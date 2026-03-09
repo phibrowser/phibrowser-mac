@@ -12,6 +12,9 @@ public extension ThemedColor {
     static let themeColor = ThemedColor(role: .themeColor)
     
     static let themeColorOnHover = ThemedColor(role: .themeColorOnHover)
+
+    static let extensionActonColor = ThemedColor(role: .extensionActonColor)
+
     // MARK: - Text Colors
     
     /// Primary text color.
@@ -109,54 +112,6 @@ public extension NSColor {
     }
 }
 
-// MARK: - Sample Themes
-
-public extension Theme {
-    /// Ocean theme with deep blue tones.
-    static let ocean: Theme = {
-        let theme = Theme(id: "ocean", name: "Ocean")
-        theme.setColor(light: NSColor(hex: 0xE0F7FA), dark: NSColor(hex: 0x0A1929), for: .windowOverlayBackground)
-        theme.setColor(light: NSColor(hex: 0xF0FDFF), dark: NSColor(hex: 0x0D2137), for: .windowBackground)
-        theme.setColor(light: NSColor(hex: 0x03045E), dark: NSColor(hex: 0xCAF0F8), for: .textPrimary)
-        theme.setColor(light: NSColor(hex: 0x0077B6), dark: NSColor(hex: 0x90E0EF), for: .textSecondary)
-        theme.setColor(light: NSColor(hex: 0x48CAE4), dark: NSColor(hex: 0x48CAE4), for: .textTertiary)
-        return theme
-    }()
-    
-    /// Forest theme with natural green tones.
-    static let forest: Theme = {
-        let theme = Theme(id: "forest", name: "Forest")
-        theme.setColor(light: NSColor(hex: 0xE8F5E9), dark: NSColor(hex: 0x0D1F17), for: .windowOverlayBackground)
-        theme.setColor(light: NSColor(hex: 0xF1F8E9), dark: NSColor(hex: 0x1B4332), for: .windowBackground)
-        theme.setColor(light: NSColor(hex: 0x1B4332), dark: NSColor(hex: 0xD8F3DC), for: .textPrimary)
-        theme.setColor(light: NSColor(hex: 0x2D6A4F), dark: NSColor(hex: 0xB7E4C7), for: .textSecondary)
-        theme.setColor(light: NSColor(hex: 0x52B788), dark: NSColor(hex: 0x74C69D), for: .textTertiary)
-        return theme
-    }()
-    
-    /// Sunset theme with warm orange tones.
-    static let sunset: Theme = {
-        let theme = Theme(id: "sunset", name: "Sunset")
-        theme.setColor(light: NSColor(hex: 0xFFF3E0).withAlphaComponent(0.4), dark: NSColor(hex: 0x1A0A00), for: .windowOverlayBackground)
-        theme.setColor(light: NSColor(hex: 0xFFF8E1), dark: NSColor(hex: 0x2D1810), for: .windowBackground)
-        theme.setColor(light: NSColor(hex: 0x370617), dark: NSColor(hex: 0xFFE8D6), for: .textPrimary)
-        theme.setColor(light: NSColor(hex: 0x6A040F), dark: NSColor(hex: 0xFFD7BA), for: .textSecondary)
-        theme.setColor(light: NSColor(hex: 0x9D0208), dark: NSColor(hex: 0xF9C784), for: .textTertiary)
-        return theme
-    }()
-    
-    /// Violet theme with rich purple tones.
-    static let violet: Theme = {
-        let theme = Theme(id: "violet", name: "Violet")
-        theme.setColor(light: NSColor(hex: 0xF3E5F5), dark: NSColor(hex: 0x120A1F), for: .windowOverlayBackground)
-        theme.setColor(light: NSColor(hex: 0xFCE4EC), dark: NSColor(hex: 0x1E1033), for: .windowBackground)
-        theme.setColor(light: NSColor(hex: 0x240046), dark: NSColor(hex: 0xF3E8FF), for: .textPrimary)
-        theme.setColor(light: NSColor(hex: 0x5A189A), dark: NSColor(hex: 0xE0AAFF), for: .textSecondary)
-        theme.setColor(light: NSColor(hex: 0x7B2CBF), dark: NSColor(hex: 0xC77DFF), for: .textTertiary)
-        return theme
-    }()
-}
-
 extension Theme {
     /// Incognito theme — dedicated theme for private browsing windows.
     static let incognito: Theme = {
@@ -166,4 +121,151 @@ extension Theme {
                        for: .windowOverlayBackground)
         return theme
     }()
+}
+
+private extension NSColor {
+    func adjustingBrightness(percent delta: CGFloat) -> NSColor {
+        let color = usingColorSpace(.extendedSRGB) ?? self
+        var hue: CGFloat = 0
+        var saturation: CGFloat = 0
+        var brightness: CGFloat = 0
+        var alpha: CGFloat = 0
+        color.getHue(&hue, saturation: &saturation, brightness: &brightness, alpha: &alpha)
+        let adjustedBrightness = min(max(brightness + (delta / 100), 0), 1)
+        return NSColor(calibratedHue: hue, saturation: saturation, brightness: adjustedBrightness, alpha: alpha)
+    }
+}
+
+private func makeDesignTheme(
+    id: String,
+    name: String,
+    lightOverlay: Int,
+    lightBackground: Int,
+    lightThemeColor: Int,
+    lightExtensionAction: Int,
+    darkOverlay: Int,
+    darkBackground: Int,
+    darkThemeColor: Int,
+    darkExtensionAction: Int
+) -> Theme {
+    let theme = Theme(id: id, name: name)
+    let lightTheme = NSColor(hex: lightThemeColor)
+    let darkTheme = NSColor(hex: darkThemeColor)
+
+    theme.setColor(
+        light: NSColor(hex: lightOverlay, alpha: 0.8),
+        dark: NSColor(hex: darkOverlay, alpha: 0.8),
+        for: .windowOverlayBackground
+    )
+    theme.setColor(
+        light: NSColor(hex: lightBackground),
+        dark: NSColor(hex: darkBackground),
+        for: .windowBackground
+    )
+    theme.setColor(light: lightTheme, dark: darkTheme, for: .themeColor)
+    theme.setColor(
+        light: NSColor(hex: lightExtensionAction),
+        dark: NSColor(hex: darkExtensionAction),
+        for: .extensionActonColor
+    )
+    theme.setColor(
+        // Figma does not define hover explicitly; keep hue/saturation and adjust brightness per spec.
+        light: lightTheme.adjustingBrightness(percent: -5),
+        dark: darkTheme.adjustingBrightness(percent: 5),
+        for: .themeColorOnHover
+    )
+
+    return theme
+}
+
+// MARK: - Built-In Themes
+
+public extension Theme {
+    static let mint = makeDesignTheme(
+        id: "mint",
+        name: NSLocalizedString("Mint", comment: "Mint theme color name"),
+        lightOverlay: 0x8AE25A,
+        lightBackground: 0xFFFFFF,
+        lightThemeColor: 0x73BD4B,
+        lightExtensionAction: 0x4BB7BD,
+        darkOverlay: 0x1B380B,
+        darkBackground: 0x1B380B,
+        darkThemeColor: 0x48802A,
+        darkExtensionAction: 0x2A7B80
+    )
+
+    static let aqua = makeDesignTheme(
+        id: "aqua",
+        name: NSLocalizedString("Aqua", comment: "Aqua theme color name"),
+        lightOverlay: 0x5BDEE3,
+        lightBackground: 0xFFFFFF,
+        lightThemeColor: 0x4BB9BD,
+        lightExtensionAction: 0x4B84BD,
+        darkOverlay: 0x0B3738,
+        darkBackground: 0x0B3738,
+        darkThemeColor: 0x2A7D80,
+        darkExtensionAction: 0x2A5280
+    )
+
+    static let iris = makeDesignTheme(
+        id: "iris",
+        name: NSLocalizedString("Iris", comment: "Iris theme color name"),
+        lightOverlay: 0x7566FF,
+        lightBackground: 0xFFFFFF,
+        lightThemeColor: 0x6357D9,
+        lightExtensionAction: 0xB857D9,
+        darkOverlay: 0x100B38,
+        darkBackground: 0x100B38,
+        darkThemeColor: 0x3D339C,
+        darkExtensionAction: 0x82339C
+    )
+
+    static let petal = makeDesignTheme(
+        id: "petal",
+        name: NSLocalizedString("Petal", comment: "Petal theme color name"),
+        lightOverlay: 0xD966FF,
+        lightBackground: 0xFFFFFF,
+        lightThemeColor: 0xB857D9,
+        lightExtensionAction: 0x4B84BD,
+        darkOverlay: 0x2D0B38,
+        darkBackground: 0x2D0B38,
+        darkThemeColor: 0x82339C,
+        darkExtensionAction: 0x2A5280
+    )
+
+    static let coral = makeDesignTheme(
+        id: "coral",
+        name: NSLocalizedString("Coral", comment: "Coral theme color name"),
+        lightOverlay: 0xFF6666,
+        lightBackground: 0xFFFFFF,
+        lightThemeColor: 0xD95757,
+        lightExtensionAction: 0xD9B857,
+        darkOverlay: 0x380B0B,
+        darkBackground: 0x380B0B,
+        darkThemeColor: 0x9C3E3E,
+        darkExtensionAction: 0x9C8133
+    )
+
+    static let amber = makeDesignTheme(
+        id: "amber",
+        name: NSLocalizedString("Amber", comment: "Amber theme color name"),
+        lightOverlay: 0xFFD966,
+        lightBackground: 0xFFFFFF,
+        lightThemeColor: 0xD9B857,
+        lightExtensionAction: 0xD95757,
+        darkOverlay: 0x382D0B,
+        darkBackground: 0x382D0B,
+        darkThemeColor: 0x9C8133,
+        darkExtensionAction: 0x9C3E3E
+    )
+
+    static let builtInThemes: [Theme] = [
+        .default,
+        .mint,
+        .aqua,
+        .iris,
+        .petal,
+        .coral,
+        .amber
+    ]
 }

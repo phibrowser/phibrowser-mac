@@ -25,7 +25,7 @@ struct GeneralSettingView: View {
     var body: some View {
         ScrollView(.vertical) {
             VStack(alignment: .leading, spacing: 24) {
-//                ThemeSectionView()
+                ThemeColorSettingView()
                 AppearanceSectionView()
                 BrowsingSectionView()
             }
@@ -42,6 +42,142 @@ private struct ThemeColorOption: Identifiable {
     let id: String
     let color: Color
     let label: String?
+}
+
+struct ThemeColorSettingView: View {
+    @State private var selectedThemeId: String = ThemeManager.shared.currentTheme.id
+
+    private let themes = Theme.builtInThemes
+    private let sliderAnimation = Animation.spring(response: 0.28, dampingFraction: 0.84)
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Text(NSLocalizedString("Theme color", comment: "General settings - Section title for configuring theme color"))
+                .font(.system(size: 12))
+                .foregroundStyle(Color.secondary)
+                .padding(.bottom, 12)
+
+            ThemeColorPickerTrack(
+                themes: themes,
+                selectedThemeId: selectedThemeId,
+                animation: sliderAnimation,
+                onSelectTheme: selectTheme(_:)
+            )
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .onReceive(NotificationCenter.default.publisher(for: .themeDidChange)) { _ in
+            withAnimation(sliderAnimation) {
+                selectedThemeId = ThemeManager.shared.currentTheme.id
+            }
+        }
+    }
+
+    private func selectTheme(_ theme: Theme) {
+        guard selectedThemeId != theme.id else { return }
+
+        withAnimation(sliderAnimation) {
+            selectedThemeId = theme.id
+        }
+
+        ThemeManager.shared.switchTheme(to: theme.id)
+    }
+}
+
+private struct ThemeColorPickerTrack: View {
+    let themes: [Theme]
+    let selectedThemeId: String
+    let animation: Animation
+    let onSelectTheme: (Theme) -> Void
+
+    private let trackWidth: CGFloat = 399
+    private let trackHeight: CGFloat = 14
+    private let knobSize: CGFloat = 22
+    private let pointSize: CGFloat = 2
+
+    var body: some View {
+        GeometryReader { geometry in
+            let metrics = trackMetrics(for: geometry.size.width)
+
+            ZStack(alignment: .leading) {
+                Image(.colorPickerBg)
+                    .resizable()
+                    .scaledToFill()
+                    .frame(width: geometry.size.width, height: trackHeight)
+                    .clipShape(Capsule())
+                    .overlay(
+                        Capsule()
+                            .stroke(Color.black.opacity(0.1), lineWidth: 1)
+                    )
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
+
+                ForEach(Array(themes.enumerated()), id: \.element.id) { index, _ in
+                    Circle()
+                        .fill(Color.black.opacity(0.88))
+                        .frame(width: pointSize, height: pointSize)
+                        .overlay(
+                            Circle()
+                                .stroke(Color.black.opacity(0.12), lineWidth: 0.5)
+                        )
+                        .offset(x: pointOffset(for: index, using: metrics))
+                }
+
+                Circle()
+                    .fill(Color.white)
+                    .frame(width: knobSize, height: knobSize)
+                    .overlay(
+                        Circle()
+                            .stroke(Color.black.opacity(0.08), lineWidth: 0.5)
+                    )
+                    .shadow(color: Color.black.opacity(0.16), radius: 8, y: 2)
+                    .offset(x: knobOffset(using: metrics))
+                    .animation(animation, value: selectedThemeId)
+            }
+            .frame(width: geometry.size.width, height: knobSize)
+            .contentShape(Rectangle())
+            .gesture(
+                DragGesture(minimumDistance: 0)
+                    .onChanged { value in
+                        updateSelection(at: value.location.x, using: metrics)
+                    }
+                    .onEnded { value in
+                        updateSelection(at: value.location.x, using: metrics)
+                    }
+            )
+        }
+        .frame(width: trackWidth, height: knobSize)
+    }
+
+    private var selectedIndex: Int {
+        themes.firstIndex(where: { $0.id == selectedThemeId }) ?? 0
+    }
+
+    private func trackMetrics(for width: CGFloat) -> (usableWidth: CGFloat, step: CGFloat) {
+        let usableWidth = max(width - knobSize, 0)
+        let step = themes.count > 1 ? usableWidth / CGFloat(themes.count - 1) : 0
+        return (usableWidth, step)
+    }
+
+    private func knobOffset(using metrics: (usableWidth: CGFloat, step: CGFloat)) -> CGFloat {
+        min(CGFloat(selectedIndex) * metrics.step, metrics.usableWidth)
+    }
+
+    private func pointOffset(for index: Int, using metrics: (usableWidth: CGFloat, step: CGFloat)) -> CGFloat {
+        min(CGFloat(index) * metrics.step, metrics.usableWidth) + ((knobSize - pointSize) / 2)
+    }
+
+    private func updateSelection(at locationX: CGFloat, using metrics: (usableWidth: CGFloat, step: CGFloat)) {
+        guard let selectedTheme = theme(at: locationX, using: metrics) else { return }
+        onSelectTheme(selectedTheme)
+    }
+
+    private func theme(at locationX: CGFloat, using metrics: (usableWidth: CGFloat, step: CGFloat)) -> Theme? {
+        guard !themes.isEmpty else { return nil }
+        guard themes.count > 1, metrics.step > 0 else { return themes.first }
+
+        let clampedOffset = min(max(locationX - (knobSize / 2), 0), metrics.usableWidth)
+        let index = Int((clampedOffset / metrics.step).rounded())
+        return themes[min(max(index, 0), themes.count - 1)]
+    }
 }
 
 private struct ThemeSectionView: View {

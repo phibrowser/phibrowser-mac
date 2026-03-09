@@ -105,7 +105,7 @@ public final class ThemeManager: NSObject, ThemeSource {
         self.currentTheme = Theme.default
         super.init()
         
-        registerTheme(Theme.default)
+        Theme.builtInThemes.forEach(registerTheme)
         
         restoreUserPreferences()
         

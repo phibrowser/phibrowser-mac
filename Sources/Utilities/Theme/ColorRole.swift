@@ -14,6 +14,7 @@ public enum ColorRole: String, Hashable, CaseIterable {
     case textPrimaryStrong
     case textSecondary
     case textTertiary
+    case extensionActonColor
     
     case windowOverlayBackground
     case windowBackground

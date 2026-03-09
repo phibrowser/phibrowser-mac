@@ -82,6 +82,8 @@ private enum ImagePreviewDebugSamples {
 #endif
 
 extension AppController {
+    private static let debugMenuThemes: [Theme] = Theme.builtInThemes
+
     func buildDebugMenuItem() -> NSMenuItem {
         let debugMenu = NSMenu(title: "*DEBUG*")
         let debugMenuItem = NSMenuItem(title: "*DEBUG*", action: nil, keyEquivalent: "")
@@ -150,31 +152,13 @@ extension AppController {
         let themsTitle = NSMenuItem(title: "Themes", action: nil, keyEquivalent: "")
         themsTitle.isEnabled = false
         themeSubmenu.addItem(themsTitle)
-        
-        let defaultItem = NSMenuItem(title: "Default", action: #selector(switchToTheme(_:)), keyEquivalent: "")
-        defaultItem.target = self
-        defaultItem.representedObject = Theme.default.id
-        themeSubmenu.addItem(defaultItem)
-        
-        let oceanItem = NSMenuItem(title: "Ocean", action: #selector(switchToTheme(_:)), keyEquivalent: "")
-        oceanItem.target = self
-        oceanItem.representedObject = "ocean"
-        themeSubmenu.addItem(oceanItem)
-        
-        let forestItem = NSMenuItem(title: "Forest", action: #selector(switchToTheme(_:)), keyEquivalent: "")
-        forestItem.target = self
-        forestItem.representedObject = "forest"
-        themeSubmenu.addItem(forestItem)
-        
-        let sunsetItem = NSMenuItem(title: "Sunset", action: #selector(switchToTheme(_:)), keyEquivalent: "")
-        sunsetItem.target = self
-        sunsetItem.representedObject = "sunset"
-        themeSubmenu.addItem(sunsetItem)
-        
-        let violetItem = NSMenuItem(title: "Violet", action: #selector(switchToTheme(_:)), keyEquivalent: "")
-        violetItem.target = self
-        violetItem.representedObject = "violet"
-        themeSubmenu.addItem(violetItem)
+
+        for theme in Self.debugMenuThemes {
+            let item = NSMenuItem(title: theme.name, action: #selector(switchToTheme(_:)), keyEquivalent: "")
+            item.target = self
+            item.representedObject = theme.id
+            themeSubmenu.addItem(item)
+        }
         
         themeSubmenu.addItem(NSMenuItem.separator())
         let appearance = NSMenuItem(title: "Appearance", action: nil, keyEquivalent: "")
@@ -214,13 +198,6 @@ extension AppController {
     
     // MARK: - Theme Switching Actions
     
-    private static let debugThemes: [String: Theme] = [
-        "ocean": .ocean,
-        "forest": .forest,
-        "sunset": .sunset,
-        "violet": .violet
-    ]
-    
     private var activeBrowserThemeContext: BrowserThemeContext? {
         NSApp.keyWindow?.browserThemeContext
     }
@@ -234,10 +211,7 @@ extension AppController {
     }
     
     private func resolvedDebugTheme(for themeId: String) -> Theme {
-        if themeId == Theme.default.id {
-            return .default
-        }
-        return Self.debugThemes[themeId] ?? .default
+        Theme.builtInThemes.first(where: { $0.id == themeId }) ?? .default
     }
     
     @objc func switchToTheme(_ sender: NSMenuItem) {
@@ -250,8 +224,6 @@ extension AppController {
             context.setTheme(theme)
             return
         }
-        
-        ThemeManager.shared.switchTheme(to: themeId)
     }
     
     

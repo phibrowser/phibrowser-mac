@@ -11,6 +11,11 @@ public enum DefaultColors {
         dark: NSColor(hex: 0x1E7099)
     )
     
+    public static let extensionActonColor = ColorPair(
+        light: NSColor(hex: 0x2DC882),
+        dark: NSColor(hex: 0x168A55)
+    )
+    
     public static let themeColorOnHover = ColorPair(
         light: NSColor(hex: 0x248AB9),
         dark: NSColor(hex: 0x368CB7)
@@ -86,6 +91,7 @@ public enum DefaultColors {
         case .sidebarTabHoveredBackground:  return sidebarTabHoveredBackground
         case .border:                       return border
         case .separator:                    return separator
+        case .extensionActonColor:          return extensionActonColor
         }
     }
     

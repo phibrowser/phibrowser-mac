@@ -1,0 +1,13 @@
+// Shared Configuration for all builds
+
+// Module Name (must be same for both versions for Swift bridging)
+PRODUCT_MODULE_NAME = Phi
+
+// Product Directory Name
+CR_PRODUCT_DIR_NAME = ${PRODUCT_BUNDLE_IDENTIFIER}
+
+// Sparkle Update Feed
+// Note: URL_SCHEME is used to prevent '//' from being treated as a comment in xcconfig
+URL_SCHEME = https:/
+// Note: ${APPCAST_PATH} is defined in each configuration file and will be expanded when SUFEED_URL is used
+SUFEED_URL = ${URL_SCHEME}/ota.phibrowser.com/${APPCAST_PATH}/PhiBrowserMacUpdate.xml

@@ -1,0 +1,1036 @@
+{
+  "sourceLanguage" : "en",
+  "strings" : {
+    "" : {
+
+    },
+    " Telegram bot creation and customization process, follow the on-screen instructions and paste the Bot Token below" : {
+      "comment" : "Phi Link - Custom bot guide suffix"
+    },
+    "・" : {
+
+    },
+    "・Paused" : {
+      "comment" : "Download item row - Status indicator when download is paused"
+    },
+    "· %@" : {
+
+    },
+    "@%@" : {
+
+    },
+    "/**/Appearance" : {
+      "comment" : "[EXAMPLE] Theme example: appearance picker label"
+    },
+    "/**/Appearance Choice" : {
+      "comment" : "[EXAMPLE] Theme example: appearance picker section title"
+    },
+    "/**/AppKit Controls Examples" : {
+      "comment" : "[EXAMPLE] Theme example: AppKit controls section title"
+    },
+    "/**/Basic Usage - <> Operator" : {
+      "comment" : "[EXAMPLE] Theme example: basic usage code title"
+    },
+    "/**/Border" : {
+      "comment" : "[EXAMPLE] Theme example: border style label"
+    },
+    "/**/Border & Separator Examples" : {
+      "comment" : "[EXAMPLE] Theme example: border section title"
+    },
+    "/**/Code Examples" : {
+      "comment" : "[EXAMPLE] Theme example: code examples section title"
+    },
+    "/**/Current Appearance: %@" : {
+      "comment" : "[EXAMPLE] Theme example: current appearance label with format"
+    },
+    "/**/Custom Theme" : {
+      "comment" : "[EXAMPLE] Theme example: custom theme code title"
+    },
+    "/**/Dark Mode Button" : {
+      "comment" : "[EXAMPLE] Theme example: dark mode button title"
+    },
+    "/**/Hovered Tab" : {
+      "comment" : "[EXAMPLE] Theme example: hovered tab label"
+    },
+    "/**/Light Mode Button" : {
+      "comment" : "[EXAMPLE] Theme example: light mode button title"
+    },
+    "/**/Normal Tab" : {
+      "comment" : "[EXAMPLE] Theme example: normal tab label"
+    },
+    "/**/NSButton with phi.title:" : {
+      "comment" : "[EXAMPLE] Theme example: NSButton description"
+    },
+    "/**/NSTextField with phi.textColor:" : {
+      "comment" : "[EXAMPLE] Theme example: NSTextField description"
+    },
+    "/**/NSView with phiLayer.backgroundColor:" : {
+      "comment" : "[EXAMPLE] Theme example: NSView layer description"
+    },
+    "/**/Overlay Background" : {
+      "comment" : "[EXAMPLE] Theme example: overlay background label"
+    },
+    "/**/Primary Text - Main content text" : {
+      "comment" : "[EXAMPLE] Theme example: primary text sample"
+    },
+    "/**/Secondary Text - Supporting text" : {
+      "comment" : "[EXAMPLE] Theme example: secondary text sample"
+    },
+    "/**/Selected Tab" : {
+      "comment" : "[EXAMPLE] Theme example: selected tab label"
+    },
+    "/**/Separator" : {
+      "comment" : "[EXAMPLE] Theme example: separator style label"
+    },
+    "/**/Sidebar Style Examples" : {
+      "comment" : "[EXAMPLE] Theme example: sidebar section title"
+    },
+    "/**/SwiftUI Modifiers" : {
+      "comment" : "[EXAMPLE] Theme example: SwiftUI modifiers code title"
+    },
+    "/**/Tertiary Text - Tertiary level text" : {
+      "comment" : "[EXAMPLE] Theme example: tertiary text sample"
+    },
+    "/**/Text Color Examples" : {
+      "comment" : "[EXAMPLE] Theme example: text color section title"
+    },
+    "/**/This is an NSTextField, color changes with appearance" : {
+      "comment" : "[EXAMPLE] Theme example: NSTextField sample text"
+    },
+    "/**/User Appearance Choice" : {
+      "comment" : "[EXAMPLE] Theme example: user appearance code title"
+    },
+    "/**/Window Background" : {
+      "comment" : "[EXAMPLE] Theme example: window background label"
+    },
+    "%d days ago" : {
+      "comment" : "Download item row - Relative time showing days since download completed"
+    },
+    "%d hour ago" : {
+      "comment" : "Download item row - Relative time showing hours since download completed"
+    },
+    "%d min ago" : {
+      "comment" : "Download item row - Relative time showing minutes since download completed"
+    },
+    "%lld/%lld" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$lld/%2$lld"
+          }
+        }
+      }
+    },
+    "© %d Phinomenon. All rights reserved." : {
+      "comment" : "About window - Copyright notice at bottom"
+    },
+    "Add Download" : {
+
+    },
+    "Add New" : {
+      "comment" : "Shortcuts settings - Placeholder text when no shortcut is assigned"
+    },
+    "Add to Bookmark" : {
+      "comment" : "Tab context menu - Add current tab to root bookmark bar in sidebar"
+    },
+    "Add to Bookmark Bar" : {
+      "comment" : "Tab context menu - Add current tab to root bookmark bar"
+    },
+    "Add to Folder" : {
+      "comment" : "Tab context menu - Menu item to add tab to bookmarks"
+    },
+    "Additional browser settings" : {
+      "comment" : "General settings - Title for always more settings"
+    },
+    "Additional info (optional)" : {
+      "comment" : "Feedback form - Section header for optional additional information"
+    },
+    "AI conversations will be closed and all connected Connectors will be disconnected." : {
+      "comment" : "AI settings - Alert message explaining consequences of disabling AI features"
+    },
+    "AI Sidebar" : {
+      "comment" : "AI settings - Section title for AI sidebar options"
+    },
+    "All connected Connectors will be disconnected." : {
+      "comment" : "AI settings - Alert message explaining consequences of disabling connectors"
+    },
+    "All Downloads" : {
+      "comment" : "Downloads list - Button to open full downloads page"
+    },
+    "Always Show Bookmark Bar" : {
+      "comment" : "View menu - Menu item to always show the bookmark bar"
+    },
+    "Always show full URL" : {
+      "comment" : "General settings - Toggle title for always showing full URL in address bar"
+    },
+    "Always Show URL Path" : {
+      "comment" : "Address bar menu - Toggle URL path visibility"
+    },
+    "Appearance" : {
+      "comment" : "General settings - Appearance section title"
+    },
+    "AppKit" : {
+
+    },
+    "Are you sure you want to install version %@ and restart Phi?" : {
+      "comment" : "Update alert - Message asking user to confirm update installation with version number"
+    },
+    "Attach file" : {
+      "comment" : "Feedback form - Label for file attachment section"
+    },
+    "Automatically add current tab as context to new conversation" : {
+      "comment" : "AI settings - Toggle to auto-add current tab as context when starting new AI conversation"
+    },
+    "Automatically add External Data Connectors as context to new conversation" : {
+      "comment" : "AI settings - Toggle to auto-add connector data as context to new AI conversation"
+    },
+    "Back" : {
+      "comment" : "Web content header - Accessibility description for back navigation button"
+    },
+    "Balanced" : {
+      "comment" : "Layout option - Vertical tabs with address bar at the top of webcontent\nOnboarding layout selection - Balanced option"
+    },
+    "Bookmark All Tabs" : {
+      "comment" : "Tab area context menu - Bookmark all open tabs"
+    },
+    "Bookmark Name" : {
+      "comment" : "Bookmark editor - Placeholder for bookmark name input"
+    },
+    "Bookmarks" : {
+      "comment" : "Default root bookmarks folder title\nImport data type - Bookmarks toggle label"
+    },
+    "Bookmarks Bar" : {
+      "comment" : "Bookmark editor - Root bookmark folder display name in folder picker"
+    },
+    "Bot Token" : {
+      "comment" : "Phi Link - Custom bot token label"
+    },
+    "Browser data" : {
+      "comment" : "Import browser data page - Page title\nImport data type selection - Page title"
+    },
+    "Browser memory" : {
+      "comment" : "AI settings - Section title for browser memory management"
+    },
+    "Browsing" : {
+      "comment" : "General settings - Browsing section title"
+    },
+    "Browsing history" : {
+      "comment" : "Import data type - Browsing history toggle label"
+    },
+    "Cancel" : {
+      "comment" : "AI settings - Cancel button in disable-AI confirmation alert\nAI settings - Cancel button in disable-connectors confirmation alert\nAccount settings - Cancel button in logout confirmation dialog\nAccount settings - Cancel button in rename dialog\nCancel\nDownload item row - Tooltip for cancel button during safety scan\nDownload item row - Tooltip for cancel download button\nEditor - Cancel button title\nFeedback form - Cancel button in permission alert\nFeedback form - Cancel button to dismiss feedback form\nNew folder dialog cancel button title\nTooltip for cancel button during safety scan in living downloads toast\nUpdate alert - Button to cancel update installation"
+    },
+    "Cancel First" : {
+
+    },
+    "Canceled" : {
+      "comment" : "Download item row - Status label when download was cancelled"
+    },
+    "Cancelled" : {
+      "comment" : "Download state"
+    },
+    "Card %lld of %lld" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Card %1$lld of %2$lld"
+          }
+        }
+      }
+    },
+    "Certificate is invalid" : {
+      "comment" : "Address bar menu - Certificate validity status"
+    },
+    "Certificate is valid" : {
+      "comment" : "Address bar menu - Certificate validity status"
+    },
+    "Change Name" : {
+      "comment" : "Account settings - Dialog title for changing user name"
+    },
+    "Chat" : {
+      "comment" : "Sidebar bottom chat button title"
+    },
+    "Check for Update..." : {
+      "comment" : "Phi menu - Menu item to check for app updates"
+    },
+    "Checking for updates..." : {
+      "comment" : "Phi menu - Menu item text while checking for updates"
+    },
+    "Choose File" : {
+      "comment" : "Feedback form - Button to open file picker for attachment"
+    },
+    "Chromium Engine Version %@" : {
+      "comment" : "About window - Chromium engine version label"
+    },
+    "Clear Cache" : {
+      "comment" : "Address bar menu - Settings submenu item to clear cache\nExtension list - Website settings item to clear cache"
+    },
+    "Clear Cookie" : {
+      "comment" : "Address bar menu - Settings submenu item to clear cookie\nExtension list - Website settings item to clear cookies"
+    },
+    "Click " : {
+      "comment" : "Phi Link - Custom bot guide prefix"
+    },
+    "Click to install update" : {
+      "comment" : "Phi menu - Menu item text when update is ready to install"
+    },
+    "Close" : {
+      "comment" : "Sidebar update reminder - Accessibility description for close button\nTab context menu - Menu item to close the selected tab"
+    },
+    "Close Other Tabs" : {
+      "comment" : "Tab context menu - Menu item to close all tabs except the selected one"
+    },
+    "Code Examples" : {
+
+    },
+    "Color" : {
+      "comment" : "General settings - Theme color row title"
+    },
+    "Color appearance" : {
+      "comment" : "General settings - Color appearance row title"
+    },
+    "Comfortable" : {
+      "comment" : "Layout option - Horizontal tabs\nOnboarding layout selection - Comfortable option"
+    },
+    "Complete First" : {
+
+    },
+    "Complete First In-Progress" : {
+
+    },
+    "Completed" : {
+      "comment" : "Download state"
+    },
+    "Configured" : {
+      "comment" : "Phi Link - Custom bot configured status"
+    },
+    "Confirm" : {
+      "comment" : "New folder dialog confirm button title"
+    },
+    "Confirm Logout" : {
+      "comment" : "Account settings - Logout confirmation dialog title"
+    },
+    "Conflicts with: %@" : {
+      "comment" : "Shortcuts settings - Warning text showing conflicting shortcuts"
+    },
+    "Connected" : {
+      "comment" : "AI settings - Badge text when connector is successfully connected"
+    },
+    "Connection is not fully secure" : {
+      "comment" : "Address bar menu - Website security not fully secure\nWebsite security not fully secure"
+    },
+    "Connection is not secure" : {
+      "comment" : "Address bar menu - Website security not secure\nWebsite security not secure"
+    },
+    "Connection is secure" : {
+      "comment" : "Address bar menu - Website security secure\nWebsite security secure"
+    },
+    "Cookies" : {
+      "comment" : "Import data type - Cookies toggle label"
+    },
+    "Copy Link" : {
+      "comment" : "Address bar menu - Copy link menu item\nBookmark Copy Link menu item\nDownload item row - Tooltip for copy link button\nTab context menu - Menu item to copy the tab URL to clipboard\nTooltip for button to copy download URL in living downloads toast"
+    },
+    "Crash Samples" : {
+
+    },
+    "Create a new folder to organize your bookmarks." : {
+      "comment" : "Folder creator - Subtitle explaining new folder creation"
+    },
+    "Custom Telegram bot" : {
+      "comment" : "Phi Link - Custom bot title"
+    },
+    "Dark" : {
+      "comment" : "Appearance choice: always dark mode"
+    },
+    "DEBUG Test Mode" : {
+
+    },
+    "Delete" : {
+      "comment" : "Delete bookmark menu item"
+    },
+    "Deleted" : {
+      "comment" : "Download item row - Status label when downloaded file was deleted"
+    },
+    "Describe the issue in detail" : {
+      "comment" : "Feedback form - Label prompting user to describe the issue"
+    },
+    "Discard" : {
+      "comment" : "Download item row - Tooltip for discard button on blocked download\nDownload item row - Tooltip for discard button on safety warning\nTooltip for discard button on blocked download in living downloads toast\nTooltip for discard button on safety warning in living downloads toast"
+    },
+    "Dismiss" : {
+      "comment" : "Tooltip for button to dismiss living download item"
+    },
+    "Download images" : {
+      "comment" : "Account settings - Button to download profile card as image"
+    },
+    "Download Test Controls" : {
+
+    },
+    "Downloading" : {
+      "comment" : "Download state"
+    },
+    "Downloading update..." : {
+      "comment" : "Phi menu - Menu item text while downloading update"
+    },
+    "Downloading..." : {
+      "comment" : "Placeholder text when download filename is not yet available"
+    },
+    "Downloads" : {
+      "comment" : "Header more menu - Downloads action"
+    },
+    "Drag tabs here or pin them from the tab list" : {
+      "comment" : "Drag tabs here or pin them from the tab list"
+    },
+    "Duplicate" : {
+      "comment" : "Tab context menu - Menu item to duplicate the selected tab"
+    },
+    "e.g. 123456:ABC-DEF..." : {
+
+    },
+    "Edit Bookmark" : {
+      "comment" : "Bookmark editor - Title of the sheet to edit a bookmark"
+    },
+    "Edit Folder" : {
+      "comment" : "Folder editor - Title of the sheet to edit a folder"
+    },
+    "Edit Pinned Tab" : {
+      "comment" : "Favorite editor - Title of the sheet to edit a pin"
+    },
+    "Edit the name and address for this bookmark." : {
+      "comment" : "Bookmark editor - Subtitle explaining bookmark editing"
+    },
+    "Edit..." : {
+      "comment" : "Edit bookmark url menu item title\nPinned tab context menu - Edit pinned tab menu item"
+    },
+    "Enable AI features in Phi Browser" : {
+      "comment" : "AI settings - Master toggle to enable or disable all AI features in Phi Browser"
+    },
+    "Enable External Data Connectors" : {
+      "comment" : "AI settings - Toggle to enable external data connectors"
+    },
+    "Enter a name for the new folder." : {
+      "comment" : "Bookmark editor - Inline new folder creation subtitle"
+    },
+    "Error" : {
+      "comment" : "Phi Link - Custom bot generic error text"
+    },
+    "Extension Info" : {
+      "comment" : "Extension info alert - Title of the alert showing extension version information\nHelp menu - Menu item to show extension version info, only visible when holding Option key"
+    },
+    "Extensions" : {
+      "comment" : "Address bar menu - Extensions submenu title\nExtension list - Section title for browser extensions\nImport data type - Extensions toggle label\nWeb content header - Extensions menu button"
+    },
+    "External Data Connectors" : {
+      "comment" : "AI settings - Section title for external data connectors\nAI settings - Sub-section title for connectors list within the container"
+    },
+    "External Data Connectors help to provide additional context for better AI experience" : {
+      "comment" : "AI settings - Description explaining external data connectors purpose"
+    },
+    "Fail First In-Progress" : {
+
+    },
+    "Failed" : {
+      "comment" : "Download item row - Status label when download failed\nDownload state"
+    },
+    "Failed to decode image" : {
+      "comment" : "Image preview error"
+    },
+    "Failed to load remote image" : {
+      "comment" : "Image preview error"
+    },
+    "Feedback" : {
+      "comment" : "Feedback - Sidebar feedback button title\nFeedback - Tooltip text for icon-only feedback button\nHeader more menu - Feedback action"
+    },
+    "File too large" : {
+      "comment" : "Feedback form - Alert title when selected file exceeds size limit"
+    },
+    "Find shortcut keys" : {
+      "comment" : "Shortcuts settings - Search field placeholder to find shortcuts"
+    },
+    "Finish" : {
+      "comment" : "Onboarding password manager - Finish button"
+    },
+    "Folder" : {
+      "comment" : "Bookmark editor - Label for the folder picker"
+    },
+    "Folder Name" : {
+      "comment" : "Folder editor - Placeholder for folder name input\nNew folder dialog input placeholder"
+    },
+    "Forward" : {
+      "comment" : "Web content header - Accessibility description for forward navigation button"
+    },
+    "From %@" : {
+      "comment" : "Download item row - Source host label showing where the file is downloaded from"
+    },
+    "From Arc" : {
+      "comment" : "Import browser data page - Option label to import data from Arc browser"
+    },
+    "From Chrome" : {
+      "comment" : "Import browser data page - Option label to import data from Chrome browser"
+    },
+    "From Safari" : {
+      "comment" : "Import browser data page - Option label to import data from Safari browser"
+    },
+    "General" : {
+      "comment" : "Settings - Tab title for general settings"
+    },
+    "Give this folder a name to organize your bookmarks." : {
+      "comment" : "Folder editor - Subtitle explaining folder naming"
+    },
+    "Go back and try again" : {
+      "comment" : "Retry link text shown when login fails in onboarding"
+    },
+    "Go to the browser to complete log in" : {
+      "comment" : "Waiting view title shown during login process in onboarding"
+    },
+    "here to begin the @BotFather" : {
+      "comment" : "Phi Link - Custom bot guide link text"
+    },
+    "Hide" : {
+      "comment" : "Phi Link - Hide token plaintext button"
+    },
+    "https://example.com" : {
+      "comment" : "Editor - Placeholder example URL in text field"
+    },
+    "I'll setup my own" : {
+      "comment" : "Onboarding password manager - Manual setup option"
+    },
+    "iCloud Passwords" : {
+      "comment" : "Onboarding password manager - iCloud Passwords option"
+    },
+    "Image file not found" : {
+      "comment" : "Image preview error"
+    },
+    "Import completed successfully" : {
+      "comment" : "Browser data importer - Status message when all imports completed successfully"
+    },
+    "Import completed with errors. Failed to import from: %@" : {
+      "comment" : "Browser data importer - Status message when some imports failed, shows list of failed browsers"
+    },
+    "Imported From Arc" : {
+      "comment" : "Arc bookmarks import folder title"
+    },
+    "Importing Arc data..." : {
+      "comment" : "Browser data importer - Status message while importing Arc browser data"
+    },
+    "Importing Chrome data..." : {
+      "comment" : "Browser data importer - Status message while importing Chrome browser data"
+    },
+    "Importing Safari data..." : {
+      "comment" : "Browser data importer - Status message while importing Safari browser data"
+    },
+    "Include this screenshot and titles of open tabs" : {
+      "comment" : "Feedback form - Checkbox option to include screenshot with feedback"
+    },
+    "Install and Restart" : {
+      "comment" : "Update alert - Button to install update and restart the app"
+    },
+    "Install Update" : {
+      "comment" : "Update alert - Title for install update confirmation dialog"
+    },
+    "Invalid image source" : {
+      "comment" : "Image preview error"
+    },
+    "Invalid Input" : {
+      "comment" : "Account settings - Alert title for invalid input"
+    },
+    "Invitation Code" : {
+      "comment" : "Account settings - Label for invitation code field"
+    },
+    "Invitation Code Details" : {
+      "comment" : "Account settings - Window title for invitation code details"
+    },
+    "Item 1" : {
+
+    },
+    "Item 2" : {
+
+    },
+    "Just now" : {
+      "comment" : "Download item row - Relative time when download completed less than a minute ago"
+    },
+    "Keep" : {
+      "comment" : "Download item row - Tooltip for keep button on safety warning\nTooltip for keep button on safety warning in living downloads toast"
+    },
+    "Launch Phi Sentinel automatically at login" : {
+      "comment" : "AI settings - Toggle to auto-launch Phi Sentinel at system login"
+    },
+    "Layout mode" : {
+      "comment" : "General settings - Layout mode row title"
+    },
+    "Layout Mode" : {
+      "comment" : "General settings - Section title for layout configuration\nTab area context menu - Switch layout mode\nView menu - Layout mode section header in View menu"
+    },
+    "Layout selection" : {
+      "comment" : "Onboarding layout selection - Page title"
+    },
+    "Light" : {
+      "comment" : "Appearance choice: always light mode"
+    },
+    "Link" : {
+      "comment" : "Phi Link - Official bot link button"
+    },
+    "Link Telegram to chat with %@." : {
+      "comment" : "Phi Link - Official bot link prompt with agent name"
+    },
+    "Linked" : {
+      "comment" : "Phi Link - Custom bot linked status\nPhi Link - Custom bot linked text\nPhi Link - Official bot linked status"
+    },
+    "Linking..." : {
+      "comment" : "Phi Link - Custom bot linking text"
+    },
+    "Living Downloads Test" : {
+
+    },
+    "Loading image…" : {
+      "comment" : "Image preview loading"
+    },
+    "Log in" : {
+      "comment" : "Onboarding Login button title"
+    },
+    "Logout" : {
+      "comment" : "Account settings - Logout button\nAccount settings - Logout button in logout confirmation dialog"
+    },
+    "Logout Failed" : {
+      "comment" : "Account settings - Alert title when logout fails"
+    },
+    "Manage" : {
+      "comment" : "AI settings - Button to open connector management page"
+    },
+    "Manage Extensions" : {
+      "comment" : "Address bar menu - Extensions submenu item to open extension management\nExtension list - Button to open extensions management page"
+    },
+    "More Settings" : {
+      "comment" : "Address bar menu - Settings submenu item to open settings page\nExtension list - Website settings item to open more settings"
+    },
+    "Mute" : {
+      "comment" : "Notification menu option - Disable auto popup for notification cards\nTab mute button tooltip - mute"
+    },
+    "Name" : {
+      "comment" : "Editor - Label for the title/name input field"
+    },
+    "Name cannot be empty" : {
+      "comment" : "Account settings - Error message when user name is empty\nSet name page - Error message when user name is empty or contains only spaces"
+    },
+    "Name cannot exceed %d characters" : {
+      "comment" : "Account settings - Error message when user name is too long"
+    },
+    "Name is too long (maximum 100 characters)" : {
+      "comment" : "Set name page - Error message when user name exceeds 100 characters"
+    },
+    "New Folder" : {
+      "comment" : "Bookmark New Folder menu item\nBookmark editor - Inline new folder creation title\nFolder creator - Title of the sheet to create a new folder\nNew folder dialog title\nSidebar context menu title\nTab area context menu - Create a new bookmark folder"
+    },
+    "New Folder…" : {
+      "comment" : "Bookmark editor - Create new folder option in folder picker"
+    },
+    "New Nested Folder..." : {
+      "comment" : "Bookmark New Folder menu item"
+    },
+    "New Tab" : {
+      "comment" : "Default title for a new tab when no page title or URL is available\nSidebar tab list - Button title to create a new browser tab\nTab area context menu - Open a new browser tab\nside bar new tab button text"
+    },
+    "New tab behavior" : {
+      "comment" : "General settings - Row title for configuring new tab behavior"
+    },
+    "New Tab Page" : {
+      "comment" : "General settings - Option to open New Tab Page when pressing ⌘+T"
+    },
+    "New Tab Page requires Phi AI to be enabled" : {
+      "comment" : "General settings - Hint shown when Phi AI is disabled explaining New Tab Page requires it"
+    },
+    "New Version %@ Available" : {
+      "comment" : "Sidebar update reminder - Message showing new version is available"
+    },
+    "New version available" : {
+      "comment" : "Phi menu - Menu item text when new version is available"
+    },
+    "Next" : {
+      "comment" : "Onboarding base - Next button to proceed to next step\nOnboarding welcome page - Next button to proceed to next step"
+    },
+    "Next image" : {
+      "comment" : "Image preview: accessibility label for next image control"
+    },
+    "Next Test (%lld items)" : {
+
+    },
+    "No certificate available" : {
+      "comment" : "No certificate tooltip"
+    },
+    "No Downloads" : {
+      "comment" : "Downloads list - Empty state text when no downloads exist"
+    },
+    "No extensions found" : {
+      "comment" : "Address bar menu - Empty extension submenu item\nExtension list - Empty state when no extensions are installed"
+    },
+    "No extensions found or versions unavailable." : {
+      "comment" : "Extension info alert - Fallback when no extension versions are available"
+    },
+    "No Results" : {
+      "comment" : "Shortcuts settings - Empty state text when no shortcuts match search"
+    },
+    "No share actions available" : {
+      "comment" : "Address bar menu - Empty share submenu item"
+    },
+    "Not configured" : {
+      "comment" : "Phi Link - Custom bot not configured status"
+    },
+    "Not connected" : {
+      "comment" : "AI settings - Connector row status text when not connected\nAI settings - Default text when connector is not connected"
+    },
+    "Not linked" : {
+      "comment" : "Phi Link - Official bot not linked status"
+    },
+    "Official Phi Link Telegram bot" : {
+      "comment" : "Phi Link - Official Bot title"
+    },
+    "OK" : {
+      "comment" : "Account settings - OK button\nAccount settings - OK button to dismiss logout failed alert\nExtension info alert - OK button to dismiss the alert\nFeedback form - OK button to dismiss file size alert"
+    },
+    "Omnibox" : {
+      "comment" : "General settings - Option to open Omnibox search when pressing ⌘+T"
+    },
+    "Open in New Tab" : {
+      "comment" : "Open in New Tab menu item"
+    },
+    "Open in Telegram" : {
+      "comment" : "Phi Link - Open official bot link in Telegram"
+    },
+    "Open Settings" : {
+      "comment" : "Import browser data page - Button to open system settings for granting permissions"
+    },
+    "Open System Settings" : {
+      "comment" : "Feedback form - Button to open system settings for screen recording permission"
+    },
+    "Open User Data Directory" : {
+      "comment" : "Debug menu item to reveal the current user's data storage directory in Finder"
+    },
+    "Passwords Manager" : {
+      "comment" : "Onboarding password manager - Page title"
+    },
+    "Pause" : {
+      "comment" : "Download item row - Tooltip for pause download button"
+    },
+    "Performance" : {
+      "comment" : "Layout option - Vertical tabs with address bar at side bar\nOnboarding layout selection - Performance option"
+    },
+    "Permissions" : {
+      "comment" : "Import browser data page - Page title when showing permission request"
+    },
+    "Phi" : {
+      "comment" : "Profile card - App name displayed on user profile card"
+    },
+    "Phi & AI" : {
+      "comment" : "Settings - Tab title for AI and Phi assistant settings"
+    },
+    "Phi is not your default browser" : {
+      "comment" : "Account settings - Status text when Phi is not the default browser"
+    },
+    "Phi is your default browser" : {
+      "comment" : "Account settings - Status text when Phi is the default browser"
+    },
+    "Phi Link" : {
+      "comment" : "Settings - Tab title for Phi Link settings"
+    },
+    "Phi needs Full Disk Access to import your data from Safari." : {
+      "comment" : "Import browser data page - Description explaining why Full Disk Access permission is needed"
+    },
+    "Phi Sentinel" : {
+      "comment" : "AI settings - Section title for Phi Sentinel background helper"
+    },
+    "Phi Sentinel is a lightweight background helper that allows Phi to complete scheduled AI tasks" : {
+      "comment" : "AI settings - Description explaining what Phi Sentinel does"
+    },
+    "Phi Sentinel service is unavailable. Check whether it started normally." : {
+      "comment" : "IM Channels - Custom bot service unavailable message\nIM Channels - Official bot service unavailable message"
+    },
+    "Pin" : {
+      "comment" : "Tab context menu - Menu item to pin the selected tab"
+    },
+    "Pin extension" : {
+      "comment" : "Extension list - Tooltip for pinning an extension"
+    },
+    "Please allow this app to record your screen to attach screenshots to feedback." : {
+      "comment" : "Feedback form - Alert message explaining why screen recording permission is needed"
+    },
+    "Please select a file smaller than 2MB." : {
+      "comment" : "Feedback form - Alert message explaining file size limit"
+    },
+    "Pop up" : {
+      "comment" : "Notification menu option - Enable auto popup for notification cards"
+    },
+    "Press shortcut…" : {
+      "comment" : "Shortcuts settings - Prompt text when recording new shortcut"
+    },
+    "Previous image" : {
+      "comment" : "Image preview: accessibility label for previous image control"
+    },
+    "QR code expired. Generate a fresh one to continue." : {
+      "comment" : "Phi Link - Official bot QR expired hint"
+    },
+    "Quit" : {
+      "comment" : "Quit"
+    },
+    "Quit Phi?" : {
+      "comment" : "Quit Phi?"
+    },
+    "Recommended" : {
+      "comment" : "Onboarding password manager - Recommended label for iCloud Passwords"
+    },
+    "Refresh" : {
+      "comment" : "Phi Link - Official bot refresh QR action\nWeb content header - Accessibility description for refresh page button"
+    },
+    "Relink" : {
+      "comment" : "Phi Link - Official bot relink action"
+    },
+    "Remove" : {
+      "comment" : "Bookmark editor - Remove bookmark button title (CMD+D toggle)\nDownload item row - Tooltip for remove download button\nIM Channels - Custom bot remove action"
+    },
+    "Remove from list" : {
+      "comment" : "Download item row - Menu option to remove download from list"
+    },
+    "Rename" : {
+      "comment" : "Rename folder or bookmark dialog title"
+    },
+    "Rename..." : {
+      "comment" : "Bookmark Rename menu item"
+    },
+    "Reopen Closed Tab" : {
+      "comment" : "Tab area context menu - Reopen the last closed tab"
+    },
+    "Reset" : {
+
+    },
+    "Restore" : {
+      "comment" : "Shortcuts settings - Button to restore single shortcut to default"
+    },
+    "Restore all shortcuts" : {
+      "comment" : "Shortcuts settings - Button to reset all shortcuts to default"
+    },
+    "Resume" : {
+      "comment" : "Download item row - Tooltip for resume download button"
+    },
+    "Retry" : {
+      "comment" : "Download item row - Tooltip for retry download button\nPhi Link - Retry loading official bot\nTooltip for button to retry interrupted download in living downloads toast"
+    },
+    "Retry after Phi Sentinel is running normally." : {
+      "comment" : "IM Channels - Official bot retry hint when service is unavailable"
+    },
+    "Return" : {
+      "comment" : "Import data type selection - Return button to go back"
+    },
+    "Run" : {
+      "comment" : "Notification card run button - Executes the suggested action"
+    },
+    "Save" : {
+      "comment" : "Account settings - Save button in rename dialog\nEditor - Save button title\nIM Channels - Custom bot save button"
+    },
+    "Scan the QR code with your phone camera or click on the button below to add Phi Link bot to your Telegram" : {
+      "comment" : "Phi Link - Official bot QR hint"
+    },
+    "Screen Recording Permission Required" : {
+      "comment" : "Feedback form - Alert title when screen recording permission is needed"
+    },
+    "Search" : {
+      "comment" : "Omnibox - Accessibility description for search icon"
+    },
+    "Search or Enter URL" : {
+      "comment" : "Omnibox - Placeholder text prompting user to search or enter URL\nOmnibox suggestion - Placeholder text for search or URL entry\nSidebar address bar - Placeholder text prompting user to enter URL or search query"
+    },
+    "Send" : {
+      "comment" : "Feedback form - Send button to submit feedback"
+    },
+    "Send Feedback to Phi" : {
+      "comment" : "Feedback window - Window title for feedback submission"
+    },
+    "Service issue" : {
+      "comment" : "Phi Link - Custom bot service issue status\nPhi Link - Official bot service issue status"
+    },
+    "Set as default" : {
+      "comment" : "Account settings - Button to set Phi as default browser"
+    },
+    "Setting" : {
+      "comment" : "Extension list - Section title for extension settings"
+    },
+    "Setting up your own Telegram bot using Telegram's @BotFather" : {
+      "comment" : "Phi Link - Custom bot subtitle"
+    },
+    "Settings" : {
+      "comment" : "Extension list - Website settings entry"
+    },
+    "Share" : {
+      "comment" : "Account settings - Section title for sharing\nAddress bar menu - Share submenu title"
+    },
+    "Shortcuts" : {
+      "comment" : "Settings - Tab title for keyboard shortcuts settings\nShortcuts settings - Section title for keyboard shortcuts"
+    },
+    "Show" : {
+      "comment" : "Phi Link - Show token plaintext button"
+    },
+    "Show Bookmark Bar on New Tab" : {
+      "comment" : "View menu - Menu item to show the bookmark bar on new tab pages"
+    },
+    "Show certificate" : {
+      "comment" : "Show certificate tooltip"
+    },
+    "Show in Finder" : {
+      "comment" : "Download item row - Menu option to reveal file in Finder\nDownload item row - Tooltip for show in finder button\nTooltip for button to reveal downloaded file in Finder in living downloads toast"
+    },
+    "Site Settings" : {
+      "comment" : "Address bar menu - Settings menu item\nAddress bar menu - Settings submenu title"
+    },
+    "Skip" : {
+      "comment" : "Onboarding base - Skip button to bypass current step"
+    },
+    "Some account and system information may be sent to Phinomenon. We will use the information you give us to help address technical issues and to improve our services, subject to our Privacy Policy and Terms of Service." : {
+      "comment" : "Feedback form - Legal disclaimer text explaining data usage, contains links to Privacy Policy and Terms of Service"
+    },
+    "Something went wrong when logging out" : {
+      "comment" : "Account settings - Alert message when logout fails"
+    },
+    "Something went wrong? " : {
+      "comment" : "Retry hint prefix text shown when login fails in onboarding"
+    },
+    "Start Test" : {
+
+    },
+    "Stop" : {
+      "comment" : "Web content header - Accessibility description for stop loading button"
+    },
+    "SwiftUI" : {
+
+    },
+    "System" : {
+      "comment" : "Appearance choice: follow system setting"
+    },
+    "Tab ⇥" : {
+      "comment" : "Tab"
+    },
+    "Telegram" : {
+      "comment" : "Phi Link - Section title"
+    },
+    "Telegram ID" : {
+      "comment" : "Phi Link - Official bot connected label"
+    },
+    "The local IM service is unavailable. Check whether Phi Sentinel started normally and the IM service is running." : {
+      "comment" : "IM Channels - Message shown when im-server is not connected"
+    },
+    "Theme" : {
+      "comment" : "General settings - Theme section title"
+    },
+    "This is the URL that opens when you click this pinned tab." : {
+      "comment" : "Favorite editor - Subtitle explaining what the pinned URL controls"
+    },
+    "Today" : {
+      "comment" : "Download item row - Relative time when download completed today"
+    },
+    "Toggle Chatbar" : {
+      "comment" : "View menu - Menu item to show or hide the AI chat bar"
+    },
+    "Toggle Sidebar" : {
+      "comment" : "View menu - Menu item to show or hide the sidebar\nWeb content header - Accessibility description for sidebar toggle button"
+    },
+    "Token verified successfully" : {
+      "comment" : "IM Channels - Custom bot verify success"
+    },
+    "Turn Off" : {
+      "comment" : "AI settings - Destructive button to confirm turning off AI features\nAI settings - Destructive button to confirm turning off connectors"
+    },
+    "Turn Off AI Features?" : {
+      "comment" : "AI settings - Confirmation alert title when disabling all AI features"
+    },
+    "Turn Off Connectors?" : {
+      "comment" : "AI settings - Confirmation alert title when disabling external data connectors"
+    },
+    "Unknown" : {
+      "comment" : "Address bar menu - Website security unknown\nWebsite security unknown"
+    },
+    "Unlink" : {
+      "comment" : "Phi Link - Official bot unlink button"
+    },
+    "Unmute" : {
+      "comment" : "Tab mute button tooltip - unmute"
+    },
+    "Unpin" : {
+      "comment" : "Tab context menu - Menu item to unpin the selected tab"
+    },
+    "Unpin extension" : {
+      "comment" : "Extension list - Tooltip for unpinning an extension"
+    },
+    "Unsupported image format" : {
+      "comment" : "Image preview error"
+    },
+    "Untitled" : {
+      "comment" : "Default name for new bookmark folder\nDefault name for new bookmark folder in root"
+    },
+    "Update" : {
+      "comment" : "Sidebar header upgrade button title"
+    },
+    "Update available" : {
+      "comment" : "Sidebar update reminder - Accessibility description for update icon"
+    },
+    "URL" : {
+      "comment" : "Editor - Label for the URL input field\nFeedback form - Label for URL input field"
+    },
+    "Using Telegram to send and receive messages with %@" : {
+      "comment" : "Phi Link - Section subtitle with agent name"
+    },
+    "Verification failed. Please check the token and try again." : {
+      "comment" : "IM Channels - Custom bot verify failure"
+    },
+    "Verify" : {
+      "comment" : "IM Channels - Custom bot verify action\nIM Channels - Custom bot verify button"
+    },
+    "Version %@ (%@)" : {
+      "comment" : "About window - App version and build number label",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Version %1$@ (%2$@)"
+          }
+        }
+      }
+    },
+    "View and manage your browser memory" : {
+      "comment" : "AI settings - Row title to open browser memory management"
+    },
+    "View Details" : {
+      "comment" : "Account settings - Button to view invitation code details"
+    },
+    "We provide a Telegram bot to relay your messages @philink_bot" : {
+      "comment" : "Phi Link - Official Bot subtitle"
+    },
+    "Website" : {
+      "comment" : "Extension list - Section title for current website security info\nPinned tab URL editor - Accessibility description for placeholder favicon"
+    },
+    "Welcome" : {
+      "comment" : "Onboarding welcome page - Main title greeting the user"
+    },
+    "Welcome %@" : {
+      "comment" : "Onboarding welcome page - Personalized welcome title with user name"
+    },
+    "What should I call you?" : {
+      "comment" : "Set name page - Title asking user for their preferred name"
+    },
+    "Yesterday" : {
+      "comment" : "Download item row - Relative time when download completed yesterday"
+    },
+    "You" : {
+      "comment" : "Account settings - Default display name when user name is not available"
+    },
+    "You will be logged out and returned to the login screen. Are you sure?" : {
+      "comment" : "Account settings - Logout confirmation dialog message"
+    },
+    "Zoom in" : {
+      "comment" : "Image preview: accessibility label for zoom in control"
+    },
+    "Zoom out" : {
+      "comment" : "Image preview: accessibility label for zoom out control"
+    }
+  },
+  "version" : "1.0"
+}

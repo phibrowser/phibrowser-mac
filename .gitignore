@@ -1,0 +1,30 @@
+build
+xcuserdata
+*.xcuserdata/
+*.xcuserdatad/
+project.xcworkspace
+*.ocunit.xml
+.DS_Store
+.xcode-build-environment
+*.scratch
+scratch
+
+# Webstorm
+**/.idea/workspace.xml
+**/.idea/tasks.xml
+
+# Cocoapods
+Pods/
+Podfile.yml
+Podfile
+Podfile.lock
+
+Default Apps/
+Chromium Framework.framework
+Phi Framework.framework
+my-chroma
+Sparkle-bin
+.claude
+.vscode
+.worktrees
+.cursor

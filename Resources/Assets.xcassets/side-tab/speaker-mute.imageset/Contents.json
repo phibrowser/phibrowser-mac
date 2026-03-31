@@ -1,0 +1,12 @@
+{
+  "images" : [
+    {
+      "filename" : "speaker-mute.pdf",
+      "idiom" : "universal"
+    }
+  ],
+  "info" : {
+    "author" : "xcode",
+    "version" : 1
+  }
+}

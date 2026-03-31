@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>Audience</key>
+	<string>https://phibrowser-stag.us.auth0.com/api/v2/</string>
+	<key>ClientId</key>
+	<string>360ZYEcp1T2AexR9rzoUkIn0VTVWc0pv</string>
+	<key>Domain</key>
+	<string>auth.stag.phibrowser.com</string>
+</dict>
+</plist>

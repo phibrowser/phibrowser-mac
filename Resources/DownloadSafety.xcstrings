@@ -1,0 +1,282 @@
+{
+  "sourceLanguage" : "en",
+  "strings" : {
+    "download.safety.accountCompromise" : {
+      "comment" : "Download safety - Warning for account-stealing malware (Chromium: IDS_DOWNLOAD_BUBBLE_SUBPAGE_SUMMARY_WARNING_COOKIE_THEFT)",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This file can harm your personal and social network accounts"
+          }
+        }
+      }
+    },
+    "download.safety.blockedPasswordProtected" : {
+      "comment" : "Download safety - Policy blocked encrypted file (Chromium: IDS_DOWNLOAD_BUBBLE_SUBPAGE_SUMMARY_ENCRYPTED)",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Your organization blocked this file because it is encrypted"
+          }
+        }
+      }
+    },
+    "download.safety.blockedScanFailed" : {
+      "comment" : "Download safety - Policy blocked due to scan failure (Chromium: IDS_DOWNLOAD_BUBBLE_SUBPAGE_SUMMARY_SCAN_FAILED)",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Your organization blocked this file because the scan failed"
+          }
+        }
+      }
+    },
+    "download.safety.blockedTooLarge" : {
+      "comment" : "Download safety - Policy blocked file too large (Chromium: IDS_DOWNLOAD_BUBBLE_SUBPAGE_SUMMARY_TOO_BIG)",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Your organization blocked this file because it is too big for a security check"
+          }
+        }
+      }
+    },
+    "download.safety.dangerous" : {
+      "comment" : "Download safety - Generic dangerous/malicious file (Chromium: IDS_DOWNLOAD_BUBBLE_SUBPAGE_SUMMARY_WARNING_DANGEROUS)",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This file is dangerous"
+          }
+        }
+      }
+    },
+    "download.safety.dangerousFile" : {
+      "comment" : "Download safety - Suspicious file type warning (Chromium: IDS_DOWNLOAD_BUBBLE_SUBPAGE_SUMMARY_WARNING_DANGEROUS_FILE_TYPE)",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This file type isn't commonly downloaded and it may be dangerous"
+          }
+        }
+      }
+    },
+    "download.safety.deceptive" : {
+      "comment" : "Download safety - Potentially unwanted application (Chromium: IDS_DOWNLOAD_BUBBLE_SUBPAGE_SUMMARY_WARNING_DECEPTIVE)",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This file is deceptive and may make unexpected changes to your device"
+          }
+        }
+      }
+    },
+    "download.safety.genericWarning" : {
+      "comment" : "Download safety - Generic danger warning fallback (Chromium: IDS_DOWNLOAD_BUBBLE_SUBPAGE_SUMMARY_WARNING_DANGEROUS)",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This file is dangerous"
+          }
+        }
+      }
+    },
+    "download.safety.insecure" : {
+      "comment" : "Download safety - Insecure HTTP download (Chromium: IDS_DOWNLOAD_BUBBLE_SUBPAGE_SUMMARY_WARNING_INSECURE)",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This site isn't using a secure connection and the file may have been tampered with"
+          }
+        }
+      }
+    },
+    "download.safety.policyBlocked" : {
+      "comment" : "Download safety - Generic policy block fallback",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This file has been blocked by security policy"
+          }
+        }
+      }
+    },
+    "download.safety.promptForLocalPasswordScanning" : {
+      "comment" : "Download safety - Encrypted file may be dangerous (Chromium: IDS_DOWNLOAD_BUBBLE_SUBPAGE_SUMMARY_DEEP_SCANNING_PROMPT_LOCAL_DECRYPTION)",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This file may be dangerous"
+          }
+        }
+      }
+    },
+    "download.safety.promptForScanning" : {
+      "comment" : "Download safety - Possible virus/malware (Chromium: IDS_DOWNLOAD_BUBBLE_SUBPAGE_SUMMARY_DEEP_SCANNING_PROMPT_UPDATED)",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This file might be a virus or malware"
+          }
+        }
+      }
+    },
+    "download.safety.scanning" : {
+      "comment" : "Download safety - Async scanning in progress (Chromium: IDS_DOWNLOAD_BUBBLE_SUBPAGE_SUMMARY_ASYNC_SCANNING)",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This file might be a virus or malware"
+          }
+        }
+      }
+    },
+    "download.safety.sensitiveContent" : {
+      "comment" : "Download safety - Sensitive content warning (Chromium: IDS_DOWNLOAD_BUBBLE_SUBPAGE_SUMMARY_SENSITIVE_CONTENT_WARNING)",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Your organization recommends deleting this file because it has sensitive content"
+          }
+        }
+      }
+    },
+    "download.safety.uncommonContent" : {
+      "comment" : "Download safety - Uncommon file warning (Chromium: IDS_DOWNLOAD_BUBBLE_SUBPAGE_SUMMARY_WARNING_UNCOMMON_FILE)",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This file isn't commonly downloaded and it may be dangerous"
+          }
+        }
+      }
+    },
+    "download.safety.short.blocked" : {
+      "comment" : "Short status - generic policy blocked (Chromium: IDS_DOWNLOAD_BUBBLE_STATUS_BLOCKED)",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Blocked"
+          }
+        }
+      }
+    },
+    "download.safety.short.dangerous" : {
+      "comment" : "Short status - dangerous/malicious file (Chromium: IDS_DOWNLOAD_BUBBLE_STATUS_WARNING_DANGEROUS)",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dangerous download blocked"
+          }
+        }
+      }
+    },
+    "download.safety.short.encrypted" : {
+      "comment" : "Short status - encrypted file blocked (Chromium: IDS_DOWNLOAD_BUBBLE_STATUS_ENCRYPTED)",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Encrypted"
+          }
+        }
+      }
+    },
+    "download.safety.short.insecure" : {
+      "comment" : "Short status - insecure download (Chromium: IDS_DOWNLOAD_BUBBLE_STATUS_WARNING_INSECURE)",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Insecure download blocked"
+          }
+        }
+      }
+    },
+    "download.safety.short.scanFailed" : {
+      "comment" : "Short status - scan failed (Chromium: IDS_DOWNLOAD_BUBBLE_STATUS_SCAN_FAILED)",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Scan failed"
+          }
+        }
+      }
+    },
+    "download.safety.short.scanning" : {
+      "comment" : "Short status - scanning in progress",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Scanning…"
+          }
+        }
+      }
+    },
+    "download.safety.short.suspicious" : {
+      "comment" : "Short status - suspicious file (Chromium: IDS_DOWNLOAD_BUBBLE_STATUS_WARNING_SUSPICIOUS)",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Suspicious download blocked"
+          }
+        }
+      }
+    },
+    "download.safety.short.tooBig" : {
+      "comment" : "Short status - file too big (Chromium: IDS_DOWNLOAD_BUBBLE_STATUS_TOO_BIG)",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Too big"
+          }
+        }
+      }
+    }
+  },
+  "version" : "1.0"
+}

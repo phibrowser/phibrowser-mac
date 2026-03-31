@@ -1,0 +1,17 @@
+// Release-Canary Configuration for PhiBrowser Canary
+#include "Shared.xcconfig"
+
+// Product Settings
+PRODUCT_NAME = Phi Canary
+PRODUCT_BUNDLE_IDENTIFIER = com.phibrowser.canary.Mac
+APP_ENTITLEMENTS = Resources/PhiBrowser-Canary.entitlements
+
+// Asset Catalog
+ASSETCATALOG_COMPILER_APPICON_NAME = AppIconCanary
+
+// Sparkle Update Feed (Canary channel)
+APPCAST_PATH = mac-nightly/appcast
+
+// Build Settings for Release
+SWIFT_COMPILATION_MODE = wholemodule
+// SWIFT_OPTIMIZATION_LEVEL = -O

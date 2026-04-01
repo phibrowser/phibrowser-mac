@@ -26,7 +26,7 @@ class ProfileCardViewController: ConchFrameAnimationBaseViewController {
     
     private let phiLabel: NSTextField = {
         let label = NSTextField(labelWithString: NSLocalizedString("Phi", comment: "Profile card - App name displayed on user profile card"))
-        label.font = NSFont(name: "IvyPresto Headline", size: 16)
+        label.font = NSFont(name: "IvyPrestoHeadline-SemiBold", size: 16)
         label.textColor = .white
         label.alignment = .center
         return label
@@ -56,7 +56,7 @@ class ProfileCardViewController: ConchFrameAnimationBaseViewController {
     
     private let nameLabel: NSTextField = {
         let label = NSTextField(labelWithString: "")
-        label.font = NSFont(name: "IvyPresto Headline", size: 16)
+        label.font = NSFont(name: "IvyPrestoHeadline-SemiBold", size: 16)
         label.textColor = .white
         label.alignment = .center
         label.lineBreakMode = .byTruncatingTail

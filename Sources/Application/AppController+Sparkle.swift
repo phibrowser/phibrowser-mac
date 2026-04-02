@@ -63,6 +63,11 @@ extension AppController: SPUUpdaterDelegate {
         )
     }
     
+    func updaterShouldRelaunchApplication(_ updater: SPUUpdater) -> Bool {
+        SentinelHelper.terminateAll()
+        return true
+    }
+    
     func userDidCancelDownload(_ updater: SPUUpdater) {
         updateState = .idle
     }

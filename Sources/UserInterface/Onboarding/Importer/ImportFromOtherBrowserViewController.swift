@@ -402,6 +402,7 @@ class ImportFromOtherBrowserViewController: OnboardingBaseViewController {
     }
 
     private func showPermissionView() {
+        optionsContainer.isHidden = true
         importStatusLabel.isHidden = true
         permisionImageView.isHidden = false
         browserOptionsStackView.isHidden = true

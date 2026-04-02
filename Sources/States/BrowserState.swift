@@ -248,6 +248,10 @@ class BrowserState {
                 pinnedTab.guid = -1
                 pinnedTab.setWebContentsWrapper(wrapper: nil)
             }
+
+            if pinnedTab.guidInLocalDB == focusingTab?.guidInLocalDB {
+                pinnedTab.isActive = true
+            }
         }
     }
 

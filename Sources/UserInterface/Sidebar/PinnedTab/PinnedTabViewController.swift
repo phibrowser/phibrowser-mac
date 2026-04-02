@@ -390,6 +390,7 @@ class PinnedTabViewController: NSViewController {
             if hasAnyContent {
                 self.hasAppliedInitialContentSnapshot = true
             }
+            self.updateAllItemsSelectionState(self.browserState?.focusingTab)
         }
         updateLayout()
     }

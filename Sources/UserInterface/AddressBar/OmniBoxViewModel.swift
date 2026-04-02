@@ -47,7 +47,7 @@ class OmniBoxViewModel: ObservableObject {
             return
         }
         currentTab = tab
-        state.inputText = tab.isNTP ? "" : URLProcessor.phiBrandEnsuredUrlString( tab.url ?? "")
+        state.inputText = URLProcessor.phiBrandEnsuredUrlString( tab.url ?? "")
         opennedFromCurrentTab = true
     }
 

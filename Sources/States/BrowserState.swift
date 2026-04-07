@@ -19,6 +19,12 @@ class BrowserState {
     
     /// Pending requests to mark the next created tab as a native NTP (incognito only).
     private var pendingNativeNtpCount: Int = 0
+    
+    /// Tracks tabs replayed during restore so we can close Chromium's startup NTP
+    /// after real restored tabs begin arriving.
+    private var pendingRestoreExpectedTabCount: Int?
+    private var pendingRestoreReceivedTabIds: Set<Int> = []
+    private var pendingRestorePlaceholderTabId: Int?
 
     private struct PendingNormalTabInsertion {
         let url: String?
@@ -451,6 +457,55 @@ class BrowserState {
         }
     }
     
+    /// Prepares this window to drop Chromium's auto-created placeholder tab while replaying restore tabs.
+    func prepareForRestoredTabs(expectedCount: Int) {
+        pendingRestoreExpectedTabCount = nil
+        pendingRestoreReceivedTabIds.removeAll()
+        pendingRestorePlaceholderTabId = nil
+
+        guard expectedCount > 0 else {
+            return
+        }
+        
+        pendingRestoreExpectedTabCount = expectedCount
+        let placeholderCandidates = tabs.filter { tab in
+            guard tab.guidInLocalDB?.isEmpty ?? true else { return false }
+            if tab.isNTP {
+                return true
+            }
+            return tab.url == nil
+        }
+        if placeholderCandidates.count == 1, let placeholder = placeholderCandidates.first {
+            pendingRestorePlaceholderTabId = placeholder.guid
+            AppLogInfo("🪟 [Restore] tracked placeholder tab windowId=\(windowId) tabId=\(placeholder.guid) url=\(placeholder.url ?? "nil")")
+        }
+    }
+
+    private func registerRestoredTabArrivalIfNeeded(_ tab: Tab) {
+        guard let expectedCount = pendingRestoreExpectedTabCount, expectedCount > 0 else { return }
+
+        if let placeholderTabId = pendingRestorePlaceholderTabId, tab.guid == placeholderTabId {
+            return
+        }
+
+        pendingRestoreReceivedTabIds.insert(tab.guid)
+        AppLogInfo("🪟 [Restore] observed restored tab windowId=\(windowId) tabId=\(tab.guid) received=\(pendingRestoreReceivedTabIds.count)/\(expectedCount)")
+
+        if let placeholderTabId = pendingRestorePlaceholderTabId,
+           let placeholderTab = tabs.first(where: { $0.guid == placeholderTabId }) {
+            AppLogInfo("🪟 [Restore] closing tracked placeholder tab windowId=\(windowId) tabId=\(placeholderTab.guid)")
+            // should not use .close() here, which will cause a crash
+            placeholderTab.webContentWrapper?.close()
+            pendingRestorePlaceholderTabId = nil
+        }
+
+        if pendingRestoreReceivedTabIds.count >= expectedCount {
+            pendingRestoreExpectedTabCount = nil
+            pendingRestoreReceivedTabIds.removeAll()
+            pendingRestorePlaceholderTabId = nil
+        }
+    }
+    
     func handleNewTabFromChromium(_ tab: Tab) {
         // Check if this is an AI Chat Tab
         if let customGuid = tab.guidInLocalDB,
@@ -465,6 +520,7 @@ class BrowserState {
         }
         
         tabs.append(tab)
+        registerRestoredTabArrivalIfNeeded(tab)
 
         // Reattach to a pinned tab entry when the local guid matches.
         if let localGuid = tab.guidInLocalDB,

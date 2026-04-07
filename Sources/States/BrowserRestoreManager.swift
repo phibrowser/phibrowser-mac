@@ -154,7 +154,13 @@ final class BrowserRestoreManager {
     @MainActor
     private func restoreTabs(in controller: MainBrowserWindowController, windowState: BrowserRestoreWindowState) {
         let focusIndex = windowState.selectedIndex
+        let restorableTabCount = windowState.tabs.reduce(into: 0) { count, tabState in
+            if !tabState.url.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                count += 1
+            }
+        }
         AppLogInfo("\(Self.logPrefix) restore tabs start windowId=\(controller.windowId) focusIndex=\(String(describing: focusIndex))")
+        controller.browserState.prepareForRestoredTabs(expectedCount: restorableTabCount)
         
         for (index, tabState) in windowState.tabs.enumerated() {
             let trimmedURL = tabState.url.trimmingCharacters(in: .whitespacesAndNewlines)

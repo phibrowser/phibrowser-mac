@@ -41,7 +41,7 @@ final class TabViewModel {
     var displayTitle: String {
         if !title.isEmpty { return title }
         if let url, !url.isEmpty { return url }
-        return NSLocalizedString("New Tab", comment: "Default title for a new tab when no page title or URL is available")
+        return ""
     }
 
     func reloadFavicon() {

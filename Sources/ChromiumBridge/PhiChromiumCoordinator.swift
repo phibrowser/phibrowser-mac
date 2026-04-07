@@ -185,7 +185,6 @@ extension PhiChromiumCoordinator: PhiChromiumBridgeDelegate {
     func newTabCreated(withInfo tabInfo: [AnyHashable : Any], windowId: Int64) {
         AppLogDebug("[Tab] newTabCreated: \(tabInfo) \n, windowId: \(windowId)")
         
-        //newTabCreated: [AnyHashable("isVisible"): 1, AnyHashable("isAudioMuted"): 0, AnyHashable("index"): 2, AnyHashable("isLoading"): 1, AnyHashable("webView"): <WebContentsViewCocoa: 0x13c03bbd680>, AnyHashable("isCurrentlyAudible"): 0, AnyHashable("title"): New Tab, AnyHashable("url"): chrome://newtab/, AnyHashable("id"): 1357214032384]
         let title = tabInfo["title"] as? String
         let url = tabInfo["url"] as? String
         let index = tabInfo["index"] as? Int ?? -1
@@ -193,7 +192,14 @@ extension PhiChromiumCoordinator: PhiChromiumBridgeDelegate {
         let active = false // fixeme
         let contentView = tabInfo["webView"] as? (WebContentWrapper & NSObject)
         let customGuid = tabInfo["customGuid"] as? String
-        let tab = Tab(guid: id, url: url, isActive: active, index: index, title: title, webContentView: contentView, customGuid: customGuid, windowId: Int(windowId))
+        let tab = Tab(guid: id,
+                      url: url,
+                      isActive: active,
+                      index: index,
+                      title: title,
+                      webContentView: contentView,
+                      customGuid: customGuid,
+                      windowId: Int(windowId))
         
         if MainBrowserWindowControllersManager.shared.hasDanglingWindow(for: windowId.intValue) {
             MainBrowserWindowControllersManager.shared.addPendingTabToDanglingWindow(tab, windowId: windowId.intValue)

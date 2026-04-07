@@ -631,7 +631,7 @@
       "comment" : "Bookmark New Folder menu item"
     },
     "New Tab" : {
-      "comment" : "Default title for a new tab when no page title or URL is available\nSidebar tab list - Button title to create a new browser tab\nTab area context menu - Open a new browser tab\nside bar new tab button text"
+      "comment" : "Sidebar tab list - Button title to create a new browser tab\nTab area context menu - Open a new browser tab\nside bar new tab button text"
     },
     "New tab behavior" : {
       "comment" : "General settings - Row title for configuring new tab behavior"

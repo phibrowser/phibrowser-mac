@@ -186,7 +186,7 @@ final class ExtensionDialogManager {
             AppLogWarn("[ExtDialog] Failed to serialize broadcast payload")
             return
         }
-        messenger.broadcast(type: "dialog", payload: json)
+        messenger.broadcast(type: "showDialog", payload: json)
     }
 }
 

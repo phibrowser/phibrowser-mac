@@ -100,10 +100,15 @@ final class OmniBoxContainerViewController: NSViewController {
         self.addressView = addressView
         showFromAddressBar = fromAddressBar && addressView != nil
         needsShowAnimation = true
-        omniBoxController?.requestAtonce()
+        omniBoxController?.logOpenTrace(
+            stage: "show-omnibox",
+            details: "fromAddressBar=\(fromAddressBar) anchored=\(showFromAddressBar)"
+        )
         if !showFromAddressBar {
             omniBoxController?.view.alphaValue = 1
             hasShown = true
+        } else {
+            showOmniboxReletiveToAdressView(omniBoxController?.contentSize ?? .zero)
         }
         omniBoxController?.focusTextField()
     }

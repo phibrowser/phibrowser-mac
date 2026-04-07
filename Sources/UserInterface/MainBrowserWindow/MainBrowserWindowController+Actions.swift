@@ -47,6 +47,10 @@ extension MainBrowserWindowController {
             if omniBoxContainerViewController == nil {
                 omniBoxContainerViewController = OmniBoxContainerViewController(browserState: self.browserState, superView: omnibackgroundView)
             }
+            omniBoxContainerViewController?.omniBoxController?.beginOpenTrace(
+                trigger: fromAddressBar ? "address-bar" : "omnibox",
+                addressViewPresent: addressView != nil
+            )
             
             // Add background view to content view
             if let contentView = contentViewController?.view {
@@ -64,15 +68,26 @@ extension MainBrowserWindowController {
                 }
             }
             if fromAddressBar, let tab = browserState.focusingTab {
-                omniBoxContainerViewController?.omniBoxController?.updateStatus(with: tab)
+                omniBoxContainerViewController?.omniBoxController?.updateStatus(
+                    with: tab,
+                    suppressAutomaticSearch: true
+                )
             }
             omniBoxContainerViewController?.showOmniBox(fromAddressBar: fromAddressBar, addressView: addressView)
         } else if omniBoxContainerViewController?.omniBoxController?.openningFromCurrenTab == false,
                   fromAddressBar,
                   addressView == nil {
             // `Cmd+L` while already open should refill the current tab state.
+            omniBoxContainerViewController?.omniBoxController?.beginOpenTrace(
+                trigger: "address-bar-refill",
+                addressViewPresent: false
+            )
             if let tab = browserState.focusingTab {
-                omniBoxContainerViewController?.omniBoxController?.updateStatus(with: tab)
+                omniBoxContainerViewController?.omniBoxController?.updateStatus(
+                    with: tab,
+                    suppressAutomaticSearch: true
+                )
+                omniBoxContainerViewController?.omniBoxController?.requestAtonce(source: .manualRefresh)
             }
         } else {
             // Already showing, just hide it

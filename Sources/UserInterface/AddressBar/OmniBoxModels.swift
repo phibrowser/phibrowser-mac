@@ -5,6 +5,7 @@
 
 import Foundation
 import Combine
+import Dispatch
 import Kingfisher
 // MARK: - OmniBox Suggestion Types
 
@@ -145,6 +146,99 @@ struct OmniBoxSuggestion {
 extension OmniBoxSuggestion: CustomStringConvertible {
     var description: String {
         "title-contents: \(title), subTitle-des: \(subtitle ?? ""), type: \(type), inline:\(String(describing: inlineCompletionString)), fill:\(fillIntoEdit)"
+    }
+}
+
+enum OmniBoxSearchRequestSource: String {
+    case inputChange = "input-change"
+    case openPrefill = "open-prefill"
+    case manualRefresh = "manual-refresh"
+}
+
+struct OmniBoxSearchRequestToken: Equatable {
+    let id: Int
+    let query: String
+    let source: OmniBoxSearchRequestSource
+}
+
+final class OmniBoxSearchCoordinator {
+    private var nextRequestID: Int = 0
+    private var latestRequestID: Int = 0
+    private var suppressNextAutomaticSearch = false
+
+    func prepareForPrefilledOpen(text: String, minInputLength: Int) {
+        let trimmedText = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        suppressNextAutomaticSearch = trimmedText.count >= minInputLength
+    }
+
+    func shouldPerformAutomaticSearch(for text: String, minInputLength: Int) -> Bool {
+        let trimmedText = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmedText.count >= minInputLength else {
+            suppressNextAutomaticSearch = false
+            return false
+        }
+
+        if suppressNextAutomaticSearch {
+            suppressNextAutomaticSearch = false
+            return false
+        }
+
+        return true
+    }
+
+    func beginRequest(query: String, source: OmniBoxSearchRequestSource) -> OmniBoxSearchRequestToken {
+        nextRequestID += 1
+        latestRequestID = nextRequestID
+        return OmniBoxSearchRequestToken(id: nextRequestID, query: query, source: source)
+    }
+
+    func shouldApplyResponse(for token: OmniBoxSearchRequestToken) -> Bool {
+        token.id == latestRequestID
+    }
+
+    func reset() {
+        nextRequestID = 0
+        suppressNextAutomaticSearch = false
+        latestRequestID = 0
+    }
+}
+
+final class OmniBoxTraceSession {
+    private let sessionID: String
+    private let trigger: String
+    private let startedAt: UInt64
+    private let timeProvider: () -> UInt64
+    private var loggedStages = Set<String>()
+
+    init(
+        trigger: String,
+        sessionID: String = String(UUID().uuidString.prefix(8)),
+        timeProvider: @escaping () -> UInt64 = { DispatchTime.now().uptimeNanoseconds }
+    ) {
+        self.sessionID = sessionID
+        self.trigger = trigger
+        self.timeProvider = timeProvider
+        self.startedAt = timeProvider()
+    }
+
+    func message(for stage: String, details: String? = nil) -> String {
+        let elapsedMilliseconds = Double(timeProvider() - startedAt) / 1_000_000
+        let detailsSuffix: String
+        if let details, !details.isEmpty {
+            detailsSuffix = " \(details)"
+        } else {
+            detailsSuffix = ""
+        }
+        return "[OmniboxTrace] session=\(sessionID) trigger=\(trigger) stage=\(stage) elapsed=\(String(format: "%.1f", elapsedMilliseconds))ms\(detailsSuffix)"
+    }
+
+    func log(stage: String, details: String? = nil) {
+        AppLogDebug(message(for: stage, details: details))
+    }
+
+    func logOnce(stage: String, details: String? = nil) {
+        guard loggedStages.insert(stage).inserted else { return }
+        log(stage: stage, details: details)
     }
 }
 

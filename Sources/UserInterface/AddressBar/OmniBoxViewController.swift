@@ -131,7 +131,7 @@ class OmniBoxViewController: NSViewController {
     
     override func viewDidDisappear() {
         super.viewDidDisappear()
-        viewModel.state.reset()
+        viewModel.reset()
         NotificationCenter.default.removeObserver(self)
         browserState?.stopAutoCompletion()
     }
@@ -189,7 +189,6 @@ class OmniBoxViewController: NSViewController {
     
     private func setupBindings() {
         viewModel.state.$inputText
-            .receive(on: DispatchQueue.main)
             .sink { [weak self] text in
                 if self?.textField.stringValue != text {
                     self?.textField.updateDisplayText(text)
@@ -214,7 +213,7 @@ class OmniBoxViewController: NSViewController {
             .store(in: &cancellables)
         
         viewModel.state.$suggestions
-            .debounce(for: .seconds(0.1), scheduler: DispatchQueue.main)
+            .receive(on: DispatchQueue.main)
             .sink { [weak self] suggestions in
                 self?.updateSuggestionViewHeight(for: suggestions.count)
             }
@@ -224,15 +223,19 @@ class OmniBoxViewController: NSViewController {
             .receive(on: DispatchQueue.main)
             .sink { [weak self] isShowing in
                 self?.suggestionView.isHidden = !isShowing
+                if isShowing {
+                    let count = self?.viewModel.state.suggestions.count ?? 0
+                    self?.logOpenTrace(stage: "suggestions-visible", details: "count=\(count)", once: true)
+                }
             }
             .store(in: &cancellables)
     }
     
-    func requestAtonce() {
+    func requestAtonce(source: OmniBoxSearchRequestSource = .manualRefresh) {
         if viewModel.state.inputText.isEmpty {
             contentSize = { contentSize }()
         } else {
-            viewModel.performSearchAtonce()
+            viewModel.performSearchAtonce(source: source)
         }
     }
     
@@ -257,6 +260,18 @@ class OmniBoxViewController: NSViewController {
 
     func setCurrentTabForNavigation(_ tab: Tab?) {
         viewModel.setCurrentTab(tab)
+    }
+
+    func beginOpenTrace(trigger: String, addressViewPresent: Bool) {
+        viewModel.beginOpenTrace(trigger: trigger, addressViewPresent: addressViewPresent)
+    }
+
+    func logOpenTrace(stage: String, details: String? = nil, once: Bool = false) {
+        viewModel.logOpenTrace(stage: stage, details: details, once: once)
+    }
+
+    func updateStatus(with tab: Tab, suppressAutomaticSearch: Bool) {
+        viewModel.updateStatus(with: tab, suppressAutomaticSearch: suppressAutomaticSearch)
     }
     
     // MARK: - Private Methods

@@ -14,12 +14,15 @@ class OmniBoxViewModel: ObservableObject {
     private var cancellables = Set<AnyCancellable>()
     private let chromiumBridge = ChromiumLauncher.sharedInstance().bridge
     private let browserState: BrowserState
+    private let searchCoordinator = OmniBoxSearchCoordinator()
+    private var currentSearchTask: Task<Void, Never>?
     private(set) var preventInlineCompletion: Bool = false
     
     @Published private(set) var canUseTemporaryText = false
     
     var opennedFromCurrentTab = false
     var currentTab: Tab?
+    private(set) var openTraceSession: OmniBoxTraceSession?
     
     // MARK: - Initialization
     
@@ -42,12 +45,41 @@ class OmniBoxViewModel: ObservableObject {
             .store(in: &cancellables)
     }
     
-    func updateStatus(with tab: Tab?) {
+    func beginOpenTrace(trigger: String, addressViewPresent: Bool) {
+        #if DEBUG
+        let session = OmniBoxTraceSession(trigger: trigger)
+        openTraceSession = session
+        session.log(stage: "open-trigger", details: "addressViewPresent=\(addressViewPresent)")
+        #endif
+    }
+
+    func logOpenTrace(stage: String, details: String? = nil, once: Bool = false) {
+        #if DEBUG
+        if once {
+            openTraceSession?.logOnce(stage: stage, details: details)
+        } else {
+            openTraceSession?.log(stage: stage, details: details)
+        }
+        #endif
+    }
+
+    func updateStatus(with tab: Tab?, suppressAutomaticSearch: Bool = false) {
         guard let tab else {
             return
         }
         currentTab = tab
-        state.inputText = URLProcessor.phiBrandEnsuredUrlString( tab.url ?? "")
+        let prefilledText = URLProcessor.phiBrandEnsuredUrlString(tab.url ?? "")
+        if suppressAutomaticSearch {
+            searchCoordinator.prepareForPrefilledOpen(
+                text: prefilledText,
+                minInputLength: configuration.minInputLength
+            )
+        }
+        logOpenTrace(
+            stage: "prefill-current-tab",
+            details: "suppressAutomaticSearch=\(suppressAutomaticSearch) urlLength=\(prefilledText.count)"
+        )
+        state.inputText = prefilledText
         opennedFromCurrentTab = true
     }
 
@@ -117,7 +149,11 @@ class OmniBoxViewModel: ObservableObject {
     }
     
     func reset() {
+        currentSearchTask?.cancel()
+        currentSearchTask = nil
         opennedFromCurrentTab = false
+        searchCoordinator.reset()
+        openTraceSession = nil
         state.reset()
     }
     
@@ -138,22 +174,57 @@ class OmniBoxViewModel: ObservableObject {
             state.clearSuggestions()
             return
         }
-        
-        performSearch(for: trimmedText)
+
+        guard searchCoordinator.shouldPerformAutomaticSearch(for: text, minInputLength: configuration.minInputLength) else {
+            logOpenTrace(stage: "skip-automatic-search", details: "reason=prefill queryLength=\(trimmedText.count)")
+            return
+        }
+
+        performSearch(for: trimmedText, source: .inputChange)
     }
     
-    func performSearchAtonce() {
-        performSearch(for: state.inputText)
+    func performSearchAtonce(source: OmniBoxSearchRequestSource = .manualRefresh) {
+        performSearch(for: state.inputText, source: source)
     }
     
-    private func performSearch(for query: String) {
-        Task { @MainActor in
-            let result = await requestSuggestions(for: query, on: browserState, _preventInlineComplete: self.preventInlineCompletion)
-            handleSearchResults(results: result ?? [])
+    private func performSearch(for query: String, source: OmniBoxSearchRequestSource) {
+        let trimmedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmedQuery.count >= configuration.minInputLength else {
+            state.clearSuggestions()
+            return
+        }
+
+        currentSearchTask?.cancel()
+        browserState.stopAutoCompletion()
+
+        let request = searchCoordinator.beginRequest(query: trimmedQuery, source: source)
+        logOpenTrace(
+            stage: "request-start",
+            details: "request=\(request.id) source=\(request.source.rawValue) queryLength=\(trimmedQuery.count)"
+        )
+
+        currentSearchTask = Task { @MainActor in
+            let result = await requestSuggestions(
+                for: trimmedQuery,
+                on: browserState,
+                _preventInlineComplete: self.preventInlineCompletion
+            )
+
+            guard !Task.isCancelled else { return }
+
+            let resultCount = result?.count ?? 0
+            logOpenTrace(stage: "response-received", details: "request=\(request.id) resultCount=\(resultCount)")
+
+            guard searchCoordinator.shouldApplyResponse(for: request) else {
+                logOpenTrace(stage: "response-ignored", details: "request=\(request.id) reason=stale")
+                return
+            }
+
+            handleSearchResults(results: result ?? [], request: request)
         }
     }
     
-    private func handleSearchResults(results: [[String: Any]]) {
+    private func handleSearchResults(results: [[String: Any]], request: OmniBoxSearchRequestToken? = nil) {
         let suggestions = results.compactMap { OmniBoxSuggestion(chromiumDic: $0) }
             .filter { !$0.isEmpty && $0.isSupportedType }
             .sorted {
@@ -171,6 +242,12 @@ class OmniBoxViewModel: ObservableObject {
             state.suggestions = suggestions
             state.selectedIndex = -1
         }
+        
+        let requestDescription = request.map { "request=\($0.id) source=\($0.source.rawValue)" } ?? "request=delete-or-reset"
+        logOpenTrace(
+            stage: "results-applied",
+            details: "\(requestDescription) suggestionCount=\(suggestions.count) selectedIndex=\(state.selectedIndex)"
+        )
     }
     
     @MainActor

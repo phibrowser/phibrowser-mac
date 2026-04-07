@@ -7,28 +7,61 @@ import XCTest
 @testable import Phi
 
 final class PhiBrowserTests: XCTestCase {
+    func testOmniBoxSearchCoordinatorSuppressesOnlyTheNextAutomaticSearchAfterPrefill() {
+        let coordinator = OmniBoxSearchCoordinator()
 
-    override func setUpWithError() throws {
-        // Put setup code here. This method is called before the invocation of each test method in the class.
+        coordinator.prepareForPrefilledOpen(text: "https://phibrowser.com", minInputLength: 1)
+
+        XCTAssertFalse(
+            coordinator.shouldPerformAutomaticSearch(for: "https://phibrowser.com", minInputLength: 1),
+            "Prefilling the current tab URL should not immediately trigger a duplicate automatic search."
+        )
+        XCTAssertTrue(
+            coordinator.shouldPerformAutomaticSearch(for: "https://phibrowser.com/path", minInputLength: 1),
+            "Only the next automatic search should be suppressed so later edits still update suggestions."
+        )
     }
 
-    override func tearDownWithError() throws {
-        // Put teardown code here. This method is called after the invocation of each test method in the class.
+    func testOmniBoxSearchCoordinatorAcceptsOnlyTheLatestRequest() {
+        let coordinator = OmniBoxSearchCoordinator()
+
+        let first = coordinator.beginRequest(query: "phi", source: .inputChange)
+        let second = coordinator.beginRequest(query: "phibrowser", source: .openPrefill)
+
+        XCTAssertFalse(
+            coordinator.shouldApplyResponse(for: first),
+            "Stale suggestion responses should be ignored once a newer request has been issued."
+        )
+        XCTAssertTrue(
+            coordinator.shouldApplyResponse(for: second),
+            "The most recent request should be the only one allowed to update the UI."
+        )
     }
 
-    func testExample() throws {
-        // This is an example of a functional test case.
-        // Use XCTAssert and related functions to verify your tests produce the correct results.
-        // Any test you write for XCTest can be annotated as throws and async.
-        // Mark your test throws to produce an unexpected failure when your test encounters an uncaught error.
-        // Mark your test async to allow awaiting for asynchronous code to complete. Check the results with assertions afterwards.
+    func testOmniBoxSearchCoordinatorDoesNotArmSuppressionForEmptyPrefill() {
+        let coordinator = OmniBoxSearchCoordinator()
+
+        coordinator.prepareForPrefilledOpen(text: "", minInputLength: 1)
+
+        XCTAssertTrue(
+            coordinator.shouldPerformAutomaticSearch(for: "g", minInputLength: 1),
+            "An empty prefill should not consume the user's first real search edit."
+        )
     }
 
-    func testPerformanceExample() throws {
-        // This is an example of a performance test case.
-        self.measure {
-            // Put the code you want to measure the time of here.
-        }
-    }
+    func testOmniBoxTraceSessionFormatsReadableElapsedLogMessages() {
+        var ticks: [UInt64] = [1_000_000_000, 1_125_000_000]
+        let session = OmniBoxTraceSession(
+            trigger: "address-bar",
+            timeProvider: { ticks.removeFirst() }
+        )
 
+        let message = session.message(for: "request-start", details: "queryLength=12")
+
+        XCTAssertTrue(message.contains("[OmniboxTrace]"))
+        XCTAssertTrue(message.contains("trigger=address-bar"))
+        XCTAssertTrue(message.contains("stage=request-start"))
+        XCTAssertTrue(message.contains("elapsed=125.0ms"))
+        XCTAssertTrue(message.contains("queryLength=12"))
+    }
 }

@@ -40,8 +40,8 @@ class PinnedTabViewController: NSViewController {
                     return NSCollectionViewItem()
                 }
                 pinnedItem.configure(with: model)
-                pinnedItem.itemClicked = { [weak self] model in
-                    self?.handleExtensionClicked(model)
+                pinnedItem.itemClicked = { [weak self] model, view in
+                    self?.handleExtensionClicked(model, anchor: view)
                 }
                 return pinnedItem
 
@@ -439,12 +439,15 @@ class PinnedTabViewController: NSViewController {
         browserState?.openOrFocusPinnedTab(tab)
     }
 
-    private func handleExtensionClicked(_ item: PinnedTabItemModel) {
-        let mouseLocation = NSEvent.mouseLocation
-        guard let screen = NSScreen.main else { return }
-        let convertedLocation = NSPoint(x: mouseLocation.x, y: screen.frame.height - mouseLocation.y)
+    private func handleExtensionClicked(_ item: PinnedTabItemModel, anchor view: NSView) {
+        let point = ExtensionPopupAnchor.pointBelowView(view)
+            ?? ExtensionPopupAnchor.mouseFallback()
         let windowId = MainBrowserWindowControllersManager.shared.activeWindowController?.browserState.windowId
-        ChromiumLauncher.sharedInstance().bridge?.triggerExtension(withId: item.id, pointInScreen: convertedLocation, windowId: windowId?.int64Value ?? 0)
+        ChromiumLauncher.sharedInstance().bridge?.triggerExtension(
+            withId: item.id,
+            pointInScreen: point,
+            windowId: windowId?.int64Value ?? 0
+        )
     }
 }
 

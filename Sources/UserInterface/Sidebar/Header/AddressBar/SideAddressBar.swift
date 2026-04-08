@@ -188,12 +188,15 @@ class SideAddressBar: NSView {
     
     @objc private func extensionButtonClicked(_ sender: NSView) {
         guard let extensionId = sender.identifier?.rawValue else { return }
-        
-        let mouseLocation = NSEvent.mouseLocation
-        guard let screen = NSScreen.main else { return }
-        let convertedLocation = NSPoint(x: mouseLocation.x, y: screen.frame.height - mouseLocation.y)
-        
-        ChromiumLauncher.sharedInstance().bridge?.triggerExtension(withId: extensionId, pointInScreen: convertedLocation, windowId: unsafeBrowserState?.windowId.int64Value ?? 0)
+
+        let point = ExtensionPopupAnchor.pointBelowView(sender)
+            ?? ExtensionPopupAnchor.mouseFallback()
+
+        ChromiumLauncher.sharedInstance().bridge?.triggerExtension(
+            withId: extensionId,
+            pointInScreen: point,
+            windowId: unsafeBrowserState?.windowId.int64Value ?? 0
+        )
     }
    
     override func mouseDown(with event: NSEvent) {

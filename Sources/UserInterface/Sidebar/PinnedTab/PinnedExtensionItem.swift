@@ -31,7 +31,7 @@ struct PinnedTabItemModel: Hashable {
 class PinnedExtensionItem: NSCollectionViewItem {
     static var reuseIdentifier: NSUserInterfaceItemIdentifier { .init(rawValue: "\(Self.self)") }
 
-    var itemClicked: ((PinnedTabItemModel) -> Void)?
+    var itemClicked: ((PinnedTabItemModel, NSView) -> Void)?
 
     private var iconImageView: NSImageView!
     private var backgroundView: HoverableView!
@@ -76,7 +76,7 @@ private extension PinnedExtensionItem {
         backgroundView.enableClickAnimation = true
         backgroundView.clickAction = { [weak self] in
             guard let self, let model else { return }
-            itemClicked?(model)
+            itemClicked?(model, backgroundView)
         }
 
         iconImageView = NSImageView()

@@ -161,6 +161,7 @@
 		8EC70E162F0BBF3D009FE2CD /* BookmarkItemView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8EC70E152F0BBF3D009FE2CD /* BookmarkItemView.swift */; };
 		8EC70E182F0BC77E009FE2CD /* NSImageView+Favicon.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8EC70E172F0BC77E009FE2CD /* NSImageView+Favicon.swift */; };
 		8EE5BEEC2F14FF9800698D7D /* TabCloseButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8EE5BEEB2F14FF9800698D7D /* TabCloseButton.swift */; };
+		8EEC91C22F8623EB00C5336E /* ExtensionPopupAnchor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8EEC91C12F8623EB00C5336E /* ExtensionPopupAnchor.swift */; };
 		8EF36C032F4E9E7000FCC91E /* TabViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8EF36C012F4E9E7000FCC91E /* TabViewModel.swift */; };
 		8EF36C062F4E9EC100FCC91E /* TabContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8EF36C052F4E9EC100FCC91E /* TabContentView.swift */; };
 		8EF36C082F4EA95B00FCC91E /* SideTabView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8EF36C072F4EA95B00FCC91E /* SideTabView.swift */; };
@@ -496,6 +497,7 @@
 		8EC70E152F0BBF3D009FE2CD /* BookmarkItemView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BookmarkItemView.swift; sourceTree = "<group>"; };
 		8EC70E172F0BC77E009FE2CD /* NSImageView+Favicon.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "NSImageView+Favicon.swift"; sourceTree = "<group>"; };
 		8EE5BEEB2F14FF9800698D7D /* TabCloseButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TabCloseButton.swift; sourceTree = "<group>"; };
+		8EEC91C12F8623EB00C5336E /* ExtensionPopupAnchor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExtensionPopupAnchor.swift; sourceTree = "<group>"; };
 		8EF36C012F4E9E7000FCC91E /* TabViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TabViewModel.swift; sourceTree = "<group>"; };
 		8EF36C052F4E9EC100FCC91E /* TabContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TabContentView.swift; sourceTree = "<group>"; };
 		8EF36C072F4EA95B00FCC91E /* SideTabView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SideTabView.swift; sourceTree = "<group>"; };
@@ -1470,6 +1472,7 @@
 		CCBF8F672E65A9CB00B9A99E /* Extensions */ = {
 			isa = PBXGroup;
 			children = (
+				8EEC91C12F8623EB00C5336E /* ExtensionPopupAnchor.swift */,
 				CCBF8F652E65A9A500B9A99E /* ExtensionModel.swift */,
 				CCBF8F812E67F7C400B9A99E /* ExtensionManager.swift */,
 				CCBF8F682E65A9D700B9A99E /* ExtensionList.swift */,
@@ -1943,6 +1946,7 @@
 				D10000000000000000000008 /* ExtensionDialogManager.swift in Sources */,
 				D10000000000000000000009 /* ExtensionDialogViewController.swift in Sources */,
 				CC6B001B2E793EAC00D4F133 /* PinnedTabViewController.swift in Sources */,
+				8EEC91C22F8623EB00C5336E /* ExtensionPopupAnchor.swift in Sources */,
 				CCBF8F462E653F6900B9A99E /* BookmarkModel.swift in Sources */,
 				37FC8C922F335942004675B8 /* WebContentProgressBarView.swift in Sources */,
 				CC4351BF2EC7327A009D8FC3 /* SetNameViewController.swift in Sources */,

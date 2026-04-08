@@ -135,7 +135,10 @@ struct HeaderExtensionContainer: View {
     var body: some View {
         HStack(spacing: HeaderExtensionLayout.itemSpacing) {
             ForEach(pinnedExtensions) { ext in
-                extensionButton(ext)
+                PinnedExtensionButton(
+                    ext: ext,
+                    windowId: browserState?.windowId.int64Value ?? 0
+                )
             }
             HeaderExtensionMenuButton(
                 extensionManager: extensionManager,
@@ -147,9 +150,15 @@ struct HeaderExtensionContainer: View {
                 .themedStroke(.border)
         )
     }
+}
 
-    @ViewBuilder
-    private func extensionButton(_ ext: Extension) -> some View {
+private struct PinnedExtensionButton: View {
+    let ext: Extension
+    let windowId: Int64
+
+    @State private var anchorView: NSView?
+
+    var body: some View {
         let image = ext.icon
             ?? NSImage(systemSymbolName: "puzzlepiece.extension", accessibilityDescription: nil)
             ?? NSImage()
@@ -158,18 +167,19 @@ struct HeaderExtensionContainer: View {
             image: image,
             accessibilityLabel: ext.name
         ) {
-            let mouseLocation = NSEvent.mouseLocation
-            guard let screen = NSScreen.main else { return }
-            let convertedLocation = NSPoint(
-                x: mouseLocation.x,
-                y: screen.frame.height - mouseLocation.y
-            )
-            let windowId = browserState?.windowId.int64Value ?? 0
+            let point = anchorView.flatMap(ExtensionPopupAnchor.pointBelowView)
+                ?? ExtensionPopupAnchor.mouseFallback()
             ChromiumLauncher.sharedInstance().bridge?.triggerExtension(
                 withId: ext.id,
-                pointInScreen: convertedLocation,
+                pointInScreen: point,
                 windowId: windowId
             )
         }
+        .background(
+            AddressBarAnchorView { view in
+                anchorView = view
+            }
+            .allowsHitTesting(false)
+        )
     }
 }

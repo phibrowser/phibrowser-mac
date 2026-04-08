@@ -156,10 +156,9 @@ struct DownloadButtonView: View {
 
 /// NSView wrapper for DownloadButtonView to use in SidebarBottomBar
 class DownloadButtonNSView: NSView {
-    private var hostingView: NSHostingView<AnyView>?
+    private var hostingView: ThemedHostingView?
     private let viewModel: DownloadButtonViewModel
     private var onTap: (() -> Void)?
-    private var themeObserver = ThemeObserver.shared
     
     // MARK: - Initialization
     
@@ -177,12 +176,9 @@ class DownloadButtonNSView: NSView {
     // MARK: - Setup
     
     private func setupHostingView() {
-        updateThemeObserver()
-        let buttonView = DownloadButtonView(viewModel: viewModel, onTap: { [weak self] in
+        let hosting = ThemedHostingView(rootView: DownloadButtonView(viewModel: viewModel, onTap: { [weak self] in
             self?.onTap?()
-        }).phiThemeObserver(themeObserver)
-        
-        let hosting = NSHostingView(rootView: AnyView(buttonView))
+        }))
         hosting.translatesAutoresizingMaskIntoConstraints = false
         addSubview(hosting)
         
@@ -194,21 +190,6 @@ class DownloadButtonNSView: NSView {
         ])
         
         self.hostingView = hosting
-    }
-    
-    override func viewDidMoveToWindow() {
-        super.viewDidMoveToWindow()
-        updateThemeObserver()
-        hostingView?.rootView = AnyView(
-            DownloadButtonView(viewModel: viewModel, onTap: { [weak self] in
-                self?.onTap?()
-            })
-            .phiThemeObserver(themeObserver)
-        )
-    }
-    
-    private func updateThemeObserver() {
-        themeObserver = ThemeObserver(themeSource: themeStateProvider)
     }
     
     // MARK: - Public Methods

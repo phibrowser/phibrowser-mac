@@ -367,12 +367,11 @@ struct CardEntryButton: View {
 
 /// AppKit bridge for the SwiftUI sidebar bottom bar.
 class SidebarBottomBarSwiftUIView: NSView {
-    private var hostingView: NSHostingView<AnyView>?
+    private var hostingView: ThemedHostingView?
     private let state = SidebarBottomBarState()
     private let downloadViewModel = DownloadButtonViewModel()
     private var cancellables = Set<AnyCancellable>()
     private var heightConstraint: NSLayoutConstraint?
-    private var themeObserver = ThemeObserver.shared
     
     /// Height change callback.
     var onHeightChange: ((CGFloat) -> Void)?
@@ -396,8 +395,17 @@ class SidebarBottomBarSwiftUIView: NSView {
     }
     
     private func setupHostingView() {
-        updateThemeObserver()
-        let hosting = NSHostingView(rootView: makeRootView())
+        let hosting = ThemedHostingView(
+            rootView: SidebarBottomBarSwiftUI(
+                state: state,
+                downloadViewModel: downloadViewModel,
+                cardManager: NotificationCardManager.shared,
+                onFeedbackTap: { [weak self] in self?.onFeedbackTap?() },
+                onBookmarkTap: { [weak self] in self?.onBookmarkTap?() },
+                onChatTap: { [weak self] in self?.onChatTap?() },
+                onCardEntryTap: { [weak self] in self?.onCardEntryTap?() }
+            )
+        )
         hosting.translatesAutoresizingMaskIntoConstraints = false
         addSubview(hosting)
         
@@ -411,12 +419,6 @@ class SidebarBottomBarSwiftUIView: NSView {
         self.hostingView = hosting
     }
     
-    override func viewDidMoveToWindow() {
-        super.viewDidMoveToWindow()
-        updateThemeObserver()
-        hostingView?.rootView = makeRootView()
-    }
-    
     private func setupObservers() {
         // Propagate compact-mode height changes to the container.
         state.$isCompact
@@ -426,25 +428,6 @@ class SidebarBottomBarSwiftUIView: NSView {
                 self.onHeightChange?(self.state.height(for: isCompact))
             }
             .store(in: &cancellables)
-    }
-    
-    private func updateThemeObserver() {
-        themeObserver = ThemeObserver(themeSource: themeStateProvider)
-    }
-    
-    private func makeRootView() -> AnyView {
-        AnyView(
-            SidebarBottomBarSwiftUI(
-                state: state,
-                downloadViewModel: downloadViewModel,
-                cardManager: NotificationCardManager.shared,
-                onFeedbackTap: { [weak self] in self?.onFeedbackTap?() },
-                onBookmarkTap: { [weak self] in self?.onBookmarkTap?() },
-                onChatTap: { [weak self] in self?.onChatTap?() },
-                onCardEntryTap: { [weak self] in self?.onCardEntryTap?() }
-            )
-            .phiThemeObserver(themeObserver)
-        )
     }
     
     /// Hides or shows the chat button, for example in private mode.

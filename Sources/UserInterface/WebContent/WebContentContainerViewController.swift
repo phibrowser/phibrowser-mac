@@ -96,7 +96,7 @@ class WebContentContainerViewController: NSViewController {
     private let statusURLViewModel = StatusURLViewModel()
 
     /// Status URL hosting controller for displaying link hover information
-    private var statusURLHostingController: NSHostingController<AnyView>?
+    private var statusURLHostingController: ThemedHostingController<StatusURLView>?
 
     /// Global TabStrip bar controller - only visible in traditional layout mode
     /// Contains TabStrip and right-side buttons (CardEntryButton, etc.)
@@ -211,8 +211,7 @@ class WebContentContainerViewController: NSViewController {
     }
 
     private func setupStatusURLView() {
-        let themeObserver = ThemeObserver(themeSource: browserState?.themeContext ?? ThemeManager.shared)
-        let hostingController = StatusURLView.makeHostingController(viewModel: statusURLViewModel, themeObserver: themeObserver)
+        let hostingController = StatusURLView.makeHostingController(viewModel: statusURLViewModel, themeSource: browserState?.themeContext)
         statusURLHostingController = hostingController
         let hostingView = hostingController.view
 

@@ -7,8 +7,8 @@ import Cocoa
 import SwiftUI
 
 final class GeneralSettingHostingViewController: NSViewController {
-    private var hostingController: NSHostingController<GeneralSettingView>?
-    
+    private var hostingController: ThemedHostingController<GeneralSettingView>?
+
     override func loadView() {
         view = NSView()
         view.wantsLayer = true
@@ -21,8 +21,7 @@ final class GeneralSettingHostingViewController: NSViewController {
     }
     
     private func setupSwiftUIView() {
-        let generalView = GeneralSettingView()
-        let hostingController = NSHostingController(rootView: generalView)
+        let hostingController = ThemedHostingController(rootView: GeneralSettingView())
         
         hostingController.view.translatesAutoresizingMaskIntoConstraints = false
         addChild(hostingController)

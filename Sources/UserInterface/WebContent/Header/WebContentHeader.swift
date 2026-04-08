@@ -107,7 +107,7 @@ class WebContentHeader: NSView {
         wantsLayer = true
         phiLayer?.setBackgroundColor(.contentOverlayBackground)
 
-        updateThemeObserver()
+        themeObserver = ThemeObserver(themeSource: themeStateProvider)
         let swiftUIView = makeSwiftUIView()
 
         let hosting = ZeroSafeAreaHostingView(rootView: swiftUIView)
@@ -178,14 +178,11 @@ class WebContentHeader: NSView {
 
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
-        updateThemeObserver()
-        updateHostingRoot()
+        if window != nil {
+            themeObserver.rebind(to: themeStateProvider)
+        }
         setupObservers()
         updateLayoutVisibility()
-    }
-
-    private func updateThemeObserver() {
-        themeObserver = ThemeObserver(themeSource: themeStateProvider)
     }
 
     private func setupConfigObserver() {

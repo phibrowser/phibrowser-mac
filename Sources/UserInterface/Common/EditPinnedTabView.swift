@@ -123,11 +123,11 @@ enum EditPinnedTabPresenter {
             }
         )
 
-        let hosting: NSHostingController<AnyView>
+        let hosting: ThemedHostingController<AnyView>
         if let modelContainer {
-            hosting = NSHostingController(rootView: AnyView(contentView.modelContainer(modelContainer)))
+            hosting = ThemedHostingController(rootView: AnyView(contentView.modelContainer(modelContainer)))
         } else {
-            hosting = NSHostingController(rootView: AnyView(contentView))
+            hosting = ThemedHostingController(rootView: AnyView(contentView))
         }
         let window = NSWindow(contentViewController: hosting)
         window.styleMask = [.titled, .closable]

@@ -7,7 +7,7 @@ import Cocoa
 import SwiftUI
 
 final class IMChannelsSettingHostingViewController: NSViewController {
-    private var hostingController: NSHostingController<IMChannelsSettingView>?
+    private var hostingController: ThemedHostingController<IMChannelsSettingView>?
 
     override func loadView() {
         view = NSView()
@@ -21,8 +21,7 @@ final class IMChannelsSettingHostingViewController: NSViewController {
     }
 
     private func setupSwiftUIView() {
-        let settingView = IMChannelsSettingView()
-        let hostingController = NSHostingController(rootView: settingView)
+        let hostingController = ThemedHostingController(rootView: IMChannelsSettingView())
 
         hostingController.view.translatesAutoresizingMaskIntoConstraints = false
         addChild(hostingController)

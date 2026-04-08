@@ -432,7 +432,7 @@ class LottieAnimationNSView: NSView {
     // MARK: - Setup
     
     private func setupHostingView(with view: LottieAnimationView) {
-        updateThemeObserver()
+        themeObserver = ThemeObserver(themeSource: themeStateProvider)
         let hosting = LottieAnimationHostingView(rootView: AnyView(view.phiThemeObserver(themeObserver)))
         hosting.translatesAutoresizingMaskIntoConstraints = false
         addSubview(hosting)
@@ -454,15 +454,8 @@ class LottieAnimationNSView: NSView {
     
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
-        updateThemeObserver()
-        hostingView?.rootView = AnyView(
-            LottieAnimationView(config: config, state: viewState, action: action)
-                .phiThemeObserver(themeObserver)
-        )
-    }
-    
-    private func updateThemeObserver() {
-        themeObserver = ThemeObserver(themeSource: themeStateProvider)
+        guard window != nil else { return }
+        themeObserver.rebind(to: themeStateProvider)
     }
     
     // MARK: - Public Methods

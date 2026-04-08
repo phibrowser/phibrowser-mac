@@ -37,7 +37,7 @@ class FeedbackViewController: NSViewController {
         return view
     }()
     
-    private lazy var feedbackHosting = NSHostingController(rootView: feedbackView)
+    private lazy var feedbackHosting = ThemedHostingController(rootView: feedbackView)
     
     init(host: MainBrowserWindowController) {
         self.hostWindowController = host

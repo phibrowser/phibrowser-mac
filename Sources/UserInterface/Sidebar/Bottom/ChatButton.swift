@@ -77,9 +77,8 @@ struct ChatButton: View {
 
 /// AppKit wrapper for `ChatButton`.
 class ChatButtonNSView: NSView {
-    private var hostingView: NSHostingView<AnyView>?
+    private var hostingView: ThemedHostingView?
     private let action: () -> Void
-    private var themeObserver = ThemeObserver.shared
     
     init(action: @escaping () -> Void) {
         self.action = action
@@ -92,9 +91,7 @@ class ChatButtonNSView: NSView {
     }
     
     private func setupHostingView(action: @escaping () -> Void) {
-        updateThemeObserver()
-        let chatButton = ChatButton(action: action).phiThemeObserver(themeObserver)
-        let hosting = NSHostingView(rootView: AnyView(chatButton))
+        let hosting = ThemedHostingView(rootView: ChatButton(action: action))
         hosting.translatesAutoresizingMaskIntoConstraints = false
         addSubview(hosting)
         
@@ -111,19 +108,6 @@ class ChatButtonNSView: NSView {
         ])
         
         self.hostingView = hosting
-    }
-    
-    override func viewDidMoveToWindow() {
-        super.viewDidMoveToWindow()
-        updateThemeObserver()
-        hostingView?.rootView = AnyView(
-            ChatButton(action: action)
-                .phiThemeObserver(themeObserver)
-        )
-    }
-    
-    private func updateThemeObserver() {
-        themeObserver = ThemeObserver(themeSource: themeStateProvider)
     }
 }
 

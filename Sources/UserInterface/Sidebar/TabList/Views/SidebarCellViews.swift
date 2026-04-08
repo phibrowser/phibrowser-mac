@@ -109,9 +109,8 @@ extension NSView {
 
 // MARK: - Tab Cell View (reused from existing)
 class SidebarTabCellView: SidebarCellView {
-    private var hostingView: NSHostingView<AnyView>!
+    private var hostingView: ThemedHostingView!
     private let viewModel = TabViewModel()
-    private var themeObserver = ThemeObserver.shared
     weak var delegate: TabCellDelegate?
     
     override init(frame frameRect: NSRect) {
@@ -131,19 +130,14 @@ class SidebarTabCellView: SidebarCellView {
     }
     
     private func setupViews() {
-        updateThemeObserver()
-        hostingView = NSHostingView(rootView: makeRootView())
+        hostingView = ThemedHostingView(rootView: SideTabView(model: viewModel) { [weak self] in
+            self?.closeButtonTapped()
+        })
         addSubview(hostingView)
         hostingView.snp.makeConstraints { make in
             make.edges.equalToSuperview()
         }
         setupPressAnimation()
-    }
-    
-    override func viewDidMoveToWindow() {
-        super.viewDidMoveToWindow()
-        updateThemeObserver()
-        hostingView.rootView = makeRootView()
     }
     
     // MARK: - Press Animation
@@ -166,19 +160,6 @@ class SidebarTabCellView: SidebarCellView {
         default:
             break
         }
-    }
-
-    private func updateThemeObserver() {
-        themeObserver = ThemeObserver(themeSource: themeStateProvider)
-    }
-
-    private func makeRootView() -> AnyView {
-        AnyView(
-            SideTabView(model: viewModel) { [weak self] in
-                self?.closeButtonTapped()
-            }
-            .phiThemeObserver(themeObserver)
-        )
     }
 
     private func closeButtonTapped() {

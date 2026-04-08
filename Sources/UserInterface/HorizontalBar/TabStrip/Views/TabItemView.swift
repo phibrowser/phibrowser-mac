@@ -154,7 +154,7 @@ final class TabItemView: NSView {
     // MARK: - Setup
 
     private func setupUI() {
-        updateThemeObserver()
+        themeObserver = ThemeObserver(themeSource: themeStateProvider)
         wantsLayer = true
         layer?.masksToBounds = false
         backgroundLayer.sourceView = self
@@ -169,12 +169,8 @@ final class TabItemView: NSView {
     
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
-        updateThemeObserver()
-        faviconHostingView.rootView = makeFaviconRootView()
-        titleHostingView.rootView = makeTitleRootView()
-        muteButtonHostingView.rootView = makeMuteButtonRootView()
-        recordingIconHostingView.rootView = makeRecordingIconRootView()
-        closeButtonHostingView.rootView = makeCloseButtonRootView()
+        guard window != nil else { return }
+        themeObserver.rebind(to: themeStateProvider)
     }
 
     // MARK: - Constants
@@ -319,10 +315,6 @@ final class TabItemView: NSView {
         themeObservation = subscribe { [weak self] _, _ in
             self?.backgroundLayer.refreshAppearance()
         }
-    }
-    
-    private func updateThemeObserver() {
-        themeObserver = ThemeObserver(themeSource: themeStateProvider)
     }
     
     private func makeFaviconRootView() -> AnyView {

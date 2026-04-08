@@ -7,7 +7,7 @@ import Cocoa
 import SwiftUI
 
 final class AISettingHostingViewController: NSViewController {
-    private var hostingController: NSHostingController<AISettingView>?
+    private var hostingController: ThemedHostingController<AISettingView>?
     private let connectorViewModel = AISettingsConnectorViewModel()
 
     override func loadView() {
@@ -22,8 +22,7 @@ final class AISettingHostingViewController: NSViewController {
     }
 
     private func setupSwiftUIView() {
-        let aiSettingView = AISettingView(connectorViewModel: connectorViewModel)
-        let hostingController = NSHostingController(rootView: aiSettingView)
+        let hostingController = ThemedHostingController(rootView: AISettingView(connectorViewModel: connectorViewModel))
 
         hostingController.view.translatesAutoresizingMaskIntoConstraints = false
         addChild(hostingController)

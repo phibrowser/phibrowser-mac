@@ -10,17 +10,14 @@ class OverlayToastViewController: NSViewController {
         return OverlayToastViewModel(browserState: state)
     }()
     
-    private var themeObserver: ThemeObserver
-    
-    private lazy var toastContainerViewController: NSHostingController<AnyView> = {
-        return NSHostingController(rootView: makeRootView())
+    private lazy var toastContainerViewController: ThemedHostingController<OverlayToastContainer> = {
+        return ThemedHostingController(rootView: OverlayToastContainer(viewModel: viewModel), themeSource: state.themeContext)
     }()
     
     let state: BrowserState
     
     init(state: BrowserState) {
         self.state = state
-        self.themeObserver = ThemeObserver(themeSource: state.themeContext)
         super.init(nibName: nil, bundle: nil)
     }
     
@@ -49,12 +46,6 @@ class OverlayToastViewController: NSViewController {
         }
     }
     
-    private func makeRootView() -> AnyView {
-        AnyView(
-            OverlayToastContainer(viewModel: viewModel)
-                .phiThemeObserver(themeObserver)
-        )
-    }
     
 }
 

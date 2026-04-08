@@ -6,8 +6,8 @@
 import Cocoa
 import SwiftUI
 final class ShortcutsSettingHostingViewController: NSViewController {
-    private var hostingController: NSHostingController<ShortcutsSettingsView>?
-    
+    private var hostingController: ThemedHostingController<ShortcutsSettingsView>?
+
     override func loadView() {
         view = NSView()
 //        if #unavailable(macOS 26, ) {
@@ -22,8 +22,7 @@ final class ShortcutsSettingHostingViewController: NSViewController {
     }
     
     private func setupSwiftUIView() {
-        let shortcutsView = ShortcutsSettingsView()
-        let hostingController = NSHostingController(rootView: shortcutsView)
+        let hostingController = ThemedHostingController(rootView: ShortcutsSettingsView())
         
         hostingController.view.translatesAutoresizingMaskIntoConstraints = false
         addChild(hostingController)
@@ -41,7 +40,6 @@ final class ShortcutsSettingHostingViewController: NSViewController {
     
     override func viewWillAppear() {
         super.viewWillAppear()
-        // Force a layout pass once the window becomes visible.
         hostingController?.view.needsLayout = true
     }
 }

@@ -259,7 +259,7 @@ class HoverableButtonNSView: NSView {
     }
     
     private func setupHostingView() {
-        updateThemeObserver()
+        themeObserver = ThemeObserver(themeSource: themeStateProvider)
         let hosting = HoverableHostingView(rootView: AnyView(button.phiThemeObserver(themeObserver)))
         hosting.translatesAutoresizingMaskIntoConstraints = false
         addSubview(hosting)
@@ -280,12 +280,8 @@ class HoverableButtonNSView: NSView {
     
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
-        updateThemeObserver()
-        hostingView?.rootView = AnyView(button.phiThemeObserver(themeObserver))
-    }
-    
-    private func updateThemeObserver() {
-        themeObserver = ThemeObserver(themeSource: themeStateProvider)
+        guard window != nil else { return }
+        themeObserver.rebind(to: themeStateProvider)
     }
 }
 

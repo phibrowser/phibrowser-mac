@@ -64,12 +64,8 @@ struct StatusURLView: View {
 // MARK: - AppKit Hosting
 
 extension StatusURLView {
-    static func makeHostingController(viewModel: StatusURLViewModel, themeObserver: ThemeObserver) -> NSHostingController<AnyView> {
-        let rootView = AnyView(
-            StatusURLView(viewModel: viewModel)
-                .phiThemeObserver(themeObserver)
-        )
-        let hostingController = NSHostingController(rootView: rootView)
+    static func makeHostingController(viewModel: StatusURLViewModel, themeSource: ThemeStateProvider? = nil) -> ThemedHostingController<StatusURLView> {
+        let hostingController = ThemedHostingController(rootView: StatusURLView(viewModel: viewModel), themeSource: themeSource)
         let hostingView = hostingController.view
         hostingView.translatesAutoresizingMaskIntoConstraints = false
 

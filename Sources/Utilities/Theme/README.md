@@ -53,7 +53,9 @@ label.phi.setTextColor(.black <> .white)
 3. `Mapper<V>`: value mapper resolved from `(theme, appearance)`.
 4. `ThemedColor`: color abstraction with theme/appearance-aware resolution.
 5. `Phi<Base>`: binder that applies mappers to AppKit properties.
-6. `ThemeObserver`: `ObservableObject` used by SwiftUI to consume window-scoped theme state through environment values.
+6. `ThemeObserver`: `ObservableObject` used by SwiftUI to consume window-scoped theme state through environment values. Supports `rebind(to:)` to switch theme source without replacing the object.
+7. `ThemedHostingController`: `NSHostingController` subclass that auto-injects theme environment at the AppKit–SwiftUI boundary.
+8. `ThemedHostingView`: `NSHostingView` subclass that auto-injects theme environment and rebinds on `viewDidMoveToWindow`.
 
 ## Implementation
 
@@ -90,11 +92,52 @@ extension NSView: ThemeSource {
 
 SwiftUI bindings use `Combine`, `ObservableObject`, and environment propagation.
 
-- `ThemeObserver` subscribes to a `ThemeStateProvider`.
-- Browser-window hosting boundaries inject a window-scoped observer via `phiThemeObserver(_:)`.
+- `ThemedHostingController` is the recommended way to bridge `NSHostingController` boundaries. It auto-creates a `ThemeObserver` and injects `phiTheme` / `phiAppearance` environment values, resolving the theme source in order: explicit parameter → active browser window → `ThemeManager.shared`.
+- `ThemedHostingView` is the recommended way to bridge `NSHostingView` boundaries. Same auto-injection as `ThemedHostingController`, plus automatic `rebind` on `viewDidMoveToWindow` (views may be created before being added to a window).
 - Themed SwiftUI modifiers resolve from `@Environment(\.phiTheme)` and `@Environment(\.phiAppearance)` so they stay aligned with the current browser window.
+- For custom `NSHostingView` subclasses (e.g. `ZeroSafeAreaHostingView`, `HitTransparentHostingView`), keep a `ThemeObserver` property and call `themeObserver.rebind(to: themeStateProvider)` in `viewDidMoveToWindow`.
 
-Example:
+Example – hosting controller:
+
+```swift
+// Auto-resolve from active browser window (settings pages, standalone panels)
+let hc = ThemedHostingController(rootView: MySettingView())
+
+// Explicit source (browser window components with known BrowserState)
+let hc = ThemedHostingController(rootView: MyView(), themeSource: browserState.themeContext)
+
+// Subclassing
+class MyViewController: ThemedHostingController<MyContentView> {
+    init(browserState: BrowserState) {
+        super.init(rootView: MyContentView(), themeSource: browserState.themeContext)
+    }
+}
+```
+
+Example – hosting view:
+
+```swift
+// Direct usage (replaces NSHostingView + manual .phiThemeObserver wrapping)
+let hosting = ThemedHostingView(rootView: ChatButton(action: action))
+
+// Content update (preserves theme injection)
+hosting.setThemedContent(ChatButton(action: newAction))
+```
+
+Example – custom hosting view subclass with `rebind`:
+
+```swift
+private var themeObserver = ThemeObserver(themeSource: themeStateProvider)
+let hosting = ZeroSafeAreaHostingView(rootView: AnyView(myView.phiThemeObserver(themeObserver)))
+
+override func viewDidMoveToWindow() {
+    super.viewDidMoveToWindow()
+    guard window != nil else { return }
+    themeObserver.rebind(to: themeStateProvider)
+}
+```
+
+Example – themed modifier internals:
 
 ```swift
 struct ThemedForegroundModifier: ViewModifier {
@@ -186,7 +229,9 @@ VStack { ... }
 - Normal windows currently still initialize from `ThemeManager.shared` shared defaults.
 - Incognito windows force `.dark` and do not follow system appearance, app-level appearance, or shared appearance changes.
 - Any browser window with `userAppearanceChoice != .system` is a fixed-appearance window.
-- UI that has not yet joined a browser-window theme context may still use `ThemeManager.shared` as a compatibility fallback.
+- All `NSHostingController` boundaries should use `ThemedHostingController` instead of raw `NSHostingController` to ensure theme environment is injected.
+- All `NSHostingView` boundaries should use `ThemedHostingView` instead of raw `NSHostingView`. For custom subclasses, use `ThemeObserver.rebind(to:)` in `viewDidMoveToWindow`.
+- Both `ThemedHostingController` and `ThemedHostingView` without an explicit `themeSource` auto-resolve from the active browser window, falling back to `ThemeManager.shared`.
 
 ### Update Shared Defaults
 
@@ -467,6 +512,26 @@ Add the following keys in `Localizable.xcstrings`:
 ```
 
 ## API Reference
+
+### `ThemedHostingController<Content: View>`
+
+| Method | Description |
+|---|---|
+| `init(rootView:themeSource:)` | Create a hosting controller with auto-injected theme environment. `themeSource` defaults to active browser window context → `ThemeManager.shared`. |
+
+### `ThemedHostingView`
+
+| Method | Description |
+|---|---|
+| `init(rootView:themeSource:)` | Create a hosting view with auto-injected theme environment. Auto-rebinds on `viewDidMoveToWindow`. |
+| `setThemedContent(_:)` | Update the hosted SwiftUI content while preserving theme injection. |
+
+### `ThemeObserver`
+
+| Method | Description |
+|---|---|
+| `init(themeSource:)` | Create an observer subscribed to the given `ThemeStateProvider`. |
+| `rebind(to:)` | Switch to a new theme source without replacing the observer object. Existing SwiftUI environment references stay valid. |
 
 ### `BrowserThemeContext`
 

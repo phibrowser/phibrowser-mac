@@ -255,7 +255,7 @@ extension AppController {
         }
 
         let aboutView = AboutView()
-        let hostingController = NSHostingController(rootView: aboutView)
+        let hostingController = ThemedHostingController(rootView: aboutView)
 
         let window = NSWindow(
             contentRect: .zero,

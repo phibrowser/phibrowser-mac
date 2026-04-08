@@ -388,7 +388,7 @@ extension AppController {
             return
         }
 
-        let hostingController = NSHostingController(rootView: CrashSampleView())
+        let hostingController = ThemedHostingController(rootView: CrashSampleView())
         let windowSize = NSSize(width: 560, height: 680)
         let window = NSWindow(
             contentRect: NSRect(origin: .zero, size: windowSize),

@@ -40,7 +40,7 @@ struct VisualEffectBackground: NSViewRepresentable {
     }
 }
 
-class DownloadsListViewController: NSHostingController<DownloadsListContentView> {
+class DownloadsListViewController: ThemedHostingController<DownloadsListContentView> {
     #if DEBUG
     static let mockDownloads = false
     #endif
@@ -53,10 +53,10 @@ class DownloadsListViewController: NSHostingController<DownloadsListContentView>
         #endif
         
         let contentView = DownloadsListContentView(downloadsManager: manager)
-        super.init(rootView: contentView)
+        super.init(rootView: contentView, themeSource: browserState.themeContext)
     }
     
-    @MainActor required dynamic init?(coder: NSCoder) {
+    @MainActor @preconcurrency required dynamic public init?(coder: NSCoder) {
         fatalError("init(coder:) has not been implemented")
     }
 }

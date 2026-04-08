@@ -61,6 +61,19 @@ public final class ThemeObserver: ObservableObject {
         }
     }
     
+    /// Rebinds this observer to a different theme source without replacing the object.
+    /// Existing SwiftUI environment references stay valid.
+    public func rebind(to source: ThemeStateProvider) {
+        self.theme = source.currentTheme
+        self.appearance = source.currentAppearance
+        self.subscription = source.subscribe { [weak self] theme, appearance in
+            DispatchQueue.main.async {
+                self?.theme = theme
+                self?.appearance = appearance
+            }
+        }
+    }
+
     /// Resolves a themed color into a SwiftUI color.
     public func resolve(_ themedColor: ThemedColor, appearance override: Appearance? = nil) -> Color {
         themedColor.resolver(theme, override ?? appearance).swiftUIColor
@@ -270,6 +283,79 @@ struct ThemedShapeStroke<S: Shape>: View {
     
     var body: some View {
         shape.stroke(themedColor.swiftUIColor(theme: theme, appearance: appearance), lineWidth: lineWidth)
+    }
+}
+
+// MARK: - Themed Hosting
+
+/// NSHostingController that automatically injects window-scoped theme environment.
+///
+/// Resolves theme source in order: explicit parameter → active browser window → ThemeManager.shared.
+///
+///     // Auto-resolve from active window (settings pages, standalone panels)
+///     let hc = ThemedHostingController(rootView: MySettingView())
+///
+///     // Explicit source (browser window components)
+///     let hc = ThemedHostingController(rootView: MyView(), themeSource: browserState.themeContext)
+///
+public class ThemedHostingController<Content: View>: NSHostingController<AnyView> {
+    private let themeObserver: ThemeObserver
+
+    public init(rootView content: Content, themeSource: ThemeStateProvider? = nil) {
+        let source = themeSource
+            ?? MainBrowserWindowControllersManager.shared.activeWindowController?.browserState.themeContext
+            ?? ThemeManager.shared
+        let observer = ThemeObserver(themeSource: source)
+        self.themeObserver = observer
+        super.init(rootView: AnyView(content.phiThemeObserver(observer)))
+    }
+
+    @MainActor @preconcurrency required dynamic public init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+}
+
+/// NSHostingView subclass that automatically injects and rebinds window-scoped theme environment.
+///
+/// On `viewDidMoveToWindow`, the observer rebinds to the window's `themeStateProvider`
+/// so existing SwiftUI environment references stay valid without rebuilding the root view.
+///
+///     // Auto-resolve from active window
+///     let hosting = ThemedHostingView(rootView: MySwiftUIView())
+///
+///     // Explicit source
+///     let hosting = ThemedHostingView(rootView: MyView(), themeSource: browserState.themeContext)
+///
+public class ThemedHostingView: NSHostingView<AnyView> {
+    private var themeObserver: ThemeObserver
+
+    public init<Content: View>(rootView content: Content, themeSource: ThemeStateProvider? = nil) {
+        let source = themeSource
+            ?? MainBrowserWindowControllersManager.shared.activeWindowController?.browserState.themeContext
+            ?? ThemeManager.shared
+        let observer = ThemeObserver(themeSource: source)
+        self.themeObserver = observer
+        super.init(rootView: AnyView(content.phiThemeObserver(observer)))
+    }
+
+    @MainActor @preconcurrency required public init(rootView: AnyView) {
+        self.themeObserver = ThemeObserver(themeSource: ThemeManager.shared)
+        super.init(rootView: rootView)
+    }
+
+    @MainActor @preconcurrency required dynamic public init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    public override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        guard window != nil else { return }
+        themeObserver.rebind(to: themeStateProvider)
+    }
+
+    /// Updates the hosted content while preserving theme injection.
+    public func setThemedContent<Content: View>(_ content: Content) {
+        rootView = AnyView(content.phiThemeObserver(themeObserver))
     }
 }
 

@@ -179,7 +179,9 @@ class WebContentHeader: NSView {
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
         if window != nil {
-            themeObserver.rebind(to: themeStateProvider)
+            let provider = themeStateProvider
+            AppLogDebug("[ThemeDebug] WebContentHeader.viewDidMoveToWindow: provider=\(type(of: provider)), theme=\(provider.currentTheme.id), appearance=\(provider.currentAppearance)")
+            themeObserver.rebind(to: provider)
         }
         setupObservers()
         updateLayoutVisibility()

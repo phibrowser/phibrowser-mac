@@ -47,29 +47,31 @@ public final class ThemeObserver: ObservableObject {
     @Published public var appearance: Appearance
     
     private var subscription: AnyObject?
-    private let themeSource: ThemeStateProvider
+    private var generation: UInt = 0
     
     public init(themeSource: ThemeStateProvider = ThemeManager.shared) {
-        self.themeSource = themeSource
         self.theme = themeSource.currentTheme
         self.appearance = themeSource.currentAppearance
-        self.subscription = themeSource.subscribe { [weak self] theme, appearance in
-            DispatchQueue.main.async {
-                self?.theme = theme
-                self?.appearance = appearance
-            }
-        }
+        bindSubscription(to: themeSource)
     }
     
     /// Rebinds this observer to a different theme source without replacing the object.
     /// Existing SwiftUI environment references stay valid.
     public func rebind(to source: ThemeStateProvider) {
+        AppLogDebug("[ThemeDebug] rebind: source=\(type(of: source)), theme=\(source.currentTheme.id), appearance=\(source.currentAppearance)")
         self.theme = source.currentTheme
         self.appearance = source.currentAppearance
+        bindSubscription(to: source)
+    }
+    
+    private func bindSubscription(to source: ThemeStateProvider) {
+        generation &+= 1
+        let expectedGeneration = generation
         self.subscription = source.subscribe { [weak self] theme, appearance in
             DispatchQueue.main.async {
-                self?.theme = theme
-                self?.appearance = appearance
+                guard let self, self.generation == expectedGeneration else { return }
+                self.theme = theme
+                self.appearance = appearance
             }
         }
     }
@@ -302,12 +304,18 @@ public class ThemedHostingController<Content: View>: NSHostingController<AnyView
     private let themeObserver: ThemeObserver
 
     public init(rootView content: Content, themeSource: ThemeStateProvider? = nil) {
-        let source = themeSource
-            ?? MainBrowserWindowControllersManager.shared.activeWindowController?.browserState.themeContext
-            ?? ThemeManager.shared
+        let source = themeSource ?? Self.resolveNonIncognitoContext()
         let observer = ThemeObserver(themeSource: source)
         self.themeObserver = observer
         super.init(rootView: AnyView(content.phiThemeObserver(observer)))
+    }
+
+    private static func resolveNonIncognitoContext() -> ThemeStateProvider {
+        if let controller = MainBrowserWindowControllersManager.shared.activeWindowController,
+           !controller.browserState.isIncognito {
+            return controller.browserState.themeContext
+        }
+        return ThemeManager.shared
     }
 
     @MainActor @preconcurrency required dynamic public init?(coder: NSCoder) {
@@ -330,9 +338,7 @@ public class ThemedHostingView: NSHostingView<AnyView> {
     private var themeObserver: ThemeObserver
 
     public init<Content: View>(rootView content: Content, themeSource: ThemeStateProvider? = nil) {
-        let source = themeSource
-            ?? MainBrowserWindowControllersManager.shared.activeWindowController?.browserState.themeContext
-            ?? ThemeManager.shared
+        let source = themeSource ?? Self.resolveNonIncognitoContext()
         let observer = ThemeObserver(themeSource: source)
         self.themeObserver = observer
         super.init(rootView: AnyView(content.phiThemeObserver(observer)))
@@ -341,6 +347,14 @@ public class ThemedHostingView: NSHostingView<AnyView> {
     @MainActor @preconcurrency required public init(rootView: AnyView) {
         self.themeObserver = ThemeObserver(themeSource: ThemeManager.shared)
         super.init(rootView: rootView)
+    }
+
+    private static func resolveNonIncognitoContext() -> ThemeStateProvider {
+        if let controller = MainBrowserWindowControllersManager.shared.activeWindowController,
+           !controller.browserState.isIncognito {
+            return controller.browserState.themeContext
+        }
+        return ThemeManager.shared
     }
 
     @MainActor @preconcurrency required dynamic public init?(coder: NSCoder) {

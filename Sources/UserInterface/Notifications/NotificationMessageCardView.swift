@@ -158,7 +158,7 @@ struct NotificationMessageCardContent: View {
         .padding(.vertical, 8)
         .background(
             RoundedRectangle(cornerRadius: cornerRadius)
-                .themedFill(ThemedColor(lightHex: 0xFFFFFF, darkHex: 0x0B2938))
+                .themedFill(.contentOverlayBackground)
         )
         .overlay(
             RoundedRectangle(cornerRadius: cornerRadius)

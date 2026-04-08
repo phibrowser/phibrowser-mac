@@ -40,14 +40,21 @@ public struct BrowserThemeConfiguration {
 enum BrowserThemeConfigurationResolver {
     @MainActor
     static func resolve(isIncognito: Bool) -> BrowserThemeConfiguration {
+        if isIncognito {
+            return BrowserThemeConfiguration(
+                currentTheme: .incognito,
+                userAppearanceChoice: .dark,
+                mirrorsSharedTheme: false,
+                mirrorsSharedAppearance: false
+            )
+        }
         let manager = ThemeManager.shared
         let theme = resolveTheme(id: manager.currentTheme.id, manager: manager)
-        let appearanceChoice: UserAppearanceChoice = isIncognito ? .dark : manager.userAppearanceChoice
         return BrowserThemeConfiguration(
             currentTheme: theme,
-            userAppearanceChoice: appearanceChoice,
+            userAppearanceChoice: manager.userAppearanceChoice,
             mirrorsSharedTheme: true,
-            mirrorsSharedAppearance: !isIncognito
+            mirrorsSharedAppearance: true
         )
     }
     

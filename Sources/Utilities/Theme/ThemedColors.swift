@@ -156,3 +156,14 @@ public extension Theme {
         return theme
     }()
 }
+
+extension Theme {
+    /// Incognito theme — dedicated theme for private browsing windows.
+    static let incognito: Theme = {
+        let theme = Theme(id: "incognito", name: "Incognito")
+        theme.setColor(light: NSColor(hex: 0x383838).withAlphaComponent(0.8),
+                       dark:  NSColor(hex: 0x383838).withAlphaComponent(0.8),
+                       for: .windowOverlayBackground)
+        return theme
+    }()
+}

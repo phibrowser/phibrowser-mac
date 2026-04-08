@@ -56,6 +56,7 @@ final class NewTabViewController: NSViewController {
     override func loadView() {
         view = NSView()
         view.wantsLayer = true
+        view.phiLayer?.setBackgroundColor(.contentOverlayBackground)
     }
 
     override func viewDidLoad() {

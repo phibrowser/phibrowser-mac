@@ -81,7 +81,8 @@ class HoverableButtonState: ObservableObject {
 struct HoverableButton: View {
     let config: HoverableButtonConfig
     @ObservedObject var state: HoverableButtonState
-    @ObservedObject private var themeObserver = ThemeObserver.shared
+    @Environment(\.phiTheme) private var theme
+    @Environment(\.phiAppearance) private var appearance
     let action: () -> Void
     
     @State private var isHovering = false
@@ -95,20 +96,20 @@ struct HoverableButton: View {
     // MARK: - Resolved Colors
     
     private var resolvedBackgroundColor: Color {
-        themeObserver.resolve(config.backgroundColor)
+        config.backgroundColor.swiftUIColor(theme: theme, appearance: appearance)
     }
     
     private var resolvedHoverBackgroundColor: Color {
-        themeObserver.resolve(config.hoverBackgroundColor)
+        config.hoverBackgroundColor.swiftUIColor(theme: theme, appearance: appearance)
     }
     
     private var resolvedTitleColor: Color {
-        themeObserver.resolve(config.titleColor)
+        config.titleColor.swiftUIColor(theme: theme, appearance: appearance)
     }
     
     private var resolvedImageTintColor: Color? {
         guard let imageTintColor = config.imageTintColor else { return nil }
-        return themeObserver.resolve(imageTintColor)
+        return imageTintColor.swiftUIColor(theme: theme, appearance: appearance)
     }
     
     var body: some View {
@@ -216,6 +217,7 @@ class HoverableButtonNSView: NSView {
     private weak var target: AnyObject?
     private var selector: Selector?
     private let buttonState: HoverableButtonState
+    private var themeObserver = ThemeObserver.shared
     
     var isEnabled: Bool {
         get { buttonState.isEnabled }
@@ -257,7 +259,8 @@ class HoverableButtonNSView: NSView {
     }
     
     private func setupHostingView() {
-        let hosting = HoverableHostingView(rootView: AnyView(button))
+        updateThemeObserver()
+        let hosting = HoverableHostingView(rootView: AnyView(button.phiThemeObserver(themeObserver)))
         hosting.translatesAutoresizingMaskIntoConstraints = false
         addSubview(hosting)
         hosting.setContentHuggingPriority(.required, for: .horizontal)
@@ -273,6 +276,16 @@ class HoverableButtonNSView: NSView {
         ])
         
         self.hostingView = hosting
+    }
+    
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        updateThemeObserver()
+        hostingView?.rootView = AnyView(button.phiThemeObserver(themeObserver))
+    }
+    
+    private func updateThemeObserver() {
+        themeObserver = ThemeObserver(themeSource: themeStateProvider)
     }
 }
 

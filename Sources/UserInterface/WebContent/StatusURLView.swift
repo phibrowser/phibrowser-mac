@@ -20,7 +20,7 @@ struct StatusURLView: View {
     var body: some View {
         Text(displayedURL.isEmpty ? " " : displayedURL)
             .font(.system(size: 12))
-            .foregroundColor(.primary)
+            .themedForeground(.textPrimary)
             .padding(.horizontal, 8)
             .padding(.vertical, 4)
             .background(
@@ -64,13 +64,15 @@ struct StatusURLView: View {
 // MARK: - AppKit Hosting
 
 extension StatusURLView {
-    static func makeHostingController(viewModel: StatusURLViewModel) -> NSHostingController<StatusURLView> {
-        let statusView = StatusURLView(viewModel: viewModel)
-        let hostingController = NSHostingController(rootView: statusView)
+    static func makeHostingController(viewModel: StatusURLViewModel, themeObserver: ThemeObserver) -> NSHostingController<AnyView> {
+        let rootView = AnyView(
+            StatusURLView(viewModel: viewModel)
+                .phiThemeObserver(themeObserver)
+        )
+        let hostingController = NSHostingController(rootView: rootView)
         let hostingView = hostingController.view
         hostingView.translatesAutoresizingMaskIntoConstraints = false
 
-        // Enable layer-backing and set z-position to ensure it's always on top.
         hostingView.wantsLayer = true
         hostingView.layer?.zPosition = 1000
 

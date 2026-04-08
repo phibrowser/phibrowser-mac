@@ -67,12 +67,13 @@ class WebContentHeader: NSView {
     var onCurrentTabUrlChanged: ((String?) -> Void)?
 
     private(set) var addressBarAnchorView: NSView?
-    private var hostingView: ZeroSafeAreaHostingView<WebContentHeaderView>?
+    private var hostingView: ZeroSafeAreaHostingView<AnyView>?
     private let state = WebContentHeaderState()
     private let downloadViewModel = DownloadButtonViewModel()
     private var cancellables = Set<AnyCancellable>()
     private weak var browserState: BrowserState?
     private var didSetupHostingView = false
+    private var themeObserver = ThemeObserver.shared
 
     private lazy var bottomSeparator: NSView = {
         let view = NSView()
@@ -106,6 +107,7 @@ class WebContentHeader: NSView {
         wantsLayer = true
         phiLayer?.setBackgroundColor(.contentOverlayBackground)
 
+        updateThemeObserver()
         let swiftUIView = makeSwiftUIView()
 
         let hosting = ZeroSafeAreaHostingView(rootView: swiftUIView)
@@ -131,8 +133,8 @@ class WebContentHeader: NSView {
         ])
     }
 
-    private func makeSwiftUIView() -> WebContentHeaderView {
-        WebContentHeaderView(
+    private func makeSwiftUIView() -> AnyView {
+        AnyView(WebContentHeaderView(
             state: state,
             downloadViewModel: downloadViewModel,
             currentTab: currentTab,
@@ -165,6 +167,7 @@ class WebContentHeader: NSView {
                 self?.addressBarAnchorView = view
             }
         )
+        .phiThemeObserver(themeObserver))
     }
 
     private func updateHostingRoot() {
@@ -175,8 +178,14 @@ class WebContentHeader: NSView {
 
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
+        updateThemeObserver()
+        updateHostingRoot()
         setupObservers()
         updateLayoutVisibility()
+    }
+
+    private func updateThemeObserver() {
+        themeObserver = ThemeObserver(themeSource: themeStateProvider)
     }
 
     private func setupConfigObserver() {

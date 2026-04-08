@@ -255,7 +255,6 @@ struct ThemeSwiftUIExampleView: View {
 // MARK: - AppKit Bridged Examples
 
 /// Bridges `NSTextField` into SwiftUI.
-@available(macOS 10.15, *)
 struct AppKitTextFieldExample: NSViewRepresentable {
     let text: String
     
@@ -275,7 +274,6 @@ struct AppKitTextFieldExample: NSViewRepresentable {
 }
 
 /// Bridges `NSButton` into SwiftUI.
-@available(macOS 10.15, *)
 struct AppKitButtonExample: NSViewRepresentable {
     let action: () -> Void
     
@@ -309,7 +307,6 @@ struct AppKitButtonExample: NSViewRepresentable {
 }
 
 /// Bridges an `NSView` with a themed backing layer into SwiftUI.
-@available(macOS 10.15, *)
 struct AppKitLayerViewExample: NSViewRepresentable {
     func makeNSView(context: Context) -> NSView {
         let view = NSView()

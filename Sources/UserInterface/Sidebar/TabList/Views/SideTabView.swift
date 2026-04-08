@@ -12,7 +12,7 @@ struct SideTabView: View {
     var onClose: (() -> Void)? = nil
 
     @State private var isHovered = false
-    @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.phiAppearance) private var appearance
 
     private var backgroundColor: Color {
         if model.isActive {
@@ -25,7 +25,7 @@ struct SideTabView: View {
     }
 
     private var borderColor: Color {
-        (model.isActive && colorScheme == .dark) ? .white.opacity(0.2) : .clear
+        (model.isActive && appearance == .dark) ? .white.opacity(0.2) : .clear
     }
 
     var body: some View {

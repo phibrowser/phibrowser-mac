@@ -123,7 +123,8 @@ class LottieAnimationViewState: ObservableObject {
 struct LottieAnimationView: View {
     let config: LottieAnimationViewConfig
     @ObservedObject var state: LottieAnimationViewState
-    @ObservedObject private var themeObserver = ThemeObserver.shared
+    @Environment(\.phiTheme) private var theme
+    @Environment(\.phiAppearance) private var appearance
     let action: (() -> Void)?
     
     @State private var isHovering = false
@@ -139,7 +140,8 @@ struct LottieAnimationView: View {
     
     /// Resolved tint color based on current theme and appearance
     private var resolvedTintColor: NSColor? {
-        config.themedTintColor?.resolved()
+        guard let themedTintColor = config.themedTintColor else { return nil }
+        return themedTintColor.resolver(theme, appearance)
     }
     
     init(
@@ -230,7 +232,7 @@ struct LottieAnimationView: View {
                         animationView.setValueProvider(colorProvider, keypath: AnimationKeypath(keypath: "**.Stroke 1.Color"))
                     }
                 }
-                .id(themeObserver.appearance) // Force rebuild when appearance changes
+                .id("\(config.animationName)-\(theme.id)-\(appearance.description)")
                 .opacity(isUsingReverseFile ? 0 : 1)
             
             // Reverse animation (separate file, if provided)
@@ -258,7 +260,7 @@ struct LottieAnimationView: View {
                             animationView.setValueProvider(colorProvider, keypath: AnimationKeypath(keypath: "**.Stroke 1.Color"))
                         }
                     }
-                    .id(themeObserver.appearance) // Force rebuild when appearance changes
+                    .id("\(reverseAnimationName)-\(theme.id)-\(appearance.description)")
                     .opacity(isUsingReverseFile ? 1 : 0)
             }
         }
@@ -333,6 +335,8 @@ class LottieAnimationNSView: NSView {
     private var hostingView: LottieAnimationHostingView?
     private let viewState: LottieAnimationViewState
     private var config: LottieAnimationViewConfig
+    private var action: (() -> Void)?
+    private var themeObserver = ThemeObserver.shared
     
     /// Enable/disable the button
     @objc var isEnabled: Bool {
@@ -345,6 +349,7 @@ class LottieAnimationNSView: NSView {
     init(config: LottieAnimationViewConfig, isEnabled: Bool = true, action: (() -> Void)? = nil) {
         self.config = config
         self.viewState = LottieAnimationViewState(isEnabled: isEnabled)
+        self.action = action
         super.init(frame: .zero)
         
         let view = LottieAnimationView(config: config, state: viewState, action: action)
@@ -427,7 +432,8 @@ class LottieAnimationNSView: NSView {
     // MARK: - Setup
     
     private func setupHostingView(with view: LottieAnimationView) {
-        let hosting = LottieAnimationHostingView(rootView: AnyView(view))
+        updateThemeObserver()
+        let hosting = LottieAnimationHostingView(rootView: AnyView(view.phiThemeObserver(themeObserver)))
         hosting.translatesAutoresizingMaskIntoConstraints = false
         addSubview(hosting)
         
@@ -444,6 +450,19 @@ class LottieAnimationNSView: NSView {
         ])
         
         self.hostingView = hosting
+    }
+    
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        updateThemeObserver()
+        hostingView?.rootView = AnyView(
+            LottieAnimationView(config: config, state: viewState, action: action)
+                .phiThemeObserver(themeObserver)
+        )
+    }
+    
+    private func updateThemeObserver() {
+        themeObserver = ThemeObserver(themeSource: themeStateProvider)
     }
     
     // MARK: - Public Methods

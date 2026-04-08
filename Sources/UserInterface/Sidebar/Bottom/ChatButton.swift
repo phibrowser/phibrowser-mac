@@ -13,7 +13,7 @@ struct ChatButton: View {
     let action: () -> Void
     
     @State private var isHovering = false
-    @ObservedObject private var themeObserver = ThemeObserver.shared
+    @Environment(\.phiAppearance) private var appearance
     
     // MARK: - Constants
     
@@ -62,7 +62,7 @@ struct ChatButton: View {
             .overlay(
                 Capsule()
                     .strokeBorder(Constants.borderColor, lineWidth: Constants.borderWidth)
-                    .opacity(themeObserver.appearance.isDark ? 1 : 0)
+                    .opacity(appearance.isDark ? 1 : 0)
             )
             .animation(.easeInOut(duration: 0.15), value: isHovering)
         }
@@ -77,9 +77,12 @@ struct ChatButton: View {
 
 /// AppKit wrapper for `ChatButton`.
 class ChatButtonNSView: NSView {
-    private var hostingView: NSHostingView<ChatButton>?
+    private var hostingView: NSHostingView<AnyView>?
+    private let action: () -> Void
+    private var themeObserver = ThemeObserver.shared
     
     init(action: @escaping () -> Void) {
+        self.action = action
         super.init(frame: .zero)
         setupHostingView(action: action)
     }
@@ -89,8 +92,9 @@ class ChatButtonNSView: NSView {
     }
     
     private func setupHostingView(action: @escaping () -> Void) {
-        let chatButton = ChatButton(action: action)
-        let hosting = NSHostingView(rootView: chatButton)
+        updateThemeObserver()
+        let chatButton = ChatButton(action: action).phiThemeObserver(themeObserver)
+        let hosting = NSHostingView(rootView: AnyView(chatButton))
         hosting.translatesAutoresizingMaskIntoConstraints = false
         addSubview(hosting)
         
@@ -107,6 +111,19 @@ class ChatButtonNSView: NSView {
         ])
         
         self.hostingView = hosting
+    }
+    
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        updateThemeObserver()
+        hostingView?.rootView = AnyView(
+            ChatButton(action: action)
+                .phiThemeObserver(themeObserver)
+        )
+    }
+    
+    private func updateThemeObserver() {
+        themeObserver = ThemeObserver(themeSource: themeStateProvider)
     }
 }
 

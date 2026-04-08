@@ -33,7 +33,7 @@ extension NSView: ThemeSource {
     
     /// Current appearance resolved from `effectiveAppearance`.
     public var currentAppearance: Appearance {
-        effectiveAppearance.phiAppearance
+        themeStateProvider.currentAppearance
     }
     
     /// Theme binder that uses this view as its source.
@@ -59,7 +59,7 @@ extension NSApplication: ThemeSource {
     
     /// Current appearance resolved from `effectiveAppearance`.
     public var currentAppearance: Appearance {
-        effectiveAppearance.phiAppearance
+        ThemeManager.shared.currentAppearance
     }
     
     /// Whether the current appearance is dark.
@@ -70,44 +70,62 @@ extension NSApplication: ThemeSource {
 
 // MARK: - Private Subscription Helpers
 
+private final class ViewThemeObservation {
+    private weak var view: NSView?
+    private let action: (Theme, Appearance) -> Void
+    private weak var currentProvider: ThemeStateProvider?
+    private var providerSubscription: AnyObject?
+    private var appearanceObservation: NSKeyValueObservation?
+    private var windowObservation: NSKeyValueObservation?
+    
+    init(view: NSView, action: @escaping (Theme, Appearance) -> Void) {
+        self.view = view
+        self.action = action
+        
+        bindProviderIfNeeded()
+        emitCurrentState()
+        
+        if #available(macOS 10.14, *) {
+            appearanceObservation = view.observe(\.effectiveAppearance, options: [.old, .new]) { [weak self] _, change in
+                guard let self, change.oldValue != change.newValue else { return }
+                self.bindProviderIfNeeded()
+                self.emitCurrentState()
+            }
+        }
+        
+        windowObservation = view.observe(\.window, options: [.old, .new]) { [weak self] _, change in
+            guard let self else { return }
+            let oldWindow = change.oldValue ?? nil
+            let newWindow = change.newValue ?? nil
+            if oldWindow === newWindow {
+                return
+            }
+            self.bindProviderIfNeeded()
+            self.emitCurrentState()
+        }
+    }
+    
+    private func bindProviderIfNeeded() {
+        guard let view else { return }
+        let provider = view.themeStateProvider
+        guard currentProvider !== provider else { return }
+        
+        currentProvider = provider
+        providerSubscription = provider.subscribe { [weak self] _, _ in
+            self?.emitCurrentState()
+        }
+    }
+    
+    private func emitCurrentState() {
+        guard let view else { return }
+        let provider = view.themeStateProvider
+        action(provider.currentTheme, provider.currentAppearance)
+    }
+}
+
 private extension NSView {
     func _subscribeToThemeChanges(_ action: @escaping (Theme, Appearance) -> Void) -> AnyObject {
-        let manager = ThemeManager.shared
-        
-        // Apply the current state immediately.
-        action(manager.currentTheme, manager.currentAppearance)
-        
-        var observations: [AnyObject] = []
-        
-        // Observe system appearance changes only when following the system.
-        if #available(macOS 10.14, *) {
-            let appearanceObs = observe(\.effectiveAppearance, options: [.old, .new]) { _, change in
-                guard change.oldValue != change.newValue else { return }
-                // Ignore system changes while the user forces light or dark mode.
-                if case .system = manager.appearanceMode {
-                    action(manager.currentTheme, manager.currentAppearance)
-                }
-            }
-            observations.append(appearanceObs)
-        }
-        
-        // Observe explicit theme switches.
-        let themeObs = manager.observe(\.currentTheme, options: [.new]) { _, _ in
-            action(manager.currentTheme, manager.currentAppearance)
-        }
-        observations.append(themeObs)
-        
-        // Observe explicit appearance preference changes.
-        let appearanceChangeObs = NotificationCenter.default.addObserver(
-            forName: .appearanceDidChange,
-            object: manager,
-            queue: .main
-        ) { _ in
-            action(manager.currentTheme, manager.currentAppearance)
-        }
-        observations.append(appearanceChangeObs as AnyObject)
-        
-        return CompoundObservation(observations)
+        ViewThemeObservation(view: self, action: action)
     }
 }
 
@@ -120,33 +138,18 @@ private extension NSApplication {
         
         var observations: [AnyObject] = []
         
-        // Observe system appearance changes only when following the system.
         if #available(macOS 10.14, *) {
             let appearanceObs = observe(\.effectiveAppearance, options: [.old, .new]) { _, change in
                 guard change.oldValue != change.newValue else { return }
-                // Ignore system changes while the user forces light or dark mode.
-                if case .system = manager.appearanceMode {
-                    action(manager.currentTheme, manager.currentAppearance)
-                }
+                action(manager.currentTheme, self.currentAppearance)
             }
             observations.append(appearanceObs)
         }
         
-        // Observe explicit theme switches.
-        let themeObs = manager.observe(\.currentTheme, options: [.new]) { _, _ in
-            action(manager.currentTheme, manager.currentAppearance)
+        let providerSubscription = manager.subscribe { theme, _ in
+            action(theme, self.currentAppearance)
         }
-        observations.append(themeObs)
-        
-        // Observe explicit appearance preference changes.
-        let appearanceChangeObs = NotificationCenter.default.addObserver(
-            forName: .appearanceDidChange,
-            object: manager,
-            queue: .main
-        ) { _ in
-            action(manager.currentTheme, manager.currentAppearance)
-        }
-        observations.append(appearanceChangeObs as AnyObject)
+        observations.append(providerSubscription)
         
         return CompoundObservation(observations)
     }
@@ -348,5 +351,3 @@ public extension Phi where Base: CALayer {
         nonmutating set { self[\.shadowColor] = newValue }
     }
 }
-
-

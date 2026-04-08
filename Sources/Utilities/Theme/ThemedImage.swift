@@ -118,30 +118,29 @@ public extension Phi where Base: NSButton {
 // MARK: - SwiftUI Image Themed Extension
 
 /// Applies a theme-aware tint to SwiftUI images.
-@available(macOS 10.15, *)
 struct ThemedImageTintModifier: ViewModifier {
     let themedColor: ThemedColor
-    @ObservedObject var observer = ThemeObserver()
+    @Environment(\.phiTheme) private var theme
+    @Environment(\.phiAppearance) private var appearance
     
     func body(content: Content) -> some View {
         content
-            .foregroundColor(observer.resolve(themedColor))
+            .foregroundColor(themedColor.swiftUIColor(theme: theme, appearance: appearance))
     }
 }
 
 /// Applies the themed rendering color to SwiftUI images.
-@available(macOS 10.15, *)
 struct ThemedImageRenderingModifier: ViewModifier {
     let themedColor: ThemedColor
-    @ObservedObject var observer = ThemeObserver()
+    @Environment(\.phiTheme) private var theme
+    @Environment(\.phiAppearance) private var appearance
     
     func body(content: Content) -> some View {
         content
-            .foregroundColor(observer.resolve(themedColor))
+            .foregroundColor(themedColor.swiftUIColor(theme: theme, appearance: appearance))
     }
 }
 
-@available(macOS 10.15, *)
 public extension Image {
     /// Applies a theme-aware tint to the image.
     func themedTint(_ color: ThemedColor) -> some View {
@@ -153,10 +152,10 @@ public extension Image {
 // MARK: - SwiftUI View for Themed NSImage
 
 /// SwiftUI view that renders a themed `NSImage`.
-@available(macOS 10.15, *)
 public struct ThemedImageView: View {
     let themedImage: ThemedImage
-    @ObservedObject var observer = ThemeObserver()
+    @Environment(\.phiTheme) private var theme
+    @Environment(\.phiAppearance) private var appearance
     
     public init(_ themedImage: ThemedImage) {
         self.themedImage = themedImage
@@ -171,7 +170,7 @@ public struct ThemedImageView: View {
     }
     
     public var body: some View {
-        if let nsImage = themedImage.resolver(observer.theme, observer.appearance) {
+        if let nsImage = themedImage.resolver(theme, appearance) {
             Image(nsImage: nsImage)
                 .resizable()
         } else {

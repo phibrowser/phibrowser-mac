@@ -255,7 +255,7 @@ class OmniBoxSuggestionCellView: NSTableCellView {
             switchToTabView.setEmphasized(isSelected || isHovered)
         }
         
-        let isLightMode = (ThemeManager.shared.currentAppearance == .light)
+        let isLightMode = (currentAppearance == .light)
         
         let isBuiltInIcon: Bool = {
             guard let suggestion else { return false }
@@ -334,7 +334,7 @@ class SwitchToTabView: NSView {
 
     // Optional: a simple highlight to use when the row is selected/hovered
     func setEmphasized(_ emphasized: Bool) {
-        let isLightMode = (ThemeManager.shared.currentAppearance == .light)
+        let isLightMode = (currentAppearance == .light)
         if isLightMode && emphasized {
             label.textColor = NSColor.white.withAlphaComponent(0.85)
             phiLayer?.borderColor = NSColor.white.withAlphaComponent(0.85).cgColor <> nil

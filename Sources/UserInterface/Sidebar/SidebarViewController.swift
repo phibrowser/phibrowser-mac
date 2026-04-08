@@ -68,22 +68,11 @@ class SidebarViewController: NSViewController {
         return view
     }()
     
+    private var messageCardThemeObserver = ThemeObserver.shared
+    
     /// Hosting controller for the sidebar message card view.
-    private lazy var messageCardHostingController: NSHostingController<NotificationMessageCardView> = {
-        let swiftUIView = NotificationMessageCardView(
-            manager: NotificationCardManager.shared,
-            layoutMode: .sidebar,
-            onRun: { card in
-                NotificationCardManager.shared.decide(card: card, decision: .accept)
-            },
-            onDismiss: { _ in
-                NotificationCardManager.shared.hideCard()
-            },
-            onDelete: { card in
-                NotificationCardManager.shared.decide(card: card, decision: .reject)
-            }
-        )
-        let hostingController = NSHostingController(rootView: swiftUIView)
+    private lazy var messageCardHostingController: NSHostingController<AnyView> = {
+        let hostingController = NSHostingController(rootView: makeMessageCardRootView())
         if #available(macOS 13.0, *) {
             // Avoid intrinsic size constraints from NSHostingController; we measure explicitly.
             hostingController.sizingOptions = []
@@ -136,9 +125,14 @@ class SidebarViewController: NSViewController {
         updateSidebarContentActivation()
     }
     
+    override func viewWillAppear() {
+        super.viewWillAppear()
+        updateSwiftUIThemeObservers()
+    }
+    
     override func viewDidAppear() {
         super.viewDidAppear()
-        
+        updateSwiftUIThemeObservers()
         bottomBarSwiftUI.bindDownloadsManager(state.downloadsManager)
     }
 
@@ -253,6 +247,30 @@ class SidebarViewController: NSViewController {
         messageCardHostingController.view.snp.makeConstraints { make in
             make.edges.equalToSuperview()
         }
+    }
+    
+    private func updateSwiftUIThemeObservers() {
+        messageCardThemeObserver = ThemeObserver(themeSource: view.themeStateProvider)
+        messageCardHostingController.rootView = makeMessageCardRootView()
+    }
+    
+    private func makeMessageCardRootView() -> AnyView {
+        AnyView(
+            NotificationMessageCardView(
+                manager: NotificationCardManager.shared,
+                layoutMode: .sidebar,
+                onRun: { card in
+                    NotificationCardManager.shared.decide(card: card, decision: .accept)
+                },
+                onDismiss: { _ in
+                    NotificationCardManager.shared.hideCard()
+                },
+                onDelete: { card in
+                    NotificationCardManager.shared.decide(card: card, decision: .reject)
+                }
+            )
+            .phiThemeObserver(messageCardThemeObserver)
+        )
     }
     
     private func createSpacer(height: CGFloat) -> NSView {

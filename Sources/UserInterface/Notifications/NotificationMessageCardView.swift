@@ -256,7 +256,7 @@ struct NotificationMessageCardContent: View {
                     .frame(width: 20, height: 20)
                     .background(
                         RoundedRectangle(cornerRadius: 4)
-                            .fill(isHovered ? ThemedColor.hover.color : Color.clear)
+                            .themedFill(isHovered ? .hover : .clear)
                     )
             }
             .buttonStyle(.plain)
@@ -282,7 +282,7 @@ struct NotificationMessageCardContent: View {
                     .frame(width: 20, height: 20)
                     .background(
                         RoundedRectangle(cornerRadius: 4)
-                            .fill(isHovered ? ThemedColor.hover.color : Color.clear)
+                            .themedFill(isHovered ? .hover : .clear)
                     )
             }
             .buttonStyle(.plain)
@@ -367,7 +367,8 @@ struct NotificationMessageCardContent: View {
             Button(action: action) {
                 Text(title)
                     .font(.system(size: 11))
-                    .foregroundColor(style == .primary ? .white : ThemedColor.textPrimary.color)
+                    .foregroundColor(.white)
+                    .themedForeground(style == .primary ? .custom(light: .white, dark: .white) : .textPrimary)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .background(background)
                     .overlay(border)
@@ -385,13 +386,16 @@ struct NotificationMessageCardContent: View {
             Group {
                 if style == .primary {
                     if isHovered {
-                        ThemedColor.themeColorOnHover.color
+                        Color.clear
+                            .themedBackground(.themeColorOnHover)
                     } else {
-                        ThemedColor.themeColor.color
+                        Color.clear
+                            .themedBackground(.themeColor)
                     }
                 } else {
                     if isHovered {
-                        ThemedColor.hover.color
+                        Color.clear
+                            .themedBackground(.hover)
                     } else {
                         Color.clear
                     }
@@ -433,11 +437,11 @@ struct NotificationMessageCardContent: View {
             Button(action: action) {
                 Image(systemName: direction.systemImage)
                     .font(.system(size: 11, weight: .medium))
-                    .foregroundColor(ThemedColor.textPrimary.color)
+                    .themedForeground(.textPrimary)
                     .frame(width: 24, height: 20)
                     .background(
                         RoundedRectangle(cornerRadius: 4)
-                            .fill(isHovered ? ThemedColor.hover.color : Color.clear)
+                            .themedFill(isHovered ? .hover : .clear)
                     )
                     .contentShape(Rectangle())
             }

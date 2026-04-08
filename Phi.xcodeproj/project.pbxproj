@@ -75,6 +75,7 @@
 		377D21EC2F52C67300A68BE5 /* WebContentAddressBarMenu.swift in Sources */ = {isa = PBXBuildFile; fileRef = 377D21EB2F52C67300A68BE5 /* WebContentAddressBarMenu.swift */; };
 		378AFF252F78D6590016B334 /* ivy-presto-display-semi-bold.otf in Resources */ = {isa = PBXBuildFile; fileRef = 378AFF242F78D6530016B334 /* ivy-presto-display-semi-bold.otf */; };
 		378AFF262F78D6780016B334 /* ivy-presto-display-semi-bold.otf in Copy Fonts */ = {isa = PBXBuildFile; fileRef = 378AFF242F78D6530016B334 /* ivy-presto-display-semi-bold.otf */; };
+		378AFF622F78E5EA0016B334 /* BrowserThemeContext.swift in Sources */ = {isa = PBXBuildFile; fileRef = 378AFF612F78E5EA0016B334 /* BrowserThemeContext.swift */; };
 		37B977D52EF3F62F007E0568 /* login-dot-bg.mp4 in Resources */ = {isa = PBXBuildFile; fileRef = 37B977D42EF3F62F007E0568 /* login-dot-bg.mp4 */; };
 		37B978102EF403AB007E0568 /* GradientBorderButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = 37B9780F2EF403AB007E0568 /* GradientBorderButton.swift */; };
 		37C1B0D82ED6DCBD00DD4496 /* Shortcuts.swift in Sources */ = {isa = PBXBuildFile; fileRef = 37C1B0D72ED6DCBD00DD4496 /* Shortcuts.swift */; };
@@ -421,6 +422,7 @@
 		377D210E2F51986900A68BE5 /* WebContentContainerViewController+FloatingSidebar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "WebContentContainerViewController+FloatingSidebar.swift"; sourceTree = "<group>"; };
 		377D21EB2F52C67300A68BE5 /* WebContentAddressBarMenu.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WebContentAddressBarMenu.swift; sourceTree = "<group>"; };
 		378AFF242F78D6530016B334 /* ivy-presto-display-semi-bold.otf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "ivy-presto-display-semi-bold.otf"; sourceTree = "<group>"; };
+		378AFF612F78E5EA0016B334 /* BrowserThemeContext.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrowserThemeContext.swift; sourceTree = "<group>"; };
 		37B977D42EF3F62F007E0568 /* login-dot-bg.mp4 */ = {isa = PBXFileReference; lastKnownFileType = file; path = "login-dot-bg.mp4"; sourceTree = "<group>"; };
 		37B9780F2EF403AB007E0568 /* GradientBorderButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GradientBorderButton.swift; sourceTree = "<group>"; };
 		37C1B0D72ED6DCBD00DD4496 /* Shortcuts.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Shortcuts.swift; sourceTree = "<group>"; };
@@ -707,6 +709,7 @@
 				37686A982F10B46800DC3990 /* ThemedImage.swift */,
 				370D03B82F0E4BFC0087A1C9 /* ThemeExample.swift */,
 				37686A9A2F10C27E00DC3990 /* README.md */,
+				378AFF612F78E5EA0016B334 /* BrowserThemeContext.swift */,
 			);
 			path = Theme;
 			sourceTree = "<group>";
@@ -1344,7 +1347,6 @@
 		CC6B000C2E77DEA900D4F133 /* Preferences */ = {
 			isa = PBXGroup;
 			children = (
-				897C09F32F6BEDA000E5CA9B /* IMChannels */,
 				37686A9B2F10D61E00DC3990 /* UserDefaultsRegistration.swift */,
 				CC98F89B2E8BC71800DAD237 /* Settings.swift */,
 				CC99096C2EBC86940046BC81 /* PhiPreferences.swift */,
@@ -1352,6 +1354,7 @@
 				37C1B0E52ED8515C00DD4496 /* AISettings */,
 				37C1B0E42ED8515400DD4496 /* Account */,
 				37C1B4F62EE6CE8A00DD4496 /* General */,
+				897C09F32F6BEDA000E5CA9B /* IMChannels */,
 				37C1B0E32ED8514E00DD4496 /* Shortcuts */,
 			);
 			path = Preferences;
@@ -1931,6 +1934,7 @@
 				B0F370B92E430CA5000B51F9 /* WebContentViewController.swift in Sources */,
 				CC6336052E4EE55300A176DA /* FileSystemUtils.swift in Sources */,
 				A1B2C3D4E5F60718293A4B56 /* SharedAuthTokenStore.swift in Sources */,
+				378AFF622F78E5EA0016B334 /* BrowserThemeContext.swift in Sources */,
 				CC24EF062E89223500CE9DD7 /* LoginController.swift in Sources */,
 				CCBF8F662E65A9A500B9A99E /* ExtensionModel.swift in Sources */,
 				37C1B2A62EE16B5700DD4496 /* ProgressView.swift in Sources */,

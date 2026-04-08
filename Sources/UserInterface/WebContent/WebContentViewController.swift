@@ -300,8 +300,9 @@ class WebContentViewController: NSViewController {
             updateContentForTab(tab)
         }
         
-        ThemeManager.shared.themeAppearancePublisher
-            .sink { [weak self] theme, appearance in
+        browserState?.themeContext.themeAppearancePublisher
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _, _ in
                 self?.updateTheme()
             }
             .store(in: &cancellables)

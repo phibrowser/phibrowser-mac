@@ -4,7 +4,6 @@
 // found in the LICENSE file.
 
 import SwiftUI
-import Combine
 
 // MARK: - Theme Environment Key
 
@@ -14,6 +13,10 @@ private struct ThemeKey: EnvironmentKey {
 
 private struct AppearanceKey: EnvironmentKey {
     static let defaultValue: Appearance = ThemeManager.shared.currentAppearance
+}
+
+private struct ThemeObserverKey: EnvironmentKey {
+    static let defaultValue: ThemeObserver = .shared
 }
 
 public extension EnvironmentValues {
@@ -26,60 +29,56 @@ public extension EnvironmentValues {
         get { self[AppearanceKey.self] }
         set { self[AppearanceKey.self] = newValue }
     }
+    
+    var phiThemeObserver: ThemeObserver {
+        get { self[ThemeObserverKey.self] }
+        set { self[ThemeObserverKey.self] = newValue }
+    }
 }
 
 // MARK: - ThemeObserver
 
 /// ObservableObject that mirrors theme and appearance changes.
-@available(macOS 10.15, *)
 public final class ThemeObserver: ObservableObject {
     /// Shared observer used by SwiftUI views to avoid duplicate subscriptions.
-    public static let shared = ThemeObserver()
+    public static let shared = ThemeObserver(themeSource: ThemeManager.shared)
     
     @Published public var theme: Theme
     @Published public var appearance: Appearance
     
-    private var cancellables = Set<AnyCancellable>()
+    private var subscription: AnyObject?
+    private let themeSource: ThemeStateProvider
     
-    public init() {
-        let manager = ThemeManager.shared
-        self.theme = manager.currentTheme
-        self.appearance = manager.currentAppearance
-        
-        // Observe explicit theme switches.
-        manager.themePublisher
-            .receive(on: DispatchQueue.main)
-            .sink { [weak self] theme in
+    public init(themeSource: ThemeStateProvider = ThemeManager.shared) {
+        self.themeSource = themeSource
+        self.theme = themeSource.currentTheme
+        self.appearance = themeSource.currentAppearance
+        self.subscription = themeSource.subscribe { [weak self] theme, appearance in
+            DispatchQueue.main.async {
                 self?.theme = theme
-            }
-            .store(in: &cancellables)
-        
-        // Observe appearance updates.
-        manager.appearancePublisher
-            .receive(on: DispatchQueue.main)
-            .sink { [weak self] appearance in
                 self?.appearance = appearance
             }
-            .store(in: &cancellables)
-        
-        // Observe system appearance changes when the manager follows the system.
-        NotificationCenter.default.publisher(for: .appearanceDidChange)
-            .receive(on: DispatchQueue.main)
-            .sink { [weak self] _ in
-                self?.appearance = manager.currentAppearance
-            }
-            .store(in: &cancellables)
+        }
     }
     
     /// Resolves a themed color into a SwiftUI color.
-    public func resolve(_ themedColor: ThemedColor) -> Color {
-        themedColor.resolver(theme, appearance).swiftUIColor
+    public func resolve(_ themedColor: ThemedColor, appearance override: Appearance? = nil) -> Color {
+        themedColor.resolver(theme, override ?? appearance).swiftUIColor
+    }
+    
+    public func resolveNSColor(_ themedColor: ThemedColor, appearance override: Appearance? = nil) -> NSColor {
+        themedColor.resolver(theme, override ?? appearance)
+    }
+}
+
+extension ColorScheme {
+    var phiAppearance: Appearance {
+        self == .dark ? .dark : .light
     }
 }
 
 // MARK: - ThemedColor to SwiftUI Color
 
-@available(macOS 10.15, *)
 public extension ThemedColor {
     /// Resolves a SwiftUI color for a specific theme and appearance.
     func swiftUIColor(theme: Theme, appearance: Appearance) -> Color {
@@ -88,14 +87,12 @@ public extension ThemedColor {
     
     /// Resolves a SwiftUI color from the current theme manager state.
     var color: Color {
-        let manager = ThemeManager.shared
-        return resolver(manager.currentTheme, manager.currentAppearance).swiftUIColor
+        dynamicColor().swiftUIColor
     }
 }
 
 // MARK: - NSColor to SwiftUI Color Extension
 
-@available(macOS 10.15, *)
 public extension NSColor {
     /// Converts the AppKit color into a SwiftUI color.
     var swiftUIColor: Color {
@@ -116,36 +113,54 @@ public extension NSColor {
 
 // MARK: - View Modifiers
 
+private struct ThemeObserverEnvironmentBridge: ViewModifier {
+    @ObservedObject private var observer: ThemeObserver
+    
+    init(observer: ThemeObserver) {
+        _observer = ObservedObject(wrappedValue: observer)
+    }
+    
+    func body(content: Content) -> some View {
+        content
+            .environment(\.phiThemeObserver, observer)
+            .environment(\.phiTheme, observer.theme)
+            .environment(\.phiAppearance, observer.appearance)
+    }
+}
+
 /// Applies a themed foreground color.
 struct ThemedForegroundModifier: ViewModifier {
     let themedColor: ThemedColor
-    @ObservedObject var observer = ThemeObserver.shared
+    @Environment(\.phiTheme) private var theme
+    @Environment(\.phiAppearance) private var appearance
     
     func body(content: Content) -> some View {
-        content.foregroundColor(observer.resolve(themedColor))
+        content.foregroundColor(themedColor.swiftUIColor(theme: theme, appearance: appearance))
     }
 }
 
 /// Applies a themed background color.
 struct ThemedBackgroundModifier: ViewModifier {
     let themedColor: ThemedColor
-    @ObservedObject var observer = ThemeObserver.shared
+    @Environment(\.phiTheme) private var theme
+    @Environment(\.phiAppearance) private var appearance
     
     func body(content: Content) -> some View {
-        content.background(observer.resolve(themedColor))
+        content.background(themedColor.swiftUIColor(theme: theme, appearance: appearance))
     }
 }
 
 /// Applies a themed tint color.
 struct ThemedTintModifier: ViewModifier {
     let themedColor: ThemedColor
-    @ObservedObject var observer = ThemeObserver.shared
+    @Environment(\.phiTheme) private var theme
+    @Environment(\.phiAppearance) private var appearance
     
     func body(content: Content) -> some View {
         if #available(macOS 12.0, *) {
-            content.tint(observer.resolve(themedColor))
+            content.tint(themedColor.swiftUIColor(theme: theme, appearance: appearance))
         } else {
-            content.accentColor(observer.resolve(themedColor))
+            content.accentColor(themedColor.swiftUIColor(theme: theme, appearance: appearance))
         }
     }
 }
@@ -154,10 +169,11 @@ struct ThemedTintModifier: ViewModifier {
 struct ThemedBorderModifier: ViewModifier {
     let themedColor: ThemedColor
     let width: CGFloat
-    @ObservedObject var observer = ThemeObserver.shared
+    @Environment(\.phiTheme) private var theme
+    @Environment(\.phiAppearance) private var appearance
     
     func body(content: Content) -> some View {
-        content.border(observer.resolve(themedColor), width: width)
+        content.border(themedColor.swiftUIColor(theme: theme, appearance: appearance), width: width)
     }
 }
 
@@ -167,16 +183,26 @@ struct ThemedShadowModifier: ViewModifier {
     let radius: CGFloat
     let x: CGFloat
     let y: CGFloat
-    @ObservedObject var observer = ThemeObserver.shared
+    @Environment(\.phiTheme) private var theme
+    @Environment(\.phiAppearance) private var appearance
     
     func body(content: Content) -> some View {
-        content.shadow(color: observer.resolve(themedColor), radius: radius, x: x, y: y)
+        content.shadow(
+            color: themedColor.swiftUIColor(theme: theme, appearance: appearance),
+            radius: radius,
+            x: x,
+            y: y
+        )
     }
 }
 
 // MARK: - View Extensions
 
 public extension View {
+    func phiThemeObserver(_ observer: ThemeObserver) -> some View {
+        modifier(ThemeObserverEnvironmentBridge(observer: observer))
+    }
+    
     /// Applies a themed foreground color.
     func themedForeground(_ themedColor: ThemedColor) -> some View {
         modifier(ThemedForegroundModifier(themedColor: themedColor))
@@ -226,10 +252,11 @@ public extension Shape {
 struct ThemedShapeFill<S: Shape>: View {
     let shape: S
     let themedColor: ThemedColor
-    @ObservedObject var observer = ThemeObserver.shared
+    @Environment(\.phiTheme) private var theme
+    @Environment(\.phiAppearance) private var appearance
     
     var body: some View {
-        shape.fill(observer.resolve(themedColor))
+        shape.fill(themedColor.swiftUIColor(theme: theme, appearance: appearance))
     }
 }
 
@@ -238,10 +265,11 @@ struct ThemedShapeStroke<S: Shape>: View {
     let shape: S
     let themedColor: ThemedColor
     let lineWidth: CGFloat
-    @ObservedObject var observer = ThemeObserver.shared
+    @Environment(\.phiTheme) private var theme
+    @Environment(\.phiAppearance) private var appearance
     
     var body: some View {
-        shape.stroke(observer.resolve(themedColor), lineWidth: lineWidth)
+        shape.stroke(themedColor.swiftUIColor(theme: theme, appearance: appearance), lineWidth: lineWidth)
     }
 }
 
@@ -260,7 +288,8 @@ public extension Color {
 public struct ThemedText: View {
     let text: String
     let themedColor: ThemedColor
-    @ObservedObject var observer = ThemeObserver.shared
+    @Environment(\.phiTheme) private var theme
+    @Environment(\.phiAppearance) private var appearance
     
     public init(_ text: String, color: ThemedColor) {
         self.text = text
@@ -269,6 +298,6 @@ public struct ThemedText: View {
     
     public var body: some View {
         Text(text)
-            .foregroundColor(observer.resolve(themedColor))
+            .foregroundColor(themedColor.swiftUIColor(theme: theme, appearance: appearance))
     }
 }

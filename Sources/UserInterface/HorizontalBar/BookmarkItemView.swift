@@ -19,6 +19,7 @@ class BookmarkItemView: NSView {
     // MARK: - Properties
     let bookmark: Bookmark
     private var cancellables = Set<AnyCancellable>()
+    private var themeObservation: AnyObject?
     // Reports the clicked bookmark to the container view.
     var onClick: ((Bookmark) -> Void)?
 
@@ -62,6 +63,7 @@ class BookmarkItemView: NSView {
         super.init(frame: .zero)
         setupUI()
         bindData()
+        bindTheme()
     }
 
     required init?(coder: NSCoder) {
@@ -88,10 +90,16 @@ class BookmarkItemView: NSView {
                 .store(in: &cancellables)
         }
     }
+    
+    private func bindTheme() {
+        themeObservation = subscribe { [weak self] _, _ in
+            self?.updateAppearance()
+        }
+    }
 
     private func updateAppearance() {
         if isHovered {
-            layer?.backgroundColor = ThemedColor.hover.resolved().cgColor
+            layer?.backgroundColor = ThemedColor.hover.resolve(in: self).cgColor
         } else {
             layer?.backgroundColor = NSColor.clear.cgColor
         }

@@ -7,6 +7,8 @@ import AppKit
 import QuartzCore
 
 final class TabBackgroundLayer: CAShapeLayer {
+    weak var sourceView: NSView?
+
     enum State {
         case inactive
         case hovered
@@ -65,14 +67,18 @@ final class TabBackgroundLayer: CAShapeLayer {
 
         switch tabState {
             case .active:
-                fillColor = ThemedColor.contentOverlayBackground.resolved().cgColor
+                fillColor = ThemedColor.contentOverlayBackground.resolve(in: sourceView).cgColor
             case .hovered:
-                fillColor = ThemedColor.hover.resolved().cgColor
+                fillColor = ThemedColor.hover.resolve(in: sourceView).cgColor
             case .inactive:
                 fillColor = NSColor.clear.cgColor
         }
 
         CATransaction.commit()
+    }
+    
+    func refreshAppearance() {
+        updateAppearance()
     }
 
     private func createPath(for bounds: CGRect, state: State, isPinned: Bool) -> CGPath {

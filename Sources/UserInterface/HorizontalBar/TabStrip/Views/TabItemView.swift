@@ -51,6 +51,8 @@ final class TabItemView: NSView {
     private var currentTabId: String?
     private weak var sourceTab: Tab?
     private var cancellables = Set<AnyCancellable>()
+    private var themeObservation: AnyObject?
+    private var themeObserver = ThemeObserver.shared
 
     private let backgroundLayer = TabBackgroundLayer()
     
@@ -86,35 +88,33 @@ final class TabItemView: NSView {
     // MARK: - Subviews
 
     // Favicon & Title (Non-interactive parts)
-    private lazy var faviconHostingView: HitTransparentHostingView<UnifiedTabFaviconView> = {
-        let view = HitTransparentHostingView(rootView: UnifiedTabFaviconView(viewModel: viewModel))
+    private lazy var faviconHostingView: HitTransparentHostingView<AnyView> = {
+        let view = HitTransparentHostingView(rootView: makeFaviconRootView())
         view.layer?.backgroundColor = .clear
         return view
     }()
 
-    private lazy var titleHostingView: HitTransparentHostingView<UnifiedTabTitleView> = {
-        let view = HitTransparentHostingView(rootView: UnifiedTabTitleView(viewModel: viewModel))
+    private lazy var titleHostingView: HitTransparentHostingView<AnyView> = {
+        let view = HitTransparentHostingView(rootView: makeTitleRootView())
         view.layer?.backgroundColor = .clear
         return view
     }()
 
     // Interactive Components (Must be interactive)
-    private lazy var muteButtonHostingView: ZeroSafeAreaHostingView<UnifiedTabMuteButton> = {
-        let view = ZeroSafeAreaHostingView(rootView: UnifiedTabMuteButton(viewModel: viewModel))
+    private lazy var muteButtonHostingView: ZeroSafeAreaHostingView<AnyView> = {
+        let view = ZeroSafeAreaHostingView(rootView: makeMuteButtonRootView())
         view.layer?.backgroundColor = .clear
         return view
     }()
 
-    private lazy var recordingIconHostingView: ZeroSafeAreaHostingView<UnifiedTabRecordingIcon> = {
-        let view = ZeroSafeAreaHostingView(rootView: UnifiedTabRecordingIcon())
+    private lazy var recordingIconHostingView: ZeroSafeAreaHostingView<AnyView> = {
+        let view = ZeroSafeAreaHostingView(rootView: makeRecordingIconRootView())
         view.layer?.backgroundColor = .clear
         return view
     }()
 
-    private lazy var closeButtonHostingView: ZeroSafeAreaHostingView<UnifiedTabCloseButton> = {
-        let view = ZeroSafeAreaHostingView(rootView: UnifiedTabCloseButton { [weak self] in
-            self?.sourceTab?.close()
-        })
+    private lazy var closeButtonHostingView: ZeroSafeAreaHostingView<AnyView> = {
+        let view = ZeroSafeAreaHostingView(rootView: makeCloseButtonRootView())
         view.layer?.backgroundColor = .clear
         return view
     }()
@@ -136,6 +136,7 @@ final class TabItemView: NSView {
     init() {
         super.init(frame: .zero)
         setupUI()
+        bindTheme()
     }
 
     required init?(coder: NSCoder) {
@@ -153,8 +154,10 @@ final class TabItemView: NSView {
     // MARK: - Setup
 
     private func setupUI() {
+        updateThemeObserver()
         wantsLayer = true
         layer?.masksToBounds = false
+        backgroundLayer.sourceView = self
         layer?.insertSublayer(backgroundLayer, at: 0)
 
         addSubview(faviconHostingView)
@@ -162,6 +165,16 @@ final class TabItemView: NSView {
         addSubview(recordingIconHostingView)
         addSubview(titleHostingView)
         addSubview(closeButtonHostingView)
+    }
+    
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        updateThemeObserver()
+        faviconHostingView.rootView = makeFaviconRootView()
+        titleHostingView.rootView = makeTitleRootView()
+        muteButtonHostingView.rootView = makeMuteButtonRootView()
+        recordingIconHostingView.rootView = makeRecordingIconRootView()
+        closeButtonHostingView.rootView = makeCloseButtonRootView()
     }
 
     // MARK: - Constants
@@ -298,6 +311,43 @@ final class TabItemView: NSView {
             backgroundLayer.tabState = .inactive
             layer?.zPosition = 0
         }
+        
+        backgroundLayer.refreshAppearance()
+    }
+    
+    private func bindTheme() {
+        themeObservation = subscribe { [weak self] _, _ in
+            self?.backgroundLayer.refreshAppearance()
+        }
+    }
+    
+    private func updateThemeObserver() {
+        themeObserver = ThemeObserver(themeSource: themeStateProvider)
+    }
+    
+    private func makeFaviconRootView() -> AnyView {
+        AnyView(UnifiedTabFaviconView(viewModel: viewModel).phiThemeObserver(themeObserver))
+    }
+    
+    private func makeTitleRootView() -> AnyView {
+        AnyView(UnifiedTabTitleView(viewModel: viewModel).phiThemeObserver(themeObserver))
+    }
+    
+    private func makeMuteButtonRootView() -> AnyView {
+        AnyView(UnifiedTabMuteButton(viewModel: viewModel).phiThemeObserver(themeObserver))
+    }
+    
+    private func makeRecordingIconRootView() -> AnyView {
+        AnyView(UnifiedTabRecordingIcon().phiThemeObserver(themeObserver))
+    }
+    
+    private func makeCloseButtonRootView() -> AnyView {
+        AnyView(
+            UnifiedTabCloseButton { [weak self] in
+                self?.sourceTab?.close()
+            }
+            .phiThemeObserver(themeObserver)
+        )
     }
 
     // MARK: - Configuration

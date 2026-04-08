@@ -10,6 +10,7 @@ class ColoredVisualEffectView: NSVisualEffectView {
     // Dedicated backing view that carries the resolved color fill.
     private let colorView = NSView()
     private var themeSubscription: AnyCancellable?
+    private weak var subscribedProvider: ThemeStateProvider?
 
     /// Static background color synced onto the backing view.
     /// The alpha channel still participates in the visual-effect blend.
@@ -61,6 +62,12 @@ class ColoredVisualEffectView: NSVisualEffectView {
         if colorView.superview != self {
             addSubview(colorView, positioned: .below, relativeTo: nil)
         }
+        if themedBackgroundColor != nil {
+            themeSubscription?.cancel()
+            themeSubscription = nil
+            subscribedProvider = nil
+            subscribeToThemeChanges()
+        }
         updateColor()
     }
 
@@ -75,14 +82,14 @@ class ColoredVisualEffectView: NSVisualEffectView {
     }
     
     private func subscribeToThemeChanges() {
-        // Reuse the existing subscription when one is already active.
-        guard themeSubscription == nil else { return }
+        let provider = themeStateProvider
+        if let subscribedProvider, subscribedProvider === provider, themeSubscription != nil {
+            return
+        }
         
-        let manager = ThemeManager.shared
-        themeSubscription = Publishers.Merge(
-            manager.themePublisher.map { _ in () },
-            manager.appearancePublisher.map { _ in () }
-        )
+        subscribedProvider = provider
+        themeSubscription = provider.themeAppearancePublisher
+            .map { _ in () }
         .receive(on: DispatchQueue.main)
         .sink { [weak self] _ in
             self?.updateColor()
@@ -96,7 +103,7 @@ class ColoredVisualEffectView: NSVisualEffectView {
     private func makeBackgroundColor() -> NSColor {
         // Prefer the theme-driven color when present.
         if let themedColor = themedBackgroundColor {
-            let resolvedColor = themedColor.resolved()
+            let resolvedColor = themedColor.resolve(in: self)
             if let alpha = colorAlphaComponent {
                 return resolvedColor.withAlphaComponent(alpha)
             }

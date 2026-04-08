@@ -221,11 +221,34 @@ extension AppController {
         "violet": .violet
     ]
     
+    private var activeBrowserThemeContext: BrowserThemeContext? {
+        NSApp.keyWindow?.browserThemeContext
+    }
+    
+    private var activeBrowserState: BrowserState? {
+        (NSApp.keyWindow?.windowController as? MainBrowserWindowController)?.browserState
+    }
+    
+    private var activeBrowserIsIncognito: Bool {
+        activeBrowserState?.isIncognito == true
+    }
+    
+    private func resolvedDebugTheme(for themeId: String) -> Theme {
+        if themeId == Theme.default.id {
+            return .default
+        }
+        return Self.debugThemes[themeId] ?? .default
+    }
+    
     @objc func switchToTheme(_ sender: NSMenuItem) {
         guard let themeId = sender.representedObject as? String else { return }
+        let theme = resolvedDebugTheme(for: themeId)
         
-        if let theme = Self.debugThemes[themeId] {
-            ThemeManager.shared.registerTheme(theme)
+        ThemeManager.shared.registerTheme(theme)
+        
+        if let context = activeBrowserThemeContext {
+            context.setTheme(theme)
+            return
         }
         
         ThemeManager.shared.switchTheme(to: themeId)
@@ -234,15 +257,26 @@ extension AppController {
     
     @objc func switchAppearance(_ sender: NSMenuItem) {
         guard let appearance = sender.representedObject as? String else { return }
+        let choice: UserAppearanceChoice
         switch appearance {
         case "dark":
-            ThemeManager.shared.setUserAppearanceChoice(.dark)
+            choice = .dark
         case "light":
-            ThemeManager.shared.setUserAppearanceChoice(.light)
+            choice = .light
         default:
-            ThemeManager.shared.setUserAppearanceChoice(.system)
+            choice = .system
         }
-     
+        
+        if let context = activeBrowserThemeContext {
+            if activeBrowserIsIncognito {
+                context.setUserAppearanceChoice(.dark)
+            } else {
+                context.setUserAppearanceChoice(choice)
+            }
+            return
+        }
+        
+        ThemeManager.shared.setUserAppearanceChoice(choice)
     }
     
     @objc func sendTestNotificationCard(_ sender: Any?) {
@@ -605,13 +639,22 @@ extension AppController {
     func menuNeedsUpdate(_ menu: NSMenu) {
         guard menu.title == "Debug Theme" else { return }
         
-        let currentThemeId = ThemeManager.shared.currentTheme.id
-        let appearance = ThemeManager.shared.userAppearanceChoice
+        let context = NSApp.keyWindow?.browserThemeContext
+        let isIncognito = activeBrowserIsIncognito
+        let currentThemeId = context?.currentTheme.id ?? ThemeManager.shared.currentTheme.id
+        let appearance = context?.userAppearanceChoice ?? ThemeManager.shared.userAppearanceChoice
         for item in menu.items {
             guard let themeId = item.representedObject as? String else { continue }
             item.state = (themeId == currentThemeId) ? .on : .off
             if ["system", "light", "dark"].contains(themeId) {
                 item.state = (themeId == appearance.identifier) ? .on : .off
+                if isIncognito {
+                    item.isEnabled = (themeId == UserAppearanceChoice.dark.identifier)
+                } else {
+                    item.isEnabled = true
+                }
+            } else {
+                item.isEnabled = true
             }
         }
     }

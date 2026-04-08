@@ -69,7 +69,8 @@ class DownloadButtonViewModel: ObservableObject {
 
 struct DownloadButtonView: View {
     @ObservedObject var viewModel: DownloadButtonViewModel
-    @ObservedObject private var themeObserver = ThemeObserver.shared
+    @Environment(\.phiTheme) private var theme
+    @Environment(\.phiAppearance) private var appearance
     @State private var isHovered = false
     @State private var playbackMode: LottiePlaybackMode = .paused(at: .progress(0))
     
@@ -124,7 +125,7 @@ struct DownloadButtonView: View {
     
     /// Resolved tint color based on current theme and appearance
     private var resolvedTintColor: NSColor {
-        iconTintColor.resolved()
+        iconTintColor.resolver(theme, appearance)
     }
     
     /// The download icon with Lottie animation
@@ -140,7 +141,7 @@ struct DownloadButtonView: View {
                 animationView.setValueProvider(colorProvider, keypath: AnimationKeypath(keypath: "**.Fill 1.Color"))
                 animationView.setValueProvider(colorProvider, keypath: AnimationKeypath(keypath: "**.Stroke 1.Color"))
             }
-            .id(themeObserver.appearance)
+            .id("\(theme.id)-\(appearance.description)")
             .frame(width: 24, height: 24)
     }
     
@@ -155,9 +156,10 @@ struct DownloadButtonView: View {
 
 /// NSView wrapper for DownloadButtonView to use in SidebarBottomBar
 class DownloadButtonNSView: NSView {
-    private var hostingView: NSHostingView<DownloadButtonView>?
+    private var hostingView: NSHostingView<AnyView>?
     private let viewModel: DownloadButtonViewModel
     private var onTap: (() -> Void)?
+    private var themeObserver = ThemeObserver.shared
     
     // MARK: - Initialization
     
@@ -175,11 +177,12 @@ class DownloadButtonNSView: NSView {
     // MARK: - Setup
     
     private func setupHostingView() {
+        updateThemeObserver()
         let buttonView = DownloadButtonView(viewModel: viewModel, onTap: { [weak self] in
             self?.onTap?()
-        })
+        }).phiThemeObserver(themeObserver)
         
-        let hosting = NSHostingView(rootView: buttonView)
+        let hosting = NSHostingView(rootView: AnyView(buttonView))
         hosting.translatesAutoresizingMaskIntoConstraints = false
         addSubview(hosting)
         
@@ -191,6 +194,21 @@ class DownloadButtonNSView: NSView {
         ])
         
         self.hostingView = hosting
+    }
+    
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        updateThemeObserver()
+        hostingView?.rootView = AnyView(
+            DownloadButtonView(viewModel: viewModel, onTap: { [weak self] in
+                self?.onTap?()
+            })
+            .phiThemeObserver(themeObserver)
+        )
+    }
+    
+    private func updateThemeObserver() {
+        themeObserver = ThemeObserver(themeSource: themeStateProvider)
     }
     
     // MARK: - Public Methods

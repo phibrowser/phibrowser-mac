@@ -82,6 +82,7 @@ class MainBrowserWindowController: NSWindowController {
         //        window.delegate = self
         window.setFrameAutosaveName("mainBrowserWindow")
         let frameToRestore = window.frame
+        applyThemeAppearance(to: window)
         
         NotificationCenter.default.addObserver(self,
                                                selector: #selector(myWindowWillEnterFullScreen),
@@ -91,8 +92,32 @@ class MainBrowserWindowController: NSWindowController {
                                                selector: #selector(myWindowWillExitFullScreen),
                                                name: NSWindow.willExitFullScreenNotification,
                                                object: window)
+        browserState.themeContext.themeAppearancePublisher
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _, _ in
+                guard let self, let window = self.window else { return }
+                self.applyThemeAppearance(to: window)
+            }
+            .store(in: &cancellables)
+        NotificationCenter.default.publisher(for: .appearanceDidChange, object: ThemeManager.shared)
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in
+                guard let self, let window = self.window else { return }
+                guard self.browserState.themeContext.hasFixedWindowAppearance else { return }
+                self.applyThemeAppearance(to: window)
+            }
+            .store(in: &cancellables)
         setupContentView()
+        applyThemeAppearance(to: window)
         window.setFrame(frameToRestore, display: true)
+    }
+
+    private func applyThemeAppearance(to window: NSWindow) {
+        let appearance = browserState.themeContext.windowAppearance
+        window.appearance = appearance
+        window.contentView?.appearance = appearance
+        contentViewController?.view.appearance = appearance
+        mainSplitViewController.view.appearance = appearance
     }
     
     private func setupContentView() {

@@ -127,8 +127,9 @@ class BookmarkBar: NSView {
             }
             .store(in: &cancellables)
 
-        ThemeManager.shared.themeAppearancePublisher
-            .sink { [weak self] theme, appearance in
+        state.themeContext.themeAppearancePublisher
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _, _ in
                 self?.setBackgroundColor()
             }
             .store(in: &cancellables)

@@ -133,7 +133,8 @@ struct WebContentAddressBarView: View {
     @State private var isMenuShown = false
     @State private var menuAnchorView: NSView?
     @StateObject private var lottieState = LottieAnimationViewState()
-    @ObservedObject private var themeObserver = ThemeObserver.shared
+    @Environment(\.phiTheme) private var theme
+    @Environment(\.phiAppearance) private var appearance
 
     private let onAnchorResolved: ((NSView?) -> Void)?
 
@@ -214,7 +215,7 @@ struct WebContentAddressBarView: View {
     private var backgroundShape: some View {
         let baseColor = showBackgroundWhenInactive
             ? Color(.sidebarTabHovered)
-            : themeObserver.resolve(.contentOverlayBackground)
+            : ThemedColor.contentOverlayBackground.swiftUIColor(theme: theme, appearance: appearance)
         let hoverColor = Color(.sidebarTabHoveredColorEmphasized)
         let shouldHighlight = isHovering || isMenuShown
         return ZStack {
@@ -233,7 +234,7 @@ struct WebContentAddressBarView: View {
         GeometryReader { proxy in
             let totalWidth = proxy.size.width
             let clampedProgress = min(max(effectiveLoadingProgress, 0), 1)
-            let baseColor = themeObserver.resolve(.themeColor)
+            let baseColor = ThemedColor.themeColor.swiftUIColor(theme: theme, appearance: appearance)
             let backgroundLead: CGFloat = 100
             let progressWidth = totalWidth * clampedProgress
             let backgroundWidth = min(totalWidth, progressWidth + backgroundLead)
@@ -265,8 +266,8 @@ struct WebContentAddressBarView: View {
 
     private var displayTextColor: Color {
         viewModel.displayText.isEmpty
-            ? themeObserver.resolve(.textSecondary)
-            : themeObserver.resolve(.textPrimary)
+            ? ThemedColor.textSecondary.swiftUIColor(theme: theme, appearance: appearance)
+            : ThemedColor.textPrimary.swiftUIColor(theme: theme, appearance: appearance)
     }
 
     private var isNTP: Bool {
@@ -353,7 +354,8 @@ private struct AddressBarWidthPreferenceKey: PreferenceKey {
 private struct AddressBarProgressBarView: View {
     let progress: Double
     let isVisible: Bool
-    @ObservedObject private var themeObserver = ThemeObserver.shared
+    @Environment(\.phiTheme) private var theme
+    @Environment(\.phiAppearance) private var appearance
 
     var body: some View {
         GeometryReader { geometry in
@@ -361,8 +363,8 @@ private struct AddressBarProgressBarView: View {
             let height = geometry.size.height
             let clampedProgress = min(max(progress, 0), 1)
             let progressWidth = width * clampedProgress
-            let baseColor = themeObserver.resolve(.themeColor)
-            let backgroundColor = themeObserver.resolve(.contentOverlayBackground)
+            let baseColor = ThemedColor.themeColor.swiftUIColor(theme: theme, appearance: appearance)
+            let backgroundColor = ThemedColor.contentOverlayBackground.swiftUIColor(theme: theme, appearance: appearance)
             let fadeStart: Double = 0.3
             let fadeRange: Double = 0.2
             let gradientOpacity = max(0, min(1, (clampedProgress - fadeStart) / fadeRange))

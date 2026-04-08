@@ -67,6 +67,7 @@ class BrowserState {
 
     @Published var isDraggingTab = false
     let imagePreviewState: BrowserImagePreviewState
+    let themeContext: BrowserThemeContext
 
     /// Tracks in-flight tab dragging within this BrowserState (not a singleton).
     @MainActor private(set) lazy var tabDraggingSession: TabDraggingSession = { .init(state: self) }()
@@ -161,6 +162,9 @@ class BrowserState {
         self.profileId = profileId
         self.isIncognito = isIncognito
         self.imagePreviewState = BrowserImagePreviewState(loader: ImagePreviewLoader())
+        self.themeContext = BrowserThemeContext(
+            configuration: BrowserThemeConfigurationResolver.resolve(isIncognito: isIncognito)
+        )
         self.layoutMode = Self.buildLayoutMode()
         self.addPinnedTabObserver()
         self.tabDraggingSession.isDraggingPublisher

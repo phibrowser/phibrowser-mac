@@ -655,7 +655,6 @@
 		CCCD5E352EB1C36300E78FC1 /* DefaultExtensionManifestWriter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DefaultExtensionManifestWriter.swift; sourceTree = "<group>"; };
 		CCD3246C2EB1EFB600AA0B85 /* PinnedExtensionItem.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PinnedExtensionItem.swift; sourceTree = "<group>"; };
 		CCD87CC32EC2E7E000148E3F /* LocalStore+Bookmark.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "LocalStore+Bookmark.swift"; sourceTree = "<group>"; };
-		CCDEC82B2E83BE4400D91BE9 /* embedded.provisionprofile */ = {isa = PBXFileReference; lastKnownFileType = file; path = embedded.provisionprofile; sourceTree = "<group>"; };
 		CCDEC82E2E83D6B200D91BE9 /* AppController+Sparkle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AppController+Sparkle.swift"; sourceTree = "<group>"; };
 		CCEB64C82E98BFD40036C763 /* ColoredVisualEffectView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ColoredVisualEffectView.swift; sourceTree = "<group>"; };
 		CCEB64CA2E98DD520036C763 /* InsetTableRowView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InsetTableRowView.swift; sourceTree = "<group>"; };
@@ -674,6 +673,7 @@
 		D10000000000000000000032 /* ExtensionDialogViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExtensionDialogViewController.swift; sourceTree = "<group>"; };
 		D1B584F695BF7833FAA99558 /* AISettingHostingViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AISettingHostingViewController.swift; sourceTree = "<group>"; };
 		D8FCAEAE328C802016D87943 /* AISettingsConnectorViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AISettingsConnectorViewModel.swift; sourceTree = "<group>"; };
+		E10000000000000000000001 /* PhiBrowser-OpenSource.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = "PhiBrowser-OpenSource.entitlements"; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -1205,10 +1205,10 @@
 				375C66372EFB923C00885D78 /* Fonts */,
 				3765817A2EE9637F00D3E031 /* Localizable.xcstrings */,
 				37C1B2FF2EE672D500DD4496 /* LottieFiles */,
-				CCDEC82B2E83BE4400D91BE9 /* embedded.provisionprofile */,
 				CC8B35202E81618F00C8A380 /* PhiBrowser-Info.plist */,
 				B0C4694D2E3B10E2007F0C7A /* Assets.xcassets */,
 				B0C469522E3B10E2007F0C7A /* PhiBrowser.entitlements */,
+				E10000000000000000000001 /* PhiBrowser-OpenSource.entitlements */,
 				37DEADB82F5FCDBC00129429 /* PhiBrowser-Canary.entitlements */,
 				CC4BFB922E9798ED00CC6162 /* Auth0.plist */,
 				CC99097B2EBC9F090046BC81 /* login-bg.mp4 */,
@@ -2757,6 +2757,172 @@
 			};
 			name = Release;
 		};
+		E10000000000000000000002 /* OpenSource */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReferenceAnchor = 37686B012F1103F300DC3990 /* Configs */;
+			baseConfigurationReferenceRelativePath = OpenSource.xcconfig;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"DEBUG=1",
+					"$(inherited)",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MACOSX_DEPLOYMENT_TARGET = 15.2;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				SDKROOT = macosx;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+			};
+			name = OpenSource;
+		};
+		E10000000000000000000003 /* OpenSource */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = PhiIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CLANG_ENABLE_MODULES = YES;
+				CODE_SIGNING_ALLOWED = NO;
+				CODE_SIGNING_REQUIRED = NO;
+				CODE_SIGN_ENTITLEMENTS = "$(APP_ENTITLEMENTS)";
+				CODE_SIGN_IDENTITY = "-";
+				CODE_SIGN_STYLE = Manual;
+				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 4;
+				ENABLE_HARDENED_RUNTIME = NO;
+				FRAMEWORK_SEARCH_PATHS = (
+					"$(inherited)",
+					"$(PROJECT_DIR)/Frameworks",
+				);
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"$(inherited)",
+					"$(GPD_COMMON)",
+				);
+				GENERATE_INFOPLIST_FILE = YES;
+				GPD_COMMON = "NIGHTLY_BUILD=$(NIGHTLY_BUILD)";
+				INFOPLIST_FILE = "PhiBrowser-Info.plist";
+				INFOPLIST_KEY_CFBundleDisplayName = Phi;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.productivity";
+				INFOPLIST_KEY_NSBluetoothAlwaysUsageDescription = "Websites may use your bluetooth for features on their site.";
+				INFOPLIST_KEY_NSCameraUsageDescription = "Websites may use your camera for features on their site.";
+				INFOPLIST_KEY_NSDesktopFolderUsageDescription = "Access to \"Desktop\" is required to make files accessible from Arc.";
+				INFOPLIST_KEY_NSDownloadsFolderUsageDescription = "Access to \"Downloads\" is required for downloading files from the web and to make files accessible from Arc.";
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				INFOPLIST_KEY_NSLocationAlwaysAndWhenInUseUsageDescription = "Websites may use your location for features on their site.";
+				INFOPLIST_KEY_NSLocationAlwaysUsageDescription = "Websites may use your location for features on their site.";
+				INFOPLIST_KEY_NSLocationUsageDescription = "Websites may use your location for features on their site.";
+				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "Websites may use your location for features on their site.";
+				INFOPLIST_KEY_NSMainNibFile = "";
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Websites may use your microphone for features on their site.";
+				INFOPLIST_KEY_NSPrincipalClass = PhiApplication;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				LIBRARY_SEARCH_PATHS = (
+					"$(inherited)",
+					"$(PROJECT_DIR)/Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MARKETING_VERSION = debug;
+				NIGHTLY_BUILD = 1;
+				OTHER_CFLAGS = "-DDEBUG";
+				OTHER_SWIFT_FLAGS = "-DDEBUG -DNIGHTLY_BUILD";
+				PROVISIONING_PROFILE_SPECIFIER = "";
+				REGISTER_APP_GROUPS = NO;
+				SDKROOT = macosx;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_OBJC_BRIDGING_HEADER = "$(PROJECT_DIR)/Sources/Other/PhiBrowser-Bridging-Header.h";
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 5.0;
+			};
+			name = OpenSource;
+		};
+		E10000000000000000000004 /* OpenSource */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGNING_ALLOWED = NO;
+				CODE_SIGNING_REQUIRED = NO;
+				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "-";
+				CODE_SIGN_STYLE = Manual;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 15.2;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.phibrowser.PhiBrowserTests;
+				PRODUCT_MODULE_NAME = PhiBrowserTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 5.0;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Phi.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Phi";
+			};
+			name = OpenSource;
+		};
+		E10000000000000000000005 /* OpenSource */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGNING_ALLOWED = NO;
+				CODE_SIGNING_REQUIRED = NO;
+				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "-";
+				CODE_SIGN_STYLE = Manual;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = YES;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.phibrowser.PhiBrowserUITests;
+				PRODUCT_MODULE_NAME = PhiBrowserUITests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 5.0;
+				TEST_TARGET_NAME = PhiBrowser;
+			};
+			name = OpenSource;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -2765,6 +2931,7 @@
 			buildConfigurations = (
 				B0C469692E3B10E2007F0C7A /* Debug */,
 				8EFE14E22EF27FA900BD41C6 /* Debug-Canary */,
+				E10000000000000000000002 /* OpenSource */,
 				B0C4696A2E3B10E2007F0C7A /* Release */,
 				8EFE14E72EF27FBD00BD41C6 /* Release-Canary */,
 			);
@@ -2776,6 +2943,7 @@
 			buildConfigurations = (
 				B0C4696C2E3B10E2007F0C7A /* Debug */,
 				8EFE14E32EF27FA900BD41C6 /* Debug-Canary */,
+				E10000000000000000000003 /* OpenSource */,
 				B0C4696D2E3B10E2007F0C7A /* Release */,
 				8EFE14E82EF27FBD00BD41C6 /* Release-Canary */,
 			);
@@ -2787,6 +2955,7 @@
 			buildConfigurations = (
 				B0C4696F2E3B10E2007F0C7A /* Debug */,
 				8EFE14E42EF27FA900BD41C6 /* Debug-Canary */,
+				E10000000000000000000004 /* OpenSource */,
 				B0C469702E3B10E2007F0C7A /* Release */,
 				8EFE14E92EF27FBD00BD41C6 /* Release-Canary */,
 			);
@@ -2798,6 +2967,7 @@
 			buildConfigurations = (
 				B0C469722E3B10E2007F0C7A /* Debug */,
 				8EFE14E52EF27FA900BD41C6 /* Debug-Canary */,
+				E10000000000000000000005 /* OpenSource */,
 				B0C469732E3B10E2007F0C7A /* Release */,
 				8EFE14EA2EF27FBD00BD41C6 /* Release-Canary */,
 			);

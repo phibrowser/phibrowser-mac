@@ -18,8 +18,8 @@ This repository contains the macOS client source code. To build the app locally,
 2. Download the latest release of `Phi Framework` from the [phibrowser/phibrowser-framework](https://github.com/phibrowser/phibrowser-framework/releases) repository.
 3. Place `Phi Framework.framework` into the root `Frameworks/` directory of this repository.
 4. Open `Phi.xcodeproj` in Xcode and wait for Swift Package Manager to resolve dependencies.
-5. Select PhiBrowser-canary scheme.
-6. Build and run the app, then start your Phi Browser journey.
+5. Select the `PhiBrowser-OpenSource` scheme.
+6. Build the app in Xcode.
 
 ## Contributing
 

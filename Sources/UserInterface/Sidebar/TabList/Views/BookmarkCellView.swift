@@ -105,7 +105,7 @@ class BookmarkCellView: SidebarCellView {
         iconImageView.snp.makeConstraints { make in
             make.leading.equalToSuperview().offset(6)
             make.centerY.equalToSuperview()
-            make.size.equalTo(14)
+            make.size.equalTo(20)
         }
         
         titleLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)

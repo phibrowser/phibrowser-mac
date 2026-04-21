@@ -46,7 +46,7 @@ import SnapKit
 import SwiftUI
 
 enum WebContentConstant {
-    static let edgesSpacing = 8
+    static let edgesSpacing: CGFloat = 8.0
     static let headerHeight: CGFloat = 40  // WebContentHeader
     static let topBarHeight: CGFloat = TabStripMetrics.Strip.height  // horizontal tab strip
     static let bookmarkBarHeight: CGFloat = 32
@@ -60,6 +60,11 @@ class WebContentViewController: NSViewController {
     private var tabObserverCancellables = Set<AnyCancellable>()
     /// Cancellables for content switching based on URL changes.
     private var contentObserverCancellables = Set<AnyCancellable>()
+    /// Cancellable for content-fullscreen subscription on the associated tab.
+    private var contentFullscreenCancellable: AnyCancellable?
+    /// Saved superview reference while hostView is re-parented to window.contentView
+    /// for HTML5 content fullscreen. Nil when not in fullscreen.
+    private weak var savedHostViewSuperview: NSView?
     private var progressObserverCancellables = Set<AnyCancellable>()
     private var lastProgressLogBucket: Int?
     private var isSubscriptionsSetup = false
@@ -67,7 +72,13 @@ class WebContentViewController: NSViewController {
         case nativeNtp
         case webContent
     }
-    private var contentMode: ContentMode?
+    private var contentMode: ContentMode? {
+        didSet {
+            // Mirror to the tab so consumers outside this controller (e.g.
+            // CommandDispatcher) can tell whether a WebContents is visible.
+            associatedTab?.isShowingNativeNTP = (contentMode == .nativeNtp)
+        }
+    }
     
     /// Flag to prevent reentrant updates between splitViewItem and tab state
     private var isUpdatingAIChatState = false
@@ -85,6 +96,11 @@ class WebContentViewController: NSViewController {
     /// Frame-change processing is skipped during this window to avoid interfering
     /// with the animation (e.g. persisting intermediate widths).
     private var isAnimatingAIChatExpansion = false
+    
+    /// Chromium's `restoreFocus` / `focus` silently fails on pages that haven't
+    /// loaded yet (url=nil).  When set, the `$url` observer will re-trigger
+    /// `restoreFocusForCurrentTab` once the URL arrives and the page is ready.
+    private var pendingChromeRefocusOnUrlReady = false
     
     // MARK: - Left Content Area
     /// Wrapper that provides the adjustable inset for the left content area.
@@ -106,7 +122,15 @@ class WebContentViewController: NSViewController {
     private weak var attachedBookmarkBar: BookmarkBar?
     private var leftContainerInsetConstraint: Constraint?
     private var nativeNtpController: NewTabViewController?
-    
+
+    // MARK: - Agent Animation Overlay
+    private lazy var agentAnimationOverlay: EdgeFogOverlayView = {
+        let overlay = EdgeFogOverlayView()
+        overlay.alphaValue = 0
+        overlay.layer?.cornerRadius = 0
+        return overlay
+    }()
+
     // MARK: - AI Chat Split View
     /// Split-view container that owns the rounded background and spacing.
     private lazy var splitViewContainer = NSView()
@@ -137,12 +161,18 @@ class WebContentViewController: NSViewController {
         self.browserState = state
         self.associatedTab = tab
         super.init(nibName: nil, bundle: nil)
+        // Subscribe to the initial tab's content-fullscreen state so a brand-new
+        // controller (created when a tab is first opened) picks up future
+        // fullscreen toggles. updateAssociatedTab re-binds on tab switch.
+        rebindContentFullscreenObserver(for: tab)
     }
     
     /// Update the associated tab (called when switching tabs in legacy mode)
     func updateAssociatedTab(_ tab: Tab) {
         let tabChanged = tab !== associatedTab
-        
+        if tabChanged {
+            pendingChromeRefocusOnUrlReady = false
+        }
         self.associatedTab = tab
         headerView.currentTab = tab
         
@@ -171,8 +201,10 @@ class WebContentViewController: NSViewController {
         
         bindContentObservers(for: tab)
         bindProgressObservers(for: tab)
+        rebindContentFullscreenObserver(for: tab)
         updateContentForTab(tab)
-        
+        updateAgentAnimationOverlay()
+
         // Restore focus whenever the associated tab changes.
         restoreFocusForCurrentTab()
     }
@@ -218,6 +250,13 @@ class WebContentViewController: NSViewController {
         super.viewDidAppear()
         // Restore focus after the view enters the hierarchy.
         restoreFocusForCurrentTab()
+        // If this controller became associated with a fullscreen tab before
+        // its view was in a window (so applyContentFullscreenState bailed
+        // out early), catch up now that hostView.window is available.
+        if associatedTab?.isInContentFullscreen == true,
+           savedHostViewSuperview == nil {
+            applyContentFullscreenState(true)
+        }
     }
     
     // MARK: - Focus Management
@@ -226,6 +265,11 @@ class WebContentViewController: NSViewController {
     private func restoreFocusForCurrentTab() {
         guard let tab = associatedTab else {
             AppLogDebug("🔍 [Focus] restoreFocusForCurrentTab - no associatedTab")
+            return
+        }
+
+        if agentAnimationOverlay.superview != nil {
+            view.window?.makeFirstResponder(agentAnimationOverlay)
             return
         }
         
@@ -270,17 +314,30 @@ class WebContentViewController: NSViewController {
             AppLogDebug("🔍 [Focus] focusWebContent - no tab or webView")
             return
         }
-        AppLogDebug("🔍 [Focus] focusWebContent - url: \(tab.url ?? "nil"), isNTP: \(tab.isNTP), calling focus")
-        DispatchQueue.main.async { [weak self] in
-            self?.view.window?.makeFirstResponder(webView)
-            if tab.webContentWrapper?.responds(to: #selector(WebContentWrapper.focus)) ?? false {
-                // Native/new-tab pages use `focus`; regular pages use `restoreFocus`.
-                if tab.isNTP {
-                    tab.webContentWrapper?.focus()
-                } else {
-                    tab.webContentWrapper?.restoreFocus()
-                }
+
+        let mfrResult = view.window?.makeFirstResponder(webView) ?? false
+
+        guard let wrapper = tab.webContentWrapper,
+              wrapper.responds(to: #selector(WebContentWrapper.focus)) else {
+            return
+        }
+
+        if !mfrResult {
+            return
+        }
+
+        if tab.url == nil {
+            pendingChromeRefocusOnUrlReady = true
+            AppLogDebug("🔍 [Focus] Chromium focus deferred — page not loaded yet (tabGuid: \(tab.guid))")
+            return
+        }
+        pendingChromeRefocusOnUrlReady = false
+        if tab.isNTP {
+            if !wrapper.isFocused {
+                wrapper.focus()
             }
+        } else {
+            wrapper.restoreFocus()
         }
     }
 
@@ -306,6 +363,16 @@ class WebContentViewController: NSViewController {
                 self?.updateTheme()
             }
             .store(in: &cancellables)
+
+        AgentAnimationManager.shared.stateChanged
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] tabId in
+                guard let self, self.associatedTab?.guid == tabId else { return }
+                self.updateAgentAnimationOverlay()
+            }
+            .store(in: &cancellables)
+        updateAgentAnimationOverlay()
+
         // Observe AI Chat collapse state once the split item exists.
         setupAIChatObserver()
     }
@@ -540,9 +607,7 @@ class WebContentViewController: NSViewController {
         splitViewContainer.layer?.cornerRadius =  LiquidGlassCompatible.webContentContainerCornerRadius
         splitViewContainer.layer?.masksToBounds = true
         splitViewContainer.phiLayer?.setBackgroundColor(ThemedColor.contentOverlayBackground)
-//        splitViewContainer.layer?.backgroundColor = NSColor.cyan.cgColor
         splitViewContainer.snp.makeConstraints { make in
-//            make.edges.equalToSuperview().inset(WebContentConstant.edgesSpacing)
             make.leading.trailing.bottom.equalToSuperview().inset(WebContentConstant.edgesSpacing)
             make.top.equalToSuperview()
         }
@@ -601,9 +666,15 @@ class WebContentViewController: NSViewController {
         tab.$url
             .removeDuplicates()
             .receive(on: DispatchQueue.main)
-            .sink { [weak self, weak tab] _ in
+            .sink { [weak self, weak tab] url in
                 self?.updateContentForTab(tab)
                 self?.persistAIChatSidebarStateIfNeeded(for: tab)
+                if self?.pendingChromeRefocusOnUrlReady == true,
+                   let url,
+                   !url.isEmpty {
+                    AppLogDebug("🔍 [Focus] URL arrived — retrying Chromium focus (tabGuid: \(tab?.guid ?? -1))")
+                    self?.restoreFocusForCurrentTab()
+                }
             }
             .store(in: &contentObserverCancellables)
     }
@@ -708,20 +779,312 @@ class WebContentViewController: NSViewController {
     }
 
     private func showWebContent(_ contentView: NSView, tabId: Int) {
-        if hostView.subviews.count == 1, hostView.subviews.first === contentView {
+        // Check if content view is already the primary view in hostView
+        if hostView.subviews.contains(contentView),
+           contentView.superview === hostView {
             return
         }
         addWebContentView(contentView, tabId: tabId)
         contentMode = .webContent
     }
-    
+
     private func addWebContentView(_ contentView: NSView, tabId: Int) {
         hostView.subviews.forEach { $0.removeFromSuperview() }
+        contentView.translatesAutoresizingMaskIntoConstraints = true
+        contentView.autoresizingMask = []
+        contentView.frame = hostView.bounds
         hostView.addSubview(contentView)
-        contentView.snp.makeConstraints { make in
-            make.edges.equalToSuperview()
+
+        if let tab = associatedTab, tab.devToolsAttached {
+            // Tab has DevTools: restore DevTools view hierarchy and manual frame layout.
+            restoreDevToolsState()
+        } else {
+            // Safety net: clear any stuck-paused state left behind by a prior
+            // DevTools session that never got a clean detach (renderer crash,
+            // tab cleanup racing the Chromium detach callback, etc.). Without
+            // this, hostView.layout()'s frame-sync stays disabled and plain
+            // web content no longer auto-resizes with the window.
+            if hostView.isFrameSyncPaused {
+                AppLogInfo("[DevTools] clearing stale isFrameSyncPaused on plain webContent install (tabId=\(tabId))")
+                hostView.isFrameSyncPaused = false
+            }
         }
-        // Focus restoration is handled centrally in `viewDidAppear`.
+    }
+
+    // MARK: - Content Fullscreen (HTML5 requestFullscreen)
+
+    deinit {
+        // If this controller is being torn down while still in content
+        // fullscreen, hostView sits under window.contentView — NOT inside
+        // self.view's subtree — so normal view-hierarchy teardown leaves
+        // it orphaned on top of the window. This happens specifically on
+        // close: Chromium's async DidToggleFullscreenModeForTab(false) can
+        // arrive after TabsProxy::OnTabWillBeRemoved has already erased the
+        // observer, so the terminal exit event never reaches Mac. Detach
+        // here as the last-resort guarantee.
+        if savedHostViewSuperview != nil {
+            hostView.removeFromSuperview()
+        }
+    }
+
+    /// Rebind the content-fullscreen observer to the given tab. Called from
+    /// `updateAssociatedTab`. If the controller is still in fullscreen from a
+    /// previous tab (shouldn't happen under normal flow, but guard anyway),
+    /// restore hostView first so re-binding starts from a clean state.
+    private func rebindContentFullscreenObserver(for tab: Tab?) {
+        contentFullscreenCancellable = nil
+        // Force-exit any lingering fullscreen state before switching tabs.
+        // Under normal flow Chromium fires ExitFullscreen on tab deactivate,
+        // which already flips isInContentFullscreen to false upstream, but the
+        // visible guarantee must be that hostView is back in its original
+        // superview before we attach to a different tab's state.
+        applyContentFullscreenState(false)
+
+        guard let tab else { return }
+        contentFullscreenCancellable = tab.$isInContentFullscreen
+            .removeDuplicates()
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] isFullscreen in
+                self?.applyContentFullscreenState(isFullscreen)
+            }
+    }
+
+    /// Enter or exit HTML5 content fullscreen by re-parenting `hostView`
+    /// directly under `window.contentView`. This covers every other Phi
+    /// chrome element (tab strip, sidebar, header, AI chat, traffic lights)
+    /// in one move, and needs no per-element visibility toggling.
+    private func applyContentFullscreenState(_ isFullscreen: Bool) {
+        if isFullscreen {
+            guard savedHostViewSuperview == nil else { return }
+            guard let window = hostView.window,
+                  let contentView = window.contentView else {
+                // The controller's view is not currently in a window (cached
+                // controller for an inactive tab). Ignore — viewDidAppear
+                // catches up once the view reaches a window.
+                return
+            }
+            savedHostViewSuperview = hostView.superview
+            // Deactivate progress bar constraints before removing hostView —
+            // they reference hostView and would otherwise be torn down by
+            // AutoLayout with an `unsatisfiable` log.
+            webContentProgressBar.snp.removeConstraints()
+            hostView.removeFromSuperview()
+            contentView.addSubview(hostView, positioned: .above, relativeTo: nil)
+            hostView.snp.remakeConstraints { make in
+                make.edges.equalToSuperview()
+            }
+            // Re-parent transiently detaches webContentView from the window,
+            // which causes NSWindow to clear first responder. Without this,
+            // keyboard events (including ESC to exit fullscreen) never reach
+            // Chromium and the "Press Esc to exit full screen" toast is
+            // inert until the user clicks into the video area.
+            restoreWebContentFirstResponder()
+        } else {
+            guard let original = savedHostViewSuperview else { return }
+            hostView.removeFromSuperview()
+            original.addSubview(hostView)
+            hostView.snp.remakeConstraints { make in
+                make.leading.trailing.bottom.equalToSuperview()
+                make.top.equalTo(bookmarkBarSlotView.snp.bottom)
+            }
+            if webContentProgressBar.superview === original {
+                original.addSubview(webContentProgressBar,
+                                    positioned: .above,
+                                    relativeTo: hostView)
+                webContentProgressBar.snp.remakeConstraints { make in
+                    make.leading.trailing.equalTo(hostView)
+                    make.top.equalTo(hostView)
+                    make.height.equalTo(2)
+                }
+            }
+            savedHostViewSuperview = nil
+            // Re-clear AppKit's kCAFilterPlusL after moving hostView back into
+            // the ColoredVisualEffectView hierarchy (matches DevTools paths).
+            hostView.scheduleVibrancyClear()
+            // Same first-responder recovery as on entry (removeFromSuperview
+            // resets responder chain in both directions).
+            restoreWebContentFirstResponder()
+        }
+    }
+
+    private func restoreWebContentFirstResponder() {
+        guard let tab = associatedTab,
+              let webView = tab.webContentView,
+              let window = hostView.window else { return }
+        window.makeFirstResponder(webView)
+        // makeFirstResponder puts Cocoa's responder chain at webView, but
+        // Chromium's internal focus tracker also needs an explicit nudge to
+        // route keyboard events to the renderer — without it, ESC on the
+        // "Press Esc to exit full screen" toast doesn't reach the fullscreen
+        // handler until the user clicks inside the video area. Use
+        // restoreFocus() (not focus()) so the page's previously focused
+        // element survives the fullscreen detach/reattach: on macOS,
+        // WebContentsViewMac::Focus() clears the stored focus target.
+        guard let wrapper = tab.webContentWrapper,
+              wrapper.responds(to: #selector(WebContentWrapper.restoreFocus)) else {
+            return
+        }
+        wrapper.restoreFocus()
+    }
+
+    // MARK: - DevTools Embedding
+
+    /// Attach a docked DevTools view to this tab's hostView.
+    /// DevTools goes full-size below webContentView; webContentView stays full-size
+    /// initially (covering DevTools) until the first bounds callback shrinks it.
+    func attachDevTools(view devToolsView: NSView) {
+        guard let tab = associatedTab else { return }
+        guard let webContentView = tab.webContentView else { return }
+
+        // Idempotent: same view already attached in hostView — no-op.
+        // Right-click "Inspect" on an already-open DevTools re-enters Show()'s
+        // docked path and sends another OnDevToolsDidAttach; skip it.
+        if tab.devToolsAttached, tab.devToolsView === devToolsView,
+           devToolsView.superview === hostView {
+            return
+        }
+
+        // Defensive: if webContentView is not in hostView (e.g. native NTP overlay),
+        // transition to web content mode first so relativeTo: is valid.
+        if webContentView.superview !== hostView {
+            hostView.subviews.forEach { $0.removeFromSuperview() }
+            hostView.addSubview(webContentView)
+            contentMode = .webContent
+        }
+
+        // Force layer-backing before addSubview so the layer exists when Cocoa
+        // establishes the view's position in a layer-hosting hierarchy.
+        devToolsView.wantsLayer = true
+
+        // Pause hostView.layout()'s frame-sync: it forces any
+        // translatesAutoresizingMaskIntoConstraints=true subview to hostView.bounds.
+        // With DevTools attached we need webContentView at the partial bounds
+        // DevTools JS computes — otherwise the next layout pass overrides our
+        // explicit frame and webContentView covers the whole hostView (hiding
+        // DevTools and routing all events to the webpage).
+        hostView.isFrameSyncPaused = true
+
+        // Defensive: a stale devToolsView from a prior attach may still be in
+        // hostView if Chromium re-sends attach with a different NSView instance
+        // without a detach in between (e.g. renderer restart). Remove it so we
+        // don't leak orphaned subviews.
+        if tab.devToolsAttached, let staleView = tab.devToolsView, staleView !== devToolsView {
+            AppLogWarn("[DevTools] attach received with new view while previous view still attached; removing stale view")
+            staleView.removeFromSuperview()
+        }
+
+        // Insert DevTools below webContentView (Z-order: DevTools behind content)
+        hostView.addSubview(devToolsView, positioned: .below, relativeTo: webContentView)
+        devToolsView.frame = hostView.bounds
+        devToolsView.autoresizingMask = [.width, .height]
+
+        // Switch webContentView from auto-layout to manual frame management.
+        // Clear autoresizingMask so the mask-to-constraints translation doesn't
+        // generate fill-superview constraints that fight our explicit frame.
+        webContentView.snp.removeConstraints()
+        webContentView.autoresizingMask = []
+        webContentView.translatesAutoresizingMaskIntoConstraints = true
+        webContentView.frame = hostView.bounds
+
+        // Update tab state (overwrite any stale values)
+        tab.devToolsAttached = true
+        tab.devToolsView = devToolsView
+        tab.inspectedPageBounds = nil
+        tab.hideInspectedContents = false
+
+        hostView.scheduleVibrancyClear()
+    }
+
+    /// Detach DevTools from this tab's hostView and restore webContentView to full size.
+    func detachDevTools() {
+        guard let tab = associatedTab else { return }
+
+        // Remove DevTools view
+        tab.devToolsView?.removeFromSuperview()
+
+        // Restore webContentView to auto-layout (full-size)
+        if let webContentView = tab.webContentView, webContentView.superview === hostView {
+            webContentView.translatesAutoresizingMaskIntoConstraints = false
+            webContentView.snp.remakeConstraints { make in
+                make.edges.equalToSuperview()
+            }
+            webContentView.isHidden = false
+        }
+
+        // Clear tab state
+        tab.devToolsAttached = false
+        tab.devToolsView = nil
+        tab.inspectedPageBounds = nil
+        tab.hideInspectedContents = false
+
+        // Resume frame-sync last, after webContentView is back on SnapKit fill
+        // constraints. Symmetric with attachDevTools (which pauses before any
+        // mutation) so no layout pass can fire against a half-restored view.
+        hostView.isFrameSyncPaused = false
+
+        hostView.scheduleVibrancyClear()
+    }
+
+    /// Update the inspected page bounds (called continuously as DevTools JS resizes).
+    /// Bounds are in web coordinate system (origin top-left, relative to hostView).
+    func updateInspectedPageBounds(_ bounds: CGRect, hide: Bool) {
+        guard let tab = associatedTab,
+              let webContentView = tab.webContentView,
+              webContentView.superview === hostView else { return }
+
+        // Cache for tab switch restore
+        tab.inspectedPageBounds = bounds
+        tab.hideInspectedContents = hide
+
+        if hide {
+            webContentView.isHidden = true
+            return
+        }
+
+        webContentView.isHidden = false
+
+        // Convert from web coordinates (origin top-left) to NSView (origin bottom-left).
+        let hostHeight = hostView.bounds.height
+        let flippedY = hostHeight - bounds.origin.y - bounds.size.height
+        let nsRect = NSRect(x: bounds.origin.x, y: flippedY,
+                            width: bounds.size.width, height: bounds.size.height)
+        webContentView.frame = nsRect
+    }
+
+    /// Restore DevTools state when switching back to a tab that has DevTools attached.
+    /// Called by WebContentContainerViewController during tab switch.
+    func restoreDevToolsState() {
+        guard let tab = associatedTab, tab.devToolsAttached,
+              let devToolsView = tab.devToolsView else { return }
+
+        // Pause frame-sync (see attachDevTools) so webContentView's partial
+        // frame isn't overridden by hostView.layout() on the next pass.
+        hostView.isFrameSyncPaused = true
+
+        // Re-add DevTools view if not already in hostView
+        if devToolsView.superview !== hostView {
+            let webContentView = tab.webContentView
+            devToolsView.wantsLayer = true
+            hostView.addSubview(devToolsView, positioned: .below, relativeTo: webContentView)
+            devToolsView.frame = hostView.bounds
+            devToolsView.autoresizingMask = [.width, .height]
+        }
+
+        // Restore webContentView to manual frame mode
+        if let webContentView = tab.webContentView, webContentView.superview === hostView {
+            webContentView.snp.removeConstraints()
+            webContentView.autoresizingMask = []  // see attachDevTools for why
+            webContentView.translatesAutoresizingMaskIntoConstraints = true
+
+            // Restore cached bounds, or full-size if no cached bounds yet
+            if let cachedBounds = tab.inspectedPageBounds {
+                updateInspectedPageBounds(cachedBounds, hide: tab.hideInspectedContents)
+            } else {
+                webContentView.frame = hostView.bounds
+            }
+        }
+
+        hostView.scheduleVibrancyClear()
     }
 
     // MARK: - Bookmark Bar Hosting
@@ -893,15 +1256,27 @@ class WebContentViewController: NSViewController {
             AppLogDebug("[AIChatSidebarCache] temporarily set minimumThickness=\(clampedTarget) for expand animation (original=\(savedMinThickness ?? 0))")
         }
 
+        hostView.isFrameSyncPaused = true
+
         NSAnimationContext.runAnimationGroup({ _ in
             splitViewItem.animator().isCollapsed = collapsed
         }, completionHandler: { [weak self, weak splitViewItem] in
             guard let self else { return }
-            // Restore original minimumThickness before any width calculations.
             if let savedMinThickness, let splitViewItem {
                 splitViewItem.minimumThickness = savedMinThickness
                 AppLogDebug("[AIChatSidebarCache] restored minimumThickness=\(savedMinThickness)")
             }
+
+            // If DevTools is docked, it owns hostView.isFrameSyncPaused (keeps it
+            // true for the duration of the attachment) and manages webContentView's
+            // partial frame explicitly via DevTools JS bounds. Resetting the flag
+            // or force-syncing here would collapse webContentView to hostView.bounds,
+            // hiding DevTools and routing events to the webpage.
+            if self.associatedTab?.devToolsAttached != true {
+                self.hostView.isFrameSyncPaused = false
+                self.hostView.forceSyncAllSubviewFrames()
+            }
+
             self.isAnimatingAIChatExpansion = false
             if expanding {
                 self.pendingAIChatWidthRestore = nil
@@ -993,9 +1368,113 @@ class WebContentViewController: NSViewController {
             }
             .store(in: &cancellables)
     }
+
+    // MARK: - Agent Animation Overlay
+
+    private func updateAgentAnimationOverlay() {
+        guard let tab = associatedTab else {
+            hideAgentAnimationOverlay()
+            return
+        }
+        if AgentAnimationManager.shared.isActive(for: tab.guid) {
+            showAgentAnimationOverlay()
+        } else {
+            hideAgentAnimationOverlay()
+        }
+    }
+
+    private func showAgentAnimationOverlay() {
+        if agentAnimationOverlay.superview == nil {
+            agentAnimationOverlay.alphaValue = 0
+            agentAnimationOverlay.isAnimationPaused = false
+            leftContainerView.addSubview(agentAnimationOverlay, positioned: .above, relativeTo: nil)
+            agentAnimationOverlay.snp.makeConstraints { make in
+                make.edges.equalToSuperview()
+            }
+            NSAnimationContext.runAnimationGroup { context in
+                context.duration = 0.3
+                self.agentAnimationOverlay.animator().alphaValue = 1
+            }
+        }
+        if associatedTab === browserState?.focusingTab {
+            view.window?.makeFirstResponder(agentAnimationOverlay)
+        }
+    }
+
+    private func hideAgentAnimationOverlay() {
+        guard agentAnimationOverlay.superview != nil else { return }
+        NSAnimationContext.runAnimationGroup({ context in
+            context.duration = 0.3
+            self.agentAnimationOverlay.animator().alphaValue = 0
+        }, completionHandler: { [weak self] in
+            guard let self else { return }
+            self.agentAnimationOverlay.isAnimationPaused = true
+            self.agentAnimationOverlay.removeFromSuperview()
+            self.restoreFocusForCurrentTab()
+        })
+    }
 }
 
-class WebContentHostView: NSView {}
+/// Host view for Chromium-rendered content (webContentView, devToolsView).
+///
+/// **Vibrancy suppression**: Our ancestor `ColoredVisualEffectView`
+/// (`NSVisualEffectView`) causes AppKit to auto-apply `kCAFilterPlusL` on
+/// layer-backed descendants at window-compositor level — `isOpaque`, opaque
+/// `backgroundColor`, and `layout()`-only clearing are all insufficient.
+/// Apple provides no opt-out API; their guidance is "don't place non-vibrant
+/// content inside NSVisualEffectView."  Short of a full view-hierarchy
+/// restructure, KVO on each subview layer's `compositingFilter` is the only
+/// mechanism that catches every re-application (layout, subview mutation,
+/// CA transaction commit from Chromium frame push).
+/// Host view for Chromium-rendered content (webContentView, devToolsView).
+///
+/// **Vibrancy suppression**: Our ancestor `ColoredVisualEffectView`
+/// (`NSVisualEffectView`) causes AppKit to auto-apply `kCAFilterPlusL` on
+/// layer-backed descendants.  The filter is written during the CA
+/// transaction commit that follows subview mutations, *after* our
+/// synchronous `layout()` has already run.  Callers must therefore ask
+/// hostView to re-clear on the next run loop iteration (post-commit) via
+/// `scheduleVibrancyClear()`.
+class WebContentHostView: NSView {
+    var isFrameSyncPaused = false
+
+    /// Clears `compositingFilter` on all subview backing layers both
+    /// synchronously and on the next run loop pass (after the current CA
+    /// transaction commits, which is when AppKit re-applies `kCAFilterPlusL`).
+    /// Call after any subview mutation (attach/detach DevTools, restore on
+    /// tab switch).
+    func scheduleVibrancyClear() {
+        clearCompositingFilters()
+        DispatchQueue.main.async { [weak self] in
+            self?.clearCompositingFilters()
+        }
+    }
+
+    private func clearCompositingFilters() {
+        for subview in subviews {
+            subview.layer?.compositingFilter = nil
+        }
+    }
+
+    override func layout() {
+        super.layout()
+        clearCompositingFilters()
+        guard !isFrameSyncPaused else { return }
+        let target = bounds
+        for subview in subviews where subview.translatesAutoresizingMaskIntoConstraints {
+            if subview.frame != target {
+                subview.frame = target
+            }
+        }
+    }
+
+    func forceSyncAllSubviewFrames() {
+        let target = bounds
+        for subview in subviews where subview.translatesAutoresizingMaskIntoConstraints {
+            subview.frame = target
+        }
+    }
+}
 
 class TitlebarAwareView: NSView, TitlebarAwareHitTestable {
     func shouldConsumeHitTest(at point: NSPoint) -> Bool {

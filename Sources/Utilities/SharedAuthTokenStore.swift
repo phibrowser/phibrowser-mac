@@ -12,9 +12,12 @@ extension Notification.Name {
 
 struct SharedAuthToken: Codable {
     let accessToken: String
+    let refreshToken: String?
+    let idToken: String?
     let auth0Sub: String?
     let expiresAt: Date?
     let updatedAt: Date
+    let renewedBy: String?
 }
 
 final class SharedAuthTokenStore {
@@ -31,15 +34,25 @@ final class SharedAuthTokenStore {
 
     private init() {}
 
-    func upsert(accessToken: String, auth0Sub: String?, expiresAt: Date?) -> Bool {
+    func upsert(
+        accessToken: String,
+        refreshToken: String? = nil,
+        idToken: String? = nil,
+        auth0Sub: String?,
+        expiresAt: Date?,
+        renewedBy: String? = nil
+    ) -> Bool {
         guard !accessToken.isEmpty else { return false }
         guard let accessGroup = resolvedAccessGroup() else { return false }
 
         let payload = SharedAuthToken(
             accessToken: accessToken,
+            refreshToken: refreshToken,
+            idToken: idToken,
             auth0Sub: auth0Sub,
             expiresAt: expiresAt,
-            updatedAt: Date()
+            updatedAt: Date(),
+            renewedBy: renewedBy
         )
         guard let data = try? JSONEncoder().encode(payload) else { return false }
 

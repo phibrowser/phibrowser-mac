@@ -74,6 +74,31 @@ typedef NS_ENUM(NSUInteger, DownloadEventType) {
 - (void)tabIndicesUpdated:(NSDictionary<NSNumber *, NSNumber *> *)tabIndices windowId:(int64_t)windowId;
 
 // ==========================================================================
+// DevTools embedding (Chromium → Mac notification)
+// ==========================================================================
+
+/// Called when DevTools has attached (docked) to a tab.
+/// Mac should add the devToolsNativeView to the tab's hostView (full-size, Z-below content).
+/// @param tabId The inspected tab's Chromium tab ID
+/// @param windowId The window ID containing the tab
+/// @param devToolsNativeView The DevTools frontend NSView to embed
+- (void)devToolsDidAttachToTab:(int64_t)tabId
+                      windowId:(int64_t)windowId
+                  devToolsView:(NSView*)devToolsNativeView;
+
+/// Called when DevTools has detached from a tab (closed or switched to undocked).
+/// Mac should remove the devToolsView and restore webContentView to full size.
+- (void)devToolsDidDetachFromTab:(int64_t)tabId
+                        windowId:(int64_t)windowId;
+
+/// Called when the inspected page bounds change (DevTools JS resizes the content area).
+/// Mac should update webContentView.frame accordingly.
+- (void)updateInspectedPageBounds:(CGRect)bounds
+                         forTabId:(int64_t)tabId
+                         windowId:(int64_t)windowId
+             hideInspectedContents:(BOOL)hide;
+
+// ==========================================================================
 // Flicker fix: Tab visibility synchronization (Chromium → Mac notification)
 // ==========================================================================
 
@@ -89,6 +114,11 @@ typedef NS_ENUM(NSUInteger, DownloadEventType) {
 /// @param tabId The Chromium tab ID that is ready to display
 /// @param windowId The window ID containing the tab
 - (void)tabReadyToDisplay:(int64_t)tabId windowId:(int64_t)windowId;
+
+// Content fullscreen
+- (void)tabContentFullscreenChanged:(int64_t)tabId
+                           windowId:(int64_t)windowId
+                       isFullscreen:(BOOL)isFullscreen;
 
 // bookmark service
 - (void)bookmarksLoaded:(int64_t)windowId;
@@ -145,6 +175,14 @@ typedef NS_ENUM(NSUInteger, DownloadEventType) {
 - (void)showFeedbackDialog;
 
 @optional
+// Optional metadata-rich variants for richer native tab orchestration.
+- (void)tabWillBeRemove:(int64_t)tabId
+               windowId:(int64_t)windowId
+                 context:(NSDictionary<NSString *, id> *)context;
+// Relationship snapshot version increases monotonically per window.
+- (void)tabRelationshipSnapshotChanged:(NSDictionary *)snapshot
+                             windowId:(int64_t)windowId
+                               version:(int64_t)version;
 // Returns a custom shortcut override, or nil to use Chromium defaults.
 - (nullable NSDictionary<NSString*, id>*)keyEquivalentOverrideForCommand:
     (int)commandId;
@@ -170,6 +208,8 @@ typedef NS_ENUM(NSUInteger, DownloadEventType) {
                    windowId:(int64_t)windowId
                  customGuid:(NSString* _Nullable)customGuid
            focusAfterCreate:(BOOL)focus;
+- (void)createQuickLookupTabWithWindowId:(int64_t)windowId
+                               customGuid:(NSString* _Nullable)customGuid;
 - (void)createNewTabWithUrl:(NSString*)urlString
                     atIndex:(NSInteger)index
                    windowId:(NSInteger)windowId
@@ -199,6 +239,7 @@ typedef NS_ENUM(NSUInteger, DownloadEventType) {
 
 - (void)getAllExtensionsWithCompletion:(void (^)(NSArray<NSDictionary *> *))completion windowId:(int64_t)windowId;
 - (void)triggerExtensionWithId:(NSString *)extensionId pointInScreen:(NSPoint)pointInScreen windowId:(int64_t)windowId;
+- (void)triggerExtensionContextMenuWithId:(NSString *)extensionId pointInScreen:(NSPoint)pointInScreen windowId:(int64_t)windowId;
 - (void)pinExtensionWithId:(NSString *)extensionId windowId:(int64_t)windowId;
 - (void)unpinExtensionWithId:(NSString *)extensionId windowId:(int64_t)windowId;
 - (void)movePinnedExtensionWithId:(NSString *)extensionId toIndex:(int)newIndex windowId:(int64_t)windowId;
@@ -405,6 +446,7 @@ typedef NS_ENUM(NSUInteger, DownloadEventType) {
 @property(nonatomic, assign, readonly) BOOL isCapturingTab;
 @property(nonatomic, assign, readonly) BOOL isBeingMirrored;
 @property(nonatomic, assign, readonly) BOOL isSharingScreen;
+@property(nonatomic, assign, readonly) BOOL isInContentFullscreen;
 
 - (void)close;
 - (void)reload;

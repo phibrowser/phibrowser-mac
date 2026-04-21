@@ -49,7 +49,7 @@ enum CrashScenario: String, CaseIterable, Identifiable {
         case .invalidCast:
             let value: Any = 42
             let stringValue = value as! String
-            print(stringValue)
+            AppLogDebug(stringValue)
         case .objectiveCException:
             NSException(
                 name: .invalidArgumentException,

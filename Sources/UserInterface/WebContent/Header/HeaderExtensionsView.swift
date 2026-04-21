@@ -54,22 +54,28 @@ final class WebContentHeaderExtensionsModel {
 
 struct CircularIconButton: View {
     let image: NSImage?
+    let imageResource: ImageResource?
     let systemName: String?
     let accessibilityLabel: String
     let action: () -> Void
+    let secondaryAction: (() -> Void)?
 
     @State private var isHovering = false
 
     init(
         image: NSImage? = nil,
+        imageResource: ImageResource? = nil,
         systemName: String? = nil,
         accessibilityLabel: String,
-        action: @escaping () -> Void
+        action: @escaping () -> Void,
+        secondaryAction: (() -> Void)? = nil
     ) {
         self.image = image
+        self.imageResource = imageResource
         self.systemName = systemName
         self.accessibilityLabel = accessibilityLabel
         self.action = action
+        self.secondaryAction = secondaryAction
     }
 
     var body: some View {
@@ -78,7 +84,12 @@ struct CircularIconButton: View {
                 Circle()
                     .fill(isHovering ? .sidebarTabHoveredColorEmphasized : Color.clear)
 
-                if let image {
+                if let imageResource {
+                    Image(imageResource)
+                        .resizable()
+                        .aspectRatio(contentMode: .fit)
+                        .frame(width: HeaderExtensionLayout.iconSize, height: HeaderExtensionLayout.iconSize)
+                } else if let image {
                     Image(nsImage: image)
                         .resizable()
                         .aspectRatio(contentMode: .fit)
@@ -93,6 +104,9 @@ struct CircularIconButton: View {
         }
         .buttonStyle(.plain)
         .contentShape(Circle())
+        .overlay(
+            SecondaryClickPassthrough(onSecondaryClick: secondaryAction)
+        )
         .onHover { hovering in
             withAnimation(.easeInOut(duration: 0.12)) {
                 isHovering = hovering
@@ -107,19 +121,28 @@ struct HeaderExtensionMenuButton: View {
     let extensionManager: ExtensionManager?
     @Binding var isPopoverShown: Bool
 
+    @State private var anchorView: NSView?
+
     var body: some View {
         CircularIconButton(
-            systemName: "puzzlepiece.extension",
+            imageResource: .extensionIcon,
             accessibilityLabel: NSLocalizedString("Extensions", comment: "Web content header - Extensions menu button")
         ) {
             isPopoverShown.toggle()
         }
+        .background(
+            AddressBarAnchorView { view in
+                anchorView = view
+            }
+            .allowsHitTesting(false)
+        )
         .popover(isPresented: $isPopoverShown, arrowEdge: .bottom) {
             if let manager = extensionManager {
                 ExtensionList(
                     extensionManager: manager,
                     needSettings: false,
-                    onRequestDismiss: { isPopoverShown = false }
+                    onRequestDismiss: { isPopoverShown = false },
+                    triggerAnchorView: anchorView
                 )
             }
         }
@@ -131,6 +154,8 @@ struct HeaderExtensionContainer: View {
     let extensionManager: ExtensionManager?
     let browserState: BrowserState?
     @Binding var isPopoverShown: Bool
+
+    @State private var isHovering = false
 
     var body: some View {
         HStack(spacing: HeaderExtensionLayout.itemSpacing) {
@@ -145,10 +170,17 @@ struct HeaderExtensionContainer: View {
                 isPopoverShown: $isPopoverShown
             )
         }
+        .frame(height: HeaderTrailingLayout.rowHeight)
         .background(
             Capsule()
                 .themedStroke(.border)
+                .opacity(isHovering ? 1 : 0)
         )
+        .onHover { hovering in
+            withAnimation(.easeInOut(duration: 0.12)) {
+                isHovering = hovering
+            }
+        }
     }
 }
 
@@ -165,16 +197,26 @@ private struct PinnedExtensionButton: View {
 
         CircularIconButton(
             image: image,
-            accessibilityLabel: ext.name
-        ) {
-            let point = anchorView.flatMap(ExtensionPopupAnchor.pointBelowView)
-                ?? ExtensionPopupAnchor.mouseFallback()
-            ChromiumLauncher.sharedInstance().bridge?.triggerExtension(
-                withId: ext.id,
-                pointInScreen: point,
-                windowId: windowId
-            )
-        }
+            accessibilityLabel: ext.name,
+            action: {
+                let point = anchorView.flatMap(ExtensionPopupAnchor.pointBelowView)
+                    ?? ExtensionPopupAnchor.mouseFallback()
+                ChromiumLauncher.sharedInstance().bridge?.triggerExtension(
+                    withId: ext.id,
+                    pointInScreen: point,
+                    windowId: windowId
+                )
+            },
+            secondaryAction: {
+                let point = anchorView.flatMap(ExtensionPopupAnchor.pointBelowView)
+                    ?? ExtensionPopupAnchor.mouseFallback()
+                ChromiumLauncher.sharedInstance().bridge?.triggerExtensionContextMenu(
+                    withId: ext.id,
+                    pointInScreen: point,
+                    windowId: windowId
+                )
+            }
+        )
         .background(
             AddressBarAnchorView { view in
                 anchorView = view

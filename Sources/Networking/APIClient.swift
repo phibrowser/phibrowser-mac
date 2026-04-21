@@ -5,6 +5,24 @@
 
 import Foundation
 
+struct AgentAvatarResponse: Codable {
+    enum Source: String, Codable {
+        case `default`
+        case custom
+    }
+
+    let url: String
+    let source: Source
+    let mimeType: String
+    let filename: String
+    let updatedAt: String?
+}
+
+struct AgentAvatarImagePayload {
+    let metadata: AgentAvatarResponse
+    let data: Data
+}
+
 class APIClient {
     static let shared = APIClient()
     #if DEBUG
@@ -29,12 +47,13 @@ class APIClient {
     private let accountBaseURL = "https://account.phibrowser.com"
     private let connectorBaseURL = "https://ai.phibrowser.com/data"
     #endif
+    private let agentBaseURL = "http://127.0.0.1:8788"
 
     private var token: String {
         let accessToken = AuthManager.shared.getAccessTokenSyncly()
 
         if accessToken == nil {
-            print("Failed to get Auth0 token")
+            AppLogError("Failed to get Auth0 token")
         }
 
         return accessToken ?? ""
@@ -79,6 +98,74 @@ class APIClient {
         }
 
         return try JSONDecoder().decode(Response<UpdateProfileResponse>.self, from: data)
+    }
+
+    // MARK: - Agent Persona
+
+    func getAgentAvatar() async throws -> AgentAvatarResponse {
+        let url = URL(string: "\(agentBaseURL)/api/v1/agent-persona/avatar")!
+        var request = URLRequest(url: url)
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw APIError.invalidResponse
+        }
+
+        guard (200...299).contains(httpResponse.statusCode) else {
+            throw APIError.httpError(statusCode: httpResponse.statusCode)
+        }
+
+        return try JSONDecoder().decode(AgentAvatarResponse.self, from: data)
+    }
+
+    func getAgentAvatarImageData() async throws -> AgentAvatarImagePayload {
+        let avatar = try await getAgentAvatar()
+
+        if let data = Self.decodeAgentAvatarDataURL(avatar.url) {
+            return AgentAvatarImagePayload(metadata: avatar, data: data)
+        }
+
+        guard let url = URL(string: avatar.url) else {
+            throw APIError.invalidResponse
+        }
+
+        var request = URLRequest(url: url)
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw APIError.invalidResponse
+        }
+
+        guard (200...299).contains(httpResponse.statusCode) else {
+            throw APIError.httpError(statusCode: httpResponse.statusCode)
+        }
+
+        return AgentAvatarImagePayload(metadata: avatar, data: data)
+    }
+
+    static func decodeAgentAvatarDataURL(_ url: String) -> Data? {
+        guard url.hasPrefix("data:"),
+              let commaIndex = url.firstIndex(of: ",") else {
+            return nil
+        }
+
+        let header = url[..<commaIndex]
+        let payload = String(url[url.index(after: commaIndex)...])
+
+        if header.localizedCaseInsensitiveContains(";base64") {
+            return Data(base64Encoded: payload)
+        }
+
+        guard let decodedPayload = payload.removingPercentEncoding else {
+            return nil
+        }
+
+        return decodedPayload.data(using: .utf8)
     }
     
     // MARK: - Invitation APIs

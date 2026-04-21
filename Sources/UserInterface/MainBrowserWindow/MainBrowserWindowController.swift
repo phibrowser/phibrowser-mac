@@ -214,6 +214,25 @@ class MainBrowserWindowController: NSWindowController {
             .handleTabReadyToDisplay(tabId: tabId)
     }
 
+    // =========================================================================
+    // DevTools embedding
+    // =========================================================================
+
+    func handleDevToolsDidAttach(tabId: Int, devToolsView: NSView) {
+        mainSplitViewController.webContentContainerViewController
+            .handleDevToolsDidAttach(tabId: tabId, devToolsView: devToolsView)
+    }
+
+    func handleDevToolsDidDetach(tabId: Int) {
+        mainSplitViewController.webContentContainerViewController
+            .handleDevToolsDidDetach(tabId: tabId)
+    }
+
+    func handleUpdateInspectedPageBounds(tabId: Int, bounds: CGRect, hide: Bool) {
+        mainSplitViewController.webContentContainerViewController
+            .handleUpdateInspectedPageBounds(tabId: tabId, bounds: bounds, hide: hide)
+    }
+
 }
 
 extension NSNotification.Name {

@@ -267,11 +267,11 @@ struct FeedbackView: View {
                         selectedFilename = url.lastPathComponent
                         selectedFileURL = url
                     } catch {
-                        print("Error checking file size: \(error.localizedDescription)")
+                        AppLogError("Error checking file size: \(error.localizedDescription)")
                     }
                 }
             case .failure(let error):
-                print("File selection error: \(error.localizedDescription)")
+                AppLogError("File selection error: \(error.localizedDescription)")
             }
         }
         .alert(NSLocalizedString("File too large", comment: "Feedback form - Alert title when selected file exceeds size limit"), isPresented: $showFileSizeAlert) {

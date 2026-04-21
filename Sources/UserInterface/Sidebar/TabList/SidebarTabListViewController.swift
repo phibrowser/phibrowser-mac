@@ -279,6 +279,7 @@ class SidebarTabListViewController: NSViewController {
         self.allItems = items
         
         rebuildFloatingBookmarkPresentationIfNeeded()
+        invalidateExistingTabCells()
         outlineView.reloadData()
         selectActiveTab()
         applyFocusingSelection(for: browserState.focusingTab)
@@ -288,6 +289,18 @@ class SidebarTabListViewController: NSViewController {
         }
     }
     
+    /// Cancel Combine subscriptions on all visible tab cells before reloadData.
+    /// NSOutlineView.reloadData() does NOT call prepareForReuse on replaced cells,
+    /// leaving orphaned ViewModels with active subscriptions that cause title flicker.
+    /// Uses invalidateSubscriptions() instead of prepareForReuse() to avoid
+    /// resetting visual state which causes a visible blank frame during reload.
+    private func invalidateExistingTabCells() {
+        for row in 0..<outlineView.numberOfRows {
+            guard let cell = outlineView.view(atColumn: 0, row: row, makeIfNecessary: false) as? SidebarTabCellView else { continue }
+            cell.invalidateSubscriptions()
+        }
+    }
+
     private func selectActiveTab() {
         for item in allItems {
             if let tab = item as? Tab, tab.isActive {
@@ -305,6 +318,7 @@ class SidebarTabListViewController: NSViewController {
         if let item, item.isActive {
             let index = outlineView.row(forItem: item)
             outlineView.selectRowIndexes(IndexSet(integer: index), byExtendingSelection: false)
+            lastScrolledFocusingTabId = item.id
         }
     }
     
@@ -1051,9 +1065,7 @@ extension SidebarTabListViewController: NSOutlineViewDelegate {
             
         case .tab:
             let identifier = NSUserInterfaceItemIdentifier("TabCell")
-            let existingTabCell = outlineView.makeView(withIdentifier: identifier, owner: self) as? SidebarTabCellView
-            let isNew = existingTabCell == nil
-            let tabCell = existingTabCell ?? {
+            let tabCell = outlineView.makeView(withIdentifier: identifier, owner: self) as? SidebarTabCellView ?? {
                 let c = SidebarTabCellView()
                 c.identifier = identifier
                 return c
@@ -1389,11 +1401,15 @@ extension SidebarTabListViewController: TabSectionDelegate {
 
         outlineView.endUpdates()
 
-        selectActiveTab()
-        applyFocusingSelection(for: browserState.focusingTab)
-
+        // Defer selection to the next run loop so NSOutlineView finishes its
+        // insert/remove animation layout pass first. Calling row(forItem:) or
+        // selectRowIndexes while animations are in flight can trigger a spurious
+        // viewFor:item: call, creating a duplicate cell for the same Tab.
         DispatchQueue.main.async { [weak self] in
-            self?.updateVisibleBookmarkTabs()
+            guard let self else { return }
+            self.selectActiveTab()
+            self.applyFocusingSelection(for: self.browserState.focusingTab)
+            self.updateVisibleBookmarkTabs()
         }
     }
     

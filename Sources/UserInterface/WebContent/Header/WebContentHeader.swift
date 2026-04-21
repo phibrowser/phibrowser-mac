@@ -14,6 +14,7 @@ class WebContentHeaderState: ObservableObject {
     @Published var showChatButton: Bool = false
     @Published var showFeedbackButton: Bool = false
     @Published var showDownloadButton: Bool = false
+    @Published var showMemoryButton: Bool = false
     @Published var showSidebarButton: Bool = false
     @Published var canGoBack: Bool = false
     @Published var canGoForward: Bool = false
@@ -27,9 +28,11 @@ class WebContentHeaderState: ObservableObject {
         let layoutMode = PhiPreferences.GeneralSettings.loadLayoutMode()
         let navigationAtTop = layoutMode.showsNavigationAtTop
         let traditionalLayout = layoutMode.isTraditional
+        let phiAIEnabled = UserDefaults.standard.bool(forKey: PhiPreferences.AISettings.phiAIEnabled.rawValue)
         self.showAddressBar = navigationAtTop
         self.showNavigationButtons = navigationAtTop
         self.showDownloadButton = traditionalLayout
+        self.showMemoryButton = traditionalLayout && phiAIEnabled
         self.showFeedbackButton = traditionalLayout
         self.showChatButton = false
     }
@@ -160,6 +163,9 @@ class WebContentHeader: NSView {
             onFeedbackTap: { [weak self] in
                 self?.feedbackButtonClicked()
             },
+            onMemoryTap: { [weak self] in
+                self?.memoryButtonClicked()
+            },
             onOpenLocationBar: { [weak self] anchorView in
                 self?.unsafeBrowserWindowController?.openLocationBar(anchorView)
             },
@@ -267,6 +273,7 @@ class WebContentHeader: NSView {
             self.state.showChatButton = navigationAtTop && !isIncognito && aiChatEnabled && phiAIEnabled
             self.state.showFeedbackButton = traditionalLayout || (navigationAtTop && isCollapsed)
             self.state.showDownloadButton = traditionalLayout || (navigationAtTop && isCollapsed)
+            self.state.showMemoryButton = (traditionalLayout || (navigationAtTop && isCollapsed)) && phiAIEnabled && !isIncognito
             self.state.showSidebarButton = !traditionalLayout && navigationAtTop && isCollapsed
             self.state.isIncognito = isIncognito
         }
@@ -300,6 +307,10 @@ class WebContentHeader: NSView {
 
     @objc private func feedbackButtonClicked() {
         unsafeBrowserState?.windowController?.showFeedbackWindow()
+    }
+
+    @objc private func memoryButtonClicked() {
+        BrowserState.currentState()?.createTab("chrome://memory/memory.html", focusAfterCreate: true)
     }
 
     // MARK: - Public Methods

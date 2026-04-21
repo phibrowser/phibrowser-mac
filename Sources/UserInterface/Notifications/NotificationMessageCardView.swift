@@ -168,13 +168,7 @@ struct NotificationMessageCardContent: View {
 
     private var headerRow: some View {
         HStack {
-            Circle()
-                .fill(Color.black)
-                .frame(width: 18, height: 18)
-                .overlay(
-                    Circle()
-                        .stroke(Color.white.opacity(0.2), lineWidth: 1)
-                )
+            NotificationCardAgentAvatarView(refreshID: card.id)
 
             Spacer()
 
@@ -451,6 +445,50 @@ struct NotificationMessageCardContent: View {
             .onHover { hovering in
                 isHovered = hovering
             }
+        }
+    }
+}
+
+private struct NotificationCardAgentAvatarView: View {
+    let refreshID: String
+
+    @State private var image: NSImage?
+
+    private let size: CGFloat = 18
+
+    var body: some View {
+        ZStack {
+            Circle()
+                .fill(Color.clear)
+
+            if let image {
+                Image(nsImage: image)
+                    .resizable()
+                    .scaledToFill()
+            }
+        }
+        .frame(width: size, height: size)
+        .clipShape(Circle())
+        .overlay(
+            Circle()
+                .stroke(Color.white.opacity(0.2), lineWidth: 1)
+        )
+        .task(id: refreshID) {
+            await loadAvatar()
+        }
+    }
+
+    @MainActor
+    private func loadAvatar() async {
+        image = nil
+
+        do {
+            let payload = try await APIClient.shared.getAgentAvatarImageData()
+            image = NSImage(data: payload.data)
+        } catch {
+            #if DEBUG
+            AppLogError("[NotificationMessageCardView] Failed to load agent avatar: \(error)")
+            #endif
         }
     }
 }

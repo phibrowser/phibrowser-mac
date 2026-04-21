@@ -90,7 +90,7 @@ extension OmniBoxViewController: NSTextSuggestionsDelegate {
         
         for info in infos {
             let suggestion = OmniBoxSuggestion(chromiumDic: info)
-            print("suggestion.url: \(suggestion.url)")
+            AppLogDebug("suggestion.url: \(suggestion.url)")
             let isOpenedTab = state.tabs.contains { tab in
                 guard let tabUrl = tab.url else { return false }
                 return tabUrl == suggestion.url

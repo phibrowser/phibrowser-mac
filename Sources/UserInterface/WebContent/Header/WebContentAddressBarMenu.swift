@@ -221,15 +221,6 @@ final class WebContentAddressBarMenuPresenter {
             return submenu
         }
 
-        addMenuItem(
-            title: NSLocalizedString("Copy Link", comment: "Address bar menu - Copy link menu item"),
-            isEnabled: !brandedURLString.isEmpty,
-            image: menuSymbol(named: "link")
-        ) {
-            guard !brandedURLString.isEmpty else { return }
-            NSPasteboard.general.clearContents()
-            NSPasteboard.general.setString(brandedURLString, forType: .string)
-        }
         menu.addItem(.separator())
 
         let settingsItem = addMenuItem(

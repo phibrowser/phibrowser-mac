@@ -43,6 +43,9 @@ class PinnedTabViewController: NSViewController {
                 pinnedItem.itemClicked = { [weak self] model, view in
                     self?.handleExtensionClicked(model, anchor: view)
                 }
+                pinnedItem.secondaryItemClicked = { [weak self] model in
+                    self?.handleExtensionSecondaryClicked(model)
+                }
                 return pinnedItem
 
             case .tabItem(let tab):
@@ -244,7 +247,6 @@ class PinnedTabViewController: NSViewController {
         cancellables.removeAll()
         // Refresh the snapshot only when the pinned-tab collection actually changes.
         browserState.$pinnedTabs
-            .print("pinned tab changed: UI")
             .receive(on: DispatchQueue.main)
             .sink { [weak self] tabs in
                 guard let self else {
@@ -449,6 +451,16 @@ class PinnedTabViewController: NSViewController {
             windowId: windowId?.int64Value ?? 0
         )
     }
+
+    private func handleExtensionSecondaryClicked(_ item: PinnedTabItemModel) {
+        let point = ExtensionPopupAnchor.mouseFallback()
+        let windowId = MainBrowserWindowControllersManager.shared.activeWindowController?.browserState.windowId
+        ChromiumLauncher.sharedInstance().bridge?.triggerExtensionContextMenu(
+            withId: item.id,
+            pointInScreen: point,
+            windowId: windowId?.int64Value ?? 0
+        )
+    }
 }
 
 extension PinnedTabViewController: NSCollectionViewDelegate {
@@ -639,14 +651,19 @@ extension PinnedTabViewController {
             return true
         }
 
-        // Handle external drop from normal tab
-        if isExternalDrag, let guidString = pasteboard.string(forType: .normalTab), let guid = Int(guidString) {
-            return handleNormalTabDropToFavorites(tabGuid: guid, destinationIndex: finalDestinationIndex)
+        // Handle drop from normal tab
+        if pasteboard.string(forType: .pinnedTab) == nil,
+           let guidString = pasteboard.string(forType: .normalTab),
+           let guid = Int(guidString) {
+            let destinationIndex = min(finalDestinationIndex, pinnedTabs.count)
+            return handleNormalTabDropToFavorites(tabGuid: guid, destinationIndex: destinationIndex)
         }
         
-        // Handle external drop from bookmark
-        if isExternalDrag, let bookmarkId = pasteboard.string(forType: .phiBookmark) {
-            return handleBookmarkDropToFavorites(bookmarkGuid: bookmarkId, destinationIndex: finalDestinationIndex)
+        // Handle drop from bookmark
+        if pasteboard.string(forType: .pinnedTab) == nil,
+           let bookmarkId = pasteboard.string(forType: .phiBookmark) {
+            let destinationIndex = min(finalDestinationIndex, pinnedTabs.count)
+            return handleBookmarkDropToFavorites(bookmarkGuid: bookmarkId, destinationIndex: destinationIndex)
         }
 
         return false
@@ -733,7 +750,8 @@ extension PinnedTabViewController: ReorderingCollectionViewDelegate {
                 if sourceIndexPath == indexPath { return }
                 
                 let movedTab = self.pinnedTabs.remove(at: sourceIndexPath.item)
-                self.pinnedTabs.insert(movedTab, at: indexPath.item)
+                let targetIndex = min(indexPath.item, self.pinnedTabs.count)
+                self.pinnedTabs.insert(movedTab, at: targetIndex)
                 applySnapshot(animatingDifferences: true)
                 return
             }
@@ -748,10 +766,7 @@ extension PinnedTabViewController: ReorderingCollectionViewDelegate {
             if sourceIndexPath == indexPath { return }
 
             let movedTab = self.pinnedTabs.remove(at: sourceIndexPath.item)
-            let index = indexPath.item
-            guard index >= 0 && index <= self.pinnedTabs.count else {
-                return
-            }
+            let index = min(indexPath.item, self.pinnedTabs.count)
             self.pinnedTabs.insert(movedTab, at: index)
             applySnapshot(animatingDifferences: true)
             return

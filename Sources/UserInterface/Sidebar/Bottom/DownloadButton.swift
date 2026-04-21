@@ -76,7 +76,10 @@ struct DownloadButtonView: View {
     
     /// Lottie icon tint color (themed)
     var iconTintColor: ThemedColor = .textPrimary
-    
+
+    /// When true, the hover background renders as a circle instead of a rounded rectangle.
+    var useCircularHoverShape: Bool = false
+
     var onTap: () -> Void
     
     /// Button size (matches other sidebar buttons)
@@ -90,9 +93,9 @@ struct DownloadButtonView: View {
     var body: some View {
         Button(action: onTap) {
             ZStack(alignment: .bottom) {
-                RoundedRectangle(cornerRadius: cornerRadius)
+                hoverBackground
                     .fill(isHovered ? Color(nsColor: .sidebarTabHovered) : Color.clear)
-                
+
                 iconView
                 
                 PhiProgressView(
@@ -121,8 +124,10 @@ struct DownloadButtonView: View {
         })
     }
     
-    // MARK: - Icon View
-    
+    private var hoverBackground: AnyShape {
+        useCircularHoverShape ? AnyShape(Circle()) : AnyShape(RoundedRectangle(cornerRadius: cornerRadius))
+    }
+
     /// Resolved tint color based on current theme and appearance
     private var resolvedTintColor: NSColor {
         iconTintColor.resolver(theme, appearance)

@@ -43,6 +43,9 @@ class SidebarViewController: NSViewController {
         view.onCardEntryTap = { [weak self] in
             self?.showMessageCardTemporarily()
         }
+        view.onMemoryTap = {
+            BrowserState.currentState()?.createTab("chrome://memory/memory.html", focusAfterCreate: true)
+        }
         return view
     }()
     
@@ -134,6 +137,7 @@ class SidebarViewController: NSViewController {
         setupConfigObserverIfNeeded()
         updateHeaderHeight()
         updateChatButtonVisibility()
+        updateMemoryButtonVisibility()
         updateSidebarContentActivation()
     }
     
@@ -155,6 +159,13 @@ class SidebarViewController: NSViewController {
         bottomBarSwiftUI.setChatHidden(shouldHideChat)
     }
 
+    /// Hide the AI memory button when Phi AI is disabled or in incognito mode.
+    private func updateMemoryButtonVisibility() {
+        let phiAIEnabled = UserDefaults.standard.bool(forKey: PhiPreferences.AISettings.phiAIEnabled.rawValue)
+        let shouldHideMemory = state.isIncognito || !phiAIEnabled
+        bottomBarSwiftUI.setMemoryHidden(shouldHideMemory)
+    }
+
     /// Update header height based on configuration
     private func updateHeaderHeight() {
         let showInSidebar = !PhiPreferences.GeneralSettings.loadLayoutMode().showsNavigationAtTop
@@ -170,6 +181,7 @@ class SidebarViewController: NSViewController {
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in
                 self?.updateChatButtonVisibility()
+                self?.updateMemoryButtonVisibility()
                 self?.updateHeaderHeight()
             }
             .store(in: &cancellables)

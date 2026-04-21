@@ -64,7 +64,16 @@ extension PhiChromiumCoordinator: PhiChromiumBridgeDelegate {
     }
     
     func keyEquivalentOverride(forCommand commandId: Int32) -> [String : Any]? {
-        guard let state = Shortcuts.overrideState(for: Int(commandId)) else {
+        let id = Int(commandId)
+
+        // Suppress Chromium's Ctrl+Tab binding for IDC_SELECT_NEXT/PREVIOUS_TAB
+        // because PHI_TAB_SWITCHER_FORWARD/BACKWARD owns those keys now.
+        if id == CommandWrapper.IDC_SELECT_NEXT_TAB.rawValue ||
+           id == CommandWrapper.IDC_SELECT_PREVIOUS_TAB.rawValue {
+            return ["keyEquivalent": "", "modifierFlags": 0]
+        }
+
+        guard let state = Shortcuts.overrideState(for: id) else {
             return nil
         }
         
@@ -74,7 +83,6 @@ extension PhiChromiumCoordinator: PhiChromiumBridgeDelegate {
                 "modifierFlags": key.modifiersRaw
             ]
         } else {
-            // An explicit disabled override is represented by an empty shortcut payload.
             return [
                 "keyEquivalent": "",
                 "modifierFlags": 0
@@ -127,7 +135,7 @@ extension PhiChromiumCoordinator: PhiChromiumBridgeDelegate {
     func getAuth0AccessTokenSyncly() -> String {
         let token = AuthManager.shared.getAccessTokenSyncly() ?? ""
         let hasToken = !token.isEmpty
-        AppLogInfo("🌐 [Chromium] getAuth0AccessTokenSyncly called - hasToken: \(hasToken)")
+        AppLogDebug("🌐 [Chromium] getAuth0AccessTokenSyncly called - hasToken: \(hasToken)")
         return token
     }
     
@@ -200,6 +208,13 @@ extension PhiChromiumCoordinator: PhiChromiumBridgeDelegate {
                       webContentView: contentView,
                       customGuid: customGuid,
                       windowId: Int(windowId))
+        let creationPayload = (tabInfo["creationContext"] as? [AnyHashable: Any]) ?? tabInfo
+        let creationContext = NativeTabCreationContext(dictionary: creationPayload)
+        AppLogDebug(
+            "[NativeTab] mac newTabCreated " +
+            "tabId=\(id) windowId=\(windowId) index=\(index) " +
+            "creationPayload=\(creationPayload)"
+        )
         
         if MainBrowserWindowControllersManager.shared.hasDanglingWindow(for: windowId.intValue) {
             MainBrowserWindowControllersManager.shared.addPendingTabToDanglingWindow(tab, windowId: windowId.intValue)
@@ -207,8 +222,39 @@ extension PhiChromiumCoordinator: PhiChromiumBridgeDelegate {
         } else {
             EventBus.shared
                 .send(TabEvent(browserId: windowId.intValue,
-                               action: .newTab(tab)))
+                               action: .newTabWithContext(tab, context: creationContext)))
         }
+    }
+
+    @objc(tabRelationshipSnapshotChanged:windowId:version:)
+    func tabRelationshipSnapshotChanged(_ snapshotInfo: [AnyHashable : Any], windowId: Int64, version: Int64) {
+        AppLogDebug("[Tab] tabRelationshipSnapshotChanged: \(snapshotInfo), windowId: \(windowId)")
+        let openerByTabId = (snapshotInfo["openerByTabId"] as? [AnyHashable: Any]) ?? snapshotInfo
+        let resetOnActiveChangeTabIds = (snapshotInfo["resetOnActiveChangeTabIds"] as? [Any]) ?? []
+        AppLogDebug(
+            "[NativeTab] mac relationshipSnapshot " +
+            "windowId=\(windowId) version=\(version) " +
+            "openerByTabId=\(openerByTabId) " +
+            "resetOnActiveChangeTabIds=\(resetOnActiveChangeTabIds)"
+        )
+        guard let snapshot = NativeTabRelationshipSnapshot(
+            dictionary: [
+                "windowId": windowId,
+                "version": version,
+                "openerByTabId": openerByTabId,
+                "resetOnActiveChangeTabIds": resetOnActiveChangeTabIds,
+            ],
+            fallbackWindowId: windowId.intValue
+        ) else {
+            AppLogWarn("[Tab] Failed to parse relationship snapshot for windowId: \(windowId)")
+            return
+        }
+        EventBus.shared.send(
+            TabEvent(
+                browserId: windowId.intValue,
+                action: .updateTabRelationships(snapshot)
+            )
+        )
     }
     
     func tabWillBeRemove(_ tabId: Int64, windowId: Int64) {
@@ -272,6 +318,34 @@ extension PhiChromiumCoordinator: PhiChromiumBridgeDelegate {
     }
 
     // =========================================================================
+    // DevTools embedding
+    // =========================================================================
+
+    /// Called by Chromium when DevTools has attached (docked) to a tab.
+    func devToolsDidAttach(toTab tabId: Int64, windowId: Int64, devToolsView: NSView) {
+        guard let windowController = MainBrowserWindowControllersManager.shared
+            .getAllWindows()
+            .first(where: { $0.windowId == Int(windowId) }) else { return }
+        windowController.handleDevToolsDidAttach(tabId: Int(tabId), devToolsView: devToolsView)
+    }
+
+    /// Called by Chromium when DevTools has detached from a tab (closed or undocked).
+    func devToolsDidDetach(fromTab tabId: Int64, windowId: Int64) {
+        guard let windowController = MainBrowserWindowControllersManager.shared
+            .getAllWindows()
+            .first(where: { $0.windowId == Int(windowId) }) else { return }
+        windowController.handleDevToolsDidDetach(tabId: Int(tabId))
+    }
+
+    /// Called by Chromium when the inspected page bounds change.
+    func updateInspectedPageBounds(_ bounds: CGRect, forTabId tabId: Int64, windowId: Int64, hideInspectedContents hide: Bool) {
+        guard let windowController = MainBrowserWindowControllersManager.shared
+            .getAllWindows()
+            .first(where: { $0.windowId == Int(windowId) }) else { return }
+        windowController.handleUpdateInspectedPageBounds(tabId: Int(tabId), bounds: bounds, hide: hide)
+    }
+
+    // =========================================================================
     // Flicker fix: Tab visibility synchronization
     // =========================================================================
 
@@ -293,6 +367,24 @@ extension PhiChromiumCoordinator: PhiChromiumBridgeDelegate {
                            action: .tabReadyToDisplay(tabId.intValue)))
     }
 
+    // =========================================================================
+    // Content fullscreen (HTML5 requestFullscreen)
+    // =========================================================================
+
+    /// Called when a tab enters or exits HTML5 content fullscreen.
+    /// Routed through EventBus to the owning BrowserState, which drives the
+    /// re-parent of that tab's hostView to cover the window.
+    func tabContentFullscreenChanged(_ tabId: Int64,
+                                     windowId: Int64,
+                                     isFullscreen: Bool) {
+        AppLogDebug("[Fullscreen] tabContentFullscreenChanged: tabId=\(tabId), windowId=\(windowId), isFullscreen=\(isFullscreen)")
+        EventBus.shared
+            .send(TabEvent(browserId: windowId.intValue,
+                           action: .tabContentFullscreenChanged(
+                               tabId: tabId.intValue,
+                               isFullscreen: isFullscreen)))
+    }
+
     func targetURLChanged(_ tabId: Int64, windowId: Int64, url: String) {
         guard let windowController = MainBrowserWindowControllersManager.shared
             .getAllWindows()
@@ -310,16 +402,19 @@ extension PhiChromiumCoordinator: PhiChromiumBridgeDelegate {
 }
 
 extension PhiChromiumCoordinator {
+    @MainActor
     func dispatchCommand(_ commandId: Int32, window: NSWindow) -> Bool {
         return CommandDispatcher.dispatchCommand(commandId, window: window)
     }
     
+    @MainActor
     func commandDispatch(_ sender: Any, window: NSWindow) -> Bool {
         return CommandDispatcher.dispatchCommand(sender, window: window)
     }
     
+    @MainActor
     func handleKeyEquivalent(_ event: NSEvent, window: NSWindow) -> Bool {
-        return false
+        return CommandDispatcher.handleKeyEquivalent(event, window: window)
     }
 }
 

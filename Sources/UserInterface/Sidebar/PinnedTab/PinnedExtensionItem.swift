@@ -32,6 +32,7 @@ class PinnedExtensionItem: NSCollectionViewItem {
     static var reuseIdentifier: NSUserInterfaceItemIdentifier { .init(rawValue: "\(Self.self)") }
 
     var itemClicked: ((PinnedTabItemModel, NSView) -> Void)?
+    var secondaryItemClicked: ((PinnedTabItemModel) -> Void)?
 
     private var iconImageView: NSImageView!
     private var backgroundView: HoverableView!
@@ -77,6 +78,10 @@ private extension PinnedExtensionItem {
         backgroundView.clickAction = { [weak self] in
             guard let self, let model else { return }
             itemClicked?(model, backgroundView)
+        }
+        backgroundView.secondaryClickAction = { [weak self] in
+            guard let self, let model else { return }
+            secondaryItemClicked?(model)
         }
 
         iconImageView = NSImageView()

@@ -34,11 +34,33 @@ struct HoverableButtonConfig {
     var edgeInsets: EdgeInsets
     var cornerRadius: CGFloat
     var imageSize: NSSize?
-    
+
+    /// SF Symbol name; when set, uses `Image(systemName:)` which supports `symbolEffect`.
+    var systemName: String?
+    /// SF Symbol name for triggered state (e.g. "checkmark" after copy).
+    var triggeredSystemName: String?
+    /// Font weight for SF Symbol rendering; defaults to `.medium`.
+    var symbolWeight: Font.Weight?
+
+    /// NSImage shown after trigger (ignored when `triggeredSystemName` is set).
+    var triggeredImage: NSImage?
+    var triggeredImageTintColor: ThemedColor?
+    /// Content transition applied to the image (e.g. `.symbolEffect(.replace)`).
+    var imageContentTransition: ContentTransition?
+    /// Auto-revert delay in seconds; `nil` means the triggered state persists.
+    var triggeredRevertDelay: TimeInterval?
+
     init(
         title: String = "",
         image: NSImage? = nil,
         imageSize: NSSize? = nil,
+        systemName: String? = nil,
+        triggeredSystemName: String? = nil,
+        symbolWeight: Font.Weight? = nil,
+        triggeredImage: NSImage? = nil,
+        triggeredImageTintColor: ThemedColor? = nil,
+        imageContentTransition: ContentTransition? = nil,
+        triggeredRevertDelay: TimeInterval? = nil,
         displayMode: HoverableButtonDisplayMode = .imageOnly,
         backgroundColor: ThemedColor = .clear,
         hoverBackgroundColor: ThemedColor = .hover,
@@ -65,6 +87,13 @@ struct HoverableButtonConfig {
         self.edgeInsets = edgeInsets
         self.cornerRadius = cornerRadius
         self.imageSize = imageSize
+        self.systemName = systemName
+        self.triggeredSystemName = triggeredSystemName
+        self.symbolWeight = symbolWeight
+        self.triggeredImage = triggeredImage
+        self.triggeredImageTintColor = triggeredImageTintColor
+        self.imageContentTransition = imageContentTransition
+        self.triggeredRevertDelay = triggeredRevertDelay
     }
 }
 
@@ -86,6 +115,7 @@ struct HoverableButton: View {
     let action: () -> Void
     
     @State private var isHovering = false
+    @State private var isTriggered = false
     
     init(config: HoverableButtonConfig, state: HoverableButtonState, action: @escaping () -> Void) {
         self.config = config
@@ -111,11 +141,36 @@ struct HoverableButton: View {
         guard let imageTintColor = config.imageTintColor else { return nil }
         return imageTintColor.swiftUIColor(theme: theme, appearance: appearance)
     }
+
+    private var displaySystemName: String? {
+        if isTriggered, let name = config.triggeredSystemName { return name }
+        return config.systemName
+    }
+
+    private var displayImage: NSImage? {
+        if isTriggered, let img = config.triggeredImage { return img }
+        return config.image
+    }
+
+    private var resolvedDisplayImageTintColor: Color? {
+        if isTriggered, let tint = config.triggeredImageTintColor {
+            return tint.swiftUIColor(theme: theme, appearance: appearance)
+        }
+        return resolvedImageTintColor
+    }
     
     var body: some View {
         Button(action: {
             if state.isEnabled {
                 action()
+                if config.triggeredImage != nil || config.triggeredSystemName != nil {
+                    isTriggered = true
+                    if let delay = config.triggeredRevertDelay {
+                        DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
+                            isTriggered = false
+                        }
+                    }
+                }
             }
         }) {
             contentView
@@ -142,16 +197,17 @@ struct HoverableButton: View {
                 .foregroundColor(resolvedTitleColor)
                 .font(config.titleFont)
         case .imageOnly:
-            if let image = config.image {
+            if let name = displaySystemName {
+                symbolImageView(name)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if let image = displayImage {
                 imageView(image)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         case .both(let imagePosition):
             HStack(spacing: config.spacing) {
                 if imagePosition == .left {
-                    if let image = config.image {
-                        imageView(image)
-                    }
+                    currentImageContent
                     Text(config.title)
                         .foregroundColor(resolvedTitleColor)
                         .font(config.titleFont)
@@ -159,41 +215,66 @@ struct HoverableButton: View {
                     Text(config.title)
                         .foregroundColor(resolvedTitleColor)
                         .font(config.titleFont)
-                    if let image = config.image {
-                        imageView(image)
-                    }
+                    currentImageContent
                 }
             }
         }
     }
+
+    @ViewBuilder
+    private var currentImageContent: some View {
+        if let name = displaySystemName {
+            symbolImageView(name)
+        } else if let image = displayImage {
+            imageView(image)
+        }
+    }
     
     @ViewBuilder
+    private func symbolImageView(_ name: String) -> some View {
+        let tintColor = resolvedDisplayImageTintColor ?? .primary
+        let transition = config.imageContentTransition ?? .identity
+
+        Image(systemName: name)
+            .font(.system(size: config.imageSize?.height ?? 16, weight: config.symbolWeight ?? .medium))
+            .foregroundStyle(tintColor)
+            .contentTransition(transition)
+    }
+
+    @ViewBuilder
     private func imageView(_ image: NSImage) -> some View {
+        let tintColor = resolvedDisplayImageTintColor
+        let transition = config.imageContentTransition ?? .identity
+
         if let imageSize = config.imageSize {
-            if let tintColor = resolvedImageTintColor {
+            if let tintColor {
                 Image(nsImage: image)
                     .renderingMode(.template)
                     .resizable()
                     .aspectRatio(contentMode: .fit)
                     .foregroundColor(tintColor)
                     .frame(width: imageSize.width, height: imageSize.height)
+                    .contentTransition(transition)
             } else {
                 Image(nsImage: image)
                     .resizable()
                     .aspectRatio(contentMode: .fit)
                     .frame(width: imageSize.width, height: imageSize.height)
+                    .contentTransition(transition)
             }
         } else {
-            if let tintColor = resolvedImageTintColor {
+            if let tintColor {
                 Image(nsImage: image)
                     .renderingMode(.template)
                     .resizable()
                     .aspectRatio(contentMode: .fit)
                     .foregroundColor(tintColor)
+                    .contentTransition(transition)
             } else {
                 Image(nsImage: image)
                     .resizable()
                     .aspectRatio(contentMode: .fit)
+                    .contentTransition(transition)
             }
         }
     }
@@ -211,6 +292,117 @@ final class HoverableHostingView: NSHostingView<AnyView> {
     }
 }
 
+struct SecondaryClickPassthrough: NSViewRepresentable {
+    let onSecondaryClick: (() -> Void)?
+
+    func makeNSView(context: Context) -> SecondaryClickPassthroughNSView {
+        let view = SecondaryClickPassthroughNSView()
+        view.onSecondaryClick = onSecondaryClick
+        return view
+    }
+
+    func updateNSView(_ nsView: SecondaryClickPassthroughNSView, context: Context) {
+        nsView.onSecondaryClick = onSecondaryClick
+    }
+}
+
+struct SecondaryClickContainer<Content: View>: NSViewRepresentable {
+    let onSecondaryClick: (() -> Void)?
+    let content: Content
+
+    init(
+        onSecondaryClick: (() -> Void)?,
+        @ViewBuilder content: () -> Content
+    ) {
+        self.onSecondaryClick = onSecondaryClick
+        self.content = content()
+    }
+
+    func makeNSView(context: Context) -> SecondaryClickContainerNSView {
+        let view = SecondaryClickContainerNSView()
+        view.onSecondaryClick = onSecondaryClick
+        view.setRootView(AnyView(content))
+        return view
+    }
+
+    func updateNSView(_ nsView: SecondaryClickContainerNSView, context: Context) {
+        nsView.onSecondaryClick = onSecondaryClick
+        nsView.setRootView(AnyView(content))
+    }
+}
+
+final class SecondaryClickPassthroughNSView: NSView {
+    var onSecondaryClick: (() -> Void)?
+
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        guard onSecondaryClick != nil else { return nil }
+        guard let event = NSApp.currentEvent else { return nil }
+        switch event.type {
+        case .rightMouseDown, .rightMouseUp:
+            return self
+        default:
+            return nil
+        }
+    }
+
+    override func rightMouseDown(with event: NSEvent) {
+        guard let onSecondaryClick else {
+            super.rightMouseDown(with: event)
+            return
+        }
+        onSecondaryClick()
+    }
+}
+
+final class SecondaryClickContainerNSView: NSView {
+    private let hostingView = HoverableHostingView(rootView: AnyView(EmptyView()))
+
+    var onSecondaryClick: (() -> Void)?
+
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        translatesAutoresizingMaskIntoConstraints = false
+        setupHostingView()
+    }
+
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    func setRootView(_ rootView: AnyView) {
+        hostingView.rootView = rootView
+    }
+
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        guard onSecondaryClick != nil else { return super.hitTest(point) }
+        guard let event = NSApp.currentEvent else { return super.hitTest(point) }
+        switch event.type {
+        case .rightMouseDown, .rightMouseUp:
+            return self
+        default:
+            return super.hitTest(point)
+        }
+    }
+
+    override func rightMouseDown(with event: NSEvent) {
+        guard let onSecondaryClick else {
+            super.rightMouseDown(with: event)
+            return
+        }
+        onSecondaryClick()
+    }
+
+    private func setupHostingView() {
+        addSubview(hostingView)
+        NSLayoutConstraint.activate([
+            hostingView.topAnchor.constraint(equalTo: topAnchor),
+            hostingView.leadingAnchor.constraint(equalTo: leadingAnchor),
+            hostingView.trailingAnchor.constraint(equalTo: trailingAnchor),
+            hostingView.bottomAnchor.constraint(equalTo: bottomAnchor)
+        ])
+    }
+}
+
 class HoverableButtonNSView: NSView {
     private var hostingView: HoverableHostingView?
     private var button: HoverableButton!
@@ -218,6 +410,8 @@ class HoverableButtonNSView: NSView {
     private var selector: Selector?
     private let buttonState: HoverableButtonState
     private var themeObserver = ThemeObserver.shared
+
+    var secondaryAction: (() -> Void)?
     
     var isEnabled: Bool {
         get { buttonState.isEnabled }
@@ -282,6 +476,15 @@ class HoverableButtonNSView: NSView {
         super.viewDidMoveToWindow()
         guard window != nil else { return }
         themeObserver.rebind(to: themeStateProvider)
+    }
+
+    override func rightMouseDown(with event: NSEvent) {
+        guard buttonState.isEnabled else { return }
+        guard let secondaryAction else {
+            super.rightMouseDown(with: event)
+            return
+        }
+        secondaryAction()
     }
 }
 

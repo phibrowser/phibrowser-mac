@@ -353,7 +353,7 @@ struct ThemeAppKitExampleView: View {
                         .themedForeground(.textSecondary)
                     
                     AppKitButtonExample {
-                        print("Button clicked!")
+                        AppLogDebug("Button clicked!")
                     }
                     .frame(height: 30)
                 }

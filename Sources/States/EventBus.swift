@@ -32,6 +32,7 @@ struct TabEvent: WindowEvent {
 
     enum TabAction {
         case newTab(_ tab: Tab)
+        case newTabWithContext(_ tab: Tab, context: NativeTabCreationContext)
         case closeTab(_ tabId: Int)
         case focusTab(_ tab: Tab)
         case focusTabWithTabId(_ tabId: Int)
@@ -39,6 +40,7 @@ struct TabEvent: WindowEvent {
         case openTab(_ url: String)
         case updateTabTitle(tabId: Int, newTitle: String)
         case updateTabIndex(_ indexesMap: [Int: Int])
+        case updateTabRelationships(_ snapshot: NativeTabRelationshipSnapshot)
         case move(tab: Tab, toNewIndex: Int, selectAfterMove: Bool)
 
         /// Chromium has hidden the previous tab and the native view can be released.
@@ -46,6 +48,9 @@ struct TabEvent: WindowEvent {
 
         /// Chromium produced the first non-empty paint for the tab.
         case tabReadyToDisplay(_ tabId: Int)
+
+        /// Content-fullscreen entered/exited on a tab (HTML5 requestFullscreen).
+        case tabContentFullscreenChanged(tabId: Int, isFullscreen: Bool)
     }
 }
 
@@ -106,7 +111,9 @@ class EventBus {
     func send<T: AppEvent>(_ event: T) {
              switch event.scope {
              case .window(let windowId):
-                 handleWindowEvent(event, windowId: windowId)
+                 Task { @MainActor in
+                     handleWindowEvent(event, windowId: windowId)
+                 }
 
              case .profile:
                  fatalError("not support")
@@ -115,6 +122,7 @@ class EventBus {
              }
     }
     
+    @MainActor
     private func handleWindowEvent<T: AppEvent>(_ event: T, windowId: Int) {
         guard let browserState = MainBrowserWindowControllersManager.shared
             .getBrowserState(for: windowId) else {
@@ -134,16 +142,19 @@ class EventBus {
         }
     }
     
+    @MainActor
     private func handleTabEvent(_ event: TabEvent, in state: BrowserState) {
         switch event.action {
         case .newTab(let tab):
             state.handleNewTabFromChromium(tab)
+        case .newTabWithContext(let tab, let context):
+            state.handleNewTabFromChromium(tab, context: context)
         case .closeTab(let tabId):
             state.closeTab(tabId)
         case .focusTab(let tab):
             state.focuseTab(tab)
         case .focusTabWithTabId(let tabId):
-            state.focusTabWithTabId(tabId)
+            state.handleChromiumActiveTabChanged(tabId)
         case .createTab(let url):
             state.createTab(url)
         case .openTab(let url):
@@ -152,12 +163,16 @@ class EventBus {
             state.updateTabTitle(tabId: tabId, newTitle: newTitle)
         case .updateTabIndex(let indexesMap):
             state.reorderTabs(indexesMap)
+        case .updateTabRelationships(let snapshot):
+            state.applyRelationshipSnapshot(snapshot)
         case .move(let tab, let toNewIndex, let selectAfterMove):
             state.move(tab: tab, to: toNewIndex, selectAfterMove: selectAfterMove)
         case .previousTabReadyForCleanup(let tabId):
             state.handlePreviousTabReadyForCleanup(tabId: tabId)
         case .tabReadyToDisplay(let tabId):
             state.handleTabReadyToDisplay(tabId: tabId)
+        case .tabContentFullscreenChanged(let tabId, let isFullscreen):
+            state.handleTabContentFullscreen(tabId: tabId, isFullscreen: isFullscreen)
         }
     }
 

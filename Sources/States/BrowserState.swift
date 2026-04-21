@@ -39,6 +39,8 @@ class BrowserState {
     }
     /// Pending insertion state for tabs created by drag/drop into the normal-tab section.
     private var pendingNormalTabInsertion: PendingNormalTabInsertion?
+    private var nativeRelationGraph: NativeTabRelationGraph = .empty
+    private var pendingSelectionOverride: NativePendingSelectionOverride?
 
     private var lastLegacyLayout: Bool?
     @Published var layoutMode: LayoutMode = .performance
@@ -58,6 +60,13 @@ class BrowserState {
     
     /// AI Chat tabs keyed by the associated tab identifier.
     @Published var aiChatTabs: [String: Tab] = [:]
+
+    /// Identifiers whose AI Chat tab creation has been dispatched to Chromium
+    /// but hasn't been mirrored back via `handleNewTabFromChromium` yet. Used
+    /// to dedupe parallel `createAIChatTab(for:chromeTabId:)` requests from
+    /// multiple chat view controllers (e.g. sidebar + traditional layout)
+    /// before `aiChatTabs` is populated.
+    private var aiChatTabsBeingCreated: Set<String> = []
     
     @Published var sidebarCollapsed = false
     @Published var sidebarWidth: CGFloat = 0
@@ -71,6 +80,8 @@ class BrowserState {
 
     /// Tracks in-flight tab dragging within this BrowserState (not a singleton).
     @MainActor private(set) lazy var tabDraggingSession: TabDraggingSession = { .init(state: self) }()
+
+    @MainActor private(set) lazy var tabSwitchManager: TabSwitchManager = { .init(browserState: self) }()
     
     /// Whether this window can accept a cross-window drag from `source`.
     /// - Same-profile normal windows: allowed
@@ -258,7 +269,7 @@ class BrowserState {
                 pinnedTab.guid = -1
                 pinnedTab.setWebContentsWrapper(wrapper: nil)
             }
-
+            
             if pinnedTab.guidInLocalDB == focusingTab?.guidInLocalDB {
                 pinnedTab.isActive = true
             }
@@ -385,6 +396,7 @@ class BrowserState {
         }
     }
     
+    @MainActor
     func focuseTab(_ tab: Tab) {
         // AI Chat Tab cannot become focusingTab
         if let customGuid = tab.guidInLocalDB, Self.isAIChatId(customGuid) {
@@ -401,9 +413,12 @@ class BrowserState {
                 $0.setActive(false)
             }
         }
+        tabSwitchManager.handleExternalFocusChange()
         focusingTab = tab
+        tabSwitchManager.recordActiveTab(tab)
     }
     
+    @MainActor
     func focusTabWithTabId(_ tabId: Int) {
         // AI Chat tabs redirect focus back to the associated content tab.
         for (identifier, aiTab) in aiChatTabs {
@@ -418,6 +433,63 @@ class BrowserState {
         if let tab = tabs.first(where: { $0.guid == tabId }) {
             focuseTab(tab)
         }
+    }
+
+    @MainActor
+    func handleChromiumActiveTabChanged(_ tabId: Int) {
+        let t0 = CFAbsoluteTimeGetCurrent()
+        let previousActiveTabId = focusingTab?.guid
+        let previousActiveText = previousActiveTabId.map(String.init) ?? "nil"
+        let resetTabIds = Array(nativeRelationGraph.resetOnActiveChangeTabIds).sorted()
+        AppLogDebug(
+            "[NativeTab] handleChromiumActiveTabChanged new=\(tabId) " +
+            "previous=\(previousActiveText) " +
+            "graphBefore={openers=\(nativeRelationGraph.openerByTabId), reset=\(resetTabIds)}"
+        )
+        if let previousActiveTabId {
+            nativeRelationGraph.forgetOpenerOnActiveTabChange(from: previousActiveTabId, to: tabId)
+        }
+        let resetTabIdsAfterForget = Array(nativeRelationGraph.resetOnActiveChangeTabIds).sorted()
+        AppLogDebug(
+            "[NativeTab] handleChromiumActiveTabChanged graphAfterForget={openers=\(nativeRelationGraph.openerByTabId), " +
+            "reset=\(resetTabIdsAfterForget)}"
+        )
+
+        if let pendingSelectionOverride {
+            let closingTabStillExists = tabs.contains(where: { $0.guid == pendingSelectionOverride.closingTabId })
+            AppLogDebug(
+                "[NativeTab] handleChromiumActiveTabChanged pendingOverride={closing=\(pendingSelectionOverride.closingTabId), " +
+                "target=\(pendingSelectionOverride.targetTabId), version=\(pendingSelectionOverride.relationVersion)} " +
+                "chromiumChose=\(tabId) closingTabStillExists=\(closingTabStillExists)"
+            )
+
+            if closingTabStillExists {
+                AppLogDebug("[NativeTab] handleChromiumActiveTabChanged discarding stale override, closing tab not yet removed")
+                self.pendingSelectionOverride = nil
+            } else if pendingSelectionOverride.targetTabId == tabId {
+                AppLogDebug("[NativeTab] handleChromiumActiveTabChanged override matches chromium choice")
+                self.pendingSelectionOverride = nil
+                focusTabWithTabId(tabId)
+                let elapsed = (CFAbsoluteTimeGetCurrent() - t0) * 1000
+                AppLogDebug("[NativeTab] ⏱ handleChromiumActiveTabChanged tabId=\(tabId) took \(String(format: "%.2f", elapsed))ms")
+                return
+            } else if let targetTab = tabs.first(where: { $0.guid == pendingSelectionOverride.targetTabId }),
+                      let wrapper = targetTab.webContentWrapper {
+                AppLogDebug("[NativeTab] handleChromiumActiveTabChanged overriding to target=\(pendingSelectionOverride.targetTabId)")
+                self.pendingSelectionOverride = nil
+                wrapper.setAsActiveTab()
+                let elapsed = (CFAbsoluteTimeGetCurrent() - t0) * 1000
+                AppLogDebug("[NativeTab] ⏱ handleChromiumActiveTabChanged tabId=\(tabId) took \(String(format: "%.2f", elapsed))ms")
+                return
+            } else {
+                AppLogDebug("[NativeTab] handleChromiumActiveTabChanged override target not found, falling through")
+                self.pendingSelectionOverride = nil
+            }
+        }
+
+        focusTabWithTabId(tabId)
+        let elapsed = (CFAbsoluteTimeGetCurrent() - t0) * 1000
+        AppLogDebug("[NativeTab] ⏱ handleChromiumActiveTabChanged tabId=\(tabId) took \(String(format: "%.2f", elapsed))ms")
     }
     
     /// Find a tab by its identifier (either guidInLocalDB or chromium guid as string)
@@ -439,26 +511,34 @@ class BrowserState {
         guard LoginController.shared.isLoggedin() else {
             return
         }
-
+        if aiChatTabs[identifier] != nil {
+            return
+        }
+        if !aiChatTabsBeingCreated.insert(identifier).inserted {
+            return
+        }
         let customGuid = Self.aiChatId(for: identifier)
         createTab("chrome-extension://fenmfiepnpdlhplemgijlimpbebebljo/index.html?is_sidebar=1&tabId=\(chromeTabId)", customGuid: customGuid, focusAfterCreate: false)
     }
     
     /// Close the AI Chat tab associated with the specified identifier
     /// - Parameter identifier: The tab identifier whose AI Chat tab should be closed
+    ///
+    /// Goes straight through `WebContentWrapper.close()` instead of `Tab.close()` so we
+    /// never accidentally enter the `IDC_CLOSE_TAB` branch (the AI tab is not active on
+    /// the mac side, and that command would close whatever is active in Chromium, which
+    /// is not necessarily the AI tab — especially with `UnclosableTabMarker` skewing
+    /// Chromium's selection logic).
     func closeAIChatTab(for identifier: String) {
-        if let aiTab = aiChatTabs[identifier] {
-            aiTab.close()
-            aiChatTabs.removeValue(forKey: identifier)
-        }
+        guard let aiTab = aiChatTabs.removeValue(forKey: identifier) else { return }
+        aiTab.webContentWrapper?.close()
     }
     
     /// Close the normal tab associated with the specified identifier (called when AI Chat tab is closed)
     /// - Parameter identifier: The tab identifier of the normal tab to close
     private func closeAssociatedTab(for identifier: String) {
-        if let tab = findTabByIdentifier(identifier) {
-            tab.close()
-        }
+        guard let tab = findTabByIdentifier(identifier) else { return }
+        tab.close()
     }
     
     /// Prepares this window to drop Chromium's auto-created placeholder tab while replaying restore tabs.
@@ -510,11 +590,23 @@ class BrowserState {
         }
     }
     
-    func handleNewTabFromChromium(_ tab: Tab) {
+    func handleNewTabFromChromium(_ tab: Tab, context: NativeTabCreationContext? = nil) {
+        registerRestoredTabArrivalIfNeeded(tab)
         // Check if this is an AI Chat Tab
         if let customGuid = tab.guidInLocalDB,
            Self.isAIChatId(customGuid),
            let identifier = Self.associatedIdentifier(from: customGuid) {
+            aiChatTabsBeingCreated.remove(identifier)
+            // Defensive: if Chromium produced more than one AI Chat tab for the
+            // same identifier (e.g. two callers raced before our dedup landed,
+            // or a previous build leaked one), keep the first arrival and close
+            // the duplicate via Chromium so it doesn't outlive its associated
+            // content tab and keep the window alive.
+            if let existing = aiChatTabs[identifier] {
+                AppLogWarn("🤖 [AIChat] duplicate AI tab for identifier=\(identifier) existing=\(existing.guid) duplicate=\(tab.guid); closing duplicate")
+                tab.webContentWrapper?.close()
+                return
+            }
             aiChatTabs[identifier] = tab
             return  // Don't add to regular tabs
         }
@@ -524,7 +616,21 @@ class BrowserState {
         }
         
         tabs.append(tab)
-        registerRestoredTabArrivalIfNeeded(tab)
+        let creationKindText = context?.creationKind.rawValue ?? "nil"
+        let t0 = CFAbsoluteTimeGetCurrent()
+        let openerText = context?.openerTabId.map(String.init) ?? "nil"
+        let insertAfterText = context?.insertAfterTabId.map(String.init) ?? "nil"
+        let sourceText = context?.sourceTabId.map(String.init) ?? "nil"
+        let resetOnActiveText = context?.resetOpenerOnActiveTabChange.description ?? "nil"
+        let resetTabIds = Array(nativeRelationGraph.resetOnActiveChangeTabIds).sorted()
+        AppLogDebug(
+            "[NativeTab] handleNewTabFromChromium tabId=\(tab.guid) title=\(tab.title ?? "") " +
+            "url=\(tab.url ?? "") normalOrderBefore=\(normalTabOrder) " +
+            "context={kind=\(creationKindText), opener=\(openerText), insertAfter=\(insertAfterText), " +
+            "source=\(sourceText), resetOnActive=\(resetOnActiveText)} " +
+            "graphBefore={openers=\(nativeRelationGraph.openerByTabId), reset=\(resetTabIds)}"
+        )
+        nativeRelationGraph.applyOptimisticCreation(tabId: tab.guid, context: context)
 
         // Reattach to a pinned tab entry when the local guid matches.
         if let localGuid = tab.guidInLocalDB,
@@ -542,22 +648,143 @@ class BrowserState {
             if pending.matches(tab: tab) {
                 insertIntoNormalTabOrder(tabGuid: tab.guid, at: pending.index)
                 pendingNormalTabInsertion = nil
+                let elapsed = (CFAbsoluteTimeGetCurrent() - t0) * 1000
+                AppLogDebug("[NativeTab] ⏱ handleNewTabFromChromium tabId=\(tab.guid) took \(String(format: "%.2f", elapsed))ms")
                 return
             }
         }
+
+        if let insertionIndex = NativeTabDecisionEngine.insertionIndex(
+            visibleNormalTabIds: normalTabs.map(\.guid),
+            context: context,
+            relationGraph: nativeRelationGraph
+        ) {
+            AppLogDebug("[NativeTab] handleNewTabFromChromium inserting tabId=\(tab.guid) at index=\(insertionIndex)")
+            insertIntoNormalTabOrder(tabGuid: tab.guid, at: insertionIndex)
+            let elapsed = (CFAbsoluteTimeGetCurrent() - t0) * 1000
+            AppLogDebug("[NativeTab] ⏱ handleNewTabFromChromium tabId=\(tab.guid) took \(String(format: "%.2f", elapsed))ms")
+            return
+        }
         
+        AppLogDebug("[NativeTab] handleNewTabFromChromium falling back to updateNormalTabs for tabId=\(tab.guid)")
         updateNormalTabs()
+        let elapsed = (CFAbsoluteTimeGetCurrent() - t0) * 1000
+        AppLogDebug("[NativeTab] ⏱ handleNewTabFromChromium tabId=\(tab.guid) took \(String(format: "%.2f", elapsed))ms")
+    }
+
+    func applyRelationshipSnapshot(_ snapshot: NativeTabRelationshipSnapshot) {
+        guard snapshot.windowId == windowId else { return }
+        let t0 = CFAbsoluteTimeGetCurrent()
+        let snapshotResetTabIds = Array(snapshot.resetOnActiveChangeTabIds).sorted()
+        let knownTabIds = Array(nativeRelationGraph.knownTabIds).sorted()
+        let graphResetTabIds = Array(nativeRelationGraph.resetOnActiveChangeTabIds).sorted()
+        let localFixBefore = nativeRelationGraph.locallyFixedOpenerTabIds
+        AppLogDebug(
+            "[NativeTab] applyRelationshipSnapshot version=\(snapshot.version) " +
+            "snapshotOpeners=\(snapshot.openerByTabId) " +
+            "snapshotReset=\(snapshotResetTabIds) " +
+            "graphBefore={known=\(knownTabIds), openers=\(nativeRelationGraph.openerByTabId), " +
+            "reset=\(graphResetTabIds), localFix=\(localFixBefore)}"
+        )
+        nativeRelationGraph.apply(snapshot: snapshot)
+        let knownTabIdsAfterApply = Array(nativeRelationGraph.knownTabIds).sorted()
+        let graphResetTabIdsAfterApply = Array(nativeRelationGraph.resetOnActiveChangeTabIds).sorted()
+        AppLogDebug(
+            "[NativeTab] applyRelationshipSnapshot graphAfter={known=\(knownTabIdsAfterApply), " +
+            "openers=\(nativeRelationGraph.openerByTabId), reset=\(graphResetTabIdsAfterApply), " +
+            "localFix=\(nativeRelationGraph.locallyFixedOpenerTabIds), version=\(nativeRelationGraph.version)}"
+        )
+        let elapsed = (CFAbsoluteTimeGetCurrent() - t0) * 1000
+        AppLogDebug("[NativeTab] ⏱ applyRelationshipSnapshot version=\(snapshot.version) took \(String(format: "%.2f", elapsed))ms")
+    }
+
+    func prepareForActiveTabClose(tabId: Int) {
+        guard focusingTab?.guid == tabId else { return }
+        guard normalTabs.contains(where: { $0.guid == tabId }) else { return }
+        let visibleIds = normalTabs.map(\.guid)
+        AppLogDebug(
+            "[NativeTab] prepareForActiveTabClose tabId=\(tabId) " +
+            "visibleIds=\(visibleIds) " +
+            "graph={openers=\(nativeRelationGraph.openerByTabId), " +
+            "localFix=\(nativeRelationGraph.locallyFixedOpenerTabIds)}"
+        )
+        var targetTabId = NativeTabDecisionEngine.selectionTarget(
+            visibleNormalTabIds: visibleIds,
+            closingTabId: tabId,
+            relationGraph: nativeRelationGraph
+        )
+
+        if let target = targetTabId,
+           nativeRelationGraph.openerByTabId[tabId] != nil,
+           !isOpenerRelated(target: target, closingTabId: tabId) {
+            if let pinnedTarget = findPinnedOrBookmarkAncestor(of: tabId) {
+                AppLogDebug("[NativeTab] prepareForActiveTabClose redirecting to pinned/bookmark ancestor \(pinnedTarget)")
+                targetTabId = pinnedTarget
+            }
+        }
+
+        guard let finalTarget = targetTabId else {
+            AppLogDebug("[NativeTab] prepareForActiveTabClose no selectionTarget found, clearing override")
+            pendingSelectionOverride = nil
+            return
+        }
+
+        pendingSelectionOverride = NativePendingSelectionOverride(
+            closingTabId: tabId,
+            targetTabId: finalTarget,
+            relationVersion: nativeRelationGraph.version
+        )
+        AppLogDebug(
+            "[NativeTab] prepareForActiveTabClose override={closing=\(tabId), " +
+            "target=\(finalTarget), version=\(nativeRelationGraph.version)}"
+        )
+    }
+
+    /// Walk the opener chain upward to find a pinned or bookmark content tab.
+    private func findPinnedOrBookmarkAncestor(of tabId: Int) -> Int? {
+        let openedPinnedGuids = Set(pinnedTabs.filter { $0.isOpenned }.compactMap { $0.guidInLocalDB })
+        let openedBookmarkGuids = Set(bookmarkManager.getAllBookmarks().filter { $0.isOpened }.map { $0.guid })
+
+        var current: Int? = nativeRelationGraph.openerByTabId[tabId]
+        var visited = Set<Int>()
+        while let cid = current, !visited.contains(cid) {
+            visited.insert(cid)
+            if let tab = tabs.first(where: { $0.guid == cid }),
+               let localGuid = tab.guidInLocalDB, !localGuid.isEmpty {
+                if openedPinnedGuids.contains(localGuid) || openedBookmarkGuids.contains(localGuid) {
+                    return cid
+                }
+            }
+            current = nativeRelationGraph.openerByTabId[cid]
+        }
+        return nil
+    }
+
+    /// Check if `target` was selected via direct opener relationship (child, sibling, or opener).
+    /// Remote ancestors don't count — they indicate a neighbor fallback, not opener-based selection.
+    private func isOpenerRelated(target: Int, closingTabId: Int) -> Bool {
+        let closingOpener = nativeRelationGraph.openerByTabId[closingTabId]
+        let targetOpener = nativeRelationGraph.openerByTabId[target]
+        if targetOpener == closingTabId { return true }
+        if let co = closingOpener, targetOpener == co { return true }
+        if let co = closingOpener, target == co { return true }
+        return false
     }
     
+    @MainActor
     func closeTab(_ tabId: Int) {
+        let t0 = CFAbsoluteTimeGetCurrent()
+        // Ensure selection override is computed before the graph is modified.
+        // Tab.close() already calls this for sidebar-initiated closes, but
+        // Chromium-driven closes (CMD+W, etc.) arrive via tabWillBeRemove
+        // and skip Tab.close() entirely.
+        prepareForActiveTabClose(tabId: tabId)
+
         // When an AI Chat tab closes, also clear its association and close the linked content tab.
         for (identifier, aiTab) in aiChatTabs {
             if aiTab.guid == tabId {
                 aiChatTabs.removeValue(forKey: identifier)
-                // Delay the linked tab close so Chromium can finish its selection updates first.
-                DispatchQueue.main.async { [weak self] in
-                    self?.closeAssociatedTab(for: identifier)
-                }
+                closeAssociatedTab(for: identifier)
                 return
             }
         }
@@ -565,11 +792,11 @@ class BrowserState {
         // Resolve the normal tab after AI Chat-tab handling has been ruled out.
         guard let closedTab = tabs.first(where: { $0.guid == tabId }) else { return }
 
-        // Delay the linked AI Chat close so Chromium can finish its selection updates first.
+        // Close the linked AI Chat synchronously. EventBus already hops through a
+        // `Task @MainActor`, so we are no longer inside Chromium's tab strip
+        // change callback and can call `WebContentWrapper.close()` directly.
         let identifier = getTabIdentifier(for: closedTab)
-        DispatchQueue.main.async { [weak self] in
-            self?.closeAIChatTab(for: identifier)
-        }
+        closeAIChatTab(for: identifier)
         
         // Remove the tab from pinned state if it was mirrored there.
         if let localGuid = closedTab.guidInLocalDB,
@@ -585,9 +812,28 @@ class BrowserState {
         // Clear bookmark open-state linkage if this tab came from a bookmark.
         handleBookmarkTabClosed(closedTab)
 
+        tabSwitchManager.removeTab(tabID: tabId)
+
         // Remove the tab from the in-memory list after linked state is updated.
         tabs.removeAll { $0.guid == tabId }
+        let closedChildren = nativeRelationGraph.directChildren(of: tabId)
+        AppLogDebug(
+            "[NativeTab] closeTab tabId=\(tabId) children=\(closedChildren) " +
+            "graphBefore={openers=\(nativeRelationGraph.openerByTabId), " +
+            "localFix=\(nativeRelationGraph.locallyFixedOpenerTabIds)}"
+        )
+        nativeRelationGraph.fixOpenersAfterMovingTab(tabId)
+        for childId in closedChildren {
+            nativeRelationGraph.locallyFixedOpenerTabIds.insert(childId)
+        }
+        nativeRelationGraph.removeTab(tabId)
+        AppLogDebug(
+            "[NativeTab] closeTab graphAfter={openers=\(nativeRelationGraph.openerByTabId), " +
+            "localFix=\(nativeRelationGraph.locallyFixedOpenerTabIds)}"
+        )
         updateNormalTabs()
+        let elapsed = (CFAbsoluteTimeGetCurrent() - t0) * 1000
+        AppLogDebug("[NativeTab] ⏱ closeTab tabId=\(tabId) took \(String(format: "%.2f", elapsed))ms")
     }
     
     func closeTabs(keeping: Set<Int>) {
@@ -622,6 +868,18 @@ class BrowserState {
 
         windowController?.handleTabReadyToDisplay(tabId: tabId)
     }
+
+    /// Called when a tab enters/exits HTML5 content fullscreen. Writes the
+    /// new state onto the Tab so the owning WebContentViewController can
+    /// observe and re-parent its hostView.
+    func handleTabContentFullscreen(tabId: Int, isFullscreen: Bool) {
+        guard let tab = tabs.first(where: { $0.guid == tabId }) else {
+            return
+        }
+        if tab.isInContentFullscreen != isFullscreen {
+            tab.isInContentFullscreen = isFullscreen
+        }
+    }
     
     func toggleTabPinStatus(_ tabId: Int, guidInDB: String?) {
         if let opennedTab = tabs.first(where: { $0.guid == tabId }) {
@@ -652,10 +910,26 @@ class BrowserState {
     
     func createTab(_ url: String?, customGuid: String? = nil, focusAfterCreate: Bool = true) {
         AppLogInfo("🪟 [Restore] createTab request windowId=\(windowId) focus=\(focusAfterCreate) url=\(url ?? "") customGuid=\(customGuid ?? "nil")")
+        let focusingTabText = focusingTab?.guid ?? -1
+        AppLogDebug(
+            "[NativeTab] mac createTab " +
+            "windowId=\(windowId) url=\(url ?? "") focusAfterCreate=\(focusAfterCreate) " +
+            "focusingTab=\(focusingTabText) normalOrder=\(normalTabOrder)"
+        )
         ChromiumLauncher.sharedInstance().bridge?.createNewTab(withUrl: url ?? "",
                                                                windowId: windowId.int64Value,
                                                                customGuid: customGuid,
                                                                focusAfterCreate: focusAfterCreate)
+    }
+
+    func createQuickLookupTab(customGuid: String? = nil) {
+        let focusingTabText = focusingTab?.guid ?? -1
+        AppLogDebug(
+            "[NativeTab] mac createQuickLookupTab " +
+            "windowId=\(windowId) focusingTab=\(focusingTabText) normalOrder=\(normalTabOrder)"
+        )
+        ChromiumLauncher.sharedInstance().bridge?.createQuickLookupTab(withWindowId: windowId.int64Value,
+                                                                       customGuid: customGuid)
     }
     
     func openTab(_ url: String?) {
@@ -699,14 +973,30 @@ class BrowserState {
     ///   - toIndex: Destination insertion index inside `normalTabs`.
     func moveNormalTabLocally(from fromIndex: Int, to toIndex: Int) {
         guard fromIndex >= 0, fromIndex < normalTabOrder.count else { return }
-        
-        let guid = normalTabOrder.remove(at: fromIndex)
-        
+
         var insertIndex = toIndex
         if fromIndex < toIndex {
             insertIndex = max(0, toIndex - 1)
         }
         insertIndex = min(insertIndex, normalTabOrder.count)
+        guard insertIndex != fromIndex else { return }
+
+        let guid = normalTabOrder.remove(at: fromIndex)
+        let affectedChildren = nativeRelationGraph.directChildren(of: guid)
+        AppLogDebug(
+            "[NativeTab] moveNormalTabLocally tabId=\(guid) from=\(fromIndex) to=\(insertIndex) " +
+            "children=\(affectedChildren) " +
+            "graphBefore={openers=\(nativeRelationGraph.openerByTabId), " +
+            "localFix=\(nativeRelationGraph.locallyFixedOpenerTabIds)}"
+        )
+        nativeRelationGraph.fixOpenersAfterMovingTab(guid)
+        for childId in affectedChildren {
+            nativeRelationGraph.locallyFixedOpenerTabIds.insert(childId)
+        }
+        AppLogDebug(
+            "[NativeTab] moveNormalTabLocally graphAfter={openers=\(nativeRelationGraph.openerByTabId), " +
+            "localFix=\(nativeRelationGraph.locallyFixedOpenerTabIds)}"
+        )
         
         normalTabOrder.insert(guid, at: insertIndex)
         
@@ -749,6 +1039,11 @@ class BrowserState {
     func moveNormalTab(tabId: Int, toPinnd pinnedIndex: Int, selectAfterMove: Bool = false) {
         guard let tab = tabs.first(where: { $0.guid == tabId }) else {
             return
+        }
+        let affectedChildren = nativeRelationGraph.directChildren(of: tabId)
+        nativeRelationGraph.fixOpenersAfterMovingTab(tabId)
+        for childId in affectedChildren {
+            nativeRelationGraph.locallyFixedOpenerTabIds.insert(childId)
         }
         var afterGuid: String?
         if pinnedIndex > 0, !pinnedTabs.isEmpty {
@@ -807,6 +1102,11 @@ class BrowserState {
         guard let tab = tabs.first(where: { $0.guid == tabId }),
               let url = tab.url, !url.isEmpty else {
             return
+        }
+        let affectedChildren = nativeRelationGraph.directChildren(of: tabId)
+        nativeRelationGraph.fixOpenersAfterMovingTab(tabId)
+        for childId in affectedChildren {
+            nativeRelationGraph.locallyFixedOpenerTabIds.insert(childId)
         }
         
         let newBookmarkGuid = UUID().uuidString

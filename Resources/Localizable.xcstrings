@@ -212,6 +212,9 @@
     "Browser memory" : {
       "comment" : "AI settings - Section title for browser memory management"
     },
+    "Browser Memory" : {
+      "comment" : "Header more menu - AI memory\nMemory button - Tooltip & Accessibility label for the AI memory entry button shown in the sidebar bottom bar and the web content header trailing area"
+    },
     "Browsing" : {
       "comment" : "General settings - Browsing section title"
     },
@@ -331,7 +334,7 @@
       "comment" : "Import data type - Cookies toggle label"
     },
     "Copy Link" : {
-      "comment" : "Address bar menu - Copy link menu item\nBookmark Copy Link menu item\nDownload item row - Tooltip for copy link button\nTab context menu - Menu item to copy the tab URL to clipboard\nTooltip for button to copy download URL in living downloads toast"
+      "comment" : "Address bar menu - Copy link menu item\nBookmark Copy Link menu item\nDownload item row - Tooltip for copy link button\nSidebar address bar - Copy current page URL button tooltip\nTab context menu - Menu item to copy the tab URL to clipboard\nTooltip for button to copy download URL in living downloads toast"
     },
     "Crash Samples" : {
 
@@ -401,6 +404,9 @@
     },
     "Edit the name and address for this bookmark." : {
       "comment" : "Bookmark editor - Subtitle explaining bookmark editing"
+    },
+    "Edit the name and address for this pinned tab." : {
+      "comment" : "Pinned tab editor - Subtitle explaining pinned tab editing"
     },
     "Edit..." : {
       "comment" : "Edit bookmark url menu item title\nPinned tab context menu - Edit pinned tab menu item"
@@ -524,6 +530,9 @@
     },
     "Include this screenshot and titles of open tabs" : {
       "comment" : "Feedback form - Checkbox option to include screenshot with feedback"
+    },
+    "Incognito" : {
+      "comment" : "Incognito label in the native new tab page"
     },
     "Install and Restart" : {
       "comment" : "Update alert - Button to install update and restart the app"
@@ -909,6 +918,9 @@
     "Tab ⇥" : {
       "comment" : "Tab"
     },
+    "Tab Name" : {
+      "comment" : "Pinned tab editor - Placeholder for pinned tab name input"
+    },
     "Telegram" : {
       "comment" : "Phi Link - Section title"
     },
@@ -920,9 +932,6 @@
     },
     "Theme" : {
       "comment" : "General settings - Theme section title"
-    },
-    "This is the URL that opens when you click this pinned tab." : {
-      "comment" : "Favorite editor - Subtitle explaining what the pinned URL controls"
     },
     "Today" : {
       "comment" : "Download item row - Relative time when download completed today"

@@ -31,6 +31,7 @@ class HoverableView: NSView {
     var enableClickAnimation = false
     
     var clickAction: (() -> Void)?
+    var secondaryClickAction: (() -> Void)?
     var hoverStateChanged: ((Bool) -> Void)?
     
     init(frame frameRect: NSRect = .zero, clickAction: (() -> Void)? = nil) {
@@ -122,6 +123,14 @@ class HoverableView: NSView {
         if responseToClickAction {
             clickAction?()
         }
+    }
+
+    override func rightMouseDown(with event: NSEvent) {
+        guard let secondaryClickAction else {
+            super.rightMouseDown(with: event)
+            return
+        }
+        secondaryClickAction()
     }
     
     // MARK: - Animation Methods

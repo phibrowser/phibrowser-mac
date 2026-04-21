@@ -31,7 +31,7 @@ struct SideTabView: View {
     var body: some View {
         HStack(spacing: 8) {
             UnifiedTabFaviconView(viewModel: model)
-                .frame(width: 14, height: 14)
+                .frame(width: 16, height: 16)
 
             // Media Indicators
             if model.isCurrentlyAudible || model.isAudioMuted {

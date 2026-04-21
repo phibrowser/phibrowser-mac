@@ -10,11 +10,18 @@ import SwiftData
 extension MainBrowserWindowController {
     @IBAction func newBrowserTab(_ sender: Any?) {
         let openNewTabPage = PhiPreferences.GeneralSettings.openNewTabPageOnCmdT.loadValue()
+        let focusingTabText = browserState.focusingTab?.guid ?? -1
+        AppLogDebug(
+            "[NativeTab] mac newBrowserTab " +
+            "windowId=\(browserState.windowId) " +
+            "openNewTabPage=\(openNewTabPage) " +
+            "focusingTab=\(focusingTabText)"
+        )
         if openNewTabPage {
             if browserState.isIncognito {
                 browserState.enqueueNativeNTP()
             }
-            browserState.createTab("chrome://newtab", focusAfterCreate: true)
+            browserState.createQuickLookupTab()
         } else {
             toggleOmniBox(fromAddressBar: false)
         }
@@ -117,11 +124,17 @@ extension MainBrowserWindowController {
     }
     
     /// will be called by PhiApplication.sendEvent
-    @IBAction func goBack(_ sender: Any) {
+    @IBAction func goBack(_ sender: Any?) {
+        guard !AgentAnimationManager.shared.isActive(for: browserState.focusingTab?.guid ?? 0) else {
+            return
+        }
         browserState.focusingTab?.goBack()
     }
     
-    @IBAction func goForward(_ sender: Any) {
+    @IBAction func goForward(_ sender: Any?) {
+        guard !AgentAnimationManager.shared.isActive(for: browserState.focusingTab?.guid ?? 0) else {
+            return
+        }
         browserState.focusingTab?.goForward()
     }
 

@@ -2,6 +2,16 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+	<key>com.apple.developer.web-browser.public-key-credential</key>
+	<true/>
+	<key>com.apple.security.application-groups</key>
+	<array>
+		<string>group.com.phibrowser.shared</string>
+	</array>
+	<key>keychain-access-groups</key>
+	<array>
+		<string>87DQ3HMK5G.com.phibrowser.canary.Mac.webauthn</string>
+	</array>
 	<key>com.apple.security.app-sandbox</key>
 	<false/>
 	<key>com.apple.security.automation.apple-events</key>

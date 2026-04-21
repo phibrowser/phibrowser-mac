@@ -228,7 +228,7 @@ class ConchFrameAnimationBaseViewController: NSViewController {
                             }
                         }
                     } else {
-                        print("Failed to load image: \(row)-\(col)")
+                        AppLogError("Failed to load image: \(row)-\(col)")
                     }
                 }
             }

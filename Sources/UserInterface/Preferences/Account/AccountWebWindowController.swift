@@ -4,6 +4,7 @@
 // found in the LICENSE file.
 
 import Cocoa
+import UniformTypeIdentifiers
 import WebKit
 
 /// A transparent view that allows window dragging when the title bar is hidden
@@ -104,6 +105,7 @@ class AccountWebWindowController: NSWindowController {
         webView = WKWebView(frame: contentView.bounds, configuration: configuration)
         webView.autoresizingMask = [.width, .height]
         webView.navigationDelegate = self
+        webView.uiDelegate = self
 
         // Enable developer tools / Inspect Element in DEBUG and NIGHTLY builds
         #if DEBUG || NIGHTLY_BUILD
@@ -154,6 +156,22 @@ extension AccountWebWindowController: WKScriptMessageHandler {
            let image = NSImage(data: data) {
             AppLogInfo("📄 [AccountWebWindow] Avatar image decoded successfully")
             onAvatarSaved?(image)
+        }
+    }
+}
+
+// MARK: - WKUIDelegate
+
+extension AccountWebWindowController: WKUIDelegate {
+    func webView(_ webView: WKWebView, runOpenPanelWith parameters: WKOpenPanelParameters, initiatedByFrame frame: WKFrameInfo, completionHandler: @escaping ([URL]?) -> Void) {
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = true
+        panel.canChooseDirectories = false
+        panel.allowsMultipleSelection = parameters.allowsMultipleSelection
+        panel.allowedContentTypes = [.image]
+
+        panel.beginSheetModal(for: window!) { response in
+            completionHandler(response == .OK ? panel.urls : nil)
         }
     }
 }

@@ -20,6 +20,7 @@ class SidebarHeaderView: NSView, TitlebarAwareHitTestable {
     private var layoutSettleCancellable: AnyCancellable?
     /// Currently available app update version.
     private var availableUpdateVersion: String?
+    private var currentWidth: CGFloat = 0
     
     private var isFloating: Bool = false
     
@@ -119,7 +120,7 @@ class SidebarHeaderView: NSView, TitlebarAwareHitTestable {
         let stack = NSStackView(views: [backButton, forwardButton, refreshButton, stopButton])
         stack.orientation = .horizontal
         stack.alignment = .centerY
-        stack.spacing = 4
+        stack.spacing = 2
         return stack
     }()
     
@@ -166,11 +167,12 @@ class SidebarHeaderView: NSView, TitlebarAwareHitTestable {
             upgradeButtonLeftConstraint = make.left.equalToSuperview().offset(sidebarButtonLeftOffset).constraint
             make.size.equalTo(NSSize(width: 56, height: 24))
         }
+        
         addSubview(stackView)
         stackView.snp.makeConstraints { make in
             make.centerY.equalTo(sidebarButton)
             make.height.equalTo(24)
-            make.right.equalToSuperview().inset(5)
+            make.right.equalToSuperview().inset(2)
         }
         
         addSubview(addressView)
@@ -371,7 +373,8 @@ class SidebarHeaderView: NSView, TitlebarAwareHitTestable {
     }
     
     private func handleWidthChange(_ newWidth: CGFloat) {
-//        sidebarButton.isHidden = newWidth <= 170
+        currentWidth = newWidth
+        updateUpgradeAndSidebarVisibility(layoutMode: browserState?.layoutMode ?? .performance)
     }
     
     @objc private func sidebarButtonClicked() {
@@ -428,8 +431,8 @@ class SidebarHeaderView: NSView, TitlebarAwareHitTestable {
             return
         }
 
-        upgradeButton.isHidden = false
-        // Keep previous behavior for non-navigationAtTop layouts.
-        sidebarButton.isHidden = layoutMode != .balanced
+        let tooNarrowForUpgrade = !isFloating && currentWidth <= 225
+        upgradeButton.isHidden = tooNarrowForUpgrade
+        sidebarButton.isHidden = tooNarrowForUpgrade ? false : (layoutMode != .balanced)
     }
 }

@@ -125,12 +125,15 @@ class WebContentContainerViewController: NSViewController {
     var floatingSidebarContainerView: NSView?
     var floatingSidebarViewController: FloatingSidebarViewController?
     var floatingSidebarLeadingConstraint: Constraint?
+    var floatingSidebarWidthConstraint: Constraint?
     var floatingSidebarHideWorkItem: DispatchWorkItem?
     var floatingSidebarEnableWorkItem: DispatchWorkItem?
     var floatingSidebarLastShownAt: Date?
     var floatingSidebarShownFromRightToLeft = false
     var isPointerInsideFloatingSidebar = false
     var isPointerInsideFloatingSidebarTrigger = false
+    /// Tracks the last non-zero sidebar width so the floating panel can match it after collapse.
+    var lastKnownSidebarWidth: CGFloat = 0
     
     // MARK: - Initialization
     
@@ -186,6 +189,9 @@ class WebContentContainerViewController: NSViewController {
             make.left.equalToSuperview()
             make.top.bottom.equalToSuperview()
             make.width.equalTo(10)
+        }
+        resizeHandle.onDragEnded = { [weak self] in
+            self?.updateLayoutForMode()
         }
 
         // Add left-edge hover trigger for floating sidebar.
@@ -279,6 +285,28 @@ class WebContentContainerViewController: NSViewController {
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in
                 self?.updateLayoutForMode()
+            }
+            .store(in: &cancellables)
+
+        if lastKnownSidebarWidth <= 0 {
+            let cached = AccountController.shared.account?.userDefaults.lastKnownSidebarWidth ?? 0
+            if cached > 0 {
+                lastKnownSidebarWidth = cached
+            }
+        }
+
+        browserState?.$sidebarWidth
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] width in
+                guard let self else { return }
+                // Only cache widths >= the split-view minimum. This includes the user-chosen
+                // minimum width (185), but excludes 0 (collapsed) and the small transient
+                // frames produced during the collapse animation, which would otherwise
+                // shrink the floating sidebar below the real sidebar's minimum.
+                if width >= MainSplitViewController.leftItemMinWidth {
+                    self.lastKnownSidebarWidth = width
+                }
+                self.updateFloatingSidebarWidth()
             }
             .store(in: &cancellables)
 
@@ -599,8 +627,9 @@ class WebContentContainerViewController: NSViewController {
             titleAwareArea.isHidden = false
         }
 
-        // In non-comfortable mode, hide resize handle while sidebar is collapsed.
-        resizeHandle.isHidden = shouldEnableFloatingSidebar()
+        // Keep the resize handle visible during an active drag so the user can
+        // re-expand the sidebar without releasing the mouse button.
+        resizeHandle.isHidden = shouldEnableFloatingSidebar() && !resizeHandle.isDragging
         updateFloatingSidebarAvailability()
     }
 
@@ -703,6 +732,39 @@ class WebContentContainerViewController: NSViewController {
         notifyViewSwitchCompleted()
 
         // AppLogDebug("[FlickerFix][Mac] ➡️ Sent confirmViewSwitchCompleted after new tab first paint")
+    }
+
+    // =========================================================================
+    // DevTools embedding
+    // =========================================================================
+
+    /// Find the WebContentViewController managing a given Chromium tab ID.
+    private func findController(forTabId tabId: Int) -> WebContentViewController? {
+        webContentControllers.values.first { $0.associatedTab?.guid == tabId }
+    }
+
+    /// Called when Chromium attaches docked DevTools to a tab.
+    func handleDevToolsDidAttach(tabId: Int, devToolsView: NSView) {
+        guard let controller = findController(forTabId: tabId) else {
+            AppLogInfo("[DevTools] No controller found for tabId=\(tabId)")
+            return
+        }
+        controller.attachDevTools(view: devToolsView)
+    }
+
+    /// Called when Chromium detaches DevTools from a tab (closed or undocked).
+    func handleDevToolsDidDetach(tabId: Int) {
+        guard let controller = findController(forTabId: tabId) else {
+            AppLogInfo("[DevTools] No controller found for tabId=\(tabId)")
+            return
+        }
+        controller.detachDevTools()
+    }
+
+    /// Called when DevTools JS updates the inspected page bounds.
+    func handleUpdateInspectedPageBounds(tabId: Int, bounds: CGRect, hide: Bool) {
+        guard let controller = findController(forTabId: tabId) else { return }
+        controller.updateInspectedPageBounds(bounds, hide: hide)
     }
 
     // MARK: - Status URL Display

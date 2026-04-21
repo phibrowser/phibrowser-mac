@@ -385,7 +385,7 @@ class BookmarkBar: NSView {
     }
 
     private func handleBookmarkClick(_ bookmark: Bookmark, itemView: NSView) {
-        print("Bookmark clicked: \(bookmark.title)")
+        AppLogDebug("Bookmark clicked: \(bookmark.title)")
         if bookmark.isFolder {
             showFolderMenu(for: bookmark, relativeTo: itemView)
         } else {

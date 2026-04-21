@@ -188,7 +188,7 @@ class LoginController {
         }
 
         if auth0Manager.hasRecoverableLoginSession(),
-           let credentials = auth0Manager.getActiveCredentialsSyncly() {
+           let credentials = auth0Manager.currentCredentials {
             initAccountIfNeeded(credentials)
             return AccountController.shared.account
         }

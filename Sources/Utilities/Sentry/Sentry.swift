@@ -12,6 +12,7 @@ import Sentry
     @objc static func setup() {
         SentrySDK.start { options in
             options.dsn = ""
+            options.experimental.enableLogs = true
             
             if let basePath = NSSearchPathForDirectoriesInDomains(.applicationSupportDirectory, .userDomainMask, true).first,
                let appName = Bundle.main.infoDictionary?["CFBundleIdentifier"] as? String {
@@ -27,10 +28,9 @@ import Sentry
             options.enableCoreDataTracing = false
             options.enableFileIOTracing = false
             options.enableNetworkTracking = false
-            options.enableAutoSessionTracking = false
+            options.enableAutoSessionTracking = true
             options.enableCaptureFailedRequests = false
-            
-            // System modal alerts can look like hangs to Sentry, so keep hang tracking off.
+            options.enableAutoPerformanceTracing = false
             options.enableAppHangTracking = false
             
             options.initialScope = { scope in
@@ -76,5 +76,39 @@ import Sentry
         user.userId = userInfo.sub
         user.username = userInfo.name
         SentrySDK.setUser(user)
+    }
+
+    /// Reports an unrecoverable auth failure (refresh-token reuse, token-family destruction,
+    /// missing credentials) that forced the user back to the login state. Sends one Sentry
+    /// message event with the rendered auth trace attached. Callers (`AuthManager`) MUST
+    /// dedupe to avoid producing one event per concurrent caller observing the same
+    /// failure. The previous implementation also opened a manual `auth.forced-logout`
+    /// transaction, but transactions are intended for timing/spans and bypass `tracesSampleRate`,
+    /// which would noisify the performance dashboard for what is a discrete error event.
+    static func captureAuthForcedLogout(
+        operation: String,
+        reason: String,
+        trace: String,
+        attributes: [String: String]
+    ) {
+        var enrichedAttributes = attributes
+        enrichedAttributes["operation"] = operation
+        enrichedAttributes["reason"] = reason
+
+        SentrySDK.logger.error("Auth forced logout", attributes: enrichedAttributes)
+
+        SentrySDK.capture(message: "Auth forced logout: \(reason)") { scope in
+            // `noCredentials` typically reflects a benign state (user wiped Keychain,
+            // first-run, etc.) and should not page on-call.
+            scope.setLevel(reason == "no_credentials" ? .warning : .error)
+            scope.setTag(value: "auth", key: "area")
+            scope.setTag(value: reason, key: "auth.reason")
+            scope.setTag(value: operation, key: "auth.operation")
+            scope.setContext(value: enrichedAttributes, key: "auth")
+            scope.setExtra(value: trace, key: "auth_trace")
+            if let data = trace.data(using: .utf8) {
+                scope.addAttachment(Attachment(data: data, filename: "auth-trace.txt"))
+            }
+        }
     }
 }

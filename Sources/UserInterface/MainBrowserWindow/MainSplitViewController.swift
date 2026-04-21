@@ -6,6 +6,9 @@
 import Cocoa
 import Combine
 class MainSplitViewController: NSViewController {
+    static let leftItemMinWidth: CGFloat = 185
+    static let leftItemMaxWidth: CGFloat = 500
+    
     private let splitViewController = NSSplitViewController()
 
     private lazy var verticalTabListViewController: SidebarViewController = { SidebarViewController(browserState: state) }()
@@ -215,8 +218,8 @@ class MainSplitViewController: NSViewController {
         } else {
             sideBarSplitViewItem = NSSplitViewItem(sidebarWithViewController: verticalTabListViewController)
         }
-        sideBarSplitViewItem.minimumThickness = 220
-        sideBarSplitViewItem.maximumThickness = 500
+        sideBarSplitViewItem.minimumThickness = Self.leftItemMinWidth
+        sideBarSplitViewItem.maximumThickness = Self.leftItemMaxWidth
         sideBarSplitViewItem.canCollapse = true
         sideBarSplitViewItem.holdingPriority = .init(rawValue: 260)
         
@@ -306,6 +309,10 @@ extension MainSplitViewController: NSSplitViewDelegate {
     private func updateSidebarWidth() {
         let width = sideBarSplitViewItem.isCollapsed ? 0 : sideBarSplitViewItem.viewController.view.frame.width
         state.sidebarWidth = width
+        guard width != Self.leftItemMinWidth else {
+            return
+        }
+        AccountController.shared.account?.userDefaults.setLastKnownSidebarWidth(width)
     }
 }
 

@@ -223,6 +223,16 @@ extension OmniBoxTextField: NSTextFieldDelegate {
         }
 
         if let fieldEditor = window?.fieldEditor(false, for: textFiled) {
+            let raw = fieldEditor.string
+            if raw.contains("\n") || raw.contains("\r") {
+                let cleaned = raw
+                    .replacingOccurrences(of: "\r\n", with: " ")
+                    .replacingOccurrences(of: "\n", with: " ")
+                    .replacingOccurrences(of: "\r", with: " ")
+                let cursorPos = min(fieldEditor.selectedRange.location, (cleaned as NSString).length)
+                fieldEditor.string = cleaned
+                fieldEditor.selectedRange = NSRange(location: cursorPos, length: 0)
+            }
             savedSelection = fieldEditor.selectedRange
             suppressSelectionSave = false
         }

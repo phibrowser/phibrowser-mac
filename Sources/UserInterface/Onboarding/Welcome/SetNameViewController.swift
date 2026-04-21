@@ -113,7 +113,9 @@ class SetNameViewController: OnboardingBaseViewController {
     override func viewDidAppear() {
         super.viewDidAppear()
         if credentials == nil {
-            credentials = AuthManager.shared.getActiveCredentialsSyncly()
+            Task {
+                credentials = await AuthManager.shared.getActiveCredentials()
+            }
         }
     }
     

@@ -6,6 +6,17 @@
 import SwiftUI
 import Combine
 import UniformTypeIdentifiers
+import AppKit
+
+private enum LivingDownloadDebugTuning {
+    static var autoDismissDuration: TimeInterval {
+#if DEBUG
+        10.0
+#else
+        3.0
+#endif
+    }
+}
 
 // MARK: - Living Download Item
 
@@ -21,7 +32,7 @@ class LivingDownloadItem: ObservableObject, Identifiable {
     private var dismissDuration: TimeInterval
     private var cancellables = Set<AnyCancellable>()
     
-    init(downloadItem: DownloadItem, dismissDuration: TimeInterval = 3.0) {
+    init(downloadItem: DownloadItem, dismissDuration: TimeInterval = LivingDownloadDebugTuning.autoDismissDuration) {
         self.id = downloadItem.id
         self.downloadItem = downloadItem
         self.dismissDuration = dismissDuration
@@ -113,7 +124,7 @@ class LivingDownloadsManager: ObservableObject {
     
     private weak var downloadsManager: DownloadsManager?
     
-    var autoDismissDuration: TimeInterval = 3.0
+    var autoDismissDuration: TimeInterval = LivingDownloadDebugTuning.autoDismissDuration
     
     private var cancellables = Set<AnyCancellable>()
     
@@ -271,8 +282,9 @@ struct CircularProgressButton: View {
     var trackColor: Color = Color.phiPrimary.opacity(0.15)
     var lineWidth: CGFloat = 2.5
     var buttonIcon: String = "xmark"
-    var isHovered: Bool = false
     var action: () -> Void
+
+    @State private var isHovered = false
     
     var body: some View {
         ZStack {
@@ -283,13 +295,19 @@ struct CircularProgressButton: View {
                 trackColor: trackColor,
                 lineWidth: lineWidth
             )
+            .allowsHitTesting(false)
             
             Button(action: action) {
                 Image(systemName: buttonIcon)
                     .font(.system(size: 10, weight: .semibold))
                     .foregroundColor(progressColor.opacity(isHovered ? 0.9 : 0.7))
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .contentShape(Circle())
             }
-            .buttonStyle(PlainButtonStyle())
+            .buttonStyle(.plain)
+            .onHover { hovering in
+                isHovered = hovering
+            }
         }
     }
 }
@@ -314,36 +332,39 @@ struct LivingDownloadItemView: View {
     private let actionButtonSize: CGFloat = 32
     
     private var item: DownloadItem { livingItem.downloadItem }
+
+    /// Chromium may disallow opening (e.g. removed file, policy); only normal safety is shown without warnings in this toast.
+    private var canOpenCompletedFile: Bool {
+        item.state == .complete && item.safetyState == .normal && item.canOpenDownload
+    }
     
     var body: some View {
         HStack(spacing: 12) {
-            fileIcon
-            
-            fileInfo
-            
-            Spacer(minLength: 0)
+            HStack(spacing: 12) {
+                fileIcon
+                
+                fileInfo
+                
+                Spacer(minLength: 0)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(Rectangle())
             
             actionArea
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 12)
-        .background(
-            ZStack {
-                VisualEffectBlur(material: .hudWindow, blendingMode: .withinWindow)
-                Color.black.opacity(0.06)
-            }
-        )
-        .clipShape(RoundedRectangle(cornerRadius: 10))
-        .overlay(
-            RoundedRectangle(cornerRadius: 10)
-                .stroke(Color.white.opacity(0.2), lineWidth: 0.5)
-        )
+        .livingToastBackground(cornerRadius: LivingDownloadToastMetrics.cornerRadius)
         .shadow(color: Color.black.opacity(0.15), radius: 20, x: 0, y: 10)
         .shadow(color: Color.black.opacity(0.1), radius: 1, x: 0, y: 0)
         .contentShape(Rectangle())
         .onHover { hovering in
             isHovered = hovering
             livingItem.setHovered(hovering)
+        }
+        .onTapGesture {
+            guard canOpenCompletedFile else { return }
+            onOpen(item)
         }
     }
     
@@ -376,7 +397,7 @@ struct LivingDownloadItemView: View {
         VStack(alignment: .leading, spacing: 4) {
             Text(item.displayFileName)
                 .font(.system(size: 13, weight: .medium))
-                .foregroundColor(Color.phiPrimary.opacity(0.85))
+                .livingToastPrimaryStyle()
                 .lineLimit(1)
                 .truncationMode(.middle)
 
@@ -402,7 +423,7 @@ struct LivingDownloadItemView: View {
             } else {
                 Text("From \(item.sourceHost)")
                     .font(.system(size: 11))
-                    .foregroundColor(Color.phiPrimary.opacity(0.5))
+                    .livingToastSecondaryStyle()
                     .lineLimit(1)
                     .truncationMode(.tail)
             }
@@ -458,7 +479,6 @@ struct LivingDownloadItemView: View {
             CircularProgressButton(
                 progress: item.percentComplete >= 0 ? Double(item.percentComplete) / 100.0 : 0,
                 progressColor: item.isPaused ? .orange : .phiPrimary,
-                isHovered: isHovered,
                 action: { onCancel(item) }
             )
             .frame(width: actionButtonSize, height: actionButtonSize)
@@ -511,25 +531,60 @@ struct LivingDownloadItemView: View {
     }
 }
 
-// MARK: - Visual Effect Blur (NSVisualEffectView wrapper)
+private enum LivingDownloadToastMetrics {
+    static let cornerRadius: CGFloat = 10
+}
 
-struct VisualEffectBlur: NSViewRepresentable {
-    var material: NSVisualEffectView.Material
-    var blendingMode: NSVisualEffectView.BlendingMode
-    
-    func makeNSView(context: Context) -> NSVisualEffectView {
+/// HUD-material vibrancy used as the pre-macOS 26 fallback. macOS 26+ renders glass via SwiftUI's `.glassEffect`.
+private struct LivingDownloadItemLegacyBackgroundView: NSViewRepresentable {
+    func makeNSView(context: Context) -> NSView {
         let view = ColoredVisualEffectView()
-        view.material = material
-        view.blendingMode = blendingMode
+        view.material = .hudWindow
+        view.blendingMode = .withinWindow
         view.backgroundColor = NSColor.white
         view.colorAlphaComponent = 0.5
         view.state = .active
         return view
     }
-    
-    func updateNSView(_ nsView: NSVisualEffectView, context: Context) {
-        nsView.material = material
-        nsView.blendingMode = blendingMode
+
+    func updateNSView(_ nsView: NSView, context: Context) {}
+}
+
+private extension View {
+    /// macOS 26+ uses native Liquid Glass so primary/secondary label vibrancy adapts to underlying content;
+    /// older systems keep the HUD-material fallback with an explicit edge highlight.
+    @ViewBuilder
+    func livingToastBackground(cornerRadius: CGFloat) -> some View {
+        if #available(macOS 26.0, *) {
+            self.glassEffect(.regular, in: .rect(cornerRadius: cornerRadius))
+        } else {
+            self
+                .background(LivingDownloadItemLegacyBackgroundView())
+                .clipShape(RoundedRectangle(cornerRadius: cornerRadius))
+                .overlay(
+                    RoundedRectangle(cornerRadius: cornerRadius)
+                        .stroke(Color.white.opacity(0.2), lineWidth: 0.5)
+                )
+        }
+    }
+
+    /// On macOS 26+ uses semantic `.primary` so glass vibrancy auto-adapts; older systems keep softened phi label color.
+    @ViewBuilder
+    func livingToastPrimaryStyle() -> some View {
+        if #available(macOS 26.0, *) {
+            self.foregroundStyle(.primary)
+        } else {
+            self.foregroundColor(Color.phiPrimary.opacity(0.85))
+        }
+    }
+
+    @ViewBuilder
+    func livingToastSecondaryStyle() -> some View {
+        if #available(macOS 26.0, *) {
+            self.foregroundStyle(.secondary)
+        } else {
+            self.foregroundColor(Color.phiPrimary.opacity(0.5))
+        }
     }
 }
 

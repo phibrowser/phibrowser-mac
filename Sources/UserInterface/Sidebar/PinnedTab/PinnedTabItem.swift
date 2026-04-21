@@ -120,6 +120,15 @@ class PinnedTabItem: NSCollectionViewItem, NSMenuDelegate {
             }
             .store(in: &cancellables)
         
+        tab.$title
+            .combineLatest(tab.$url)
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] title, url in
+                guard let self else { return }
+                self.view.toolTip = "\(title)\n\(url ?? "")"
+            }
+            .store(in: &cancellables)
+
         tab.$isActive
             .removeDuplicates()
             .receive(on: DispatchQueue.main)

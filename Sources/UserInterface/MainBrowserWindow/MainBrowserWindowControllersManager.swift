@@ -97,6 +97,7 @@ class MainBrowserWindowControllersManager: MainBrowserWindowLookup {
     }
     
     /// Process all dangling windows after login completion
+    @MainActor
     @objc private func handleLoginCompleted() {
         assert(Thread.isMainThread)
         AppLogInfo("🪟 [WindowManager] Login completed - processing \(danglingWindows.count) dangling window(s)")
@@ -111,6 +112,7 @@ class MainBrowserWindowControllersManager: MainBrowserWindowLookup {
     }
     
     /// Convert a dangling window to a proper MainBrowserWindowController and show it
+    @MainActor
     private func processDanglingWindow(_ danglingWindow: DanglingWindow) {
         AppLogInfo("🪟 [WindowManager] Processing dangling window - windowId: \(danglingWindow.windowId), pending tabs: \(danglingWindow.pendingTabs.count)")
         guard let account = AccountController.shared.account else {

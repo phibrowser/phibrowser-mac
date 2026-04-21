@@ -146,6 +146,7 @@ extension AccountUserDefaults {
         case cachedUserConnectors
         /// Controls whether notification cards auto-popup. Default is popup enabled.
         case notificationPopupMode
+        case lastKnownSidebarWidth
     }
     
     /// Notification popup behavior mode.
@@ -175,6 +176,17 @@ extension AccountUserDefaults {
             object: nil,
             userInfo: ["mode": mode]
         )
+    }
+
+    var lastKnownSidebarWidth: CGFloat {
+        CGFloat(double(forKey: DefaultsKey.lastKnownSidebarWidth.rawValue))
+    }
+
+    func setLastKnownSidebarWidth(_ width: CGFloat) {
+        guard width > 0 else {
+            return
+        }
+        set(Double(width), forKey: DefaultsKey.lastKnownSidebarWidth.rawValue)
     }
 }
 

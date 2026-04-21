@@ -34,7 +34,10 @@ class SidebarBottomBarState: ObservableObject {
     }
     /// Whether the chat button is hidden.
     @Published var isChatHidden: Bool = false
-    
+
+    /// Whether the AI memory button is hidden (mirrors the global Phi AI toggle).
+    @Published var isMemoryHidden: Bool = false
+
     /// Whether the downloads popover is visible.
     @Published var isDownloadPopoverShown: Bool = false
 }
@@ -49,6 +52,7 @@ struct SidebarBottomBarSwiftUI: View {
     let onBookmarkTap: () -> Void
     let onChatTap: () -> Void
     let onCardEntryTap: () -> Void
+    let onMemoryTap: () -> Void
     
     var body: some View {
         GeometryReader { geometry in
@@ -75,7 +79,8 @@ struct SidebarBottomBarSwiftUI: View {
         let bulbButtonExists = showCardEntry
         let widthBelowThreshold = width < SidebarBottomBarState.compactWidthThreshold
         
-        let shouldBeCompact = chatButtonExists && bulbButtonExists && widthBelowThreshold
+        let tooNarrow = width < 200
+        let shouldBeCompact = (tooNarrow && chatButtonExists) || (chatButtonExists && widthBelowThreshold)
         
         if state.isFeedbackCompact != shouldBeCompact {
 //            withAnimation(.easeInOut(duration: 0.05)) {
@@ -88,21 +93,30 @@ struct SidebarBottomBarSwiftUI: View {
     
     private var regularLayout: some View {
         HStack(spacing: 4) {
-            cardEntryButton
-            
             downloadButton
-            
+
+            memoryButton
+
+            cardEntryButton
+
             Spacer(minLength: 0)
-            
+
             FeedbackButtonSwiftUI(action: onFeedbackTap, isIconOnly: state.isFeedbackCompact)
                 .layoutPriority(1)
-            
+
             if !state.isChatHidden {
                 ChatButton(action: onChatTap)
                     .layoutPriority(1)
             }
         }
         .padding(.leading, 8)
+    }
+
+    @ViewBuilder
+    private var memoryButton: some View {
+        if !state.isMemoryHidden {
+            MemoryButton(action: onMemoryTap)
+        }
     }
     
     // MARK: - Download Button
@@ -127,13 +141,15 @@ struct SidebarBottomBarSwiftUI: View {
     
     private var compactLayout: some View {
         VStack(spacing: SidebarBottomBarState.rowSpacing) {
-            HStack(spacing: 4) {
+            HStack(spacing: 2) {
+                downloadButton
+
+                memoryButton
+
                 cardEntryButton
 
-                downloadButton
-                
                 Spacer()
-                
+
                 if !state.isChatHidden {
                     ChatButton(action: onChatTap)
                 }
@@ -172,6 +188,8 @@ struct FeedbackButtonSwiftUI: View {
     let action: () -> Void
     /// Whether to render the icon-only variant.
     var isIconOnly: Bool = false
+    var contentWidth: CGFloat? = nil
+    var contentHeight: CGFloat? = nil
     
     /// Width for icon-only mode.
     private let iconOnlyWidth: CGFloat = 32
@@ -202,14 +220,15 @@ struct FeedbackButtonSwiftUI: View {
                         .foregroundColor(Color.primaryLabel)
                 }
             }
-            .frame(width: isIconOnly ? iconOnlyWidth : fullWidth)
+            .frame(width: isIconOnly ? iconOnlyWidth : (contentWidth ?? fullWidth))
             .padding(.vertical, 3)
+            .frame(height: contentHeight)
             .background(
-                RoundedRectangle(cornerRadius: 11)
+                RoundedRectangle(cornerRadius: 999)
                     .fill(isHovering ? Color.sidebarTabHovered : Color.clear)
             )
             .overlay(
-                RoundedRectangle(cornerRadius: 11)
+                RoundedRectangle(cornerRadius: 999)
                     .stroke(Color.commonBorder, lineWidth: 1)
             )
         }
@@ -381,6 +400,7 @@ class SidebarBottomBarSwiftUIView: NSView {
     var onBookmarkTap: (() -> Void)?
     var onChatTap: (() -> Void)?
     var onCardEntryTap: (() -> Void)?
+    var onMemoryTap: (() -> Void)?
     
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
@@ -403,7 +423,8 @@ class SidebarBottomBarSwiftUIView: NSView {
                 onFeedbackTap: { [weak self] in self?.onFeedbackTap?() },
                 onBookmarkTap: { [weak self] in self?.onBookmarkTap?() },
                 onChatTap: { [weak self] in self?.onChatTap?() },
-                onCardEntryTap: { [weak self] in self?.onCardEntryTap?() }
+                onCardEntryTap: { [weak self] in self?.onCardEntryTap?() },
+                onMemoryTap: { [weak self] in self?.onMemoryTap?() }
             )
         )
         hosting.translatesAutoresizingMaskIntoConstraints = false
@@ -433,6 +454,11 @@ class SidebarBottomBarSwiftUIView: NSView {
     /// Hides or shows the chat button, for example in private mode.
     func setChatHidden(_ hidden: Bool) {
         state.isChatHidden = hidden
+    }
+
+    /// Hides or shows the AI memory button. Should be hidden when Phi AI is disabled.
+    func setMemoryHidden(_ hidden: Bool) {
+        state.isMemoryHidden = hidden
     }
     
     /// Binds the downloads manager for progress display.

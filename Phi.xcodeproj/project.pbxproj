@@ -31,8 +31,11 @@
 		37388BE32F04DAE8005EA92E /* BrowserRestoreManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 37388BDF2F04DAE8005EA92E /* BrowserRestoreManager.swift */; };
 		37388BE42F04DAE8005EA92E /* BrowserRestoreStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 37388BE12F04DAE8005EA92E /* BrowserRestoreStore.swift */; };
 		373D84032F3C801B00430BE6 /* AuthManagerExternalBrowserWebAuthUserAgent.swift in Sources */ = {isa = PBXBuildFile; fileRef = 373D84022F3C801B00430BE6 /* AuthManagerExternalBrowserWebAuthUserAgent.swift */; };
+		3741AC652F7BBF62009B5E40 /* ivy-presto-headline-light.otf in Copy Fonts */ = {isa = PBXBuildFile; fileRef = 3741AC632F7BBF48009B5E40 /* ivy-presto-headline-light.otf */; };
 		374BCE992F7157FD0043C656 /* TabAreaContextMenuHelper.swift in Sources */ = {isa = PBXBuildFile; fileRef = 374BCE982F7157FD0043C656 /* TabAreaContextMenuHelper.swift */; };
+		374BD1062F739D5F0043C656 /* NativeTabDecisionEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 374BD1052F739D5F0043C656 /* NativeTabDecisionEngine.swift */; };
 		3756AB282F31ABA300FFA686 /* WebContentAddressBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3756AB272F31ABA300FFA686 /* WebContentAddressBar.swift */; };
+		3758B1E52F962BA50036F2AF /* AuthManager+Provider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3758B1E42F962BA50036F2AF /* AuthManager+Provider.swift */; };
 		375B2D3A2ED009F60053FECC /* BrowserDataImporter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 375B2D392ED009F60053FECC /* BrowserDataImporter.swift */; };
 		375B2D4F2ED07C780053FECC /* ConchFrameAnimationBaseViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 375B2D4E2ED07C780053FECC /* ConchFrameAnimationBaseViewController.swift */; };
 		375B2D8C2ED408270053FECC /* AccountUserDefaults.swift in Sources */ = {isa = PBXBuildFile; fileRef = 375B2D8B2ED408270053FECC /* AccountUserDefaults.swift */; };
@@ -73,11 +76,12 @@
 		376CE5E82F2C669B0093D937 /* TabStripRightButtons.swift in Sources */ = {isa = PBXBuildFile; fileRef = 376CE5E72F2C669B0093D937 /* TabStripRightButtons.swift */; };
 		377D210F2F51986900A68BE5 /* WebContentContainerViewController+FloatingSidebar.swift in Sources */ = {isa = PBXBuildFile; fileRef = 377D210E2F51986900A68BE5 /* WebContentContainerViewController+FloatingSidebar.swift */; };
 		377D21EC2F52C67300A68BE5 /* WebContentAddressBarMenu.swift in Sources */ = {isa = PBXBuildFile; fileRef = 377D21EB2F52C67300A68BE5 /* WebContentAddressBarMenu.swift */; };
-		378AFF252F78D6590016B334 /* ivy-presto-display-semi-bold.otf in Resources */ = {isa = PBXBuildFile; fileRef = 378AFF242F78D6530016B334 /* ivy-presto-display-semi-bold.otf */; };
 		378AFF262F78D6780016B334 /* ivy-presto-display-semi-bold.otf in Copy Fonts */ = {isa = PBXBuildFile; fileRef = 378AFF242F78D6530016B334 /* ivy-presto-display-semi-bold.otf */; };
 		378AFF622F78E5EA0016B334 /* BrowserThemeContext.swift in Sources */ = {isa = PBXBuildFile; fileRef = 378AFF612F78E5EA0016B334 /* BrowserThemeContext.swift */; };
 		37B977D52EF3F62F007E0568 /* login-dot-bg.mp4 in Resources */ = {isa = PBXBuildFile; fileRef = 37B977D42EF3F62F007E0568 /* login-dot-bg.mp4 */; };
 		37B978102EF403AB007E0568 /* GradientBorderButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = 37B9780F2EF403AB007E0568 /* GradientBorderButton.swift */; };
+		37BA3EA22F866864003A8A53 /* EdgeFogOverlayView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 37BA3EA12F866864003A8A53 /* EdgeFogOverlayView.swift */; };
+		37BA3EA42F866870003A8A53 /* AgentAnimationManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 37BA3EA32F866870003A8A53 /* AgentAnimationManager.swift */; };
 		37C1B0D82ED6DCBD00DD4496 /* Shortcuts.swift in Sources */ = {isa = PBXBuildFile; fileRef = 37C1B0D72ED6DCBD00DD4496 /* Shortcuts.swift */; };
 		37C1B0DE2ED8081400DD4496 /* ShortcutsSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 37C1B0DD2ED8081400DD4496 /* ShortcutsSettingsView.swift */; };
 		37C1B0E02ED809EA00DD4496 /* ShortcutsSettingHostingViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 37C1B0DF2ED809EA00DD4496 /* ShortcutsSettingHostingViewController.swift */; };
@@ -107,9 +111,12 @@
 		37C1B4F72EE6CE8A00DD4496 /* GeneralSettingHostingViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 37C1B4F32EE6CE8A00DD4496 /* GeneralSettingHostingViewController.swift */; };
 		37C1B4F82EE6CE8A00DD4496 /* GeneralSettingViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 37C1B4F42EE6CE8A00DD4496 /* GeneralSettingViewController.swift */; };
 		37C1B4F92EE6CE8A00DD4496 /* GeneratlSettingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 37C1B4F52EE6CE8A00DD4496 /* GeneratlSettingView.swift */; };
-		37C6AAD92F1F761D00C0A46E /* DraggingSession.md in Resources */ = {isa = PBXBuildFile; fileRef = 37C6AAD82F1F761D00C0A46E /* DraggingSession.md */; };
+		37C76E162F8FAD510042FE45 /* SharedTokenLock.swift in Sources */ = {isa = PBXBuildFile; fileRef = 37C76E152F8FAD510042FE45 /* SharedTokenLock.swift */; };
+		37C76E182F8FAD570042FE45 /* SharedHeartbeatStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 37C76E172F8FAD570042FE45 /* SharedHeartbeatStore.swift */; };
+		37C76E1A2F8FAD730042FE45 /* SharedAuth0Config.swift in Sources */ = {isa = PBXBuildFile; fileRef = 37C76E192F8FAD730042FE45 /* SharedAuth0Config.swift */; };
 		37C9E5A22F3EF7CD00353A03 /* AIChatSidebarStateStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 37C9E5A12F3EF7CD00353A03 /* AIChatSidebarStateStore.swift */; };
 		37C9E68C2F3F322D00353A03 /* Shimmer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 37C9E68A2F3F322D00353A03 /* Shimmer.swift */; };
+		37CC00022F9D000100000001 /* SentinelIPCClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 37CC00012F9D000100000001 /* SentinelIPCClient.swift */; };
 		37D4F5122F6A5CB100F9E67D /* OverlayScrollView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 37D4F5112F6A5CB100F9E67D /* OverlayScrollView.swift */; };
 		37D6E3672F18FDA700129557 /* WebContentContainerViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 37D6E3662F18FDA700129557 /* WebContentContainerViewController.swift */; };
 		37DEB33A2F63F0F500129429 /* TabDataModelSchemaV1.swift in Sources */ = {isa = PBXBuildFile; fileRef = 37DEB3392F63F0F500129429 /* TabDataModelSchemaV1.swift */; };
@@ -125,6 +132,7 @@
 		37FC8C922F335942004675B8 /* WebContentProgressBarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 37FC8C912F335942004675B8 /* WebContentProgressBarView.swift */; };
 		37FC8DAA2F39B2DE004675B8 /* LayoutModeSettingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 37FC8DA92F39B2DE004675B8 /* LayoutModeSettingView.swift */; };
 		4508A9362EEFF2EB007C94E2 /* AccountWebWindowController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4508A9352EEFF2EB007C94E2 /* AccountWebWindowController.swift */; };
+		7A5B00A02EF0000000000001 /* MemoryButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A5B00A02EF0000000000002 /* MemoryButton.swift */; };
 		897C09F42F6BEDA000E5CA9B /* IMChannelsViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 897C09F22F6BEDA000E5CA9B /* IMChannelsViewModel.swift */; };
 		897C09F52F6BEDA000E5CA9B /* IMChannelAPIClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 897C09EE2F6BEDA000E5CA9B /* IMChannelAPIClient.swift */; };
 		897C09F62F6BEDA000E5CA9B /* IMChannelsSettingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 897C09F02F6BEDA000E5CA9B /* IMChannelsSettingView.swift */; };
@@ -167,6 +175,11 @@
 		8EF36C062F4E9EC100FCC91E /* TabContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8EF36C052F4E9EC100FCC91E /* TabContentView.swift */; };
 		8EF36C082F4EA95B00FCC91E /* SideTabView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8EF36C072F4EA95B00FCC91E /* SideTabView.swift */; };
 		A1B2C3D4E5F60718293A4B56 /* SharedAuthTokenStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F60718293A4B55 /* SharedAuthTokenStore.swift */; };
+		AA10000000000000000000B1 /* TabSwitchMetrics.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA10000000000000000000F1 /* TabSwitchMetrics.swift */; };
+		AA10000000000000000000B2 /* TabSwitchItem.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA10000000000000000000F2 /* TabSwitchItem.swift */; };
+		AA10000000000000000000B3 /* TabSwitchCellView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA10000000000000000000F3 /* TabSwitchCellView.swift */; };
+		AA10000000000000000000B4 /* TabSwitchWindowController.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA10000000000000000000F4 /* TabSwitchWindowController.swift */; };
+		AA10000000000000000000B5 /* TabSwitchManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA10000000000000000000F5 /* TabSwitchManager.swift */; };
 		B001795A2E49CF84007B4635 /* PhiChromiumCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = B00179592E49CF84007B4635 /* PhiChromiumCoordinator.swift */; };
 		B02586F52E42FD97001B08FC /* ChromiumLauncher.m in Sources */ = {isa = PBXBuildFile; fileRef = B02586EE2E42FD97001B08FC /* ChromiumLauncher.m */; };
 		B02586F62E42FD97001B08FC /* AppController.swift in Sources */ = {isa = PBXBuildFile; fileRef = B02586F02E42FD97001B08FC /* AppController.swift */; };
@@ -341,6 +354,7 @@
 			dstPath = Fonts;
 			dstSubfolderSpec = 7;
 			files = (
+				3741AC652F7BBF62009B5E40 /* ivy-presto-headline-light.otf in Copy Fonts */,
 				378AFF262F78D6780016B334 /* ivy-presto-display-semi-bold.otf in Copy Fonts */,
 				375C66382EFB925F00885D78 /* impact.ttf in Copy Fonts */,
 				375C66392EFB925F00885D78 /* Ivy-Presto-Display-Light.otf in Copy Fonts */,
@@ -377,8 +391,11 @@
 		373D84022F3C801B00430BE6 /* AuthManagerExternalBrowserWebAuthUserAgent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthManagerExternalBrowserWebAuthUserAgent.swift; sourceTree = "<group>"; };
 		3741A9DD2F7B8158009B5E40 /* LICENSE */ = {isa = PBXFileReference; lastKnownFileType = text; path = LICENSE; sourceTree = "<group>"; };
 		3741A9DE2F7B8158009B5E40 /* README.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = README.md; sourceTree = "<group>"; };
+		3741AC632F7BBF48009B5E40 /* ivy-presto-headline-light.otf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "ivy-presto-headline-light.otf"; sourceTree = "<group>"; };
 		374BCE982F7157FD0043C656 /* TabAreaContextMenuHelper.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TabAreaContextMenuHelper.swift; sourceTree = "<group>"; };
+		374BD1052F739D5F0043C656 /* NativeTabDecisionEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeTabDecisionEngine.swift; sourceTree = "<group>"; };
 		3756AB272F31ABA300FFA686 /* WebContentAddressBar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WebContentAddressBar.swift; sourceTree = "<group>"; };
+		3758B1E42F962BA50036F2AF /* AuthManager+Provider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AuthManager+Provider.swift"; sourceTree = "<group>"; };
 		375B2D392ED009F60053FECC /* BrowserDataImporter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrowserDataImporter.swift; sourceTree = "<group>"; };
 		375B2D4E2ED07C780053FECC /* ConchFrameAnimationBaseViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConchFrameAnimationBaseViewController.swift; sourceTree = "<group>"; };
 		375B2D8B2ED408270053FECC /* AccountUserDefaults.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccountUserDefaults.swift; sourceTree = "<group>"; };
@@ -425,6 +442,8 @@
 		378AFF612F78E5EA0016B334 /* BrowserThemeContext.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrowserThemeContext.swift; sourceTree = "<group>"; };
 		37B977D42EF3F62F007E0568 /* login-dot-bg.mp4 */ = {isa = PBXFileReference; lastKnownFileType = file; path = "login-dot-bg.mp4"; sourceTree = "<group>"; };
 		37B9780F2EF403AB007E0568 /* GradientBorderButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GradientBorderButton.swift; sourceTree = "<group>"; };
+		37BA3EA12F866864003A8A53 /* EdgeFogOverlayView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EdgeFogOverlayView.swift; sourceTree = "<group>"; };
+		37BA3EA32F866870003A8A53 /* AgentAnimationManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentAnimationManager.swift; sourceTree = "<group>"; };
 		37C1B0D72ED6DCBD00DD4496 /* Shortcuts.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Shortcuts.swift; sourceTree = "<group>"; };
 		37C1B0DD2ED8081400DD4496 /* ShortcutsSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShortcutsSettingsView.swift; sourceTree = "<group>"; };
 		37C1B0DF2ED809EA00DD4496 /* ShortcutsSettingHostingViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShortcutsSettingHostingViewController.swift; sourceTree = "<group>"; };
@@ -453,11 +472,17 @@
 		37C1B4F32EE6CE8A00DD4496 /* GeneralSettingHostingViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GeneralSettingHostingViewController.swift; sourceTree = "<group>"; };
 		37C1B4F42EE6CE8A00DD4496 /* GeneralSettingViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GeneralSettingViewController.swift; sourceTree = "<group>"; };
 		37C1B4F52EE6CE8A00DD4496 /* GeneratlSettingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GeneratlSettingView.swift; sourceTree = "<group>"; };
+		37C2A68A2F8E1585006E856E /* README.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = README.md; sourceTree = "<group>"; };
+		37C2A68B2F8E1585006E856E /* tab-order-spec.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = "tab-order-spec.md"; sourceTree = "<group>"; };
 		37C6AAD82F1F761D00C0A46E /* DraggingSession.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = DraggingSession.md; sourceTree = "<group>"; };
+		37C76E152F8FAD510042FE45 /* SharedTokenLock.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SharedTokenLock.swift; sourceTree = "<group>"; };
+		37C76E172F8FAD570042FE45 /* SharedHeartbeatStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SharedHeartbeatStore.swift; sourceTree = "<group>"; };
+		37C76E192F8FAD730042FE45 /* SharedAuth0Config.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SharedAuth0Config.swift; sourceTree = "<group>"; };
 		37C9E5A12F3EF7CD00353A03 /* AIChatSidebarStateStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIChatSidebarStateStore.swift; sourceTree = "<group>"; };
 		37C9E68A2F3F322D00353A03 /* Shimmer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Shimmer.swift; sourceTree = "<group>"; };
 		37C9E68D2F3F323B00353A03 /* README.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = README.md; sourceTree = "<group>"; };
 		37C9E68E2F3F324200353A03 /* LICENSE */ = {isa = PBXFileReference; lastKnownFileType = text; path = LICENSE; sourceTree = "<group>"; };
+		37CC00012F9D000100000001 /* SentinelIPCClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SentinelIPCClient.swift; sourceTree = "<group>"; };
 		37D4F5112F6A5CB100F9E67D /* OverlayScrollView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OverlayScrollView.swift; sourceTree = "<group>"; };
 		37D6E3662F18FDA700129557 /* WebContentContainerViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WebContentContainerViewController.swift; sourceTree = "<group>"; };
 		37DEADB82F5FCDBC00129429 /* PhiBrowser-Canary.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = "PhiBrowser-Canary.entitlements"; sourceTree = "<group>"; };
@@ -472,6 +497,8 @@
 		37FC8C912F335942004675B8 /* WebContentProgressBarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WebContentProgressBarView.swift; sourceTree = "<group>"; };
 		37FC8DA92F39B2DE004675B8 /* LayoutModeSettingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LayoutModeSettingView.swift; sourceTree = "<group>"; };
 		4508A9352EEFF2EB007C94E2 /* AccountWebWindowController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccountWebWindowController.swift; sourceTree = "<group>"; };
+		7A5B00A02EF0000000000002 /* MemoryButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MemoryButton.swift; sourceTree = "<group>"; };
+		8417101CC460A0D12720DE81 /* Cocoa.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Cocoa.framework; path = Platforms/MacOSX.platform/Developer/SDKs/MacOSX15.0.sdk/System/Library/Frameworks/Cocoa.framework; sourceTree = DEVELOPER_DIR; };
 		897C09EE2F6BEDA000E5CA9B /* IMChannelAPIClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IMChannelAPIClient.swift; sourceTree = "<group>"; };
 		897C09EF2F6BEDA000E5CA9B /* IMChannelsSettingHostingViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IMChannelsSettingHostingViewController.swift; sourceTree = "<group>"; };
 		897C09F02F6BEDA000E5CA9B /* IMChannelsSettingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IMChannelsSettingView.swift; sourceTree = "<group>"; };
@@ -504,6 +531,11 @@
 		8EF36C052F4E9EC100FCC91E /* TabContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TabContentView.swift; sourceTree = "<group>"; };
 		8EF36C072F4EA95B00FCC91E /* SideTabView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SideTabView.swift; sourceTree = "<group>"; };
 		A1B2C3D4E5F60718293A4B55 /* SharedAuthTokenStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SharedAuthTokenStore.swift; sourceTree = "<group>"; };
+		AA10000000000000000000F1 /* TabSwitchMetrics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TabSwitchMetrics.swift; sourceTree = "<group>"; };
+		AA10000000000000000000F2 /* TabSwitchItem.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TabSwitchItem.swift; sourceTree = "<group>"; };
+		AA10000000000000000000F3 /* TabSwitchCellView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TabSwitchCellView.swift; sourceTree = "<group>"; };
+		AA10000000000000000000F4 /* TabSwitchWindowController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TabSwitchWindowController.swift; sourceTree = "<group>"; };
+		AA10000000000000000000F5 /* TabSwitchManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TabSwitchManager.swift; sourceTree = "<group>"; };
 		B00179592E49CF84007B4635 /* PhiChromiumCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhiChromiumCoordinator.swift; sourceTree = "<group>"; };
 		B02586EC2E42FD97001B08FC /* PhiBrowser-Bridging-Header.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = "PhiBrowser-Bridging-Header.h"; sourceTree = "<group>"; };
 		B02586ED2E42FD97001B08FC /* ChromiumLauncher.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = ChromiumLauncher.h; sourceTree = "<group>"; };
@@ -623,6 +655,7 @@
 		CCCD5E352EB1C36300E78FC1 /* DefaultExtensionManifestWriter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DefaultExtensionManifestWriter.swift; sourceTree = "<group>"; };
 		CCD3246C2EB1EFB600AA0B85 /* PinnedExtensionItem.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PinnedExtensionItem.swift; sourceTree = "<group>"; };
 		CCD87CC32EC2E7E000148E3F /* LocalStore+Bookmark.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "LocalStore+Bookmark.swift"; sourceTree = "<group>"; };
+		CCDEC82B2E83BE4400D91BE9 /* embedded.provisionprofile */ = {isa = PBXFileReference; lastKnownFileType = file; path = embedded.provisionprofile; sourceTree = "<group>"; };
 		CCDEC82E2E83D6B200D91BE9 /* AppController+Sparkle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AppController+Sparkle.swift"; sourceTree = "<group>"; };
 		CCEB64C82E98BFD40036C763 /* ColoredVisualEffectView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ColoredVisualEffectView.swift; sourceTree = "<group>"; };
 		CCEB64CA2E98DD520036C763 /* InsetTableRowView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InsetTableRowView.swift; sourceTree = "<group>"; };
@@ -647,6 +680,11 @@
 		37686B012F1103F300DC3990 /* Configs */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			path = Configs;
+			sourceTree = "<group>";
+		};
+		376CE0A02F2330160093D937 /* build-scripts */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = "build-scripts";
 			sourceTree = "<group>";
 		};
 		B0C4695A2E3B10E2007F0C7A /* PhiBrowserTests */ = {
@@ -725,6 +763,7 @@
 		375C66372EFB923C00885D78 /* Fonts */ = {
 			isa = PBXGroup;
 			children = (
+				3741AC632F7BBF48009B5E40 /* ivy-presto-headline-light.otf */,
 				378AFF242F78D6530016B334 /* ivy-presto-display-semi-bold.otf */,
 				375C66332EFB923C00885D78 /* impact.ttf */,
 				375C66342EFB923C00885D78 /* Ivy-Presto-Display-Light.otf */,
@@ -896,6 +935,7 @@
 				37E6AF3F2EEC30E80078CCD8 /* ChatButton.swift */,
 				CCBF8F412E653D9600B9A99E /* SidebarBottomBar.swift */,
 				37C1B2FD2EE2E26F00DD4496 /* DownloadButton.swift */,
+				7A5B00A02EF0000000000002 /* MemoryButton.swift */,
 			);
 			path = Bottom;
 			sourceTree = "<group>";
@@ -920,6 +960,35 @@
 				37FC8DA92F39B2DE004675B8 /* LayoutModeSettingView.swift */,
 			);
 			path = General;
+			sourceTree = "<group>";
+		};
+		37C2A6892F8E1572006E856E /* TabOrder */ = {
+			isa = PBXGroup;
+			children = (
+				374BD1052F739D5F0043C656 /* NativeTabDecisionEngine.swift */,
+				37C2A68A2F8E1585006E856E /* README.md */,
+				37C2A68B2F8E1585006E856E /* tab-order-spec.md */,
+			);
+			path = TabOrder;
+			sourceTree = "<group>";
+		};
+		37C2A68C2F8E15C1006E856E /* Dragging */ = {
+			isa = PBXGroup;
+			children = (
+				CCF5D0A22F00000100ABCDEF /* TabDraggingSession.swift */,
+				37C6AAD82F1F761D00C0A46E /* DraggingSession.md */,
+			);
+			path = Dragging;
+			sourceTree = "<group>";
+		};
+		37C2A68D2F8E15FF006E856E /* SessionRestore */ = {
+			isa = PBXGroup;
+			children = (
+				37388BDF2F04DAE8005EA92E /* BrowserRestoreManager.swift */,
+				37388BE02F04DAE8005EA92E /* BrowserRestoreState.swift */,
+				37388BE12F04DAE8005EA92E /* BrowserRestoreStore.swift */,
+			);
+			path = SessionRestore;
 			sourceTree = "<group>";
 		};
 		37C9E6852F3F31E600353A03 /* ThirdParty */ = {
@@ -959,6 +1028,14 @@
 				CC288A892E5333CC004A6C1C /* main.m */,
 			);
 			path = Other;
+			sourceTree = "<group>";
+		};
+		76E8F41378C97F983BCE6B33 /* OS X */ = {
+			isa = PBXGroup;
+			children = (
+				8417101CC460A0D12720DE81 /* Cocoa.framework */,
+			);
+			name = "OS X";
 			sourceTree = "<group>";
 		};
 		897C09F32F6BEDA000E5CA9B /* IMChannels */ = {
@@ -1046,6 +1123,17 @@
 			path = Tabs;
 			sourceTree = "<group>";
 		};
+		AA10000000000000000000G1 /* TabSwitch */ = {
+			isa = PBXGroup;
+			children = (
+				AA10000000000000000000F1 /* TabSwitchMetrics.swift */,
+				AA10000000000000000000F2 /* TabSwitchItem.swift */,
+				AA10000000000000000000F3 /* TabSwitchCellView.swift */,
+				AA10000000000000000000F4 /* TabSwitchWindowController.swift */,
+			);
+			path = TabSwitch;
+			sourceTree = "<group>";
+		};
 		B02586F42E42FD97001B08FC /* Sources */ = {
 			isa = PBXGroup;
 			children = (
@@ -1080,6 +1168,7 @@
 			isa = PBXGroup;
 			children = (
 				CC6BFFD82E72B83500D4F133 /* Phi Framework.framework */,
+				76E8F41378C97F983BCE6B33 /* OS X */,
 			);
 			path = Frameworks;
 			sourceTree = "<group>";
@@ -1092,6 +1181,7 @@
 				B02BEB632E3B2F5A00E5859A /* Package.swift */,
 				B02586F42E42FD97001B08FC /* Sources */,
 				B0C469752E3B158D007F0C7A /* Resources */,
+				376CE0A02F2330160093D937 /* build-scripts */,
 				B0691CB22E3B639000934AEE /* Frameworks */,
 				B0C4698F2E3B1915007F0C7A /* Tests */,
 				B0C469492E3B10E1007F0C7A /* Products */,
@@ -1115,6 +1205,7 @@
 				375C66372EFB923C00885D78 /* Fonts */,
 				3765817A2EE9637F00D3E031 /* Localizable.xcstrings */,
 				37C1B2FF2EE672D500DD4496 /* LottieFiles */,
+				CCDEC82B2E83BE4400D91BE9 /* embedded.provisionprofile */,
 				CC8B35202E81618F00C8A380 /* PhiBrowser-Info.plist */,
 				B0C4694D2E3B10E2007F0C7A /* Assets.xcassets */,
 				B0C469522E3B10E2007F0C7A /* PhiBrowser.entitlements */,
@@ -1155,6 +1246,7 @@
 				37C1B2F32EE287CB00DD4496 /* OverlayWindowToast */,
 				CC6B000C2E77DEA900D4F133 /* Preferences */,
 				CC288A652E4F121E004A6C1C /* Sidebar */,
+				AA10000000000000000000G1 /* TabSwitch */,
 				CCEF2CF22E57075700FDDEB2 /* WebContent */,
 			);
 			path = UserInterface;
@@ -1170,7 +1262,10 @@
 				CC6335FC2E4ED0DF00A176DA /* Logging */,
 				CCEF2D212E584F1700FDDEB2 /* URLProcessor.swift */,
 				CC6336042E4EE55300A176DA /* FileSystemUtils.swift */,
+				37C76E192F8FAD730042FE45 /* SharedAuth0Config.swift */,
 				A1B2C3D4E5F60718293A4B55 /* SharedAuthTokenStore.swift */,
+				37C76E152F8FAD510042FE45 /* SharedTokenLock.swift */,
+				37C76E172F8FAD570042FE45 /* SharedHeartbeatStore.swift */,
 				CC5025FB2E702603004223DC /* NSImage+Extension.swift */,
 				CC35D7932E7271CE00E1A970 /* LiquidGlassCompatible.swift */,
 				CC6BFFDC2E72C04000D4F133 /* FaviconDataProvider.swift */,
@@ -1194,6 +1289,7 @@
 				CC9AF3432EC192BC00C27C98 /* AppControlle+LaunchInfo.swift */,
 				CCBF0F9F2ECEC1AE005E729B /* AppController+Deeplink.swift */,
 				3703C9832F6956E600E7CF6D /* SentinelHelper.swift */,
+				37CC00012F9D000100000001 /* SentinelIPCClient.swift */,
 			);
 			path = Application;
 			sourceTree = "<group>";
@@ -1205,6 +1301,7 @@
 				8E6145812F753114001919BA /* LayoutSelection */,
 				373D84022F3C801B00430BE6 /* AuthManagerExternalBrowserWebAuthUserAgent.swift */,
 				CC24EF072E89251D00CE9DD7 /* AuthManager.swift */,
+				3758B1E42F962BA50036F2AF /* AuthManager+Provider.swift */,
 				CC24EF052E89223500CE9DD7 /* LoginController.swift */,
 				CC4351CA2ECAD650009D8FC3 /* OnboardingWindowController.swift */,
 				CCBF0C9E2ECB2CFD005E729B /* Importer */,
@@ -1500,17 +1597,16 @@
 		CCBF8FA32E69913C00B9A99E /* States */ = {
 			isa = PBXGroup;
 			children = (
-				B0F370CA2E43261A000B51F9 /* EventBus.swift */,
 				CCBF8FA42E69915200B9A99E /* ApplicationState.swift */,
-				37388BDF2F04DAE8005EA92E /* BrowserRestoreManager.swift */,
-				37388BE02F04DAE8005EA92E /* BrowserRestoreState.swift */,
-				37388BE12F04DAE8005EA92E /* BrowserRestoreStore.swift */,
-				CCBF8FA62E69948D00B9A99E /* BrowserState.swift */,
-				3703C9812F69558C00E7CF6D /* BrowserState+ToggleAI.swift */,
 				D10000000000000000000011 /* BrowserImagePreviewState.swift */,
-				CCF5D0A22F00000100ABCDEF /* TabDraggingSession.swift */,
+				CCBF8FA62E69948D00B9A99E /* BrowserState.swift */,
 				376581F62EEA845700D3E031 /* BrowserState+Bookmark.swift */,
-				37C6AAD82F1F761D00C0A46E /* DraggingSession.md */,
+				3703C9812F69558C00E7CF6D /* BrowserState+ToggleAI.swift */,
+				B0F370CA2E43261A000B51F9 /* EventBus.swift */,
+				AA10000000000000000000F5 /* TabSwitchManager.swift */,
+				37C2A68C2F8E15C1006E856E /* Dragging */,
+				37C2A68D2F8E15FF006E856E /* SessionRestore */,
+				37C2A6892F8E1572006E856E /* TabOrder */,
 			);
 			path = States;
 			sourceTree = "<group>";
@@ -1528,6 +1624,8 @@
 				B0F370B82E430CA5000B51F9 /* WebContentViewController.swift */,
 				37C9E5A12F3EF7CD00353A03 /* AIChatSidebarStateStore.swift */,
 				37EECF362F0F8C7F0022A176 /* SplitViewResizeHandle.swift */,
+				37BA3EA12F866864003A8A53 /* EdgeFogOverlayView.swift */,
+				37BA3EA32F866870003A8A53 /* AgentAnimationManager.swift */,
 			);
 			path = WebContent;
 			sourceTree = "<group>";
@@ -1689,10 +1787,8 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				37C6AAD92F1F761D00C0A46E /* DraggingSession.md in Resources */,
 				37F574482F7A7C5D00879867 /* PhiIcon.icon in Resources */,
 				B0C4694E2E3B10E2007F0C7A /* Assets.xcassets in Resources */,
-				378AFF252F78D6590016B334 /* ivy-presto-display-semi-bold.otf in Resources */,
 				3765817B2EE963AD00D3E031 /* Localizable.xcstrings in Resources */,
 				37B977D52EF3F62F007E0568 /* login-dot-bg.mp4 in Resources */,
 				CC99097C2EBC9F090046BC81 /* login-bg.mp4 in Resources */,
@@ -1740,12 +1836,14 @@
 				37FC8DAA2F39B2DE004675B8 /* LayoutModeSettingView.swift in Sources */,
 				CCB53DCC2E6EC437004BF233 /* OmniBoxViewModel.swift in Sources */,
 				37C1B2FE2EE2E26F00DD4496 /* DownloadButton.swift in Sources */,
+				7A5B00A02EF0000000000001 /* MemoryButton.swift in Sources */,
 				376581F92EEA9BB200D3E031 /* BookmarkCellView.swift in Sources */,
 				8EF36C082F4EA95B00FCC91E /* SideTabView.swift in Sources */,
 				CCB53DCE2E6EC437004BF233 /* OmniBoxModels.swift in Sources */,
 				37C1B28F2EE1364D00DD4496 /* EnvironmentChecker.swift in Sources */,
 				37C1B28A2EE0457F00DD4496 /* LivingDownloadsListView.swift in Sources */,
 				3703C9842F6956E600E7CF6D /* SentinelHelper.swift in Sources */,
+				37CC00022F9D000100000001 /* SentinelIPCClient.swift in Sources */,
 				CCB53DCF2E6EC437004BF233 /* OmniBoxTextField.swift in Sources */,
 				8EC70E182F0BC77E009FE2CD /* NSImageView+Favicon.swift in Sources */,
 				376CE4002F2891670093D937 /* ExtensionMessageEnvelope.swift in Sources */,
@@ -1779,6 +1877,12 @@
 				CC71BAB92E9E2E74006C7238 /* EventBlockBgView.swift in Sources */,
 				CCBF8FA72E69948D00B9A99E /* BrowserState.swift in Sources */,
 				CCF5D0A12F00000100ABCDEF /* TabDraggingSession.swift in Sources */,
+				37C76E182F8FAD570042FE45 /* SharedHeartbeatStore.swift in Sources */,
+				AA10000000000000000000B1 /* TabSwitchMetrics.swift in Sources */,
+				AA10000000000000000000B2 /* TabSwitchItem.swift in Sources */,
+				AA10000000000000000000B3 /* TabSwitchCellView.swift in Sources */,
+				AA10000000000000000000B4 /* TabSwitchWindowController.swift in Sources */,
+				AA10000000000000000000B5 /* TabSwitchManager.swift in Sources */,
 				CCBF8F4D2E6543E800B9A99E /* TabSectionController.swift in Sources */,
 				373D84032F3C801B00430BE6 /* AuthManagerExternalBrowserWebAuthUserAgent.swift in Sources */,
 				37C1B0E02ED809EA00DD4496 /* ShortcutsSettingHostingViewController.swift in Sources */,
@@ -1805,6 +1909,7 @@
 				37686A9C2F10D61E00DC3990 /* UserDefaultsRegistration.swift in Sources */,
 				3769C6B32EFA540300A94DE0 /* GradientColorLabel.swift in Sources */,
 				376581FB2EEA9D6200D3E031 /* BookmarkRowView.swift in Sources */,
+				37C76E162F8FAD510042FE45 /* SharedTokenLock.swift in Sources */,
 				37D4F5122F6A5CB100F9E67D /* OverlayScrollView.swift in Sources */,
 				B0F370CB2E43261A000B51F9 /* EventBus.swift in Sources */,
 				37D6E3672F18FDA700129557 /* WebContentContainerViewController.swift in Sources */,
@@ -1868,6 +1973,7 @@
 				370D03AD2F0E463B0087A1C9 /* ThemedColor.swift in Sources */,
 				370D03AE2F0E463B0087A1C9 /* Key.swift in Sources */,
 				370D03AF2F0E463B0087A1C9 /* Phi.swift in Sources */,
+				37C76E1A2F8FAD730042FE45 /* SharedAuth0Config.swift in Sources */,
 				370D03B02F0E463B0087A1C9 /* ThemedColors.swift in Sources */,
 				370D03B12F0E463B0087A1C9 /* Bags.swift in Sources */,
 				370D03B22F0E463B0087A1C9 /* Appearance.swift in Sources */,
@@ -1890,6 +1996,8 @@
 				CC376D1F2EC6D5EE00270B93 /* Array.swift in Sources */,
 				37C1B0E92ED8531700DD4496 /* Shortcuts+Custom.swift in Sources */,
 				CC376D202EC6D5EE00270B93 /* GrayscalingMode.swift in Sources */,
+				37BA3EA22F866864003A8A53 /* EdgeFogOverlayView.swift in Sources */,
+				37BA3EA42F866870003A8A53 /* AgentAnimationManager.swift in Sources */,
 				37289F4D2EFE8A9B0003624E /* EditPinnedTabView.swift in Sources */,
 				CC376D212EC6D5EE00270B93 /* DynamicColor+HSB.swift in Sources */,
 				CC376D222EC6D5EE00270B93 /* Color.swift in Sources */,
@@ -1925,6 +2033,7 @@
 				CC98F89C2E8BC71800DAD237 /* Settings.swift in Sources */,
 				376CE4092F28917C0093D937 /* NotificationMessageCardView.swift in Sources */,
 				CC2708A92E7A675C00B65AB8 /* Account.swift in Sources */,
+				374BD1062F739D5F0043C656 /* NativeTabDecisionEngine.swift in Sources */,
 				37C1B4F72EE6CE8A00DD4496 /* GeneralSettingHostingViewController.swift in Sources */,
 				37C1B4F82EE6CE8A00DD4496 /* GeneralSettingViewController.swift in Sources */,
 				8EE5BEEC2F14FF9800698D7D /* TabCloseButton.swift in Sources */,
@@ -1957,6 +2066,7 @@
 				CC6BFFDD2E72C04000D4F133 /* FaviconDataProvider.swift in Sources */,
 				377D210F2F51986900A68BE5 /* WebContentContainerViewController+FloatingSidebar.swift in Sources */,
 				37686A992F10B46800DC3990 /* ThemedImage.swift in Sources */,
+				3758B1E52F962BA50036F2AF /* AuthManager+Provider.swift in Sources */,
 				CC288A8A2E5333CC004A6C1C /* main.m in Sources */,
 				CCBF8FA52E69915200B9A99E /* ApplicationState.swift in Sources */,
 				37C1B2F72EE2882400DD4496 /* OverlayToastViewModel.swift in Sources */,
@@ -2088,12 +2198,11 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CLANG_ENABLE_MODULES = YES;
 				CODE_SIGN_ENTITLEMENTS = "$(APP_ENTITLEMENTS)";
-				CODE_SIGN_IDENTITY = "Apple Development";
-				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "-";
+				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 4;
-				DEVELOPMENT_TEAM = "";
+				DEVELOPMENT_TEAM = 87DQ3HMK5G;
 				ENABLE_HARDENED_RUNTIME = YES;
 				FRAMEWORK_SEARCH_PATHS = (
 					"$(inherited)",
@@ -2105,7 +2214,6 @@
 				);
 				GENERATE_INFOPLIST_FILE = YES;
 				GPD_COMMON = "NIGHTLY_BUILD=$(NIGHTLY_BUILD)";
-				HEADER_SEARCH_PATHS = "";
 				INFOPLIST_FILE = "PhiBrowser-Info.plist";
 				INFOPLIST_KEY_CFBundleDisplayName = Phi;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.productivity";
@@ -2134,7 +2242,6 @@
 				NIGHTLY_BUILD = 1;
 				OTHER_CFLAGS = "-DDEBUG";
 				OTHER_SWIFT_FLAGS = "-DDEBUG -DNIGHTLY_BUILD";
-				PROVISIONING_PROFILE_SPECIFIER = "";
 				REGISTER_APP_GROUPS = YES;
 				SDKROOT = macosx;
 				SWIFT_EMIT_LOC_STRINGS = YES;
@@ -2247,11 +2354,11 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CLANG_ENABLE_MODULES = YES;
 				CODE_SIGN_ENTITLEMENTS = "$(APP_ENTITLEMENTS)";
-				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "-";
+				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = "";
+				DEVELOPMENT_TEAM = 87DQ3HMK5G;
 				ENABLE_HARDENED_RUNTIME = YES;
 				FRAMEWORK_SEARCH_PATHS = (
 					"$(inherited)",
@@ -2260,7 +2367,6 @@
 				GCC_PREPROCESSOR_DEFINITIONS = "$(GPD_COMMON)";
 				GENERATE_INFOPLIST_FILE = YES;
 				GPD_COMMON = "NIGHTLY_BUILD=$(NIGHTLY_BUILD)";
-				HEADER_SEARCH_PATHS = "";
 				INFOPLIST_FILE = "PhiBrowser-Info.plist";
 				INFOPLIST_KEY_CFBundleDisplayName = Phi;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.productivity";
@@ -2465,11 +2571,10 @@
 				CLANG_ENABLE_MODULES = YES;
 				CODE_SIGN_ENTITLEMENTS = "$(APP_ENTITLEMENTS)";
 				CODE_SIGN_IDENTITY = "Apple Development";
-				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "-";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 4;
-				DEVELOPMENT_TEAM = "";
+				DEVELOPMENT_TEAM = 87DQ3HMK5G;
 				ENABLE_HARDENED_RUNTIME = YES;
 				FRAMEWORK_SEARCH_PATHS = (
 					"$(inherited)",
@@ -2481,7 +2586,6 @@
 				);
 				GENERATE_INFOPLIST_FILE = YES;
 				GPD_COMMON = "NIGHTLY_BUILD=$(NIGHTLY_BUILD)";
-				HEADER_SEARCH_PATHS = "";
 				INFOPLIST_FILE = "PhiBrowser-Info.plist";
 				INFOPLIST_KEY_CFBundleDisplayName = Phi;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.productivity";
@@ -2528,11 +2632,10 @@
 				CLANG_ENABLE_MODULES = YES;
 				CODE_SIGN_ENTITLEMENTS = "$(APP_ENTITLEMENTS)";
 				CODE_SIGN_IDENTITY = "Apple Development";
-				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "-";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 4;
-				DEVELOPMENT_TEAM = "";
+				DEVELOPMENT_TEAM = 87DQ3HMK5G;
 				ENABLE_HARDENED_RUNTIME = YES;
 				FRAMEWORK_SEARCH_PATHS = (
 					"$(inherited)",
@@ -2541,7 +2644,6 @@
 				GCC_PREPROCESSOR_DEFINITIONS = "$(GPD_COMMON)";
 				GENERATE_INFOPLIST_FILE = YES;
 				GPD_COMMON = "NIGHTLY_BUILD=$(NIGHTLY_BUILD)";
-				HEADER_SEARCH_PATHS = "";
 				INFOPLIST_FILE = "PhiBrowser-Info.plist";
 				INFOPLIST_KEY_CFBundleDisplayName = Phi;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.productivity";

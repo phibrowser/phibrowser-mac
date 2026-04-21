@@ -25,15 +25,35 @@ class ReorderingCollectionView: NSCollectionView {
 
     override func draggingUpdated(_ session: NSDraggingInfo) -> NSDragOperation {
         let point = self.convert(session.draggingLocation, from: nil)
-        
-        if let destinationIndexPath = self.indexPathForItem(at: point) {
-            if destinationIndexPath != lastDragTargetIndexPath {
-                self.lastDragTargetIndexPath = destinationIndexPath
-                reorderDelegate?.collectionView(self, draggingInfo: session, movedTo: destinationIndexPath)
+
+        let targetIndexPath = indexPathForItem(at: point) ?? inferredTargetIndexPath(at: point)
+
+        if let targetIndexPath, targetIndexPath != lastDragTargetIndexPath {
+            lastDragTargetIndexPath = targetIndexPath
+            reorderDelegate?.collectionView(self, draggingInfo: session, movedTo: targetIndexPath)
+        }
+
+        return super.draggingUpdated(session)
+    }
+
+    /// When the cursor is over empty space past the last item in a grid row,
+    /// infer the intended drop target from layout geometry.
+    private func inferredTargetIndexPath(at point: NSPoint) -> IndexPath? {
+        for section in stride(from: numberOfSections - 1, through: 0, by: -1) {
+            let count = numberOfItems(inSection: section)
+            guard count > 0 else { continue }
+
+            let lastIndexPath = IndexPath(item: count - 1, section: section)
+            guard let lastAttrs = collectionViewLayout?.layoutAttributesForItem(at: lastIndexPath) else { continue }
+
+            let isPastLastRow = point.y > lastAttrs.frame.maxY
+            let isAfterLastItemInRow = point.y >= lastAttrs.frame.minY && point.x > lastAttrs.frame.maxX
+
+            if isPastLastRow || isAfterLastItemInRow {
+                return IndexPath(item: count, section: section)
             }
         }
-        
-        return super.draggingUpdated(session)
+        return nil
     }
 
     override func draggingSession(_ session: NSDraggingSession, movedTo screenPoint: NSPoint) {

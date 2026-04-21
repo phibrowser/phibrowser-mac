@@ -132,6 +132,7 @@ struct WebContentAddressBarView: View {
     @State private var anchorView: NSView?
     @State private var isMenuShown = false
     @State private var menuAnchorView: NSView?
+    @State private var showCopyConfirmation = false
     @StateObject private var lottieState = LottieAnimationViewState()
     @Environment(\.phiTheme) private var theme
     @Environment(\.phiAppearance) private var appearance
@@ -185,7 +186,10 @@ struct WebContentAddressBarView: View {
                 .frame(maxHeight: .infinity)
                 .allowsHitTesting(false)
 
-                menuButton
+                HStack(spacing: 2) {
+                    copyURLButton
+                    menuButton
+                }
             }
             .padding(.leading, 12)
             .padding(.trailing, 0)
@@ -299,6 +303,17 @@ struct WebContentAddressBarView: View {
         .allowsHitTesting(false)
     }
 
+    @ViewBuilder
+    private var copyURLButton: some View {
+        CopyURLButtonView(
+            currentTab: currentTab,
+            showCopyConfirmation: $showCopyConfirmation,
+            isAddressBarHovering: isHovering,
+            isMenuShown: isMenuShown
+        )
+        .help(NSLocalizedString("Copy Link", comment: "Address bar menu - Copy link menu item"),)
+    }
+
     private var menuButton: some View {
         let config = LottieAnimationViewConfig(
             animationName: "extension-button",
@@ -341,6 +356,55 @@ struct WebContentAddressBarView: View {
         }
     }
 
+}
+
+private struct CopyURLButtonView: View {
+    let currentTab: Tab?
+    @Binding var showCopyConfirmation: Bool
+    let isAddressBarHovering: Bool
+    let isMenuShown: Bool
+
+    @State private var isButtonHovering = false
+    @Environment(\.phiTheme) private var theme
+    @Environment(\.phiAppearance) private var appearance
+
+    var body: some View {
+        let iconName = showCopyConfirmation ? "checkmark" : "link"
+        let iconColor = showCopyConfirmation
+            ? ThemedColor.textPrimary.swiftUIColor(theme: theme, appearance: appearance)
+            : ThemedColor.textPrimary.swiftUIColor(theme: theme, appearance: appearance)
+
+        Button {
+            guard let urlString = currentTab?.url, !urlString.isEmpty else { return }
+            let branded = URLProcessor.phiBrandEnsuredUrlString(urlString)
+            NSPasteboard.general.clearContents()
+            NSPasteboard.general.setString(branded, forType: .string)
+            showCopyConfirmation = true
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
+                showCopyConfirmation = false
+            }
+        } label: {
+            ZStack {
+                Circle()
+                    .fill(Color(.sidebarTabHovered))
+                    .frame(width: 24, height: 24)
+                    .opacity(isButtonHovering ? 1 : 0)
+
+                Image(systemName: iconName)
+                    .contentTransition(.symbolEffect(.replace, options: .speed(3)))
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(iconColor)
+            }
+        }
+        .buttonStyle(.plain)
+        .frame(width: 24, height: 24)
+        .onHover { hovering in
+            isButtonHovering = hovering
+        }
+        .opacity((isAddressBarHovering || isMenuShown) ? 1 : 0)
+        .animation(.easeInOut(duration: 0.15), value: isAddressBarHovering || isMenuShown)
+        .animation(.easeInOut(duration: 0.15), value: isButtonHovering)
+    }
 }
 
 private struct AddressBarWidthPreferenceKey: PreferenceKey {

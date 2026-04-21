@@ -21,6 +21,7 @@ final class OmniBoxContainerViewController: NSViewController {
     private var needsShowAnimation = false
     private var animationOn = false
     private weak var browserState: BrowserState?
+    private var focusingTabObserver: AnyCancellable?
     
     init(browserState: BrowserState, superView: EventBlockBgView? = nil) {
         super.init(nibName: nil, bundle: nil)
@@ -78,6 +79,15 @@ final class OmniBoxContainerViewController: NSViewController {
         }
     }
     
+    private func observeFocusingTabChange() {
+        focusingTabObserver = browserState?.$focusingTab
+            .dropFirst()
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in
+                self?.hideOmniBox()
+            }
+    }
+    
     private func superViewClicked(_ event: NSEvent) {
         guard let omniBoxView = omniBoxController?.view else { return }
         
@@ -111,9 +121,11 @@ final class OmniBoxContainerViewController: NSViewController {
             showOmniboxReletiveToAdressView(omniBoxController?.contentSize ?? .zero)
         }
         omniBoxController?.focusTextField()
+        observeFocusingTabChange()
     }
     
     func hideOmniBox(fromAddressBar: Bool = false) {
+        focusingTabObserver = nil
         guard animationOn else {
            hideOmniBoxWithoutAnimation()
             return

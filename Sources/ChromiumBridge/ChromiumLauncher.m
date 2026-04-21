@@ -99,6 +99,7 @@
 
 #if DEBUG || NIGHTLY_BUILD
                 [arguments addObject:@"--phi-ai-debug"];
+                [arguments addObject:@"--phi-no-embed-extensions"];
 #endif
 #if DEBUG
                 [arguments addObject:@"--no-sandbox"];

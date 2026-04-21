@@ -428,7 +428,7 @@ class ProfileCardViewController: ConchFrameAnimationBaseViewController {
             do {
                 try pngData.write(to: url)
             } catch {
-                print("Failed to write PNG file: \(error)")
+                AppLogError("Failed to write PNG file: \(error)")
             }
         }
     }

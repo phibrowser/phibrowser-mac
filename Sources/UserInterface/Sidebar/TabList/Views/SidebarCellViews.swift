@@ -125,8 +125,21 @@ class SidebarTabCellView: SidebarCellView {
     
     override func prepareForReuse() {
         super.prepareForReuse()
-        viewModel.isPressed = false
+        // Only cancel subscriptions and reset interaction state.
+        // Visual state (title, favicon, etc.) is preserved until configure()
+        // overwrites it, avoiding a blank-frame flicker between prepareForReuse
+        // and the next SwiftUI render cycle.
         viewModel.cancelSubscriptions()
+        viewModel.isPressed = false
+    }
+
+    /// Cancel Combine subscriptions without resetting visual state.
+    /// Used before reloadData to prevent orphan events while keeping
+    /// the current frame on screen (avoids blank-frame flicker).
+    func invalidateSubscriptions() {
+        viewModel.cancelSubscriptions()
+        cancellables.forEach { $0.cancel() }
+        cancellables.removeAll()
     }
     
     private func setupViews() {
@@ -169,7 +182,6 @@ class SidebarTabCellView: SidebarCellView {
     
     override func configureAppearance() {
         guard let tab = item as? Tab else { return }
-        
         cancellables.forEach { $0.cancel() }
         cancellables.removeAll()
         

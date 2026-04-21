@@ -77,6 +77,11 @@ class Tab: WebContentRepresentable {
     @Published private(set) var isCapturingTab: Bool = false
     @Published private(set) var isBeingMirrored: Bool = false
     @Published private(set) var isSharingScreen: Bool = false
+    /// Whether this tab is currently in HTML5 content fullscreen. Driven by
+    /// the bridge event `tabContentFullscreenChanged`. The container view
+    /// controller subscribes to this to re-parent `hostView` on/off the
+    /// window's top-level overlay layer.
+    @Published var isInContentFullscreen: Bool = false
     @Published var isPinned = false
     @Published var title: String = ""
     @Published var url: String?
@@ -88,6 +93,13 @@ class Tab: WebContentRepresentable {
 
     /// Use native NTP rendering when the tab URL is an NTP URL.
     var usesNativeNTP: Bool = false
+
+    /// Whether this tab is currently rendered by the native NTP view (rather
+    /// than Chromium's WebContents). Mirrored from `WebContentViewController.contentMode`
+    /// so consumers outside the view controller (e.g. key-event dispatch) can
+    /// reliably tell that no WebContents is visible.
+    var isShowingNativeNTP: Bool = false
+
     
     // =========================================================================
     // Flicker fix: Track first paint state for new tab switching (scenario 2)
@@ -97,6 +109,19 @@ class Tab: WebContentRepresentable {
     /// Used to determine if we can immediately show this tab (true) or need to
     /// wait for first paint notification (false) when switching to it.
     var hasFirstPaint: Bool = false
+
+    // =========================================================================
+    // DevTools embedding state
+    // =========================================================================
+
+    /// Whether a docked DevTools is currently attached to this tab.
+    var devToolsAttached: Bool = false
+    /// The DevTools NSView (owned by Chromium, we just hold a reference).
+    var devToolsView: NSView?
+    /// Last known inspected page bounds (for restoring on tab switch).
+    var inspectedPageBounds: CGRect?
+    /// Whether the inspected content should be hidden (e.g. device emulation fullscreen).
+    var hideInspectedContents: Bool = false
 
     /// Last known focus target used when restoring tab focus.
     var lastFocusTarget: FocusTarget? = .webContent
@@ -302,6 +327,9 @@ class Tab: WebContentRepresentable {
     
     @objc func close() {
         if isActive, windowId != 0 {
+            MainBrowserWindowControllersManager.shared
+                .getBrowserState(for: windowId)?
+                .prepareForActiveTabClose(tabId: guid)
             // Let Chromium handle active-tab teardown to avoid close flicker.
             ChromiumLauncher.sharedInstance().bridge?.executeCommand(
                 Int32(CommandWrapper.IDC_CLOSE_TAB.rawValue),

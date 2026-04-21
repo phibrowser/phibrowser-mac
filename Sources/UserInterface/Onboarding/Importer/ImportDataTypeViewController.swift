@@ -117,7 +117,7 @@ class ImportDataTypeViewController: OnboardingBaseViewController {
             make.height.equalTo(viewHeight)
         }
 
-        titleLabel.font = NSFont(name: "IvyPresto Headline", size: titleFontSize)
+        titleLabel.font = NSFont(name: "IvyPrestoDisplay-SemiBoldItalic", size: titleFontSize)
         titleLabel.snp.remakeConstraints { make in
             make.centerX.equalToSuperview()
             make.top.equalToSuperview().offset(titleTopOffset)

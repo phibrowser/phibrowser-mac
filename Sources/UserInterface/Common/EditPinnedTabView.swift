@@ -380,8 +380,8 @@ struct EditPinnedTabView: View {
             )
         case .pin:
             return NSLocalizedString(
-                "This is the URL that opens when you click this pinned tab.",
-                comment: "Favorite editor - Subtitle explaining what the pinned URL controls"
+                "Edit the name and address for this pinned tab.",
+                comment: "Pinned tab editor - Subtitle explaining pinned tab editing"
             )
         }
     }
@@ -391,7 +391,7 @@ struct EditPinnedTabView: View {
     @ViewBuilder
     private var inputFieldsSection: some View {
         VStack(alignment: .leading, spacing: 12) {
-            if mode == .folder || mode == .newFolder || mode == .bookmark || mode == .editOrMoveBookmark {
+            if mode == .folder || mode == .newFolder || mode == .bookmark || mode == .editOrMoveBookmark || mode == .pin {
                 VStack(alignment: .leading, spacing: 4) {
                     Text(
                         NSLocalizedString(
@@ -475,7 +475,10 @@ struct EditPinnedTabView: View {
                 comment: "Bookmark editor - Placeholder for bookmark name input"
             )
         case .pin:
-            return ""
+            return NSLocalizedString(
+                "Tab Name",
+                comment: "Pinned tab editor - Placeholder for pinned tab name input"
+            )
         }
     }
 
@@ -519,7 +522,7 @@ struct EditPinnedTabView: View {
                 )
             ) {
                 let result = EditPinnedTabResult(
-                    title: (mode == .folder || mode == .newFolder || mode == .bookmark || mode == .editOrMoveBookmark)
+                    title: (mode == .folder || mode == .newFolder || mode == .bookmark || mode == .editOrMoveBookmark || mode == .pin)
                         ? titleString.trimmingCharacters(in: .whitespacesAndNewlines)
                         : nil,
                     url: (mode == .bookmark || mode == .editOrMoveBookmark || mode == .pin)
@@ -548,16 +551,15 @@ struct EditPinnedTabView: View {
             return !titleString.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
                 && !urlString.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         case .pin:
-            return !urlString.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            return !titleString.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                && !urlString.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         }
     }
 
     private func setInitialFocus() {
         switch mode {
-        case .folder, .newFolder, .bookmark, .editOrMoveBookmark:
+        case .folder, .newFolder, .bookmark, .editOrMoveBookmark, .pin:
             focusedField = .title
-        case .pin:
-            focusedField = .url
         }
     }
 
@@ -816,12 +818,13 @@ struct EditPinnedTab_Previews: PreviewProvider {
 
             EditPinnedTabView(
                 mode: .pin,
+                title: "163",
                 urlString: "https://www.163.com/",
                 onCancel: {
                     print("EditPinnedTab: Cancel")
                 },
                 onSave: { result in
-                    print("EditPinnedTab: Save -> url: \(result.url ?? "nil")")
+                    print("EditPinnedTab: Save -> title: \(result.title ?? "nil"), url: \(result.url ?? "nil")")
                 }
             )
             .previewDisplayName("Favorite Mode")

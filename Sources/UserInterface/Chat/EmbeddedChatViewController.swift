@@ -228,7 +228,13 @@ class EmbeddedChatViewController: NSViewController {
     }
     
     /// Reattaches the AI Chat view if another container moved it away,
-    /// or creates a new AI Chat tab if the previous one was cleaned up.
+    /// or rebuilds the AI Chat tab when it was previously cleared (e.g. after
+    /// `closeAllAIContent` followed by the user re-opening the sidebar).
+    ///
+    /// Calling `loadAIChatForCurrentTab()` here can race with the call from
+    /// `setupIfNeeded()` on the first appear; the dedup in
+    /// `BrowserState.createAIChatTab(for:chromeTabId:)` (`aiChatTabsBeingCreated`
+    /// in-flight set) is what keeps Chromium from building duplicate AI tabs.
     private func reattachAIChatViewIfNeeded() {
         if currentAIChatTab == nil {
             loadAIChatForCurrentTab()

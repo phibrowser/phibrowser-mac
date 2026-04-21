@@ -71,13 +71,13 @@ extension LocalStore {
         let oldDBFile = oldDir.appendingPathComponent("LocalStore.sqlite")
         
         guard fileManager.fileExists(atPath: oldDBFile.path) else {
-            print("No old database found, skipping migration")
+            AppLogDebug("No old database found, skipping migration")
             return
         }
         
         let newDBFile = newDir.appendingPathComponent("LocalStore.sqlite")
         if fileManager.fileExists(atPath: newDBFile.path) {
-            print("New database already exists, skipping migration")
+            AppLogDebug("New database already exists, skipping migration")
             return
         }
         
@@ -98,7 +98,7 @@ extension LocalStore {
                 
                 if fileManager.fileExists(atPath: oldFile.path) {
                     try fileManager.moveItem(at: oldFile, to: newFile)
-                    print("Migrated: \(fileName)")
+                    AppLogDebug("Migrated: \(fileName)")
                 }
             }
             
@@ -141,7 +141,7 @@ extension LocalStore {
             )
             return try context.fetch(descriptor)
         } catch {
-            print("Failed to fetch pinned tabs for profile \(profileId): \(error)")
+            AppLogError("Failed to fetch pinned tabs for profile \(profileId): \(error)")
             return []
         }
     }
@@ -155,7 +155,7 @@ extension LocalStore {
             let descriptor = FetchDescriptor<TabDataModel>(sortBy: sortBy)
             return try context.fetch(descriptor)
         } catch {
-            print("Failed to fetch tabs: \(error)")
+            AppLogError("Failed to fetch tabs: \(error)")
             return []
         }
     }
@@ -168,7 +168,7 @@ extension LocalStore {
             let descriptor = FetchDescriptor<TabDataModel>(predicate: predicate)
             return try context.fetch(descriptor).first
         } catch {
-            print("Failed to fetch tab with guid \(guid): \(error)")
+            AppLogError("Failed to fetch tab with guid \(guid): \(error)")
             return nil
         }
     }
@@ -182,7 +182,7 @@ extension LocalStore {
             let descriptor = FetchDescriptor<TabDataModel>(predicate: predicate, sortBy: sortBy)
             return try context.fetch(descriptor)
         } catch {
-            print("Failed to fetch tabs with url \(url): \(error)")
+            AppLogError("Failed to fetch tabs with url \(url): \(error)")
             return []
         }
     }
@@ -196,7 +196,7 @@ extension LocalStore {
             let descriptor = FetchDescriptor<TabDataModel>(predicate: predicate, sortBy: sortBy)
             return try context.fetch(descriptor)
         } catch {
-            print("Failed to fetch open tabs: \(error)")
+            AppLogError("Failed to fetch open tabs: \(error)")
             return []
         }
     }
@@ -229,6 +229,21 @@ extension LocalStore {
         updateTabURL(guid, url: url)
     }
     
+    func updateTabTitle(_ guid: String, title: String) {
+        performBackgroundWrite { context in
+            do {
+                let predicate = #Predicate<TabDataModel> { $0.guid == guid }
+                let descriptor = FetchDescriptor<TabDataModel>(predicate: predicate)
+                if let tab = try context.fetch(descriptor).first {
+                    tab.title = title
+                    tab.updatedDate = Date()
+                }
+            } catch {
+                AppLogError("[LocalStore] Failed to update tab title: \(error)")
+            }
+        }
+    }
+
     func updateTabFavicon(_ guid: String, favicon: Data) {
         performBackgroundWrite { context in
             do {

@@ -38,10 +38,30 @@ final class NewTabViewController: NSViewController {
 
     private lazy var iconImageView: NSImageView = {
         let imageView = NSImageView()
-        imageView.image = .nativeNTPIcon
+        if browserState.isIncognito {
+            imageView.image = .nativeNTPIncognito
+        } else {
+            imageView.image = .nativeNTPIcon
+        }
         imageView.imageScaling = .scaleProportionallyUpOrDown
         imageView.imageAlignment = .alignCenter
         return imageView
+    }()
+    
+    private lazy var incognitoLabel: NSTextField = {
+        let tf = NSTextField()
+        tf.stringValue = NSLocalizedString("Incognito", comment: "Incognito label in the native new tab page")
+        tf.font = NSFont(name: "IvyPrestoHeadline-Light", size: 21)
+        tf.isEditable = false
+        tf.isBordered = false
+        tf.drawsBackground = false
+        tf.alignment = .center
+        tf.usesSingleLineMode = true
+        tf.lineBreakMode = .byClipping
+        tf.maximumNumberOfLines = 1
+        tf.textColor = .primaryLabel
+        tf.allowsDefaultTighteningForTruncation = false
+        return tf
     }()
 
     init(state: BrowserState) {
@@ -90,6 +110,7 @@ final class NewTabViewController: NSViewController {
         areControlsHidden = hidden
         iconImageView.isHidden = hidden
         omniBoxController.view.isHidden = hidden
+        incognitoLabel.isHidden = hidden
     }
 
     private func setupViews() {
@@ -102,6 +123,7 @@ final class NewTabViewController: NSViewController {
 
         addChild(omniBoxController)
         contentView.addSubview(iconImageView)
+        contentView.addSubview(incognitoLabel)
         contentView.addSubview(omniBoxController.view)
 
         omniBoxController.view.translatesAutoresizingMaskIntoConstraints = true
@@ -122,10 +144,23 @@ final class NewTabViewController: NSViewController {
         let clipSize = scrollView.contentView.bounds.size
         guard clipSize.width > 0, clipSize.height > 0 else { return }
         let omniSize = omniBoxController.contentSize
+        
+        // Measure incognito label size using the cell to include internal padding
+        var labelSize: NSSize
+        if let cell = incognitoLabel.cell {
+            labelSize = cell.cellSize
+        } else {
+            labelSize = incognitoLabel.attributedStringValue.size()
+        }
+        // Ceil to whole pixels and add 2pt padding to avoid last character clipping
+        labelSize.width = ceil(labelSize.width) + 2
+        labelSize.height = ceil(labelSize.height)
+        let labelHeight = labelSize.height
 
-        let contentWidth = max(omniSize.width, iconSize.width)
-        let contentHeight = iconSize.height + contentSpacing + omniSize.height
-        let collapsedContentHeight = iconSize.height + contentSpacing + collapsedOmniBoxHeight
+        // Content size includes icon, label (6pt below icon), and omni (48pt below label)
+        let contentWidth = max(omniSize.width, iconSize.width, labelSize.width)
+        let contentHeight = iconSize.height + 6 + labelHeight + 48 + omniSize.height
+        let collapsedContentHeight = iconSize.height + 6 + labelHeight + 48 + collapsedOmniBoxHeight
 
         let documentWidth = max(contentWidth, clipSize.width)
         let documentHeight = max(contentHeight, clipSize.height)
@@ -140,13 +175,20 @@ final class NewTabViewController: NSViewController {
             originY = 0
         }
 
-        let omniX = originX + (contentWidth - omniSize.width) / 2
-        let omniY = originY + 50
-        omniBoxController.view.frame = NSRect(x: omniX, y: omniY, width: omniSize.width, height: omniSize.height)
-
+        // Position icon at the top of our content column
         let iconX = originX + (contentWidth - iconSize.width) / 2
-        let iconY = omniBoxController.view.frame.maxY + contentSpacing
+        let iconY = originY + (iconSize.height + 6 + labelHeight + 48 + omniSize.height) - iconSize.height
         iconImageView.frame = NSRect(x: iconX, y: iconY, width: iconSize.width, height: iconSize.height)
+
+        // Position label 6pt below the icon, centered horizontally
+        let labelX = originX + (contentWidth - labelSize.width) / 2
+        let labelY = iconImageView.frame.minY - 6 - labelHeight
+        incognitoLabel.frame = NSRect(x: labelX, y: labelY, width: labelSize.width, height: labelHeight)
+
+        // Position omnibox 48pt below the label
+        let omniX = originX + (contentWidth - omniSize.width) / 2
+        let omniY = incognitoLabel.frame.minY - 48 - omniSize.height
+        omniBoxController.view.frame = NSRect(x: omniX, y: omniY, width: omniSize.width, height: omniSize.height)
 
         scrollView.reflectScrolledClipView(scrollView.contentView)
     }
@@ -158,3 +200,4 @@ extension NewTabViewController: OmniBoxActionDelegate {
         omniBoxController.reset()
     }
 }
+

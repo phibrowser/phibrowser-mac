@@ -109,6 +109,8 @@ enum CommandWrapper: Int, Equatable {
     // Phi
     case PHI_TOGGLE_SIDEBAR          = 90000
     case PHI_TOGGLE_CHATBAR          = 90001
+    case PHI_TAB_SWITCHER_FORWARD    = 90002
+    case PHI_TAB_SWITCHER_BACKWARD   = 90003
     
     // System Preserved
     case IDS_HIDE_OTHERS_MAC         = 110
@@ -192,8 +194,8 @@ extension Shortcuts {
         .IDC_SHOW_DOWNLOADS: .init(characters: "j", modifiers: [.command, .shift]),
 
         // Tab
-        .IDC_SELECT_NEXT_TAB: .init(characters: "\t", modifiers: .control),
-        .IDC_SELECT_PREVIOUS_TAB: .init(characters: "\t", modifiers: [.control, .shift]),
+        .IDC_SELECT_NEXT_TAB: .init(characters: "]", modifiers: [.command, .shift]),
+        .IDC_SELECT_PREVIOUS_TAB: .init(characters: "[", modifiers: [.command, .shift]),
         .IDC_SELECT_TAB_0: .init(characters: "1", modifiers: .command),
         .IDC_SELECT_TAB_1: .init(characters: "2", modifiers: .command),
         .IDC_SELECT_TAB_2: .init(characters: "3", modifiers: .command),
@@ -213,6 +215,8 @@ extension Shortcuts {
         // PHI
         .PHI_TOGGLE_SIDEBAR: .init(characters: "s", modifiers: [.command]),
         .PHI_TOGGLE_CHATBAR: .init(characters: "s", modifiers: [.command, .shift]),
+        .PHI_TAB_SWITCHER_FORWARD: .init(characters: "\t", modifiers: .control),
+        .PHI_TAB_SWITCHER_BACKWARD: .init(characters: "\t", modifiers: [.control, .shift]),
         
         // System Preserved Shortcuts
         .IDS_HIDE_OTHERS_MAC: .init(characters: "h", modifiers: [.command, .option]),

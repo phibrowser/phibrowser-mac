@@ -31,6 +31,7 @@ struct ExtensionList<Manager: ExtensionManagerProtocol>: View {
     @ObservedObject private var extensionManager: Manager
     private let needSettings: Bool
     private let onRequestDismiss: (() -> Void)?
+    private let triggerAnchorView: NSView?
     @State private var contentSize: CGSize = .zero
     
     var onFrameChanged: ((CGSize) -> Void)?
@@ -52,12 +53,14 @@ struct ExtensionList<Manager: ExtensionManagerProtocol>: View {
         extensionManager: Manager,
         onFrameChanged: ((CGSize) -> Void)? = nil,
         needSettings: Bool = true,
-        onRequestDismiss: (() -> Void)? = nil
+        onRequestDismiss: (() -> Void)? = nil,
+        triggerAnchorView: NSView? = nil
     ) {
         self.extensionManager = extensionManager
         self.onFrameChanged = onFrameChanged
         self.needSettings = needSettings
         self.onRequestDismiss = onRequestDismiss
+        self.triggerAnchorView = triggerAnchorView
     }
     
     private var needsScrolling: Bool {
@@ -209,11 +212,44 @@ struct ExtensionList<Manager: ExtensionManagerProtocol>: View {
                     ext: ext,
                     onTogglePin: { model in
                         extensionManager.togglePin(model)
+                    },
+                    onTap: triggerAnchorView.map { anchor in
+                        { ext in triggerExtension(ext, anchor: anchor) }
+                    },
+                    onSecondaryTap: { ext in
+                        triggerExtensionContextMenu(ext)
                     }
                 )
                 .fixedSize()
             }
         }
+    }
+
+    private func triggerExtension(_ ext: Extension, anchor: NSView) {
+        // Dismiss the SwiftUI popover BEFORE triggering the Chromium popup so
+        // the popover's fade-out animation runs in parallel with the popup's
+        // appearance instead of overlapping it visually.
+        onRequestDismiss?()
+        let point = ExtensionPopupAnchor.pointBelowView(anchor)
+            ?? ExtensionPopupAnchor.mouseFallback()
+        let windowId = MainBrowserWindowControllersManager.shared
+            .activeWindowController?.browserState.windowId
+        ChromiumLauncher.sharedInstance().bridge?.triggerExtension(
+            withId: ext.id,
+            pointInScreen: point,
+            windowId: windowId?.int64Value ?? 0
+        )
+    }
+
+    private func triggerExtensionContextMenu(_ ext: Extension) {
+        let point = ExtensionPopupAnchor.mouseFallback()
+        let windowId = MainBrowserWindowControllersManager.shared
+            .activeWindowController?.browserState.windowId
+        ChromiumLauncher.sharedInstance().bridge?.triggerExtensionContextMenu(
+            withId: ext.id,
+            pointInScreen: point,
+            windowId: windowId?.int64Value ?? 0
+        )
     }
     
     #if DEBUG
@@ -283,6 +319,7 @@ struct ExtensionGridItem: View {
     @State private var isHovered = false
     var onTogglePin: ((Extension) -> Void)?
     var onTap: ((Extension) -> Void)?
+    var onSecondaryTap: ((Extension) -> Void)?
     
     private let itemWidth: CGFloat = 50
     private let itemHeight: CGFloat = 32
@@ -340,6 +377,11 @@ struct ExtensionGridItem: View {
         }
         .frame(width: itemWidth, height: itemHeight)
         .contentShape(Rectangle())
+        .overlay(
+            SecondaryClickPassthrough {
+                onSecondaryTap?(ext)
+            }
+        )
         .onHover { hovering in
             isHovered = hovering
         }

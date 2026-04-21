@@ -50,5 +50,21 @@ final class ExtensionMessageRouter {
             ExtensionDialogManager.shared.handleRequest(context: context)
             return nil
         }
+
+        register(type: "getServiceExports") { context in
+            Task {
+                do {
+                    let result = try await SentinelIPCClient.shared.getComponentExports()
+                    await ExtensionMessaging.shared.sendResponse(result, requestId: context.requestId)
+                } catch {
+                    await ExtensionMessaging.shared.sendError(error.localizedDescription, requestId: context.requestId)
+                }
+            }
+            return nil
+        }
+
+        register(type: "toggleAgentAnimation") { context in
+            return AgentAnimationManager.shared.handleRequest(context: context)
+        }
     }
 }

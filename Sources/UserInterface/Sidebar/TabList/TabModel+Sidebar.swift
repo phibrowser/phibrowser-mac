@@ -172,7 +172,7 @@ extension Tab: ContextMenuRepresentable {
             menu.addItem(folderItem)
         }
     }
-
+ 
     @MainActor
     @objc private func editPinnedTab() {
         guard let windowController = MainBrowserWindowControllersManager.shared.activeWindowController else {
@@ -182,10 +182,13 @@ extension Tab: ContextMenuRepresentable {
             return
         }
         let state = windowController.browserState
-        let initialURL = state.pinnedTabs.first(where: { $0.guidInLocalDB == guid })?.url ?? url ?? ""
+        let pinnedTab = state.pinnedTabs.first(where: { $0.guidInLocalDB == guid })
+        let initialURL = pinnedTab?.url ?? url ?? ""
+        let initialTitle = pinnedTab?.storedTitle ?? pinnedTab?.title ?? ""
         let pinnedGuid = guid
 
         EditPinnedTabPresenter.presentModal(mode: .pin,
+                                            title: initialTitle,
                                             urlString: initialURL,
                                             from: windowController.window) { [weak windowController] result in
             guard let windowController else { return }
@@ -195,9 +198,16 @@ extension Tab: ContextMenuRepresentable {
             let normalizedString = normalizedURL.absoluteString
             state.localStore.updateTabURL(pinnedGuid, url: normalizedURL)
 
+            if let newTitle = result.title {
+                state.localStore.updateTabTitle(pinnedGuid, title: newTitle)
+            }
+
             if let targetTab = state.pinnedTabs.first(where: { $0.guidInLocalDB == pinnedGuid }) {
                 if targetTab.url != normalizedString {
                     targetTab.url = normalizedString
+                }
+                if let newTitle = result.title {
+                    targetTab.applyStoredTitle(newTitle)
                 }
                 if targetTab.isOpenned, let wrapper = targetTab.webContentWrapper {
                     wrapper.updateTabCustomValue("")

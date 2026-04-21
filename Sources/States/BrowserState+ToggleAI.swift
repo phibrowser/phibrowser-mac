@@ -30,8 +30,8 @@ extension BrowserState {
     /// Only called when AI is enabled.
     func updateSentinelRegistration(_ launchOnLogin: Bool) {
         if launchOnLogin {
-            SentinelHelper.terminateAll()
             SentinelHelper.register()
+            SentinelHelper.launch()
             // register() may steal focus. poll up to 2s and reactivate main app if needed
             Task {
                 for _ in 0..<10 {

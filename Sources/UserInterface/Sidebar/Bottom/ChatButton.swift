@@ -11,7 +11,9 @@ import AppKit
 /// Chat button that opens the AI Chat sidebar.
 struct ChatButton: View {
     let action: () -> Void
-    
+    var contentWidth: CGFloat? = nil
+    var contentHeight: CGFloat? = nil
+
     @State private var isHovering = false
     @Environment(\.phiAppearance) private var appearance
     
@@ -25,7 +27,7 @@ struct ChatButton: View {
         /// Border color in dark appearance.
         static let borderColor = Color.white.opacity(0.4)
         /// Border width.
-        static let borderWidth: CGFloat = 1
+        static let borderWidth: CGFloat = 0
         /// Capsule corner radius.
         static let cornerRadius: CGFloat = 999
         /// Vertical padding.
@@ -57,6 +59,7 @@ struct ChatButton: View {
             .padding(.leading, Constants.leadingPadding)
             .padding(.trailing, Constants.trailingPadding)
             .padding(.vertical, Constants.verticalPadding)
+            .frame(width: contentWidth, height: contentHeight)
             .themedBackground(isHovering ? Constants.hoveredBackgroundColor : Constants.backgroundColor)
             .clipShape(Capsule())
             .overlay(

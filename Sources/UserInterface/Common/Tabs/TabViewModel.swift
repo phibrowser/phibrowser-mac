@@ -52,12 +52,34 @@ final class TabViewModel {
         cancellables.removeAll()
     }
 
+    func prepareForReuse() {
+        cancellables.removeAll()
+        title = ""
+        url = nil
+        faviconUrl = nil
+        faviconLoadURL = nil
+        liveFaviconImage = nil
+        liveFaviconRevision = 0
+        isActive = false
+        isPressed = false
+        isLoading = false
+        loadingProgress = 1.0
+        isCurrentlyAudible = false
+        isAudioMuted = false
+        isCapturingMedia = false
+        faviconRevision &+= 1
+        onToggleMute = nil
+        onToolTipUpdated = nil
+    }
+
+    private var configuredTabGuid: Int?
+
     func configure(with tab: Tab) {
+        configuredTabGuid = tab.guid
+
         self.title = tab.title
         self.url = tab.url
-        if let newUrl = tab.url, !newUrl.isEmpty {
-            self.faviconLoadURL = newUrl
-        }
+        self.faviconLoadURL = (tab.url?.isEmpty == false) ? tab.url : nil
         self.faviconUrl = tab.faviconUrl
         updateLiveFavicon(data: tab.liveFaviconData, revision: tab.liveFaviconRevision)
         self.isActive = tab.isActive
@@ -68,21 +90,28 @@ final class TabViewModel {
         self.isCapturingMedia = tab.isCapturingAudio || tab.isCapturingVideo || tab.isSharingScreen
         
         cancellables.removeAll()
+        let expectedGuid = tab.guid
         
         tab.$title
+            .removeDuplicates()
             .receive(on: DispatchQueue.main)
             .sink { [weak self] newTitle in
-                guard let self else { return }
+                guard let self, self.configuredTabGuid == expectedGuid else { return }
                 self.title = newTitle
                 self.onToolTipUpdated?()
             }
             .store(in: &cancellables)
             
         tab.$url
+            .removeDuplicates()
             .receive(on: DispatchQueue.main)
             .sink { [weak self] newUrl in
-                guard let self else { return }
+                guard let self, self.configuredTabGuid == expectedGuid else { return }
                 self.url = newUrl
+                // Intentionally keep faviconLoadURL when newUrl is nil/empty.
+                // During navigation the URL briefly becomes nil before the new
+                // page URL arrives; clearing faviconLoadURL here would cause a
+                // globe-icon flash. configure() already resets it unconditionally.
                 if let newUrl, !newUrl.isEmpty {
                     self.faviconLoadURL = newUrl
                 }
@@ -90,9 +119,10 @@ final class TabViewModel {
             .store(in: &cancellables)
             
         tab.$faviconUrl
+            .removeDuplicates()
             .receive(on: DispatchQueue.main)
             .sink { [weak self] rawFaviconUrl in
-                guard let self else { return }
+                guard let self, self.configuredTabGuid == expectedGuid else { return }
                 let newFaviconUrl = (rawFaviconUrl?.isEmpty == false) ? rawFaviconUrl : nil
                 let oldFaviconUrl = (self.faviconUrl?.isEmpty == false) ? self.faviconUrl : nil
                 self.faviconUrl = rawFaviconUrl
@@ -115,38 +145,55 @@ final class TabViewModel {
             .combineLatest(tab.$liveFaviconRevision)
             .receive(on: DispatchQueue.main)
             .sink { [weak self] data, revision in
-                self?.updateLiveFavicon(data: data, revision: revision)
+                guard let self, self.configuredTabGuid == expectedGuid else { return }
+                self.updateLiveFavicon(data: data, revision: revision)
             }
             .store(in: &cancellables)
             
         tab.$isActive
+            .removeDuplicates()
             .receive(on: DispatchQueue.main)
-            .sink { [weak self] in self?.isActive = $0 }
+            .sink { [weak self] in
+                guard let self, self.configuredTabGuid == expectedGuid else { return }
+                self.isActive = $0
+            }
             .store(in: &cancellables)
             
         tab.$isLoading
+            .removeDuplicates()
             .receive(on: DispatchQueue.main)
-            .sink { [weak self] in self?.isLoading = $0 }
+            .sink { [weak self] newVal in
+                guard let self, self.configuredTabGuid == expectedGuid else { return }
+                self.isLoading = newVal
+            }
             .store(in: &cancellables)
             
         tab.$loadingProgress
+            .removeDuplicates()
             .receive(on: DispatchQueue.main)
-            .sink { [weak self] in self?.loadingProgress = Double($0) }
+            .sink { [weak self] newVal in
+                guard let self, self.configuredTabGuid == expectedGuid else { return }
+                self.loadingProgress = Double(newVal)
+            }
             .store(in: &cancellables)
 
         tab.$isCurrentlyAudible
             .combineLatest(tab.$isAudioMuted)
+            .removeDuplicates { $0 == $1 }
             .receive(on: DispatchQueue.main)
             .sink { [weak self] isCurrentlyAudible, isAudioMuted in
-                self?.isCurrentlyAudible = isCurrentlyAudible
-                self?.isAudioMuted = isAudioMuted
+                guard let self, self.configuredTabGuid == expectedGuid else { return }
+                self.isCurrentlyAudible = isCurrentlyAudible
+                self.isAudioMuted = isAudioMuted
             }
             .store(in: &cancellables)
 
         Publishers.CombineLatest3(tab.$isCapturingAudio, tab.$isCapturingVideo, tab.$isSharingScreen)
+            .removeDuplicates { $0 == $1 }
             .receive(on: DispatchQueue.main)
             .sink { [weak self] isCapturingAudio, isCapturingVideo, isSharingScreen in
-                self?.isCapturingMedia = isCapturingAudio || isCapturingVideo || isSharingScreen
+                guard let self, self.configuredTabGuid == expectedGuid else { return }
+                self.isCapturingMedia = isCapturingAudio || isCapturingVideo || isSharingScreen
             }
             .store(in: &cancellables)
     }

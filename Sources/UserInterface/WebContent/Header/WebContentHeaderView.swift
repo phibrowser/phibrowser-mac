@@ -19,6 +19,7 @@ struct WebContentHeaderView: View {
     let onStopLoadingTap: () -> Void
     let onChatTap: () -> Void
     let onFeedbackTap: () -> Void
+    let onMemoryTap: () -> Void
     let onOpenLocationBar: (NSView?) -> Void
     var onAnchorResolved: ((NSView?) -> Void)?
 
@@ -38,6 +39,7 @@ struct WebContentHeaderView: View {
         onStopLoadingTap: @escaping () -> Void,
         onChatTap: @escaping () -> Void,
         onFeedbackTap: @escaping () -> Void,
+        onMemoryTap: @escaping () -> Void = {},
         onOpenLocationBar: @escaping (NSView?) -> Void,
         onAnchorResolved: ((NSView?) -> Void)? = nil
     ) {
@@ -52,6 +54,7 @@ struct WebContentHeaderView: View {
         self.onStopLoadingTap = onStopLoadingTap
         self.onChatTap = onChatTap
         self.onFeedbackTap = onFeedbackTap
+        self.onMemoryTap = onMemoryTap
         self.onOpenLocationBar = onOpenLocationBar
         self.onAnchorResolved = onAnchorResolved
         _extensionsModel = State(wrappedValue: WebContentHeaderExtensionsModel(browserState: browserState))
@@ -87,6 +90,7 @@ struct WebContentHeaderView: View {
                     availableWidth: max(0, totalHeaderWidth - leadingButtonsWidth - addressBarReservedWidth),
                     pinnedExtensions: extensionsModel.pinnedExtensions,
                     showDownload: state.showDownloadButton,
+                    showMemory: state.showMemoryButton,
                     showFeedback: state.showFeedbackButton,
                     showChat: state.showChatButton,
                     extensionManager: browserState?.extensionManager,
@@ -95,8 +99,10 @@ struct WebContentHeaderView: View {
                     isDownloadPopoverShown: $state.isDownloadPopoverShown,
                     isExtensionPopoverShown: $isExtensionPopoverShown,
                     onFeedbackTap: onFeedbackTap,
-                    onChatTap: onChatTap
+                    onChatTap: onChatTap,
+                    onMemoryTap: onMemoryTap
                 )
+                .frame(height: HeaderTrailingLayout.rowHeight)
             }
             .frame(maxWidth: .infinity)
             .onGeometryChange(for: CGFloat.self) { proxy in
@@ -158,6 +164,7 @@ struct WebContentHeaderView: View {
                     accessibilityLabel: state.isProgressVisible
                         ? NSLocalizedString("Stop", comment: "Web content header - Accessibility description for stop loading button")
                         : NSLocalizedString("Refresh", comment: "Web content header - Accessibility description for refresh page button"),
+                    hoverBackgroundOffsetY: state.isProgressVisible ? 0 : 1,
                     action: state.isProgressVisible ? onStopLoadingTap : onRefreshTap
                 )
             }
@@ -171,6 +178,8 @@ struct NavigationButton: View {
     let systemName: String
     var isEnabled: Bool = true
     var accessibilityLabel: String? = nil
+    /// Vertical offset for the hover background relative to the icon (negative moves up).
+    var hoverBackgroundOffsetY: CGFloat = 0
     let action: () -> Void
 
     @State private var isHovering = false
@@ -181,8 +190,12 @@ struct NavigationButton: View {
                 .font(.system(size: 14))
                 .foregroundColor(isEnabled ? .primary : .secondary)
                 .frame(width: 24, height: 24)
-                .themedBackground((isHovering && isEnabled) ? .hover : .clear)
-                .clipShape(RoundedRectangle(cornerRadius: 4))
+                .background(
+                    Circle()
+                        .themedFill((isHovering && isEnabled) ? .hover : .clear)
+                        .frame(width: 24, height: 24)
+                        .offset(y: hoverBackgroundOffsetY)
+                )
         }
         .buttonStyle(.plain)
         .disabled(!isEnabled)

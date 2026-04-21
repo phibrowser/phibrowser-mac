@@ -7,15 +7,25 @@ import Cocoa
 import SnapKit
 
 extension WebContentContainerViewController {
-    static let floatingSidebarWidth: CGFloat = 280
+    static let floatingSidebarDefaultWidth: CGFloat = MainSplitViewController.leftItemMinWidth
     static let floatingSidebarTriggerWidth: CGFloat = 10
     static let floatingSidebarHideDelay: TimeInterval = 0.12
     static let floatingSidebarMinimumVisibleDuration: TimeInterval = 0.5
     static let floatingSidebarInset: CGFloat = 5
     static let floatingSidebarShowDuration: TimeInterval = 0.15
     static let floatingSidebarHideDuration: TimeInterval = 0.15
-    static var floatingSidebarHiddenLeading: CGFloat {
-        -(floatingSidebarWidth + floatingSidebarInset)
+
+    var currentFloatingWidth: CGFloat {
+        // The floating panel only appears while the sidebar is collapsed (sidebarWidth == 0),
+        // so we always rely on the cached width captured before collapse. `edgesSpacing`
+        // compensates for the hidden splitview divider so the panel visually matches the
+        // real sidebar.
+        let baseWidth = lastKnownSidebarWidth > 0 ? lastKnownSidebarWidth : Self.floatingSidebarDefaultWidth
+        return baseWidth + WebContentConstant.edgesSpacing
+    }
+
+    var floatingSidebarHiddenLeading: CGFloat {
+        -(currentFloatingWidth + Self.floatingSidebarInset)
     }
 
     func setupFloatingSidebarTrigger() {
@@ -96,10 +106,10 @@ extension WebContentContainerViewController {
 
         view.addSubview(interactionContainerView, positioned: .above, relativeTo: nil)
         interactionContainerView.snp.makeConstraints { make in
-            floatingSidebarLeadingConstraint = make.leading.equalToSuperview().offset(Self.floatingSidebarHiddenLeading).constraint
+            floatingSidebarLeadingConstraint = make.leading.equalToSuperview().offset(floatingSidebarHiddenLeading).constraint
             make.top.equalToSuperview().offset(Self.floatingSidebarInset)
             make.bottom.equalToSuperview().offset(-Self.floatingSidebarInset)
-            make.width.equalTo(Self.floatingSidebarWidth + Self.floatingSidebarInset)
+            floatingSidebarWidthConstraint = make.width.equalTo(currentFloatingWidth + Self.floatingSidebarInset).constraint
         }
         view.layoutSubtreeIfNeeded()
         interactionContainerView.isHidden = true
@@ -108,6 +118,10 @@ extension WebContentContainerViewController {
         floatingSidebarViewController = floatingSidebarVC
         floatingSidebarVC.setContentActive(shouldEnableFloatingSidebar())
         floatingSidebarContainerView = interactionContainerView
+    }
+
+    func updateFloatingSidebarWidth() {
+        floatingSidebarWidthConstraint?.update(offset: currentFloatingWidth + Self.floatingSidebarInset)
     }
 
     func updateFloatingSidebarAvailability() {
@@ -144,7 +158,7 @@ extension WebContentContainerViewController {
         guard panel.isHidden else { return }
 
         // Ensure panel starts offscreen before sliding in.
-        floatingSidebarLeadingConstraint?.update(offset: Self.floatingSidebarHiddenLeading)
+        floatingSidebarLeadingConstraint?.update(offset: floatingSidebarHiddenLeading)
         view.layoutSubtreeIfNeeded()
         panel.isHidden = false
         floatingSidebarLastShownAt = Date()
@@ -168,7 +182,7 @@ extension WebContentContainerViewController {
         cancelFloatingSidebarHide()
         guard let panel = floatingSidebarContainerView else { return }
         guard panel.isHidden == false else { return }
-        floatingSidebarLeadingConstraint?.update(offset: Self.floatingSidebarHiddenLeading)
+        floatingSidebarLeadingConstraint?.update(offset: floatingSidebarHiddenLeading)
 
         if animated {
             NSAnimationContext.runAnimationGroup { context in

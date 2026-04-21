@@ -19,6 +19,29 @@ class SideAddressBar: NSView {
     }
 
     private var containerView: HoverableView!
+    private lazy var copyURLButton: HoverableButtonNSView = {
+        
+        let config = HoverableButtonConfig(
+            imageSize: .init(width: 12, height: 12),
+            systemName: "link",
+            triggeredSystemName: "checkmark",
+            symbolWeight: .medium,
+            triggeredImageTintColor: .textPrimary,
+            imageContentTransition: .symbolEffect(.replace, options: .speed(3)),
+            triggeredRevertDelay: 1,
+            hoverBackgroundColor: .hover,
+            cornerRadius: 4
+        )
+        let button = HoverableButtonNSView(config: config) { [weak self] in
+            self?.copyCurrentURL()
+        }
+        button.toolTip = NSLocalizedString("Copy Link", comment: "Sidebar address bar - Copy current page URL button tooltip")
+        button.snp.makeConstraints { make in
+            make.size.equalTo(CGSize(width: 24, height: 24))
+        }
+        return button
+    }()
+
     private lazy var extensionMenuHostingView: NSHostingView<ExtensionPopoverButton> = {
         let hosting = NSHostingView(rootView: ExtensionPopoverButton(extensionManager: nil))
         hosting.translatesAutoresizingMaskIntoConstraints = false
@@ -178,6 +201,19 @@ class SideAddressBar: NSView {
         button.toolTip = ext.name
         
         button.identifier = NSUserInterfaceItemIdentifier(ext.id)
+        button.secondaryAction = { [weak self, weak button] in
+            guard let self, let button else { return }
+            guard let extensionId = button.identifier?.rawValue else { return }
+
+            let point = ExtensionPopupAnchor.pointBelowView(button)
+                ?? ExtensionPopupAnchor.mouseFallback()
+
+            ChromiumLauncher.sharedInstance().bridge?.triggerExtensionContextMenu(
+                withId: extensionId,
+                pointInScreen: point,
+                windowId: self.unsafeBrowserState?.windowId.int64Value ?? 0
+            )
+        }
         
         button.snp.makeConstraints { make in
             make.size.equalTo(CGSize(width: 24, height: 24))
@@ -186,6 +222,13 @@ class SideAddressBar: NSView {
         return button
     }
     
+    private func copyCurrentURL() {
+        guard let urlString = currentTab?.url, !urlString.isEmpty else { return }
+        let branded = URLProcessor.phiBrandEnsuredUrlString(urlString)
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(branded, forType: .string)
+    }
+
     @objc private func extensionButtonClicked(_ sender: NSView) {
         guard let extensionId = sender.identifier?.rawValue else { return }
 
@@ -249,7 +292,7 @@ class SideAddressBar: NSView {
     private func setupRightStackView() {
         rightStackView = CustomStackView()
         rightStackView.orientation = .horizontal
-        rightStackView.spacing = 6
+        rightStackView.spacing = 2
         rightStackView.alignment = .centerY
         rightStackView.distribution = .gravityAreas
         
@@ -259,6 +302,7 @@ class SideAddressBar: NSView {
         extensionIconsStackView.alignment = .centerY
         
         rightStackView.addArrangedSubview(extensionIconsStackView)
+        rightStackView.addArrangedSubview(copyURLButton)
         rightStackView.addArrangedSubview(extensionMenuHostingView)
         extensionMenuHostingView.snp.makeConstraints { make in
             make.width.height.equalTo(24)
@@ -318,6 +362,8 @@ struct ExtensionPopoverButton: View {
     @State private var isShown = false
     let extensionManager: ExtensionManager?
 
+    @State private var anchorView: NSView?
+
     var body: some View {
         let isPresented = Binding(
             get: { isShown && extensionManager != nil },
@@ -327,11 +373,18 @@ struct ExtensionPopoverButton: View {
         LottieMenuButtonRepresentable(isShown: $isShown)
             .frame(width: 24, height: 24)
             .contentShape(Rectangle())
+            .background(
+                AddressBarAnchorView { view in
+                    anchorView = view
+                }
+                .allowsHitTesting(false)
+            )
         .popover(isPresented: isPresented, arrowEdge: .top) {
             if let manager = extensionManager {
                 ExtensionList(
                     extensionManager: manager,
-                    onRequestDismiss: { isShown = false }
+                    onRequestDismiss: { isShown = false },
+                    triggerAnchorView: anchorView
                 )
             } else {
                 EmptyView()

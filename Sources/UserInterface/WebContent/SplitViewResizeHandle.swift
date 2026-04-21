@@ -5,7 +5,7 @@
 
 import Foundation
 class SplitViewResizeHandle: NSView {
-    private var isDragging = false
+    private(set) var isDragging = false
     private var isMouseEntered = false
     private var lastMouseLocation: NSPoint = .zero
     private var trackingArea: NSTrackingArea?
@@ -13,6 +13,14 @@ class SplitViewResizeHandle: NSView {
 
     private var hoverIndicatorLayer: CALayer?
     private var showDelayTimer: Timer?
+
+    var onDragEnded: (() -> Void)?
+
+    override var isHidden: Bool {
+        didSet {
+            if isHidden { resetInteractionState() }
+        }
+    }
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
@@ -204,17 +212,25 @@ class SplitViewResizeHandle: NSView {
         super.mouseUp(with: event)
         isDragging = false
 
-        // Restore the correct cursor and indicator state after dragging.
         let locationInView = convert(event.locationInWindow, from: nil)
         if bounds.contains(locationInView) {
             NSCursor.resizeLeftRight.set()
-            // Keep the indicator visible while the pointer remains inside.
             scheduleShowHoverIndicator()
         } else {
             NSCursor.arrow.set()
-            // Hide the indicator once the pointer leaves the handle.
             hideHoverIndicator()
         }
+
+        onDragEnded?()
+    }
+
+    private func resetInteractionState() {
+        isDragging = false
+        isMouseEntered = false
+        accumulatedDeadZoneDelta = 0
+        showDelayTimer?.invalidate()
+        hoverIndicatorLayer?.removeAllAnimations()
+        hoverIndicatorLayer?.opacity = 0.0
     }
 
     private func findMainSplitViewController() -> MainSplitViewController? {

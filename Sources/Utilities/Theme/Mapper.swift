@@ -59,7 +59,7 @@ public struct Mapper<V> {
     public func debug(_ identifier: Any = #function) -> Mapper<V> {
         #if DEBUG
         return `do` { theme, appearance in
-            print("\(identifier) - Theme: \(theme.id), Appearance: \(appearance) -> \(self[theme, appearance])")
+            AppLogDebug("\(identifier) - Theme: \(theme.id), Appearance: \(appearance) -> \(self[theme, appearance])")
         }
         #else
         return self

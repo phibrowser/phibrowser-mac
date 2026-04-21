@@ -32,7 +32,7 @@ class PinnedTabLayout: NSCollectionViewLayout {
         static let insets = NSEdgeInsets(top: 8, left: 8, bottom: 8, right: 0)
         static let tabHeight: CGFloat = 45
         static let extensionHeight: CGFloat = 28
-        static let tabMinimumWidth: CGFloat = 60
+        static let tabMinimumWidth: CGFloat = 54
         static let extensionMinimumWidth: CGFloat = 26
     }
 
@@ -167,23 +167,24 @@ private extension PinnedTabLayout {
     }
 
     func tabColumnsLimit(for width: CGFloat) -> Int {
-        if width <= 230 {
-            return 2
-        } else if width <= 350 {
+        if width < 236 {
             return 3
-        } else {
+        } else if width < 294 {
             return 4
+        } else if width < 352 {
+            return 5
+        } else {
+            return 6
         }
     }
 
     func extensionColumnsLimit(for width: CGFloat) -> Int {
-//        if width <= 230 {
-//            return 2
-//        } else
-        if width <= 350 {
-            return 4
-        } else {
+        if width <= 250 {
+            return 5
+        } else if width <= 350 {
             return 7
+        } else {
+            return 10
         }
     }
 

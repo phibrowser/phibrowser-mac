@@ -85,7 +85,9 @@ extension Shortcuts {
                 return [.IDC_MANAGE_EXTENSIONS,
                         .IDC_SHOW_DOWNLOADS]
             case .tab:
-                return [.IDC_NEW_TAB_TO_RIGHT,
+                return [.PHI_TAB_SWITCHER_FORWARD,
+                        .PHI_TAB_SWITCHER_BACKWARD,
+                        .IDC_NEW_TAB_TO_RIGHT,
                         .IDC_SELECT_NEXT_TAB,
                         .IDC_SELECT_PREVIOUS_TAB,
                         .IDC_SELECT_TAB_0,
@@ -158,29 +160,28 @@ extension Shortcuts {
     /// Overrides a shortcut or removes the override when `remove` is true.
     static func override(_ key: ShortcutsKey?, for command: CommandWrapper, remove: Bool = false) {
         if remove {
-            // Restore the default shortcut.
             overridedShortcuts.removeValue(forKey: command)
         } else if key != DefaultShortcuts[command] {
-            // Store explicit `nil` by wrapping it in `Optional(...)`; assigning bare
-            // `nil` would remove the dictionary entry entirely.
             overridedShortcuts[command] = Optional(key)
         } else if key == DefaultShortcuts[command] {
-            // Matching the default means the override can be removed.
             overridedShortcuts.removeValue(forKey: command)
         }
         
         save()
+        CommandDispatcher.reloadPhiShortcutMap()
         notifyChromiumShortcutsChanged()
     }
     
     static func reloadOverrides() {
         overridedShortcuts = load()
+        CommandDispatcher.reloadPhiShortcutMap()
         notifyChromiumShortcutsChanged()
     }
     
     static func restoreOverrides() {
         overridedShortcuts.removeAll()
         save()
+        CommandDispatcher.reloadPhiShortcutMap()
         notifyChromiumShortcutsChanged()
     }
     
@@ -220,7 +221,7 @@ extension Shortcuts {
             try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true, attributes: nil)
             try data.write(to: url)
         } catch {
-            print("Failed to save shortcuts: \(error)")
+            AppLogError("Failed to save shortcuts: \(error)")
         }
     }
     
@@ -321,6 +322,8 @@ extension CommandWrapper {
         .IDC_MOVE_TAB_TO_NEW_WINDOW: .init(title: "Move Tab to New Window", keywords: ["movetabtonewwindow"]),
         .PHI_TOGGLE_SIDEBAR: .init(title: "Toggle Sidebar", keywords: ["togglesidebar"]),
         .PHI_TOGGLE_CHATBAR: .init(title: "Toggle Chatbar", keywords: ["togglechatbar","ai"]),
+        .PHI_TAB_SWITCHER_FORWARD: .init(title: "Show Tab Switcher", keywords: ["tab switcher", "forward"]),
+        .PHI_TAB_SWITCHER_BACKWARD: .init(title: "Show Tab Switcher(Reverse)", keywords: ["tab switcher", "backward"]),
         
         .IDS_HIDE_OTHERS_MAC: .init(title: "Hide Others", keywords: []),
         .IDS_CLOSE_ALL_WINDOWS_MAC: .init(title: "Close All", keywords: []),

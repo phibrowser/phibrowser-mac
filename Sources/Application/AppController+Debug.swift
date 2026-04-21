@@ -567,7 +567,7 @@ extension AppController {
        
         dataStore.fetchDataRecords(ofTypes: dataTypes) { records in
             WKWebsiteDataStore.default().removeData(ofTypes: dataTypes, for: records) {
-                print("✅ All WKWebView cookies, cache, and website data cleared.")
+                AppLogDebug("✅ All WKWebView cookies, cache, and website data cleared.")
             }
             AuthManager.shared.clearLocalCredentials()
             NSApp.terminate(nil)

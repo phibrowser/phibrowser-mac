@@ -276,6 +276,21 @@ class AuthManager {
             return currentCredentials
         }
 
+        // Without a stored refresh token (user-initiated logout, first launch, keychain
+        // wipe, etc.) calling into `credentialManager.credentials()` or
+        // `renewCredentialsAsync(...)` would surface `noCredentials` from the Auth0 SDK
+        // and trip the forced-logout path even though there was never a session to lose.
+        // Bail out early before touching the SDK; `recoverFromSharedStoreIfNeeded` above
+        // would have flipped `canRenew()` to true via `store(credentials:)` if the
+        // shared store had a usable token.
+        let canRenew = await MainActor.run {
+            credentialManager.canRenew()
+        }
+        guard canRenew else {
+            recordTrace("active-credentials-skipped-no-refresh-token", details: credentialSnapshotDetails())
+            return nil
+        }
+
         let hasLocallyValidCredentials = await MainActor.run {
             credentialManager.hasValid()
         }

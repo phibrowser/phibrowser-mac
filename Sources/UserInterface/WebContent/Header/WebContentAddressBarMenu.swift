@@ -110,7 +110,8 @@ final class WebContentAddressBarMenuPresenter {
 
             return submenu
         }
-
+        
+        @MainActor
         func buildExtensionsSubmenu() -> NSMenu {
             let submenu = NSMenu(title: NSLocalizedString("Extensions", comment: "Address bar menu - Extensions submenu title"))
             let extensions = extensionManager?.extensions ?? []
@@ -128,12 +129,8 @@ final class WebContentAddressBarMenuPresenter {
                     let item = NSMenuItem(title: ext.name, action: nil, keyEquivalent: "")
                     item.image = normalizedExtensionMenuIcon(from: ext.icon)
                     let target = MenuActionTarget {
-                        let mouseLocation = NSEvent.mouseLocation
-                        guard let screen = NSScreen.main else { return }
-                        let convertedLocation = NSPoint(
-                            x: mouseLocation.x,
-                            y: screen.frame.height - mouseLocation.y
-                        )
+                        let convertedLocation = ExtensionPopupAnchor.pointBelowView(anchorView)
+                            ?? ExtensionPopupAnchor.mouseFallback()
                         let windowId = browserState?.windowId.int64Value ?? 0
                         ChromiumLauncher.sharedInstance().bridge?.triggerExtension(
                             withId: ext.id,

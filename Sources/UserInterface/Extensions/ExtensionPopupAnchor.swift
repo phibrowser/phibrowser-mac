@@ -23,31 +23,24 @@ enum ExtensionPopupAnchor {
         let rectInScreen = window.convertToScreen(rectInWindow)
         // `rectInScreen` is in AppKit's bottom-left-origin screen space, so
         // `minY` is the visual bottom edge.
-        return flipToChromiumScreen(
-            NSPoint(x: rectInScreen.minX, y: rectInScreen.minY)
-        )
+        return chromiumScreenPoint(from: NSPoint(x: rectInScreen.minX, y: rectInScreen.minY))
     }
 
     /// Returns the current mouse location in Chromium screen coordinates
     /// (top-left origin). Used as a defensive fallback when a view-based
     /// anchor is not yet available.
     static func mouseFallback() -> NSPoint {
-        flipToChromiumScreen(NSEvent.mouseLocation)
+        chromiumScreenPoint(from: NSEvent.mouseLocation)
     }
 
     /// Flips an AppKit (bottom-left-origin) screen point to Chromium's
-    /// top-left-origin convention.
-    ///
-    /// Known limitation: uses `NSScreen.main?.frame.height` (the key-window
-    /// screen), which is NOT the screen that anchors AppKit's coordinate
-    /// system in a multi-display setup. This preserves the pre-existing
-    /// behavior of all five extension trigger call sites. To fix multi-screen
-    /// accuracy, replace `NSScreen.main?.frame.height ?? 0` with
-    /// `NSScreen.screens.map { $0.frame.maxY }.max() ?? 0` — see
-    /// `TabDraggingSession.swift` (`snapshotImageUsingWindowServer`) for the
-    /// correct pattern already used elsewhere in this codebase.
-    private static func flipToChromiumScreen(_ point: NSPoint) -> NSPoint {
-        let screenHeight = NSScreen.main?.frame.height ?? 0
+    /// top-left-origin convention using the primary display, which matches
+    /// Chromium's `screen_mac.mm` conversion logic.
+    static func chromiumScreenPoint(
+        from point: NSPoint,
+        primaryScreenFrame: NSRect? = NSScreen.screens.first?.frame
+    ) -> NSPoint {
+        let screenHeight = primaryScreenFrame?.height ?? 0
         return NSPoint(x: point.x, y: screenHeight - point.y)
     }
 }

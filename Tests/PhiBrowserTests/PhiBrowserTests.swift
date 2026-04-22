@@ -8,6 +8,39 @@ import AppKit
 @testable import Phi
 
 final class PhiBrowserTests: XCTestCase {
+    func testExtensionPopupAnchorUsesPrimaryScreenHeightForChromiumFlip() {
+        let point = NSPoint(x: 240, y: 320)
+        let primaryFrame = NSRect(x: 0, y: 0, width: 1920, height: 900)
+
+        let chromiumPoint = ExtensionPopupAnchor.chromiumScreenPoint(
+            from: point,
+            primaryScreenFrame: primaryFrame
+        )
+
+        XCTAssertEqual(chromiumPoint.x, 240)
+        XCTAssertEqual(
+            chromiumPoint.y,
+            580,
+            "Extension popup anchors must flip against the primary display height so Swift matches Chromium's global screen coordinates."
+        )
+    }
+
+    func testExtensionPopupAnchorPreservesLegitimateNegativeChromiumY() {
+        let point = NSPoint(x: 120, y: 960)
+        let primaryFrame = NSRect(x: 0, y: 0, width: 1920, height: 900)
+
+        let chromiumPoint = ExtensionPopupAnchor.chromiumScreenPoint(
+            from: point,
+            primaryScreenFrame: primaryFrame
+        )
+
+        XCTAssertEqual(
+            chromiumPoint.y,
+            -60,
+            "Points above the primary display should remain negative after the AppKit-to-Chromium flip."
+        )
+    }
+
     func testAuthFailureTraceBufferKeepsMostRecentEntries() {
         let baseDate = Date(timeIntervalSince1970: 1_713_600_000)
         var tick: TimeInterval = 0

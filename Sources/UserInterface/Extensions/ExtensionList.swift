@@ -242,7 +242,8 @@ struct ExtensionList<Manager: ExtensionManagerProtocol>: View {
     }
 
     private func triggerExtensionContextMenu(_ ext: Extension) {
-        let point = ExtensionPopupAnchor.mouseFallback()
+        let point = triggerAnchorView.flatMap(ExtensionPopupAnchor.pointBelowView)
+            ?? ExtensionPopupAnchor.mouseFallback()
         let windowId = MainBrowserWindowControllersManager.shared
             .activeWindowController?.browserState.windowId
         ChromiumLauncher.sharedInstance().bridge?.triggerExtensionContextMenu(
@@ -389,9 +390,7 @@ struct ExtensionGridItem: View {
             if let onTap = onTap {
                 onTap(ext)
             } else {
-                let mouseLocation = NSEvent.mouseLocation
-                guard let screen = NSScreen.main else { return }
-                let convertedLocation = NSPoint(x: mouseLocation.x, y: screen.frame.height - mouseLocation.y)
+                let convertedLocation = ExtensionPopupAnchor.mouseFallback()
                 let windowId = MainBrowserWindowControllersManager.shared.activeWindowController?.browserState.windowId
                 ChromiumLauncher.sharedInstance().bridge?.triggerExtension(withId: ext.id, pointInScreen: convertedLocation, windowId: windowId?.int64Value ?? 0)
             }

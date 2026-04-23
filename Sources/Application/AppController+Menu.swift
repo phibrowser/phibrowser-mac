@@ -15,6 +15,7 @@ extension AppController {
     static let layoutModeNavigationAtTopItemTag = 500006
     static let layoutModeTraditionalItemTag = 500007
     static let layoutModeTitleItemTag = 500008
+    static let whatsNewItemTag = 500009
     
     func startObservingMainMenu() {
         guard let app = NSApplication.shared as NSApplication? else {
@@ -160,8 +161,11 @@ extension AppController {
             } else
             
             if menuItem.title == "Help", let subMenu = menuItem.submenu {
-                // Remove existing extension info items to avoid duplication
-                subMenu.items.removeAll { $0.tag == AppController.extensionInfoItemTag }
+                // Remove existing custom items to avoid duplication on menu rebuild
+                subMenu.items.removeAll {
+                    $0.tag == AppController.extensionInfoItemTag ||
+                    $0.tag == AppController.whatsNewItemTag
+                }
                 
                 let extensionInfoItem = NSMenuItem(title: NSLocalizedString("Extension Info", comment: "Help menu - Menu item to show extension version info, only visible when holding Option key"),
                                                    action: #selector(showExtensionInfo(_:)),
@@ -174,6 +178,19 @@ extension AppController {
                     subMenu.insertItem(extensionInfoItem, at: 0)
                 } else {
                     subMenu.addItem(extensionInfoItem)
+                }
+
+                let whatsNewItem = NSMenuItem(title: NSLocalizedString("What's New", comment: "Help menu - Menu item that opens the chrome://whats-new page in a new tab, placed right below 'Report an Issue'"),
+                                              action: #selector(showWhatsNew(_:)),
+                                              keyEquivalent: "")
+                whatsNewItem.tag = AppController.whatsNewItemTag
+                whatsNewItem.target = self
+                // Insert right below the Chromium-provided "Report an Issue" item (IDC_FEEDBACK).
+                // Fallback to appending at the end if that item is not present.
+                if let reportIssueIndex = subMenu.items.firstIndex(where: { $0.tag == CommandWrapper.IDC_FEEDBACK.rawValue }) {
+                    subMenu.insertItem(whatsNewItem, at: reportIssueIndex + 1)
+                } else {
+                    subMenu.addItem(whatsNewItem)
                 }
                 
                 subMenu.delegate = self
@@ -223,6 +240,10 @@ extension AppController {
         default:
             break
         }
+    }
+    
+    @objc func showWhatsNew(_ sender: Any?) {
+        BrowserState.currentState()?.createTab("chrome://whats-new", focusAfterCreate: true)
     }
     
     @objc func showExtensionInfo(_ sender: Any?) {

@@ -28,7 +28,8 @@ struct FaviconConfiguration {
     static let defaultFaviconPathPrefixes: [String] = [
         "newtab",
         "conversation",
-        "memory"
+        "memory",
+        "whats-new"
     ]
 
     /// Whether the URL is an internal page that should display the default Phi favicon.

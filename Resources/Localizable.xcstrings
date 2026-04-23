@@ -1025,6 +1025,9 @@
     "What should I call you?" : {
       "comment" : "Set name page - Title asking user for their preferred name"
     },
+    "What's New" : {
+      "comment" : "Help menu - Menu item that opens the chrome://whats-new page in a new tab, placed right below 'Report an Issue'"
+    },
     "Yesterday" : {
       "comment" : "Download item row - Relative time when download completed yesterday"
     },

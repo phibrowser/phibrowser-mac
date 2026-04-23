@@ -242,8 +242,7 @@ struct ExtensionList<Manager: ExtensionManagerProtocol>: View {
     }
 
     private func triggerExtensionContextMenu(_ ext: Extension) {
-        let point = triggerAnchorView.flatMap(ExtensionPopupAnchor.pointBelowView)
-            ?? ExtensionPopupAnchor.mouseFallback()
+        let point = ExtensionPopupAnchor.mouseFallback()
         let windowId = MainBrowserWindowControllersManager.shared
             .activeWindowController?.browserState.windowId
         ChromiumLauncher.sharedInstance().bridge?.triggerExtensionContextMenu(

@@ -111,7 +111,17 @@ import Countly
             LoginController.shared.showLoginWindow()
             return true
         } else {
-            AuthManager.shared.renewCredentials()
+            // Only renew on reopen when the access token is actually close to
+            // expiring. Calling `renewCredentials()` on every reopen turned a
+            // routine UX gesture into a high-frequency RT-exchange trigger and
+            // amplified ferrt risk on stale RTs (see Auth0 incident
+            // 2026-04-22). The periodic renew timer still handles long-term
+            // freshness; this gate just removes the redundant burst on reopen.
+            if AuthManager.shared.shouldRenewOnReopen() {
+                AuthManager.shared.renewCredentials()
+            } else {
+                AppLogDebug("reopen: access token still fresh, skipping renew")
+            }
             return ChromiumLauncher.sharedInstance().bridge?.applicationShouldHandleReopen(sender, hasVisibleWindows: hasVisibleWindows) ?? false
         }
     }

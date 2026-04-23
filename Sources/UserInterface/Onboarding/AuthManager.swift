@@ -201,9 +201,14 @@ class AuthManager {
             _ = credentialManager.store(credentials: results)
             self.currentCredentials = results
             self.lastRenewAttemptAt = Date()
-            self.lastSuccessfulSyncAt = Date()
             self.lastForcedLogoutReportAt = nil
-            syncSharedTokens(results)
+            // Bump `lastSuccessfulSyncAt` only when shared store actually accepted
+            // the new credentials. Otherwise launch-time recovery would think the
+            // shared store is in sync with us and skip importing a token written
+            // out-of-process while the keychain write was failing.
+            if syncSharedTokens(results) {
+                self.lastSuccessfulSyncAt = Date()
+            }
             startRenewTimer()
             startHeartbeat()
             writeSharedAuth0Config()
@@ -391,6 +396,21 @@ class AuthManager {
         Task { _ = await renewCredentialsAsync(operation: "renew credentials") }
     }
 
+    /// Decides whether `applicationShouldHandleReopen` should fire a renew.
+    /// Reopen is a high-frequency user gesture (every Dock click, every
+    /// foreground transition) and the previous unconditional renewal turned it
+    /// into a constant ferrt risk: each reopen is a fresh chance to submit a
+    /// stale RT to Auth0. We now skip the renew unless one of:
+    /// - we have no in-memory credentials (let the regular recovery flow run);
+    /// - access token is within the urgent window (~10 min from expiry).
+    /// The periodic renew timer still backstops longer-term refresh needs.
+    func shouldRenewOnReopen() -> Bool {
+        if isRenewing { return false }
+        guard let credentials = currentCredentials else { return true }
+        let secondsToExpiry = credentials.expiresIn.timeIntervalSinceNow
+        return secondsToExpiry <= renewUrgentWindow
+    }
+
     /// Lock-protected renewal. Returns the resulting credentials when the renew completes
     /// successfully (or when the shared store already has a fresh token that satisfies the
     /// caller); otherwise returns nil. All mutations to `currentCredentials`,
@@ -569,13 +589,55 @@ class AuthManager {
                     return
                 }
 
+                // Record the callback trace synchronously, NOT inside the
+                // `Task { @MainActor in ... }` below. Otherwise a process death
+                // between the SDK delivering the callback and the main actor
+                // picking up the task would leave no trace at all, which is
+                // precisely the post-mortem scenario this entry is meant to
+                // disambiguate (callback fired vs. callback never fired).
+                let outcome: String
+                switch result {
+                case .success: outcome = "success"
+                case .failure: outcome = "failure"
+                }
+                self.recordTrace(
+                    "renew-callback-received",
+                    details: [
+                        "outcome": outcome,
+                        "operation": operation
+                    ]
+                )
+
+                // Persist to the shared store in the same synchronous context the
+                // SDK callback hands us. Auth0's CredentialsManager has already
+                // written RT_new to the local keychain by the time this closure
+                // runs; if we deferred the shared-store write to a `Task @MainActor`
+                // and the process died before that task was scheduled, we'd be
+                // left with a "local has RT_new, shared still has RT_old" split
+                // brain — exactly the precondition for the next launch's
+                // `applySharedStoreRecoveryLocked` to overwrite our newer local
+                // RT with the stale shared RT, leading to ferrt on the next
+                // renew. Doing the keychain write up-front shrinks that window
+                // from a main-actor hop to a couple of Keychain calls.
+                let syncedCredentials: (Credentials, Bool)? = {
+                    guard case .success(let credentials) = result else { return nil }
+                    let ok = self.syncSharedTokens(credentials)
+                    return (credentials, ok)
+                }()
+
                 Task { @MainActor in
                     switch result {
                     case .success(let credentials):
                         self.lastRenewAttemptAt = Date()
-                        self.lastSuccessfulSyncAt = Date()
                         self.currentCredentials = credentials
-                        self.syncSharedTokens(credentials)
+                        // Only bump `lastSuccessfulSyncAt` when shared store actually
+                        // accepted the new credentials. Otherwise the next
+                        // `recoverFromSharedStoreIfNeeded` would short-circuit on
+                        // `sharedToken.updatedAt <= lastSyncedAt` and skip importing
+                        // a token that was never written.
+                        if let synced = syncedCredentials, synced.1 {
+                            self.lastSuccessfulSyncAt = Date()
+                        }
                         self.recordTrace("renew-succeeded", details: self.credentialSnapshotDetails())
                         AppLogInfo("[TokenRenew] renew successful, expires at: \(credentials.expiresIn)")
                         self.isRenewing = false
@@ -587,12 +649,11 @@ class AuthManager {
                         // attempt would happen ~1h later with a refresh token that the
                         // server has already rotated, destroying the entire token family.
                         if Self.isNetworkRenewError(error) {
+                            var details = Self.networkErrorDetails(error)
+                            details["operation"] = operation
                             self.recordTrace(
                                 "renew-network-error-no-cooldown",
-                                details: [
-                                    "error": error.localizedDescription,
-                                    "operation": operation
-                                ]
+                                details: details
                             )
                             AppLogInfo("[TokenRenew] network error, skipping cooldown to allow retry within reuse window: \(error.localizedDescription)")
                         } else {
@@ -817,6 +878,30 @@ class AuthManager {
             return
         }
 
+        // Defend against the most damaging variant of the Auth0 incident
+        // 2026-04-22: a previous Phi process rotated the RT (Auth0 SDK already
+        // wrote RT_new to the local keychain), but our shared-store sync did
+        // not land before that process exited. On relaunch the shared store
+        // still holds RT_old; importing it would overwrite RT_new in the local
+        // keychain and the very next renew would submit RT_old to Auth0,
+        // triggering ferrt and destroying the entire token family.
+        //
+        // Two complementary checks below cover the two ways "local is fresher"
+        // can manifest:
+        //
+        //   (a) Same process: `currentCredentials` already holds the newer
+        //       credentials in memory but never reached the shared store.
+        //   (b) New process: `currentCredentials` is nil but the SDK keychain
+        //       might still contain a fresher access token from a previous
+        //       process's successful renew. We probe via the SDK's only
+        //       side-effect-free read API, `hasValid(minTTL:)`, which checks
+        //       the locally stored access token's remaining lifetime without
+        //       touching the network or rotating anything.
+        if isLocalCredentialsFresherThanShared(sharedToken: sharedToken) {
+            handleLocalFresherThanShared(sharedToken: sharedToken, reason: reason)
+            return
+        }
+
         guard let refreshToken = sharedToken.refreshToken else {
             recordTrace("shared-store-recovery-skipped", details: ["reason": "\(reason):missing_refresh_token"])
             return
@@ -850,9 +935,120 @@ class AuthManager {
         }
     }
 
-    private func syncSharedTokens(_ credentials: Credentials, renewedBy: String = "phi") {
+    /// Returns true when our local store (in-memory credentials, or the
+    /// underlying Auth0 SDK keychain probed via `hasValid(minTTL:)`) is known
+    /// to be NEWER than the shared-store snapshot. Used by recovery to refuse
+    /// stale shared writes from overwriting fresher local credentials.
+    @MainActor
+    private func isLocalCredentialsFresherThanShared(sharedToken: SharedAuthToken) -> Bool {
+        guard let sharedExpiresAt = sharedToken.expiresAt else {
+            // We never import a shared token without `expiresAt` anyway, so do
+            // not bother claiming "local is fresher" here. The downstream
+            // `shared_token_missing_expires_at` branch will handle the skip.
+            return false
+        }
+
+        // Case (a): in-memory credentials are the cheapest, most reliable
+        // comparison — same access-token TTL means later `expiresIn` ⇔ later
+        // server-issued credential.
+        if let local = currentCredentials, local.expiresIn > sharedExpiresAt {
+            return true
+        }
+
+        // Case (b): probe the Auth0 SDK keychain. `hasValid(minTTL:)` returns
+        // true iff the locally stored access token still has at least `minTTL`
+        // seconds remaining; it does NOT trigger a renew. We add a small
+        // buffer so identical-TTL tokens (e.g. shared was just imported from
+        // local) do not accidentally pass the probe.
+        let sharedRemainingSeconds = Int(sharedExpiresAt.timeIntervalSinceNow)
+        let bufferSeconds = 5 * 60
+        let probeTTLSeconds = sharedRemainingSeconds + bufferSeconds
+        if probeTTLSeconds > 0,
+           credentialManager.canRenew(),
+           credentialManager.hasValid(minTTL: probeTTLSeconds) {
+            return true
+        }
+
+        return false
+    }
+
+    /// Records the "skipped to protect local" decision and reverse-syncs to
+    /// the shared store when we have the in-memory credentials handy. We can
+    /// only safely reverse-sync from `currentCredentials` because the SDK has
+    /// no public API to extract the keychain RT without potentially renewing.
+    /// In the keychain-only fresher case we accept that the shared store will
+    /// catch up on Phi's next successful renew.
+    @MainActor
+    private func handleLocalFresherThanShared(sharedToken: SharedAuthToken, reason: String) {
+        if let local = currentCredentials {
+            let synced = syncSharedTokens(local, renewedBy: "phi-recovery-reverse")
+            recordTrace(
+                "shared-store-recovery-reverse-synced",
+                details: [
+                    "reason": reason,
+                    "synced": boolString(synced),
+                    "localExpiresAt": iso8601String(local.expiresIn),
+                    "sharedExpiresAt": iso8601String(sharedToken.expiresAt),
+                    "sharedTokenUpdatedAt": iso8601String(sharedToken.updatedAt)
+                ]
+            )
+            if synced {
+                self.lastSuccessfulSyncAt = Date()
+            }
+            AppLogInfo("[TokenRenew] local credentials are fresher than shared store; reverse-synced to shared")
+        } else {
+            recordTrace(
+                "shared-store-recovery-skipped-local-fresher",
+                details: [
+                    "reason": reason,
+                    "sharedExpiresAt": iso8601String(sharedToken.expiresAt),
+                    "sharedTokenUpdatedAt": iso8601String(sharedToken.updatedAt)
+                ]
+            )
+            AppLogInfo("[TokenRenew] SDK keychain holds fresher credentials than shared store; skipping import (reverse-sync will happen on next renew)")
+        }
+    }
+
+    /// Persists the freshly issued credentials to the App Group keychain so other
+    /// processes (Sentinel) can pick them up. Returns `false` when the underlying
+    /// keychain write failed; callers MUST treat that as "shared store still holds
+    /// the previous RT" and avoid bumping `lastSuccessfulSyncAt`, otherwise the
+    /// next `applySharedStoreRecoveryLocked` would short-circuit on
+    /// `sharedToken.updatedAt <= lastSyncedAt` and never re-import.
+    ///
+    /// Failures are surfaced (not silent) as `shared-token-sync-failed` in the
+    /// trace buffer and via `AppLogError`, so any subsequent forced-logout Sentry
+    /// event will carry them in its attached trace.
+    ///
+    /// We deliberately DO NOT retry the failed write here. A naive
+    /// "1s later, upsert again" retry races with the rest of the world:
+    ///   1. Sentinel could acquire `SharedTokenLock` in the meantime and rotate
+    ///      the RT itself; an unlocked retry would then overwrite the newer
+    ///      shared token with our captured (now stale) one and trigger ferrt.
+    ///   2. The user could call `logOut()` and clear the shared store; an
+    ///      unlocked retry would resurrect the deleted session, leaving
+    ///      Sentinel running on a server-revoked refresh token.
+    ///   3. The next successful Phi-side renew will sync again anyway, so the
+    ///      "eventually consistent" guarantee is already provided by the normal
+    ///      renew path — a retry only buys us 1 second of head start.
+    /// Implementing a safe retry would require reacquiring `SharedTokenLock` and
+    /// re-checking shared-store freshness against the captured credentials,
+    /// effectively duplicating `applySharedStoreRecoveryLocked`. The complexity
+    /// is not worth the marginal benefit; if observability ever shows a real
+    /// pattern of transient F4/F5 (`errSecInteractionNotAllowed`,
+    /// `errSecMissingEntitlement`) failures that hurt users, revisit then.
+    ///
+    /// Residual risk acknowledged: if the keychain write fails AND the process
+    /// exits AND a new process starts within ~5 minutes (so the buffer in
+    /// `isLocalCredentialsFresherThanShared` does not save us), the new process
+    /// can import the stale shared token and ferrt on the next renew. We accept
+    /// this because (a) keychain transient failures are themselves rare on
+    /// macOS and (b) the `shared-token-sync-failed` trace lets us spot the
+    /// pattern in Sentry if it actually happens.
+    @discardableResult
+    private func syncSharedTokens(_ credentials: Credentials, renewedBy: String = "phi") -> Bool {
         let auth0Sub = User(from: credentials.idToken).sub
-        _ = SharedAuthTokenStore.shared.upsert(
+        let ok = SharedAuthTokenStore.shared.upsert(
             accessToken: credentials.accessToken,
             refreshToken: credentials.refreshToken,
             idToken: credentials.idToken,
@@ -860,6 +1056,18 @@ class AuthManager {
             expiresAt: credentials.expiresIn,
             renewedBy: renewedBy
         )
+        if !ok {
+            recordTrace(
+                "shared-token-sync-failed",
+                details: [
+                    "expiresAt": iso8601String(credentials.expiresIn),
+                    "hasRefreshToken": boolString(credentials.refreshToken != nil),
+                    "renewedBy": renewedBy
+                ]
+            )
+            AppLogError("[TokenRenew] shared store upsert failed (renewedBy=\(renewedBy))")
+        }
+        return ok
     }
 
     private func recordTrace(
@@ -893,6 +1101,57 @@ class AuthManager {
             return authError.isNetworkError
         }
         return false
+    }
+
+    /// Decomposes a renew failure into post-mortem-friendly fields. Concrete
+    /// `URLError` codes are critical here: a `cancelled`/`networkConnectionLost`
+    /// suggests the server may have rotated the RT but the response was lost on
+    /// the way back (see Auth0 ferrt scenarios), while `notConnectedToInternet`
+    /// implies the request never reached Auth0 at all and the RT is still valid.
+    private static func networkErrorDetails(_ error: Error) -> [String: String] {
+        var details: [String: String] = [
+            "error": error.localizedDescription
+        ]
+        if let urlError = unwrapURLError(from: error) {
+            details["urlErrorCode"] = String(urlError.errorCode)
+            // `URLError.errorDomain` is a static `"NSURLErrorDomain"`. Spell
+            // the literal so readers don't have to reason about the static
+            // type-property pun (and so it stays correct if Apple ever splits
+            // the type).
+            details["urlErrorDomain"] = "NSURLErrorDomain"
+        }
+        return details
+    }
+
+    /// Mirrors the same nesting that `isNetworkRenewError` peels through, so
+    /// that any error we classify as "network" also yields a concrete URLError
+    /// for the trace. The most common renew shape is
+    /// `CredentialsManagerError(.renewFailed, cause: AuthenticationError(info[cause]: URLError))`,
+    /// because Auth0's `AuthenticationError.isNetworkError` reads `cause as? URLError`
+    /// from `info["cause"]`. The previous version of this helper only tried
+    /// `managerError.cause as? URLError`, which is never true for renew
+    /// failures and silently dropped the `urlErrorCode` field on exactly the
+    /// errors we needed to classify post-mortem.
+    private static func unwrapURLError(from error: Error) -> URLError? {
+        if let direct = error as? URLError {
+            return direct
+        }
+        if let managerError = error as? CredentialsManagerError {
+            if let authError = managerError.cause as? AuthenticationError,
+               let urlError = authError.cause as? URLError {
+                return urlError
+            }
+            // Forward-compatible fallback: if a future SDK starts wrapping
+            // the URLError directly, accept that shape too.
+            if let urlError = managerError.cause as? URLError {
+                return urlError
+            }
+        }
+        if let authError = error as? AuthenticationError,
+           let urlError = authError.cause as? URLError {
+            return urlError
+        }
+        return nil
     }
 
     private func authFailureReason(for managerError: CredentialsManagerError) -> String {

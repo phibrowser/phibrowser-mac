@@ -108,12 +108,24 @@ class AuthManager {
         // Keep the release key stable so existing users do not lose cached credentials.
         storeKey = "credentials"
         #endif
-        return CredentialsManager(authentication: Auth0.authentication(clientId: clicentId, domain: domain, session: URLSession.shared), storeKey: storeKey)
+        // `maxRetries: 3` lets the SDK transparently retry transient failures
+        // (network drops, HTTP 5xx, 429) with exponential backoff (0.5s + 1s + 2s).
+        // This keeps the whole renew within Auth0's 60s reuse window so the server can
+        // re-issue the same rotated token instead of destroying the refresh token family.
+        return CredentialsManager(
+            authentication: Auth0.authentication(clientId: clicentId, domain: domain, session: URLSession.shared),
+            storeKey: storeKey,
+            maxRetries: 3
+        )
     }()
     
     // Renew throttling: allow at most once per hour unless close to expiry.
-    // `lastRenewAttemptAt` is bumped on every renew attempt (success / failure / timeout)
-    // and is used purely for cooldown decisions in `shouldRenewNow()`.
+    // `lastRenewAttemptAt` is bumped on success, business failures, and timeouts so
+    // `shouldRenewNow()` can apply its 1h cooldown. Transient network failures are
+    // intentionally NOT recorded here: the cooldown would otherwise push the next
+    // retry beyond Auth0's 60s refresh-token reuse window, turning a recoverable
+    // packet loss into a forced logout once the server has already rotated the
+    // token (see `callAuth0Renew`'s failure branch).
     private var lastRenewAttemptAt: Date?
     // `lastSuccessfulSyncAt` is only bumped when local credentials are known to be in sync
     // with the shared store (successful renew, or successful import from the shared store).
@@ -569,7 +581,23 @@ class AuthManager {
                         self.isRenewing = false
                         continuation.resume(returning: credentials)
                     case .failure(let error):
-                        self.lastRenewAttemptAt = Date()
+                        // Skip the cooldown for network errors so the next natural trigger
+                        // (reopen / shared-token change / API access) can retry within
+                        // Auth0's 60s refresh-token reuse window. Without this the next
+                        // attempt would happen ~1h later with a refresh token that the
+                        // server has already rotated, destroying the entire token family.
+                        if Self.isNetworkRenewError(error) {
+                            self.recordTrace(
+                                "renew-network-error-no-cooldown",
+                                details: [
+                                    "error": error.localizedDescription,
+                                    "operation": operation
+                                ]
+                            )
+                            AppLogInfo("[TokenRenew] network error, skipping cooldown to allow retry within reuse window: \(error.localizedDescription)")
+                        } else {
+                            self.lastRenewAttemptAt = Date()
+                        }
                         self.logCredentialsFailure(error, operation: operation)
                         self.isRenewing = false
                         continuation.resume(returning: nil)
@@ -850,6 +878,21 @@ class AuthManager {
             line: line,
             callStackSymbols: callStackSymbols
         )
+    }
+
+    /// Returns true when a renew failure is caused by a transient network condition
+    /// (URLError covered by Auth0's `AuthenticationError.isNetworkError`). Network
+    /// failures are excluded from the cooldown so the next trigger can retry within
+    /// Auth0's refresh-token reuse window.
+    private static func isNetworkRenewError(_ error: Error) -> Bool {
+        if let authError = error as? AuthenticationError {
+            return authError.isNetworkError
+        }
+        if let managerError = error as? CredentialsManagerError,
+           let authError = managerError.cause as? AuthenticationError {
+            return authError.isNetworkError
+        }
+        return false
     }
 
     private func authFailureReason(for managerError: CredentialsManagerError) -> String {

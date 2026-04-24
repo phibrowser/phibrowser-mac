@@ -236,7 +236,7 @@ class AuthManager {
             lastForcedLogoutReportAt = nil
             currentCredentials = nil
             SharedAuthTokenStore.shared.clear()
-            stopRenewTimer()
+            await stopRenewTimer()
             stopHeartbeat()
             recordTrace("user-logout-succeeded")
             return true
@@ -254,7 +254,7 @@ class AuthManager {
         // the cross-process lock for no benefit.
         currentCredentials = await getActiveCredentials()
         if currentCredentials != nil {
-            startRenewTimer()
+            await startRenewTimer()
             startHeartbeat()
             writeSharedAuth0Config()
             recordTrace("refresh-auth-status-restored", details: credentialSnapshotDetails())
@@ -764,29 +764,27 @@ class AuthManager {
     /// Starts the periodic renew timer. Should be called after successful login or credential restoration.
     /// The timer fires every hour and calls renewCredentials(), which internally checks shouldRenewNow()
     /// to avoid redundant renew attempts if a manual renew happened recently.
+    @MainActor
     func startRenewTimer() {
-        // Invalidate any existing timer to avoid duplicates
-        stopRenewTimer()
-        
-        // Schedule timer on main run loop
-        DispatchQueue.main.async { [weak self] in
-            guard let self else { return }
-            self.renewTimer = Timer.scheduledTimer(
-                withTimeInterval: self.renewCooldown,
-                repeats: true
-            ) { [weak self] _ in
-                AppLogInfo("periodic renew timer fired")
-                self?.renewCredentials()
-            }
-            // Ensure timer fires even when UI is tracking (e.g., during scrolling)
-            if let timer = self.renewTimer {
-                RunLoop.main.add(timer, forMode: .common)
-            }
-            AppLogInfo("renew timer started, interval: \(self.renewCooldown)s")
+        if let renewTimer, renewTimer.isValid {
+            return
         }
+
+        let timer = Timer(
+            timeInterval: renewCooldown,
+            repeats: true
+        ) { [weak self] _ in
+            AppLogInfo("periodic renew timer fired")
+            self?.renewCredentials()
+        }
+
+        renewTimer = timer
+        RunLoop.main.add(timer, forMode: .common)
+        AppLogInfo("renew timer started, interval: \(renewCooldown)s")
     }
     
     /// Stops the periodic renew timer. Should be called on logout or when credentials are cleared.
+    @MainActor
     func stopRenewTimer() {
         renewTimer?.invalidate()
         renewTimer = nil

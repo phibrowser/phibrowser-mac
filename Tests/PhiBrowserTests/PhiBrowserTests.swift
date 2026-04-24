@@ -8,6 +8,24 @@ import AppKit
 @testable import Phi
 
 final class PhiBrowserTests: XCTestCase {
+    @MainActor
+    func testAuthManagerStartRenewTimerDoesNotReplaceExistingValidTimer() async throws {
+        let authManager = AuthManager()
+
+        authManager.startRenewTimer()
+        let firstTimer = try await waitForRenewTimer(in: authManager)
+
+        authManager.startRenewTimer()
+        let secondTimer = try await waitForRenewTimer(in: authManager)
+
+        authManager.stopRenewTimer()
+
+        XCTAssertTrue(
+            firstTimer === secondTimer,
+            "Starting the renew timer while an existing valid timer is already running should keep the original timer instance instead of invalidating and replacing it."
+        )
+    }
+
     func testExtensionPopupAnchorUsesPrimaryScreenHeightForChromiumFlip() {
         let point = NSPoint(x: 240, y: 320)
         let primaryFrame = NSRect(x: 0, y: 0, width: 1920, height: 900)
@@ -271,5 +289,28 @@ final class PhiBrowserTests: XCTestCase {
             didInvokeSecondaryAction,
             "Popover grid items should handle right clicks through their dedicated AppKit container."
         )
+    }
+
+    @MainActor
+    private func waitForRenewTimer(
+        in authManager: AuthManager,
+        timeout: TimeInterval = 1
+    ) async throws -> Timer {
+        let deadline = Date().addingTimeInterval(timeout)
+
+        while Date() < deadline {
+            if let timer = renewTimer(in: authManager), timer.isValid {
+                return timer
+            }
+            await Task.yield()
+            RunLoop.main.run(until: Date().addingTimeInterval(0.01))
+        }
+
+        XCTFail("Expected renew timer to become available before timeout.")
+        throw NSError(domain: "PhiBrowserTests", code: 1)
+    }
+
+    private func renewTimer(in authManager: AuthManager) -> Timer? {
+        Mirror(reflecting: authManager).descendant("renewTimer") as? Timer
     }
 }

@@ -287,8 +287,8 @@ public extension Theme {
 
     static let builtInThemes: [Theme] = [
         .pure,
-        .mist,
         .mint,
+        .mist,
         .aqua,
         .iris,
         .petal,

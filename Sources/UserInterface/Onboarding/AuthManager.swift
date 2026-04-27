@@ -356,13 +356,24 @@ class AuthManager {
     }
     
     func getAccessTokenSyncly() -> String? {
+        // Hot path: Chromium calls this multiple times per second to attach
+        // bearer tokens to outgoing requests. When the in-memory access token
+        // is still valid we answer entirely from memory — no keychain
+        // round-trip, no securityd IPC, no trace activity. The previous
+        // implementation gated this on a `credentialManager.canRenew()`
+        // keychain probe whose only purpose was to detect "SDK keychain wiped
+        // externally", which is a degraded state we cannot recover from
+        // synchronously anyway; the periodic renew timer and launch recovery
+        // catch it on a non-hot path.
+        if let currentCredentials,
+           currentCredentials.expiresIn.timeIntervalSinceNow > 0 {
+            return currentCredentials.accessToken
+        }
+
         guard credentialManager.canRenew() else {
             return nil
         }
         if let currentCredentials {
-            if currentCredentials.expiresIn.timeIntervalSinceNow > 0 {
-                return currentCredentials.accessToken
-            }
             recordTrace(
                 "access-token-syncly-skipped-expired-current-credentials",
                 details: ["expiresAt": iso8601String(currentCredentials.expiresIn)]

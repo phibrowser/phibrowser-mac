@@ -92,10 +92,15 @@ extension Tab: ContextMenuRepresentable {
         }
  
         items.append(addToBookmark)
-        
-        
+
         items.append(.separator())
-        
+
+        let newGroupItem = NSMenuItem(title: NSLocalizedString("New Tab Group", comment: "Tab context menu - Add this tab to a new tab group"), action: #selector(addToNewTabGroup), keyEquivalent: "")
+        newGroupItem.target = self
+        items.append(newGroupItem)
+
+        items.append(.separator())
+
         if isPinned {
             let editItem = NSMenuItem(title: NSLocalizedString("Edit...", comment: "Pinned tab context menu - Edit pinned tab menu item"), action: #selector(editPinnedTab), keyEquivalent: "")
             editItem.target = self
@@ -224,5 +229,25 @@ extension Tab: ContextMenuRepresentable {
     @objc private func duplicateTab() {
         guard let tabURL = url, !tabURL.isEmpty else { return }
         MainBrowserWindowControllersManager.shared.activeWindowController?.browserState.createTab(tabURL, focusAfterCreate: true)
+    }
+
+    /// Mini Phase 1.3 verification entry point. Creates a new tab group
+    /// containing only this tab, with Chromium-default visuals (empty
+    /// title, auto-assigned color). The end-to-end roundtrip can be
+    /// verified against the chunks A-E VLOG(3) lines on the Chromium
+    /// side. Full Phase 1.3 will replace this with a richer command set
+    /// (rename / change color / add-to-existing-group submenu).
+    @MainActor
+    @objc private func addToNewTabGroup() {
+        guard let bridge = ChromiumLauncher.sharedInstance().bridge else {
+            AppLogDebug("[TAB_GROUPS] addToNewTabGroup: no bridge available")
+            return
+        }
+        let tabIds: [NSNumber] = [NSNumber(value: Int64(guid))]
+        let token = bridge.createGroupFromTabs(withWindowId: Int64(windowId),
+                                               tabIds: tabIds,
+                                               title: nil,
+                                               color: nil)
+        AppLogDebug("[TAB_GROUPS] addToNewTabGroup: windowId=\(windowId) tabId=\(guid) returned token=\(token)")
     }
 }

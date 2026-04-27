@@ -385,6 +385,46 @@ extension PhiChromiumCoordinator: PhiChromiumBridgeDelegate {
                                isFullscreen: isFullscreen)))
     }
 
+    // =========================================================================
+    // Tab groups (Chromium → Mac)
+    //
+    // Mini phase: stub implementations satisfy the delegate protocol so the
+    // chunks A-E events compile. Real state-machine wiring lands in
+    // Phase 1.4 (per-window groups dict + tab.groupToken).
+    // =========================================================================
+
+    func tabGroupCreated(_ windowId: Int64,
+                         tokenHex: String,
+                         title: String,
+                         color: String,
+                         isCollapsed: Bool,
+                         initialTabIds: [NSNumber]) {
+        // TODO(phase 1.4): create WebContentGroupInfo and add to per-window
+        // groups dict; sync each initialTabId's groupToken.
+    }
+
+    func tabGroupVisualDataChanged(_ windowId: Int64,
+                                    tokenHex: String,
+                                    title: String,
+                                    color: String,
+                                    isCollapsed: Bool) {
+        // TODO(phase 1.4): overwrite cached visual data on the matching group.
+    }
+
+    func tabGroupClosed(_ windowId: Int64, tokenHex: String) {
+        // TODO(phase 1.4): drop the group entry from the per-window dict.
+    }
+
+    func tabJoinedGroup(_ windowId: Int64, tabId: Int64, tokenHex: String) {
+        // TODO(phase 1.4): set tab.groupToken and append to group's
+        // orderedTabIds (idempotent — first-tab kCreated already inserts).
+    }
+
+    func tabLeftGroup(_ windowId: Int64, tabId: Int64, tokenHex: String) {
+        // TODO(phase 1.4): clear tab.groupToken and remove from group's
+        // orderedTabIds; if orderedTabIds becomes empty, drop the group entry.
+    }
+
     func targetURLChanged(_ tabId: Int64, windowId: Int64, url: String) {
         guard let windowController = MainBrowserWindowControllersManager.shared
             .getAllWindows()

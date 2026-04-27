@@ -32,6 +32,8 @@ import Sentry
             options.enableCaptureFailedRequests = false
             options.enableAutoPerformanceTracing = false
             options.enableAppHangTracking = false
+            options.enableMetricKit = true
+            options.enableMetricKitRawPayload = true
             
             options.initialScope = { scope in
                 // Attach recent logs up front because startup may immediately report a previous crash.

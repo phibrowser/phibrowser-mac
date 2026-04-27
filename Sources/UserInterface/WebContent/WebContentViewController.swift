@@ -379,6 +379,11 @@ class WebContentViewController: NSViewController {
 
     private func updateTheme() {
         splitViewContainer.phiLayer?.setBackgroundColor(ThemedColor.contentOverlayBackground)
+        // Theme change writes into ColoredVisualEffectView's colorView layer,
+        // whose CA transaction commit re-applies kCAFilterPlusL on hostView's
+        // layer-backed descendants. Re-clear (sync + post-commit) to keep
+        // webContentView / devToolsView free of the vibrancy tint.
+        hostView.scheduleVibrancyClear()
     }
     
     // MARK: - AI Chat Observer

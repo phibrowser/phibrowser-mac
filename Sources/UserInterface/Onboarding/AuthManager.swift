@@ -344,6 +344,17 @@ class AuthManager {
     }
     
     func checkLoginStatusOnChromiumLaunch() -> Bool {
+        // Hot path: Chromium polls this on every page load / tab change. Once
+        // login has finished and we have credentials in memory, the answer is
+        // already settled — `transitionToLoggedOutState` clears
+        // `currentCredentials` and flips `phase` back to `.login` atomically
+        // on the main actor, so the (`phase == .done`, `currentCredentials != nil`)
+        // pair is a reliable proxy for "user is logged in" without paying for
+        // the keychain reads inside `canRenew()` / `credentialManager.user`.
+        if LoginController.shared.phase == .done, currentCredentials != nil {
+            return true
+        }
+
         guard hasRecoverableLoginSession() else {
             return false
         }

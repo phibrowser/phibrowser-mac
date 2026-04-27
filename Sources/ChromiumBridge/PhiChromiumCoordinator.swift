@@ -121,7 +121,7 @@ extension PhiChromiumCoordinator: PhiChromiumBridgeDelegate {
     
     func isUserLoggedIn() -> Bool {
         let isLoggedIn = AuthManager.shared.checkLoginStatusOnChromiumLaunch()
-        AppLogInfo("🌐 [Chromium] isUserLoggedIn check: \(isLoggedIn)")
+        AppLogDebug("🌐 [Chromium] isUserLoggedIn check: \(isLoggedIn)")
         return isLoggedIn
     }
     

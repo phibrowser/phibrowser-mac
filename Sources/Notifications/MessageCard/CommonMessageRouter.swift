@@ -18,6 +18,9 @@ final class CommonMessageRouter {
         case "getAuth0Profile":
             handleAuth0ProfileRequest(context)
             return nil
+        case "getWindowTheme":
+            WindowThemeMessageRouter.shared.handleGetWindowTheme(context)
+            return nil
         default:
             AppLogDebug("[CommonMessage] Unhandled message type: \(context.type)")
             return nil

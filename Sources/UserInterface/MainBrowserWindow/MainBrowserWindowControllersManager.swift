@@ -174,6 +174,7 @@ class MainBrowserWindowControllersManager: MainBrowserWindowLookup {
               let windowController = window.windowController as? MainBrowserWindowController else {
             return
         }
+        WindowThemeMessageRouter.shared.stopObservingWindow(windowId: windowController.windowId)
         windowControllers.remove(windowController)
     }
     

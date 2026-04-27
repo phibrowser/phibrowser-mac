@@ -25,7 +25,7 @@ struct GeneralSettingView: View {
     var body: some View {
         ScrollView(.vertical) {
             VStack(alignment: .leading, spacing: 24) {
-                ThemeColorSettingView()
+                ThemeSectionView()
                 AppearanceSectionView()
                 BrowsingSectionView()
             }
@@ -33,182 +33,50 @@ struct GeneralSettingView: View {
             .padding(.vertical, 36)
             .padding(.horizontal, 36)
         }
-        .themedBackground(.windowBackground)
+        .themedBackground(PhiPreferences.fixedWindowBackground)
         .frame(width: 680, height: 561)
     }
 }
 
-private struct ThemeColorOption: Identifiable {
-    let id: String
-    let color: Color
-    let label: String?
-}
-
-struct ThemeColorSettingView: View {
+private struct ThemeSectionView: View {
     @State private var selectedThemeId: String = ThemeManager.shared.currentTheme.id
 
     private let themes = Theme.builtInThemes
-    private let sliderAnimation = Animation.spring(response: 0.28, dampingFraction: 0.84)
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            Text(NSLocalizedString("Theme color", comment: "General settings - Section title for configuring theme color"))
-                .font(.system(size: 12))
-                .foregroundStyle(Color.secondary)
-                .padding(.bottom, 12)
+        GeneralSectionView(title: NSLocalizedString("Theme", comment: "General settings - Theme section title")) {
+            GeneralContainerView {
+                HStack(alignment: .top, spacing: 12) {
+                    Text(NSLocalizedString("Color", comment: "General settings - Theme color row title"))
+                        .font(.system(size: 13))
+                        .themedForeground(.textPrimary)
 
-            ThemeColorPickerTrack(
-                themes: themes,
-                selectedThemeId: selectedThemeId,
-                animation: sliderAnimation,
-                onSelectTheme: selectTheme(_:)
-            )
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .onReceive(NotificationCenter.default.publisher(for: .themeDidChange)) { _ in
-            withAnimation(sliderAnimation) {
-                selectedThemeId = ThemeManager.shared.currentTheme.id
+                    Spacer(minLength: 12)
+
+                    HStack(alignment: .top, spacing: 13) {
+                        ForEach(themes, id: \.id) { theme in
+                            ThemeColorItemView(
+                                theme: theme,
+                                selected: selectedThemeId == theme.id,
+                                action: { selectTheme(theme) }
+                            )
+                        }
+                    }
+                }
+                .padding(.vertical, 12)
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .themeDidChange)) { _ in
+            selectedThemeId = ThemeManager.shared.currentTheme.id
         }
     }
 
     private func selectTheme(_ theme: Theme) {
         guard selectedThemeId != theme.id else { return }
 
-        withAnimation(sliderAnimation) {
-            selectedThemeId = theme.id
-        }
-
+        selectedThemeId = theme.id
         ThemeManager.shared.switchTheme(to: theme.id)
-    }
-}
-
-private struct ThemeColorPickerTrack: View {
-    let themes: [Theme]
-    let selectedThemeId: String
-    let animation: Animation
-    let onSelectTheme: (Theme) -> Void
-
-    private let trackWidth: CGFloat = 399
-    private let trackHeight: CGFloat = 14
-    private let knobSize: CGFloat = 22
-    private let pointSize: CGFloat = 2
-
-    var body: some View {
-        GeometryReader { geometry in
-            let metrics = trackMetrics(for: geometry.size.width)
-
-            ZStack(alignment: .leading) {
-                Image(.colorPickerBg)
-                    .resizable()
-                    .scaledToFill()
-                    .frame(width: geometry.size.width, height: trackHeight)
-                    .clipShape(Capsule())
-                    .overlay(
-                        Capsule()
-                            .stroke(Color.black.opacity(0.1), lineWidth: 1)
-                    )
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
-
-                ForEach(Array(themes.enumerated()), id: \.element.id) { index, _ in
-                    Circle()
-                        .fill(Color.black.opacity(0.88))
-                        .frame(width: pointSize, height: pointSize)
-                        .overlay(
-                            Circle()
-                                .stroke(Color.black.opacity(0.12), lineWidth: 0.5)
-                        )
-                        .offset(x: pointOffset(for: index, using: metrics))
-                }
-
-                Circle()
-                    .fill(Color.white)
-                    .frame(width: knobSize, height: knobSize)
-                    .overlay(
-                        Circle()
-                            .stroke(Color.black.opacity(0.08), lineWidth: 0.5)
-                    )
-                    .shadow(color: Color.black.opacity(0.16), radius: 8, y: 2)
-                    .offset(x: knobOffset(using: metrics))
-                    .animation(animation, value: selectedThemeId)
-            }
-            .frame(width: geometry.size.width, height: knobSize)
-            .contentShape(Rectangle())
-            .gesture(
-                DragGesture(minimumDistance: 0)
-                    .onChanged { value in
-                        updateSelection(at: value.location.x, using: metrics)
-                    }
-                    .onEnded { value in
-                        updateSelection(at: value.location.x, using: metrics)
-                    }
-            )
-        }
-        .frame(width: trackWidth, height: knobSize)
-    }
-
-    private var selectedIndex: Int {
-        themes.firstIndex(where: { $0.id == selectedThemeId }) ?? 0
-    }
-
-    private func trackMetrics(for width: CGFloat) -> (usableWidth: CGFloat, step: CGFloat) {
-        let usableWidth = max(width - knobSize, 0)
-        let step = themes.count > 1 ? usableWidth / CGFloat(themes.count - 1) : 0
-        return (usableWidth, step)
-    }
-
-    private func knobOffset(using metrics: (usableWidth: CGFloat, step: CGFloat)) -> CGFloat {
-        min(CGFloat(selectedIndex) * metrics.step, metrics.usableWidth)
-    }
-
-    private func pointOffset(for index: Int, using metrics: (usableWidth: CGFloat, step: CGFloat)) -> CGFloat {
-        min(CGFloat(index) * metrics.step, metrics.usableWidth) + ((knobSize - pointSize) / 2)
-    }
-
-    private func updateSelection(at locationX: CGFloat, using metrics: (usableWidth: CGFloat, step: CGFloat)) {
-        guard let selectedTheme = theme(at: locationX, using: metrics) else { return }
-        onSelectTheme(selectedTheme)
-    }
-
-    private func theme(at locationX: CGFloat, using metrics: (usableWidth: CGFloat, step: CGFloat)) -> Theme? {
-        guard !themes.isEmpty else { return nil }
-        guard themes.count > 1, metrics.step > 0 else { return themes.first }
-
-        let clampedOffset = min(max(locationX - (knobSize / 2), 0), metrics.usableWidth)
-        let index = Int((clampedOffset / metrics.step).rounded())
-        return themes[min(max(index, 0), themes.count - 1)]
-    }
-}
-
-private struct ThemeSectionView: View {
-    @State private var selectedColorID: String = "white"
-
-    private let colorOptions: [ThemeColorOption] = [
-        ThemeColorOption(id: "white", color: .white, label: "White"),
-        ThemeColorOption(id: "green", color: Color(hexString: "#8DE17E"), label: nil),
-        ThemeColorOption(id: "cyan", color: Color(hexString: "#70D7E2"), label: nil),
-        ThemeColorOption(id: "blue", color: Color(hexString: "#7D84F6"), label: nil),
-        ThemeColorOption(id: "purple", color: Color(hexString: "#C870DE"), label: nil),
-        ThemeColorOption(id: "red", color: Color(hexString: "#F18375"), label: nil),
-        ThemeColorOption(id: "yellow", color: Color(hexString: "#EBCB6A"), label: nil)
-    ]
-
-    var body: some View {
-        GeneralSectionView(title: NSLocalizedString("Theme", comment: "General settings - Theme section title")) {
-            GeneralContainerView {
-                GeneralRowView(title: NSLocalizedString("Color", comment: "General settings - Theme color row title")) {
-                    HStack(spacing: 12) {
-                        ForEach(colorOptions) { option in
-                            ThemeColorItemView(
-                                option: option,
-                                selected: selectedColorID == option.id,
-                                action: { selectedColorID = option.id }
-                            )
-                        }
-                    }
-                }
-            }
-        }
     }
 }
 
@@ -435,28 +303,49 @@ private struct GeneralRowView<Accessory: View>: View {
 }
 
 private struct ThemeColorItemView: View {
-    let option: ThemeColorOption
+    let theme: Theme
     let selected: Bool
     let action: () -> Void
+
+    @Environment(\.phiAppearance) private var appearance
+
+    private var swatchColor: Color {
+        if theme == .pure {
+            return .white
+        }
+        return Color(theme.color(for: .themeColor, appearance: appearance))
+    }
+
+    private var selectedBorderColor: Color {
+        Color(theme.color(for: .themeColor, appearance: appearance))
+    }
 
     var body: some View {
         Button(action: action) {
             VStack(spacing: 8) {
                 Circle()
-                    .fill(option.color)
+                    .fill(swatchColor)
                     .frame(width: 22, height: 22)
+                    .frame(width: 26, height: 26)
                     .overlay {
                         Circle()
-                            .stroke(selected ? Color.accentColor : Color.clear, lineWidth: 2)
-                            .padding(-2)
+                            .stroke(selected ? selectedBorderColor : Color.clear, lineWidth: 2)
                     }
+                    .overlay {
+                        Circle()
+                            .stroke(Color.black.opacity(theme == .pure ? 0.12 : 0), lineWidth: 0.5)
+                            .frame(width: 22, height: 22)
+                    }
+                    .shadow(color: Color.black.opacity(0.12), radius: 4, y: 1)
 
-                Text(option.label ?? " ")
+                Text(theme.name)
                     .font(.system(size: 11))
-                    .foregroundStyle(Color.white.opacity(0.85))
-                    .opacity(option.label == nil ? 0 : 1)
+                    .themedForeground(.textPrimary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
+                    .opacity(selected ? 1 : 0)
             }
-            .frame(width: 32)
+            .frame(width: 30)
         }
         .buttonStyle(.plain)
     }

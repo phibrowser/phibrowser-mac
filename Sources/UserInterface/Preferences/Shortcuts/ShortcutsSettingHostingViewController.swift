@@ -12,7 +12,7 @@ final class ShortcutsSettingHostingViewController: NSViewController {
         view = NSView()
 //        if #unavailable(macOS 26, ) {
             view.wantsLayer = true
-            view.phiLayer?.setBackgroundColor(.windowBackground)
+            view.phiLayer?.setBackgroundColor(PhiPreferences.fixedWindowBackground)
 //        }
     }
     

@@ -627,6 +627,9 @@
     "Mint" : {
       "comment" : "Mint theme color name"
     },
+    "Mist" : {
+      "comment" : "Mist theme color name"
+    },
     "More Settings" : {
       "comment" : "Address bar menu - Settings submenu item to open settings page\nExtension list - Website settings item to open more settings"
     },
@@ -953,9 +956,6 @@
     },
     "Theme" : {
       "comment" : "General settings - Theme section title"
-    },
-    "Theme color" : {
-      "comment" : "General settings - Section title for configuring theme color"
     },
     "Today" : {
       "comment" : "Download item row - Relative time when download completed today"

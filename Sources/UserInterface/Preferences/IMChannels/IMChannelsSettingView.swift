@@ -38,7 +38,7 @@ struct IMChannelsSettingView: View {
             .padding(.vertical, 36)
             .padding(.horizontal, 36)
         }
-        .themedBackground(.windowBackground)
+        .themedBackground(PhiPreferences.fixedWindowBackground)
         .frame(width: 680, height: 561)
         .task { await vm.loadAll() }
         .onDisappear { Task { await vm.stopPolling() } }

@@ -3,6 +3,7 @@
 // Use of this source code is governed by an Apache license that can be
 // found in the LICENSE file.
 
+import AppKit
 import Foundation
 
 extension UserDefaults {
@@ -41,6 +42,10 @@ enum PhiPreferences: String {
     case preferedUserName
     case accentColor
     case needImportDataFromOtherBrowsers
+
+    static let fixedWindowBackground = ThemedColor { _, appearance in
+        DefaultColors.windowBackground.color(for: appearance)
+    }
 }
 
 extension PhiPreferences {

@@ -181,6 +181,32 @@ private func makeDesignTheme(
 // MARK: - Built-In Themes
 
 public extension Theme {
+    static let pure = makeDesignTheme(
+        id: "pure",
+        name: NSLocalizedString("Pure", comment: "Pure theme name"),
+        lightOverlay: 0xEAEAEA,
+        lightBackground: 0xFFFFFF,
+        lightThemeColor: 0x3AA4D5,
+        lightExtensionAction: 0x2DC882,
+        darkOverlay: 0x383838,
+        darkBackground: 0x383838,
+        darkThemeColor: 0x1E7099,
+        darkExtensionAction: 0x168A55
+    )
+
+    static let mist = makeDesignTheme(
+        id: "mist",
+        name: NSLocalizedString("Mist", comment: "Mist theme color name"),
+        lightOverlay: 0x66CCFF,
+        lightBackground: 0xFFFFFF,
+        lightThemeColor: 0x57AED9,
+        lightExtensionAction: 0x2DC882,
+        darkOverlay: 0x0B2938,
+        darkBackground: 0x0B2938,
+        darkThemeColor: 0x1E7099,
+        darkExtensionAction: 0x168A55
+    )
+    
     static let mint = makeDesignTheme(
         id: "mint",
         name: NSLocalizedString("Mint", comment: "Mint theme color name"),
@@ -260,7 +286,8 @@ public extension Theme {
     )
 
     static let builtInThemes: [Theme] = [
-        .default,
+        .pure,
+        .mist,
         .mint,
         .aqua,
         .iris,

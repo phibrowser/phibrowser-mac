@@ -93,6 +93,12 @@ class AuthManager {
     let browserAuthCallbackQueue = DispatchQueue(label: "com.phi.auth.browser-callback")
     var pendingBrowserAuthCallback: ((URL) -> Void)?
     var pendingBrowserAuthCallbackToken: UUID?
+
+    private lazy var authURLSession: URLSession = {
+        let configuration = URLSessionConfiguration.default
+        configuration.timeoutIntervalForRequest = 20
+        return URLSession(configuration: configuration)
+    }()
     
     private lazy var credentialManager: CredentialsManager =  {
         let storeKey: String
@@ -108,24 +114,22 @@ class AuthManager {
         // Keep the release key stable so existing users do not lose cached credentials.
         storeKey = "credentials"
         #endif
-        // `maxRetries: 3` lets the SDK transparently retry transient failures
-        // (network drops, HTTP 5xx, 429) with exponential backoff (0.5s + 1s + 2s).
-        // This keeps the whole renew within Auth0's 60s reuse window so the server can
-        // re-issue the same rotated token instead of destroying the refresh token family.
+        // Keep Auth0's automatic retry window short. With rotating refresh tokens, a
+        // missed successful response leaves the client holding the previous RT; delayed
+        // retries can then exceed Auth0's overlap period and destroy the token family.
         return CredentialsManager(
-            authentication: Auth0.authentication(clientId: clicentId, domain: domain, session: URLSession.shared),
+            authentication: Auth0.authentication(clientId: clicentId, domain: domain, session: authURLSession),
             storeKey: storeKey,
-            maxRetries: 3
+            maxRetries: 1
         )
     }()
     
-    // Renew throttling: allow at most once per hour unless close to expiry.
+    // Renew throttling: check hourly, but only exchange the refresh token when the
+    // access token is close to expiry.
     // `lastRenewAttemptAt` is bumped on success, business failures, and timeouts so
-    // `shouldRenewNow()` can apply its 1h cooldown. Transient network failures are
-    // intentionally NOT recorded here: the cooldown would otherwise push the next
-    // retry beyond Auth0's 60s refresh-token reuse window, turning a recoverable
-    // packet loss into a forced logout once the server has already rotated the
-    // token (see `callAuth0Renew`'s failure branch).
+    // the failure trace can explain the most recent exchange attempt. Transient
+    // network failures are intentionally NOT recorded here: doing so would make a
+    // missed-response retry look like a deliberate successful sync point.
     private var lastRenewAttemptAt: Date?
     // `lastSuccessfulSyncAt` is only bumped when local credentials are known to be in sync
     // with the shared store (successful renew, or successful import from the shared store).
@@ -135,7 +139,7 @@ class AuthManager {
     // which leaves the local Auth0 SDK with a rotated (stale) refresh token.
     private var lastSuccessfulSyncAt: Date?
     private let renewCooldown: TimeInterval = 60 * 60 // 1 hour
-    private let renewUrgentWindow: TimeInterval = 10 * 60 // 10 minutes before expiry
+    private let renewUrgentWindow: TimeInterval = 30 * 60 // 30 minutes before expiry
 
     private var isRenewing = false
     private let failureTrace = AuthFailureTraceBuffer()
@@ -144,7 +148,7 @@ class AuthManager {
     private var lastForcedLogoutReportAt: Date?
     private let forcedLogoutReportDedupeWindow: TimeInterval = 5 * 60
 
-    // Periodic renew timer: ensures credentials are renewed even if app stays open
+    // Periodic renew timer: checks whether credentials are close enough to expiry to renew.
     private var renewTimer: Timer?
     private var heartbeatTimer: DispatchSourceTimer?
     
@@ -394,13 +398,10 @@ class AuthManager {
     }
     
     private func shouldRenewNow() -> Bool {
-        guard let last = lastRenewAttemptAt else { return true }
-        let now = Date()
-        if let exp = currentCredentials?.expiresIn {
-            let secondsToExpiry = exp.timeIntervalSince(now)
-            if secondsToExpiry <= renewUrgentWindow { return true }
+        guard let exp = currentCredentials?.expiresIn else {
+            return true
         }
-        return now.timeIntervalSince(last) >= renewCooldown
+        return exp.timeIntervalSinceNow <= renewUrgentWindow
     }
     
     func renewCredentials() {
@@ -413,13 +414,17 @@ class AuthManager {
     /// into a constant ferrt risk: each reopen is a fresh chance to submit a
     /// stale RT to Auth0. We now skip the renew unless one of:
     /// - we have no in-memory credentials (let the regular recovery flow run);
-    /// - access token is within the urgent window (~10 min from expiry).
-    /// The periodic renew timer still backstops longer-term refresh needs.
+    /// - access token is within the urgent window (~30 min from expiry).
+    /// The periodic renew timer still checks long-running sessions for refresh needs.
+    ///
+    /// Delegates the urgent-window logic to `shouldRenewNow()` so reopen and
+    /// the internal preflight in `renewCredentialsAsync` agree on what counts
+    /// as "due for renewal". The explicit `isRenewing` check here is a
+    /// fast-path optimization to avoid spawning a Task that the preflight
+    /// would immediately skip; the preflight still does its own check.
     func shouldRenewOnReopen() -> Bool {
         if isRenewing { return false }
-        guard let credentials = currentCredentials else { return true }
-        let secondsToExpiry = credentials.expiresIn.timeIntervalSinceNow
-        return secondsToExpiry <= renewUrgentWindow
+        return shouldRenewNow()
     }
 
     /// Lock-protected renewal. Returns the resulting credentials when the renew completes
@@ -441,14 +446,19 @@ class AuthManager {
                 return .skip
             }
             if !shouldRenewNow() {
+                var details: [String: String] = [
+                    "reason": "not_in_urgent_window",
+                    "lastRenewAttemptAt": iso8601String(lastRenewAttemptAt)
+                ]
+                if let expiresAt = currentCredentials?.expiresIn {
+                    details["currentCredentialExpiresAt"] = iso8601String(expiresAt)
+                    details["currentCredentialSecondsToExpiry"] = String(Int(expiresAt.timeIntervalSinceNow))
+                }
                 recordTrace(
                     "renew-skipped",
-                    details: [
-                        "reason": "cooldown",
-                        "lastRenewAttemptAt": iso8601String(lastRenewAttemptAt)
-                    ]
+                    details: details
                 )
-                AppLogInfo("[TokenRenew] skip renew: under cooldown; last attempt at: \(String(describing: lastRenewAttemptAt))")
+                AppLogInfo("[TokenRenew] skip renew: access token is not within urgent window; expires at: \(String(describing: currentCredentials?.expiresIn))")
                 return .returnCachedCredentials(currentCredentials)
             }
             return .proceed
@@ -580,13 +590,13 @@ class AuthManager {
                 }
                 Task { @MainActor in
                     self.recordTrace("renew-timed-out", details: self.credentialSnapshotDetails())
-                    AppLogError("[TokenRenew] renew timed out after 30s, releasing lock")
+                    AppLogError("[TokenRenew] renew timed out after 45s, releasing lock")
                     self.lastRenewAttemptAt = Date()
                     self.isRenewing = false
                     continuation.resume(returning: nil)
                 }
             }
-            DispatchQueue.global().asyncAfter(deadline: .now() + 30, execute: timeoutWork)
+            DispatchQueue.global().asyncAfter(deadline: .now() + 45, execute: timeoutWork)
 
             credentialManager.renew(parameters: ["audience": audience]) { [weak self] result in
                 completionLock.lock()
@@ -654,11 +664,9 @@ class AuthManager {
                         self.isRenewing = false
                         continuation.resume(returning: credentials)
                     case .failure(let error):
-                        // Skip the cooldown for network errors so the next natural trigger
-                        // (reopen / shared-token change / API access) can retry within
-                        // Auth0's 60s refresh-token reuse window. Without this the next
-                        // attempt would happen ~1h later with a refresh token that the
-                        // server has already rotated, destroying the entire token family.
+                        // Do not mark network failures as a completed renew attempt. A
+                        // missed successful response can leave the client holding the
+                        // previous RT, so traces must keep that ambiguity visible.
                         if Self.isNetworkRenewError(error) {
                             var details = Self.networkErrorDetails(error)
                             details["operation"] = operation
@@ -666,7 +674,7 @@ class AuthManager {
                                 "renew-network-error-no-cooldown",
                                 details: details
                             )
-                            AppLogInfo("[TokenRenew] network error, skipping cooldown to allow retry within reuse window: \(error.localizedDescription)")
+                            AppLogInfo("[TokenRenew] network error, preserving last successful sync point: \(error.localizedDescription)")
                         } else {
                             self.lastRenewAttemptAt = Date()
                         }
@@ -785,7 +793,7 @@ class AuthManager {
             timeInterval: renewCooldown,
             repeats: true
         ) { [weak self] _ in
-            AppLogInfo("periodic renew timer fired")
+            AppLogInfo("periodic renew check fired")
             self?.renewCredentials()
         }
 
@@ -1099,8 +1107,8 @@ class AuthManager {
 
     /// Returns true when a renew failure is caused by a transient network condition
     /// (URLError covered by Auth0's `AuthenticationError.isNetworkError`). Network
-    /// failures are excluded from the cooldown so the next trigger can retry within
-    /// Auth0's refresh-token reuse window.
+    /// failures are not recorded as completed renew attempts because the server may
+    /// have rotated the refresh token even when the client missed the response.
     private static func isNetworkRenewError(_ error: Error) -> Bool {
         if let authError = error as? AuthenticationError {
             return authError.isNetworkError

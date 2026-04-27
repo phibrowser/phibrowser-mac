@@ -99,6 +99,7 @@ class MainBrowserWindowController: NSWindowController {
                 self.applyThemeAppearance(to: window)
             }
             .store(in: &cancellables)
+        WindowThemeMessageRouter.shared.observeWindow(browserState)
         NotificationCenter.default.publisher(for: .appearanceDidChange, object: ThemeManager.shared)
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in

@@ -57,6 +57,10 @@ final class TabStrip: NSView, TitlebarAwareHitTestable {
 
     private let containerMaskLayer = CAShapeLayer()
 
+    /// Notifies the parent (TabStripBarController) whenever the strip relayouts
+    /// so the content border outline can recompute its active-tab gap.
+    var onLayoutChanged: (() -> Void)?
+
     // MARK: - View Pools
     private var pinnedTabViews: [String: TabItemView] = [:]
     private var normalTabViews: [String: TabItemView] = [:]
@@ -227,6 +231,34 @@ final class TabStrip: NSView, TitlebarAwareHitTestable {
             gapIndex: normalGap,
             gapWidth: normalGapW
         )
+
+        onLayoutChanged?()
+    }
+
+    /// Returns the given tab's frame in `coordView`'s coordinate space, or nil
+    /// if the tab is not currently shown in the normal-tab container (pinned,
+    /// not present, or detached). The caller picks which tab to query — the
+    /// content border passes the *visible* controller's tab, which can lag
+    /// behind `browserState.focusingTab` during the deferred-first-paint
+    /// switch path.
+    ///
+    /// During this tab's own drag the source view is hidden in favor of a drag
+    /// proxy in `dragOverlay`; returning the source frame would point at a
+    /// stale slot. Return the proxy's live frame instead so the content
+    /// border's active-tab gap keeps tracking the dragged tab.
+    func tabFrame(for tab: Tab?, in coordView: NSView) -> CGRect? {
+        guard let tab else { return nil }
+        if dragController.context?.draggingTab === tab,
+           let proxy = draggingProxyView,
+           proxy.superview != nil {
+            return proxy.convert(proxy.bounds, to: coordView)
+        }
+        let id = tabId(for: tab)
+        guard let view = normalTabViews[id] ?? pinnedTabViews[id],
+              view.superview != nil else {
+            return nil
+        }
+        return view.convert(view.bounds, to: coordView)
     }
 
     // MARK: - Mouse Tracking
@@ -327,6 +359,11 @@ final class TabStrip: NSView, TitlebarAwareHitTestable {
             activeTab: activeTab,
             isPinned: false
         )
+
+        // scroll-driven and animation-driven repositioning enters here without
+        // going through layout(); fire the same notification so the content
+        // outer border tracks the active tab's new x.
+        onLayoutChanged?()
     }
 
     // MARK: - Data Binding
@@ -1356,6 +1393,10 @@ extension TabStrip: TabStripDragDelegate {
         }
 
         updateDraggingViewPosition()
+        // Drag relayout reflows the non-dragged tabs (including the active tab
+        // when a sibling is dragged past it); recompute the content border so
+        // its gap follows.
+        onLayoutChanged?()
     }
 
     func dragControllerDidEndDrag(tab: Tab, toZone: TabContainerType, toIndex: Int) {
@@ -1512,6 +1553,10 @@ extension TabStrip: TabStripDragDelegate {
         CATransaction.setDisableActions(true)
         draggingView.frame = newFrame
         CATransaction.commit()
+
+        // Keep the content-border active-tab gap in sync with the proxy on
+        // plain drag-move ticks (when no sibling reflow fires onLayoutChanged).
+        onLayoutChanged?()
     }
 
     private func updateDraggingPresentationIfNeeded(for zone: TabContainerType, tab: Tab) {

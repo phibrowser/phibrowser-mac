@@ -112,6 +112,23 @@ class WebContentContainerViewController: NSViewController {
         view.wantsLayer = true
         return view
     }()
+
+    /// Single CAShapeLayer that strokes a unified path covering the active
+    /// tab's outline (top + sides + inverse curves) AND splitViewContainer's
+    /// rounded-rect outline. Hosted on this view's layer so its z is above
+    /// both the tab strip (in barController.view) and the content (in
+    /// contentContainer); otherwise the active tab's fill or splitView's fill
+    /// would clip half of the stroke.
+    private let outerBorderLayer = CAShapeLayer()
+    private var outerBorderThemeObservation: AnyObject?
+
+    private enum LayerZIndex {
+        /// Stacks above every sibling sublayer in `view.layer` so the active
+        /// tab's fill (in barController.view) and splitViewContainer's fill
+        /// (in contentContainer → webContentVC.view) can't clip the stroke.
+        /// Bump only if a higher-z layer is intentionally introduced.
+        static let contentOuterBorder: CGFloat = 1000
+    }
     
     /// Titlebar aware area for handling double-click on titlebar
     private var titleAwareArea = TitlebarAwareView()
@@ -182,6 +199,28 @@ class WebContentContainerViewController: NSViewController {
         contentContainer.snp.makeConstraints { make in
             make.edges.equalToSuperview()
         }
+
+        // Outer border layer sits on this view's layer so it can render above
+        // both the tab strip's tab fills and splitViewContainer's fill.
+        outerBorderLayer.fillColor = NSColor.clear.cgColor
+        outerBorderLayer.strokeColor = NSColor.clear.cgColor
+        outerBorderLayer.lineWidth = 1
+        outerBorderLayer.lineCap = .butt
+        outerBorderLayer.lineJoin = .round
+        outerBorderLayer.zPosition = LayerZIndex.contentOuterBorder
+        // strokeColor / lineWidth never animate; path is conditionally
+        // animated in updateContentOuterBorder() to match the surrounding
+        // tab-strip animation context (so the gap morphs while tabs slide,
+        // but snaps on plain relayouts like window resize).
+        outerBorderLayer.actions = [
+            "strokeColor": NSNull(),
+            "lineWidth": NSNull()
+        ]
+        view.layer?.addSublayer(outerBorderLayer)
+        outerBorderThemeObservation = view.subscribe { [weak self] _, _ in
+            guard let self else { return }
+            self.outerBorderLayer.strokeColor = ThemedColor.border.resolve(in: self.view).cgColor
+        }
         
         // Add resize handle for sidebar adjustment
         view.addSubview(resizeHandle)
@@ -233,9 +272,12 @@ class WebContentContainerViewController: NSViewController {
 
     private func setupTopBarIfNeeded() {
         guard tabStripBarController == nil, let state = browserState else { return }
-        
+
         let barController = TabStripBarController(browserState: state)
         tabStripBarController = barController
+        barController.onTabStripLayoutChanged = { [weak self] in
+            self?.updateContentOuterBorder()
+        }
         
         // Note: CardEntryButton tap is now handled internally by TabStripBarController
         // which manages the NotificationCardPanel directly
@@ -341,6 +383,135 @@ class WebContentContainerViewController: NSViewController {
                 self?.updateLayoutForMode()
             }
             .store(in: &cancellables)
+    }
+
+    override func viewDidLayout() {
+        super.viewDidLayout()
+        updateContentOuterBorder()
+    }
+
+    /// Computes and applies the unified content border path. The path traces:
+    /// active tab (top + sides + inverse curves) → splitViewContainer
+    /// (rounded-rect outline) as one closed shape, so a single stroke renders
+    /// across the whole boundary without seams. In sidebar layouts (no
+    /// horizontal tab strip) it intentionally falls back to a plain
+    /// rounded-rect outline — we still want the content container to carry
+    /// its own outline in Balanced/Performance, just without the active-tab
+    /// gap that only makes sense when a horizontal tab strip is present.
+    private func updateContentOuterBorder() {
+        guard let controller = currentWebContentController else {
+            outerBorderLayer.path = nil
+            return
+        }
+        let r = controller.splitViewContainerFrame(in: view)
+        guard r.width > 0, r.height > 0 else {
+            outerBorderLayer.path = nil
+            return
+        }
+
+        let cornerR = LiquidGlassCompatible.webContentContainerCornerRadius
+        let invR = TabStripMetrics.Tab.inverseCornerRadius
+        let kappa: CGFloat = 0.55228
+        let h = cornerR * kappa
+
+        let leftX = r.minX
+        let rightX = r.maxX
+        let topY = r.maxY
+        let bottomY = r.minY
+
+        // Tie the gap to the *visible* controller's tab rather than
+        // browserState.focusingTab. During the deferred-first-paint switch
+        // path, focusingTab updates before currentWebContentController is
+        // promoted; using the visible tab keeps the outline attached to the
+        // tab whose page is actually onscreen.
+        let activeFrame: CGRect? = PhiPreferences.GeneralSettings.loadLayoutMode().isTraditional
+            ? tabStripBarController?.tabFrame(for: controller.associatedTab, in: view)
+            : nil
+
+        let path = CGMutablePath()
+
+        if let af = activeFrame,
+           af.minX - invR > leftX + cornerR,
+           af.maxX + invR < rightX - cornerR {
+            // Unified clockwise path: right apex → up tab → top → down tab →
+            // left apex → splitView outline → close.
+            let rightApex = CGPoint(x: af.maxX + invR, y: topY)
+
+            // Tab outline (right apex → top → left apex), shared with TabBackgroundLayer.
+            TabStripMetrics.appendActiveTabOutline(
+                to: path,
+                leftX: af.minX,
+                rightX: af.maxX,
+                apexY: topY,
+                tabTopY: af.maxY
+            )
+            // Continue clockwise along splitView's top edge to the left corner.
+            path.addLine(to: CGPoint(x: leftX + cornerR, y: topY))
+            path.addCurve(
+                to: CGPoint(x: leftX, y: topY - cornerR),
+                control1: CGPoint(x: leftX + cornerR - h, y: topY),
+                control2: CGPoint(x: leftX, y: topY - cornerR + h)
+            )
+            path.addLine(to: CGPoint(x: leftX, y: bottomY + cornerR))
+            path.addCurve(
+                to: CGPoint(x: leftX + cornerR, y: bottomY),
+                control1: CGPoint(x: leftX, y: bottomY + cornerR - h),
+                control2: CGPoint(x: leftX + cornerR - h, y: bottomY)
+            )
+            path.addLine(to: CGPoint(x: rightX - cornerR, y: bottomY))
+            path.addCurve(
+                to: CGPoint(x: rightX, y: bottomY + cornerR),
+                control1: CGPoint(x: rightX - cornerR + h, y: bottomY),
+                control2: CGPoint(x: rightX, y: bottomY + cornerR - h)
+            )
+            path.addLine(to: CGPoint(x: rightX, y: topY - cornerR))
+            path.addCurve(
+                to: CGPoint(x: rightX - cornerR, y: topY),
+                control1: CGPoint(x: rightX, y: topY - cornerR + h),
+                control2: CGPoint(x: rightX - cornerR + h, y: topY)
+            )
+            path.addLine(to: rightApex)
+            path.closeSubpath()
+        } else {
+            // Closed rounded rect outline (no active tab gap).
+            path.move(to: CGPoint(x: leftX + cornerR, y: topY))
+            path.addLine(to: CGPoint(x: rightX - cornerR, y: topY))
+            path.addCurve(
+                to: CGPoint(x: rightX, y: topY - cornerR),
+                control1: CGPoint(x: rightX - cornerR + h, y: topY),
+                control2: CGPoint(x: rightX, y: topY - cornerR + h)
+            )
+            path.addLine(to: CGPoint(x: rightX, y: bottomY + cornerR))
+            path.addCurve(
+                to: CGPoint(x: rightX - cornerR, y: bottomY),
+                control1: CGPoint(x: rightX, y: bottomY + cornerR - h),
+                control2: CGPoint(x: rightX - cornerR + h, y: bottomY)
+            )
+            path.addLine(to: CGPoint(x: leftX + cornerR, y: bottomY))
+            path.addCurve(
+                to: CGPoint(x: leftX, y: bottomY + cornerR),
+                control1: CGPoint(x: leftX + cornerR - h, y: bottomY),
+                control2: CGPoint(x: leftX, y: bottomY + cornerR - h)
+            )
+            path.addLine(to: CGPoint(x: leftX, y: topY - cornerR))
+            path.addCurve(
+                to: CGPoint(x: leftX + cornerR, y: topY),
+                control1: CGPoint(x: leftX, y: topY - cornerR + h),
+                control2: CGPoint(x: leftX + cornerR - h, y: topY)
+            )
+            path.closeSubpath()
+        }
+
+        // Animate path morphing when the caller (tab strip) is inside an
+        // NSAnimationContext with implicit animations enabled; snap otherwise.
+        // This keeps the gap aligned with tabs during select/close/scroll/drag
+        // animations without making it morph during plain layout passes.
+        let shouldAnimate = NSAnimationContext.current.allowsImplicitAnimation
+        CATransaction.begin()
+        CATransaction.setDisableActions(!shouldAnimate)
+        outerBorderLayer.path = path
+        outerBorderLayer.strokeColor = ThemedColor.border.resolve(in: view).cgColor
+        CATransaction.commit()
     }
     
     // MARK: - Tab Management
@@ -509,6 +680,7 @@ class WebContentContainerViewController: NSViewController {
         attachSharedBookmarkBar(to: controller)
 
         currentWebContentController = controller
+        updateContentOuterBorder()
 
         // Notify Chromium that view switch is complete, it can now hide the old WebContents
         notifyViewSwitchCompleted()
@@ -601,6 +773,9 @@ class WebContentContainerViewController: NSViewController {
             controller.removeFromParent()
             currentWebContentController = nil
             currentTabIdentifier = nil
+            // Clear the unified outline so it doesn't linger over the now
+            // detached content area until the next focus/layout pass.
+            updateContentOuterBorder()
         }
         
         // Remove from dictionary
@@ -723,6 +898,7 @@ class WebContentContainerViewController: NSViewController {
         // Update current controller and identifier
         currentWebContentController = pending.controller
         currentTabIdentifier = pending.identifier
+        updateContentOuterBorder()
 
         // Clear pending state
         pendingNewTabSwitch = nil

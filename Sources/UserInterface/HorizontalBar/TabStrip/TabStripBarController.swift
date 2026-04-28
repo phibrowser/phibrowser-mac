@@ -68,6 +68,18 @@ final class TabStripBarController: NSViewController {
     func setActive(_ active: Bool) {
         tabStrip.setActive(active)
     }
+
+    /// Forwards to the underlying tab strip — used by the content border
+    /// outline coordinator to find where to carve the gap for a specific tab.
+    func tabFrame(for tab: Tab?, in coordView: NSView) -> CGRect? {
+        tabStrip.tabFrame(for: tab, in: coordView)
+    }
+
+    /// Set by the coordinator to receive a notification on each strip layout.
+    var onTabStripLayoutChanged: (() -> Void)? {
+        get { tabStrip.onLayoutChanged }
+        set { tabStrip.onLayoutChanged = newValue }
+    }
     
     // MARK: - Constants
     

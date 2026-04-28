@@ -659,6 +659,12 @@ class WebContentViewController: NSViewController {
         self.aiChatSplitViewItem = aiChatSplitViewItem
     }
     
+    /// Returns the splitView container's frame in the given coordinate space —
+    /// used by the outer-border coordinator on the parent controller.
+    func splitViewContainerFrame(in coordView: NSView) -> CGRect {
+        splitViewContainer.convert(splitViewContainer.bounds, to: coordView)
+    }
+
     /// Toggles the AI Chat panel when the associated tab allows it.
     func toggleAIChatInTraditionalLayout() {
         guard associatedTab?.aiChatEnabled == true else { return }

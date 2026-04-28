@@ -72,4 +72,67 @@ enum TabStripMetrics {
         static let insets = NSEdgeInsets(top: 0, left: 8, bottom: 0, right: 8)
         static let cornerRadius: CGFloat = 4
     }
+
+    // MARK: - Active-tab outline geometry
+
+    /// Appends the active-tab outer outline (right inverse curve → right side →
+    /// top → left side → left inverse curve), going clockwise, to `path`. The
+    /// helper performs the initial `move(to:)` to the right apex and ends with
+    /// the path's current point at the left apex; the caller closes or
+    /// continues the path as needed.
+    ///
+    /// Both `TabBackgroundLayer.createPath` (for the active tab fill, in tab-
+    /// local coords) and `WebContentContainerViewController.updateContentOuterBorder`
+    /// (for the unified content border, in WCC-view coords) call this so the
+    /// curve geometry stays in one place.
+    ///
+    /// - Parameters:
+    ///   - leftX/rightX: x-coordinates of the tab's left/right sides; the
+    ///     inverse-curve apexes sit at `leftX − invR` and `rightX + invR`.
+    ///   - apexY: y-coordinate where the inverse-curve apexes meet the strip's
+    ///     bottom (= splitView's top edge in the unified path; = `-bottomSpacing`
+    ///     in tab-local coords).
+    ///   - tabTopY: y-coordinate of the tab's top edge.
+    static func appendActiveTabOutline(
+        to path: CGMutablePath,
+        leftX: CGFloat,
+        rightX: CGFloat,
+        apexY: CGFloat,
+        tabTopY: CGFloat
+    ) {
+        let invR = Tab.inverseCornerRadius
+        let cornerR = Tab.cornerRadius
+
+        // Right apex → up the right inverse curve to the tab's right side.
+        path.move(to: CGPoint(x: rightX + invR, y: apexY))
+        path.addCurve(
+            to: CGPoint(x: rightX, y: apexY + invR),
+            control1: CGPoint(x: rightX + invR / 2, y: apexY),
+            control2: CGPoint(x: rightX, y: apexY + invR / 2)
+        )
+        // Up the right side.
+        path.addLine(to: CGPoint(x: rightX, y: tabTopY - cornerR))
+        // Top-right corner.
+        path.addCurve(
+            to: CGPoint(x: rightX - cornerR, y: tabTopY),
+            control1: CGPoint(x: rightX, y: tabTopY - cornerR / 2),
+            control2: CGPoint(x: rightX - cornerR / 2, y: tabTopY)
+        )
+        // Top edge, going left.
+        path.addLine(to: CGPoint(x: leftX + cornerR, y: tabTopY))
+        // Top-left corner.
+        path.addCurve(
+            to: CGPoint(x: leftX, y: tabTopY - cornerR),
+            control1: CGPoint(x: leftX + cornerR / 2, y: tabTopY),
+            control2: CGPoint(x: leftX, y: tabTopY - cornerR / 2)
+        )
+        // Down the left side.
+        path.addLine(to: CGPoint(x: leftX, y: apexY + invR))
+        // Left inverse curve down to the left apex.
+        path.addCurve(
+            to: CGPoint(x: leftX - invR, y: apexY),
+            control1: CGPoint(x: leftX, y: apexY + invR / 2),
+            control2: CGPoint(x: leftX - invR / 2, y: apexY)
+        )
+    }
 }

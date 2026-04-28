@@ -56,8 +56,7 @@ final class TabBackgroundLayer: CAShapeLayer {
 
     func updatePath(in bounds: CGRect) {
         guard bounds.width > 0 && bounds.height > 0 else { return }
-        let path = createPath(for: bounds, state: tabState, isPinned: isPinned)
-        self.path = path
+        self.path = createPath(for: bounds, state: tabState, isPinned: isPinned)
         updateAppearance()
     }
 
@@ -65,6 +64,9 @@ final class TabBackgroundLayer: CAShapeLayer {
         CATransaction.begin()
         CATransaction.setAnimationDuration(0.1)
 
+        // Border (top + sides + inverse curves) for the active normal tab is
+        // drawn by WebContentViewController's outerBorderLayer as part of a
+        // unified path, so this layer only paints the fill.
         switch tabState {
             case .active:
                 fillColor = ThemedColor.contentOverlayBackground.resolve(in: sourceView).cgColor
@@ -76,57 +78,30 @@ final class TabBackgroundLayer: CAShapeLayer {
 
         CATransaction.commit()
     }
-    
+
     func refreshAppearance() {
         updateAppearance()
     }
 
     private func createPath(for bounds: CGRect, state: State, isPinned: Bool) -> CGPath {
-        let path = NSBezierPath()
-        let width = bounds.width
-        let height = bounds.height
         let cornerRadius = TabStripMetrics.Tab.cornerRadius
 
-        if isPinned {
+        if isPinned || state != .active {
             return NSBezierPath(roundedRect: bounds, xRadius: cornerRadius, yRadius: cornerRadius).cgPath
         }
 
-        if state == .active {
-            let invRadius = TabStripMetrics.Tab.inverseCornerRadius
-            let extensionHeight = TabStripMetrics.Strip.bottomSpacing
-            let extendedBottomY = -extensionHeight
-
-            path.move(to: CGPoint(x: -invRadius, y: extendedBottomY))
-
-            path.curve(to: CGPoint(x: 0, y: extendedBottomY + invRadius),
-                       controlPoint1: CGPoint(x: -invRadius / 2, y: extendedBottomY),
-                       controlPoint2: CGPoint(x: 0, y: extendedBottomY + invRadius / 2))
-
-            path.line(to: CGPoint(x: 0, y: height - cornerRadius))
-
-            path.curve(to: CGPoint(x: cornerRadius, y: height),
-                       controlPoint1: CGPoint(x: 0, y: height - cornerRadius / 2),
-                       controlPoint2: CGPoint(x: cornerRadius / 2, y: height))
-
-            path.line(to: CGPoint(x: width - cornerRadius, y: height))
-
-            path.curve(to: CGPoint(x: width, y: height - cornerRadius),
-                       controlPoint1: CGPoint(x: width - cornerRadius / 2, y: height),
-                       controlPoint2: CGPoint(x: width, y: height - cornerRadius / 2))
-
-            path.line(to: CGPoint(x: width, y: extendedBottomY + invRadius))
-
-            path.curve(to: CGPoint(x: width + invRadius, y: extendedBottomY),
-                       controlPoint1: CGPoint(x: width, y: extendedBottomY + invRadius / 2),
-                       controlPoint2: CGPoint(x: width + invRadius / 2, y: extendedBottomY))
-
-            path.close()
-        } else {
-            let rectPath = NSBezierPath(roundedRect: bounds, xRadius: cornerRadius, yRadius: cornerRadius)
-            path.append(rectPath)
-        }
-
-        return path.cgPath
+        // Active normal tab: outer outline traced by the shared helper, then
+        // closed along the apex y so the fill region matches the original path.
+        let path = CGMutablePath()
+        TabStripMetrics.appendActiveTabOutline(
+            to: path,
+            leftX: 0,
+            rightX: bounds.width,
+            apexY: -TabStripMetrics.Strip.bottomSpacing,
+            tabTopY: bounds.height
+        )
+        path.closeSubpath()
+        return path
     }
 }
 

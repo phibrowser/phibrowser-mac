@@ -20,8 +20,33 @@ struct SharedAuthToken: Codable {
     let renewedBy: String?
 }
 
+/// Severity level for diagnostics emitted by `SharedAuthTokenStore`.
+enum SharedAuthTokenStoreLogLevel {
+    case info
+    case warning
+    case error
+}
+
+/// Receives diagnostic events from `SharedAuthTokenStore`. The store itself
+/// has no logging dependency so the file can be copied verbatim between the
+/// Phi browser and Phi Sentinel projects; each host wires its own logger
+/// (CocoaLumberjack-backed `AppLog*` in Phi, `SentinelLogger` in Sentinel).
+///
+/// When no delegate is attached (the default), the store runs silently.
+protocol SharedAuthTokenStoreLogDelegate: AnyObject {
+    func sharedAuthTokenStore(
+        _ store: SharedAuthTokenStore,
+        log level: SharedAuthTokenStoreLogLevel,
+        _ message: String
+    )
+}
+
 final class SharedAuthTokenStore {
     static let shared = SharedAuthTokenStore()
+
+    /// Hosts attach their own logger here on startup. Held weakly so a
+    /// host's lifecycle owns the logger; the store does not retain it.
+    weak var logDelegate: SharedAuthTokenStoreLogDelegate?
 
     private let appGroupAccessGroup = "group.com.phibrowser.shared"
     private let service = "com.phibrowser.auth.shared-token"
@@ -34,6 +59,10 @@ final class SharedAuthTokenStore {
 
     private init() {}
 
+    private func log(_ level: SharedAuthTokenStoreLogLevel, _ message: String) {
+        logDelegate?.sharedAuthTokenStore(self, log: level, message)
+    }
+
     func upsert(
         accessToken: String,
         refreshToken: String? = nil,
@@ -42,8 +71,14 @@ final class SharedAuthTokenStore {
         expiresAt: Date?,
         renewedBy: String? = nil
     ) -> Bool {
-        guard !accessToken.isEmpty else { return false }
-        guard let accessGroup = resolvedAccessGroup() else { return false }
+        guard !accessToken.isEmpty else {
+            log(.error, "[SharedAuthTokenStore] upsert refused: accessToken is empty")
+            return false
+        }
+        guard let accessGroup = resolvedAccessGroup() else {
+            log(.error, "[SharedAuthTokenStore] upsert refused: no resolvable access group")
+            return false
+        }
 
         let payload = SharedAuthToken(
             accessToken: accessToken,
@@ -54,7 +89,10 @@ final class SharedAuthTokenStore {
             updatedAt: Date(),
             renewedBy: renewedBy
         )
-        guard let data = try? JSONEncoder().encode(payload) else { return false }
+        guard let data = try? JSONEncoder().encode(payload) else {
+            log(.error, "[SharedAuthTokenStore] upsert refused: failed to JSON-encode SharedAuthToken payload")
+            return false
+        }
 
         let baseQuery: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
@@ -69,28 +107,39 @@ final class SharedAuthTokenStore {
             kSecValueData as String: data
         ]
 
-        let updateStatus = SecItemUpdate(baseQuery as CFDictionary, updateAttributes as CFDictionary)
+        let updateStatus = runKeychainOpWithRetry(label: "SecItemUpdate") {
+            SecItemUpdate(baseQuery as CFDictionary, updateAttributes as CFDictionary)
+        }
         if updateStatus == errSecSuccess {
             postDistributedChangeNotification(hasToken: true, auth0Sub: auth0Sub)
             return true
         }
 
         if updateStatus != errSecItemNotFound {
+            log(.error, "[SharedAuthTokenStore] SecItemUpdate failed: \(Self.describe(updateStatus))")
             return false
         }
 
         var createQuery = baseQuery
         applyAccessibilityIfNeeded(to: &createQuery)
         createQuery[kSecValueData as String] = data
-        let addStatus = SecItemAdd(createQuery as CFDictionary, nil)
+        let addStatus = runKeychainOpWithRetry(label: "SecItemAdd") {
+            SecItemAdd(createQuery as CFDictionary, nil)
+        }
         if addStatus == errSecSuccess {
             postDistributedChangeNotification(hasToken: true, auth0Sub: auth0Sub)
+            return true
         }
-        return addStatus == errSecSuccess
+
+        log(.error, "[SharedAuthTokenStore] SecItemAdd failed: \(Self.describe(addStatus))")
+        return false
     }
 
     func read() -> SharedAuthToken? {
-        guard let accessGroup = resolvedAccessGroup() else { return nil }
+        guard let accessGroup = resolvedAccessGroup() else {
+            log(.error, "[SharedAuthTokenStore] read failed: no resolvable access group")
+            return nil
+        }
 
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
@@ -104,13 +153,29 @@ final class SharedAuthTokenStore {
         ]
 
         var item: CFTypeRef?
-        let status = SecItemCopyMatching(query as CFDictionary, &item)
-        guard status == errSecSuccess, let data = item as? Data else { return nil }
-        return try? JSONDecoder().decode(SharedAuthToken.self, from: data)
+        let status = runKeychainOpWithRetry(label: "SecItemCopyMatching") {
+            SecItemCopyMatching(query as CFDictionary, &item)
+        }
+        if status == errSecSuccess {
+            guard let data = item as? Data else {
+                log(.error, "[SharedAuthTokenStore] SecItemCopyMatching returned success but item is not Data")
+                return nil
+            }
+            return try? JSONDecoder().decode(SharedAuthToken.self, from: data)
+        }
+        // `errSecItemNotFound` is the legitimate "no shared token yet" state
+        // (e.g., before first login on this device), so don't log it.
+        if status != errSecItemNotFound {
+            log(.error, "[SharedAuthTokenStore] SecItemCopyMatching failed: \(Self.describe(status))")
+        }
+        return nil
     }
 
     func clear() {
-        guard let accessGroup = resolvedAccessGroup() else { return }
+        guard let accessGroup = resolvedAccessGroup() else {
+            log(.error, "[SharedAuthTokenStore] clear failed: no resolvable access group")
+            return
+        }
 
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
@@ -121,10 +186,17 @@ final class SharedAuthTokenStore {
             kSecUseDataProtectionKeychain as String: true
         ]
 
-        let status = SecItemDelete(query as CFDictionary)
+        let status = runKeychainOpWithRetry(label: "SecItemDelete") {
+            SecItemDelete(query as CFDictionary)
+        }
         if status == errSecSuccess || status == errSecItemNotFound {
             postDistributedChangeNotification(hasToken: false, auth0Sub: nil)
+            return
         }
+        // A failed clear leaves a stale (and possibly server-revoked) RT in the
+        // shared store. Surface this loudly because subsequent recovery flows
+        // will pick that token up and ferrt again.
+        log(.error, "[SharedAuthTokenStore] SecItemDelete failed: \(Self.describe(status))")
     }
 
     private func resolvedAccessGroup() -> String? {
@@ -162,6 +234,46 @@ final class SharedAuthTokenStore {
             return [string]
         }
         return []
+    }
+
+    /// Runs a keychain operation once, retrying it once after a brief delay
+    /// when the first attempt returns a likely-transient failure. Sleep/wake
+    /// transitions, securityd contention right after device unlock, and brief
+    /// memory pressure occasionally surface as `errSecInternalComponent`,
+    /// `errSecAllocate`, or other non-permanent statuses; a single 150ms
+    /// pause clears the vast majority of these without keeping the caller
+    /// blocked for long.
+    ///
+    /// `errSecSuccess` and `errSecItemNotFound` skip the retry: success is
+    /// already terminal, and "not found" is a meaningful state used by both
+    /// `upsert` (to fall through to `SecItemAdd`) and `clear` (already in
+    /// the desired state).
+    private func runKeychainOpWithRetry(
+        label: String,
+        op: () -> OSStatus
+    ) -> OSStatus {
+        let first = op()
+        if first == errSecSuccess || first == errSecItemNotFound {
+            return first
+        }
+
+        usleep(150_000) // 150ms
+        let second = op()
+        if second == errSecSuccess {
+            log(.info, "[SharedAuthTokenStore] \(label) recovered on retry: first=\(Self.describe(first))")
+        } else if second != errSecItemNotFound {
+            log(.warning, "[SharedAuthTokenStore] \(label) retry did not recover: first=\(Self.describe(first)), second=\(Self.describe(second))")
+        }
+        return second
+    }
+
+    /// Renders an OSStatus as `OSStatus(<code>) <Apple-provided message>`.
+    /// The Apple message comes from `SecCopyErrorMessageString`, which
+    /// understands all `errSec*` constants and returns nil only for unknown
+    /// statuses.
+    private static func describe(_ status: OSStatus) -> String {
+        let message = SecCopyErrorMessageString(status, nil) as String?
+        return "OSStatus(\(status)) \(message ?? "no description")"
     }
 
     private func postDistributedChangeNotification(hasToken: Bool, auth0Sub: String?) {

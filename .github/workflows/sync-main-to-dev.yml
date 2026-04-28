@@ -23,6 +23,7 @@ jobs:
       - name: Create or report sync PR
         uses: actions/github-script@v7
         with:
+          github-token: ${{ secrets.SYNC_PR_TOKEN }}
           script: |
             const owner = context.repo.owner;
             const repo = context.repo.repo;

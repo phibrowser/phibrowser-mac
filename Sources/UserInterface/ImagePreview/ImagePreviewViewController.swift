@@ -259,13 +259,22 @@ final class ImagePreviewViewController: NSViewController {
         stack.orientation = .horizontal
         stack.alignment = .centerY
         stack.spacing = 0
-        stack.edgeInsets = NSEdgeInsets(top: 0, left: 0, bottom: 0, right: 0)
+        if #available(macOS 26.0, *) {
+            stack.edgeInsets = NSEdgeInsets(top: 0, left: 0, bottom: 0, right: 0)
+        } else {
+            stack.edgeInsets = NSEdgeInsets(top: 1, left: 1, bottom: 1, right: 1)
+        }
     }
 
     private static func configureBottomToolbarStack(_ stack: NSStackView) {
         stack.orientation = .horizontal
         stack.alignment = .centerY
         stack.spacing = 2
+        if #available(macOS 26.0, *) {
+            stack.edgeInsets = NSEdgeInsets(top: 0, left: 0, bottom: 0, right: 0)
+        } else {
+            stack.edgeInsets = NSEdgeInsets(top: 1, left: 1, bottom: 1, right: 1)
+        }
     }
 
     private static func configureCenterOverlayStack(_ stack: NSStackView) {

@@ -111,6 +111,14 @@ import Sentry
             if let data = trace.data(using: .utf8) {
                 scope.addAttachment(Attachment(data: data, filename: "auth-trace.txt"))
             }
+            // Sentinel can trigger `ferrt` while Phi is closed (the renew runs
+            // out-of-process every few minutes when Phi is offline). Attaching
+            // the tail of Sentinel's `boot.log` lets post-mortem see the
+            // out-of-process events that led up to the logout, which Phi's
+            // own auth trace cannot capture.
+            if let sentinelLogData = SentinelHelper.recentBootLog() {
+                scope.addAttachment(Attachment(data: sentinelLogData, filename: "sentinel-boot.log"))
+            }
         }
     }
 }

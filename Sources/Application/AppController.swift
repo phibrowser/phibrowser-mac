@@ -81,6 +81,11 @@ import Countly
         UserDefaultsRegistration.registerDefaults()
         
         setupLogging()
+        // Wire the shared keychain store into AppLog so its keychain errors and
+        // retry recoveries land in the same log file as the rest of the app.
+        // Must happen before any auth flow (login / renew / launch recovery)
+        // touches `SharedAuthTokenStore`.
+        SharedAuthTokenStore.shared.logDelegate = SharedAuthTokenStoreLogBridge.shared
         AppLogInfo("------------------------------  Starting: \(Self.makeClientString())  ------------------------------")
         recordLaunchVersion()
         ChromiumLauncher.sharedInstance().bridge?.applicationWillFinishLaunching(notification)

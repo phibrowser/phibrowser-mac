@@ -10,6 +10,33 @@ import SnapKit
 import UniformTypeIdentifiers
 #endif
 
+private final class FallbackOverlayContainerView: NSView {
+    private let cornerRadius: CGFloat
+
+    init(cornerRadius: CGFloat) {
+        self.cornerRadius = cornerRadius
+        super.init(frame: .zero)
+        translatesAutoresizingMaskIntoConstraints = false
+        wantsLayer = true
+    }
+
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    override var wantsUpdateLayer: Bool {
+        true
+    }
+
+    override func updateLayer() {
+        layer?.cornerRadius = cornerRadius
+        layer?.masksToBounds = true
+        layer?.borderWidth = 1
+        layer?.borderColor = NSColor.separatorColor.withAlphaComponent(0.28).cgColor
+        layer?.backgroundColor = NSColor.controlBackgroundColor.withAlphaComponent(0.82).cgColor
+    }
+}
+
 private enum LiquidGlassAdaptor {
     private static let fallbackCornerRadius = LiquidGlassCompatible.webContentInnerComponentsCornerRadius
 
@@ -27,19 +54,12 @@ private enum LiquidGlassAdaptor {
             return glass
         }
 
-        let fx = NSVisualEffectView()
-        fx.translatesAutoresizingMaskIntoConstraints = false
-        fx.material = .hudWindow
-        fx.blendingMode = .withinWindow
-        fx.state = .active
-        fx.wantsLayer = true
-        fx.layer?.cornerRadius = cornerRadius
-        fx.layer?.masksToBounds = true
-        fx.addSubview(content)
+        let container = FallbackOverlayContainerView(cornerRadius: cornerRadius)
+        container.addSubview(content)
         content.snp.makeConstraints { make in
             make.edges.equalToSuperview()
         }
-        return fx
+        return container
     }
 }
 

@@ -8,6 +8,114 @@ import AppKit
 @testable import Phi
 
 final class PhiBrowserTests: XCTestCase {
+    func testBookmarkMenuContentBuilderAddsBookmarkThisTabAndRecursiveBookmarks() {
+        let rootBookmark = Bookmark(title: "Phi", url: "https://phibrowser.com")
+        let folder = Bookmark(folderTitle: "Favorites")
+        let childBookmark = Bookmark(title: "Docs", url: "https://docs.phibrowser.com")
+        folder.addChild(childBookmark)
+        let target = BookmarkMenuTestTarget()
+
+        let menu = BookmarkMenuContentBuilder.makeMenu(
+            bookmarks: [rootBookmark, folder],
+            canBookmarkCurrentTab: true,
+            canBookmarkAllTabs: true,
+            target: target,
+            bookmarkThisTabAction: #selector(BookmarkMenuTestTarget.menuAction(_:)),
+            bookmarkAllTabsAction: #selector(BookmarkMenuTestTarget.menuAction(_:)),
+            openBookmarkAction: #selector(BookmarkMenuTestTarget.menuAction(_:))
+        )
+
+        XCTAssertEqual(
+            menu.items.first?.title,
+            NSLocalizedString("Bookmark This Tab...", comment: "Bookmarks menu - Menu item to add or edit a bookmark for the currently focused tab")
+        )
+        XCTAssertEqual(menu.items.first?.tag, CommandWrapper.IDC_BOOKMARK_THIS_TAB.rawValue)
+        XCTAssertEqual(
+            menu.items.dropFirst().first?.title,
+            NSLocalizedString("Bookmark All Tabs...", comment: "Bookmarks menu - Menu item to add bookmarks for all currently open tabs in the active window")
+        )
+        XCTAssertEqual(menu.items.dropFirst().first?.tag, CommandWrapper.IDC_BOOKMARK_ALL_TABS.rawValue)
+        XCTAssertTrue(
+            menu.items.first?.isEnabled == true,
+            "The Bookmarks menu should enable the Bookmark This Tab item when the active window has a focusable tab URL."
+        )
+        XCTAssertTrue(menu.items.dropFirst(2).first?.isSeparatorItem == true)
+        XCTAssertEqual(menu.items.dropFirst(3).map(\.title), ["Phi", "Favorites"])
+        XCTAssertEqual(menu.items.last?.submenu?.items.map(\.title), ["Docs"])
+    }
+
+    func testBookmarkMenuContentBuilderDisablesBookmarkThisTabWithoutFocusedTab() {
+        let target = BookmarkMenuTestTarget()
+
+        let menu = BookmarkMenuContentBuilder.makeMenu(
+            bookmarks: [],
+            canBookmarkCurrentTab: false,
+            canBookmarkAllTabs: false,
+            target: target,
+            bookmarkThisTabAction: #selector(BookmarkMenuTestTarget.menuAction(_:)),
+            bookmarkAllTabsAction: #selector(BookmarkMenuTestTarget.menuAction(_:)),
+            openBookmarkAction: #selector(BookmarkMenuTestTarget.menuAction(_:))
+        )
+
+        XCTAssertFalse(
+            menu.items.first?.isEnabled == true,
+            "The Bookmarks menu should disable the Bookmark This Tab item when there is no focused tab with a bookmarkable URL."
+        )
+        XCTAssertFalse(
+            menu.items.dropFirst().first?.isEnabled == true,
+            "The Bookmarks menu should disable the Bookmark All Tabs item when the active window does not have more than one bookmarkable open tab."
+        )
+        XCTAssertEqual(menu.items.count, 2)
+    }
+
+    func testBookmarkMenuContentBuilderShowsDisabledEmptyItemForEmptyFolders() {
+        let emptyFolder = Bookmark(folderTitle: "Empty Folder")
+        let target = BookmarkMenuTestTarget()
+
+        let menu = BookmarkMenuContentBuilder.makeMenu(
+            bookmarks: [emptyFolder],
+            canBookmarkCurrentTab: true,
+            canBookmarkAllTabs: true,
+            target: target,
+            bookmarkThisTabAction: #selector(BookmarkMenuTestTarget.menuAction(_:)),
+            bookmarkAllTabsAction: #selector(BookmarkMenuTestTarget.menuAction(_:)),
+            openBookmarkAction: #selector(BookmarkMenuTestTarget.menuAction(_:))
+        )
+
+        let folderItem = menu.items[3]
+        let emptyItem = try? XCTUnwrap(folderItem.submenu?.items.first)
+
+        XCTAssertEqual(folderItem.title, "Empty Folder")
+        XCTAssertEqual(
+            emptyItem??.title,
+            NSLocalizedString("Empty", comment: "Bookmarks menu - Disabled placeholder item shown when a bookmark folder has no child bookmarks")
+        )
+        XCTAssertFalse(
+            emptyItem??.isEnabled == true,
+            "Empty bookmark folders should show a disabled placeholder item so the submenu still renders a stable empty state."
+        )
+    }
+
+    func testBookmarkMenuContentBuilderDisablesBookmarkAllTabsWithoutEnoughTabs() {
+        let target = BookmarkMenuTestTarget()
+
+        let menu = BookmarkMenuContentBuilder.makeMenu(
+            bookmarks: [],
+            canBookmarkCurrentTab: true,
+            canBookmarkAllTabs: false,
+            target: target,
+            bookmarkThisTabAction: #selector(BookmarkMenuTestTarget.menuAction(_:)),
+            bookmarkAllTabsAction: #selector(BookmarkMenuTestTarget.menuAction(_:)),
+            openBookmarkAction: #selector(BookmarkMenuTestTarget.menuAction(_:))
+        )
+
+        XCTAssertEqual(menu.items[1].tag, CommandWrapper.IDC_BOOKMARK_ALL_TABS.rawValue)
+        XCTAssertFalse(
+            menu.items[1].isEnabled,
+            "Bookmark All Tabs should be disabled unless the active window has more than one bookmarkable open tab."
+        )
+    }
+
     @MainActor
     func testAuthManagerStartRenewTimerDoesNotReplaceExistingValidTimer() async throws {
         let authManager = AuthManager()
@@ -313,4 +421,8 @@ final class PhiBrowserTests: XCTestCase {
     private func renewTimer(in authManager: AuthManager) -> Timer? {
         Mirror(reflecting: authManager).descendant("renewTimer") as? Timer
     }
+}
+
+private final class BookmarkMenuTestTarget: NSObject {
+    @objc func menuAction(_ sender: Any?) {}
 }

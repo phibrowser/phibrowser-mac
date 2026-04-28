@@ -200,11 +200,17 @@
     "Bookmark All Tabs" : {
       "comment" : "Tab area context menu - Bookmark all open tabs"
     },
+    "Bookmark All Tabs..." : {
+      "comment" : "Bookmarks menu - Menu item to add bookmarks for all currently open tabs in the active window"
+    },
     "Bookmark Name" : {
       "comment" : "Bookmark editor - Placeholder for bookmark name input"
     },
+    "Bookmark This Tab..." : {
+      "comment" : "Bookmarks menu - Menu item to add or edit a bookmark for the currently focused tab"
+    },
     "Bookmarks" : {
-      "comment" : "Default root bookmarks folder title\nImport data type - Bookmarks toggle label"
+      "comment" : "Default root bookmarks folder title\nImport data type - Bookmarks toggle label\nMain menu - Top-level Bookmarks menu title in the application menu bar"
     },
     "Bookmarks Bar" : {
       "comment" : "Bookmark editor - Root bookmark folder display name in folder picker"
@@ -419,6 +425,9 @@
     },
     "Edit..." : {
       "comment" : "Edit bookmark url menu item title\nPinned tab context menu - Edit pinned tab menu item"
+    },
+    "Empty" : {
+      "comment" : "Bookmarks menu - Disabled placeholder item shown when a bookmark folder has no child bookmarks"
     },
     "Enable AI features in Phi Browser" : {
       "comment" : "AI settings - Master toggle to enable or disable all AI features in Phi Browser"

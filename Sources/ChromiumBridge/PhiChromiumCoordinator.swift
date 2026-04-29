@@ -200,6 +200,11 @@ extension PhiChromiumCoordinator: PhiChromiumBridgeDelegate {
         let active = false // fixeme
         let contentView = tabInfo["webView"] as? (WebContentWrapper & NSObject)
         let customGuid = tabInfo["customGuid"] as? String
+        // Empty string means "not in any group" — the chromium bridge always
+        // emits the key, so absence (older builds) is also treated as none.
+        let groupIdHex = (tabInfo["groupIdHex"] as? String).flatMap {
+            $0.isEmpty ? nil : $0
+        }
         let tab = Tab(guid: id,
                       url: url,
                       isActive: active,
@@ -208,6 +213,13 @@ extension PhiChromiumCoordinator: PhiChromiumBridgeDelegate {
                       webContentView: contentView,
                       customGuid: customGuid,
                       windowId: Int(windowId))
+        // Apply the group affiliation eagerly so the sidebar's first render
+        // after `tabs.append(tab)` already places this tab inside its group —
+        // no transient "outside group" frame for tabs created directly into a
+        // group (createTabInGroup, future regroup-on-create flows).
+        if let groupIdHex {
+            tab.groupToken = groupIdHex
+        }
         let creationPayload = (tabInfo["creationContext"] as? [AnyHashable: Any]) ?? tabInfo
         let creationContext = NativeTabCreationContext(dictionary: creationPayload)
         AppLogDebug(

@@ -95,7 +95,7 @@ extension BrowserState {
         if realBookmark.isOpened, let wrapper = realBookmark.webContentWrapper {
             wrapper.setAsActiveTab()
         } else {
-            createTab(url, customGuid: realBookmark.guid, focusAfterCreate: true)
+            createTab(URLProcessor.processUserInput(url), customGuid: realBookmark.guid, focusAfterCreate: true)
         }
     }
     

@@ -916,8 +916,7 @@ class BrowserState {
             "windowId=\(windowId) url=\(url ?? "") focusAfterCreate=\(focusAfterCreate) " +
             "focusingTab=\(focusingTabText) normalOrder=\(normalTabOrder)"
         )
-        let _url = URLProcessor.processUserInput(url ?? "")
-        ChromiumLauncher.sharedInstance().bridge?.createNewTab(withUrl: _url,
+        ChromiumLauncher.sharedInstance().bridge?.createNewTab(withUrl: url ?? "",
                                                                windowId: windowId.int64Value,
                                                                customGuid: customGuid,
                                                                focusAfterCreate: focusAfterCreate)

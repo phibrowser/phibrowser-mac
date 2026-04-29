@@ -909,14 +909,15 @@ class BrowserState {
     }
     
     func createTab(_ url: String?, customGuid: String? = nil, focusAfterCreate: Bool = true) {
-        AppLogInfo("🪟 [Restore] createTab request windowId=\(windowId) focus=\(focusAfterCreate) url=\(url ?? "") customGuid=\(customGuid ?? "nil")")
+        AppLogDebug("🪟 [Restore] createTab request windowId=\(windowId) focus=\(focusAfterCreate) url=\(url ?? "") customGuid=\(customGuid ?? "nil")")
         let focusingTabText = focusingTab?.guid ?? -1
         AppLogDebug(
             "[NativeTab] mac createTab " +
             "windowId=\(windowId) url=\(url ?? "") focusAfterCreate=\(focusAfterCreate) " +
             "focusingTab=\(focusingTabText) normalOrder=\(normalTabOrder)"
         )
-        ChromiumLauncher.sharedInstance().bridge?.createNewTab(withUrl: url ?? "",
+        let _url = URLProcessor.processUserInput(url ?? "")
+        ChromiumLauncher.sharedInstance().bridge?.createNewTab(withUrl: _url,
                                                                windowId: windowId.int64Value,
                                                                customGuid: customGuid,
                                                                focusAfterCreate: focusAfterCreate)

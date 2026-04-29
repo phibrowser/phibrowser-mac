@@ -25,7 +25,8 @@ extension LocalStore {
                         index: Int? = nil,
                         guid: String? = nil,
                         spaceId: String? = nil) {
-        guard let bookmarkURL = normalizedURL(from: url) else {
+        guard let normalizedURL = normalizedURL(from: url),
+        let bookmarkURL = URL(string: URLProcessor.processUserInput( normalizedURL.absoluteString)) else {
             AppLogError("Invalid bookmark url: \(url ?? "nil")")
             return
         }

@@ -105,7 +105,7 @@ public final class ThemeManager: NSObject, ThemeSource {
         self.currentTheme = Theme.default
         super.init()
         
-        registerTheme(Theme.default)
+        Theme.builtInThemes.forEach(registerTheme)
         
         restoreUserPreferences()
         
@@ -120,7 +120,10 @@ public final class ThemeManager: NSObject, ThemeSource {
         }
         updateAppearanceMode()
         
-        if let themeId = UserDefaults.standard.string(forKey: PhiPreferences.ThemeSettings.currentThemeId.rawValue) {
+        if var themeId = UserDefaults.standard.string(forKey: PhiPreferences.ThemeSettings.currentThemeId.rawValue) {
+            if themeId == "default" {
+                themeId = Theme.default.id
+            }
             if let theme = registeredThemes[themeId] {
                 currentTheme = theme
             } else {

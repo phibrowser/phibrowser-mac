@@ -12,7 +12,7 @@ final class GeneralSettingHostingViewController: NSViewController {
     override func loadView() {
         view = NSView()
         view.wantsLayer = true
-        view.phiLayer?.setBackgroundColor(.windowBackground)
+        view.phiLayer?.setBackgroundColor(PhiPreferences.fixedWindowBackground)
     }
     
     override func viewDidLoad() {
@@ -42,5 +42,4 @@ final class GeneralSettingHostingViewController: NSViewController {
         hostingController?.view.needsLayout = true
     }
 }
-
 

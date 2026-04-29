@@ -74,5 +74,5 @@ public class Theme: NSObject {
 
 public extension Theme {
     /// Default built-in theme.
-    static let `default` = Theme(id: "default", name: "Default")
+    static let `default` = Theme.pure
 }

@@ -65,6 +65,7 @@
 		376CE4012F2891670093D937 /* ExtensionMessageRouter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 376CE3FB2F2891670093D937 /* ExtensionMessageRouter.swift */; };
 		376CE4022F2891670093D937 /* ExtensionMessaging.swift in Sources */ = {isa = PBXBuildFile; fileRef = 376CE3FC2F2891670093D937 /* ExtensionMessaging.swift */; };
 		376CE4032F2891670093D937 /* NotificationCardManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 376CE3FD2F2891670093D937 /* NotificationCardManager.swift */; };
+		376CE4042F2891670093D937 /* WindowThemeMessageRouter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 376CE3F92F2891670093D937 /* WindowThemeMessageRouter.swift */; };
 		376CE4092F28917C0093D937 /* NotificationMessageCardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 376CE4072F28917C0093D937 /* NotificationMessageCardView.swift */; };
 		376CE4122F2897D30093D937 /* AirbyteResponse.swift in Sources */ = {isa = PBXBuildFile; fileRef = 376CE40A2F2897D30093D937 /* AirbyteResponse.swift */; };
 		376CE4132F2897D30093D937 /* Connector.swift in Sources */ = {isa = PBXBuildFile; fileRef = 376CE40B2F2897D30093D937 /* Connector.swift */; };
@@ -424,6 +425,7 @@
 		3769C6B22EFA540300A94DE0 /* GradientColorLabel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GradientColorLabel.swift; sourceTree = "<group>"; };
 		3769C6EC2EFA6CBE00A94DE0 /* GaussianEffectView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GaussianEffectView.swift; sourceTree = "<group>"; };
 		376CE2F22F27226A0093D937 /* NewTabViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NewTabViewController.swift; sourceTree = "<group>"; };
+		376CE3F92F2891670093D937 /* WindowThemeMessageRouter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WindowThemeMessageRouter.swift; sourceTree = "<group>"; };
 		376CE3FA2F2891670093D937 /* ExtensionMessageEnvelope.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExtensionMessageEnvelope.swift; sourceTree = "<group>"; };
 		376CE3FB2F2891670093D937 /* ExtensionMessageRouter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExtensionMessageRouter.swift; sourceTree = "<group>"; };
 		376CE3FC2F2891670093D937 /* ExtensionMessaging.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExtensionMessaging.swift; sourceTree = "<group>"; };
@@ -813,6 +815,7 @@
 				376CE3FB2F2891670093D937 /* ExtensionMessageRouter.swift */,
 				376CE3FC2F2891670093D937 /* ExtensionMessaging.swift */,
 				376CE3FD2F2891670093D937 /* NotificationCardManager.swift */,
+				376CE3F92F2891670093D937 /* WindowThemeMessageRouter.swift */,
 			);
 			path = MessageCard;
 			sourceTree = "<group>";
@@ -1853,6 +1856,7 @@
 				376CE4012F2891670093D937 /* ExtensionMessageRouter.swift in Sources */,
 				376CE4022F2891670093D937 /* ExtensionMessaging.swift in Sources */,
 				376CE4032F2891670093D937 /* NotificationCardManager.swift in Sources */,
+				376CE4042F2891670093D937 /* WindowThemeMessageRouter.swift in Sources */,
 				CCD3246D2EB1EFB600AA0B85 /* PinnedExtensionItem.swift in Sources */,
 				CCB53DD02E6EC437004BF233 /* OmniBoxContainerViewController.swift in Sources */,
 				CC8B76B12EA8D7B70075F58C /* AppController+Debug.swift in Sources */,

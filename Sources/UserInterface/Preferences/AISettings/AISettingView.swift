@@ -43,7 +43,7 @@ struct AISettingView: View {
             .padding(.vertical, 36)
             .padding(.horizontal, 36)
         }
-        .themedBackground(.windowBackground)
+        .themedBackground(PhiPreferences.fixedWindowBackground)
         .frame(width: 680, height: 561)
         .onChange(of: phiAIEnabled) { oldValue, newValue in
             if newValue == false {

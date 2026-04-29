@@ -80,7 +80,7 @@ class AccountSettingViewController: NSViewController, SettingsPane {
     override func loadView() {
         view = NSView()
         view.wantsLayer = true
-        view.phiLayer?.setBackgroundColor(.windowBackground)
+        view.phiLayer?.setBackgroundColor(PhiPreferences.fixedWindowBackground)
         view.snp.makeConstraints { make in
             make.size.equalTo(NSSize(width: 680, height: 561))
         }

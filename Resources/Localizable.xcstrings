@@ -167,11 +167,17 @@
     "Always Show URL Path" : {
       "comment" : "Address bar menu - Toggle URL path visibility"
     },
+    "Amber" : {
+      "comment" : "Amber theme color name"
+    },
     "Appearance" : {
       "comment" : "General settings - Appearance section title"
     },
     "AppKit" : {
 
+    },
+    "Aqua" : {
+      "comment" : "Aqua theme color name"
     },
     "Are you sure you want to install version %@ and restart Phi?" : {
       "comment" : "Update alert - Message asking user to confirm update installation with version number"
@@ -341,6 +347,9 @@
     },
     "Copy Link" : {
       "comment" : "Address bar menu - Copy link menu item\nBookmark Copy Link menu item\nDownload item row - Tooltip for copy link button\nSidebar address bar - Copy current page URL button tooltip\nTab context menu - Menu item to copy the tab URL to clipboard\nTooltip for button to copy download URL in living downloads toast"
+    },
+    "Coral" : {
+      "comment" : "Coral theme color name"
     },
     "Crash Samples" : {
 
@@ -561,6 +570,9 @@
     "Invitation Code Details" : {
       "comment" : "Account settings - Window title for invitation code details"
     },
+    "Iris" : {
+      "comment" : "Iris theme color name"
+    },
     "Item 1" : {
 
     },
@@ -620,6 +632,12 @@
     },
     "Manage Extensions" : {
       "comment" : "Address bar menu - Extensions submenu item to open extension management\nExtension list - Button to open extensions management page"
+    },
+    "Mint" : {
+      "comment" : "Mint theme color name"
+    },
+    "Mist" : {
+      "comment" : "Mist theme color name"
     },
     "More Settings" : {
       "comment" : "Address bar menu - Settings submenu item to open settings page\nExtension list - Website settings item to open more settings"
@@ -738,6 +756,9 @@
     "Permissions" : {
       "comment" : "Import browser data page - Page title when showing permission request"
     },
+    "Petal" : {
+      "comment" : "Petal theme color name"
+    },
     "Phi" : {
       "comment" : "Profile card - App name displayed on user profile card"
     },
@@ -785,6 +806,9 @@
     },
     "Previous image" : {
       "comment" : "Image preview: accessibility label for previous image control"
+    },
+    "Pure" : {
+      "comment" : "Pure theme name"
     },
     "QR code expired. Generate a fresh one to continue." : {
       "comment" : "Phi Link - Official bot QR expired hint"

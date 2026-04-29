@@ -13,7 +13,7 @@ final class AISettingHostingViewController: NSViewController {
     override func loadView() {
         view = NSView()
         view.wantsLayer = true
-        view.phiLayer?.setBackgroundColor(.windowBackground)
+        view.phiLayer?.setBackgroundColor(PhiPreferences.fixedWindowBackground)
     }
 
     override func viewDidLoad() {

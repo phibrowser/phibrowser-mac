@@ -5,6 +5,7 @@
 
 import Foundation
 import Cocoa
+import Kingfisher
 
 struct BookmarkMenuContentBuilder {
     static func makeMenu(bookmarks: [Bookmark],
@@ -85,7 +86,7 @@ struct BookmarkMenuContentBuilder {
             item.submenu = makeFolderMenu(for: bookmark, target: target, openBookmarkAction: openBookmarkAction)
         } else {
             item.target = target
-            item.image = bookmarkMenuImage(for: bookmark)
+            item.image = bookmarkMenuImage(for: bookmark, menuItem: item)
         }
 
         return item
@@ -112,13 +113,30 @@ struct BookmarkMenuContentBuilder {
         return menu
     }
 
-    private static func bookmarkMenuImage(for bookmark: Bookmark) -> NSImage? {
+    private static func bookmarkMenuImage(for bookmark: Bookmark, menuItem: NSMenuItem) -> NSImage? {
         if let data = bookmark.liveFaviconData ?? bookmark.cachedFaviconData,
            let image = NSImage(data: data) {
-            image.size = NSSize(width: 16, height: 16)
-            return image
+            return sizedBookmarkMenuImage(from: image)
+        }
+
+        if let urlString = bookmark.url,
+           let url = URL(string: urlString) {
+            let provider = FaviconDataProvider(pageURL: url)
+            let options: KingfisherOptionsInfo = [.cacheOriginalImage]
+
+            KingfisherManager.shared.retrieveImage(with: .provider(provider), options: options) { result in
+                guard case let .success(value) = result else { return }
+                DispatchQueue.main.async {
+                    menuItem.image = sizedBookmarkMenuImage(from: value.image)
+                }
+            }
         }
 
         return NSImage(systemSymbolName: "globe", accessibilityDescription: nil)
+    }
+
+    private static func sizedBookmarkMenuImage(from image: NSImage) -> NSImage {
+        image.size = NSSize(width: 16, height: 16)
+        return image
     }
 }

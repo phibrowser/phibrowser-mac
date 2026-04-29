@@ -281,11 +281,40 @@ class SidebarTabListViewController: NSViewController {
         rebuildFloatingBookmarkPresentationIfNeeded()
         invalidateExistingTabCells()
         outlineView.reloadData()
+        applyTabGroupCollapseStates()
         selectActiveTab()
         applyFocusingSelection(for: browserState.focusingTab)
 
         DispatchQueue.main.async { [weak self] in
             self?.updateVisibleBookmarkTabs()
+        }
+    }
+
+    /// Aligns each visible tab-group row's expansion state with the data
+    /// layer (`group.isCollapsed`). Called after every full reload so the
+    /// kVisualsChanged feedback loop (user click → bridge → Chromium →
+    /// Mac → here) lands as a UI change.
+    ///
+    /// `expandItem` / `collapseItem` DO trigger `shouldExpandItem` /
+    /// `shouldCollapseItem` (Apple's docs are silent on this and empirical
+    /// evidence shows they fire). Without the guard the data-driven call
+    /// would re-enter the bridge, get a round-trip back here, and loop.
+    /// `isApplyingTabGroupCollapseStates` short-circuits the user-gesture
+    /// branch in those delegate methods.
+    private var isApplyingTabGroupCollapseStates = false
+
+    private func applyTabGroupCollapseStates() {
+        isApplyingTabGroupCollapseStates = true
+        defer { isApplyingTabGroupCollapseStates = false }
+        // Direct (non-animated) expand/collapse: the call site is always
+        // post-reloadData() where animation would race the row rebuild.
+        // NSOutlineView no-ops when the requested state already holds.
+        for case let groupItem as TabGroupSidebarItem in allItems {
+            if groupItem.group.isCollapsed {
+                outlineView.collapseItem(groupItem)
+            } else {
+                outlineView.expandItem(groupItem)
+            }
         }
     }
     
@@ -302,10 +331,22 @@ class SidebarTabListViewController: NSViewController {
     }
 
     private func selectActiveTab() {
+        // Search root rows first for the common ungrouped case, then descend
+        // into group wrappers to find an active grouped child tab. Without
+        // this descent grouped active tabs lose their sidebar highlight on
+        // every reload (allItems carries only root rows; grouped tabs live
+        // inside TabGroupSidebarItem.childrenItems).
         for item in allItems {
             if let tab = item as? Tab, tab.isActive {
-               selectItem(tab, clearSelectionFirst: true)
-                break
+                selectItem(tab, clearSelectionFirst: true)
+                return
+            }
+        }
+        for case let groupItem as TabGroupSidebarItem in allItems {
+            if let activeChild = groupItem.childrenItems
+                .first(where: { ($0 as? Tab)?.isActive == true }) {
+                selectItem(activeChild, clearSelectionFirst: true)
+                return
             }
         }
     }
@@ -508,6 +549,21 @@ extension SidebarTabListViewController: NSOutlineViewDataSource {
         if isCrossWindowDrag(pasteboard),
            let sourceState = sourceBrowserState(for: pasteboard),
            !browserState.canAcceptCrossWindowDrag(from: sourceState) {
+            clearFolderDropFeedback()
+            return []
+        }
+
+        // Phase 1 deferral: tab drag/drop is disabled in any window that
+        // contains a tab group. The current `calculateTabDestinationIndex`
+        // math assumes a flat one-row-per-tab tab section and produces
+        // wrong drop indices once group wrappers replace N grouped tabs
+        // with one root row. Phase 3 (drag-clear-polish) lifts this
+        // restriction by teaching the drop pipeline about grouped child
+        // rows. See docs/superpowers/specs/2026-04-23-chromium-native-
+        // tab-groups/03-phase-3-drag-clear-polish.md → "Phase 1 deferred".
+        let isTabDrag = pasteboard.string(forType: .normalTab) != nil
+            || pasteboard.string(forType: .pinnedTab) != nil
+        if isTabDrag && !browserState.groups.isEmpty {
             clearFolderDropFeedback()
             return []
         }
@@ -1038,7 +1094,7 @@ extension SidebarTabListViewController: NSOutlineViewDelegate {
         }
         
         switch sidebarItem.itemType {
-        case .tab, .newTabButton:
+        case .tab, .newTabButton, .tabGroup:
             return InsetTableRowView(insets: NSEdgeInsets(top: 0, left: 0, bottom: 0, right: 0))
         case .bookmark, .bookmarkFolder:
             return BookmarkRowView(/*insets:  NSEdgeInsets(top: 0, left: 0, bottom: 0, right: 0)*/)
@@ -1092,11 +1148,15 @@ extension SidebarTabListViewController: NSOutlineViewDelegate {
             cellView = separatorCell!
 
         case .tabGroup:
-            // PLACEHOLDER (commit 1): no producer of `.tabGroup` items
-            // exists at this commit (TabGroupSidebarItem is introduced in
-            // commit 3), so this branch is unreachable at runtime.
-            // The real cell wiring lives in commit 3.
-            fatalError("tabGroup cell wired up in a later commit")
+            let identifier = NSUserInterfaceItemIdentifier("TabGroupHeaderCell")
+            var groupCell = outlineView.makeView(
+                withIdentifier: identifier, owner: self) as? TabGroupHeaderCellView
+            if groupCell == nil {
+                groupCell = TabGroupHeaderCellView()
+                groupCell?.identifier = identifier
+            }
+            cellView = groupCell!
+
         }
         
         cellView.configure(with: sidebarItem)
@@ -1119,14 +1179,61 @@ extension SidebarTabListViewController: NSOutlineViewDelegate {
     }
     
     func outlineView(_ outlineView: NSOutlineView, shouldCollapseItem item: Any) -> Bool {
+        // Tab-group rows are data-driven: dispatch the user gesture to the
+        // bridge and let kVisualsChanged reflect back via the data layer.
+        // Returning false suppresses the immediate native collapse so the
+        // on-screen state never diverges from `group.isCollapsed`.
+        // Programmatic calls from `applyTabGroupCollapseStates` short-
+        // circuit (return true) so the data-driven re-application doesn't
+        // loop back through the bridge. Idempotent gestures (chevron click
+        // when the row is already in the requested state) also short-
+        // circuit to avoid an unnecessary IPC round-trip + refresh.
+        if let groupItem = item as? TabGroupSidebarItem {
+            if isApplyingTabGroupCollapseStates {
+                return true
+            }
+            if groupItem.group.isCollapsed {
+                return true
+            }
+            requestTabGroupCollapseChange(group: groupItem.group, collapsed: true)
+            return false
+        }
         return true
     }
-    
+
     func outlineView(_ outlineView: NSOutlineView, shouldExpandItem item: Any) -> Bool {
         if browserState.isDraggingTab && !allowExpandDuringDrag {
             return false
         }
+        if let groupItem = item as? TabGroupSidebarItem {
+            if isApplyingTabGroupCollapseStates {
+                return true
+            }
+            if !groupItem.group.isCollapsed {
+                return true
+            }
+            requestTabGroupCollapseChange(group: groupItem.group, collapsed: false)
+            return false
+        }
         return (item as? SidebarItem)?.isExpandable ?? false
+    }
+
+    private func requestTabGroupCollapseChange(group: WebContentGroupInfo,
+                                                collapsed: Bool) {
+        guard let bridge = ChromiumLauncher.sharedInstance().bridge else {
+            AppLogDebug(
+                "[TAB_GROUPS] setCollapsed: no bridge windowId=\(browserState.windowId) " +
+                "token=\(group.token)"
+            )
+            return
+        }
+        AppLogDebug(
+            "[TAB_GROUPS] setCollapsed→bridge windowId=\(browserState.windowId) " +
+            "token=\(group.token) collapsed=\(collapsed)"
+        )
+        bridge.updateTabGroupCollapsed(withWindowId: Int64(browserState.windowId),
+                                       tokenHex: group.token,
+                                       isCollapsed: collapsed)
     }
     
     func outlineView(_ outlineView: NSOutlineView, shouldSelectItem item: Any) -> Bool {
@@ -1378,6 +1485,16 @@ extension SidebarTabListViewController: TabSectionDelegate {
         if !hasStructuralChanges {
             selectActiveTab()
             applyFocusingSelection(for: browserState.focusingTab)
+            // Visual-only group changes (rename, recolor, collapse, or
+            // tab-removed-from-still-existing-group) reach here. Cells
+            // auto-update via their VM subscriptions; collapse state
+            // needs an explicit expandItem/collapseItem call; the group's
+            // children cache must be invalidated so closing a grouped
+            // tab actually drops the row from the outline.
+            applyTabGroupCollapseStates()
+            for case let groupItem as TabGroupSidebarItem in allItems {
+                outlineView.reloadItem(groupItem, reloadChildren: true)
+            }
             return
         }
 
@@ -1857,7 +1974,7 @@ extension SidebarTabListViewController {
         }
         
         let shouldScroll = tab.id != lastScrolledFocusingTabId
-        
+
         if let item = allItems.first(where: { $0.id == tab.id }) {
             selectItem(item, clearSelectionFirst: true)
             if shouldScroll {
@@ -1865,6 +1982,22 @@ extension SidebarTabListViewController {
                 scheduleScrollToVisible(forItem: item)
             }
             return
+        }
+
+        // Grouped child rows live inside TabGroupSidebarItem.childrenItems,
+        // not allItems. Walk the group wrappers to find a focusing tab
+        // that's been collapsed/grouped — keeps the sidebar highlight
+        // following the focusing tab even when it's a group member.
+        for case let groupItem as TabGroupSidebarItem in allItems {
+            if let child = groupItem.childrenItems
+                .first(where: { $0.id == tab.id }) {
+                selectItem(child, clearSelectionFirst: true)
+                if shouldScroll {
+                    lastScrolledFocusingTabId = tab.id
+                    scheduleScrollToVisible(forItem: child)
+                }
+                return
+            }
         }
         
         if let presentation = focusedBookmarkPresentation,

@@ -60,6 +60,21 @@ struct SideTabView: View {
         .padding(.leading, 10)
         .padding(.trailing, 2)
         .padding(.vertical, 2)
+        // Group affiliation bar: 4pt color stripe pinned to the cell's
+        // leading edge, sitting in the 10pt outer padding. Drawn after the
+        // base padding so the rounded background isn't displaced. Hidden
+        // when the tab is ungrouped, so root rows look identical to the
+        // pre-tab-groups behavior.
+        .overlay(alignment: .leading) {
+            if let color = model.groupColor {
+                RoundedRectangle(cornerRadius: 1.5, style: .continuous)
+                    .fill(Color(nsColor: color.nsColor))
+                    .frame(width: 3)
+                    .padding(.leading, 2)
+                    .padding(.vertical, 6)
+                    .allowsHitTesting(false)
+            }
+        }
         .scaleEffect(model.isPressed ? 0.985 : 1.0)
         .animation(.easeOut(duration: 0.1), value: model.isPressed)
         .onHover { hovering in

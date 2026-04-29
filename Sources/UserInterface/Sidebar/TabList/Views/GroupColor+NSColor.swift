@@ -24,3 +24,23 @@ extension GroupColor {
         }
     }
 }
+
+extension NSImage {
+    /// Small rounded square swatch filled with a tab-group color. Sized
+    /// for the leading-edge image of an `NSMenuItem` (used by the "Add
+    /// to Group" submenu and the group header's "Change Color" submenu).
+    static func tabGroupColorSwatch(for groupColor: GroupColor,
+                                    size: NSSize = NSSize(width: 12, height: 12),
+                                    cornerRadius: CGFloat = 3) -> NSImage {
+        let image = NSImage(size: size)
+        image.lockFocus()
+        defer { image.unlockFocus() }
+        let rect = NSRect(origin: .zero, size: size)
+        let path = NSBezierPath(roundedRect: rect,
+                                xRadius: cornerRadius,
+                                yRadius: cornerRadius)
+        groupColor.nsColor.setFill()
+        path.fill()
+        return image
+    }
+}

@@ -184,8 +184,10 @@ class SidebarTabCellView: SidebarCellView {
         guard let tab = item as? Tab else { return }
         cancellables.forEach { $0.cancel() }
         cancellables.removeAll()
-        
-        viewModel.configure(with: tab)
+
+        let state = MainBrowserWindowControllersManager.shared
+            .controller(for: tab.windowId)?.browserState
+        viewModel.configure(with: tab, in: state)
         viewModel.onToggleMute = { [weak tab] in
             guard let tab else { return }
             tab.setAudioMuted(!tab.isAudioMuted)
@@ -285,7 +287,7 @@ class SeparatorCellView: SidebarCellView {
         separatorView.wantsLayer = true
         separatorView.phiLayer?.setBackgroundColor(.separator)
         addSubview(separatorView)
-        
+
         separatorView.snp.makeConstraints { make in
             make.leading.trailing.equalToSuperview()
             make.centerY.equalToSuperview()
@@ -293,7 +295,6 @@ class SeparatorCellView: SidebarCellView {
         }
     }
 }
-
 
 protocol TabCellDelegate: AnyObject {
     func tabCellDidRequestClose(_ tab: Tab)

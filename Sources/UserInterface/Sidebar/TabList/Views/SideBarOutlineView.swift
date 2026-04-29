@@ -97,12 +97,47 @@ class SideBarOutlineView: NSOutlineView {
         phiOutlineDelegate?.outlineView(self, didMiddleClickRow: clickedRow)
     }
     
+    /// Width / trailing inset of the relocated tab-group disclosure chevron.
+    /// Kept as constants so `TabGroupHeaderView` can mirror them when
+    /// reserving trailing space for the chevron.
+    static let tabGroupChevronWidth: CGFloat = 16
+    static let tabGroupChevronTrailingInset: CGFloat = 8
+
     override func frameOfOutlineCell(atRow row: Int) -> NSRect {
-        // hide disclosure triangle
+        // Tab-group rows expose the native disclosure triangle as the only
+        // collapse/expand affordance (Phi has no chevron in the SwiftUI
+        // header cell). The chevron lives at the trailing edge of the row
+        // — not the leading one — so the SwiftUI cell can render its
+        // color bar flush with the leading edge, vertically aligned with
+        // the group-affiliation bar on member tab rows. Bookmark folders
+        // and tabs continue to hide the native chevron (bookmark folders
+        // draw their own; tabs are not expandable).
+        if let item = item(atRow: row) as? SidebarItem,
+           item.itemType == .tabGroup {
+            let rowRect = rect(ofRow: row)
+            let width = Self.tabGroupChevronWidth
+            let height = Self.tabGroupChevronWidth
+            return NSRect(
+                x: rowRect.maxX - width - Self.tabGroupChevronTrailingInset,
+                y: rowRect.midY - height / 2,
+                width: width,
+                height: height
+            )
+        }
         return .zero
-        
     }
     override func frameOfCell(atColumn column: Int, row: Int) -> NSRect {
+        // Tab-group rows: chevron is at the trailing edge so the cell can
+        // span the full row width starting at x=0. The SwiftUI header
+        // reserves trailing room for the chevron via internal padding.
+        if let item = item(atRow: row) as? SidebarItem,
+           item.itemType == .tabGroup {
+            let rowRect = rect(ofRow: row)
+            return NSRect(x: 0,
+                          y: rowRect.minY,
+                          width: rowRect.width,
+                          height: rowRect.height)
+        }
         let origin = super.frameOfCell(atColumn: column, row: row)
         guard let item = item(atRow: row) as? SidebarItem, item.isBookmark else {
             return origin

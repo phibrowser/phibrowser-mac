@@ -45,7 +45,7 @@ extension Tab: SidebarItem {
 }
 
 extension Tab: ContextMenuRepresentable {
-    func makeContextMenu(on menu: NSMenu) {
+    @MainActor func makeContextMenu(on menu: NSMenu) {
         menu.removeAllItems()
         
         var items: [NSMenuItem] = []
@@ -95,11 +95,15 @@ extension Tab: ContextMenuRepresentable {
 
         items.append(.separator())
 
-        let newGroupItem = NSMenuItem(title: NSLocalizedString("New Tab Group", comment: "Tab context menu - Add this tab to a new tab group"), action: #selector(addToNewTabGroup), keyEquivalent: "")
-        newGroupItem.target = self
-        items.append(newGroupItem)
-
-        items.append(.separator())
+        let countBeforeTabGroupBlock = items.count
+        appendTabGroupMenuItems(into: &items)
+        if items.count > countBeforeTabGroupBlock {
+            // Tab-group block contributed entries; close it with a
+            // separator before the pin/edit/close block.
+            items.append(.separator())
+        }
+        // If the block was empty (pinned tab), the separator we appended
+        // above already serves as the bookmark→pin/close divider.
 
         if isPinned {
             let editItem = NSMenuItem(title: NSLocalizedString("Edit...", comment: "Pinned tab context menu - Edit pinned tab menu item"), action: #selector(editPinnedTab), keyEquivalent: "")
@@ -231,12 +235,147 @@ extension Tab: ContextMenuRepresentable {
         MainBrowserWindowControllersManager.shared.activeWindowController?.browserState.createTab(tabURL, focusAfterCreate: true)
     }
 
-    /// Mini Phase 1.3 verification entry point. Creates a new tab group
-    /// containing only this tab, with Chromium-default visuals (empty
-    /// title, auto-assigned color). The end-to-end roundtrip can be
-    /// verified against the chunks A-E VLOG(3) lines on the Chromium
-    /// side. Full Phase 1.3 will replace this with a richer command set
-    /// (rename / change color / add-to-existing-group submenu).
+    /// Builds the tab-group block of the right-click menu. Branches on
+    /// `groupToken`:
+    ///
+    ///   * Ungrouped tab → "New Tab Group" + (when other groups exist)
+    ///     "Add to Group ▶" submenu listing this window's groups in
+    ///     strip order with color swatches.
+    ///   * Grouped tab → "Remove from Group".
+    ///
+    /// Skipped entirely for pinned tabs and bookmark-backed tabs:
+    /// Chromium's TabStripModel doesn't allow pinned tabs to participate
+    /// in groups, and Phi's bookmark-backed tabs are an in-app concept
+    /// that pre-empts any group affiliation (the tab's identity is the
+    /// bookmark, not a free-floating page). Bookmark sidebar rows use a
+    /// separate `Bookmark.makeContextMenu` and never reach this method;
+    /// this guard catches the case where the tab strip itself contains a
+    /// tab whose `guidInLocalDB` resolves to a bookmark (legacy /
+    /// traditional layout, where bookmark-opened tabs sit in normalTabs).
+    @MainActor
+    private func appendTabGroupMenuItems(into items: inout [NSMenuItem]) {
+        if isPinned {
+            return
+        }
+        let browserState = MainBrowserWindowControllersManager.shared
+            .getBrowserState(for: windowId)
+        if isBookmarkBackedTab(state: browserState) {
+            return
+        }
+        if groupToken == nil {
+            let newGroupItem = NSMenuItem(
+                title: NSLocalizedString(
+                    "New Tab Group",
+                    comment: "Tab context menu - Add this tab to a newly created tab group"),
+                action: #selector(addToNewTabGroup),
+                keyEquivalent: "")
+            newGroupItem.target = self
+            items.append(newGroupItem)
+
+            let orderedGroups = orderedGroupsInStripOrder(state: browserState)
+            if !orderedGroups.isEmpty, let browserState {
+                let parent = NSMenuItem(
+                    title: NSLocalizedString(
+                        "Add to Group",
+                        comment: "Tab context menu - Submenu to add this tab to an existing tab group"),
+                    action: nil,
+                    keyEquivalent: "")
+                let submenu = NSMenu()
+                for group in orderedGroups {
+                    let memberCount = browserState.normalTabs
+                        .lazy.filter { $0.groupToken == group.token }.count
+                    let entry = NSMenuItem(
+                        title: group.displayTitle(memberCount: memberCount),
+                        action: #selector(addToExistingTabGroup(_:)),
+                        keyEquivalent: "")
+                    entry.target = self
+                    entry.image = NSImage.tabGroupColorSwatch(for: group.color)
+                    entry.representedObject = group.token
+                    submenu.addItem(entry)
+                }
+                parent.submenu = submenu
+                items.append(parent)
+            }
+        } else if let currentToken = groupToken {
+            // Grouped tab: offer "Move to Group ▶" listing every other
+            // group in this window plus "Remove from Group". The move
+            // path reuses addTabsToGroup; Chromium's TabStripModel removes
+            // the tab from its current group atomically before joining
+            // the destination, so a single bridge call suffices.
+            let otherGroups = orderedGroupsInStripOrder(state: browserState)
+                .filter { $0.token != currentToken }
+            if !otherGroups.isEmpty, let browserState {
+                let parent = NSMenuItem(
+                    title: NSLocalizedString(
+                        "Move to Group",
+                        comment: "Tab context menu - Submenu to move this tab to another tab group"),
+                    action: nil,
+                    keyEquivalent: "")
+                let submenu = NSMenu()
+                for group in otherGroups {
+                    let memberCount = browserState.normalTabs
+                        .lazy.filter { $0.groupToken == group.token }.count
+                    let entry = NSMenuItem(
+                        title: group.displayTitle(memberCount: memberCount),
+                        action: #selector(addToExistingTabGroup(_:)),
+                        keyEquivalent: "")
+                    entry.target = self
+                    entry.image = NSImage.tabGroupColorSwatch(for: group.color)
+                    entry.representedObject = group.token
+                    submenu.addItem(entry)
+                }
+                parent.submenu = submenu
+                items.append(parent)
+            }
+
+            let moveToNewItem = NSMenuItem(
+                title: NSLocalizedString(
+                    "Move to New Group",
+                    comment: "Tab context menu - Move this tab out of its current group into a newly created group"),
+                action: #selector(moveToNewTabGroup),
+                keyEquivalent: "")
+            moveToNewItem.target = self
+            items.append(moveToNewItem)
+
+            let removeItem = NSMenuItem(
+                title: NSLocalizedString(
+                    "Remove from Group",
+                    comment: "Tab context menu - Remove this tab from its tab group"),
+                action: #selector(removeFromTabGroup),
+                keyEquivalent: "")
+            removeItem.target = self
+            items.append(removeItem)
+        }
+    }
+
+    /// True iff this tab is a bookmark-backed tab (its `guidInLocalDB`
+    /// resolves to a bookmark in this window's manager). Pinned tabs are
+    /// excluded — they have their own localDB binding semantic.
+    private func isBookmarkBackedTab(state: BrowserState?) -> Bool {
+        guard !isPinned,
+              let guid = guidInLocalDB, !guid.isEmpty,
+              let state else { return false }
+        return state.bookmarkManager.bookmark(withGuid: guid) != nil
+    }
+
+    /// Returns this window's tab groups in tab-strip order (first
+    /// appearance of each token in `normalTabs`). Matches Chrome's
+    /// "Add to Group" submenu ordering.
+    private func orderedGroupsInStripOrder(state: BrowserState?)
+        -> [WebContentGroupInfo] {
+        guard let state else { return [] }
+        var seen = Set<String>()
+        var ordered: [WebContentGroupInfo] = []
+        for tab in state.normalTabs {
+            guard let token = tab.groupToken,
+                  !seen.contains(token),
+                  let info = state.groups[token] else { continue }
+            seen.insert(token)
+            ordered.append(info)
+        }
+        return ordered
+    }
+
     @MainActor
     @objc private func addToNewTabGroup() {
         guard let bridge = ChromiumLauncher.sharedInstance().bridge else {
@@ -249,5 +388,50 @@ extension Tab: ContextMenuRepresentable {
                                                title: nil,
                                                color: nil)
         AppLogDebug("[TAB_GROUPS] addToNewTabGroup: windowId=\(windowId) tabId=\(guid) returned token=\(token)")
+    }
+
+    /// Move this (already-grouped) tab into a newly created group.
+    /// Reuses `createGroupFromTabs`: Chromium's TabStripModel atomically
+    /// detaches the tab from its current group before forming the new
+    /// group, so a single bridge call suffices (no separate remove step).
+    /// Chromium emits kClosed for the old group if this was its last tab.
+    @MainActor
+    @objc private func moveToNewTabGroup() {
+        guard let bridge = ChromiumLauncher.sharedInstance().bridge else {
+            AppLogDebug("[TAB_GROUPS] moveToNewTabGroup: no bridge available")
+            return
+        }
+        let tabIds: [NSNumber] = [NSNumber(value: Int64(guid))]
+        let token = bridge.createGroupFromTabs(withWindowId: Int64(windowId),
+                                               tabIds: tabIds,
+                                               title: nil,
+                                               color: nil)
+        AppLogDebug("[TAB_GROUPS] moveToNewTabGroup: windowId=\(windowId) tabId=\(guid) returned token=\(token)")
+    }
+
+    @MainActor
+    @objc private func addToExistingTabGroup(_ sender: NSMenuItem) {
+        guard let token = sender.representedObject as? String,
+              let bridge = ChromiumLauncher.sharedInstance().bridge else {
+            AppLogDebug("[TAB_GROUPS] addToExistingTabGroup: missing token or bridge")
+            return
+        }
+        let tabIds: [NSNumber] = [NSNumber(value: Int64(guid))]
+        bridge.addTabsToGroup(withWindowId: Int64(windowId),
+                              tabIds: tabIds,
+                              tokenHex: token)
+        AppLogDebug("[TAB_GROUPS] addToExistingTabGroup windowId=\(windowId) tabId=\(guid) token=\(token)")
+    }
+
+    @MainActor
+    @objc private func removeFromTabGroup() {
+        guard let bridge = ChromiumLauncher.sharedInstance().bridge else {
+            AppLogDebug("[TAB_GROUPS] removeFromTabGroup: no bridge available")
+            return
+        }
+        let tabIds: [NSNumber] = [NSNumber(value: Int64(guid))]
+        bridge.removeTabsFromGroup(withWindowId: Int64(windowId),
+                                   tabIds: tabIds)
+        AppLogDebug("[TAB_GROUPS] removeFromTabGroup windowId=\(windowId) tabId=\(guid)")
     }
 }

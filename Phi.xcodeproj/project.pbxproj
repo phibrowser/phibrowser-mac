@@ -163,6 +163,9 @@
 		8E8008D72FA1A59800EB24C5 /* GroupColor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8E8008D42FA1A59800EB24C5 /* GroupColor.swift */; };
 		8E8008D82FA1A59800EB24C5 /* WebContentGroupInfo.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8E8008D52FA1A59800EB24C5 /* WebContentGroupInfo.swift */; };
 		8E8008DA2FA1A69600EB24C5 /* GroupColor+NSColor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8E8008D92FA1A69600EB24C5 /* GroupColor+NSColor.swift */; };
+		8E8008F52FA1A72E00EB24C5 /* TabGroupHeaderView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8E8008F42FA1A72E00EB24C5 /* TabGroupHeaderView.swift */; };
+		8E8008F62FA1A72E00EB24C5 /* TabGroupHeaderCellView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8E8008F32FA1A72E00EB24C5 /* TabGroupHeaderCellView.swift */; };
+		8E8008F82FA1A73A00EB24C5 /* TabGroupSidebarItem.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8E8008F72FA1A73A00EB24C5 /* TabGroupSidebarItem.swift */; };
 		8E9DAF422F765E83004EA160 /* PasswordManagerViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8E9DAF402F765E83004EA160 /* PasswordManagerViewController.swift */; };
 		8E9E96AC2F0F6E64002D0D21 /* TabItemView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8E9E96A82F0F6E64002D0D21 /* TabItemView.swift */; };
 		8E9E96AD2F0F6E64002D0D21 /* TabStripState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8E9E96A62F0F6E64002D0D21 /* TabStripState.swift */; };
@@ -524,6 +527,9 @@
 		8E8008D42FA1A59800EB24C5 /* GroupColor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GroupColor.swift; sourceTree = "<group>"; };
 		8E8008D52FA1A59800EB24C5 /* WebContentGroupInfo.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WebContentGroupInfo.swift; sourceTree = "<group>"; };
 		8E8008D92FA1A69600EB24C5 /* GroupColor+NSColor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "GroupColor+NSColor.swift"; sourceTree = "<group>"; };
+		8E8008F32FA1A72E00EB24C5 /* TabGroupHeaderCellView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TabGroupHeaderCellView.swift; sourceTree = "<group>"; };
+		8E8008F42FA1A72E00EB24C5 /* TabGroupHeaderView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TabGroupHeaderView.swift; sourceTree = "<group>"; };
+		8E8008F72FA1A73A00EB24C5 /* TabGroupSidebarItem.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TabGroupSidebarItem.swift; sourceTree = "<group>"; };
 		8E9DAF402F765E83004EA160 /* PasswordManagerViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PasswordManagerViewController.swift; sourceTree = "<group>"; };
 		8E9E96A52F0F6E64002D0D21 /* TabStripMetrics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TabStripMetrics.swift; sourceTree = "<group>"; };
 		8E9E96A62F0F6E64002D0D21 /* TabStripState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TabStripState.swift; sourceTree = "<group>"; };
@@ -1335,6 +1341,7 @@
 		CC2708992E7965E700B65AB8 /* TabList */ = {
 			isa = PBXGroup;
 			children = (
+				8E8008F72FA1A73A00EB24C5 /* TabGroupSidebarItem.swift */,
 				CCBF8F452E653F6900B9A99E /* BookmarkModel.swift */,
 				CCBF8F632E65835900B9A99E /* BookmarkModel+Sidebar.swift */,
 				CCBF8F582E656DC000B9A99E /* TabModel+Sidebar.swift */,
@@ -1604,6 +1611,8 @@
 		CCBF8F6A2E66A2C300B9A99E /* Views */ = {
 			isa = PBXGroup;
 			children = (
+				8E8008F32FA1A72E00EB24C5 /* TabGroupHeaderCellView.swift */,
+				8E8008F42FA1A72E00EB24C5 /* TabGroupHeaderView.swift */,
 				8E8008D92FA1A69600EB24C5 /* GroupColor+NSColor.swift */,
 				8EF36C072F4EA95B00FCC91E /* SideTabView.swift */,
 				CCEB64CA2E98DD520036C763 /* InsetTableRowView.swift */,
@@ -1884,6 +1893,8 @@
 				CC450AE42EA74AD5004EE144 /* CommandDispatcher.swift in Sources */,
 				CCBF0FA02ECEC1AE005E729B /* AppController+Deeplink.swift in Sources */,
 				CCBF8F442E653F3400B9A99E /* SidebarItem.swift in Sources */,
+				8E8008F52FA1A72E00EB24C5 /* TabGroupHeaderView.swift in Sources */,
+				8E8008F62FA1A72E00EB24C5 /* TabGroupHeaderCellView.swift in Sources */,
 				CCD87CC42EC2E7E000148E3F /* LocalStore+Bookmark.swift in Sources */,
 				897C09F42F6BEDA000E5CA9B /* IMChannelsViewModel.swift in Sources */,
 				897C09F52F6BEDA000E5CA9B /* IMChannelAPIClient.swift in Sources */,
@@ -1927,6 +1938,7 @@
 				CC98F89F2E8BC79B00DAD237 /* AccountSettingViewController.swift in Sources */,
 				CC6B000F2E77E04800D4F133 /* AboutView.swift in Sources */,
 				8E4C94962F10AEED00B09A80 /* TabBackgroundLayer.swift in Sources */,
+				8E8008F82FA1A73A00EB24C5 /* TabGroupSidebarItem.swift in Sources */,
 				8E4C949C2F10DA5800B09A80 /* NewTabButton.swift in Sources */,
 				8E8008D72FA1A59800EB24C5 /* GroupColor.swift in Sources */,
 				8E8008D82FA1A59800EB24C5 /* WebContentGroupInfo.swift in Sources */,

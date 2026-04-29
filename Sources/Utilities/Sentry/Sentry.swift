@@ -35,6 +35,20 @@ import Sentry
             options.enableMetricKit = true
             options.enableMetricKitRawPayload = true
             
+            options.beforeSend = { event in
+                let isMetricKitDiskWrite =
+                event.exceptions?.contains {
+                    $0.type == "MXDiskWriteException" ||
+                    $0.type == "MXDiskWriteExceptionDiagnostic"
+                } == true
+                
+                if isMetricKitDiskWrite {
+                    return nil
+                }
+                
+                return event
+            }
+            
             options.initialScope = { scope in
                 // Attach recent logs up front because startup may immediately report a previous crash.
                 scope.clearAttachments()

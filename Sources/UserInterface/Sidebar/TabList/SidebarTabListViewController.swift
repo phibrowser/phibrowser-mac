@@ -506,10 +506,19 @@ extension SidebarTabListViewController: NSOutlineViewDataSource {
     
     func outlineView(_ outlineView: NSOutlineView, pasteboardWriterForItem item: Any) -> NSPasteboardWriting? {
         guard let sidebarItem = item as? SidebarItem else { return nil }
-        
+
         let pasteboardItem = NSPasteboardItem()
-        
+
         if let tab = sidebarItem as? Tab {
+            // Phase 1 deferral: tabs that already belong to a group cannot be
+            // dragged out yet. The "drag a grouped tab into another group"
+            // and "drag a grouped tab to ungrouped position" semantics are
+            // designed in Phase 3 (drag-clear-polish). Returning nil here
+            // makes the row non-draggable; the user can still use the
+            // right-click "Move to Group ▶" / "Remove from Group" actions.
+            if tab.groupToken != nil {
+                return nil
+            }
             pasteboardItem.setString(String(tab.guid), forType: .normalTab)
             pasteboardItem.setString(String(browserState.windowId), forType: .sourceWindowId)
             return pasteboardItem
@@ -553,17 +562,88 @@ extension SidebarTabListViewController: NSOutlineViewDataSource {
             return []
         }
 
-        // Phase 1 deferral: tab drag/drop is disabled in any window that
-        // contains a tab group. The current `calculateTabDestinationIndex`
-        // math assumes a flat one-row-per-tab tab section and produces
-        // wrong drop indices once group wrappers replace N grouped tabs
-        // with one root row. Phase 3 (drag-clear-polish) lifts this
-        // restriction by teaching the drop pipeline about grouped child
-        // rows. See docs/superpowers/specs/2026-04-23-chromium-native-
-        // tab-groups/03-phase-3-drag-clear-polish.md → "Phase 1 deferred".
-        let isTabDrag = pasteboard.string(forType: .normalTab) != nil
-            || pasteboard.string(forType: .pinnedTab) != nil
-        if isTabDrag && !browserState.groups.isEmpty {
+        // Phase 1 deferral: drops *into* a group are not handled yet.
+        // Phase 3 (drag-clear-polish) defines the semantics ("attach to
+        // group" vs "land before/after"). Until then, refuse any drop
+        // whose target is a group wrapper, a child of an expanded group,
+        // or a tab that's currently inside a group. Drops at the tab
+        // section root, on bookmark folders, into the pinned section,
+        // etc. continue to work — they go through the corrected
+        // `calculateTabDestinationIndex` below.
+        //
+        // NSOutlineView's drop reporting differs by expansion state:
+        //
+        //   * Expanded group — children rows are visible. The visual gap
+        //     between the group's last child and the next root sibling
+        //     reports as `proposedItem = wrapper, childIndex = childCount`.
+        //     Indices `0..<childCount` mean "drop between visible
+        //     children" (genuinely into-group). Redirect only the
+        //     append-at-end case to a root drop after the wrapper; block
+        //     the rest.
+        //
+        //   * Collapsed group — children are hidden. The wrapper occupies
+        //     a single row, and the gap *just below* it visually belongs
+        //     to whatever follows at the root. AppKit still reports the
+        //     drop as `proposedItem = wrapper` (often with childIndex 0
+        //     or `childCount`) because the collapsed item "owns" that
+        //     spring-load region. Redirect any of these (except
+        //     `NSOutlineViewDropOnItemIndex`, which is "drop ON wrapper"
+        //     and clearly into-group) to a root drop after the wrapper —
+        //     critical when two groups stack and the first is collapsed.
+        if let groupWrapper = originalResolvedItem as? TabGroupSidebarItem {
+            let isCollapsed = !outlineView.isItemExpanded(groupWrapper)
+            let groupChildCount = groupWrapper.childrenItems.count
+            let isDropOn = index == NSOutlineViewDropOnItemIndex
+            // `shouldRedirect` says "treat this as a root-level drop near
+            // the wrapper rather than an into-group drop"; `redirectAfter`
+            // picks which side (before vs after the wrapper).
+            //
+            // For a collapsed wrapper the cursor's Y relative to the
+            // wrapper row's midline is the only reliable signal — AppKit
+            // can report the same `(wrapper, 0)` for both the row's upper
+            // and lower spring-load edges depending on internal state and
+            // shouldExpandItem behavior, so we don't trust the index for
+            // direction. For an expanded wrapper, indices `0..<childCount`
+            // are genuinely "between visible children" (block); only the
+            // append-at-end (`childCount`) maps to "after the group".
+            let shouldRedirect: Bool
+            let redirectAfter: Bool
+            if isDropOn {
+                shouldRedirect = false
+                redirectAfter = false
+            } else if isCollapsed {
+                let row = outlineView.row(forItem: groupWrapper)
+                if row >= 0 {
+                    let rowFrame = outlineView.rect(ofRow: row)
+                    let cursorInOutline =
+                        outlineView.convert(info.draggingLocation, from: nil)
+                    redirectAfter = cursorInOutline.y >= rowFrame.midY
+                } else {
+                    redirectAfter = true
+                }
+                shouldRedirect = true
+            } else if index == groupChildCount {
+                shouldRedirect = true
+                redirectAfter = true
+            } else {
+                shouldRedirect = false
+                redirectAfter = false
+            }
+            if shouldRedirect,
+               let posInTabItems = tabSectionController.tabItems.firstIndex(
+                where: {
+                    ($0 as? TabGroupSidebarItem)?.group.token == groupWrapper.group.token
+                }) {
+                let rootIndex = currentTabSectionStart() + posInTabItems + (redirectAfter ? 1 : 0)
+                outlineView.setDropItem(nil, dropChildIndex: rootIndex)
+                resolvedItem = nil
+                resolvedIndex = rootIndex
+            } else {
+                clearFolderDropFeedback()
+                return []
+            }
+        } else if let proposedTab = originalResolvedItem as? Tab,
+                  proposedTab.groupToken != nil {
             clearFolderDropFeedback()
             return []
         }
@@ -629,10 +709,18 @@ extension SidebarTabListViewController: NSOutlineViewDataSource {
             }
             
             // Dropping ON a tab (index == -1) would jump it to position 0; redirect to insert before that tab.
+            // `outlineView.row(forItem:)` returns a flat row index that includes
+            // expanded group children, but `setDropItem(_:dropChildIndex:)`
+            // expects a root-child index. The two used to coincide back when
+            // the tab section was a flat one-row-per-tab list; once expanded
+            // groups produce extra child rows above the target, the two
+            // diverge. Locate the target's position in `tabItems` (root-child
+            // space) directly.
             if let targetTab = resolvedItem as? Tab, resolvedIndex == NSOutlineViewDropOnItemIndex {
-                let targetRow = outlineView.row(forItem: targetTab)
-                if targetRow >= 0 {
-                    outlineView.setDropItem(nil, dropChildIndex: targetRow)
+                if let posInTabItems = tabSectionController.tabItems.firstIndex(
+                    where: { ($0 as? Tab) === targetTab }) {
+                    let rootChildIndex = currentTabSectionStart() + posInTabItems
+                    outlineView.setDropItem(nil, dropChildIndex: rootChildIndex)
                     return .move
                 }
             }
@@ -922,16 +1010,51 @@ extension SidebarTabListViewController: NSOutlineViewDataSource {
     }
     
     private func calculateTabDestinationIndex(from outlineViewIndex: Int) -> Int {
-        if !showBookmarks {
-            return max(0, outlineViewIndex - 1)
+        // Translate an NSOutlineView root-row index (drop position) into a
+        // `normalTabs` insertion index.
+        //
+        // Semantically the drop is "right before `tabItems[k]`", where
+        // `k = outlineViewIndex - tabSectionStart`. The earlier approach
+        // accumulated `1 per Tab item, memberCount per group wrapper`,
+        // which is wrong during transient kJoined-before-kMoved frames
+        // where group members are non-contiguous in `normalTabs`: the
+        // wrapper visually represents only its FIRST occurrence in
+        // `normalTabs` (later same-token tabs are skipped by `buildItems`
+        // to keep one row per group), so summing the full `memberCount`
+        // overshoots by the count of trailing non-contiguous members.
+        //
+        // Anchor on the visual-first-member instead: locate the target
+        // entry in `tabItems` and return the strip index of the first
+        // tab it represents. This is correct in both contiguous and
+        // non-contiguous frames, and makes the drop's "land before X"
+        // semantics survive a rebuild — after insertion + buildItems,
+        // the new tab appears immediately ahead of the target entry.
+        let positionInTabItems = max(0, outlineViewIndex - currentTabSectionStart())
+        let items = tabSectionController.tabItems
+
+        // Drop at or before the New-Tab-button row → very front of
+        // `normalTabs`. (`tabItems[0]` is always the New-Tab-button.)
+        if positionInTabItems <= 1 {
+            return 0
         }
-        
-        let bookmarkSectionEnd = bookmarkSectionController.bookmarkItems.count
-        let separatorOffset = (!bookmarkSectionController.bookmarkItems.isEmpty && !tabSectionController.tabItems.isEmpty) ? 1 : 0
-        let tabSectionStart = tabSectionStartIndexInRootChildren(bookmarkCount: bookmarkSectionEnd, separatorCount: separatorOffset)
-        
-        // -1 for the "New Tab" button at the top of tab section
-        return max(0, outlineViewIndex - tabSectionStart - 1)
+        // Drop past the last tab-section item → append to `normalTabs`.
+        if positionInTabItems >= items.count {
+            return browserState.normalTabs.count
+        }
+
+        let target = items[positionInTabItems]
+        if let tab = target as? Tab {
+            return browserState.normalTabs.firstIndex(of: tab)
+                ?? browserState.normalTabs.count
+        }
+        if let groupItem = target as? TabGroupSidebarItem {
+            let token = groupItem.group.token
+            return browserState.normalTabs.firstIndex { $0.groupToken == token }
+                ?? browserState.normalTabs.count
+        }
+        // Unexpected item type (would be a bug elsewhere) — fall back to
+        // append rather than dropping at a wrong index.
+        return browserState.normalTabs.count
     }
     
     private func findBookmark(withId id: String) -> Bookmark? {
@@ -1423,6 +1546,19 @@ extension SidebarTabListViewController: TabSectionDelegate {
             start += 1
         }
         return start
+    }
+
+    /// Convenience: root-child index where the tab section begins, given
+    /// the current visible state. All three drop-redirect call sites need
+    /// this in root-child space (the same coordinate `setDropItem(_:dropChildIndex:)`
+    /// expects), so they share one helper instead of recomputing inline.
+    private func currentTabSectionStart() -> Int {
+        guard showBookmarks else { return 0 }
+        let bookmarkCount = bookmarkSectionController.bookmarkItems.count
+        let separatorCount = (!bookmarkSectionController.bookmarkItems.isEmpty && !tabSectionController.tabItems.isEmpty) ? 1 : 0
+        return tabSectionStartIndexInRootChildren(
+            bookmarkCount: bookmarkCount,
+            separatorCount: separatorCount)
     }
     
     func tabSectionDidUpdate(with change: TabSectionChange) {

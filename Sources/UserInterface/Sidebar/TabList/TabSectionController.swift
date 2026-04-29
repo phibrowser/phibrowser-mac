@@ -219,7 +219,7 @@ class TabSectionController: NSObject {
         } else if nowHasGroups || previousHadGroups {
             // When groups participate in either frame the index math for
             // structural incremental updates is complex (root rows whose
-            // children move into / out of nested group rows). Two cases:
+            // children move into / out of nested group rows). Three cases:
             //
             //   * Same root ids in same order — visual-only change
             //     (rename, recolor, collapse/expand, tab closed inside a
@@ -230,14 +230,30 @@ class TabSectionController: NSObject {
             //     to keep collapse state in sync. NO `reloadData()` —
             //     this avoids the bookmark-section flicker.
             //
-            //   * Different root ids — structural change (group create/
-            //     close, tab join/leave a group, ungrouped tab added).
-            //     Fall back to full reload; sidebar volumes are small.
+            //   * Same root ids, different order, single-move detected —
+            //     a root row reordered (typically a normal-tab drag past
+            //     a group wrapper). Emit a moveOperation so the receiver
+            //     calls `NSOutlineView.moveItem`, which preserves group
+            //     expansion state. Going through `reloadData()` here would
+            //     race with the drag guard in `shouldExpandItem` and leave
+            //     groups visually collapsed even when `isCollapsed=false`.
+            //
+            //   * Otherwise — structural change (group create/close, tab
+            //     join/leave a group, ungrouped tab added/removed). Fall
+            //     back to full reload; sidebar volumes are small.
             if newIds == previousItemIds {
                 change = TabSectionChange(insertedIndices: [],
                                           removedIndices: [],
                                           moveOperation: nil,
                                           needsFullReload: false)
+            } else if Set(newIds) == Set(previousItemIds),
+                      let moveOp = detectSingleMove(oldIds: previousItemIds,
+                                                    newIds: newIds) {
+                change = TabSectionChange(
+                    insertedIndices: [],
+                    removedIndices: [],
+                    moveOperation: (from: moveOp.from, to: moveOp.to),
+                    needsFullReload: false)
             } else {
                 change = TabSectionChange(insertedIndices: [],
                                           removedIndices: [],

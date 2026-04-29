@@ -89,6 +89,33 @@ struct BookmarkEvent: WindowEvent {
     }
 }
 
+struct TabGroupEvent: WindowEvent {
+    var browserId: Int?
+    var scope: EventScope {
+        if let browserId {
+            return .window(browserId: browserId)
+        } else {
+            return .global
+        }
+    }
+    let action: TabGroupAction
+
+    enum TabGroupAction {
+        case groupCreated(token: String,
+                          title: String,
+                          color: GroupColor,
+                          isCollapsed: Bool,
+                          initialTabIds: [Int])
+        case groupVisualDataChanged(token: String,
+                                    title: String,
+                                    color: GroupColor,
+                                    isCollapsed: Bool)
+        case groupClosed(token: String)
+        case tabJoinedGroup(tabId: Int, token: String)
+        case tabLeftGroup(tabId: Int, token: String)
+    }
+}
+
 struct ExtensionEvent: WindowEvent {
     var browserId: Int?
     var scope: EventScope {
@@ -138,6 +165,8 @@ class EventBus {
             handleBookmarkEvent(bookmarkEvent, in: browserState)
         case let extensionEvent as ExtensionEvent:
             handleExtensionEvent(extensionEvent, in: browserState)
+        case let tabGroupEvent as TabGroupEvent:
+            handleTabGroupEvent(tabGroupEvent, in: browserState)
         default:  fatalError("not support")
         }
     }
@@ -195,6 +224,29 @@ class EventBus {
         }
     }
     
+    @MainActor
+    private func handleTabGroupEvent(_ event: TabGroupEvent, in state: BrowserState) {
+        switch event.action {
+        case let .groupCreated(token, title, color, isCollapsed, initialTabIds):
+            state.handleTabGroupCreated(token: token,
+                                        title: title,
+                                        color: color,
+                                        isCollapsed: isCollapsed,
+                                        initialTabIds: initialTabIds)
+        case let .groupVisualDataChanged(token, title, color, isCollapsed):
+            state.handleTabGroupVisualDataChanged(token: token,
+                                                  title: title,
+                                                  color: color,
+                                                  isCollapsed: isCollapsed)
+        case .groupClosed(let token):
+            state.handleTabGroupClosed(token: token)
+        case let .tabJoinedGroup(tabId, token):
+            state.handleTabJoinedGroup(tabId: tabId, token: token)
+        case let .tabLeftGroup(tabId, token):
+            state.handleTabLeftGroup(tabId: tabId, token: token)
+        }
+    }
+
     private func handleExtensionEvent(_ event: ExtensionEvent, in state: BrowserState) {
         switch event.action {
         case .extensionChanged(let info):

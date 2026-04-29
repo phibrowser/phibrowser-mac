@@ -19,6 +19,12 @@ struct DanglingWindow {
     let profileId: String
     /// Tabs created before login, will be processed after login
     var pendingTabs: [Tab] = []
+    /// Tab-group events emitted before the window's BrowserState exists
+    /// (e.g., Chromium replays an existing-group state right after the
+    /// window is created but before login). Replayed after the pending
+    /// tabs in `processDanglingWindow` so kCreated handlers find the
+    /// already-arrived members.
+    var pendingGroupActions: [TabGroupEvent.TabGroupAction] = []
 }
 
 class MainBrowserWindowControllersManager: MainBrowserWindowLookup {
@@ -84,6 +90,27 @@ class MainBrowserWindowControllersManager: MainBrowserWindowLookup {
     func hasDanglingWindow(for windowId: Int) -> Bool {
         return danglingWindows.contains { $0.windowId == windowId }
     }
+
+    /// Buffer a tab-group action for a dangling window so it can be
+    /// replayed once the window's BrowserState comes up. Without this,
+    /// any group event (kCreated/kClosed/kJoined/kLeft/kVisualsChanged)
+    /// that arrives between window creation and login is silently
+    /// dropped by `EventBus.handleWindowEvent`'s "Window not found"
+    /// guard, permanently flattening grouped tabs on cold start.
+    @discardableResult
+    func addPendingGroupActionToDanglingWindow(_ action: TabGroupEvent.TabGroupAction,
+                                                windowId: Int) -> Bool {
+        assert(Thread.isMainThread)
+        guard let index = danglingWindows.firstIndex(where: { $0.windowId == windowId }) else {
+            return false
+        }
+        danglingWindows[index].pendingGroupActions.append(action)
+        AppLogInfo(
+            "🪟 [WindowManager] Buffered group action for dangling window " +
+            "windowId=\(windowId) total=\(danglingWindows[index].pendingGroupActions.count)"
+        )
+        return true
+    }
     
     /// Hide a dangling window completely
     private func hideDanglingWindow(_ window: NSWindow) {
@@ -136,7 +163,22 @@ class MainBrowserWindowControllersManager: MainBrowserWindowLookup {
             }
             windowController.browserState.handleNewTabFromChromium(tab)
         }
-        
+
+        // Replay buffered tab-group actions AFTER the tabs are in place so
+        // kCreated / kJoined handlers see their members already on
+        // `BrowserState.tabs` (or, for races, populate the
+        // `pendingGroupClaims` map for backfill on later arrival).
+        if !danglingWindow.pendingGroupActions.isEmpty {
+            AppLogInfo(
+                "🪟 [WindowManager] Replaying \(danglingWindow.pendingGroupActions.count) " +
+                "buffered group action(s) for windowId=\(danglingWindow.windowId)"
+            )
+            for action in danglingWindow.pendingGroupActions {
+                EventBus.shared.send(TabGroupEvent(browserId: danglingWindow.windowId,
+                                                    action: action))
+            }
+        }
+
         if windowController.browserState.focusingTab == nil,
             let last = danglingWindow.pendingTabs.last {
             windowController.browserState.focuseTab(last)

@@ -152,15 +152,15 @@ typedef NS_ENUM(NSUInteger, DownloadEventType) {
 
 /// A tab joined a tab group. windowId and tabId are pre-resolved (the
 /// underlying WebContents may be in transition during teardown). Mac side
-/// should set the tab's groupToken and append it to the group's
-/// orderedTabIds (idempotent).
+/// sets `Tab.groupToken` (the single source of truth for membership);
+/// member ordering is derived live from the tab strip.
 - (void)tabJoinedGroup:(int64_t)windowId
                  tabId:(int64_t)tabId
               tokenHex:(NSString *)tokenHex;
 
-/// A tab left a tab group. Mac side should clear the tab's groupToken and
-/// remove it from the group's orderedTabIds; if orderedTabIds becomes
-/// empty, also drop the group entry (defensive cleanup, see spec § 1.4).
+/// A tab left a tab group. Mac side clears the tab's groupToken; if no
+/// other tab still claims this token, the group entry is dropped
+/// (defensive cleanup, see spec § 1.4).
 - (void)tabLeftGroup:(int64_t)windowId
                tabId:(int64_t)tabId
             tokenHex:(NSString *)tokenHex;
@@ -284,6 +284,12 @@ typedef NS_ENUM(NSUInteger, DownloadEventType) {
 - (void)removeTabsFromGroupWithWindowId:(int64_t)windowId
                                  tabIds:(NSArray<NSNumber *> *)tabIds;
 
+/// Atomically create a new tab inside the group identified by `tokenHex`,
+/// inserted at the end of the group's range in the strip. The new tab
+/// loads the New Tab URL and is foregrounded.
+- (void)createTabInGroupWithWindowId:(int64_t)windowId
+                            tokenHex:(NSString *)tokenHex;
+
 /// Close the group identified by `tokenHex` (closes all of its tabs).
 - (void)closeGroupWithWindowId:(int64_t)windowId
                       tokenHex:(NSString *)tokenHex;
@@ -294,20 +300,20 @@ typedef NS_ENUM(NSUInteger, DownloadEventType) {
                      tokenHex:(NSString *)tokenHex
                       toIndex:(NSInteger)toIndex;
 
-/// Set the group's display title (empty string clears to Chromium auto).
-- (void)setTabGroupTitleWithWindowId:(int64_t)windowId
-                             tokenHex:(NSString *)tokenHex
-                                title:(NSString *)title;
+/// Update the group's display title (empty string clears to Chromium auto).
+- (void)updateTabGroupTitleWithWindowId:(int64_t)windowId
+                                tokenHex:(NSString *)tokenHex
+                                   title:(NSString *)title;
 
-/// Set the group's color via lowercase wire string ("blue"/"red"/...).
-- (void)setTabGroupColorWithWindowId:(int64_t)windowId
-                             tokenHex:(NSString *)tokenHex
-                                color:(NSString *)color;
+/// Update the group's color via lowercase wire string ("blue"/"red"/...).
+- (void)updateTabGroupColorWithWindowId:(int64_t)windowId
+                                tokenHex:(NSString *)tokenHex
+                                   color:(NSString *)color;
 
-/// Set the group's collapsed state (YES collapses, NO expands).
-- (void)setTabGroupCollapsedWithWindowId:(int64_t)windowId
-                                 tokenHex:(NSString *)tokenHex
-                              isCollapsed:(BOOL)isCollapsed;
+/// Update the group's collapsed state (YES collapses, NO expands).
+- (void)updateTabGroupCollapsedWithWindowId:(int64_t)windowId
+                                    tokenHex:(NSString *)tokenHex
+                                 isCollapsed:(BOOL)isCollapsed;
 // Wrapped by base::apple::CallWithEHFrame for Chromium-side exception handling.
 - (void)callWithEHFrame:(void (^)(void))block;
 - (void)openURLInNewWindow:(NSString *)url;

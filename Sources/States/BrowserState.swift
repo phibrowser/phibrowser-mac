@@ -13,7 +13,18 @@ class BrowserState {
     @Published var normalTabs: [Tab] = []
     /// Pinned tabs managed on the native side.
     @Published var pinnedTabs: [Tab] = []
-    
+
+    /// Tab groups in this window, keyed by hex token. Mirrors Chromium's
+    /// `TabGroupModel`; updated by the `handleTabGroup*` family.
+    @Published var groups: [String: WebContentGroupInfo] = [:]
+
+    /// Tab → token claims received from Chromium before the matching `Tab`
+    /// arrived in `handleNewTabFromChromium`. The new-tab handler drains
+    /// this map so the late-arriving Tab inherits its group membership.
+    /// Without this, kJoined-before-NewTab races silently drop the membership
+    /// permanently because `tab.groupToken` is the only source of truth.
+    private var pendingGroupClaims: [Int: String] = [:]
+
     /// Native ordering for non-pinned tabs, stored as Chromium guids.
     private var normalTabOrder: [Int] = []
     
@@ -616,6 +627,11 @@ class BrowserState {
         }
         
         tabs.append(tab)
+        // If Chromium emitted a kCreated/kJoined for this tab while it was
+        // still in flight, restore the group membership now that the Tab
+        // exists. Sidebar reactivity comes through the group's
+        // objectWillChange (signalled by drainPendingGroupClaim).
+        drainPendingGroupClaim(for: tab)
         let creationKindText = context?.creationKind.rawValue ?? "nil"
         let t0 = CFAbsoluteTimeGetCurrent()
         let openerText = context?.openerTabId.map(String.init) ?? "nil"
@@ -836,6 +852,155 @@ class BrowserState {
         AppLogDebug("[NativeTab] ⏱ closeTab tabId=\(tabId) took \(String(format: "%.2f", elapsed))ms")
     }
     
+    // =========================================================================
+    // Tab groups (Chromium → Mac state)
+    //
+    // Routed in via `EventBus.handleTabGroupEvent`. Source of truth lives in
+    // Chromium; these handlers only mirror the visible state used by the
+    // sidebar UI.
+    // =========================================================================
+
+    @MainActor
+    func handleTabGroupCreated(token: String,
+                               title: String,
+                               color: GroupColor,
+                               isCollapsed: Bool,
+                               initialTabIds: [Int]) {
+        AppLogDebug(
+            "[TAB_GROUPS] groupCreated windowId=\(windowId) token=\(token) " +
+            "title=\"\(title)\" color=\(color.rawValue) isCollapsed=\(isCollapsed) " +
+            "initialTabIds=\(initialTabIds)"
+        )
+        let info = WebContentGroupInfo(token: token,
+                                       title: title,
+                                       color: color,
+                                       isCollapsed: isCollapsed)
+        groups[token] = info
+
+        // Sync membership on each initial tab. Chromium fires kCreated before
+        // any kJoined for the seed tabs, so this is where they first learn
+        // their group token. Tabs that haven't arrived via
+        // `handleNewTabFromChromium` yet are stashed in `pendingGroupClaims`
+        // for backfill on arrival.
+        for tabId in initialTabIds {
+            if let tab = tabs.first(where: { $0.guid == tabId }) {
+                tab.groupToken = token
+            } else {
+                pendingGroupClaims[tabId] = token
+            }
+        }
+    }
+
+    @MainActor
+    func handleTabGroupVisualDataChanged(token: String,
+                                         title: String,
+                                         color: GroupColor,
+                                         isCollapsed: Bool) {
+        guard let info = groups[token] else {
+            AppLogWarn(
+                "[TAB_GROUPS] visualDataChanged for unknown token=\(token) " +
+                "windowId=\(windowId); ignoring"
+            )
+            return
+        }
+        AppLogDebug(
+            "[TAB_GROUPS] visualDataChanged windowId=\(windowId) token=\(token) " +
+            "title=\"\(title)\" color=\(color.rawValue) isCollapsed=\(isCollapsed)"
+        )
+        if info.title != title { info.title = title }
+        if info.color != color { info.color = color }
+        if info.isCollapsed != isCollapsed { info.isCollapsed = isCollapsed }
+    }
+
+    @MainActor
+    func handleTabGroupClosed(token: String) {
+        AppLogDebug("[TAB_GROUPS] groupClosed windowId=\(windowId) token=\(token)")
+        groups.removeValue(forKey: token)
+        // Defensive: any tab that still claims this token gets cleared. In
+        // normal flow Chromium fires kLeft for each member before kClosed,
+        // but this guards against any reordering races.
+        for tab in tabs where tab.groupToken == token {
+            tab.groupToken = nil
+        }
+        // Drop any stashed claims that would resurrect membership for a
+        // late-arriving tab once the group is gone.
+        pendingGroupClaims = pendingGroupClaims.filter { $0.value != token }
+    }
+
+    @MainActor
+    func handleTabJoinedGroup(tabId: Int, token: String) {
+        AppLogDebug(
+            "[TAB_GROUPS] tabJoinedGroup windowId=\(windowId) tabId=\(tabId) token=\(token)"
+        )
+        guard let info = groups[token] else {
+            // kCreated raced behind kJoined (rare). Stash so the new-tab
+            // handler or a later kCreated can backfill.
+            pendingGroupClaims[tabId] = token
+            AppLogWarn(
+                "[TAB_GROUPS] tabJoinedGroup before group exists " +
+                "windowId=\(windowId) tabId=\(tabId) token=\(token); stashed"
+            )
+            return
+        }
+        if let tab = tabs.first(where: { $0.guid == tabId }) {
+            tab.groupToken = token
+            // Tab.groupToken is @Published but the sidebar's
+            // TabSectionController doesn't subscribe per-tab; nudge the
+            // group's objectWillChange so the wrapper re-resolves children
+            // / count.
+            info.objectWillChange.send()
+        } else {
+            pendingGroupClaims[tabId] = token
+        }
+    }
+
+    @MainActor
+    func handleTabLeftGroup(tabId: Int, token: String) {
+        AppLogDebug(
+            "[TAB_GROUPS] tabLeftGroup windowId=\(windowId) tabId=\(tabId) token=\(token)"
+        )
+        if let tab = tabs.first(where: { $0.guid == tabId }),
+           tab.groupToken == token {
+            tab.groupToken = nil
+        }
+        // Drop any stale claim for this tab so a future arrival doesn't
+        // resurrect the membership.
+        if pendingGroupClaims[tabId] == token {
+            pendingGroupClaims.removeValue(forKey: tabId)
+        }
+        guard let info = groups[token] else { return }
+        // If the last member left and Chromium hasn't (yet) fired kClosed,
+        // drop the entry so the sidebar doesn't carry an empty header.
+        // Membership is now derived from `tab.groupToken`, so check the
+        // live tab list.
+        let stillHasMember = tabs.contains { $0.groupToken == token }
+        if !stillHasMember {
+            groups.removeValue(forKey: token)
+        } else {
+            info.objectWillChange.send()
+        }
+    }
+
+    /// Drains any pending group claim for `tab.guid` left by a kCreated /
+    /// kJoined that arrived before the tab itself. Call from
+    /// `handleNewTabFromChromium` after the tab is appended to `tabs`.
+    private func drainPendingGroupClaim(for tab: Tab) {
+        guard let token = pendingGroupClaims.removeValue(forKey: tab.guid) else { return }
+        guard let info = groups[token] else {
+            AppLogWarn(
+                "[TAB_GROUPS] pending claim drained for tabId=\(tab.guid) " +
+                "but group token=\(token) no longer exists; ignoring"
+            )
+            return
+        }
+        AppLogDebug(
+            "[TAB_GROUPS] backfill from pending claim windowId=\(windowId) " +
+            "tabId=\(tab.guid) token=\(token)"
+        )
+        tab.groupToken = token
+        info.objectWillChange.send()
+    }
+
     func closeTabs(keeping: Set<Int>) {
         for tab in tabs {
             if !keeping.contains(tab.guid) {

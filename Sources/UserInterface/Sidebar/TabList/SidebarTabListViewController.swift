@@ -1090,7 +1090,13 @@ extension SidebarTabListViewController: NSOutlineViewDelegate {
                 separatorCell?.identifier = identifier
             }
             cellView = separatorCell!
-            
+
+        case .tabGroup:
+            // PLACEHOLDER (commit 1): no producer of `.tabGroup` items
+            // exists at this commit (TabGroupSidebarItem is introduced in
+            // commit 3), so this branch is unreachable at runtime.
+            // The real cell wiring lives in commit 3.
+            fatalError("tabGroup cell wired up in a later commit")
         }
         
         cellView.configure(with: sidebarItem)

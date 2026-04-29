@@ -388,10 +388,36 @@ extension PhiChromiumCoordinator: PhiChromiumBridgeDelegate {
     // =========================================================================
     // Tab groups (Chromium → Mac)
     //
-    // Mini phase: stub implementations satisfy the delegate protocol so the
-    // chunks A-E events compile. Real state-machine wiring lands in
-    // Phase 1.4 (per-window groups dict + tab.groupToken).
+    // Forwards all 5 bridge callbacks through EventBus, matching the
+    // dispatch shape used by TabEvent / BookmarkEvent. The actual state
+    // updates happen in `BrowserState.handleTabGroup*`.
     // =========================================================================
+
+    private func decodeGroupColor(_ wire: String, context: String) -> GroupColor {
+        if let color = GroupColor(rawValue: wire) {
+            return color
+        }
+        AppLogWarn(
+            "[TAB_GROUPS] unknown wire color \"\(wire)\" in \(context); falling back to .grey"
+        )
+        return .grey
+    }
+
+    /// Routes a tab-group action: if the destination window is dangling
+    /// (created pre-login, no BrowserState yet), the action is buffered
+    /// for replay after `processDanglingWindow`. Otherwise it goes straight
+    /// onto the EventBus. Without buffering, group events dropped during
+    /// the dangling window flatten grouped tabs permanently on cold start.
+    private func dispatchGroupAction(_ action: TabGroupEvent.TabGroupAction,
+                                      windowId: Int64) {
+        let id = windowId.intValue
+        let manager = MainBrowserWindowControllersManager.shared
+        if manager.hasDanglingWindow(for: id) {
+            manager.addPendingGroupActionToDanglingWindow(action, windowId: id)
+            return
+        }
+        EventBus.shared.send(TabGroupEvent(browserId: id, action: action))
+    }
 
     func tabGroupCreated(_ windowId: Int64,
                          tokenHex: String,
@@ -399,8 +425,14 @@ extension PhiChromiumCoordinator: PhiChromiumBridgeDelegate {
                          color: String,
                          isCollapsed: Bool,
                          initialTabIds: [NSNumber]) {
-        // TODO(phase 1.4): create WebContentGroupInfo and add to per-window
-        // groups dict; sync each initialTabId's groupToken.
+        let decodedColor = decodeGroupColor(color, context: "tabGroupCreated token=\(tokenHex)")
+        let tabIds = initialTabIds.map { $0.intValue }
+        dispatchGroupAction(.groupCreated(token: tokenHex,
+                                           title: title,
+                                           color: decodedColor,
+                                           isCollapsed: isCollapsed,
+                                           initialTabIds: tabIds),
+                            windowId: windowId)
     }
 
     func tabGroupVisualDataChanged(_ windowId: Int64,
@@ -408,21 +440,28 @@ extension PhiChromiumCoordinator: PhiChromiumBridgeDelegate {
                                     title: String,
                                     color: String,
                                     isCollapsed: Bool) {
-        // TODO(phase 1.4): overwrite cached visual data on the matching group.
+        let decodedColor = decodeGroupColor(
+            color,
+            context: "tabGroupVisualDataChanged token=\(tokenHex)")
+        dispatchGroupAction(.groupVisualDataChanged(token: tokenHex,
+                                                     title: title,
+                                                     color: decodedColor,
+                                                     isCollapsed: isCollapsed),
+                            windowId: windowId)
     }
 
     func tabGroupClosed(_ windowId: Int64, tokenHex: String) {
-        // TODO(phase 1.4): drop the group entry from the per-window dict.
+        dispatchGroupAction(.groupClosed(token: tokenHex), windowId: windowId)
     }
 
     func tabJoinedGroup(_ windowId: Int64, tabId: Int64, tokenHex: String) {
-        // TODO(phase 1.4): set tab.groupToken and append to group's
-        // orderedTabIds (idempotent — first-tab kCreated already inserts).
+        dispatchGroupAction(.tabJoinedGroup(tabId: tabId.intValue, token: tokenHex),
+                            windowId: windowId)
     }
 
     func tabLeftGroup(_ windowId: Int64, tabId: Int64, tokenHex: String) {
-        // TODO(phase 1.4): clear tab.groupToken and remove from group's
-        // orderedTabIds; if orderedTabIds becomes empty, drop the group entry.
+        dispatchGroupAction(.tabLeftGroup(tabId: tabId.intValue, token: tokenHex),
+                            windowId: windowId)
     }
 
     func targetURLChanged(_ tabId: Int64, windowId: Int64, url: String) {

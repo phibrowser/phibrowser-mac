@@ -41,6 +41,10 @@ enum SidebarItemType {
     case bookmarkFolder
     case newTabButton
     case separator
+    /// Header row for a Chromium tab group, materialized by
+    /// `TabGroupSidebarItem`. Selectable=false; expand/collapse routes
+    /// through the bridge via `requestTabGroupCollapseChange`.
+    case tabGroup
 }
 
 // Helper classes for UI elements

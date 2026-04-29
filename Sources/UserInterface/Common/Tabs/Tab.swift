@@ -83,6 +83,10 @@ class Tab: WebContentRepresentable {
     /// window's top-level overlay layer.
     @Published var isInContentFullscreen: Bool = false
     @Published var isPinned = false
+    /// Hex token of the Chromium tab group this tab belongs to, or nil when
+    /// the tab is ungrouped. Mirrors `chrome.tabGroups` membership; updated
+    /// by `BrowserState.handleTabJoinedGroup` / `handleTabLeftGroup`.
+    @Published var groupToken: String?
     @Published var title: String = ""
     @Published var url: String?
     @Published private(set) var securityInfo: TabSecurityInfo = .empty

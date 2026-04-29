@@ -75,6 +75,14 @@ struct SideTabView: View {
                     .allowsHitTesting(false)
             }
         }
+        // Indent grouped tabs 4pt to the right of ungrouped rows so the
+        // visual hierarchy ("this tab belongs to the group above") is
+        // obvious at a glance. Applied after the color-stripe overlay so
+        // the stripe shifts with the cell — the indent IS the affordance.
+        // Driven by `isInGroup` (mirrors `tab.groupToken != nil` directly)
+        // rather than `groupColor != nil` so the indent doesn't flicker
+        // out for one frame in the kJoined-before-kCreated race window.
+        .padding(.leading, model.isInGroup ? 4 : 0)
         .scaleEffect(model.isPressed ? 0.985 : 1.0)
         .animation(.easeOut(duration: 0.1), value: model.isPressed)
         .onHover { hovering in

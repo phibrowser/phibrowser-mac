@@ -31,6 +31,13 @@ final class TabViewModel {
     /// Tracks live: changes when the tab joins / leaves a group, when the
     /// group is closed, or when the group's color is recolored.
     var groupColor: GroupColor?
+    /// Membership flag derived directly from `tab.groupToken`. Distinct
+    /// from `groupColor != nil`: a tab can be a group member momentarily
+    /// before its color resolves (kJoined arrives on the data side
+    /// before `state.groups` re-emits onto the main runloop), so this
+    /// flag is the authoritative signal for layout decisions like
+    /// indentation that should not flicker on color settling.
+    var isInGroup: Bool = false
     
     var onToggleMute: (() -> Void)?
     var onToolTipUpdated: (() -> Void)?
@@ -213,6 +220,19 @@ final class TabViewModel {
         } else {
             self.groupColor = nil
         }
+        self.isInGroup = (tab.groupToken != nil)
+        // Track group membership independently of color resolution. Updates
+        // synchronously on tab.groupToken transitions so callers like
+        // `SideTabView`'s indent rely on a flicker-free signal.
+        tab.$groupToken
+            .map { $0 != nil }
+            .removeDuplicates()
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] inGroup in
+                guard let self, self.configuredTabGuid == expectedGuid else { return }
+                self.isInGroup = inGroup
+            }
+            .store(in: &cancellables)
         if let browserState {
             tab.$groupToken
                 .combineLatest(browserState.$groups)

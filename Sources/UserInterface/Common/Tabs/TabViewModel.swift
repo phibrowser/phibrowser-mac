@@ -26,6 +26,11 @@ final class TabViewModel {
     var isAudioMuted: Bool = false
     var isCapturingMedia: Bool = false
     var isHorizontalCompactMode: Bool = false
+    /// Color of the tab group this tab belongs to, if any. Drives the
+    /// vertical group-affiliation bar on the leading edge of the cell.
+    /// Tracks live: changes when the tab joins / leaves a group, when the
+    /// group is closed, or when the group's color is recolored.
+    var groupColor: GroupColor?
     
     var onToggleMute: (() -> Void)?
     var onToolTipUpdated: (() -> Void)?
@@ -67,6 +72,7 @@ final class TabViewModel {
         isCurrentlyAudible = false
         isAudioMuted = false
         isCapturingMedia = false
+        groupColor = nil
         faviconRevision &+= 1
         onToggleMute = nil
         onToolTipUpdated = nil
@@ -74,7 +80,7 @@ final class TabViewModel {
 
     private var configuredTabGuid: Int?
 
-    func configure(with tab: Tab) {
+    func configure(with tab: Tab, in browserState: BrowserState? = nil) {
         configuredTabGuid = tab.guid
 
         self.title = tab.title
@@ -196,6 +202,37 @@ final class TabViewModel {
                 self.isCapturingMedia = isCapturingAudio || isCapturingVideo || isSharingScreen
             }
             .store(in: &cancellables)
+
+        // Group affiliation color. Updates on (a) tab joining/leaving a group,
+        // (b) the dict gaining/losing the entry, (c) the current group's color
+        // change. switchToLatest re-binds the inner color publisher whenever
+        // membership changes so we don't leak subscriptions to old groups.
+        if let token = tab.groupToken,
+           let info = browserState?.groups[token] {
+            self.groupColor = info.color
+        } else {
+            self.groupColor = nil
+        }
+        if let browserState {
+            tab.$groupToken
+                .combineLatest(browserState.$groups)
+                .map { token, groups -> AnyPublisher<GroupColor?, Never> in
+                    guard let token, let info = groups[token] else {
+                        return Just(nil).eraseToAnyPublisher()
+                    }
+                    return info.$color
+                        .map { Optional($0) }
+                        .eraseToAnyPublisher()
+                }
+                .switchToLatest()
+                .removeDuplicates()
+                .receive(on: DispatchQueue.main)
+                .sink { [weak self] color in
+                    guard let self, self.configuredTabGuid == expectedGuid else { return }
+                    self.groupColor = color
+                }
+                .store(in: &cancellables)
+        }
     }
 
     private func updateLiveFavicon(data: Data?, revision: Int) {

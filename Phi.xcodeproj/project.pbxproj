@@ -160,6 +160,9 @@
 		8E762C192F15F5AE00631087 /* TabDragContext.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8E762C172F15F5AE00631087 /* TabDragContext.swift */; };
 		8E762C1A2F15F5AE00631087 /* TabStripDragController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8E762C182F15F5AE00631087 /* TabStripDragController.swift */; };
 		8E762CC62F16531A00631087 /* TabStripAnimation.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8E762CC52F16531A00631087 /* TabStripAnimation.swift */; };
+		8E8008D72FA1A59800EB24C5 /* GroupColor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8E8008D42FA1A59800EB24C5 /* GroupColor.swift */; };
+		8E8008D82FA1A59800EB24C5 /* WebContentGroupInfo.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8E8008D52FA1A59800EB24C5 /* WebContentGroupInfo.swift */; };
+		8E8008DA2FA1A69600EB24C5 /* GroupColor+NSColor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8E8008D92FA1A69600EB24C5 /* GroupColor+NSColor.swift */; };
 		8E9DAF422F765E83004EA160 /* PasswordManagerViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8E9DAF402F765E83004EA160 /* PasswordManagerViewController.swift */; };
 		8E9E96AC2F0F6E64002D0D21 /* TabItemView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8E9E96A82F0F6E64002D0D21 /* TabItemView.swift */; };
 		8E9E96AD2F0F6E64002D0D21 /* TabStripState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8E9E96A62F0F6E64002D0D21 /* TabStripState.swift */; };
@@ -518,6 +521,9 @@
 		8E762C172F15F5AE00631087 /* TabDragContext.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TabDragContext.swift; sourceTree = "<group>"; };
 		8E762C182F15F5AE00631087 /* TabStripDragController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TabStripDragController.swift; sourceTree = "<group>"; };
 		8E762CC52F16531A00631087 /* TabStripAnimation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TabStripAnimation.swift; sourceTree = "<group>"; };
+		8E8008D42FA1A59800EB24C5 /* GroupColor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GroupColor.swift; sourceTree = "<group>"; };
+		8E8008D52FA1A59800EB24C5 /* WebContentGroupInfo.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WebContentGroupInfo.swift; sourceTree = "<group>"; };
+		8E8008D92FA1A69600EB24C5 /* GroupColor+NSColor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "GroupColor+NSColor.swift"; sourceTree = "<group>"; };
 		8E9DAF402F765E83004EA160 /* PasswordManagerViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PasswordManagerViewController.swift; sourceTree = "<group>"; };
 		8E9E96A52F0F6E64002D0D21 /* TabStripMetrics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TabStripMetrics.swift; sourceTree = "<group>"; };
 		8E9E96A62F0F6E64002D0D21 /* TabStripState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TabStripState.swift; sourceTree = "<group>"; };
@@ -1063,6 +1069,15 @@
 			path = LayoutSelection;
 			sourceTree = "<group>";
 		};
+		8E8008D62FA1A59800EB24C5 /* TabGroup */ = {
+			isa = PBXGroup;
+			children = (
+				8E8008D42FA1A59800EB24C5 /* GroupColor.swift */,
+				8E8008D52FA1A59800EB24C5 /* WebContentGroupInfo.swift */,
+			);
+			path = TabGroup;
+			sourceTree = "<group>";
+		};
 		8E9DAF412F765E83004EA160 /* PasswordManager */ = {
 			isa = PBXGroup;
 			children = (
@@ -1589,6 +1604,7 @@
 		CCBF8F6A2E66A2C300B9A99E /* Views */ = {
 			isa = PBXGroup;
 			children = (
+				8E8008D92FA1A69600EB24C5 /* GroupColor+NSColor.swift */,
 				8EF36C072F4EA95B00FCC91E /* SideTabView.swift */,
 				CCEB64CA2E98DD520036C763 /* InsetTableRowView.swift */,
 				CCBF8F4A2E6543E800B9A99E /* SidebarCellViews.swift */,
@@ -1603,6 +1619,7 @@
 		CCBF8FA32E69913C00B9A99E /* States */ = {
 			isa = PBXGroup;
 			children = (
+				8E8008D62FA1A59800EB24C5 /* TabGroup */,
 				CCBF8FA42E69915200B9A99E /* ApplicationState.swift */,
 				D10000000000000000000011 /* BrowserImagePreviewState.swift */,
 				CCBF8FA62E69948D00B9A99E /* BrowserState.swift */,
@@ -1911,6 +1928,8 @@
 				CC6B000F2E77E04800D4F133 /* AboutView.swift in Sources */,
 				8E4C94962F10AEED00B09A80 /* TabBackgroundLayer.swift in Sources */,
 				8E4C949C2F10DA5800B09A80 /* NewTabButton.swift in Sources */,
+				8E8008D72FA1A59800EB24C5 /* GroupColor.swift in Sources */,
+				8E8008D82FA1A59800EB24C5 /* WebContentGroupInfo.swift in Sources */,
 				376CE2F32F27226A0093D937 /* NewTabViewController.swift in Sources */,
 				B02586F52E42FD97001B08FC /* ChromiumLauncher.m in Sources */,
 				37686A9C2F10D61E00DC3990 /* UserDefaultsRegistration.swift in Sources */,
@@ -2069,6 +2088,7 @@
 				CC6B001B2E793EAC00D4F133 /* PinnedTabViewController.swift in Sources */,
 				8EEC91C22F8623EB00C5336E /* ExtensionPopupAnchor.swift in Sources */,
 				CCBF8F462E653F6900B9A99E /* BookmarkModel.swift in Sources */,
+				8E8008DA2FA1A69600EB24C5 /* GroupColor+NSColor.swift in Sources */,
 				37FC8C922F335942004675B8 /* WebContentProgressBarView.swift in Sources */,
 				CC4351BF2EC7327A009D8FC3 /* SetNameViewController.swift in Sources */,
 				CC6BFFDD2E72C04000D4F133 /* FaviconDataProvider.swift in Sources */,

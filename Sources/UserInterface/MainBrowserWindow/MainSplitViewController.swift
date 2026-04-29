@@ -113,6 +113,13 @@ class MainSplitViewController: NSViewController {
         webContentContainerViewController.toggleAIChat()
     }
 
+    func containsSidebarTabDragBoundary(at screenLocation: CGPoint) -> Bool {
+        guard sideBarSplitViewItem.isCollapsed == false else {
+            return false
+        }
+        return verticalTabListViewController.view.containsScreenLocation(screenLocation)
+    }
+
     func adjustSidebarWidthWithDeadZone(by deltaX: CGFloat, currentMouseX: CGFloat, resizeHandleRightEdge: CGFloat, accumulatedDelta: inout CGFloat) -> CGFloat {
         let collapseBufferDistance: CGFloat = 70
 

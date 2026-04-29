@@ -196,6 +196,13 @@ class MainBrowserWindowController: NSWindowController {
         AppLogInfo("🪟 [WindowController] Window restored and displayed - windowId: \(windowId)")
     }
 
+    func containsTabDragBoundary(at screenLocation: CGPoint) -> Bool {
+        if tabStripView?.containsScreenLocation(screenLocation) == true {
+            return true
+        }
+        return mainSplitViewController.containsSidebarTabDragBoundary(at: screenLocation)
+    }
+
     // =========================================================================
     // Flicker fix: Tab visibility synchronization
     // =========================================================================
@@ -237,4 +244,13 @@ class MainBrowserWindowController: NSWindowController {
 
 extension NSNotification.Name {
     static let mainBrowserWindowCreated = NSNotification.Name("MainBrowserWindowCreated")
+}
+
+extension NSView {
+    func containsScreenLocation(_ screenLocation: CGPoint) -> Bool {
+        guard let window else { return false }
+        let pointInWindow = window.convertPoint(fromScreen: NSPoint(x: screenLocation.x, y: screenLocation.y))
+        let pointInView = convert(pointInWindow, from: nil)
+        return bounds.contains(pointInView)
+    }
 }

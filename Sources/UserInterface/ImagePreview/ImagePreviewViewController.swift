@@ -135,6 +135,12 @@ private final class CircularHoverButton: NSView {
 }
 
 final class ImagePreviewViewController: NSViewController {
+    private static let fallbackControlInset: CGFloat = 1
+    private static let fallbackNavigationContainerSize: CGFloat = 30
+    private static let fallbackBottomToolbarHeight: CGFloat = 26
+    private static let fallbackNavigationCornerRadius: CGFloat = fallbackNavigationContainerSize / 2
+    private static let fallbackBottomToolbarCornerRadius: CGFloat = fallbackBottomToolbarHeight / 2
+
     private let state: BrowserImagePreviewState
     private var cancellables = Set<AnyCancellable>()
 
@@ -195,9 +201,12 @@ final class ImagePreviewViewController: NSViewController {
         Self.configureBottomToolbarStack(bottomToolbarStack)
         Self.configureCenterOverlayStack(centerOverlayStack)
 
-        self.leftNavigation = LiquidGlassAdaptor.wrappingContent(leftNavStack, cornerRadius: 28)
-        self.rightNavigation = LiquidGlassAdaptor.wrappingContent(rightNavStack, cornerRadius: 28)
-        self.bottomToolbar = LiquidGlassAdaptor.wrappingContent(bottomToolbarStack, cornerRadius: 24)
+        let navigationCornerRadius = SystemUtils.isMacOS26OrLater ? 28 : Self.fallbackNavigationCornerRadius
+        let bottomToolbarCornerRadius = SystemUtils.isMacOS26OrLater ? 24 : Self.fallbackBottomToolbarCornerRadius
+
+        self.leftNavigation = LiquidGlassAdaptor.wrappingContent(leftNavStack, cornerRadius: navigationCornerRadius)
+        self.rightNavigation = LiquidGlassAdaptor.wrappingContent(rightNavStack, cornerRadius: navigationCornerRadius)
+        self.bottomToolbar = LiquidGlassAdaptor.wrappingContent(bottomToolbarStack, cornerRadius: bottomToolbarCornerRadius)
 
         self.state = state
         super.init(nibName: nil, bundle: nil)
@@ -259,13 +268,32 @@ final class ImagePreviewViewController: NSViewController {
         stack.orientation = .horizontal
         stack.alignment = .centerY
         stack.spacing = 0
-        stack.edgeInsets = NSEdgeInsets(top: 0, left: 0, bottom: 0, right: 0)
+        if #available(macOS 26.0, *) {
+            stack.edgeInsets = NSEdgeInsets(top: 0, left: 0, bottom: 0, right: 0)
+        } else {
+            stack.edgeInsets = NSEdgeInsets(
+                top: fallbackControlInset,
+                left: fallbackControlInset,
+                bottom: fallbackControlInset,
+                right: fallbackControlInset
+            )
+        }
     }
 
     private static func configureBottomToolbarStack(_ stack: NSStackView) {
         stack.orientation = .horizontal
         stack.alignment = .centerY
         stack.spacing = 2
+        if #available(macOS 26.0, *) {
+            stack.edgeInsets = NSEdgeInsets(top: 0, left: 0, bottom: 0, right: 0)
+        } else {
+            stack.edgeInsets = NSEdgeInsets(
+                top: fallbackControlInset,
+                left: fallbackControlInset,
+                bottom: fallbackControlInset,
+                right: fallbackControlInset
+            )
+        }
     }
 
     private static func configureCenterOverlayStack(_ stack: NSStackView) {
@@ -325,16 +353,25 @@ final class ImagePreviewViewController: NSViewController {
         leftNavigation.snp.makeConstraints { make in
             make.leading.equalToSuperview().offset(14)
             make.centerY.equalTo(scrollView)
+            if !SystemUtils.isMacOS26OrLater {
+                make.width.height.equalTo(Self.fallbackNavigationContainerSize)
+            }
         }
 
         rightNavigation.snp.makeConstraints { make in
             make.trailing.equalToSuperview().offset(-14)
             make.centerY.equalTo(scrollView)
+            if !SystemUtils.isMacOS26OrLater {
+                make.width.height.equalTo(Self.fallbackNavigationContainerSize)
+            }
         }
 
         bottomToolbar.snp.makeConstraints { make in
             make.centerX.equalToSuperview()
             make.bottom.equalToSuperview().offset(-16)
+            if !SystemUtils.isMacOS26OrLater {
+                make.height.equalTo(Self.fallbackBottomToolbarHeight)
+            }
         }
 
         scrollView.onZoomChanged = { [weak self] scale, fitScale, minScale in

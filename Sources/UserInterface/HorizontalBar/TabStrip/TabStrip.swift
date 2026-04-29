@@ -909,34 +909,14 @@ final class TabStrip: NSView, TitlebarAwareHitTestable {
     }
 
     private func resolveExternalDropTarget(for screenPoint: CGPoint) -> ExternalDropTarget? {
-        let targetPoint = NSPoint(x: screenPoint.x, y: screenPoint.y)
-        let sourceWindowController = unsafeBrowserWindowController
-        let candidates = MainBrowserWindowControllersManager.shared.getAllWindows()
-        guard let targetWindowController = candidates.first(where: {
-            guard let window = $0.window else { return false }
-            guard $0 !== sourceWindowController else { return false }
-            return window.frame.contains(targetPoint)
-        }) else {
+        guard let (targetWindowController, targetStrip) = visibleExternalTabStripTarget(for: screenPoint) else {
             return nil
         }
-
-        if !targetWindowController.browserState.canAcceptCrossWindowDrag(from: browserState) {
-            return nil
-        }
-
-        if let targetStrip = targetWindowController.tabStripView {
-            let target = targetStrip.dropTarget(forScreenPoint: screenPoint)
-            return ExternalDropTarget(
-                windowController: targetWindowController,
-                zone: target.zone,
-                index: target.index
-            )
-        }
-
+        let target = targetStrip.dropTarget(forScreenPoint: screenPoint)
         return ExternalDropTarget(
             windowController: targetWindowController,
-            zone: .normal,
-            index: targetWindowController.browserState.normalTabs.count
+            zone: target.zone,
+            index: target.index
         )
     }
 
@@ -1064,21 +1044,7 @@ final class TabStrip: NSView, TitlebarAwareHitTestable {
 
     private func updateExternalPreviewTarget(screenPoint: CGPoint) {
         guard dragController.context != nil else { return }
-        let point = NSPoint(x: screenPoint.x, y: screenPoint.y)
-        let sourceWindowController = unsafeBrowserWindowController
-        let candidates = MainBrowserWindowControllersManager.shared.getAllWindows()
-        let targetWindowController = candidates.first(where: {
-            guard let window = $0.window else { return false }
-            guard $0 !== sourceWindowController else { return false }
-            return window.frame.contains(point)
-        })
-        let targetStrip: TabStrip?
-        if let targetWindowController,
-           targetWindowController.browserState.canAcceptCrossWindowDrag(from: browserState) {
-            targetStrip = targetWindowController.tabStripView
-        } else {
-            targetStrip = nil
-        }
+        let targetStrip = visibleExternalTabStripTarget(for: screenPoint)?.tabStrip
 
         if externalPreviewTargetStrip !== targetStrip {
             externalPreviewTargetStrip?.clearExternalDragPreview()
@@ -1089,6 +1055,42 @@ final class TabStrip: NSView, TitlebarAwareHitTestable {
             return
         }
         targetStrip.updateExternalDragPreview(screenPoint: screenPoint)
+    }
+
+    private func visibleExternalTabStripTarget(for screenPoint: CGPoint) -> (windowController: MainBrowserWindowController, tabStrip: TabStrip)? {
+        let point = NSPoint(x: screenPoint.x, y: screenPoint.y)
+        let sourceWindowController = unsafeBrowserWindowController
+        let windowManager = MainBrowserWindowControllersManager.shared
+
+        for window in NSApp.orderedWindows where window.frame.contains(point) {
+            guard let windowController = windowManager.findControllerWith(window: window) else {
+                continue
+            }
+            if windowController === sourceWindowController {
+                return nil
+            }
+            guard windowController.browserState.canAcceptCrossWindowDrag(from: browserState),
+                  let tabStrip = windowController.tabStripView,
+                  tabStrip.isInsideDragBoundary(screenPoint) else {
+                return nil
+            }
+            return (windowController, tabStrip)
+        }
+
+        if sourceWindowController?.window?.frame.contains(point) == true {
+            return nil
+        }
+
+        return windowManager.getAllWindows().compactMap { windowController in
+            guard windowController !== sourceWindowController,
+                  windowController.window?.frame.contains(point) == true,
+                  windowController.browserState.canAcceptCrossWindowDrag(from: browserState),
+                  let tabStrip = windowController.tabStripView,
+                  tabStrip.isInsideDragBoundary(screenPoint) else {
+                return nil
+            }
+            return (windowController, tabStrip)
+        }.first
     }
 
     private func clearExternalPreviewTarget() {

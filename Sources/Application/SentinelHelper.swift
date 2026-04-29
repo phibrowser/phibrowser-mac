@@ -119,4 +119,69 @@ enum SentinelHelper {
         }
         return sentinelURL
     }
+
+    // MARK: - Sentinel Log Reader
+
+    /// Reads the tail of Sentinel's `boot.log` (the file Sentinel's
+    /// `SentinelLogger` writes to) capped at `maxBytes`. Used to attach
+    /// Sentinel's recent activity to Phi's forced-logout Sentry events,
+    /// because the underlying `ferrt` is often triggered on the Sentinel
+    /// side while Phi is closed and Phi otherwise has no visibility into
+    /// what happened.
+    ///
+    /// Returns `nil` when:
+    /// - Sentinel has never run on this device (file does not exist),
+    /// - the log directory layout has changed without us updating the path
+    ///   resolution below, or
+    /// - the file system rejected the read (sandbox, permissions).
+    static func recentBootLog(maxBytes: Int = 98_000) -> Data? {
+        let url = bootLogURL()
+        guard FileManager.default.fileExists(atPath: url.path) else {
+            return nil
+        }
+        guard let attrs = try? FileManager.default.attributesOfItem(atPath: url.path),
+              let fileSize = (attrs[.size] as? UInt64).map(Int.init),
+              fileSize > 0 else {
+            return nil
+        }
+
+        let bytesToRead = min(fileSize, maxBytes)
+        let offset = UInt64(fileSize - bytesToRead)
+
+        guard let handle = try? FileHandle(forReadingFrom: url) else {
+            return nil
+        }
+        defer { try? handle.close() }
+
+        do {
+            try handle.seek(toOffset: offset)
+            return try handle.readToEnd()
+        } catch {
+            AppLogError("[SentinelHelper] failed to read sentinel boot.log tail: \(error.localizedDescription)")
+            return nil
+        }
+    }
+
+    private static func bootLogURL() -> URL {
+        FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent("Library", isDirectory: true)
+            .appendingPathComponent("Logs", isDirectory: true)
+            .appendingPathComponent(sentinelLogDirName(), isDirectory: true)
+            .appendingPathComponent("boot.log", isDirectory: false)
+    }
+
+    /// Mirrors `SentinelLogger.logDirName` from the Sentinel project.
+    /// Sentinel resolves its log directory from its OWN bundle ID; Phi's
+    /// bundle ID has the same `.canary.` / `.dev.` channel markers, so we
+    /// can derive the same directory name without any IPC.
+    private static func sentinelLogDirName() -> String {
+        let phiBundleID = Bundle.main.bundleIdentifier?.lowercased() ?? ""
+        if phiBundleID.contains(".dev.") {
+            return "PhiSentinel-Dev"
+        }
+        if phiBundleID.contains(".canary.") {
+            return "PhiSentinel-Canary"
+        }
+        return "PhiSentinel"
+    }
 }

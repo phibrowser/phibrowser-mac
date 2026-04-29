@@ -16,6 +16,8 @@ extension AppController {
     static let layoutModeTraditionalItemTag = 500007
     static let layoutModeTitleItemTag = 500008
     static let whatsNewItemTag = 500009
+    static let bookmarksMenuItemTag = 500010
+    static let bookmarksMenuIdentifier = NSUserInterfaceItemIdentifier("phi.bookmarks.menu")
     
     func startObservingMainMenu() {
         guard let app = NSApplication.shared as NSApplication? else {
@@ -32,7 +34,8 @@ extension AppController {
         guard let mainMenu = NSApp.mainMenu else {
             return
         }
-        
+
+        var hasBookmarksMenu = false
         for menuItem in mainMenu.items {
             if let submenu = menuItem.submenu, menuItem.title == "View" {
                 submenu.items.forEach {
@@ -146,9 +149,10 @@ extension AppController {
             if menuItem.title == "Profiles" || menuItem.tag == 46100 {
                 menuItem.isHidden = true
             } else
-                
-            if menuItem.title == "Bookmarks" || menuItem.tag == 40029 {
-                menuItem.isHidden = true
+
+            if menuItem.title == "Bookmarks" || menuItem.tag == 40029 || menuItem.tag == AppController.bookmarksMenuItemTag {
+                hasBookmarksMenu = true
+                configureBookmarksMenuItem(menuItem)
             } else
             
             if menuItem.title == "Tab", let subMenu = menuItem.submenu {
@@ -196,6 +200,10 @@ extension AppController {
                 subMenu.delegate = self
             }
         }
+
+        if !hasBookmarksMenu {
+            installBookmarksMenu(in: mainMenu)
+        }
         
         if mainMenu.items.first(where: { $0.title == "*DEBUG*" }) == nil {
             let item = buildDebugMenuItem()
@@ -207,6 +215,67 @@ extension AppController {
             }
             #endif // DEBUG || NIGHTLY_BUILD
         }
+    }
+
+    private func configureBookmarksMenuItem(_ menuItem: NSMenuItem) {
+        menuItem.title = NSLocalizedString("Bookmarks", comment: "Main menu - Top-level Bookmarks menu title in the application menu bar")
+        menuItem.tag = AppController.bookmarksMenuItemTag
+        menuItem.isHidden = false
+
+        let submenu = menuItem.submenu ?? NSMenu(title: menuItem.title)
+        submenu.identifier = AppController.bookmarksMenuIdentifier
+        submenu.delegate = self
+        menuItem.submenu = submenu
+
+        rebuildBookmarksMenu(submenu)
+    }
+
+    private func installBookmarksMenu(in mainMenu: NSMenu) {
+        let menuItem = NSMenuItem(
+            title: NSLocalizedString("Bookmarks", comment: "Main menu - Top-level Bookmarks menu title in the application menu bar"),
+            action: nil,
+            keyEquivalent: ""
+        )
+        menuItem.tag = AppController.bookmarksMenuItemTag
+        configureBookmarksMenuItem(menuItem)
+
+        if let historyIndex = mainMenu.items.firstIndex(where: { $0.title == "History" }) {
+            mainMenu.insertItem(menuItem, at: historyIndex + 1)
+        } else if let windowIndex = mainMenu.items.firstIndex(where: { $0.title == "Window" }) {
+            mainMenu.insertItem(menuItem, at: windowIndex)
+        } else {
+            mainMenu.addItem(menuItem)
+        }
+    }
+
+    private func rebuildBookmarksMenu(_ menu: NSMenu) {
+        let bookmarks = MainBrowserWindowControllersManager.shared.activeWindowController?.browserState.bookmarkManager.rootFolder.children ?? []
+
+        BookmarkMenuContentBuilder.populate(
+            menu: menu,
+            bookmarks: bookmarks,
+            canBookmarkCurrentTab: canBookmarkCurrentTab(),
+            canBookmarkAllTabs: canBookmarkAllTabs(),
+            target: self,
+            bookmarkThisTabAction: #selector(bookmarkThisTab(_:)),
+            bookmarkAllTabsAction: #selector(bookmarkAllTabs(_:)),
+            openBookmarkAction: #selector(openBookmarkMenuItem(_:))
+        )
+    }
+
+    private func canBookmarkCurrentTab() -> Bool {
+        guard let tab = MainBrowserWindowControllersManager.shared.activeWindowController?.browserState.focusingTab,
+              let url = tab.url,
+              !url.isEmpty else {
+            return false
+        }
+
+        return true
+    }
+
+    private func canBookmarkAllTabs() -> Bool {
+        let bookmarkableTabsCount = MainBrowserWindowControllersManager.shared.activeWindowController?.browserState.normalTabs.filter { !$0.isLocalPage }.count ?? 0
+        return bookmarkableTabsCount > 1
     }
     
     @objc func toggleSidebar(_ sender: Any?) {
@@ -225,6 +294,35 @@ extension AppController {
     @objc func toggleBookmarkBarOnNewTab(_ sender: Any?) {
         let currentValue = PhiPreferences.GeneralSettings.showBookmarkBarOnNewTabPage.loadValue()
         UserDefaults.standard.set(!currentValue, forKey: PhiPreferences.GeneralSettings.showBookmarkBarOnNewTabPage.rawValue)
+    }
+
+    @objc func bookmarkThisTab(_ sender: Any?) {
+        MainBrowserWindowControllersManager.shared.activeWindowController?.toggleBookmark(sender)
+    }
+
+    @objc func bookmarkAllTabs(_ sender: Any?) {
+        guard let state = MainBrowserWindowControllersManager.shared.activeWindowController?.browserState else {
+            return
+        }
+
+        let tabs = state.normalTabs
+        guard !tabs.isEmpty else { return }
+        for tab in tabs {
+            if tab.isLocalPage { continue }
+            let title = tab.title.isEmpty ? (tab.url ?? "") : tab.title
+            let url = tab.url ?? ""
+            guard !url.isEmpty else { continue }
+            state.bookmarkManager.addBookmark(title: title, url: url)
+        }
+    }
+
+    @objc func openBookmarkMenuItem(_ sender: Any?) {
+        guard let item = sender as? NSMenuItem,
+              let bookmark = item.representedObject as? Bookmark else {
+            return
+        }
+
+        MainBrowserWindowControllersManager.shared.activeWindowController?.browserState.openBookmark(bookmark)
     }
 
     @objc func selectLayoutMode(_ sender: Any?) {
@@ -368,6 +466,19 @@ extension AppController {
                 return true
             }
         }
+        if item.action == #selector(bookmarkThisTab(_:)) {
+            return canBookmarkCurrentTab()
+        }
+        if item.action == #selector(bookmarkAllTabs(_:)) {
+            return canBookmarkAllTabs()
+        }
+        if item.action == #selector(openBookmarkMenuItem(_:)) {
+            guard let menuItem = item as? NSMenuItem,
+                  let bookmark = menuItem.representedObject as? Bookmark else {
+                return false
+            }
+            return !bookmark.isFolder
+        }
         let isLoggedIn = LoginController.shared.isLoggedin()
         if !isLoggedIn {
             let allowedActions: [Selector] = [
@@ -400,6 +511,11 @@ extension AppController {
 // MARK: - NSMenuDelegate for Help menu Option key handling
 extension AppController: NSMenuDelegate {
     func menuWillOpen(_ menu: NSMenu) {
+        if menu.identifier == AppController.bookmarksMenuIdentifier {
+            rebuildBookmarksMenu(menu)
+            return
+        }
+
         let optionKeyPressed = NSEvent.modifierFlags.contains(.option)
         if let extensionInfoItem = menu.item(withTag: AppController.extensionInfoItemTag) {
             extensionInfoItem.isHidden = !optionKeyPressed

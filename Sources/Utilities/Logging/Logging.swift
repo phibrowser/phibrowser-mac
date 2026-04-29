@@ -132,3 +132,31 @@ public func AppLogPerformance(_ operation: String, duration: TimeInterval, file:
 public func AppLogMemoryWarning(_ message: String = "Memory warning received", file: StaticString = #file, function: StaticString = #function, line: UInt = #line) {
     DDLogWarn("🧠 \(message)", file: file, function: function, line: line)
 }
+
+// MARK: - SharedAuthTokenStore Bridge
+
+/// Routes diagnostics from the shared (between Phi and Sentinel) keychain
+/// store into Phi's `AppLog*` facade. Set `SharedAuthTokenStore.shared.logDelegate
+/// = SharedAuthTokenStoreLogBridge.shared` once at startup before any auth-related
+/// flow runs (login, renew, recovery), and the store's keychain errors will
+/// land in the same CocoaLumberjack-backed log file as everything else.
+final class SharedAuthTokenStoreLogBridge: SharedAuthTokenStoreLogDelegate {
+    static let shared = SharedAuthTokenStoreLogBridge()
+
+    private init() {}
+
+    func sharedAuthTokenStore(
+        _ store: SharedAuthTokenStore,
+        log level: SharedAuthTokenStoreLogLevel,
+        _ message: String
+    ) {
+        switch level {
+        case .info:
+            AppLogInfo(message)
+        case .warning:
+            AppLogWarn(message)
+        case .error:
+            AppLogError(message)
+        }
+    }
+}

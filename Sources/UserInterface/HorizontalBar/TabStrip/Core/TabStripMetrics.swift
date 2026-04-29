@@ -22,7 +22,7 @@ enum TabStripMetrics {
     // Dimensions and spacing for regular tabs.
     enum Tab {
         static let spacing: CGFloat = 2
-        static let idealWidth: CGFloat = 160
+        static let idealWidth: CGFloat = 180
         static let minWidth: CGFloat = 36
         static let activeMinWidth: CGFloat = 100
         static let cornerRadius: CGFloat = 8

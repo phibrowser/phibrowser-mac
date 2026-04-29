@@ -32,6 +32,22 @@ import Sentry
             options.enableCaptureFailedRequests = false
             options.enableAutoPerformanceTracing = false
             options.enableAppHangTracking = false
+            options.enableMetricKit = true
+            options.enableMetricKitRawPayload = true
+            
+            options.beforeSend = { event in
+                let isMetricKitDiskWrite =
+                event.exceptions?.contains {
+                    $0.type == "MXDiskWriteException" ||
+                    $0.type == "MXDiskWriteExceptionDiagnostic"
+                } == true
+                
+                if isMetricKitDiskWrite {
+                    return nil
+                }
+                
+                return event
+            }
             
             options.initialScope = { scope in
                 // Attach recent logs up front because startup may immediately report a previous crash.
@@ -108,6 +124,14 @@ import Sentry
             scope.setExtra(value: trace, key: "auth_trace")
             if let data = trace.data(using: .utf8) {
                 scope.addAttachment(Attachment(data: data, filename: "auth-trace.txt"))
+            }
+            // Sentinel can trigger `ferrt` while Phi is closed (the renew runs
+            // out-of-process every few minutes when Phi is offline). Attaching
+            // the tail of Sentinel's `boot.log` lets post-mortem see the
+            // out-of-process events that led up to the logout, which Phi's
+            // own auth trace cannot capture.
+            if let sentinelLogData = SentinelHelper.recentBootLog() {
+                scope.addAttachment(Attachment(data: sentinelLogData, filename: "sentinel-boot.log"))
             }
         }
     }

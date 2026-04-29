@@ -203,6 +203,7 @@
 		CC288A6B2E4F12EC004A6C1C /* SidebarHeaderView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC288A6A2E4F12EC004A6C1C /* SidebarHeaderView.swift */; };
 		CC288A8A2E5333CC004A6C1C /* main.m in Sources */ = {isa = PBXBuildFile; fileRef = CC288A892E5333CC004A6C1C /* main.m */; };
 		CC288A8C2E534230004A6C1C /* AppController+Menu.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC288A8B2E534230004A6C1C /* AppController+Menu.swift */; };
+		37DD11022F9D111100000001 /* BookmarkMenuContentBuilder.swift in Sources */ = {isa = PBXBuildFile; fileRef = 37DD11012F9D111100000001 /* BookmarkMenuContentBuilder.swift */; };
 		CC293E462E8A7BD4009FECA5 /* Dependencies in Frameworks */ = {isa = PBXBuildFile; productRef = CC293E452E8A7BD4009FECA5 /* Dependencies */; };
 		CC35D7942E7271CE00E1A970 /* LiquidGlassCompatible.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC35D7932E7271CE00E1A970 /* LiquidGlassCompatible.swift */; };
 		CC376CDA2EC5ED4100270B93 /* AISettingsViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC376CD72EC5ED4100270B93 /* AISettingsViewController.swift */; };
@@ -567,6 +568,7 @@
 		CC288A6A2E4F12EC004A6C1C /* SidebarHeaderView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SidebarHeaderView.swift; sourceTree = "<group>"; };
 		CC288A892E5333CC004A6C1C /* main.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = main.m; sourceTree = "<group>"; };
 		CC288A8B2E534230004A6C1C /* AppController+Menu.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AppController+Menu.swift"; sourceTree = "<group>"; };
+		37DD11012F9D111100000001 /* BookmarkMenuContentBuilder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BookmarkMenuContentBuilder.swift; sourceTree = "<group>"; };
 		CC288AA82E55824A004A6C1C /* PhiChromiumBridgeHeader.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = PhiChromiumBridgeHeader.h; sourceTree = "<group>"; };
 		CC35D7932E7271CE00E1A970 /* LiquidGlassCompatible.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiquidGlassCompatible.swift; sourceTree = "<group>"; };
 		CC376CD72EC5ED4100270B93 /* AISettingsViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AISettingsViewController.swift; sourceTree = "<group>"; };
@@ -1283,6 +1285,7 @@
 				B02586F32E42FD97001B08FC /* PhiApplication.m */,
 				B02586F02E42FD97001B08FC /* AppController.swift */,
 				CC288A8B2E534230004A6C1C /* AppController+Menu.swift */,
+				37DD11012F9D111100000001 /* BookmarkMenuContentBuilder.swift */,
 				CCDEC82E2E83D6B200D91BE9 /* AppController+Sparkle.swift */,
 				CC98F8A12E8BCE0900DAD237 /* AppController+Settings.swift */,
 				CC8B76B02EA8D7B70075F58C /* AppController+Debug.swift */,
@@ -1951,6 +1954,7 @@
 				370D03B92F0E4BFC0087A1C9 /* ThemeExample.swift in Sources */,
 				CC71BABB2E9E40A9006C7238 /* OmniBoxSuggestionCellView.swift in Sources */,
 				CC288A8C2E534230004A6C1C /* AppController+Menu.swift in Sources */,
+				37DD11022F9D111100000001 /* BookmarkMenuContentBuilder.swift in Sources */,
 				B02587122E43038B001B08FC /* Tab.swift in Sources */,
 				8E9DAF422F765E83004EA160 /* PasswordManagerViewController.swift in Sources */,
 				CCBF8F502E65445800B9A99E /* SidebarTabListViewController.swift in Sources */,

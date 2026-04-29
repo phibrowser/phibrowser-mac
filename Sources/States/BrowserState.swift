@@ -909,7 +909,7 @@ class BrowserState {
     }
     
     func createTab(_ url: String?, customGuid: String? = nil, focusAfterCreate: Bool = true) {
-        AppLogInfo("🪟 [Restore] createTab request windowId=\(windowId) focus=\(focusAfterCreate) url=\(url ?? "") customGuid=\(customGuid ?? "nil")")
+        AppLogDebug("🪟 [Restore] createTab request windowId=\(windowId) focus=\(focusAfterCreate) url=\(url ?? "") customGuid=\(customGuid ?? "nil")")
         let focusingTabText = focusingTab?.guid ?? -1
         AppLogDebug(
             "[NativeTab] mac createTab " +

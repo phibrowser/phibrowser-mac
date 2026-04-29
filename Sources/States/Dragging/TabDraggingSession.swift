@@ -325,7 +325,7 @@ final class TabDraggingSession {
 
     private func shouldUsePageSnapshotPreview(for screenLocation: CGPoint) -> Bool {
         if dragBoundaryContainerView != nil {
-            return !isInsideContainerBoundary(screenLocation) && !isInsideAnyOtherBrowserWindow(screenLocation)
+            return !isInsideContainerBoundary(screenLocation) && !isInsideAnyOtherBrowserTabDragBoundary(screenLocation)
         }
         return !isInsideAnyBrowserWindow(screenLocation)
     }
@@ -349,7 +349,7 @@ final class TabDraggingSession {
         return sourceWindow?.frame.contains(point) == true
     }
 
-    private func isInsideAnyOtherBrowserWindow(_ screenLocation: CGPoint) -> Bool {
+    private func isInsideAnyOtherBrowserTabDragBoundary(_ screenLocation: CGPoint) -> Bool {
         let point = NSPoint(x: screenLocation.x, y: screenLocation.y)
         let sourceWindowNumber = sourceWindow?.windowNumber
         let windows = MainBrowserWindowControllersManager.shared.getAllWindows()
@@ -359,7 +359,7 @@ final class TabDraggingSession {
                 if let sourceWindowNumber, window.windowNumber == sourceWindowNumber {
                     return false
                 }
-                return window.frame.contains(point)
+                return window.frame.contains(point) && controller.containsTabDragBoundary(at: screenLocation)
             }
         }
         return false

@@ -148,13 +148,18 @@ extension AppController {
             
             if menuItem.title == "Profiles" || menuItem.tag == 46100 {
                 menuItem.isHidden = true
-            } else
+            }
 
-            if menuItem.title == "Bookmarks" || menuItem.tag == 40029 || menuItem.tag == AppController.bookmarksMenuItemTag {
+            switch BookmarkMainMenuItemRouting.action(title: menuItem.title, tag: menuItem.tag) {
+            case .configureCustomItem:
                 hasBookmarksMenu = true
                 configureBookmarksMenuItem(menuItem)
-            } else
-            
+            case .hideSystemItem:
+                menuItem.isHidden = true
+            case .ignore:
+                break
+            }
+
             if menuItem.title == "Tab", let subMenu = menuItem.submenu {
                 let hiddenTitles = ["Pin Tab", "Group Tab", "Move Tab to New Window", "Close Other Tabs", "Close Tabs to the Right"]
                 subMenu.items.forEach { item in

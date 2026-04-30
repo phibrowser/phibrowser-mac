@@ -140,3 +140,22 @@ struct BookmarkMenuContentBuilder {
         return image
     }
 }
+
+
+enum BookmarkMainMenuItemRouting: Equatable {
+    case configureCustomItem
+    case hideSystemItem
+    case ignore
+
+    static func action(title: String, tag: Int) -> Self {
+        if tag == AppController.bookmarksMenuItemTag {
+            return .configureCustomItem
+        }
+
+        if title == "Bookmarks" || tag == 40029 {
+            return .hideSystemItem
+        }
+
+        return .ignore
+    }
+}

@@ -101,7 +101,8 @@ class AccountSettingViewController: NSViewController, SettingsPane {
         // Check if user is logged in before loading data
         let isLoggedIn = LoginController.shared.isLoggedin()
         AppLogDebug("👁️ [AccountSettings] Login status check: \(isLoggedIn)")
-        
+        updateReauthenticationWarning()
+
         guard isLoggedIn else {
             AppLogDebug("👁️ [AccountSettings] Not logged in, skipping data load")
             return
@@ -148,7 +149,7 @@ class AccountSettingViewController: NSViewController, SettingsPane {
         rightContainer.addSubview(accountView)
         accountView.snp.makeConstraints { make in
             make.top.left.right.equalToSuperview()
-            make.height.equalTo(80)
+            make.height.equalTo(92)
         }
 
         // Default browser section
@@ -195,6 +196,8 @@ class AccountSettingViewController: NSViewController, SettingsPane {
                 await self?.accountViewModel.logout()
             }
         }
+
+        updateReauthenticationWarning()
     }
 
     private func openAvatarEditor() {
@@ -236,6 +239,19 @@ class AccountSettingViewController: NSViewController, SettingsPane {
                 AccountController.shared.account?.userDefaults.set(name, forKey: .cachedUserName)
             }
             .store(in: &cancellables)
+
+        NotificationCenter.default.publisher(for: .authReauthenticationStateDidChange)
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in
+                self?.updateReauthenticationWarning()
+            }
+            .store(in: &cancellables)
+    }
+
+    private func updateReauthenticationWarning() {
+        accountView.updateReauthenticationWarning(
+            isVisible: AuthManager.shared.requiresReauthentication
+        )
     }
 }
 
@@ -732,6 +748,26 @@ class AccountCardView: SettingItemBackgroundView {
         return tf
     }()
 
+    private let reauthenticationWarningLabel: NSTextField = {
+        let tf = NSTextField(labelWithString: NSLocalizedString(
+            "Reauthentication needed.",
+            comment: "Account settings - Warning shown when account tokens require reauthentication"
+        ))
+        tf.font = .systemFont(ofSize: 11, weight: .medium)
+        tf.textColor = .systemOrange
+        tf.lineBreakMode = .byTruncatingTail
+        tf.maximumNumberOfLines = 1
+        tf.isEditable = false
+        tf.isBordered = false
+        tf.drawsBackground = false
+        tf.isHidden = true
+        tf.toolTip = NSLocalizedString(
+            "Please reauthenticate to restore account features.",
+            comment: "Account settings - Tooltip explaining why reauthentication is needed"
+        )
+        return tf
+    }()
+
     private let logoutButton: NSButton = {
         let btn = NSButton()
         btn.title = NSLocalizedString("Logout", comment: "Account settings - Logout button")
@@ -758,6 +794,7 @@ class AccountCardView: SettingItemBackgroundView {
     private var isAvatarHovered = false
     private var isNameHovered = false
     private var canEdit = false
+    private var showsReauthenticationWarning = false
     private var avatarRevalidateTask: DownloadTask?
 
     private static let maxUserNameLength = 100
@@ -864,6 +901,13 @@ class AccountCardView: SettingItemBackgroundView {
             make.right.lessThanOrEqualTo(logoutButton.snp.left).offset(-8)
         }
 
+        addSubview(reauthenticationWarningLabel)
+        reauthenticationWarningLabel.snp.makeConstraints { make in
+            make.left.equalTo(emailLabel)
+            make.top.equalTo(emailLabel.snp.bottom).offset(2)
+            make.right.lessThanOrEqualTo(logoutButton.snp.left).offset(-8)
+        }
+
         setupTrackingAreas()
     }
 
@@ -952,13 +996,20 @@ class AccountCardView: SettingItemBackgroundView {
             logoutButton.isHidden = true
             nameLabel.isHidden = true
             emailLabel.isHidden = true
+            reauthenticationWarningLabel.isHidden = true
         } else {
             loadingIndicator.stopAnimation(nil)
             loadingIndicator.isHidden = true
             logoutButton.isHidden = false
             nameLabel.isHidden = false
             emailLabel.isHidden = false
+            reauthenticationWarningLabel.isHidden = !showsReauthenticationWarning
         }
+    }
+
+    func updateReauthenticationWarning(isVisible: Bool) {
+        showsReauthenticationWarning = isVisible
+        reauthenticationWarningLabel.isHidden = !isVisible || !loadingIndicator.isHidden
     }
 
     // MARK: Avatar revalidation

@@ -138,8 +138,8 @@ class AuthManager {
     // skip importing a fresher Sentinel-written token after Phi had a recent failed renew,
     // which leaves the local Auth0 SDK with a rotated (stale) refresh token.
     private var lastSuccessfulSyncAt: Date?
-    private let renewCooldown: TimeInterval = 60 * 60 // 1 hour
-    private let renewUrgentWindow: TimeInterval = 30 * 60 // 30 minutes before expiry
+    private let renewCooldown: TimeInterval = 60 /** 60*/ // 1 hour
+    private let renewUrgentWindow: TimeInterval = 30 * 60 * 10000 // 30 minutes before expiry
 
     private var isRenewing = false
     private let failureTrace = AuthFailureTraceBuffer()
@@ -147,6 +147,15 @@ class AuthManager {
     // does not produce one event per concurrent caller.
     private var lastForcedLogoutReportAt: Date?
     private let forcedLogoutReportDedupeWindow: TimeInterval = 5 * 60
+    var reauthenticationState: AuthReauthenticationState = .normal {
+        didSet {
+            guard oldValue != reauthenticationState else { return }
+            NotificationCenter.default.post(name: .authReauthenticationStateDidChange, object: nil)
+        }
+    }
+    let reauthenticationPolicy: AuthReauthenticationPolicy = .default
+    var isPresentingReauthenticationPrompt = false
+    var hasPersistedReauthenticationState = false
 
     // Periodic renew timer: checks whether credentials are close enough to expiry to renew.
     private var renewTimer: Timer?
@@ -206,6 +215,8 @@ class AuthManager {
             self.currentCredentials = results
             self.lastRenewAttemptAt = Date()
             self.lastForcedLogoutReportAt = nil
+            self.reauthenticationState = .normal
+            self.clearPersistedReauthenticationState()
             // Bump `lastSuccessfulSyncAt` only when shared store actually accepted
             // the new credentials. Otherwise launch-time recovery would think the
             // shared store is in sync with us and skip importing a token written
@@ -238,6 +249,8 @@ class AuthManager {
             lastRenewAttemptAt = nil
             lastSuccessfulSyncAt = nil
             lastForcedLogoutReportAt = nil
+            reauthenticationState = .normal
+            clearPersistedReauthenticationState()
             currentCredentials = nil
             SharedAuthTokenStore.shared.clear()
             await stopRenewTimer()
@@ -253,6 +266,17 @@ class AuthManager {
     
     func refreshAuthStatus() async {
         recordTrace("refresh-auth-status-started")
+        await MainActor.run {
+            hydrateAccountForReauthenticationIfNeeded()
+            restorePersistedReauthenticationStateIfNeeded(
+                promptIfDue: true,
+                trigger: "launch"
+            )
+        }
+        if hasReauthenticationGraceSession() {
+            recordTrace("refresh-auth-status-skipped-reauthentication-required")
+            return
+        }
         // `getActiveCredentials()` itself performs shared-store recovery on cache miss;
         // calling `recoverFromSharedStoreIfNeeded` again here would just double-acquire
         // the cross-process lock for no benefit.
@@ -274,6 +298,10 @@ class AuthManager {
             return false
         }
 #endif
+        if hasReauthenticationGraceSession(),
+           LoginController.shared.phase == .done {
+            return true
+        }
         return credentialManager.canRenew()
     }
     
@@ -283,6 +311,11 @@ class AuthManager {
             return nil
         }
 #endif
+        if hasReauthenticationGraceSession() {
+            recordTrace("active-credentials-skipped-reauthentication-required")
+            return nil
+        }
+
         if let currentCredentials,
            currentCredentials.expiresIn.timeIntervalSinceNow > 0 {
             return currentCredentials
@@ -351,7 +384,8 @@ class AuthManager {
         // on the main actor, so the (`phase == .done`, `currentCredentials != nil`)
         // pair is a reliable proxy for "user is logged in" without paying for
         // the keychain reads inside `canRenew()` / `credentialManager.user`.
-        if LoginController.shared.phase == .done, currentCredentials != nil {
+        if LoginController.shared.phase == .done,
+           (currentCredentials != nil || hasReauthenticationGraceSession()) {
             return true
         }
 
@@ -361,8 +395,16 @@ class AuthManager {
 
         if let storedUserInfo = credentialManager.user {
             LoginController.shared.initAcoountWithUserInfo(storedUserInfo)
+            restorePersistedReauthenticationStateIfNeeded(
+                promptIfDue: true,
+                trigger: "chromium_launch"
+            )
         } else if let currentCredentials {
             LoginController.shared.initAccountIfNeeded(currentCredentials)
+            restorePersistedReauthenticationStateIfNeeded(
+                promptIfDue: true,
+                trigger: "chromium_launch"
+            )
         } else {
             return false
         }
@@ -371,6 +413,11 @@ class AuthManager {
     }
     
     func getAccessTokenSyncly() -> String? {
+        if hasReauthenticationGraceSession() {
+            recordTrace("access-token-syncly-skipped-reauthentication-required")
+            return nil
+        }
+
         // Hot path: Chromium calls this multiple times per second to attach
         // bearer tokens to outgoing requests. When the in-memory access token
         // is still valid we answer entirely from memory — no keychain
@@ -451,6 +498,11 @@ class AuthManager {
         }
 
         let preflight = await MainActor.run { () -> RenewPreflightDecision in
+            if hasReauthenticationGraceSession() {
+                recordTrace("renew-skipped", details: ["reason": "reauthentication_required"])
+                AppLogInfo("[TokenRenew] skip renew: reauthentication is required")
+                return .skip
+            }
             if isRenewing {
                 recordTrace("renew-skipped", details: ["reason": "already_in_progress"])
                 AppLogDebug("[TokenRenew] skip renew: already in progress")
@@ -670,6 +722,8 @@ class AuthManager {
                         if let synced = syncedCredentials, synced.1 {
                             self.lastSuccessfulSyncAt = Date()
                         }
+                        self.reauthenticationState = .normal
+                        self.clearPersistedReauthenticationState()
                         self.recordTrace("renew-succeeded", details: self.credentialSnapshotDetails())
                         AppLogInfo("[TokenRenew] renew successful, expires at: \(credentials.expiresIn)")
                         self.isRenewing = false
@@ -707,14 +761,19 @@ class AuthManager {
                 underlyingError: managerError.cause?.localizedDescription
             )
             recordTrace("credentials-failure", details: details)
-            if shouldTransitionToLoggedOutState(for: managerError) {
+
+            let reauthenticationReason = reauthenticationReason(for: managerError)
+
+            if hasReauthenticationGraceSession(),
+               reauthenticationReason != nil {
                 recordTrace(
-                    "transition-to-logged-out",
-                    details: ["reason": failureReason, "operation": operation],
-                    callStackSymbols: Array(Thread.callStackSymbols.prefix(16))
+                    "credentials-failure-ignored-during-reauthentication",
+                    details: ["reason": failureReason, "operation": operation]
                 )
-                reportForcedLogoutIfNeeded(operation: operation, reason: failureReason, details: details)
-                transitionToLoggedOutState()
+            } else if let reauthenticationReason {
+                Task { @MainActor [weak self] in
+                    self?.enterReauthenticationRequiredState(reason: reauthenticationReason)
+                }
             }
             if let cause = managerError.cause {
                 AppLogError("\(operation) failed: \(managerError.debugDescription) underlying error: \(cause.localizedDescription)")
@@ -757,21 +816,22 @@ class AuthManager {
         )
     }
 
-    private func shouldTransitionToLoggedOutState(for managerError: CredentialsManagerError) -> Bool {
-        if CredentialsManagerError.noCredentials ~= managerError ||
-            CredentialsManagerError.noRefreshToken ~= managerError {
-            return true
-        }
-
+    private func reauthenticationReason(for managerError: CredentialsManagerError) -> AuthReauthenticationReason? {
         guard CredentialsManagerError.renewFailed ~= managerError,
               let authError = managerError.cause as? AuthenticationError else {
-            return false
+            return nil
         }
 
-        return authError.isInvalidRefreshToken || authError.isRefreshTokenDeleted
+        if authError.isInvalidRefreshToken {
+            return .invalidRefreshToken
+        }
+        if authError.isRefreshTokenDeleted {
+            return .refreshTokenDeleted
+        }
+        return nil
     }
 
-    private func transitionToLoggedOutState() {
+    func transitionToLoggedOutState() {
         Task { @MainActor [weak self] in
             guard let self else { return }
             AppLogInfo("transition auth state to login: clearing local credentials after unrecoverable session loss")
@@ -780,6 +840,8 @@ class AuthManager {
             self.currentCredentials = nil
             self.lastRenewAttemptAt = nil
             self.lastSuccessfulSyncAt = nil
+            self.reauthenticationState = .normal
+            self.clearPersistedReauthenticationState()
             self.stopRenewTimer()
             self.stopHeartbeat()
             LoginController.shared.phase = .login
@@ -856,6 +918,56 @@ class AuthManager {
     func clearLocalCredentials() {
         _ = credentialManager.clear()
         SharedAuthTokenStore.shared.clear()
+    }
+
+    @MainActor
+    func pauseRenewalForReauthentication() {
+        stopRenewTimer()
+    }
+
+    @MainActor
+    func storeReauthenticatedCredentials(_ credentials: Credentials) -> Bool {
+        guard reauthenticatedCredentialsMatchCurrentAccount(credentials) else {
+            recordTrace("reauthentication-user-mismatch")
+            return false
+        }
+
+        _ = credentialManager.store(credentials: credentials)
+        currentCredentials = credentials
+        lastRenewAttemptAt = Date()
+        lastForcedLogoutReportAt = nil
+        if syncSharedTokens(credentials, renewedBy: "phi-reauthentication") {
+            lastSuccessfulSyncAt = Date()
+        }
+        startRenewTimer()
+        startHeartbeat()
+        writeSharedAuth0Config()
+        return true
+    }
+
+    @MainActor
+    func hydrateAccountForReauthenticationIfNeeded() {
+        guard AccountController.shared.account == nil,
+              let storedUserInfo = credentialManager.user else {
+            return
+        }
+
+        LoginController.shared.initAcoountWithUserInfo(storedUserInfo)
+    }
+
+    @MainActor
+    func reauthenticatedCredentialsMatchCurrentAccount(_ credentials: Credentials) -> Bool {
+        let user = Self.retriveUserInfo(from: credentials)
+        guard let newUserID = user.sub else {
+            return false
+        }
+
+        if let currentUserID = AccountController.shared.account?.userID {
+            return currentUserID == newUserID
+        }
+
+        LoginController.shared.initAccountIfNeeded(credentials)
+        return AccountController.shared.account?.userID == newUserID
     }
 
     func recoverFromSharedStoreIfNeeded() async {
@@ -1098,7 +1210,7 @@ class AuthManager {
         return ok
     }
 
-    private func recordTrace(
+    func recordTrace(
         _ event: String,
         details: [String: String] = [:],
         fileID: String = #fileID,
@@ -1213,7 +1325,7 @@ class AuthManager {
         return details
     }
 
-    private func credentialSnapshotDetails() -> [String: String] {
+    func credentialSnapshotDetails() -> [String: String] {
         var details: [String: String] = [
             "isRenewing": boolString(isRenewing),
             "canRenew": boolString(credentialManager.canRenew()),
@@ -1251,7 +1363,7 @@ class AuthManager {
         ]
     }
 
-    private func iso8601String(_ date: Date?) -> String {
+    func iso8601String(_ date: Date?) -> String {
         guard let date else { return "nil" }
         return ISO8601DateFormatter().string(from: date)
     }

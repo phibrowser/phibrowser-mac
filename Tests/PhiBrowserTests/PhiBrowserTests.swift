@@ -8,6 +8,32 @@ import AppKit
 @testable import Phi
 
 final class PhiBrowserTests: XCTestCase {
+    func testBookmarkMainMenuItemRoutingKeepsChromiumBookmarksItemUntouched() {
+        let action = BookmarkMainMenuItemRouting.action(
+            title: "Bookmarks",
+            tag: 40029
+        )
+
+        XCTAssertEqual(
+            action,
+            .hideSystemItem,
+            "The Chromium-owned Bookmarks menu item must stay discoverable by IDC_BOOKMARKS_MENU so AppController should only hide it instead of repurposing it as the native custom Bookmarks menu."
+        )
+    }
+
+    func testBookmarkMainMenuItemRoutingRecognizesCustomBookmarksItem() {
+        let action = BookmarkMainMenuItemRouting.action(
+            title: "Bookmarks",
+            tag: AppController.bookmarksMenuItemTag
+        )
+
+        XCTAssertEqual(
+            action,
+            .configureCustomItem,
+            "The native Phi Bookmarks item should be the only menu item that gets reconfigured and rebuilt."
+        )
+    }
+
     func testBookmarkMenuContentBuilderAddsBookmarkThisTabAndRecursiveBookmarks() {
         let rootBookmark = Bookmark(title: "Phi", url: "https://phibrowser.com")
         let folder = Bookmark(folderTitle: "Favorites")
@@ -236,6 +262,48 @@ final class PhiBrowserTests: XCTestCase {
             "Trace lines for forced-logout transitions must include the captured call stack so refresh-token reuse incidents can be correlated to the triggering caller."
         )
         XCTAssertTrue(rendered.contains("Phi  AuthManager.renew"))
+    }
+
+    func testAuthReauthenticationPolicyAllowsDeferralBeforeHardLimits() {
+        let policy = AuthReauthenticationPolicy(
+            maxPromptDeferrals: 3,
+            maxOfflineDuration: 7 * 24 * 60 * 60,
+            promptIntervals: [
+                10.0 * 60,
+                60.0 * 60
+            ]
+        )
+        let detectedAt = Date(timeIntervalSince1970: 1_713_600_000)
+
+        XCTAssertFalse(
+            policy.shouldForceLogin(
+                firstDetectedAt: detectedAt,
+                promptDeferrals: 2,
+                now: detectedAt.addingTimeInterval(6 * 24 * 60 * 60)
+            ),
+            "Users who have deferred fewer than three prompts and have been degraded for less than seven days should be allowed to keep browsing."
+        )
+        XCTAssertTrue(
+            policy.shouldForceLogin(
+                firstDetectedAt: detectedAt,
+                promptDeferrals: 3,
+                now: detectedAt.addingTimeInterval(60)
+            ),
+            "After three explicit deferrals, token-gated features should require a real login instead of leaving the session degraded forever."
+        )
+        XCTAssertTrue(
+            policy.shouldForceLogin(
+                firstDetectedAt: detectedAt,
+                promptDeferrals: 0,
+                now: detectedAt.addingTimeInterval(7 * 24 * 60 * 60 + 1)
+            ),
+            "A degraded auth session older than seven days should require login even if the user was not repeatedly prompted."
+        )
+
+        let firstRetryAt = policy.nextPromptAt(afterDeferrals: 1, now: detectedAt)
+        XCTAssertEqual(firstRetryAt, detectedAt.addingTimeInterval(10 * 60))
+        XCTAssertFalse(policy.canPrompt(nextPromptAt: firstRetryAt, now: detectedAt.addingTimeInterval(9 * 60)))
+        XCTAssertTrue(policy.canPrompt(nextPromptAt: firstRetryAt, now: detectedAt.addingTimeInterval(10 * 60)))
     }
 
     func testOmniBoxSearchCoordinatorSuppressesOnlyTheNextAutomaticSearchAfterPrefill() {

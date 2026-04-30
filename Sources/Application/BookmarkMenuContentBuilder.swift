@@ -141,7 +141,6 @@ struct BookmarkMenuContentBuilder {
     }
 }
 
-
 enum BookmarkMainMenuItemRouting: Equatable {
     case configureCustomItem
     case hideSystemItem

@@ -585,6 +585,9 @@
     "Keep" : {
       "comment" : "Download item row - Tooltip for keep button on safety warning\nTooltip for keep button on safety warning in living downloads toast"
     },
+    "Later" : {
+      "comment" : "Auth reauthentication - Secondary action to defer Auth0 web authentication"
+    },
     "Launch Phi Sentinel automatically at login" : {
       "comment" : "AI settings - Toggle to auto-launch Phi Sentinel at system login"
     },
@@ -777,6 +780,9 @@
     "Phi needs Full Disk Access to import your data from Safari." : {
       "comment" : "Import browser data page - Description explaining why Full Disk Access permission is needed"
     },
+    "Phi needs you to authenticate again to restore account features. You can keep browsing for now, but token-based features will be unavailable until you reauthenticate." : {
+      "comment" : "Auth reauthentication - Alert body explaining degraded auth state"
+    },
     "Phi Sentinel" : {
       "comment" : "AI settings - Section title for Phi Sentinel background helper"
     },
@@ -794,6 +800,9 @@
     },
     "Please allow this app to record your screen to attach screenshots to feedback." : {
       "comment" : "Feedback form - Alert message explaining why screen recording permission is needed"
+    },
+    "Please reauthenticate to restore account features." : {
+      "comment" : "Account settings - Tooltip explaining why reauthentication is needed"
     },
     "Please select a file smaller than 2MB." : {
       "comment" : "Feedback form - Alert message explaining file size limit"
@@ -818,6 +827,12 @@
     },
     "Quit Phi?" : {
       "comment" : "Quit Phi?"
+    },
+    "Reauthenticate" : {
+      "comment" : "Auth reauthentication - Primary action to start Auth0 web authentication"
+    },
+    "Reauthentication needed." : {
+      "comment" : "Account settings - Warning shown when account tokens require reauthentication"
     },
     "Recommended" : {
       "comment" : "Onboarding password manager - Recommended label for iCloud Passwords"
@@ -890,6 +905,9 @@
     },
     "Service issue" : {
       "comment" : "Phi Link - Custom bot service issue status\nPhi Link - Official bot service issue status"
+    },
+    "Session Expired" : {
+      "comment" : "Auth reauthentication - Alert title when the access token can no longer be renewed"
     },
     "Set as default" : {
       "comment" : "Account settings - Button to set Phi as default browser"

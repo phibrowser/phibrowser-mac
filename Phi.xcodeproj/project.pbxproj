@@ -31,6 +31,7 @@
 		37388BE32F04DAE8005EA92E /* BrowserRestoreManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 37388BDF2F04DAE8005EA92E /* BrowserRestoreManager.swift */; };
 		37388BE42F04DAE8005EA92E /* BrowserRestoreStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 37388BE12F04DAE8005EA92E /* BrowserRestoreStore.swift */; };
 		373D84032F3C801B00430BE6 /* AuthManagerExternalBrowserWebAuthUserAgent.swift in Sources */ = {isa = PBXBuildFile; fileRef = 373D84022F3C801B00430BE6 /* AuthManagerExternalBrowserWebAuthUserAgent.swift */; };
+		373D84052F9D500100000001 /* AuthManager+Reauthentication.swift in Sources */ = {isa = PBXBuildFile; fileRef = 373D84042F9D500100000001 /* AuthManager+Reauthentication.swift */; };
 		3741AC652F7BBF62009B5E40 /* ivy-presto-headline-light.otf in Copy Fonts */ = {isa = PBXBuildFile; fileRef = 3741AC632F7BBF48009B5E40 /* ivy-presto-headline-light.otf */; };
 		374BCE992F7157FD0043C656 /* TabAreaContextMenuHelper.swift in Sources */ = {isa = PBXBuildFile; fileRef = 374BCE982F7157FD0043C656 /* TabAreaContextMenuHelper.swift */; };
 		374BD1062F739D5F0043C656 /* NativeTabDecisionEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 374BD1052F739D5F0043C656 /* NativeTabDecisionEngine.swift */; };
@@ -391,6 +392,7 @@
 		37388BE02F04DAE8005EA92E /* BrowserRestoreState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrowserRestoreState.swift; sourceTree = "<group>"; };
 		37388BE12F04DAE8005EA92E /* BrowserRestoreStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrowserRestoreStore.swift; sourceTree = "<group>"; };
 		373D84022F3C801B00430BE6 /* AuthManagerExternalBrowserWebAuthUserAgent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthManagerExternalBrowserWebAuthUserAgent.swift; sourceTree = "<group>"; };
+		373D84042F9D500100000001 /* AuthManager+Reauthentication.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AuthManager+Reauthentication.swift"; sourceTree = "<group>"; };
 		3741A9DD2F7B8158009B5E40 /* LICENSE */ = {isa = PBXFileReference; lastKnownFileType = text; path = LICENSE; sourceTree = "<group>"; };
 		3741A9DE2F7B8158009B5E40 /* README.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = README.md; sourceTree = "<group>"; };
 		3741AC632F7BBF48009B5E40 /* ivy-presto-headline-light.otf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "ivy-presto-headline-light.otf"; sourceTree = "<group>"; };
@@ -1308,6 +1310,7 @@
 				373D84022F3C801B00430BE6 /* AuthManagerExternalBrowserWebAuthUserAgent.swift */,
 				CC24EF072E89251D00CE9DD7 /* AuthManager.swift */,
 				3758B1E42F962BA50036F2AF /* AuthManager+Provider.swift */,
+				373D84042F9D500100000001 /* AuthManager+Reauthentication.swift */,
 				CC24EF052E89223500CE9DD7 /* LoginController.swift */,
 				CC4351CA2ECAD650009D8FC3 /* OnboardingWindowController.swift */,
 				CCBF0C9E2ECB2CFD005E729B /* Importer */,
@@ -1892,6 +1895,7 @@
 				AA10000000000000000000B5 /* TabSwitchManager.swift in Sources */,
 				CCBF8F4D2E6543E800B9A99E /* TabSectionController.swift in Sources */,
 				373D84032F3C801B00430BE6 /* AuthManagerExternalBrowserWebAuthUserAgent.swift in Sources */,
+				373D84052F9D500100000001 /* AuthManager+Reauthentication.swift in Sources */,
 				37C1B0E02ED809EA00DD4496 /* ShortcutsSettingHostingViewController.swift in Sources */,
 				37C1B0E22ED80CFB00DD4496 /* ShortcutsSettingViewController.swift in Sources */,
 				8EC70DB52F0A5E04009FE2CD /* BookmarkBar.swift in Sources */,

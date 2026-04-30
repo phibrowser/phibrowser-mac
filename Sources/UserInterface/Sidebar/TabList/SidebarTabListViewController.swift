@@ -1621,16 +1621,14 @@ extension SidebarTabListViewController: TabSectionDelegate {
         if !hasStructuralChanges {
             selectActiveTab()
             applyFocusingSelection(for: browserState.focusingTab)
-            // Visual-only group changes (rename, recolor, collapse, or
-            // tab-removed-from-still-existing-group) reach here. Cells
-            // auto-update via their VM subscriptions; collapse state
-            // needs an explicit expandItem/collapseItem call; the group's
-            // children cache must be invalidated so closing a grouped
-            // tab actually drops the row from the outline.
+            // Visual-only paths reach here: rename / recolor / collapse
+            // (cells refresh via VM subscriptions, no reload needed) AND
+            // tab-removed-from-still-existing-group / intra-group reorder
+            // (need a children reload on the affected wrapper). The
+            // affected-token filter keeps unrelated groups quiet during
+            // pure metadata edits.
             applyTabGroupCollapseStates()
-            for case let groupItem as TabGroupSidebarItem in allItems {
-                outlineView.reloadItem(groupItem, reloadChildren: true)
-            }
+            reloadAffectedGroupChildren(change.affectedGroupTokens)
             return
         }
 
@@ -1660,6 +1658,15 @@ extension SidebarTabListViewController: TabSectionDelegate {
 
         outlineView.endUpdates()
 
+        // Tabs that joined or left a still-existing group surface as a
+        // root-level insert/remove of the moved tab's guid; the group's
+        // token stays at the same root position, so NSOutlineView won't
+        // requery its children without an explicit reload. Filter by
+        // affected tokens so creating an ungrouped tab (no group's
+        // membership changed) leaves every group wrapper alone.
+        applyTabGroupCollapseStates()
+        reloadAffectedGroupChildren(change.affectedGroupTokens)
+
         // Defer selection to the next run loop so NSOutlineView finishes its
         // insert/remove animation layout pass first. Calling row(forItem:) or
         // selectRowIndexes while animations are in flight can trigger a spurious
@@ -1671,7 +1678,15 @@ extension SidebarTabListViewController: TabSectionDelegate {
             self.updateVisibleBookmarkTabs()
         }
     }
-    
+
+    private func reloadAffectedGroupChildren(_ tokens: Set<String>) {
+        guard !tokens.isEmpty else { return }
+        for case let groupItem as TabGroupSidebarItem in allItems
+            where tokens.contains(groupItem.group.token) {
+            outlineView.reloadItem(groupItem, reloadChildren: true)
+        }
+    }
+
     func focusingTabChanged(_ tab: Tab?) {
         guard isActive else { return }
         clearFloatingProxyIfTabClosed()

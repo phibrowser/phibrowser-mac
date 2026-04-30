@@ -16,6 +16,11 @@ struct TabSectionChange {
     let moveOperation: (from: Int, to: Int)?
     /// Whether a full reload is required.
     let needsFullReload: Bool
+    /// Group tokens whose live `state.normalTabs.filter { groupToken == token }`
+    /// child list changed (membership added/removed or intra-group reorder).
+    /// The consumer reloads only these wrappers' children — adding an
+    /// ungrouped tab leaves this empty so unrelated groups don't repaint.
+    let affectedGroupTokens: Set<String>
 }
 
 class TabSectionController: NSObject {
@@ -40,9 +45,13 @@ class TabSectionController: NSObject {
     /// Previous root-level item ids used to compute diffs. Holds tab guid
     /// (`Int`) for ungrouped tabs and group token (`String`) for group rows.
     private var previousItemIds: [AnyHashable] = []
-    /// Whether the previous frame contained any group row. Combined with the
-    /// current frame we decide whether the diff fast path is safe.
-    private var previousHadGroups: Bool = false
+
+    /// Per-token ordered guid list captured from the previous frame's
+    /// `normalTabs`. Used to detect membership / order changes inside any
+    /// given group so the consumer can reload exactly the affected wrappers
+    /// (and leave unrelated groups untouched on edits like creating a new
+    /// ungrouped tab).
+    private var previousGroupMembers: [String: [Int]] = [:]
 
     weak var delegate: TabSectionDelegate?
     var browserState: BrowserState? {
@@ -66,7 +75,7 @@ class TabSectionController: NSObject {
         guard let browserState else {
             tabItems = []
             previousItemIds = []
-            previousHadGroups = false
+            previousGroupMembers = [:]
             groupWrappers.removeAll()
             return
         }
@@ -79,7 +88,7 @@ class TabSectionController: NSObject {
         let initialItems = buildItems(from: currentTabs, groups: browserState.groups, state: browserState)
         tabItems = initialItems
         previousItemIds = initialItems.map { $0.id }
-        previousHadGroups = !browserState.groups.isEmpty
+        previousGroupMembers = Self.computeGroupMembers(tabs: currentTabs)
 
         // dropFirst() skips the initial synchronous delivery we already handled above.
         browserState.$normalTabs
@@ -196,82 +205,78 @@ class TabSectionController: NSObject {
         guard let browserState else {
             tabItems = []
             previousItemIds = []
-            previousHadGroups = false
+            previousGroupMembers = [:]
             delegate?.tabSectionDidUpdate(with: TabSectionChange(
                 insertedIndices: [],
                 removedIndices: [],
                 moveOperation: nil,
-                needsFullReload: true
+                needsFullReload: true,
+                affectedGroupTokens: []
             ))
             return
         }
         let groups = browserState.groups
         let items = buildItems(from: tabs, groups: groups, state: browserState)
         let newIds = items.map { $0.id }
-        let nowHasGroups = items.contains { $0 is TabGroupSidebarItem }
+        let newGroupMembers = Self.computeGroupMembers(tabs: tabs)
+        let affectedTokens = Self.affectedGroupTokens(old: previousGroupMembers,
+                                                      new: newGroupMembers)
 
+        // Single diff path for all cases (with or without groups). Group
+        // rows participate as ordinary root-level ids (their token), so
+        // `computeFlatChange` correctly emits insertions/removals when a
+        // group is created/closed and moveOperation when a group row
+        // reorders past an ungrouped tab. Tab join/leave a still-existing
+        // group leaves the group's token in both frames; only the moved
+        // tab's id surfaces in the root diff. The consumer reloads exactly
+        // the wrappers listed in `affectedGroupTokens` so unrelated edits
+        // (e.g. creating an ungrouped tab) do not repaint other groups,
+        // and we never call `reloadData()` — which would also rebuild the
+        // bookmark section above and cause a visible flicker there.
         let change: TabSectionChange
         if isInitial || delegate == nil {
             change = TabSectionChange(insertedIndices: [],
                                       removedIndices: [],
                                       moveOperation: nil,
-                                      needsFullReload: true)
-        } else if nowHasGroups || previousHadGroups {
-            // When groups participate in either frame the index math for
-            // structural incremental updates is complex (root rows whose
-            // children move into / out of nested group rows). Three cases:
-            //
-            //   * Same root ids in same order — visual-only change
-            //     (rename, recolor, collapse/expand, tab closed inside a
-            //     still-existing group, intra-group tab reorder). Cells
-            //     update via VM subscriptions; SidebarTabListViewController
-            //     also calls `reloadItem(_:reloadChildren:)` on each group
-            //     to refresh children, and `applyTabGroupCollapseStates`
-            //     to keep collapse state in sync. NO `reloadData()` —
-            //     this avoids the bookmark-section flicker.
-            //
-            //   * Same root ids, different order, single-move detected —
-            //     a root row reordered (typically a normal-tab drag past
-            //     a group wrapper). Emit a moveOperation so the receiver
-            //     calls `NSOutlineView.moveItem`, which preserves group
-            //     expansion state. Going through `reloadData()` here would
-            //     race with the drag guard in `shouldExpandItem` and leave
-            //     groups visually collapsed even when `isCollapsed=false`.
-            //
-            //   * Otherwise — structural change (group create/close, tab
-            //     join/leave a group, ungrouped tab added/removed). Fall
-            //     back to full reload; sidebar volumes are small.
-            if newIds == previousItemIds {
-                change = TabSectionChange(insertedIndices: [],
-                                          removedIndices: [],
-                                          moveOperation: nil,
-                                          needsFullReload: false)
-            } else if Set(newIds) == Set(previousItemIds),
-                      let moveOp = detectSingleMove(oldIds: previousItemIds,
-                                                    newIds: newIds) {
-                change = TabSectionChange(
-                    insertedIndices: [],
-                    removedIndices: [],
-                    moveOperation: (from: moveOp.from, to: moveOp.to),
-                    needsFullReload: false)
-            } else {
-                change = TabSectionChange(insertedIndices: [],
-                                          removedIndices: [],
-                                          moveOperation: nil,
-                                          needsFullReload: true)
-            }
+                                      needsFullReload: true,
+                                      affectedGroupTokens: [])
         } else {
-            change = computeFlatChange(oldIds: previousItemIds, newIds: newIds)
+            change = computeFlatChange(oldIds: previousItemIds,
+                                       newIds: newIds,
+                                       affectedGroupTokens: affectedTokens)
         }
 
         self.tabItems = items
         self.previousItemIds = newIds
-        self.previousHadGroups = nowHasGroups
+        self.previousGroupMembers = newGroupMembers
 
         delegate?.tabSectionDidUpdate(with: change)
     }
 
-    private func computeFlatChange(oldIds: [AnyHashable], newIds: [AnyHashable]) -> TabSectionChange {
+    /// Snapshot of each group's ordered guid list. Compared frame-over-frame
+    /// to identify which wrappers need a children reload — order matters
+    /// because intra-group reorder also requires a refresh.
+    private static func computeGroupMembers(tabs: [Tab]) -> [String: [Int]] {
+        var result: [String: [Int]] = [:]
+        for tab in tabs {
+            guard let token = tab.groupToken else { continue }
+            result[token, default: []].append(tab.guid)
+        }
+        return result
+    }
+
+    private static func affectedGroupTokens(old: [String: [Int]],
+                                            new: [String: [Int]]) -> Set<String> {
+        var tokens: Set<String> = []
+        for token in Set(old.keys).union(new.keys) where old[token] != new[token] {
+            tokens.insert(token)
+        }
+        return tokens
+    }
+
+    private func computeFlatChange(oldIds: [AnyHashable],
+                                   newIds: [AnyHashable],
+                                   affectedGroupTokens: Set<String>) -> TabSectionChange {
         let oldSet = Set(oldIds)
         let newSet = Set(newIds)
 
@@ -289,14 +294,16 @@ class TabSectionController: NSObject {
                         insertedIndices: [],
                         removedIndices: [],
                         moveOperation: (from: moveOp.from, to: moveOp.to),
-                        needsFullReload: false
+                        needsFullReload: false,
+                        affectedGroupTokens: affectedGroupTokens
                     )
                 }
             }
             return TabSectionChange(insertedIndices: [],
                                     removedIndices: [],
                                     moveOperation: nil,
-                                    needsFullReload: true)
+                                    needsFullReload: true,
+                                    affectedGroupTokens: affectedGroupTokens)
         }
 
         var insertedIndices = IndexSet()
@@ -313,7 +320,8 @@ class TabSectionController: NSObject {
             insertedIndices: insertedIndices,
             removedIndices: removedIndices,
             moveOperation: nil,
-            needsFullReload: false
+            needsFullReload: false,
+            affectedGroupTokens: affectedGroupTokens
         )
     }
     

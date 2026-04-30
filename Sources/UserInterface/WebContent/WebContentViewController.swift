@@ -1155,13 +1155,16 @@ class WebContentViewController: NSViewController {
     }
 
     /// Detach the currently attached bookmark bar, if any.
+    /// The shared bar's active state is driven by updateBookmarkBarVisibility
+    /// based on layout/preferences; we must not deactivate here, otherwise
+    /// every tab switch would tear down and rebuild BookmarkItemViews and
+    /// reload favicons, producing a visible flicker.
     func detachBookmarkBarIfAttached() {
         guard let attachedBookmarkBar else {
             updateBookmarkBarVisibility(bookmarkCount: 0)
             return
         }
 
-        attachedBookmarkBar.setActive(false)
         if attachedBookmarkBar.superview === bookmarkBarSlotView {
             attachedBookmarkBar.removeFromSuperview()
         }

@@ -314,11 +314,24 @@ extension AuthManager {
                 .start()
 
             guard storeReauthenticatedCredentials(results) else {
+                reportReauthenticationResult(
+                    succeeded: false,
+                    reason: details.reason,
+                    details: [
+                        "failure": "user_mismatch",
+                        "promptDeferrals": String(details.promptDeferrals)
+                    ]
+                )
                 return false
             }
             reauthenticationState = .normal
             clearPersistedReauthenticationState()
             recordTrace("reauthentication-succeeded", details: credentialSnapshotDetails())
+            reportReauthenticationResult(
+                succeeded: true,
+                reason: details.reason,
+                details: credentialSnapshotDetails()
+            )
             return true
         } catch {
             reauthenticationState = .required(
@@ -340,6 +353,15 @@ extension AuthManager {
                     "error": error.localizedDescription
                 ]
             )
+            reportReauthenticationResult(
+                succeeded: false,
+                reason: details.reason,
+                details: [
+                    "failure": "webauth_error",
+                    "error": error.localizedDescription,
+                    "promptDeferrals": String(details.promptDeferrals)
+                ]
+            )
             AppLogError("reauthentication with auth0 failed: \(error.localizedDescription)")
             return false
         }
@@ -347,6 +369,7 @@ extension AuthManager {
 
     @MainActor
     func forceLogoutAfterReauthenticationFailure(reason: String) {
+        let reauthenticationReason = reauthenticationState.requiredDetails?.reason
         recordTrace(
             "reauthentication-forced-logout",
             details: [
@@ -354,6 +377,16 @@ extension AuthManager {
             ],
             callStackSymbols: Array(Thread.callStackSymbols.prefix(16))
         )
+        if let reauthenticationReason {
+            reportReauthenticationResult(
+                succeeded: false,
+                reason: reauthenticationReason,
+                details: [
+                    "failure": "forced_logout",
+                    "forcedLogoutReason": reason
+                ]
+            )
+        }
         transitionToLoggedOutState()
     }
 

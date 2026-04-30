@@ -94,42 +94,32 @@ import Sentry
         SentrySDK.setUser(user)
     }
 
-    /// Reports an unrecoverable auth failure (refresh-token reuse, token-family destruction,
-    /// missing credentials) that forced the user back to the login state. Sends one Sentry
-    /// message event with the rendered auth trace attached. Callers (`AuthManager`) MUST
-    /// dedupe to avoid producing one event per concurrent caller observing the same
-    /// failure. The previous implementation also opened a manual `auth.forced-logout`
-    /// transaction, but transactions are intended for timing/spans and bypass `tracesSampleRate`,
-    /// which would noisify the performance dashboard for what is a discrete error event.
-    static func captureAuthForcedLogout(
-        operation: String,
+    static func captureAuthReauthenticationResult(
+        succeeded: Bool,
         reason: String,
         trace: String,
         attributes: [String: String]
     ) {
         var enrichedAttributes = attributes
-        enrichedAttributes["operation"] = operation
         enrichedAttributes["reason"] = reason
+        enrichedAttributes["result"] = succeeded ? "success" : "failure"
 
-        SentrySDK.logger.error("Auth forced logout", attributes: enrichedAttributes)
+        if !succeeded {
+            SentrySDK.logger.error("Auth reauthentication failed", attributes: enrichedAttributes)
+        }
 
-        SentrySDK.capture(message: "Auth forced logout: \(reason)") { scope in
-            // `noCredentials` typically reflects a benign state (user wiped Keychain,
-            // first-run, etc.) and should not page on-call.
-            scope.setLevel(reason == "no_credentials" ? .warning : .error)
+        let result = succeeded ? "succeeded" : "failed"
+        SentrySDK.capture(message: "Auth reauthentication \(result): \(reason)") { scope in
+            scope.setLevel(succeeded ? .info : .error)
             scope.setTag(value: "auth", key: "area")
+            scope.setTag(value: "reauthentication", key: "auth.operation")
             scope.setTag(value: reason, key: "auth.reason")
-            scope.setTag(value: operation, key: "auth.operation")
-            scope.setContext(value: enrichedAttributes, key: "auth")
+            scope.setTag(value: result, key: "auth.reauthentication.result")
+            scope.setContext(value: enrichedAttributes, key: "auth_reauthentication")
             scope.setExtra(value: trace, key: "auth_trace")
             if let data = trace.data(using: .utf8) {
                 scope.addAttachment(Attachment(data: data, filename: "auth-trace.txt"))
             }
-            // Sentinel can trigger `ferrt` while Phi is closed (the renew runs
-            // out-of-process every few minutes when Phi is offline). Attaching
-            // the tail of Sentinel's `boot.log` lets post-mortem see the
-            // out-of-process events that led up to the logout, which Phi's
-            // own auth trace cannot capture.
             if let sentinelLogData = SentinelHelper.recentBootLog() {
                 scope.addAttachment(Attachment(data: sentinelLogData, filename: "sentinel-boot.log"))
             }

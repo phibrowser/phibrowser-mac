@@ -138,15 +138,11 @@ class AuthManager {
     // skip importing a fresher Sentinel-written token after Phi had a recent failed renew,
     // which leaves the local Auth0 SDK with a rotated (stale) refresh token.
     private var lastSuccessfulSyncAt: Date?
-    private let renewCooldown: TimeInterval = 60 /** 60*/ // 1 hour
-    private let renewUrgentWindow: TimeInterval = 30 * 60 * 10000 // 30 minutes before expiry
+    private let renewCooldown: TimeInterval = 60 * 60 // 1 hour
+    private let renewUrgentWindow: TimeInterval = 30 * 60 // 30 minutes before expiry
 
     private var isRenewing = false
     private let failureTrace = AuthFailureTraceBuffer()
-    // Dedupes Sentry forced-logout reports so a single token-family destruction
-    // does not produce one event per concurrent caller.
-    private var lastForcedLogoutReportAt: Date?
-    private let forcedLogoutReportDedupeWindow: TimeInterval = 5 * 60
     var reauthenticationState: AuthReauthenticationState = .normal {
         didSet {
             guard oldValue != reauthenticationState else { return }
@@ -214,7 +210,6 @@ class AuthManager {
             _ = credentialManager.store(credentials: results)
             self.currentCredentials = results
             self.lastRenewAttemptAt = Date()
-            self.lastForcedLogoutReportAt = nil
             self.reauthenticationState = .normal
             self.clearPersistedReauthenticationState()
             // Bump `lastSuccessfulSyncAt` only when shared store actually accepted
@@ -248,7 +243,6 @@ class AuthManager {
             _ = credentialManager.clear()
             lastRenewAttemptAt = nil
             lastSuccessfulSyncAt = nil
-            lastForcedLogoutReportAt = nil
             reauthenticationState = .normal
             clearPersistedReauthenticationState()
             currentCredentials = nil
@@ -785,32 +779,14 @@ class AuthManager {
         }
     }
 
-    /// A single token-family destruction can be observed by several concurrent callers
-    /// (`APIClient.token`, `MessageRouter`, `SetNameViewController`, the renew timer,
-    /// etc.). Without dedupe, every one of them would push a Sentry event, drowning the
-    /// dashboard. Dedupe within a short window per process; the first caller still
-    /// records full context.
-    private func reportForcedLogoutIfNeeded(
-        operation: String,
-        reason: String,
+    func reportReauthenticationResult(
+        succeeded: Bool,
+        reason: AuthReauthenticationReason,
         details: [String: String]
     ) {
-        if let lastReportedAt = lastForcedLogoutReportAt,
-           Date().timeIntervalSince(lastReportedAt) < forcedLogoutReportDedupeWindow {
-            recordTrace(
-                "forced-logout-report-suppressed",
-                details: [
-                    "reason": reason,
-                    "operation": operation,
-                    "lastReportedAt": iso8601String(lastReportedAt)
-                ]
-            )
-            return
-        }
-        lastForcedLogoutReportAt = Date()
-        SentryService.captureAuthForcedLogout(
-            operation: operation,
-            reason: reason,
+        SentryService.captureAuthReauthenticationResult(
+            succeeded: succeeded,
+            reason: reason.rawValue,
             trace: failureTrace.renderedTrace(),
             attributes: details
         )
@@ -935,7 +911,6 @@ class AuthManager {
         _ = credentialManager.store(credentials: credentials)
         currentCredentials = credentials
         lastRenewAttemptAt = Date()
-        lastForcedLogoutReportAt = nil
         if syncSharedTokens(credentials, renewedBy: "phi-reauthentication") {
             lastSuccessfulSyncAt = Date()
         }

@@ -236,25 +236,37 @@ final class TabStrip: NSView, TitlebarAwareHitTestable {
     }
 
     /// Returns the given tab's frame in `coordView`'s coordinate space, or nil
-    /// if the tab is not currently shown in the normal-tab container (pinned,
-    /// not present, or detached). The caller picks which tab to query — the
-    /// content border passes the *visible* controller's tab, which can lag
-    /// behind `browserState.focusingTab` during the deferred-first-paint
-    /// switch path.
+    /// if the tab should not contribute an active-tab gap (pinned, not shown,
+    /// or being dragged over the pinned zone). The caller picks which tab to
+    /// query — the content border passes the *visible* controller's tab,
+    /// which can lag behind `browserState.focusingTab` during the
+    /// deferred-first-paint switch path.
     ///
     /// During this tab's own drag the source view is hidden in favor of a drag
-    /// proxy in `dragOverlay`; returning the source frame would point at a
-    /// stale slot. Return the proxy's live frame instead so the content
-    /// border's active-tab gap keeps tracking the dragged tab.
+    /// proxy in `dragOverlay`, and the proxy gets restyled to match whichever
+    /// zone it currently hovers over. The gap follows the same rule: it tracks
+    /// the proxy's live frame while the proxy is over the normal zone, and
+    /// disappears while the proxy crosses into the pinned zone — regardless
+    /// of which zone the drag started from. Pinned tabs in their resting
+    /// position never get a gap.
     func tabFrame(for tab: Tab?, in coordView: NSView) -> CGRect? {
         guard let tab else { return nil }
-        if dragController.context?.draggingTab === tab,
-           let proxy = draggingProxyView,
-           proxy.superview != nil {
+        // Match by uniqueId, not reference: WebContentViewController.associatedTab
+        // can hold a different Tab instance than browserState.pinnedTabs /
+        // dragController.context.draggingTab while representing the same
+        // logical tab (different objects, same guidInLocalDB / guid).
+        let id = tabId(for: tab)
+        if let context = dragController.context, tabId(for: context.draggingTab) == id {
+            guard context.targetContainerType != .pinned,
+                  let proxy = draggingProxyView,
+                  proxy.superview != nil else {
+                return nil
+            }
             return proxy.convert(proxy.bounds, to: coordView)
         }
-        let id = tabId(for: tab)
-        guard let view = normalTabViews[id] ?? pinnedTabViews[id],
+        let isPinned = browserState.pinnedTabs.contains(where: { tabId(for: $0) == id })
+        guard !isPinned,
+              let view = normalTabViews[id],
               view.superview != nil else {
             return nil
         }

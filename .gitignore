@@ -2,7 +2,9 @@ build
 xcuserdata
 *.xcuserdata/
 *.xcuserdatad/
-project.xcworkspace
+
+# Xcode nested workspace inside .xcodeproj: track workspace metadata and SPM lockfile;
+# xcuserdata/ remains excluded via the rules above.
 *.ocunit.xml
 .DS_Store
 .xcode-build-environment

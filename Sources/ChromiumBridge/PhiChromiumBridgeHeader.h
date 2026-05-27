@@ -227,6 +227,34 @@ typedef NS_ENUM(NSUInteger, PhiOmniboxSuggestionDisposition) {
 - (void)toggleChatSidebar:(NSNumber * _Nullable)show;
 - (void)showFeedbackDialog;
 
+// ==========================================================================
+// Split view notifications (Chromium → Mac)
+// splitId is a SplitTabId serialized via base::Token::ToString()
+// ==========================================================================
+
+/// Called when a split is created. primaryTabId is at position 0, secondaryTabId at position 1.
+- (void)splitCreated:(NSString *)splitId
+        primaryTabId:(int64_t)primaryTabId
+      secondaryTabId:(int64_t)secondaryTabId
+              layout:(NSString *)layout   // @"vertical" | @"horizontal"
+               ratio:(double)ratio        // 0.0–1.0, proportion of primary pane
+            windowId:(int64_t)windowId;
+
+/// Called when a split's layout or ratio changes.
+- (void)splitVisualsChanged:(NSString *)splitId
+                     layout:(NSString *)layout
+                      ratio:(double)ratio
+                   windowId:(int64_t)windowId;
+
+/// Called when one or both sides of a split change (e.g. after reverseTabsInSplit).
+- (void)splitContentsChanged:(NSString *)splitId
+               primaryTabId:(int64_t)primaryTabId
+             secondaryTabId:(int64_t)secondaryTabId
+                   windowId:(int64_t)windowId;
+
+/// Called when a split is disbanded.
+- (void)splitRemoved:(NSString *)splitId windowId:(int64_t)windowId;
+
 @optional
 // Optional metadata-rich variants for richer native tab orchestration.
 - (void)tabWillBeRemove:(int64_t)tabId
@@ -587,6 +615,66 @@ typedef NS_ENUM(NSUInteger, PhiOmniboxSuggestionDisposition) {
                  requestId:(NSString *)requestId
                   senderId:(NSString *)senderId;
 
+// ==========================================================================
+// Split view control (Mac → Chromium)
+// ==========================================================================
+
+/// Create a split from two existing tabs. Returns the split ID string, or nil on failure.
+- (NSString * _Nullable)createSplitWithTabId:(int64_t)primaryTabId
+                                  secondTabId:(int64_t)secondaryTabId
+                                       layout:(NSString *)layout
+                                     windowId:(int64_t)windowId;
+
+/// Disband a split (tabs remain open, just no longer side-by-side).
+- (void)removeSplit:(NSString *)splitId windowId:(int64_t)windowId;
+
+/// Change split orientation (@"vertical" side-by-side, @"horizontal" stacked).
+- (void)updateSplitLayout:(NSString *)splitId layout:(NSString *)layout windowId:(int64_t)windowId;
+
+/// Adjust the divider position (ratio 0.0–1.0 is the fraction occupied by the primary pane).
+- (void)updateSplitRatio:(NSString *)splitId ratio:(double)ratio windowId:(int64_t)windowId;
+
+/// Swap the positions of the two tabs within the split.
+- (void)reverseTabsInSplit:(NSString *)splitId windowId:(int64_t)windowId;
+
+/// Mark `tabId` as the soon-to-be partner of a split currently being formed.
+/// While marked, the active-tab visibility path skips the OCCLUDED transition
+/// and the deferred-HIDDEN flip for that tab. Used by "Open as Split" so the
+/// existing tab does not bounce through HIDDEN (which RenderWidgetHostViewCocoa
+/// does not always cleanly resume from) before its pane is mounted in the
+/// split. The mark is cleared automatically when the split is established
+/// (CreateSplit) or the tab leaves the strip; callers should also clear
+/// explicitly on timeout or failure paths.
+- (void)markPendingSplitPartnerWithTabId:(int64_t)tabId
+                                windowId:(int64_t)windowId;
+- (void)clearPendingSplitPartnerWithTabId:(int64_t)tabId
+                                 windowId:(int64_t)windowId;
+
+/// Cross-tab reordering: replace or swap one side of a split with another tab in the strip.
+/// @param splitId   Target split.
+/// @param slotIndex 0 = primary slot, 1 = secondary slot.
+/// @param otherTabId The tab outside the split that moves in.
+/// @param swap      YES → kSwap (other tab takes the slot, evicted tab takes other's old position).
+///                  NO  → kReplace (evicted tab is closed).
+/// One of the split's tabs is activated first so Chromium's invariant is met.
+- (void)swapTabInSplit:(NSString *)splitId
+              slotIndex:(int)slotIndex
+              withTabId:(int64_t)otherTabId
+                   swap:(BOOL)swap
+               windowId:(int64_t)windowId;
+
+/// Move the entire split (both tabs) as a block to a new position in the tab strip.
+/// Pin/group state of the split is preserved.
+- (void)moveSplit:(NSString *)splitId
+          toIndex:(int)toIndex
+         windowId:(int64_t)windowId;
+
+/// Returns the split ID for a tab, or nil if the tab is not currently in a split.
+- (NSString * _Nullable)getSplitIdForTabId:(int64_t)tabId windowId:(int64_t)windowId;
+
+/// Returns all active split ID strings in the given window.
+- (NSArray<NSString *> *)listSplitsInWindow:(int64_t)windowId;
+
 @end
 
 @protocol WebContentWrapper <NSObject>
@@ -639,6 +727,15 @@ typedef NS_ENUM(NSUInteger, PhiOmniboxSuggestionDisposition) {
    andAddToGroupTokenHex:(NSString *)targetGroupTokenHex
               afterTabId:(int64_t)anchorTabId;
 
+/// Split-aware tear-off: when the receiver belongs to a split, move BOTH tabs
+/// of the split (preserving layout and ratio) into a new window atomically.
+/// When the receiver is not in a split, behaves identically to moveSelfToNewWindow:.
+- (void)moveSplitToNewWindow:(BOOL)activateNewWindow;
+/// Split-aware cross-window move: when the receiver belongs to a split, move
+/// BOTH tabs of the split into the target window starting at insertIndex,
+/// preserving layout and ratio. When not in a split, behaves identically to
+/// moveSelfToWindow:atIndex:.
+- (void)moveSplitToWindow:(int64_t)targetWindowId atIndex:(NSInteger)insertIndex;
 - (void)updateTabCustomValue:(NSString *)customValue;
 - (void)focus;
 - (void)restoreFocus;

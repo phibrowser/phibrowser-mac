@@ -158,11 +158,20 @@
     "© %d Phinomenon. All rights reserved." : {
       "comment" : "About window - Copyright notice at bottom"
     },
-    "Add Download" : {
-
+    "Add Left Split" : {
+      "comment" : "Drop-zone hint shown when dragging a tab over the left third of the page"
     },
     "Add New" : {
       "comment" : "Shortcuts settings - Placeholder text when no shortcut is assigned"
+    },
+    "Add Right Split" : {
+      "comment" : "Drop-zone hint shown when dragging a tab over the right third of the page"
+    },
+    "Add Split to Bookmark" : {
+      "comment" : "Tab context menu - Save both panes of the split as a bookmark folder"
+    },
+    "Add Split to Folder" : {
+      "comment" : "Tab context menu - Save both panes of the split into a chosen bookmark folder"
     },
     "Add to Bookmark" : {
       "comment" : "Tab context menu - Add current tab to root bookmark bar in sidebar"
@@ -290,24 +299,11 @@
     "Cancel" : {
       "comment" : "AI settings - Cancel button in disable-AI confirmation alert\nAI settings - Cancel button in disable-connectors confirmation alert\nAccount settings - Cancel button in logout confirmation dialog\nAccount settings - Cancel button in rename dialog\nCancel\nDebug clear data - Alert button to cancel clearing user data\nDebug import user data - Alert button to cancel importing user data\nDownload item row - Tooltip for cancel button during safety scan\nDownload item row - Tooltip for cancel download button\nEditor - Cancel button title\nFeedback form - Cancel button to dismiss feedback form\nNew folder dialog cancel button title\nTab group rename alert - Cancel button\nTooltip for cancel button during safety scan in living downloads toast\nUpdate alert - Button to cancel update installation"
     },
-    "Cancel First" : {
-
-    },
     "Canceled" : {
       "comment" : "Download item row - Status label when download was cancelled"
     },
     "Cancelled" : {
       "comment" : "Download state"
-    },
-    "Card %lld of %lld" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "Card %1$lld of %2$lld"
-          }
-        }
-      }
     },
     "Certificate is invalid" : {
       "comment" : "Address bar menu - Certificate validity status"
@@ -375,12 +371,6 @@
     "Comfortable" : {
       "comment" : "Layout option - Horizontal tabs\nOnboarding layout selection - Comfortable option"
     },
-    "Complete First" : {
-
-    },
-    "Complete First In-Progress" : {
-
-    },
     "Completed" : {
       "comment" : "Download state"
     },
@@ -414,6 +404,18 @@
     "Copy Link" : {
       "comment" : "Address bar menu - Copy link menu item\nBookmark Copy Link menu item\nDownload item row - Tooltip for copy link button\nSidebar address bar - Copy current page URL button tooltip\nTab context menu - Menu item to copy the tab URL to clipboard\nTooltip for button to copy download URL in living downloads toast"
     },
+    "Copy Link 1" : {
+      "comment" : "Bookmark context menu - Copy the primary URL of a split-view bookmark"
+    },
+    "Copy Link 2" : {
+      "comment" : "Bookmark context menu - Copy the secondary URL of a split-view bookmark"
+    },
+    "Copy URL 1" : {
+      "comment" : "Tab context menu - Copy the first pane's URL for a pinned split"
+    },
+    "Copy URL 2" : {
+      "comment" : "Tab context menu - Copy the second pane's URL for a pinned split"
+    },
     "Coral" : {
       "comment" : "Coral theme color name"
     },
@@ -431,9 +433,6 @@
     },
     "Dark" : {
       "comment" : "Appearance choice: always dark mode"
-    },
-    "DEBUG Test Mode" : {
-
     },
     "Delete" : {
       "comment" : "Delete bookmark menu item"
@@ -453,9 +452,6 @@
     "Download image" : {
       "comment" : "Account settings - Button to download profile card as image"
     },
-    "Download Test Controls" : {
-
-    },
     "Downloading" : {
       "comment" : "Download state"
     },
@@ -474,6 +470,9 @@
     "Duplicate" : {
       "comment" : "Tab context menu - Menu item to duplicate the selected tab"
     },
+    "Duplicate Split" : {
+      "comment" : "Tab context menu - Duplicate both panes of a pinned split as a new split"
+    },
     "e.g. 123456:ABC-DEF..." : {
 
     },
@@ -483,14 +482,26 @@
     "Edit Folder" : {
       "comment" : "Folder editor - Title of the sheet to edit a folder"
     },
+    "Edit Pinned Split" : {
+      "comment" : "Favorite editor - Title of the sheet to edit a pinned split-view tab"
+    },
     "Edit Pinned Tab" : {
       "comment" : "Favorite editor - Title of the sheet to edit a pin"
+    },
+    "Edit Split Bookmark" : {
+      "comment" : "Bookmark editor - Title of the sheet when editing a split-view bookmark"
     },
     "Edit the name and address for this bookmark." : {
       "comment" : "Bookmark editor - Subtitle explaining bookmark editing"
     },
     "Edit the name and address for this pinned tab." : {
       "comment" : "Pinned tab editor - Subtitle explaining pinned tab editing"
+    },
+    "Edit the name and both addresses for this split-view bookmark." : {
+      "comment" : "Bookmark editor - Subtitle explaining split-view bookmark editing"
+    },
+    "Edit the names and addresses for both panes of this pinned split." : {
+      "comment" : "Pinned tab editor - Subtitle explaining pinned split editing"
     },
     "Edit..." : {
       "comment" : "Edit bookmark url menu item title\nPinned tab context menu - Edit pinned tab menu item"
@@ -540,9 +551,6 @@
     "External Data Connectors help to provide additional context for better AI experience" : {
       "comment" : "AI settings - Description explaining external data connectors purpose"
     },
-    "Fail First In-Progress" : {
-
-    },
     "Failed" : {
       "comment" : "Download item row - Status label when download failed\nDownload state"
     },
@@ -563,6 +571,12 @@
     },
     "Finish" : {
       "comment" : "Onboarding password manager - Finish button"
+    },
+    "First Name" : {
+      "comment" : "Bookmark editor - Label for the primary title input field on a split-view bookmark"
+    },
+    "First URL" : {
+      "comment" : "Bookmark editor - Label for the primary URL input field on a split-view bookmark"
     },
     "Folder" : {
       "comment" : "Bookmark editor - Label for the folder picker"
@@ -690,6 +704,9 @@
     "Keep" : {
       "comment" : "Download item row - Tooltip for keep button on safety warning\nTooltip for keep button on safety warning in living downloads toast"
     },
+    "L" : {
+
+    },
     "Launch Phi Sentinel automatically at login" : {
       "comment" : "AI settings - Toggle to auto-launch Phi Sentinel at system login"
     },
@@ -719,9 +736,6 @@
     },
     "Linking..." : {
       "comment" : "Phi Link - Custom bot linking text"
-    },
-    "Living Downloads Test" : {
-
     },
     "Loading image…" : {
       "comment" : "Image preview loading"
@@ -760,7 +774,7 @@
       "comment" : "Tab context menu - Move this tab out of its current group into a newly created group"
     },
     "Mute" : {
-      "comment" : "Notification menu option - Disable auto popup for notification cards\nTab mute button tooltip - mute"
+      "comment" : "Notification menu option - Disable auto popup for notification cards"
     },
     "Name" : {
       "comment" : "Editor - Label for the title/name input field"
@@ -813,9 +827,6 @@
     "Next image" : {
       "comment" : "Image preview: accessibility label for next image control"
     },
-    "Next Test (%lld items)" : {
-
-    },
     "No certificate available" : {
       "comment" : "No certificate tooltip"
     },
@@ -860,6 +871,9 @@
     },
     "Opacity" : {
       "comment" : "General settings - Theme opacity row title for adjusting the selected theme overlay transparency"
+    },
+    "Open as Split" : {
+      "comment" : "Bookmark context menu - Open this bookmark as a new tab paired with the current tab in a split\nTab context menu - Open a new tab as the second pane in a split with this tab"
     },
     "Open in New Tab" : {
       "comment" : "Open in New Tab menu item"
@@ -924,6 +938,9 @@
     "Pink" : {
       "comment" : "Tab Groups - color name shown in auto-named group title and color picker"
     },
+    "Pin Split" : {
+      "comment" : "Tab context menu - Pin the split that contains this tab"
+    },
     "Please reauthenticate to restore account features." : {
       "comment" : "Account settings - Tooltip explaining why reauthentication is needed"
     },
@@ -954,6 +971,9 @@
     "Quit Phi?" : {
       "comment" : "Quit Phi?"
     },
+    "R" : {
+
+    },
     "Reauthenticate" : {
       "comment" : "Auth reauthentication - Primary action to start Auth0 web authentication"
     },
@@ -981,6 +1001,9 @@
     "Remove from list" : {
       "comment" : "Download item row - Menu option to remove download from list"
     },
+    "Remove from Split" : {
+      "comment" : "Tab context menu - Dissolve the split that contains this tab"
+    },
     "Rename" : {
       "comment" : "Rename folder or bookmark dialog title"
     },
@@ -992,9 +1015,6 @@
     },
     "Reopen Closed Tab" : {
       "comment" : "Tab area context menu - Reopen the last closed tab"
-    },
-    "Reset" : {
-
     },
     "Restore" : {
       "comment" : "Shortcuts settings - Button to restore single shortcut to default"
@@ -1014,6 +1034,9 @@
     "Return" : {
       "comment" : "Import data type selection - Return button to go back"
     },
+    "Reverse Panes" : {
+      "comment" : "Tab context menu - Swap the left/right (or top/bottom) panes of the split this tab belongs to"
+    },
     "Run" : {
       "comment" : "Notification card run button - Executes the suggested action"
     },
@@ -1028,6 +1051,12 @@
     },
     "Search or Enter URL" : {
       "comment" : "Omnibox - Placeholder text prompting user to search or enter URL\nOmnibox suggestion - Placeholder text for search or URL entry\nSidebar address bar - Placeholder text prompting user to enter URL or search query"
+    },
+    "Second Name" : {
+      "comment" : "Bookmark editor - Label for the secondary title input field on a split-view bookmark"
+    },
+    "Second URL" : {
+      "comment" : "Bookmark editor - Label for the secondary URL input field on a split-view bookmark"
     },
     "Select Phi User Data Backup" : {
       "comment" : "Debug import user data - NSOpenPanel title for choosing a Phi user data zip"
@@ -1095,9 +1124,6 @@
     "Something went wrong? " : {
       "comment" : "Retry hint prefix text shown when login fails in onboarding"
     },
-    "Start Test" : {
-
-    },
     "Stop" : {
       "comment" : "Web content header - Accessibility description for stop loading button"
     },
@@ -1164,14 +1190,14 @@
     "Unlink" : {
       "comment" : "Phi Link - Official bot unlink button"
     },
-    "Unmute" : {
-      "comment" : "Tab mute button tooltip - unmute"
-    },
     "Unpin" : {
       "comment" : "Tab context menu - Menu item to unpin the selected tab"
     },
     "Unpin extension" : {
       "comment" : "Extension list - Tooltip for unpinning an extension"
+    },
+    "Unpin Split" : {
+      "comment" : "Tab context menu - Remove the pin from the split that contains this tab"
     },
     "Unsupported image format" : {
       "comment" : "Image preview error"

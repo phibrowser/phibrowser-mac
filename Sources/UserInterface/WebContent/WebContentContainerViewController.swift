@@ -106,12 +106,25 @@ class WebContentContainerViewController: NSViewController {
     private var topBarHeightConstraint: Constraint?
     private var topBarTopConstraint: Constraint?
     
-    /// Container view for the current WebContentViewController
-    private lazy var contentContainer: NSView = {
-        let view = NSView()
+    /// Container view for the current WebContentViewController. Also serves
+    /// as the drop target for "drag a tab onto the left third → make a split".
+    private lazy var contentContainer: SplitTabDropContainer = {
+        let view = SplitTabDropContainer()
         view.wantsLayer = true
+        view.browserState = self.browserState
+        view.pageAreaProvider = { [weak self, weak view] in
+            guard let self, let view,
+                  let current = self.currentWebContentController else { return nil }
+            return current.pageContentAreaFrame(in: view)
+        }
         return view
     }()
+
+    /// Exposed so the horizontal TabStrip (comfortable layout) can show the
+    /// split-drop hint while a tab is being torn out — TabStrip drives drags
+    /// with raw mouse events, not an NSDraggingSession, so the container's
+    /// NSDraggingDestination callbacks never fire in that mode.
+    var splitTabDropContainer: SplitTabDropContainer { contentContainer }
 
     /// Single CAShapeLayer that strokes a unified path covering the active
     /// tab's outline (top + sides + inverse curves) AND splitViewContainer's
@@ -869,6 +882,19 @@ class WebContentContainerViewController: NSViewController {
 
         attachSharedBookmarkBar(to: controller)
 
+        // Re-mount content before we mark this controller as current.
+        // For split tabs, the partner's webContentView may have been
+        // reparented into another controller's split host. For tabs whose
+        // split was dissolved while they were inactive, a stale split host
+        // may still be hanging around. In both cases this reconciles.
+        //
+        // NB: code reachable from `refreshContentForCurrentTab` must NOT read
+        // `currentWebContentController` — it still points at the outgoing VC
+        // until the assignment below. Today the reachable code stays inside
+        // the controller's own host; if you add a container-level lookup,
+        // consult the `controller` parameter explicitly instead.
+        controller.refreshContentForCurrentTab()
+
         currentWebContentController = controller
         // Force a full layout sweep before reading splitViewContainer's frame.
         // Otherwise — if the window was just resized (e.g. titlebar
@@ -1120,8 +1146,30 @@ class WebContentContainerViewController: NSViewController {
         webContentControllers.values.first { $0.associatedTab?.guid == tabId }
     }
 
+    /// True when the inspected tab is part of a split currently mounted by
+    /// the visible WebContentViewController. In that case DevTools must dock
+    /// into the matching pane's container — routing through the inspected
+    /// tab's own (offscreen) controller would dump DevTools into a hostView
+    /// that isn't in the window hierarchy.
+    private func mountedSplitPane(forInspectedTabId tabId: Int)
+        -> (controller: WebContentViewController, pane: SplitPaneHostView.Pane)? {
+        guard let state = browserState,
+              let group = state.splitGroup(forTabId: tabId),
+              let mounted = currentWebContentController,
+              let mountedTabId = mounted.associatedTab?.guid,
+              group.contains(tabId: mountedTabId) else { return nil }
+        let pane: SplitPaneHostView.Pane = group.primaryTabId == tabId ? .primary : .secondary
+        return (mounted, pane)
+    }
+
     /// Called when Chromium attaches docked DevTools to a tab.
     func handleDevToolsDidAttach(tabId: Int, devToolsView: NSView) {
+        if let target = mountedSplitPane(forInspectedTabId: tabId) {
+            target.controller.attachDevToolsToPane(tabId: tabId,
+                                                   pane: target.pane,
+                                                   devToolsView: devToolsView)
+            return
+        }
         guard let controller = findController(forTabId: tabId) else {
             AppLogInfo("[DevTools] No controller found for tabId=\(tabId)")
             return
@@ -1131,6 +1179,10 @@ class WebContentContainerViewController: NSViewController {
 
     /// Called when Chromium detaches DevTools from a tab (closed or undocked).
     func handleDevToolsDidDetach(tabId: Int) {
+        if let target = mountedSplitPane(forInspectedTabId: tabId) {
+            target.controller.detachDevToolsFromPane(tabId: tabId, pane: target.pane)
+            return
+        }
         guard let controller = findController(forTabId: tabId) else {
             AppLogInfo("[DevTools] No controller found for tabId=\(tabId)")
             return
@@ -1140,6 +1192,13 @@ class WebContentContainerViewController: NSViewController {
 
     /// Called when DevTools JS updates the inspected page bounds.
     func handleUpdateInspectedPageBounds(tabId: Int, bounds: CGRect, hide: Bool) {
+        if let target = mountedSplitPane(forInspectedTabId: tabId) {
+            target.controller.updateInspectedPageBoundsForPane(tabId: tabId,
+                                                               pane: target.pane,
+                                                               bounds: bounds,
+                                                               hide: hide)
+            return
+        }
         guard let controller = findController(forTabId: tabId) else { return }
         controller.updateInspectedPageBounds(bounds, hide: hide)
     }

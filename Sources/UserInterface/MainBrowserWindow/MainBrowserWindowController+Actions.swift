@@ -313,6 +313,39 @@ extension MainBrowserWindowController: NSMenuItemValidation {
         guard let tab = item.representedObject as? Tab else {
             return
         }
+
+        // A pinned-split cell renders both panes as a single merged item, so
+        // Close on that cell should dispose of both live Chromium tabs (the
+        // split dissolves as a side-effect). Pinned records stay in place,
+        // matching Close-on-a-pinned-tab behavior.
+        //   - Live path: menu fires off a live tab in a pinned `SplitGroup`.
+        //   - Persisted path: menu fires off a pinned record whose partner
+        //     is tracked via `splitPartnerGuid`; either pane may be live.
+        let liveTabs: [Tab]
+        if let group = browserState.splitGroup(forTabId: tab.guid), group.isPinned {
+            liveTabs = [group.primaryTabId, group.secondaryTabId]
+                .compactMap { id in browserState.tabs.first(where: { $0.guid == id }) }
+        } else if let dbGuid = tab.guidInLocalDB, !dbGuid.isEmpty,
+                  let pinnedSelf = browserState.pinnedTabs.first(where: { $0.guidInLocalDB == dbGuid }),
+                  let (leftDB, rightDB) = browserState.pinnedSplitDBPair(forPinnedTab: pinnedSelf) {
+            liveTabs = [leftDB, rightDB]
+                .compactMap { db in browserState.tabs.first(where: { $0.guidInLocalDB == db }) }
+        } else {
+            liveTabs = []
+        }
+
+        if !liveTabs.isEmpty {
+            // Close inactive panes first so the IDC_CLOSE_TAB path in
+            // `Tab.close()` lands on whichever pane is still focused.
+            for pane in liveTabs where !pane.isActive {
+                pane.close()
+            }
+            for pane in liveTabs where pane.isActive {
+                pane.close()
+            }
+            return
+        }
+
         tab.close()
     }
     
@@ -328,6 +361,25 @@ extension MainBrowserWindowController: NSMenuItemValidation {
             return
         }
         browserState.toggleTabPinStatus(tab.guid, guidInDB: tab.guidInLocalDB)
+    }
+
+    @objc func togglePinSplit(_ item: NSMenuItem) {
+        guard let splitId = item.representedObject as? String else {
+            return
+        }
+        browserState.toggleSplitPinStatus(splitId)
+    }
+
+    /// Closed-pinned-split unpin. `representedObject` is a `[leftDB, rightDB]`
+    /// pair (the two persisted `guidInLocalDB`s of the pinned split). Used by
+    /// the right-click menu on a pinned-split cell whose live `SplitGroup`
+    /// hasn't been recreated yet (neither pane is currently open).
+    @MainActor
+    @objc func unpinClosedPinnedSplit(_ item: NSMenuItem) {
+        guard let pair = item.representedObject as? [String], pair.count == 2 else {
+            return
+        }
+        browserState.unpinClosedPinnedSplit(leftDB: pair[0], rightDB: pair[1])
     }
     
     

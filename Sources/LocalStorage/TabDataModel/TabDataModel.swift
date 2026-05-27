@@ -6,8 +6,8 @@
 import SwiftData
 import Foundation
 
-typealias TabDataModel = TabDataModelSchemaV3.TabDataModel
-typealias ProfileModel = TabDataModelSchemaV3.ProfileModel
+typealias TabDataModel = TabDataModelSchemaV5.TabDataModel
+typealias ProfileModel = TabDataModelSchemaV5.ProfileModel
 
 extension TabDataModel: CustomStringConvertible {
     var description: String {
@@ -17,11 +17,11 @@ extension TabDataModel: CustomStringConvertible {
 
 enum TabDataModelMigrationPlan: SchemaMigrationPlan {
     static var schemas: [any VersionedSchema.Type] {
-        [TabDataModelSchemaV1.self, TabDataModelSchemaV2.self, TabDataModelSchemaV3.self]
+        [TabDataModelSchemaV1.self, TabDataModelSchemaV2.self, TabDataModelSchemaV3.self, TabDataModelSchemaV4.self, TabDataModelSchemaV5.self]
     }
 
     static var stages: [MigrationStage] {
-        [migrateV1toV2, migrateV2toV3]
+        [migrateV1toV2, migrateV2toV3, migrateV3toV4, migrateV4toV5]
     }
 
     nonisolated(unsafe) static var v1TypeMapping: [String: Int] = [:]
@@ -62,6 +62,20 @@ enum TabDataModelMigrationPlan: SchemaMigrationPlan {
         }
     )
 
+    /// Additive: introduces optional `secondaryUrl` for split-view bookmarks.
+    /// No data movement required — SwiftData fills the new column with nil.
+    static let migrateV3toV4 = MigrationStage.lightweight(
+        fromVersion: TabDataModelSchemaV3.self,
+        toVersion: TabDataModelSchemaV4.self
+    )
+
+    /// Additive: introduces optional `splitPartnerGuid` so pinned splits
+    /// survive restarts. No data movement required.
+    static let migrateV4toV5 = MigrationStage.lightweight(
+        fromVersion: TabDataModelSchemaV4.self,
+        toVersion: TabDataModelSchemaV5.self
+    )
+
     static let migrateV2toV3 = MigrationStage.custom(
         fromVersion: TabDataModelSchemaV2.self,
         toVersion: TabDataModelSchemaV3.self,
@@ -85,8 +99,9 @@ enum TabDataModelMigrationPlan: SchemaMigrationPlan {
                 tab.profileId = LocalStore.defaultProfileId
             }
 
+            let bookmarkFolderRaw = TabDataType.bookmarkFolder.rawValue
             if let bookmarkRoot = tabs.first(where: {
-                $0.dataType == .bookmarkFolder &&
+                $0.type == bookmarkFolderRaw &&
                 $0.parent == nil
             }) {
                 defaultProfile.bookmarkRoot = bookmarkRoot

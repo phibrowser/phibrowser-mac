@@ -26,6 +26,10 @@ final class TabDragContext {
     let initialTabFrame: CGRect
     /// Width of the dragged tab, used when sizing the gap.
     let draggedTabWidth: CGFloat
+    /// Index of the dragged tab's split partner in the same zone, if any.
+    /// Set so the partner lifts alongside the dragged tab and the layout
+    /// engine excludes both indices.
+    let siblingSourceIndex: Int?
 
     // MARK: - Target State
 
@@ -151,7 +155,8 @@ final class TabDragContext {
         sourceContainerType: TabContainerType,
         sourceIndex: Int,
         initialMouseLocation: CGPoint,
-        initialTabFrame: CGRect
+        initialTabFrame: CGRect,
+        siblingSourceIndex: Int? = nil
     ) {
         self.draggingTab = draggingTab
         self.sourceContainerType = sourceContainerType
@@ -159,6 +164,7 @@ final class TabDragContext {
         self.initialMouseLocation = initialMouseLocation
         self.initialTabFrame = initialTabFrame
         self.draggedTabWidth = initialTabFrame.width
+        self.siblingSourceIndex = siblingSourceIndex
 
         // Start with the source position as the initial target.
         self.targetContainerType = sourceContainerType

@@ -126,9 +126,32 @@ struct ExtensionEvent: WindowEvent {
         }
     }
     let action: ExtensionAction
-    
+
     enum ExtensionAction {
         case extensionChanged(info: [[AnyHashable : Any]])
+    }
+}
+
+struct SplitEvent: WindowEvent {
+    var browserId: Int?
+    var scope: EventScope {
+        if let browserId {
+            return .window(browserId: browserId)
+        } else {
+            return .global
+        }
+    }
+    let action: SplitAction
+
+    enum SplitAction {
+        case created(splitId: String,
+                     primaryTabId: Int,
+                     secondaryTabId: Int,
+                     layout: SplitLayout,
+                     ratio: Double)
+        case visualsChanged(splitId: String, layout: SplitLayout, ratio: Double)
+        case contentsChanged(splitId: String, primaryTabId: Int, secondaryTabId: Int)
+        case removed(splitId: String)
     }
 }
 
@@ -167,6 +190,8 @@ class EventBus {
             handleExtensionEvent(extensionEvent, in: browserState)
         case let tabGroupEvent as TabGroupEvent:
             handleTabGroupEvent(tabGroupEvent, in: browserState)
+        case let splitEvent as SplitEvent:
+            handleSplitEvent(splitEvent, in: browserState)
         default:  fatalError("not support")
         }
     }
@@ -253,6 +278,26 @@ class EventBus {
             if let typedInfo = info as? [[String: Any]] {
                 state.extensionManager.extensionChanged(typedInfo)
             }
+        }
+    }
+
+    @MainActor
+    private func handleSplitEvent(_ event: SplitEvent, in state: BrowserState) {
+        switch event.action {
+        case let .created(splitId, primaryTabId, secondaryTabId, layout, ratio):
+            state.handleSplitCreated(splitId: splitId,
+                                     primaryTabId: primaryTabId,
+                                     secondaryTabId: secondaryTabId,
+                                     layout: layout,
+                                     ratio: ratio)
+        case let .visualsChanged(splitId, layout, ratio):
+            state.handleSplitVisualsChanged(splitId: splitId, layout: layout, ratio: ratio)
+        case let .contentsChanged(splitId, primaryTabId, secondaryTabId):
+            state.handleSplitContentsChanged(splitId: splitId,
+                                             primaryTabId: primaryTabId,
+                                             secondaryTabId: secondaryTabId)
+        case .removed(let splitId):
+            state.handleSplitRemoved(splitId: splitId)
         }
     }
 }

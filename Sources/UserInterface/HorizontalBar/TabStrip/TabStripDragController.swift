@@ -51,21 +51,26 @@ struct TabStripMetricsSnapshot {
     /// cursor (which can sit anywhere within the dragged tab,
     /// depending on where the user grabbed it).
     let draggedTabFrameInNormal: CGRect?
+    /// Lower-index position of every adjacent split pair in `normalTabFrames`.
+    /// Used to stop the drop indicator from landing between the two panes.
+    let normalSplitPairLowerIndices: Set<Int>
 }
 
 /// Delegate for drag-driven tab-strip updates.
 protocol TabStripDragDelegate: AnyObject {
     /// Requests a relayout after the drag gap changes.
     /// - Parameters:
-    ///   - pinnedExcludedIndex: Source tab index to hide in the pinned zone.
+    ///   - pinnedExcludedIndices: Source tab indices to hide in the pinned zone.
     ///   - pinnedGapIndex: Gap position in the pinned zone.
-    ///   - normalExcludedIndex: Source tab index to hide in the normal zone.
+    ///   - normalExcludedIndices: Source tab indices to hide in the normal zone.
+    ///     For split-pair drags this set contains both tab indices so the pair
+    ///     lifts out as a unit.
     ///   - normalGapIndex: Gap position in the normal zone.
     ///   - normalGapWidth: Gap width for the normal zone.
     func dragControllerDidUpdateLayout(
-        pinnedExcludedIndex: Int?,
+        pinnedExcludedIndices: Set<Int>,
         pinnedGapIndex: Int?,
-        normalExcludedIndex: Int?,
+        normalExcludedIndices: Set<Int>,
         normalGapIndex: Int?,
         normalGapWidth: CGFloat?
     )
@@ -116,7 +121,8 @@ final class TabStripDragController {
         sourceIndex: Int,
         sourceZone: TabContainerType,
         mouseLocation: CGPoint,
-        tabFrame: CGRect
+        tabFrame: CGRect,
+        siblingSourceIndex: Int? = nil
     ) {
         // Capture the source geometry before any layout changes.
         context = TabDragContext(
@@ -124,7 +130,8 @@ final class TabStripDragController {
             sourceContainerType: sourceZone,
             sourceIndex: sourceIndex,
             initialMouseLocation: mouseLocation,
-            initialTabFrame: tabFrame
+            initialTabFrame: tabFrame,
+            siblingSourceIndex: siblingSourceIndex
         )
 
         // Hide the source tab before the gap is shown.
@@ -545,35 +552,45 @@ final class TabStripDragController {
     private func notifyLayoutUpdate() {
         guard let context = context else { return }
 
-        var pinnedExcludedIndex: Int?
+        var pinnedExcludedIndices: Set<Int> = []
         var pinnedGapIndex: Int?
-        var normalExcludedIndex: Int?
+        var normalExcludedIndices: Set<Int> = []
         var normalGapIndex: Int?
         var normalGapWidth: CGFloat?
 
-        // Hide the source tab in its original zone.
+        // Hide the source tab — and its split partner, if any — in its
+        // original zone so the whole pair lifts together.
         switch context.sourceContainerType {
         case .pinned:
-            pinnedExcludedIndex = context.sourceIndex
+            pinnedExcludedIndices.insert(context.sourceIndex)
+            if let sibling = context.siblingSourceIndex {
+                pinnedExcludedIndices.insert(sibling)
+            }
         case .normal:
-            normalExcludedIndex = context.sourceIndex
+            normalExcludedIndices.insert(context.sourceIndex)
+            if let sibling = context.siblingSourceIndex {
+                normalExcludedIndices.insert(sibling)
+            }
         }
 
-        // Show the insertion gap in the target zone.
+        // Show the insertion gap in the target zone. Reserve room for both
+        // members when the drag carries a split pair.
+        let slotCount = context.siblingSourceIndex == nil ? 1 : 2
         switch context.targetContainerType {
         case .pinned:
             pinnedGapIndex = context.targetIndex
         case .normal:
             normalGapIndex = context.targetIndex
             if let metrics = delegate?.dragControllerRequestMetrics() {
-                normalGapWidth = calculateAverageTabWidth(from: metrics.normalTabFrames)
+                let perTab = calculateAverageTabWidth(from: metrics.normalTabFrames)
+                normalGapWidth = perTab * CGFloat(slotCount)
             }
         }
 
         delegate?.dragControllerDidUpdateLayout(
-            pinnedExcludedIndex: pinnedExcludedIndex,
+            pinnedExcludedIndices: pinnedExcludedIndices,
             pinnedGapIndex: pinnedGapIndex,
-            normalExcludedIndex: normalExcludedIndex,
+            normalExcludedIndices: normalExcludedIndices,
             normalGapIndex: normalGapIndex,
             normalGapWidth: normalGapWidth
         )
@@ -604,10 +621,13 @@ final class TabStripDragController {
         if inPinned {
             // Drag is currently over the pinned zone — cursor-based.
             let localX = localPoint.x - metrics.pinnedContainerFrame.minX
+            let excluded: Set<Int> = context.sourceContainerType == .pinned
+                ? sourceExclusionSet(for: context)
+                : []
             let index = calculateGapIndex(
                 localX: localX,
                 tabFrames: metrics.pinnedTabFrames,
-                excludedIndex: context.sourceContainerType == .pinned ? context.sourceIndex : nil
+                excludedIndices: excluded
             )
             return (.pinned, index)
         } else if inNormal {
@@ -616,27 +636,38 @@ final class TabStripDragController {
             // the user grabbed inside the dragged tab). Falls back to
             // cursor-based when the proxy frame isn't available yet
             // (e.g. cross-zone transition's first tick before
-            // targetContainerType updates to .normal).
-            let excluded = context.sourceContainerType == .normal ? context.sourceIndex : nil
-            let normalCursorX = localPoint.x
+            // targetContainerType updates to .normal). Either way, the
+            // resolved index is snapped outside any adjacent split pair
+            // so the drop indicator never lands between two panes.
+            let localX = localPoint.x
                 - metrics.normalContainerFrame.minX
                 + metrics.normalScrollOffset
+            let excluded: Set<Int> = context.sourceContainerType == .normal
+                ? sourceExclusionSet(for: context)
+                : []
+            let rawIndex: Int
             if let xFrame = metrics.draggedTabFrameInNormal {
-                let index = calculateGapIndexEdgeBased(
+                rawIndex = calculateGapIndexEdgeBased(
                     xFrame: xFrame,
                     tabFrames: metrics.normalTabFrames,
                     chipFrames: metrics.chipFrames,
-                    excludedIndex: excluded,
+                    excludedIndices: excluded,
                     previousIndex: context.targetIndex
                 )
-                return (.normal, index)
+            } else {
+                rawIndex = calculateGapIndex(
+                    localX: localX,
+                    tabFrames: metrics.normalTabFrames,
+                    excludedIndices: excluded
+                )
             }
-            let index = calculateGapIndex(
-                localX: normalCursorX,
+            let snappedIndex = snapGapOutsideSplitPair(
+                rawIndex: rawIndex,
+                localX: localX,
                 tabFrames: metrics.normalTabFrames,
-                excludedIndex: excluded
+                splitPairLowerIndices: metrics.normalSplitPairLowerIndices
             )
-            return (.normal, index)
+            return (.normal, snappedIndex)
         } else {
             // Keep the previous destination while outside both zones.
             return (context.targetContainerType, context.targetIndex)
@@ -675,7 +706,7 @@ final class TabStripDragController {
         xFrame: CGRect,
         tabFrames: [CGRect],
         chipFrames: [TabStripChipFrame],
-        excludedIndex: Int?,
+        excludedIndices: Set<Int>,
         previousIndex: Int
     ) -> Int {
         // An entry is one hit-test target — either a visible tab or
@@ -715,7 +746,7 @@ final class TabStripDragController {
                 i = chip.lastMemberIndex + 1
                 continue
             }
-            if let exclude = excludedIndex, i == exclude {
+            if excludedIndices.contains(i) {
                 i += 1
                 continue
             }
@@ -761,17 +792,18 @@ final class TabStripDragController {
     /// - Parameters:
     ///   - localX: Pointer x-position in container coordinates.
     ///   - tabFrames: Tab frames in container coordinates.
-    ///   - excludedIndex: Source tab index excluded from layout.
+    ///   - excludedIndices: Source tab indices excluded from layout. Contains
+    ///     both pair members during a split-pair drag.
     /// - Returns: Target gap index.
     private func calculateGapIndex(
         localX: CGFloat,
         tabFrames: [CGRect],
-        excludedIndex: Int?
+        excludedIndices: Set<Int>
     ) -> Int {
-        // Remove the dragged tab and any placeholder frames.
+        // Remove the dragged tab(s) and any placeholder frames.
         var visibleFrames: [(index: Int, frame: CGRect)] = []
         for (i, frame) in tabFrames.enumerated() {
-            if let exclude = excludedIndex, i == exclude {
+            if excludedIndices.contains(i) {
                 continue
             }
             if frame == .zero {
@@ -790,8 +822,7 @@ final class TabStripDragController {
             if localX < midX {
                 return calculateActualInsertIndex(
                     visualIndex: arrayIndex,
-                    visibleFrames: visibleFrames,
-                    excludedIndex: excludedIndex
+                    visibleFrames: visibleFrames
                 )
             }
         }
@@ -804,11 +835,42 @@ final class TabStripDragController {
         return 0
     }
 
+    /// Source-zone exclusion set: the dragged tab and (for split pairs) its
+    /// partner so the gap-index math ignores both placeholders.
+    private func sourceExclusionSet(for context: TabDragContext) -> Set<Int> {
+        var set: Set<Int> = [context.sourceIndex]
+        if let sibling = context.siblingSourceIndex {
+            set.insert(sibling)
+        }
+        return set
+    }
+
+    /// If the raw insertion index would land strictly between the two members
+    /// of an adjacent split pair, snap it to the side whose tab the pointer is
+    /// currently over. The same snapped index drives both the drop indicator
+    /// and the eventual commit, so what the user sees matches what they get.
+    private func snapGapOutsideSplitPair(
+        rawIndex: Int,
+        localX: CGFloat,
+        tabFrames: [CGRect],
+        splitPairLowerIndices: Set<Int>
+    ) -> Int {
+        let lo = rawIndex - 1
+        guard splitPairLowerIndices.contains(lo),
+              lo + 1 < tabFrames.count else {
+            return rawIndex
+        }
+        let frameLo = tabFrames[lo]
+        let frameHi = tabFrames[lo + 1]
+        guard frameLo != .zero, frameHi != .zero else { return rawIndex }
+        let pairMid = (frameLo.midX + frameHi.midX) / 2
+        return localX < pairMid ? lo : lo + 2
+    }
+
     /// Converts a visible-array index back into the underlying tab index.
     private func calculateActualInsertIndex(
         visualIndex: Int,
-        visibleFrames: [(index: Int, frame: CGRect)],
-        excludedIndex: Int?
+        visibleFrames: [(index: Int, frame: CGRect)]
     ) -> Int {
         if visualIndex < visibleFrames.count {
             return visibleFrames[visualIndex].index

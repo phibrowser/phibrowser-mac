@@ -358,7 +358,8 @@ enum NativeTabDecisionEngine {
     static func insertionIndex(
         visibleNormalTabIds: [Int],
         context: NativeTabCreationContext?,
-        relationGraph: NativeTabRelationGraph
+        relationGraph: NativeTabRelationGraph,
+        splitPartnerByTabId: [Int: Int] = [:]
     ) -> Int? {
         let creationKindText = context?.creationKind.rawValue ?? "nil"
         let isActiveText = context?.isActiveAtCreation.description ?? "nil"
@@ -371,7 +372,8 @@ enum NativeTabDecisionEngine {
             "[NativeTab] insertionIndex visible=\(visibleNormalTabIds) " +
             "context={kind=\(creationKindText), active=\(isActiveText), opener=\(openerText), " +
             "insertAfter=\(insertAfterText), source=\(sourceText), resetOnActive=\(resetOnActiveText)} " +
-            "graph={openers=\(relationGraph.openerByTabId), reset=\(resetTabIds)}"
+            "graph={openers=\(relationGraph.openerByTabId), reset=\(resetTabIds)} " +
+            "splitPartners=\(splitPartnerByTabId)"
         )
         guard !visibleNormalTabIds.isEmpty else { return 0 }
         guard let context else { return nil }
@@ -380,11 +382,17 @@ enum NativeTabDecisionEngine {
         case .linkForeground:
             if let openerTabId = context.openerTabId,
                let openerIndex = visibleNormalTabIds.firstIndex(of: openerTabId) {
+                let anchorIndex = splitAdjustedAnchorIndex(
+                    openerTabId: openerTabId,
+                    openerIndex: openerIndex,
+                    visibleNormalTabIds: visibleNormalTabIds,
+                    splitPartnerByTabId: splitPartnerByTabId
+                )
                 AppLogDebug(
                     "[NativeTab] insertionIndex chose foreground opener=\(openerTabId) " +
-                    "openerIndex=\(openerIndex) result=\(openerIndex + 1)"
+                    "openerIndex=\(openerIndex) anchorIndex=\(anchorIndex) result=\(anchorIndex + 1)"
                 )
-                return openerIndex + 1
+                return anchorIndex + 1
             }
             if let insertAfterTabId = context.insertAfterTabId,
                let anchorIndex = visibleNormalTabIds.firstIndex(of: insertAfterTabId) {
@@ -397,15 +405,21 @@ enum NativeTabDecisionEngine {
         case .linkBackground:
             if let openerTabId = context.openerTabId,
                let openerIndex = visibleNormalTabIds.firstIndex(of: openerTabId) {
-                let result = lastVisibleDescendantInsertionIndex(
+                let anchorIndex = splitAdjustedAnchorIndex(
                     openerTabId: openerTabId,
                     openerIndex: openerIndex,
+                    visibleNormalTabIds: visibleNormalTabIds,
+                    splitPartnerByTabId: splitPartnerByTabId
+                )
+                let result = lastVisibleDescendantInsertionIndex(
+                    openerTabId: openerTabId,
+                    openerIndex: anchorIndex,
                     visibleNormalTabIds: visibleNormalTabIds,
                     relationGraph: relationGraph
                 )
                 AppLogDebug(
                     "[NativeTab] insertionIndex chose background opener=\(openerTabId) " +
-                    "openerIndex=\(openerIndex) result=\(result)"
+                    "openerIndex=\(openerIndex) anchorIndex=\(anchorIndex) result=\(result)"
                 )
                 return result
             }
@@ -495,6 +509,23 @@ enum NativeTabDecisionEngine {
             }
         }
         return insertAfterIndex + 1
+    }
+
+    /// If the opener is in a split with a partner at a higher index, return the
+    /// partner's index so new tabs land after the whole split rather than between
+    /// the two split panes.
+    private static func splitAdjustedAnchorIndex(
+        openerTabId: Int,
+        openerIndex: Int,
+        visibleNormalTabIds: [Int],
+        splitPartnerByTabId: [Int: Int]
+    ) -> Int {
+        guard let partnerId = splitPartnerByTabId[openerTabId],
+              let partnerIndex = visibleNormalTabIds.firstIndex(of: partnerId),
+              partnerIndex > openerIndex else {
+            return openerIndex
+        }
+        return partnerIndex
     }
 
     private static func directionalMatch(

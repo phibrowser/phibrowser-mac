@@ -206,7 +206,11 @@ class BookmarkBar: NSView {
             make.height.equalTo(1)
         }
 
-        registerForDraggedTypes([.phiBookmark])
+        // Also accept tabs and pinned tabs so the user can drag any tab from
+        // the sidebar / tab strip onto the bar to create a bookmark. Split-
+        // pair tabs become one split-view bookmark via
+        // `BrowserState.addSplitBookmarkFromTab`.
+        registerForDraggedTypes([.phiBookmark, .normalTab, .pinnedTab])
     }
 
     override var intrinsicContentSize: NSSize {
@@ -255,17 +259,80 @@ class BookmarkBar: NSView {
         if bookmark.isFolder {
             item.image = NSImage(systemSymbolName: "folder", accessibilityDescription: nil)
             item.submenu = createMenu(for: bookmark)
-        } else {
-            item.image = NSImage(systemSymbolName: "globe", accessibilityDescription: nil)
-            loadFavicon(for: bookmark.url) { [weak item] image in
-                guard let image = image else { return }
-                DispatchQueue.main.async {
-                    image.size = NSSize(width: self.faviconSize, height: self.faviconSize)
-                    item?.image = image
-                }
+            return item
+        }
+
+        if let secondaryUrl = bookmark.secondaryUrl, !secondaryUrl.isEmpty {
+            // Split-view bookmark: mirror the in-bar rendering so the folder
+            // dropdown also reads as a split — combined "primary • secondary"
+            // label and a dual favicon. Without this, both panes collapse to a
+            // single globe icon and the menu looks like a plain bookmark.
+            let secondaryDisplay = Self.displayName(forSecondaryTitle: bookmark.secondaryTitle, url: secondaryUrl)
+            item.title = secondaryDisplay.isEmpty ? bookmark.title : "\(bookmark.title) • \(secondaryDisplay)"
+            item.image = NSImage(systemSymbolName: "rectangle.split.2x1", accessibilityDescription: nil)
+            loadSplitFavicons(primaryUrl: bookmark.url, secondaryUrl: secondaryUrl) { [weak item] image in
+                item?.image = image
+            }
+            return item
+        }
+
+        item.image = NSImage(systemSymbolName: "globe", accessibilityDescription: nil)
+        loadFavicon(for: bookmark.url) { [weak item] image in
+            guard let image = image else { return }
+            DispatchQueue.main.async {
+                image.size = NSSize(width: self.faviconSize, height: self.faviconSize)
+                item?.image = image
             }
         }
         return item
+    }
+
+    /// Returns the best display label for the secondary pane: the stored title
+    /// if present, otherwise the URL's host with any leading `www.` stripped.
+    /// Mirrors `BookmarkItemView.displayName` so the folder dropdown and the
+    /// in-bar item stay visually consistent.
+    private static func displayName(forSecondaryTitle title: String?, url: String) -> String {
+        if let title, !title.isEmpty { return title }
+        guard let parsed = URL(string: url), let host = parsed.host else { return "" }
+        if host.hasPrefix("www."), host.count > 4 {
+            return String(host.dropFirst(4))
+        }
+        return host
+    }
+
+    /// Loads both favicons of a split bookmark and composes them into a single
+    /// side-by-side image suitable for use as an `NSMenuItem.image`. Missing
+    /// favicons fall back to the globe symbol so the layout slot still renders.
+    private func loadSplitFavicons(primaryUrl: String?,
+                                   secondaryUrl: String,
+                                   completion: @escaping (NSImage) -> Void) {
+        let iconSize = self.faviconSize
+        loadFavicon(for: primaryUrl) { [weak self] primaryImage in
+            self?.loadFavicon(for: secondaryUrl) { secondaryImage in
+                DispatchQueue.main.async {
+                    let composed = BookmarkBar.composeSplitFavicon(primary: primaryImage,
+                                                                   secondary: secondaryImage,
+                                                                   iconSize: iconSize)
+                    completion(composed)
+                }
+            }
+        }
+    }
+
+    /// Draws two favicons side-by-side with a 2pt gap (matches
+    /// `BookmarkItemView`'s in-bar layout) into a single NSImage.
+    private static func composeSplitFavicon(primary: NSImage?,
+                                            secondary: NSImage?,
+                                            iconSize: CGFloat) -> NSImage {
+        let gap: CGFloat = 2
+        let totalSize = NSSize(width: iconSize * 2 + gap, height: iconSize)
+        let composed = NSImage(size: totalSize)
+        let fallback = NSImage(systemSymbolName: "globe", accessibilityDescription: nil)
+        composed.lockFocus()
+        (primary ?? fallback)?.draw(in: NSRect(x: 0, y: 0, width: iconSize, height: iconSize))
+        (secondary ?? fallback)?.draw(in: NSRect(x: iconSize + gap, y: 0, width: iconSize, height: iconSize))
+        composed.unlockFocus()
+        return composed
     }
 
     private func createMenu(for folder: Bookmark) -> NSMenu {
@@ -303,13 +370,30 @@ class BookmarkBar: NSView {
     // MARK: - NSDraggingDestination
     override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation {
         let pasteboard = sender.draggingPasteboard
-        if pasteboard.types?.contains(.phiBookmark) == true {
+        let types = pasteboard.types ?? []
+        if types.contains(.phiBookmark) {
             return .move
+        }
+        if types.contains(.normalTab) || types.contains(.pinnedTab) {
+            // Use `.copy` for tab → bookmark so the macOS drag cursor shows a
+            // "+" badge: the existing tab keeps running and a new bookmark is
+            // added on top.
+            return .copy
         }
         return []
     }
 
     override func draggingUpdated(_ sender: NSDraggingInfo) -> NSDragOperation {
+        let types = sender.draggingPasteboard.types ?? []
+        let operation: NSDragOperation
+        if types.contains(.phiBookmark) {
+            operation = .move
+        } else if types.contains(.normalTab) || types.contains(.pinnedTab) {
+            operation = .copy
+        } else {
+            return []
+        }
+
         let locationInStack = stackView.convert(sender.draggingLocation, from: nil)
         let visibleItems = stackView.arrangedSubviews.compactMap { $0 as? BookmarkItemView }.filter { !$0.isHidden }
 
@@ -341,7 +425,7 @@ class BookmarkBar: NSView {
 
         dropIndicator.frame = CGRect(x: targetPointInBar.x, y: verticalPadding, width: 2, height: bounds.height - verticalPadding * 2)
         dropIndicator.isHidden = false
-        return .move
+        return operation
     }
 
     override func draggingExited(_ sender: NSDraggingInfo?) {
@@ -351,35 +435,87 @@ class BookmarkBar: NSView {
     override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
         dropIndicator.isHidden = true
 
-        guard let pasteboard = sender.draggingPasteboard.pasteboardItems?.first,
-              let guid = pasteboard.string(forType: .phiBookmark),
-              let draggedBookmark = state.bookmarkManager.bookmark(withGuid: guid),
-              let currentIndex = bookmarks.firstIndex(of: draggedBookmark) else {
+        guard let pasteboardItem = sender.draggingPasteboard.pasteboardItems?.first else {
             return false
         }
 
+        // Reorder existing bookmark — current behavior. Computed targetIndex
+        // is *post-removal* because `moveBookmark` removes-then-inserts.
+        if let guid = pasteboardItem.string(forType: .phiBookmark),
+           let draggedBookmark = state.bookmarkManager.bookmark(withGuid: guid),
+           let currentIndex = bookmarks.firstIndex(of: draggedBookmark) {
+            var targetIndex = resolvedDropIndex()
+            if targetIndex > currentIndex {
+                targetIndex -= 1
+            }
+            state.bookmarkManager.moveBookmark(draggedBookmark, to: state.bookmarkManager.rootFolder, at: targetIndex)
+            return true
+        }
+
+        // Tab → bookmark. Drop index here is an *insertion* index (pre-add),
+        // so no off-by-one adjustment is needed.
+        let sourceState = sourceBrowserState(for: sender.draggingPasteboard) ?? state
+        let dropIndex = resolvedDropIndex()
+
+        if let guidString = pasteboardItem.string(forType: .normalTab),
+           let tabGuid = Int(guidString),
+           let draggedTab = sourceState.tabs.first(where: { $0.guid == tabGuid }) {
+            return performTabDrop(draggedTab, sourceState: sourceState, at: dropIndex)
+        }
+
+        if let pinnedGuid = pasteboardItem.string(forType: .pinnedTab) {
+            return performPinnedTabDrop(pinnedGuid: pinnedGuid,
+                                        sourceState: sourceState,
+                                        at: dropIndex)
+        }
+
+        return false
+    }
+
+    /// Translates `lastDropIndex` (visible-row index) back into a position in
+    /// the canonical `bookmarks` array used for insertion / move.
+    private func resolvedDropIndex() -> Int {
         let visibleItems = stackView.arrangedSubviews.compactMap { $0 as? BookmarkItemView }.filter { !$0.isHidden }
         let hiddenItems = stackView.arrangedSubviews.compactMap { $0 as? BookmarkItemView }.filter { $0.isHidden }
-
-        var targetIndex = 0
-
         if lastDropIndex < visibleItems.count {
             let anchorBookmark = visibleItems[lastDropIndex].bookmark
-            targetIndex = bookmarks.firstIndex(of: anchorBookmark) ?? 0
-        } else {
-            if let firstHidden = hiddenItems.first {
-                targetIndex = bookmarks.firstIndex(of: firstHidden.bookmark) ?? bookmarks.count
-            } else {
-                targetIndex = bookmarks.count
-            }
+            return bookmarks.firstIndex(of: anchorBookmark) ?? 0
         }
-
-        if targetIndex > currentIndex {
-            targetIndex -= 1
+        if let firstHidden = hiddenItems.first {
+            return bookmarks.firstIndex(of: firstHidden.bookmark) ?? bookmarks.count
         }
+        return bookmarks.count
+    }
 
-        state.bookmarkManager.moveBookmark(draggedBookmark, to: state.bookmarkManager.rootFolder, at: targetIndex)
+    /// Creates a bookmark from a tab. Split-pair tabs become one split-view
+    /// bookmark (both panes saved together); ordinary tabs go through the
+    /// migrating `moveNormalTab` path so the open tab gets bound to the new
+    /// bookmark.
+    private func performTabDrop(_ tab: Tab, sourceState: BrowserState, at index: Int) -> Bool {
+        if sourceState.addSplitBookmarkFromTab(tab, toFolder: nil, targetIndex: index) {
+            return true
+        }
+        sourceState.moveNormalTab(tabId: tab.guid, toBookmark: nil, index: index)
         return true
+    }
+
+    /// Pinned tabs can never be in a split (the right-click "Open as Split"
+    /// entry is suppressed for pinned tabs), so the drop always reuses the
+    /// existing single-URL conversion path.
+    private func performPinnedTabDrop(pinnedGuid: String, sourceState: BrowserState, at index: Int) -> Bool {
+        sourceState.movePinnedTabOut(pinnedGuid: pinnedGuid, toBookmark: nil, index: index)
+        return true
+    }
+
+    /// Resolves the source window's `BrowserState` from the pasteboard's
+    /// `.sourceWindowId` entry. Falls back to nil for same-window drags.
+    private func sourceBrowserState(for pasteboard: NSPasteboard) -> BrowserState? {
+        guard let idString = pasteboard.string(forType: .sourceWindowId),
+              let sourceId = Int(idString),
+              sourceId != state.windowId else {
+            return nil
+        }
+        return MainBrowserWindowControllersManager.shared.getBrowserState(for: sourceId)
     }
 
     // MARK: - Actions

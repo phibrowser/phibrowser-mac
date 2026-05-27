@@ -5,7 +5,6 @@
 
 import Foundation
 import AppKit
-import PostHog
 
 extension AppController {
     /// Public read-only launch context exposed to the rest of the app.

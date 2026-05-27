@@ -55,9 +55,32 @@ struct UnifiedTabFaviconView: View {
                     .offset(x: 3, y: -3)
             }
         }
+        .overlay(alignment: .bottomTrailing) {
+            if let position = viewModel.splitPairPosition {
+                SplitPositionBadge(position: position)
+                    .offset(x: 3, y: 3)
+            }
+        }
         .scaleEffect(viewModel.isPressed ? 0.985 : 1.0)
         .animation(.easeOut(duration: 0.1), value: viewModel.isPressed)
         .ignoresSafeArea()
+    }
+}
+
+struct SplitPositionBadge: View {
+    let position: SplitPairPosition
+
+    var body: some View {
+        Text(position == .first ? "L" : "R")
+            .font(.system(size: 7, weight: .black, design: .rounded))
+            .foregroundStyle(.white)
+            .frame(width: 11, height: 11)
+            .background(
+                Circle().themedFill(.themeColor)
+            )
+            .overlay(
+                Circle().stroke(.white, lineWidth: 0.5)
+            )
     }
 }
 

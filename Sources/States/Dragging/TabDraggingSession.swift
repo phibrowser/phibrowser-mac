@@ -90,6 +90,12 @@ final class TabDraggingSession {
     private var pendingTearOffWindowPlacement: PendingTearOffWindowPlacement?
     private var mainWindowCreatedObserver: NSObjectProtocol?
 
+    /// Live observers waiting for the source window's `openTwoURLsAsSplit`
+    /// to publish a new `SplitGroup`; once that fires, the split's live
+    /// wrapper is used to atomically tear both panes into a new window via
+    /// `moveSplit(toNewWindow:)` — the same path opened-tab drag uses.
+    private var pendingTearOffSplitObservers: Set<AnyCancellable> = []
+
     // MARK: - Drag image switching predicate
     
     /// Custom predicate to determine if drag image switching should be enabled for a given item.
@@ -308,21 +314,153 @@ final class TabDraggingSession {
         if didPerformDrop {
             return
         }
-        guard let web = item as? WebContentRepresentable,
-              lastIsInsideDragBoundary == false,
-              let item = snapshot.draggingItem,
-              shouldSwitchDragImage(for: item) else {
+        guard lastIsInsideDragBoundary == false,
+              let snapshotItem = snapshot.draggingItem,
+              shouldSwitchDragImage(for: snapshotItem) else {
             return
         }
-        
-        if let webContentWrapper = web.webContentWrapper {
+
+        // Split bookmark: if the bookmark is already open as a live split in
+        // any window, tear that live split off instead of spawning a duplicate.
+        // Otherwise spawn a new window and open both URLs as a fresh split —
+        // bookmarks have no live wrapper, so `moveSplit(toNewWindow:)` isn't
+        // available; the new-window split is wired up in
+        // `handleMainBrowserWindowCreated`.
+        if let bookmark = item as? Bookmark,
+           let primaryURL = bookmark.url, !primaryURL.isEmpty,
+           let secondaryURL = bookmark.secondaryUrl, !secondaryURL.isEmpty {
+            recordPendingTearOffWindowPlacement(screenLocation: snapshot.screenLocation)
+            if let wrapper = openedSplitWrapper(forBookmarkGuid: bookmark.guid) {
+                wrapper.updateTabCustomValue("")
+                wrapper.moveSplit(toNewWindow: true)
+            } else {
+                requestNewWindowSplit(primaryURL: primaryURL, secondaryURL: secondaryURL)
+            }
+            return
+        }
+
+        // Pinned-split pane: if the pinned split is currently open as a live
+        // split, tear off the live split (source's pinned record stays). Else
+        // open both URLs in a new window — "open in another window" semantics.
+        if let tab = item as? Tab,
+           tab.isPinned,
+           let primaryURL = tab.url, !primaryURL.isEmpty,
+           let partnerGuid = tab.splitPartnerGuid, !partnerGuid.isEmpty,
+           let sourceState = state,
+           let partner = sourceState.pinnedTabs.first(where: { $0.guidInLocalDB == partnerGuid }),
+           let secondaryURL = partner.url, !secondaryURL.isEmpty {
+            recordPendingTearOffWindowPlacement(screenLocation: snapshot.screenLocation)
+            if let wrapper = openedPinnedSplitWrapper(forPinnedRecord: tab, in: sourceState) {
+                // Clear custom_value on BOTH live panes before tearing off.
+                // The new window loads the same pinned records from localStore,
+                // so any pane arriving with its DB guid still set would
+                // reattach into the pinned area, leaving one pane in the
+                // normal list and one in the pinned list.
+                for paneWrapper in openedPinnedSplitPaneWrappers(forPinnedRecord: tab, in: sourceState) {
+                    paneWrapper.updateTabCustomValue("")
+                }
+                wrapper.moveSplit(toNewWindow: true)
+            } else {
+                requestNewWindowSplit(primaryURL: primaryURL, secondaryURL: secondaryURL)
+            }
+            return
+        }
+
+        // Live-wrapper path: Chromium tears off the tab (and partner pane, if
+        // this is a split) into a new window in a single atomic operation.
+        if let web = item as? WebContentRepresentable,
+           let webContentWrapper = web.webContentWrapper {
             recordPendingTearOffWindowPlacement(screenLocation: snapshot.screenLocation)
             webContentWrapper.updateTabCustomValue("")
-            webContentWrapper.moveSelf(toNewWindow: true)
-        } else {
-//            ChromiumLauncher.sharedInstance().bridge?.openURL(inNewWindow: web.url ?? "")
+            webContentWrapper.moveSplit(toNewWindow: true)
         }
-        
+    }
+
+    /// Open both URLs as a split in the source window (via the proven
+    /// `openTwoURLsAsSplit` path), then watch for the new `SplitGroup` to
+    /// appear and tear it off into a new window via `moveSplit(toNewWindow:)`.
+    /// This mirrors what an opened-tab split drag would do.
+    private func requestNewWindowSplit(primaryURL: String, secondaryURL: String) {
+        guard let state else { return }
+        AppLogDebug("[NewWindowSplit] queued primary=\(primaryURL) secondary=\(secondaryURL) sourceWin=\(sourceWindow?.windowNumber ?? -1)")
+
+        let preexistingSplitIds = Set(state.splits.map(\.id))
+        state.openTwoURLsAsSplit(primaryURL: primaryURL, secondaryURL: secondaryURL)
+
+        // Wait until both the new SplitGroup appears AND its first pane has a
+        // live `webContentWrapper`; Chromium publishes the split before the
+        // wrapper attaches in the slow path. Without this combineLatest gate
+        // we'd silently drop the tear-off when `$splits` fires first.
+        var cancellable: AnyCancellable?
+        cancellable = Publishers.CombineLatest(state.$splits, state.$tabs)
+            .compactMap { splits, tabs -> WebContentWrapper? in
+                guard let newSplit = splits.first(where: { !preexistingSplitIds.contains($0.id) }) else {
+                    return nil
+                }
+                return tabs.first(where: { newSplit.contains(tabId: $0.guid) })?.webContentWrapper
+            }
+            .first()
+            .sink { [weak self] wrapper in
+                AppLogDebug("[NewWindowSplit] tearing off newly-created split")
+                wrapper.moveSplit(toNewWindow: true)
+                if let c = cancellable {
+                    self?.pendingTearOffSplitObservers.remove(c)
+                }
+            }
+        if let c = cancellable {
+            pendingTearOffSplitObservers.insert(c)
+        }
+    }
+
+    /// Return a live wrapper for the split currently bound to `bookmarkGuid`
+    /// in any window, or nil if the split bookmark isn't currently open.
+    /// `splitBookmarkBindings` is per-window, so we scan all windows — the
+    /// same bookmark can only have one active binding at a time (the second
+    /// open call re-activates the first), but it can live in any window.
+    private func openedSplitWrapper(forBookmarkGuid bookmarkGuid: String) -> (WebContentWrapper & NSObject)? {
+        for controller in MainBrowserWindowControllersManager.shared.getAllWindows() {
+            let bs = controller.browserState
+            guard let splitId = bs.splitBookmarkBindings[bookmarkGuid],
+                  let group = bs.splits.first(where: { $0.id == splitId }) else { continue }
+            if let wrapper = bs.tabs.first(where: { group.contains(tabId: $0.guid) })?.webContentWrapper {
+                return wrapper
+            }
+        }
+        return nil
+    }
+
+    /// Return a live wrapper for the pinned split that includes `pinnedRecord`
+    /// when it's currently open, or nil if the pinned split has no live panes.
+    /// Pinned records are window-scoped, so we only look at the source state:
+    /// the live pane bound to the pinned record (matched by `guidInLocalDB`)
+    /// must be a member of an `isPinned` SplitGroup in the same window.
+    private func openedPinnedSplitWrapper(forPinnedRecord pinnedRecord: Tab,
+                                          in sourceState: BrowserState) -> (WebContentWrapper & NSObject)? {
+        guard let dbGuid = pinnedRecord.guidInLocalDB, !dbGuid.isEmpty,
+              let liveTab = sourceState.tabs.first(where: { $0.guidInLocalDB == dbGuid }),
+              let group = sourceState.splitGroup(forTabId: liveTab.guid),
+              group.isPinned else {
+            return nil
+        }
+        return liveTab.webContentWrapper
+    }
+
+    /// Live wrappers for BOTH panes of the pinned split that includes
+    /// `pinnedRecord`. Used by the tear-off path to clear `custom_value` on
+    /// each pane before `moveSplitToNewWindow:` — otherwise the partner
+    /// pane arrives in the new window with its DB guid intact and snaps
+    /// back into the pinned area there.
+    private func openedPinnedSplitPaneWrappers(forPinnedRecord pinnedRecord: Tab,
+                                               in sourceState: BrowserState) -> [WebContentWrapper & NSObject] {
+        guard let dbGuid = pinnedRecord.guidInLocalDB, !dbGuid.isEmpty,
+              let liveTab = sourceState.tabs.first(where: { $0.guidInLocalDB == dbGuid }),
+              let group = sourceState.splitGroup(forTabId: liveTab.guid),
+              group.isPinned else {
+            return []
+        }
+        let partnerTab = group.partnerTabId(of: liveTab.guid)
+            .flatMap { partnerId in sourceState.tabs.first(where: { $0.guid == partnerId }) }
+        return [liveTab.webContentWrapper, partnerTab?.webContentWrapper].compactMap { $0 }
     }
 
     func shouldUsePageSnapshotPreview(at screenLocation: CGPoint?) -> Bool {
@@ -435,7 +573,7 @@ final class TabDraggingSession {
             pendingTearOffWindowPlacement = nil
             return
         }
-        
+
         createdWindow.setFrame(targetFrame, display: true)
         pendingTearOffWindowPlacement = nil
     }
@@ -656,16 +794,205 @@ extension TabDraggingSession {
     /// Resolve the drag image to use when the cursor is outside the source window.
     private func resolveOutsideWindowDragImage(for item: SidebarItem) -> NSImage? {
         if let tab = item as? Tab {
+            // Pinned splits aren't in Chromium's split table — they're paired
+            // via persisted `splitPartnerGuid`, so handle them first.
+            if tab.isPinned, let split = makeSplitSnapshotImage(forPinnedSplitTab: tab) {
+                return split
+            }
+            if let split = makeSplitSnapshotImage(forTab: tab) {
+                return split
+            }
             return makeTabSnapshotImage(tab) ?? makeTabPlaceholderImage(url: tab.url, title: tab.title)
-        } else if let bookmark = item as? Bookmark,
-                  !bookmark.isFolder,
-                  bookmark.isActive,
-                  let nativeView = bookmark.webContentWrapper?.nativeView
-        {
-            return makeTabSnapshotImage(nativeView)
-                ?? makeTabPlaceholderImage(url: bookmark.url, title: bookmark.title)
+        } else if let bookmark = item as? Bookmark, !bookmark.isFolder {
+            if let split = makeSplitSnapshotImage(forSplitBookmark: bookmark) {
+                return split
+            }
+            if bookmark.isActive,
+               let nativeView = bookmark.webContentWrapper?.nativeView,
+               let live = makeTabSnapshotImage(nativeView)
+            {
+                return live
+            }
+            return makeTabPlaceholderImage(url: bookmark.url, title: bookmark.title)
         }
         return makeTabPlaceholderImage(url: item.url, title: item.title)
+    }
+
+    /// Composite snapshot of both panes when the dragged tab belongs to a split.
+    /// Returns nil if the tab isn't in a split or the partner can't be resolved.
+    ///
+    /// Canvas geometry is computed deterministically from `group.layout` and
+    /// `group.ratio`, and panes are filled with Chromium per-tab thumbnails
+    /// (falling back to a favicon/title placeholder). Live screen capture is
+    /// intentionally avoided here — split-pane views can report bounds that
+    /// don't match their on-screen rect, leading to mis-cropped previews.
+    private func makeSplitSnapshotImage(forTab tab: Tab) -> NSImage? {
+        guard let state = state,
+              let group = state.splitGroup(forTabId: tab.guid),
+              let primaryTab = state.normalTabs.first(where: { $0.guid == group.primaryTabId }),
+              let secondaryTab = state.normalTabs.first(where: { $0.guid == group.secondaryTabId }) else {
+            return nil
+        }
+        return composeSplitSnapshot(
+            layout: group.layout,
+            ratio: group.ratio,
+            primaryPane: { [weak self] size in
+                self?.makeSplitPaneFromThumbnail(for: primaryTab, size: size) ?? NSImage(size: size)
+            },
+            secondaryPane: { [weak self] size in
+                self?.makeSplitPaneFromThumbnail(for: secondaryTab, size: size) ?? NSImage(size: size)
+            }
+        )
+    }
+
+    /// Snapshot for a pinned split — the pair is identified by the live
+    /// `splitPartnerGuid` on the dragged pinned tab, not by Chromium's split
+    /// table. Defaults to a vertical layout because pinned splits open as
+    /// vertical via `openTwoURLsAsSplit`. Returns nil if no partner is found.
+    private func makeSplitSnapshotImage(forPinnedSplitTab tab: Tab) -> NSImage? {
+        guard tab.isPinned,
+              let partnerGuid = tab.splitPartnerGuid, !partnerGuid.isEmpty,
+              let state = state,
+              let partner = state.pinnedTabs.first(where: { $0.guidInLocalDB == partnerGuid }) else {
+            return nil
+        }
+        return composeSplitSnapshot(
+            layout: .vertical,
+            ratio: 0.5,
+            primaryPane: { [weak self] size in
+                self?.makeSplitPaneFromThumbnail(for: tab, size: size) ?? NSImage(size: size)
+            },
+            secondaryPane: { [weak self] size in
+                self?.makeSplitPaneFromThumbnail(for: partner, size: size) ?? NSImage(size: size)
+            }
+        )
+    }
+
+    /// Snapshot for a split-view bookmark — both panes derived from the
+    /// bookmark's primary/secondary URL+title, since a bookmark has no live
+    /// tab to draw from. Returns nil for single-URL bookmarks.
+    private func makeSplitSnapshotImage(forSplitBookmark bookmark: Bookmark) -> NSImage? {
+        guard !bookmark.isFolder,
+              let primaryURL = bookmark.url, !primaryURL.isEmpty,
+              let secondaryURL = bookmark.secondaryUrl, !secondaryURL.isEmpty else {
+            return nil
+        }
+        let primaryTitle = bookmark.title
+        let secondaryTitle: String = {
+            if let t = bookmark.secondaryTitle, !t.isEmpty { return t }
+            return URL(string: secondaryURL)?.host ?? secondaryURL
+        }()
+        return composeSplitSnapshot(
+            layout: .vertical,
+            ratio: 0.5,
+            primaryPane: { [weak self] size in
+                self?.makeSplitPaneFromURL(url: primaryURL, title: primaryTitle, size: size)
+                    ?? NSImage(size: size)
+            },
+            secondaryPane: { [weak self] size in
+                self?.makeSplitPaneFromURL(url: secondaryURL, title: secondaryTitle, size: size)
+                    ?? NSImage(size: size)
+            }
+        )
+    }
+
+    /// Shared canvas builder: compute pane rects from layout/ratio, ask each
+    /// pane closure to render at its target size, then composite onto a
+    /// rounded card with a divider.
+    private func composeSplitSnapshot(
+        layout: SplitLayout,
+        ratio: Double,
+        primaryPane: (NSSize) -> NSImage,
+        secondaryPane: (NSSize) -> NSImage
+    ) -> NSImage {
+        let canvasSize = splitCanvasSize(for: layout)
+        let divider: CGFloat = 2
+        let clampedRatio = CGFloat(max(0.05, min(0.95, ratio)))
+
+        let primaryRect: NSRect
+        let secondaryRect: NSRect
+        let dividerRect: NSRect
+        switch layout {
+        case .vertical:
+            let primaryW = floor((canvasSize.width - divider) * clampedRatio)
+            let secondaryW = canvasSize.width - divider - primaryW
+            primaryRect = NSRect(x: 0, y: 0, width: primaryW, height: canvasSize.height)
+            dividerRect = NSRect(x: primaryW, y: 0, width: divider, height: canvasSize.height)
+            secondaryRect = NSRect(x: primaryW + divider, y: 0, width: secondaryW, height: canvasSize.height)
+        case .horizontal:
+            // Primary is the lower-strip-indexed tab → top pane (higher y).
+            let primaryH = floor((canvasSize.height - divider) * clampedRatio)
+            let secondaryH = canvasSize.height - divider - primaryH
+            primaryRect = NSRect(x: 0, y: secondaryH + divider, width: canvasSize.width, height: primaryH)
+            dividerRect = NSRect(x: 0, y: secondaryH, width: canvasSize.width, height: divider)
+            secondaryRect = NSRect(x: 0, y: 0, width: canvasSize.width, height: secondaryH)
+        }
+
+        let primaryImage = primaryPane(primaryRect.size)
+        let secondaryImage = secondaryPane(secondaryRect.size)
+
+        let canvas = NSImage(size: canvasSize)
+        canvas.lockFocus()
+        defer { canvas.unlockFocus() }
+
+        let canvasRect = NSRect(origin: .zero, size: canvasSize)
+        let clipPath = NSBezierPath(roundedRect: canvasRect,
+                                    xRadius: Self.tabSnapshotCornerRadius,
+                                    yRadius: Self.tabSnapshotCornerRadius)
+        clipPath.addClip()
+
+        NSColor.controlBackgroundColor.withAlphaComponent(0.98).setFill()
+        canvasRect.fill()
+
+        primaryImage.draw(in: primaryRect,
+                          from: .zero,
+                          operation: .sourceOver,
+                          fraction: 1.0)
+        secondaryImage.draw(in: secondaryRect,
+                            from: .zero,
+                            operation: .sourceOver,
+                            fraction: 1.0)
+
+        NSColor.separatorColor.withAlphaComponent(0.75).setFill()
+        dividerRect.fill()
+
+        NSColor.separatorColor.withAlphaComponent(0.55).setStroke()
+        clipPath.lineWidth = 1
+        clipPath.stroke()
+
+        return canvas
+    }
+
+    /// Pick canvas dimensions matched to the split's layout so panes have a
+    /// reasonable aspect each (wide for vertical splits, tall for horizontal).
+    private func splitCanvasSize(for layout: SplitLayout) -> NSSize {
+        let shortEdge: CGFloat = 160
+        let longEdge: CGFloat = 280
+        switch layout {
+        case .vertical:
+            return NSSize(width: longEdge, height: shortEdge)
+        case .horizontal:
+            return NSSize(width: shortEdge, height: longEdge)
+        }
+    }
+
+    /// Returns a non-nil pane image at the requested rect size. Uses the
+    /// Chromium-cached thumbnail directly (no live view capture), then falls
+    /// back to the favicon/title placeholder if the thumbnail isn't cached.
+    private func makeSplitPaneFromThumbnail(for tab: Tab, size: NSSize) -> NSImage {
+        if let jpegData = ChromiumLauncher.sharedInstance().bridge?.thumbnail(forTab: Int64(tab.guid)),
+           let image = NSImage(data: jpegData) {
+            return image.drawnAsRoundedSnapshot(targetSize: size, cornerRadius: 0)
+        }
+        return makeTabPlaceholderImage(url: tab.url, title: tab.title)
+            .drawnAsRoundedSnapshot(targetSize: size, cornerRadius: 0)
+    }
+
+    /// Pane image for cases where no live tab exists (e.g. split bookmarks):
+    /// always renders the favicon/title placeholder for the given URL.
+    private func makeSplitPaneFromURL(url: String?, title: String, size: NSSize) -> NSImage {
+        return makeTabPlaceholderImage(url: url, title: title)
+            .drawnAsRoundedSnapshot(targetSize: size, cornerRadius: 0)
     }
 
     func pageSnapshotImage(for item: SidebarItem) -> NSImage? {

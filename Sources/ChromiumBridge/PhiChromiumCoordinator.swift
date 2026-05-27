@@ -567,6 +567,62 @@ extension PhiChromiumCoordinator {
     }
 }
 
+// MARK: - Split view notifications
+
+extension PhiChromiumCoordinator {
+    func splitCreated(_ splitId: String,
+                      primaryTabId: Int64,
+                      secondaryTabId: Int64,
+                      layout: String,
+                      ratio: Double,
+                      windowId: Int64) {
+        AppLogDebug("[Split] created: id=\(splitId) primary=\(primaryTabId) secondary=\(secondaryTabId) layout=\(layout) ratio=\(ratio) window=\(windowId)")
+        EventBus.shared.send(SplitEvent(
+            browserId: windowId.intValue,
+            action: .created(splitId: splitId,
+                             primaryTabId: primaryTabId.intValue,
+                             secondaryTabId: secondaryTabId.intValue,
+                             layout: parseBridgeLayout(layout),
+                             ratio: ratio)))
+    }
+
+    func splitVisualsChanged(_ splitId: String,
+                             layout: String,
+                             ratio: Double,
+                             windowId: Int64) {
+        EventBus.shared.send(SplitEvent(
+            browserId: windowId.intValue,
+            action: .visualsChanged(splitId: splitId,
+                                    layout: parseBridgeLayout(layout),
+                                    ratio: ratio)))
+    }
+
+    private func parseBridgeLayout(_ raw: String) -> SplitLayout {
+        if let layout = SplitLayout(bridgeString: raw) { return layout }
+        AppLogError("[Split] unknown bridge layout string '\(raw)' — defaulting to vertical")
+        return .vertical
+    }
+
+    func splitContentsChanged(_ splitId: String,
+                              primaryTabId: Int64,
+                              secondaryTabId: Int64,
+                              windowId: Int64) {
+        AppLogDebug("[Split] contentsChanged: id=\(splitId) primary=\(primaryTabId) secondary=\(secondaryTabId) window=\(windowId)")
+        EventBus.shared.send(SplitEvent(
+            browserId: windowId.intValue,
+            action: .contentsChanged(splitId: splitId,
+                                     primaryTabId: primaryTabId.intValue,
+                                     secondaryTabId: secondaryTabId.intValue)))
+    }
+
+    func splitRemoved(_ splitId: String, windowId: Int64) {
+        AppLogDebug("[Split] removed: id=\(splitId) window=\(windowId)")
+        EventBus.shared.send(SplitEvent(
+            browserId: windowId.intValue,
+            action: .removed(splitId: splitId)))
+    }
+}
+
 extension Int64 {
     var intValue: Int { Int(self) }
 }

@@ -253,6 +253,13 @@ class SidebarTabCellView: SidebarCellView {
     private let hoverDeadZoneView = SidebarTabHoverDeadZoneView()
     private let viewModel = TabViewModel()
     weak var delegate: TabCellDelegate?
+    /// Owning window's BrowserState. Set by the controller when the cell is
+    /// configured so `updateSplitMembership` resolves split info against this
+    /// window's data — not the globally-active window's. Without this, a
+    /// newly-created window (e.g. via drag-out) whose key state hasn't taken
+    /// over yet would consult the source window's splits and render its split
+    /// pair as two unmerged rows until something else triggered a refresh.
+    weak var browserState: BrowserState?
     
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
@@ -363,6 +370,26 @@ class SidebarTabCellView: SidebarCellView {
         viewModel.onToggleMute = { [weak tab] in
             guard let tab else { return }
             tab.setAudioMuted(!tab.isAudioMuted)
+        }
+        updateSplitMembership()
+    }
+
+    /// Recompute split-pair position and active-group flag from BrowserState.
+    /// Cheap; safe to call from a global $splits / $focusingTab subscription
+    /// to update visible cells without going through reloadData().
+    func updateSplitMembership() {
+        guard let tab = item as? Tab,
+              let state = browserState else {
+            viewModel.splitPairPosition = nil
+            viewModel.isSplitGroupActive = false
+            return
+        }
+        if let group = state.splitGroup(forTabId: tab.guid) {
+            viewModel.splitPairPosition = state.splitPairPosition(forTabId: tab.guid)
+            viewModel.isSplitGroupActive = state.isSplitGroupActive(group)
+        } else {
+            viewModel.splitPairPosition = nil
+            viewModel.isSplitGroupActive = false
         }
     }
 }

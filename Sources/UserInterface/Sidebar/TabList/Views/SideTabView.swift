@@ -19,6 +19,15 @@ struct SideTabView: View {
         if model.isActive {
             return Color(nsColor: NSColor(resource: .sidebarTabSelected))
         }
+        // Partner of the focused tab in a split — keep the merged-bar look
+        // but muted so the focused half visually stands out.
+        if model.splitPairPosition != nil && model.isSplitGroupActive {
+            return Color(nsColor: NSColor(resource: .sidebarTabSelected)).opacity(0.55)
+        }
+        // Inactive split group — show a subtle bar so the pair is still merged.
+        if model.splitPairPosition != nil {
+            return Color(nsColor: NSColor(resource: .sidebarTabHovered))
+        }
         if model.isHovered {
             return Color(nsColor: NSColor(resource: .sidebarTabHovered))
         }
@@ -26,7 +35,56 @@ struct SideTabView: View {
     }
 
     private var borderColor: Color {
-        (model.isActive && appearance == .dark) ? .white.opacity(0.2) : .clear
+        if model.isActive && appearance == .dark {
+            return .white.opacity(0.2)
+        }
+        // Inactive split pair — outline each half so the merged bar reads as
+        // a single grouped unit even when the split isn't focused. The two
+        // halves' inner edges overlap at the seam and double as a thin
+        // separator between the two tabs.
+        if model.splitPairPosition != nil && !model.isSplitGroupActive {
+            return .primary.opacity(0.1)
+        }
+        return .clear
+    }
+
+    private var borderWidth: CGFloat {
+        if model.isActive { return 1 }
+        if model.splitPairPosition != nil && !model.isSplitGroupActive { return 1 }
+        return 0
+    }
+
+    /// Per-corner radius: drop the corners that touch the partner cell so
+    /// two stacked pair cells visually merge into a single rounded bar.
+    private var cornerRadii: RectangleCornerRadii {
+        let r: CGFloat = 8
+        switch model.splitPairPosition {
+        case .first:
+            return RectangleCornerRadii(topLeading: r, bottomLeading: 0,
+                                        bottomTrailing: 0, topTrailing: r)
+        case .second:
+            return RectangleCornerRadii(topLeading: 0, bottomLeading: r,
+                                        bottomTrailing: r, topTrailing: 0)
+        case .none:
+            return RectangleCornerRadii(topLeading: r, bottomLeading: r,
+                                        bottomTrailing: r, topTrailing: r)
+        }
+    }
+
+    /// Vertical outer padding — collapse the gap on the side that touches
+    /// the partner cell so the two cells render edge-to-edge.
+    private var verticalPadding: EdgeInsets {
+        switch model.splitPairPosition {
+        case .first:  return EdgeInsets(top: 2, leading: 0, bottom: 0, trailing: 0)
+        case .second: return EdgeInsets(top: 0, leading: 0, bottom: 2, trailing: 0)
+        case .none:   return EdgeInsets(top: 2, leading: 0, bottom: 2, trailing: 0)
+        }
+    }
+
+    private var dropShadowOpacity: Double {
+        if model.isActive { return 0.15 }
+        // Don't drop-shadow each half of a merged bar — only the active half.
+        return 0
     }
 
     var body: some View {
@@ -50,18 +108,19 @@ struct SideTabView: View {
         .padding(.trailing, 8)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
+            UnevenRoundedRectangle(cornerRadii: cornerRadii, style: .continuous)
                 .fill(backgroundColor)
         )
         .overlay(
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .stroke(borderColor, lineWidth: model.isActive ? 1 : 0)
+            UnevenRoundedRectangle(cornerRadii: cornerRadii, style: .continuous)
+                .stroke(borderColor, lineWidth: borderWidth)
         )
 //        .debugBorder()
-        .shadow(color: model.isActive ? .black.opacity(0.15) : .clear, radius: 1, x: 0, y: 1)
+        .shadow(color: .black.opacity(dropShadowOpacity), radius: 1, x: 0, y: 1)
         .padding(.leading, WebContentConstant.edgesSpacing)
         .padding(.trailing, model.isInGroup ? 2 : WebContentConstant.edgesSpacing)
-        .padding(.vertical, 2)
+        .padding(.top, verticalPadding.top)
+        .padding(.bottom, verticalPadding.bottom)
         .scaleEffect(model.isPressed ? 0.985 : 1.0)
         .animation(.easeOut(duration: 0.08), value: model.isPressed)
         .onHover { hovering in

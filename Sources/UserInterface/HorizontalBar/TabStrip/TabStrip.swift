@@ -1540,8 +1540,7 @@ final class TabStrip: NSView, TitlebarAwareHitTestable {
             layoutOutput: layoutOutput,
             tabs: tabs,
             activeTab: activeTab,
-            isPinned: isPinned,
-            collapsedHiddenIndices: pinnedSplitCollapsedIndices
+            isPinned: isPinned
         )
     }
 
@@ -1759,8 +1758,7 @@ final class TabStrip: NSView, TitlebarAwareHitTestable {
         layoutOutput: TabStripLayoutOutput,
         tabs: [Tab],
         activeTab: Tab?,
-        isPinned: Bool,
-        collapsedHiddenIndices: Set<Int> = []
+        isPinned: Bool
     ) {
         if !isPinned {
             lastContentWidth = layoutOutput.totalContentWidth
@@ -1798,27 +1796,28 @@ final class TabStrip: NSView, TitlebarAwareHitTestable {
             if index < layoutOutput.tabFrames.count {
                 var frame = layoutOutput.tabFrames[index]
                 // A .zero frame is the layout engine's "excluded" placeholder.
-                // For split-pair drags this includes the partner of the dragged
-                // tab — leave its source view in place so its proxy can return
-                // to a meaningful frame on drop without snapping to (0, 0).
+                // Most .zero cases (collapsed group members, pinned-split
+                // collapsed second pane, dragged-tab placeholder) must zero
+                // out the view's frame so a stale frame from the previous
+                // layout doesn't ghost on top of the active layout.
                 //
-                // For pinned-split collapse the second-pane view must instead
-                // be made invisible so it doesn't ghost on top of the first
-                // pane; force its frame to .zero in that case.
+                // The split-pair drag sibling is the one exception: keep its
+                // source view in place so its proxy can return to a meaningful
+                // frame on drop without snapping to (0, 0). startDragging
+                // already hid alpha there.
                 if frame == .zero {
-                    if collapsedHiddenIndices.contains(index) {
-                        view.frame = .zero
-                        view.alphaValue = 0
+                    if view === draggingSiblingSourceView {
+                        continue
                     }
+                    view.frame = .zero
+                    view.alphaValue = 0
                     continue
                 }
                 if !isPinned {
                     frame.origin.x -= currentScrollOffset
                 }
                 view.frame = frame
-                // Collapsed members: engine emitted .zero; hide alpha so
-                // hidden cells don't leak hover/click hit-testing.
-                view.alphaValue = (frame == .zero) ? 0 : 1
+                view.alphaValue = 1
             }
         }
 
@@ -3738,8 +3737,7 @@ extension TabStrip: TabStripDragDelegate {
             layoutOutput: layoutOutput,
             tabs: tabs,
             activeTab: activeTab,
-            isPinned: isPinned,
-            collapsedHiddenIndices: pinnedSplitCollapsedIndices
+            isPinned: isPinned
         )
     }
 

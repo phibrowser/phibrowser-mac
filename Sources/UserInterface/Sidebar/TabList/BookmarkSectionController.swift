@@ -144,8 +144,15 @@ class BookmarkSectionController: NSObject {
     
     func handleDrop(of item: Any, to target: Bookmark?, at index: Int?) -> Bool {
         let state = MainBrowserWindowControllersManager.shared.activeWindowController?.browserState
-        
+
         if let tab = item as? Tab {
+            // Split-pair tabs become one split-view bookmark; the original
+            // split keeps running because `addSplitBookmarkFromTab` does not
+            // rebind either tab. Single tabs fall through to the migrating
+            // `moveNormalTab` path, which converts the tab in place.
+            if state?.addSplitBookmarkFromTab(tab, toFolder: target, targetIndex: index) == true {
+                return true
+            }
             state?.moveNormalTab(tabId: tab.guid, toBookmark: target?.guid, index: index ?? 0)
             return true
         }

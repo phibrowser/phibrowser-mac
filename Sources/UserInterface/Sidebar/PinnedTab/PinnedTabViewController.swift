@@ -27,6 +27,7 @@ class PinnedTabViewController: NSViewController {
         collectionView.backgroundColors = [.clear]
         collectionView.clipsToBounds = true
         collectionView.register(PinnedTabItem.self, forItemWithIdentifier: PinnedTabItem.reuseIdentifier)
+        collectionView.register(PinnedSplitItem.self, forItemWithIdentifier: PinnedSplitItem.reuseIdentifier)
         collectionView.register(PinnedExtensionItem.self, forItemWithIdentifier: PinnedExtensionItem.reuseIdentifier)
         return collectionView
     }()
@@ -62,6 +63,20 @@ class PinnedTabViewController: NSViewController {
                     self?.handleTabClicked(tab)
                 }
                 return tabItem
+
+            case .splitItem(let group):
+                guard let splitItem = collectionView.makeItem(withIdentifier: PinnedSplitItem.reuseIdentifier, for: indexPath) as? PinnedSplitItem else {
+                    return NSCollectionViewItem()
+                }
+                splitItem.configure(
+                    leftTab: group.leftTab,
+                    rightTab: group.rightTab,
+                    themeProvider: browserState?.themeContext ?? ThemeManager.shared
+                )
+                splitItem.itemClicked = { [weak self] tab in
+                    self?.handleSplitCellClicked(group: group, preferredTab: tab)
+                }
+                return splitItem
             }
         }
         return dataSource
@@ -72,9 +87,27 @@ class PinnedTabViewController: NSViewController {
         case tabs = 1
     }
 
+    /// One pinned split represented as a single grid cell with both panes.
+    /// Identified by the split's stable Chromium id so the diffable snapshot
+    /// can detect when the same split is rebuilt with new tab instances.
+    struct PinnedSplitGroupItem: Hashable {
+        let splitId: String
+        let leftTab: Tab
+        let rightTab: Tab
+
+        func hash(into hasher: inout Hasher) {
+            hasher.combine(splitId)
+        }
+
+        static func == (lhs: PinnedSplitGroupItem, rhs: PinnedSplitGroupItem) -> Bool {
+            lhs.splitId == rhs.splitId
+        }
+    }
+
     private enum Item: Hashable {
         case extensionItem(PinnedTabItemModel)
         case tabItem(Tab)
+        case splitItem(PinnedSplitGroupItem)
 
         private static func stableTabIdentifier(for tab: Tab) -> String {
             if let localGuid = tab.guidInLocalDB, localGuid.isEmpty == false {
@@ -94,6 +127,9 @@ class PinnedTabViewController: NSViewController {
             case .tabItem(let tab):
                 hasher.combine("tab")
                 hasher.combine(Self.stableTabIdentifier(for: tab))
+            case .splitItem(let group):
+                hasher.combine("split")
+                hasher.combine(group.splitId)
             }
         }
 
@@ -103,6 +139,8 @@ class PinnedTabViewController: NSViewController {
                 return a == b
             case (.tabItem(let a), .tabItem(let b)):
                 return stableTabIdentifier(for: a) == stableTabIdentifier(for: b)
+            case (.splitItem(let a), .splitItem(let b)):
+                return a == b
             default:
                 return false
             }
@@ -268,6 +306,19 @@ class PinnedTabViewController: NSViewController {
             }
             .store(in: &cancellables)
 
+        // Split membership / pin flag changes can flip a pair of pinnedTabs
+        // entries into a single .splitItem (and back) without changing the
+        // pinnedTabs array itself. Rebuild the snapshot when splits change so
+        // the collapsed-vs-expanded representation stays in sync.
+        browserState.$splits
+            .dropFirst()
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in
+                guard let self, self.isDragging == false else { return }
+                self.applySnapshot(animatingDifferences: true)
+            }
+            .store(in: &cancellables)
+
         browserState.$isDraggingTab
             .receive(on: DispatchQueue.main)
             .sink { [weak self] dragging in
@@ -368,14 +419,94 @@ class PinnedTabViewController: NSViewController {
         updateEmptyViewVisibility()
     }
     
+    /// Build the tabs-section items by collapsing each pinned split's two
+    /// records into one `.splitItem`. Iteration follows `pinnedTabs` order;
+    /// the first pane encountered emits the combined item, the partner is
+    /// consumed and skipped. Tabs without a pinned-split membership stay as
+    /// regular `.tabItem`s.
+    ///
+    /// Pairing source order:
+    ///   1. Live `SplitGroup` flagged `isPinned` — used while both panes are
+    ///      currently open Chromium tabs.
+    ///   2. Persisted `Tab.splitPartnerGuid` — survives across restarts and
+    ///      covers the case where one or both panes are closed pinned-tab
+    ///      records waiting to be reopened.
+    private func buildTabSectionItems() -> [Item] {
+        guard let state = browserState else {
+            return pinnedTabs.map { .tabItem($0) }
+        }
+        // Pre-compute lookup dictionaries so the per-tab loop runs O(1) per
+        // entry instead of repeating `first(where:)` scans against `tabs`,
+        // `splits`, and `pinnedTabs`. Snapshot rebuilds fire on every
+        // `$pinnedTabs` / `$splits` / `$focusingTab` emission, so the
+        // savings compound during normal interaction.
+        let pinnedByDB: [String: Tab] = Dictionary(uniqueKeysWithValues:
+            pinnedTabs.compactMap { tab in tab.guidInLocalDB.map { ($0, tab) } }
+        )
+        let liveByDB: [String: Tab] = Dictionary(
+            state.tabs.compactMap { tab in tab.guidInLocalDB.map { ($0, tab) } },
+            uniquingKeysWith: { first, _ in first }
+        )
+        let pinnedSplitByLiveTabId: [Int: SplitGroup] = state.splits
+            .filter(\.isPinned)
+            .reduce(into: [:]) { result, group in
+                result[group.primaryTabId] = group
+                result[group.secondaryTabId] = group
+            }
+
+        var consumedDBGuids = Set<String>()
+        var items: [Item] = []
+        for tab in pinnedTabs {
+            guard let myDBGuid = tab.guidInLocalDB, !consumedDBGuids.contains(myDBGuid) else { continue }
+
+            // Prefer the live SplitGroup id when one exists so the same
+            // splitId is used while the split is open and the diffable
+            // snapshot does not flicker between live/persisted forms.
+            var combined: PinnedSplitGroupItem?
+            if let liveTab = liveByDB[myDBGuid],
+               let group = pinnedSplitByLiveTabId[liveTab.guid],
+               let partnerLiveId = group.partnerTabId(of: liveTab.guid),
+               let partnerLive = state.tabs.first(where: { $0.guid == partnerLiveId }),
+               let partnerDBGuid = partnerLive.guidInLocalDB,
+               let partnerPinned = pinnedByDB[partnerDBGuid] {
+                combined = PinnedSplitGroupItem(splitId: group.id,
+                                                leftTab: tab,
+                                                rightTab: partnerPinned)
+                consumedDBGuids.insert(partnerDBGuid)
+            } else if let partnerDBGuid = tab.splitPartnerGuid,
+                      !partnerDBGuid.isEmpty,
+                      !consumedDBGuids.contains(partnerDBGuid),
+                      let partnerPinned = pinnedByDB[partnerDBGuid] {
+                // Persisted pair. Synthesize a stable splitId from both DB
+                // guids so the diffable snapshot identifies the same item
+                // across re-renders.
+                let sortedPair = [myDBGuid, partnerDBGuid].sorted()
+                let stableId = "persisted-split:\(sortedPair[0])|\(sortedPair[1])"
+                combined = PinnedSplitGroupItem(splitId: stableId,
+                                                leftTab: tab,
+                                                rightTab: partnerPinned)
+                consumedDBGuids.insert(partnerDBGuid)
+            }
+
+            if let combined {
+                items.append(.splitItem(combined))
+            } else {
+                items.append(.tabItem(tab))
+            }
+            consumedDBGuids.insert(myDBGuid)
+        }
+        return items
+    }
+
     private func applySnapshot(animatingDifferences: Bool = true) {
         var snapshot = NSDiffableDataSourceSnapshot<Section, Item>()
         snapshot.appendSections(Section.allCases)
         if !pinnedExtensionItems.isEmpty {
             snapshot.appendItems(pinnedExtensionItems.map { .extensionItem($0) }, toSection: .extensions)
         }
-        if !pinnedTabs.isEmpty {
-            snapshot.appendItems(pinnedTabs.map { .tabItem($0) }, toSection: .tabs)
+        let tabSectionItems = buildTabSectionItems()
+        if !tabSectionItems.isEmpty {
+            snapshot.appendItems(tabSectionItems, toSection: .tabs)
         }
 
         let hasAnyContent = !pinnedTabs.isEmpty || !pinnedExtensionItems.isEmpty
@@ -399,16 +530,36 @@ class PinnedTabViewController: NSViewController {
     }
 
     private func updateAllItemsSelectionState(_ focusing: Tab?) {
-        guard let focusingTab = focusing, focusingTab.guidInLocalDB?.isEmpty ?? true == false else {
-            collectionView.visibleItems().compactMap { $0 as? PinnedTabItem }.forEach {
-                $0.isSelected = false
+        let focusingDBGuid: String? = {
+            guard let guid = focusing?.guidInLocalDB, !guid.isEmpty else { return nil }
+            return guid
+        }()
+
+        guard focusingDBGuid != nil else {
+            collectionView.visibleItems().forEach { visible in
+                if let tabItem = visible as? PinnedTabItem { tabItem.isSelected = false }
+                if let splitItem = visible as? PinnedSplitItem { splitItem.isSelected = false }
             }
             return
         }
-        for (index, tab) in pinnedTabs.enumerated() {
+
+        // Snapshot order matches the collection view's index paths; iterate
+        // by snapshot index so split-collapsed items align with their cells.
+        let tabItems = dataSource.snapshot().itemIdentifiers(inSection: .tabs)
+        for (index, item) in tabItems.enumerated() {
             let indexPath = IndexPath(item: index, section: Section.tabs.rawValue)
-            if let item = collectionView.item(at: indexPath) as? PinnedTabItem {
-                item.isSelected = tab.guidInLocalDB == focusing?.guidInLocalDB
+            switch item {
+            case .tabItem(let tab):
+                if let cell = collectionView.item(at: indexPath) as? PinnedTabItem {
+                    cell.isSelected = tab.guidInLocalDB == focusingDBGuid
+                }
+            case .splitItem(let group):
+                if let cell = collectionView.item(at: indexPath) as? PinnedSplitItem {
+                    cell.isSelected = group.leftTab.guidInLocalDB == focusingDBGuid
+                        || group.rightTab.guidInLocalDB == focusingDBGuid
+                }
+            case .extensionItem:
+                break
             }
         }
     }
@@ -433,6 +584,21 @@ class PinnedTabViewController: NSViewController {
 
     private func handleTabClicked(_ tab: Tab) {
         browserState?.openOrFocusPinnedTab(tab)
+    }
+
+    /// Click handler for a merged pinned-split cell. Opens whichever pane is
+    /// currently closed so the auto-pair logic can recreate the `SplitGroup`,
+    /// then activates the pane the user clicked closer to.
+    private func handleSplitCellClicked(group: PinnedSplitGroupItem, preferredTab: Tab?) {
+        guard let state = browserState,
+              let leftGuid = group.leftTab.guidInLocalDB,
+              let rightGuid = group.rightTab.guidInLocalDB else {
+            return
+        }
+        let focusRight = preferredTab?.guidInLocalDB == rightGuid
+        state.openPinnedSplit(leftPinnedGuid: leftGuid,
+                              rightPinnedGuid: rightGuid,
+                              focusRight: focusRight)
     }
 
     private func handleExtensionClicked(_ item: PinnedTabItemModel, anchor view: NSView) {
@@ -472,8 +638,21 @@ extension PinnedTabViewController: NSCollectionViewDelegate {
 extension PinnedTabViewController {
     func collectionView(_ collectionView: NSCollectionView, writeItemsAt indexPaths: Set<IndexPath>, to pasteboard: NSPasteboard) -> Bool {
         guard let indexPath = indexPaths.first,
-              let item = dataSource.itemIdentifier(for: indexPath),
-              case .tabItem(let tab) = item else { return false }
+              let item = dataSource.itemIdentifier(for: indexPath) else { return false }
+
+        // Pinned splits render as a single merged cell, so use the left pane
+        // as the drag handle. Drop handlers detect split membership via the
+        // pinned tab's `splitPartnerGuid` / live `splitGroup` and operate on
+        // the whole pair where appropriate.
+        let tab: Tab
+        switch item {
+        case .tabItem(let t):
+            tab = t
+        case .splitItem(let group):
+            tab = group.leftTab
+        case .extensionItem:
+            return false
+        }
 
         // Publish both pinned-tab and normal-tab identifiers to the pasteboard.
         pasteboard.setString("\(tab.guidInLocalDB ?? "")", forType: .pinnedTab)
@@ -492,11 +671,17 @@ extension PinnedTabViewController {
         browserState?.tabDraggingSession.attachNativeSession(session)
         let draggingItem: Any? = {
             guard let indexPath = indexPaths.first,
-                  let item = dataSource.itemIdentifier(for: indexPath),
-                  case .tabItem(let tab) = item else {
+                  let item = dataSource.itemIdentifier(for: indexPath) else {
                 return nil
             }
-            return tab
+            switch item {
+            case .tabItem(let tab):
+                return tab
+            case .splitItem(let group):
+                return group.leftTab
+            case .extensionItem:
+                return nil
+            }
         }()
         browserState?.tabDraggingSession.begin(
             draggingItem: draggingItem,
@@ -555,21 +740,31 @@ extension PinnedTabViewController {
 
     func collectionView(_ collectionView: NSCollectionView, validateDrop draggingInfo: NSDraggingInfo, proposedIndexPath proposedDropIndexPath: AutoreleasingUnsafeMutablePointer<NSIndexPath>, dropOperation proposedDropOperation: UnsafeMutablePointer<NSCollectionView.DropOperation>) -> NSDragOperation {
         updateDraggingSession(from: draggingInfo)
-        let dropIndexPath = proposedDropIndexPath.pointee as IndexPath
-        guard let targetSection = Section(rawValue: dropIndexPath.section),
-              targetSection == .tabs else {
-            return []
+        let initialDropIndexPath = proposedDropIndexPath.pointee as IndexPath
+        // When the system proposes a target outside the tabs section (e.g.
+        // hovering above the first row, over the extensions row, or in a
+        // boundary gap), redirect to the end of the tabs section so the
+        // drop is accepted instead of silently rejected. Otherwise external
+        // bookmark/tab drags onto the pinned area look unsupported.
+        let dropIndexPath: IndexPath
+        if let targetSection = Section(rawValue: initialDropIndexPath.section),
+           targetSection == .tabs {
+            dropIndexPath = initialDropIndexPath
+        } else {
+            let tabsCount = collectionView.numberOfItems(inSection: Section.tabs.rawValue)
+            dropIndexPath = IndexPath(item: tabsCount, section: Section.tabs.rawValue)
+            proposedDropIndexPath.pointee = dropIndexPath as NSIndexPath
         }
-        
+
         let pasteboard = draggingInfo.draggingPasteboard
-        
+
         if isCrossWindowDrag(pasteboard),
            let sourceState = sourceBrowserState(for: pasteboard),
            let targetState = browserState,
            !targetState.canAcceptCrossWindowDrag(from: sourceState) {
             return []
         }
-        
+
         // Accept non-folder bookmarks.
         if let bookmarkId = pasteboard.string(forType: .phiBookmark),
            let bookmark = browserState?.bookmarkManager.bookmark(withGuid: bookmarkId),
@@ -577,13 +772,13 @@ extension PinnedTabViewController {
             proposedDropOperation.pointee = .on
             return .move
         }
-        
+
         // Accept pinned tabs and normal tabs.
         if pasteboard.string(forType: .pinnedTab) != nil || pasteboard.string(forType: .normalTab) != nil {
             proposedDropOperation.pointee = .on
             return .move
         }
-        
+
         return []
     }
 
@@ -664,7 +859,15 @@ extension PinnedTabViewController {
     }
 
     private func handleNormalTabDropToFavorites(tabGuid: Int, destinationIndex: Int) -> Bool {
-        browserState?.moveNormalTab(tabId: tabGuid, toPinnd: destinationIndex)
+        guard let state = browserState else { return false }
+        // Split-aware: when the dropped tab is one pane of a split, pin the
+        // whole pair as a single pinned-split unit instead of pinning just
+        // the dropped pane and leaving the other behind in the strip.
+        if let splitGroup = state.splitGroup(forTabId: tabGuid) {
+            state.pinSplitInsertingAtPinnedIndex(splitGroup.id, atIndex: destinationIndex)
+            return true
+        }
+        state.moveNormalTab(tabId: tabGuid, toPinnd: destinationIndex)
         return true
     }
     
@@ -951,7 +1154,10 @@ extension PinnedTabViewController {
     private func moveTabToTargetWindow(_ tab: Tab) -> Bool {
         guard let targetState = browserState, let wrapper = tab.webContentWrapper else { return false }
         let insertIndex = max(0, targetState.tabs.count)
-        wrapper.moveSelf(toWindow: targetState.windowId.int64Value, at: insertIndex)
+        // Split-aware: keep both halves of a split together on cross-window
+        // moves. The bridge falls back to the single-tab path for non-split
+        // tabs (the common pinned-sidebar case).
+        wrapper.moveSplit(toWindow: targetState.windowId.int64Value, at: insertIndex)
         return true
     }
 }

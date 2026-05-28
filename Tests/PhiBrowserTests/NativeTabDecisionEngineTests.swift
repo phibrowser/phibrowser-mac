@@ -95,6 +95,104 @@ final class NativeTabDecisionEngineTests: XCTestCase {
         XCTAssertEqual(index, 3)
     }
 
+    func testForegroundLinkFromSplitOpenerLandsAfterSplitPartner() {
+        let context = NativeTabCreationContext(
+            isActiveAtCreation: true,
+            creationKind: .linkForeground,
+            openerTabId: 1,
+            insertAfterTabId: nil,
+            sourceTabId: 1,
+            resetOpenerOnActiveTabChange: false,
+            didForgetAllOpenersBeforeCreate: false
+        )
+
+        let index = NativeTabDecisionEngine.insertionIndex(
+            visibleNormalTabIds: [0, 1, 2, 3],
+            context: context,
+            relationGraph: .empty,
+            splitPartnerByTabId: [1: 2, 2: 1]
+        )
+
+        XCTAssertEqual(index, 3)
+    }
+
+    func testBackgroundLinkFromSplitOpenerLandsAfterSplitPartner() {
+        let context = NativeTabCreationContext(
+            isActiveAtCreation: false,
+            creationKind: .linkBackground,
+            openerTabId: 1,
+            insertAfterTabId: nil,
+            sourceTabId: 1,
+            resetOpenerOnActiveTabChange: false,
+            didForgetAllOpenersBeforeCreate: false
+        )
+
+        let index = NativeTabDecisionEngine.insertionIndex(
+            visibleNormalTabIds: [0, 1, 2, 3],
+            context: context,
+            relationGraph: .empty,
+            splitPartnerByTabId: [1: 2, 2: 1]
+        )
+
+        XCTAssertEqual(index, 3)
+    }
+
+    func testForegroundLinkFromSecondSplitTabLandsImmediatelyAfterOpener() {
+        // Opener is the higher-indexed half of the split; partner is to the left,
+        // so the partner-anchor shortcut must NOT pull the insertion back.
+        let context = NativeTabCreationContext(
+            isActiveAtCreation: true,
+            creationKind: .linkForeground,
+            openerTabId: 2,
+            insertAfterTabId: nil,
+            sourceTabId: 2,
+            resetOpenerOnActiveTabChange: false,
+            didForgetAllOpenersBeforeCreate: false
+        )
+
+        let index = NativeTabDecisionEngine.insertionIndex(
+            visibleNormalTabIds: [0, 1, 2, 3],
+            context: context,
+            relationGraph: .empty,
+            splitPartnerByTabId: [1: 2, 2: 1]
+        )
+
+        XCTAssertEqual(index, 3)
+    }
+
+    func testBackgroundLinkFromSplitOpenerLandsPastDescendantsBeyondPartner() {
+        // Split opener at index 1 with partner at index 2. A descendant of the
+        // opener lives at index 4 (past the partner). The split-anchor shortcut
+        // bumps the anchor to the partner, but the descendant-walk must still
+        // discover the deeper descendant and insert after it (index 5), not
+        // immediately after the partner (index 3).
+        let context = NativeTabCreationContext(
+            isActiveAtCreation: false,
+            creationKind: .linkBackground,
+            openerTabId: 1,
+            insertAfterTabId: nil,
+            sourceTabId: 1,
+            resetOpenerOnActiveTabChange: false,
+            didForgetAllOpenersBeforeCreate: false
+        )
+        let relationGraph = NativeTabRelationGraph(
+            openerByTabId: [
+                4: 1,
+            ],
+            resetOnActiveChangeTabIds: [],
+            version: 1
+        )
+
+        let index = NativeTabDecisionEngine.insertionIndex(
+            visibleNormalTabIds: [0, 1, 2, 3, 4],
+            context: context,
+            relationGraph: relationGraph,
+            splitPartnerByTabId: [1: 2, 2: 1]
+        )
+
+        XCTAssertEqual(index, 5)
+    }
+
     func testBackgroundLinkInsertionPrefersOpenerChainOverInsertAfterHint() {
         let context = NativeTabCreationContext(
             isActiveAtCreation: false,

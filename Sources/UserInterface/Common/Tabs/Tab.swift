@@ -145,6 +145,12 @@ class Tab: WebContentRepresentable {
     var storedTitle: String?
     /// Original URL persisted in the database for pinned tabs, immune to navigation KVO.
     var pinnedUrl: String?
+    /// guid of the pinned-tab record that forms the other half of a pinned
+    /// split. Mirrors `TabDataModel.splitPartnerGuid` for the in-memory copy
+    /// of pinned-tab record-Tabs so the sidebar can detect the pair without a
+    /// live `SplitGroup`. nil for non-split pinned tabs and for live Chromium
+    /// tabs that aren't bound to a pinned record.
+    var splitPartnerGuid: String?
     var webContentView: NSView? { webContentWrapper?.nativeView }
     
     private var cancellables = Set<AnyCancellable>()
@@ -436,6 +442,7 @@ extension Tab {
         self.storedTitle = dbModel.title
         if dbModel.dataType == .pinnedTab {
             self.pinnedUrl = dbModel.url.absoluteString
+            self.splitPartnerGuid = dbModel.splitPartnerGuid
         }
     }
 }

@@ -19,9 +19,17 @@ protocol BookmarkCellViewDelegate: AnyObject {
 
 class BookmarkCellView: SidebarCellView {
     private var iconImageView: NSImageView!
+    /// Second favicon shown only when the bookmark represents a split view.
+    /// Sits to the right of the primary favicon and shares its visual
+    /// styling so the pair reads as one composite icon.
+    private var secondaryIconImageView: NSImageView!
     private var titleLabel: NSTextField!
     private var editField: NSTextField!
     private var faviconLoadHandle: ProfileScopedFaviconLoadHandle?
+    private var secondaryFaviconLoadHandle: ProfileScopedFaviconLoadHandle?
+    /// True while the current bookmark is a split-view bookmark; controls the
+    /// secondary favicon's zero-width collapse.
+    private var isShowingSecondaryFavicon = false
     private var isHovered = false
     private var isActiveBookmark = false
     private var isDropTargetHighlighted = false
@@ -45,7 +53,10 @@ class BookmarkCellView: SidebarCellView {
         super.prepareForReuse()
         faviconLoadHandle?.cancel()
         faviconLoadHandle = nil
+        secondaryFaviconLoadHandle?.cancel()
+        secondaryFaviconLoadHandle = nil
         iconImageView.image = nil
+        secondaryIconImageView.image = nil
     }
     
     private func setupViews() {
@@ -75,6 +86,18 @@ class BookmarkCellView: SidebarCellView {
         iconImageView.layer?.cornerCurve = .continuous
         iconImageView.layer?.masksToBounds = true
         backgoundView.addSubview(iconImageView)
+
+        // Secondary favicon for split-view bookmarks. Starts collapsed
+        // (width=0) so non-split bookmarks lay out unchanged; expanded in
+        // configureAppearance when the bound bookmark has a secondaryUrl.
+        secondaryIconImageView = NSImageView()
+        secondaryIconImageView.imageScaling = .scaleProportionallyUpOrDown
+        secondaryIconImageView.wantsLayer = true
+        secondaryIconImageView.layer?.cornerRadius = 4
+        secondaryIconImageView.layer?.cornerCurve = .continuous
+        secondaryIconImageView.layer?.masksToBounds = true
+        secondaryIconImageView.isHidden = true
+        backgoundView.addSubview(secondaryIconImageView)
         
         // Title (display mode)
         titleLabel = NSTextField(labelWithString: "")
@@ -107,18 +130,31 @@ class BookmarkCellView: SidebarCellView {
             make.centerY.equalToSuperview()
             make.size.equalTo(20)
         }
-        
+
+        // Sits flush to the right of the primary favicon with a 2pt gap.
+        // Width starts at 0 and is bumped to the icon size when the bound
+        // bookmark turns out to carry a secondaryUrl.
+        secondaryIconImageView.snp.makeConstraints { make in
+            make.leading.equalTo(iconImageView.snp.trailing).offset(2)
+            make.centerY.equalToSuperview()
+            make.height.equalTo(20)
+            make.width.equalTo(0)
+        }
+
         titleLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         titleLabel.snp.makeConstraints { make in
-            make.leading.equalTo(iconImageView.snp.trailing).offset(8)
+            // Anchored to the secondary favicon's trailing edge — when the
+            // secondary is collapsed to width=0 the title sits exactly where
+            // it would relative to the primary icon (with a small 2pt extra).
+            make.leading.equalTo(secondaryIconImageView.snp.trailing).offset(8)
             make.trailing.equalToSuperview().inset(8)
             make.centerY.equalToSuperview()
         }
-        
+
         editField.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         editField.snp.makeConstraints { make in
             // Match the title-label constraints so edit mode does not jump.
-            make.leading.equalTo(iconImageView.snp.trailing).offset(8)
+            make.leading.equalTo(secondaryIconImageView.snp.trailing).offset(8)
             make.trailing.equalToSuperview().inset(8)
             make.centerY.equalToSuperview()
         }
@@ -140,14 +176,25 @@ class BookmarkCellView: SidebarCellView {
         cancellables.removeAll()
         faviconLoadHandle?.cancel()
         faviconLoadHandle = nil
+        secondaryFaviconLoadHandle?.cancel()
+        secondaryFaviconLoadHandle = nil
+        secondaryIconImageView.image = nil
         isDropTargetHighlighted = false
         
-        bookmark.$title
-            .removeDuplicates()
+        // Title + split state share one publisher chain so the displayed
+        // string and the secondary favicon stay consistent no matter which
+        // side updates first. CombineLatest fires once both publishers have
+        // emitted, which is fine because `@Published` ships an initial value
+        // immediately for each property on subscribe.
+        Publishers.CombineLatest3(bookmark.$title,
+                                  bookmark.$secondaryUrl,
+                                  bookmark.$secondaryTitle)
             .receive(on: DispatchQueue.main)
-            .sink { [weak self] title in
-                self?.titleLabel.stringValue = title
-                self?.titleLabel.toolTip = title
+            .sink { [weak self] primaryTitle, secondaryUrl, secondaryTitle in
+                self?.applyTitleAndSplitState(bookmark: bookmark,
+                                              primaryTitle: primaryTitle,
+                                              secondaryUrl: secondaryUrl,
+                                              secondaryTitle: secondaryTitle)
             }
             .store(in: &cancellables)
 
@@ -213,6 +260,12 @@ class BookmarkCellView: SidebarCellView {
         iconImageView.snp.updateConstraints { make in
             make.size.equalTo(iconSize)
         }
+        // Match the secondary favicon's height to the primary's; its width is
+        // separately managed by `setSecondaryFavicon(visible:)` based on
+        // whether the bookmark is a split.
+        secondaryIconImageView.snp.updateConstraints { make in
+            make.height.equalTo(iconSize)
+        }
     }
     
     private func updateActiveState(_ isActive: Bool) {
@@ -264,6 +317,73 @@ class BookmarkCellView: SidebarCellView {
     private func updateFolderIcon(bookmark: Bookmark) {
         guard bookmark.isFolder else { return }
         iconImageView.image = NSImage(resource: bookmark.isExpanded ? .foderOpen : .foderClose)
+    }
+
+    /// Joins both pane names into the title label and toggles the secondary
+    /// favicon. Mirrors the bookmark-bar implementation so the two surfaces
+    /// stay visually consistent.
+    private func applyTitleAndSplitState(bookmark: Bookmark,
+                                         primaryTitle: String,
+                                         secondaryUrl: String?,
+                                         secondaryTitle: String?) {
+        guard !bookmark.isFolder,
+              let secondaryUrl, !secondaryUrl.isEmpty else {
+            setSecondaryFavicon(visible: false)
+            secondaryIconImageView.image = nil
+            secondaryFaviconLoadHandle?.cancel()
+            secondaryFaviconLoadHandle = nil
+            titleLabel.stringValue = primaryTitle
+            titleLabel.toolTip = primaryTitle
+            return
+        }
+        setSecondaryFavicon(visible: true)
+        loadSecondaryFavicon(bookmark: bookmark, pageUrl: secondaryUrl)
+        let resolvedSecondary = Self.displayName(forSecondaryTitle: secondaryTitle, url: secondaryUrl)
+        let combined: String
+        if resolvedSecondary.isEmpty {
+            combined = primaryTitle
+        } else {
+            combined = "\(primaryTitle) • \(resolvedSecondary)"
+        }
+        titleLabel.stringValue = combined
+        titleLabel.toolTip = combined
+    }
+
+    /// Collapses the secondary favicon to zero width when hidden so non-split
+    /// bookmarks lay out exactly as they did before this view supported
+    /// split-view bookmarks. Split bookmarks are never folders, so when
+    /// visible the secondary uses the 16pt non-folder icon size.
+    private func setSecondaryFavicon(visible: Bool) {
+        guard isShowingSecondaryFavicon != visible else {
+            secondaryIconImageView.isHidden = !visible
+            return
+        }
+        isShowingSecondaryFavicon = visible
+        secondaryIconImageView.isHidden = !visible
+        secondaryIconImageView.snp.updateConstraints { make in
+            make.width.equalTo(visible ? 16 : 0)
+        }
+    }
+
+    private func loadSecondaryFavicon(bookmark: Bookmark, pageUrl: String) {
+        secondaryFaviconLoadHandle?.cancel()
+        let request = ProfileScopedFaviconRequest(
+            profileId: bookmark.profileId,
+            pageURLString: pageUrl,
+            snapshotData: nil
+        )
+        secondaryFaviconLoadHandle = ProfileScopedFaviconRepository.shared.loadFavicon(for: request) { [weak self] result in
+            self?.secondaryIconImageView.image = result.image
+        }
+    }
+
+    private static func displayName(forSecondaryTitle title: String?, url: String) -> String {
+        if let title, !title.isEmpty { return title }
+        guard let parsed = URL(string: url), let host = parsed.host else { return "" }
+        if host.hasPrefix("www."), host.count > 4 {
+            return String(host.dropFirst(4))
+        }
+        return host
     }
     
     // MARK: - Editing State

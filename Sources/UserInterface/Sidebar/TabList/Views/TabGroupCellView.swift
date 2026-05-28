@@ -468,6 +468,12 @@ final class TabGroupCellView: SidebarCellView {
                 cell.identifier = identifier
             }
             cell.delegate = self
+            // Bind to this group's owning window state BEFORE `configure(with:)`
+            // so `updateSplitMembership` resolves splitPairPosition against it.
+            // Without this, a split that joined the group renders as two
+            // unmerged rows because `updateSplitMembership` falls into the
+            // `browserState == nil` early-return branch.
+            cell.browserState = self.configuredBrowserState
             cell.configure(with: tab)
             return cell
         }
@@ -512,6 +518,67 @@ final class TabGroupCellView: SidebarCellView {
                 self.groupCellDelegate?.tabGroupCellNeedsHeightUpdate(
                     self, for: captureToken)
             }
+    }
+
+    /// Result of compositing a split-pair drag image for an inner-row drag.
+    /// `image` is the stacked snapshot, `upperHeight` is the height of the
+    /// upper pane snapshot (used to anchor the dragging frame when the
+    /// dragged pane is the lower one), and `isDraggedUpper` says whether
+    /// the originally-dragged row is the upper one in the composite.
+    struct SplitPairCompositeImage {
+        let image: NSImage
+        let upperHeight: CGFloat
+        let isDraggedUpper: Bool
+    }
+
+    /// If `tab` is one pane of a split whose other pane is also a member
+    /// of this group, stack both panes' inner-table cell snapshots into
+    /// one composite drag image so the drag lifts the pair as a unit.
+    /// Returns nil when the tab isn't in a split, the partner isn't a
+    /// visible member of this group's inner table, or the snapshots
+    /// can't be produced.
+    func splitPairCompositeForInnerRow(
+        tab: Tab,
+        draggedRowView: SidebarTabCellView,
+        draggedImage: NSImage,
+        stack: (NSImage, NSImage) -> NSImage?
+    ) -> SplitPairCompositeImage? {
+        guard let state = configuredBrowserState,
+              let group = state.splitGroup(forTabId: tab.guid),
+              let partnerId = group.partnerTabId(of: tab.guid),
+              let draggedRow = currentMemberOrder.firstIndex(of: tab.guid),
+              let partnerRow = currentMemberOrder.firstIndex(of: partnerId),
+              let partnerCell = innerTable.view(
+                atColumn: 0, row: partnerRow, makeIfNecessary: false)
+                as? SidebarTabCellView,
+              let partnerSnapshot = partnerCell.createDraggingImage() else {
+            return nil
+        }
+        let isDraggedUpper = draggedRow < partnerRow
+        let upperSnapshot = isDraggedUpper ? draggedImage : partnerSnapshot
+        let lowerSnapshot = isDraggedUpper ? partnerSnapshot : draggedImage
+        guard let composite = stack(upperSnapshot, lowerSnapshot) else {
+            return nil
+        }
+        return SplitPairCompositeImage(
+            image: composite,
+            upperHeight: upperSnapshot.size.height,
+            isDraggedUpper: isDraggedUpper
+        )
+    }
+
+    /// Re-run `updateSplitMembership` on every visible member cell.
+    /// Called from the controller's `$splits` / `$focusingTab`
+    /// subscription so a split that joined this group (or whose pair
+    /// flipped state) re-renders with the merged-bar appearance
+    /// immediately, without waiting for the cell to be reconfigured.
+    func refreshMemberSplitMembership() {
+        for row in 0..<innerTable.numberOfRows {
+            guard let cell = innerTable.view(
+                atColumn: 0, row: row, makeIfNecessary: false)
+                as? SidebarTabCellView else { continue }
+            cell.updateSplitMembership()
+        }
     }
 
     func setTemporarilyCollapsedForDrag(_ collapsed: Bool) {
@@ -858,6 +925,20 @@ extension TabGroupCellView: GroupTabsDragSource {
         if dropOperation == .on {
             innerTable.setDropRow(proposedRow, dropOperation: .above)
         }
+        // A split that joined this group must render and behave as a
+        // single unit. If the proposed drop falls strictly between the
+        // two panes (i.e., `proposedRow` is the second pane's row index
+        // with `.above`), snap to whichever side of the pair the cursor
+        // is closer to — matching the outer outline's
+        // `snapDropChildIndexOutsideSplitPair` behavior.
+        let snappedRow = snapDropRowOutsideInnerSplitPair(
+            proposedRow: proposedRow,
+            dropOperation: dropOperation,
+            draggingLocation: info.draggingLocation,
+            draggedGuid: pasteboard.string(forType: .normalTab).flatMap { Int($0) })
+        if snappedRow != proposedRow {
+            innerTable.setDropRow(snappedRow, dropOperation: .above)
+        }
         // Pinned and bookmark drops never join a group.
         if pasteboard.string(forType: .pinnedTab) != nil { return [] }
         if pasteboard.string(forType: .phiBookmark) != nil { return [] }
@@ -870,8 +951,56 @@ extension TabGroupCellView: GroupTabsDragSource {
             return []
         }
         let result: NSDragOperation = pasteboard.string(forType: .normalTab) != nil ? .move : []
-        AppLogDebug("[TAB_GROUPS][INNER_DRAG] inner.validateDrop -> \(result.rawValue)")
+        AppLogDebug("[TAB_GROUPS][INNER_DRAG] inner.validateDrop -> \(result.rawValue) snappedRow=\(snappedRow)")
         return result
+    }
+
+    /// If `proposedRow` would drop a tab strictly between the two panes
+    /// of a split that lives inside this group, return the closest legal
+    /// row on whichever side the cursor's y-coordinate indicates.
+    /// Otherwise return `proposedRow` unchanged. The dragged tab itself
+    /// is allowed to land between its own split's panes (no-op for
+    /// in-pair moves — those go through `moveSplit` / `reverseTabs`).
+    private func snapDropRowOutsideInnerSplitPair(
+        proposedRow: Int,
+        dropOperation: NSTableView.DropOperation,
+        draggingLocation: NSPoint,
+        draggedGuid: Int?) -> Int {
+        // `dropOperation` is checked by callers; we only need to snap
+        // based on the row regardless of the incoming op. The validate
+        // path promotes `.on` to `.above` *before* calling this, then
+        // calls `setDropRow(snapped, .above)` — but if we early-returned
+        // on a non-`.above` op the visual indicator would stay parked on
+        // the seam even after the accept-side already moved off it.
+        guard let state = configuredBrowserState else {
+            return proposedRow
+        }
+        for split in state.splits {
+            guard let primaryRow = currentMemberOrder.firstIndex(of: split.primaryTabId),
+                  let secondaryRow = currentMemberOrder.firstIndex(of: split.secondaryTabId) else {
+                continue
+            }
+            let lo = min(primaryRow, secondaryRow)
+            let hi = max(primaryRow, secondaryRow)
+            guard hi == lo + 1, proposedRow == hi else { continue }
+            // The moving tab IS one of the split's panes — let the inner
+            // table handle it the same way as any tab move; the `moveTab
+            // intoGroup` flow keeps the split intact via
+            // `enforceSplitAdjacency`.
+            if let draggedGuid,
+               draggedGuid == split.primaryTabId || draggedGuid == split.secondaryTabId {
+                continue
+            }
+            let loRect = innerTable.rect(ofRow: lo)
+            let hiRect = innerTable.rect(ofRow: hi)
+            let boundaryY = (loRect.midY + hiRect.midY) / 2
+            let pointInTable = innerTable.convert(draggingLocation, from: nil)
+            let pointerOnUpperHalf = innerTable.isFlipped
+                ? pointInTable.y < boundaryY
+                : pointInTable.y > boundaryY
+            return pointerOnUpperHalf ? lo : hi + 1
+        }
+        return proposedRow
     }
 
     func groupTabsAcceptDrop(_ info: NSDraggingInfo,
@@ -888,6 +1017,16 @@ extension TabGroupCellView: GroupTabsDragSource {
               let tab = state.tabs.first(where: { $0.guid == guid })
         else { return false }
 
+        // Apply the same split-pair snap as validateDrop so the actual
+        // insertion index stays out of the gap between the two panes
+        // even when AppKit passes the original proposedRow through
+        // unchanged on .acceptDrop.
+        let snappedRow = snapDropRowOutsideInnerSplitPair(
+            proposedRow: row,
+            dropOperation: dropOperation,
+            draggingLocation: info.draggingLocation,
+            draggedGuid: guid)
+
         // `proposedRow` is in inner-table indices (0..<memberCount).
         // The outer normal-tabs index = group's lower bound + row.
         let members = state.normalTabs.filter { $0.groupToken == group.token }
@@ -897,7 +1036,7 @@ extension TabGroupCellView: GroupTabsDragSource {
             else { return state.normalTabs.count }
             return idx
         }()
-        let clampedRow = min(max(0, row), members.count)
+        let clampedRow = min(max(0, snappedRow), members.count)
         let normalTabsIdx = groupLowerBound + clampedRow
 
         let accepted = groupCellDelegate?.tabGroupCell(
@@ -905,7 +1044,7 @@ extension TabGroupCellView: GroupTabsDragSource {
             didAcceptTab: tab,
             intoGroupToken: group.token,
             atNormalTabsIdx: normalTabsIdx) ?? false
-        AppLogDebug("[TAB_GROUPS][INNER_DRAG] inner.acceptDrop -> \(accepted)")
+        AppLogDebug("[TAB_GROUPS][INNER_DRAG] inner.acceptDrop -> \(accepted) snappedRow=\(snappedRow)")
         return accepted
     }
 }

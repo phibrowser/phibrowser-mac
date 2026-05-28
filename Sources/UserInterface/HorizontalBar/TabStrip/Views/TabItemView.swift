@@ -70,6 +70,10 @@ final class TabItemView: NSView {
 
     private var isActive = false
     private var isPinned = false
+    /// Backing for the second pane of a pinned split. When non-nil this cell
+    /// renders two favicons side-by-side; the secondary view model carries
+    /// the partner's bindings so favicon updates flow independently.
+    private weak var pinnedSplitPartner: Tab?
     private var isDragHighlighted = false {
         didSet {
             guard oldValue != isDragHighlighted else { return }
@@ -91,6 +95,18 @@ final class TabItemView: NSView {
     private lazy var faviconHostingView: HitTransparentHostingView<AnyView> = {
         let view = HitTransparentHostingView(rootView: makeFaviconRootView())
         view.layer?.backgroundColor = .clear
+        return view
+    }()
+
+    /// Secondary favicon used only for the `.first` pane of a pinned split,
+    /// where the cell needs to show both panes' favicons side-by-side.
+    /// Hidden when `pinnedSplitPartner` is nil. Driven by its own view model
+    /// so its Combine subscriptions don't trample the primary tab's bindings.
+    private let secondaryFaviconViewModel = TabViewModel()
+    private lazy var secondaryFaviconHostingView: HitTransparentHostingView<AnyView> = {
+        let view = HitTransparentHostingView(rootView: makeSecondaryFaviconRootView())
+        view.layer?.backgroundColor = .clear
+        view.isHidden = true
         return view
     }()
 
@@ -161,6 +177,7 @@ final class TabItemView: NSView {
         layer?.insertSublayer(backgroundLayer, at: 0)
 
         addSubview(faviconHostingView)
+        addSubview(secondaryFaviconHostingView)
         addSubview(muteButtonHostingView)
         addSubview(recordingIconHostingView)
         addSubview(titleHostingView)
@@ -213,15 +230,43 @@ final class TabItemView: NSView {
                 recordingIconHostingView.isHidden = false
                 recordingIconHostingView.frame = centeredFrame(for: recordingIconSize)
                 faviconHostingView.isHidden = true
+                secondaryFaviconHostingView.isHidden = true
                 muteButtonHostingView.isHidden = true
             } else if showMute {
                 muteButtonHostingView.isHidden = false
                 muteButtonHostingView.frame = centeredFrame(for: muteButtonSize)
                 faviconHostingView.isHidden = true
+                secondaryFaviconHostingView.isHidden = true
+                recordingIconHostingView.isHidden = true
+            } else if pinnedSplitPartner != nil && mode == .pinned {
+                // Two favicons inside one pinned cell. Stack them horizontally
+                // around the cell's center so the cell still occupies a single
+                // pinned-tab slot in the strip's layout.
+                let centerY = bounds.height / 2
+                let iconSize = metrics.faviconSize
+                let gap: CGFloat = 2
+                let pairWidth = iconSize.width * 2 + gap
+                let leftX = (bounds.width - pairWidth) / 2
+                faviconHostingView.isHidden = false
+                faviconHostingView.frame = CGRect(
+                    x: leftX,
+                    y: centerY - iconSize.height / 2,
+                    width: iconSize.width,
+                    height: iconSize.height
+                )
+                secondaryFaviconHostingView.isHidden = false
+                secondaryFaviconHostingView.frame = CGRect(
+                    x: leftX + iconSize.width + gap,
+                    y: centerY - iconSize.height / 2,
+                    width: iconSize.width,
+                    height: iconSize.height
+                )
+                muteButtonHostingView.isHidden = true
                 recordingIconHostingView.isHidden = true
             } else {
                 faviconHostingView.isHidden = false
                 faviconHostingView.frame = centeredFrame(for: metrics.faviconSize)
+                secondaryFaviconHostingView.isHidden = true
                 muteButtonHostingView.isHidden = true
                 recordingIconHostingView.isHidden = true
             }
@@ -229,6 +274,7 @@ final class TabItemView: NSView {
 
         case .normal:
             faviconHostingView.isHidden = false
+            secondaryFaviconHostingView.isHidden = true
             faviconHostingView.frame = CGRect(
                 x: metrics.faviconLeading,
                 y: centerY - metrics.faviconSize.height / 2,
@@ -338,6 +384,10 @@ final class TabItemView: NSView {
     private func makeFaviconRootView() -> AnyView {
         AnyView(UnifiedTabFaviconView(viewModel: viewModel).phiThemeObserver(themeObserver))
     }
+
+    private func makeSecondaryFaviconRootView() -> AnyView {
+        AnyView(UnifiedTabFaviconView(viewModel: secondaryFaviconViewModel).phiThemeObserver(themeObserver))
+    }
     
     private func makeTitleRootView() -> AnyView {
         AnyView(UnifiedTabTitleView(viewModel: viewModel).phiThemeObserver(themeObserver))
@@ -366,6 +416,22 @@ final class TabItemView: NSView {
         currentTabId = data.id
         isActive = data.isActive
         isPinned = data.isPinned
+        backgroundLayer.splitPairPosition = data.splitPairPosition
+        backgroundLayer.isSplitGroupActive = data.isSplitGroupActive
+        viewModel.splitPairPosition = data.splitPairPosition
+        viewModel.isSplitGroupActive = data.isSplitGroupActive
+
+        // Pinned-split first pane: bind the secondary view model so the right
+        // favicon renders the partner. The configure() call subscribes to the
+        // partner tab's Combine publishers; clearing back to nil drops them.
+        pinnedSplitPartner = data.pinnedSplitPartner
+        if let partner = data.pinnedSplitPartner {
+            secondaryFaviconViewModel.configure(with: partner)
+            secondaryFaviconHostingView.isHidden = false
+        } else {
+            secondaryFaviconViewModel.cancelSubscriptions()
+            secondaryFaviconHostingView.isHidden = true
+        }
 
         updateAppearance()
         

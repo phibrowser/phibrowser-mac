@@ -259,6 +259,33 @@ class SidebarTabListViewController: NSViewController {
             self?.updateFloatingNewTabVisibility()
         }
         .store(in: &cancellables)
+
+        // Splits don't change the tab list, so the tab-section diff path
+        // doesn't fire. Update visible cells directly when split membership
+        // or the focusing tab changes — both feed splitPairPosition /
+        // isSplitGroupActive on the cells' view models.
+        Publishers.CombineLatest(browserState.$splits, browserState.$focusingTab)
+            .dropFirst()
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _, _ in
+                self?.refreshVisibleSplitMembership()
+            }
+            .store(in: &cancellables)
+    }
+
+    private func refreshVisibleSplitMembership() {
+        for row in 0..<outlineView.numberOfRows {
+            let view = outlineView.view(atColumn: 0, row: row, makeIfNecessary: false)
+            if let cell = view as? SidebarTabCellView {
+                cell.updateSplitMembership()
+            } else if let groupCell = view as? TabGroupCellView {
+                // Inner-table cells (split panes that joined this group)
+                // are not reached by the outer-outline walk above; refresh
+                // them too so the merged-bar appearance updates when a
+                // split's membership or focus state changes.
+                groupCell.refreshMemberSplitMembership()
+            }
+        }
     }
 
     func setActive(_ active: Bool) {
@@ -814,7 +841,20 @@ extension SidebarTabListViewController: NSOutlineViewDataSource {
                 return .move
             }
         }
-    
+
+        // Keep the blue drop line from landing between the two panes of a
+        // split pair. Snap to the side matching the pointer's vertical half so
+        // the indicator and the eventual commit agree.
+        if resolvedItem == nil,
+           resolvedIndex != NSOutlineViewDropOnItemIndex,
+           let snapped = snapDropChildIndexOutsideSplitPair(
+               outlineView: outlineView,
+               dragLocation: info.draggingLocation,
+               proposedChildIndex: resolvedIndex) {
+            outlineView.setDropItem(nil, dropChildIndex: snapped)
+            resolvedIndex = snapped
+        }
+
         if pasteboard.string(forType: .pinnedTab) != nil {
             if resolvedItem == nil {
                 let proposedRow = resolvedIndex == NSOutlineViewDropOnItemIndex ? outlineView.numberOfRows : resolvedIndex
@@ -826,6 +866,35 @@ extension SidebarTabListViewController: NSOutlineViewDataSource {
                 }
             }
             if let targetBookmark = resolvedItem as? Bookmark, targetBookmark.isFolder {
+                return .copy
+            }
+            // Drop ON a tab: redirect to "insert before that tab" in the tab
+            // section so the drop indicator and acceptDrop both treat it as a
+            // tab-list move. Without this redirect the drop is rejected and
+            // pinned→tab-list drags appear unsupported.
+            if let targetTab = resolvedItem as? Tab, resolvedIndex == NSOutlineViewDropOnItemIndex {
+                let targetRootChildIndex = outlineView.childIndex(forItem: targetTab)
+                if targetRootChildIndex >= 0 {
+                    let finalIndex = snapDropChildIndexOutsideSplitPair(
+                        outlineView: outlineView,
+                        dragLocation: info.draggingLocation,
+                        proposedChildIndex: targetRootChildIndex
+                    ) ?? targetRootChildIndex
+                    outlineView.setDropItem(nil, dropChildIndex: finalIndex)
+                    return .move
+                }
+            }
+            // Drop ON a non-folder bookmark: redirect to "insert before that
+            // bookmark" so pinned→bookmark drags land in the bookmark list
+            // at the visible position instead of being rejected.
+            if let targetBookmark = resolvedItem as? Bookmark, !targetBookmark.isFolder {
+                if let parent = targetBookmark.parent {
+                    if let targetIndex = parent.children.firstIndex(of: targetBookmark) {
+                        outlineView.setDropItem(parent, dropChildIndex: targetIndex)
+                    }
+                } else if let targetIndex = bookmarkSectionController.bookmarkItems.firstIndex(where: { ($0 as? Bookmark)?.guid == targetBookmark.guid }) {
+                    outlineView.setDropItem(nil, dropChildIndex: targetIndex)
+                }
                 return .copy
             }
             return []
@@ -859,7 +928,14 @@ extension SidebarTabListViewController: NSOutlineViewDataSource {
             if let targetTab = resolvedItem as? Tab, resolvedIndex == NSOutlineViewDropOnItemIndex {
                 let targetRootChildIndex = outlineView.childIndex(forItem: targetTab)
                 if targetRootChildIndex >= 0 {
-                    outlineView.setDropItem(nil, dropChildIndex: targetRootChildIndex)
+                    // The "before that tab" slot may land between two panes of a
+                    // split pair — snap past the pair when it does.
+                    let finalIndex = snapDropChildIndexOutsideSplitPair(
+                        outlineView: outlineView,
+                        dragLocation: info.draggingLocation,
+                        proposedChildIndex: targetRootChildIndex
+                    ) ?? targetRootChildIndex
+                    outlineView.setDropItem(nil, dropChildIndex: finalIndex)
                     return .move
                 }
             }
@@ -910,9 +986,9 @@ extension SidebarTabListViewController: NSOutlineViewDataSource {
             
             if resolvedItem == nil {
                 let bookmarkSectionEnd = bookmarkSectionController.bookmarkItems.count
-                
+
                 AppLogDebug("[validateDrop] -> Root level drop, index: \(resolvedIndex), bookmarkSectionEnd: \(bookmarkSectionEnd)")
-                
+
                 if resolvedIndex <= bookmarkSectionEnd {
                     AppLogDebug("[validateDrop] -> In bookmark section, returning .move")
                     return .move
@@ -921,10 +997,27 @@ extension SidebarTabListViewController: NSOutlineViewDataSource {
                     return .move
                 }
             }
-            
+
+            // Drop ON a tab: redirect to "insert before that tab" so a
+            // bookmark→tab-list drag commits as a tab-section drop instead
+            // of falling through to []. Without this the user can only drop
+            // in the narrow gap between tabs.
+            if let targetTab = resolvedItem as? Tab, resolvedIndex == NSOutlineViewDropOnItemIndex {
+                let targetRootChildIndex = outlineView.childIndex(forItem: targetTab)
+                if targetRootChildIndex >= 0 {
+                    let finalIndex = snapDropChildIndexOutsideSplitPair(
+                        outlineView: outlineView,
+                        dragLocation: info.draggingLocation,
+                        proposedChildIndex: targetRootChildIndex
+                    ) ?? targetRootChildIndex
+                    outlineView.setDropItem(nil, dropChildIndex: finalIndex)
+                    return .move
+                }
+            }
+
             AppLogDebug("[validateDrop] -> No matching condition, returning []")
         }
-        
+
         return []
     }
     
@@ -1053,11 +1146,20 @@ extension SidebarTabListViewController: NSOutlineViewDataSource {
                 }
                 
                 let destination = calculateTabDestinationIndex(from: resolvedIndex)
+                // Pinned-split pair: open both URLs as a fresh split in the
+                // destination window. The source's pinned record (and its live
+                // tabs, if any) stay put — this is "open in another window",
+                // not "move".
+                if let urls = pinnedSplitURLs(in: sourceState, pinnedGuid: pinnedTabId) {
+                    browserState.openTwoURLsAsSplit(primaryURL: urls.primary,
+                                                   secondaryURL: urls.secondary)
+                    return true
+                }
                 if let openTab = findOpenTab(in: sourceState, matchingLocalGuid: pinnedTabId) {
                     sourceState.movePinnedTabOut(pinnedGuid: pinnedTabId, to: destination)
                     return moveTabToTargetWindow(openTab, destinationIndex: destination, scheduleNormalInsertion: true)
                 }
-                
+
                 return handleFavoriteTabDropToNormalList(tabGuid: pinnedTabId, destinationIndex: resolvedIndex)
             }
             if let targetBookmark = resolvedItem as? Bookmark, targetBookmark.isFolder {
@@ -1077,12 +1179,20 @@ extension SidebarTabListViewController: NSOutlineViewDataSource {
             let crossWindowSource = sourceBrowserState(for: pasteboard)
             if isCrossWindowDrag(pasteboard), let sourceState = crossWindowSource,
                let draggedTab = sourceState.tabs.first(where: { $0.guid == tabGuid }) {
-                
+
                 if let targetBookmark = resolvedItem as? Bookmark, targetBookmark.isFolder {
+                    // Split-pair tabs become a single split-view bookmark in
+                    // the destination window; fall through to `moveNormalTab`
+                    // for plain tabs.
+                    let dropIndex = resolvedIndex == NSOutlineViewDropOnItemIndex ? 0 : resolvedIndex
+                    if let targetFolder = browserState.bookmarkManager.bookmark(withGuid: targetBookmark.guid),
+                       sourceState.addSplitBookmarkFromTab(draggedTab, toFolder: targetFolder, targetIndex: dropIndex) {
+                        return true
+                    }
                     sourceState.moveNormalTab(
                         tabId: draggedTab.guid,
                         toBookmark: targetBookmark.guid,
-                        index: resolvedIndex == NSOutlineViewDropOnItemIndex ? 0 : resolvedIndex
+                        index: dropIndex
                     )
                     return true
                 }
@@ -1096,9 +1206,12 @@ extension SidebarTabListViewController: NSOutlineViewDataSource {
                     )
                     return true
                 }
-                
+
                 let proposedRow = resolvedIndex == NSOutlineViewDropOnItemIndex ? outlineView.numberOfRows : resolvedIndex
                 if isRowInBookmarkSection(proposedRow) {
+                    if sourceState.addSplitBookmarkFromTab(draggedTab, toFolder: nil, targetIndex: resolvedIndex) {
+                        return true
+                    }
                     sourceState.moveNormalTab(tabId: draggedTab.guid, toBookmark: nil, index: resolvedIndex)
                     return true
                 }
@@ -1239,6 +1352,16 @@ extension SidebarTabListViewController: NSOutlineViewDataSource {
                 } else {
                     AppLogDebug("[acceptDrop] -> In tab section, calling handleBookmarkDropToNormalList")
                     if isCrossWindowDrag(pasteboard), let sourceState = sourceBrowserState(for: pasteboard) {
+                        // Split bookmark cross-window: open both URLs as a
+                        // fresh split in the destination. Source bookmark and
+                        // any live split stay put — this is "open in another
+                        // window", not "move".
+                        if let secondaryURL = draggedBookmark.secondaryUrl, !secondaryURL.isEmpty,
+                           let primaryURL = draggedBookmark.url, !primaryURL.isEmpty {
+                            browserState.openTwoURLsAsSplit(primaryURL: primaryURL,
+                                                           secondaryURL: secondaryURL)
+                            return true
+                        }
                         let destination = calculateTabDestinationIndex(from: resolvedIndex)
                         if let openTab = findOpenTab(in: sourceState, matchingLocalGuid: draggedBookmark.guid) {
                             sourceState.moveBookmarkOut(draggedBookmark, toNormalTabs: destination)
@@ -1277,6 +1400,92 @@ extension SidebarTabListViewController: NSOutlineViewDataSource {
             screenLocation: CGPoint(x: screenPoint.x, y: screenPoint.y),
             containerView: hostVC?.view
         )
+        // When dragging a tab that belongs to a split, override the default
+        // single-row drag image with a composite that shows both pair members
+        // stacked in their visual order, so the animation reads as "the whole
+        // split is moving" (the drop layer already moves both members).
+        if let draggedTab = draggedItems.first as? Tab {
+            applySplitPairDragImageIfNeeded(session: session, draggedTab: draggedTab)
+        }
+    }
+
+    /// If the dragged tab is part of a split, replace the dragging image with
+    /// a vertical composite of both row snapshots and expand the dragging
+    /// frame to cover the pair. No-op for non-split tabs.
+    private func applySplitPairDragImageIfNeeded(session: NSDraggingSession, draggedTab: Tab) {
+        guard let group = browserState.splitGroup(forTabId: draggedTab.guid) else {
+            return
+        }
+        guard let partnerId = group.partnerTabId(of: draggedTab.guid),
+              let partner = browserState.normalTabs.first(where: { $0.guid == partnerId }) else {
+            return
+        }
+        let draggedRow = outlineView.row(forItem: draggedTab)
+        let partnerRow = outlineView.row(forItem: partner)
+        guard draggedRow >= 0, partnerRow >= 0 else { return }
+        guard let draggedCell = outlineView.view(atColumn: 0, row: draggedRow, makeIfNecessary: false) as? SidebarCellView,
+              let partnerCell = outlineView.view(atColumn: 0, row: partnerRow, makeIfNecessary: false) as? SidebarCellView,
+              let draggedSnapshot = draggedCell.createDraggingImage(),
+              let partnerSnapshot = partnerCell.createDraggingImage() else {
+            return
+        }
+        let upperSnapshot: NSImage
+        let lowerSnapshot: NSImage
+        if draggedRow < partnerRow {
+            upperSnapshot = draggedSnapshot
+            lowerSnapshot = partnerSnapshot
+        } else {
+            upperSnapshot = partnerSnapshot
+            lowerSnapshot = draggedSnapshot
+        }
+        guard let composite = makeStackedSplitDragImage(upper: upperSnapshot, lower: lowerSnapshot) else {
+            return
+        }
+        // Anchor the composite so the cursor stays over the originally-dragged
+        // row. AppKit reports the original drag frame in window coordinates;
+        // shift its origin up by the upper row's height when the dragged row
+        // is the lower one so the pair lifts as a unit.
+        let upperHeight = upperSnapshot.size.height
+        let isDraggedUpper = draggedRow < partnerRow
+        session.enumerateDraggingItems(
+            options: [],
+            for: nil,
+            classes: [NSPasteboardItem.self],
+            searchOptions: [:]
+        ) { draggingItem, _, _ in
+            var frame = draggingItem.draggingFrame
+            if !isDraggedUpper {
+                frame.origin.y -= upperHeight
+            }
+            frame.size = composite.size
+            draggingItem.imageComponentsProvider = nil
+            draggingItem.setDraggingFrame(frame, contents: composite)
+        }
+        // Cache the composite so the cross-window page-snapshot switcher in
+        // TabDraggingSession can restore it when the cursor returns inside.
+        browserState.tabDraggingSession.setOriginalDragImage(composite)
+    }
+
+    /// Stacks two row snapshots vertically into a single drag image, matching
+    /// the way a split pair renders as a merged rounded bar in the sidebar.
+    /// Used by both the outer outline drag path
+    /// (`applySplitPairDragImageIfNeeded`) and the group inner-table drag
+    /// path (`tabGroupCell(_:beginDragging:...)`) so a split that lives
+    /// inside a tab group still lifts as a single visual unit.
+    func makeStackedSplitDragImage(upper: NSImage, lower: NSImage) -> NSImage? {
+        let width = max(upper.size.width, lower.size.width)
+        let height = upper.size.height + lower.size.height
+        guard width > 0, height > 0 else { return nil }
+        let image = NSImage(size: NSSize(width: width, height: height))
+        image.lockFocus()
+        defer { image.unlockFocus() }
+        // Cocoa coordinates are flipped (origin at bottom-left), so the lower
+        // row in screen terms is drawn at y=0 and the upper row above it.
+        let lowerRect = NSRect(x: 0, y: 0, width: width, height: lower.size.height)
+        let upperRect = NSRect(x: 0, y: lower.size.height, width: width, height: upper.size.height)
+        lower.draw(in: lowerRect, from: NSRect(origin: .zero, size: lower.size), operation: .sourceOver, fraction: 1.0)
+        upper.draw(in: upperRect, from: NSRect(origin: .zero, size: upper.size), operation: .sourceOver, fraction: 1.0)
+        return image
     }
     
     func outlineView(_ outlineView: NSOutlineView,
@@ -1346,6 +1555,35 @@ extension SidebarTabListViewController: NSOutlineViewDataSource {
         return row > bookmarkSectionEnd + separatorOffset
     }
     
+    /// If the proposed drop child index would land strictly between the two
+    /// members of an adjacent split pair in the tab section, return the
+    /// adjusted child index on whichever side the pointer's vertical half
+    /// indicates. Returns nil when the proposed index doesn't fall between a
+    /// pair (in which case the original index is fine).
+    private func snapDropChildIndexOutsideSplitPair(
+        outlineView: NSOutlineView,
+        dragLocation: NSPoint,
+        proposedChildIndex: Int
+    ) -> Int? {
+        let tabDestination = calculateTabDestinationIndex(from: proposedChildIndex)
+        let pairLowers = browserState.splitPairLowerIndicesInNormalTabs()
+        let lo = tabDestination - 1
+        guard pairLowers.contains(lo),
+              lo >= 0,
+              lo + 1 < browserState.normalTabs.count else {
+            return nil
+        }
+        let loRow = outlineView.row(forItem: browserState.normalTabs[lo])
+        let hiRow = outlineView.row(forItem: browserState.normalTabs[lo + 1])
+        guard loRow >= 0, hiRow >= 0 else { return nil }
+        let pairBoundaryY = (outlineView.rect(ofRow: loRow).midY + outlineView.rect(ofRow: hiRow).midY) / 2
+        let dragInOutline = outlineView.convert(dragLocation, from: nil)
+        let pointerOnUpperHalf = outlineView.isFlipped
+            ? dragInOutline.y < pairBoundaryY
+            : dragInOutline.y > pairBoundaryY
+        return pointerOnUpperHalf ? proposedChildIndex - 1 : proposedChildIndex + 1
+    }
+
     private func calculateTabDestinationIndex(from outlineViewIndex: Int) -> Int {
         // Translate an NSOutlineView root-row index (drop position) into a
         // `normalTabs` insertion index.
@@ -1728,16 +1966,46 @@ extension SidebarTabListViewController: NSOutlineViewDataSource {
     private func findOpenTab(in state: BrowserState, matchingLocalGuid guid: String) -> Tab? {
         return state.tabs.first { $0.guidInLocalDB == guid }
     }
+
+    /// If `pinnedGuid` identifies one pane of a pinned split, return both
+    /// panes' URLs. Used to open the pair as a fresh split in another window
+    /// without disturbing the source's pinned record or live tabs.
+    private func pinnedSplitURLs(in state: BrowserState, pinnedGuid: String) -> (primary: String, secondary: String)? {
+        guard let pinnedTab = state.pinnedTabs.first(where: { $0.guidInLocalDB == pinnedGuid }),
+              let partnerGuid = pinnedTab.splitPartnerGuid, !partnerGuid.isEmpty,
+              let partner = state.pinnedTabs.first(where: { $0.guidInLocalDB == partnerGuid }),
+              let primaryURL = pinnedTab.url, !primaryURL.isEmpty,
+              let secondaryURL = partner.url, !secondaryURL.isEmpty else {
+            return nil
+        }
+        return (primaryURL, secondaryURL)
+    }
     
     private func moveTabToTargetWindow(_ tab: Tab, destinationIndex: Int, scheduleNormalInsertion: Bool) -> Bool {
         guard let wrapper = tab.webContentWrapper else { return false }
         let targetState = browserState
+        // Split-aware: when the dragged tab belongs to a split, the Chromium
+        // bridge re-creates the pair atomically at the requested index. Skip
+        // the local schedule + tail-insert dance — its post-arrival per-tab
+        // moveTab callback would yank the dragged half out of the new split
+        // and break the pair.
+        if tabIsInSplitInAnyWindow(tab) {
+            let clampedIndex = max(0, min(destinationIndex, targetState.tabs.count))
+            wrapper.moveSplit(toWindow: targetState.windowId.int64Value, at: clampedIndex)
+            return true
+        }
         if scheduleNormalInsertion {
             targetState.scheduleNormalTabInsertion(tabGuid: tab.guid, at: destinationIndex)
         }
         let insertIndex = max(0, targetState.tabs.count)
-        wrapper.moveSelf(toWindow: targetState.windowId.int64Value, at: insertIndex)
+        wrapper.moveSplit(toWindow: targetState.windowId.int64Value, at: insertIndex)
         return true
+    }
+
+    private func tabIsInSplitInAnyWindow(_ tab: Tab) -> Bool {
+        MainBrowserWindowControllersManager.shared.getAllWindows().contains {
+            $0.browserState.splitGroup(forTabId: tab.guid) != nil
+        }
     }
 }
 
@@ -1788,6 +2056,11 @@ extension SidebarTabListViewController: NSOutlineViewDelegate {
                 return c
             }()
             tabCell.delegate = self
+            // Bind to this window's state so split-pair rendering doesn't
+            // depend on which window is currently key. Drag-out to a new
+            // window can otherwise leave the destination window resolving
+            // splits against the source window until a tab is clicked.
+            tabCell.browserState = browserState
             cellView = tabCell
             
         case .newTabButton:
@@ -3030,16 +3303,44 @@ extension SidebarTabListViewController: TabGroupCellViewDelegate {
             "windowId=\(browserState.windowId)"
         )
 
+        // When the dragged tab is one pane of a split inside this group,
+        // composite both panes' snapshots so the drag image reads "the
+        // whole split is moving" — matching the outer outline behavior
+        // (`applySplitPairDragImageIfNeeded`). Without this, only the
+        // dragged pane lifts visually while the partner stays in place.
+        let composite = cell.splitPairCompositeForInnerRow(
+            tab: tab, draggedRowView: rowView, draggedImage: image,
+            stack: { [weak self] upper, lower in
+                self?.makeStackedSplitDragImage(upper: upper, lower: lower)
+            })
+        let finalImage = composite?.image ?? image
+        let frameInOutline = outlineView.convert(rowView.bounds, from: rowView)
+        var draggingFrame = frameInOutline
+        if let composite {
+            draggingFrame.size = composite.image.size
+            // Anchor so the cursor stays over the originally-dragged row:
+            // when the dragged pane is the *lower* one, shift the frame's
+            // origin up by the upper-snapshot height so the composite
+            // lifts as a unit instead of clipping the partner off-screen.
+            if !composite.isDraggedUpper {
+                draggingFrame.origin.y -= composite.upperHeight
+            }
+        }
         let draggingItem = NSDraggingItem(pasteboardWriter: pasteboardItem)
-        let frame = outlineView.convert(rowView.bounds, from: rowView)
-        AppLogDebug("[TAB_GROUPS][INNER_DRAG] controller.dragFrameInOutline=\(frame)")
-        draggingItem.setDraggingFrame(frame, contents: image)
+        AppLogDebug("[TAB_GROUPS][INNER_DRAG] controller.dragFrameInOutline=\(draggingFrame)")
+        draggingItem.setDraggingFrame(draggingFrame, contents: finalImage)
 
         let session = outlineView.beginDraggingSession(
             with: [draggingItem],
             event: mouseDownEvent,
             source: self)
         AppLogDebug("[TAB_GROUPS][INNER_DRAG] controller.beginDraggingSession session=\(session)")
+
+        // Cache so the cross-window page-snapshot switcher can restore it
+        // if the cursor returns inside the sidebar.
+        if let composite {
+            browserState.tabDraggingSession.setOriginalDragImage(composite.image)
+        }
 
         let screenPoint = mouseDownEvent.window?
             .convertPoint(toScreen: mouseDownEvent.locationInWindow) ?? NSEvent.mouseLocation

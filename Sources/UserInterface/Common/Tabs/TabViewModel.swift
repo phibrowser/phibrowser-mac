@@ -40,7 +40,13 @@ final class TabViewModel {
     /// flag is the authoritative signal for layout decisions like
     /// indentation that should not flicker on color settling.
     var isInGroup: Bool = false
-    
+
+    /// Position within a Chromium split pair, if any. Drives merged-bar rendering.
+    var splitPairPosition: SplitPairPosition?
+    /// True when the split this tab belongs to contains the focusing tab.
+    /// Both pair members render with the active-group background in that case.
+    var isSplitGroupActive: Bool = false
+
     var onToggleMute: (() -> Void)?
     var onToolTipUpdated: (() -> Void)?
     
@@ -84,6 +90,8 @@ final class TabViewModel {
         isAudioMuted = false
         isCapturingMedia = false
         groupColor = nil
+        splitPairPosition = nil
+        isSplitGroupActive = false
         faviconRevision &+= 1
         onToggleMute = nil
         onToolTipUpdated = nil

@@ -12,6 +12,9 @@
 		2ABF91DB68C2445BAA58C9BA /* GroupTabsTableView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 457F461C0F164136A46FF641 /* GroupTabsTableView.swift */; };
 		3703C88C2F68F78500E7CF6D /* AISettingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3703C88B2F68F78500E7CF6D /* AISettingView.swift */; };
 		3703C9822F69558C00E7CF6D /* BrowserState+ToggleAI.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3703C9812F69558C00E7CF6D /* BrowserState+ToggleAI.swift */; };
+		5F1A5A11AC1D000000000001 /* BrowserState+Split.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5F1A5A11AC1D000000000002 /* BrowserState+Split.swift */; };
+		5F1A5A11AC1D000000000003 /* SplitPaneHostView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5F1A5A11AC1D000000000004 /* SplitPaneHostView.swift */; };
+		5F1A5A11AC1D000000000005 /* SplitTabDropContainer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5F1A5A11AC1D000000000006 /* SplitTabDropContainer.swift */; };
 		3703C9842F6956E600E7CF6D /* SentinelHelper.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3703C9832F6956E600E7CF6D /* SentinelHelper.swift */; };
 		3703C9862F6956E600E7CF6D /* SentinelVersionGuard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3703C9852F6956E600E7CF6D /* SentinelVersionGuard.swift */; };
 		370D03AC2F0E463B0087A1C9 /* Mapper.swift in Sources */ = {isa = PBXBuildFile; fileRef = 370D03A32F0E463B0087A1C9 /* Mapper.swift */; };
@@ -126,6 +129,8 @@
 		37DEB33A2F63F0F500129429 /* TabDataModelSchemaV1.swift in Sources */ = {isa = PBXBuildFile; fileRef = 37DEB3392F63F0F500129429 /* TabDataModelSchemaV1.swift */; };
 		37DEB33E2F63F13700129429 /* TabDataModelSchemaV2.swift in Sources */ = {isa = PBXBuildFile; fileRef = 37DEB33D2F63F13700129429 /* TabDataModelSchemaV2.swift */; };
 		37DEB42F2F67C0F000129429 /* TabDataModelSchemaV3.swift in Sources */ = {isa = PBXBuildFile; fileRef = 37DEB42E2F67C0F000129429 /* TabDataModelSchemaV3.swift */; };
+		37DEB4312F67C0F100129429 /* TabDataModelSchemaV4.swift in Sources */ = {isa = PBXBuildFile; fileRef = 37DEB4302F67C0F100129429 /* TabDataModelSchemaV4.swift */; };
+		CCAA00022F00010000000001 /* TabDataModelSchemaV5.swift in Sources */ = {isa = PBXBuildFile; fileRef = CCAA00022F00010000000002 /* TabDataModelSchemaV5.swift */; };
 		37E6AF402EEC30E80078CCD8 /* ChatButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = 37E6AF3F2EEC30E80078CCD8 /* ChatButton.swift */; };
 		37EA23AB2F6C010C00D3C4A9 /* Dependencies in Frameworks */ = {isa = PBXBuildFile; productRef = B00B9F252E3B2A3F0029D3A9 /* Dependencies */; };
 		37EA23AC2F6C010C00D3C4A9 /* Dependencies in Frameworks */ = {isa = PBXBuildFile; productRef = B02BEB612E3B2D5900E5859A /* Dependencies */; };
@@ -253,6 +258,7 @@
 		CC6B000F2E77E04800D4F133 /* AboutView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC6B000E2E77E04800D4F133 /* AboutView.swift */; };
 		CC6B001B2E793EAC00D4F133 /* PinnedTabViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC6B001A2E793EAC00D4F133 /* PinnedTabViewController.swift */; };
 		CC6B00322E7941C300D4F133 /* PinnedTabItem.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC6B00312E7941C300D4F133 /* PinnedTabItem.swift */; };
+		CCAA00012F00010000000001 /* PinnedSplitItem.swift in Sources */ = {isa = PBXBuildFile; fileRef = CCAA00012F00010000000002 /* PinnedSplitItem.swift */; };
 		CC6BFFDD2E72C04000D4F133 /* FaviconDataProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC6BFFDC2E72C04000D4F133 /* FaviconDataProvider.swift */; };
 		CC71BAB92E9E2E74006C7238 /* EventBlockBgView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC71BAB82E9E2E74006C7238 /* EventBlockBgView.swift */; };
 		CC71BABB2E9E40A9006C7238 /* OmniBoxSuggestionCellView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC71BABA2E9E40A9006C7238 /* OmniBoxSuggestionCellView.swift */; };
@@ -383,6 +389,9 @@
 /* Begin PBXFileReference section */
 		3703C88B2F68F78500E7CF6D /* AISettingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AISettingView.swift; sourceTree = "<group>"; };
 		3703C9812F69558C00E7CF6D /* BrowserState+ToggleAI.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "BrowserState+ToggleAI.swift"; sourceTree = "<group>"; };
+		5F1A5A11AC1D000000000002 /* BrowserState+Split.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "BrowserState+Split.swift"; sourceTree = "<group>"; };
+		5F1A5A11AC1D000000000004 /* SplitPaneHostView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SplitPaneHostView.swift; sourceTree = "<group>"; };
+		5F1A5A11AC1D000000000006 /* SplitTabDropContainer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SplitTabDropContainer.swift; sourceTree = "<group>"; };
 		3703C9832F6956E600E7CF6D /* SentinelHelper.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SentinelHelper.swift; sourceTree = "<group>"; };
 		3703C9852F6956E600E7CF6D /* SentinelVersionGuard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SentinelVersionGuard.swift; sourceTree = "<group>"; };
 		370D039F2F0E463B0087A1C9 /* Appearance.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Appearance.swift; sourceTree = "<group>"; };
@@ -506,6 +515,8 @@
 		37DEB3392F63F0F500129429 /* TabDataModelSchemaV1.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TabDataModelSchemaV1.swift; sourceTree = "<group>"; };
 		37DEB33D2F63F13700129429 /* TabDataModelSchemaV2.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TabDataModelSchemaV2.swift; sourceTree = "<group>"; };
 		37DEB42E2F67C0F000129429 /* TabDataModelSchemaV3.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TabDataModelSchemaV3.swift; sourceTree = "<group>"; };
+		37DEB4302F67C0F100129429 /* TabDataModelSchemaV4.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TabDataModelSchemaV4.swift; sourceTree = "<group>"; };
+		CCAA00022F00010000000002 /* TabDataModelSchemaV5.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TabDataModelSchemaV5.swift; sourceTree = "<group>"; };
 		37E6AF3F2EEC30E80078CCD8 /* ChatButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatButton.swift; sourceTree = "<group>"; };
 		37EA25EE2F6D5A5A00D3C4A9 /* CommonMessageRouter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CommonMessageRouter.swift; sourceTree = "<group>"; };
 		37EECF212F0F623A0022A176 /* EmbeddedChatViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EmbeddedChatViewController.swift; sourceTree = "<group>"; };
@@ -640,6 +651,7 @@
 		CC6B000E2E77E04800D4F133 /* AboutView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AboutView.swift; sourceTree = "<group>"; };
 		CC6B001A2E793EAC00D4F133 /* PinnedTabViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PinnedTabViewController.swift; sourceTree = "<group>"; };
 		CC6B00312E7941C300D4F133 /* PinnedTabItem.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PinnedTabItem.swift; sourceTree = "<group>"; };
+		CCAA00012F00010000000002 /* PinnedSplitItem.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PinnedSplitItem.swift; sourceTree = "<group>"; };
 		CC6BFFD82E72B83500D4F133 /* Phi Framework.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; path = "Phi Framework.framework"; sourceTree = "<group>"; };
 		CC6BFFDC2E72C04000D4F133 /* FaviconDataProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FaviconDataProvider.swift; sourceTree = "<group>"; };
 		CC71BAB82E9E2E74006C7238 /* EventBlockBgView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EventBlockBgView.swift; sourceTree = "<group>"; };
@@ -1045,6 +1057,8 @@
 				37DEB3392F63F0F500129429 /* TabDataModelSchemaV1.swift */,
 				37DEB33D2F63F13700129429 /* TabDataModelSchemaV2.swift */,
 				37DEB42E2F67C0F000129429 /* TabDataModelSchemaV3.swift */,
+				37DEB4302F67C0F100129429 /* TabDataModelSchemaV4.swift */,
+				CCAA00022F00010000000002 /* TabDataModelSchemaV5.swift */,
 			);
 			path = TabDataModel;
 			sourceTree = "<group>";
@@ -1533,6 +1547,7 @@
 				CC6B001A2E793EAC00D4F133 /* PinnedTabViewController.swift */,
 				CC2708972E7959DF00B65AB8 /* PinnedTabLayout.swift */,
 				CC6B00312E7941C300D4F133 /* PinnedTabItem.swift */,
+				CCAA00012F00010000000002 /* PinnedSplitItem.swift */,
 				CCD3246C2EB1EFB600AA0B85 /* PinnedExtensionItem.swift */,
 				CCCA86772EB316CC0071E30A /* ReorderingCollectionView.swift */,
 			);
@@ -1670,6 +1685,7 @@
 				CCBF8FA62E69948D00B9A99E /* BrowserState.swift */,
 				376581F62EEA845700D3E031 /* BrowserState+Bookmark.swift */,
 				3703C9812F69558C00E7CF6D /* BrowserState+ToggleAI.swift */,
+				5F1A5A11AC1D000000000002 /* BrowserState+Split.swift */,
 				B0F370CA2E43261A000B51F9 /* EventBus.swift */,
 				AA10000000000000000000F5 /* TabSwitchManager.swift */,
 				37C2A68C2F8E15C1006E856E /* Dragging */,
@@ -1690,6 +1706,9 @@
 				377D210E2F51986900A68BE5 /* WebContentContainerViewController+FloatingSidebar.swift */,
 				B0F370B82E430CA5000B51F9 /* WebContentViewController.swift */,
 				37C9E5A12F3EF7CD00353A03 /* AIChatSidebarStateStore.swift */,
+				37EECF362F0F8C7F0022A176 /* SplitViewResizeHandle.swift */,
+				5F1A5A11AC1D000000000004 /* SplitPaneHostView.swift */,
+				5F1A5A11AC1D000000000006 /* SplitTabDropContainer.swift */,
 				37BA3EA12F866864003A8A53 /* EdgeFogOverlayView.swift */,
 				37BA3EA32F866870003A8A53 /* AgentAnimationManager.swift */,
 			);
@@ -1895,6 +1914,7 @@
 				375B2D4F2ED07C780053FECC /* ConchFrameAnimationBaseViewController.swift in Sources */,
 				8EEBD7692FAB137E008CBD9A /* TabGroupRun.swift in Sources */,
 				CC6B00322E7941C300D4F133 /* PinnedTabItem.swift in Sources */,
+				CCAA00012F00010000000001 /* PinnedSplitItem.swift in Sources */,
 				CCBF0E912ECD7DE7005E729B /* ProfileCardViewController.swift in Sources */,
 				37DEB33A2F63F0F500129429 /* TabDataModelSchemaV1.swift in Sources */,
 				CC98F8A82E8BEB4F00DAD237 /* SidebarViewController+UpdateReminder.swift in Sources */,
@@ -2002,6 +2022,8 @@
 				15B618E574463D94C98AEA5F /* AISettingHostingViewController.swift in Sources */,
 				376193532F4EB8630094A78E /* SystemUtils.swift in Sources */,
 				37DEB42F2F67C0F000129429 /* TabDataModelSchemaV3.swift in Sources */,
+				37DEB4312F67C0F100129429 /* TabDataModelSchemaV4.swift in Sources */,
+				CCAA00022F00010000000001 /* TabDataModelSchemaV5.swift in Sources */,
 				8E762C1A2F15F5AE00631087 /* TabStripDragController.swift in Sources */,
 				CCBF8F642E65835900B9A99E /* BookmarkModel+Sidebar.swift in Sources */,
 				CC4351C12EC73509009D8FC3 /* GradientMapper.swift in Sources */,
@@ -2110,6 +2132,9 @@
 				CCBF8F692E65A9D700B9A99E /* ExtensionList.swift in Sources */,
 				CC35D7942E7271CE00E1A970 /* LiquidGlassCompatible.swift in Sources */,
 				3703C9822F69558C00E7CF6D /* BrowserState+ToggleAI.swift in Sources */,
+				5F1A5A11AC1D000000000001 /* BrowserState+Split.swift in Sources */,
+				5F1A5A11AC1D000000000003 /* SplitPaneHostView.swift in Sources */,
+				5F1A5A11AC1D000000000005 /* SplitTabDropContainer.swift in Sources */,
 				37C1B2842EE039D000DD4496 /* DownloadsListView.swift in Sources */,
 				8E4FD9BF2EF7D98C007D97A4 /* ZeroSafeAreaHostingView.swift in Sources */,
 				CC450ACD2EA251D3004EE144 /* HoverableButton.swift in Sources */,

@@ -38,6 +38,9 @@ struct TabStripLayoutInput {
     /// caller leaves its visible frame at the drag-start value and
     /// drives cursor follow via a `layer.transform` translation.
     let excludedGroupRange: ClosedRange<Int>?
+    /// Indices excluded from layout, typically the dragged tab and — when it
+    /// belongs to a split pair — its partner so both lift together.
+    let excludedTabIndices: Set<Int>
     /// Gap insertion index.
     let gapAtIndex: Int?
     /// Gap width.
@@ -71,6 +74,7 @@ struct TabStripLayoutInput {
          tabHeight: CGFloat,
          excludedTabIndex: Int? = nil,
          excludedGroupRange: ClosedRange<Int>? = nil,
+         excludedTabIndices: Set<Int> = [],
          gapAtIndex: Int? = nil,
          gapWidth: CGFloat? = nil,
          groupRuns: [GroupRun] = [],
@@ -86,6 +90,7 @@ struct TabStripLayoutInput {
         self.tabHeight = tabHeight
         self.excludedTabIndex = excludedTabIndex
         self.excludedGroupRange = excludedGroupRange
+        self.excludedTabIndices = excludedTabIndices
         self.gapAtIndex = gapAtIndex
         self.gapWidth = gapWidth
         self.groupRuns = groupRuns
@@ -138,7 +143,8 @@ struct TabStripLayoutOutput {
 enum TabStripLayoutEngine {
     static func layoutPinned(
         tabCount: Int,
-        excludedTabIndex: Int? = nil,
+        excludedTabIndices: Set<Int> = [],
+        wideTabIndices: Set<Int> = [],
         gapAtIndex: Int? = nil
     ) -> TabStripLayoutOutput {
         var frames: [CGRect] = []
@@ -149,6 +155,11 @@ enum TabStripLayoutEngine {
         // Center pinned tabs vertically in the 32pt strip.
         let containerHeight = TabStripMetrics.Strip.tabHeight // 32
         let y = (containerHeight - itemHeight) / 2.0
+
+        // Wide cells (pinned splits) span two normal slots plus the spacing
+        // that would have sat between them, so the cell visually "absorbs"
+        // its collapsed partner's slot.
+        let wideWidth = itemWidth * 2 + spacing
 
         var currentX: CGFloat = 0
 
@@ -161,15 +172,16 @@ enum TabStripLayoutEngine {
                     currentX += spacing
                 }
             }
-            if let excluded = excludedTabIndex, i == excluded {
+            if excludedTabIndices.contains(i) {
                 // Keep indices aligned by inserting a placeholder frame.
                 frames.append(.zero)
                 continue
             }
 
-            let frame = CGRect(x: currentX, y: y, width: itemWidth, height: itemHeight)
+            let width = wideTabIndices.contains(i) ? wideWidth : itemWidth
+            let frame = CGRect(x: currentX, y: y, width: width, height: itemHeight)
             frames.append(frame)
-            currentX += itemWidth + spacing
+            currentX += width + spacing
         }
 
         if let gapIndex = gapAtIndex {
@@ -204,10 +216,11 @@ enum TabStripLayoutEngine {
         let btnSize = TabStripMetrics.NewTabButton.size
         let buttonOverhead = btnSize.width + TabStripMetrics.NewTabButton.insets.right
         // Excluding the dragged tab(s) changes the available width
-        // calculation. excludedTabIndex (single-tab drag) and
-        // excludedGroupRange (whole-group drag) are mutually exclusive
-        // in practice but we subtract both defensively.
-        var effectiveTabCount = input.tabCount
+        // calculation. `excludedTabIndex` (single-tab drag),
+        // `excludedGroupRange` (whole-group drag), and
+        // `excludedTabIndices` (split-pair drag) are mutually exclusive
+        // in practice but we subtract all three defensively.
+        var effectiveTabCount = input.tabCount - input.excludedTabIndices.count
         if input.excludedTabIndex != nil {
             effectiveTabCount -= 1
         }
@@ -242,7 +255,7 @@ enum TabStripLayoutEngine {
                 inactiveW = baseWidth
             } else {
                 // Tight space: protect the active tab.
-                let isActiveExcluded = (input.excludedTabIndex != nil && input.excludedTabIndex == input.activeTabIndex)
+                let isActiveExcluded = (input.activeTabIndex.map { input.excludedTabIndices.contains($0) } ?? false)
                 if input.activeTabIndex != nil && !isActiveExcluded {
                     activeW = input.activeTabWidth
                     let remainingForInactive = availableForTabs - activeW
@@ -273,7 +286,7 @@ enum TabStripLayoutEngine {
                     currentX += gapW
                 }
             }
-            if let excluded = input.excludedTabIndex, i == excluded {
+            if input.excludedTabIndices.contains(i) {
                 // Keep indices aligned by inserting a placeholder frame.
                 tabFrames.append(.zero)
                 separatorXs.append(-1000)

@@ -53,18 +53,47 @@ extension Bookmark: ContextMenuRepresentable {
     func makeContextMenu(on menu: NSMenu, source: BookmarkMenuSource) {
         menu.removeAllItems()
         if !isFolder {
-            let copyUrlItem = NSMenuItem(title: NSLocalizedString("Copy Link", comment: "Bookmark Copy Link menu item"), action: #selector(MainBrowserWindowController.myCopyLink(_:)), keyEquivalent: "")
-            copyUrlItem.representedObject = self
-            menu.addItem(copyUrlItem)
+            // Split-view bookmarks expose each URL on its own item — copying
+            // both at once isn't useful in practice and matches how the edit
+            // dialog separates them. `myCopyLink` reads
+            // `WebContentRepresentable.url` (primary only), so the split
+            // case needs a dedicated handler routed via the menu item's tag.
+            let hasSecondary = !(secondaryUrl ?? "").isEmpty
+            if hasSecondary {
+                let copyPrimary = NSMenuItem(title: NSLocalizedString("Copy Link 1", comment: "Bookmark context menu - Copy the primary URL of a split-view bookmark"),
+                                             action: #selector(copySplitLink(_:)),
+                                             keyEquivalent: "")
+                copyPrimary.target = self
+                copyPrimary.tag = 0
+                menu.addItem(copyPrimary)
+
+                let copySecondary = NSMenuItem(title: NSLocalizedString("Copy Link 2", comment: "Bookmark context menu - Copy the secondary URL of a split-view bookmark"),
+                                               action: #selector(copySplitLink(_:)),
+                                               keyEquivalent: "")
+                copySecondary.target = self
+                copySecondary.tag = 1
+                menu.addItem(copySecondary)
+            } else {
+                let copyUrlItem = NSMenuItem(title: NSLocalizedString("Copy Link", comment: "Bookmark Copy Link menu item"),
+                                             action: #selector(MainBrowserWindowController.myCopyLink(_:)),
+                                             keyEquivalent: "")
+                copyUrlItem.representedObject = self
+                menu.addItem(copyUrlItem)
+            }
         }
         
         switch source {
         case .sidebar:
-            let rename = NSMenuItem(title: NSLocalizedString("Rename...", comment: "Bookmark Rename menu item"),
-                                    action: #selector(renameBookmark),
-                                    keyEquivalent: "")
-            rename.target = self
-            menu.addItem(rename)
+            // Split-view bookmarks have two URLs + two titles, which inline
+            // rename can't express — route those through Edit... only.
+            let isSplit = !(secondaryUrl ?? "").isEmpty
+            if !isSplit {
+                let rename = NSMenuItem(title: NSLocalizedString("Rename...", comment: "Bookmark Rename menu item"),
+                                        action: #selector(renameBookmark),
+                                        keyEquivalent: "")
+                rename.target = self
+                menu.addItem(rename)
+            }
         case .bookmarkBar:
             if isFolder {
                 let rename = NSMenuItem(title: NSLocalizedString("Rename...", comment: "Bookmark Rename menu item"),
@@ -84,9 +113,26 @@ extension Bookmark: ContextMenuRepresentable {
             editURL.target = self
             menu.addItem(editURL)
             
-            let openInNewTab = NSMenuItem(title: NSLocalizedString("Open in New Tab", comment: "Open in New Tab menu item"), action: #selector(openInNewTab), keyEquivalent: "")
+            // Route split-view bookmarks through a dedicated action that
+            // opens a fresh duplicate split without touching the existing
+            // bookmark→split binding. The menu title stays "Open in New Tab"
+            // for consistency with normal bookmarks.
+            let isSplit = !(secondaryUrl ?? "").isEmpty
+            let openInNewTab = NSMenuItem(title: NSLocalizedString("Open in New Tab", comment: "Open in New Tab menu item"),
+                                          action: isSplit ? #selector(openSplitInNewTab) : #selector(openInNewTab),
+                                          keyEquivalent: "")
             openInNewTab.target = self
             menu.addItem(openInNewTab)
+
+            // A split-view bookmark already opens as a split on click, so the
+            // explicit "Open as Split" entry would just duplicate the click.
+            if !isSplit {
+                let openInSplit = NSMenuItem(title: NSLocalizedString("Open as Split", comment: "Bookmark context menu - Open this bookmark as a new tab paired with the current tab in a split"),
+                                             action: #selector(openInSplitView),
+                                             keyEquivalent: "")
+                openInSplit.target = self
+                menu.addItem(openInSplit)
+            }
         }
         
         let delete = NSMenuItem(title: NSLocalizedString("Delete", comment: "Delete bookmark menu item"), action: #selector(myDelete(_:)), keyEquivalent: "")
@@ -103,6 +149,40 @@ extension Bookmark: ContextMenuRepresentable {
         guard let _ = url else { return }
         // Open through the bookmark flow so the Chromium tab stays associated.
         MainBrowserWindowControllersManager.shared.activeWindowController?.browserState.createTab(url)
+    }
+
+    /// Opens a fresh duplicate split for a split-view bookmark. Intentionally
+    /// passes no `bookmarkGuid` so the existing bookmark→split binding (if
+    /// any) is preserved and a future click on the bookmark still re-activates
+    /// the originally-tracked split rather than this duplicate.
+    @MainActor
+    @objc private func openSplitInNewTab() {
+        guard let url, !url.isEmpty,
+              let secondaryURL = secondaryUrl, !secondaryURL.isEmpty,
+              let state = MainBrowserWindowControllersManager.shared.activeWindowController?.browserState else { return }
+        state.openTwoURLsAsSplit(primaryURL: url, secondaryURL: secondaryURL)
+    }
+
+    /// Copies one URL of a split-view bookmark to the pasteboard. The menu
+    /// item's `tag` selects which side: 0 = primary, 1 = secondary.
+    @objc private func copySplitLink(_ item: NSMenuItem) {
+        let raw: String?
+        switch item.tag {
+        case 0: raw = url
+        case 1: raw = secondaryUrl
+        default: raw = nil
+        }
+        guard let raw, !raw.isEmpty else { return }
+        let pb = NSPasteboard.general
+        pb.clearContents()
+        pb.setString(URLProcessor.phiBrandEnsuredUrlString(raw), forType: .string)
+    }
+
+    @MainActor
+    @objc private func openInSplitView() {
+        guard let url, !url.isEmpty,
+              let state = MainBrowserWindowControllersManager.shared.activeWindowController?.browserState else { return }
+        state.openURLAsSplit(url: url)
     }
     
     @objc private func renameBookmark() {
@@ -146,10 +226,17 @@ extension Bookmark: ContextMenuRepresentable {
         let state = windowController.browserState
         let bookmarkGuid = self.guid
         let originalParentGuid = self.parent?.guid
+        // Pass the existing secondary URL and title into the editor so the
+        // split-view case shows the second name + URL fields and preserves the
+        // values when those rows are left untouched.
+        let initialSecondaryUrl = self.secondaryUrl
+        let initialSecondaryTitle = self.secondaryTitle
         EditPinnedTabPresenter.presentModal(
             mode: isFolder ? .folder : .bookmark,
             title: title,
             urlString: url ?? "",
+            secondaryUrlString: initialSecondaryUrl,
+            secondaryTitleString: initialSecondaryTitle,
             modelContainer: state.localStore.container,
             profileId: state.profileId,
             initialFolderGuid: originalParentGuid,
@@ -163,10 +250,18 @@ extension Bookmark: ContextMenuRepresentable {
                 return guid
             }
         ) { result in
+            // Use double-optional for the split fields: `.none` leaves them
+            // alone (non-split bookmark untouched), `.some(value)` writes —
+            // including `.some("")` to clear. Clearing the secondary URL also
+            // clears the secondary title at the persistence layer.
+            let secondaryUrlUpdate: String?? = (initialSecondaryUrl == nil) ? nil : .some(result.secondaryUrl ?? "")
+            let secondaryTitleUpdate: String?? = (initialSecondaryUrl == nil) ? nil : .some(result.secondaryTitle ?? "")
             state.bookmarkManager.updateBookmark(
                 guid: bookmarkGuid,
                 title: result.title,
-                url: result.url
+                url: result.url,
+                secondaryUrl: secondaryUrlUpdate,
+                secondaryTitle: secondaryTitleUpdate
             )
             if let newParentGuid = result.parentFolderGuid,
                newParentGuid != originalParentGuid {

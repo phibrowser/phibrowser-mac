@@ -244,6 +244,27 @@ extension LocalStore {
         }
     }
 
+    /// Sets the persisted split-partner guid on a pinned tab record. Pass nil
+    /// to clear it (called when a split is unpinned or one half is destroyed).
+    /// Writes happen on the background actor, same as the other tab updates.
+    func updateTabSplitPartner(_ guid: String, partnerGuid: String?) {
+        performBackgroundWrite { context in
+            do {
+                let predicate = #Predicate<TabDataModel> { $0.guid == guid }
+                let descriptor = FetchDescriptor<TabDataModel>(predicate: predicate)
+                if let tab = try context.fetch(descriptor).first {
+                    if tab.splitPartnerGuid == partnerGuid {
+                        return
+                    }
+                    tab.splitPartnerGuid = partnerGuid
+                    tab.updatedDate = Date()
+                }
+            } catch {
+                AppLogError("[LocalStore] Failed to update split partner: \(error)")
+            }
+        }
+    }
+
     func updateTabFavicon(_ guid: String, favicon: Data) {
         performBackgroundWrite { context in
             do {

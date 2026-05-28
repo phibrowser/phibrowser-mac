@@ -115,7 +115,7 @@ Stores the Mac-side computed selection target before a close operation:
 
 ### 4.2 New Tab Insertion
 
-`NativeTabDecisionEngine.insertionIndex(visibleNormalTabIds:context:relationGraph:)` computes the insertion position:
+`NativeTabDecisionEngine.insertionIndex(visibleNormalTabIds:context:relationGraph:splitPartnerByTabId:)` computes the insertion position:
 
 | `creationKind` | Logic |
 |----------------|-------|
@@ -123,6 +123,8 @@ Stores the Mac-side computed selection target before a close operation:
 | `linkBackground` | After the opener's last visible descendant; fallback to `insertAfterTabId` |
 | `typedNewTab` / `typedNavigation` | Append to end |
 | `explicitInsert` / `restore` / others | Use `insertAfterTabId` if present; otherwise nil (caller appends) |
+
+Split-pair adjustment: if the opener is in a split with a partner at a higher tab-strip index, the insertion anchor shifts from the opener to the partner. This keeps the split pair contiguous — link clicks from a split tab land after the whole pair instead of between its two panes.
 
 Integration in `BrowserState.handleNewTabFromChromium`:
 

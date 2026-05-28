@@ -32,6 +32,26 @@ struct EditPinnedTabResult {
     let title: String?
     let url: String?
     let parentFolderGuid: String?
+    /// Updated secondary URL for a split-view bookmark. Nil for ordinary
+    /// bookmarks; an empty string is treated as "no secondary URL" by the
+    /// persistence layer.
+    let secondaryUrl: String?
+    /// Updated display title for the secondary URL. Nil for ordinary
+    /// bookmarks; for split bookmarks an empty string clears the title and
+    /// lets the renderer fall back to the host.
+    let secondaryTitle: String?
+
+    init(title: String?,
+         url: String?,
+         parentFolderGuid: String?,
+         secondaryUrl: String? = nil,
+         secondaryTitle: String? = nil) {
+        self.title = title
+        self.url = url
+        self.parentFolderGuid = parentFolderGuid
+        self.secondaryUrl = secondaryUrl
+        self.secondaryTitle = secondaryTitle
+    }
 }
 
 // MARK: - Favicon View
@@ -70,6 +90,48 @@ private struct FaviconView: View {
     }
 }
 
+/// A view displaying the two favicons of a split-view bookmark side-by-side
+/// inside a single rounded tile. Used as the header icon in `EditPinnedTabView`
+/// when the bookmark being edited carries a `secondaryUrl`.
+private struct SplitFaviconView: View {
+    let primaryURLString: String
+    let secondaryURLString: String
+    let size: CGFloat
+    let cornerRadius: CGFloat
+
+    var body: some View {
+        // Each favicon takes half the available width; a 1pt gap keeps the
+        // two halves visually separated without splitting the rounded tile.
+        let halfWidth = (size - 1) / 2
+        HStack(spacing: 1) {
+            faviconHalf(urlString: primaryURLString, width: halfWidth)
+            faviconHalf(urlString: secondaryURLString, width: halfWidth)
+        }
+        .frame(width: size, height: size)
+        .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+    }
+
+    @ViewBuilder
+    private func faviconHalf(urlString: String, width: CGFloat) -> some View {
+        Group {
+            if URL(string: urlString) != nil {
+                Image.favicon(
+                    for: urlString,
+                    configuration: .init(cornerRadius: 0)
+                )
+            } else {
+                Image(systemName: "globe")
+                    .resizable()
+                    .scaledToFit()
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .frame(width: width, height: size)
+        .background(Color(nsColor: .windowBackgroundColor))
+        .clipped()
+    }
+}
+
 /// A view displaying a folder icon.
 private struct FolderIconView: View {
     let size: CGFloat
@@ -93,6 +155,8 @@ enum EditPinnedTabPresenter {
         mode: EditPinnedTabMode,
         title: String = "",
         urlString: String = "",
+        secondaryUrlString: String? = nil,
+        secondaryTitleString: String? = nil,
         modelContainer: ModelContainer? = nil,
         profileId: String = "",
         initialFolderGuid: String? = nil,
@@ -108,6 +172,8 @@ enum EditPinnedTabPresenter {
             mode: mode,
             title: title,
             urlString: urlString,
+            secondaryUrlString: secondaryUrlString,
+            secondaryTitleString: secondaryTitleString,
             profileId: profileId,
             initialFolderGuid: initialFolderGuid,
             dismissesOnAction: false,
@@ -235,6 +301,8 @@ struct EditPinnedTabView: View {
     private let mode: EditPinnedTabMode
     private let profileId: String
     private let faviconURLString: String
+    private let secondaryFaviconURLString: String?
+    private let isSplitBookmark: Bool
     private let onCancel: (() -> Void)?
     private let onRemove: (() -> Void)?
     private let onSave: ((EditPinnedTabResult) -> Void)?
@@ -243,6 +311,8 @@ struct EditPinnedTabView: View {
 
     @State private var titleString: String
     @State private var urlString: String
+    @State private var secondaryUrlString: String
+    @State private var secondaryTitleString: String
     @State private var selectedFolderGuid: String?
     @State private var isCreatingFolder = false
     @State private var newFolderName = ""
@@ -251,6 +321,8 @@ struct EditPinnedTabView: View {
     private enum FocusField {
         case title
         case url
+        case secondaryTitle
+        case secondaryUrl
         case newFolderName
     }
 
@@ -258,6 +330,8 @@ struct EditPinnedTabView: View {
         mode: EditPinnedTabMode,
         title: String = "",
         urlString: String = "",
+        secondaryUrlString: String? = nil,
+        secondaryTitleString: String? = nil,
         profileId: String = "",
         initialFolderGuid: String? = nil,
         dismissesOnAction: Bool = true,
@@ -269,6 +343,8 @@ struct EditPinnedTabView: View {
         self.mode = mode
         self.profileId = profileId
         self.faviconURLString = urlString
+        self.secondaryFaviconURLString = secondaryUrlString
+        self.isSplitBookmark = (secondaryUrlString?.isEmpty == false)
         self.dismissesOnAction = dismissesOnAction
         self.onCancel = onCancel
         self.onRemove = onRemove
@@ -276,6 +352,8 @@ struct EditPinnedTabView: View {
         self.onSave = onSave
         _titleString = State(initialValue: title)
         _urlString = State(initialValue: URLProcessor.phiBrandEnsuredUrlString(urlString))
+        _secondaryUrlString = State(initialValue: URLProcessor.phiBrandEnsuredUrlString(secondaryUrlString ?? ""))
+        _secondaryTitleString = State(initialValue: secondaryTitleString ?? "")
         _selectedFolderGuid = State(initialValue: initialFolderGuid)
     }
 
@@ -332,7 +410,16 @@ struct EditPinnedTabView: View {
         case .folder, .newFolder:
             FolderIconView(size: 48)
         case .bookmark, .editOrMoveBookmark, .pin:
-            FaviconView(urlString: faviconURLString, size: 56, cornerRadius: 6)
+            if isSplitBookmark, let secondaryFaviconURLString {
+                SplitFaviconView(
+                    primaryURLString: faviconURLString,
+                    secondaryURLString: secondaryFaviconURLString,
+                    size: 56,
+                    cornerRadius: 6
+                )
+            } else {
+                FaviconView(urlString: faviconURLString, size: 56, cornerRadius: 6)
+            }
         }
     }
 
@@ -349,11 +436,23 @@ struct EditPinnedTabView: View {
                 comment: "Folder creator - Title of the sheet to create a new folder"
             )
         case .bookmark, .editOrMoveBookmark:
+            if isSplitBookmark {
+                return NSLocalizedString(
+                    "Edit Split Bookmark",
+                    comment: "Bookmark editor - Title of the sheet when editing a split-view bookmark"
+                )
+            }
             return NSLocalizedString(
                 "Edit Bookmark",
                 comment: "Bookmark editor - Title of the sheet to edit a bookmark"
             )
         case .pin:
+            if isSplitBookmark {
+                return NSLocalizedString(
+                    "Edit Pinned Split",
+                    comment: "Favorite editor - Title of the sheet to edit a pinned split-view tab"
+                )
+            }
             return NSLocalizedString(
                 "Edit Pinned Tab",
                 comment: "Favorite editor - Title of the sheet to edit a pin"
@@ -374,11 +473,23 @@ struct EditPinnedTabView: View {
                 comment: "Folder creator - Subtitle explaining new folder creation"
             )
         case .bookmark, .editOrMoveBookmark:
+            if isSplitBookmark {
+                return NSLocalizedString(
+                    "Edit the name and both addresses for this split-view bookmark.",
+                    comment: "Bookmark editor - Subtitle explaining split-view bookmark editing"
+                )
+            }
             return NSLocalizedString(
                 "Edit the name and address for this bookmark.",
                 comment: "Bookmark editor - Subtitle explaining bookmark editing"
             )
         case .pin:
+            if isSplitBookmark {
+                return NSLocalizedString(
+                    "Edit the names and addresses for both panes of this pinned split.",
+                    comment: "Pinned tab editor - Subtitle explaining pinned split editing"
+                )
+            }
             return NSLocalizedString(
                 "Edit the name and address for this pinned tab.",
                 comment: "Pinned tab editor - Subtitle explaining pinned tab editing"
@@ -393,14 +504,9 @@ struct EditPinnedTabView: View {
         VStack(alignment: .leading, spacing: 12) {
             if mode == .folder || mode == .newFolder || mode == .bookmark || mode == .editOrMoveBookmark || mode == .pin {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(
-                        NSLocalizedString(
-                            "Name",
-                            comment: "Editor - Label for the title/name input field"
-                        )
-                    )
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
+                    Text(primaryNameFieldLabel)
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
 
                     TextField(
                         "",
@@ -414,14 +520,9 @@ struct EditPinnedTabView: View {
 
             if mode == .bookmark || mode == .editOrMoveBookmark || mode == .pin {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(
-                        NSLocalizedString(
-                            "URL",
-                            comment: "Editor - Label for the URL input field"
-                        )
-                    )
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
+                    Text(primaryUrlFieldLabel)
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
 
                     TextField(
                         "",
@@ -435,6 +536,56 @@ struct EditPinnedTabView: View {
                     )
                     .textFieldStyle(.roundedBorder)
                     .focused($focusedField, equals: .url)
+                }
+            }
+
+            if isSplitBookmark, mode == .bookmark || mode == .editOrMoveBookmark || mode == .pin {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(
+                        NSLocalizedString(
+                            "Second Name",
+                            comment: "Bookmark editor - Label for the secondary title input field on a split-view bookmark"
+                        )
+                    )
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+
+                    TextField(
+                        "",
+                        text: $secondaryTitleString,
+                        prompt: Text(
+                            NSLocalizedString(
+                                "Bookmark Name",
+                                comment: "Bookmark editor - Placeholder for bookmark name input"
+                            )
+                        )
+                    )
+                    .textFieldStyle(.roundedBorder)
+                    .focused($focusedField, equals: .secondaryTitle)
+                }
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(
+                        NSLocalizedString(
+                            "Second URL",
+                            comment: "Bookmark editor - Label for the secondary URL input field on a split-view bookmark"
+                        )
+                    )
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+
+                    TextField(
+                        "",
+                        text: $secondaryUrlString,
+                        prompt: Text(
+                            NSLocalizedString(
+                                "https://example.com",
+                                comment: "Editor - Placeholder example URL in text field"
+                            )
+                        )
+                    )
+                    .textFieldStyle(.roundedBorder)
+                    .focused($focusedField, equals: .secondaryUrl)
                 }
             }
 
@@ -460,6 +611,32 @@ struct EditPinnedTabView: View {
                 }
             }
         }
+    }
+
+    private var primaryUrlFieldLabel: String {
+        if isSplitBookmark {
+            return NSLocalizedString(
+                "First URL",
+                comment: "Bookmark editor - Label for the primary URL input field on a split-view bookmark"
+            )
+        }
+        return NSLocalizedString(
+            "URL",
+            comment: "Editor - Label for the URL input field"
+        )
+    }
+
+    private var primaryNameFieldLabel: String {
+        if isSplitBookmark {
+            return NSLocalizedString(
+                "First Name",
+                comment: "Bookmark editor - Label for the primary title input field on a split-view bookmark"
+            )
+        }
+        return NSLocalizedString(
+            "Name",
+            comment: "Editor - Label for the title/name input field"
+        )
     }
 
     private var titlePlaceholder: String {
@@ -530,6 +707,12 @@ struct EditPinnedTabView: View {
                         : nil,
                     parentFolderGuid: (mode == .bookmark || mode == .editOrMoveBookmark)
                         ? selectedFolderGuid
+                        : nil,
+                    secondaryUrl: (isSplitBookmark && (mode == .bookmark || mode == .editOrMoveBookmark || mode == .pin))
+                        ? secondaryUrlString.trimmingCharacters(in: .whitespacesAndNewlines)
+                        : nil,
+                    secondaryTitle: (isSplitBookmark && (mode == .bookmark || mode == .editOrMoveBookmark || mode == .pin))
+                        ? secondaryTitleString.trimmingCharacters(in: .whitespacesAndNewlines)
                         : nil
                 )
                 onSave?(result)
@@ -548,11 +731,21 @@ struct EditPinnedTabView: View {
         case .folder, .newFolder:
             return !titleString.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         case .bookmark, .editOrMoveBookmark:
-            return !titleString.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                && !urlString.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            let titleOK = !titleString.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            let primaryOK = !urlString.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            if isSplitBookmark {
+                let secondaryOK = !secondaryUrlString.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                return titleOK && primaryOK && secondaryOK
+            }
+            return titleOK && primaryOK
         case .pin:
-            return !titleString.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                && !urlString.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            let titleOK = !titleString.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            let primaryOK = !urlString.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            if isSplitBookmark {
+                let secondaryOK = !secondaryUrlString.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                return titleOK && primaryOK && secondaryOK
+            }
+            return titleOK && primaryOK
         }
     }
 
@@ -631,7 +824,13 @@ struct EditPinnedTabView: View {
                 let result = EditPinnedTabResult(
                     title: titleString.trimmingCharacters(in: .whitespacesAndNewlines),
                     url: urlString.trimmingCharacters(in: .whitespacesAndNewlines),
-                    parentFolderGuid: folderGuid
+                    parentFolderGuid: folderGuid,
+                    secondaryUrl: isSplitBookmark
+                        ? secondaryUrlString.trimmingCharacters(in: .whitespacesAndNewlines)
+                        : nil,
+                    secondaryTitle: isSplitBookmark
+                        ? secondaryTitleString.trimmingCharacters(in: .whitespacesAndNewlines)
+                        : nil
                 )
                 onSave?(result)
                 if dismissesOnAction { dismiss() }

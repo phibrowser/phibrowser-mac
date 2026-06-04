@@ -664,6 +664,16 @@ extension PhiChromiumCoordinator {
             browserId: windowId.intValue,
             action: .removed(splitId: splitId)))
     }
+
+    func openLinkAsSplitPartner(withPartnerTabId partnerTabId: Int64,
+                                url: String,
+                                windowId: Int64) {
+        AppLogDebug("[Split] openLinkAsSplitPartner: partner=\(partnerTabId) url=\(url) window=\(windowId)")
+        EventBus.shared.send(SplitEvent(
+            browserId: windowId.intValue,
+            action: .openLinkAsSplitPartner(partnerTabId: partnerTabId.intValue,
+                                            url: url)))
+    }
 }
 
 extension Int64 {

@@ -255,6 +255,14 @@ typedef NS_ENUM(NSUInteger, PhiOmniboxSuggestionDisposition) {
 /// Called when a split is disbanded.
 - (void)splitRemoved:(NSString *)splitId windowId:(int64_t)windowId;
 
+/// Right-click "Open link in split view" — Chromium asks Mac to open `url`
+/// as a fresh pane paired with the tab identified by `partnerTabId`. Routed
+/// through Swift so the pendingSplitPartner marker dance can prevent the
+/// partner pane from bouncing HIDDEN → VISIBLE and rendering blank.
+- (void)openLinkAsSplitPartnerWithPartnerTabId:(int64_t)partnerTabId
+                                           url:(NSString *)url
+                                      windowId:(int64_t)windowId;
+
 @optional
 // Optional metadata-rich variants for richer native tab orchestration.
 - (void)tabWillBeRemove:(int64_t)tabId

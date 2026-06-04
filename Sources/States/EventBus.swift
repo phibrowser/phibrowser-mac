@@ -152,6 +152,7 @@ struct SplitEvent: WindowEvent {
         case visualsChanged(splitId: String, layout: SplitLayout, ratio: Double)
         case contentsChanged(splitId: String, primaryTabId: Int, secondaryTabId: Int)
         case removed(splitId: String)
+        case openLinkAsSplitPartner(partnerTabId: Int, url: String)
     }
 }
 
@@ -298,6 +299,8 @@ class EventBus {
                                              secondaryTabId: secondaryTabId)
         case .removed(let splitId):
             state.handleSplitRemoved(splitId: splitId)
+        case let .openLinkAsSplitPartner(partnerTabId, url):
+            state.handleOpenLinkAsSplitPartner(partnerTabId: partnerTabId, url: url)
         }
     }
 }

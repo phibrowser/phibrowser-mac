@@ -328,15 +328,16 @@ extension MainBrowserWindowController: NSMenuItemValidation {
             return
         }
 
-        // A pinned-split cell renders both panes as a single merged item, so
-        // Close on that cell should dispose of both live Chromium tabs (the
-        // split dissolves as a side-effect). Pinned records stay in place,
-        // matching Close-on-a-pinned-tab behavior.
-        //   - Live path: menu fires off a live tab in a pinned `SplitGroup`.
+        // Split cells render both panes as a single merged item, so Close on
+        // that cell should dispose of both live Chromium tabs (the split
+        // dissolves as a side-effect). Pinned records stay in place, matching
+        // Close-on-a-pinned-tab behavior.
+        //   - Live path: menu fires off a live tab in a `SplitGroup` (pinned
+        //     or not).
         //   - Persisted path: menu fires off a pinned record whose partner
         //     is tracked via `splitPartnerGuid`; either pane may be live.
         let liveTabs: [Tab]
-        if let group = browserState.splitGroup(forTabId: tab.guid), group.isPinned {
+        if let group = browserState.splitGroup(forTabId: tab.guid) {
             liveTabs = [group.primaryTabId, group.secondaryTabId]
                 .compactMap { id in browserState.tabs.first(where: { $0.guid == id }) }
         } else if let dbGuid = tab.guidInLocalDB, !dbGuid.isEmpty,

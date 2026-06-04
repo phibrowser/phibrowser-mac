@@ -1241,7 +1241,7 @@ class WebContentContainerViewController: NSViewController {
     // =========================================================================
 
     /// Find the WebContentViewController managing a given Chromium tab ID.
-    private func findController(forTabId tabId: Int) -> WebContentViewController? {
+    func findController(forTabId tabId: Int) -> WebContentViewController? {
         webContentControllers.values.first { $0.associatedTab?.guid == tabId }
     }
 

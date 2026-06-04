@@ -10,15 +10,18 @@ import Combine
 class EmbeddedChatViewController: NSViewController {
     private lazy var contentView = NSView()
     private lazy var cancellables = Set<AnyCancellable>()
+    /// Cancellables scoped to `associatedTab` — re-bound whenever the
+    /// associated tab changes so observers always track the current tab.
+    private var tabCancellables = Set<AnyCancellable>()
     private weak var browserState: BrowserState?
     private var isSetup = false
-    
+
     /// The associated Tab for this embedded chat
     private(set) weak var associatedTab: Tab?
-    
+
     /// The current AI Chat Tab being displayed
     private weak var currentAIChatTab: Tab?
-    
+
     /// The identifier for the associated tab (used for AI Chat tab lookup)
     private var tabIdentifier: String?
     
@@ -84,9 +87,10 @@ class EmbeddedChatViewController: NSViewController {
     /// Updates the primary tab associated with this chat pane.
     func updateAssociatedTab(_ tab: Tab) {
         guard tab !== associatedTab else { return }
-        
+
         self.associatedTab = tab
-        
+        bindAssociatedTabObservers(tab)
+
         if let state = browserState {
             let newIdentifier = state.chatIdentifier(for: tab)
             if newIdentifier != tabIdentifier {
@@ -94,6 +98,23 @@ class EmbeddedChatViewController: NSViewController {
                 loadAIChatForCurrentTab()
             }
         }
+    }
+
+    /// Re-bind observers that follow the current `associatedTab`. In a split
+    /// both panes' chat controllers exist simultaneously, but a single chat
+    /// `webContentView` can only live in one pane's `contentView`. When focus
+    /// moves to this pane (`tab.isActive` flips true) we must pull the chat
+    /// view back into this controller — otherwise it stays in the previously
+    /// active pane and this pane shows a blank chat area.
+    private func bindAssociatedTabObservers(_ tab: Tab) {
+        tabCancellables.removeAll()
+        tab.$isActive
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] isActive in
+                guard let self, isActive else { return }
+                self.reattachAIChatViewIfNeeded()
+            }
+            .store(in: &tabCancellables)
     }
     
     // MARK: - Private Methods
@@ -103,14 +124,19 @@ class EmbeddedChatViewController: NSViewController {
             return
         }
         isSetup = true
-        
+
         if let tab = associatedTab {
             tabIdentifier = state.chatIdentifier(for: tab)
+            bindAssociatedTabObservers(tab)
         }
         
         state.$aiChatTabs
             .receive(on: DispatchQueue.main)
             .sink { [weak self] tabs in
+                // Re-resolve first: when the *other* pane in a split creates
+                // a chat, this pane's resolver now points at that chat and
+                // we should switch to it rather than create a second one.
+                self?.refreshChatIdentifierIfNeeded()
                 self?.handleAIChatTabsChanged(tabs)
             }
             .store(in: &cancellables)
@@ -162,9 +188,13 @@ class EmbeddedChatViewController: NSViewController {
         } else {
             let chromeTabId = tab.guid
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self, weak state] in
-                guard let self, let state else { return }
-                if state.aiChatTabs[identifier] == nil {
-                    state.createAIChatTab(for: identifier, chromeTabId: chromeTabId)
+                guard let self, let state, let tab = self.associatedTab else { return }
+                // Re-resolve at firing time: between the click and now, the
+                // other pane in a split may have created the shared chat —
+                // in which case we should adopt it, not create a duplicate.
+                let resolved = state.chatIdentifier(for: tab)
+                if state.aiChatTabs[resolved] == nil {
+                    state.createAIChatTab(for: resolved, chromeTabId: chromeTabId)
                 }
             }
         }

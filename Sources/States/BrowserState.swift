@@ -102,13 +102,6 @@ class BrowserState {
     /// in `handleSplitCreated` if Chromium picked the other one.
     var pendingSplitPrimaryByCreateId: [String: Int] = [:]
 
-    /// splitIds whose `SplitGroup.isPinned` should be forced to `true` in
-    /// `handleSplitCreated` regardless of the `isSplitMembersAllPinned`
-    /// inference. Written by callers that pin both panes synchronously and
-    /// know the resulting split is pinned, even though the async `pinnedTabs`
-    /// publisher may not have caught up by the time Chromium echoes the
-    /// `splitCreated` back.
-    var pendingPinnedSplitMarkByCreateId: Set<String> = []
     private var nativeRelationGraph: NativeTabRelationGraph = .empty
     private var pendingSelectionOverride: NativePendingSelectionOverride?
 
@@ -260,8 +253,12 @@ class BrowserState {
         let secondaryId = getTabIdentifier(for: secondary)
         if aiChatTabs[primaryId] != nil { return primaryId }
         if aiChatTabs[secondaryId] != nil { return secondaryId }
-        if let focused = focusingTab, focused.guid == secondary.guid { return secondaryId }
-        return primaryId
+        // Neither pane has a chat yet: bind to the caller's tab so the chat
+        // follows the pane the user invoked from, not whichever pane happens
+        // to be focused at split-creation time. Keyed by tab.guid, so
+        // reversing the split's primary/secondary roles does not move the
+        // binding.
+        return getTabIdentifier(for: tab)
     }
 
     // MARK: - Native NTP (Incognito)

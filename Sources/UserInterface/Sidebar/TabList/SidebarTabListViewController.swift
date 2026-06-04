@@ -1629,10 +1629,39 @@ extension SidebarTabListViewController: NSOutlineViewDataSource {
         resolvedItem: Any?,
         resolvedIndex: Int
     ) -> Bool {
-        guard let targetTab = resolvedItem as? Tab,
-              resolvedIndex == NSOutlineViewDropOnItemIndex else {
-            return false
+        guard resolvedIndex == NSOutlineViewDropOnItemIndex else { return false }
+        // SplitPair rows are merged-cell representations of two adjacent
+        // panes; without an explicit redirect AppKit reports the drop as
+        // landing ON the row and skips the gap indicator entirely, so the
+        // user cannot see the insert line on either edge of a splitview
+        // tab. Pick the leading or trailing side from the pointer's
+        // vertical half within the row.
+        //
+        // Look the pair up by `id` against the data source rather than
+        // via NSOutlineView's identity-keyed cache: `SplitPairSidebarItem`
+        // is rebuilt on every `buildItems` pass (its `id` stays stable
+        // off `groupId`), so `childIndex(forItem:)` can return -1 in
+        // frames where AppKit's cached reference no longer matches the
+        // newly-built instance.
+        if let pair = resolvedItem as? SplitPairSidebarItem {
+            let dragInOutline = outlineView.convert(info.draggingLocation, from: nil)
+            let cursorRow = outlineView.row(at: dragInOutline)
+            // Resolve the row from the cursor rather than `row(forItem:)`,
+            // which can return -1 when AppKit's identity-keyed cache holds a
+            // stale reference even though the row is still rendered here.
+            guard cursorRow >= 0 else { return false }
+            let rowRect = outlineView.rect(ofRow: cursorRow)
+            let rootChildren = dataSourceChildren(of: nil)
+            guard let pairChildIndex = rootChildren.firstIndex(where: { $0.id == pair.id }) else {
+                return false
+            }
+            let dropAbove = outlineView.isFlipped
+                ? dragInOutline.y < rowRect.midY
+                : dragInOutline.y > rowRect.midY
+            outlineView.setDropItem(nil, dropChildIndex: dropAbove ? pairChildIndex : pairChildIndex + 1)
+            return true
         }
+        guard let targetTab = resolvedItem as? Tab else { return false }
         let targetRootChildIndex = outlineView.childIndex(forItem: targetTab)
         guard targetRootChildIndex >= 0 else { return false }
         let finalIndex = snapDropChildIndexOutsideSplitPair(
@@ -1714,6 +1743,15 @@ extension SidebarTabListViewController: NSOutlineViewDataSource {
         if let groupItem = target as? TabGroupSidebarItem {
             let token = groupItem.group.token
             return browserState.normalTabs.firstIndex { $0.groupToken == token }
+                ?? browserState.normalTabs.count
+        }
+        if let pair = target as? SplitPairSidebarItem {
+            // The merged splitPair row represents its leading pane in the
+            // strip — "drop before pair" means "drop before leftTab".
+            // Without this branch the function falls through to the
+            // "append at end" fallback and the blue indicator line can
+            // never land on the leading edge of a splitview tab.
+            return browserState.normalTabs.firstIndex(of: pair.leftTab)
                 ?? browserState.normalTabs.count
         }
         // Unexpected item type (would be a bug elsewhere) — fall back to
@@ -3692,6 +3730,13 @@ extension SidebarTabListViewController: SideBarOutlineViewDelegate {
     func outlineView(_ outlineView: SideBarOutlineView, didMiddleClickRow row: Int) {
         guard row >= 0 else { return }
         guard let item = outlineView.item(atRow: row) as? SidebarItem else { return }
+        if let pair = item as? SplitPairSidebarItem {
+            // Merged split row reads as "one tab" in the sidebar — middle
+            // click closes both panes so the whole split disappears.
+            tabSectionController.closeTab(pair.leftTab)
+            tabSectionController.closeTab(pair.rightTab)
+            return
+        }
         guard let tab = item as? Tab, !tab.isPinned else { return }
         tabSectionController.closeTab(tab)
     }

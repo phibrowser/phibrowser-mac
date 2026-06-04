@@ -695,7 +695,18 @@ final class TabItemView: NSView {
             return
         }
         guard !isPinned else { return }
-        sourceTab?.close()
+        guard let tab = sourceTab else { return }
+        // Split tab reads as "one tab" to the user — close both panes
+        // so middle-click on either half dissolves the whole split.
+        if let state = MainBrowserWindowControllersManager.shared.getBrowserState(for: tab.windowId),
+           let group = state.splitGroup(forTabId: tab.guid),
+           let partnerId = group.partnerTabId(of: tab.guid),
+           let partner = state.normalTabs.first(where: { $0.guid == partnerId }) {
+            tab.close()
+            partner.close()
+            return
+        }
+        tab.close()
     }
 
     override func menu(for event: NSEvent) -> NSMenu? {

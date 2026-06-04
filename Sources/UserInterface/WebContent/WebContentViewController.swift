@@ -404,7 +404,21 @@ class WebContentViewController: NSViewController {
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in
                 guard let self, let tab = self.associatedTab else { return }
+                // AI Chat autohide depends on split membership: a pane leaving
+                // a split must collapse its now-orphaned sidebar immediately,
+                // not wait for the next focus switch to re-sync. Runs for every
+                // controller (focused or not) so a partner pane that has just
+                // been split off also converges.
+                if let aiChatSplitViewItem = self.aiChatSplitViewItem {
+                    self.syncAIChatState(from: tab, to: aiChatSplitViewItem)
+                }
                 guard self.browserState?.focusingTab?.guid == tab.guid else { return }
+                // Each pane tracks its own `lastKnownAIChatWidth`, so a
+                // freshly-formed split would otherwise expand the partner
+                // pane at its stale (often default) width. Push the focused
+                // pane's width into the partner now — runs before the
+                // partner's own aiChatCollapsed observer fires the expand.
+                self.syncAIChatWidthToSplitPartner(self.lastKnownAIChatWidth)
                 self.updateContentForTab(tab)
             }
             .store(in: &cancellables)
@@ -555,8 +569,10 @@ class WebContentViewController: NSViewController {
     
     /// Sync AI Chat state from tab to splitViewItem (one-time, with animation)
     private func syncAIChatState(from tab: Tab, to splitViewItem: NSSplitViewItem) {
-        guard tab.aiChatEnabled else {
-            // Always collapse AI Chat when the tab disables it.
+        // In a split the chat is shared, so autohide only when *both* panes
+        // disable chat (e.g. both panes are on NTP). When the partner pane
+        // still has chat enabled, mirror the shared collapsed state instead.
+        guard tab.aiChatEnabled || partnerHasAIChatEnabled() else {
             if !splitViewItem.isCollapsed {
                 isUpdatingAIChatState = true
                 splitViewItem.animator().isCollapsed = true
@@ -564,7 +580,7 @@ class WebContentViewController: NSViewController {
             }
             return
         }
-        
+
         // Mirror the tab's collapsed state into the split item.
         if tab.aiChatCollapsed != splitViewItem.isCollapsed {
             if !tab.aiChatCollapsed {
@@ -583,16 +599,25 @@ class WebContentViewController: NSViewController {
             .receive(on: DispatchQueue.main)
             .sink { [weak self, weak splitViewItem, weak tab] collapsed in
                 guard let self, let splitViewItem, let tab else { return }
-                
+
                 // Prevent observer feedback loops.
                 guard !self.isUpdatingAIChatState else { return }
-                
-                // Ignore collapse changes while AI Chat is disabled.
-                guard tab.aiChatEnabled else { return }
-                
+
+                // Ignore collapse changes while AI Chat is disabled — unless a
+                // split partner still has chat enabled, in which case this
+                // pane participates in the shared expand/collapse state so the
+                // sidebar can be toggled from either pane of the split.
+                guard tab.aiChatEnabled || self.partnerHasAIChatEnabled() else { return }
+
                 if collapsed != splitViewItem.isCollapsed {
                     if !collapsed {
                         self.prepareAIChatWidthBeforeExpand(for: tab)
+                        // When the focused pane in a split expands chat, push
+                        // our width to the partner now (before its own expand
+                        // observer fires) so both panes open to the same size.
+                        if self.browserState?.focusingTab?.guid == tab.guid {
+                            self.syncAIChatWidthToSplitPartner(self.lastKnownAIChatWidth)
+                        }
                     }
                     // Guard against feedback loops while mirroring KVO back into the tab.
                     self.isUpdatingAIChatState = true
@@ -611,18 +636,67 @@ class WebContentViewController: NSViewController {
             .receive(on: DispatchQueue.main)
             .sink { [weak self, weak splitViewItem] enabled in
                 guard let self, let splitViewItem else { return }
-                
+
                 // Ignore recursive updates triggered by our own state sync.
                 guard !self.isUpdatingAIChatState else { return }
-                
-                // Collapse the sidebar when the tab disables AI Chat.
-                if !enabled && !splitViewItem.isCollapsed {
+
+                // In a split the chat is shared. Skip autohide while the
+                // partner pane still has chat enabled — collapsing would
+                // pull the sidebar out from under the partner's webpage.
+                guard !enabled, !self.partnerHasAIChatEnabled() else {
+                    return
+                }
+
+                if !splitViewItem.isCollapsed {
                     self.isUpdatingAIChatState = true
                     splitViewItem.animator().isCollapsed = true
                     self.isUpdatingAIChatState = false
                 }
+                // Each pane only observes its own tab's aiChatEnabled, so the
+                // partner pane needs an explicit poke to re-evaluate once both
+                // panes are NTP and the sidebar must collapse on both sides.
+                self.refreshSplitPartnerAIChatSidebarState()
             }
             .store(in: &tabObserverCancellables)
+    }
+
+    /// True when this pane sits in a split whose other pane still has AI Chat
+    /// enabled. Used by the autohide path so the sidebar stays open while at
+    /// least one pane of the split can use chat.
+    private func partnerHasAIChatEnabled() -> Bool {
+        guard let state = browserState,
+              let tab = associatedTab,
+              let group = state.splitGroup(forTabId: tab.guid),
+              let partnerId = group.partnerTabId(of: tab.guid),
+              let partner = state.tabs.first(where: { $0.guid == partnerId }) else {
+            return false
+        }
+        return partner.aiChatEnabled
+    }
+
+    /// Ask this pane's split partner controller to re-sync its AI Chat
+    /// sidebar against the latest combined state. Used when this pane's
+    /// autohide kicks in so the partner pane converges on the new state
+    /// rather than holding its own sidebar open.
+    private func refreshSplitPartnerAIChatSidebarState() {
+        guard let state = browserState,
+              let tab = associatedTab,
+              let group = state.splitGroup(forTabId: tab.guid),
+              let partnerId = group.partnerTabId(of: tab.guid),
+              let container = parent as? WebContentContainerViewController,
+              let partner = container.findController(forTabId: partnerId),
+              partner !== self else {
+            return
+        }
+        partner.refreshAIChatSidebarStateForPartnerNotification()
+    }
+
+    /// Re-run the AI Chat sidebar sync against the current tab and partner
+    /// states. Called by a split partner that has just flipped its own
+    /// `aiChatEnabled` so this pane mirrors the new combined autohide state.
+    func refreshAIChatSidebarStateForPartnerNotification() {
+        guard let aiChatSplitViewItem, let tab = associatedTab else { return }
+        syncAIChatState(from: tab, to: aiChatSplitViewItem)
     }
 
     private func setupView() {

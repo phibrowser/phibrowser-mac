@@ -487,10 +487,53 @@ class WebContentViewController: NSViewController {
             guard width > 0 else { return }
             // Skip during expand animation to avoid persisting intermediate widths.
             guard !self.isAnimatingAIChatExpansion else { return }
-            self.lastKnownAIChatWidth = self.clampAIChatWidth(width)
+            let newWidth = self.clampAIChatWidth(width)
+            // Bounce guard: when a split partner pushed this width onto us via
+            // `applyAIChatWidthFromPartner`, our split-view re-lays-out and
+            // fires this notification with the same value. Skip the re-emit
+            // so we don't ping-pong with the partner.
+            guard abs(newWidth - self.lastKnownAIChatWidth) > 0.5 else { return }
+            self.lastKnownAIChatWidth = newWidth
             self.persistAIChatSidebarStateIfNeeded(for: self.associatedTab)
+            self.syncAIChatWidthToSplitPartner(newWidth)
         }
         .store(in: &cancellables)
+    }
+
+    /// In a split both panes have independent `aiChatSplitViewItem` geometry,
+    /// but the chat itself is shared. After a manual resize on the active
+    /// pane, push the new width into the partner pane's split item so that
+    /// switching focus does not snap the chat back to the partner's stale
+    /// width.
+    private func syncAIChatWidthToSplitPartner(_ width: CGFloat) {
+        guard let state = browserState,
+              let tab = associatedTab,
+              let group = state.splitGroup(forTabId: tab.guid),
+              let partnerId = group.partnerTabId(of: tab.guid),
+              let container = parent as? WebContentContainerViewController,
+              let partner = container.findController(forTabId: partnerId),
+              partner !== self else { return }
+        partner.applyAIChatWidthFromPartner(width)
+    }
+
+    /// Apply a chat width pushed in from this controller's split partner.
+    /// Updates `lastKnownAIChatWidth` so any future expand uses the synced
+    /// value, and if the split item is currently uncollapsed, drives the
+    /// divider to match so the visible width stays consistent across pane
+    /// focus changes. Bounce-protected via the equality check in the frame
+    /// observer.
+    func applyAIChatWidthFromPartner(_ width: CGFloat) {
+        let clamped = clampAIChatWidth(width)
+        guard abs(clamped - lastKnownAIChatWidth) > 0.5 else { return }
+        lastKnownAIChatWidth = clamped
+        guard let aiChatSplitViewItem,
+              !aiChatSplitViewItem.isCollapsed else { return }
+        let splitView = contentSplitViewController.splitView
+        let total = splitView.bounds.width
+        guard total > 0 else { return }
+        let dividerThickness = splitView.dividerThickness
+        let position = max(0, total - clamped - dividerThickness)
+        splitView.setPosition(position, ofDividerAt: 0)
     }
     
     /// Rebind tab observers when associated tab changes

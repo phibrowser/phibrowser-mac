@@ -521,6 +521,18 @@ extension BrowserState {
         updateNormalTabs()
     }
 
+    /// Right-click link → "Open link in split view" arrived from Chromium.
+    /// The source tab is `partnerTabId`; the linked URL becomes a new pane on
+    /// its right. Defers to `openNewTabAsSplit` so the partner pane goes
+    /// through the standard pendingSplitPartner marker dance and avoids the
+    /// blank-pane bounce.
+    @MainActor
+    func handleOpenLinkAsSplitPartner(partnerTabId: Int, url: String) {
+        openNewTabAsSplit(partnerTabId: partnerTabId,
+                          newTabSlot: .right,
+                          partnerNavigateURL: url)
+    }
+
     @MainActor
     func handleSplitRemoved(splitId: String) {
         splits.removeAll { $0.id == splitId }

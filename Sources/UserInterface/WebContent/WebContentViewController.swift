@@ -807,6 +807,17 @@ class WebContentViewController: NSViewController {
         if browserState?.groupOverviewState != nil {
             return
         }
+        // For split members, only the focused VC may run this — same rule the
+        // `$splits` subscription enforces. Other entry points (`tab.$url`
+        // re-emit on a background member, the deferred re-run below) can fire
+        // on a member whose VC is currently behind another's; letting them
+        // run installSplitContent steals BOTH panes back into the hidden VC's
+        // split host, and the visible VC renders an empty host (both panes
+        // blank) until the user switches away and back.
+        if browserState?.splitGroup(forTabId: tab.guid) != nil,
+           browserState?.focusingTab?.guid != tab.guid {
+            return
+        }
         // setupView calls this from inside loadView, before the controller's
         // view has been added to its superview — so view.window is nil. In
         // the "Open as Split" flow, state.splits already contains the new

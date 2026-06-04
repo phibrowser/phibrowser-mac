@@ -848,7 +848,21 @@ extension BrowserState {
               pendingPinnedSplitRecreateGuids.contains(partnerDBGuid) else {
             return
         }
-        tryRecreatePendingPinnedSplit(leftDBGuid: myDBGuid, rightDBGuid: partnerDBGuid)
+        // Order by pinned-grid position so the just-opened tab is mapped to
+        // its actual left/right role. This handler fires for whichever pane
+        // arrives second; passing `myDBGuid` blindly as `leftDBGuid` would
+        // swap the panes when the right pane is the late arrival, which
+        // `createSplit(leftTabId:rightTabId:)` would then register as a
+        // reversed primary and `handleSplitCreated` would reorder the strip.
+        let myIdx = pinnedTabs.firstIndex(where: { $0.guidInLocalDB == myDBGuid })
+        let partnerIdx = pinnedTabs.firstIndex(where: { $0.guidInLocalDB == partnerDBGuid })
+        let (leftDBGuid, rightDBGuid): (String, String)
+        if let myIdx, let partnerIdx, partnerIdx < myIdx {
+            (leftDBGuid, rightDBGuid) = (partnerDBGuid, myDBGuid)
+        } else {
+            (leftDBGuid, rightDBGuid) = (myDBGuid, partnerDBGuid)
+        }
+        tryRecreatePendingPinnedSplit(leftDBGuid: leftDBGuid, rightDBGuid: rightDBGuid)
     }
 
     /// Validate both halves are live and ungrouped, then schedule a deferred

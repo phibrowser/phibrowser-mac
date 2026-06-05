@@ -2169,16 +2169,7 @@ extension SidebarTabListViewController: NSOutlineViewDelegate {
         case .tab, .newTabButton, .separator, .tabGroup:
             return InsetTableRowView(insets: NSEdgeInsets(top: 0, left: 0, bottom: 0, right: 0))
         case .splitPair:
-            // The merged split-pair cell is layer-backed (rounded
-            // background), which used to occupy the row's full y range
-            // and block AppKit's `.regular` between-row drop indicator
-            // from painting at the row's top/bottom edge. Insetting the
-            // cell view by 2pt vertically leaves a strip of bare row
-            // surface for the native indicator to draw into; the cell's
-            // own `outerBackground` inset is set to 0 in
-            // `SidebarSplitPairCellView` so the visible chrome stays
-            // pixel-identical to the non-inset rows.
-            return InsetTableRowView(insets: NSEdgeInsets(top: 2, left: 0, bottom: 2, right: 0))
+            return InsetTableRowView(insets: NSEdgeInsets(top: 0, left: 0, bottom: 0, right: 0))
         case .bookmark, .bookmarkFolder:
             return BookmarkRowView(/*insets:  NSEdgeInsets(top: 0, left: 0, bottom: 0, right: 0)*/)
         default:

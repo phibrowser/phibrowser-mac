@@ -412,15 +412,8 @@ class SidebarSplitPairCellView: SidebarCellView {
         outerBackground.layer?.cornerCurve = .continuous
         addSubview(outerBackground)
         outerBackground.snp.makeConstraints { make in
-            // Top/bottom inset is 0 here because the row view
-            // (`SplitPairRowView`) already insets the whole cell by 2pt
-            // vertically. The combined effect matches the original
-            // visual position while leaving a 2pt strip of bare row
-            // surface above/below the cell for AppKit's `.regular`
-            // between-row drop indicator to paint into.
             make.edges.equalToSuperview().inset(NSEdgeInsets(
-                top: 0, left: WebContentConstant.edgesSpacing,
-                bottom: 0, right: WebContentConstant.edgesSpacing))
+                top: 2, left: WebContentConstant.edgesSpacing, bottom: 2, right: WebContentConstant.edgesSpacing))
         }
 
         // Match normal-tab close buttons (24x24 with rounded hover fill) by

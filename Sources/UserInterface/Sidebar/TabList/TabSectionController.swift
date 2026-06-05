@@ -42,6 +42,20 @@ class TabSectionController: NSObject {
     /// `BrowserState.groups`.
     private var groupWrappers: [String: TabGroupSidebarItem] = [:]
 
+    /// Per-`SplitGroup.id` stable wrapper for the merged split-pair row.
+    /// `NSOutlineView` keys its drop-feedback / expansion / row-selection
+    /// caches on object identity; without this cache, every `buildItems`
+    /// pass allocates a fresh `SplitPairSidebarItem` and AppKit's
+    /// identity lookups silently no-op, manifesting most visibly as the
+    /// `.regular` between-row drop indicator failing to paint above/below
+    /// a split-pair row even after `setDropItem(nil, dropChildIndex:)`
+    /// redirects the proposal. `leftTab` / `rightTab` are mutable
+    /// properties precisely so the wrapper can be re-resolved in place
+    /// after a "Reverse Panes" swap (see `SidebarItem.swift`).
+    /// Evicted in lock-step with `groupWrappers` when the underlying
+    /// split group disappears.
+    private var splitPairWrappers: [String: SplitPairSidebarItem] = [:]
+
     /// Previous root-level item ids used to compute diffs. Holds tab guid
     /// (`Int`) for ungrouped tabs and group token (`String`) for group rows.
     private var previousItemIds: [AnyHashable] = []
@@ -77,6 +91,7 @@ class TabSectionController: NSObject {
             previousItemIds = []
             previousGroupMembers = [:]
             groupWrappers.removeAll()
+            splitPairWrappers.removeAll()
             return
         }
 
@@ -191,6 +206,8 @@ class TabSectionController: NSObject {
         // start building (so menu actions on a dead wrapper still see a
         // nil bridge result, not a stale-but-live object).
         groupWrappers = groupWrappers.filter { groups[$0.key] != nil }
+        let liveSplitIds = Set(state.splits.map(\.id))
+        splitPairWrappers = splitPairWrappers.filter { liveSplitIds.contains($0.key) }
 
         var items: [SidebarItem] = [newTabButton]
         var emittedGroupTokens = Set<String>()
@@ -224,12 +241,26 @@ class TabSectionController: NSObject {
                     leftTab = partner
                     rightTab = tab
                 }
-                items.append(SplitPairSidebarItem(
-                    groupId: group.id,
-                    leftTab: leftTab,
-                    rightTab: rightTab,
-                    browserState: state
-                ))
+                // Reuse the cached wrapper so NSOutlineView's identity-keyed
+                // tracking (drop feedback, expansion state, selection) survives
+                // every `buildItems` rebuild. The `id` is keyed on `group.id`
+                // alone, so updating `leftTab` / `rightTab` in place is correct
+                // for "Reverse Panes" swaps too.
+                let pair: SplitPairSidebarItem
+                if let cached = splitPairWrappers[group.id] {
+                    cached.leftTab = leftTab
+                    cached.rightTab = rightTab
+                    cached.browserState = state
+                    pair = cached
+                } else {
+                    pair = SplitPairSidebarItem(
+                        groupId: group.id,
+                        leftTab: leftTab,
+                        rightTab: rightTab,
+                        browserState: state)
+                    splitPairWrappers[group.id] = pair
+                }
+                items.append(pair)
                 consumedSplitTabIds.insert(tab.guid)
                 consumedSplitTabIds.insert(partnerId)
                 continue

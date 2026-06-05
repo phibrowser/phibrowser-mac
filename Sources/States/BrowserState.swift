@@ -102,6 +102,13 @@ class BrowserState {
     /// in `handleSplitCreated` if Chromium picked the other one.
     var pendingSplitPrimaryByCreateId: [String: Int] = [:]
 
+    /// splitIds whose pinned flag must be forced on the very next
+    /// `handleSplitCreated`. The caller (e.g. drop-into-pinned-strip) pins
+    /// the panes synchronously and registers the createId here so the
+    /// pinned-inference in `handleSplitCreated` doesn't race the async
+    /// `pinnedTabs` publisher feeding `isSplitMembersAllPinned`.
+    var pendingPinnedSplitMarkByCreateId: Set<String> = []
+
     private var nativeRelationGraph: NativeTabRelationGraph = .empty
     private var pendingSelectionOverride: NativePendingSelectionOverride?
 

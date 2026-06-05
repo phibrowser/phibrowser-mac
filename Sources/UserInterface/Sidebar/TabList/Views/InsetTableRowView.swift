@@ -7,7 +7,7 @@ import Cocoa
 class InsetTableRowView: NSTableRowView {
     private let insets: NSEdgeInsets
     private var cellConstraints: [NSLayoutConstraint] = []
-    
+
     init(insets: NSEdgeInsets) {
         self.insets = insets
         super.init(frame: .zero)

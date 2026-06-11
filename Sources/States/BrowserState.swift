@@ -420,6 +420,10 @@ class BrowserState {
             existing.splitPartnerGuid = localTab.splitPartnerGuid
         }
 
+        if existing.lastSeen != localTab.lastSeen {
+            existing.lastSeen = localTab.lastSeen
+        }
+
         if !existing.isOpenned {
             existing.url = persistedURL
         }
@@ -679,6 +683,8 @@ class BrowserState {
         // main thread, so `assumeIsolated` is safe here and avoids forcing
         // every caller of `openOrFocusPinnedTab` to become `@MainActor`.
         if let (leftDB, rightDB) = pinnedSplitDBPair(forPinnedTab: realTab) {
+            localStore.updateLastSeen(leftDB)
+            localStore.updateLastSeen(rightDB)
             MainActor.assumeIsolated {
                 openPinnedSplit(leftPinnedGuid: leftDB,
                                 rightPinnedGuid: rightDB,
@@ -687,6 +693,7 @@ class BrowserState {
             return
         }
 
+        localStore.updateLastSeen(guid)
         if realTab.isOpenned, let wrapper = realTab.webContentWrapper {
             wrapper.setAsActiveTab()
         } else {
@@ -1185,6 +1192,7 @@ class BrowserState {
         // Reattach to a pinned tab entry when the local guid matches.
         if let localGuid = tab.guidInLocalDB,
            let pinnedTab = pinnedTabs.first(where: { $0.guidInLocalDB == localGuid }) {
+            localStore.updateLastSeen(localGuid)
             pinnedTab.isOpenned = true
             pinnedTab.setWebContentsWrapper(wrapper: tab.webContentWrapper)
             pinnedTab.guid = tab.guid

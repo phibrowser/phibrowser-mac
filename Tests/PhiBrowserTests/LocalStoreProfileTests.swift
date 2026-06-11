@@ -189,6 +189,65 @@ final class LocalStoreProfileTests: XCTestCase {
         )
     }
 
+    func testUpdateLastSeenOnlyPersistsForPinnedTabsAndBookmarks() throws {
+        let store = try makeStore()
+        let context = try XCTUnwrap(store.getMainContext())
+        let profile = ProfileModel(profileId: "Default")
+        context.insert(profile)
+
+        let root = makeFolder(guid: "root", title: "Bookmarks")
+        root.profile = profile
+        root.profileId = "Default"
+        profile.bookmarkRoot = root
+        context.insert(root)
+
+        let pinned = makeTab(guid: "pinned", title: "Pinned", url: "https://pinned.example")
+        pinned.dataType = TabDataType.pinnedTab
+        pinned.profile = profile
+        pinned.profileId = "Default"
+        context.insert(pinned)
+
+        let bookmark = makeTab(guid: "bookmark", title: "Bookmark", url: "https://bookmark.example")
+        bookmark.dataType = TabDataType.bookmark
+        bookmark.profile = profile
+        bookmark.profileId = "Default"
+        bookmark.parent = root
+        context.insert(bookmark)
+
+        let folder = makeFolder(guid: "folder", title: "Folder")
+        folder.profile = profile
+        folder.profileId = "Default"
+        folder.parent = root
+        context.insert(folder)
+
+        let normal = makeTab(guid: "normal", title: "Normal", url: "https://normal.example")
+        normal.dataType = TabDataType.tab
+        normal.profile = profile
+        normal.profileId = "Default"
+        context.insert(normal)
+        try context.save()
+
+        let seenAt = Date(timeIntervalSince1970: 1_800_123_456)
+        store.updateLastSeen("pinned", seenAt: seenAt)
+        store.updateLastSeen("bookmark", seenAt: seenAt)
+        store.updateLastSeen("folder", seenAt: seenAt)
+        store.updateLastSeen("normal", seenAt: seenAt)
+
+        try waitUntil {
+            store.getTab(by: "pinned")?.lastSeen != nil &&
+            store.getTab(by: "bookmark")?.lastSeen != nil
+        }
+
+        XCTAssertEqual(try XCTUnwrap(store.getTab(by: "pinned")?.lastSeen).timeIntervalSince1970,
+                       seenAt.timeIntervalSince1970,
+                       accuracy: 0.001)
+        XCTAssertEqual(try XCTUnwrap(store.getTab(by: "bookmark")?.lastSeen).timeIntervalSince1970,
+                       seenAt.timeIntervalSince1970,
+                       accuracy: 0.001)
+        XCTAssertNil(store.getTab(by: "folder")?.lastSeen)
+        XCTAssertNil(store.getTab(by: "normal")?.lastSeen)
+    }
+
     func testBrowserDataImporterStoresTargetContext() {
         let importer = BrowserDataImporter(targetProfileId: "Work", targetWindowId: 42)
 

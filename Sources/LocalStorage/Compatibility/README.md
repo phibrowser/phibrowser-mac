@@ -52,7 +52,8 @@ The controller performs this flow:
 4. If no readable backup exists, return `.requiresNewerApp` and leave the active
    store untouched.
 5. After SwiftData opens successfully, record the active store as the current
-   format.
+   format. If this launch restored a backup, remove that consumed backup record
+   and delete its backup directory.
 
 Backups copy the SQLite main file and its sidecar files:
 
@@ -63,6 +64,11 @@ Backups copy the SQLite main file and its sidecar files:
 Multiple backups can exist at the same time. For example, if v4 and v5 both
 created backups, a v4 app can restore the v4 backup while a v3 app can restore
 the v3 backup.
+
+A restored backup is consumed only after SwiftData/Core Data opens the restored
+store successfully. The selected backup remains available between `prepareStore`
+and `markStoreOpenedSuccessfully` so a failed open does not delete the last
+known readable recovery point.
 
 ## Development Rules
 
@@ -87,4 +93,3 @@ SQLite files.
 Do not delete old backups as part of a schema change unless a separate retention
 policy is intentionally designed and tested. Older app builds may still need a
 lower-version backup to recover from a manual downgrade.
-

@@ -3,16 +3,14 @@
 // Use of this source code is governed by an Apache license that can be
 // found in the LICENSE file.
 
-
 import Foundation
 import SwiftData
+
 /// Modification record:
-/// - V3 adds `ProfileModel` and the `TabDataModel.profile` relationship for
-///   profile-scoped tabs and bookmarks.
-/// - V3 removes `associatedProfileIdentifier`; `profileId` remains as the
-///   denormalized profile lookup key.
-enum TabDataModelSchemaV3: VersionedSchema {
-    static var versionIdentifier = Schema.Version(3, 0, 0)
+/// - V6 adds optional `lastSeen` for persisted last-opened tracking on pinned
+///   tabs and bookmarks.
+enum TabDataModelSchemaV6: VersionedSchema {
+    static var versionIdentifier = Schema.Version(6, 0, 0)
 
     static var models: [any PersistentModel.Type] {
         [ProfileModel.self, TabDataModel.self]
@@ -33,7 +31,7 @@ enum TabDataModelSchemaV3: VersionedSchema {
             self.guid = guid
             self.profileId = profileId
         }
-        
+
         static let entityName = "ProfileModel"
     }
 
@@ -54,6 +52,10 @@ enum TabDataModelSchemaV3: VersionedSchema {
         var spaceId: String?
         var profileId: String?
         var source: Int = 0
+        var secondaryUrl: URL?
+        var secondaryTitle: String?
+        var splitPartnerGuid: String?
+        var lastSeen: Date?
 
         @Relationship(inverse: \TabDataModel.children)
         var parent: TabDataModel?
@@ -72,7 +74,7 @@ enum TabDataModelSchemaV3: VersionedSchema {
             self.createdDate = createdDate
             self.updatedDate = updatedDate
         }
-        
+
         static let entityName = "TabDataModel"
     }
 }

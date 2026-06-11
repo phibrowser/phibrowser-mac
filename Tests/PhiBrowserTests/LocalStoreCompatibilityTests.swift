@@ -111,6 +111,41 @@ final class LocalStoreCompatibilityTests: XCTestCase {
         XCTAssertEqual(manifest.backups.map(\.storeFormatVersion), [3, 4])
     }
 
+    func testRestoredBackupIsConsumedAfterStoreOpensSuccessfully() throws {
+        let directory = try makeTemporaryStoreDirectory()
+        try writeStoreFiles(in: directory, contents: "v5")
+        let v3Backup = try createBackup(in: directory, id: "v3-backup", storeFormatVersion: 3)
+        let v4Backup = try createBackup(in: directory, id: "v4-backup", storeFormatVersion: 4)
+        try writeManifest(
+            LocalStoreCompatibilityManifest(activeStoreFormatVersion: 5, backups: [v3Backup, v4Backup]),
+            to: directory
+        )
+        let controller = makeController(currentStoreFormatVersion: 4, readableStoreFormatVersions: 1...4)
+
+        let result = try controller.prepareStore(at: directory)
+
+        guard case .ready(let plan) = result else {
+            return XCTFail("Expected a readable backup to be restored.")
+        }
+        let restoredBackup = try XCTUnwrap(plan.restoredBackup)
+        let restoredBackupDirectory = directory.appendingPathComponent(restoredBackup.directoryName, isDirectory: true)
+        XCTAssertEqual(restoredBackup.id, "v4-backup")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: restoredBackupDirectory.path))
+        XCTAssertEqual(try readManifest(from: directory).backups.map(\.id), ["v3-backup", "v4-backup"])
+
+        try controller.markStoreOpenedSuccessfully(plan, at: directory)
+
+        let manifestAfterOpen = try readManifest(from: directory)
+        XCTAssertEqual(manifestAfterOpen.activeStoreFormatVersion, 4)
+        XCTAssertEqual(manifestAfterOpen.backups.map(\.id), ["v3-backup"])
+        XCTAssertFalse(FileManager.default.fileExists(atPath: restoredBackupDirectory.path))
+        XCTAssertTrue(
+            FileManager.default.fileExists(
+                atPath: directory.appendingPathComponent(v3Backup.directoryName, isDirectory: true).path
+            )
+        )
+    }
+
     func testPrepareRestoresLowerReadableBackupWhenExactVersionIsUnavailable() throws {
         let directory = try makeTemporaryStoreDirectory()
         try writeStoreFiles(in: directory, contents: "v5")
@@ -206,7 +241,15 @@ final class LocalStoreCompatibilityTests: XCTestCase {
         let restoredItem = try fetchVersionOneItem(at: storeURL)
         XCTAssertEqual(restoredItem.id, "item-1")
         XCTAssertEqual(restoredItem.title, "Created by v1")
+        let restoredBackupDirectory = try XCTUnwrap(downgradePlan.restoredBackup?.directoryName)
+        try downgradeController.markStoreOpenedSuccessfully(downgradePlan, at: directory)
         XCTAssertEqual(try readManifest(from: directory).activeStoreFormatVersion, 1)
+        XCTAssertTrue(try readManifest(from: directory).backups.isEmpty)
+        XCTAssertFalse(
+            FileManager.default.fileExists(
+                atPath: directory.appendingPathComponent(restoredBackupDirectory, isDirectory: true).path
+            )
+        )
     }
 
     private func makeController(

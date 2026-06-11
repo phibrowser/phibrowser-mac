@@ -118,7 +118,13 @@ final class LocalStoreCompatibilityController {
     func markStoreOpenedSuccessfully(_ plan: LocalStoreOpenPlan, at storeDirectory: URL) throws {
         var manifestState = try loadManifest(from: storeDirectory)
         manifestState.manifest.activeStoreFormatVersion = plan.targetStoreFormatVersion
+        if let restoredBackup = plan.restoredBackup {
+            manifestState.manifest.backups.removeAll { $0.id == restoredBackup.id }
+        }
         try saveManifest(manifestState.manifest, to: storeDirectory)
+        if let restoredBackup = plan.restoredBackup {
+            try deleteBackup(restoredBackup, in: storeDirectory)
+        }
     }
 
     private func loadManifest(from storeDirectory: URL) throws -> (manifest: LocalStoreCompatibilityManifest, wasCreated: Bool) {
@@ -197,6 +203,14 @@ final class LocalStoreCompatibilityController {
                 try fileManager.copyItem(at: sourceURL, to: destinationURL)
             }
         }
+    }
+
+    private func deleteBackup(_ backup: LocalStoreBackupRecord, in storeDirectory: URL) throws {
+        let backupDirectory = storeDirectory.appendingPathComponent(backup.directoryName, isDirectory: true)
+        guard fileManager.fileExists(atPath: backupDirectory.path) else {
+            return
+        }
+        try fileManager.removeItem(at: backupDirectory)
     }
 
     private func bestReadableBackup(

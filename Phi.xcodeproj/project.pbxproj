@@ -129,6 +129,7 @@
 		37E6AF402EEC30E80078CCD8 /* ChatButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = 37E6AF3F2EEC30E80078CCD8 /* ChatButton.swift */; };
 		37E9E91B2FC84DEA00815832 /* TabDataModelSchemaV4.swift in Sources */ = {isa = PBXBuildFile; fileRef = 37E9E9192FC84DEA00815832 /* TabDataModelSchemaV4.swift */; };
 		37E9E91C2FC84DEA00815832 /* TabDataModelSchemaV5.swift in Sources */ = {isa = PBXBuildFile; fileRef = 37E9E91A2FC84DEA00815832 /* TabDataModelSchemaV5.swift */; };
+		37E9E91D2FC84DEA00815832 /* TabDataModelSchemaV6.swift in Sources */ = {isa = PBXBuildFile; fileRef = 37E9E91E2FC84DEA00815832 /* TabDataModelSchemaV6.swift */; };
 		37EA23AB2F6C010C00D3C4A9 /* Dependencies in Frameworks */ = {isa = PBXBuildFile; productRef = B00B9F252E3B2A3F0029D3A9 /* Dependencies */; };
 		37EA23AC2F6C010C00D3C4A9 /* Dependencies in Frameworks */ = {isa = PBXBuildFile; productRef = B02BEB612E3B2D5900E5859A /* Dependencies */; };
 		37EA25EF2F6D5A5A00D3C4A9 /* CommonMessageRouter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 37EA25EE2F6D5A5A00D3C4A9 /* CommonMessageRouter.swift */; };
@@ -527,6 +528,7 @@
 		37E6AF3F2EEC30E80078CCD8 /* ChatButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatButton.swift; sourceTree = "<group>"; };
 		37E9E9192FC84DEA00815832 /* TabDataModelSchemaV4.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TabDataModelSchemaV4.swift; sourceTree = "<group>"; };
 		37E9E91A2FC84DEA00815832 /* TabDataModelSchemaV5.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TabDataModelSchemaV5.swift; sourceTree = "<group>"; };
+		37E9E91E2FC84DEA00815832 /* TabDataModelSchemaV6.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TabDataModelSchemaV6.swift; sourceTree = "<group>"; };
 		37EA25EE2F6D5A5A00D3C4A9 /* CommonMessageRouter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CommonMessageRouter.swift; sourceTree = "<group>"; };
 		37EECF212F0F623A0022A176 /* EmbeddedChatViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EmbeddedChatViewController.swift; sourceTree = "<group>"; };
 		37F574472F7A7C5D00879867 /* PhiIcon.icon */ = {isa = PBXFileReference; lastKnownFileType = folder.iconcomposer.icon; path = PhiIcon.icon; sourceTree = "<group>"; };
@@ -1086,6 +1088,7 @@
 				37DEB42E2F67C0F000129429 /* TabDataModelSchemaV3.swift */,
 				37E9E9192FC84DEA00815832 /* TabDataModelSchemaV4.swift */,
 				37E9E91A2FC84DEA00815832 /* TabDataModelSchemaV5.swift */,
+				37E9E91E2FC84DEA00815832 /* TabDataModelSchemaV6.swift */,
 			);
 			path = TabDataModel;
 			sourceTree = "<group>";
@@ -2023,6 +2026,7 @@
 				7B00AAAA000000050000A5B5 /* PostHogEnv.swift in Sources */,
 				37E9E91B2FC84DEA00815832 /* TabDataModelSchemaV4.swift in Sources */,
 				37E9E91C2FC84DEA00815832 /* TabDataModelSchemaV5.swift in Sources */,
+				37E9E91D2FC84DEA00815832 /* TabDataModelSchemaV6.swift in Sources */,
 				7B00AAAA000000070000A7B7 /* PostHogConfig.generated.swift in Sources */,
 				B025870E2E430305001B08FC /* MainSplitViewController.swift in Sources */,
 				3769C2E82EF9437A00A94DE0 /* ArcDataParser.swift in Sources */,

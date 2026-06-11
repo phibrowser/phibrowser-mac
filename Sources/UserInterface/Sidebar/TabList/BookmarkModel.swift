@@ -27,6 +27,7 @@ class Bookmark: WebContentRepresentable {
     @Published var isExpanded: Bool = false
     /// Whether the bookmark is currently in inline-edit mode.
     @Published var isEditing: Bool = false
+    @Published var lastSeen: Date?
     
     let isFolder: Bool
     
@@ -49,6 +50,7 @@ class Bookmark: WebContentRepresentable {
          secondaryTitle: String? = nil,
          profileId: String? = nil,
          faviconData: Data? = nil,
+         lastSeen: Date? = nil,
          isFolder: Bool = false) {
         self.guid = guid
         self.profileId = profileId
@@ -57,6 +59,7 @@ class Bookmark: WebContentRepresentable {
         self.secondaryUrl = secondaryUrl
         self.secondaryTitle = secondaryTitle
         self.cachedFaviconData = faviconData
+        self.lastSeen = lastSeen
         self.isFolder = isFolder
     }
     
@@ -542,6 +545,7 @@ extension Bookmark {
                   secondaryTitle: resolvedSecondaryTitle,
                   profileId: model.profile?.profileId ?? model.profileId,
                   faviconData: model.favicon,
+                  lastSeen: isFolder ? nil : model.lastSeen,
                   isFolder: isFolder)
     }
 }

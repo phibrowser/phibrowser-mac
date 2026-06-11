@@ -22,8 +22,8 @@ actor LocalStoreActor {
 class LocalStore {
     static let defaultProfileId = "Default"
     static let compatibilityConfiguration = LocalStoreCompatibilityConfiguration(
-        currentStoreFormatVersion: 5,
-        readableStoreFormatVersions: 1...5,
+        currentStoreFormatVersion: 6,
+        readableStoreFormatVersions: 1...6,
         storeFilename: "LocalStore.sqlite"
     )
 
@@ -338,6 +338,27 @@ extension LocalStore {
         }
     }
 
+    func updateLastSeen(_ guid: String, seenAt: Date = Date()) {
+        performBackgroundWrite { context in
+            do {
+                let predicate = #Predicate<TabDataModel> { $0.guid == guid }
+                let descriptor = FetchDescriptor<TabDataModel>(predicate: predicate)
+                guard let tab = try context.fetch(descriptor).first else {
+                    return
+                }
+                switch tab.dataType {
+                case .pinnedTab, .bookmark:
+                    tab.lastSeen = seenAt
+                    tab.updatedDate = seenAt
+                case .tab, .bookmarkFolder:
+                    return
+                }
+            } catch {
+                AppLogError("[LocalStore] Failed to update last seen date: \(error)")
+            }
+        }
+    }
+
     func updateTabFavicon(_ guid: String, favicon: Data) {
         performBackgroundWrite { context in
             do {
@@ -480,6 +501,7 @@ extension LocalStore {
                     old.guid == new.guid && 
                     old.title == new.title && 
                     old.index == new.index &&
+                    old.lastSeen == new.lastSeen &&
                     old.updatedDate == new.updatedDate
                 }
             }
@@ -542,6 +564,7 @@ extension LocalStore {
                 var pinnedTabs = try context.fetch(descriptor)
                 
                 var tabToMove: TabDataModel
+                let now = Date()
                 if let tabToMoveIndex = pinnedTabs.firstIndex(where: { $0.guid == tabGuid }) {
                     tabToMove = pinnedTabs.remove(at: tabToMoveIndex)
                 } else {
@@ -556,8 +579,8 @@ extension LocalStore {
                         index: 0,
                         url: url,
                         favicon: nil,
-                        createdDate: Date(),
-                        updatedDate: Date()
+                        createdDate: now,
+                        updatedDate: now
                     )
                     tabToMove.dataType = .pinnedTab
                     tabToMove.isCreatedByChromium = false
@@ -586,7 +609,7 @@ extension LocalStore {
                 
                 for (index, tabModel) in pinnedTabs.enumerated() {
                     tabModel.index = index
-                    tabModel.updatedDate = Date()
+                    tabModel.updatedDate = now
                 }
                 
             } catch {

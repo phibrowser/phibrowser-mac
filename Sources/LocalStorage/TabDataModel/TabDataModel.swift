@@ -6,8 +6,8 @@
 import SwiftData
 import Foundation
 
-typealias TabDataModel = TabDataModelSchemaV5.TabDataModel
-typealias ProfileModel = TabDataModelSchemaV5.ProfileModel
+typealias TabDataModel = TabDataModelSchemaV6.TabDataModel
+typealias ProfileModel = TabDataModelSchemaV6.ProfileModel
 
 extension TabDataModel: CustomStringConvertible {
     var description: String {
@@ -17,11 +17,18 @@ extension TabDataModel: CustomStringConvertible {
 
 enum TabDataModelMigrationPlan: SchemaMigrationPlan {
     static var schemas: [any VersionedSchema.Type] {
-        [TabDataModelSchemaV1.self, TabDataModelSchemaV2.self, TabDataModelSchemaV3.self, TabDataModelSchemaV4.self, TabDataModelSchemaV5.self]
+        [
+            TabDataModelSchemaV1.self,
+            TabDataModelSchemaV2.self,
+            TabDataModelSchemaV3.self,
+            TabDataModelSchemaV4.self,
+            TabDataModelSchemaV5.self,
+            TabDataModelSchemaV6.self,
+        ]
     }
 
     static var stages: [MigrationStage] {
-        [migrateV1toV2, migrateV2toV3, migrateV3toV4, migrateV4toV5]
+        [migrateV1toV2, migrateV2toV3, migrateV3toV4, migrateV4toV5, migrateV5toV6]
     }
 
     nonisolated(unsafe) static var v1TypeMapping: [String: Int] = [:]
@@ -74,6 +81,11 @@ enum TabDataModelMigrationPlan: SchemaMigrationPlan {
     static let migrateV4toV5 = MigrationStage.lightweight(
         fromVersion: TabDataModelSchemaV4.self,
         toVersion: TabDataModelSchemaV5.self
+    )
+
+    static let migrateV5toV6 = MigrationStage.lightweight(
+        fromVersion: TabDataModelSchemaV5.self,
+        toVersion: TabDataModelSchemaV6.self
     )
 
     static let migrateV2toV3 = MigrationStage.custom(
@@ -139,4 +151,3 @@ extension TabDataModel {
         set { source = newValue.rawValue }
     }
 }
-

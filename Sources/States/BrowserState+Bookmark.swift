@@ -197,6 +197,7 @@ extension BrowserState {
             clearGroupOverview()
         }
 
+        localStore.updateLastSeen(bookmark.guid)
         if let secondaryURL = bookmark.secondaryUrl, !secondaryURL.isEmpty {
             if let splitId = splitBookmarkBindings[bookmark.guid],
                let group = splits.first(where: { $0.id == splitId }),
@@ -291,6 +292,7 @@ extension BrowserState {
         }
         
         if let bookmark = bookmarkManager.bookmark(withGuid: localGuid) {
+            localStore.updateLastSeen(localGuid)
             syncBookmarkBinding(bookmark, with: tab, focusingTabGuid: focusingTab?.guid)
         }
     }

@@ -1239,6 +1239,9 @@
     "This replaces the Phi user data folder with the archive and restarts Phi. Save your work first." : {
       "comment" : "Debug import user data - Confirmation alert body warning data replacement and relaunch"
     },
+    "This version of Phi cannot open local browser data that was updated by a newer version. Install the latest Phi version and try again." : {
+      "comment" : "Local store compatibility alert - body when a newer app is required to read local data"
+    },
     "Today" : {
       "comment" : "Download item row - Relative time when download completed today"
     },
@@ -1292,6 +1295,9 @@
     },
     "Update available" : {
       "comment" : "Sidebar update reminder - Accessibility description for update icon"
+    },
+    "Update Phi to Open Local Data" : {
+      "comment" : "Local store compatibility alert - title when the local database was opened by a newer app version"
     },
     "URL" : {
       "comment" : "Editor - Label for the URL input field\nFeedback form - Label for URL input field"

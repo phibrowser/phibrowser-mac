@@ -134,6 +134,10 @@
 		37EA25EF2F6D5A5A00D3C4A9 /* CommonMessageRouter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 37EA25EE2F6D5A5A00D3C4A9 /* CommonMessageRouter.swift */; };
 		37EECF222F0F623A0022A176 /* EmbeddedChatViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 37EECF212F0F623A0022A176 /* EmbeddedChatViewController.swift */; };
 		37F574482F7A7C5D00879867 /* PhiIcon.icon in Resources */ = {isa = PBXBuildFile; fileRef = 37F574472F7A7C5D00879867 /* PhiIcon.icon */; };
+		37FA01012FDA000100000001 /* LocalStoreCompatibilityManifest.swift in Sources */ = {isa = PBXBuildFile; fileRef = 37FA01112FDA000100000001 /* LocalStoreCompatibilityManifest.swift */; };
+		37FA01022FDA000100000002 /* LocalStoreBackupPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = 37FA01122FDA000100000002 /* LocalStoreBackupPolicy.swift */; };
+		37FA01032FDA000100000003 /* LocalStoreCompatibilityConfiguration.swift in Sources */ = {isa = PBXBuildFile; fileRef = 37FA01132FDA000100000003 /* LocalStoreCompatibilityConfiguration.swift */; };
+		37FA01042FDA000100000004 /* LocalStoreCompatibilityController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 37FA01142FDA000100000004 /* LocalStoreCompatibilityController.swift */; };
 		37FC8C922F335942004675B8 /* WebContentProgressBarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 37FC8C912F335942004675B8 /* WebContentProgressBarView.swift */; };
 		37FC8DAA2F39B2DE004675B8 /* LayoutModeSettingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 37FC8DA92F39B2DE004675B8 /* LayoutModeSettingView.swift */; };
 		3BCDDE6FBABE4BD8A51F0127 /* TabGroupCellView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE7E61A49E8A472DB330779E /* TabGroupCellView.swift */; };
@@ -473,6 +477,7 @@
 		37B9780F2EF403AB007E0568 /* GradientBorderButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GradientBorderButton.swift; sourceTree = "<group>"; };
 		37BA3EA12F866864003A8A53 /* EdgeFogOverlayView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EdgeFogOverlayView.swift; sourceTree = "<group>"; };
 		37BA3EA32F866870003A8A53 /* AgentAnimationManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentAnimationManager.swift; sourceTree = "<group>"; };
+		37BE8D432FDA84DE00BE5687 /* README.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = README.md; sourceTree = "<group>"; };
 		37C1B0D72ED6DCBD00DD4496 /* Shortcuts.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Shortcuts.swift; sourceTree = "<group>"; };
 		37C1B0DD2ED8081400DD4496 /* ShortcutsSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShortcutsSettingsView.swift; sourceTree = "<group>"; };
 		37C1B0DF2ED809EA00DD4496 /* ShortcutsSettingHostingViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShortcutsSettingHostingViewController.swift; sourceTree = "<group>"; };
@@ -525,6 +530,10 @@
 		37EA25EE2F6D5A5A00D3C4A9 /* CommonMessageRouter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CommonMessageRouter.swift; sourceTree = "<group>"; };
 		37EECF212F0F623A0022A176 /* EmbeddedChatViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EmbeddedChatViewController.swift; sourceTree = "<group>"; };
 		37F574472F7A7C5D00879867 /* PhiIcon.icon */ = {isa = PBXFileReference; lastKnownFileType = folder.iconcomposer.icon; path = PhiIcon.icon; sourceTree = "<group>"; };
+		37FA01112FDA000100000001 /* LocalStoreCompatibilityManifest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalStoreCompatibilityManifest.swift; sourceTree = "<group>"; };
+		37FA01122FDA000100000002 /* LocalStoreBackupPolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalStoreBackupPolicy.swift; sourceTree = "<group>"; };
+		37FA01132FDA000100000003 /* LocalStoreCompatibilityConfiguration.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalStoreCompatibilityConfiguration.swift; sourceTree = "<group>"; };
+		37FA01142FDA000100000004 /* LocalStoreCompatibilityController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalStoreCompatibilityController.swift; sourceTree = "<group>"; };
 		37FC8C912F335942004675B8 /* WebContentProgressBarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WebContentProgressBarView.swift; sourceTree = "<group>"; };
 		37FC8DA92F39B2DE004675B8 /* LayoutModeSettingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LayoutModeSettingView.swift; sourceTree = "<group>"; };
 		4508A9352EEFF2EB007C94E2 /* AccountWebWindowController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccountWebWindowController.swift; sourceTree = "<group>"; };
@@ -1090,6 +1099,18 @@
 			path = Other;
 			sourceTree = "<group>";
 		};
+		37FA01212FDA000100000001 /* Compatibility */ = {
+			isa = PBXGroup;
+			children = (
+				37FA01122FDA000100000002 /* LocalStoreBackupPolicy.swift */,
+				37FA01132FDA000100000003 /* LocalStoreCompatibilityConfiguration.swift */,
+				37FA01142FDA000100000004 /* LocalStoreCompatibilityController.swift */,
+				37FA01112FDA000100000001 /* LocalStoreCompatibilityManifest.swift */,
+				37BE8D432FDA84DE00BE5687 /* README.md */,
+			);
+			path = Compatibility;
+			sourceTree = "<group>";
+		};
 		4D454D4F5259000000000003 /* Diagnostics */ = {
 			isa = PBXGroup;
 			children = (
@@ -1447,6 +1468,7 @@
 				CC2708A22E7A65E500B65AB8 /* LocalStore.swift */,
 				CCD87CC32EC2E7E000148E3F /* LocalStore+Bookmark.swift */,
 				37DEB42B2F63F90200129429 /* TabDataModel */,
+				37FA01212FDA000100000001 /* Compatibility */,
 			);
 			path = LocalStorage;
 			sourceTree = "<group>";
@@ -2086,6 +2108,10 @@
 				8E762CC62F16531A00631087 /* TabStripAnimation.swift in Sources */,
 				37C1B0DE2ED8081400DD4496 /* ShortcutsSettingsView.swift in Sources */,
 				CC2708A52E7A65E500B65AB8 /* LocalStore.swift in Sources */,
+				37FA01022FDA000100000002 /* LocalStoreBackupPolicy.swift in Sources */,
+				37FA01032FDA000100000003 /* LocalStoreCompatibilityConfiguration.swift in Sources */,
+				37FA01042FDA000100000004 /* LocalStoreCompatibilityController.swift in Sources */,
+				37FA01012FDA000100000001 /* LocalStoreCompatibilityManifest.swift in Sources */,
 				CC99096D2EBC86940046BC81 /* PhiPreferences.swift in Sources */,
 				CC2708A62E7A65E500B65AB8 /* TabDataModel.swift in Sources */,
 				CC6335F92E4DF65700A176DA /* PhiLogFormatter.swift in Sources */,

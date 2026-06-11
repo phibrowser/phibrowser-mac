@@ -21,8 +21,13 @@ actor LocalStoreActor {
 
 class LocalStore {
     static let defaultProfileId = "Default"
+    static let compatibilityConfiguration = LocalStoreCompatibilityConfiguration(
+        currentStoreFormatVersion: 5,
+        readableStoreFormatVersions: 1...5,
+        storeFilename: "LocalStore.sqlite"
+    )
 
-    let container: ModelContainer?
+    private(set) var container: ModelContainer?
     let account: Account
     private let userStorageURL: URL
     private var cancellable: AnyCancellable?
@@ -41,6 +46,7 @@ class LocalStore {
     /// through this stream restores submit-order == apply-order, which every
     /// caller already assumes.
     private let writeJobContinuation: AsyncStream<() async -> Void>.Continuation?
+    private(set) var compatibilityStatus: LocalStoreCompatibilityStatus = .notChecked
 
     @MainActor var mainContext: ModelContext? {
         container?.mainContext
@@ -58,6 +64,42 @@ class LocalStore {
         
         try? FileManager.default.createDirectory(at: userStorageURL,
                                                  withIntermediateDirectories: true)
+
+        let compatibilityController = LocalStoreCompatibilityController(
+            configuration: Self.compatibilityConfiguration
+        )
+        let compatibilityResult: LocalStoreCompatibilityResult
+        do {
+            compatibilityResult = try compatibilityController.prepareStore(at: userStorageURL)
+        } catch {
+            AppLogError("[LocalStore] Failed to prepare local store compatibility state: \(error)")
+            compatibilityStatus = .failed(error.localizedDescription)
+            container = nil
+            writeActor = nil
+            writeJobContinuation = nil
+            return
+        }
+
+        let openPlan: LocalStoreOpenPlan
+        switch compatibilityResult {
+        case .ready(let plan):
+            compatibilityStatus = .ready(plan)
+            openPlan = plan
+        case .requiresNewerApp(let issue):
+            AppLogError(
+                "[LocalStore] Store format \(issue.activeStoreFormatVersion) requires a newer app. Current readable range: \(issue.readableStoreFormatVersions)"
+            )
+            compatibilityStatus = .requiresNewerApp(issue)
+            NotificationCenter.default.post(
+                name: .localStoreRequiresNewerApp,
+                object: self,
+                userInfo: ["issue": issue]
+            )
+            container = nil
+            writeActor = nil
+            writeJobContinuation = nil
+            return
+        }
         
         let configuration = ModelConfiguration(url: userStorageURL.appendingPathComponent("LocalStore.sqlite"))
         
@@ -80,6 +122,11 @@ class LocalStore {
                 for await job in stream {
                     await job()
                 }
+            }
+            do {
+                try compatibilityController.markStoreOpenedSuccessfully(openPlan, at: userStorageURL)
+            } catch {
+                AppLogError("[LocalStore] Failed to record opened local store format: \(error)")
             }
         } catch {
             AppLogError("Failed to create ModelContainer: \(error)")

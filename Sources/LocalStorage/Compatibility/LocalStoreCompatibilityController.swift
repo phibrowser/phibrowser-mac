@@ -126,9 +126,13 @@ final class LocalStoreCompatibilityController {
     private func loadManifest(from storeDirectory: URL) throws -> (manifest: LocalStoreCompatibilityManifest, wasCreated: Bool) {
         let url = manifestURL(in: storeDirectory)
         guard fileManager.fileExists(atPath: url.path) else {
+            let existingStoreURL = storeDirectory.appendingPathComponent(configuration.storeFilename)
+            let activeStoreFormatVersion = fileManager.fileExists(atPath: existingStoreURL.path)
+                ? configuration.legacyStoreFormatVersionForCurrentBundle()
+                : configuration.currentStoreFormatVersion
             return (
                 LocalStoreCompatibilityManifest(
-                    activeStoreFormatVersion: configuration.currentStoreFormatVersion,
+                    activeStoreFormatVersion: activeStoreFormatVersion,
                     backups: []
                 ),
                 true

@@ -21,7 +21,10 @@ final class LocalStoreCompatibilityTests: XCTestCase {
 
     func testFirstRunCreatesManifestForCurrentStoreFormat() throws {
         let directory = try makeTemporaryStoreDirectory()
-        let controller = makeController(currentStoreFormatVersion: 5)
+        let controller = makeController(
+            currentStoreFormatVersion: 5,
+            backupPolicy: .beforeSchemaUpgrade
+        )
 
         let result = try controller.prepareStore(at: directory)
 
@@ -35,6 +38,91 @@ final class LocalStoreCompatibilityTests: XCTestCase {
 
         let manifest = try readManifest(from: directory)
         XCTAssertEqual(manifest.activeStoreFormatVersion, 5)
+        XCTAssertTrue(manifest.backups.isEmpty)
+    }
+
+    func testMissingManifestWithExistingStoreUsesBundleBuildForV5LegacyStore() throws {
+        let directory = try makeTemporaryStoreDirectory()
+        try writeStoreFiles(in: directory, contents: "legacy")
+        let controller = makeController(
+            currentStoreFormatVersion: 6,
+            backupPolicy: .beforeSchemaUpgrade,
+            bundleBuildNumber: 585
+        )
+
+        let result = try controller.prepareStore(at: directory)
+
+        guard case .ready(let plan) = result else {
+            return XCTFail("Expected existing store without a manifest to prepare as a legacy store.")
+        }
+        XCTAssertEqual(plan.activeStoreFormatVersion, 5)
+        XCTAssertTrue(plan.manifestWasCreated)
+        let createdBackup = try XCTUnwrap(plan.createdBackup)
+        XCTAssertEqual(createdBackup.storeFormatVersion, 5)
+        XCTAssertEqual(createdBackup.createdBeforeUpgradingToStoreFormatVersion, 6)
+        XCTAssertNil(plan.restoredBackup)
+
+        let manifestBeforeOpen = try readManifest(from: directory)
+        XCTAssertEqual(manifestBeforeOpen.activeStoreFormatVersion, 5)
+        XCTAssertEqual(manifestBeforeOpen.backups.map(\.storeFormatVersion), [5])
+        XCTAssertEqual(
+            try readText(directory.appendingPathComponent(createdBackup.directoryName).appendingPathComponent("LocalStore.sqlite")),
+            "legacy-main"
+        )
+
+        try controller.markStoreOpenedSuccessfully(plan, at: directory)
+
+        let manifestAfterOpen = try readManifest(from: directory)
+        XCTAssertEqual(manifestAfterOpen.activeStoreFormatVersion, 6)
+        XCTAssertEqual(manifestAfterOpen.backups.map(\.storeFormatVersion), [5])
+    }
+
+    func testMissingManifestWithExistingStoreUsesBundleBuildForV3LegacyStore() throws {
+        for buildNumber in [494, 584] {
+            let directory = try makeTemporaryStoreDirectory()
+            try writeStoreFiles(in: directory, contents: "legacy")
+            let controller = makeController(
+                currentStoreFormatVersion: 6,
+                backupPolicy: .beforeSchemaUpgrade,
+                bundleBuildNumber: buildNumber
+            )
+
+            let result = try controller.prepareStore(at: directory)
+
+            guard case .ready(let plan) = result else {
+                return XCTFail("Expected existing store without a manifest to prepare as a legacy store.")
+            }
+            XCTAssertEqual(plan.activeStoreFormatVersion, 3)
+            let createdBackup = try XCTUnwrap(plan.createdBackup)
+            XCTAssertEqual(createdBackup.storeFormatVersion, 3)
+            XCTAssertEqual(createdBackup.createdBeforeUpgradingToStoreFormatVersion, 6)
+
+            let manifestBeforeOpen = try readManifest(from: directory)
+            XCTAssertEqual(manifestBeforeOpen.activeStoreFormatVersion, 3)
+            XCTAssertEqual(manifestBeforeOpen.backups.map(\.storeFormatVersion), [3])
+        }
+    }
+
+    func testMissingManifestWithExistingStoreTreatsUnmappedBundleBuildAsCurrentFormat() throws {
+        let directory = try makeTemporaryStoreDirectory()
+        try writeStoreFiles(in: directory, contents: "legacy")
+        let controller = makeController(
+            currentStoreFormatVersion: 6,
+            backupPolicy: .beforeSchemaUpgrade,
+            bundleBuildNumber: 493
+        )
+
+        let result = try controller.prepareStore(at: directory)
+
+        guard case .ready(let plan) = result else {
+            return XCTFail("Expected existing store without a manifest to prepare as the current format.")
+        }
+        XCTAssertEqual(plan.activeStoreFormatVersion, 6)
+        XCTAssertTrue(plan.manifestWasCreated)
+        XCTAssertNil(plan.createdBackup)
+
+        let manifest = try readManifest(from: directory)
+        XCTAssertEqual(manifest.activeStoreFormatVersion, 6)
         XCTAssertTrue(manifest.backups.isEmpty)
     }
 
@@ -259,7 +347,8 @@ final class LocalStoreCompatibilityTests: XCTestCase {
     private func makeController(
         currentStoreFormatVersion: Int,
         readableStoreFormatVersions: ClosedRange<Int>? = nil,
-        backupPolicy: LocalStoreBackupPolicy = .never
+        backupPolicy: LocalStoreBackupPolicy = .never,
+        bundleBuildNumber: Int? = nil
     ) -> LocalStoreCompatibilityController {
         LocalStoreCompatibilityController(
             configuration: LocalStoreCompatibilityConfiguration(
@@ -270,7 +359,8 @@ final class LocalStoreCompatibilityTests: XCTestCase {
                 backupsDirectoryName: "Backups",
                 backupPolicy: backupPolicy,
                 dateProvider: { Date(timeIntervalSince1970: 1_800_000_000) },
-                idProvider: { "backup-id" }
+                idProvider: { "backup-id" },
+                bundleBuildNumberProvider: { bundleBuildNumber }
             )
         )
     }

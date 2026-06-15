@@ -45,7 +45,11 @@ creating the SwiftData `ModelContainer`.
 
 The controller performs this flow:
 
-1. Load the manifest, or create one for the current format on first run.
+1. Load the manifest, or create one when the manifest is missing. A clean first
+   run uses the current format. An existing store without a manifest is treated
+   as a legacy store for the current bundle build: build 585 and newer map to
+   format v5, builds 494 through 584 map to format v3, and other builds use the
+   current format so no compatibility backup is created.
 2. If the active store format is readable, optionally create a backup according
    to the configured `LocalStoreBackupPolicy`.
 3. If the active store format is too new, restore the highest readable backup.

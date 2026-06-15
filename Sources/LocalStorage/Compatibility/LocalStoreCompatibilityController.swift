@@ -5,10 +5,6 @@
 
 import Foundation
 
-extension Notification.Name {
-    static let localStoreRequiresNewerApp = Notification.Name("LocalStoreRequiresNewerAppNotification")
-}
-
 struct LocalStoreOpenPlan {
     let activeStoreFormatVersion: Int
     let targetStoreFormatVersion: Int

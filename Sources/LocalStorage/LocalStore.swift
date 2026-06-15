@@ -4,6 +4,7 @@
 // found in the LICENSE file.
 
 import Foundation
+import AppKit
 import SwiftData
 import Combine
 
@@ -52,7 +53,11 @@ class LocalStore {
         container?.mainContext
     }
     
-    init(account: Account, storeDirectoryURL: URL? = nil) {
+    init(
+        account: Account,
+        storeDirectoryURL: URL? = nil,
+        presentsCompatibilityAlerts: Bool = true
+    ) {
         self.account = account
         
         let userDir = account.userDataStorage
@@ -90,14 +95,12 @@ class LocalStore {
                 "[LocalStore] Store format \(issue.activeStoreFormatVersion) requires a newer app. Current readable range: \(issue.readableStoreFormatVersions)"
             )
             compatibilityStatus = .requiresNewerApp(issue)
-            NotificationCenter.default.post(
-                name: .localStoreRequiresNewerApp,
-                object: self,
-                userInfo: ["issue": issue]
-            )
             container = nil
             writeActor = nil
             writeJobContinuation = nil
+            if presentsCompatibilityAlerts {
+                Self.runRequiresNewerAppAlert()
+            }
             return
         }
         
@@ -133,6 +136,23 @@ class LocalStore {
             container = nil
             writeActor = nil
             writeJobContinuation = nil
+        }
+    }
+
+    private static func runRequiresNewerAppAlert() {
+        Task { @MainActor in
+            let alert = NSAlert()
+            alert.messageText = NSLocalizedString(
+                "Update Phi to Open Local Data",
+                comment: "Local store compatibility alert - title when the local database was opened by a newer app version"
+            )
+            alert.informativeText = NSLocalizedString(
+                "This version of Phi cannot open local browser data that was updated by a newer version. Install the latest Phi version and try again.",
+                comment: "Local store compatibility alert - body when a newer app is required to read local data"
+            )
+            alert.alertStyle = .warning
+            alert.addButton(withTitle: NSLocalizedString("OK", comment: "Generic - OK button to dismiss an alert"))
+            alert.runModal()
         }
     }
 }

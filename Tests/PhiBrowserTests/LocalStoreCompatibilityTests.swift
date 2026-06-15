@@ -190,7 +190,11 @@ final class LocalStoreCompatibilityTests: XCTestCase {
             to: directory
         )
 
-        let store = LocalStore(account: Account(userID: UUID().uuidString), storeDirectoryURL: directory)
+        let store = LocalStore(
+            account: Account(userID: UUID().uuidString),
+            storeDirectoryURL: directory,
+            presentsCompatibilityAlerts: false
+        )
 
         XCTAssertNil(store.getMainContext())
         guard case .requiresNewerApp(let issue) = store.compatibilityStatus else {

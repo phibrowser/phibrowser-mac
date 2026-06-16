@@ -225,7 +225,7 @@ protocol SideBarOutlineViewDelegate: AnyObject {
     func outlineView(_ outlineView: NSOutlineView, draggingEnded sender: any NSDraggingInfo)
 }
 
-class SideBarOutlineView: NSOutlineView {
+class SideBarOutlineView: DiffableOutlineView {
     static let indentation = 10
     private static let dragThreshold: CGFloat = 5
     private static let dragAutoscrollHotZoneHeight: CGFloat = 92

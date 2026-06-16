@@ -182,4 +182,10 @@ final class DiffableOutlineViewTests: XCTestCase {
 
         XCTAssertTrue(view.events.isEmpty)
     }
+
+    func testSideBarOutlineViewIsDiffableOutlineView() {
+        let view = SideBarOutlineView()
+
+        XCTAssertTrue(view is DiffableOutlineView)
+    }
 }

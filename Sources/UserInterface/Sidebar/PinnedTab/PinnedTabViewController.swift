@@ -540,6 +540,24 @@ class PinnedTabViewController: NSViewController {
                 result[group.secondaryTabId] = group
             }
 
+        // Bidirectional persisted-partner map. Each pinned-split pane persists
+        // its own `splitPartnerGuid`, but the two writes are async and the
+        // second can be dropped if the app quits before it flushes — leaving a
+        // half-linked pair (only A->B on disk). Resolving pairing off a single
+        // record's `splitPartnerGuid` then splinters the cell into two on the
+        // next launch when the unlinked record sorts first. Mirroring every
+        // link so either direction pairs both panes makes the merge
+        // order-independent and tolerant of a half-persisted link.
+        var persistedPartnerByDB: [String: String] = [:]
+        for tab in pinnedTabs {
+            guard let db = tab.guidInLocalDB,
+                  let partner = tab.splitPartnerGuid, !partner.isEmpty else { continue }
+            persistedPartnerByDB[db] = partner
+            if persistedPartnerByDB[partner] == nil {
+                persistedPartnerByDB[partner] = db
+            }
+        }
+
         var consumedDBGuids = Set<String>()
         var items: [Item] = []
         for tab in pinnedTabs {
@@ -565,13 +583,12 @@ class PinnedTabViewController: NSViewController {
                                                 leftTab: currentIsPrimary ? tab : partnerPinned,
                                                 rightTab: currentIsPrimary ? partnerPinned : tab)
                 consumedDBGuids.insert(partnerDBGuid)
-            } else if let partnerDBGuid = tab.splitPartnerGuid,
-                      !partnerDBGuid.isEmpty,
+            } else if let partnerDBGuid = persistedPartnerByDB[myDBGuid],
                       !consumedDBGuids.contains(partnerDBGuid),
                       let partnerPinned = pinnedByDB[partnerDBGuid] {
-                // Persisted pair. Synthesize a stable splitId from both DB
-                // guids so the diffable snapshot identifies the same item
-                // across re-renders.
+                // Persisted pair (bidirectional — see `persistedPartnerByDB`).
+                // Synthesize a stable splitId from both DB guids so the
+                // diffable snapshot identifies the same item across re-renders.
                 let sortedPair = [myDBGuid, partnerDBGuid].sorted()
                 let stableId = "persisted-split:\(sortedPair[0])|\(sortedPair[1])"
                 combined = PinnedSplitGroupItem(splitId: stableId,

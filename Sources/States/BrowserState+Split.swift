@@ -276,6 +276,13 @@ extension BrowserState {
         if partnerDB == nil, let persisted = pinnedTab.splitPartnerGuid, !persisted.isEmpty {
             partnerDB = persisted
         }
+        // Bidirectional fallback: a half-persisted pair may carry only the
+        // partner's forward link (the reverse `splitPartnerGuid` write was
+        // dropped on quit before flushing). Pair off whichever side points at
+        // us so close / move / render all treat the two as one split.
+        if partnerDB == nil {
+            partnerDB = pinnedTabs.first { $0.splitPartnerGuid == myDB }?.guidInLocalDB
+        }
         guard let partnerDB,
               let myIdx = pinnedTabs.firstIndex(where: { $0.guidInLocalDB == myDB }),
               let partnerIdx = pinnedTabs.firstIndex(where: { $0.guidInLocalDB == partnerDB }) else {

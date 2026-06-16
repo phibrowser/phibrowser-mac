@@ -80,6 +80,9 @@ private final class VerticallyCenteredBookmarkTextFieldCell: NSTextFieldCell {
 }
 
 class BookmarkCellView: SidebarCellView {
+    /// Identifier stamped on every sidebar bookmark row's content view.
+    static let accessibilityIdentifier = "sidebarBookmark"
+
     private let viewState = BookmarkCellViewState()
     private let primaryTabViewModel = TabViewModel()
     private let secondaryTabViewModel = TabViewModel()
@@ -240,6 +243,15 @@ class BookmarkCellView: SidebarCellView {
     override func configureAppearance() {
         guard let bookmark = resolvedBookmark else { return }
         configuredBookmark = bookmark
+
+        // Expose to UI testing as a button so the test reset can find and
+        // delete bookmark rows. This tags the cell *content* view (not the
+        // outline row), so the row-level `cells`/`selected` AX the tab tests
+        // rely on is unaffected.
+        setAccessibilityElement(true)
+        setAccessibilityRole(.button)
+        setAccessibilityIdentifier(BookmarkCellView.accessibilityIdentifier)
+        setAccessibilityLabel(bookmark.title)
 
         cancellables.forEach { $0.cancel() }
         cancellables.removeAll()

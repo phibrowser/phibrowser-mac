@@ -1908,6 +1908,19 @@ final class TabStrip: NSView, TitlebarAwareHitTestable {
                 }
             }
 
+            // Stamp the UI-test query surface. The collapsed second pane of a
+            // split (it merges into its partner's cell) and the transparent
+            // drag-source stand-in must not count as separate tab cells.
+            let axVisible = !isDraggingSourceView
+                && !pinnedSplitCollapsedIndices.contains(index)
+            view.configureAccessibility(
+                identifier: isPinned
+                    ? TabItemView.pinnedAccessibilityIdentifier
+                    : TabItemView.normalAccessibilityIdentifier,
+                title: tab.title,
+                visible: axVisible,
+                isSplitPair: pinnedSplitPartners[id] != nil)
+
             nextViews[id] = view
         }
 

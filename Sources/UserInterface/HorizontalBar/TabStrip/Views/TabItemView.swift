@@ -736,6 +736,42 @@ final class TabItemView: NSView {
         layoutContent()
     }
 
+    /// Exposes this cell to UI testing as a single accessibility button.
+    /// The horizontal strip otherwise has no stable query surface — the
+    /// sidebar reaches its rows through an `NSOutlineView`
+    /// (`setAccessibilityIdentifier("sidebarTabList")`), but the strip is a
+    /// pool of plain views. This is the strip-side analog so split-view UI
+    /// tests can find, count, and right-click strip tabs.
+    ///
+    /// `visible` is false for the collapsed second pane of a split (it shares
+    /// one merged cell with its partner) and for the transparent drag-source
+    /// stand-in, so neither is mistaken for a separate tab cell. Pinned and
+    /// normal cells carry distinct identifiers so tests can tell a pinned
+    /// split (which lives in the pinned section) from a normal-list tab.
+    func configureAccessibility(identifier: String, title: String, visible: Bool, isSplitPair: Bool) {
+        setAccessibilityElement(visible)
+        guard visible else {
+            setAccessibilityIdentifier(nil)
+            setAccessibilityValue(nil)
+            return
+        }
+        setAccessibilityRole(.button)
+        setAccessibilityIdentifier(identifier)
+        setAccessibilityLabel(title)
+        // A merged split-pair cell hosts two panes behind one cell; expose
+        // that so assistive tech (and UI tests) can tell it apart from a
+        // single-tab cell — a split that fails to merge renders as two plain
+        // cells with no such marker.
+        setAccessibilityValue(isSplitPair ? TabItemView.splitPairAccessibilityValue : nil)
+    }
+
+    /// Identifier stamped on every visible normal-section strip tab cell.
+    static let normalAccessibilityIdentifier = "tabStripTab"
+    /// Identifier stamped on every visible pinned-section strip tab cell.
+    static let pinnedAccessibilityIdentifier = "tabStripPinnedTab"
+    /// Accessibility value stamped on a cell that merges a split pair.
+    static let splitPairAccessibilityValue = "splitPair"
+
     private func updateTitleHostingToolTips() {
         titleHostingView.toolTip = viewModel.displayTitle
         guard pinnedSplitPartner != nil else {

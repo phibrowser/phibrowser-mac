@@ -9,6 +9,9 @@ import SnapKit
 
 class PinnedTabItem: NSCollectionViewItem, NSMenuDelegate {
     static var reuseIdentifier: NSUserInterfaceItemIdentifier { .init(rawValue: "\(Self.self)") }
+    /// Identifier stamped on every visible sidebar pinned-grid item (solo
+    /// tab or pinned split — see also `PinnedSplitItem`).
+    static let accessibilityIdentifier = "sidebarPinnedTab"
     private var iconImageView: NSImageView!
     private var backgroundView: HoverableView!
     private var tab: Tab?
@@ -97,6 +100,13 @@ class PinnedTabItem: NSCollectionViewItem, NSMenuDelegate {
 
         setupFavicon()
         view.toolTip = "\(tab.title)\n\(tab.url ?? "")"
+
+        // Expose to UI testing — the pinned grid is a collection view with no
+        // stable query surface for the test reset to find and unpin items.
+        view.setAccessibilityElement(true)
+        view.setAccessibilityRole(.button)
+        view.setAccessibilityIdentifier(PinnedTabItem.accessibilityIdentifier)
+        view.setAccessibilityLabel(tab.title)
 
         // Selection state is driven by the view controller.
         self.isSelected = tab.isActive

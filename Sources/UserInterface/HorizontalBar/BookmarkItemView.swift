@@ -81,7 +81,16 @@ class BookmarkItemView: NSView {
         setupUI()
         bindData()
         bindTheme()
+        // Expose each bar item to UI testing as a button; the bookmark bar
+        // otherwise has no stable query surface for the test reset to clear.
+        setAccessibilityElement(true)
+        setAccessibilityRole(.button)
+        setAccessibilityIdentifier(BookmarkItemView.accessibilityIdentifier)
+        setAccessibilityLabel(bookmark.title)
     }
+
+    /// Identifier stamped on every bookmark-bar item.
+    static let accessibilityIdentifier = "bookmarkBarItem"
 
     required init?(coder: NSCoder) {
         fatalError("init(coder:) has not been implemented")

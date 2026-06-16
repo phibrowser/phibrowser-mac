@@ -124,6 +124,13 @@ class PinnedSplitItem: NSCollectionViewItem, NSMenuDelegate {
         refreshFavicon(for: rightTab)
         view.toolTip = "\(leftTab.title) | \(rightTab.title)"
 
+        // Expose to UI testing, sharing the pinned-grid identifier with
+        // `PinnedTabItem` so the test reset can find and unpin every item.
+        view.setAccessibilityElement(true)
+        view.setAccessibilityRole(.button)
+        view.setAccessibilityIdentifier(PinnedTabItem.accessibilityIdentifier)
+        view.setAccessibilityLabel("\(leftTab.title) | \(rightTab.title)")
+
         self.isSelected = leftTab.isActive || rightTab.isActive
 
         // Drive the context menu off the left pane so the user gets the

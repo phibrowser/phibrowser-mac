@@ -18,6 +18,13 @@
         "identifier" : "B0C469562E3B10E2007F0C7A",
         "name" : "PhiBrowserTests"
       }
+    },
+    {
+      "target" : {
+        "containerPath" : "container:Phi.xcodeproj",
+        "identifier" : "B0C469602E3B10E2007F0C7A",
+        "name" : "PhiBrowserUITests"
+      }
     }
   ],
   "version" : 1

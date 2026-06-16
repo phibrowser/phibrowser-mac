@@ -1706,6 +1706,7 @@
 				C0D1D0012FEA000000000001 /* SidebarTabListViewController+MultiSelectionDragPreview.swift */,
 				CCBF8F492E6543E800B9A99E /* BookmarkSectionController.swift */,
 				CCBF8F432E653F3400B9A99E /* SidebarItem.swift */,
+				D1F600072FD6000000000007 /* SidebarDiffableSnapshotBuilder.swift */,
 				CCBF8F6A2E66A2C300B9A99E /* Views */,
 			);
 			path = TabList;

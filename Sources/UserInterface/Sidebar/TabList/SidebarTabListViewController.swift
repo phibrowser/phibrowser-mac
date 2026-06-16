@@ -383,19 +383,10 @@ class SidebarTabListViewController: NSViewController {
     // MARK: - Data Management
     private func refreshAllItems() {
         guard isActive else { return }
-        var items: [SidebarItem] = []
-        
-        if showBookmarks {
-            items.append(contentsOf: bookmarkSectionController.bookmarkItems)
-            if !bookmarkSectionController.bookmarkItems.isEmpty && !tabSectionController.tabItems.isEmpty {
-                items.append(separatorItem)
-            }
-        }
-        
-        items.append(contentsOf: tabSectionController.tabItems)
-        
+        let items = makeAllItems()
+
         self.allItems = items
-        
+
         rebuildFloatingBookmarkPresentationIfNeeded()
         invalidateExistingTabCells()
         outlineView.reloadData()
@@ -406,6 +397,46 @@ class SidebarTabListViewController: NSViewController {
             self?.updateVisibleBookmarkTabs()
             self?.updateFloatingNewTabVisibility()
         }
+    }
+
+    private func makeAllItems() -> [SidebarItem] {
+        var items: [SidebarItem] = []
+
+        if showBookmarks {
+            items.append(contentsOf: bookmarkSectionController.bookmarkItems)
+            if !bookmarkSectionController.bookmarkItems.isEmpty && !tabSectionController.tabItems.isEmpty {
+                items.append(separatorItem)
+            }
+        }
+
+        items.append(contentsOf: tabSectionController.tabItems)
+        return items
+    }
+
+    private func makeDiffableSnapshot(
+        rootItems: [SidebarItem],
+        focusedPresentation: (
+            proxy: FocusedBookmarkSidebarItem,
+            insertionParent: SidebarItem?,
+            insertionIndex: Int
+        )?
+    ) -> DiffableOutlineSnapshot<AnyHashable> {
+        let virtualInsertion: SidebarDiffableSnapshotBuilder.VirtualInsertion?
+        if let focusedPresentation {
+            virtualInsertion = .init(
+                item: focusedPresentation.proxy,
+                parentID: focusedPresentation.insertionParent?.id,
+                index: focusedPresentation.insertionIndex
+            )
+        } else {
+            virtualInsertion = nil
+        }
+
+        return SidebarDiffableSnapshotBuilder(
+            rootItems: rootItems,
+            virtualInsertion: virtualInsertion,
+            hiddenItemID: temporarilyHiddenRealBookmarkGuid.map(AnyHashable.init)
+        ).makeSnapshot()
     }
 
     /// Cancel Combine subscriptions on all visible tab cells before reloadData.

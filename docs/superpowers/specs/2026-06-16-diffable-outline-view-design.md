@@ -97,7 +97,7 @@ The planner wraps `CollectionDifference` with tree semantics:
 - Cross-parent movement of the same ID becomes `remove` from the old parent plus `insert` into the new parent.
 - Deleting a subtree emits only the highest removed node; descendants are removed by AppKit as part of that subtree.
 - Inserting a subtree emits only the highest inserted node; descendants are supplied by the updated data source.
-- Replaced payload objects for an existing ID produce a reload/reconfigure operation after structural mutations.
+- Replaced payload objects for an existing ID produce a local identity replacement unless an ancestor is already being removed or inserted. `NSOutlineView` tracks concrete item objects internally, so a stable ID alone is not enough to make an unchanged row point at a reconstructed model object.
 
 The operation model should be explicit:
 
@@ -106,6 +106,7 @@ enum DiffableOutlineOperation<ItemID: Hashable> {
     case remove(id: ItemID, parentID: ItemID?, index: Int)
     case move(id: ItemID, parentID: ItemID?, from: Int, to: Int)
     case insert(id: ItemID, parentID: ItemID?, index: Int)
+    case replace(id: ItemID, parentID: ItemID?, index: Int)
     case reload(id: ItemID)
 }
 ```
@@ -115,7 +116,8 @@ Operation order must be deterministic:
 1. Remove operations, deepest first, higher indexes before lower indexes within the same parent.
 2. Same-parent move operations.
 3. Insert operations, shallowest first, lower indexes before higher indexes within the same parent.
-4. Reload operations for visible existing IDs whose payload object changed.
+4. Replace operations for visible existing IDs whose payload object changed and whose ancestors are not already structurally replaced.
+5. Reload operations for existing IDs explicitly marked for visual reconfiguration without identity replacement.
 
 If snapshot validation fails, `DiffableOutlineView` must not call `updateDataSource()` and must not mutate the outline view. If both snapshots are valid but the planner cannot produce a safe operation sequence, `DiffableOutlineView` must fall back to `updateDataSource()` plus `reloadData()`.
 
@@ -132,7 +134,7 @@ If snapshot validation fails, `DiffableOutlineView` must not call `updateDataSou
 7. If the plan is unsafe, call `updateDataSource()`, `reloadData()`, store the new snapshot, then call completion.
 8. For a safe plan, call `updateDataSource()` before any outline mutation.
 9. Call `beginUpdates()`.
-10. Apply remove, move, insert, and reload operations.
+10. Apply remove, move, insert, replace, and reload operations.
 11. Call `endUpdates()`.
 12. Store the new snapshot.
 13. Run completion on the next main run loop so selection, scrolling, and visible-item bookkeeping happen after AppKit has processed the structural update.
@@ -148,7 +150,7 @@ The key rule is that the external backing data source switches to the new tree a
 - Same-parent moves can use the old parent object when the parent object is still recognized by the outline view.
 - If the needed parent object cannot be resolved safely, fall back to `reloadData()`.
 
-The first sidebar integration should prefer stable parent objects where possible, but reconstructed bookmark objects are valid as long as the data source and snapshot agree before insert/reload queries happen.
+The first sidebar integration should prefer stable parent objects where possible. Reconstructed bookmark objects are valid only when the plan includes local replacements for the highest changed objects, because unchanged rows otherwise remain associated with the old objects inside `NSOutlineView`.
 
 ## Sidebar Integration
 
@@ -203,6 +205,7 @@ The implementation must prioritize crash resistance:
 - Mutations are wrapped in a single `beginUpdates()` / `endUpdates()` pair.
 - No nested `reloadWith` should run while another apply is active; a reentrant call should queue the latest snapshot or fall back to reload after the current apply finishes.
 - The first version should not animate cross-parent moves as `moveItem`.
+- Existing IDs whose item objects changed should be locally replaced at the highest affected node, not merely reloaded by row.
 - If an item involved in a structural operation is expanded or collapsed mid-apply, the apply should avoid extra expansion mutations and let the existing delegate behavior own expansion state.
 - Fallback reload is acceptable when preserving safety is more important than animation.
 
@@ -235,8 +238,9 @@ Cover:
 - cross-parent move produces `remove` plus `insert`
 - subtree insert emits only the inserted subtree root
 - subtree delete emits only the deleted subtree root
+- object identity replacement emits only the highest replaced node
 - mixed remove/move/insert operations have deterministic order
-- payload replacement produces reload after structural operations
+- explicit reload markers produce reload after structural operations
 - invalid snapshot fails validation before planning
 
 ### View Apply Tests
@@ -249,6 +253,7 @@ Use a test double subclass that records calls to `reloadData`, `beginUpdates`, `
 - insert uses new parent and new index
 - same-parent reorder calls `moveItem`
 - cross-parent move calls remove and insert
+- object identity replacement calls remove and insert at the same parent/index
 - invalid snapshot does not call `updateDataSource`
 - unsafe valid plan falls back to `reloadData`
 - completion runs after apply

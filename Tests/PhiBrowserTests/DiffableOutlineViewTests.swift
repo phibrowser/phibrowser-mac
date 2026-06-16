@@ -98,6 +98,38 @@ final class DiffableOutlineViewTests: XCTestCase {
         XCTAssertEqual(view.events, ["updateDataSource", "reloadData"])
     }
 
+    func testPrepareReloadDataRunsBeforeReloadData() {
+        let view = RecordingDiffableOutlineView()
+        let snapshot = applySnapshot(["item0"], ["item0": (OutlineApplyItem("item0"), nil, [])])
+
+        view.reloadWith(snapshot, animated: false) {
+            view.record("updateDataSource")
+        } prepareReloadData: {
+            view.record("prepareReloadData")
+        }
+
+        XCTAssertEqual(view.events, ["updateDataSource", "prepareReloadData", "reloadData"])
+    }
+
+    func testResetDiffableSnapshotForcesNextApplyToReloadData() {
+        let view = RecordingDiffableOutlineView()
+        let item0 = OutlineApplyItem("item0")
+        let old = applySnapshot(["item0"], ["item0": (item0, nil, [])])
+        let new = applySnapshot(["item0", "item1"], [
+            "item0": (item0, nil, []),
+            "item1": (OutlineApplyItem("item1"), nil, []),
+        ])
+        view.reloadWith(old, animated: false) {}
+        view.resetDiffableSnapshot()
+        view.clearEvents()
+
+        view.reloadWith(new, animated: false) {
+            view.record("updateDataSource")
+        }
+
+        XCTAssertEqual(view.events, ["updateDataSource", "reloadData"])
+    }
+
     func testInsertUpdatesDataSourceBeforeMutation() {
         let view = RecordingDiffableOutlineView()
         let item0 = OutlineApplyItem("item0")

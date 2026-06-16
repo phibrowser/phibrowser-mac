@@ -364,6 +364,7 @@ class SidebarTabListViewController: NSViewController {
         removeFloatingNewTabCell()
         outlineView.deselectAll(nil)
         outlineView.reloadData()
+        outlineView.resetDiffableSnapshot()
         browserState.visibleBookmarkTabs = []
     }
     
@@ -388,15 +389,33 @@ class SidebarTabListViewController: NSViewController {
         self.allItems = items
 
         rebuildFloatingBookmarkPresentationIfNeeded()
-        invalidateExistingTabCells()
-        outlineView.reloadData()
-        selectActiveTab()
-        applyFocusingSelection(for: browserState.focusingTab)
+        let focusedPresentation = focusedBookmarkPresentation
+        let snapshot = makeDiffableSnapshot(
+            rootItems: items,
+            focusedPresentation: focusedPresentation
+        )
 
-        DispatchQueue.main.async { [weak self] in
-            self?.updateVisibleBookmarkTabs()
-            self?.updateFloatingNewTabVisibility()
-        }
+        outlineView.reloadWith(
+            snapshot,
+            updateDataSource: { [weak self] in
+                guard let self else { return }
+                self.allItems = items
+                self.focusedBookmarkPresentation = focusedPresentation
+            },
+            prepareReloadData: { [weak self] in
+                self?.invalidateExistingTabCells()
+            },
+            completion: { [weak self] in
+                guard let self else { return }
+                self.selectActiveTab()
+                self.applyFocusingSelection(for: self.browserState.focusingTab)
+
+                DispatchQueue.main.async { [weak self] in
+                    self?.updateVisibleBookmarkTabs()
+                    self?.updateFloatingNewTabVisibility()
+                }
+            }
+        )
     }
 
     private func makeAllItems() -> [SidebarItem] {
@@ -437,6 +456,15 @@ class SidebarTabListViewController: NSViewController {
             virtualInsertion: virtualInsertion,
             hiddenItemID: temporarilyHiddenRealBookmarkGuid.map(AnyHashable.init)
         ).makeSnapshot()
+    }
+
+    private func syncDiffableSnapshotToCurrentDataSource() {
+        outlineView.resetDiffableSnapshot(
+            makeDiffableSnapshot(
+                rootItems: allItems,
+                focusedPresentation: focusedBookmarkPresentation
+            )
+        )
     }
 
     /// Cancel Combine subscriptions on all visible tab cells before reloadData.
@@ -2893,17 +2921,20 @@ extension SidebarTabListViewController: SidebarTabListItemOwner {
                         focusedBookmarkPresentation = desired
                         outlineView.insertItems(at: IndexSet(integer: desired.insertionIndex), inParent: desired.insertionParent, withAnimation: [.effectFade, .effectGap])
                         outlineView.endUpdates()
+                        syncDiffableSnapshotToCurrentDataSource()
                     } else {
                         focusedBookmarkPresentation = desired
                         outlineView.beginUpdates()
                         outlineView.insertItems(at: IndexSet(integer: desired.insertionIndex), inParent: desired.insertionParent, withAnimation: [.effectFade, .effectGap])
                         outlineView.endUpdates()
+                        syncDiffableSnapshotToCurrentDataSource()
                     }
                 } else {
                     focusedBookmarkPresentation = desired
                     outlineView.beginUpdates()
                     outlineView.insertItems(at: IndexSet(integer: desired.insertionIndex), inParent: desired.insertionParent, withAnimation: [.effectFade, .effectGap])
                     outlineView.endUpdates()
+                    syncDiffableSnapshotToCurrentDataSource()
                 }
                 
                 outlineView.animator().collapseItem(item)
@@ -3074,6 +3105,7 @@ extension SidebarTabListViewController: TabSectionDelegate {
             self.allItems = items
             rebuildFloatingBookmarkPresentationIfNeeded()
             outlineView.reloadData()
+            syncDiffableSnapshotToCurrentDataSource()
             selectActiveTab()
             applyFocusingSelection(for: browserState.focusingTab)
             DispatchQueue.main.async { [weak self] in
@@ -3132,6 +3164,7 @@ extension SidebarTabListViewController: TabSectionDelegate {
         }
 
         outlineView.endUpdates()
+        syncDiffableSnapshotToCurrentDataSource()
 
         // Tabs that joined or left a still-existing group surface as a
         // root-level insert/remove of the moved tab's guid; the group's
@@ -3254,9 +3287,11 @@ extension SidebarTabListViewController {
            old.proxy.underlyingBookmark.guid == new.proxy.underlyingBookmark.guid,
            old.insertionParent?.id == new.insertionParent?.id,
            old.insertionIndex == new.insertionIndex {
+            syncDiffableSnapshotToCurrentDataSource()
             return
         }
         if old == nil, new == nil {
+            syncDiffableSnapshotToCurrentDataSource()
             return
         }
         
@@ -3281,6 +3316,7 @@ extension SidebarTabListViewController {
         }
         
         outlineView.endUpdates()
+        syncDiffableSnapshotToCurrentDataSource()
     }
     private func rebuildFloatingBookmarkPresentationIfNeeded() {
         guard let bookmarkGuid = floatingBookmarkGuid,
@@ -3481,11 +3517,13 @@ extension SidebarTabListViewController {
            old.proxy.underlyingBookmark.guid == new.proxy.underlyingBookmark.guid,
            old.insertionParent?.id == new.insertionParent?.id,
            old.insertionIndex == new.insertionIndex {
+            syncDiffableSnapshotToCurrentDataSource()
             applyFocusingSelection(for: tab)
             updateVisibleBookmarkTabs()
             return
         }
         if old == nil, new == nil {
+            syncDiffableSnapshotToCurrentDataSource()
             applyFocusingSelection(for: tab)
             updateVisibleBookmarkTabs()
             return
@@ -3514,6 +3552,7 @@ extension SidebarTabListViewController {
         }
         
         outlineView.endUpdates()
+        syncDiffableSnapshotToCurrentDataSource()
         
         applyFocusingSelection(for: tab)
         updateVisibleBookmarkTabs()
@@ -3548,6 +3587,7 @@ extension SidebarTabListViewController {
             outlineView.reloadData()
         }
         outlineView.endUpdates()
+        syncDiffableSnapshotToCurrentDataSource()
 
         updateVisibleBookmarkTabs()
     }

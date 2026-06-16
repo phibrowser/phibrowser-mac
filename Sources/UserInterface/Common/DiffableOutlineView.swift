@@ -13,6 +13,7 @@ class DiffableOutlineView: NSOutlineView {
         _ snapshot: DiffableOutlineSnapshot<AnyHashable>,
         animated: Bool = true,
         updateDataSource: @escaping () -> Void,
+        prepareReloadData: (() -> Void)? = nil,
         completion: (() -> Void)? = nil
     ) {
         guard Thread.isMainThread else {
@@ -21,6 +22,7 @@ class DiffableOutlineView: NSOutlineView {
                     snapshot,
                     animated: animated,
                     updateDataSource: updateDataSource,
+                    prepareReloadData: prepareReloadData,
                     completion: completion
                 )
             }
@@ -33,6 +35,7 @@ class DiffableOutlineView: NSOutlineView {
                     snapshot,
                     animated: animated,
                     updateDataSource: updateDataSource,
+                    prepareReloadData: prepareReloadData,
                     completion: completion
                 )
             }
@@ -46,6 +49,7 @@ class DiffableOutlineView: NSOutlineView {
 
         guard let oldSnapshot = currentSnapshot else {
             updateDataSource()
+            prepareReloadData?()
             reloadData()
             currentSnapshot = snapshot
             completion?()
@@ -55,6 +59,7 @@ class DiffableOutlineView: NSOutlineView {
         let plan = DiffableOutlineDiffPlanner.plan(from: oldSnapshot, to: snapshot)
         guard plan.isSafe else {
             updateDataSource()
+            prepareReloadData?()
             reloadData()
             currentSnapshot = snapshot
             completion?()
@@ -70,6 +75,10 @@ class DiffableOutlineView: NSOutlineView {
         DispatchQueue.main.async {
             completion?()
         }
+    }
+
+    func resetDiffableSnapshot(_ snapshot: DiffableOutlineSnapshot<AnyHashable>? = nil) {
+        currentSnapshot = snapshot
     }
 
     func applyRemove(

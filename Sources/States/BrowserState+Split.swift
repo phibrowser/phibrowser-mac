@@ -574,6 +574,12 @@ extension BrowserState {
 
     @MainActor
     func handleSplitRemoved(splitId: String) {
+        // A pinned split's underlying Chromium split only dissolves on close
+        // (its panes can't be "Remove from Split"-ed). Capture the partner
+        // linkage from the still-present live group before dropping it, so the
+        // two pinned records survive as one reopenable merged cell instead of
+        // splintering into two separate pinned tabs.
+        reconcilePinnedSplitPartners()
         splits.removeAll { $0.id == splitId }
         // Drop any split-bookmark bindings that pointed at this split so the
         // bookmark cell stops claiming "opened" and a fresh click re-opens
@@ -831,6 +837,53 @@ extension BrowserState {
         }
         if let secondaryPinned = pinnedTabs.first(where: { $0.guidInLocalDB == secondaryDB }) {
             secondaryPinned.splitPartnerGuid = primaryDB
+        }
+    }
+
+    /// Stamp the `splitPartnerGuid` linkage onto the in-memory pinned records
+    /// of every live `isPinned` split, derived from the live `SplitGroup`
+    /// rather than waiting on the async store round-trip.
+    ///
+    /// `pinSplitInsertingAtPinnedIndex` persists `splitPartnerGuid` to the
+    /// store, but the in-memory pinned records only learn it on the next
+    /// pinned-tabs publisher emission (`persistPinnedSplitPair`'s in-memory
+    /// patch no-ops because the records don't exist yet at pin time). If the
+    /// user closes the split before that echo lands, the live group is
+    /// removed (`handleSplitRemoved`) while the two pinned records are still
+    /// unlinked, and the merged pinned-split cell splinters into two separate
+    /// pinned tabs. Reconciling from the live group throughout the split's
+    /// life — and once more at the instant it is removed — makes the linkage
+    /// durable in memory before the group can disappear.
+    ///
+    /// Safe to over-call: it only writes when a record's partner actually
+    /// changes, and it never runs for a dissolved pinned pair because the
+    /// only path that keeps the panes alive while breaking the pair
+    /// (`unpinSplitPanesIntoNormalList`) clears the group's `isPinned` flag
+    /// first. "Remove from Split" / "Reverse Panes" are not offered for
+    /// pinned splits, so a live `isPinned` group always means an intact pair.
+    func reconcilePinnedSplitPartners() {
+        guard !isIncognito else { return }
+        let pinnedByDB: [String: Tab] = Dictionary(
+            pinnedTabs.compactMap { tab in tab.guidInLocalDB.map { ($0, tab) } },
+            uniquingKeysWith: { first, _ in first }
+        )
+        for group in splits where group.isPinned {
+            guard let primaryLive = tabs.first(where: { $0.guid == group.primaryTabId }),
+                  let secondaryLive = tabs.first(where: { $0.guid == group.secondaryTabId }),
+                  let primaryDB = primaryLive.guidInLocalDB, !primaryDB.isEmpty,
+                  let secondaryDB = secondaryLive.guidInLocalDB, !secondaryDB.isEmpty,
+                  let primaryPinned = pinnedByDB[primaryDB],
+                  let secondaryPinned = pinnedByDB[secondaryDB] else {
+                continue
+            }
+            if primaryPinned.splitPartnerGuid != secondaryDB {
+                primaryPinned.splitPartnerGuid = secondaryDB
+                localStore.updateTabSplitPartner(primaryDB, partnerGuid: secondaryDB)
+            }
+            if secondaryPinned.splitPartnerGuid != primaryDB {
+                secondaryPinned.splitPartnerGuid = primaryDB
+                localStore.updateTabSplitPartner(secondaryDB, partnerGuid: primaryDB)
+            }
         }
     }
 

@@ -500,6 +500,11 @@ class BrowserState {
 
         // Re-sync every pinned tab against the currently open Chromium tabs.
         syncAllPinnedTabsState()
+        // Stamp the pinned-split partner linkage from any live `isPinned`
+        // group now that the records exist, so closing a just-pinned split
+        // can't strand the pair unlinked while the store write is still in
+        // flight.
+        reconcilePinnedSplitPartners()
         updateNormalTabs()
     }
 

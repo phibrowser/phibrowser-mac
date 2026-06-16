@@ -34,6 +34,7 @@
 		373D84052F9D500100000001 /* AuthManager+Reauthentication.swift in Sources */ = {isa = PBXBuildFile; fileRef = 373D84042F9D500100000001 /* AuthManager+Reauthentication.swift */; };
 		3741AC652F7BBF62009B5E40 /* ivy-presto-headline-light.otf in Copy Fonts */ = {isa = PBXBuildFile; fileRef = 3741AC632F7BBF48009B5E40 /* ivy-presto-headline-light.otf */; };
 		374BCE992F7157FD0043C656 /* TabAreaContextMenuHelper.swift in Sources */ = {isa = PBXBuildFile; fileRef = 374BCE982F7157FD0043C656 /* TabAreaContextMenuHelper.swift */; };
+		D1F600022FD6000000000002 /* DiffableOutlineSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1F600012FD6000000000001 /* DiffableOutlineSnapshot.swift */; };
 		374BD1062F739D5F0043C656 /* NativeTabDecisionEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 374BD1052F739D5F0043C656 /* NativeTabDecisionEngine.swift */; };
 		3756AB282F31ABA300FFA686 /* WebContentAddressBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3756AB272F31ABA300FFA686 /* WebContentAddressBar.swift */; };
 		3758B1E52F962BA50036F2AF /* AuthManager+Provider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3758B1E42F962BA50036F2AF /* AuthManager+Provider.swift */; };
@@ -512,6 +513,7 @@
 		3741A9DE2F7B8158009B5E40 /* README.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = README.md; sourceTree = "<group>"; };
 		3741AC632F7BBF48009B5E40 /* ivy-presto-headline-light.otf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "ivy-presto-headline-light.otf"; sourceTree = "<group>"; };
 		374BCE982F7157FD0043C656 /* TabAreaContextMenuHelper.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TabAreaContextMenuHelper.swift; sourceTree = "<group>"; };
+		D1F600012FD6000000000001 /* DiffableOutlineSnapshot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DiffableOutlineSnapshot.swift; sourceTree = "<group>"; };
 		374BD1052F739D5F0043C656 /* NativeTabDecisionEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeTabDecisionEngine.swift; sourceTree = "<group>"; };
 		3756AB272F31ABA300FFA686 /* WebContentAddressBar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WebContentAddressBar.swift; sourceTree = "<group>"; };
 		3758B1E42F962BA50036F2AF /* AuthManager+Provider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AuthManager+Provider.swift"; sourceTree = "<group>"; };
@@ -1950,6 +1952,7 @@
 				CD1100050000000000000001 /* IconPicker */,
 				8EF36C022F4E9E7000FCC91E /* Tabs */,
 				374BCE982F7157FD0043C656 /* TabAreaContextMenuHelper.swift */,
+				D1F600012FD6000000000001 /* DiffableOutlineSnapshot.swift */,
 				37B9780F2EF403AB007E0568 /* GradientBorderButton.swift */,
 				B0F370D92E433F0E000B51F9 /* OverlayWindowController.swift */,
 				B0F370C82E43242F000B51F9 /* PhiSplitView.swift */,
@@ -2311,6 +2314,7 @@
 				37E6AF402EEC30E80078CCD8 /* ChatButton.swift in Sources */,
 				CC9AF3442EC192BC00C27C98 /* AppControlle+LaunchInfo.swift in Sources */,
 				CCBF8F622E65719600B9A99E /* SideBarOutlineView.swift in Sources */,
+				D1F600022FD6000000000002 /* DiffableOutlineSnapshot.swift in Sources */,
 				CCEB64CB2E98DD520036C763 /* InsetTableRowView.swift in Sources */,
 				37C1B1E42EDEA03400DD4496 /* FeedbackView.swift in Sources */,
 				FBD200012FD0000000000001 /* FeedbackOutbox.swift in Sources */,

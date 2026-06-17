@@ -840,6 +840,9 @@
     "Name is too long (maximum 100 characters)" : {
       "comment" : "Set name page - Error message when user name exceeds 100 characters"
     },
+    "New Conversation" : {
+      "comment" : "View menu - Menu item to start a new AI conversation in the sidebar"
+    },
     "New Folder" : {
       "comment" : "Bookmark New Folder menu item\nBookmark editor - Inline new folder creation title\nFolder creator - Title of the sheet to create a new folder\nNew folder dialog title\nSidebar context menu title\nTab area context menu - Create a new bookmark folder\nTab multi-selection context menu - bookmark selected tabs into a newly created folder"
     },

@@ -51,6 +51,28 @@
 - Related docs:
   - `docs/mac/about_hotkeys_and_keycodes.md`
 
+## Phi Extension-Bridged Commands
+
+Some `PHI_*` commands act on the Sidecar extension instead of a native target.
+`PHI_NEW_CONVERSATION` (raw value `90004`, default `⇧⌘O`) is one: its logic lives
+in the extension (React), so the native selector only broadcasts a message.
+
+- Defined like any other shortcut: `CommandWrapper` case + `DefaultShortcuts` in
+  `Shortcuts.swift`, plus `Group.view` membership and `presentationOverrides` in
+  `Shortcuts+Custom.swift` (this is what makes it appear/customizable in the
+  Shortcuts settings panel).
+- Wired as a View menu item with selector `newConversation(_:)` in
+  `AppController+Menu.swift`, which calls
+  `ExtensionMessaging.shared.broadcast(type: "newConversation", payload:)`. The
+  payload carries the focused window's chrome window id so only that window's
+  Sidecar reacts.
+- Scoped via `validateUserInterfaceItem(_:)`: enabled only while focus is in the
+  AI sidebar (`focusingTab.lastFocusTarget == .aiChat`, plus the same AI-enabled
+  checks as Toggle Chatbar). When disabled, the key equivalent falls through to
+  its original behavior.
+- The extension side listens on `chrome.phinomenonPrivate.onAppMessage`. See the
+  ai-extension repo `docs/sidecar-new-conversation-shortcut.md`.
+
 ## Notes
 
 - When applying custom shortcuts, do not overwrite original action/target for items such as Preferences; only update `keyEquivalent`.

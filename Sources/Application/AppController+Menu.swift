@@ -123,6 +123,15 @@ extension AppController {
                 Shortcuts.updateShortcut(for: toggleChatbarItem)
                 toggleChatbarItem.target = self
                 submenu.addItem(toggleChatbarItem)
+
+                let newConversationItem = NSMenuItem(title: NSLocalizedString("New Conversation", comment: "View menu - Menu item to start a new AI conversation in the sidebar"),
+                                                   action: #selector(newConversation(_:)),
+                                                   keyEquivalent: "o")
+                newConversationItem.keyEquivalentModifierMask = [.command, .shift]
+                newConversationItem.tag = CommandWrapper.PHI_NEW_CONVERSATION.rawValue
+                Shortcuts.updateShortcut(for: newConversationItem)
+                newConversationItem.target = self
+                submenu.addItem(newConversationItem)
             } else
             
             if menuItem.title == "Phi", let subMenu = menuItem.submenu {
@@ -338,6 +347,28 @@ extension AppController {
     
     @objc func toggleChatbar(_ sendar: Any?) {
         MainBrowserWindowControllersManager.shared.activeWindowController?.browserState.toggleAIChat()
+    }
+
+    /// Starts a new AI conversation in the focused window's sidebar.
+    ///
+    /// The actual "new conversation" logic lives inside the Sidecar extension
+    /// (React), so we can't run it natively. Instead we broadcast a message the
+    /// extension listens for. Validation (`validateUserInterfaceItem`) already
+    /// guarantees focus is inside the AI sidebar when this fires, so the sidebar
+    /// is open and visible — no need to open it here. `windowId` lets only the
+    /// focused window's Sidecar respond to the broadcast.
+    @MainActor
+    @objc func newConversation(_ sender: Any?) {
+        guard let windowController = MainBrowserWindowControllersManager.shared.activeWindowController else {
+            return
+        }
+        let windowId = windowController.browserState.focusingTab?.windowId ?? 0
+        let payload = ["windowId": windowId]
+        guard let data = try? JSONSerialization.data(withJSONObject: payload),
+              let json = String(data: data, encoding: .utf8) else {
+            return
+        }
+        ExtensionMessaging.shared.broadcast(type: "newConversation", payload: json)
     }
 
     @objc func toggleBookmarkBar(_ sender: Any?) {
@@ -593,7 +624,23 @@ extension AppController {
                 return false
             }
         }
-        
+
+        // New Conversation only applies while focus is inside the AI sidebar;
+        // otherwise disable the item so its shortcut falls through to the
+        // original behavior.
+        if item.action == #selector(newConversation(_:)) {
+            let phiAIEnabled = UserDefaults.standard.bool(forKey: PhiPreferences.AISettings.phiAIEnabled.rawValue)
+            let state = MainBrowserWindowControllersManager.shared.getActiveWindowState()
+            guard phiAIEnabled,
+                  let state,
+                  !state.isIncognito,
+                  state.groupOverviewState == nil,
+                  state.focusingTab?.aiChatEnabled == true,
+                  state.focusingTab?.lastFocusTarget == .aiChat else {
+                return false
+            }
+        }
+
         // Toggle Sidebar is unavailable in the traditional layout.
         if item.action == #selector(toggleSidebar(_:)) {
             if PhiPreferences.GeneralSettings.loadLayoutMode().isTraditional {

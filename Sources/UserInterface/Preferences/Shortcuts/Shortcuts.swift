@@ -111,6 +111,7 @@ enum CommandWrapper: Int, Equatable {
     case PHI_TOGGLE_CHATBAR          = 90001
     case PHI_TAB_SWITCHER_FORWARD    = 90002
     case PHI_TAB_SWITCHER_BACKWARD   = 90003
+    case PHI_NEW_CONVERSATION        = 90004
     
     // System Preserved
     case IDS_HIDE_OTHERS_MAC         = 110
@@ -217,6 +218,7 @@ extension Shortcuts {
         .PHI_TOGGLE_CHATBAR: .init(characters: "s", modifiers: [.command, .shift]),
         .PHI_TAB_SWITCHER_FORWARD: .init(characters: "\t", modifiers: .control),
         .PHI_TAB_SWITCHER_BACKWARD: .init(characters: "\t", modifiers: [.control, .shift]),
+        .PHI_NEW_CONVERSATION: .init(characters: "o", modifiers: [.command, .shift]),
         
         // System Preserved Shortcuts
         .IDS_HIDE_OTHERS_MAC: .init(characters: "h", modifiers: [.command, .option]),

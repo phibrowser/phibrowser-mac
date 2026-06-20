@@ -17,6 +17,10 @@ enum LiquidGlassCompatible {
         return SystemUtils.isMacOS26OrLater ? 14 : 6
     }
     
+    static var zeroContainerCornerRadius: CGFloat {
+        return 0
+    }
+    
     static var webContentInnerComponentsCornerRadius: CGFloat {
         return SystemUtils.isMacOS26OrLater ? 10 : 6
     }

@@ -391,12 +391,11 @@ struct DownloadActionButton: View {
     var tooltip: String = ""
     
     @State private var isHovered = false
-    init(icon: Image? = nil, iconName: String? = nil, action: @escaping () -> Void, tooltip: String, isHovered: Bool = false, isEnabled: Bool = true) {
+    init(icon: Image? = nil, iconName: String? = nil, action: @escaping () -> Void, tooltip: String, isEnabled: Bool = true) {
         self.icon = icon
         self.iconName = iconName
         self.action = action
         self.tooltip = tooltip
-        self.isHovered = isHovered
         self.isEnabled = isEnabled
     }
     var body: some View {

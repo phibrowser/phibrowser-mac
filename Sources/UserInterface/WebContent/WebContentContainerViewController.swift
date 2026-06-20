@@ -336,7 +336,7 @@ class WebContentContainerViewController: NSViewController {
         view.addSubview(barController.view, positioned: .above, relativeTo: titleAwareArea)
         barController.view.snp.makeConstraints { make in
             make.leading.trailing.equalToSuperview()
-            topBarTopConstraint = make.top.equalToSuperview().inset(WebContentConstant.edgesSpacing).constraint
+            topBarTopConstraint = make.top.equalToSuperview().inset(WebContentConstant.zeroSpacing).constraint
             topBarHeightConstraint = make.height.equalTo(0).constraint
         }
         
@@ -509,7 +509,7 @@ class WebContentContainerViewController: NSViewController {
             return
         }
 
-        let cornerR = LiquidGlassCompatible.webContentContainerCornerRadius
+        let cornerR = LiquidGlassCompatible.zeroContainerCornerRadius
         let invR = TabStripMetrics.Tab.inverseCornerRadius
         let kappa: CGFloat = 0.55228
         let h = cornerR * kappa
@@ -1144,7 +1144,7 @@ class WebContentContainerViewController: NSViewController {
             tabStripBarController?.setActive(false)
             tabStripBarController?.view.isHidden = true
             topBarHeightConstraint?.update(offset: 0)
-            topBarTopConstraint?.update(inset: WebContentConstant.edgesSpacing)
+            topBarTopConstraint?.update(inset: WebContentConstant.zeroSpacing)
             titleAwareArea.isHidden = false
         }
 

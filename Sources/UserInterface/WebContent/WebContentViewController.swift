@@ -47,6 +47,8 @@ import SnapKit
 import SwiftUI
 
 enum WebContentConstant {
+    static let zeroSpacing: CGFloat = 0
+    
     static let edgesSpacing: CGFloat = 8.0
     static let headerHeight: CGFloat = 40  // WebContentHeader
     static let topBarHeight: CGFloat = TabStripMetrics.Strip.height  // horizontal tab strip
@@ -455,7 +457,7 @@ class WebContentViewController: NSViewController {
         let traditionalLayout = PhiPreferences.GeneralSettings.loadLayoutMode().isTraditional
         let sidebarCollapsed = browserState?.sidebarCollapsed ?? true
         let leadingInset: CGFloat = (traditionalLayout || sidebarCollapsed)
-            ? WebContentConstant.edgesSpacing
+        ? WebContentConstant.zeroSpacing
             : 0
         splitViewLeadingConstraint?.update(inset: leadingInset)
     }
@@ -806,7 +808,7 @@ class WebContentViewController: NSViewController {
     private func setupLeftContainerLayout() {
         leftContainerView.wantsLayer = true
         leftContainerView.layer?.cornerCurve = .continuous
-        leftContainerView.layer?.cornerRadius = LiquidGlassCompatible.webContentInnerComponentsCornerRadius
+        leftContainerView.layer?.cornerRadius = LiquidGlassCompatible.zeroContainerCornerRadius
         leftContainerView.layer?.masksToBounds = true
         leftContainerView.phiLayer?.backgroundColor = NSColor.white <> NSColor.black
         // Border visibility is updated later based on the current layout mode.
@@ -857,12 +859,12 @@ class WebContentViewController: NSViewController {
         view.addSubview(splitViewContainer)
         splitViewContainer.wantsLayer = true
         splitViewContainer.layer?.cornerCurve = .continuous
-        splitViewContainer.layer?.cornerRadius = LiquidGlassCompatible.webContentContainerCornerRadius
+        splitViewContainer.layer?.cornerRadius = LiquidGlassCompatible.zeroContainerCornerRadius
         splitViewContainer.layer?.masksToBounds = true
         splitViewContainer.phiLayer?.setBackgroundColor(ThemedColor.contentOverlayBackground)
         splitViewContainer.snp.makeConstraints { make in
             splitViewLeadingConstraint = make.leading.equalToSuperview().constraint
-            make.trailing.bottom.equalToSuperview().inset(WebContentConstant.edgesSpacing)
+            make.trailing.bottom.equalToSuperview().inset(WebContentConstant.zeroSpacing)
             make.top.equalToSuperview()
         }
         updateSplitViewLeadingInset()

@@ -158,9 +158,6 @@
     "© %d Phinomenon. All rights reserved." : {
       "comment" : "About window - Copyright notice at bottom"
     },
-    "Add Download" : {
-
-    },
     "Add Left Split" : {
       "comment" : "Drop-zone hint shown when dragging a tab over the left third of the page"
     },
@@ -305,24 +302,11 @@
     "Cancel" : {
       "comment" : "AI settings - Cancel button in disable-AI confirmation alert\nAI settings - Cancel button in disable-connectors confirmation alert\nAccount settings - Cancel button in logout confirmation dialog\nAccount settings - Cancel button in rename dialog\nCancel\nDebug clear data - Alert button to cancel clearing user data\nDebug import user data - Alert button to cancel importing user data\nDownload item row - Tooltip for cancel button during safety scan\nDownload item row - Tooltip for cancel download button\nEditor - Cancel button title\nNew folder dialog cancel button title\nTab group rename alert - Cancel button\nTooltip for cancel button during safety scan in living downloads toast\nUpdate alert - Button to cancel update installation"
     },
-    "Cancel First" : {
-
-    },
     "Canceled" : {
       "comment" : "Download item row - Status label when download was cancelled"
     },
     "Cancelled" : {
       "comment" : "Download state"
-    },
-    "Card %lld of %lld" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "Card %1$lld of %2$lld"
-          }
-        }
-      }
     },
     "Certificate is invalid" : {
       "comment" : "Address bar menu - Certificate validity status"
@@ -399,12 +383,6 @@
     "Comfortable" : {
       "comment" : "Layout option - Horizontal tabs\nOnboarding layout selection - Comfortable option"
     },
-    "Complete First" : {
-
-    },
-    "Complete First In-Progress" : {
-
-    },
     "Completed" : {
       "comment" : "Download state"
     },
@@ -471,9 +449,6 @@
     "Dark" : {
       "comment" : "Appearance choice: always dark mode"
     },
-    "DEBUG Test Mode" : {
-
-    },
     "Delete" : {
       "comment" : "Delete bookmark menu item"
     },
@@ -491,9 +466,6 @@
     },
     "Download image" : {
       "comment" : "Account settings - Button to download profile card as image"
-    },
-    "Download Test Controls" : {
-
     },
     "Downloading" : {
       "comment" : "Download state"
@@ -596,9 +568,6 @@
     },
     "External Data Connectors help to provide additional context for better AI experience" : {
       "comment" : "AI settings - Description explaining external data connectors purpose"
-    },
-    "Fail First In-Progress" : {
-
     },
     "Failed" : {
       "comment" : "Download item row - Status label when download failed\nDownload state"
@@ -780,9 +749,6 @@
     "Linking..." : {
       "comment" : "Phi Link - Custom bot linking text"
     },
-    "Living Downloads Test" : {
-
-    },
     "Loading image…" : {
       "comment" : "Image preview loading"
     },
@@ -823,7 +789,7 @@
       "comment" : "Tab context menu - Move this tab out of its current group into a newly created group"
     },
     "Mute" : {
-      "comment" : "Notification menu option - Disable auto popup for notification cards\nTab mute button tooltip - mute"
+      "comment" : "Notification menu option - Disable auto popup for notification cards"
     },
     "Name" : {
       "comment" : "Editor - Label for the title/name input field"
@@ -878,9 +844,6 @@
     },
     "Next image" : {
       "comment" : "Image preview: accessibility label for next image control"
-    },
-    "Next Test (%lld items)" : {
-
     },
     "No certificate available" : {
       "comment" : "No certificate tooltip"
@@ -1086,9 +1049,6 @@
     "Replace Top" : {
       "comment" : "Drop-zone hint shown when dragging a tab over the top/primary pane of a horizontal split to replace it"
     },
-    "Reset" : {
-
-    },
     "Restore" : {
       "comment" : "Shortcuts settings - Button to restore single shortcut to default"
     },
@@ -1200,9 +1160,6 @@
     "Split with Current" : {
       "comment" : "Tab context menu - Pair this tab with the currently focused tab in a split"
     },
-    "Start Test" : {
-
-    },
     "Stop" : {
       "comment" : "Web content header - Accessibility description for stop loading button"
     },
@@ -1271,9 +1228,6 @@
     },
     "Unlink" : {
       "comment" : "Phi Link - Official bot unlink button"
-    },
-    "Unmute" : {
-      "comment" : "Tab mute button tooltip - unmute"
     },
     "Unpin" : {
       "comment" : "Tab context menu - Menu item to unpin the selected tab"

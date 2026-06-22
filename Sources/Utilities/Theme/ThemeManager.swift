@@ -214,13 +214,31 @@ public final class ThemeManager: NSObject, ThemeSource {
     @MainActor
     public func updateCurrentThemeOverlayOpacity(_ opacity: CGFloat, for appearance: Appearance? = nil) {
         let targetAppearance = appearance ?? currentAppearance
-        let beforeLight = currentTheme.windowOverlayOpacity(for: .light)
-        let beforeDark = currentTheme.windowOverlayOpacity(for: .dark)
-        let updatedSnapshot = currentTheme
-            .makeSnapshot()
-            .updatingOverlayOpacity(opacity, for: targetAppearance)
-        AppLogDebug("[OverlayOpacity] updateCurrentThemeOverlayOpacity opacity=\(opacity) target=\(targetAppearance) before(light=\(beforeLight),dark=\(beforeDark)) after(light=\(updatedSnapshot.colors.windowOverlayBackground.light.alpha),dark=\(updatedSnapshot.colors.windowOverlayBackground.dark.alpha))")
-        applyThemeSnapshot(updatedSnapshot)
+        // Opacity is a single global control: applying it only to the active
+        // theme would leave Spaces pinned to a different theme unchanged
+        // (their `BrowserThemeContext.mirrorsSharedTheme` is false, so they
+        // never see the active theme's snapshot update). Update every
+        // registered theme so every Space picks up the new opacity.
+        var refreshedCurrent: Theme?
+        for (themeId, theme) in registeredThemes {
+            let updatedSnapshot = theme
+                .makeSnapshot()
+                .updatingOverlayOpacity(opacity, for: targetAppearance)
+            let updatedTheme = updatedSnapshot.makeTheme()
+            registeredThemes[themeId] = updatedTheme
+            persistedThemeIDs.insert(themeId)
+            if themeId == currentTheme.id {
+                refreshedCurrent = updatedTheme
+            }
+        }
+        persistThemeSnapshots()
+        AppLogDebug("[OverlayOpacity] updateCurrentThemeOverlayOpacity opacity=\(opacity) target=\(targetAppearance) themes=\(registeredThemes.count)")
+        if let refreshedCurrent {
+            // Assigning a fresh instance fires the publisher so mirroring
+            // windows refresh; pinned windows re-resolve their own theme id
+            // from the registry inside `BrowserThemeContext.bindSharedTheme`.
+            currentTheme = refreshedCurrent
+        }
     }
     
     // MARK: - Appearance

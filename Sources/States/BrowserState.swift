@@ -245,6 +245,9 @@ class BrowserState {
     let windowId: Int
     let localStore: LocalStore
     let profileId: String
+    /// Identifies which Space this window renders. Persisted pinned tabs and
+    /// bookmarks under the same Space share this id; see `SpaceModel`.
+    let spaceId: String
     let isIncognito: Bool
     let searchSuggestionChanged = PassthroughSubject<([[String: Any]], String), Never>()
     
@@ -346,10 +349,12 @@ class BrowserState {
     init(windowId: Int,
          localStore: LocalStore,
          profileId: String = LocalStore.defaultProfileId,
+         spaceId: String = LocalStore.defaultSpaceId,
          isIncognito: Bool = false) {
         self.windowId = windowId
         self.localStore = localStore
         self.profileId = profileId
+        self.spaceId = spaceId
         self.isIncognito = isIncognito
         self.imagePreviewState = BrowserImagePreviewState(loader: ImagePreviewLoader())
         self.themeContext = BrowserThemeContext(
@@ -3320,7 +3325,8 @@ class BrowserState {
                                   profileId: profileId,
                                   parentId: parentGuid,
                                   index: index,
-                                  guid: newBookmarkGuid)
+                                  guid: newBookmarkGuid,
+                                  spaceId: spaceId)
 
         updateNormalTabs()
     }
@@ -3411,6 +3417,7 @@ class BrowserState {
             profileId: profileId,
             parentId: parentFolder?.guid,
             index: startIndex,
+            spaceId: spaceId,
             bookmarks: bookmarkDrafts.map { (title: $0.title, url: $0.url, guid: $0.guid) }
         )
         updateNormalTabs()
@@ -3466,7 +3473,8 @@ class BrowserState {
                                   profileId: profileId,
                                   parentId: parentGuid,
                                   index: index,
-                                  guid: newBookmarkGuid)
+                                  guid: newBookmarkGuid,
+                                  spaceId: spaceId)
 
         if pinnedTab.isOpenned, let chromiumTab = tabs.first(where: { $0.guidInLocalDB == pinnedGuid }) {
             migrateAIChatTab(for: chromiumTab, toNewIdentifier: newBookmarkGuid)
@@ -3545,6 +3553,7 @@ class BrowserState {
             parentId: parentGuid,
             index: index,
             guid: newBookmarkGuid,
+            spaceId: spaceId,
             secondaryUrl: URLProcessor.processUserInput(secondaryURL),
             secondaryTitle: secondaryDisplayTitle
         )

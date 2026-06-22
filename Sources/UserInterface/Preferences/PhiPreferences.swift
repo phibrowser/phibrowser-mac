@@ -56,6 +56,7 @@ extension PhiPreferences {
         case alwaysShowBookmarkBar // In traditional layout, always show bookmark bar below address bar
         case showBookmarkBarOnNewTabPage // In traditional layout, show bookmark bar on new tab page
         case alwaysShowURLPath // In address bar menu, always show full URL path
+        case spacesFeatureEnabled // Master toggle for Spaces + profile management UI
 
         var defaultValue: Bool {
             switch self {
@@ -70,6 +71,8 @@ extension PhiPreferences {
             case .showBookmarkBarOnNewTabPage:
                 return true
             case .alwaysShowURLPath:
+                return false
+            case .spacesFeatureEnabled:
                 return false
             }
         }
@@ -104,6 +107,44 @@ extension PhiPreferences {
         static func saveLayoutMode(_ mode: LayoutMode) {
             let defaults = UserDefaults.standard
             defaults.set(mode.rawValue, forKey: Self.layoutModeKey)
+        }
+
+        /// Duration of the cross-Space swap animation, in seconds. Drives the
+        /// horizontal-layout slide and the vertical-layout sidebar tint
+        /// cross-fade. The horizontal slide is the longer, more prominent
+        /// motion; vertical's tint cross-fade is shorter.
+        static func loadSwitchSpaceAnimationDuration() -> TimeInterval {
+            loadLayoutMode().isTraditional
+                ? Self.horizontalSwitchSpaceAnimationDuration
+                : Self.verticalSwitchSpaceAnimationDuration
+        }
+
+        /// Cross-Space animation duration in the horizontal (Comfortable) layout.
+        static let horizontalSwitchSpaceAnimationDuration: TimeInterval = 0.4
+        /// Cross-Space animation duration in the vertical (Performance /
+        /// Balanced) layouts.
+        static let verticalSwitchSpaceAnimationDuration: TimeInterval = 0.3
+
+        /// Which window's traffic-light buttons the horizontal-layout
+        /// cross-Space slide suppresses. `source` (the ship default) fades
+        /// the leaving window's buttons before its snapshot is captured so
+        /// the sliding snapshot carries none; `target` keeps them in the
+        /// snapshot and instead hides the destination window's live buttons
+        /// until the slide finishes; `both` combines the two.
+        enum SwitchSpaceTrafficLightHiding: String, CaseIterable {
+            case source
+            case target
+            case both
+
+            var hidesSource: Bool { self != .target }
+            var hidesTarget: Bool { self != .source }
+        }
+
+        /// The horizontal cross-Space slide always hides the *source* window's
+        /// traffic lights before snapshotting it, so the sliding snapshot
+        /// carries none.
+        static func loadSwitchSpaceTrafficLightHiding() -> SwitchSpaceTrafficLightHiding {
+            .source
         }
     }
     
@@ -146,7 +187,7 @@ extension PhiPreferences {
     }
     
     // MARK: - Theme Settings
-    
+
     enum ThemeSettings: String, CaseIterable {
         /// User-selected appearance mode. `0 = system`, `1 = light`, `2 = dark`.
         case userAppearanceChoice = "PhiUserAppearanceChoice"

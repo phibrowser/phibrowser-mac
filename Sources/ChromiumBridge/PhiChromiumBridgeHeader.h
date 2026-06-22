@@ -229,6 +229,25 @@ typedef NS_ENUM(NSUInteger, PhiOmniboxSuggestionDisposition) {
 - (void)toggleChatSidebar:(NSNumber * _Nullable)show;
 - (void)showFeedbackDialog;
 
+/// A navigation matched a Space URL rule whose action is "ask first", so
+/// Chromium cancelled it instead of routing silently. The Mac client should
+/// prompt the user to choose a destination Space and open `urlString` there,
+/// or re-open it in `sourceWindowId` if the user keeps it where it is.
+/// `defaultSpaceId` is the rule's configured target Space — the suggested
+/// default selection in the prompt.
+- (void)askSpaceForURL:(NSString *)urlString
+        defaultSpaceId:(NSString *)defaultSpaceId
+        sourceWindowId:(int64_t)sourceWindowId;
+
+/// The user picked a Space from the web-content right-click "Open link as"
+/// submenu. The Mac client should open `urlString` as a new foreground tab in
+/// the Space identified by `spaceId`, spawning/activating its window if it is
+/// not currently open. `sourceWindowId` is the window the right-click happened
+/// in (used to resolve the source slot for window placement).
+- (void)openLinkInSpace:(NSString *)spaceId
+                    url:(NSString *)urlString
+         sourceWindowId:(int64_t)sourceWindowId;
+
 // ==========================================================================
 // Split view notifications (Chromium → Mac)
 // splitId is a SplitTabId serialized via base::Token::ToString()
@@ -277,6 +296,19 @@ typedef NS_ENUM(NSUInteger, PhiOmniboxSuggestionDisposition) {
 - (void)tabWillBeRemove:(int64_t)tabId
                windowId:(int64_t)windowId
                  context:(NSDictionary<NSString *, id> *)context;
+/// Restore-aware variant of `mainBrowserWindowCreated:type:profileId:windowId:`
+/// — preferred by the bridge when implemented. `restoredFromWindowId` is
+/// non-zero only when Chromium session restore re-created this window from
+/// the previous session, and then carries the PREVIOUS session's windowId
+/// for it (the id the Mac client saw — and may have persisted — last run).
+/// `windowId` is always the fresh per-run id; the two never coincide by
+/// contract, only by counter accident, so match restore snapshots against
+/// `restoredFromWindowId` exclusively.
+- (void)mainBrowserWindowCreated:(NSWindow *)window
+                            type:(ChromiumBrowserType)browserType
+                       profileId:(NSString *)profileId
+                        windowId:(int64_t)windowId
+            restoredFromWindowId:(int64_t)restoredFromWindowId;
 // Relationship snapshot version increases monotonically per window.
 - (void)tabRelationshipSnapshotChanged:(NSDictionary *)snapshot
                              windowId:(int64_t)windowId
@@ -358,6 +390,52 @@ typedef NS_ENUM(NSUInteger, PhiOmniboxSuggestionDisposition) {
                              tabId:(int64_t)tabId;
 - (void)moveTabToLastWithWindowId:(int64_t)windowId
                             tabId:(int64_t)tabId;
+
+// ==========================================================================
+// Space URL routing (Mac → Chromium)
+// ==========================================================================
+
+/// Push the current Space URL routing table down to Chromium. Replaces the
+/// entire table atomically; send on every change. Chromium does not diff.
+///
+/// `rules` is an array of dictionaries; required keys per entry:
+///   @"targetSpaceId" (NSString *)               — the destination Space.
+///   @"host"          (NSString *)               — "github.com" (exact),
+///                                                 "*.foo.com" (suffix) or
+///                                                 "*needle*" (host contains).
+///   @"pathPrefix"    (NSString * _Nullable)     — optional path prefix match.
+///   @"ask"           (NSNumber * _Nullable)     — bool; when YES a match is
+///                                                 not routed silently — the
+///                                                 navigation is cancelled and
+///                                                 `askSpaceForURL:...` fires.
+///   @"sortOrder"     (NSNumber *)               — stable tie-break, asc wins.
+///
+/// `spaceWindowMap` maps NSString spaceId -> NSNumber windowId (int64).
+/// Spaces whose window is not currently open should be omitted; rules whose
+/// targetSpaceId is not in the map are treated as no-match.
+- (void)setSpaceRoutingTable:(NSArray<NSDictionary<NSString *, id> *> *)rules
+              spaceWindowMap:(NSDictionary<NSString *, NSNumber *> *)spaceWindowMap;
+
+/// Push the Space list shown in the web-content right-click "Open Link In
+/// Space" submenu. Replaces the whole list atomically; send on every change to
+/// the Space set, a Space's name, or which window a Space is open in.
+///
+/// `spaces` is an array of dictionaries; keys per entry:
+///   @"spaceId"  (NSString *)               — the Space's wire identity.
+///   @"name"     (NSString *)               — user-facing Space name.
+///   @"windowId" (NSNumber *)               — int64 of the Space's currently
+///                                            open window, or 0 if none. Used to
+///                                            exclude the current Space from the
+///                                            submenu in the right-clicked window.
+- (void)setOpenLinkSpaceMenu:(NSArray<NSDictionary<NSString *, id> *> *)spaces;
+
+/// Open `url` as a new foreground tab in `windowId`, bypassing Space URL
+/// routing for that one navigation. Used by the "ask every time" flow after
+/// the user has chosen a Space: re-opening the URL there must not be caught
+/// by the same rule and prompted again (which would loop). The bypass is a
+/// one-shot exemption matched on (url, windowId).
+- (void)openTabBypassingSpaceRoutingWithUrl:(NSString *)url
+                                    windowId:(int64_t)windowId;
 
 /// Create a new tab group containing the given Phi-stable tab ids in
 /// `windowId`. Returns the new group's 32-char uppercase hex token, or an
@@ -468,9 +546,28 @@ typedef NS_ENUM(NSUInteger, PhiOmniboxSuggestionDisposition) {
                                  isCollapsed:(BOOL)isCollapsed;
 // Wrapped by base::apple::CallWithEHFrame for Chromium-side exception handling.
 - (void)callWithEHFrame:(void (^)(void))block;
-- (void)openURLInNewWindow:(NSString *)url;
-// Returns a dictionary with keys: @"window", @"windowId", @"windowType".
-- (NSDictionary<NSString *, id> *)createBrowserWithWindowType:(ChromiumBrowserType)browserType;
+/// Opens |url| in a new browser window.
+/// |profileId| is the on-disk profile basename (same wire format as
+/// `mainBrowserWindowCreated:profileId:`). Pass nil to use the last-used
+/// profile (preserves single-profile behavior for menu ⌘N / dock reopen).
+/// Caller is responsible for `ensureProfileLoaded:` for unloaded profiles
+/// — passing an unknown/unloaded `profileId` falls back to the last-used
+/// profile with a logged warning.
+- (void)openURLInNewWindow:(NSString *)url
+                 profileId:(NSString * _Nullable)profileId;
+/// Creates a new Browser window of |browserType| bound to |profileId|
+/// (same wire format as above; nil = last-used profile). Unlike
+/// `openURLInNewWindow:profileId:` there is NO fallback for an
+/// unknown/unloaded |profileId|: the Mac side pairs the returned window
+/// with the Space that requested the profile, and a substituted profile
+/// would surface another profile's pinned tabs inside that Space — the
+/// call returns nil instead. Callers `ensureProfileLoaded:` first.
+/// Returns a dictionary with keys: @"window" (NSWindow*), @"windowId"
+/// (NSNumber*), @"windowType" (NSNumber* of ChromiumBrowserType),
+/// @"profileId" (NSString*, the basename actually used). Returns nil when
+/// the window could not be created; callers must handle the nil result.
+- (nullable NSDictionary<NSString *, id> *)createBrowserWithWindowType:(ChromiumBrowserType)browserType
+                                                            profileId:(NSString * _Nullable)profileId;
 - (void)tryToTerminateApplication:(NSApplication*)app;
 - (void)stopTryingToTerminateApplication:(NSApplication*)app;
 - (void)applicationWillFinishLaunching:(NSNotification*)notification;
@@ -741,6 +838,38 @@ typedef NS_ENUM(NSUInteger, PhiOmniboxSuggestionDisposition) {
 
 /// Returns all active split ID strings in the given window.
 - (NSArray<NSString *> *)listSplitsInWindow:(int64_t)windowId;
+
+// ==========================================================================
+// Profile management (Mac → Chromium)
+// ==========================================================================
+
+/// Enumerates every on-disk profile known to Chromium's
+/// ProfileAttributesStorage. Each dict has keys:
+///   @"profileId" (NSString *)   — on-disk basename, the wire identity.
+///   @"displayName" (NSString *) — user-facing name.
+///   @"isLoaded" (NSNumber/BOOL) — currently in memory.
+///   @"isInUse" (NSNumber/BOOL)  — any live Browser is bound to it.
+/// Synchronous; safe to poll on each Mac-side refresh.
+- (NSArray<NSDictionary<NSString *, id> *> *)listProfiles;
+
+/// Creates a new on-disk profile via Chromium's CreateMultiProfileAsync.
+/// `completion` fires on the UI thread with the new profile's basename, or
+/// nil on failure.
+- (void)createProfileWithDisplayName:(NSString *)displayName
+                          completion:(void (^)(NSString * _Nullable profileId))completion;
+
+/// Schedules `profileId` for deletion. Rejects (success=NO) if any live
+/// Browser is bound to it — Phi's Space↔Profile binding is immutable so a
+/// live Browser implies an active Space; Mac is expected to refuse the
+/// affordance up front, this is a backstop.
+- (void)deleteProfile:(NSString *)profileId
+           completion:(void (^)(BOOL success, NSString * _Nullable error))completion;
+
+/// Ensures `profileId` is loaded into memory. Short-circuits if already
+/// loaded. SpaceManager calls this before spawning a window for a Space on a
+/// not-yet-loaded profile (first cross-profile activation per session).
+- (void)ensureProfileLoaded:(NSString *)profileId
+                 completion:(void (^)(BOOL success))completion;
 
 @end
 

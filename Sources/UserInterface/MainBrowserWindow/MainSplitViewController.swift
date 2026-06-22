@@ -12,7 +12,12 @@ class MainSplitViewController: NSViewController {
     private let splitViewController = NSSplitViewController()
 
     private lazy var verticalTabListViewController: SidebarViewController = { SidebarViewController(browserState: state) }()
-    
+
+    /// This window's sidebar controller. Exposed so `SpaceManager` can drive
+    /// the vertical-layout Space-switch push-in (snapshot a window's content
+    /// band, run the slide overlay) without reaching through private state.
+    var sidebarViewController: SidebarViewController { verticalTabListViewController }
+
     let webContentContainerViewController: WebContentContainerViewController
 
     private var sideBarSplitViewItem: NSSplitViewItem!
@@ -117,6 +122,39 @@ class MainSplitViewController: NSViewController {
         // Sidebar is always collapsed in traditional layout.
         guard !PhiPreferences.GeneralSettings.loadLayoutMode().isTraditional else { return }
         sideBarSplitViewItem.animator().isCollapsed.toggle()
+    }
+
+    /// The per-Space chrome that should slide during a cross-Space swap.
+    /// Traditional (horizontal) layout only — the full content view slides
+    /// so the tab strip and page content move together as a coherent page
+    /// swipe. Vertical layout runs its own transition instead (the sidebar
+    /// content band pushes in over a ramping tint gradient; see
+    /// `SpaceManager.performVerticalSidebarPushIn`), so a nil return here
+    /// means the horizontal slide shouldn't run. Read-only; never used for
+    /// layout.
+    var swapAnchorView: NSView? {
+        PhiPreferences.GeneralSettings.loadLayoutMode().isTraditional ? view : nil
+    }
+
+    /// Programmatically aligns this window's sidebar to the supplied width and
+    /// collapsed state. Used by `SpaceManager` immediately before swapping the
+    /// visible window so the user perceives a single window whose sidebar
+    /// keeps the same shape across Spaces. The width is clamped to the
+    /// split-view item's allowed thickness range; a nil width leaves the
+    /// current divider position untouched (useful when only the collapsed
+    /// state needs to change).
+    func syncSidebar(width: CGFloat?, collapsed: Bool) {
+        if PhiPreferences.GeneralSettings.loadLayoutMode().isTraditional {
+            // Traditional layout pins the sidebar collapsed regardless of the
+            // source window's state; don't fight that here.
+            return
+        }
+        if sideBarSplitViewItem.isCollapsed != collapsed {
+            sideBarSplitViewItem.isCollapsed = collapsed
+        }
+        guard !collapsed, let width, width > 0 else { return }
+        let clamped = min(max(width, Self.leftItemMinWidth), Self.leftItemMaxWidth)
+        splitViewController.splitView.setPosition(clamped, ofDividerAt: 0)
     }
 
     func toggleAIChat(_ sender: Any?) {

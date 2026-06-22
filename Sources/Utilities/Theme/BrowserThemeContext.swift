@@ -116,10 +116,16 @@ public final class BrowserThemeContext: NSObject, ThemeStateProvider {
     public let appearancePublisher = PassthroughSubject<Appearance, Never>()
     public let themeAppearancePublisher = PassthroughSubject<(Theme, Appearance), Never>()
     
-    private let mirrorsSharedTheme: Bool
-    private let mirrorsSharedAppearance: Bool
+    /// Whether changes to the global `ThemeManager.shared.currentTheme` are
+    /// mirrored onto this window's theme. Flipped to false by `SpaceManager`
+    /// when a Space has an explicit theme override, so a later global theme
+    /// switch doesn't clobber the Space's pinned theme. The mirror sink is
+    /// installed unconditionally and gates on this flag at fire time, so
+    /// callers can toggle this freely after construction.
+    public var mirrorsSharedTheme: Bool
+    public var mirrorsSharedAppearance: Bool
     private var cancellables = Set<AnyCancellable>()
-    
+
     @MainActor
     public init(configuration: BrowserThemeConfiguration) {
         self.currentTheme = configuration.currentTheme
@@ -127,7 +133,7 @@ public final class BrowserThemeContext: NSObject, ThemeStateProvider {
         self.mirrorsSharedTheme = configuration.mirrorsSharedTheme
         self.mirrorsSharedAppearance = configuration.mirrorsSharedAppearance
         super.init()
-        bindSharedThemeIfNeeded()
+        bindSharedTheme()
     }
     
     public func subscribe(_ action: @escaping (Theme, Appearance) -> Void) -> AnyObject {
@@ -162,24 +168,34 @@ public final class BrowserThemeContext: NSObject, ThemeStateProvider {
     }
     
     @MainActor
-    private func bindSharedThemeIfNeeded() {
+    private func bindSharedTheme() {
         let manager = ThemeManager.shared
-        
-        if mirrorsSharedTheme {
-            manager.themePublisher
-                .receive(on: DispatchQueue.main)
-                .sink { [weak self] theme in
-                    self?.currentTheme = theme
+
+        // Install both mirror sinks unconditionally; each gates on its own
+        // `mirrorsShared*` flag at fire time so callers (e.g. `SpaceManager`
+        // applying a Space-pinned theme) can toggle mirroring on/off at
+        // runtime without tearing down or re-installing subscriptions.
+        manager.themePublisher
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] theme in
+                guard let self else { return }
+                if self.mirrorsSharedTheme {
+                    self.currentTheme = theme
+                } else if let refreshed = manager.registeredThemes[self.currentTheme.id] {
+                    // Pinned themes ignore the active theme but must still
+                    // pick up edits applied across the whole registry — e.g.
+                    // the global opacity slider rewrites every theme's
+                    // overlay alpha. Re-resolve our pinned id so those edits
+                    // reach this window.
+                    self.currentTheme = refreshed
                 }
-                .store(in: &cancellables)
-        }
-        
-        guard mirrorsSharedAppearance else { return }
-        
+            }
+            .store(in: &cancellables)
+
         NotificationCenter.default.publisher(for: .appearanceDidChange, object: manager)
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in
-                guard let self else { return }
+                guard let self, self.mirrorsSharedAppearance else { return }
                 let sharedChoice = manager.userAppearanceChoice
                 if self.userAppearanceChoice != sharedChoice {
                     self.userAppearanceChoice = sharedChoice

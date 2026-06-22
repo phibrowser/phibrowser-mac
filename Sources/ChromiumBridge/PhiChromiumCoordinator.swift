@@ -5,8 +5,20 @@
 
 import Cocoa
 import Foundation
+import SwiftUI
 @objc class PhiChromiumCoordinator: NSObject {
     @objc static var shared = PhiChromiumCoordinator()
+
+    /// Live ask-Space overlays keyed by the source windowId, so a second
+    /// match for the same window replaces (rather than stacks) the prompt and
+    /// dismissal can tear the right one down.
+    private var activeChoosers: [Int64: NSWindow] = [:]
+    /// `willClose` observers for the source windows hosting an active chooser,
+    /// keyed the same way. Drained in lockstep with `activeChoosers` so a
+    /// source window closing mid-prompt can't leak its overlay NSWindow (the
+    /// overlay is `isReleasedWhenClosed = false` and AppKit only detaches it
+    /// from the parent, it doesn't drop our dictionary reference).
+    private var chooserCloseObservers: [Int64: NSObjectProtocol] = [:]
 }
 
 extension PhiChromiumCoordinator: PhiChromiumBridgeDelegate {
@@ -97,6 +109,138 @@ extension PhiChromiumCoordinator: PhiChromiumBridgeDelegate {
     func handleDeeplink(withUrlString urlString: String, windowId: Int64) -> Bool {
         return DeeplinkHandler.handle(urlString)
     }
+
+    /// A navigation matched a Space URL rule whose action is "ask every time"
+    /// and Chromium cancelled it. Dims the source window and presents the
+    /// Space chooser (current Space first); opens the URL in the chosen Space,
+    /// or keeps it in the source window if the user declines. Owns the prompt
+    /// + routing so Chromium stays out of the UI and Space-window lifecycle.
+    func askSpace(forURL urlString: String, defaultSpaceId: String, sourceWindowId: Int64) {
+        Task { @MainActor in
+            let manager = SpaceManager.shared
+            let spaces = manager.spaces
+            guard !spaces.isEmpty,
+                  let controller = MainBrowserWindowControllersManager.shared
+                      .controller(for: Int(sourceWindowId)),
+                  let sourceWindow = controller.window else {
+                // No Spaces to choose from, or the source window is gone — fall
+                // back to the rule's default Space rather than dropping the URL.
+                manager.routeAskedURL(urlString,
+                                      toSpaceId: spaces.isEmpty ? nil : defaultSpaceId,
+                                      sourceWindowId: sourceWindowId)
+                return
+            }
+
+            // List the current Space first, then the rest in their order.
+            let currentSpaceId = controller.spaceId
+            let ordered = spaces.filter { $0.spaceId == currentSpaceId }
+                + spaces.filter { $0.spaceId != currentSpaceId }
+
+            // Resolve each Space's theme color (its pinned theme, or the
+            // current theme when none) for the source window's appearance, so a
+            // row's tint matches what that Space actually looks like.
+            let appearance = sourceWindow.effectiveAppearance.phiAppearance
+            let items: [SpaceChooserItem] = ordered.map { space in
+                let theme: Theme
+                if let pinnedId = manager.themeId(forSpaceId: space.spaceId),
+                   let pinned = ThemeManager.shared.registeredThemes[pinnedId] {
+                    theme = pinned
+                } else {
+                    theme = ThemeManager.shared.currentTheme
+                }
+                let themeNSColor = theme.color(for: .themeColor, appearance: appearance)
+                // Contrast is computed on the opaque color, then the row is
+                // tinted with the theme's overlay opacity (the Opacity setting)
+                // so the item background is translucent like the box.
+                let legible: NSColor = themeNSColor.isLight() ? .black : .white
+                let opacity = theme.windowOverlayOpacity(for: appearance)
+                return SpaceChooserItem(
+                    id: space.spaceId,
+                    name: space.name,
+                    iconName: space.iconName,
+                    isCurrent: space.spaceId == currentSpaceId,
+                    themeColor: Color(nsColor: themeNSColor.withAlphaComponent(opacity)),
+                    textColor: Color(nsColor: legible))
+            }
+
+            // The box's translucency follows the current Space's theme overlay
+            // opacity (the Opacity setting in General settings), so it matches
+            // the window it sits over.
+            let currentTheme: Theme
+            if let pinnedId = manager.themeId(forSpaceId: currentSpaceId),
+               let pinned = ThemeManager.shared.registeredThemes[pinnedId] {
+                currentTheme = pinned
+            } else {
+                currentTheme = ThemeManager.shared.currentTheme
+            }
+            let boxBackground = Color(
+                nsColor: currentTheme.color(for: .windowOverlayBackground, appearance: appearance))
+
+            // Replace any prompt already up for this window.
+            self.dismissChooser(windowId: sourceWindowId)
+
+            let chooser = SpaceChooserView(items: items, boxBackground: boxBackground) { [weak self] chosen in
+                self?.dismissChooser(windowId: sourceWindowId)
+                SpaceManager.shared.routeAskedURL(urlString,
+                                                  toSpaceId: chosen,
+                                                  sourceWindowId: sourceWindowId)
+            }
+
+            // Borderless child window over the source window: a child window
+            // sits above the parent (and its accelerated web-content surface)
+            // and moves with it, so the dim reliably covers the whole window.
+            let overlay = SpaceChooserOverlayWindow(
+                contentRect: sourceWindow.frame,
+                styleMask: .borderless,
+                backing: .buffered,
+                defer: false)
+            overlay.isOpaque = false
+            overlay.backgroundColor = .clear
+            overlay.hasShadow = false
+            overlay.isReleasedWhenClosed = false
+            overlay.contentView = NSHostingView(rootView: chooser)
+            overlay.setFrame(sourceWindow.frame, display: false)
+
+            sourceWindow.addChildWindow(overlay, ordered: .above)
+            overlay.makeKeyAndOrderFront(nil)
+            self.activeChoosers[sourceWindowId] = overlay
+            // Tear the prompt down if the source window closes underneath it,
+            // so a stranded entry can't accumulate for the session. The token
+            // is removed in `dismissChooser`.
+            self.chooserCloseObservers[sourceWindowId] = NotificationCenter.default.addObserver(
+                forName: NSWindow.willCloseNotification,
+                object: sourceWindow,
+                queue: .main) { [weak self] _ in
+                    self?.dismissChooser(windowId: sourceWindowId)
+                }
+        }
+    }
+
+    /// The user picked a Space from the web-content right-click "Open link as"
+    /// submenu. Open `urlString` in that Space, reusing the ask-Space routing
+    /// path which activates (cold-spawning if needed) the target Space's window
+    /// and opens the URL there, bypassing Space URL routing for the re-open.
+    func openLink(inSpace spaceId: String, url urlString: String, sourceWindowId: Int64) {
+        Task { @MainActor in
+            SpaceManager.shared.routeAskedURL(urlString,
+                                              toSpaceId: spaceId,
+                                              sourceWindowId: sourceWindowId)
+        }
+    }
+
+    /// Tears down the ask-Space overlay for `windowId`, if any, and returns
+    /// key focus to the parent window. Always called on the main thread (the
+    /// presenting Task and the SwiftUI button actions both run there).
+    private func dismissChooser(windowId: Int64) {
+        if let token = chooserCloseObservers.removeValue(forKey: windowId) {
+            NotificationCenter.default.removeObserver(token)
+        }
+        guard let overlay = activeChoosers.removeValue(forKey: windowId) else { return }
+        let parent = overlay.parent
+        parent?.removeChildWindow(overlay)
+        overlay.orderOut(nil)
+        parent?.makeKey()
+    }
     
     func importStarted(_ browserType: BrowserType) {
         AppLogDebug("importStarted type: \(browserType)")
@@ -140,7 +284,19 @@ extension PhiChromiumCoordinator: PhiChromiumBridgeDelegate {
     }
     
     func mainBrowserWindowCreated(_ window: NSWindow, type browserType: ChromiumBrowserType, profileId: String, windowId: Int64) {
-        AppLogInfo("🌐 [Chromium] mainBrowserWindowCreated called - windowId: \(windowId), type: \(browserType.rawValue)")
+        // Legacy entry point kept for framework/client version skew: a Phi
+        // Framework built before `restoredFromWindowId` was added calls this
+        // selector. Zero means "not a session-restore re-creation", so the
+        // restore-snapshot claim below never fires on this path.
+        mainBrowserWindowCreated(window,
+                                 type: browserType,
+                                 profileId: profileId,
+                                 windowId: windowId,
+                                 restoredFromWindowId: 0)
+    }
+
+    func mainBrowserWindowCreated(_ window: NSWindow, type browserType: ChromiumBrowserType, profileId: String, windowId: Int64, restoredFromWindowId: Int64) {
+        AppLogInfo("🌐 [Chromium] mainBrowserWindowCreated called - windowId: \(windowId), restoredFrom: \(restoredFromWindowId), type: \(browserType.rawValue)")
 
 
         guard browserType == .normal || browserType == .incognito || browserType == .shadow else {
@@ -151,19 +307,103 @@ extension PhiChromiumCoordinator: PhiChromiumBridgeDelegate {
         // Check login status BEFORE creating window controller
         let userLoggedIn = isUserLoggedIn()
 
+        // Chromium has no concept of Spaces or slots. Resolve which slot
+        // (i.e. which user-perceived browser window) this Chromium window
+        // belongs to, and what Space it should be tagged with:
+        //   1. If some slot has a pending spawn intent for this windowId,
+        //      that slot owns the window and the intent carries the spaceId
+        //      — covers the "user clicked a Space pip, Chromium spawned a
+        //      window for us" path, and stays correct even if the user
+        //      clicked another Space in the gap before this async callback.
+        //   2. Otherwise this is a Chromium-initiated window: Cmd+N from
+        //      the macOS menu bar, session restore, target=_blank with
+        //      new-window disposition, etc. Always create a NEW slot so
+        //      the new window is its own independent "window group" — if
+        //      we attached to the existing keySlot, the new controller
+        //      would silently overwrite `keySlot.windowsBySpaceId[spaceId]`
+        //      and orphan the original window, leaving its sidebar
+        //      routing pip clicks to the wrong window. The new slot
+        //      inherits the keySlot's current Space for "Cmd+N opens in
+        //      the same context" continuity.
+        //
+        // Whatever path resolves it, the Space must be bound to the
+        // window's actual Chromium profile: pinned tabs and bookmarks are
+        // loaded from the controller's profileId, so tagging a window with
+        // another profile's Space surfaces that profile's pinned tabs
+        // inside the Space. `spaceId(boundTo:preferring:)` re-resolves any
+        // inconsistent pair — the spawn path requested the Space's own
+        // profile so it's a pass-through there, but the fallback and
+        // restore paths pair Chromium's profile with a Swift-chosen Space
+        // and the two can disagree.
+        let resolvedSlot: SpaceWindowSlot?
+        let spaceId: String
+        if browserType == .normal {
+            if let claim = SpaceManager.shared.claimPendingSpawn(forWindowId: Int(windowId)) {
+                resolvedSlot = claim.slot
+                spaceId = SpaceManager.shared.spaceId(boundTo: profileId,
+                                                      preferring: claim.spaceId)
+            } else if let restored = SpaceManager.shared.claimRestoredWindow(
+                forRestoredFromWindowId: Int(restoredFromWindowId)) {
+                // Session-restore path: Chromium replays each saved window
+                // as a separate `mainBrowserWindowCreated` callback with no
+                // pending spawn, reporting the PREVIOUS session's windowId
+                // as `restoredFromWindowId` (the per-run `windowId` never
+                // matches the persisted snapshot). Without this lookup every
+                // restored window would inherit `keySlot.activeSpaceId` and
+                // tabs from non-active Spaces would migrate into the active
+                // one.
+                resolvedSlot = restored.slot
+                spaceId = SpaceManager.shared.spaceId(boundTo: profileId,
+                                                      preferring: restored.spaceId)
+            } else {
+                let initial = SpaceManager.shared.keySlot?.activeSpaceId
+                    ?? SpaceManager.shared.persistedActiveSpaceId
+                    ?? LocalStore.defaultSpaceId
+                // Correct BEFORE creating the slot so it starts on the
+                // resolved Space and the window surfaces as the slot's
+                // active window below.
+                spaceId = SpaceManager.shared.spaceId(boundTo: profileId,
+                                                      preferring: initial)
+                resolvedSlot = SpaceManager.shared.createSlot(initialSpaceId: spaceId)
+            }
+        } else {
+            // Incognito / shadow windows are orthogonal to Spaces.
+            resolvedSlot = nil
+            spaceId = SpaceManager.shared.persistedActiveSpaceId ?? LocalStore.defaultSpaceId
+        }
+
         if userLoggedIn, MainBrowserWindowControllersManager.shared.findControllerWith(window: window) == nil {
             let mainWindowController = MainBrowserWindowController(
                 window: window,
                 windowId: Int(windowId),
                 browserType: browserType,
-                profileId: profileId
+                profileId: profileId,
+                spaceId: spaceId,
+                slot: resolvedSlot
             )
-            // Do NOT force key/front here. Chromium's BrowserWindow Show() /
-            // ShowInactive() runs post-ctor on this same NSWindow and drives
-            // visibility + activation with the correct intent; forcing
-            // makeKeyAndOrderFront here made chrome.windows.create({focused:false})
-            // come to the foreground (the focused param was effectively ignored).
-            if browserType == .shadow {
+            // Do NOT force key/front for the active window here. Chromium's
+            // BrowserWindow Show() / ShowInactive() runs post-ctor on this same
+            // NSWindow and drives visibility + activation with the correct
+            // intent; forcing makeKeyAndOrderFront here made
+            // chrome.windows.create({focused:false}) come to the foreground (the
+            // focused param was effectively ignored).
+            if browserType != .shadow {
+                // On cold-launch session restore a slot can own multiple
+                // Chromium windows (one per Space ever surfaced). Only the
+                // window matching `slot.activeSpaceId` belongs on screen;
+                // siblings stay hidden until the user pip-switches to them,
+                // matching the steady-state "one slot, one visible window"
+                // invariant. The active window is left to Chromium's Show() to
+                // surface (see note above); only siblings are explicitly hidden.
+                let isActiveForSlot: Bool = {
+                    guard let resolvedSlot else { return true }
+                    return resolvedSlot.activeSpaceId == spaceId
+                }()
+                if !isActiveForSlot {
+                    mainWindowController.window?.orderOut(nil)
+                    AppLogInfo("🌐 [Chromium] Restored sibling Space window kept hidden — spaceId=\(spaceId), activeSpaceId=\(resolvedSlot?.activeSpaceId ?? "nil")")
+                }
+            } else {
                 AppLogInfo("🌐 Shadow window controller initialized but hidden.")
             }
             AppLogInfo("🌐 [Chromium] ✅ Window controller created and displayed (user logged in)")
@@ -173,7 +413,9 @@ extension PhiChromiumCoordinator: PhiChromiumBridgeDelegate {
                 window,
                 windowId: Int(windowId),
                 browserType: browserType,
-                profileId: profileId
+                profileId: profileId,
+                spaceId: spaceId,
+                slot: resolvedSlot
             )
             
             DispatchQueue.main.async {

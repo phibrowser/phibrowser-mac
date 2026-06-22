@@ -8,7 +8,15 @@ import PostHog
 class Account {
     let userID: String
     let userInfo: User?
-    lazy var localStorage: LocalStore = { LocalStore(account: self) }()
+    lazy var localStorage: LocalStore = {
+        // Under UI testing the store is redirected to a throwaway per-launch
+        // temp directory so tests never read or mutate the real account's
+        // Spaces, bookmarks, or pinned tabs. See `uiTestStoreDirectoryURL`.
+        if let testStoreURL = Account.uiTestStoreDirectoryURL {
+            return LocalStore(account: self, storeDirectoryURL: testStoreURL)
+        }
+        return LocalStore(account: self)
+    }()
     private(set) lazy var userDefaults: AccountUserDefaults = {
         AccountUserDefaults(account: self)
     }()
@@ -39,6 +47,20 @@ extension Account {
     static var defaultAccount: Account {
         return Account(userID: defaultUid)
     }
+
+    /// A unique-per-launch temp directory for the `LocalStore` when the app is
+    /// launched for UI testing (`-uitest`); otherwise nil. Isolating the store
+    /// keeps UI tests from reading or writing the real account's Spaces,
+    /// bookmarks, and pinned tabs — the Chromium `--user-data-dir` does not
+    /// cover this Swift-side, per-account store. Computed once per process.
+    static let uiTestStoreDirectoryURL: URL? = {
+        guard ProcessInfo.processInfo.arguments.contains("-uitest") else { return nil }
+        return URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
+            .appendingPathComponent(
+                "PhiUITestStore-\(ProcessInfo.processInfo.globallyUniqueString)",
+                isDirectory: true
+            )
+    }()
 }
 
 class AccountController {

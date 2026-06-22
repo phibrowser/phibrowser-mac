@@ -253,7 +253,7 @@ extension MainBrowserWindowController {
                 let guid = UUID().uuidString
                 state.localStore.createDirectory(
                     title: folderName, profileId: state.profileId,
-                    parentId: nil, guid: guid
+                    parentId: nil, guid: guid, spaceId: state.spaceId
                 )
                 return guid
             },

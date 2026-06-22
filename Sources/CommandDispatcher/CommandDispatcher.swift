@@ -98,7 +98,21 @@ struct CommandDispatcher {
             }
             return false
         case .IDC_CLOSE_TAB:
-            return windowController.handleCloseTab()
+            // If this would close the last tab in the active Space,
+            // tag the slot so `unregisterWindow` takes the switch-to-
+            // sibling branch on the resulting Chromium auto-close
+            // instead of cascading the whole window. The tag MUST be
+            // gated on `handleCloseTab()` returning `false`:
+            // `handleCloseTab` swallows ⌘W when the omnibox is open
+            // and returns `true` without closing any tab — tagging in
+            // that case would leave a stale marker that misclassifies
+            // the user's next window-driven close.
+            let willEmptyStrip = windowController.browserState.tabs.count <= 1
+            let handled = windowController.handleCloseTab()
+            if !handled, willEmptyStrip {
+                windowController.slot?.markTabDrivenClose(for: windowController.spaceId)
+            }
+            return handled
         case .IDC_FOCUS_LOCATION:
             windowController.openLocationBar(nil)
             return true

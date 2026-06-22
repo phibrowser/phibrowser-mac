@@ -76,11 +76,11 @@ extension BrowserState {
     func createDirectory(title: String,
                          parentId: String?,
                          index: Int? = nil) {
-        localStore.createDirectory(title: title, profileId: profileId, parentId: parentId)
+        localStore.createDirectory(title: title, profileId: profileId, parentId: parentId, spaceId: spaceId)
     }
     
     func addBookmark(url: String, title: String, parentId: String) {
-        localStore.createBookmark(url: url, title: title, profileId: profileId, parentId: parentId)
+        localStore.createBookmark(url: url, title: title, profileId: profileId, parentId: parentId, spaceId: spaceId)
     }
 
     /// If `tab` belongs to a split pair, save the whole pair as one split-view
@@ -138,6 +138,7 @@ extension BrowserState {
                 parentId: parentGuid,
                 index: targetIndex,
                 guid: newBookmarkGuid,
+                spaceId: spaceId,
                 secondaryUrl: URLProcessor.processUserInput(secondaryURL),
                 secondaryTitle: secondaryDisplayTitle
             )
@@ -178,6 +179,7 @@ extension BrowserState {
                 parentId: parentGuid,
                 index: targetIndex,
                 guid: UUID().uuidString,
+                spaceId: spaceId,
                 secondaryUrl: URLProcessor.processUserInput(secondaryURL),
                 secondaryTitle: secondaryDisplayTitle
             )

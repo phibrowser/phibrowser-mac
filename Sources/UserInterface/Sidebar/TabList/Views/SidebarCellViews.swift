@@ -183,6 +183,11 @@ final class SidebarTabHoverRegionView: NSView {
 
     private var trackingArea: NSTrackingArea?
 
+    // Pass clicks through to the hostingView below. Manually forwarding via
+    // `mouseDown(with:)` doesn't trigger SwiftUI's gesture system (the X
+    // close button never fires), so let AppKit deliver events the normal way.
+    // Hover detection still works because NSTrackingArea fires entered/exited
+    // independent of hit testing.
     override func hitTest(_ point: NSPoint) -> NSView? {
         return nil
     }
@@ -233,6 +238,7 @@ private final class SidebarTabHoverDeadZoneView: NSView {
 
     private var trackingArea: NSTrackingArea?
 
+    // Same hit-transparent strategy as `SidebarTabHoverRegionView`.
     override func hitTest(_ point: NSPoint) -> NSView? {
         return nil
     }

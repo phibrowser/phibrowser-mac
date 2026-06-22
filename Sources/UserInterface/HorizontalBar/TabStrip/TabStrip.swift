@@ -16,10 +16,12 @@ private final class DragOverlayView: NSView {
 
 final class TabStrip: NSView, TitlebarAwareHitTestable {
     func shouldConsumeHitTest(at point: NSPoint) -> Bool {
-        if let event = NSApp.currentEvent, event.type == .rightMouseDown {
-            return true
-        }
-        return false
+        guard let event = NSApp.currentEvent else { return false }
+        // Right-clicks open the strip context menu; scroll gestures scroll
+        // the strip or feed the swipe-to-switch-Space handler up the chain
+        // (TabStripBarView.scrollWheel) and play no part in window
+        // drag/zoom. Everything else falls through to the system titlebar.
+        return event.type == .rightMouseDown || event.type == .scrollWheel
     }
 
     override func hitTest(_ point: NSPoint) -> NSView? {

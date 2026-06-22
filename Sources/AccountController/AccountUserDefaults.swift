@@ -149,6 +149,19 @@ extension AccountUserDefaults {
         case lastKnownSidebarWidth
         case authReauthenticationReason
         case authReauthenticationFirstDetectedAt
+        case activeSpaceId
+        /// Per-Space theme override map (`[spaceId: themeId]`). A spaceId
+        /// missing from this map means "follow the global theme"; an entry
+        /// means the Space pins itself to that theme regardless of the
+        /// global selection. Stored here rather than on `SpaceModel` to
+        /// avoid a schema migration for what is purely a UI preference.
+        case spaceThemeIds
+        /// Snapshot of the slot/window/Space layout written on every
+        /// `SpaceWindowSlot.registerWindow`. Read on the next launch by
+        /// `SpaceManager` so Chromium-restored windows reattach to the
+        /// Space they had when the snapshot was saved, instead of all
+        /// piling into the persisted-active Space.
+        case slotsRestoreSnapshot
     }
     
     /// Notification popup behavior mode.
@@ -189,6 +202,18 @@ extension AccountUserDefaults {
             return
         }
         set(Double(width), forKey: DefaultsKey.lastKnownSidebarWidth.rawValue)
+    }
+
+    /// Snapshot of the per-Space theme override map. Returns an empty
+    /// dictionary when no Spaces have a theme override set yet.
+    func spaceThemeIds() -> [String: String] {
+        (object(forKey: DefaultsKey.spaceThemeIds.rawValue) as? [String: String]) ?? [:]
+    }
+
+    /// Persists the per-Space theme override map verbatim. Callers should
+    /// mutate a snapshot from `spaceThemeIds()` and pass the new map here.
+    func setSpaceThemeIds(_ map: [String: String]) {
+        set(map, forKey: DefaultsKey.spaceThemeIds.rawValue)
     }
 }
 

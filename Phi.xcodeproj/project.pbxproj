@@ -126,6 +126,12 @@
 		37DEB33A2F63F0F500129429 /* TabDataModelSchemaV1.swift in Sources */ = {isa = PBXBuildFile; fileRef = 37DEB3392F63F0F500129429 /* TabDataModelSchemaV1.swift */; };
 		37DEB33E2F63F13700129429 /* TabDataModelSchemaV2.swift in Sources */ = {isa = PBXBuildFile; fileRef = 37DEB33D2F63F13700129429 /* TabDataModelSchemaV2.swift */; };
 		37DEB42F2F67C0F000129429 /* TabDataModelSchemaV3.swift in Sources */ = {isa = PBXBuildFile; fileRef = 37DEB42E2F67C0F000129429 /* TabDataModelSchemaV3.swift */; };
+		CCAA00062F00010000000001 /* TabDataModelSchemaV7.swift in Sources */ = {isa = PBXBuildFile; fileRef = CCAA00062F00010000000002 /* TabDataModelSchemaV7.swift */; };
+		CC4F00010000000000000001 /* LocalStore+SpaceURLRule.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC4F00010000000000000002 /* LocalStore+SpaceURLRule.swift */; };
+		CC4F00020000000000000001 /* URLRouter.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC4F00020000000000000002 /* URLRouter.swift */; };
+		CC4F00030000000000000001 /* SpaceURLRulesEditor.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC4F00030000000000000002 /* SpaceURLRulesEditor.swift */; };
+		CC4F00040000000000000001 /* CreateSpacePanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC4F00040000000000000002 /* CreateSpacePanel.swift */; };
+		CC4F00050000000000000001 /* SpaceChooserView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC4F00050000000000000002 /* SpaceChooserView.swift */; };
 		37E6AF402EEC30E80078CCD8 /* ChatButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = 37E6AF3F2EEC30E80078CCD8 /* ChatButton.swift */; };
 		37E9E91B2FC84DEA00815832 /* TabDataModelSchemaV4.swift in Sources */ = {isa = PBXBuildFile; fileRef = 37E9E9192FC84DEA00815832 /* TabDataModelSchemaV4.swift */; };
 		37E9E91C2FC84DEA00815832 /* TabDataModelSchemaV5.swift in Sources */ = {isa = PBXBuildFile; fileRef = 37E9E91A2FC84DEA00815832 /* TabDataModelSchemaV5.swift */; };
@@ -327,11 +333,15 @@
 		CCBF8F822E67F7C400B9A99E /* ExtensionManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = CCBF8F812E67F7C400B9A99E /* ExtensionManager.swift */; };
 		CCBF8FA22E698A7400B9A99E /* MainBrowserWindowControllersManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = CCBF8FA12E698A7400B9A99E /* MainBrowserWindowControllersManager.swift */; };
 		CCBF8FA52E69915200B9A99E /* ApplicationState.swift in Sources */ = {isa = PBXBuildFile; fileRef = CCBF8FA42E69915200B9A99E /* ApplicationState.swift */; };
+		CC59CE000001000000000001 /* SpaceManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC59CE000001000000000002 /* SpaceManager.swift */; };
+		CC59CE000002000000000001 /* SpacesStripView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC59CE000002000000000002 /* SpacesStripView.swift */; };
+		CC59CE000003000000000001 /* ProfileManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC59CE000003000000000002 /* ProfileManager.swift */; };
 		CCBF8FA72E69948D00B9A99E /* BrowserState.swift in Sources */ = {isa = PBXBuildFile; fileRef = CCBF8FA62E69948D00B9A99E /* BrowserState.swift */; };
 		CCCA86782EB316CC0071E30A /* ReorderingCollectionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CCCA86772EB316CC0071E30A /* ReorderingCollectionView.swift */; };
 		CCCD5E362EB1C36300E78FC1 /* DefaultExtensionManifestWriter.swift in Sources */ = {isa = PBXBuildFile; fileRef = CCCD5E352EB1C36300E78FC1 /* DefaultExtensionManifestWriter.swift */; };
 		CCD3246D2EB1EFB600AA0B85 /* PinnedExtensionItem.swift in Sources */ = {isa = PBXBuildFile; fileRef = CCD3246C2EB1EFB600AA0B85 /* PinnedExtensionItem.swift */; };
 		CCD87CC42EC2E7E000148E3F /* LocalStore+Bookmark.swift in Sources */ = {isa = PBXBuildFile; fileRef = CCD87CC32EC2E7E000148E3F /* LocalStore+Bookmark.swift */; };
+		CCD87CC62EC2E7E000148E3F /* LocalStore+Space.swift in Sources */ = {isa = PBXBuildFile; fileRef = CCD87CC52EC2E7E000148E3F /* LocalStore+Space.swift */; };
 		CCDEC82F2E83D6B200D91BE9 /* AppController+Sparkle.swift in Sources */ = {isa = PBXBuildFile; fileRef = CCDEC82E2E83D6B200D91BE9 /* AppController+Sparkle.swift */; };
 		CCEB64C92E98BFD40036C763 /* ColoredVisualEffectView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CCEB64C82E98BFD40036C763 /* ColoredVisualEffectView.swift */; };
 		CCEB64CB2E98DD520036C763 /* InsetTableRowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CCEB64CA2E98DD520036C763 /* InsetTableRowView.swift */; };
@@ -540,6 +550,12 @@
 		37DEB3392F63F0F500129429 /* TabDataModelSchemaV1.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TabDataModelSchemaV1.swift; sourceTree = "<group>"; };
 		37DEB33D2F63F13700129429 /* TabDataModelSchemaV2.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TabDataModelSchemaV2.swift; sourceTree = "<group>"; };
 		37DEB42E2F67C0F000129429 /* TabDataModelSchemaV3.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TabDataModelSchemaV3.swift; sourceTree = "<group>"; };
+		CCAA00062F00010000000002 /* TabDataModelSchemaV7.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TabDataModelSchemaV7.swift; sourceTree = "<group>"; };
+		CC4F00010000000000000002 /* LocalStore+SpaceURLRule.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "LocalStore+SpaceURLRule.swift"; sourceTree = "<group>"; };
+		CC4F00020000000000000002 /* URLRouter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = URLRouter.swift; sourceTree = "<group>"; };
+		CC4F00030000000000000002 /* SpaceURLRulesEditor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpaceURLRulesEditor.swift; sourceTree = "<group>"; };
+		CC4F00040000000000000002 /* CreateSpacePanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CreateSpacePanel.swift; sourceTree = "<group>"; };
+		CC4F00050000000000000002 /* SpaceChooserView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpaceChooserView.swift; sourceTree = "<group>"; };
 		37E6AF3F2EEC30E80078CCD8 /* ChatButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatButton.swift; sourceTree = "<group>"; };
 		37E9E9192FC84DEA00815832 /* TabDataModelSchemaV4.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TabDataModelSchemaV4.swift; sourceTree = "<group>"; };
 		37E9E91A2FC84DEA00815832 /* TabDataModelSchemaV5.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TabDataModelSchemaV5.swift; sourceTree = "<group>"; };
@@ -752,11 +768,15 @@
 		CCBF8F812E67F7C400B9A99E /* ExtensionManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExtensionManager.swift; sourceTree = "<group>"; };
 		CCBF8FA12E698A7400B9A99E /* MainBrowserWindowControllersManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainBrowserWindowControllersManager.swift; sourceTree = "<group>"; };
 		CCBF8FA42E69915200B9A99E /* ApplicationState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ApplicationState.swift; sourceTree = "<group>"; };
+		CC59CE000001000000000002 /* SpaceManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpaceManager.swift; sourceTree = "<group>"; };
+		CC59CE000002000000000002 /* SpacesStripView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpacesStripView.swift; sourceTree = "<group>"; };
+		CC59CE000003000000000002 /* ProfileManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfileManager.swift; sourceTree = "<group>"; };
 		CCBF8FA62E69948D00B9A99E /* BrowserState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrowserState.swift; sourceTree = "<group>"; };
 		CCCA86772EB316CC0071E30A /* ReorderingCollectionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReorderingCollectionView.swift; sourceTree = "<group>"; };
 		CCCD5E352EB1C36300E78FC1 /* DefaultExtensionManifestWriter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DefaultExtensionManifestWriter.swift; sourceTree = "<group>"; };
 		CCD3246C2EB1EFB600AA0B85 /* PinnedExtensionItem.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PinnedExtensionItem.swift; sourceTree = "<group>"; };
 		CCD87CC32EC2E7E000148E3F /* LocalStore+Bookmark.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "LocalStore+Bookmark.swift"; sourceTree = "<group>"; };
+		CCD87CC52EC2E7E000148E3F /* LocalStore+Space.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "LocalStore+Space.swift"; sourceTree = "<group>"; };
 		CCDEC82E2E83D6B200D91BE9 /* AppController+Sparkle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AppController+Sparkle.swift"; sourceTree = "<group>"; };
 		CCEB64C82E98BFD40036C763 /* ColoredVisualEffectView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ColoredVisualEffectView.swift; sourceTree = "<group>"; };
 		CCEB64CA2E98DD520036C763 /* InsetTableRowView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InsetTableRowView.swift; sourceTree = "<group>"; };
@@ -1119,6 +1139,7 @@
 				37E9E9192FC84DEA00815832 /* TabDataModelSchemaV4.swift */,
 				37E9E91A2FC84DEA00815832 /* TabDataModelSchemaV5.swift */,
 				37E9E91E2FC84DEA00815832 /* TabDataModelSchemaV6.swift */,
+				CCAA00062F00010000000002 /* TabDataModelSchemaV7.swift */,
 			);
 			path = TabDataModel;
 			sourceTree = "<group>";
@@ -1522,6 +1543,8 @@
 			children = (
 				CC2708A22E7A65E500B65AB8 /* LocalStore.swift */,
 				CCD87CC32EC2E7E000148E3F /* LocalStore+Bookmark.swift */,
+				CCD87CC52EC2E7E000148E3F /* LocalStore+Space.swift */,
+				CC4F00010000000000000002 /* LocalStore+SpaceURLRule.swift */,
 				37DEB42B2F63F90200129429 /* TabDataModel */,
 				37FA01212FDA000100000001 /* Compatibility */,
 			);
@@ -1545,9 +1568,21 @@
 				CC27089A2E7965FE00B65AB8 /* Header */,
 				CC6B001C2E793ED400D4F133 /* PinnedTab */,
 				CC2708992E7965E700B65AB8 /* TabList */,
+				CC59CE000002000000000003 /* Spaces */,
 				37C1B2FC2EE2E20F00DD4496 /* Bottom */,
 			);
 			path = Sidebar;
+			sourceTree = "<group>";
+		};
+		CC59CE000002000000000003 /* Spaces */ = {
+			isa = PBXGroup;
+			children = (
+				CC59CE000002000000000002 /* SpacesStripView.swift */,
+				CC4F00030000000000000002 /* SpaceURLRulesEditor.swift */,
+				CC4F00040000000000000002 /* CreateSpacePanel.swift */,
+				CC4F00050000000000000002 /* SpaceChooserView.swift */,
+			);
+			path = Spaces;
 			sourceTree = "<group>";
 		};
 		CC376D022EC6D5DB00270B93 /* DynamicColor */ = {
@@ -1783,14 +1818,25 @@
 			path = Views;
 			sourceTree = "<group>";
 		};
+		CC59CE000001000000000003 /* Space */ = {
+			isa = PBXGroup;
+			children = (
+				CC59CE000001000000000002 /* SpaceManager.swift */,
+				CC4F00020000000000000002 /* URLRouter.swift */,
+			);
+			path = Space;
+			sourceTree = "<group>";
+		};
 		CCBF8FA32E69913C00B9A99E /* States */ = {
 			isa = PBXGroup;
 			children = (
+				CC59CE000001000000000003 /* Space */,
 				8E8008D62FA1A59800EB24C5 /* TabGroup */,
 				CCBF8FA42E69915200B9A99E /* ApplicationState.swift */,
 				D10000000000000000000011 /* BrowserImagePreviewState.swift */,
 				CCBF8FA62E69948D00B9A99E /* BrowserState.swift */,
 				AB1000000000000000000FA2 /* TabMultiSelection.swift */,
+				CC59CE000003000000000002 /* ProfileManager.swift */,
 				376581F62EEA845700D3E031 /* BrowserState+Bookmark.swift */,
 				3703C9812F69558C00E7CF6D /* BrowserState+ToggleAI.swift */,
 				5F1A5A11AC1D000000000002 /* BrowserState+Split.swift */,
@@ -2068,6 +2114,7 @@
 				3BCDDE6FBABE4BD8A51F0127 /* TabGroupCellView.swift in Sources */,
 				2ABF91DB68C2445BAA58C9BA /* GroupTabsTableView.swift in Sources */,
 				CCD87CC42EC2E7E000148E3F /* LocalStore+Bookmark.swift in Sources */,
+				CCD87CC62EC2E7E000148E3F /* LocalStore+Space.swift in Sources */,
 				897C09F42F6BEDA000E5CA9B /* IMChannelsViewModel.swift in Sources */,
 				897C09F52F6BEDA000E5CA9B /* IMChannelAPIClient.swift in Sources */,
 				897C09F62F6BEDA000E5CA9B /* IMChannelsSettingView.swift in Sources */,
@@ -2157,6 +2204,12 @@
 				15B618E574463D94C98AEA5F /* AISettingHostingViewController.swift in Sources */,
 				376193532F4EB8630094A78E /* SystemUtils.swift in Sources */,
 				37DEB42F2F67C0F000129429 /* TabDataModelSchemaV3.swift in Sources */,
+				CCAA00062F00010000000001 /* TabDataModelSchemaV7.swift in Sources */,
+				CC4F00010000000000000001 /* LocalStore+SpaceURLRule.swift in Sources */,
+				CC4F00020000000000000001 /* URLRouter.swift in Sources */,
+				CC4F00030000000000000001 /* SpaceURLRulesEditor.swift in Sources */,
+				CC4F00040000000000000001 /* CreateSpacePanel.swift in Sources */,
+				CC4F00050000000000000001 /* SpaceChooserView.swift in Sources */,
 				8E762C1A2F15F5AE00631087 /* TabStripDragController.swift in Sources */,
 				CCBF8F642E65835900B9A99E /* BookmarkModel+Sidebar.swift in Sources */,
 				CC4351C12EC73509009D8FC3 /* GradientMapper.swift in Sources */,
@@ -2318,6 +2371,9 @@
 				3758B1E52F962BA50036F2AF /* AuthManager+Provider.swift in Sources */,
 				CC288A8A2E5333CC004A6C1C /* main.m in Sources */,
 				CCBF8FA52E69915200B9A99E /* ApplicationState.swift in Sources */,
+				CC59CE000001000000000001 /* SpaceManager.swift in Sources */,
+				CC59CE000002000000000001 /* SpacesStripView.swift in Sources */,
+				CC59CE000003000000000001 /* ProfileManager.swift in Sources */,
 				37C1B2F72EE2882400DD4496 /* OverlayToastViewModel.swift in Sources */,
 				8E5D8B012FDFFAD30039CBE3 /* WebContentSnapshotter.swift in Sources */,
 				376CE4122F2897D30093D937 /* AirbyteResponse.swift in Sources */,

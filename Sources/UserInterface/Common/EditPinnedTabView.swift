@@ -863,7 +863,16 @@ private struct BookmarkFolderPicker: View {
     }
 
     private var rootFolder: TabDataModel? {
-        folderModels.first { $0.profile?.bookmarkRoot?.guid == $0.guid && $0.profileId == profileId }
+        // Identify the Space's hidden top-level folder structurally
+        // (parent == nil within the profile). The picker is invoked from the
+        // default Space today; when EditPinnedTabView is threaded with a
+        // spaceId by the Space-switcher UI, swap the secondary filter to
+        // `$0.spaceId == spaceId`.
+        folderModels.first {
+            $0.parent == nil &&
+            $0.profileId == profileId &&
+            $0.spaceId == LocalStore.defaultSpaceId
+        }
     }
 
     private var flatFolderList: [(folder: TabDataModel, depth: Int)] {

@@ -103,6 +103,9 @@
     "/**/Window Background" : {
       "comment" : "[EXAMPLE] Theme example: window background label"
     },
+    "%@ — in use by a Space" : {
+      "comment" : "Spaces menu - Delete Profile row label for a profile bound to a Space"
+    },
     "%@ · %d tabs" : {
       "comment" : "Tab Groups - auto-generated group title, e.g. 'Blue · 3 tabs'",
       "localizations" : {
@@ -173,6 +176,9 @@
     "Add Right Split" : {
       "comment" : "Drop-zone hint shown when dragging a tab over the right third of the page"
     },
+    "Add Rule" : {
+      "comment" : "Footer button in URL rules editor"
+    },
     "Add Split to Bookmark" : {
       "comment" : "Tab context menu - Save both panes of the split as a bookmark folder"
     },
@@ -209,6 +215,9 @@
     "All connected Connectors will be disconnected." : {
       "comment" : "AI settings - Alert message explaining consequences of disabling connectors"
     },
+    "All cookies, history, extensions, and saved data on this profile will be permanently removed. This cannot be undone." : {
+      "comment" : "Body of the delete-profile confirmation"
+    },
     "All Downloads" : {
       "comment" : "Downloads list - Button to open full downloads page"
     },
@@ -238,6 +247,9 @@
     },
     "Are you sure you want to install version %@ and restart Phi?" : {
       "comment" : "Update alert - Message asking user to confirm update installation with version number"
+    },
+    "Ask every time" : {
+      "comment" : "Special target in the URL rule Space picker: prompt for a Space on each match"
     },
     "Attach files" : {
       "comment" : "Feedback form - Label for file attachment section"
@@ -306,26 +318,13 @@
       "comment" : "Import data type - Browsing history toggle label"
     },
     "Cancel" : {
-      "comment" : "AI settings - Cancel button in disable-AI confirmation alert\nAI settings - Cancel button in disable-connectors confirmation alert\nAccount settings - Cancel button in logout confirmation dialog\nAccount settings - Cancel button in rename dialog\nCancel\nDebug clear data - Alert button to cancel clearing user data\nDebug import user data - Alert button to cancel importing user data\nDownload item row - Tooltip for cancel button during safety scan\nDownload item row - Tooltip for cancel download button\nEditor - Cancel button title\nNew folder dialog cancel button title\nTab group rename alert - Cancel button\nTooltip for cancel button during safety scan in living downloads toast\nUpdate alert - Button to cancel update installation"
-    },
-    "Cancel First" : {
-
+      "comment" : "AI settings - Cancel button in disable-AI confirmation alert\nAI settings - Cancel button in disable-connectors confirmation alert\nAccount settings - Cancel button in logout confirmation dialog\nAccount settings - Cancel button in rename dialog\nCancel\nCancel button\nDebug clear data - Alert button to cancel clearing user data\nDebug import user data - Alert button to cancel importing user data\nDownload item row - Tooltip for cancel button during safety scan\nDownload item row - Tooltip for cancel download button\nEditor - Cancel button title\nNew folder dialog cancel button title\nTab group rename alert - Cancel button\nTooltip for cancel button during safety scan in living downloads toast\nUpdate alert - Button to cancel update installation"
     },
     "Canceled" : {
       "comment" : "Download item row - Status label when download was cancelled"
     },
     "Cancelled" : {
       "comment" : "Download state"
-    },
-    "Card %lld of %lld" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "Card %1$lld of %2$lld"
-          }
-        }
-      }
     },
     "Certificate is invalid" : {
       "comment" : "Address bar menu - Certificate validity status"
@@ -336,8 +335,20 @@
     "Change Color" : {
       "comment" : "Tab group context menu - Submenu to change the group color"
     },
+    "Change Icon" : {
+      "comment" : "Spaces menu - Submenu to change the active Space's icon"
+    },
     "Change Name" : {
       "comment" : "Account settings - Dialog title for changing user name"
+    },
+    "Change Profile" : {
+      "comment" : "Confirm button of the change-Space-profile confirmation\nSpaces menu - Submenu to re-bind the active Space to another profile"
+    },
+    "Change Profile to “%@”?" : {
+      "comment" : "Title of the change-Space-profile confirmation"
+    },
+    "Change Theme" : {
+      "comment" : "Active-Space menu: change current Space theme"
     },
     "Chat" : {
       "comment" : "Sidebar bottom chat button title"
@@ -402,12 +413,6 @@
     "Comfortable" : {
       "comment" : "Layout option - Horizontal tabs\nOnboarding layout selection - Comfortable option"
     },
-    "Complete First" : {
-
-    },
-    "Complete First In-Progress" : {
-
-    },
     "Completed" : {
       "comment" : "Download state"
     },
@@ -459,11 +464,26 @@
     "Could Not Save Feedback" : {
       "comment" : "Feedback form - Alert title when local outbox save fails"
     },
+    "Couldn't delete profile" : {
+      "comment" : "Title of the profile-delete error"
+    },
     "Crash Samples" : {
 
     },
+    "Create" : {
+      "comment" : "Create button"
+    },
     "Create a new folder to organize your bookmarks." : {
       "comment" : "Folder creator - Subtitle explaining new folder creation"
+    },
+    "Create a Space" : {
+      "comment" : "Title of the create-Space panel"
+    },
+    "Create Space" : {
+      "comment" : "Confirm button in the create-Space panel"
+    },
+    "Current" : {
+      "comment" : "Marks the Space the user is currently in, in the ask-Space list"
     },
     "Custom Telegram bot" : {
       "comment" : "Phi Link - Custom bot title"
@@ -474,11 +494,20 @@
     "Dark" : {
       "comment" : "Appearance choice: always dark mode"
     },
-    "DEBUG Test Mode" : {
-
-    },
     "Delete" : {
-      "comment" : "Delete bookmark menu item"
+      "comment" : "Delete bookmark menu item\nDestructive button\nDestructive menu item"
+    },
+    "Delete “%@”?" : {
+      "comment" : "Title of the delete-Space confirmation"
+    },
+    "Delete Profile" : {
+      "comment" : "Spaces menu - Submenu listing deletable browser profiles"
+    },
+    "Delete profile “%@”?" : {
+      "comment" : "Title of the delete-profile confirmation"
+    },
+    "Delete Space…" : {
+      "comment" : "Spaces menu - Delete the active Space"
     },
     "Deleted" : {
       "comment" : "Download item row - Status label when downloaded file was deleted"
@@ -492,11 +521,17 @@
     "Dismiss" : {
       "comment" : "Tooltip for button to dismiss living download item"
     },
+    "Domain" : {
+      "comment" : "URL rule match type: exact host only"
+    },
+    "Domain contains" : {
+      "comment" : "URL rule match type: host contains a substring"
+    },
+    "Domain suffix" : {
+      "comment" : "URL rule match type: host plus all subdomains"
+    },
     "Download image" : {
       "comment" : "Account settings - Button to download profile card as image"
-    },
-    "Download Test Controls" : {
-
     },
     "Downloading" : {
       "comment" : "Download state"
@@ -525,6 +560,9 @@
     "e.g. 123456:ABC-DEF..." : {
 
     },
+    "Each space has its own independent bookmarks" : {
+      "comment" : "Subtitle of the create-Space panel"
+    },
     "Edit Bookmark" : {
       "comment" : "Bookmark editor - Title of the sheet to edit a bookmark"
     },
@@ -552,6 +590,9 @@
     "Edit the names and addresses for both panes of this pinned split." : {
       "comment" : "Pinned tab editor - Subtitle explaining pinned split editing"
     },
+    "Edit Theme" : {
+      "comment" : "Spaces menu - Submenu to set a theme override for the active Space"
+    },
     "Edit..." : {
       "comment" : "Edit bookmark url menu item title\nPinned tab context menu - Edit pinned tab menu item"
     },
@@ -564,11 +605,26 @@
     "Enable External Data Connectors" : {
       "comment" : "AI settings - Toggle to enable external data connectors"
     },
+    "Enable Spaces" : {
+      "comment" : "View menu - Master toggle for the Spaces feature"
+    },
     "Enter a name for the new folder." : {
       "comment" : "Bookmark editor - Inline new folder creation subtitle"
     },
+    "Enter a name for the new profile. Each profile has its own cookies, history, and extensions." : {
+      "comment" : "Body of the create-profile dialog"
+    },
+    "Enter a new name for this Space." : {
+      "comment" : "Body of the rename-Space dialog"
+    },
     "Error" : {
       "comment" : "Phi Link - Custom bot generic error text"
+    },
+    "example" : {
+      "comment" : "URL rule value placeholder for Domain contains match"
+    },
+    "example.com" : {
+      "comment" : "URL rule value placeholder for Domain suffix match"
     },
     "Expand Group" : {
       "comment" : "Tab group context menu - Expand a collapsed group"
@@ -600,9 +656,6 @@
     "External Data Connectors help to provide additional context for better AI experience" : {
       "comment" : "AI settings - Description explaining external data connectors purpose"
     },
-    "Fail First In-Progress" : {
-
-    },
     "Failed" : {
       "comment" : "Download item row - Status label when download failed\nDownload state"
     },
@@ -626,6 +679,9 @@
     },
     "Folder Name" : {
       "comment" : "Folder editor - Placeholder for folder name input\nNew folder dialog input placeholder"
+    },
+    "Follow Global" : {
+      "comment" : "Spaces menu - Theme submenu entry that clears the per-Space override\nTheme menu: clear per-Space override"
     },
     "Forward" : {
       "comment" : "Web content header - Accessibility description for forward navigation button"
@@ -671,6 +727,9 @@
     },
     "https://example.com" : {
       "comment" : "Editor - Placeholder example URL in text field"
+    },
+    "https://example.com/path" : {
+      "comment" : "URL rule value placeholder for URL (host + path) match"
     },
     "I'll setup my own" : {
       "comment" : "Onboarding password manager - Manual setup option"
@@ -783,9 +842,6 @@
     "Linking..." : {
       "comment" : "Phi Link - Custom bot linking text"
     },
-    "Living Downloads Test" : {
-
-    },
     "Loading image…" : {
       "comment" : "Image preview loading"
     },
@@ -826,7 +882,7 @@
       "comment" : "Tab context menu - Move this tab out of its current group into a newly created group"
     },
     "Mute" : {
-      "comment" : "Notification menu option - Disable auto popup for notification cards\nTab mute button tooltip - mute"
+      "comment" : "Notification menu option - Disable auto popup for notification cards"
     },
     "Name" : {
       "comment" : "Editor - Label for the title/name input field"
@@ -854,6 +910,15 @@
     },
     "New Nested Folder..." : {
       "comment" : "Bookmark New Folder menu item"
+    },
+    "New Profile" : {
+      "comment" : "Title of the create-profile dialog"
+    },
+    "New Profile…" : {
+      "comment" : "Profile picker item to create a new profile\nSpaces menu - Create a new browser profile"
+    },
+    "New Space…" : {
+      "comment" : "Spaces menu - Create a new Space"
     },
     "New Tab" : {
       "comment" : "Sidebar tab list - Button title to create a new browser tab\nTab area context menu - Open a new browser tab\nTitle for the group overview card that creates a new tab in the selected group\nside bar new tab button text"
@@ -885,8 +950,8 @@
     "Next image" : {
       "comment" : "Image preview: accessibility label for next image control"
     },
-    "Next Test (%lld items)" : {
-
+    "Next Space" : {
+      "comment" : "Spaces menu - Activate the next Space in the strip"
     },
     "No certificate available" : {
       "comment" : "No certificate tooltip"
@@ -906,11 +971,20 @@
     "No Phi User Data to Back Up" : {
       "comment" : "Debug clear data - Alert title when the Phi data folder is missing before backup"
     },
+    "No Profiles to Delete" : {
+      "comment" : "Spaces menu - Delete Profile submenu empty state"
+    },
     "No Results" : {
       "comment" : "Shortcuts settings - Empty state text when no shortcuts match search"
     },
+    "No rules yet." : {
+      "comment" : "Empty state label in the URL rules editor"
+    },
     "No share actions available" : {
       "comment" : "Address bar menu - Empty share submenu item"
+    },
+    "No Space" : {
+      "comment" : "Active-Space header fallback when no Space is selected"
     },
     "Not configured" : {
       "comment" : "Phi Link - Custom bot not configured status"
@@ -935,6 +1009,9 @@
     },
     "Open as Split" : {
       "comment" : "Bookmark context menu - Open this bookmark as a new tab paired with the current tab in a split\nTab context menu - Open a new tab as the second pane in a split with this tab"
+    },
+    "Open in" : {
+      "comment" : "Leading label for a URL rule's target Space"
     },
     "Open in New Tab" : {
       "comment" : "Open in New Tab menu item"
@@ -996,6 +1073,9 @@
     "Phi Sentinel service is unavailable. Check whether it started normally." : {
       "comment" : "IM Channels - Custom bot service unavailable message\nIM Channels - Official bot service unavailable message"
     },
+    "Pick a target Space and enter a host like “github.com”." : {
+      "comment" : "Empty state hint in the universal URL rules editor"
+    },
     "Pin" : {
       "comment" : "Tab context menu - Menu item to pin the selected tab"
     },
@@ -1011,6 +1091,9 @@
     "Pinned Tabs" : {
       "comment" : "Search Tabs - Pinned tabs section title"
     },
+    "Pinned tabs and bookmarks belonging to this Space will also be removed. This action cannot be undone." : {
+      "comment" : "Body of the delete-Space confirmation"
+    },
     "Please reauthenticate to restore account features." : {
       "comment" : "Account settings - Tooltip explaining why reauthentication is needed"
     },
@@ -1025,6 +1108,15 @@
     },
     "Previous image" : {
       "comment" : "Image preview: accessibility label for previous image control"
+    },
+    "Previous Space" : {
+      "comment" : "Spaces menu - Activate the previous Space in the strip"
+    },
+    "Profile" : {
+      "comment" : "Label for the profile picker in the create-Space panel"
+    },
+    "Profile name" : {
+      "comment" : "Placeholder for the profile-name field"
     },
     "Pure" : {
       "comment" : "Pure theme name"
@@ -1077,14 +1169,26 @@
     "Remove from Split" : {
       "comment" : "Tab context menu - Dissolve the split that contains this tab"
     },
+    "Remove rule" : {
+      "comment" : "Tooltip for remove-rule button"
+    },
     "Rename" : {
-      "comment" : "Rename folder or bookmark dialog title"
+      "comment" : "Rename button\nRename folder or bookmark dialog title"
     },
     "Rename Group" : {
       "comment" : "Tab group context menu - Rename the group\nTab group rename alert - Title"
     },
+    "Rename Space" : {
+      "comment" : "Title of the rename-Space dialog"
+    },
+    "Rename Space…" : {
+      "comment" : "Spaces menu - Rename the active Space"
+    },
     "Rename..." : {
       "comment" : "Bookmark Rename menu item"
+    },
+    "Rename…" : {
+      "comment" : "Active-Space menu: rename current Space"
     },
     "Reopen Closed Tab" : {
       "comment" : "Tab area context menu - Reopen the last closed tab"
@@ -1100,9 +1204,6 @@
     },
     "Replace Top" : {
       "comment" : "Drop-zone hint shown when dragging a tab over the top/primary pane of a horizontal split to replace it"
-    },
-    "Reset" : {
-
     },
     "Restore" : {
       "comment" : "Shortcuts settings - Button to restore single shortcut to default"
@@ -1135,7 +1236,7 @@
       "comment" : "Notification card run button - Executes the suggested action"
     },
     "Save" : {
-      "comment" : "Account settings - Save button in rename dialog\nDebug clear data - NSSavePanel confirm button title when saving Phi user data backup zip\nEditor - Save button title\nIM Channels - Custom bot save button\nTab group rename alert - Confirm button"
+      "comment" : "Account settings - Save button in rename dialog\nDebug clear data - NSSavePanel confirm button title when saving Phi user data backup zip\nEditor - Save button title\nIM Channels - Custom bot save button\nSave button\nTab group rename alert - Confirm button"
     },
     "Scan the QR code with your phone camera or click on the button below to add Phi Link bot to your Telegram" : {
       "comment" : "Phi Link - Official bot QR hint"
@@ -1215,14 +1316,20 @@
     "Something went wrong? " : {
       "comment" : "Retry hint prefix text shown when login fails in onboarding"
     },
+    "Space %d" : {
+      "comment" : "Default name for a newly created Space"
+    },
+    "Space name" : {
+      "comment" : "Placeholder for the Space-name field"
+    },
+    "Spaces" : {
+      "comment" : "Main menu - Top-level Spaces menu title in the application menu bar\nTooltip for the Spaces picker affordance"
+    },
     "Split with" : {
       "comment" : "Search Tabs - Prefix for the split partner shown in a result row"
     },
     "Split with Current" : {
       "comment" : "Tab context menu - Pair this tab with the currently focused tab in a split"
-    },
-    "Start Test" : {
-
     },
     "Stop" : {
       "comment" : "Web content header - Accessibility description for stop loading button"
@@ -1260,6 +1367,9 @@
     "This replaces the Phi user data folder with the archive and restarts Phi. Save your work first." : {
       "comment" : "Debug import user data - Confirmation alert body warning data replacement and relaunch"
     },
+    "This Space's window will be reopened with the new profile and its open tabs will be reloaded there. Site logins won't carry over. Bookmarks stay with the Space; pinned tabs will be the new profile's." : {
+      "comment" : "Body of the change-Space-profile confirmation"
+    },
     "This version of Phi cannot open local browser data that was updated by a newer version. Install the latest Phi version and try again." : {
       "comment" : "Local store compatibility alert - body when a newer app is required to read local data"
     },
@@ -1290,11 +1400,11 @@
     "Unknown" : {
       "comment" : "Address bar menu - Website security unknown\nWebsite security unknown"
     },
+    "Unknown error" : {
+      "comment" : "Fallback profile-delete error reason"
+    },
     "Unlink" : {
       "comment" : "Phi Link - Official bot unlink button"
-    },
-    "Unmute" : {
-      "comment" : "Tab mute button tooltip - unmute"
     },
     "Unpin" : {
       "comment" : "Tab context menu - Menu item to unpin the selected tab"
@@ -1321,7 +1431,16 @@
       "comment" : "Local store compatibility alert - title when the local database was opened by a newer app version"
     },
     "URL" : {
-      "comment" : "Editor - Label for the URL input field\nFeedback form - Label for URL input field"
+      "comment" : "Editor - Label for the URL input field\nFeedback form - Label for URL input field\nURL rule match type: exact host plus a path prefix"
+    },
+    "URL Rules" : {
+      "comment" : "Title of the universal URL rules editor\nWindow title for the universal URL rules editor"
+    },
+    "URL Rules…" : {
+      "comment" : "Spaces menu - Open the universal URL routing rules editor"
+    },
+    "URLs matching any rule will open in the assigned Space, no matter where you click or type them." : {
+      "comment" : "Subtitle of the universal URL rules editor"
     },
     "Using Telegram to send and receive messages with %@" : {
       "comment" : "Phi Link - Section subtitle with agent name"
@@ -1369,6 +1488,9 @@
     },
     "What's New" : {
       "comment" : "Help menu - Menu item that opens the chrome://whats-new page in a new tab, placed right below 'Report an Issue'"
+    },
+    "www.example.com" : {
+      "comment" : "URL rule value placeholder for Domain match"
     },
     "Yellow" : {
       "comment" : "Tab Groups - color name shown in auto-named group title and color picker"

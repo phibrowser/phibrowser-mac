@@ -192,7 +192,7 @@ class SidebarTabListViewController: NSViewController {
         scrollView.menu = contextMenu
         scrollView.contentView.postsBoundsChangedNotifications = true
         scrollView.contentView.postsFrameChangedNotifications = true
-        
+
         outlineView = SideBarOutlineView()
         outlineView.setAccessibilityIdentifier("sidebarTabList")
         outlineView.bottomPadding = Self.bottomContentInset

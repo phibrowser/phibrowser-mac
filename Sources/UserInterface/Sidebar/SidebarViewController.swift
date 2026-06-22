@@ -65,6 +65,28 @@ class SidebarViewController: NSViewController {
         view.wantsLayer = true
         return view
     }()
+
+    /// Per-Space tint painted behind the tab area — the active Space's
+    /// `colorHex` fading from the top of the sidebar to clear at the bottom.
+    /// During a vertical-layout Space switch this gradient ramps to the new
+    /// color in step with the content-band push-in (see
+    /// `SpaceManager.performVerticalSidebarPushIn`); because it sits behind
+    /// `mainStackView` it shows through the band's transparent snapshot as it
+    /// slides. Re-resolved when the slot's `activeSpaceId` changes or the
+    /// underlying Space is recolored.
+    private let spaceTintGradientLayer: CAGradientLayer = {
+        let layer = CAGradientLayer()
+        layer.startPoint = CGPoint(x: 0.5, y: 0)
+        layer.endPoint = CGPoint(x: 0.5, y: 1)
+        return layer
+    }()
+
+    private lazy var spaceTintBackgroundView: NSView = {
+        let view = NSView()
+        view.wantsLayer = true
+        view.layer?.addSublayer(spaceTintGradientLayer)
+        return view
+    }()
     
     /// Container above the bottom bar for transient notification content.
     private lazy var notificationContainerView: NSView = {
@@ -79,6 +101,33 @@ class SidebarViewController: NSViewController {
         let view = NSView()
         view.wantsLayer = true
         return view
+    }()
+
+    /// Hosting controller for the Spaces strip — placed just above the bottom
+    /// toolbar so the row of Space pips is the last per-Space element before
+    /// the global actions. Reports its intrinsic height so the strip can grow
+    /// to multiple rows when pips wrap.
+    ///
+    /// The strip is bound to its hosting window's `SpaceWindowSlot` so that
+    /// clicks here only switch THIS window's active Space. The slot is
+    /// resolved via `state.windowController?.slot`; for the early-init case
+    /// where the window controller isn't wired up yet (BrowserState is
+    /// constructed before the controller assigns itself in
+    /// `MainBrowserWindowController.init`), fall back to the manager's
+    /// `keySlot` so the strip stays functional rather than crashing.
+    private lazy var spacesStripHostingController: ThemedHostingController<SpacesStripView> = {
+        let slot = state.windowController?.slot
+            ?? SpaceManager.shared.keySlot
+            ?? SpaceManager.shared.createSlot(initialSpaceId: nil)
+        let hostingController = ThemedHostingController(
+            rootView: SpacesStripView(manager: SpaceManager.shared, slot: slot, rowHeight: SpacesStripView.sidebarHeight),
+            themeSource: state.themeContext
+        )
+        if #available(macOS 13.0, *) {
+            hostingController.sizingOptions = [.intrinsicContentSize]
+        }
+        hostingController.view.translatesAutoresizingMaskIntoConstraints = false
+        return hostingController
     }()
     
     /// Hosting controller for the sidebar message card view.
@@ -120,6 +169,9 @@ class SidebarViewController: NSViewController {
     private var hasSetupConfigObserver = false
     private var isSidebarContentActive = false
     private var lastPersistedFavoriteHeight: CGFloat?
+
+    /// Swipe-to-switch-Space gesture state (see `SpaceSwipeTracker`).
+    private let spaceSwipe = SpaceSwipeTracker()
     
     init(browserState: BrowserState) {
         self.state = browserState
@@ -149,6 +201,17 @@ class SidebarViewController: NSViewController {
         updateChatButtonVisibility()
         updateMemoryButtonVisibility()
         updateSidebarContentActivation()
+        updateSpaceTintGradient()
+    }
+
+    override func viewDidLayout() {
+        super.viewDidLayout()
+        // CAGradientLayer is a sublayer (not the host layer), so it doesn't
+        // pick up the host view's autoresizing — sync the frame each pass.
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        spaceTintGradientLayer.frame = spaceTintBackgroundView.bounds
+        CATransaction.commit()
     }
     
     override func viewWillAppear() {
@@ -168,6 +231,53 @@ class SidebarViewController: NSViewController {
         guard !didBindDownloadsManager else { return }
         didBindDownloadsManager = true
         bottomBarSwiftUI.bindDownloadsManager(state.downloadsManager)
+    }
+
+    // MARK: - Swipe to switch Space
+
+    /// Catches trackpad gestures anywhere in the sidebar that no subview
+    /// consumed — the tab list's scroll view routes horizontal-dominant
+    /// gestures up the chain (see OverlayScrollView.scrollWheel), and the
+    /// remaining sidebar views don't scroll at all. A sideways swipe switches
+    /// this window's active Space.
+    override func scrollWheel(with event: NSEvent) {
+        // While the create-Space overlay is up it covers the sidebar; a swipe
+        // there must not switch out from under the form, so skip the
+        // space-swipe tracker entirely and let the event scroll as usual.
+        guard createSpaceOverlay == nil else {
+            super.scrollWheel(with: event)
+            return
+        }
+        switch spaceSwipe.handle(event) {
+        case .passthrough:
+            super.scrollWheel(with: event)
+        case .consumed:
+            break
+        case .trigger(let step):
+            activateAdjacentSpace(by: step)
+        }
+    }
+
+    /// Switches THIS window's active Space, clamped at the first/last Space
+    /// (no wrap-around) so the push-in animation direction always matches the
+    /// swipe. At a clamp edge the switch can't proceed, so a rubber-band end
+    /// effect plays instead of the swipe being swallowed. Vertical layouts only.
+    private func activateAdjacentSpace(by step: Int) {
+        guard !PhiPreferences.GeneralSettings.loadLayoutMode().isTraditional,
+              PhiPreferences.GeneralSettings.spacesFeatureEnabled.loadValue() else { return }
+        let spaces = SpaceManager.shared.spaces
+        guard let slot = state.windowController?.slot ?? SpaceManager.shared.keySlot,
+              let currentId = slot.activeSpaceId,
+              let currentIdx = spaces.firstIndex(where: { $0.spaceId == currentId }) else { return }
+        let targetIdx = currentIdx + step
+        guard spaces.indices.contains(targetIdx) else {
+            // Already at the first/last Space (or only one exists) — there's
+            // nowhere to switch, so play the rubber-band end effect instead of
+            // silently swallowing the swipe.
+            bounceSpaceSwitchBand(forward: step > 0)
+            return
+        }
+        slot.activate(spaceId: spaces[targetIdx].spaceId)
     }
 
     /// Update chat button visibility based on configuration and current tab's aiChatEnabled
@@ -201,10 +311,17 @@ class SidebarViewController: NSViewController {
         bottomBarSwiftUI.setMemoryHidden(shouldHideMemory)
     }
 
-    /// Update header height based on configuration
+    /// Update header height based on configuration. The header now also hosts
+    /// the Spaces switch (below the nav row, above the address bar), so both
+    /// heights include room for that row — see `SidebarHeaderView.mountSpaceSwitch`.
     private func updateHeaderHeight() {
-        let showInSidebar = !PhiPreferences.GeneralSettings.loadLayoutMode().showsNavigationAtTop
-        let headerHeight: CGFloat = showInSidebar ? 73 : 41
+        let addressInSidebar = !PhiPreferences.GeneralSettings.loadLayoutMode().showsNavigationAtTop
+        let spacesEnabled = PhiPreferences.GeneralSettings.spacesFeatureEnabled.loadValue()
+        // Base = nav row (+ address bar in sidebar layouts). The Spaces switch
+        // row adds 32 (24 row + 8 gap) only when the feature is enabled, so the
+        // header reclaims the row's height when Spaces is off.
+        let base: CGFloat = addressInSidebar ? 80 : 42
+        let headerHeight = base + (spacesEnabled ? 32 : 0)
         headerHeightConstraint?.update(offset: headerHeight)
     }
 
@@ -217,6 +334,7 @@ class SidebarViewController: NSViewController {
             .sink { [weak self] _ in
                 self?.updateChatButtonVisibility()
                 self?.updateMemoryButtonVisibility()
+                self?.headerView.updateSpaceSwitchVisibility()
                 self?.updateHeaderHeight()
             }
             .store(in: &cancellables)
@@ -225,6 +343,15 @@ class SidebarViewController: NSViewController {
     // MARK: - Setup
     
     private func setupStackView() {
+        // Added before mainStackView so it stays behind every stack item.
+        // The ColoredVisualEffectView's own `colorView` is already pinned
+        // at the back by NSVisualEffectView.commonInit, so the tint sits
+        // between the theme fill (below) and the content stack (above).
+        view.addSubview(spaceTintBackgroundView)
+        spaceTintBackgroundView.snp.makeConstraints { make in
+            make.edges.equalToSuperview()
+        }
+
         view.addSubview(mainStackView)
         mainStackView.snp.makeConstraints { make in
             make.edges.equalToSuperview()
@@ -247,10 +374,19 @@ class SidebarViewController: NSViewController {
             make.leading.trailing.equalToSuperview()
             pinnedTabsHeightConstraint = make.height.equalTo(loadCachedFavoriteHeight()).constraint
         }
-        
+
         let pinSpacer = createSpacer(height: 3)
         mainStackView.addArrangedSubview(pinSpacer)
-        
+
+        // The Spaces switch is mounted at the TOP of the sidebar — inside the
+        // header, below the nav row and above the address bar — rather than
+        // here in the tab band, so it reads as the top-most per-Space control
+        // and scrolls its label vertically on switch (see SpacesStripView).
+        // It remains a child hosting controller of this VC for theming; only
+        // its view lives in the header.
+        addChild(spacesStripHostingController)
+        headerView.mountSpaceSwitch(spacesStripHostingController.view)
+
         mainStackView.addArrangedSubview(tabList.view)
         tabList.view.snp.makeConstraints { make in
             make.leading.trailing.equalToSuperview()
@@ -282,11 +418,11 @@ class SidebarViewController: NSViewController {
             bottomBarHeightConstraint = make.height.equalTo(SidebarBottomBarState.singleRowHeight).constraint
             make.leading.trailing.equalToSuperview()
         }
-        
+
         bottomBarSwiftUI.onHeightChange = { [weak self] newHeight in
             self?.updateBottomBarHeight(newHeight)
         }
-        
+
         let bottomSpacer = createSpacer(height: 8)
         mainStackView.addArrangedSubview(bottomSpacer)
     }
@@ -373,6 +509,248 @@ class SidebarViewController: NSViewController {
                 }
             }
             .store(in: &cancellables)
+
+        // Mirror the SpacesStripView fallback chain so the gradient still
+        // resolves before MainBrowserWindowController has wired up its slot.
+        let slot = state.windowController?.slot ?? SpaceManager.shared.keySlot
+        slot?.$activeSpaceId
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in self?.updateSpaceTintGradient() }
+            .store(in: &cancellables)
+
+        SpaceManager.shared.$spaces
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in self?.updateSpaceTintGradient() }
+            .store(in: &cancellables)
+    }
+
+    /// Recompute the tint gradient from the active Space's `colorHex` and
+    /// cross-fade to it over the layout's swap-animation duration (see
+    /// `PhiPreferences.GeneralSettings.loadSwitchSpaceAnimationDuration`).
+    /// Initial paint before any prior colors are set is forced instant —
+    /// animating from nothing to the first colors causes a visible flash.
+    private func updateSpaceTintGradient() {
+        // A vertical Space-switch push-in drives the tint ramp explicitly via
+        // `rampSpaceTint`; the slot-observation that calls this fires a runloop
+        // later and would otherwise remove that in-flight ramp (snapping the
+        // background to the target color). Defer to the explicit ramp while it
+        // runs.
+        guard !isRampingSpaceTint else { return }
+        let slot = state.windowController?.slot ?? SpaceManager.shared.keySlot
+        let spaceId = slot?.activeSpaceId
+        let colorHex: String?
+        if let spaceId,
+           let space = SpaceManager.shared.spaces.first(where: { $0.spaceId == spaceId }) {
+            colorHex = space.colorHex
+        } else {
+            colorHex = nil
+        }
+        let newColors = spaceTintColors(forHex: colorHex)
+        let oldColors = spaceTintGradientLayer.colors as? [CGColor]
+        let duration = PhiPreferences.GeneralSettings.loadSwitchSpaceAnimationDuration()
+
+        guard let oldColors, duration > 0 else {
+            CATransaction.begin()
+            CATransaction.setDisableActions(true)
+            spaceTintGradientLayer.colors = newColors
+            CATransaction.commit()
+            return
+        }
+
+        // Drive the cross-fade with an explicit CABasicAnimation so the
+        // duration is exactly the configured value rather than the default
+        // implicit-action timing (~0.25s) that CAGradientLayer would otherwise
+        // use. Model value is set first with actions disabled so the explicit
+        // animation is the only thing the user sees.
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        spaceTintGradientLayer.colors = newColors
+        CATransaction.commit()
+
+        spaceTintGradientLayer.removeAnimation(forKey: "spaceTintColors")
+        let animation = CABasicAnimation(keyPath: "colors")
+        animation.fromValue = oldColors
+        animation.toValue = newColors
+        animation.duration = duration
+        animation.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+        animation.isRemovedOnCompletion = true
+        spaceTintGradientLayer.add(animation, forKey: "spaceTintColors")
+    }
+
+    /// The two-stop tint colors for a Space `colorHex` (or clear when nil):
+    /// the active color at 22% alpha fading to fully transparent.
+    private func spaceTintColors(forHex hex: String?) -> [CGColor] {
+        let base = hex.map { NSColor(hexString: $0) } ?? .clear
+        return [
+            base.withAlphaComponent(0.22).cgColor,
+            base.withAlphaComponent(0).cgColor
+        ]
+    }
+
+    // MARK: - Space-switch push-in support
+
+    /// True while `rampSpaceTint` owns the tint animation, so the
+    /// slot-observation update (`updateSpaceTintGradient`) doesn't clobber it.
+    private var isRampingSpaceTint = false
+    private var tintRampTimer: Timer?
+
+    /// Ramps the tint gradient from `fromHex` to `toHex` over `duration`, in
+    /// lockstep with the push-in slide, so the background visibly transitions
+    /// from the source Space's color to the target's *during* the slide rather
+    /// than jumping at the end.
+    ///
+    /// Driven by a per-frame timer that sets the gradient's MODEL color each
+    /// tick. A plain `CABasicAnimation` only updates the layer's presentation
+    /// value, which the host `NSVisualEffectView` snaps back to the model when
+    /// it re-composites its material — so the interpolation was never visible.
+    /// Writing the model each frame (the same approach the horizontal window
+    /// slide uses) is immune to that. `.common` run-loop mode keeps it ticking
+    /// during modal tracking.
+    func rampSpaceTint(fromHex: String?, toHex: String?, duration: TimeInterval) {
+        tintRampTimer?.invalidate()
+        tintRampTimer = nil
+        spaceTintGradientLayer.removeAnimation(forKey: "spaceTintColors")
+
+        let from = (fromHex.map { NSColor(hexString: $0) } ?? .clear).usingColorSpace(.sRGB) ?? .clear
+        let to = (toHex.map { NSColor(hexString: $0) } ?? .clear).usingColorSpace(.sRGB) ?? .clear
+
+        guard duration > 0 else {
+            setSpaceTintBase(to)
+            return
+        }
+
+        isRampingSpaceTint = true
+        setSpaceTintBase(from)
+        let start = CACurrentMediaTime()
+        let timer = Timer(timeInterval: 1.0 / 60.0, repeats: true) { [weak self] t in
+            guard let self else { t.invalidate(); return }
+            let progress = min(1.0, (CACurrentMediaTime() - start) / duration)
+            let eased: CGFloat = progress < 0.5
+                ? 2 * progress * progress
+                : 1 - pow(-2 * progress + 2, 2) / 2
+            self.setSpaceTintBase(self.lerpColor(from, to, eased))
+            if progress >= 1.0 {
+                t.invalidate()
+                self.tintRampTimer = nil
+                self.isRampingSpaceTint = false
+            }
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        tintRampTimer = timer
+    }
+
+    /// Sets the gradient model to the two-stop tint for `base` with implicit
+    /// animation disabled (the timer supplies the motion).
+    private func setSpaceTintBase(_ base: NSColor) {
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        spaceTintGradientLayer.colors = [
+            base.withAlphaComponent(0.22).cgColor,
+            base.withAlphaComponent(0).cgColor
+        ]
+        CATransaction.commit()
+    }
+
+    private func lerpColor(_ a: NSColor, _ b: NSColor, _ t: CGFloat) -> NSColor {
+        NSColor(
+            srgbRed: a.redComponent + (b.redComponent - a.redComponent) * t,
+            green: a.greenComponent + (b.greenComponent - a.greenComponent) * t,
+            blue: a.blueComponent + (b.blueComponent - a.blueComponent) * t,
+            alpha: a.alphaComponent + (b.alphaComponent - a.alphaComponent) * t
+        )
+    }
+
+    /// The contiguous per-Space content band — pinned tabs, the Spaces strip
+    /// (name + switcher), and the tab list (which also hosts bookmarks) — in
+    /// this view's coordinate space. `SpaceManager` snapshots this region from
+    /// the entering window's sidebar and slides it in over the leaving
+    /// window's matching region during a vertical Space switch. The header
+    /// (address bar) above and the bottom toolbar below are deliberately
+    /// excluded so they stay put through the push.
+    var spaceSwitchBandFrame: NSRect {
+        // The Spaces switch now lives in the header (with its own scroll
+        // animation), so the push-in band is just the pinned strip and the
+        // tab list.
+        let bandViews: [NSView] = [
+            pinnedTabContainerView,
+            tabList.view
+        ]
+        let rects = bandViews.compactMap { v -> NSRect? in
+            guard v.superview != nil else { return nil }
+            return view.convert(v.bounds, from: v)
+        }
+        guard let first = rects.first else { return .zero }
+        return rects.dropFirst().reduce(first) { $0.union($1) }
+    }
+
+    /// Content-only snapshot of `spaceSwitchBandFrame`. The tint gradient
+    /// lives in a sibling layer behind `mainStackView`, so it is NOT captured
+    /// here — the band image carries a transparent background and the ramping
+    /// gradient shows through during the slide. Renders even while the host
+    /// window is off-screen, since AppKit layout/`cacheDisplay` is independent
+    /// of window visibility.
+    func snapshotSpaceSwitchBand() -> NSImage? {
+        view.layoutSubtreeIfNeeded()
+        let bandInStack = mainStackView.convert(spaceSwitchBandFrame, from: view)
+        guard bandInStack.width > 0, bandInStack.height > 0,
+              let rep = mainStackView.bitmapImageRepForCachingDisplay(in: bandInStack) else {
+            return nil
+        }
+        mainStackView.cacheDisplay(in: bandInStack, to: rep)
+        let image = NSImage(size: bandInStack.size)
+        image.addRepresentation(rep)
+        return image
+    }
+
+    /// Hides/reveals the live band content while the push-in overlay (which
+    /// carries the same content as a transparent snapshot) plays on top.
+    /// Without this the static live content shows through the snapshot's
+    /// transparent areas and reads as a doubled, non-moving copy. Uses alpha
+    /// rather than `isHidden` so the stack layout — and the tint gradient
+    /// painted behind it — is unaffected.
+    func setSwitchBandContentHidden(_ hidden: Bool) {
+        let alpha: CGFloat = hidden ? 0 : 1
+        pinnedTabContainerView.alphaValue = alpha
+        tabList.view.alphaValue = alpha
+    }
+
+    /// Rubber-band nudge on the per-Space content band, played when a
+    /// swipe-to-switch can't proceed because the active Space is already the
+    /// first or last one. The band (pinned strip + tab list) shifts a short
+    /// distance in the swipe's push direction and springs back — the same
+    /// horizontal motion as the push-in swap, minus the Space change — so the
+    /// gesture still resolves with feedback the user can feel. `forward`
+    /// follows the swap convention: next-Space swipes push the band left,
+    /// previous-Space swipes push it right.
+    func bounceSpaceSwitchBand(forward: Bool) {
+        let bandViews: [NSView] = [pinnedTabContainerView, tabList.view]
+        let offset: CGFloat = forward ? -22 : 22
+
+        // Clip the nudge to the sidebar so the shifted band reveals the
+        // background on the trailing edge instead of poking over the web
+        // content; restored once the bounce settles.
+        mainStackView.wantsLayer = true
+        let priorMasksToBounds = mainStackView.layer?.masksToBounds ?? false
+        mainStackView.layer?.masksToBounds = true
+
+        CATransaction.begin()
+        CATransaction.setCompletionBlock { [weak self] in
+            self?.mainStackView.layer?.masksToBounds = priorMasksToBounds
+        }
+        for bandView in bandViews {
+            bandView.wantsLayer = true
+            guard let layer = bandView.layer else { continue }
+            let bounce = CAKeyframeAnimation(keyPath: "transform.translation.x")
+            bounce.values = [0, offset, 0]
+            bounce.keyTimes = [0, 0.4, 1]
+            bounce.timingFunctions = [
+                CAMediaTimingFunction(name: .easeInEaseOut),
+                CAMediaTimingFunction(name: .easeInEaseOut)
+            ]
+            bounce.duration = 0.3
+            layer.add(bounce, forKey: "spaceSwitchEdgeBounce")
+        }
+        CATransaction.commit()
     }
 
     private func shouldActivateSidebarContent() -> Bool { state.layoutMode != .comfortable }
@@ -580,6 +958,75 @@ class SidebarViewController: NSViewController {
                 make.height.equalTo(0)
             }
             notificationContainerView.subviews.forEach { $0.removeFromSuperview() }
+        }
+    }
+
+    // MARK: - Create Space Overlay
+
+    /// Inline "Create a Space" form filling the sidebar in vertical layouts.
+    /// The horizontal layout routes to a floating window instead — the choice
+    /// is made in `CreateSpacePanel.requestCreation`.
+    private var createSpaceOverlay: ThemedHostingController<CreateSpacePanel>?
+    /// Themed backdrop painted behind the create-Space form so it matches the
+    /// active Space's sidebar — same visual-effect recipe as the sidebar root
+    /// (`loadView`), resolved against this window's theme context.
+    private var createSpaceOverlayBackdrop: ColoredVisualEffectView?
+
+    func showCreateSpaceOverlay(initialProfileId: String?) {
+        guard createSpaceOverlay == nil else { return }
+        let panel = CreateSpacePanel(
+            style: .sidebar,
+            manager: .shared,
+            profileManager: .shared,
+            initialProfileId: initialProfileId
+        ) { [weak self] in
+            self?.dismissCreateSpaceOverlay()
+        }
+        // Match the current Space's sidebar background (color + opacity) by
+        // reusing the sidebar root's visual-effect recipe; the form hosting
+        // view above is transparent so this shows through.
+        let backdrop = ColoredVisualEffectView()
+        backdrop.themedBackgroundColor = .windowOverlayBackground
+        backdrop.material = .fullScreenUI
+        backdrop.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(backdrop)
+        backdrop.snp.makeConstraints { make in
+            make.edges.equalToSuperview()
+        }
+
+        let host = ThemedHostingController(rootView: panel, themeSource: state.themeContext)
+        host.view.translatesAutoresizingMaskIntoConstraints = false
+        addChild(host)
+        view.addSubview(host.view)
+        host.view.snp.makeConstraints { make in
+            make.edges.equalToSuperview()
+        }
+        backdrop.alphaValue = 0
+        host.view.alphaValue = 0
+        createSpaceOverlay = host
+        createSpaceOverlayBackdrop = backdrop
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = 0.18
+            context.allowsImplicitAnimation = true
+            backdrop.animator().alphaValue = 1
+            host.view.animator().alphaValue = 1
+        }
+    }
+
+    func dismissCreateSpaceOverlay() {
+        guard let host = createSpaceOverlay else { return }
+        let backdrop = createSpaceOverlayBackdrop
+        createSpaceOverlay = nil
+        createSpaceOverlayBackdrop = nil
+        NSAnimationContext.runAnimationGroup({ context in
+            context.duration = 0.15
+            context.allowsImplicitAnimation = true
+            host.view.animator().alphaValue = 0
+            backdrop?.animator().alphaValue = 0
+        }) {
+            host.view.removeFromSuperview()
+            host.removeFromParent()
+            backdrop?.removeFromSuperview()
         }
     }
 }

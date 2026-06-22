@@ -6,8 +6,10 @@
 import SwiftData
 import Foundation
 
-typealias TabDataModel = TabDataModelSchemaV6.TabDataModel
-typealias ProfileModel = TabDataModelSchemaV6.ProfileModel
+typealias TabDataModel = TabDataModelSchemaV7.TabDataModel
+typealias ProfileModel = TabDataModelSchemaV7.ProfileModel
+typealias SpaceModel = TabDataModelSchemaV7.SpaceModel
+typealias SpaceURLRule = TabDataModelSchemaV7.SpaceURLRule
 
 extension TabDataModel: CustomStringConvertible {
     var description: String {
@@ -24,11 +26,12 @@ enum TabDataModelMigrationPlan: SchemaMigrationPlan {
             TabDataModelSchemaV4.self,
             TabDataModelSchemaV5.self,
             TabDataModelSchemaV6.self,
+            TabDataModelSchemaV7.self,
         ]
     }
 
     static var stages: [MigrationStage] {
-        [migrateV1toV2, migrateV2toV3, migrateV3toV4, migrateV4toV5, migrateV5toV6]
+        [migrateV1toV2, migrateV2toV3, migrateV3toV4, migrateV4toV5, migrateV5toV6, migrateV6toV7]
     }
 
     nonisolated(unsafe) static var v1TypeMapping: [String: Int] = [:]
@@ -83,9 +86,46 @@ enum TabDataModelMigrationPlan: SchemaMigrationPlan {
         toVersion: TabDataModelSchemaV5.self
     )
 
+    /// Additive: introduces optional `lastSeen` for persisted last-opened
+    /// tracking on pinned tabs and bookmarks. No data movement required.
     static let migrateV5toV6 = MigrationStage.lightweight(
         fromVersion: TabDataModelSchemaV5.self,
         toVersion: TabDataModelSchemaV6.self
+    )
+
+    /// Adds `SpaceModel` and `SpaceURLRule` (schema-level additive) AND
+    /// backfills every existing *bookmark* row where `spaceId == nil` to the
+    /// well-known default space id. Only bookmarks are scoped per-Space (see
+    /// the `SpaceModel` doc in `TabDataModelSchemaV7`): pinned tabs are
+    /// per-profile and ordinary/open tabs are unscoped, so both keep
+    /// `spaceId == nil` and are left untouched. Once backfilled, the bookmark
+    /// queries can filter by `spaceId` without a nil-equivalence rule, and new
+    /// spaces remain cleanly isolated from pre-Spaces data. `SpaceURLRule`
+    /// starts as an empty table; SpaceManager populates rows when the user
+    /// adds routing rules.
+    static let migrateV6toV7 = MigrationStage.custom(
+        fromVersion: TabDataModelSchemaV6.self,
+        toVersion: TabDataModelSchemaV7.self,
+        willMigrate: { _ in },
+        didMigrate: { context in
+            let descriptor = FetchDescriptor<TabDataModelSchemaV7.TabDataModel>()
+            let tabs = try context.fetch(descriptor)
+            // Mirrors `LocalStore.defaultSpaceId`; intentionally hard-coded here
+            // so the migration is self-contained (app-level constants are not
+            // guaranteed to be linked at migration time).
+            let defaultSpaceId = "default-space"
+            // Restrict to bookmark kinds: pinned tabs (per-profile) and
+            // ordinary/open tabs (unscoped) never read `spaceId`, and the
+            // `SpaceModel` doc requires their `spaceId` to stay nil. Tagging
+            // them would falsify that invariant and pull them into
+            // `deleteTaggedRows` / `deleteSpaceCascade(spaceId:)`.
+            let bookmarkKinds: Set<Int> = [TabDataType.bookmark.rawValue,
+                                           TabDataType.bookmarkFolder.rawValue]
+            for tab in tabs where tab.spaceId == nil && bookmarkKinds.contains(tab.type) {
+                tab.spaceId = defaultSpaceId
+            }
+            try context.save()
+        }
     )
 
     static let migrateV2toV3 = MigrationStage.custom(

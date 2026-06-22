@@ -23,8 +23,8 @@ actor LocalStoreActor {
 class LocalStore {
     static let defaultProfileId = "Default"
     static let compatibilityConfiguration = LocalStoreCompatibilityConfiguration(
-        currentStoreFormatVersion: 6,
-        readableStoreFormatVersions: 1...6,
+        currentStoreFormatVersion: 7,
+        readableStoreFormatVersions: 1...7,
         storeFilename: "LocalStore.sqlite"
     )
 
@@ -110,6 +110,8 @@ class LocalStore {
             let modelContainer = try ModelContainer(
                 for: TabDataModel.self,
                 ProfileModel.self,
+                SpaceModel.self,
+                SpaceURLRule.self,
                 migrationPlan: TabDataModelMigrationPlan.self,
                 configurations: configuration
             )
@@ -228,7 +230,8 @@ extension LocalStore {
             let sortBy: [SortDescriptor<TabDataModel>] = [SortDescriptor(\.index)]
             let descriptor = FetchDescriptor<TabDataModel>(
                 predicate: #Predicate<TabDataModel> { tab in
-                    tab.type == pinnedRaw && tab.profile?.profileId == profileId
+                    tab.type == pinnedRaw &&
+                    tab.profile?.profileId == profileId
                 },
                 sortBy: sortBy
             )
@@ -489,9 +492,9 @@ extension LocalStore {
         guard mainContext != nil else {
             return Just([]).eraseToAnyPublisher()
         }
-        
+
         let subject = CurrentValueSubject<[TabDataModel], Never>([])
-        
+
         let fetchPinnedTabs = {
             self.getAllPinnedTabs(for: profileID)
         }
@@ -562,7 +565,10 @@ extension LocalStore {
         }
     }
     
-    func moveOrCreatePinnedTab(_ tab: Tab, after afterGuid: String?, profileId: String, newGuid: String? = nil) {
+    func moveOrCreatePinnedTab(_ tab: Tab,
+                               after afterGuid: String?,
+                               profileId: String,
+                               newGuid: String? = nil) {
         let tabGuid = tab.guidInLocalDB ?? UUID().uuidString
         let tabTitle = tab.title
         let tabURL = tab.url
@@ -574,7 +580,8 @@ extension LocalStore {
                 }
                 let pinnedRaw = TabDataType.pinnedTab.rawValue
                 let pinnedPredicate = #Predicate<TabDataModel> {
-                    $0.type == pinnedRaw && $0.profile?.profileId == profileId
+                    $0.type == pinnedRaw &&
+                    $0.profile?.profileId == profileId
                 }
                 let sortBy: [SortDescriptor<TabDataModel>] = [SortDescriptor(\.index)]
                 let descriptor = FetchDescriptor<TabDataModel>(

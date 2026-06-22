@@ -338,9 +338,17 @@ class Tab: WebContentRepresentable {
     
     @objc func close() {
         if isActive, windowId != 0 {
-            MainBrowserWindowControllersManager.shared
-                .getBrowserState(for: windowId)?
-                .prepareForActiveTabClose(tabId: guid)
+            let manager = MainBrowserWindowControllersManager.shared
+            let state = manager.getBrowserState(for: windowId)
+            // Mirror of the CommandDispatcher.IDC_CLOSE_TAB tag: when
+            // closing the last tab in the active Space via the UI X
+            // button, tag the slot so the resulting browser auto-close
+            // falls into the switch-to-sibling branch.
+            if let state, state.tabs.count <= 1,
+               let controller = manager.controller(for: windowId) {
+                controller.slot?.markTabDrivenClose(for: controller.spaceId)
+            }
+            state?.prepareForActiveTabClose(tabId: guid)
             // Let Chromium handle active-tab teardown to avoid close flicker.
             ChromiumLauncher.sharedInstance().bridge?.executeCommand(
                 Int32(CommandWrapper.IDC_CLOSE_TAB.rawValue),

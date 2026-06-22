@@ -21,7 +21,14 @@ class SidebarHeaderView: NSView, TitlebarAwareHitTestable {
     /// Currently available app update version.
     private var availableUpdateVersion: String?
     private var currentWidth: CGFloat = 0
-    
+
+    /// The mounted Spaces-switch row (owned by the sidebar view controller);
+    /// the header positions it and toggles its visibility with the feature flag.
+    private weak var spaceSwitchView: NSView?
+    /// Last-applied switch visibility, so the toggle observer only remakes
+    /// constraints when the master Spaces flag actually flips.
+    private var spaceSwitchVisible: Bool?
+
     private var isFloating: Bool = false
     
     private lazy var sidebarButton: HoverableButtonNSView = {
@@ -206,6 +213,53 @@ class SidebarHeaderView: NSView, TitlebarAwareHitTestable {
         }
 
         updateLayoutVisibility(layoutMode: initialLayoutMode)
+    }
+
+    /// Mounts the Spaces-switch row between the nav row and the address bar so
+    /// it reads as the top-most per-Space control. The view is owned by the
+    /// sidebar view controller (a child hosting controller); the header only
+    /// positions it and re-points the address bar to sit beneath it.
+    func mountSpaceSwitch(_ view: NSView) {
+        addSubview(view)
+        spaceSwitchView = view
+        updateSpaceSwitchVisibility()
+    }
+
+    /// Shows or hides the Spaces-switch row to match the master Spaces feature
+    /// flag, reclaiming the row's height (and re-pinning the address bar to the
+    /// nav row) when the feature is off. Called on mount and whenever the toggle
+    /// flips so the header never reserves space for a control the user can't use.
+    func updateSpaceSwitchVisibility() {
+        guard let view = spaceSwitchView else { return }
+        let enabled = PhiPreferences.GeneralSettings.spacesFeatureEnabled.loadValue()
+        guard spaceSwitchVisible != enabled else { return }
+        spaceSwitchVisible = enabled
+
+        view.isHidden = !enabled
+        if enabled {
+            view.snp.remakeConstraints { make in
+                make.leading.trailing.equalToSuperview()
+                make.top.equalTo(stackView.snp.bottom).offset(8)
+                make.height.equalTo(SpacesStripView.sidebarHeight)
+            }
+            addressView.snp.remakeConstraints { make in
+                make.left.right.equalToSuperview()
+                make.top.equalTo(view.snp.bottom).offset(12)
+                addressViewHeightConstraint = make.height.equalTo(addressViewHeight).constraint
+            }
+        } else {
+            view.snp.remakeConstraints { make in
+                make.leading.trailing.equalToSuperview()
+                make.top.equalTo(stackView.snp.bottom)
+                make.height.equalTo(0)
+            }
+            addressView.snp.remakeConstraints { make in
+                make.left.right.equalToSuperview()
+                make.top.equalTo(stackView.snp.bottom).offset(12)
+                addressViewHeightConstraint = make.height.equalTo(addressViewHeight).constraint
+            }
+        }
+        updateLayoutVisibility(layoutMode: browserState?.layoutMode ?? .performance)
     }
 
     private func isSidebarLayout(_ layoutMode: LayoutMode) -> Bool {

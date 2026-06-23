@@ -103,11 +103,35 @@ extension DeeplinkHandler {
             }
             let pageParam = PageRootParam.settings(settingsPage)
             AppController.shared.handleOpenPage(pageParam)
+            postOAuthConnectorResultIfNeeded(params)
             return true
         default:
             AppLogWarn("Unsupported page name: \(pageName)")
         }
         
         return false
+    }
+
+    private static func postOAuthConnectorResultIfNeeded(_ params: [String: String]) {
+        guard let provider = params["oauth_provider"],
+              let result = params["oauth_result"] else {
+            return
+        }
+
+        var userInfo: [String: String] = [
+            "provider": provider,
+            "result": result,
+        ]
+        if let error = params["error"] {
+            userInfo["error"] = error
+        }
+
+        DispatchQueue.main.async {
+            NotificationCenter.default.post(
+                name: .oauthConnectorFlowDidReturn,
+                object: nil,
+                userInfo: userInfo
+            )
+        }
     }
 }

@@ -28,4 +28,5 @@ class AISettingsViewController: NSViewController, SettingsPane {
 
 extension Notification.Name {
     static let browserMemorySwitchDidChange = Notification.Name("browserMemorySwitchDidChange")
+    static let oauthConnectorFlowDidReturn = Notification.Name("oauthConnectorFlowDidReturn")
 }

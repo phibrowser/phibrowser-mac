@@ -25,6 +25,14 @@ struct GetOAuthConnectionsResponse: Codable {
     let connections: [OAuthConnection]
 }
 
+struct GetOAuthAuthorizationResponse: Codable {
+    let authURL: String
+
+    enum CodingKeys: String, CodingKey {
+        case authURL = "auth_url"
+    }
+}
+
 struct DeleteOAuthTokenResponse: Codable {
     let message: String
 }

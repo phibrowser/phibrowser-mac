@@ -423,6 +423,9 @@
     "Conflicts with: %@" : {
       "comment" : "Shortcuts settings - Warning text showing conflicting shortcuts"
     },
+    "Connect" : {
+      "comment" : "AI settings - Button to connect an external data connector"
+    },
     "Connected" : {
       "comment" : "AI settings - Badge text when connector is successfully connected"
     },
@@ -434,6 +437,9 @@
     },
     "Connection is secure" : {
       "comment" : "Address bar menu - Website security secure\nWebsite security secure"
+    },
+    "Connector authorization failed." : {
+      "comment" : "AI settings - OAuth authorization failure"
     },
     "Cookies" : {
       "comment" : "Import data type - Cookies toggle label"
@@ -488,6 +494,9 @@
     },
     "Discard" : {
       "comment" : "Download item row - Tooltip for discard button on blocked download\nDownload item row - Tooltip for discard button on safety warning\nTooltip for discard button on blocked download in living downloads toast\nTooltip for discard button on safety warning in living downloads toast"
+    },
+    "Disconnect" : {
+      "comment" : "AI settings - Button to disconnect an external data connector"
     },
     "Dismiss" : {
       "comment" : "Tooltip for button to dismiss living download item"
@@ -797,9 +806,6 @@
     },
     "Logout Failed" : {
       "comment" : "Account settings - Alert title when logout fails"
-    },
-    "Manage" : {
-      "comment" : "AI settings - Button to open connector management page"
     },
     "Manage Extensions" : {
       "comment" : "Address bar menu - Extensions submenu item to open extension management\nExtension list - Button to open extensions management page"
@@ -1248,6 +1254,9 @@
     "The archive does not contain a top-level Phi folder." : {
       "comment" : "Debug import user data - Error message when zip does not include the expected Phi directory at archive root"
     },
+    "The connector authorization URL is invalid." : {
+      "comment" : "AI settings - OAuth authorization URL error"
+    },
     "The local IM service is unavailable. Check whether Phi Sentinel started normally and the IM service is running." : {
       "comment" : "IM Channels - Message shown when im-server is not connected"
     },
@@ -1283,6 +1292,9 @@
     },
     "Turn Off Connectors?" : {
       "comment" : "AI settings - Confirmation alert title when disabling external data connectors"
+    },
+    "Unable to start connector authorization." : {
+      "comment" : "AI settings - OAuth authorization start error"
     },
     "Ungroup" : {
       "comment" : "Tab group context menu - Dissolve the group, keeping the tabs"

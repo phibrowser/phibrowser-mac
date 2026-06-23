@@ -299,7 +299,9 @@ private struct ConnectorsListView: View {
 
             VStack(spacing: 0) {
                 ForEach(Array(connectorViewModel.connectors.enumerated()), id: \.element.id) { index, connector in
-                    ConnectorRowView(connector: connector, enabled: enabled)
+                    ConnectorRowView(connector: connector, enabled: enabled) {
+                        connectorViewModel.toggleConnection(for: connector)
+                    }
                     if index < connectorViewModel.connectors.count - 1 {
                         Divider()
                     }
@@ -324,6 +326,7 @@ private struct ConnectorsListView: View {
 private struct ConnectorRowView: View {
     let connector: ConnectorItemState
     let enabled: Bool
+    let action: () -> Void
 
     var body: some View {
         HStack(spacing: 8) {
@@ -379,23 +382,30 @@ private struct ConnectorRowView: View {
                         .themedForeground(.textTertiary)
                 }
             }
+
+            if let errorMessage = connector.errorMessage, !errorMessage.isEmpty {
+                Text(errorMessage)
+                    .font(.system(size: 11))
+                    .foregroundStyle(Color.red)
+                    .lineLimit(2)
+            }
         }
     }
 
     private var manageButton: some View {
         Button {
-            connector.openManagePage()
+            action()
         } label: {
             HStack(spacing: 4) {
-                Image(systemName: "arrow.up.forward.square")
+                Image(systemName: connector.status.isConnected ? "xmark.circle" : "link")
                     .font(.system(size: 11))
-                Text(NSLocalizedString("Manage", comment: "AI settings - Button to open connector management page"))
+                Text(connector.actionTitle)
                     .font(.system(size: 13))
             }
         }
         .buttonStyle(.bordered)
         .controlSize(.small)
-        .disabled(!enabled)
+        .disabled(!enabled || connector.isLoading)
     }
 }
 

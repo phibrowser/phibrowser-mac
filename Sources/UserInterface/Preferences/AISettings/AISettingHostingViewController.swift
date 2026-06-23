@@ -19,6 +19,7 @@ final class AISettingHostingViewController: NSViewController {
     override func viewDidLoad() {
         super.viewDidLoad()
         setupSwiftUIView()
+        observeOAuthConnectorReturn()
     }
 
     private func setupSwiftUIView() {
@@ -42,5 +43,33 @@ final class AISettingHostingViewController: NSViewController {
         super.viewWillAppear()
         hostingController?.view.needsLayout = true
         connectorViewModel.loadConnectionsIfNeeded()
+    }
+
+    deinit {
+        NotificationCenter.default.removeObserver(self)
+    }
+
+    private func observeOAuthConnectorReturn() {
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(handleOAuthConnectorReturn(_:)),
+            name: .oauthConnectorFlowDidReturn,
+            object: nil
+        )
+    }
+
+    @objc private func handleOAuthConnectorReturn(_ notification: Notification) {
+        guard let userInfo = notification.userInfo as? [String: String],
+              let provider = userInfo["provider"],
+              let result = userInfo["result"] else {
+            connectorViewModel.refreshConnections()
+            return
+        }
+
+        connectorViewModel.handleOAuthReturn(
+            provider: provider,
+            result: result,
+            error: userInfo["error"]
+        )
     }
 }

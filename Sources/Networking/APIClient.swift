@@ -373,6 +373,7 @@ class APIClient {
         let url = URL(string: "\(accountBaseURL)/api/auth/oauth/connections")!
         var request = URLRequest(url: url)
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
 
         let (data, response) = try await URLSession.shared.data(for: request)
 
@@ -385,6 +386,39 @@ class APIClient {
         }
 
         return try JSONDecoder().decode(Response<GetOAuthConnectionsResponse>.self, from: data)
+    }
+
+    func getOAuthAuthorization(provider: String, successRedirect: String? = nil, failureRedirect: String? = nil) async throws -> Response<GetOAuthAuthorizationResponse> {
+        guard var components = URLComponents(string: "\(accountBaseURL)/api/auth/oauth/authorize/\(provider)") else {
+            throw APIError.invalidResponse
+        }
+        var queryItems: [URLQueryItem] = []
+        if let successRedirect {
+            queryItems.append(URLQueryItem(name: "success_redirect", value: successRedirect))
+        }
+        if let failureRedirect {
+            queryItems.append(URLQueryItem(name: "failure_redirect", value: failureRedirect))
+        }
+        components.queryItems = queryItems.isEmpty ? nil : queryItems
+
+        guard let url = components.url else {
+            throw APIError.invalidResponse
+        }
+        var request = URLRequest(url: url)
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw APIError.invalidResponse
+        }
+
+        guard (200...299).contains(httpResponse.statusCode) else {
+            throw APIError.httpError(statusCode: httpResponse.statusCode)
+        }
+
+        return try JSONDecoder().decode(Response<GetOAuthAuthorizationResponse>.self, from: data)
     }
     
     /// Create or update a user source
@@ -488,6 +522,7 @@ class APIClient {
         var urlRequest = URLRequest(url: url)
         urlRequest.httpMethod = "DELETE"
         urlRequest.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        urlRequest.setValue("application/json", forHTTPHeaderField: "Accept")
 
         let (data, response) = try await URLSession.shared.data(for: urlRequest)
 

@@ -1649,20 +1649,39 @@ final class SpaceWindowSlot: ObservableObject {
             }
             // The new window's `makeKeyAndOrderFront` happens after this turn
             // (inside the coordinator's `mainBrowserWindowCreated` after our
-            // controller-init returns). Hide the previous on the next runloop
-            // iteration so we don't leave the screen blank during the spawn.
+            // controller-init returns). On the next runloop the new window is
+            // up — animate the switch, then hide the previous so the screen
+            // never goes blank.
             if let previous {
                 DispatchQueue.main.async { [weak self, weak previous] in
-                    guard let self else { return }
-                    if let registered = self.windowsBySpaceId[spaceId],
-                       registered.window?.isVisible == true {
-                        previous?.window?.orderOut(nil)
-                        // The spawned target is up and the leaving window is
-                        // hidden — let a post-swap close (e.g. `deleteSpace`)
-                        // run now that it lands off-screen. No-op for ordinary
-                        // switches, which pass no handler.
-                        onSwapSettled?()
+                    guard let self,
+                          let registered = self.windowsBySpaceId[spaceId],
+                          registered.window?.isVisible == true else { return }
+                    // First switch to a Space spawns its window, so there is no
+                    // existing window for `activate` to slide — without this the
+                    // first switch surfaces with no animation. Chromium has
+                    // already fronted the new window, so this is the external-
+                    // switch shape: slide the new window's sidebar band (the
+                    // clicked push-in animates on the LEAVING window, which is
+                    // about to be hidden here, so it would play off-screen).
+                    // Bandless / horizontal layouts fall through to a plain
+                    // present, matching today's behavior.
+                    if !PhiPreferences.GeneralSettings.loadLayoutMode().isTraditional,
+                       let leavingBand = verticalLeavingBand {
+                        self.performExternalVerticalSlide(
+                            target: registered,
+                            leavingBand: leavingBand,
+                            direction: direction,
+                            sourceColorHex: sourceColorHex,
+                            targetColorHex: targetColorHex
+                        )
                     }
+                    previous?.window?.orderOut(nil)
+                    // The spawned target is up and the leaving window is
+                    // hidden — let a post-swap close (e.g. `deleteSpace`) run
+                    // now that it lands off-screen. No-op for ordinary
+                    // switches, which pass no handler.
+                    onSwapSettled?()
                 }
             }
         }

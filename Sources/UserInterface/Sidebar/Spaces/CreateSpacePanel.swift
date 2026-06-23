@@ -8,8 +8,8 @@ import SwiftUI
 
 /// Rich "Create a Space" panel. Replaces the bare name-only NSAlert that used
 /// to back both the File menu and the Spaces picker's "New Space" row. Lets the
-/// user name the Space, bind it to a profile, pick an accent swatch, and
-/// fine-tune that swatch's shade with a brightness slider before committing.
+/// user name the Space, bind it to a profile, and pick an accent swatch before
+/// committing.
 ///
 /// Self-contained: the only side effect is `manager.createSpace(...)` on
 /// confirm. Presented in a chrome-light floating window via `present(...)`,
@@ -34,10 +34,6 @@ struct CreateSpacePanel: View {
     @State private var name: String = ""
     @State private var selectedProfileId: String = ""
     @State private var selectedSwatch: Int = 0
-    /// Brightness slider position in 0...1, mapped onto the selected swatch's
-    /// HSL lightness. Seeded from each swatch's own lightness on selection so
-    /// the thumb lands where the preset naturally sits.
-    @State private var brightness: Double = 1
     @FocusState private var nameFocused: Bool
 
     /// Accent presets, lifted straight from the Figma swatch row. The first is
@@ -48,16 +44,11 @@ struct CreateSpacePanel: View {
     ]
     private static let ringColor = Color(hexString: "#3AA4D5")
     private static let accentColor = Color(hexString: "#3AA4D5")
-    /// Lightness window the slider sweeps. Bounded short of pure black/white so
-    /// every shade stays a usable accent.
-    private static let minLightness: CGFloat = 0.30
-    private static let maxLightness: CGFloat = 0.92
 
     var body: some View {
         styledContent
             .onAppear {
                 selectedProfileId = resolvedInitialProfileId
-                brightness = defaultBrightness(forSwatch: selectedSwatch)
                 DispatchQueue.main.async { nameFocused = true }
             }
     }
@@ -184,18 +175,11 @@ struct CreateSpacePanel: View {
     }
 
     private var colorBlock: some View {
-        VStack(spacing: 8) {
-            swatchRow
-            Rectangle()
-                .fill(Color.primary.opacity(0.1))
-                .frame(height: 1)
-            BrightnessSlider(value: $brightness, gradient: brightnessGradient)
-                .frame(height: 14)
-        }
-        .padding(.horizontal, 8)
-        .padding(.vertical, 6)
-        .background(Color.primary.opacity(0.04))
-        .clipShape(RoundedRectangle(cornerRadius: 8))
+        swatchRow
+            .padding(.horizontal, 8)
+            .padding(.vertical, 10)
+            .background(Color.primary.opacity(0.04))
+            .clipShape(RoundedRectangle(cornerRadius: 8))
     }
 
     private var swatchRow: some View {
@@ -221,7 +205,6 @@ struct CreateSpacePanel: View {
             .contentShape(Circle())
             .onTapGesture {
                 selectedSwatch = index
-                brightness = defaultBrightness(forSwatch: index)
             }
     }
 
@@ -251,32 +234,9 @@ struct CreateSpacePanel: View {
 
     // MARK: - Color math
 
-    /// Selected swatch shaded to the current slider position.
+    /// The Space's color is the selected accent swatch as shown — no shading.
     private func resolvedColorHex() -> String {
-        shadedHex(baseHex: Self.swatches[selectedSwatch], t: brightness)
-    }
-
-    private func shadedHex(baseHex: String, t: Double) -> String {
-        let hsl = NSColor(hexString: baseHex).toHSLComponents()
-        let lightness = Self.minLightness + CGFloat(t) * (Self.maxLightness - Self.minLightness)
-        return NSColor(hue: hsl.h, saturation: hsl.s, lightness: lightness).toHexString()
-    }
-
-    /// Slider position whose lightness reproduces the preset's own lightness,
-    /// clamped into the slider's window.
-    private func defaultBrightness(forSwatch index: Int) -> Double {
-        let l = NSColor(hexString: Self.swatches[index]).toHSLComponents().l
-        let t = (l - Self.minLightness) / (Self.maxLightness - Self.minLightness)
-        return Double(min(max(t, 0), 1))
-    }
-
-    private var brightnessGradient: Gradient {
-        let base = Self.swatches[selectedSwatch]
-        return Gradient(colors: [
-            Color(hexString: shadedHex(baseHex: base, t: 0)),
-            Color(hexString: shadedHex(baseHex: base, t: 0.5)),
-            Color(hexString: shadedHex(baseHex: base, t: 1)),
-        ])
+        Self.swatches[selectedSwatch]
     }
 
     // MARK: - Profiles
@@ -345,45 +305,6 @@ struct CreateSpacePanel: View {
         // switch animation plays over the revealed sidebar rather than under it.
         if let newSpaceId {
             manager.activateInFocusedWindow(spaceId: newSpaceId)
-        }
-    }
-}
-
-/// Custom brightness track matching the Figma: a gradient-filled rounded bar
-/// with a draggable white knob. Used instead of `Slider` so the track can
-/// preview the shade range of the selected swatch.
-private struct BrightnessSlider: View {
-    @Binding var value: Double
-    let gradient: Gradient
-
-    private let thumbSize: CGFloat = 14
-    private let trackHeight: CGFloat = 5
-
-    var body: some View {
-        GeometryReader { geo in
-            let span = max(geo.size.width - thumbSize, 1)
-            let x = thumbSize / 2 + CGFloat(value) * span
-            ZStack(alignment: .leading) {
-                Capsule()
-                    .fill(LinearGradient(gradient: gradient,
-                        startPoint: .leading, endPoint: .trailing))
-                    .frame(height: trackHeight)
-                    .overlay(Capsule().strokeBorder(Color.primary.opacity(0.1), lineWidth: 0.5))
-                    .frame(maxHeight: .infinity, alignment: .center)
-                Circle()
-                    .fill(Color.white)
-                    .frame(width: thumbSize, height: thumbSize)
-                    .overlay(Circle().strokeBorder(Color.black.opacity(0.12), lineWidth: 0.5))
-                    .shadow(color: Color.black.opacity(0.18), radius: 1.5, y: 0.5)
-                    .position(x: x, y: geo.size.height / 2)
-            }
-            .contentShape(Rectangle())
-            .gesture(
-                DragGesture(minimumDistance: 0)
-                    .onChanged { g in
-                        value = Double(min(max((g.location.x - thumbSize / 2) / span, 0), 1))
-                    }
-            )
         }
     }
 }

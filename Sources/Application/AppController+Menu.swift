@@ -13,6 +13,7 @@ extension AppController {
     static let exportLogsItemTag = 500011
     static let manageUserDataHelpSeparatorTag = 500012
     static let manageUserDataParentItemTag = 500013
+    static let timeMachineBackupsParentItemTag = 500014
     static let toggleBookmarkBarItemTag = 500003
     static let toggleBookmarkBarOnNewTabItemTag = 500004
     static let layoutModeDefaultItemTag = 500005
@@ -41,6 +42,7 @@ extension AppController {
     static let spacesURLRulesItemTag = 500021
     static let spacesURLRulesSeparatorTag = 500022
     static let spacesMenuIdentifier = NSUserInterfaceItemIdentifier("phi.spaces.menu")
+    static let timeMachineBackupsMenuIdentifier = NSUserInterfaceItemIdentifier("phi.time-machine.backups.menu")
     
     func startObservingMainMenu() {
         guard let app = NSApplication.shared as NSApplication? else {
@@ -223,6 +225,7 @@ extension AppController {
                     $0.tag == AppController.exportLogsItemTag ||
                     $0.tag == AppController.whatsNewItemTag ||
                     $0.tag == AppController.manageUserDataHelpSeparatorTag ||
+                    $0.tag == AppController.timeMachineBackupsParentItemTag ||
                     $0.tag == AppController.manageUserDataParentItemTag
                 }
                 
@@ -264,6 +267,8 @@ extension AppController {
                 let userDataSeparator = NSMenuItem.separator()
                 userDataSeparator.tag = AppController.manageUserDataHelpSeparatorTag
                 subMenu.addItem(userDataSeparator)
+
+                subMenu.addItem(makeTimeMachineBackupsMenuItem())
 
                 let manageUserDataTitle = NSLocalizedString("Manage User Data", comment: "Help menu - Parent menu item for exporting and importing Phi user data backup")
                 let manageUserDataItem = NSMenuItem(title: manageUserDataTitle, action: nil, keyEquivalent: "")
@@ -422,6 +427,39 @@ extension AppController {
         }
     }
 
+    private func makeTimeMachineBackupsMenuItem() -> NSMenuItem {
+        let title = NSLocalizedString("Time Machine Backups", comment: "Help menu - Parent menu item listing completed Phi Time Machine backups")
+        let item = NSMenuItem(title: title, action: nil, keyEquivalent: "")
+        item.tag = AppController.timeMachineBackupsParentItemTag
+
+        let submenu = NSMenu(title: title)
+        submenu.identifier = AppController.timeMachineBackupsMenuIdentifier
+        submenu.delegate = self
+        rebuildTimeMachineBackupsMenu(submenu)
+        item.submenu = submenu
+        return item
+    }
+
+    private func rebuildTimeMachineBackupsMenu(_ menu: NSMenu) {
+        do {
+            try TimeMachineMenuPresenter().populate(
+                menu,
+                target: self,
+                action: #selector(restoreTimeMachineBackup(_:))
+            )
+        } catch {
+            AppLogError("Time Machine backups menu failed: \(error.localizedDescription)")
+            menu.removeAllItems()
+            let item = NSMenuItem(
+                title: NSLocalizedString("Backups Unavailable", comment: "Help menu - Time Machine submenu placeholder when the backup catalog cannot be read"),
+                action: nil,
+                keyEquivalent: ""
+            )
+            item.isEnabled = false
+            menu.addItem(item)
+        }
+    }
+
     private func rebuildBookmarksMenu(_ menu: NSMenu) {
         let bookmarks = MainBrowserWindowControllersManager.shared.activeWindowController?.browserState.bookmarkManager.rootFolder.children ?? []
 
@@ -566,6 +604,91 @@ extension AppController {
     
     @objc func showWhatsNew(_ sender: Any?) {
         BrowserState.currentState()?.createTab("chrome://whats-new", focusAfterCreate: true)
+    }
+
+    @objc func restoreTimeMachineBackup(_ sender: Any?) {
+        guard let menuItem = sender as? NSMenuItem,
+              let backupIDString = menuItem.representedObject as? String,
+              let backupID = UUID(uuidString: backupIDString) else {
+            return
+        }
+
+        do {
+            guard let backup = try TimeMachineMenuPresenter().backup(id: backupID) else {
+                presentTimeMachineRestoreFailure(
+                    NSLocalizedString("The selected Time Machine backup is no longer available.", comment: "Help menu - Time Machine restore error when a selected backup disappears")
+                )
+                return
+            }
+
+            let backupTitle = backup.menuTitle()
+            let alert = NSAlert()
+            alert.messageText = NSLocalizedString("Restore Time Machine Backup?", comment: "Help menu - Time Machine restore confirmation title")
+            let messageTemplate = NSLocalizedString(
+                "Phi will quit and restore %@. The current app and selected user data will be replaced.",
+                comment: "Help menu - Time Machine restore confirmation body"
+            )
+            alert.informativeText = String(format: messageTemplate, backupTitle)
+            alert.alertStyle = .warning
+            alert.addButton(withTitle: NSLocalizedString("Restore", comment: "Help menu - Time Machine restore confirmation button"))
+            alert.addButton(withTitle: NSLocalizedString("Cancel", comment: "Generic - Cancel button to dismiss an alert"))
+
+            guard alert.runModal() == .alertFirstButtonReturn else {
+                return
+            }
+
+            let progressModal = TimeMachineRestoreProgressModal(backupTitle: backupTitle)
+            DispatchQueue.main.async {
+                Task {
+                    let coordinator = TimeMachineRestoreCoordinator(progressHandler: { progress in
+                        Task { @MainActor in
+                            progressModal.update(progress)
+                        }
+                    })
+
+                    do {
+                        _ = try await coordinator.prepareAndLaunchRestore(for: backup)
+                        await MainActor.run {
+                            progressModal.finish(outcome: .success(()), response: .OK)
+                        }
+                    } catch {
+                        await MainActor.run {
+                            progressModal.finish(outcome: .failure(error), response: .abort)
+                        }
+                    }
+                }
+            }
+
+            _ = progressModal.run()
+            switch progressModal.outcome {
+            case .some(.success):
+                NSApp.terminate(nil)
+            case .some(.failure(let error)):
+                let messageTemplate = NSLocalizedString(
+                    "Phi could not start Time Machine restore: %@",
+                    comment: "Help menu - Time Machine restore launch failure body"
+                )
+                presentTimeMachineRestoreFailure(String(format: messageTemplate, error.localizedDescription))
+            case .none:
+                break
+            }
+        } catch {
+            let messageTemplate = NSLocalizedString(
+                "Phi could not read Time Machine backups: %@",
+                comment: "Help menu - Time Machine restore catalog read failure body"
+            )
+            presentTimeMachineRestoreFailure(String(format: messageTemplate, error.localizedDescription))
+        }
+    }
+
+    private func presentTimeMachineRestoreFailure(_ message: String) {
+        AppLogError("Time Machine restore failed: \(message)")
+        let alert = NSAlert()
+        alert.messageText = NSLocalizedString("Time Machine Restore Failed", comment: "Help menu - Time Machine restore failure alert title")
+        alert.informativeText = message
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: NSLocalizedString("OK", comment: "Generic - OK button to dismiss an alert"))
+        alert.runModal()
     }
     
     @objc func exportLogs(_ sender: Any?) {
@@ -1425,6 +1548,7 @@ extension AppController {
                 #selector(clearAllUserData(_:)),
                 #selector(showExtensionInfo(_:)),
                 #selector(exportLogs(_:)),
+                #selector(restoreTimeMachineBackup(_:)),
                 #selector(exportUserData(_:)),
                 #selector(importUserDataFromBackup(_:))
             ]
@@ -1469,6 +1593,10 @@ extension AppController: NSMenuDelegate {
             rebuildSpacesMenu(menu)
             return
         }
+        if menu.identifier == AppController.timeMachineBackupsMenuIdentifier {
+            rebuildTimeMachineBackupsMenu(menu)
+            return
+        }
 
         let optionKeyPressed = NSEvent.modifierFlags.contains(.option)
         if let extensionInfoItem = menu.item(withTag: AppController.extensionInfoItemTag) {
@@ -1476,6 +1604,138 @@ extension AppController: NSMenuDelegate {
         }
         if let exportLogsItem = menu.item(withTag: AppController.exportLogsItemTag) {
             exportLogsItem.isHidden = !optionKeyPressed
+        }
+    }
+}
+
+private final class TimeMachineRestoreProgressModal {
+    private let window: NSPanel
+    private let titleLabel: NSTextField
+    private let backupLabel: NSTextField
+    private let stageLabel: NSTextField
+    private let progressIndicator: NSProgressIndicator
+
+    private(set) var outcome: Result<Void, Error>?
+
+    init(backupTitle: String) {
+        window = NSPanel(
+            contentRect: NSRect(x: 0, y: 0, width: 420, height: 156),
+            styleMask: [.titled],
+            backing: .buffered,
+            defer: false
+        )
+        window.title = NSLocalizedString("Time Machine Restore", comment: "Time Machine restore progress window title")
+        window.level = .modalPanel
+        window.isReleasedWhenClosed = false
+        window.standardWindowButton(.closeButton)?.isHidden = true
+        window.standardWindowButton(.miniaturizeButton)?.isHidden = true
+        window.standardWindowButton(.zoomButton)?.isHidden = true
+
+        titleLabel = NSTextField(labelWithString: NSLocalizedString(
+            "Preparing Time Machine Restore",
+            comment: "Time Machine restore progress title"
+        ))
+        titleLabel.font = .systemFont(ofSize: 15, weight: .semibold)
+        titleLabel.lineBreakMode = .byTruncatingTail
+        titleLabel.translatesAutoresizingMaskIntoConstraints = false
+
+        backupLabel = NSTextField(labelWithString: backupTitle)
+        backupLabel.font = .systemFont(ofSize: 12)
+        backupLabel.textColor = .secondaryLabelColor
+        backupLabel.lineBreakMode = .byTruncatingMiddle
+        backupLabel.translatesAutoresizingMaskIntoConstraints = false
+
+        stageLabel = NSTextField(labelWithString: Self.message(for: .preparing))
+        stageLabel.font = .systemFont(ofSize: 12)
+        stageLabel.textColor = .secondaryLabelColor
+        stageLabel.lineBreakMode = .byTruncatingTail
+        stageLabel.translatesAutoresizingMaskIntoConstraints = false
+
+        progressIndicator = NSProgressIndicator()
+        progressIndicator.style = .bar
+        progressIndicator.controlSize = .regular
+        progressIndicator.minValue = 0
+        progressIndicator.maxValue = 100
+        progressIndicator.isIndeterminate = true
+        progressIndicator.usesThreadedAnimation = true
+        progressIndicator.translatesAutoresizingMaskIntoConstraints = false
+
+        let contentView = NSView()
+        contentView.translatesAutoresizingMaskIntoConstraints = false
+        window.contentView = contentView
+
+        contentView.addSubview(titleLabel)
+        contentView.addSubview(backupLabel)
+        contentView.addSubview(progressIndicator)
+        contentView.addSubview(stageLabel)
+
+        NSLayoutConstraint.activate([
+            titleLabel.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: 24),
+            titleLabel.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -24),
+            titleLabel.topAnchor.constraint(equalTo: contentView.topAnchor, constant: 24),
+
+            backupLabel.leadingAnchor.constraint(equalTo: titleLabel.leadingAnchor),
+            backupLabel.trailingAnchor.constraint(equalTo: titleLabel.trailingAnchor),
+            backupLabel.topAnchor.constraint(equalTo: titleLabel.bottomAnchor, constant: 8),
+
+            progressIndicator.leadingAnchor.constraint(equalTo: titleLabel.leadingAnchor),
+            progressIndicator.trailingAnchor.constraint(equalTo: titleLabel.trailingAnchor),
+            progressIndicator.topAnchor.constraint(equalTo: backupLabel.bottomAnchor, constant: 22),
+
+            stageLabel.leadingAnchor.constraint(equalTo: titleLabel.leadingAnchor),
+            stageLabel.trailingAnchor.constraint(equalTo: titleLabel.trailingAnchor),
+            stageLabel.topAnchor.constraint(equalTo: progressIndicator.bottomAnchor, constant: 10)
+        ])
+    }
+
+    func run() -> NSApplication.ModalResponse {
+        window.center()
+        NSApp.activate(ignoringOtherApps: true)
+        window.makeKeyAndOrderFront(nil)
+        progressIndicator.startAnimation(nil)
+        return NSApp.runModal(for: window)
+    }
+
+    func update(_ progress: TimeMachineRestorePreparationProgress) {
+        stageLabel.stringValue = Self.message(for: progress.stage)
+        if let fractionCompleted = progress.fractionCompleted {
+            if progressIndicator.isIndeterminate {
+                progressIndicator.stopAnimation(nil)
+                progressIndicator.isIndeterminate = false
+            }
+            progressIndicator.doubleValue = fractionCompleted * 100
+        } else {
+            if !progressIndicator.isIndeterminate {
+                progressIndicator.isIndeterminate = true
+            }
+            progressIndicator.startAnimation(nil)
+        }
+    }
+
+    func finish(outcome: Result<Void, Error>, response: NSApplication.ModalResponse) {
+        self.outcome = outcome
+        progressIndicator.stopAnimation(nil)
+        NSApp.stopModal(withCode: response)
+        window.orderOut(nil)
+        window.close()
+    }
+
+    private static func message(for stage: TimeMachineRestorePreparationStage) -> String {
+        switch stage {
+        case .preparing:
+            return NSLocalizedString("Preparing restore...", comment: "Time Machine restore progress stage")
+        case .downloadingPackage:
+            return NSLocalizedString("Downloading rollback package...", comment: "Time Machine restore progress stage")
+        case .expandingPackage:
+            return NSLocalizedString("Expanding rollback package...", comment: "Time Machine restore progress stage")
+        case .validatingPackage:
+            return NSLocalizedString("Validating rollback app...", comment: "Time Machine restore progress stage")
+        case .preparingInstaller:
+            return NSLocalizedString("Preparing installer...", comment: "Time Machine restore progress stage")
+        case .launchingInstaller:
+            return NSLocalizedString("Starting restore...", comment: "Time Machine restore progress stage")
+        case .readyToQuit:
+            return NSLocalizedString("Restarting Phi...", comment: "Time Machine restore progress stage")
         }
     }
 }

@@ -79,6 +79,7 @@
 		3777EEF42FC4442700C85E41 /* FloatingNewTabView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3777EEF32FC4442700C85E41 /* FloatingNewTabView.swift */; };
 		377D210F2F51986900A68BE5 /* WebContentContainerViewController+FloatingSidebar.swift in Sources */ = {isa = PBXBuildFile; fileRef = 377D210E2F51986900A68BE5 /* WebContentContainerViewController+FloatingSidebar.swift */; };
 		377D21EC2F52C67300A68BE5 /* WebContentAddressBarMenu.swift in Sources */ = {isa = PBXBuildFile; fileRef = 377D21EB2F52C67300A68BE5 /* WebContentAddressBarMenu.swift */; };
+		3787811F2FE942E40028969F /* TimeMachineRollbackPolicy.json in Resources */ = {isa = PBXBuildFile; fileRef = 3787811E2FE942E40028969F /* TimeMachineRollbackPolicy.json */; };
 		378AFF262F78D6780016B334 /* ivy-presto-display-semi-bold.otf in Copy Fonts */ = {isa = PBXBuildFile; fileRef = 378AFF242F78D6530016B334 /* ivy-presto-display-semi-bold.otf */; };
 		378AFF622F78E5EA0016B334 /* BrowserThemeContext.swift in Sources */ = {isa = PBXBuildFile; fileRef = 378AFF612F78E5EA0016B334 /* BrowserThemeContext.swift */; };
 		37B977D52EF3F62F007E0568 /* login-dot-bg.mp4 in Resources */ = {isa = PBXBuildFile; fileRef = 37B977D42EF3F62F007E0568 /* login-dot-bg.mp4 */; };
@@ -152,6 +153,27 @@
 		4D454D4F5259000000000001 /* MemoryUsageModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4D454D4F5259000000000002 /* MemoryUsageModels.swift */; };
 		4D454D4F5259000000000004 /* MemoryUsageMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4D454D4F5259000000000005 /* MemoryUsageMonitor.swift */; };
 		4D454D4F5259000000000006 /* ProcessMemorySampler.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4D454D4F5259000000000007 /* ProcessMemorySampler.swift */; };
+		54A100012FE0000000000001 /* TimeMachineModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 54A100112FE0000000000011 /* TimeMachineModels.swift */; };
+		54A100022FE0000000000002 /* TimeMachinePaths.swift in Sources */ = {isa = PBXBuildFile; fileRef = 54A100122FE0000000000012 /* TimeMachinePaths.swift */; };
+		54A100032FE0000000000003 /* TimeMachineRollbackPolicyLoader.swift in Sources */ = {isa = PBXBuildFile; fileRef = 54A100132FE0000000000013 /* TimeMachineRollbackPolicyLoader.swift */; };
+		54A100042FE0000000000004 /* TimeMachineCatalogStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 54A100142FE0000000000014 /* TimeMachineCatalogStore.swift */; };
+		54A100052FE0000000000005 /* TimeMachineRestoreJournal.swift in Sources */ = {isa = PBXBuildFile; fileRef = 54A100152FE0000000000015 /* TimeMachineRestoreJournal.swift */; };
+		54A100062FE0000000000006 /* TimeMachineFileCloner.swift in Sources */ = {isa = PBXBuildFile; fileRef = 54A100162FE0000000000016 /* TimeMachineFileCloner.swift */; };
+		54A100072FE0000000000007 /* TimeMachineSnapshotManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 54A100172FE0000000000017 /* TimeMachineSnapshotManager.swift */; };
+		54A100082FE0000000000008 /* TimeMachineStartupRecoveryGate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 54A100182FE0000000000018 /* TimeMachineStartupRecoveryGate.swift */; };
+		54A100092FE0000000000009 /* TimeMachineBootstrap.swift in Sources */ = {isa = PBXBuildFile; fileRef = 54A100192FE0000000000019 /* TimeMachineBootstrap.swift */; };
+		54A1000A2FE000000000000A /* TimeMachineRestoreCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 54A1001A2FE000000000001A /* TimeMachineRestoreCoordinator.swift */; };
+		54A1000B2FE000000000000B /* TimeMachinePackageDownloader.swift in Sources */ = {isa = PBXBuildFile; fileRef = 54A1001B2FE000000000001B /* TimeMachinePackageDownloader.swift */; };
+		54A1000C2FE000000000000C /* TimeMachineInstallerCore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 54A1001C2FE000000000001C /* TimeMachineInstallerCore.swift */; };
+		54A1000D2FE000000000000D /* TimeMachineMenuPresenter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 54A1001D2FE000000000001D /* TimeMachineMenuPresenter.swift */; };
+		54A200012FE1000000000001 /* main.swift in Sources */ = {isa = PBXBuildFile; fileRef = 54A200112FE1000000000011 /* main.swift */; };
+		54A200022FE1000000000002 /* TimeMachineModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 54A100112FE0000000000011 /* TimeMachineModels.swift */; };
+		54A200032FE1000000000003 /* TimeMachinePaths.swift in Sources */ = {isa = PBXBuildFile; fileRef = 54A100122FE0000000000012 /* TimeMachinePaths.swift */; };
+		54A200042FE1000000000004 /* TimeMachineRestoreJournal.swift in Sources */ = {isa = PBXBuildFile; fileRef = 54A100152FE0000000000015 /* TimeMachineRestoreJournal.swift */; };
+		54A200052FE1000000000005 /* TimeMachineFileCloner.swift in Sources */ = {isa = PBXBuildFile; fileRef = 54A100162FE0000000000016 /* TimeMachineFileCloner.swift */; };
+		54A200062FE1000000000006 /* TimeMachineInstallerCore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 54A1001C2FE000000000001C /* TimeMachineInstallerCore.swift */; };
+		54A200072FE1000000000007 /* PhiTimeMachineInstaller in Copy Time Machine Helpers */ = {isa = PBXBuildFile; fileRef = 54A200122FE1000000000012 /* PhiTimeMachineInstaller */; settings = {ATTRIBUTES = (CodeSignOnCopy, ); }; };
+		54A200082FE1000000000008 /* TimeMachineCatalogStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 54A100142FE0000000000014 /* TimeMachineCatalogStore.swift */; };
 		5EA17ABC0000000000000100 /* SearchTabsModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5EA17ABC0000000000000110 /* SearchTabsModels.swift */; };
 		5EA17ABC0000000000000101 /* SearchTabsQueryMatcher.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5EA17ABC0000000000000111 /* SearchTabsQueryMatcher.swift */; };
 		5EA17ABC0000000000000102 /* SearchTabsChromiumProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5EA17ABC0000000000000112 /* SearchTabsChromiumProvider.swift */; };
@@ -363,6 +385,13 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
+		54A200302FE1000000000030 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = B0C469402E3B10E1007F0C7A /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 54A200402FE1000000000040;
+			remoteInfo = PhiTimeMachineInstaller;
+		};
 		B0C469582E3B10E2007F0C7A /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
 			containerPortal = B0C469402E3B10E1007F0C7A /* Project object */;
@@ -403,6 +432,17 @@
 				37C1B30A2EE673C800DD4496 /* download-button.json in Copy LottieFiles */,
 			);
 			name = "Copy LottieFiles";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		54A200312FE1000000000031 /* Copy Time Machine Helpers */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = Contents/Helpers;
+			dstSubfolderSpec = 1;
+			files = (
+				54A200072FE1000000000007 /* PhiTimeMachineInstaller in Copy Time Machine Helpers */,
+			);
+			name = "Copy Time Machine Helpers";
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 		CCBF0EA72ECD80B2005E729B /* Copy Fonts */ = {
@@ -497,6 +537,7 @@
 		3777EEF32FC4442700C85E41 /* FloatingNewTabView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FloatingNewTabView.swift; sourceTree = "<group>"; };
 		377D210E2F51986900A68BE5 /* WebContentContainerViewController+FloatingSidebar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "WebContentContainerViewController+FloatingSidebar.swift"; sourceTree = "<group>"; };
 		377D21EB2F52C67300A68BE5 /* WebContentAddressBarMenu.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WebContentAddressBarMenu.swift; sourceTree = "<group>"; };
+		3787811E2FE942E40028969F /* TimeMachineRollbackPolicy.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = TimeMachineRollbackPolicy.json; sourceTree = "<group>"; };
 		378AFF242F78D6530016B334 /* ivy-presto-display-semi-bold.otf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "ivy-presto-display-semi-bold.otf"; sourceTree = "<group>"; };
 		378AFF612F78E5EA0016B334 /* BrowserThemeContext.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrowserThemeContext.swift; sourceTree = "<group>"; };
 		37B977D42EF3F62F007E0568 /* login-dot-bg.mp4 */ = {isa = PBXFileReference; lastKnownFileType = file; path = "login-dot-bg.mp4"; sourceTree = "<group>"; };
@@ -574,6 +615,21 @@
 		4D454D4F5259000000000002 /* MemoryUsageModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MemoryUsageModels.swift; sourceTree = "<group>"; };
 		4D454D4F5259000000000005 /* MemoryUsageMonitor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MemoryUsageMonitor.swift; sourceTree = "<group>"; };
 		4D454D4F5259000000000007 /* ProcessMemorySampler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProcessMemorySampler.swift; sourceTree = "<group>"; };
+		54A100112FE0000000000011 /* TimeMachineModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TimeMachineModels.swift; sourceTree = "<group>"; };
+		54A100122FE0000000000012 /* TimeMachinePaths.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TimeMachinePaths.swift; sourceTree = "<group>"; };
+		54A100132FE0000000000013 /* TimeMachineRollbackPolicyLoader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TimeMachineRollbackPolicyLoader.swift; sourceTree = "<group>"; };
+		54A100142FE0000000000014 /* TimeMachineCatalogStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TimeMachineCatalogStore.swift; sourceTree = "<group>"; };
+		54A100152FE0000000000015 /* TimeMachineRestoreJournal.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TimeMachineRestoreJournal.swift; sourceTree = "<group>"; };
+		54A100162FE0000000000016 /* TimeMachineFileCloner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TimeMachineFileCloner.swift; sourceTree = "<group>"; };
+		54A100172FE0000000000017 /* TimeMachineSnapshotManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TimeMachineSnapshotManager.swift; sourceTree = "<group>"; };
+		54A100182FE0000000000018 /* TimeMachineStartupRecoveryGate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TimeMachineStartupRecoveryGate.swift; sourceTree = "<group>"; };
+		54A100192FE0000000000019 /* TimeMachineBootstrap.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TimeMachineBootstrap.swift; sourceTree = "<group>"; };
+		54A1001A2FE000000000001A /* TimeMachineRestoreCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TimeMachineRestoreCoordinator.swift; sourceTree = "<group>"; };
+		54A1001B2FE000000000001B /* TimeMachinePackageDownloader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TimeMachinePackageDownloader.swift; sourceTree = "<group>"; };
+		54A1001C2FE000000000001C /* TimeMachineInstallerCore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TimeMachineInstallerCore.swift; sourceTree = "<group>"; };
+		54A1001D2FE000000000001D /* TimeMachineMenuPresenter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TimeMachineMenuPresenter.swift; sourceTree = "<group>"; };
+		54A200112FE1000000000011 /* main.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = main.swift; sourceTree = "<group>"; };
+		54A200122FE1000000000012 /* PhiTimeMachineInstaller */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; path = PhiTimeMachineInstaller; sourceTree = BUILT_PRODUCTS_DIR; };
 		5EA17ABC0000000000000110 /* SearchTabsModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SearchTabsModels.swift; sourceTree = "<group>"; };
 		5EA17ABC0000000000000111 /* SearchTabsQueryMatcher.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SearchTabsQueryMatcher.swift; sourceTree = "<group>"; };
 		5EA17ABC0000000000000112 /* SearchTabsChromiumProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SearchTabsChromiumProvider.swift; sourceTree = "<group>"; };
@@ -825,6 +881,13 @@
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
+		54A200322FE1000000000032 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		B0C469452E3B10E1007F0C7A /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
@@ -975,6 +1038,7 @@
 			children = (
 				376CE40F2F2897D30093D937 /* Models */,
 				376CE4102F2897D30093D937 /* APIClient.swift */,
+				54A1001B2FE000000000001B /* TimeMachinePackageDownloader.swift */,
 				AE00FFFE0000000000000001 /* PhiAgentEndpointResolver.swift */,
 			);
 			path = Networking;
@@ -1175,6 +1239,33 @@
 			path = Diagnostics;
 			sourceTree = "<group>";
 		};
+		54A100202FE0000000000020 /* TimeMachine */ = {
+			isa = PBXGroup;
+			children = (
+				54A100112FE0000000000011 /* TimeMachineModels.swift */,
+				54A100122FE0000000000012 /* TimeMachinePaths.swift */,
+				54A100132FE0000000000013 /* TimeMachineRollbackPolicyLoader.swift */,
+				54A100142FE0000000000014 /* TimeMachineCatalogStore.swift */,
+				54A100152FE0000000000015 /* TimeMachineRestoreJournal.swift */,
+				54A100162FE0000000000016 /* TimeMachineFileCloner.swift */,
+				54A100172FE0000000000017 /* TimeMachineSnapshotManager.swift */,
+				54A100182FE0000000000018 /* TimeMachineStartupRecoveryGate.swift */,
+				54A100192FE0000000000019 /* TimeMachineBootstrap.swift */,
+				54A1001A2FE000000000001A /* TimeMachineRestoreCoordinator.swift */,
+				54A1001C2FE000000000001C /* TimeMachineInstallerCore.swift */,
+				54A1001D2FE000000000001D /* TimeMachineMenuPresenter.swift */,
+			);
+			path = TimeMachine;
+			sourceTree = "<group>";
+		};
+		54A200202FE1000000000020 /* TimeMachineInstaller */ = {
+			isa = PBXGroup;
+			children = (
+				54A200112FE1000000000011 /* main.swift */,
+			);
+			path = TimeMachineInstaller;
+			sourceTree = "<group>";
+		};
 		5EA17ABC0000000000000120 /* SearchTabs */ = {
 			isa = PBXGroup;
 			children = (
@@ -1338,6 +1429,7 @@
 				376CE3FF2F2891670093D937 /* Notifications */,
 				CCBF8FA32E69913C00B9A99E /* States */,
 				37C9E6852F3F31E600353A03 /* ThirdParty */,
+				54A200202FE1000000000020 /* TimeMachineInstaller */,
 				B0F370CC2E432646000B51F9 /* UserInterface */,
 				B0F370CD2E4326DC000B51F9 /* Utilities */,
 				37F574C32F7A83DF00879867 /* Other */,
@@ -1384,6 +1476,7 @@
 			isa = PBXGroup;
 			children = (
 				B0C469482E3B10E1007F0C7A /* Phi.app */,
+				54A200122FE1000000000012 /* PhiTimeMachineInstaller */,
 				B0C469572E3B10E2007F0C7A /* PhiBrowserTests.xctest */,
 				B0C469612E3B10E2007F0C7A /* PhiBrowserUITests.xctest */,
 			);
@@ -1407,6 +1500,7 @@
 				37B977D42EF3F62F007E0568 /* login-dot-bg.mp4 */,
 				37F574472F7A7C5D00879867 /* PhiIcon.icon */,
 				CC5C51F52FB5C5560044D255 /* credits.html */,
+				3787811E2FE942E40028969F /* TimeMachineRollbackPolicy.json */,
 			);
 			path = Resources;
 			sourceTree = "<group>";
@@ -1490,6 +1584,7 @@
 				3703C9832F6956E600E7CF6D /* SentinelHelper.swift */,
 				3703C9852F6956E600E7CF6D /* SentinelVersionGuard.swift */,
 				37CC00012F9D000100000001 /* SentinelIPCClient.swift */,
+				54A100202FE0000000000020 /* TimeMachine */,
 			);
 			path = Application;
 			sourceTree = "<group>";
@@ -1905,6 +2000,22 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
+		54A200402FE1000000000040 /* PhiTimeMachineInstaller */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 54A200502FE1000000000050 /* Build configuration list for PBXNativeTarget "PhiTimeMachineInstaller" */;
+			buildPhases = (
+				54A200332FE1000000000033 /* Sources */,
+				54A200322FE1000000000032 /* Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = PhiTimeMachineInstaller;
+			productName = PhiTimeMachineInstaller;
+			productReference = 54A200122FE1000000000012 /* PhiTimeMachineInstaller */;
+			productType = "com.apple.product-type.tool";
+		};
 		B0C469472E3B10E1007F0C7A /* PhiBrowser */ = {
 			isa = PBXNativeTarget;
 			buildConfigurationList = B0C4696B2E3B10E2007F0C7A /* Build configuration list for PBXNativeTarget "PhiBrowser" */;
@@ -1915,10 +2026,12 @@
 				CCBF0EA72ECD80B2005E729B /* Copy Fonts */,
 				37C1B3072EE6739C00DD4496 /* Copy LottieFiles */,
 				37C1B28D2EE0504100DD4496 /* Embed Frameworks */,
+				54A200312FE1000000000031 /* Copy Time Machine Helpers */,
 			);
 			buildRules = (
 			);
 			dependencies = (
+				54A200342FE1000000000034 /* PBXTargetDependency */,
 			);
 			name = PhiBrowser;
 			packageProductDependencies = (
@@ -1985,6 +2098,9 @@
 				LastSwiftUpdateCheck = 1640;
 				LastUpgradeCheck = 2620;
 				TargetAttributes = {
+					54A200402FE1000000000040 = {
+						CreatedOnToolsVersion = 16.2;
+					};
 					B0C469472E3B10E1007F0C7A = {
 						CreatedOnToolsVersion = 16.2;
 						LastSwiftMigration = 1620;
@@ -2017,6 +2133,7 @@
 			projectRoot = "";
 			targets = (
 				B0C469472E3B10E1007F0C7A /* PhiBrowser */,
+				54A200402FE1000000000040 /* PhiTimeMachineInstaller */,
 				B0C469562E3B10E2007F0C7A /* PhiBrowserTests */,
 				B0C469602E3B10E2007F0C7A /* PhiBrowserUITests */,
 			);
@@ -2034,6 +2151,7 @@
 				37B977D52EF3F62F007E0568 /* login-dot-bg.mp4 in Resources */,
 				CC99097C2EBC9F090046BC81 /* login-bg.mp4 in Resources */,
 				CC5C51F62FB5C5560044D255 /* credits.html in Resources */,
+				3787811F2FE942E40028969F /* TimeMachineRollbackPolicy.json in Resources */,
 				8EC502152F67AF7F00CE7338 /* DownloadSafety.xcstrings in Resources */,
 				CC4BFB932E97991A00CC6162 /* Auth0.plist in Resources */,
 			);
@@ -2056,6 +2174,20 @@
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
+		54A200332FE1000000000033 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				54A200012FE1000000000001 /* main.swift in Sources */,
+				54A200022FE1000000000002 /* TimeMachineModels.swift in Sources */,
+				54A200032FE1000000000003 /* TimeMachinePaths.swift in Sources */,
+				54A200042FE1000000000004 /* TimeMachineRestoreJournal.swift in Sources */,
+				54A200052FE1000000000005 /* TimeMachineFileCloner.swift in Sources */,
+				54A200082FE1000000000008 /* TimeMachineCatalogStore.swift in Sources */,
+				54A200062FE1000000000006 /* TimeMachineInstallerCore.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		B0C469442E3B10E1007F0C7A /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -2236,6 +2368,18 @@
 				37FA01032FDA000100000003 /* LocalStoreCompatibilityConfiguration.swift in Sources */,
 				37FA01042FDA000100000004 /* LocalStoreCompatibilityController.swift in Sources */,
 				37FA01012FDA000100000001 /* LocalStoreCompatibilityManifest.swift in Sources */,
+				54A100012FE0000000000001 /* TimeMachineModels.swift in Sources */,
+				54A100022FE0000000000002 /* TimeMachinePaths.swift in Sources */,
+				54A100032FE0000000000003 /* TimeMachineRollbackPolicyLoader.swift in Sources */,
+				54A100042FE0000000000004 /* TimeMachineCatalogStore.swift in Sources */,
+				54A100052FE0000000000005 /* TimeMachineRestoreJournal.swift in Sources */,
+				54A100062FE0000000000006 /* TimeMachineFileCloner.swift in Sources */,
+				54A100072FE0000000000007 /* TimeMachineSnapshotManager.swift in Sources */,
+				54A100082FE0000000000008 /* TimeMachineStartupRecoveryGate.swift in Sources */,
+				54A100092FE0000000000009 /* TimeMachineBootstrap.swift in Sources */,
+				54A1000A2FE000000000000A /* TimeMachineRestoreCoordinator.swift in Sources */,
+				54A1000C2FE000000000000C /* TimeMachineInstallerCore.swift in Sources */,
+				54A1000D2FE000000000000D /* TimeMachineMenuPresenter.swift in Sources */,
 				CC99096D2EBC86940046BC81 /* PhiPreferences.swift in Sources */,
 				CC2708A62E7A65E500B65AB8 /* TabDataModel.swift in Sources */,
 				CC6335F92E4DF65700A176DA /* PhiLogFormatter.swift in Sources */,
@@ -2386,6 +2530,7 @@
 				376CE4162F2897D30093D937 /* Response.swift in Sources */,
 				8EF36C032F4E9E7000FCC91E /* TabViewModel.swift in Sources */,
 				376CE4172F2897D30093D937 /* APIClient.swift in Sources */,
+				54A1000B2FE000000000000B /* TimeMachinePackageDownloader.swift in Sources */,
 				FBD200012FD0000000000003 /* FeedbackV2.swift in Sources */,
 				AE00FFFE0000000000000002 /* PhiAgentEndpointResolver.swift in Sources */,
 				CCEF2D9C2E5F1A9900FDDEB2 /* AIChatViewController.swift in Sources */,
@@ -2410,6 +2555,11 @@
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
+		54A200342FE1000000000034 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 54A200402FE1000000000040 /* PhiTimeMachineInstaller */;
+			targetProxy = 54A200302FE1000000000030 /* PBXContainerItemProxy */;
+		};
 		B0C469592E3B10E2007F0C7A /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
 			target = B0C469472E3B10E1007F0C7A /* PhiBrowser */;
@@ -2423,6 +2573,107 @@
 /* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
+		54A200512FE1000000000051 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_IDENTITY = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 87DQ3HMK5G;
+				ENABLE_HARDENED_RUNTIME = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MARKETING_VERSION = 1.0;
+				OTHER_SWIFT_FLAGS = "$(inherited) -DTIME_MACHINE_INSTALLER";
+				PRODUCT_BUNDLE_IDENTIFIER = com.phibrowser.TimeMachineInstaller;
+				PRODUCT_MODULE_NAME = PhiTimeMachineInstaller;
+				PRODUCT_NAME = PhiTimeMachineInstaller;
+				SKIP_INSTALL = YES;
+				SWIFT_VERSION = 5.0;
+			};
+			name = Debug;
+		};
+		54A200522FE1000000000052 /* Debug-Canary */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 87DQ3HMK5G;
+				ENABLE_HARDENED_RUNTIME = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MARKETING_VERSION = 1.0;
+				OTHER_SWIFT_FLAGS = "$(inherited) -DTIME_MACHINE_INSTALLER";
+				PRODUCT_BUNDLE_IDENTIFIER = com.phibrowser.canary.TimeMachineInstaller;
+				PRODUCT_MODULE_NAME = PhiTimeMachineInstaller;
+				PRODUCT_NAME = PhiTimeMachineInstaller;
+				SKIP_INSTALL = YES;
+				SWIFT_VERSION = 5.0;
+			};
+			name = "Debug-Canary";
+		};
+		54A200532FE1000000000053 /* OpenSource */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGNING_ALLOWED = NO;
+				CODE_SIGNING_REQUIRED = NO;
+				CODE_SIGN_IDENTITY = "-";
+				CODE_SIGN_STYLE = Manual;
+				CURRENT_PROJECT_VERSION = 1;
+				ENABLE_HARDENED_RUNTIME = NO;
+				GENERATE_INFOPLIST_FILE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MARKETING_VERSION = 1.0;
+				OTHER_SWIFT_FLAGS = "$(inherited) -DTIME_MACHINE_INSTALLER";
+				PRODUCT_BUNDLE_IDENTIFIER = com.phibrowser.TimeMachineInstaller;
+				PRODUCT_MODULE_NAME = PhiTimeMachineInstaller;
+				PRODUCT_NAME = PhiTimeMachineInstaller;
+				SKIP_INSTALL = YES;
+				SWIFT_VERSION = 5.0;
+			};
+			name = OpenSource;
+		};
+		54A200542FE1000000000054 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_IDENTITY = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 87DQ3HMK5G;
+				ENABLE_HARDENED_RUNTIME = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MARKETING_VERSION = 1.0;
+				OTHER_SWIFT_FLAGS = "$(inherited) -DTIME_MACHINE_INSTALLER";
+				PRODUCT_BUNDLE_IDENTIFIER = com.phibrowser.TimeMachineInstaller;
+				PRODUCT_MODULE_NAME = PhiTimeMachineInstaller;
+				PRODUCT_NAME = PhiTimeMachineInstaller;
+				SKIP_INSTALL = YES;
+				SWIFT_VERSION = 5.0;
+			};
+			name = Release;
+		};
+		54A200552FE1000000000055 /* Release-Canary */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 87DQ3HMK5G;
+				ENABLE_HARDENED_RUNTIME = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MARKETING_VERSION = 1.0;
+				OTHER_SWIFT_FLAGS = "$(inherited) -DTIME_MACHINE_INSTALLER";
+				PRODUCT_BUNDLE_IDENTIFIER = com.phibrowser.canary.TimeMachineInstaller;
+				PRODUCT_MODULE_NAME = PhiTimeMachineInstaller;
+				PRODUCT_NAME = PhiTimeMachineInstaller;
+				SKIP_INSTALL = YES;
+				SWIFT_VERSION = 5.0;
+			};
+			name = "Release-Canary";
+		};
 		8EFE14E22EF27FA900BD41C6 /* Debug-Canary */ = {
 			isa = XCBuildConfiguration;
 			baseConfigurationReferenceAnchor = 37686B012F1103F300DC3990 /* Configs */;
@@ -3179,6 +3430,18 @@
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
+		54A200502FE1000000000050 /* Build configuration list for PBXNativeTarget "PhiTimeMachineInstaller" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				54A200512FE1000000000051 /* Debug */,
+				54A200522FE1000000000052 /* Debug-Canary */,
+				54A200532FE1000000000053 /* OpenSource */,
+				54A200542FE1000000000054 /* Release */,
+				54A200552FE1000000000055 /* Release-Canary */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
 		B0C469432E3B10E1007F0C7A /* Build configuration list for PBXProject "Phi" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (

@@ -275,6 +275,9 @@
     "Backup..." : {
       "comment" : "Debug clear data - Alert button to open the save panel for a Phi user data zip"
     },
+    "Backups Unavailable" : {
+      "comment" : "Help menu - Time Machine submenu placeholder when the backup catalog cannot be read"
+    },
     "Balanced" : {
       "comment" : "Layout option - Vertical tabs with address bar at the top of webcontent\nOnboarding layout selection - Balanced option"
     },
@@ -318,13 +321,26 @@
       "comment" : "Import data type - Browsing history toggle label"
     },
     "Cancel" : {
-      "comment" : "AI settings - Cancel button in disable-AI confirmation alert\nAI settings - Cancel button in disable-connectors confirmation alert\nAccount settings - Cancel button in logout confirmation dialog\nAccount settings - Cancel button in rename dialog\nCancel\nCancel button\nDebug clear data - Alert button to cancel clearing user data\nDebug import user data - Alert button to cancel importing user data\nDownload item row - Tooltip for cancel button during safety scan\nDownload item row - Tooltip for cancel download button\nEditor - Cancel button title\nNew folder dialog cancel button title\nTab group rename alert - Cancel button\nTooltip for cancel button during safety scan in living downloads toast\nUpdate alert - Button to cancel update installation"
+      "comment" : "AI settings - Cancel button in disable-AI confirmation alert\nAI settings - Cancel button in disable-connectors confirmation alert\nAccount settings - Cancel button in logout confirmation dialog\nAccount settings - Cancel button in rename dialog\nCancel\nCancel button\nDebug clear data - Alert button to cancel clearing user data\nDebug import user data - Alert button to cancel importing user data\nDownload item row - Tooltip for cancel button during safety scan\nDownload item row - Tooltip for cancel download button\nEditor - Cancel button title\nGeneric - Cancel button to dismiss an alert\nNew folder dialog cancel button title\nTab group rename alert - Cancel button\nTooltip for cancel button during safety scan in living downloads toast\nUpdate alert - Button to cancel update installation"
+    },
+    "Cancel First" : {
+
     },
     "Canceled" : {
       "comment" : "Download item row - Status label when download was cancelled"
     },
     "Cancelled" : {
       "comment" : "Download state"
+    },
+    "Card %lld of %lld" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Card %1$lld of %2$lld"
+          }
+        }
+      }
     },
     "Certificate is invalid" : {
       "comment" : "Address bar menu - Certificate validity status"
@@ -413,6 +429,12 @@
     "Comfortable" : {
       "comment" : "Layout option - Horizontal tabs\nOnboarding layout selection - Comfortable option"
     },
+    "Complete First" : {
+
+    },
+    "Complete First In-Progress" : {
+
+    },
     "Completed" : {
       "comment" : "Download state"
     },
@@ -494,6 +516,9 @@
     "Dark" : {
       "comment" : "Appearance choice: always dark mode"
     },
+    "DEBUG Test Mode" : {
+
+    },
     "Delete" : {
       "comment" : "Delete bookmark menu item\nDestructive button\nDestructive menu item"
     },
@@ -533,8 +558,14 @@
     "Download image" : {
       "comment" : "Account settings - Button to download profile card as image"
     },
+    "Download Test Controls" : {
+
+    },
     "Downloading" : {
       "comment" : "Download state"
+    },
+    "Downloading rollback package..." : {
+      "comment" : "Time Machine restore progress stage"
     },
     "Downloading update..." : {
       "comment" : "Phi menu - Menu item text while downloading update"
@@ -629,6 +660,9 @@
     "Expand Group" : {
       "comment" : "Tab group context menu - Expand a collapsed group"
     },
+    "Expanding rollback package..." : {
+      "comment" : "Time Machine restore progress stage"
+    },
     "Export" : {
       "comment" : "Help menu - NSSavePanel primary button title for confirming log export save location"
     },
@@ -655,6 +689,9 @@
     },
     "External Data Connectors help to provide additional context for better AI experience" : {
       "comment" : "AI settings - Description explaining external data connectors purpose"
+    },
+    "Fail First In-Progress" : {
+
     },
     "Failed" : {
       "comment" : "Download item row - Status label when download failed\nDownload state"
@@ -842,6 +879,9 @@
     "Linking..." : {
       "comment" : "Phi Link - Custom bot linking text"
     },
+    "Living Downloads Test" : {
+
+    },
     "Loading image…" : {
       "comment" : "Image preview loading"
     },
@@ -882,7 +922,7 @@
       "comment" : "Tab context menu - Move this tab out of its current group into a newly created group"
     },
     "Mute" : {
-      "comment" : "Notification menu option - Disable auto popup for notification cards"
+      "comment" : "Notification menu option - Disable auto popup for notification cards\nTab mute button tooltip - mute"
     },
     "Name" : {
       "comment" : "Editor - Label for the title/name input field"
@@ -952,6 +992,12 @@
     },
     "Next Space" : {
       "comment" : "Spaces menu - Activate the next Space in the strip"
+    },
+    "Next Test (%lld items)" : {
+
+    },
+    "No Backups Available" : {
+      "comment" : "Help menu - Time Machine submenu placeholder when no completed backups exist"
     },
     "No certificate available" : {
       "comment" : "No certificate tooltip"
@@ -1052,6 +1098,12 @@
     "Phi & AI" : {
       "comment" : "Settings - Tab title for AI and Phi assistant settings"
     },
+    "Phi could not read Time Machine backups: %@" : {
+      "comment" : "Help menu - Time Machine restore catalog read failure body"
+    },
+    "Phi could not start Time Machine restore: %@" : {
+      "comment" : "Help menu - Time Machine restore launch failure body"
+    },
     "Phi is not your default browser" : {
       "comment" : "Account settings - Status text when Phi is not the default browser"
     },
@@ -1072,6 +1124,9 @@
     },
     "Phi Sentinel service is unavailable. Check whether it started normally." : {
       "comment" : "IM Channels - Custom bot service unavailable message\nIM Channels - Official bot service unavailable message"
+    },
+    "Phi will quit and restore %@. The current app and selected user data will be replaced." : {
+      "comment" : "Help menu - Time Machine restore confirmation body"
     },
     "Pick a target Space and enter a host like “github.com”." : {
       "comment" : "Empty state hint in the universal URL rules editor"
@@ -1099,6 +1154,15 @@
     },
     "Pop up" : {
       "comment" : "Notification menu option - Enable auto popup for notification cards"
+    },
+    "Preparing installer..." : {
+      "comment" : "Time Machine restore progress stage"
+    },
+    "Preparing restore..." : {
+      "comment" : "Time Machine restore progress stage"
+    },
+    "Preparing Time Machine Restore" : {
+      "comment" : "Time Machine restore progress title"
     },
     "Press shortcut…" : {
       "comment" : "Shortcuts settings - Prompt text when recording new shortcut"
@@ -1205,11 +1269,20 @@
     "Replace Top" : {
       "comment" : "Drop-zone hint shown when dragging a tab over the top/primary pane of a horizontal split to replace it"
     },
+    "Reset" : {
+
+    },
+    "Restarting Phi..." : {
+      "comment" : "Time Machine restore progress stage"
+    },
     "Restore" : {
-      "comment" : "Shortcuts settings - Button to restore single shortcut to default"
+      "comment" : "Help menu - Time Machine restore confirmation button\nShortcuts settings - Button to restore single shortcut to default"
     },
     "Restore all shortcuts" : {
       "comment" : "Shortcuts settings - Button to reset all shortcuts to default"
+    },
+    "Restore Time Machine Backup?" : {
+      "comment" : "Help menu - Time Machine restore confirmation title"
     },
     "Resume" : {
       "comment" : "Download item row - Tooltip for resume download button"
@@ -1331,6 +1404,12 @@
     "Split with Current" : {
       "comment" : "Tab context menu - Pair this tab with the currently focused tab in a split"
     },
+    "Start Test" : {
+
+    },
+    "Starting restore..." : {
+      "comment" : "Time Machine restore progress stage"
+    },
     "Stop" : {
       "comment" : "Web content header - Accessibility description for stop loading button"
     },
@@ -1361,6 +1440,9 @@
     "The Phi user data folder was not found. Continuing will still remove other local application data and quit." : {
       "comment" : "Debug clear data - Alert body when Phi folder is missing; clearing will still proceed for other locations"
     },
+    "The selected Time Machine backup is no longer available." : {
+      "comment" : "Help menu - Time Machine restore error when a selected backup disappears"
+    },
     "Theme" : {
       "comment" : "General settings - Theme section title"
     },
@@ -1372,6 +1454,15 @@
     },
     "This version of Phi cannot open local browser data that was updated by a newer version. Install the latest Phi version and try again." : {
       "comment" : "Local store compatibility alert - body when a newer app is required to read local data"
+    },
+    "Time Machine Backups" : {
+      "comment" : "Help menu - Parent menu item listing completed Phi Time Machine backups"
+    },
+    "Time Machine Restore" : {
+      "comment" : "Time Machine restore progress window title"
+    },
+    "Time Machine Restore Failed" : {
+      "comment" : "Help menu - Time Machine restore failure alert title"
     },
     "Today" : {
       "comment" : "Download item row - Relative time when download completed today"
@@ -1405,6 +1496,9 @@
     },
     "Unlink" : {
       "comment" : "Phi Link - Official bot unlink button"
+    },
+    "Unmute" : {
+      "comment" : "Tab mute button tooltip - unmute"
     },
     "Unpin" : {
       "comment" : "Tab context menu - Menu item to unpin the selected tab"
@@ -1444,6 +1538,9 @@
     },
     "Using Telegram to send and receive messages with %@" : {
       "comment" : "Phi Link - Section subtitle with agent name"
+    },
+    "Validating rollback app..." : {
+      "comment" : "Time Machine restore progress stage"
     },
     "Verification failed. Please check the token and try again." : {
       "comment" : "IM Channels - Custom bot verify failure"

@@ -1,0 +1,9 @@
+{
+  "backupTriggerBuild": 611,
+  "rollbackVersion": "Canary",
+  "rollbackBuild": 610,
+  "rollbackPackageURL": "https://ota.phibrowser.com/mac-nightly/releases/Phi_Nightly_610.zip",
+  "rollbackPackageSHA256": "1748798c059a2c8538d119bbd9d3be8be487be7787287d9aa4539e5a9f074c3c",
+  "includeChromiumData": true,
+  "rollbackAppBundleName": "Phi Canary.app"
+}

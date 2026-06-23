@@ -29,6 +29,12 @@ int main(int argc, const char * argv[]) {
             return NSApplicationMain(argc, (const char **)argv);
         }
 #endif
+
+        if ([TimeMachineBootstrap recoverPendingRestoreIfNeeded]) {
+            AppLogInfo(@"Time Machine restore recovery is handling startup; exiting current process.");
+            return 0;
+        }
+        [TimeMachineBootstrap prepareBackupIfNeeded];
         
         ChromiumLauncher *launcher = [ChromiumLauncher sharedInstance];
         if (!launcher) {

@@ -751,10 +751,19 @@ extension AppController {
         // PhiAppController (no-window CommandUpdater: New Tab/New Window enabled,
         // tab-only commands disabled), matching upstream AppController.
         if item.action == #selector(commandDispatch(_:)) {
-            return ChromiumLauncher.sharedInstance().bridge?.validateUserInterfaceItem(fromMenu: item) ?? false
+            return validateChromiumMenuItem(item)
         }
 
         return true
+    }
+
+    private func validateChromiumMenuItem(_ item: NSValidatedUserInterfaceItem) -> Bool {
+        let selector = NSSelectorFromString("validateUserInterfaceItemFromMenu:")
+        guard let bridge = ChromiumLauncher.sharedInstance().bridge as? NSObject,
+              bridge.responds(to: selector) else {
+            return false
+        }
+        return ChromiumLauncher.sharedInstance().bridge?.validateUserInterfaceItem(fromMenu: item) ?? false
     }
     
     @IBAction @objc func commandDispatch(_ sender: Any?) {

@@ -1065,6 +1065,9 @@
     "Refresh" : {
       "comment" : "Phi Link - Official bot refresh QR action\nWeb content header - Accessibility description for refresh page button"
     },
+    "Refresh connector status" : {
+      "comment" : "AI settings - Tooltip for refreshing connector status"
+    },
     "Relink" : {
       "comment" : "Phi Link - Official bot relink action"
     },
@@ -1293,8 +1296,8 @@
     "Turn Off Connectors?" : {
       "comment" : "AI settings - Confirmation alert title when disabling external data connectors"
     },
-    "Unable to start connector authorization." : {
-      "comment" : "AI settings - OAuth authorization start error"
+    "Unable to open connector authorization." : {
+      "comment" : "AI settings - OAuth authorization open error"
     },
     "Ungroup" : {
       "comment" : "Tab group context menu - Dissolve the group, keeping the tabs"

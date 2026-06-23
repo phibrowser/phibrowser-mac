@@ -396,8 +396,8 @@ struct DownloadActionButton: View {
         self.iconName = iconName
         self.action = action
         self.tooltip = tooltip
-        self.isHovered = isHovered
         self.isEnabled = isEnabled
+        self.isHovered = isHovered
     }
     var body: some View {
         Button(action: action) {

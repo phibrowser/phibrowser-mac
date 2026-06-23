@@ -57,6 +57,17 @@ class APIClient {
         return accessToken ?? ""
     }
 
+    func oauthNativeFinishedRedirect(provider: String, result: String) -> String {
+        guard var components = URLComponents(string: "\(accountBaseURL)/oauth/native-finished") else {
+            return "\(accountBaseURL)/oauth/native-finished"
+        }
+        components.queryItems = [
+            URLQueryItem(name: "provider", value: provider),
+            URLQueryItem(name: "result", value: result),
+        ]
+        return components.url?.absoluteString ?? "\(accountBaseURL)/oauth/native-finished"
+    }
+
     func getAccountProfile() async throws -> Response<Profile> {
         let url = URL(string: "\(accountBaseURL)/api/auth/profile")!
         var request = URLRequest(url: url)

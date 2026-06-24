@@ -158,6 +158,12 @@
     "© %d Phinomenon. All rights reserved." : {
       "comment" : "About window - Copyright notice at bottom"
     },
+    "Active" : {
+      "comment" : "Search Tabs - Trailing label for the active tab result"
+    },
+    "Add Download" : {
+
+    },
     "Add Left Split" : {
       "comment" : "Drop-zone hint shown when dragging a tab over the left third of the page"
     },
@@ -276,7 +282,7 @@
       "comment" : "Bookmarks menu - Menu item to add or edit a bookmark for the currently focused tab"
     },
     "Bookmarks" : {
-      "comment" : "Default root bookmarks folder title\nImport data type - Bookmarks toggle label\nMain menu - Top-level Bookmarks menu title in the application menu bar"
+      "comment" : "Default root bookmarks folder title\nImport data type - Bookmarks toggle label\nMain menu - Top-level Bookmarks menu title in the application menu bar\nSearch Tabs - Bookmark root menu title\nSearch Tabs - Bookmarks section title"
     },
     "Bookmarks Bar" : {
       "comment" : "Bookmark editor - Root bookmark folder display name in folder picker"
@@ -363,7 +369,7 @@
       "comment" : "Tab context menu - Menu item to close all tabs except the selected one\nTab multi-selection context menu - close all tabs except the selected ones"
     },
     "Close Tab" : {
-      "comment" : "Tab group overview - Accessibility label for the button that closes one tab card"
+      "comment" : "Search Tabs - Close open tab button tooltip\nTab group overview - Accessibility label for the button that closes one tab card"
     },
     "Close Tabs" : {
       "comment" : "Tab multi-selection context menu - close all selected tabs"
@@ -525,7 +531,7 @@
       "comment" : "Edit bookmark url menu item title\nPinned tab context menu - Edit pinned tab menu item"
     },
     "Empty" : {
-      "comment" : "Bookmarks menu - Disabled placeholder item shown when a bookmark folder has no child bookmarks"
+      "comment" : "Bookmarks menu - Disabled placeholder item shown when a bookmark folder has no child bookmarks\nSearch Tabs - Empty bookmark folder placeholder\nSearch Tabs - Empty bookmark menu placeholder"
     },
     "Enable AI features in Phi Browser" : {
       "comment" : "AI settings - Master toggle to enable or disable all AI features in Phi Browser"
@@ -806,6 +812,9 @@
     "Name is too long (maximum 100 characters)" : {
       "comment" : "Set name page - Error message when user name exceeds 100 characters"
     },
+    "New Conversation" : {
+      "comment" : "View menu - Menu item to start a new AI conversation in the sidebar"
+    },
     "New Folder" : {
       "comment" : "Bookmark New Folder menu item\nBookmark editor - Inline new folder creation title\nFolder creator - Title of the sheet to create a new folder\nNew folder dialog title\nSidebar context menu title\nTab area context menu - Create a new bookmark folder\nTab multi-selection context menu - bookmark selected tabs into a newly created folder"
     },
@@ -902,6 +911,9 @@
     "Open Settings" : {
       "comment" : "Import browser data page - Button to open system settings for granting permissions"
     },
+    "Open Tabs" : {
+      "comment" : "Search Tabs - Open tabs section title"
+    },
     "Open User Data Directory" : {
       "comment" : "Debug menu item to reveal the current user's data storage directory in Finder"
     },
@@ -962,6 +974,9 @@
     "Pink" : {
       "comment" : "Tab Groups - color name shown in auto-named group title and color picker"
     },
+    "Pinned Tabs" : {
+      "comment" : "Search Tabs - Pinned tabs section title"
+    },
     "Please reauthenticate to restore account features." : {
       "comment" : "Account settings - Tooltip explaining why reauthentication is needed"
     },
@@ -997,6 +1012,9 @@
     },
     "Reauthentication needed." : {
       "comment" : "Account settings - Warning shown when account tokens require reauthentication"
+    },
+    "Recently Closed" : {
+      "comment" : "Search Tabs - Recently closed section title"
     },
     "Recommended" : {
       "comment" : "Onboarding password manager - Recommended label for iCloud Passwords"
@@ -1091,6 +1109,9 @@
     "Search or Enter URL" : {
       "comment" : "Omnibox - Placeholder text prompting user to search or enter URL\nOmnibox suggestion - Placeholder text for search or URL entry\nSidebar address bar - Placeholder text prompting user to enter URL or search query\nWeb content address bar - Placeholder text shown when window has no tab"
     },
+    "Search Tabs" : {
+      "comment" : "Search Tabs - Button tooltip and accessibility label\nSearch Tabs - Placeholder text for the native tab search field"
+    },
     "Select Phi User Data Backup" : {
       "comment" : "Debug import user data - NSOpenPanel title for choosing a Phi user data zip"
     },
@@ -1156,6 +1177,9 @@
     },
     "Something went wrong? " : {
       "comment" : "Retry hint prefix text shown when login fails in onboarding"
+    },
+    "Split with" : {
+      "comment" : "Search Tabs - Prefix for the split partner shown in a result row"
     },
     "Split with Current" : {
       "comment" : "Tab context menu - Pair this tab with the currently focused tab in a split"

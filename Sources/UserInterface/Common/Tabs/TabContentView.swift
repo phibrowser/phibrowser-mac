@@ -169,6 +169,9 @@ struct UnifiedTabFaviconView: View {
     let viewModel: TabViewModel
     @Environment(\.phiAppearance) private var phiAppearance
 
+    private static let faviconSize: CGFloat = 14
+    private static let faviconCornerRadius: CGFloat = 3
+
     var body: some View {
         Group {
             if let liveFaviconImage = viewModel.liveFaviconImage {
@@ -180,12 +183,12 @@ struct UnifiedTabFaviconView: View {
                     .resizable()
                     .scaledToFit()
             } else {
-                Image.favicon(for: viewModel.faviconLoadURL ?? viewModel.url, configuration: .init(cornerRadius: 3))
+                Image.favicon(for: viewModel.faviconLoadURL ?? viewModel.url, configuration: .init(cornerRadius: Self.faviconCornerRadius))
                     .id(viewModel.faviconRevision)
             }
         }
-        .frame(width: 14, height: 14)
-        .clipped()
+        .frame(width: Self.faviconSize, height: Self.faviconSize)
+        .clipShape(RoundedRectangle(cornerRadius: Self.faviconCornerRadius, style: .continuous))
         .overlay(alignment: .topTrailing) {
             if viewModel.isCapturingMedia {
                 UnifiedTabRecordingIcon()

@@ -103,6 +103,16 @@ class MainSplitViewController: NSViewController {
         updateLayoutForHorizontalTabs()
     }
 
+    /// A window created minimized never runs `viewWillAppear` for this tree,
+    /// and deminiaturizing doesn't re-trigger it — so layout and the web
+    /// content mount never happen, leaving the restored window blank. Re-run
+    /// the appearance-time setup explicitly (idempotent) once visible again.
+    func phiHandleRestoreFromMinimized() {
+        viewWillAppear()
+        verticalTabListViewController.bindDownloadsManagerIfNeeded()
+        webContentContainerViewController.mountActiveTabForRestore()
+    }
+
     func toggleSidebar(_ sender: Any?) {
         // Sidebar is always collapsed in traditional layout.
         guard !PhiPreferences.GeneralSettings.loadLayoutMode().isTraditional else { return }

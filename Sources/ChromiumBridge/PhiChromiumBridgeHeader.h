@@ -340,6 +340,14 @@ typedef NS_ENUM(NSUInteger, PhiOmniboxSuggestionDisposition) {
 // Unlike createNewTabWithUrl, this reuses an existing tab for the same URL when possible.
 - (void)openTabWithUrl:(NSString *)urlString windowId:(int64_t)windowId;
 
+- (NSDictionary<NSString *, id> *)getSearchTabsDataWithWindowId:(int64_t)windowId;
+
+- (BOOL)activateSearchTabWithTabId:(int64_t)tabId
+                          windowId:(int64_t)windowId;
+
+- (BOOL)openRecentlyClosedSearchEntryWithSessionId:(int64_t)sessionId
+                                          windowId:(int64_t)windowId;
+
 - (void)moveTabWithWindowId:(int64_t)windowId
                       tabId:(int64_t)tabId
                 beforeTabId:(int64_t)anchorTabId;
@@ -471,6 +479,12 @@ typedef NS_ENUM(NSUInteger, PhiOmniboxSuggestionDisposition) {
 - (void)application:(NSApplication*)sender openURLs:(NSArray<NSURL*>*)urls;
 - (BOOL)applicationShouldHandleReopen:(NSApplication*)theApplication
                     hasVisibleWindows:(BOOL)hasVisibleWindows;
+// Phi: Route a main-menu command (and its validation) to PhiAppController for
+// the no-key-window case, so File-menu items like New Tab/New Window work when
+// no browser window is open. Mirrors upstream AppController acting as NSApp's
+// delegate; here NSApp's delegate is the Swift AppController, which forwards.
+- (void)commandDispatchFromMenu:(id)sender;
+- (BOOL)validateUserInterfaceItemFromMenu:(id<NSValidatedUserInterfaceItem>)item;
 - (NSMenu*)applicationDockMenu:(NSApplication*)sender;
 - (BOOL)application:(NSApplication*)application 
     willContinueUserActivityWithType:(NSString*)userActivityType;

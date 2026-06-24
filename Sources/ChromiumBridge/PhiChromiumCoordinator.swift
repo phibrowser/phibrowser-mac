@@ -158,9 +158,12 @@ extension PhiChromiumCoordinator: PhiChromiumBridgeDelegate {
                 browserType: browserType,
                 profileId: profileId
             )
-            if browserType != .shadow {
-                mainWindowController.window?.makeKeyAndOrderFront(nil)
-            } else {
+            // Do NOT force key/front here. Chromium's BrowserWindow Show() /
+            // ShowInactive() runs post-ctor on this same NSWindow and drives
+            // visibility + activation with the correct intent; forcing
+            // makeKeyAndOrderFront here made chrome.windows.create({focused:false})
+            // come to the foreground (the focused param was effectively ignored).
+            if browserType == .shadow {
                 AppLogInfo("🌐 Shadow window controller initialized but hidden.")
             }
             AppLogInfo("🌐 [Chromium] ✅ Window controller created and displayed (user logged in)")
@@ -284,6 +287,27 @@ extension PhiChromiumCoordinator: PhiChromiumBridgeDelegate {
     
     func tabWillBeRemove(_ tabId: Int64, windowId: Int64) {
         AppLogDebug("tabWillBeRemove: \(tabId)")
+        // Snapshot the closing active tab SYNCHRONOUSLY, before the async EventBus
+        // close dispatch. This bridge callback runs on the UI/main thread inside
+        // Chromium's synchronous close turn while the WebContents is still alive;
+        // the EventBus close (Task { @MainActor }) runs only AFTER Chromium has
+        // destroyed it, when CGWindowList would capture blank. MainActor.assumeIsolated
+        // mirrors windowDidEnterPlaceholderMode's synchronous-detach pattern.
+        // The contract above holds today (BrowserThread::UI = the AppKit main thread =
+        // MainActor), but it isn't type-enforced. Assert it; if Chromium ever delivers
+        // this off-main, skip the best-effort mask rather than trapping — the EventBus
+        // close below must still fire.
+        if Thread.isMainThread {
+            MainActor.assumeIsolated {
+                // nil window (already torn down) → skip silently; the mask is best-effort.
+                MainBrowserWindowControllersManager.shared
+                    .controller(for: windowId.intValue)?
+                    .mainSplitViewController.webContentContainerViewController
+                    .maskClosingTab(tabId: tabId.intValue)
+            }
+        } else {
+            assertionFailure("tabWillBeRemove off the main thread; skipping best-effort close mask")
+        }
         EventBus.shared
             .send(TabEvent(browserId: windowId.intValue,
                            action: .closeTab(tabId.intValue)))

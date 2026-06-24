@@ -17,6 +17,7 @@ class MainBrowserWindowController: NSWindowController {
     let profileId: String
     
     var omniBoxContainerViewController: OmniBoxContainerViewController?
+    var searchTabsContainerViewController: SearchTabsContainerViewController?
     
     private lazy var toastContainerViewController: OverlayToastViewController = {
         return OverlayToastViewController(state: browserState)
@@ -28,6 +29,10 @@ class MainBrowserWindowController: NSWindowController {
     
     lazy var omnibackgroundView: EventBlockBgView = {
        return EventBlockBgView()
+    }()
+
+    lazy var searchTabsBackgroundView: EventBlockBgView = {
+        EventBlockBgView()
     }()
     
     private var originalContentView: NSView?
@@ -80,7 +85,12 @@ class MainBrowserWindowController: NSWindowController {
         window.isMovableByWindowBackground = true
         window.animationBehavior = .none
         //        window.delegate = self
-        window.setFrameAutosaveName("mainBrowserWindow")
+        // Chromium owns window placement (CreateParams override bounds / WindowSizer
+        // / saved-placement prefs / --window-size/--window-position). The shared
+        // "mainBrowserWindow" frame autosave loaded a remembered frame and clobbered
+        // that for every windows.create window, so it is intentionally not used.
+        // (The not-logged-in/dangling window is hidden then force-sized on restore,
+        // so it never depended on this autosave.)
         let frameToRestore = window.frame
         applyThemeAppearance(to: window)
         
@@ -95,6 +105,12 @@ class MainBrowserWindowController: NSWindowController {
         NotificationCenter.default.addObserver(self,
                                                selector: #selector(myWindowWillClose(_:)),
                                                name: NSWindow.willCloseNotification,
+                                               object: window)
+        // A window created minimized never runs its content view-appearance
+        // lifecycle; restore it when the window is deminiaturized from the Dock.
+        NotificationCenter.default.addObserver(self,
+                                               selector: #selector(handleWindowDidDeminiaturize(_:)),
+                                               name: NSWindow.didDeminiaturizeNotification,
                                                object: window)
         browserState.themeContext.themeAppearancePublisher
             .receive(on: DispatchQueue.main)
@@ -115,6 +131,14 @@ class MainBrowserWindowController: NSWindowController {
         setupContentView()
         applyThemeAppearance(to: window)
         window.setFrame(frameToRestore, display: true)
+    }
+
+    /// A window created minimized never runs its content view-appearance
+    /// lifecycle (AppKit doesn't run appearance for a Dock/off-screen window),
+    /// and deminiaturizing doesn't re-trigger it — leaving the restored window
+    /// blank. Drive the content setup now that the window is visible again.
+    @objc private func handleWindowDidDeminiaturize(_ note: Notification) {
+        mainSplitViewController.phiHandleRestoreFromMinimized()
     }
 
     private func applyThemeAppearance(to window: NSWindow) {

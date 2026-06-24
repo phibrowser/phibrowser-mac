@@ -1,5 +1,5 @@
 {
-  "originHash" : "6b701b9fc49bacd9ba044a6f99dfd123947748d6cd7f05638feb9515a5369581",
+  "originHash" : "1d351b9042a7ce6759b76e81445d51bb99745f846d3c8e2626504655cb213f7b",
   "pins" : [
     {
       "identity" : "alamofire",
@@ -26,15 +26,6 @@
       "state" : {
         "revision" : "a9ed4b6f9bdedce7d77046f43adfb8ce1fd54114",
         "version" : "3.9.0"
-      }
-    },
-    {
-      "identity" : "countly-sdk-ios",
-      "kind" : "remoteSourceControl",
-      "location" : "https://github.com/Countly/countly-sdk-ios.git",
-      "state" : {
-        "revision" : "fa934c39234ccb762a8218ff26ea9a73c3aa110f",
-        "version" : "25.4.8"
       }
     },
     {

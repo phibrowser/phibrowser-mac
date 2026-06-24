@@ -35,6 +35,22 @@ class SidebarHeaderView: NSView, TitlebarAwareHitTestable {
         return button
     }()
 
+    private lazy var searchTabsButton: HoverableButtonNSView = {
+        let label = NSLocalizedString("Search Tabs", comment: "Search Tabs - Button tooltip and accessibility label")
+        let image = NSImage.configureSymbolImage(systemName: "magnifyingglass", pointSize: 15, weight: .regular, color: .black)
+        let config = HoverableButtonConfig(image: image,
+                                           imageSize: .init(width: 16, height: 16),
+                                           displayMode: .imageOnly,
+                                           hoverBackgroundColor: .hover,
+                                           imageTintColor: .textPrimary,
+                                           cornerRadius: 4)
+        let button = HoverableButtonNSView(config: config, target: self, selector: #selector(searchTabsButtonClicked))
+        button.toolTip = label
+        button.setAccessibilityLabel(label)
+        button.isHidden = true
+        return button
+    }()
+
     private lazy var upgradeButton: HoverableButtonNSView = {
         let config = HoverableButtonConfig(
             title: NSLocalizedString("Update", comment: "Sidebar header upgrade button title"),
@@ -154,11 +170,18 @@ class SidebarHeaderView: NSView, TitlebarAwareHitTestable {
         let showInSidebar = isSidebarLayout(initialLayoutMode)
 
         addSubview(sidebarButton)
+        addSubview(searchTabsButton)
         addSubview(upgradeButton)
 
         sidebarButton.snp.makeConstraints { make in
             make.top.equalToSuperview().offset(sidebarButtonTopOffset(for: showInSidebar))
             sidebarButtonLeftConstraint = make.left.equalToSuperview().offset(78).constraint
+            make.size.equalTo(NSSize(width: 24, height: 24))
+        }
+
+        searchTabsButton.snp.makeConstraints { make in
+            make.centerY.equalTo(sidebarButton)
+            make.right.equalTo(sidebarButton.snp.left).offset(-2)
             make.size.equalTo(NSSize(width: 24, height: 24))
         }
 
@@ -396,6 +419,10 @@ class SidebarHeaderView: NSView, TitlebarAwareHitTestable {
     @objc private func sidebarButtonClicked() {
         MainBrowserWindowControllersManager.shared.activeWindowController?.browserState.toggleSidebar(nil)
     }
+
+    @objc private func searchTabsButtonClicked() {
+        browserState?.windowController?.toggleSearchTabs(attachedTo: searchTabsButton)
+    }
     
     @objc private func backButtonClicked() {
         browserState?.focusingTab?.goBack()
@@ -444,11 +471,13 @@ class SidebarHeaderView: NSView, TitlebarAwareHitTestable {
         guard availableUpdateVersion != nil else {
             upgradeButton.isHidden = true
             sidebarButton.isHidden = false
+            searchTabsButton.isHidden = layoutMode != .balanced
             return
         }
 
         let tooNarrowForUpgrade = !isFloating && currentWidth <= 225
         upgradeButton.isHidden = tooNarrowForUpgrade
         sidebarButton.isHidden = tooNarrowForUpgrade ? false : (layoutMode != .balanced)
+        searchTabsButton.isHidden = layoutMode != .balanced || sidebarButton.isHidden
     }
 }

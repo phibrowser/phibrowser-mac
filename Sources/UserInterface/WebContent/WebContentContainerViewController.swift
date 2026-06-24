@@ -29,6 +29,13 @@ class WebContentContainerViewController: NSViewController {
     /// in contentContainer at a time).
     private var placeholderShell: PlaceholderShellViewController?
 
+    /// Static snapshot of the closing active tab, laid over the content area to hide
+    /// the flash during the view swap. Single slot; independent of `placeholderShell`.
+    private var closePlaceholder: NSImageView?
+
+    /// Fallback that clears `closePlaceholder` if no swap-completion signal arrives.
+    private var closePlaceholderTimeout: DispatchWorkItem?
+
     /// Shared bookmark bar owned once per window and moved between controllers.
     private var sharedBookmarkBar: BookmarkBar?
     /// Current host for the shared bookmark bar.
@@ -101,6 +108,9 @@ class WebContentContainerViewController: NSViewController {
 
     /// Timeout duration for waiting for first paint (in seconds)
     private static let firstPaintTimeoutSeconds: Double = 0.05
+
+    /// Fallback duration to clear the close-snapshot placeholder when no swap signal arrives (in seconds)
+    private static let closeSnapshotTimeoutSeconds: Double = 0.8
 
     // MARK: - UI Components
 
@@ -803,6 +813,19 @@ class WebContentContainerViewController: NSViewController {
         }
     }
     
+    /// Drive the active tab's content mount after the window is restored from
+    /// the Dock. A window created minimized never runs `viewWillAppear` for
+    /// this controller (AppKit doesn't run appearance for a Dock/off-screen
+    /// window, and deminiaturizing doesn't re-trigger it), so the `$focusingTab`
+    /// subscription that mounts tab content was never installed. Re-run the
+    /// appearance-time setup (idempotent) and drive the current tab.
+    func mountActiveTabForRestore() {
+        viewWillAppear()
+        if let tab = browserState?.focusingTab {
+            handleFocusingTabChanged(tab)
+        }
+    }
+
     private func handleTabsChanged(_ tabs: [Tab]) {
         guard let state = browserState else { return }
         
@@ -972,6 +995,72 @@ class WebContentContainerViewController: NSViewController {
         AppLogInfo("🦖 [Container] detached placeholder shell")
     }
 
+    // MARK: - Close Snapshot Placeholder
+    //
+    // Hides the gray/black flash when closing the ACTIVE tab. Must run SYNCHRONOUSLY
+    // from PhiChromiumCoordinator.tabWillBeRemove — the async EventBus close fires
+    // only after Chromium destroys the WebContents, too late to capture pixels.
+
+    /// Lay a static snapshot of the closing active tab over the content area.
+    /// No-op (degrades to today's flash) if the closing tab isn't on-screen or capture fails.
+    @MainActor
+    func maskClosingTab(tabId: Int) {
+        guard let controller = currentWebContentController,
+              controller.associatedTab?.guid == tabId else {
+            return
+        }
+        // Single slot: clear any prior snapshot before capturing (rapid close).
+        clearClosePlaceholder()
+
+        // Snapshot only the inset web-content region, not the side margins: covering
+        // them makes AppKit additively re-tint that vibrancy strip, and it flickers.
+        let contentView = controller.closeSnapshotSourceView
+        // Comfortable draws a 1pt active-tab outline (outerBorderLayer) ABOVE this
+        // snapshot and re-morphs it on close; inset past it so the live layer owns it.
+        let borderInset: CGFloat = outerBorderLayer.path == nil ? 0 : outerBorderLayer.lineWidth
+        guard let image = WebContentSnapshotter.captureOnScreen(contentView, resolution: .bestResolution, insetBy: borderInset) else {
+            AppLogDebug("[CloseSnapshot] capture failed for tab \(tabId) — falling back to flash")
+            return
+        }
+
+        let imageView = NSImageView()
+        imageView.image = image
+        imageView.imageScaling = .scaleAxesIndependently
+        // Mirror the source's rounded corners (shrunk by the inset) so it lines up.
+        imageView.wantsLayer = true
+        if let sourceLayer = contentView.layer {
+            imageView.layer?.cornerCurve = sourceLayer.cornerCurve
+            imageView.layer?.cornerRadius = max(0, sourceLayer.cornerRadius - borderInset)
+            imageView.layer?.masksToBounds = true
+        }
+        // Cover only the inset content region; margins (and the outline) stay live.
+        imageView.frame = contentView.convert(contentView.bounds, to: contentContainer).insetBy(dx: borderInset, dy: borderInset)
+        contentContainer.addSubview(imageView)
+        // Commit the snapshot to the WindowServer synchronously, before this bridge
+        // callback returns and Chromium destroys the closing tab. Otherwise its CA
+        // commit can land a frame AFTER the remote layer has blanked (async, on the
+        // GPU/WindowServer side) → a 1-frame blank that then "recovers" = the flicker.
+        imageView.display()
+        CATransaction.flush()
+        closePlaceholder = imageView
+
+        let timeout = DispatchWorkItem { [weak self] in
+            self?.clearClosePlaceholder()
+        }
+        closePlaceholderTimeout = timeout
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.closeSnapshotTimeoutSeconds, execute: timeout)
+    }
+
+    /// Remove the close snapshot placeholder and cancel its timeout. Idempotent.
+    @MainActor
+    private func clearClosePlaceholder() {
+        guard closePlaceholder != nil || closePlaceholderTimeout != nil else { return }
+        closePlaceholderTimeout?.cancel()
+        closePlaceholderTimeout = nil
+        closePlaceholder?.removeFromSuperview()
+        closePlaceholder = nil
+    }
+
     /// Scenario 1: Switch to an already-painted tab (immediate switch, bring to front)
     private func switchToWebContentController(_ controller: WebContentViewController) {
         // Flicker fix: Don't remove old view immediately, defer until Chromium confirms.
@@ -1027,10 +1116,27 @@ class WebContentContainerViewController: NSViewController {
 
         // Notify Chromium that view switch is complete, it can now hide the old WebContents
         notifyViewSwitchCompleted()
+
+        // Settled successor is now painted on top — drop the close snapshot (if any).
+        clearClosePlaceholder()
     }
 
     /// Scenario 2: Switch to a new unpainted tab (add view below, wait for first paint)
     private func switchToNewUnpaintedTab(controller: WebContentViewController, tab: Tab, identifier: String) {
+        // Defensive: a live host controller can be handed back here when a
+        // controller is reused for a colliding bookmark/pinned identifier.
+        // Re-pointing the current live host into the unpainted-pending slot
+        // would later trip the bookmark-bar host assertion in
+        // cancelPendingNewTabSwitchIfNeeded. If this controller is already the
+        // live host, switch to it synchronously instead of pending it. The
+        // duplicate-binding root cause is fixed Chromium-side at restore; this
+        // guard remains as a second layer.
+        if controller === currentWebContentController {
+            switchToWebContentController(controller)
+            currentTabIdentifier = identifier
+            return
+        }
+
         // Cancel any existing timeout
         pendingNewTabTimeoutWorkItem?.cancel()
         pendingNewTabTimeoutWorkItem = nil
@@ -1254,6 +1360,10 @@ class WebContentContainerViewController: NSViewController {
         // Now notify Chromium that view switch is complete
         // This triggers the old tab to be hidden and cleanup flow
         notifyViewSwitchCompleted()
+
+        // New view is on top now — real first paint, or forced by the first-paint
+        // timeout (successor may still be blank, accepted). Drop the close snapshot.
+        clearClosePlaceholder()
 
         // AppLogDebug("[FlickerFix][Mac] ➡️ Sent confirmViewSwitchCompleted after new tab first paint")
     }

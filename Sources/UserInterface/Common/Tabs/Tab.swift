@@ -275,7 +275,12 @@ class Tab: WebContentRepresentable {
             .store(in: &cancellables)
         
         wrapper.publisher(for: \.urlString)
-            .assign(to: \.url, on: self)
+            .sink { [weak self] urlString in
+                guard let self else { return }
+                let previousURLString = self.url
+                self.url = urlString
+                self.clearFaviconDataIfPageURLChanged(from: previousURLString, to: urlString)
+            }
             .store(in: &cancellables)
 
         wrapper.publisher(for: \.securityInfo)
@@ -317,6 +322,45 @@ class Tab: WebContentRepresentable {
         guard let data, cachedFaviconData != data else { return }
         cachedFaviconData = data
         faviconSnapshotUpdater?(data)
+    }
+
+    private func clearFaviconDataIfPageURLChanged(from oldURLString: String?, to newURLString: String?) {
+        guard let oldURLString = Self.normalizedNonEmptyURLString(oldURLString),
+              let newURLString = Self.normalizedNonEmptyURLString(newURLString),
+              Self.faviconHostChanged(from: oldURLString, to: newURLString) else {
+            return
+        }
+
+        let oldLiveBytes = liveFaviconData?.count ?? 0
+        let oldCachedBytes = cachedFaviconData?.count ?? 0
+        liveFaviconData = nil
+        cachedFaviconData = nil
+        AppLogDebug(
+            "[FaviconFlow] tab.clearFaviconForURLChange " +
+            "tabId=\(guid) oldURL=\(oldURLString) newURL=\(newURLString) " +
+            "oldLiveBytes=\(oldLiveBytes) oldCachedBytes=\(oldCachedBytes)"
+        )
+    }
+
+    private static func normalizedNonEmptyURLString(_ urlString: String?) -> String? {
+        guard let urlString else { return nil }
+        let trimmedURLString = urlString.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmedURLString.isEmpty ? nil : trimmedURLString
+    }
+
+    private static func faviconHostChanged(from oldURLString: String, to newURLString: String) -> Bool {
+        guard let oldHost = normalizedFaviconHost(oldURLString),
+              let newHost = normalizedFaviconHost(newURLString) else {
+            return oldURLString != newURLString
+        }
+        return oldHost != newHost
+    }
+
+    private static func normalizedFaviconHost(_ urlString: String) -> String? {
+        guard let host = URL(string: urlString)?.host?.lowercased(), !host.isEmpty else {
+            return nil
+        }
+        return host.hasPrefix("www.") ? String(host.dropFirst(4)) : host
     }
     
     /// Persists a custom title and rebinds observers so KVO no longer overwrites it.

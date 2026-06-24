@@ -71,7 +71,8 @@ extension Shortcuts {
                         .IDC_DEV_TOOLS_INSPECT,
                         .IDC_DEV_TOOLS_CONSOLE,
                         .PHI_TOGGLE_SIDEBAR,
-                        .PHI_TOGGLE_CHATBAR]
+                        .PHI_TOGGLE_CHATBAR,
+                        .PHI_NEW_CONVERSATION]
             case .history:
                 return [.IDC_HOME,
                         .IDC_BACK,
@@ -324,6 +325,7 @@ extension CommandWrapper {
         .PHI_TOGGLE_CHATBAR: .init(title: "Toggle Chatbar", keywords: ["togglechatbar","ai"]),
         .PHI_TAB_SWITCHER_FORWARD: .init(title: "Show Tab Switcher", keywords: ["tab switcher", "forward"]),
         .PHI_TAB_SWITCHER_BACKWARD: .init(title: "Show Tab Switcher(Reverse)", keywords: ["tab switcher", "backward"]),
+        .PHI_NEW_CONVERSATION: .init(title: "New Conversation", keywords: ["new conversation", "new chat", "ai", "chat"]),
         
         .IDS_HIDE_OTHERS_MAC: .init(title: "Hide Others", keywords: []),
         .IDS_CLOSE_ALL_WINDOWS_MAC: .init(title: "Close All", keywords: []),

@@ -146,6 +146,11 @@ class WebContentViewController: NSViewController {
     // MARK: - AI Chat Split View
     /// Split-view container that owns the rounded background and spacing.
     private lazy var splitViewContainer = NSView()
+
+    /// Inset, rounded web-content region used as the close-snapshot source; excludes
+    /// the side margins so the placeholder doesn't cover the window-edge material.
+    var closeSnapshotSourceView: NSView { splitViewContainer }
+
     private lazy var contentSplitViewController = NSSplitViewController()
     private var webContentSplitViewItem: NSSplitViewItem!
     private var aiChatSplitViewItem: NSSplitViewItem?

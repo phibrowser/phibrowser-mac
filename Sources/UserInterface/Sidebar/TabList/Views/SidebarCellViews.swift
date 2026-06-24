@@ -107,7 +107,7 @@ extension NSView {
     }
 }
 
-private final class SidebarTrailingFadeTextField: NSTextField {
+final class TrailingFadeTextField: NSTextField {
     private static let fadeWidth: CGFloat = 10
 
     private let fadeMaskLayer = CAGradientLayer()
@@ -404,8 +404,8 @@ class SidebarSplitPairCellView: SidebarCellView {
     private let rightPane = HoverableView()
     private let leftIconView = NSImageView()
     private let rightIconView = NSImageView()
-    private let leftTitleLabel = SidebarTrailingFadeTextField()
-    private let rightTitleLabel = SidebarTrailingFadeTextField()
+    private let leftTitleLabel = TrailingFadeTextField()
+    private let rightTitleLabel = TrailingFadeTextField()
     private var leftCloseHost: ZeroSafeAreaHostingView<AnyView>!
     private var rightCloseHost: ZeroSafeAreaHostingView<AnyView>!
     private var leftMuteHost: ZeroSafeAreaHostingView<AnyView>!

@@ -144,6 +144,14 @@ final class TabViewModel {
         updateLiveFavicon(data: tab.liveFaviconData, revision: tab.liveFaviconRevision)
         updateProfileFaviconImage(data: tab.cachedFaviconData, clearsOnNil: true)
         refreshProfileFaviconIfNeeded(for: tab, expectedGuid: tab.guid)
+        AppLogDebug(
+            "[FaviconFlow] tabViewModel.configure " +
+            "model=\(ObjectIdentifier(self)) tabId=\(expectedGuid) " +
+            "url=\(tab.url ?? "nil") faviconLoadURL=\(faviconLoadURL ?? "nil") " +
+            "tabLiveBytes=\(tab.liveFaviconData?.count ?? 0) " +
+            "tabCachedBytes=\(tab.cachedFaviconData?.count ?? 0) " +
+            "liveImage=\(liveFaviconImage != nil) profileImage=\(profileFaviconImage != nil)"
+        )
         self.isActive = tab.isActive && !isActiveSuppressed
         self.rawIsLoading = tab.isLoading
         self.loadingProgress = Double(tab.loadingProgress)
@@ -175,7 +183,12 @@ final class TabViewModel {
                 // page URL arrives; clearing faviconLoadURL here would cause a
                 // globe-icon flash. configure() already resets it unconditionally.
                 if let newUrl, !newUrl.isEmpty {
+                    let oldFaviconLoadURL = self.faviconLoadURL
                     self.faviconLoadURL = newUrl
+                    if let oldFaviconLoadURL,
+                       Self.faviconHostChanged(from: oldFaviconLoadURL, to: newUrl) {
+                        self.clearVisibleFaviconForURLChange(from: oldFaviconLoadURL, to: newUrl)
+                    }
                 }
                 self.refreshProfileFaviconIfNeeded(for: tab, expectedGuid: expectedGuid)
             }
@@ -346,10 +359,20 @@ final class TabViewModel {
 
         guard let data, let image = NSImage(data: data) else {
             liveFaviconImage = nil
+            AppLogDebug(
+                "[FaviconFlow] tabViewModel.liveFavicon " +
+                "tabId=\(configuredTabGuid.map(String.init) ?? "nil") " +
+                "bytes=\(data?.count ?? 0) revision=\(revision) image=false"
+            )
             return
         }
 
         liveFaviconImage = image
+        AppLogDebug(
+            "[FaviconFlow] tabViewModel.liveFavicon " +
+            "tabId=\(configuredTabGuid.map(String.init) ?? "nil") " +
+            "bytes=\(data.count) revision=\(revision) image=true"
+        )
     }
 
     private func updateVisualLoading() {
@@ -370,6 +393,38 @@ final class TabViewModel {
         }
 
         profileFaviconImage = image
+    }
+
+    private func clearVisibleFaviconForURLChange(from oldURLString: String, to newURLString: String) {
+        let oldLiveImage = liveFaviconImage != nil
+        let oldProfileImage = profileFaviconImage != nil
+        liveFaviconImage = nil
+        liveFaviconRevision = 0
+        profileFaviconLoadHandle?.cancel()
+        profileFaviconLoadHandle = nil
+        profileFaviconImage = nil
+        reloadFavicon()
+        AppLogDebug(
+            "[FaviconFlow] tabViewModel.clearFaviconForURLChange " +
+            "tabId=\(configuredTabGuid.map(String.init) ?? "nil") " +
+            "oldURL=\(oldURLString) newURL=\(newURLString) " +
+            "oldLiveImage=\(oldLiveImage) oldProfileImage=\(oldProfileImage)"
+        )
+    }
+
+    private static func faviconHostChanged(from oldURLString: String, to newURLString: String) -> Bool {
+        guard let oldHost = normalizedFaviconHost(oldURLString),
+              let newHost = normalizedFaviconHost(newURLString) else {
+            return oldURLString != newURLString
+        }
+        return oldHost != newHost
+    }
+
+    private static func normalizedFaviconHost(_ urlString: String) -> String? {
+        guard let host = URL(string: urlString)?.host?.lowercased(), !host.isEmpty else {
+            return nil
+        }
+        return host.hasPrefix("www.") ? String(host.dropFirst(4)) : host
     }
 
     private func refreshProfileFaviconIfNeeded(for tab: Tab, expectedGuid: Int) {
@@ -396,7 +451,11 @@ final class TabViewModel {
         )
 
         profileFaviconLoadHandle = ProfileScopedFaviconRepository.shared.loadFavicon(for: request) { [weak self, weak tab] result in
-            guard let self, self.configuredTabGuid == expectedGuid else { return }
+            guard let self,
+                  self.configuredTabGuid == expectedGuid,
+                  self.faviconLoadURL == request.pageURLString else {
+                return
+            }
             self.profileFaviconImage = result.image
             if result.source == .chromium, let data = result.data {
                 tab?.updateCachedFaviconData(data)

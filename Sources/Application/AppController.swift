@@ -12,7 +12,6 @@ import Auth0
 import Sparkle
 import WebKit
 import Settings
-import Countly
 import PostHog
 
 @objc class AppController: NSObject, NSApplicationDelegate {

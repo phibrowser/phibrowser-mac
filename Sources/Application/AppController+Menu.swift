@@ -123,6 +123,15 @@ extension AppController {
                 Shortcuts.updateShortcut(for: toggleChatbarItem)
                 toggleChatbarItem.target = self
                 submenu.addItem(toggleChatbarItem)
+
+                let newConversationItem = NSMenuItem(title: NSLocalizedString("New Conversation", comment: "View menu - Menu item to start a new AI conversation in the sidebar"),
+                                                   action: #selector(newConversation(_:)),
+                                                   keyEquivalent: "o")
+                newConversationItem.keyEquivalentModifierMask = [.command, .shift]
+                newConversationItem.tag = CommandWrapper.PHI_NEW_CONVERSATION.rawValue
+                Shortcuts.updateShortcut(for: newConversationItem)
+                newConversationItem.target = self
+                submenu.addItem(newConversationItem)
             } else
             
             if menuItem.title == "Phi", let subMenu = menuItem.submenu {
@@ -340,6 +349,32 @@ extension AppController {
         MainBrowserWindowControllersManager.shared.activeWindowController?.browserState.toggleAIChat()
     }
 
+    /// Starts a new AI conversation in the focused tab's sidebar.
+    ///
+    /// The actual "new conversation" logic lives inside the Sidecar extension
+    /// (React), so we can't run it natively. Instead we broadcast a message the
+    /// extension listens for. Validation (`validateUserInterfaceItem`) already
+    /// guarantees focus is inside the AI sidebar when this fires, so the sidebar
+    /// is open and visible — no need to open it here.
+    ///
+    /// Each browser tab has its own AI sidebar WebContents (one Sidecar instance
+    /// per tab), and they all share the same `windowId`. So we carry the focused
+    /// tab's `tabId` (its Chromium `guid`, the same value embedded as `?tabId=`
+    /// when the sidebar is created) to let exactly that tab's Sidecar respond.
+    @MainActor
+    @objc func newConversation(_ sender: Any?) {
+        guard let windowController = MainBrowserWindowControllersManager.shared.activeWindowController,
+              let tabId = windowController.browserState.focusingTab?.guid else {
+            return
+        }
+        let payload: [String: Any] = ["tabId": tabId]
+        guard let data = try? JSONSerialization.data(withJSONObject: payload),
+              let json = String(data: data, encoding: .utf8) else {
+            return
+        }
+        ExtensionMessaging.shared.broadcast(type: "newConversation", payload: json)
+    }
+
     @objc func toggleBookmarkBar(_ sender: Any?) {
         let currentValue = PhiPreferences.GeneralSettings.alwaysShowBookmarkBar.loadValue()
         UserDefaults.standard.set(!currentValue, forKey: PhiPreferences.GeneralSettings.alwaysShowBookmarkBar.rawValue)
@@ -366,7 +401,9 @@ extension AppController {
             let title = tab.title.isEmpty ? (tab.url ?? "") : tab.title
             let url = tab.url ?? ""
             guard !url.isEmpty else { continue }
-            state.bookmarkManager.addBookmark(title: title, url: url)
+            state.bookmarkManager.addBookmark(title: title,
+                                              url: url,
+                                              faviconData: tab.liveFaviconData ?? tab.cachedFaviconData)
         }
     }
 
@@ -593,7 +630,23 @@ extension AppController {
                 return false
             }
         }
-        
+
+        // New Conversation only applies while focus is inside the AI sidebar;
+        // otherwise disable the item so its shortcut falls through to the
+        // original behavior.
+        if item.action == #selector(newConversation(_:)) {
+            let phiAIEnabled = UserDefaults.standard.bool(forKey: PhiPreferences.AISettings.phiAIEnabled.rawValue)
+            let state = MainBrowserWindowControllersManager.shared.getActiveWindowState()
+            guard phiAIEnabled,
+                  let state,
+                  !state.isIncognito,
+                  state.groupOverviewState == nil,
+                  state.focusingTab?.aiChatEnabled == true,
+                  state.focusingTab?.lastFocusTarget == .aiChat else {
+                return false
+            }
+        }
+
         // Toggle Sidebar is unavailable in the traditional layout.
         if item.action == #selector(toggleSidebar(_:)) {
             if PhiPreferences.GeneralSettings.loadLayoutMode().isTraditional {
@@ -695,11 +748,22 @@ extension AppController {
             return false
         }
 
+        // Command-dispatched main-menu items that reach the app delegate had no
+        // key browser window to handle them. Defer their enabled state to
+        // PhiAppController (no-window CommandUpdater: New Tab/New Window enabled,
+        // tab-only commands disabled), matching upstream AppController.
+        if item.action == #selector(commandDispatch(_:)) {
+            return ChromiumLauncher.sharedInstance().bridge?.validateUserInterfaceItem(fromMenu: item) ?? false
+        }
+
         return true
     }
     
     @IBAction @objc func commandDispatch(_ sender: Any?) {
-        
+        // No key browser window handled this command, so it reached the app
+        // delegate. Forward to PhiAppController (via the bridge), which contains
+        // the no-window handling for File-menu commands like New Tab/New Window.
+        ChromiumLauncher.sharedInstance().bridge?.commandDispatchFromMenu(sender as Any)
     }
 }
 

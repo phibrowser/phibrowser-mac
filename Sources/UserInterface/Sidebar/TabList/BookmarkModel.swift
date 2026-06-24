@@ -41,6 +41,7 @@ class Bookmark: WebContentRepresentable {
     private(set) var webContentWrapper: (WebContentWrapper & NSObject)?
     private(set) var children: [Bookmark] = []
     private var cancellables = Set<AnyCancellable>()
+    private var canonicalFaviconCancellables = Set<AnyCancellable>()
     private var faviconSnapshotUpdater: ((Data) -> Void)?
     
     init(guid: String = UUID().uuidString,
@@ -118,6 +119,9 @@ class Bookmark: WebContentRepresentable {
     
     /// Stores the associated web-content wrapper for an opened bookmark tab.
     func setWebContentWrapper(_ wrapper: (WebContentWrapper & NSObject)?) {
+        if wrapper == nil {
+            clearCanonicalFaviconSource()
+        }
         if let currentWrapper = webContentWrapper, let wrapper, currentWrapper === wrapper {
             return
         }
@@ -126,6 +130,39 @@ class Bookmark: WebContentRepresentable {
         }
         self.webContentWrapper = wrapper
         setupObservers(for: wrapper)
+        if let wrapper {
+            setCanonicalFaviconSource(wrapper)
+        }
+    }
+
+    func setCanonicalFaviconSource<Wrapper: WebContentWrapper & NSObject>(_ wrapper: Wrapper?) {
+        clearCanonicalFaviconSource()
+
+        guard let wrapper else { return }
+
+        updateCachedFaviconDataIfNeeded(wrapper.favIconData, forWrapperURL: wrapper.urlString)
+
+        wrapper.publisher(for: \.favIconData)
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self, weak wrapper] data in
+                guard let self, let wrapper else { return }
+                self.updateCachedFaviconDataIfNeeded(data, forWrapperURL: wrapper.urlString)
+            }
+            .store(in: &canonicalFaviconCancellables)
+
+        wrapper.publisher(for: \.urlString)
+            .removeDuplicates()
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self, weak wrapper] urlString in
+                guard let self, let wrapper else { return }
+                self.updateCachedFaviconDataIfNeeded(wrapper.favIconData, forWrapperURL: urlString)
+            }
+            .store(in: &canonicalFaviconCancellables)
+    }
+
+    func clearCanonicalFaviconSource() {
+        canonicalFaviconCancellables.forEach { $0.cancel() }
+        canonicalFaviconCancellables.removeAll()
     }
     
     func setFaviconSnapshotUpdater(_ updater: @escaping (Data) -> Void) {
@@ -153,15 +190,44 @@ class Bookmark: WebContentRepresentable {
             .store(in: &cancellables)
 
         liveFaviconData = wrapper.favIconData
-        updateCachedFaviconData(wrapper.favIconData, persist: false)
 
         wrapper.publisher(for: \.favIconData)
             .receive(on: DispatchQueue.main)
             .sink { [weak self] data in
                 self?.liveFaviconData = data
-                self?.updateCachedFaviconData(data, persist: true)
             }
             .store(in: &cancellables)
+    }
+
+    private func updateCachedFaviconDataIfNeeded(_ data: Data?, forWrapperURL wrapperURLString: String?) {
+        guard let bookmarkURLString = canonicalURLString(url),
+              canonicalURLString(wrapperURLString) == bookmarkURLString else { return }
+        updateCachedFaviconData(data, persist: true)
+    }
+
+    private func canonicalURLString(_ rawURLString: String?) -> String? {
+        guard let rawURLString = rawURLString?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !rawURLString.isEmpty else {
+            return nil
+        }
+
+        let processedURLString: String
+        if rawURLString.hasPrefix("phi://") || URL(string: rawURLString)?.scheme == nil {
+            processedURLString = URLProcessor.processUserInput(rawURLString)
+        } else {
+            processedURLString = rawURLString
+        }
+        guard var components = URLComponents(string: processedURLString) else {
+            return processedURLString
+        }
+
+        components.scheme = components.scheme?.lowercased()
+        components.host = components.host?.lowercased()
+        components.fragment = nil
+        if components.path == "/" {
+            components.path = ""
+        }
+        return components.url?.absoluteString ?? processedURLString
     }
 }
 
@@ -209,9 +275,14 @@ class BookmarkManager: ObservableObject {
                 .receive(on: DispatchQueue.main)
                 .sink { [weak self] bookmarkModels in
                     guard let self else { return }
-                    self.saveExpandedState()
-                    
                     let bookmarks = self.mappedModels(from: bookmarkModels)
+                    if self.hasSameSidebarTree(as: bookmarks) {
+                        self.applyNonLayoutUpdates(from: bookmarks)
+                        self.browserState?.syncAllBookmarksOpenedState()
+                        return
+                    }
+
+                    self.saveExpandedState()
                     self.rootFolder = Bookmark(title: "Bookmarks", children: bookmarks)
                     self.rebuildIndex()
                     self.browserState?.syncAllBookmarksOpenedState()
@@ -245,6 +316,42 @@ class BookmarkManager: ObservableObject {
             pendingEditGuid = nil
             NotificationCenter.default.post(name: .bookmarkStartEditing, object: bookmark)
         }
+    }
+
+    private func hasSameSidebarTree(as bookmarks: [Bookmark]) -> Bool {
+        bookmarkTreesMatch(rootFolder.children, bookmarks)
+    }
+
+    private func bookmarkTreesMatch(_ lhs: [Bookmark], _ rhs: [Bookmark]) -> Bool {
+        guard lhs.count == rhs.count else { return false }
+
+        for (left, right) in zip(lhs, rhs) {
+            guard left.guid == right.guid,
+                  left.title == right.title,
+                  left.url == right.url,
+                  left.secondaryUrl == right.secondaryUrl,
+                  left.secondaryTitle == right.secondaryTitle,
+                  left.profileId == right.profileId,
+                  left.cachedFaviconData == right.cachedFaviconData,
+                  left.isFolder == right.isFolder,
+                  bookmarkTreesMatch(left.children, right.children) else {
+                return false
+            }
+        }
+
+        return true
+    }
+
+    private func applyNonLayoutUpdates(from bookmarks: [Bookmark]) {
+        func traverse(_ bookmark: Bookmark) {
+            if let existing = bookmarkIndex[bookmark.guid],
+               existing.lastSeen != bookmark.lastSeen {
+                existing.lastSeen = bookmark.lastSeen
+            }
+            bookmark.children.forEach(traverse)
+        }
+
+        bookmarks.forEach(traverse)
     }
     
     func updateBookmark(guid: String,
@@ -359,15 +466,32 @@ class BookmarkManager: ObservableObject {
 //        }
 //    }
     
-    func addBookmark(title: String, url: String, to parent: Bookmark? = nil, targetIndex: Int? = nil) {
-        addBookmark(title: title, url: url, toParentGuid: parent?.guid, targetIndex: targetIndex)
+    func addBookmark(title: String,
+                     url: String,
+                     to parent: Bookmark? = nil,
+                     targetIndex: Int? = nil,
+                     faviconData: Data? = nil) {
+        addBookmark(title: title,
+                    url: url,
+                    toParentGuid: parent?.guid,
+                    targetIndex: targetIndex,
+                    faviconData: faviconData)
     }
 
     /// Adds a bookmark under a parent referenced by guid. Use when the parent
     /// was just created and may not yet be present in the in-memory index.
-    func addBookmark(title: String, url: String, toParentGuid parentGuid: String?, targetIndex: Int? = nil) {
+    func addBookmark(title: String,
+                     url: String,
+                     toParentGuid parentGuid: String?,
+                     targetIndex: Int? = nil,
+                     faviconData: Data? = nil) {
         guard let profileId = browserState?.profileId else { return }
-        browserState?.localStore.createBookmark(url: url, title: title, profileId: profileId, parentId: parentGuid, index: targetIndex)
+        browserState?.localStore.createBookmark(url: url,
+                                                title: title,
+                                                profileId: profileId,
+                                                parentId: parentGuid,
+                                                index: targetIndex,
+                                                favicon: faviconDataForNewBookmark(url: url, explicitData: faviconData))
     }
 
     /// Stores both panes of a split as a single bookmark. Clicking the saved
@@ -379,7 +503,8 @@ class BookmarkManager: ObservableObject {
                           secondaryURL: String,
                           secondaryTitle: String?,
                           to parent: Bookmark? = nil,
-                          targetIndex: Int? = nil) {
+                          targetIndex: Int? = nil,
+                          primaryFaviconData: Data? = nil) {
         guard let profileId = browserState?.profileId else { return }
         browserState?.localStore.createBookmark(url: primaryURL,
                                                 title: title,
@@ -387,7 +512,8 @@ class BookmarkManager: ObservableObject {
                                                 parentId: parent?.guid,
                                                 index: targetIndex,
                                                 secondaryUrl: secondaryURL,
-                                                secondaryTitle: secondaryTitle)
+                                                secondaryTitle: secondaryTitle,
+                                                favicon: faviconDataForNewBookmark(url: primaryURL, explicitData: primaryFaviconData))
     }
     
     func addFolder(title: String, to parent: Bookmark? = nil) {
@@ -408,6 +534,7 @@ class BookmarkManager: ObservableObject {
                               to parent: Bookmark? = nil,
                               bookmarkTitle: String?,
                               bookmarkURL: String,
+                              bookmarkFaviconData: Data? = nil,
                               completion: @escaping (Bool, String) -> Void) {
         let newGuid = UUID().uuidString
         guard let profileId = browserState?.profileId else { return }
@@ -416,8 +543,33 @@ class BookmarkManager: ObservableObject {
                                                              profileId: profileId,
                                                              parentId: parent?.guid,
                                                              bookmarkTitle: bookmarkTitle,
-                                                             bookmarkURL: bookmarkURL) { success in
+                                                             bookmarkURL: bookmarkURL,
+                                                             bookmarkFavicon: faviconDataForNewBookmark(url: bookmarkURL, explicitData: bookmarkFaviconData)) { success in
             completion(success, newGuid)
+        }
+    }
+
+    private func faviconDataForNewBookmark(url: String, explicitData: Data?) -> Data? {
+        if let explicitData { return explicitData }
+        guard let state = browserState,
+              let targetURL = state.localStore.normalizedURL(from: url)?.absoluteString else {
+            return nil
+        }
+
+        func matches(_ tab: Tab) -> Bool {
+            guard let tabURL = tab.url,
+                  let normalized = state.localStore.normalizedURL(from: tabURL)?.absoluteString else {
+                return false
+            }
+            return normalized == targetURL
+        }
+
+        if let focusingTab = state.focusingTab, matches(focusingTab) {
+            return focusingTab.liveFaviconData ?? focusingTab.cachedFaviconData
+        }
+
+        return state.tabs.first(where: matches).flatMap { tab in
+            tab.liveFaviconData ?? tab.cachedFaviconData
         }
     }
     
@@ -435,6 +587,17 @@ class BookmarkManager: ObservableObject {
     func findBookmark(byURL url: String) -> Bookmark? {
         guard let normalized = browserState?.localStore.normalizedURL(from: url)?.absoluteString else { return nil }
         return getAllBookmarks().first { !$0.isFolder && $0.url == normalized }
+    }
+
+    /// Finds an existing split-view bookmark whose primary pane matches `url`.
+    /// Unlike `findBookmark(byURL:)`, this only matches bookmarks that carry a
+    /// secondary URL, so a split's Cmd+D toggle won't collide with a plain
+    /// single-page bookmark sharing the same primary URL.
+    func findSplitBookmark(byPrimaryURL url: String) -> Bookmark? {
+        guard let normalized = browserState?.localStore.normalizedURL(from: url)?.absoluteString else { return nil }
+        return getAllBookmarks().first {
+            !$0.isFolder && $0.url == normalized && $0.secondaryUrl?.isEmpty == false
+        }
     }
 
     func moveBookmark(_ bookmark: Bookmark, to newParent: Bookmark, at index: Int? = nil) {

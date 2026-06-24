@@ -17,7 +17,6 @@ class Account {
         self.userID = userID
         self.userInfo = userInfo
         if let userInfo {
-            EventTracker.updateUserProfile(userInfo)
             if let sub = userInfo.sub {
                 PostHogSDK.shared.identify(sub)
             }

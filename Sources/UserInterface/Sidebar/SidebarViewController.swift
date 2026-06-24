@@ -27,6 +27,8 @@ class SidebarViewController: NSViewController {
     private lazy var pinnedTabViewController = PinnedTabViewController(state: state, hostVC: self)
     private lazy var tabList = SidebarTabListViewController(state: state, hostVC: self)
     private var state: BrowserState
+    /// Guards one-time download manager binding (see `bindDownloadsManagerIfNeeded`).
+    private var didBindDownloadsManager = false
     /// SwiftUI-backed bottom toolbar.
     private(set) lazy var bottomBarSwiftUI: SidebarBottomBarSwiftUIView = {
         let view = SidebarBottomBarSwiftUIView()
@@ -155,6 +157,16 @@ class SidebarViewController: NSViewController {
 
     override func viewDidAppear() {
         super.viewDidAppear()
+        bindDownloadsManagerIfNeeded()
+    }
+
+    /// Binds the bottom bar's download button to the downloads manager exactly
+    /// once. A window created minimized never runs `viewDidAppear` for this
+    /// tree, so the restore-from-minimized path drives this explicitly; the
+    /// guard keeps it idempotent across repeated deminiaturize.
+    func bindDownloadsManagerIfNeeded() {
+        guard !didBindDownloadsManager else { return }
+        didBindDownloadsManager = true
         bottomBarSwiftUI.bindDownloadsManager(state.downloadsManager)
     }
 

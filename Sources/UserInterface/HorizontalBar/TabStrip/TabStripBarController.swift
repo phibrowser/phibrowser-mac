@@ -14,7 +14,10 @@ private final class SafeAreaIgnoringHostingView<Content: View>: NSHostingView<Co
     }
 
     func shouldConsumeHitTest(at point: NSPoint) -> Bool {
-        return NSApp.currentEvent?.type == .rightMouseDown
+        guard let event = NSApp.currentEvent else {
+            return true
+        }
+        return event.type == .leftMouseDown || event.type == .rightMouseDown
     }
 }
 
@@ -114,6 +117,10 @@ final class TabStripBarController: NSViewController {
             cardManager: NotificationCardManager.shared,
             onCardEntryTap: { [weak self] in
                 self?.handleCardEntryTap()
+            },
+            onSearchTabsTap: { [weak self] anchorView in
+                guard let self else { return }
+                self.handleSearchTabsTap(anchorView: anchorView ?? self.rightButtonsHostingView)
             }
         )
         let hostingView = SafeAreaIgnoringHostingView(rootView: rightButtons)
@@ -146,6 +153,13 @@ final class TabStripBarController: NSViewController {
     private func handleCardEntryTap() {
         NotificationCardManager.shared.showManually(for: .legacy)
         onCardEntryTap?()
+    }
+
+    private func handleSearchTabsTap(anchorView: NSView?) {
+        guard let anchorView else {
+            return
+        }
+        browserState.windowController?.toggleSearchTabs(attachedTo: anchorView)
     }
 }
 

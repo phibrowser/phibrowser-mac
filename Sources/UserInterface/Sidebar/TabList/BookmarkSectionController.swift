@@ -77,7 +77,11 @@ class BookmarkSectionController: NSObject {
         let title = tab.title.count > 0 ? tab.title : url
         let targetFolder = folder ?? bookmarkManager.rootFolder
         
-        bookmarkManager.addBookmark(title: title, url: url, to: targetFolder, targetIndex: index)
+        bookmarkManager.addBookmark(title: title,
+                                    url: url,
+                                    to: targetFolder,
+                                    targetIndex: index,
+                                    faviconData: tab.liveFaviconData ?? tab.cachedFaviconData)
     }
     
     func deleteBookmark(_ bookmark: Bookmark) {

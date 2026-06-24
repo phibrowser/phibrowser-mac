@@ -334,13 +334,15 @@ extension Tab: ContextMenuRepresentable {
         }
         MainBrowserWindowControllersManager.shared.activeWindowController?.browserState.bookmarkManager.addBookmark(title: title,
                                                                                                                     url: URLProcessor.processUserInput(url ?? ""),
-                                                                                                                    to: folder)
+                                                                                                                    to: folder,
+                                                                                                                    faviconData: liveFaviconData ?? cachedFaviconData)
     }
 
     @objc private func addTabToRootBookmarks() {
         MainBrowserWindowControllersManager.shared.activeWindowController?.browserState.bookmarkManager.addBookmark(title: title,
                                                                                                                     url: URLProcessor.processUserInput(url ?? ""),
-                                                                                                                    to: nil)
+                                                                                                                    to: nil,
+                                                                                                                    faviconData: liveFaviconData ?? cachedFaviconData)
     }
     
     @MainActor
@@ -351,6 +353,7 @@ extension Tab: ContextMenuRepresentable {
         let state = windowController.browserState
         let tabTitle = title
         let tabURL = URLProcessor.processUserInput(url ?? "")
+        let tabFaviconData = liveFaviconData ?? cachedFaviconData
 
         EditPinnedTabPresenter.presentModal(
             mode: .newFolder,
@@ -361,7 +364,8 @@ extension Tab: ContextMenuRepresentable {
                 title: folderName,
                 to: nil,
                 bookmarkTitle: tabTitle,
-                bookmarkURL: tabURL
+                bookmarkURL: tabURL,
+                bookmarkFaviconData: tabFaviconData
             ) { _, _ in }
         }
     }
@@ -407,7 +411,7 @@ extension Tab: ContextMenuRepresentable {
               let state = MainBrowserWindowControllersManager.shared.activeWindowController?.browserState else {
             return
         }
-        state.addSplitBookmarkFromTab(self, toFolder: folder)
+        state.addSplitBookmarkFromTab(self, toFolder: folder, bindLiveSplit: false)
     }
 
     @MainActor
@@ -431,7 +435,7 @@ extension Tab: ContextMenuRepresentable {
                                              profileId: state.profileId,
                                              parentId: nil,
                                              guid: folderGuid)
-            state.addSplitBookmarkFromTab(self, toFolderGuid: folderGuid)
+            state.addSplitBookmarkFromTab(self, toFolderGuid: folderGuid, bindLiveSplit: false)
         }
     }
 
@@ -837,7 +841,7 @@ extension Tab: ContextMenuRepresentable {
         // The menu item is only attached when this tab is in a split, so the
         // helper should always succeed here; the bool result is ignored.
         guard let state = MainBrowserWindowControllersManager.shared.activeWindowController?.browserState else { return }
-        state.addSplitBookmarkFromTab(self)
+        state.addSplitBookmarkFromTab(self, bindLiveSplit: false)
     }
 
     @MainActor

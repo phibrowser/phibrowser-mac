@@ -102,6 +102,9 @@ struct CommandDispatcher {
         case .IDC_FOCUS_LOCATION:
             windowController.openLocationBar(nil)
             return true
+        case .IDC_TAB_SEARCH:
+            windowController.toggleSearchTabs()
+            return true
         case .IDC_WINDOW_PIN_TAB:
             return true
         case .IDC_SELECT_PREVIOUS_TAB:

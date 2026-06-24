@@ -1499,6 +1499,16 @@ class BrowserState {
         
         // Resolve the normal tab after AI Chat-tab handling has been ruled out.
         guard let closedTab = tabs.first(where: { $0.guid == tabId }) else { return }
+        NotificationCenter.default.post(
+            name: .browserTabDidClose,
+            object: self,
+            userInfo: [
+                BrowserTabCloseInfoKey.tabId: closedTab.guid,
+                BrowserTabCloseInfoKey.windowId: windowId,
+                BrowserTabCloseInfoKey.url: closedTab.url as Any,
+                BrowserTabCloseInfoKey.localGuid: closedTab.guidInLocalDB as Any,
+            ]
+        )
 
         // Close the linked AI Chat synchronously. EventBus already hops through a
         // `Task @MainActor`, so we are no longer inside Chromium's tab strip
@@ -4178,6 +4188,17 @@ extension BrowserState {
     static func currentState() -> BrowserState? {
         MainBrowserWindowControllersManager.shared.activeWindowController?.browserState
     }
+}
+
+extension Notification.Name {
+    static let browserTabDidClose = Notification.Name("BrowserStateTabDidClose")
+}
+
+enum BrowserTabCloseInfoKey {
+    static let tabId = "tabId"
+    static let windowId = "windowId"
+    static let url = "url"
+    static let localGuid = "localGuid"
 }
 
 extension BrowserState {

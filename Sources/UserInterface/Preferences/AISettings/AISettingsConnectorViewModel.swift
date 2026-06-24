@@ -132,13 +132,15 @@ final class AISettingsConnectorViewModel {
         connectors = ConnectorTemplate.all.map { ConnectorItemState(template: $0) }
         tabCloseObserver = NotificationObserver(
             NotificationCenter.default.addObserver(
-                forName: .oauthAuthorizationTabWillClose,
+                forName: .browserTabDidClose,
                 object: nil,
                 queue: .main
             ) { [weak self] notification in
-                guard let tabId = notification.userInfo?["tabId"] as? Int else { return }
+                guard let tabId = notification.userInfo?[BrowserTabCloseInfoKey.tabId] as? Int else { return }
+                let localGuid = notification.userInfo?[BrowserTabCloseInfoKey.localGuid] as? String
+                let url = notification.userInfo?[BrowserTabCloseInfoKey.url] as? String
                 Task { @MainActor in
-                    self?.handleAuthorizationTabClosed(tabId: tabId)
+                    self?.handleBrowserTabClosed(tabId: tabId, localGuid: localGuid, url: url)
                 }
             }
         )
@@ -400,9 +402,12 @@ final class AISettingsConnectorViewModel {
         }
     }
 
-    private func handleAuthorizationTabClosed(tabId: Int) {
-        guard let provider = pendingAuthorizationTabIds[tabId] else { return }
-        AppLogInfo("[AISettings] OAuth authorization tab closed provider=\(provider) tabId=\(tabId)")
+    private func handleBrowserTabClosed(tabId: Int, localGuid: String?, url: String?) {
+        guard let provider = pendingAuthorizationProvider(tabId: tabId, localGuid: localGuid, url: url) else { return }
+        AppLogInfo(
+            "[AISettings] OAuth authorization tab closed " +
+            "provider=\(provider) tabId=\(tabId) localGuid=\(localGuid ?? "nil") url=\(url ?? "nil")"
+        )
         Task { @MainActor in
             await reloadConnectionsFromNetwork()
             if connectors.first(where: { $0.template.provider == provider })?.status.isConnected == true {
@@ -412,6 +417,24 @@ final class AISettingsConnectorViewModel {
                 setConnectorLoading(provider: provider, isLoading: false)
             }
         }
+    }
+
+    private func pendingAuthorizationProvider(tabId: Int, localGuid: String?, url: String?) -> String? {
+        if let provider = pendingAuthorizationTabIds[tabId] {
+            return provider
+        }
+
+        for (provider, expectedGuid) in pendingAuthorizationTabGuids {
+            if localGuid == expectedGuid {
+                return provider
+            }
+            if Self.isOAuthCallbackURL(url, provider: provider)
+                || Self.isNativeFinishedURL(url, provider: provider) {
+                return provider
+            }
+        }
+
+        return nil
     }
 
     private func capturePendingAuthorizationTabId(provider: String, tabGuid: String) {
@@ -491,30 +514,59 @@ final class AISettingsConnectorViewModel {
     }
 
     private static func isNativeFinishedTab(_ tab: Tab, provider: String) -> Bool {
-        guard let url = tab.url?.lowercased() else { return false }
+        isNativeFinishedURL(tab.url, provider: provider)
+    }
+
+    private static func isNativeFinishedURL(_ urlString: String?, provider: String) -> Bool {
+        guard let components = oauthURLComponents(urlString) else { return false }
         let provider = provider.lowercased()
-        return (url.contains("account.phibrowser.com/oauth/native-finished")
-                || url.contains("account.stag.phibrowser.com/oauth/native-finished"))
-            && url.contains("provider=\(provider)")
+        let queryItems = components.queryItems ?? []
+        let returnedProvider = queryItems.first(where: { $0.name == "provider" })?.value?.lowercased()
+        let result = queryItems.first(where: { $0.name == "result" })?.value?.lowercased()
+        return isAccountHost(components.host)
+            && components.path == "/oauth/native-finished"
+            && returnedProvider == provider
+            && (result == nil || result == "success" || result == "failure")
     }
 
     private static func isOAuthCallbackTab(_ tab: Tab, provider: String) -> Bool {
-        guard let url = tab.url?.lowercased() else { return false }
+        isOAuthCallbackURL(tab.url, provider: provider)
+    }
+
+    private static func isOAuthCallbackURL(_ urlString: String?, provider: String) -> Bool {
+        guard let components = oauthURLComponents(urlString) else { return false }
         let provider = provider.lowercased()
-        return url.contains("account.phibrowser.com/api/oauth/callback/\(provider)")
-            || url.contains("account.stag.phibrowser.com/api/oauth/callback/\(provider)")
+        return isAccountHost(components.host)
+            && components.path.lowercased() == "/api/oauth/callback/\(provider)"
     }
 
     private static func isAuthorizationTab(_ tab: Tab, provider: String) -> Bool {
-        guard let url = tab.url?.lowercased() else { return false }
+        isOAuthURL(tab.url, provider: provider, expectedGuid: nil, localGuid: tab.guidInLocalDB)
+    }
+
+    private static func isOAuthURL(_ urlString: String?, provider: String, expectedGuid: String?, localGuid: String?) -> Bool {
+        if let expectedGuid, localGuid == expectedGuid {
+            return true
+        }
+
+        guard let url = urlString?.lowercased() else { return false }
         let provider = provider.lowercased()
-        return isOAuthCallbackTab(tab, provider: provider)
-            || url.contains("account.phibrowser.com/oauth/native-finished")
-            || url.contains("account.stag.phibrowser.com/oauth/native-finished")
+        return isOAuthCallbackURL(urlString, provider: provider)
+            || isNativeFinishedURL(urlString, provider: provider)
             || url.contains("\(provider).com/oauth")
             || (provider == "google" && url.contains("accounts.google.com"))
             || (provider == "slack" && url.contains(".slack.com/oauth"))
             || (provider == "notion" && url.contains("api.notion.com/v1/oauth/authorize"))
+    }
+
+    private static func oauthURLComponents(_ urlString: String?) -> URLComponents? {
+        guard let urlString else { return nil }
+        return URLComponents(string: urlString)
+    }
+
+    private static func isAccountHost(_ host: String?) -> Bool {
+        let host = host?.lowercased()
+        return host == "account.phibrowser.com" || host == "account.stag.phibrowser.com"
     }
 
     private func updateConnectorStates() {
@@ -569,10 +621,6 @@ final class AISettingsConnectorViewModel {
         }
         PostHogSDK.shared.capture("connector_status", properties: dic)
     }
-}
-
-extension Notification.Name {
-    static let oauthAuthorizationTabWillClose = Notification.Name("AISettingsOAuthAuthorizationTabWillClose")
 }
 
 private final class NotificationObserver {

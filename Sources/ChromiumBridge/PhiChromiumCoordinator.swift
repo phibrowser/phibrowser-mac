@@ -287,14 +287,6 @@ extension PhiChromiumCoordinator: PhiChromiumBridgeDelegate {
     
     func tabWillBeRemove(_ tabId: Int64, windowId: Int64) {
         AppLogDebug("tabWillBeRemove: \(tabId)")
-        NotificationCenter.default.post(
-            name: .oauthAuthorizationTabWillClose,
-            object: nil,
-            userInfo: [
-                "tabId": tabId.intValue,
-                "windowId": windowId.intValue
-            ]
-        )
         // Snapshot the closing active tab SYNCHRONOUSLY, before the async EventBus
         // close dispatch. This bridge callback runs on the UI/main thread inside
         // Chromium's synchronous close turn while the WebContents is still alive;
@@ -576,66 +568,11 @@ extension PhiChromiumCoordinator: PhiChromiumBridgeDelegate {
         }
 
         DispatchQueue.main.async {
-            let oauthCloseDecision = Self.oauthConnectorCloseDecision(
-                tabId: tabId.intValue,
-                url: url,
-                browserState: windowController.browserState
-            )
-            if oauthCloseDecision.isNativeFinishedURL {
-                AppLogInfo(
-                    "[AISettings] OAuth native-finished URL observed " +
-                    "windowId=\(windowId) tabId=\(tabId) " +
-                    "tabGuid=\(oauthCloseDecision.tabGuid ?? "nil") " +
-                    "host=\(oauthCloseDecision.host ?? "nil") " +
-                    "path=\(oauthCloseDecision.path ?? "nil") " +
-                    "shouldClose=\(oauthCloseDecision.shouldClose) " +
-                    "url=\(url)"
-                )
-            }
-
-            if oauthCloseDecision.shouldClose {
-                let relatedOAuthTabs = windowController.browserState.tabs.filter {
-                    $0.guid != tabId.intValue &&
-                    $0.guidInLocalDB?.hasPrefix("oauth-connector-") == true
-                }
-                AppLogInfo(
-                    "[AISettings] Closing current OAuth connector tab after native-finished redirect " +
-                    "windowId=\(windowId) tabId=\(tabId) " +
-                    "relatedOAuthTabs=\(relatedOAuthTabs.map(\.guid)) url=\(url)"
-                )
-                for tab in relatedOAuthTabs {
-                    tab.close()
-                }
-                ChromiumLauncher.sharedInstance().bridge?.executeCommand(
-                    Int32(CommandWrapper.IDC_CLOSE_TAB.rawValue),
-                    windowId: windowId
-                )
-                return
-            }
-
             let shouldDisplay = !url.isEmpty &&
                               !url.hasPrefix("about:") &&
                               !url.hasPrefix("chrome:")
             windowController.browserState.targetURL = shouldDisplay ? url : ""
         }
-    }
-
-    private static func oauthConnectorCloseDecision(tabId: Int, url: String, browserState: BrowserState) -> (
-        isNativeFinishedURL: Bool,
-        shouldClose: Bool,
-        tabGuid: String?,
-        host: String?,
-        path: String?
-    ) {
-        let tabGuid = browserState.tabs.first(where: { $0.guid == tabId })?.guidInLocalDB
-        let components = URLComponents(string: url)
-        let host = components?.host?.lowercased()
-        let path = components?.path
-        let isNativeFinishedURL = path == "/oauth/native-finished"
-        let shouldClose = isNativeFinishedURL
-            && (host == "account.phibrowser.com" || host == "account.stag.phibrowser.com")
-
-        return (isNativeFinishedURL, shouldClose, tabGuid, host, path)
     }
 }
 

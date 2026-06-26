@@ -13,6 +13,11 @@ struct TabStripRightButtons: View {
     let onCardEntryTap: () -> Void
     let onSearchTabsTap: (NSView?) -> Void
 
+    // Organize-tabs is an AI feature; hide it when AI is disabled (Kensington
+    // isn't running then). `@AppStorage` keeps it reactive to the toggle.
+    @AppStorage(PhiPreferences.AISettings.phiAIEnabled.rawValue)
+    private var phiAIEnabled: Bool = PhiPreferences.AISettings.phiAIEnabled.defaultValue
+
     var body: some View {
         HStack(spacing: 6) {
             if showCardEntry {
@@ -25,7 +30,9 @@ struct TabStripRightButtons: View {
                     )
             }
 
-            TabStripFarringdonButton()
+            if phiAIEnabled {
+                TabStripFarringdonButton()
+            }
 
             TabStripSearchTabsButton(action: onSearchTabsTap)
         }

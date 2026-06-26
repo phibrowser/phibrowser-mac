@@ -1025,6 +1025,9 @@ extension Notification.Name {
 enum FarringdonOrganizer {
     @MainActor
     static func organizeFocusedWindow() {
+        // AI off → Kensington isn't running; do nothing (and don't start the
+        // sweep). The buttons are hidden in this state, this is a backstop.
+        guard PhiPreferences.AISettings.phiAIEnabled.loadValue() else { return }
         NotificationCenter.default.post(name: .farringdonOrganizeDidStart, object: nil)
         ExtensionMessaging.shared.broadcast(type: "farringdon.toggleTabs", payload: "{}")
     }

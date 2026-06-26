@@ -89,6 +89,7 @@ class SidebarTabListViewController: NSViewController {
     private lazy var contextMenuHelper = TabAreaContextMenuHelper(browserState: browserState)
     
     private var cancellables = Set<AnyCancellable>()
+    private var lastFarringdonAIEnabled = PhiPreferences.AISettings.phiAIEnabled.loadValue()
     private var allItems: [SidebarItem] = []
     
     /// UI-only state: when non-nil, we temporarily "reparent" the focusing bookmark to keep it visible.
@@ -280,6 +281,19 @@ class SidebarTabListViewController: NSViewController {
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in
                 self?.updateVisibleGroupOverviewSelection()
+            }
+            .store(in: &cancellables)
+
+        // Show/hide the broom (organize-tabs) button when AI is toggled, mirroring
+        // how the sidebar drives other AI UI off `UserDefaults.didChangeNotification`.
+        NotificationCenter.default.publisher(for: UserDefaults.didChangeNotification)
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in
+                guard let self else { return }
+                let enabled = PhiPreferences.AISettings.phiAIEnabled.loadValue()
+                guard enabled != self.lastFarringdonAIEnabled else { return }
+                self.lastFarringdonAIEnabled = enabled
+                self.updateNewTabCleanupVisibility()
             }
             .store(in: &cancellables)
     }
@@ -2413,9 +2427,7 @@ extension SidebarTabListViewController: NSOutlineViewDelegate {
                 newTabCell = NewTabButtonCellView()
                 newTabCell?.identifier = identifier
             }
-            newTabCell?.cleanupAction = { [weak self] in
-                self?.triggerFarringdonCleanup()
-            }
+            newTabCell?.cleanupAction = farringdonCleanupActionIfEnabled()
             cellView = newTabCell!
             
         case .separator:
@@ -2705,6 +2717,27 @@ extension SidebarTabListViewController: SidebarTabListItemOwner {
 
     private func triggerFarringdonCleanup() {
         FarringdonOrganizer.organizeFocusedWindow()
+    }
+
+    /// The broom (organize-tabs) action is an AI feature; when AI is disabled
+    /// Kensington isn't running, so the button is hidden by leaving the action nil.
+    private func farringdonCleanupActionIfEnabled() -> (() -> Void)? {
+        guard PhiPreferences.AISettings.phiAIEnabled.loadValue() else { return nil }
+        return { [weak self] in self?.triggerFarringdonCleanup() }
+    }
+
+    /// Reflects an AI-enabled toggle onto the live New Tab cells without a reload.
+    private func updateNewTabCleanupVisibility() {
+        let action = farringdonCleanupActionIfEnabled()
+        if let item = newTabButtonItem {
+            let row = outlineView.row(forItem: item)
+            if row >= 0,
+               let cell = outlineView.view(atColumn: 0, row: row, makeIfNecessary: false)
+                   as? NewTabButtonCellView {
+                cell.cleanupAction = action
+            }
+        }
+        floatingNewTabView?.cellView.cleanupAction = action
     }
 
     func bookmarkClicked(_ item: any SidebarItem) {
@@ -3347,9 +3380,7 @@ extension SidebarTabListViewController {
         floatingView.cellView.clickAction = { [weak self] in
             self?.browserState.windowController?.newBrowserTab(nil)
         }
-        floatingView.cellView.cleanupAction = { [weak self] in
-            self?.triggerFarringdonCleanup()
-        }
+        floatingView.cellView.cleanupAction = farringdonCleanupActionIfEnabled()
         floatingView.hoverStateChanged = { [weak self] hovering in
             self?.setVisibleTabHoverSuppressed(hovering)
         }

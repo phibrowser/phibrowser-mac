@@ -66,5 +66,12 @@ final class ExtensionMessageRouter {
         register(type: "toggleAgentAnimation") { context in
             return AgentAnimationManager.shared.handleRequest(context: context)
         }
+
+        register(type: "farringdon.organizeDidFinish") { _ in
+            DispatchQueue.main.async {
+                NotificationCenter.default.post(name: .farringdonOrganizeDidFinish, object: nil)
+            }
+            return nil
+        }
     }
 }

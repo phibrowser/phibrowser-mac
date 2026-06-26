@@ -2413,6 +2413,9 @@ extension SidebarTabListViewController: NSOutlineViewDelegate {
                 newTabCell = NewTabButtonCellView()
                 newTabCell?.identifier = identifier
             }
+            newTabCell?.cleanupAction = { [weak self] in
+                self?.triggerFarringdonCleanup()
+            }
             cellView = newTabCell!
             
         case .separator:
@@ -2699,7 +2702,11 @@ extension SidebarTabListViewController: SidebarTabListItemOwner {
     func newTabClicked(_ item: any SidebarItem) {
         browserState.windowController?.newBrowserTab(nil)
     }
-    
+
+    private func triggerFarringdonCleanup() {
+        FarringdonOrganizer.organizeFocusedWindow()
+    }
+
     func bookmarkClicked(_ item: any SidebarItem) {
         guard let bookmark = item as? Bookmark, bookmark.isFolder == false else {
             return
@@ -3339,6 +3346,9 @@ extension SidebarTabListViewController {
         floatingView.cellView.configure(with: item)
         floatingView.cellView.clickAction = { [weak self] in
             self?.browserState.windowController?.newBrowserTab(nil)
+        }
+        floatingView.cellView.cleanupAction = { [weak self] in
+            self?.triggerFarringdonCleanup()
         }
         floatingView.hoverStateChanged = { [weak self] hovering in
             self?.setVisibleTabHoverSuppressed(hovering)

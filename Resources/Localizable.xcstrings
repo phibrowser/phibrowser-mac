@@ -1158,6 +1158,9 @@
     "Orange" : {
       "comment" : "Tab Groups - color name shown in auto-named group title and color picker"
     },
+    "Organize tabs with AI" : {
+      "comment" : "Organize Tabs - Button tooltip and accessibility label\nside bar new tab row - organize tabs button tooltip"
+    },
     "Passwords" : {
       "comment" : "Profiles settings - data link to password manager"
     },

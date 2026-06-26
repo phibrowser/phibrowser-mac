@@ -32,6 +32,7 @@ struct CommandDispatcher {
         .PHI_TAB_SWITCHER_BACKWARD,
         .PHI_SELECT_NEXT_SPACE,
         .PHI_SELECT_PREVIOUS_SPACE,
+        .PHI_FARRINGDON_TOGGLE,
     ] + CommandWrapper.spaceSelectionCommands
 
     /// Commands swallowed while the focused tab shows the native NTP — it has no
@@ -147,6 +148,11 @@ struct CommandDispatcher {
             return activateSpace(by: 1, from: windowController)
         case .PHI_SELECT_PREVIOUS_SPACE:
             return activateSpace(by: -1, from: windowController)
+        case .PHI_FARRINGDON_TOGGLE:
+            // AI off → Kensington isn't running; let the key fall through.
+            guard PhiPreferences.AISettings.phiAIEnabled.loadValue() else { return false }
+            FarringdonOrganizer.organizeFocusedWindow()
+            return true
         case let c where c.spaceSelectionIndex != nil:
             guard let index = c.spaceSelectionIndex else { return false }
             return activateSpace(at: index, from: windowController)

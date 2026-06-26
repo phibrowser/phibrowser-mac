@@ -1168,7 +1168,8 @@ final class BroomButton: NSButton {
     }
 
     @objc private func handleOrganizeDidStart() {
-        guard !isHidden else { return }
+        // Only the window that triggered the run (the key window) animates.
+        guard !isHidden, window?.isKeyWindow == true else { return }
         startOrganizing()
     }
 

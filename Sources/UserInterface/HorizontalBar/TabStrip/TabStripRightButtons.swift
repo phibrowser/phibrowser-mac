@@ -55,6 +55,7 @@ private struct TabStripFarringdonButton: View {
     @State private var isHovering = false
     @State private var isOrganizing = false
     @State private var sweepAngle: Double = 0
+    @State private var anchorView: NSView?
 
     private let buttonSize: CGFloat = 24
     private let iconSize: CGFloat = 22
@@ -85,6 +86,11 @@ private struct TabStripFarringdonButton: View {
                     RoundedRectangle(cornerRadius: cornerRadius)
                         .fill(isHovering ? Color.sidebarTabHovered : Color.clear)
                 )
+                .background(
+                    TabStripAnchorReader { view in
+                        self.anchorView = view
+                    }
+                )
         }
         .buttonStyle(.plain)
         .frame(width: buttonSize, height: buttonSize)
@@ -96,6 +102,8 @@ private struct TabStripFarringdonButton: View {
         }
         .accessibilityLabel(Text(label))
         .onReceive(NotificationCenter.default.publisher(for: .farringdonOrganizeDidStart)) { _ in
+            // Only the window that triggered the run (the key window) animates.
+            guard anchorView?.window?.isKeyWindow == true else { return }
             startSweep()
         }
         .onReceive(NotificationCenter.default.publisher(for: .farringdonOrganizeDidFinish)) { _ in
@@ -150,7 +158,7 @@ private struct TabStripSearchTabsButton: View {
                         .fill(isHovering ? Color.sidebarTabHovered : Color.clear)
                 )
                 .background(
-                    TabStripSearchTabsAnchorReader { anchorView in
+                    TabStripAnchorReader { anchorView in
                         self.anchorView = anchorView
                     }
                 )
@@ -167,7 +175,7 @@ private struct TabStripSearchTabsButton: View {
     }
 }
 
-private struct TabStripSearchTabsAnchorReader: NSViewRepresentable {
+private struct TabStripAnchorReader: NSViewRepresentable {
     let onResolve: (NSView) -> Void
 
     func makeNSView(context: Context) -> NSView {

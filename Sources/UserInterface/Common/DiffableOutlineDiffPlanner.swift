@@ -40,8 +40,22 @@ enum DiffableOutlineDiffPlanner {
 
         let structuralRemovedIDs = removedIDs.union(crossParentMovedIDs)
         let structuralInsertedIDs = insertedIDs.union(crossParentMovedIDs)
-        let highestRemoved = Set(structuralRemovedIDs.filter { !old.hasAncestor(of: $0, in: structuralRemovedIDs) })
-        let highestInserted = Set(structuralInsertedIDs.filter { !new.hasAncestor(of: $0, in: structuralInsertedIDs) })
+        let initialHighestRemoved = Set(structuralRemovedIDs.filter { !old.hasAncestor(of: $0, in: structuralRemovedIDs) })
+        let initialHighestInserted = Set(structuralInsertedIDs.filter { !new.hasAncestor(of: $0, in: structuralInsertedIDs) })
+        let initialStructuralCoveredIDs = coveredIDs(initialHighestRemoved, in: old)
+            .union(coveredIDs(initialHighestInserted, in: new))
+        let highestReplaced = highestReplacementIDs(
+            replacementIDs(old: old, new: new, excludedIDs: initialStructuralCoveredIDs),
+            in: new
+        )
+        let replacementCoveredOldIDs = coveredIDs(highestReplaced, in: old)
+        let replacementCoveredNewIDs = coveredIDs(highestReplaced, in: new)
+        let highestRemoved = Set(initialHighestRemoved.filter { id in
+            crossParentMovedIDs.contains(id) || !replacementCoveredOldIDs.contains(id)
+        })
+        let highestInserted = Set(initialHighestInserted.filter { id in
+            !replacementCoveredNewIDs.contains(id)
+        })
         let structuralCoveredIDs = coveredIDs(highestRemoved, in: old)
             .union(coveredIDs(highestInserted, in: new))
         let structuralChanges = structuralOperations(
@@ -50,8 +64,11 @@ enum DiffableOutlineDiffPlanner {
             highestRemoved: highestRemoved,
             highestInserted: highestInserted
         )
-        let moves = sameParentMoves(old: old, new: new, excludedIDs: structuralCoveredIDs)
-        let replacements = replacements(old: old, new: new, excludedIDs: structuralCoveredIDs)
+        let moveExcludedIDs = structuralCoveredIDs
+            .union(replacementCoveredOldIDs)
+            .union(replacementCoveredNewIDs)
+        let moves = sameParentMoves(old: old, new: new, excludedIDs: moveExcludedIDs)
+        let replacements = replacementOperations(highestReplaced, in: new)
         let reloads = reloads(in: new)
 
         return DiffableOutlinePlan(
@@ -129,26 +146,37 @@ enum DiffableOutlineDiffPlanner {
         return operations
     }
 
-    private static func replacements<ItemID: Hashable>(
+    private static func replacementIDs<ItemID: Hashable>(
         old: DiffableOutlineSnapshot<ItemID>,
         new: DiffableOutlineSnapshot<ItemID>,
         excludedIDs: Set<ItemID>
-    ) -> [DiffableOutlineOperation<ItemID>] {
-        let replacedIDs = Set(old.nodes.keys).intersection(new.nodes.keys).filter { id in
+    ) -> Set<ItemID> {
+        Set(old.nodes.keys).intersection(new.nodes.keys).filter { id in
             guard !excludedIDs.contains(id) else { return false }
             guard let oldItem = old.item(for: id), let newItem = new.item(for: id) else { return false }
             return oldItem !== newItem
         }
-        let highestReplaced = replacedIDs.filter { !new.hasAncestor(of: $0, in: replacedIDs) }
+    }
 
+    private static func highestReplacementIDs<ItemID: Hashable>(
+        _ replacedIDs: Set<ItemID>,
+        in snapshot: DiffableOutlineSnapshot<ItemID>
+    ) -> Set<ItemID> {
+        Set(replacedIDs.filter { !snapshot.hasAncestor(of: $0, in: replacedIDs) })
+    }
+
+    private static func replacementOperations<ItemID: Hashable>(
+        _ highestReplaced: Set<ItemID>,
+        in snapshot: DiffableOutlineSnapshot<ItemID>
+    ) -> [DiffableOutlineOperation<ItemID>] {
         return highestReplaced
             .compactMap { id -> DiffableOutlineOperation<ItemID>? in
-                guard let index = new.index(of: id) else { return nil }
-                return .replace(id: id, parentID: new.parentID(of: id), index: index)
+                guard let index = snapshot.index(of: id) else { return nil }
+                return .replace(id: id, parentID: snapshot.parentID(of: id), index: index)
             }
             .sorted { lhs, rhs in
-                let left = replacementSortKey(lhs, in: new)
-                let right = replacementSortKey(rhs, in: new)
+                let left = replacementSortKey(lhs, in: snapshot)
+                let right = replacementSortKey(rhs, in: snapshot)
                 if left.depth != right.depth { return left.depth < right.depth }
                 if left.parent != right.parent { return left.parent < right.parent }
                 return left.index < right.index

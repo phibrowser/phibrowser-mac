@@ -180,6 +180,68 @@ final class DiffableOutlineViewTests: XCTestCase {
         ])
     }
 
+    func testStableParentChildReorderAppliesMove() {
+        let view = RecordingDiffableOutlineView()
+        let folder = OutlineApplyItem("folder")
+        let childA = OutlineApplyItem("item1")
+        let childB = OutlineApplyItem("item2")
+        let old = applySnapshot(["folder"], [
+            "folder": (folder, nil, ["item1", "item2"]),
+            "item1": (childA, "folder", []),
+            "item2": (childB, "folder", []),
+        ])
+        let new = applySnapshot(["folder"], [
+            "folder": (folder, nil, ["item2", "item1"]),
+            "item1": (childA, "folder", []),
+            "item2": (childB, "folder", []),
+        ])
+        view.reloadWith(old, animated: false) {}
+        view.clearEvents()
+
+        view.reloadWith(new, animated: false) {
+            view.record("updateDataSource")
+        }
+
+        XCTAssertEqual(view.events, [
+            "updateDataSource",
+            "beginUpdates",
+            "move:1:folder->0:folder",
+            "endUpdates",
+        ])
+    }
+
+    func testParentReplacementDoesNotApplyChildMove() {
+        let view = RecordingDiffableOutlineView()
+        let oldFolder = OutlineApplyItem("folder")
+        let newFolder = OutlineApplyItem("folder")
+        let childA = OutlineApplyItem("item1")
+        let childB = OutlineApplyItem("item2")
+        let old = applySnapshot(["folder"], [
+            "folder": (oldFolder, nil, ["item1", "item2"]),
+            "item1": (childA, "folder", []),
+            "item2": (childB, "folder", []),
+        ])
+        let new = applySnapshot(["folder"], [
+            "folder": (newFolder, nil, ["item2", "item1"]),
+            "item1": (childA, "folder", []),
+            "item2": (childB, "folder", []),
+        ])
+        view.reloadWith(old, animated: false) {}
+        view.clearEvents()
+
+        view.reloadWith(new, animated: false) {
+            view.record("updateDataSource")
+        }
+
+        XCTAssertEqual(view.events, [
+            "updateDataSource",
+            "beginUpdates",
+            "remove:[0]:root:none",
+            "insert:[0]:root:none",
+            "endUpdates",
+        ])
+    }
+
     func testReloadOperationResolvesRowsAfterDataSourceUpdate() {
         let view = RecordingDiffableOutlineView()
         let item1 = OutlineApplyItem("item1")

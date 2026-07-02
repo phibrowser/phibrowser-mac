@@ -95,6 +95,26 @@ final class DiffableOutlineDiffPlannerTests: XCTestCase {
         XCTAssertEqual(plan.operations, [.move(id: "b", parentID: nil, from: 1, to: 0)])
     }
 
+    func testStableParentChildReorderProducesMove() {
+        let folder = item("folder")
+        let a = item("a")
+        let b = item("b")
+        let old = snapshot(["folder"], [
+            "folder": (nil, ["a", "b"]),
+            "a": ("folder", []),
+            "b": ("folder", []),
+        ], items: ["folder": folder, "a": a, "b": b])
+        let new = snapshot(["folder"], [
+            "folder": (nil, ["b", "a"]),
+            "a": ("folder", []),
+            "b": ("folder", []),
+        ], items: ["folder": folder, "a": a, "b": b])
+
+        let plan = DiffableOutlineDiffPlanner.plan(from: old, to: new)
+
+        XCTAssertEqual(plan.operations, [.move(id: "b", parentID: "folder", from: 1, to: 0)])
+    }
+
     func testCrossParentMoveUsesRemoveAndInsert() {
         let left = item("left")
         let right = item("right")
@@ -142,6 +162,44 @@ final class DiffableOutlineDiffPlannerTests: XCTestCase {
         let plan = DiffableOutlineDiffPlanner.plan(from: old, to: new)
 
         XCTAssertEqual(plan.operations, [.replace(id: "root", parentID: nil, index: 0)])
+    }
+
+    func testParentReplacementSuppressesChildReorderMove() {
+        let oldFolder = item("old-folder")
+        let newFolder = item("new-folder")
+        let a = item("a")
+        let b = item("b")
+        let old = snapshot(["folder"], [
+            "folder": (nil, ["a", "b"]),
+            "a": ("folder", []),
+            "b": ("folder", []),
+        ], items: ["folder": oldFolder, "a": a, "b": b])
+        let new = snapshot(["folder"], [
+            "folder": (nil, ["b", "a"]),
+            "a": ("folder", []),
+            "b": ("folder", []),
+        ], items: ["folder": newFolder, "a": a, "b": b])
+
+        let plan = DiffableOutlineDiffPlanner.plan(from: old, to: new)
+
+        XCTAssertEqual(plan.operations, [.replace(id: "folder", parentID: nil, index: 0)])
+    }
+
+    func testParentReplacementSuppressesChildInsert() {
+        let oldFolder = item("old-folder")
+        let newFolder = item("new-folder")
+        let child = item("child")
+        let old = snapshot(["folder"], [
+            "folder": (nil, []),
+        ], items: ["folder": oldFolder])
+        let new = snapshot(["folder"], [
+            "folder": (nil, ["child"]),
+            "child": ("folder", []),
+        ], items: ["folder": newFolder, "child": child])
+
+        let plan = DiffableOutlineDiffPlanner.plan(from: old, to: new)
+
+        XCTAssertEqual(plan.operations, [.replace(id: "folder", parentID: nil, index: 0)])
     }
 
     func testExplicitReloadMarkerProducesReload() {

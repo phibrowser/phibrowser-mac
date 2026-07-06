@@ -185,6 +185,28 @@ final class DiffableOutlineDiffPlannerTests: XCTestCase {
         XCTAssertEqual(plan.operations, [.replace(id: "folder", parentID: nil, index: 0)])
     }
 
+    func testReplacementSiblingWithSameParentMoveIsUnsafe() {
+        let oldProxy = item("old-proxy")
+        let newProxy = item("new-proxy")
+        let a = item("a")
+        let b = item("b")
+        let old = snapshot(["proxy", "a", "b"], [
+            "proxy": (nil, []),
+            "a": (nil, []),
+            "b": (nil, []),
+        ], items: ["proxy": oldProxy, "a": a, "b": b])
+        let new = snapshot(["proxy", "b", "a"], [
+            "proxy": (nil, []),
+            "a": (nil, []),
+            "b": (nil, []),
+        ], items: ["proxy": newProxy, "a": a, "b": b])
+
+        let plan = DiffableOutlineDiffPlanner.plan(from: old, to: new)
+
+        XCTAssertFalse(plan.isSafe)
+        XCTAssertTrue(plan.operations.isEmpty)
+    }
+
     func testParentReplacementSuppressesChildInsert() {
         let oldFolder = item("old-folder")
         let newFolder = item("new-folder")

@@ -68,6 +68,20 @@ class SidebarTabListViewController: NSViewController {
             underlyingBookmark.makeContextMenu(on: menu, source: .sidebar)
         }
     }
+
+    private struct FloatingBookmarkPresentationState {
+        let focusedPresentation: (proxy: FocusedBookmarkSidebarItem, insertionParent: SidebarItem?, insertionIndex: Int)?
+        let floatingBookmarkGuid: String?
+        let floatingAnchorFolderGuid: String?
+
+        static var cleared: FloatingBookmarkPresentationState {
+            FloatingBookmarkPresentationState(
+                focusedPresentation: nil,
+                floatingBookmarkGuid: nil,
+                floatingAnchorFolderGuid: nil
+            )
+        }
+    }
     
     private var outlineView: SideBarOutlineView!
     private var scrollView: NSScrollView!
@@ -385,14 +399,10 @@ class SidebarTabListViewController: NSViewController {
     private func refreshAllItems() {
         guard isActive else { return }
         let items = makeAllItems()
-
-        self.allItems = items
-
-        rebuildFloatingBookmarkPresentationIfNeeded()
-        let focusedPresentation = focusedBookmarkPresentation
+        let floatingState = nextFloatingBookmarkPresentationState(rootItems: items)
         let snapshot = makeDiffableSnapshot(
             rootItems: items,
-            focusedPresentation: focusedPresentation
+            focusedPresentation: floatingState.focusedPresentation
         )
 
         outlineView.reloadWith(
@@ -400,7 +410,9 @@ class SidebarTabListViewController: NSViewController {
             updateDataSource: { [weak self] in
                 guard let self else { return }
                 self.allItems = items
-                self.focusedBookmarkPresentation = focusedPresentation
+                self.focusedBookmarkPresentation = floatingState.focusedPresentation
+                self.floatingBookmarkGuid = floatingState.floatingBookmarkGuid
+                self.floatingAnchorFolderGuid = floatingState.floatingAnchorFolderGuid
             },
             prepareReloadData: { [weak self] in
                 self?.invalidateExistingTabCells()
@@ -3318,13 +3330,10 @@ extension SidebarTabListViewController {
         outlineView.endUpdates()
         syncDiffableSnapshotToCurrentDataSource()
     }
-    private func rebuildFloatingBookmarkPresentationIfNeeded() {
+    private func nextFloatingBookmarkPresentationState(rootItems: [SidebarItem]) -> FloatingBookmarkPresentationState {
         guard let bookmarkGuid = floatingBookmarkGuid,
               let bookmark = browserState.bookmarkManager.bookmark(withGuid: bookmarkGuid) else {
-            focusedBookmarkPresentation = nil
-            floatingBookmarkGuid = nil
-            floatingAnchorFolderGuid = nil
-            return
+            return .cleared
         }
         
         var parents: [Bookmark] = []
@@ -3335,24 +3344,31 @@ extension SidebarTabListViewController {
         }
         
         guard let firstCollapsed = parents.first(where: { $0.isFolder && !outlineView.isItemExpanded($0) }) else {
-            focusedBookmarkPresentation = nil
-            floatingBookmarkGuid = nil
-            floatingAnchorFolderGuid = nil
-            return
+            return .cleared
         }
         
-        floatingAnchorFolderGuid = firstCollapsed.guid
-        
-        guard let expected = expectedProxyInsertionAfterCollapsedFolder(firstCollapsed) else {
-            focusedBookmarkPresentation = nil
-            floatingBookmarkGuid = nil
-            floatingAnchorFolderGuid = nil
-            return
+        guard let expected = expectedProxyInsertionAfterCollapsedFolder(firstCollapsed, rootItems: rootItems) else {
+            return .cleared
         }
         
         let indentationLevel = max(0, firstCollapsed.depth) + 1
         let proxy = FocusedBookmarkSidebarItem(bookmark: bookmark, indentationLevelOverride: indentationLevel)
-        focusedBookmarkPresentation = (proxy: proxy, insertionParent: expected.insertionParent, insertionIndex: expected.insertionIndex)
+        return FloatingBookmarkPresentationState(
+            focusedPresentation: (
+                proxy: proxy,
+                insertionParent: expected.insertionParent,
+                insertionIndex: expected.insertionIndex
+            ),
+            floatingBookmarkGuid: bookmarkGuid,
+            floatingAnchorFolderGuid: firstCollapsed.guid
+        )
+    }
+
+    private func rebuildFloatingBookmarkPresentationIfNeeded() {
+        let state = nextFloatingBookmarkPresentationState(rootItems: allItems)
+        focusedBookmarkPresentation = state.focusedPresentation
+        floatingBookmarkGuid = state.floatingBookmarkGuid
+        floatingAnchorFolderGuid = state.floatingAnchorFolderGuid
     }
 
     /// Updates `browserState.visibleBookmarkTabs` based on what bookmark items are currently visible in the outline view.
@@ -3419,14 +3435,18 @@ extension SidebarTabListViewController {
     /// The proxy is always inserted as a sibling right after the first-collapsed folder.
     /// This helper computes that expected insertion location for a given collapsed folder,
     /// matching the data source's indexing rules (including `visibleChildren` filtering).
-    private func expectedProxyInsertionAfterCollapsedFolder(_ folder: Bookmark) -> (insertionParent: SidebarItem?, insertionIndex: Int)? {
+    private func expectedProxyInsertionAfterCollapsedFolder(
+        _ folder: Bookmark,
+        rootItems: [SidebarItem]? = nil
+    ) -> (insertionParent: SidebarItem?, insertionIndex: Int)? {
         if let parent = folder.parent {
             let siblings = visibleChildren(for: parent)
             let idx = siblings.firstIndex(where: { $0.id == folder.id }) ?? siblings.count
             return (insertionParent: parent, insertionIndex: min(idx + 1, siblings.count))
         } else {
-            let idx = allItems.firstIndex(where: { $0.id == folder.id }) ?? 0
-            return (insertionParent: nil, insertionIndex: min(idx + 1, allItems.count))
+            let effectiveRootItems = rootItems ?? allItems
+            let idx = effectiveRootItems.firstIndex(where: { $0.id == folder.id }) ?? 0
+            return (insertionParent: nil, insertionIndex: min(idx + 1, effectiveRootItems.count))
         }
     }
     

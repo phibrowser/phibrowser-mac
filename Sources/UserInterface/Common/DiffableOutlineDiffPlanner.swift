@@ -68,6 +68,18 @@ enum DiffableOutlineDiffPlanner {
             .union(replacementCoveredOldIDs)
             .union(replacementCoveredNewIDs)
         let moves = sameParentMoves(old: old, new: new, excludedIDs: moveExcludedIDs)
+        let replacementSiblingParentIDs = replacementSiblingParentIDs(
+            old: old,
+            new: new,
+            replacementCoveredOldIDs: replacementCoveredOldIDs,
+            replacementCoveredNewIDs: replacementCoveredNewIDs
+        )
+        if moves.contains(where: { operation in
+            guard case .move(_, let parentID, _, _) = operation else { return false }
+            return replacementSiblingParentIDs.contains(parentID)
+        }) {
+            return .unsafe
+        }
         let replacements = replacementOperations(highestReplaced, in: new)
         let reloads = reloads(in: new)
 
@@ -144,6 +156,29 @@ enum DiffableOutlineDiffPlanner {
         }
 
         return operations
+    }
+
+    private static func replacementSiblingParentIDs<ItemID: Hashable>(
+        old: DiffableOutlineSnapshot<ItemID>,
+        new: DiffableOutlineSnapshot<ItemID>,
+        replacementCoveredOldIDs: Set<ItemID>,
+        replacementCoveredNewIDs: Set<ItemID>
+    ) -> Set<ItemID?> {
+        var parentIDs = Set<ItemID?>()
+
+        for parentID in parentIDsForSiblingDiff(old: old, new: new) {
+            let oldContainsReplacement = old.childIDs(of: parentID).contains {
+                replacementCoveredOldIDs.contains($0)
+            }
+            let newContainsReplacement = new.childIDs(of: parentID).contains {
+                replacementCoveredNewIDs.contains($0)
+            }
+            if oldContainsReplacement || newContainsReplacement {
+                parentIDs.insert(parentID)
+            }
+        }
+
+        return parentIDs
     }
 
     private static func replacementIDs<ItemID: Hashable>(

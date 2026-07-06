@@ -242,6 +242,32 @@ final class DiffableOutlineViewTests: XCTestCase {
         ])
     }
 
+    func testReplacementSiblingMoveFallsBackToReloadData() {
+        let view = RecordingDiffableOutlineView()
+        let oldProxy = OutlineApplyItem("proxy")
+        let newProxy = OutlineApplyItem("proxy")
+        let item1 = OutlineApplyItem("item1")
+        let item2 = OutlineApplyItem("item2")
+        let old = applySnapshot(["proxy", "item1", "item2"], [
+            "proxy": (oldProxy, nil, []),
+            "item1": (item1, nil, []),
+            "item2": (item2, nil, []),
+        ])
+        let new = applySnapshot(["proxy", "item2", "item1"], [
+            "proxy": (newProxy, nil, []),
+            "item1": (item1, nil, []),
+            "item2": (item2, nil, []),
+        ])
+        view.reloadWith(old, animated: false) {}
+        view.clearEvents()
+
+        view.reloadWith(new, animated: false) {
+            view.record("updateDataSource")
+        }
+
+        XCTAssertEqual(view.events, ["updateDataSource", "reloadData"])
+    }
+
     func testReloadOperationResolvesRowsAfterDataSourceUpdate() {
         let view = RecordingDiffableOutlineView()
         let item1 = OutlineApplyItem("item1")

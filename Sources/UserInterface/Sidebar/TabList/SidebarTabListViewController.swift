@@ -396,7 +396,7 @@ class SidebarTabListViewController: NSViewController {
     }
     
     // MARK: - Data Management
-    private func refreshAllItems() {
+    private func refreshAllItems(afterReload: (() -> Void)? = nil) {
         guard isActive else { return }
         let items = makeAllItems()
         let floatingState = nextFloatingBookmarkPresentationState(rootItems: items)
@@ -423,8 +423,10 @@ class SidebarTabListViewController: NSViewController {
                 self.applyFocusingSelection(for: self.browserState.focusingTab)
 
                 DispatchQueue.main.async { [weak self] in
-                    self?.updateVisibleBookmarkTabs()
-                    self?.updateFloatingNewTabVisibility()
+                    guard let self else { return }
+                    self.updateVisibleBookmarkTabs()
+                    self.updateFloatingNewTabVisibility()
+                    afterReload?()
                 }
             }
         )
@@ -2570,6 +2572,7 @@ extension SidebarTabListViewController: NSOutlineViewDataSource {
     
     private func dataSourceChildren(of parent: SidebarItem?) -> [SidebarItem] {
         if let parent {
+            guard parent.isExpandable else { return [] }
             var children = visibleChildren(for: parent)
             if let presentation = focusedBookmarkPresentation,
                let insertionParent = presentation.insertionParent,
@@ -3079,127 +3082,12 @@ extension SidebarTabListViewController: TabSectionDelegate {
     
     func tabSectionDidUpdate(with change: TabSectionChange) {
         guard isActive else { return }
-        if change.needsFullReload {
-            refreshAllItems()
-            updateNewTabCleanupVisibility()
-            clearFloatingProxyIfTabClosed()
-            return
-        }
-        
-        applyIncrementalTabChange(change)
-        updateNewTabCleanupVisibility()
-        clearFloatingProxyIfTabClosed()
-    }
-    
-    /// Applies incremental tab changes to avoid cell flicker from full reloadData.
-    private func applyIncrementalTabChange(_ change: TabSectionChange) {
-        var items: [SidebarItem] = []
-        if showBookmarks {
-            items.append(contentsOf: bookmarkSectionController.bookmarkItems)
-            if !bookmarkSectionController.bookmarkItems.isEmpty && !tabSectionController.tabItems.isEmpty {
-                items.append(separatorItem)
-            }
-        }
-        items.append(contentsOf: tabSectionController.tabItems)
-        
-        let tabSectionStart: Int
-        if showBookmarks {
-            let bookmarkCount = bookmarkSectionController.bookmarkItems.count
-            let separatorCount = (!bookmarkSectionController.bookmarkItems.isEmpty && !tabSectionController.tabItems.isEmpty) ? 1 : 0
-            tabSectionStart = tabSectionStartIndexInRootChildren(bookmarkCount: bookmarkCount, separatorCount: separatorCount)
-        } else {
-            tabSectionStart = 0
-        }
-        
-        // Fallback to full reload if outline view has no data yet (e.g. layout mode just switched).
-        let currentOutlineChildCount = outlineView.numberOfChildren(ofItem: nil)
-        if currentOutlineChildCount == 0 && !items.isEmpty {
-            self.allItems = items
-            rebuildFloatingBookmarkPresentationIfNeeded()
-            outlineView.reloadData()
-            syncDiffableSnapshotToCurrentDataSource()
-            selectActiveTab()
-            applyFocusingSelection(for: browserState.focusingTab)
-            DispatchQueue.main.async { [weak self] in
-                self?.updateVisibleBookmarkTabs()
-            }
-            return
-        }
-        
-        let hasStructuralChanges = change.moveOperation != nil
-            || !change.removedIndices.isEmpty
-            || !change.insertedIndices.isEmpty
-
-        // When there are no structural changes, skip updating allItems. Modifying allItems
-        // without a matching NSOutlineView structural call creates an inconsistency:
-        // outlineView.row(forItem:) would return indices based on the NEW allItems while
-        // NSOutlineView still renders the OLD layout. scrollRowToVisible would then request
-        // a row beyond the current layout, triggering a spurious viewFor:item: call that
-        // creates a duplicate SidebarTabCellView for the same Tab, causing the two-label
-        // flicker bug.
-        if !hasStructuralChanges {
-            selectActiveTab()
-            applyFocusingSelection(for: browserState.focusingTab)
-            // Visual-only paths reach here: rename / recolor / collapse
-            // (cells refresh via VM subscriptions, no reload needed) AND
-            // tab-removed-from-still-existing-group / intra-group reorder
-            // (need a member-table refresh on the affected cell). The
-            // affected-token filter keeps unrelated groups quiet during
-            // pure metadata edits.
-            pushMemberUpdatesToGroupCells(change.affectedGroupTokens)
-            pushPaneUpdatesToSplitPairCells(change.affectedSplitIds)
-            return
-        }
-
-        self.allItems = items
-
-        outlineView.beginUpdates()
-
-        if let moveOp = change.moveOperation {
-            let adjustedFrom = moveOp.from + tabSectionStart
-            let adjustedTo = moveOp.to + tabSectionStart
-            NSAnimationContext.runAnimationGroup { context in
-                context.duration = 1
-                context.allowsImplicitAnimation = true
-                outlineView.moveItem(at: adjustedFrom, inParent: nil, to: adjustedTo, inParent: nil)
-            }
-        } else {
-            if !change.removedIndices.isEmpty {
-                let adjustedRemovedIndices = IndexSet(change.removedIndices.map { $0 + tabSectionStart })
-                outlineView.removeItems(at: adjustedRemovedIndices, inParent: nil, withAnimation: [.effectFade])
-            }
-
-            if !change.insertedIndices.isEmpty {
-                let adjustedInsertedIndices = IndexSet(change.insertedIndices.map { $0 + tabSectionStart })
-                outlineView.insertItems(at: adjustedInsertedIndices, inParent: nil, withAnimation: [.effectFade])
-            }
-        }
-
-        outlineView.endUpdates()
-        syncDiffableSnapshotToCurrentDataSource()
-
-        // Tabs that joined or left a still-existing group surface as a
-        // root-level insert/remove of the moved tab's guid; the group's
-        // token stays at the same root position. Push the new member
-        // arrays into each affected `TabGroupCellView` so its inner
-        // diffable table animates the row delta and re-notes its
-        // height in the same animation tick.
-        pushMemberUpdatesToGroupCells(change.affectedGroupTokens)
-        // Same for pair rows whose pane membership changed alongside the
-        // structural delta (drag-to-replace inserts the evicted tab's row
-        // while the pair row id stays put).
-        pushPaneUpdatesToSplitPairCells(change.affectedSplitIds)
-
-        // Defer selection to the next run loop so NSOutlineView finishes its
-        // insert/remove animation layout pass first. Calling row(forItem:) or
-        // selectRowIndexes while animations are in flight can trigger a spurious
-        // viewFor:item: call, creating a duplicate cell for the same Tab.
-        DispatchQueue.main.async { [weak self] in
+        refreshAllItems { [weak self] in
             guard let self else { return }
-            self.selectActiveTab()
-            self.applyFocusingSelection(for: self.browserState.focusingTab)
-            self.updateVisibleBookmarkTabs()
-            self.updateFloatingNewTabVisibility()
+            self.pushMemberUpdatesToGroupCells(change.affectedGroupTokens)
+            self.pushPaneUpdatesToSplitPairCells(change.affectedSplitIds)
+            self.updateNewTabCleanupVisibility()
+            self.clearFloatingProxyIfTabClosed()
         }
     }
 

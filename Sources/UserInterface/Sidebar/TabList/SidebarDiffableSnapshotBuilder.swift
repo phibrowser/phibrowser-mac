@@ -53,7 +53,15 @@ struct SidebarDiffableSnapshotBuilder {
     }
 
     private func children(of parent: SidebarItem?) -> [SidebarItem] {
-        var children = parent?.childrenItems ?? rootItems
+        let baseChildren: [SidebarItem]
+        if let parent {
+            guard parent.isExpandable else { return [] }
+            baseChildren = parent.childrenItems
+        } else {
+            baseChildren = rootItems
+        }
+
+        var children = baseChildren
         if let hiddenItemID {
             children.removeAll { $0.id == hiddenItemID }
         }

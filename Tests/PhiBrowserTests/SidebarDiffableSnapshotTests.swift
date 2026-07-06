@@ -10,20 +10,30 @@ private final class SnapshotSidebarItem: SidebarItem {
     let id: AnyHashable
     let title: String
     let childrenItems: [SidebarItem]
+    private let isExpandableOverride: Bool?
+    private let itemTypeOverride: SidebarItemType?
 
-    init(id: String, title: String? = nil, children: [SidebarItem] = []) {
+    init(
+        id: String,
+        title: String? = nil,
+        children: [SidebarItem] = [],
+        isExpandable: Bool? = nil,
+        itemType: SidebarItemType? = nil
+    ) {
         self.id = AnyHashable(id)
         self.title = title ?? id
         self.childrenItems = children
+        self.isExpandableOverride = isExpandable
+        self.itemTypeOverride = itemType
     }
 
     var url: String? { nil }
     var iconName: String? { nil }
     var faviconUrl: String? { nil }
-    var isExpandable: Bool { !childrenItems.isEmpty }
-    var hasChildren: Bool { !childrenItems.isEmpty }
+    var isExpandable: Bool { isExpandableOverride ?? !childrenItems.isEmpty }
+    var hasChildren: Bool { isExpandable }
     var depth: Int { 0 }
-    var itemType: SidebarItemType { isExpandable ? .bookmarkFolder : .bookmark }
+    var itemType: SidebarItemType { itemTypeOverride ?? (isExpandable ? .bookmarkFolder : .bookmark) }
     var isActive: Bool { false }
     var isSelectable: Bool { true }
     var isBookmark: Bool { true }
@@ -87,5 +97,22 @@ final class SidebarDiffableSnapshotTests: XCTestCase {
             snapshot.childIDs(of: AnyHashable("parent")),
             [AnyHashable("first"), AnyHashable("virtual"), AnyHashable("second")]
         )
+    }
+
+    func testSidebarSnapshotTreatsNonExpandableItemsAsLeaves() {
+        let member = SnapshotSidebarItem(id: "member")
+        let group = SnapshotSidebarItem(
+            id: "group",
+            children: [member],
+            isExpandable: false,
+            itemType: .tabGroup
+        )
+
+        let snapshot = SidebarDiffableSnapshotBuilder(rootItems: [group]).makeSnapshot()
+
+        XCTAssertEqual(snapshot.rootIDs, [AnyHashable("group")])
+        XCTAssertEqual(snapshot.childIDs(of: AnyHashable("group")), [])
+        XCTAssertTrue(snapshot.item(for: AnyHashable("group")) === group)
+        XCTAssertNil(snapshot.item(for: AnyHashable("member")))
     }
 }

@@ -6,26 +6,20 @@
 import Cocoa
 import Combine
 
-/// Describes an incremental change in the tab section.
+/// Describes tab-section rows whose cells need extra rebinding after the
+/// root sidebar snapshot has been applied.
 struct TabSectionChange {
-    /// Inserted tab indices relative to `tabItems`, including `newTabButton`.
-    let insertedIndices: IndexSet
-    /// Removed tab indices relative to the previous `tabItems`.
-    let removedIndices: IndexSet
-    /// A single-tab move operation relative to `tabItems`, including `newTabButton`.
-    let moveOperation: (from: Int, to: Int)?
-    /// Whether a full reload is required.
-    let needsFullReload: Bool
     /// Group tokens whose live `state.normalTabs.filter { groupToken == token }`
     /// child list changed (membership added/removed or intra-group reorder).
-    /// The consumer reloads only these wrappers' children — adding an
+    /// The consumer updates only these wrappers' cells — adding an
     /// ungrouped tab leaves this empty so unrelated groups don't repaint.
     let affectedGroupTokens: Set<String>
     /// Split ids whose merged pair row kept its identity but changed pane
     /// membership (drag-to-replace swaps one pane's Tab object in place on
     /// the cached `SplitPairSidebarItem`). The row id is keyed on the split
-    /// id alone, so the flat diff sees a no-op; the consumer re-binds these
-    /// rows' cells so titles/favicons/subscriptions attach to the new Tab.
+    /// id alone, so the root snapshot can keep the same row identity while
+    /// the consumer re-binds these rows' cells so titles/favicons/subscriptions
+    /// attach to the new Tab.
     let affectedSplitIds: Set<String>
 }
 
@@ -62,13 +56,9 @@ class TabSectionController: NSObject {
     /// split group disappears.
     private var splitPairWrappers: [String: SplitPairSidebarItem] = [:]
 
-    /// Previous root-level item ids used to compute diffs. Holds tab guid
-    /// (`Int`) for ungrouped tabs and group token (`String`) for group rows.
-    private var previousItemIds: [AnyHashable] = []
-
     /// Per-token ordered guid list captured from the previous frame's
     /// `normalTabs`. Used to detect membership / order changes inside any
-    /// given group so the consumer can reload exactly the affected wrappers
+    /// given group so the consumer can update exactly the affected wrappers
     /// (and leave unrelated groups untouched on edits like creating a new
     /// ungrouped tab).
     private var previousGroupMembers: [String: [Int]] = [:]
@@ -89,7 +79,7 @@ class TabSectionController: NSObject {
     init(state: BrowserState? = nil) {
         self.browserState = state
         super.init()
-        refreshTabItems([], isInitial: true)
+        refreshTabItems([])
     }
 
     private func setupBindings() {
@@ -100,22 +90,22 @@ class TabSectionController: NSObject {
 
         guard let browserState else {
             tabItems = []
-            previousItemIds = []
             previousGroupMembers = [:]
+            previousSplitMembers = [:]
             groupWrappers.removeAll()
             splitPairWrappers.removeAll()
             return
         }
 
-        // Sync tabItems and previousItemIds with current state immediately, without
-        // notifying the delegate. This prevents a spurious tabSectionDidUpdate call
+        // Sync tabItems with current state immediately, without notifying
+        // the delegate. This prevents a spurious tabSectionDidUpdate call
         // (from @Published's synchronous initial delivery) that races with the
         // refreshAllItems() call in viewWillAppear and causes duplicate cell creation.
         let currentTabs = browserState.normalTabs
         let initialItems = buildItems(from: currentTabs, groups: browserState.groups, state: browserState)
         tabItems = initialItems
-        previousItemIds = initialItems.map { $0.id }
         previousGroupMembers = Self.computeGroupMembers(tabs: currentTabs)
+        previousSplitMembers = Self.computeSplitMembers(items: initialItems)
 
         // dropFirst() skips the initial synchronous delivery we already handled
         // above. receive(on: .main) defers until after @Published's willSet
@@ -126,7 +116,7 @@ class TabSectionController: NSObject {
             .dropFirst()
             .receive(on: DispatchQueue.main)
             .sink { [weak self] tabs in
-                self?.refreshTabItems(tabs, isInitial: false)
+                self?.refreshTabItems(tabs)
             }
             .store(in: &cancellables)
 
@@ -141,7 +131,7 @@ class TabSectionController: NSObject {
             .sink { [weak self] _ in
                 guard let self else { return }
                 self.subscribeToGroupContents()
-                self.refreshTabItems(self.browserState?.normalTabs ?? [], isInitial: false)
+                self.refreshTabItems(self.browserState?.normalTabs ?? [])
             }
             .store(in: &cancellables)
 
@@ -165,7 +155,7 @@ class TabSectionController: NSObject {
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in
                 guard let self else { return }
-                self.refreshTabItems(self.browserState?.normalTabs ?? [], isInitial: false)
+                self.refreshTabItems(self.browserState?.normalTabs ?? [])
             }
             .store(in: &cancellables)
     }
@@ -185,7 +175,7 @@ class TabSectionController: NSObject {
                 .receive(on: DispatchQueue.main)
                 .sink { [weak self] in
                     guard let self else { return }
-                    self.refreshTabItems(self.browserState?.normalTabs ?? [], isInitial: false)
+                    self.refreshTabItems(self.browserState?.normalTabs ?? [])
                 }
                 .store(in: &groupContentsCancellables)
         }
@@ -300,17 +290,12 @@ class TabSectionController: NSObject {
         return items
     }
 
-    private func refreshTabItems(_ tabs: [Tab], isInitial: Bool) {
+    private func refreshTabItems(_ tabs: [Tab]) {
         guard let browserState else {
             tabItems = []
-            previousItemIds = []
             previousGroupMembers = [:]
             previousSplitMembers = [:]
             delegate?.tabSectionDidUpdate(with: TabSectionChange(
-                insertedIndices: [],
-                removedIndices: [],
-                moveOperation: nil,
-                needsFullReload: true,
                 affectedGroupTokens: [],
                 affectedSplitIds: []
             ))
@@ -318,7 +303,6 @@ class TabSectionController: NSObject {
         }
         let groups = browserState.groups
         let items = buildItems(from: tabs, groups: groups, state: browserState)
-        let newIds = items.map { $0.id }
         let newGroupMembers = Self.computeGroupMembers(tabs: tabs)
         let affectedTokens = Self.affectedGroupTokens(old: previousGroupMembers,
                                                       new: newGroupMembers)
@@ -326,38 +310,14 @@ class TabSectionController: NSObject {
         let affectedSplits = Self.affectedSplitIds(old: previousSplitMembers,
                                                    new: newSplitMembers)
 
-        // Single diff path for all cases (with or without groups). Group
-        // rows participate as ordinary root-level ids (their token), so
-        // `computeFlatChange` correctly emits insertions/removals when a
-        // group is created/closed and moveOperation when a group row
-        // reorders past an ungrouped tab. Tab join/leave a still-existing
-        // group leaves the group's token in both frames; only the moved
-        // tab's id surfaces in the root diff. The consumer reloads exactly
-        // the wrappers listed in `affectedGroupTokens` so unrelated edits
-        // (e.g. creating an ungrouped tab) do not repaint other groups,
-        // and we never call `reloadData()` — which would also rebuild the
-        // bookmark section above and cause a visible flicker there.
-        let change: TabSectionChange
-        if isInitial || delegate == nil {
-            change = TabSectionChange(insertedIndices: [],
-                                      removedIndices: [],
-                                      moveOperation: nil,
-                                      needsFullReload: true,
-                                      affectedGroupTokens: [],
-                                      affectedSplitIds: [])
-        } else {
-            change = computeFlatChange(oldIds: previousItemIds,
-                                       newIds: newIds,
-                                       affectedGroupTokens: affectedTokens,
-                                       affectedSplitIds: affectedSplits)
-        }
-
         self.tabItems = items
-        self.previousItemIds = newIds
         self.previousGroupMembers = newGroupMembers
         self.previousSplitMembers = newSplitMembers
 
-        delegate?.tabSectionDidUpdate(with: change)
+        delegate?.tabSectionDidUpdate(with: TabSectionChange(
+            affectedGroupTokens: affectedTokens,
+            affectedSplitIds: affectedSplits
+        ))
     }
 
     /// Snapshot of each group's ordered guid list. Compared frame-over-frame
@@ -394,8 +354,8 @@ class TabSectionController: NSObject {
     }
 
     /// Split ids present in both frames whose pane guids changed. Ids only
-    /// in one frame surface as row insertions/removals in the flat diff and
-    /// rebuild their cell anyway.
+    /// in one frame surface as row insertions/removals in the root snapshot
+    /// and rebuild their cell anyway.
     private static func affectedSplitIds(old: [String: [Int]],
                                          new: [String: [Int]]) -> Set<String> {
         var ids: Set<String> = []
@@ -405,83 +365,6 @@ class TabSectionController: NSObject {
         return ids
     }
 
-    private func computeFlatChange(oldIds: [AnyHashable],
-                                   newIds: [AnyHashable],
-                                   affectedGroupTokens: Set<String>,
-                                   affectedSplitIds: Set<String>) -> TabSectionChange {
-        let oldSet = Set(oldIds)
-        let newSet = Set(newIds)
-
-        let insertedIds = newSet.subtracting(oldSet)
-        let removedIds = oldSet.subtracting(newSet)
-
-        let commonIds = oldSet.intersection(newSet)
-        let oldCommonOrder = oldIds.filter { commonIds.contains($0) }
-        let newCommonOrder = newIds.filter { commonIds.contains($0) }
-
-        if oldCommonOrder != newCommonOrder {
-            if insertedIds.isEmpty && removedIds.isEmpty {
-                if let moveOp = detectSingleMove(oldIds: oldIds, newIds: newIds) {
-                    return TabSectionChange(
-                        insertedIndices: [],
-                        removedIndices: [],
-                        moveOperation: (from: moveOp.from, to: moveOp.to),
-                        needsFullReload: false,
-                        affectedGroupTokens: affectedGroupTokens,
-                        affectedSplitIds: affectedSplitIds
-                    )
-                }
-            }
-            return TabSectionChange(insertedIndices: [],
-                                    removedIndices: [],
-                                    moveOperation: nil,
-                                    needsFullReload: true,
-                                    affectedGroupTokens: affectedGroupTokens,
-                                    affectedSplitIds: affectedSplitIds)
-        }
-
-        var insertedIndices = IndexSet()
-        for (index, id) in newIds.enumerated() where insertedIds.contains(id) {
-            insertedIndices.insert(index)
-        }
-
-        var removedIndices = IndexSet()
-        for (index, id) in oldIds.enumerated() where removedIds.contains(id) {
-            removedIndices.insert(index)
-        }
-
-        return TabSectionChange(
-            insertedIndices: insertedIndices,
-            removedIndices: removedIndices,
-            moveOperation: nil,
-            needsFullReload: false,
-            affectedGroupTokens: affectedGroupTokens,
-            affectedSplitIds: affectedSplitIds
-        )
-    }
-    
-    /// Detect whether the change can be represented as a single move.
-    /// - Parameters:
-    ///   - oldIds: Item ids before the move.
-    ///   - newIds: Item ids after the move.
-    /// - Returns: The `(from, to)` indices when a single move is detected.
-    private func detectSingleMove(oldIds: [AnyHashable], newIds: [AnyHashable]) -> (from: Int, to: Int)? {
-        guard oldIds.count == newIds.count else { return nil }
-
-        for from in 0..<oldIds.count {
-            for to in 0..<oldIds.count where from != to {
-                var simulated = oldIds
-                let item = simulated.remove(at: from)
-                simulated.insert(item, at: to)
-                if simulated == newIds {
-                    return (from: from, to: to)
-                }
-            }
-        }
-
-        return nil
-    }
-    
     func activateTab(_ tab: Tab) {
         tab.makeSelfActive()
     }

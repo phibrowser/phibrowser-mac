@@ -64,7 +64,7 @@ extension AppController: SPUUpdaterDelegate {
     }
     
     func updaterShouldRelaunchApplication(_ updater: SPUUpdater) -> Bool {
-        SentinelHelper.terminateAll()
+        SentinelHelper.requestTerminationForBrowserUpdate()
         return true
     }
     

@@ -8,6 +8,35 @@ import Foundation
 import ServiceManagement
 import CocoaLumberjackSwift
 
+struct SentinelBrowserUpdateTerminationRequest: Equatable {
+    static let notificationName = Notification.Name("com.phibrowser.sentinel.prepareForBrowserUpdate")
+    static let reason = "browser_update_install"
+
+    let requestID: String
+    let sentinelBundleID: String
+    let browserBundleID: String
+
+    var userInfo: [String: String] {
+        [
+            "requestID": requestID,
+            "browserBundleID": browserBundleID,
+            "reason": Self.reason
+        ]
+    }
+
+    static func make(
+        sentinelBundleID: String,
+        browserBundleID: String,
+        requestID: String = UUID().uuidString
+    ) -> SentinelBrowserUpdateTerminationRequest {
+        SentinelBrowserUpdateTerminationRequest(
+            requestID: requestID,
+            sentinelBundleID: sentinelBundleID,
+            browserBundleID: browserBundleID
+        )
+    }
+}
+
 enum SentinelHelper {
     struct RunningInfo: Equatable {
         let bundleID: String
@@ -92,6 +121,37 @@ enum SentinelHelper {
             app.terminate()
             AppLogInfo("Sent terminate signal to Sentinel (pid \(app.processIdentifier), bundleID \(app.bundleIdentifier ?? ""))")
         }
+    }
+
+    static func requestTerminationForBrowserUpdate(timeout: TimeInterval = 8) {
+        let identifier = loginItemIdentifier()
+        guard runningApplication(identifier: identifier) != nil else {
+            AppLogInfo("Sentinel is not running; no browser update termination request needed")
+            return
+        }
+
+        let request = SentinelBrowserUpdateTerminationRequest.make(
+            sentinelBundleID: identifier,
+            browserBundleID: Bundle.main.bundleIdentifier ?? ""
+        )
+        DistributedNotificationCenter.default().postNotificationName(
+            SentinelBrowserUpdateTerminationRequest.notificationName,
+            object: request.sentinelBundleID,
+            userInfo: request.userInfo,
+            deliverImmediately: true
+        )
+        AppLogInfo("Requested Sentinel termination for browser update (requestID \(request.requestID), bundleID \(identifier))")
+
+        let deadline = Date().addingTimeInterval(timeout)
+        while Date() < deadline {
+            if runningApplication(identifier: identifier) == nil {
+                AppLogInfo("Sentinel exited before browser update installation (requestID \(request.requestID))")
+                return
+            }
+            RunLoop.current.run(mode: .default, before: Date().addingTimeInterval(0.1))
+        }
+
+        AppLogWarn("Timed out waiting for Sentinel to exit before browser update installation (requestID \(request.requestID))")
     }
 
     private static func loginItemIdentifier() -> String {

@@ -5,6 +5,7 @@
 
 import Cocoa
 import Combine
+import SnapKit
 
 protocol SidebarTabListItemOwner: AnyObject {
     func toggleItemExpanded(_ item: SidebarItem)
@@ -71,6 +72,7 @@ class SidebarTabListViewController: NSViewController {
     private var outlineView: SideBarOutlineView!
     private var scrollView: NSScrollView!
     private var floatingNewTabView: FloatingNewTabView?
+    private let organizingOverlayView = FarringdonOrganizingOverlayView()
     
     private let tabSectionController = TabSectionController()
     private let separatorItem = SeparatorItem()
@@ -90,6 +92,7 @@ class SidebarTabListViewController: NSViewController {
     
     private var cancellables = Set<AnyCancellable>()
     private var lastFarringdonAIEnabled = PhiPreferences.AISettings.phiAIEnabled.loadValue()
+    private var lastFarringdonTabCountEligible = false
     private var allItems: [SidebarItem] = []
     
     /// UI-only state: when non-nil, we temporarily "reparent" the focusing bookmark to keep it visible.
@@ -228,6 +231,7 @@ class SidebarTabListViewController: NSViewController {
         
         scrollView.documentView = outlineView
         view.addSubview(scrollView)
+        view.addSubview(organizingOverlayView)
         
         NSLayoutConstraint.activate([
             scrollView.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor),
@@ -235,6 +239,10 @@ class SidebarTabListViewController: NSViewController {
             scrollView.trailingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.trailingAnchor),
             scrollView.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor)
         ])
+
+        organizingOverlayView.snp.makeConstraints { make in
+            make.edges.equalTo(scrollView)
+        }
     }
     
     private func setupAppearance() {
@@ -296,6 +304,38 @@ class SidebarTabListViewController: NSViewController {
                 self.updateNewTabCleanupVisibility()
             }
             .store(in: &cancellables)
+
+        // The broom also needs enough tabs to be worth a run; refresh the live
+        // cells whenever the count crosses the threshold.
+        lastFarringdonTabCountEligible =
+            FarringdonOrganizer.isTabCountEligible(
+                FarringdonOrganizer.eligibleTabCount(in: browserState.normalTabs))
+        browserState.$normalTabs
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] tabs in
+                guard let self else { return }
+                let eligible = FarringdonOrganizer.isTabCountEligible(
+                    FarringdonOrganizer.eligibleTabCount(in: tabs))
+                guard eligible != self.lastFarringdonTabCountEligible else { return }
+                self.lastFarringdonTabCountEligible = eligible
+                self.updateNewTabCleanupVisibility()
+            }
+            .store(in: &cancellables)
+
+        NotificationCenter.default.publisher(for: .farringdonOrganizeDidStart)
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in
+                guard let self, self.view.window?.isKeyWindow == true else { return }
+                self.organizingOverlayView.startOrganizing()
+            }
+            .store(in: &cancellables)
+
+        NotificationCenter.default.publisher(for: .farringdonOrganizeDidFinish)
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in
+                self?.organizingOverlayView.stopOrganizing()
+            }
+            .store(in: &cancellables)
     }
 
     func setActive(_ active: Bool) {
@@ -342,6 +382,7 @@ class SidebarTabListViewController: NSViewController {
         lastSelectedItem = nil
         userInitiatedToggleFolderGuid = nil
         removeFloatingNewTabCell()
+        organizingOverlayView.stopOrganizing()
         outlineView.deselectAll(nil)
         outlineView.reloadData()
         browserState.visibleBookmarkTabs = []
@@ -2912,7 +2953,7 @@ extension SidebarTabListViewController: SidebarTabListItemOwner {
     }
 
     /// The broom (organize-tabs) action is only useful once the window has
-    /// enough open normal tabs to organize.
+    /// enough eligible tabs to organize.
     private func farringdonCleanupActionIfVisible() -> (() -> Void)? {
         guard FarringdonOrganizer.canOrganizeTabs(in: browserState) else { return nil }
         return { [weak self] in self?.triggerFarringdonCleanup() }

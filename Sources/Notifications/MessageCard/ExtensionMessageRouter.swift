@@ -71,7 +71,7 @@ final class ExtensionMessageRouter {
             DispatchQueue.main.async {
                 NotificationCenter.default.post(name: .farringdonOrganizeDidFinish, object: nil)
             }
-            return nil
+            return #"{"ok":true}"#
         }
     }
 }

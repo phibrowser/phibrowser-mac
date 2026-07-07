@@ -144,6 +144,8 @@ final class TabStripBarController: NSViewController {
     
     /// Horizontal tab strip.
     private(set) lazy var tabStrip = TabStrip(browserState: browserState)
+
+    private let organizingOverlayView = FarringdonOrganizingOverlayView()
     
     /// Hosting view for the right-side button cluster.
     private var rightButtonsHostingView: SafeAreaIgnoringHostingView<TabStripRightButtons>?
@@ -257,8 +259,7 @@ final class TabStripBarController: NSViewController {
     private func setupUI() {
         let rightButtons = TabStripRightButtons(
             cardManager: NotificationCardManager.shared,
-            normalTabCount: browserState.normalTabs.count,
-            isIncognito: browserState.isIncognito,
+            browserState: browserState,
             onCardEntryTap: { [weak self] in
                 self?.handleCardEntryTap()
             },
@@ -298,6 +299,7 @@ final class TabStripBarController: NSViewController {
         view.addSubview(spacesHostingView)
 
         view.addSubview(tabStrip)
+        view.addSubview(organizingOverlayView)
         view.menu = stripContextMenu
         tabStrip.menu = stripContextMenu
         hostingView.menu = stripContextMenu
@@ -326,22 +328,11 @@ final class TabStripBarController: NSViewController {
         // picker's in `applySpacesPickerVisibility`.
         applySpacesPickerVisibility()
         observeSpacesFeatureFlag()
-        observeRightButtonsNormalTabCount()
+        observeFarringdonOrganizingState()
 
         (view as? TabStripBarView)?.onSpaceSwipe = { [weak self] step in
             self?.activateAdjacentSpace(by: step)
         }
-    }
-
-    private func observeRightButtonsNormalTabCount() {
-        browserState.$normalTabs
-            .map(\.count)
-            .removeDuplicates()
-            .receive(on: DispatchQueue.main)
-            .sink { [weak self] count in
-                self?.rightButtonsHostingView?.rootView.normalTabCount = count
-            }
-            .store(in: &cancellables)
     }
 
     /// Switches THIS window's active Space, clamped at the first/last Space
@@ -421,6 +412,9 @@ final class TabStripBarController: NSViewController {
                 make.leading.equalToSuperview().inset(Self.horizontalInset)
             }
         }
+        organizingOverlayView.snp.remakeConstraints { make in
+            make.edges.equalTo(tabStrip)
+        }
     }
 
     /// Re-applies the picker visibility whenever the master Spaces flag flips
@@ -442,6 +436,23 @@ final class TabStripBarController: NSViewController {
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in
                 self?.applySpacesPickerVisibility()
+            }
+            .store(in: &cancellables)
+    }
+
+    private func observeFarringdonOrganizingState() {
+        NotificationCenter.default.publisher(for: .farringdonOrganizeDidStart)
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in
+                guard let self, self.view.window?.isKeyWindow == true else { return }
+                self.organizingOverlayView.startOrganizing()
+            }
+            .store(in: &cancellables)
+
+        NotificationCenter.default.publisher(for: .farringdonOrganizeDidFinish)
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in
+                self?.organizingOverlayView.stopOrganizing()
             }
             .store(in: &cancellables)
     }

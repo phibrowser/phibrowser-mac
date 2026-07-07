@@ -1047,30 +1047,161 @@ extension Notification.Name {
 /// request to the Kensington extension, which resolves the focused window itself.
 /// Used by the sidebar broom, the horizontal-tab broom, and the keyboard shortcut.
 enum FarringdonOrganizer {
-    static let minimumNormalTabCount = 7
+    /// Organizing a handful of pages isn't worth a Farringdon run, so the broom
+    /// only appears once the current Space has more eligible pages than this.
+    static let minimumEligibleTabCount = 7
+
+    static func isTabCountEligible(_ tabCount: Int) -> Bool {
+        tabCount > minimumEligibleTabCount
+    }
+
+    static func eligibleTabCount(in tabs: [Tab]) -> Int {
+        tabs.lazy.filter { !$0.isLocalPage }.count
+    }
 
     static func canOrganizeTabs(phiAIEnabled: Bool,
                                 isIncognito: Bool,
-                                normalTabCount: Int) -> Bool {
-        phiAIEnabled && !isIncognito && normalTabCount >= minimumNormalTabCount
+                                eligibleTabCount: Int) -> Bool {
+        phiAIEnabled && !isIncognito && isTabCountEligible(eligibleTabCount)
     }
 
     static func canOrganizeTabs(in browserState: BrowserState) -> Bool {
         canOrganizeTabs(
             phiAIEnabled: PhiPreferences.AISettings.phiAIEnabled.loadValue(),
             isIncognito: browserState.isIncognito,
-            normalTabCount: browserState.normalTabs.count
+            eligibleTabCount: eligibleTabCount(in: browserState.normalTabs)
         )
     }
 
     @MainActor
-    static func organizeFocusedWindow() {
+    static func organizeFocusedWindow(eligibleTabCount: Int? = nil) {
         // Buttons and shortcuts share the same eligibility gate; this is the
         // backstop for hidden UI and direct command dispatch.
-        guard let state = MainBrowserWindowControllersManager.shared.getActiveWindowState(),
-              canOrganizeTabs(in: state) else { return }
+        guard let state = MainBrowserWindowControllersManager.shared.getActiveWindowState() else {
+            return
+        }
+        let count = eligibleTabCount ?? Self.eligibleTabCount(in: state.normalTabs)
+        guard canOrganizeTabs(
+            phiAIEnabled: PhiPreferences.AISettings.phiAIEnabled.loadValue(),
+            isIncognito: state.isIncognito,
+            eligibleTabCount: count
+        ) else { return }
         NotificationCenter.default.post(name: .farringdonOrganizeDidStart, object: nil)
         ExtensionMessaging.shared.broadcast(type: "farringdon.toggleTabs", payload: "{}")
+    }
+}
+
+final class FarringdonOrganizingOverlayView: NSView {
+    private static let fadeDelay: TimeInterval = 0.6
+    private static let fadeInDuration: TimeInterval = 0.18
+    private static let fadeOutDuration: TimeInterval = 0.16
+    private static let safetyTimeout: TimeInterval = 8.0
+    private static let pulseKey = "farringdonOrganizingPulse"
+
+    private var fadeInWorkItem: DispatchWorkItem?
+    private var safetyWorkItem: DispatchWorkItem?
+    private var isOrganizing = false
+
+    override var isFlipped: Bool {
+        true
+    }
+
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        configure()
+    }
+
+    required init?(coder: NSCoder) {
+        super.init(coder: coder)
+        configure()
+    }
+
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        nil
+    }
+
+    override func draw(_ dirtyRect: NSRect) {
+        super.draw(dirtyRect)
+
+        let glowColor = NSColor.white
+        let fill = NSGradient(colors: [
+            glowColor.withAlphaComponent(0.00),
+            glowColor.withAlphaComponent(0.05),
+            glowColor.withAlphaComponent(0.09),
+            glowColor.withAlphaComponent(0.05),
+            glowColor.withAlphaComponent(0.00)
+        ])
+        fill?.draw(
+            from: NSPoint(x: bounds.minX, y: bounds.midY),
+            to: NSPoint(x: bounds.maxX, y: bounds.midY),
+            options: []
+        )
+
+        let lineY = floor(bounds.midY)
+        let lineRect = NSRect(x: bounds.minX + 10, y: lineY, width: max(0, bounds.width - 20), height: 1)
+        glowColor.withAlphaComponent(0.12).setFill()
+        lineRect.fill()
+    }
+
+    func startOrganizing() {
+        guard !isOrganizing else { return }
+        isOrganizing = true
+        fadeInWorkItem?.cancel()
+        safetyWorkItem?.cancel()
+
+        let workItem = DispatchWorkItem { [weak self] in
+            guard let self, self.isOrganizing else { return }
+            self.isHidden = false
+            NSAnimationContext.runAnimationGroup { context in
+                context.duration = Self.fadeInDuration
+                self.animator().alphaValue = 1
+            }
+            self.startPulse()
+        }
+        fadeInWorkItem = workItem
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.fadeDelay, execute: workItem)
+
+        let safetyWorkItem = DispatchWorkItem { [weak self] in
+            self?.stopOrganizing()
+        }
+        self.safetyWorkItem = safetyWorkItem
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.safetyTimeout, execute: safetyWorkItem)
+    }
+
+    func stopOrganizing() {
+        guard isOrganizing || !isHidden else { return }
+        isOrganizing = false
+        fadeInWorkItem?.cancel()
+        fadeInWorkItem = nil
+        safetyWorkItem?.cancel()
+        safetyWorkItem = nil
+        layer?.removeAnimation(forKey: Self.pulseKey)
+
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = Self.fadeOutDuration
+            self.animator().alphaValue = 0
+        } completionHandler: { [weak self] in
+            guard let self, !self.isOrganizing else { return }
+            self.isHidden = true
+        }
+    }
+
+    private func configure() {
+        wantsLayer = true
+        alphaValue = 0
+        isHidden = true
+        layer?.masksToBounds = true
+    }
+
+    private func startPulse() {
+        let pulse = CABasicAnimation(keyPath: "opacity")
+        pulse.fromValue = 0.58
+        pulse.toValue = 1.0
+        pulse.duration = 0.9
+        pulse.autoreverses = true
+        pulse.repeatCount = .infinity
+        pulse.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+        layer?.add(pulse, forKey: Self.pulseKey)
     }
 }
 
@@ -1086,7 +1217,12 @@ final class BroomButton: NSButton {
     private var organizeStartedAt: Date?
     private var safetyTimer: Timer?
 
+    static let buttonSize: CGFloat = 24
+
+    private static let iconSize: CGFloat = 22
+    private static let cornerRadius: CGFloat = 6
     private static let sweepKey = "farringdonSweep"
+    private static let sweepAmplitude: CGFloat = 10 * .pi / 180
     private static let minVisibleDuration: TimeInterval = 0.6
     private static let safetyTimeout: TimeInterval = 8.0
 
@@ -1108,14 +1244,18 @@ final class BroomButton: NSButton {
     private func configure() {
         isBordered = false
         bezelStyle = .shadowlessSquare
+        title = ""
+        attributedTitle = NSAttributedString(string: "")
+        alternateTitle = ""
         imagePosition = .imageOnly
         imageScaling = .scaleProportionallyUpOrDown
         setButtonType(.momentaryChange)
         wantsLayer = true
-        layer?.cornerRadius = 5
+        layer?.cornerRadius = Self.cornerRadius
         layer?.cornerCurve = .continuous
-        let broom = NSImage(named: NSImage.Name("farringdon-broom"))
+        let broom = NSImage(named: NSImage.Name("farringdon-broom"))?.copy() as? NSImage
         broom?.isTemplate = true
+        broom?.size = NSSize(width: Self.iconSize, height: Self.iconSize)
         image = broom
         toolTip = NSLocalizedString(
             "Organize tabs with AI",
@@ -1147,6 +1287,13 @@ final class BroomButton: NSButton {
         trackingArea = area
     }
 
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        guard isEnabled, !isHidden, alphaValue > 0, bounds.contains(point) else {
+            return nil
+        }
+        return self
+    }
+
     override func mouseEntered(with event: NSEvent) {
         super.mouseEntered(with: event)
         isHovering = true
@@ -1158,11 +1305,9 @@ final class BroomButton: NSButton {
     }
 
     private func updateAppearance() {
-        // Prominent (matches the design's solid black broom); adapts to the
-        // theme so it stays visible in dark mode. Hover adds a subtle fill.
         phi.setContentTintColor(.textPrimary)
         layer?.backgroundColor = isHovering
-            ? NSColor.labelColor.withAlphaComponent(0.10).cgColor
+            ? NSColor(resource: .sidebarTabHovered).cgColor
             : NSColor.clear.cgColor
     }
 
@@ -1173,10 +1318,8 @@ final class BroomButton: NSButton {
         isOrganizing = true
         organizeStartedAt = Date()
 
-        // Keep in sync with the horizontal-tab broom (TabStripFarringdonButton):
-        // ~16° sweep around the center, ~0.8s full cycle.
         let sweep = CAKeyframeAnimation(keyPath: "transform.rotation.z")
-        sweep.values = [0, -0.28, 0, 0.28, 0]
+        sweep.values = [0, -Self.sweepAmplitude, 0, Self.sweepAmplitude, 0]
         sweep.keyTimes = [0, 0.25, 0.5, 0.75, 1]
         sweep.duration = 0.8
         sweep.repeatCount = .infinity
@@ -1312,6 +1455,12 @@ class NewTabButtonCellView: SidebarCellView {
         // Let the trailing broom button claim its own clicks before the cell
         // swallows the whole row (used by the floating new-tab variant where
         // `clickAction` opens a new tab).
+        if cleanupAction != nil, !cleanupButton.isHidden {
+            let backgroundPoint = backgoundView.convert(point, from: self)
+            if cleanupButton.frame.contains(backgroundPoint) {
+                return cleanupButton
+            }
+        }
         if let hit = super.hitTest(point),
            hit == cleanupButton || hit.isDescendant(of: cleanupButton) {
             return hit
@@ -1330,6 +1479,13 @@ class NewTabButtonCellView: SidebarCellView {
 
         let point = convert(event.locationInWindow, from: nil)
         guard bounds.contains(point) else { return }
+        if cleanupAction != nil, !cleanupButton.isHidden {
+            let backgroundPoint = backgoundView.convert(point, from: self)
+            if cleanupButton.frame.contains(backgroundPoint) {
+                cleanupButtonClicked()
+                return
+            }
+        }
         clickAction()
     }
     
@@ -1382,7 +1538,7 @@ class NewTabButtonCellView: SidebarCellView {
         cleanupButton.snp.makeConstraints { make in
             make.trailing.equalToSuperview().inset(4)
             make.centerY.equalToSuperview()
-            make.size.equalTo(22)
+            make.size.equalTo(BroomButton.buttonSize)
         }
 
         titleLabel.snp.makeConstraints { make in

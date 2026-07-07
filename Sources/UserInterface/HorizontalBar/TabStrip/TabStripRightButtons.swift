@@ -10,16 +10,33 @@ import AppKit
 /// Contains CardEntryButton and future buttons
 struct TabStripRightButtons: View {
     @ObservedObject var cardManager: NotificationCardManager
-    var normalTabCount: Int
-    let isIncognito: Bool
+    let browserState: BrowserState
     let onCardEntryTap: () -> Void
     let onSearchTabsTap: (NSView?) -> Void
 
     // Organize-tabs is unavailable when AI is disabled, in incognito windows,
-    // or when there are too few normal tabs. `@AppStorage` keeps the AI toggle
+    // or when there are too few eligible tabs. `@AppStorage` keeps the AI toggle
     // reactive.
     @AppStorage(PhiPreferences.AISettings.phiAIEnabled.rawValue)
     private var phiAIEnabled: Bool = PhiPreferences.AISettings.phiAIEnabled.defaultValue
+
+    /// `BrowserState` isn't an `ObservableObject`, so the eligible page count is
+    /// mirrored from the `$normalTabs` publisher via `onReceive`.
+    @State private var eligibleTabCount: Int
+
+    init(
+        cardManager: NotificationCardManager,
+        browserState: BrowserState,
+        onCardEntryTap: @escaping () -> Void,
+        onSearchTabsTap: @escaping (NSView?) -> Void
+    ) {
+        self.cardManager = cardManager
+        self.browserState = browserState
+        self.onCardEntryTap = onCardEntryTap
+        self.onSearchTabsTap = onSearchTabsTap
+        _eligibleTabCount = State(
+            initialValue: FarringdonOrganizer.eligibleTabCount(in: browserState.normalTabs))
+    }
 
     var body: some View {
         HStack(spacing: 6) {
@@ -34,10 +51,13 @@ struct TabStripRightButtons: View {
             }
 
             if showFarringdonButton {
-                TabStripFarringdonButton()
+                TabStripFarringdonButton(eligibleTabCount: eligibleTabCount)
             }
 
             TabStripSearchTabsButton(action: onSearchTabsTap)
+        }
+        .onReceive(browserState.$normalTabs.receive(on: DispatchQueue.main)) { tabs in
+            eligibleTabCount = FarringdonOrganizer.eligibleTabCount(in: tabs)
         }
         .animation(.spring(response: 0.3, dampingFraction: 0.7), value: showCardEntry)
         .animation(.spring(response: 0.3, dampingFraction: 0.7), value: showFarringdonButton)
@@ -53,8 +73,8 @@ struct TabStripRightButtons: View {
     private var showFarringdonButton: Bool {
         FarringdonOrganizer.canOrganizeTabs(
             phiAIEnabled: phiAIEnabled,
-            isIncognito: isIncognito,
-            normalTabCount: normalTabCount
+            isIncognito: browserState.isIncognito,
+            eligibleTabCount: eligibleTabCount
         )
     }
 }
@@ -64,6 +84,8 @@ struct TabStripRightButtons: View {
 /// as the sidebar broom and sweeps while a run is in progress (driven by the
 /// shared `.farringdonOrganizeDidStart` / `.farringdonOrganizeDidFinish` events).
 private struct TabStripFarringdonButton: View {
+    let eligibleTabCount: Int
+
     @State private var isHovering = false
     @State private var isOrganizing = false
     @State private var sweepAngle: Double = 0
@@ -84,7 +106,7 @@ private struct TabStripFarringdonButton: View {
     var body: some View {
         Button {
             guard !isOrganizing else { return }
-            FarringdonOrganizer.organizeFocusedWindow()
+            FarringdonOrganizer.organizeFocusedWindow(eligibleTabCount: eligibleTabCount)
         } label: {
             Image("farringdon-broom")
                 .renderingMode(.template)

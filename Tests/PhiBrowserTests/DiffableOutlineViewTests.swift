@@ -18,6 +18,7 @@ private final class OutlineApplyItem: NSObject {
 
 private final class RecordingDiffableOutlineView: DiffableOutlineView {
     private(set) var events: [String] = []
+    private(set) var invalidSnapshotErrors: [DiffableOutlineSnapshotValidationError<AnyHashable>] = []
 
     func record(_ event: String) {
         events.append(event)
@@ -29,6 +30,10 @@ private final class RecordingDiffableOutlineView: DiffableOutlineView {
 
     override func reloadData() {
         events.append("reloadData")
+    }
+
+    override func reportInvalidSnapshot(_ error: DiffableOutlineSnapshotValidationError<AnyHashable>) {
+        invalidSnapshotErrors.append(error)
     }
 
     override func beginUpdates() {
@@ -292,7 +297,7 @@ final class DiffableOutlineViewTests: XCTestCase {
         ])
     }
 
-    func testInvalidSnapshotDoesNotUpdateDataSource() {
+    func testInvalidSnapshotReportsErrorWithoutUpdatingDataSource() {
         let view = RecordingDiffableOutlineView()
         let invalid = DiffableOutlineSnapshot<AnyHashable>(rootIDs: [AnyHashable("missing")], nodes: [:])
 
@@ -301,6 +306,10 @@ final class DiffableOutlineViewTests: XCTestCase {
         }
 
         XCTAssertTrue(view.events.isEmpty)
+        XCTAssertEqual(
+            view.invalidSnapshotErrors,
+            [.missingRoot(AnyHashable("missing"))]
+        )
     }
 
     func testSideBarOutlineViewIsDiffableOutlineView() {

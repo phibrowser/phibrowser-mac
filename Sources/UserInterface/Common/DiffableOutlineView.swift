@@ -42,7 +42,8 @@ class DiffableOutlineView: NSOutlineView {
             return
         }
 
-        guard snapshot.validationError == nil else {
+        if let validationError = snapshot.validationError {
+            reportInvalidSnapshot(validationError)
             completion?()
             return
         }
@@ -79,6 +80,13 @@ class DiffableOutlineView: NSOutlineView {
 
     func resetDiffableSnapshot(_ snapshot: DiffableOutlineSnapshot<AnyHashable>? = nil) {
         currentSnapshot = snapshot
+    }
+
+    func reportInvalidSnapshot(_ error: DiffableOutlineSnapshotValidationError<AnyHashable>) {
+        AppLogWarn("[DiffableOutlineView] invalid snapshot: \(error)")
+#if DEBUG
+        assertionFailure("Invalid DiffableOutlineSnapshot: \(error)")
+#endif
     }
 
     func applyRemove(

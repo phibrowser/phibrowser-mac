@@ -72,7 +72,6 @@ class SidebarTabListViewController: NSViewController {
     private var outlineView: SideBarOutlineView!
     private var scrollView: NSScrollView!
     private var floatingNewTabView: FloatingNewTabView?
-    private let organizingOverlayView = FarringdonOrganizingOverlayView()
     
     private let tabSectionController = TabSectionController()
     private let separatorItem = SeparatorItem()
@@ -231,7 +230,6 @@ class SidebarTabListViewController: NSViewController {
         
         scrollView.documentView = outlineView
         view.addSubview(scrollView)
-        view.addSubview(organizingOverlayView)
         
         NSLayoutConstraint.activate([
             scrollView.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor),
@@ -239,10 +237,6 @@ class SidebarTabListViewController: NSViewController {
             scrollView.trailingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.trailingAnchor),
             scrollView.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor)
         ])
-
-        organizingOverlayView.snp.makeConstraints { make in
-            make.edges.equalTo(scrollView)
-        }
     }
     
     private func setupAppearance() {
@@ -322,20 +316,6 @@ class SidebarTabListViewController: NSViewController {
             }
             .store(in: &cancellables)
 
-        NotificationCenter.default.publisher(for: .farringdonOrganizeDidStart)
-            .receive(on: DispatchQueue.main)
-            .sink { [weak self] _ in
-                guard let self, self.view.window?.isKeyWindow == true else { return }
-                self.organizingOverlayView.startOrganizing()
-            }
-            .store(in: &cancellables)
-
-        NotificationCenter.default.publisher(for: .farringdonOrganizeDidFinish)
-            .receive(on: DispatchQueue.main)
-            .sink { [weak self] _ in
-                self?.organizingOverlayView.stopOrganizing()
-            }
-            .store(in: &cancellables)
     }
 
     func setActive(_ active: Bool) {
@@ -382,7 +362,6 @@ class SidebarTabListViewController: NSViewController {
         lastSelectedItem = nil
         userInitiatedToggleFolderGuid = nil
         removeFloatingNewTabCell()
-        organizingOverlayView.stopOrganizing()
         outlineView.deselectAll(nil)
         outlineView.reloadData()
         browserState.visibleBookmarkTabs = []

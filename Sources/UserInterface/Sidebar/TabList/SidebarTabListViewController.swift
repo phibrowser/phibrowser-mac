@@ -73,13 +73,30 @@ class SidebarTabListViewController: NSViewController {
         let focusedPresentation: (proxy: FocusedBookmarkSidebarItem, insertionParent: SidebarItem?, insertionIndex: Int)?
         let floatingBookmarkGuid: String?
         let floatingAnchorFolderGuid: String?
+        let hiddenBookmarkGuid: String?
 
         static var cleared: FloatingBookmarkPresentationState {
             FloatingBookmarkPresentationState(
                 focusedPresentation: nil,
                 floatingBookmarkGuid: nil,
-                floatingAnchorFolderGuid: nil
+                floatingAnchorFolderGuid: nil,
+                hiddenBookmarkGuid: nil
             )
+        }
+    }
+
+    private final class OneShotAction {
+        private var didRun = false
+        private let action: () -> Void
+
+        init(_ action: @escaping () -> Void) {
+            self.action = action
+        }
+
+        func run() {
+            guard !didRun else { return }
+            didRun = true
+            action()
         }
     }
     
@@ -396,29 +413,44 @@ class SidebarTabListViewController: NSViewController {
     }
     
     // MARK: - Data Management
-    private func refreshAllItems(afterReload: (() -> Void)? = nil) {
-        guard isActive else { return }
+    @discardableResult
+    private func refreshAllItems(
+        presentationState: FloatingBookmarkPresentationState? = nil,
+        animated: Bool = true,
+        afterReload: (() -> Void)? = nil
+    ) -> Bool {
+        guard isActive else { return false }
         let items = makeAllItems()
-        let floatingState = nextFloatingBookmarkPresentationState(rootItems: items)
+        let resolvedPresentationState = presentationState
+            ?? nextFloatingBookmarkPresentationState(
+                rootItems: items,
+                hiddenBookmarkGuid: temporarilyHiddenRealBookmarkGuid
+            )
         let snapshot = makeDiffableSnapshot(
             rootItems: items,
-            focusedPresentation: floatingState.focusedPresentation
+            focusedPresentation: resolvedPresentationState.focusedPresentation,
+            hiddenBookmarkGuid: resolvedPresentationState.hiddenBookmarkGuid
         )
 
+        var didUpdateDataSource = false
         outlineView.reloadWith(
             snapshot,
+            animated: animated,
             updateDataSource: { [weak self] in
                 guard let self else { return }
                 self.allItems = items
-                self.focusedBookmarkPresentation = floatingState.focusedPresentation
-                self.floatingBookmarkGuid = floatingState.floatingBookmarkGuid
-                self.floatingAnchorFolderGuid = floatingState.floatingAnchorFolderGuid
+                self.focusedBookmarkPresentation = resolvedPresentationState.focusedPresentation
+                self.floatingBookmarkGuid = resolvedPresentationState.floatingBookmarkGuid
+                self.floatingAnchorFolderGuid = resolvedPresentationState.floatingAnchorFolderGuid
+                self.temporarilyHiddenRealBookmarkGuid = resolvedPresentationState.hiddenBookmarkGuid
+                didUpdateDataSource = true
             },
             prepareReloadData: { [weak self] in
                 self?.invalidateExistingTabCells()
             },
             completion: { [weak self] in
                 guard let self else { return }
+                guard didUpdateDataSource else { return }
                 self.selectActiveTab()
                 self.applyFocusingSelection(for: self.browserState.focusingTab)
 
@@ -430,6 +462,7 @@ class SidebarTabListViewController: NSViewController {
                 }
             }
         )
+        return didUpdateDataSource
     }
 
     private func makeAllItems() -> [SidebarItem] {
@@ -452,7 +485,8 @@ class SidebarTabListViewController: NSViewController {
             proxy: FocusedBookmarkSidebarItem,
             insertionParent: SidebarItem?,
             insertionIndex: Int
-        )?
+        )?,
+        hiddenBookmarkGuid: String?
     ) -> DiffableOutlineSnapshot<AnyHashable> {
         let virtualInsertion: SidebarDiffableSnapshotBuilder.VirtualInsertion?
         if let focusedPresentation {
@@ -468,17 +502,8 @@ class SidebarTabListViewController: NSViewController {
         return SidebarDiffableSnapshotBuilder(
             rootItems: rootItems,
             virtualInsertion: virtualInsertion,
-            hiddenItemID: temporarilyHiddenRealBookmarkGuid.map(AnyHashable.init)
+            hiddenItemID: hiddenBookmarkGuid.map(AnyHashable.init)
         ).makeSnapshot()
-    }
-
-    private func syncDiffableSnapshotToCurrentDataSource() {
-        outlineView.resetDiffableSnapshot(
-            makeDiffableSnapshot(
-                rootItems: allItems,
-                focusedPresentation: focusedBookmarkPresentation
-            )
-        )
     }
 
     /// Cancel Combine subscriptions on all visible tab cells before reloadData.
@@ -2074,14 +2099,17 @@ extension SidebarTabListViewController: NSOutlineViewDataSource {
         guard focusedBookmarkPresentation != nil else { return }
         if let floatingGuid = floatingBookmarkGuid,
            let bookmark = browserState.bookmarkManager.bookmark(withGuid: floatingGuid) {
-            removeFocusedBookmarkPresentation(animated: false)
-            floatingBookmarkGuid = nil
-            floatingAnchorFolderGuid = nil
-            allowExpandDuringDrag = true
-            expandParents(of: bookmark)
-            allowExpandDuringDrag = false
+            let expandAfterClear = OneShotAction { [weak self] in
+                guard let self else { return }
+                self.allowExpandDuringDrag = true
+                self.expandParents(of: bookmark)
+                self.allowExpandDuringDrag = false
+            }
+            if clearFocusedBookmarkPresentation(animated: false, afterReload: expandAfterClear.run) {
+                expandAfterClear.run()
+            }
         } else {
-            removeFocusedBookmarkPresentation(animated: false)
+            clearFocusedBookmarkPresentation(animated: false)
         }
     }
     
@@ -2863,13 +2891,8 @@ extension SidebarTabListViewController: NSOutlineViewDelegate {
         // Defer to next run loop to avoid conflicting with NSOutlineView's expand animation.
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
-            let oldPresentation = self.focusedBookmarkPresentation
             self.restoreExpandedDescendantsIfNeeded(of: bookmark)
-            self.rebuildFloatingBookmarkPresentationIfNeeded()
-            self.updateVisibleBookmarkTabs()
-            let newPresentation = self.focusedBookmarkPresentation
-            self.applyFloatingPresentation(from: oldPresentation, to: newPresentation, animated: false)
-            self.updateFloatingNewTabVisibility()
+            self.refreshAllItems(animated: false)
         }
     }
     
@@ -2884,12 +2907,7 @@ extension SidebarTabListViewController: NSOutlineViewDelegate {
         temporarilyHiddenRealBookmarkGuid = nil
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
-            let oldPresentation = self.focusedBookmarkPresentation
-            self.rebuildFloatingBookmarkPresentationIfNeeded()
-            self.updateVisibleBookmarkTabs()
-            let newPresentation = self.focusedBookmarkPresentation
-            self.applyFloatingPresentation(from: oldPresentation, to: newPresentation, animated: false)
-            self.updateFloatingNewTabVisibility()
+            self.refreshAllItems(animated: false)
         }
     }
     
@@ -2920,40 +2938,21 @@ extension SidebarTabListViewController: SidebarTabListItemOwner {
                 
                 let desired = computeFocusedBookmarkPresentation(for: focusingTab, treatingFolderAsCollapsed: folder)
                 guard let desired else {
-            outlineView.animator().collapseItem(item)
+                    outlineView.animator().collapseItem(item)
                     return
                 }
                 
-                floatingBookmarkGuid = focusingBookmark.guid
-                floatingAnchorFolderGuid = folder.guid
-                
-                if let parent = focusingBookmark.parent {
-                    let siblings = visibleChildren(for: parent)
-                    if let idx = siblings.firstIndex(where: { $0.id == focusingBookmark.id }) {
-                        outlineView.beginUpdates()
-                        temporarilyHiddenRealBookmarkGuid = focusingBookmark.guid
-                        outlineView.removeItems(at: IndexSet(integer: idx), inParent: parent, withAnimation: [.effectFade])
-                        focusedBookmarkPresentation = desired
-                        outlineView.insertItems(at: IndexSet(integer: desired.insertionIndex), inParent: desired.insertionParent, withAnimation: [.effectFade, .effectGap])
-                        outlineView.endUpdates()
-                        syncDiffableSnapshotToCurrentDataSource()
-                    } else {
-                        focusedBookmarkPresentation = desired
-                        outlineView.beginUpdates()
-                        outlineView.insertItems(at: IndexSet(integer: desired.insertionIndex), inParent: desired.insertionParent, withAnimation: [.effectFade, .effectGap])
-                        outlineView.endUpdates()
-                        syncDiffableSnapshotToCurrentDataSource()
-                    }
-                } else {
-                    focusedBookmarkPresentation = desired
-                    outlineView.beginUpdates()
-                    outlineView.insertItems(at: IndexSet(integer: desired.insertionIndex), inParent: desired.insertionParent, withAnimation: [.effectFade, .effectGap])
-                    outlineView.endUpdates()
-                    syncDiffableSnapshotToCurrentDataSource()
+                let presentationState = FloatingBookmarkPresentationState(
+                    focusedPresentation: desired,
+                    floatingBookmarkGuid: focusingBookmark.guid,
+                    floatingAnchorFolderGuid: folder.guid,
+                    hiddenBookmarkGuid: focusingBookmark.guid
+                )
+                refreshAllItems(presentationState: presentationState) { [weak self] in
+                    guard let self else { return }
+                    self.outlineView.animator().collapseItem(item)
+                    self.applyFocusingSelection(for: focusingTab)
                 }
-                
-                outlineView.animator().collapseItem(item)
-                applyFocusingSelection(for: focusingTab)
                 return
             }
             
@@ -2976,18 +2975,22 @@ extension SidebarTabListViewController: SidebarTabListItemOwner {
                    existing.insertionIndex == expected.insertionIndex,
                    existing.proxy.underlyingBookmark.guid == focusingBookmark.guid {
                     
-                    removeFocusedBookmarkPresentation(animated: false)
-                    temporarilyHiddenRealBookmarkGuid = nil
-                    outlineView.expandItem(item)
-                    DispatchQueue.main.async { [weak self] in
-                        self?.updateVisibleBookmarkTabs()
+                    let expandAfterClear = OneShotAction { [weak self] in
+                        guard let self else { return }
+                        self.outlineView.expandItem(item)
+                        DispatchQueue.main.async { [weak self] in
+                            self?.updateVisibleBookmarkTabs()
+                        }
+                        self.applyFocusingSelection(for: focusingTab)
                     }
-                    applyFocusingSelection(for: focusingTab)
+                    if clearFocusedBookmarkPresentation(animated: false, afterReload: expandAfterClear.run) {
+                        expandAfterClear.run()
+                    }
                     return
                 }
                 
                 temporarilyHiddenRealBookmarkGuid = nil
-            outlineView.animator().expandItem(item)
+                outlineView.animator().expandItem(item)
                 
                 DispatchQueue.main.async { [weak self] in
                     self?.updateVisibleBookmarkTabs()
@@ -3176,49 +3179,19 @@ extension SidebarTabListViewController {
         traverse(folder)
     }
     
-    private func applyFloatingPresentation(
-        from old: (proxy: FocusedBookmarkSidebarItem, insertionParent: SidebarItem?, insertionIndex: Int)?,
-        to new: (proxy: FocusedBookmarkSidebarItem, insertionParent: SidebarItem?, insertionIndex: Int)?,
-        animated: Bool
-    ) {
-        let anim: NSOutlineView.AnimationOptions = animated ? [.effectFade, .effectGap] : []
-        
-        if let old, let new,
-           old.proxy.underlyingBookmark.guid == new.proxy.underlyingBookmark.guid,
-           old.insertionParent?.id == new.insertionParent?.id,
-           old.insertionIndex == new.insertionIndex {
-            syncDiffableSnapshotToCurrentDataSource()
-            return
-        }
-        if old == nil, new == nil {
-            syncDiffableSnapshotToCurrentDataSource()
-            return
-        }
-        
-        outlineView.beginUpdates()
-        
-        if let old {
-            focusedBookmarkPresentation = nil
-            if canApplyFocusedPresentationMutation(parent: old.insertionParent, index: old.insertionIndex, isInsertion: false) {
-                outlineView.removeItems(at: IndexSet(integer: old.insertionIndex), inParent: old.insertionParent, withAnimation: anim)
-            } else {
-                outlineView.reloadData()
-            }
-        }
-        
-        if let new {
-            focusedBookmarkPresentation = new
-            if canApplyFocusedPresentationMutation(parent: new.insertionParent, index: new.insertionIndex, isInsertion: true) {
-                outlineView.insertItems(at: IndexSet(integer: new.insertionIndex), inParent: new.insertionParent, withAnimation: anim)
-            } else {
-                outlineView.reloadData()
-            }
-        }
-        
-        outlineView.endUpdates()
-        syncDiffableSnapshotToCurrentDataSource()
+    @discardableResult
+    private func clearFocusedBookmarkPresentation(animated: Bool, afterReload: (() -> Void)? = nil) -> Bool {
+        refreshAllItems(
+            presentationState: .cleared,
+            animated: animated,
+            afterReload: afterReload
+        )
     }
-    private func nextFloatingBookmarkPresentationState(rootItems: [SidebarItem]) -> FloatingBookmarkPresentationState {
+
+    private func nextFloatingBookmarkPresentationState(
+        rootItems: [SidebarItem],
+        hiddenBookmarkGuid: String? = nil
+    ) -> FloatingBookmarkPresentationState {
         guard let bookmarkGuid = floatingBookmarkGuid,
               let bookmark = browserState.bookmarkManager.bookmark(withGuid: bookmarkGuid) else {
             return .cleared
@@ -3248,15 +3221,9 @@ extension SidebarTabListViewController {
                 insertionIndex: expected.insertionIndex
             ),
             floatingBookmarkGuid: bookmarkGuid,
-            floatingAnchorFolderGuid: firstCollapsed.guid
+            floatingAnchorFolderGuid: firstCollapsed.guid,
+            hiddenBookmarkGuid: hiddenBookmarkGuid
         )
-    }
-
-    private func rebuildFloatingBookmarkPresentationIfNeeded() {
-        let state = nextFloatingBookmarkPresentationState(rootItems: allItems)
-        focusedBookmarkPresentation = state.focusedPresentation
-        floatingBookmarkGuid = state.floatingBookmarkGuid
-        floatingAnchorFolderGuid = state.floatingAnchorFolderGuid
     }
 
     /// Updates `browserState.visibleBookmarkTabs` based on what bookmark items are currently visible in the outline view.
@@ -3417,55 +3384,6 @@ extension SidebarTabListViewController {
         }
     }
 
-    private func applyFocusedBookmarkPresentation(for tab: Tab?, animated: Bool) {
-        let old = focusedBookmarkPresentation
-        let new = computeFocusedBookmarkPresentation(for: tab)
-        
-        if let old, let new,
-           old.proxy.underlyingBookmark.guid == new.proxy.underlyingBookmark.guid,
-           old.insertionParent?.id == new.insertionParent?.id,
-           old.insertionIndex == new.insertionIndex {
-            syncDiffableSnapshotToCurrentDataSource()
-            applyFocusingSelection(for: tab)
-            updateVisibleBookmarkTabs()
-            return
-        }
-        if old == nil, new == nil {
-            syncDiffableSnapshotToCurrentDataSource()
-            applyFocusingSelection(for: tab)
-            updateVisibleBookmarkTabs()
-            return
-        }
-        
-        let anim: NSOutlineView.AnimationOptions = animated ? [.effectFade, .effectGap] : []
-        
-        outlineView.beginUpdates()
-        
-        if let old {
-            focusedBookmarkPresentation = nil
-            if canApplyFocusedPresentationMutation(parent: old.insertionParent, index: old.insertionIndex, isInsertion: false) {
-                outlineView.removeItems(at: IndexSet(integer: old.insertionIndex), inParent: old.insertionParent, withAnimation: anim)
-            } else {
-                outlineView.reloadData()
-            }
-        }
-        
-        if let new {
-            focusedBookmarkPresentation = new
-            if canApplyFocusedPresentationMutation(parent: new.insertionParent, index: new.insertionIndex, isInsertion: true) {
-                outlineView.insertItems(at: IndexSet(integer: new.insertionIndex), inParent: new.insertionParent, withAnimation: anim)
-            } else {
-                outlineView.reloadData()
-            }
-        }
-        
-        outlineView.endUpdates()
-        syncDiffableSnapshotToCurrentDataSource()
-        
-        applyFocusingSelection(for: tab)
-        updateVisibleBookmarkTabs()
-    }
-    
     private func clearFloatingProxyIfTabClosed() {
         guard let floatingGuid = floatingBookmarkGuid else { return }
         guard let bookmark = browserState.bookmarkManager.bookmark(withGuid: floatingGuid) else {
@@ -3478,46 +3396,7 @@ extension SidebarTabListViewController {
     }
     
     private func clearFloatingProxyState() {
-        removeFocusedBookmarkPresentation(animated: true)
-        floatingBookmarkGuid = nil
-        floatingAnchorFolderGuid = nil
-    }
-    
-    private func removeFocusedBookmarkPresentation(animated: Bool) {
-        guard let old = focusedBookmarkPresentation else { return }
-        let anim: NSOutlineView.AnimationOptions = animated ? [.effectFade, .effectGap] : []
-        
-        outlineView.beginUpdates()
-        focusedBookmarkPresentation = nil
-        if canApplyFocusedPresentationMutation(parent: old.insertionParent, index: old.insertionIndex, isInsertion: false) {
-            outlineView.removeItems(at: IndexSet(integer: old.insertionIndex), inParent: old.insertionParent, withAnimation: anim)
-        } else {
-            outlineView.reloadData()
-        }
-        outlineView.endUpdates()
-        syncDiffableSnapshotToCurrentDataSource()
-
-        updateVisibleBookmarkTabs()
-    }
-    
-    /// Bounds-check helper to prevent occasional crashes when NSOutlineView structural updates
-    /// race with animations or external data refresh.
-    private func canApplyFocusedPresentationMutation(parent: SidebarItem?, index: Int, isInsertion: Bool) -> Bool {
-        if let parent {
-            let count = outlineView(outlineView, numberOfChildrenOfItem: parent)
-            if isInsertion {
-                return index >= 0 && index <= count
-            } else {
-                return index >= 0 && index < count
-            }
-        } else {
-            let count = outlineView(outlineView, numberOfChildrenOfItem: nil)
-            if isInsertion {
-                return index >= 0 && index <= count
-            } else {
-                return index >= 0 && index < count
-            }
-        }
+        clearFocusedBookmarkPresentation(animated: true)
     }
 
     private var newTabButtonItem: SidebarItem? {
@@ -4383,9 +4262,9 @@ extension SidebarTabListViewController: NSDraggingSource {
 ///
 /// #### 1) Implementation (UI-only, real hierarchy untouched)
 /// - `Bookmark.parent` / `Bookmark.children` are **never** mutated.
-/// - A `FocusedBookmarkSidebarItem` (conforming to `UnderlyingBookmarkProviding`) is injected
-///   into a parent's children via `insertItems/removeItems + beginUpdates/endUpdates` to avoid
-///   breaking animations with `reloadData()`.
+/// - A `FocusedBookmarkSidebarItem` (conforming to `UnderlyingBookmarkProviding`) is passed
+///   to `SidebarDiffableSnapshotBuilder` as a virtual insertion, so proxy insert/remove/move
+///   operations use the same diffable outline path as the rest of the sidebar.
 ///
 /// #### 2) Sticky state (follows collapse/expand, not focusing)
 /// Once a floating proxy appears (e.g. Tab1 floats when F1 collapses), it persists even if the
@@ -4408,7 +4287,7 @@ extension SidebarTabListViewController: NSDraggingSource {
 /// - F1 expanded, F2 collapsed: Tab1 moves to after F2 (under F1)
 /// - Both expanded: Tab1 visible at its real position, proxy removed
 ///
-/// Implemented by `rebuildFloatingBookmarkPresentationIfNeeded()`:
+/// Implemented by `nextFloatingBookmarkPresentationState(rootItems:)` during `refreshAllItems`:
 /// - Walks the parent chain from `floatingBookmarkGuid` to find the first collapsed folder.
 /// - If none found: clear floating state + remove proxy.
 /// - If found: update `floatingAnchorFolderGuid` and reposition proxy after that folder.

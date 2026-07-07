@@ -99,6 +99,26 @@ final class SidebarDiffableSnapshotTests: XCTestCase {
         )
     }
 
+    func testSidebarSnapshotHidesRealItemAndInsertsVirtualReplacement() {
+        let real = SnapshotSidebarItem(id: "real")
+        let sibling = SnapshotSidebarItem(id: "sibling")
+        let virtual = SnapshotSidebarItem(id: "virtual")
+        let parent = SnapshotSidebarItem(id: "parent", children: [real, sibling])
+
+        let snapshot = SidebarDiffableSnapshotBuilder(
+            rootItems: [parent],
+            virtualInsertion: .init(item: virtual, parentID: AnyHashable("parent"), index: 0),
+            hiddenItemID: AnyHashable("real")
+        ).makeSnapshot()
+
+        XCTAssertEqual(
+            snapshot.childIDs(of: AnyHashable("parent")),
+            [AnyHashable("virtual"), AnyHashable("sibling")]
+        )
+        XCTAssertNil(snapshot.item(for: AnyHashable("real")))
+        XCTAssertTrue(snapshot.item(for: AnyHashable("virtual")) === virtual)
+    }
+
     func testSidebarSnapshotTreatsNonExpandableItemsAsLeaves() {
         let member = SnapshotSidebarItem(id: "member")
         let group = SnapshotSidebarItem(

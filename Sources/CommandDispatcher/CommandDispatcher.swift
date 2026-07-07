@@ -45,6 +45,14 @@ struct CommandDispatcher {
         .IDC_VIEW_SOURCE,
     ]
 
+    /// Commands that stay available while a window is agent-controlled — only
+    /// Space navigation, so the user can always leave the agent Space. Every
+    /// other browser command (menu or shortcut) is blocked until they take
+    /// control. See `isWindowAgentLocked`.
+    private static let agentLockAllowedCommands: Set<CommandWrapper> =
+        Set(CommandWrapper.spaceSelectionCommands
+            + [.PHI_SELECT_NEXT_SPACE, .PHI_SELECT_PREVIOUS_SPACE])
+
     /// Reverse lookup: user-configured shortcut key → PHI command.
     /// Rebuilt when shortcuts change via `reloadPhiShortcutMap()`.
     private static var phiShortcutMap: [ShortcutsKey: CommandWrapper] = buildPhiShortcutMap()
@@ -71,10 +79,26 @@ struct CommandDispatcher {
         return dispatchCommand(command, to: window)
     }
     
+    /// True while `window` shows an agent Space the agent currently controls.
+    /// Its workspace is off-limits to the user until they take control.
+    @MainActor
+    static func isWindowAgentLocked(_ window: NSWindow) -> Bool {
+        guard let state = MainBrowserWindowControllersManager.shared
+                .findControllerWith(window: window)?.browserState else { return false }
+        return AgentSpaceManager.shared.isAgentOwned(state.spaceId)
+    }
+
     @MainActor
     private static func dispatchCommand(_ command: CommandWrapper, to window: NSWindow) -> Bool {
         guard let windowController = MainBrowserWindowControllersManager.shared.findControllerWith(window: window) else {
             return false
+        }
+        // Agent lock: while the agent controls this window, block every command
+        // except Space navigation. The menu items are greyed and the shortcuts
+        // swallowed in `handleKeyEquivalent`; this is the execution backstop for
+        // anything that still reaches dispatch. Returning true = swallowed.
+        if !agentLockAllowedCommands.contains(command), isWindowAgentLocked(window) {
+            return true
         }
         // DevTools can't attach to the native NTP (no WebContents) — swallow the command.
         if nativeNtpBlockedCommands.contains(command),
@@ -234,7 +258,15 @@ struct CommandDispatcher {
         if let phiCommand = phiShortcutMap[key] {
             return dispatchCommand(phiCommand, to: window)
         }
-        
+
+        // Agent lock: swallow every other browser shortcut while the agent
+        // controls this window, so Chromium never runs it. Space-navigation is
+        // handled above and stays live, so the user can still leave the agent
+        // Space with the keyboard.
+        if isWindowAgentLocked(window) {
+            return true
+        }
+
         return false
     }
 

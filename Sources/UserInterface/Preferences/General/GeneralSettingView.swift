@@ -57,6 +57,7 @@ struct GeneralSettingView: View {
                 }
                 AppearanceSectionView()
                 BrowsingSectionView()
+                DeveloperSectionView()
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.vertical, 36)
@@ -361,6 +362,229 @@ private struct BrowsingSectionView: View {
             .activeWindowController?
             .browserState
             .createTab("chrome://settings")
+    }
+}
+
+private struct DeveloperSectionView: View {
+    // A Claude-Code-style coding agent that loads skills from a folder.
+    // "Install" links this app's bundled phi-browser skill into
+    // <skillsDirectory>/phi-browser so the agent can drive Phi over CDP.
+    private struct SkillTarget: Identifiable {
+        let id: String
+        let name: String
+        let skillsDirectory: URL
+
+        var linkURL: URL {
+            skillsDirectory.appendingPathComponent("phi-browser", isDirectory: true)
+        }
+    }
+
+    private static let skillTargets: [SkillTarget] = {
+        let home = FileManager.default.homeDirectoryForCurrentUser
+        return [
+            SkillTarget(id: "claude", name: "Claude Code",
+                        skillsDirectory: home.appendingPathComponent(".claude/skills", isDirectory: true)),
+            SkillTarget(id: "codex", name: "Codex",
+                        skillsDirectory: home.appendingPathComponent(".codex/skills", isDirectory: true)),
+            SkillTarget(id: "openclaw", name: "OpenClaw",
+                        skillsDirectory: home.appendingPathComponent(".openclaw/skills", isDirectory: true)),
+        ]
+    }()
+
+    // The skill tree is bundled at Contents/Resources/claude-skill/phi-browser.
+    private static var bundledSkillURL: URL? {
+        Bundle.main.resourceURL?
+            .appendingPathComponent("claude-skill/phi-browser", isDirectory: true)
+    }
+
+    // Reflects whether the CDP endpoint pref is set. Written through the app's
+    // own UserDefaults so the value the launcher reads next start is the one we
+    // wrote here (a `defaults write` from another process can lag via cfprefsd).
+    @State private var remoteDebuggingEnabled: Bool =
+        PhiPreferences.AgentSpaces.remoteDebuggingPort != nil
+    // IDs of agents whose skills folder already links to *this* app's bundle.
+    @State private var installedTargets: Set<String> = DeveloperSectionView.installedTargetIDs()
+
+    var body: some View {
+        GeneralSectionView(title: NSLocalizedString("Developer", comment: "General settings - Developer section title")) {
+            GeneralContainerView {
+                HStack(alignment: .top, spacing: 12) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(NSLocalizedString("Enable remote debugging (CDP)", comment: "General settings - Toggle title for the Chrome DevTools Protocol endpoint"))
+                            .font(.system(size: 13))
+                            .themedForeground(.textPrimary)
+                        Text(NSLocalizedString("Lets local tools drive Phi over the DevTools Protocol on 127.0.0.1. Any local process can control the browser while this is on — leave it off when you’re not using it. Takes effect after a relaunch.", comment: "General settings - Security note for the remote debugging toggle"))
+                            .font(.system(size: 11))
+                            .themedForeground(.textTertiary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    Spacer(minLength: 12)
+                    Toggle("", isOn: Binding(
+                        get: { remoteDebuggingEnabled },
+                        set: { newValue in
+                            remoteDebuggingEnabled = newValue
+                            // 0 = ephemeral port written to DevToolsActivePort.
+                            PhiPreferences.AgentSpaces.remoteDebuggingPort = newValue ? 0 : nil
+                            // Flush now so the relaunched process reads the new
+                            // value (the whole point of an in-app toggle over a
+                            // cross-process `defaults write`).
+                            UserDefaults.standard.synchronize()
+                            promptRelaunch(enabling: newValue)
+                        }
+                    ))
+                    .labelsHidden()
+                    .toggleStyle(.switch)
+                    .controlSize(.mini)
+                    .themedTint(.themeColor)
+                }
+                .padding(.vertical, 12)
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+                Divider()
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(NSLocalizedString("Install the phi-browser skill", comment: "General settings - Title for installing the phi-browser agent skill"))
+                        .font(.system(size: 13))
+                        .themedForeground(.textPrimary)
+                    Text(NSLocalizedString("Links the skill bundled in this app into an AI coding agent’s skills folder so it can drive Phi over the DevTools Protocol. Requires Node 22+; enable remote debugging above so it can connect.", comment: "General settings - Explanation for the phi-browser skill installer"))
+                        .font(.system(size: 11))
+                        .themedForeground(.textTertiary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .padding(.top, 12)
+                .padding(.bottom, 2)
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+                ForEach(Self.skillTargets) { target in
+                    HStack(alignment: .center, spacing: 12) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(target.name)
+                                .font(.system(size: 13))
+                                .themedForeground(.textPrimary)
+                            Text(Self.displayPath(target.linkURL))
+                                .font(.system(size: 11))
+                                .themedForeground(.textTertiary)
+                        }
+                        Spacer(minLength: 12)
+                        Button(installedTargets.contains(target.id)
+                            ? NSLocalizedString("Reinstall", comment: "General settings - Button to reinstall the phi-browser skill")
+                            : NSLocalizedString("Install", comment: "General settings - Button to install the phi-browser skill")) {
+                            installSkill(for: target)
+                        }
+                        .controlSize(.small)
+                        .buttonStyle(.bordered)
+                    }
+                    .padding(.vertical, 8)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
+            }
+        }
+    }
+
+    // MARK: - phi-browser skill installer
+
+    private static func displayPath(_ url: URL) -> String {
+        let home = FileManager.default.homeDirectoryForCurrentUser.path
+        let path = url.path
+        guard path.hasPrefix(home) else { return path }
+        return "~" + String(path.dropFirst(home.count))
+    }
+
+    static func installedTargetIDs() -> Set<String> {
+        guard let bundled = bundledSkillURL else { return [] }
+        return Set(skillTargets.filter { isLinked($0.linkURL, to: bundled) }.map(\.id))
+    }
+
+    // True only when linkURL is a symlink resolving to *this* app's bundled
+    // skill, so a link left by another build (or a stale target) reads as
+    // "Install" rather than already-installed.
+    private static func isLinked(_ link: URL, to bundled: URL) -> Bool {
+        guard let dest = try? FileManager.default
+            .destinationOfSymbolicLink(atPath: link.path) else { return false }
+        let resolved = dest.hasPrefix("/")
+            ? dest
+            : link.deletingLastPathComponent().appendingPathComponent(dest).path
+        return URL(fileURLWithPath: resolved).standardizedFileURL.path
+            == bundled.standardizedFileURL.path
+    }
+
+    private func installSkill(for target: SkillTarget) {
+        let fm = FileManager.default
+        guard let bundled = Self.bundledSkillURL,
+              fm.fileExists(atPath: bundled.path) else {
+            presentSkillAlert(
+                title: NSLocalizedString("Skill not found in app bundle", comment: "General settings - Skill install failure title"),
+                body: NSLocalizedString("This build doesn’t include the phi-browser skill resources. Rebuild Phi Browser and try again.", comment: "General settings - Skill install failure body when the resource is missing"),
+                style: .warning)
+            return
+        }
+
+        let link = target.linkURL
+        do {
+            try fm.createDirectory(at: target.skillsDirectory, withIntermediateDirectories: true)
+
+            if (try? fm.destinationOfSymbolicLink(atPath: link.path)) != nil {
+                // An existing symlink (ours, another build's, or broken) — replace it.
+                try fm.removeItem(at: link)
+            } else if fm.fileExists(atPath: link.path) {
+                // A real file/directory the user placed — don't clobber without asking.
+                guard confirmSkillOverwrite(at: link.path) else { return }
+                try fm.removeItem(at: link)
+            }
+
+            try fm.createSymbolicLink(at: link, withDestinationURL: bundled)
+            installedTargets.insert(target.id)
+            presentSkillAlert(
+                title: NSLocalizedString("Skill installed", comment: "General settings - Skill install success title"),
+                body: String(
+                    format: NSLocalizedString("%@ can now use the phi-browser skill. If it isn’t already on, enable remote debugging above and relaunch so the skill can connect.", comment: "General settings - Skill install success body; %@ is the agent name"),
+                    target.name),
+                style: .informational)
+        } catch {
+            presentSkillAlert(
+                title: NSLocalizedString("Couldn’t install the skill", comment: "General settings - Skill install error title"),
+                body: error.localizedDescription,
+                style: .warning)
+        }
+    }
+
+    private func confirmSkillOverwrite(at path: String) -> Bool {
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = NSLocalizedString("Replace the existing skill?", comment: "General settings - Skill overwrite prompt title")
+        alert.informativeText = String(
+            format: NSLocalizedString("“%@” already exists and isn’t a link created by Phi Browser. Replace it with a link to this app’s bundled skill?", comment: "General settings - Skill overwrite prompt body"),
+            path)
+        alert.addButton(withTitle: NSLocalizedString("Replace", comment: "General settings - Skill overwrite confirm button"))
+        alert.addButton(withTitle: NSLocalizedString("Cancel", comment: "General settings - Skill overwrite cancel button"))
+        return alert.runModal() == .alertFirstButtonReturn
+    }
+
+    private func presentSkillAlert(title: String, body: String, style: NSAlert.Style) {
+        let alert = NSAlert()
+        alert.alertStyle = style
+        alert.messageText = title
+        alert.informativeText = body
+        alert.addButton(withTitle: NSLocalizedString("OK", comment: "General settings - Alert dismiss button"))
+        alert.runModal()
+    }
+
+    private func promptRelaunch(enabling: Bool) {
+        let alert = NSAlert()
+        alert.messageText = NSLocalizedString("Relaunch to apply?", comment: "General settings - Relaunch prompt title after toggling remote debugging")
+        alert.informativeText = enabling
+            ? NSLocalizedString("Remote debugging starts after Phi Browser restarts.", comment: "General settings - Relaunch prompt body when enabling remote debugging")
+            : NSLocalizedString("Remote debugging stops after Phi Browser restarts.", comment: "General settings - Relaunch prompt body when disabling remote debugging")
+        alert.addButton(withTitle: NSLocalizedString("Relaunch Now", comment: "General settings - Relaunch prompt confirm button"))
+        alert.addButton(withTitle: NSLocalizedString("Later", comment: "General settings - Relaunch prompt dismiss button"))
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+
+        let quoted = "'" + Bundle.main.bundleURL.path.replacingOccurrences(of: "'", with: "'\\''") + "'"
+        let relaunch = Process()
+        relaunch.executableURL = URL(fileURLWithPath: "/bin/sh")
+        relaunch.arguments = ["-c", "( sleep 0.5; /usr/bin/open -n \(quoted) ) &"]
+        try? relaunch.run()
+        DispatchQueue.main.async { NSApp.terminate(nil) }
     }
 }
 

@@ -139,6 +139,14 @@ extension AppController {
         )
         imagePreviewDemoItem.target = self
         debugMenu.addItem(imagePreviewDemoItem)
+
+        let simulateAgentItem = NSMenuItem(
+            title: "Simulate Agent Space Task",
+            action: #selector(simulateAgentTask(_:)),
+            keyEquivalent: ""
+        )
+        simulateAgentItem.target = self
+        debugMenu.addItem(simulateAgentItem)
 #endif
         
         let themeMenuItem = NSMenuItem(title: "Debug Theme", action: nil, keyEquivalent: "")
@@ -523,6 +531,25 @@ extension AppController {
         guard let url = AccountController.shared.account?.userDataStorage else { return }
         NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: url.path)
     }
+
+    #if DEBUG
+    /// Test harness: spawns a hidden agent Space for the first available profile
+    /// and drives AgentSpaceManager directly (no phi-agent / Kensington backend),
+    /// so the hidden-spawn, pip badge, and overlay can be exercised locally.
+    @MainActor
+    @objc func simulateAgentTask(_ sender: Any?) {
+        let profileName = ProfileManager.shared.profiles.first?.profileId ?? "Default"
+        let taskId = "debug-\(UUID().uuidString)"
+        AgentSpaceManager.shared.createAgentSpace(taskId: taskId, profileName: profileName) { spaceId, windowId in
+            guard let spaceId, windowId != nil else {
+                AppLogWarn("[AgentSpace][debug] simulate failed to spawn")
+                return
+            }
+            AppLogInfo("[AgentSpace][debug] simulated agent Space \(spaceId); switch to its pip to watch")
+            AgentSpaceManager.shared.setStatusCaption(taskId: taskId, caption: "Reading the page…")
+        }
+    }
+    #endif
     
     @MainActor
     @objc func clearLoginStatus(_ sender: Any?) {

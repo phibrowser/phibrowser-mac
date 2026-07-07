@@ -405,7 +405,13 @@ class BrowserState {
             configuration: BrowserThemeConfigurationResolver.resolve(isIncognito: isIncognito)
         )
         self.layoutMode = Self.buildLayoutMode()
-        if isIncognito {
+        // Agent Spaces are isolated workspaces, like incognito: they show none
+        // of the profile's pinned tabs and grow no bookmarks of their own, so
+        // the agent's window stays a clean, self-contained surface. The agent
+        // task is recorded before its window is created, so isAgentSpace() is
+        // already true here.
+        let isIsolated = isIncognito || AgentSpaceManager.shared.isAgentSpace(spaceId)
+        if isIsolated {
             pinnedTabs = []
             visibleBookmarkTabs = []
         } else {
@@ -992,6 +998,10 @@ class BrowserState {
         tabSwitchManager.handleExternalFocusChange()
         focusingTab = tab
         tabSwitchManager.recordActiveTab(tab)
+        // Agent Space: the tab the agent just switched to is its operating tab
+        // (kept as the active tab). Mask it like AI chat masks a tab it drives.
+        // No-op for non-agent Spaces.
+        AgentSpaceManager.shared.refreshOperatingMask(forSpaceId: spaceId, activeTabId: tab.guid)
     }
 
     // MARK: - Multi-selection

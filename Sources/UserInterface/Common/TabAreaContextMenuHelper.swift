@@ -18,11 +18,17 @@ final class TabAreaContextMenuHelper: NSObject {
     func populate(_ menu: NSMenu) {
         menu.removeAllItems()
 
+        // Disable New Tab while the agent controls this Space: the user must not
+        // add tabs to the agent's workspace until they take control. Nil action
+        // greys it out via AppKit's automatic menu enabling.
+        let agentLocked = MainActor.assumeIsolated {
+            AgentSpaceManager.shared.isAgentOwned(browserState?.spaceId ?? "")
+        }
         menu.addItem(NSMenuItem(
             title: NSLocalizedString("New Tab", comment: "Tab area context menu - Open a new browser tab"),
-            action: #selector(newTab),
+            action: agentLocked ? nil : #selector(newTab),
             keyEquivalent: "t"
-        ).configured { $0.keyEquivalentModifierMask = .command; $0.target = self })
+        ).configured { $0.keyEquivalentModifierMask = .command; $0.target = agentLocked ? nil : self })
 
         menu.addItem(NSMenuItem(
             title: NSLocalizedString("Reopen Closed Tab", comment: "Tab area context menu - Reopen the last closed tab"),

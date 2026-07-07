@@ -9,6 +9,14 @@ import SwiftData
 
 extension MainBrowserWindowController {
     @IBAction func newBrowserTab(_ sender: Any?) {
+        // While the agent controls this Space, the watching user can't add tabs
+        // to its workspace. This is the choke point for every New Tab affordance
+        // — the sidebar "+" cell and floating button, the horizontal strip, and
+        // ⌘T's command path — so gating here covers them all. Taking control
+        // re-enables it. The agent creates tabs over CDP, not through here.
+        if MainActor.assumeIsolated({ AgentSpaceManager.shared.isAgentOwned(browserState.spaceId) }) {
+            return
+        }
         let openNewTabPage = PhiPreferences.GeneralSettings.openNewTabPageOnCmdT.loadValue()
         let focusingTabText = browserState.focusingTab?.guid ?? -1
         AppLogDebug(

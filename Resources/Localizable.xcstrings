@@ -19,6 +19,9 @@
     "· %@" : {
 
     },
+    "“%@” already exists and isn’t a link created by Phi Browser. Replace it with a link to this app’s bundled skill?" : {
+      "comment" : "General settings - Skill overwrite prompt body"
+    },
     "@%@" : {
 
     },
@@ -119,6 +122,9 @@
           }
         }
       }
+    },
+    "%@ can now use the phi-browser skill. If it isn’t already on, enable remote debugging above and relaunch so the skill can connect." : {
+      "comment" : "General settings - Skill install success body; %@ is the agent name"
     },
     "%@ tab group, %d tabs, collapsed" : {
       "comment" : "Tab Groups - VoiceOver label for collapsed horizontal-strip group chip",
@@ -345,7 +351,7 @@
       "comment" : "Title shown when deleting a Space is blocked by an in-progress import"
     },
     "Cancel" : {
-      "comment" : "AI settings - Cancel button in disable-AI confirmation alert\nAI settings - Cancel button in disable-connectors confirmation alert\nAccount settings - Cancel button in logout confirmation dialog\nAccount settings - Cancel button in rename dialog\nCancel\nCancel button\nDebug clear data - Alert button to cancel clearing user data\nDebug import user data - Alert button to cancel importing user data\nDownload item row - Tooltip for cancel button during safety scan\nDownload item row - Tooltip for cancel download button\nEditor - Cancel button title\nGeneric - Cancel button to dismiss an alert\nNew folder dialog cancel button title\nTab group rename alert - Cancel button\nTooltip for cancel button during safety scan in living downloads toast\nUpdate alert - Button to cancel update installation"
+      "comment" : "AI settings - Cancel button in disable-AI confirmation alert\nAI settings - Cancel button in disable-connectors confirmation alert\nAccount settings - Cancel button in logout confirmation dialog\nAccount settings - Cancel button in rename dialog\nCancel\nCancel button\nDebug clear data - Alert button to cancel clearing user data\nDebug import user data - Alert button to cancel importing user data\nDownload item row - Tooltip for cancel button during safety scan\nDownload item row - Tooltip for cancel download button\nEditor - Cancel button title\nGeneral settings - Skill overwrite cancel button\nGeneric - Cancel button to dismiss an alert\nNew folder dialog cancel button title\nTab group rename alert - Cancel button\nTooltip for cancel button during safety scan in living downloads toast\nUpdate alert - Button to cancel update installation"
     },
     "Canceled" : {
       "comment" : "Download item row - Status label when download was cancelled"
@@ -524,6 +530,9 @@
     "Couldn't delete profile" : {
       "comment" : "Title of the profile-delete error"
     },
+    "Couldn’t install the skill" : {
+      "comment" : "General settings - Skill install error title"
+    },
     "Couldn't rename profile" : {
       "comment" : "Title of the profile-rename error"
     },
@@ -589,6 +598,9 @@
     },
     "Describe the issue in detail" : {
       "comment" : "Feedback form - Section header prompting user to describe the issue"
+    },
+    "Developer" : {
+      "comment" : "General settings - Developer section title"
     },
     "Discard" : {
       "comment" : "Download item row - Tooltip for discard button on blocked download\nDownload item row - Tooltip for discard button on safety warning\nTooltip for discard button on blocked download in living downloads toast\nTooltip for discard button on safety warning in living downloads toast"
@@ -691,6 +703,9 @@
     },
     "Enable External Data Connectors" : {
       "comment" : "AI settings - Toggle to enable external data connectors"
+    },
+    "Enable remote debugging (CDP)" : {
+      "comment" : "General settings - Toggle title for the Chrome DevTools Protocol endpoint"
     },
     "Enter a name for the new folder." : {
       "comment" : "Bookmark editor - Inline new folder creation subtitle"
@@ -872,8 +887,14 @@
     "Incognito Space" : {
       "comment" : "Spaces settings - Incognito Space toggle label"
     },
+    "Install" : {
+      "comment" : "General settings - Button to install the phi-browser skill"
+    },
     "Install and Restart" : {
       "comment" : "Update alert - Button to install update and restart the app"
+    },
+    "Install the phi-browser skill" : {
+      "comment" : "General settings - Title for installing the phi-browser agent skill"
     },
     "Install Update" : {
       "comment" : "Update alert - Title for install update confirmation dialog"
@@ -908,6 +929,9 @@
     "Keep" : {
       "comment" : "Download item row - Tooltip for keep button on safety warning\nTooltip for keep button on safety warning in living downloads toast"
     },
+    "Later" : {
+      "comment" : "Agent handoff prompt - dismiss\nGeneral settings - Relaunch prompt dismiss button"
+    },
     "Launch Phi Sentinel automatically at login" : {
       "comment" : "AI settings - Toggle to auto-launch Phi Sentinel at system login"
     },
@@ -929,6 +953,9 @@
     "Left URL" : {
       "comment" : "Bookmark editor - Label for the left (primary) URL input field on a split-view bookmark"
     },
+    "Lets local tools drive Phi over the DevTools Protocol on 127.0.0.1. Any local process can control the browser while this is on — leave it off when you’re not using it. Takes effect after a relaunch." : {
+      "comment" : "General settings - Security note for the remote debugging toggle"
+    },
     "Light" : {
       "comment" : "Appearance choice: always light mode"
     },
@@ -943,6 +970,9 @@
     },
     "Linking..." : {
       "comment" : "Phi Link - Custom bot linking text"
+    },
+    "Links the skill bundled in this app into an AI coding agent’s skills folder so it can drive Phi over the DevTools Protocol. Requires Node 22+; enable remote debugging above so it can connect." : {
+      "comment" : "General settings - Explanation for the phi-browser skill installer"
     },
     "Loading image…" : {
       "comment" : "Image preview loading"
@@ -1116,7 +1146,7 @@
       "comment" : "Phi Link - Official Bot title"
     },
     "OK" : {
-      "comment" : "Account settings - OK button\nAccount settings - OK button to dismiss logout failed alert\nDismiss button\nExtension info alert - OK button to dismiss the alert\nGeneric - OK button to dismiss an alert"
+      "comment" : "Account settings - OK button\nAccount settings - OK button to dismiss logout failed alert\nDismiss button\nExtension info alert - OK button to dismiss the alert\nGeneral settings - Alert dismiss button\nGeneric - OK button to dismiss an alert"
     },
     "Omnibox" : {
       "comment" : "General settings - Option to open Omnibox search when pressing ⌘+T"
@@ -1301,8 +1331,23 @@
     "Refresh connector status" : {
       "comment" : "AI settings - Tooltip for refreshing connector status"
     },
+    "Reinstall" : {
+      "comment" : "General settings - Button to reinstall the phi-browser skill"
+    },
+    "Relaunch Now" : {
+      "comment" : "General settings - Relaunch prompt confirm button"
+    },
+    "Relaunch to apply?" : {
+      "comment" : "General settings - Relaunch prompt title after toggling remote debugging"
+    },
     "Relink" : {
       "comment" : "Phi Link - Official bot relink action"
+    },
+    "Remote debugging starts after Phi Browser restarts." : {
+      "comment" : "General settings - Relaunch prompt body when enabling remote debugging"
+    },
+    "Remote debugging stops after Phi Browser restarts." : {
+      "comment" : "General settings - Relaunch prompt body when disabling remote debugging"
     },
     "Remove" : {
       "comment" : "Bookmark editor - Remove bookmark button title (CMD+D toggle)\nDownload item row - Tooltip for remove download button\nIM Channels - Custom bot remove action"
@@ -1352,6 +1397,9 @@
     "Reopen Closed Tab" : {
       "comment" : "Tab area context menu - Reopen the last closed tab"
     },
+    "Replace" : {
+      "comment" : "General settings - Skill overwrite confirm button"
+    },
     "Replace Bottom" : {
       "comment" : "Drop-zone hint shown when dragging a tab over the bottom/secondary pane of a horizontal split to replace it"
     },
@@ -1360,6 +1408,9 @@
     },
     "Replace Right" : {
       "comment" : "Drop-zone hint shown when dragging a tab over the right/secondary pane of a vertical split to replace it"
+    },
+    "Replace the existing skill?" : {
+      "comment" : "General settings - Skill overwrite prompt title"
     },
     "Replace Top" : {
       "comment" : "Drop-zone hint shown when dragging a tab over the top/primary pane of a horizontal split to replace it"
@@ -1475,6 +1526,12 @@
     "Site Settings" : {
       "comment" : "Address bar menu - Settings menu item\nAddress bar menu - Settings submenu title"
     },
+    "Skill installed" : {
+      "comment" : "General settings - Skill install success title"
+    },
+    "Skill not found in app bundle" : {
+      "comment" : "General settings - Skill install failure title"
+    },
     "Skip" : {
       "comment" : "Onboarding base - Skip button to bypass current step"
     },
@@ -1514,6 +1571,9 @@
     "SwiftUI" : {
 
     },
+    "Switch to Agent Space" : {
+      "comment" : "Agent handoff prompt - open the agent Space"
+    },
     "System" : {
       "comment" : "Appearance choice: follow system setting"
     },
@@ -1531,6 +1591,12 @@
     },
     "Telegram ID" : {
       "comment" : "Phi Link - Official bot connected label"
+    },
+    "The agent handed control back to you to finish a step — for example, signing in." : {
+      "comment" : "Agent handoff prompt - default body"
+    },
+    "The agent needs you" : {
+      "comment" : "Agent handoff prompt - title"
     },
     "The archive does not contain a top-level Phi folder." : {
       "comment" : "Debug import user data - Error message when zip does not include the expected Phi directory at archive root"
@@ -1558,6 +1624,9 @@
     },
     "Theme" : {
       "comment" : "General settings - Theme section title\nSpaces settings - theme section header"
+    },
+    "This build doesn’t include the phi-browser skill resources. Rebuild Phi Browser and try again." : {
+      "comment" : "General settings - Skill install failure body when the resource is missing"
     },
     "This replaces the Phi user data folder with the archive and restarts Phi. Save your work first." : {
       "comment" : "Debug import user data - Confirmation alert body warning data replacement and relaunch"

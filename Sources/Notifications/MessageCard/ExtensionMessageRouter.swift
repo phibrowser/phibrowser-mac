@@ -9,6 +9,10 @@ struct ExtensionMessageContext {
     let type: String
     let payload: String
     let requestId: String
+    /// The sender's extension id, or a synthetic id for non-extension origins
+    /// ("cdp" for the PhiAgentSpace DevTools tunnel, "debug-extension" for the
+    /// debug panel). Empty when the bridge didn't attribute a sender.
+    let senderId: String
 }
 
 typealias ExtensionMessageHandler = (ExtensionMessageContext) -> String?
@@ -23,9 +27,9 @@ final class ExtensionMessageRouter {
         handlers[type] = handler
     }
 
-    func handle(type: String, payload: String, requestId: String) -> String? {
+    func handle(type: String, payload: String, requestId: String, senderId: String = "") -> String? {
         configureIfNeeded()
-        let context = ExtensionMessageContext(type: type, payload: payload, requestId: requestId)
+        let context = ExtensionMessageContext(type: type, payload: payload, requestId: requestId, senderId: senderId)
         if let handler = handlers[type] {
             return handler(context)
         }
@@ -65,6 +69,41 @@ final class ExtensionMessageRouter {
 
         register(type: "toggleAgentAnimation") { context in
             return AgentAnimationManager.shared.handleRequest(context: context)
+        }
+
+        register(type: "agentSpace.create") { context in
+            AgentSpaceRouter.handleCreate(context: context)
+            return nil  // async reply via ExtensionMessaging
+        }
+        register(type: "agentSpace.list") { context in
+            return AgentSpaceRouter.handleList(context: context)
+        }
+        register(type: "agentSpace.listProfiles") { context in
+            return AgentSpaceRouter.handleListProfiles(context: context)
+        }
+        register(type: "agentSpace.setState") { context in
+            return AgentSpaceRouter.handleSetState(context: context)
+        }
+        register(type: "agentSpace.cursor") { context in
+            return AgentSpaceRouter.handleCursor(context: context)
+        }
+        register(type: "agentSpace.markError") { context in
+            return AgentSpaceRouter.handleMarkError(context: context)
+        }
+        register(type: "agentSpace.complete") { context in
+            return AgentSpaceRouter.handleComplete(context: context)
+        }
+        register(type: "agentSpace.getOwnership") { context in
+            return AgentSpaceRouter.handleGetOwnership(context: context)
+        }
+        register(type: "agentSpace.handoff") { context in
+            return AgentSpaceRouter.handleHandoff(context: context)
+        }
+        register(type: "agentSpace.takeover") { context in
+            return AgentSpaceRouter.handleTakeover(context: context)
+        }
+        register(type: "agentSpace.openTab") { context in
+            return AgentSpaceRouter.handleOpenTab(context: context)
         }
 
         register(type: "farringdon.organizeDidFinish") { _ in

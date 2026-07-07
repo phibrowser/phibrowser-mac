@@ -79,13 +79,16 @@ class MainBrowserWindowController: NSWindowController {
         browserState.windowController = self
         setupWindow()
         MainBrowserWindowControllersManager.shared.retainWindowControllerUntilWindowClosed(self)
-        // Only normal and Incognito Space windows participate in the Space
-        // mapping; standalone incognito and shadow windows are orthogonal to
-        // Spaces. The slot was resolved by the caller
-        // (PhiChromiumCoordinator / MainBrowserWindowControllersManager)
-        // — register into it so it picks up this controller as its
-        // `windowsBySpaceId[spaceId]` entry.
-        if browserType == .normal || browserType == .incognitoSpace {
+        // Normal, Incognito Space, and agent-Space windows participate in the
+        // Space mapping; standalone incognito and shadow windows are orthogonal
+        // to Spaces. Agent-Space windows are hidden TYPE_NORMAL windows the user
+        // can switch to, so they must register too — otherwise the Space has no
+        // `windowsBySpaceId[spaceId]` entry, its seed tab is never created, and
+        // surfacing the pip shows an empty Space even though the Chromium window
+        // has live tabs. The slot was resolved by the caller
+        // (PhiChromiumCoordinator / MainBrowserWindowControllersManager), which
+        // treats `.normal`, `.incognitoSpace`, and `.agentSpace` identically.
+        if browserType == .normal || browserType == .incognitoSpace || browserType == .agentSpace {
             slot?.registerWindow(self, for: spaceId)
         }
 

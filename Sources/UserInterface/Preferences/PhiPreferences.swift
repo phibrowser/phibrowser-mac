@@ -189,6 +189,41 @@ extension PhiPreferences {
         }
     }
     
+    // MARK: - Agent Spaces
+
+    enum AgentSpaces {
+        private static let autoCloseKey = "PhiAgentSpaceAutoCloseOnSuccess"
+        private static let remoteDebuggingPortKey = "PhiRemoteDebuggingPort"
+
+        /// When `true`, a successfully completed agent Space that the user never
+        /// visited is closed automatically instead of lingering with a badge.
+        /// Default `false`.
+        static var autoCloseOnSuccess: Bool {
+            get { UserDefaults.standard.bool(forKey: autoCloseKey) }
+            set { UserDefaults.standard.set(newValue, forKey: autoCloseKey) }
+        }
+
+        /// Opt-in CDP endpoint for agent tooling, consumed by ChromiumLauncher
+        /// at process launch (a relaunch is required for changes to apply).
+        /// nil (key absent) = disabled; 0 = ephemeral port written to
+        /// `<user data dir>/DevToolsActivePort`; >0 = fixed port.
+        static var remoteDebuggingPort: Int? {
+            get {
+                guard UserDefaults.standard.object(forKey: remoteDebuggingPortKey) != nil else {
+                    return nil
+                }
+                return UserDefaults.standard.integer(forKey: remoteDebuggingPortKey)
+            }
+            set {
+                if let newValue {
+                    UserDefaults.standard.set(newValue, forKey: remoteDebuggingPortKey)
+                } else {
+                    UserDefaults.standard.removeObject(forKey: remoteDebuggingPortKey)
+                }
+            }
+        }
+    }
+
     // MARK: - Theme Settings
 
     enum ThemeSettings: String, CaseIterable {

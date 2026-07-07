@@ -131,6 +131,62 @@ class APIClient {
         return try JSONDecoder().decode(AgentAvatarResponse.self, from: data)
     }
 
+    // MARK: - Agent Spaces
+
+    /// Notifies phi-agent that the user entered or left an agent Space's window,
+    /// or explicitly handed control back to the agent. Informational for the
+    /// ownership state machine; failures are non-fatal (the synchronous
+    /// Chromium-side agent-mode flip already governs local behavior).
+    func setAgentSpacePresence(
+        taskId: String,
+        userPresent: Bool,
+        handback: Bool = false
+    ) async throws {
+        _ = try await postAgentSpaceAction(
+            taskId: taskId,
+            action: "presence",
+            body: [
+                "userPresent": userPresent,
+                "handback": handback,
+            ]
+        )
+    }
+
+    /// Hands control of an agent Space to the user (interrupt). `reason` is
+    /// typically "user_interrupt".
+    func handoffAgentSpace(taskId: String, reason: String) async throws {
+        _ = try await postAgentSpaceAction(
+            taskId: taskId,
+            action: "handoff",
+            body: ["reason": reason]
+        )
+    }
+
+    private func postAgentSpaceAction(
+        taskId: String,
+        action: String,
+        body: [String: Any]
+    ) async throws -> (Data, URLResponse) {
+        let payload = try JSONSerialization.data(withJSONObject: body)
+        let (data, response) = try await executePhiAgentRequest { baseURL in
+            let encoded =
+                taskId.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed)
+                ?? taskId
+            let url = URL(string: "\(baseURL)/api/agent-spaces/\(encoded)/\(action)")!
+            var request = URLRequest(url: url)
+            request.httpMethod = "POST"
+            request.setValue("Bearer \(self.token)", forHTTPHeaderField: "Authorization")
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            request.httpBody = payload
+            return request
+        }
+        guard let httpResponse = response as? HTTPURLResponse,
+              (200...299).contains(httpResponse.statusCode) else {
+            throw APIError.invalidResponse
+        }
+        return (data, response)
+    }
+
     /// Sends a request to the local phi-agent, resolving its base URL through
     /// `PhiAgentEndpointResolver` so dynamic port assignment by Sentinel is
     /// honored. On a transport-level error (no listener, refused connection,

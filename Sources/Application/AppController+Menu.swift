@@ -954,6 +954,29 @@ extension AppController {
             closeSpaceItem.target = self
             menu.addItem(closeSpaceItem)
         }
+
+        // While the agent controls this Space, disable the actions that would
+        // mutate its workspace. New Space is left enabled (it doesn't touch the
+        // agent Space).
+        if focusedSpaceIsAgentControlled() {
+            [renameItem, changeIconItem, editThemeParent, changeProfileParent, deleteSpaceItem]
+                .forEach(Self.disableAgentLockedMenuItem)
+        } else if focusedSpaceIsAgentSpace() {
+            // The user took control, so most edits are allowed again — but
+            // re-profiling replaces the Space's windows and would break the
+            // agent, so Change Profile stays disabled for any agent Space.
+            Self.disableAgentLockedMenuItem(changeProfileParent)
+        }
+    }
+
+    /// Greys out a menu item that acts on an agent-controlled Space. Clearing
+    /// the action/target (and any submenu) makes AppKit's automatic menu
+    /// enabling disable it, so it reads as unavailable rather than vanishing.
+    private static func disableAgentLockedMenuItem(_ item: NSMenuItem) {
+        item.action = nil
+        item.target = nil
+        item.submenu = nil
+        item.isEnabled = false
     }
 
     /// Fills `menu` with one item per Space — its icon, ⌃-number switch shortcut,
@@ -1114,6 +1137,18 @@ extension AppController {
         deleteSpaceItem.target = self
         menu.addItem(deleteSpaceItem)
 
+        // While the agent controls this Space, disable the actions that would
+        // mutate its workspace (mirrors the tab-area context menu). New Space
+        // and the Next/Previous switchers below stay enabled.
+        if focusedSpaceIsAgentControlled() {
+            [renameItem, changeIconItem, editThemeParent, changeProfileParent, deleteSpaceItem]
+                .forEach(Self.disableAgentLockedMenuItem)
+        } else if focusedSpaceIsAgentSpace() {
+            // Change Profile stays disabled for an agent Space even after the
+            // user takes control — re-profiling would break the running agent.
+            Self.disableAgentLockedMenuItem(changeProfileParent)
+        }
+
         menu.addItem(.separator())
 
         let nextItem = NSMenuItem(
@@ -1261,6 +1296,46 @@ extension AppController {
         let id = slot?.activeSpaceId ?? SpaceManager.shared.activeSpaceId
         guard let id else { return nil }
         return SpaceManager.shared.spaces.first(where: { $0.spaceId == id })
+    }
+
+    /// True when the focused window is showing an agent Space that the agent
+    /// currently controls (not handed off to the user). While the agent holds
+    /// control, its workspace must not be mutated from the menus: New Tab and
+    /// the modify-this-Space actions (Rename / Change Icon / Edit Theme / Change
+    /// Profile / Delete) are disabled. New Space and switching Spaces stay
+    /// enabled so the user can always leave the agent Space.
+    func focusedSpaceIsAgentControlled() -> Bool {
+        guard let id = currentActiveSpace()?.spaceId else { return false }
+        return MainActor.assumeIsolated { AgentSpaceManager.shared.isAgentOwned(id) }
+    }
+
+    /// True when the focused Space is an agent Space, regardless of who holds
+    /// control. Used for actions that stay disabled even after the user takes
+    /// control — notably Change Profile, which would break the running agent.
+    func focusedSpaceIsAgentSpace() -> Bool {
+        guard let id = currentActiveSpace()?.spaceId else { return false }
+        return MainActor.assumeIsolated { AgentSpaceManager.shared.isAgentSpace(id) }
+    }
+
+    /// True when `item` lives in the Tab, Bookmarks, or History top-level menu —
+    /// the menus disabled wholesale while the focused Space is agent-controlled.
+    /// Bookmarks carries a stable identifier; Tab and History are matched by
+    /// title, as elsewhere in this file.
+    func itemIsInAgentLockedMenu(_ item: NSMenuItem) -> Bool {
+        // Walk up to the submenu that sits directly under the main menu.
+        var top: NSMenu? = item.menu
+        while let m = top, let sup = m.supermenu, sup !== NSApp.mainMenu {
+            top = sup
+        }
+        guard let topMenu = top else { return false }
+        if topMenu.identifier == AppController.bookmarksMenuIdentifier { return true }
+        if topMenu.title == "Tab" || topMenu.title == "History" { return true }
+        // The submenu's own title isn't always the menu name; fall back to the
+        // owning main-menu item's title.
+        if let owner = NSApp.mainMenu?.items.first(where: { $0.submenu === topMenu }) {
+            return owner.title == "Tab" || owner.title == "History"
+        }
+        return false
     }
 
     private func cycleActiveSpace(by step: Int) {
@@ -1482,6 +1557,16 @@ extension AppController {
                 ]
                 if placeholderDisabledTags.contains(menuItem.tag) { return false }
             }
+        }
+
+        // Agent lock: while the agent controls the focused Space, disable the
+        // menus the user must not drive against its workspace — New Tab (File
+        // menu) plus every item in the Tab, Bookmarks, and History menus.
+        // Their shortcuts are separately swallowed in
+        // `CommandDispatcher.handleKeyEquivalent`. Take control re-enables them.
+        if let menuItem = item as? NSMenuItem, focusedSpaceIsAgentControlled() {
+            if menuItem.tag == CommandWrapper.IDC_NEW_TAB.rawValue { return false }
+            if itemIsInAgentLockedMenu(menuItem) { return false }
         }
 
         if item.action == #selector(toggleChatbar(_:)) {

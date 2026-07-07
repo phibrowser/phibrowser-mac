@@ -95,6 +95,7 @@ struct SpacesStripView: View {
     /// strip always treats itself as the owner. See `openActiveIconPicker`.
     var resolveOwnerController: () -> MainBrowserWindowController? = { nil }
     @ObservedObject private var profileManager: ProfileManager = .shared
+    @ObservedObject private var agentSpaceManager: AgentSpaceManager = .shared
     @Environment(\.phiAppearance) private var windowAppearance: Appearance
 
     @State private var isPickerOpen: Bool = false
@@ -392,6 +393,12 @@ struct SpacesStripView: View {
             HStack(spacing: Self.stripSpacing) {
                 ForEach(stripOrderedSpaces.prefix(visibleCount), id: \.spaceId) { space in
                     spacePip(for: space)
+                        .overlay(alignment: .topTrailing) {
+                            agentBadge(for: space.spaceId)
+                        }
+                        .overlay(alignment: .bottomTrailing) {
+                            agentNumberBadge(for: space.spaceId)
+                        }
                         .opacity(stripDraggingId == space.spaceId ? 0.5 : 1)
                         .onDrag {
                             stripDraggingId = space.spaceId
@@ -493,6 +500,52 @@ struct SpacesStripView: View {
     /// emoji, and legacy SF Symbols all display correctly. Tapping switches this
     /// window to that Space; the active pip stays at full strength while the rest
     /// dim, so the difference is only brightness — never a different icon style.
+    /// Small badge in the agent Space pip's top-trailing corner: a green dot
+    /// while the agent is working, a grey dot while it's idle between steps, a
+    /// hand while the user holds control, a red mark on error, and a check when a
+    /// completed task hasn't been visited yet.
+    @ViewBuilder
+    private func agentBadge(for spaceId: String) -> some View {
+        if let task = agentSpaceManager.tasksBySpaceId[spaceId] {
+            // Corner badge for the agent Space's state. Error/completed take
+            // precedence; otherwise it reads the three live states: the user
+            // holds control (hand), the agent is working (green dot), or the
+            // agent is between steps (grey dot).
+            let badge: (String, Color)? = {
+                if case .failed = task.status { return ("exclamationmark.circle.fill", .red) }
+                if task.hasUnseenError { return ("exclamationmark.circle.fill", .red) }
+                if case .completed = task.status { return ("checkmark.circle.fill", .green) }
+                if task.ownership == .user { return ("hand.raised.fill", .orange) }
+                if case .idle = task.status { return ("circle.fill", .gray) }
+                return ("circle.fill", .green)
+            }()
+            if let (symbol, color) = badge {
+                Image(systemName: symbol)
+                    .font(.system(size: 8))
+                    .foregroundStyle(color)
+                    .padding(2)
+                    .background(Circle().fill(Color(nsColor: .windowBackgroundColor)))
+                    .offset(x: 3, y: -3)
+            }
+        }
+    }
+
+    /// Bottom-trailing ordinal badge (1, 2, 3…) that tells several concurrent
+    /// agent Spaces apart. Only agent Spaces carry a task, so only they show it.
+    @ViewBuilder
+    private func agentNumberBadge(for spaceId: String) -> some View {
+        if let task = agentSpaceManager.tasksBySpaceId[spaceId] {
+            Text(verbatim: "\(task.number)")
+                .font(.system(size: 8, weight: .bold))
+                .foregroundStyle(.white)
+                .frame(minWidth: 9, minHeight: 9)
+                .padding(2)
+                .background(Circle().fill(Color.accentColor))
+                .overlay(Circle().stroke(Color(nsColor: .windowBackgroundColor), lineWidth: 1))
+                .offset(x: 3, y: 3)
+        }
+    }
+
     private func spacePip(for space: SpaceModel) -> some View {
         // The highlight follows `activeSpaceId` (matching the Spaces menu).
         // `activate` flips it to the target up front — before the vertical

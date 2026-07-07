@@ -179,11 +179,15 @@ struct SpacesSettingsView: View {
     /// drag hovers across rows), with any Space the snapshot doesn't know yet
     /// appended in the manager's order. Mirrors SpacesStripView.orderedSpaces.
     private var orderedSpaces: [SpaceModel] {
-        guard !orderedIds.isEmpty else { return listedSpaces }
-        let byId = Dictionary(uniqueKeysWithValues: listedSpaces.map { ($0.spaceId, $0) })
+        // Drop agent Spaces — ephemeral background workspaces (CDP / phi-agent)
+        // the user can't meaningfully rename, recolor, re-profile, or delete.
+        // The incognito Space is intentionally kept (see `listedSpaces`).
+        let visible = listedSpaces.filter { !$0.isAgentSpace }
+        guard !orderedIds.isEmpty else { return visible }
+        let byId = Dictionary(uniqueKeysWithValues: visible.map { ($0.spaceId, $0) })
         var result = orderedIds.compactMap { byId[$0] }
         let known = Set(orderedIds)
-        result.append(contentsOf: listedSpaces.filter { !known.contains($0.spaceId) })
+        result.append(contentsOf: visible.filter { !known.contains($0.spaceId) })
         return result
     }
 

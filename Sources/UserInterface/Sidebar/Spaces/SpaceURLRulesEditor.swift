@@ -68,7 +68,7 @@ struct URLRulesEditor: View {
         // last rule doesn't tear down the NSView tree mid-animation and adding
         // the first rule doesn't rebuild it. The empty-state placeholder lives
         // inside the host (see RuleTableView.makeEmptyOverlay).
-        RuleTableView(rows: $rows, spaces: manager.spaces)
+        RuleTableView(rows: $rows, spaces: visibleSpaces)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
@@ -80,7 +80,7 @@ struct URLRulesEditor: View {
                 Label(NSLocalizedString("Add Rule", comment: "Footer button in URL rules editor"),
                       systemImage: "plus")
             }
-            .disabled(manager.spaces.isEmpty)
+            .disabled(visibleSpaces.isEmpty)
             Spacer()
             Button(NSLocalizedString("Cancel", comment: "Cancel button")) {
                 onClose()
@@ -103,14 +103,21 @@ struct URLRulesEditor: View {
         initialFingerprint = fingerprint(of: rows)
     }
 
+    /// Spaces the user can route a rule to. Agent Spaces are ephemeral
+    /// background workspaces and must never appear as a routing target or in
+    /// the target picker.
+    private var visibleSpaces: [SpaceModel] {
+        manager.spaces.filter { !$0.isAgentSpace }
+    }
+
     private func addBlankRow() {
-        guard let firstSpaceId = manager.spaces.first?.spaceId else { return }
+        guard let firstSpaceId = visibleSpaces.first?.spaceId else { return }
         rows.append(Row(defaultSpaceId: firstSpaceId))
     }
 
     private func save() {
         guard fingerprint(of: rows) != initialFingerprint else { return }
-        let validSpaceIds = Set(manager.spaces.map(\.spaceId))
+        let validSpaceIds = Set(visibleSpaces.map(\.spaceId))
         var byTarget: [String: [LocalStore.URLRuleDraft]] = [:]
         for row in rows {
             let trimmedValue = row.value.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -122,7 +129,7 @@ struct URLRulesEditor: View {
             let targetSpaceId: String
             if validSpaceIds.contains(row.targetSpaceId) {
                 targetSpaceId = row.targetSpaceId
-            } else if row.askBeforeRouting, let fallback = manager.spaces.first?.spaceId {
+            } else if row.askBeforeRouting, let fallback = visibleSpaces.first?.spaceId {
                 targetSpaceId = fallback
             } else {
                 continue

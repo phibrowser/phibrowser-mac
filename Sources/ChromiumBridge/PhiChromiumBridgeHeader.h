@@ -31,7 +31,8 @@ typedef NS_ENUM(NSUInteger, ChromiumBrowserType) {
     ChromiumBrowserTypeApp,
     ChromiumBrowserTypeDevTools,
     ChromiumBrowserTypeShadow,
-    ChromiumBrowserTypeIncognitoSpace  // TYPE_NORMAL + Incognito Space OTR profile
+    ChromiumBrowserTypeIncognitoSpace,  // TYPE_NORMAL + Incognito Space OTR profile
+    ChromiumBrowserTypeAgentSpace
 };
 
 typedef NS_ENUM(NSUInteger, BrowserType) {
@@ -653,6 +654,22 @@ typedef NS_ENUM(NSUInteger, PhiOmniboxSuggestionDisposition) {
 /// the window could not be created; callers must handle the nil result.
 - (nullable NSDictionary<NSString *, id> *)createBrowserWithWindowType:(ChromiumBrowserType)browserType
                                                             profileId:(NSString * _Nullable)profileId;
+
+/// Creates a hidden agent-Space browser window: TYPE_NORMAL, never Show()n by
+/// Chromium, omitted from session restore, and starting in agent mode (window
+/// activation, content fullscreen, and omnibox focus are suppressed; tab
+/// contents are kept force-visible so the renderer stays paintable while the
+/// window is ordered out). The Mac client surfaces the window when the user
+/// switches to its Space. Same return shape and strict no-fallback profile
+/// resolution as `createBrowserWithWindowType:profileId:`; nil on failure.
+- (nullable NSDictionary<NSString *, id> *)createAgentBrowserWithProfileId:
+    (NSString * _Nullable)profileId;
+
+/// Flips the per-window agent-mode bit of an agent-Space browser. Pass NO when
+/// the user takes control (restores normal activation/visibility semantics)
+/// and YES when control is handed back to the agent (re-asserts forced tab
+/// visibility). No-op when `windowId` doesn't resolve to a live agent browser.
+- (void)setAgentMode:(BOOL)enabled windowId:(int64_t)windowId;
 - (void)tryToTerminateApplication:(NSApplication*)app;
 - (void)stopTryingToTerminateApplication:(NSApplication*)app;
 - (void)applicationWillFinishLaunching:(NSNotification*)notification;

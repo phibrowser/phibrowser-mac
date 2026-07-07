@@ -190,7 +190,7 @@ class MainBrowserWindowControllersManager: MainBrowserWindowLookup {
         // fall back to a fresh slot for `.normal` windows so the new
         // controller still has somewhere to register.
         let slot: SpaceWindowSlot?
-        if danglingWindow.browserType == .normal {
+        if danglingWindow.browserType == .normal || danglingWindow.browserType == .agentSpace {
             slot = danglingWindow.slot
                 ?? SpaceManager.shared.createSlot(initialSpaceId: danglingWindow.spaceId)
         } else {
@@ -289,17 +289,20 @@ class MainBrowserWindowControllersManager: MainBrowserWindowLookup {
         }
         WindowThemeMessageRouter.shared.stopObservingWindow(windowId: windowController.windowId)
         OverlayToastCenter.shared.clearWindow(windowId: windowController.windowId)
-        // Normal AND Incognito Space windows live in slots (mirrors the
-        // registerWindow gate in MainBrowserWindowController.init). Skipping
-        // the Incognito Space's window here left its dead controller
-        // registered: a window-driven cascade that included the Incognito
-        // Space never drained its last entry, so the cascade-veto recovery
-        // "recovered" onto the already-closed NSWindow and surfaced a blank
-        // shell.
-        if windowController.browserType == .normal || windowController.browserType == .incognitoSpace {
+        // Normal, Incognito Space, and agent-Space windows live in slots
+        // (mirrors the registerWindow gate in MainBrowserWindowController.init).
+        // Skipping the Incognito Space's window here left its dead controller
+        // registered: a window-driven cascade that included the Incognito Space
+        // never drained its last entry, so the cascade-veto recovery "recovered"
+        // onto the already-closed NSWindow and surfaced a blank shell. Agent
+        // Space windows register too, so they must unregister here as well.
+        if windowController.browserType == .normal || windowController.browserType == .incognitoSpace || windowController.browserType == .agentSpace {
             // Slot.unregisterWindow handles the per-slot "surface another
             // visible controller if this was the visible one" logic and
-            // asks SpaceManager to drop the slot when it becomes empty.
+            // asks SpaceManager to drop the slot when it becomes empty. Agent
+            // Space windows register (see MainBrowserWindowController.init), so
+            // they must unregister here too or their slot/window leaks when the
+            // Space is closed.
             windowController.slot?.unregisterWindow(windowController, for: windowController.spaceId)
         }
         windowControllers.remove(windowController)

@@ -39,7 +39,7 @@ extension PhiChromiumCoordinator: PhiChromiumBridgeDelegate {
     }
     
     func handleExtensionMessage(_ type: String, payload: String, requestId: String, senderId: String) -> String? {
-        return ExtensionMessageRouter.shared.handle(type: type, payload: payload, requestId: requestId)
+        return ExtensionMessageRouter.shared.handle(type: type, payload: payload, requestId: requestId, senderId: senderId)
     }
 
     func toggleChatSidebar(_ show: NSNumber?) {
@@ -342,8 +342,9 @@ extension PhiChromiumCoordinator: PhiChromiumBridgeDelegate {
 
 
         guard browserType == .normal || browserType == .incognito
-                || browserType == .incognitoSpace || browserType == .shadow else {
-            AppLogInfo("🌐 [Chromium] Ignoring window type: \(browserType.rawValue) (not normal/incognito/incognitoSpace)")
+                || browserType == .incognitoSpace || browserType == .shadow
+                || browserType == .agentSpace else {
+            AppLogInfo("🌐 [Chromium] Ignoring window type: \(browserType.rawValue) (not normal/incognito/incognitoSpace/agentSpace)")
             return
         }
 
@@ -389,7 +390,11 @@ extension PhiChromiumCoordinator: PhiChromiumBridgeDelegate {
         // intent, and `spaceId(boundTo:preferring:)` passes through because
         // the synthetic Incognito Space's profileId IS the wire id Chromium
         // reports for them. Standalone incognito stays orthogonal below.
-        if browserType == .normal || browserType == .incognitoSpace {
+        // Agent Space windows resolve the same way — registered into a slot via
+        // the pending-spawn claim from `spawnHiddenWindow` so the user can later
+        // switch to them; they differ only in that Chromium never Show()s them
+        // (agent-mode browsers), so the window stays ordered out until surfaced.
+        if browserType == .normal || browserType == .incognitoSpace || browserType == .agentSpace {
             if let claim = SpaceManager.shared.claimPendingSpawn(forWindowId: Int(windowId)) {
                 resolvedSlot = claim.slot
                 spaceId = SpaceManager.shared.spaceId(boundTo: profileId,

@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		CDA11ED500000000000000B1 /* claude-skill in Resources */ = {isa = PBXBuildFile; fileRef = CDA11ED500000000000000A1 /* claude-skill */; };
 		04FE4637EFE3A1396687DD63 /* AISettingsConnectorViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = D8FCAEAE328C802016D87943 /* AISettingsConnectorViewModel.swift */; };
 		15B618E574463D94C98AEA5F /* AISettingHostingViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1B584F695BF7833FAA99558 /* AISettingHostingViewController.swift */; };
 		2ABF91DB68C2445BAA58C9BA /* GroupTabsTableView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 457F461C0F164136A46FF641 /* GroupTabsTableView.swift */; };
@@ -319,6 +320,9 @@
 		CC4F00050000000000000001 /* SpaceChooserView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC4F00050000000000000002 /* SpaceChooserView.swift */; };
 		CC5025FC2E702603004223DC /* NSImage+Extension.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC5025FB2E702603004223DC /* NSImage+Extension.swift */; };
 		CC59CE000001000000000001 /* SpaceManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC59CE000001000000000002 /* SpaceManager.swift */; };
+		AE5ACE000000000000000011 /* AgentSpaceManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = AE5ACE000000000000000001 /* AgentSpaceManager.swift */; };
+		AE5ACE000000000000000012 /* AgentSpaceRouter.swift in Sources */ = {isa = PBXBuildFile; fileRef = AE5ACE000000000000000002 /* AgentSpaceRouter.swift */; };
+		AE5ACE000000000000000013 /* AgentSpaceOverlayView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AE5ACE000000000000000003 /* AgentSpaceOverlayView.swift */; };
 		CC59CE000002000000000001 /* SpacesStripView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC59CE000002000000000002 /* SpacesStripView.swift */; };
 		CC59CE000003000000000001 /* ProfileManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC59CE000003000000000002 /* ProfileManager.swift */; };
 		CC5C51F62FB5C5560044D255 /* credits.html in Resources */ = {isa = PBXBuildFile; fileRef = CC5C51F52FB5C5560044D255 /* credits.html */; };
@@ -486,6 +490,7 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		CDA11ED500000000000000A1 /* claude-skill */ = {isa = PBXFileReference; lastKnownFileType = folder; name = "claude-skill"; path = tools/claude-skill; sourceTree = SOURCE_ROOT; };
 		3703C88B2F68F78500E7CF6D /* AISettingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AISettingView.swift; sourceTree = "<group>"; };
 		3703C9812F69558C00E7CF6D /* BrowserState+ToggleAI.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "BrowserState+ToggleAI.swift"; sourceTree = "<group>"; };
 		3703C9832F6956E600E7CF6D /* SentinelHelper.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SentinelHelper.swift; sourceTree = "<group>"; };
@@ -807,6 +812,9 @@
 		CC5025FB2E702603004223DC /* NSImage+Extension.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "NSImage+Extension.swift"; sourceTree = "<group>"; };
 		CC50262C2E716982004223DC /* OmniBoxViewController+Suggestion.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "OmniBoxViewController+Suggestion.swift"; sourceTree = "<group>"; };
 		CC59CE000001000000000002 /* SpaceManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpaceManager.swift; sourceTree = "<group>"; };
+		AE5ACE000000000000000001 /* AgentSpaceManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentSpaceManager.swift; sourceTree = "<group>"; };
+		AE5ACE000000000000000002 /* AgentSpaceRouter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentSpaceRouter.swift; sourceTree = "<group>"; };
+		AE5ACE000000000000000003 /* AgentSpaceOverlayView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentSpaceOverlayView.swift; sourceTree = "<group>"; };
 		CC59CE000002000000000002 /* SpacesStripView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpacesStripView.swift; sourceTree = "<group>"; };
 		CC59CE000003000000000002 /* ProfileManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfileManager.swift; sourceTree = "<group>"; };
 		CC5C51F52FB5C5560044D255 /* credits.html */ = {isa = PBXFileReference; lastKnownFileType = text.html; path = credits.html; sourceTree = "<group>"; };
@@ -1542,6 +1550,7 @@
 				B02BEB632E3B2F5A00E5859A /* Package.swift */,
 				B02586F42E42FD97001B08FC /* Sources */,
 				B0C469752E3B158D007F0C7A /* Resources */,
+				CDA11ED500000000000000A1 /* claude-skill */,
 				376CE0A02F2330160093D937 /* build-scripts */,
 				B0691CB22E3B639000934AEE /* Frameworks */,
 				B0C4698F2E3B1915007F0C7A /* Tests */,
@@ -2008,10 +2017,20 @@
 			path = Views;
 			sourceTree = "<group>";
 		};
+		AE5ACE000000000000000021 /* AgentSpace */ = {
+			isa = PBXGroup;
+			children = (
+				AE5ACE000000000000000001 /* AgentSpaceManager.swift */,
+				AE5ACE000000000000000002 /* AgentSpaceRouter.swift */,
+			);
+			path = AgentSpace;
+			sourceTree = "<group>";
+		};
 		CCBF8FA32E69913C00B9A99E /* States */ = {
 			isa = PBXGroup;
 			children = (
 				CC59CE000001000000000003 /* Space */,
+				AE5ACE000000000000000021 /* AgentSpace */,
 				8E8008D62FA1A59800EB24C5 /* TabGroup */,
 				CCBF8FA42E69915200B9A99E /* ApplicationState.swift */,
 				D10000000000000000000011 /* BrowserImagePreviewState.swift */,
@@ -2049,6 +2068,7 @@
 				5F1A5A11AC1D000000000006 /* SplitTabDropContainer.swift */,
 				37BA3EA12F866864003A8A53 /* EdgeFogOverlayView.swift */,
 				37BA3EA32F866870003A8A53 /* AgentAnimationManager.swift */,
+				AE5ACE000000000000000003 /* AgentSpaceOverlayView.swift */,
 			);
 			path = WebContent;
 			sourceTree = "<group>";
@@ -2243,6 +2263,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				CDA11ED500000000000000B1 /* claude-skill in Resources */,
 				37F574482F7A7C5D00879867 /* PhiIcon.icon in Resources */,
 				B0C4694E2E3B10E2007F0C7A /* Assets.xcassets in Resources */,
 				3765817B2EE963AD00D3E031 /* Localizable.xcstrings in Resources */,
@@ -2606,6 +2627,9 @@
 				37C1B0E72ED851CE00DD4496 /* ShortcutsViewModel.swift in Sources */,
 				3769C6ED2EFA6CBE00A94DE0 /* GaussianEffectView.swift in Sources */,
 				B0F370B92E430CA5000B51F9 /* WebContentViewController.swift in Sources */,
+				AE5ACE000000000000000011 /* AgentSpaceManager.swift in Sources */,
+				AE5ACE000000000000000012 /* AgentSpaceRouter.swift in Sources */,
+				AE5ACE000000000000000013 /* AgentSpaceOverlayView.swift in Sources */,
 				CC6336052E4EE55300A176DA /* FileSystemUtils.swift in Sources */,
 				A1B2C3D4E5F60718293A4B56 /* SharedAuthTokenStore.swift in Sources */,
 				378AFF622F78E5EA0016B334 /* BrowserThemeContext.swift in Sources */,

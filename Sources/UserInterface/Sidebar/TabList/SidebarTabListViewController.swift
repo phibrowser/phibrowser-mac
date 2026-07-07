@@ -3815,7 +3815,18 @@ extension SidebarTabListViewController: NSMenuDelegate {
         guard menu === self.contextMenu else {
             return
         }
-        
+        populateContextMenu(menu)
+        // While the agent controls this Space the user may only watch — disable
+        // every right-click action (whichever variant was populated above).
+        // Taking control (overlay button) flips ownership and re-enables them.
+        let locked = AgentSpaceManager.shared.isAgentOwned(browserState.spaceId)
+        menu.autoenablesItems = !locked
+        if locked {
+            for item in menu.items { item.isEnabled = false }
+        }
+    }
+
+    private func populateContextMenu(_ menu: NSMenu) {
         guard let clickedRow = outlineView.rightClickedRow else {
             defultMenu(on: menu)
             return
@@ -4231,6 +4242,11 @@ extension SidebarTabListViewController: SideBarOutlineViewDelegate {
               let item = outlineView.item(atRow: row) as? SidebarItem else {
             return
         }
+        // In an agent Space the user may click tabs to look around while the
+        // agent keeps control: switching does NOT take over. `focuseTab` moves
+        // the operating mask to the newly active tab (ownership unchanged), so
+        // whichever tab is shown still wears the agent overlay and its
+        // "Take control" affordance — the hand-off path stays per-tab intact.
         // Normal tab rows are delivered here (the outline view's standard
         // action never fires for them), so multi-selection must be handled
         // on this path rather than `outlineViewClicked`.

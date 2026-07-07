@@ -128,6 +128,18 @@
                 [arguments addObject:@"--no-sandbox"];
 #endif
 
+                // Opt-in CDP endpoint for agent tooling (the Claude Code
+                // skill). Key absent = disabled; 0 = ephemeral port written
+                // to <user data dir>/DevToolsActivePort; >0 = fixed port.
+                // See PhiPreferences.AgentSpaces.remoteDebuggingPort.
+                NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
+                if ([defaults objectForKey:@"PhiRemoteDebuggingPort"] != nil) {
+                    NSInteger cdpPort = [defaults integerForKey:@"PhiRemoteDebuggingPort"];
+                    if (cdpPort >= 0 && cdpPort <= 65535) {
+                        [arguments addObject:[NSString stringWithFormat:@"--remote-debugging-port=%ld", (long)cdpPort]];
+                    }
+                }
+
                 [self appendLaunchCommandLineArgc:launchArgc argv:launchArgv toArguments:arguments];
 
                 int argc = (int)arguments.count;

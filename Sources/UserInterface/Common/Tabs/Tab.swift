@@ -387,6 +387,14 @@ class Tab: WebContentRepresentable {
     }
     
     @objc func close() {
+        // While the agent controls its Space, the watching user cannot close
+        // its tabs (the ✕ button, split close, ⌘W all funnel here) — the agent
+        // drives tab lifecycle over CDP. Taking control re-enables it.
+        if windowId != 0,
+           let state = MainBrowserWindowControllersManager.shared.getBrowserState(for: windowId),
+           MainActor.assumeIsolated({ AgentSpaceManager.shared.isAgentOwned(state.spaceId) }) {
+            return
+        }
         if isActive, windowId != 0 {
             let manager = MainBrowserWindowControllersManager.shared
             let state = manager.getBrowserState(for: windowId)

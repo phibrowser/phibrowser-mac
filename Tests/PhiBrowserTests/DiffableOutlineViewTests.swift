@@ -19,6 +19,7 @@ private final class OutlineApplyItem: NSObject {
 private final class RecordingDiffableOutlineView: DiffableOutlineView {
     private(set) var events: [String] = []
     private(set) var invalidSnapshotErrors: [DiffableOutlineSnapshotValidationError<AnyHashable>] = []
+    var onApplyInsert: (() -> Void)?
 
     func record(_ event: String) {
         events.append(event)
@@ -50,6 +51,7 @@ private final class RecordingDiffableOutlineView: DiffableOutlineView {
 
     override func applyInsert(at indexes: IndexSet, inParent parent: Any?, animation: NSOutlineView.AnimationOptions) {
         events.append("insert:\(Array(indexes)):\(parentID(parent)):\(animationDescription(animation))")
+        onApplyInsert?()
     }
 
     override func applyMove(from fromIndex: Int, inParent oldParent: Any?, to toIndex: Int, inParent newParent: Any?) {
@@ -153,6 +155,59 @@ final class DiffableOutlineViewTests: XCTestCase {
         }
 
         XCTAssertEqual(view.events, ["updateDataSource", "beginUpdates", "insert:[1]:root:none", "endUpdates"])
+    }
+
+    func testReentrantReloadAppliesOnlyLatestPendingSnapshot() {
+        let view = RecordingDiffableOutlineView()
+        let item0 = OutlineApplyItem("item0")
+        let item1 = OutlineApplyItem("item1")
+        let item2 = OutlineApplyItem("item2")
+        let item3 = OutlineApplyItem("item3")
+        let old = applySnapshot(["item0"], [
+            "item0": (item0, nil, []),
+        ])
+        let first = applySnapshot(["item0", "item1"], [
+            "item0": (item0, nil, []),
+            "item1": (item1, nil, []),
+        ])
+        let stale = applySnapshot(["item0", "item1", "item2"], [
+            "item0": (item0, nil, []),
+            "item1": (item1, nil, []),
+            "item2": (item2, nil, []),
+        ])
+        let latest = applySnapshot(["item0", "item1", "item3"], [
+            "item0": (item0, nil, []),
+            "item1": (item1, nil, []),
+            "item3": (item3, nil, []),
+        ])
+        view.reloadWith(old, animated: false) {}
+        view.clearEvents()
+
+        view.onApplyInsert = { [weak view] in
+            guard let view else { return }
+            view.onApplyInsert = nil
+            view.reloadWith(stale, animated: false) {
+                view.record("staleData")
+            }
+            view.reloadWith(latest, animated: false) {
+                view.record("latestData")
+            }
+        }
+
+        view.reloadWith(first, animated: false) {
+            view.record("firstData")
+        }
+
+        XCTAssertEqual(view.events, [
+            "firstData",
+            "beginUpdates",
+            "insert:[1]:root:none",
+            "endUpdates",
+            "latestData",
+            "beginUpdates",
+            "insert:[2]:root:none",
+            "endUpdates",
+        ])
     }
 
     func testReplaceUsesOldParentForRemoveAndNewParentForInsert() {

@@ -6,8 +6,17 @@
 import AppKit
 
 class DiffableOutlineView: NSOutlineView {
+    private struct ReloadRequest {
+        let snapshot: DiffableOutlineSnapshot<AnyHashable>
+        let animated: Bool
+        let updateDataSource: () -> Void
+        let prepareReloadData: (() -> Void)?
+        let completion: (() -> Void)?
+    }
+
     private var currentSnapshot: DiffableOutlineSnapshot<AnyHashable>?
     private var isApplyingSnapshot = false
+    private var pendingReloadRequest: ReloadRequest?
 
     func reloadWith(
         _ snapshot: DiffableOutlineSnapshot<AnyHashable>,
@@ -16,65 +25,75 @@ class DiffableOutlineView: NSOutlineView {
         prepareReloadData: (() -> Void)? = nil,
         completion: (() -> Void)? = nil
     ) {
+        let request = ReloadRequest(
+            snapshot: snapshot,
+            animated: animated,
+            updateDataSource: updateDataSource,
+            prepareReloadData: prepareReloadData,
+            completion: completion
+        )
+
         guard Thread.isMainThread else {
             DispatchQueue.main.async { [weak self] in
-                self?.reloadWith(
-                    snapshot,
-                    animated: animated,
-                    updateDataSource: updateDataSource,
-                    prepareReloadData: prepareReloadData,
-                    completion: completion
-                )
+                self?.applyOrQueue(request)
             }
             return
         }
 
+        applyOrQueue(request)
+    }
+
+    private func applyOrQueue(_ request: ReloadRequest) {
         guard !isApplyingSnapshot else {
-            DispatchQueue.main.async { [weak self] in
-                self?.reloadWith(
-                    snapshot,
-                    animated: animated,
-                    updateDataSource: updateDataSource,
-                    prepareReloadData: prepareReloadData,
-                    completion: completion
-                )
-            }
+            pendingReloadRequest = request
             return
         }
 
-        if let validationError = snapshot.validationError {
+        apply(request)
+        applyPendingReloads()
+    }
+
+    private func applyPendingReloads() {
+        while !isApplyingSnapshot, let request = pendingReloadRequest {
+            pendingReloadRequest = nil
+            apply(request)
+        }
+    }
+
+    private func apply(_ request: ReloadRequest) {
+        if let validationError = request.snapshot.validationError {
             reportInvalidSnapshot(validationError)
-            completion?()
+            request.completion?()
             return
         }
 
         guard let oldSnapshot = currentSnapshot else {
-            updateDataSource()
-            prepareReloadData?()
+            request.updateDataSource()
+            request.prepareReloadData?()
             reloadData()
-            currentSnapshot = snapshot
-            completion?()
+            currentSnapshot = request.snapshot
+            request.completion?()
             return
         }
 
-        let plan = DiffableOutlineDiffPlanner.plan(from: oldSnapshot, to: snapshot)
+        let plan = DiffableOutlineDiffPlanner.plan(from: oldSnapshot, to: request.snapshot)
         guard plan.isSafe else {
-            updateDataSource()
-            prepareReloadData?()
+            request.updateDataSource()
+            request.prepareReloadData?()
             reloadData()
-            currentSnapshot = snapshot
-            completion?()
+            currentSnapshot = request.snapshot
+            request.completion?()
             return
         }
 
         isApplyingSnapshot = true
-        updateDataSource()
-        apply(plan.operations, oldSnapshot: oldSnapshot, newSnapshot: snapshot, animated: animated)
-        currentSnapshot = snapshot
+        request.updateDataSource()
+        apply(plan.operations, oldSnapshot: oldSnapshot, newSnapshot: request.snapshot, animated: request.animated)
+        currentSnapshot = request.snapshot
         isApplyingSnapshot = false
 
         DispatchQueue.main.async {
-            completion?()
+            request.completion?()
         }
     }
 

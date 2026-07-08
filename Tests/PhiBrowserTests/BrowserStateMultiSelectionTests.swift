@@ -54,6 +54,16 @@ final class BrowserStateMultiSelectionTests: XCTestCase {
         return false
     }
 
+    private func makeSpace(id: String = "space-target",
+                           profileId: String = "Default") -> SpaceModel {
+        SpaceModel(spaceId: id,
+                   profileId: profileId,
+                   name: "Target",
+                   colorHex: "#000000",
+                   iconName: "circle",
+                   sortOrder: 1)
+    }
+
     func testToggleNormalTabEntersAndExits() throws {
         let state = try makeState()
         seed(state, guids: [1, 2, 3])
@@ -586,6 +596,236 @@ final class BrowserStateMultiSelectionTests: XCTestCase {
         XCTAssertFalse(menu.items.contains { $0.title == "Close Tabs" })
         XCTAssertFalse(menu.items.contains { $0.title == "Close Other Tabs" })
         XCTAssertFalse(menu.items.last?.isSeparatorItem == true)
+    }
+
+    func testFolderMultiSelectionMenuFiltersInvalidBookmarkFolderTargets() throws {
+        let state = try makeState()
+        seed(state, guids: [1, 2])
+        let folderAGuid = "folder-a"
+        let childGuid = "folder-a-1"
+        let siblingGuid = "folder-b"
+        state.localStore.createDirectory(title: "Folder A",
+                                         profileId: state.profileId,
+                                         parentId: nil,
+                                         guid: folderAGuid)
+        state.localStore.createDirectory(title: "Folder A-1",
+                                         profileId: state.profileId,
+                                         parentId: folderAGuid,
+                                         guid: childGuid)
+        state.localStore.createDirectory(title: "Folder B",
+                                         profileId: state.profileId,
+                                         parentId: nil,
+                                         guid: siblingGuid)
+        guard waitUntil(condition: {
+            state.bookmarkManager.bookmark(withGuid: folderAGuid) != nil &&
+                state.bookmarkManager.bookmark(withGuid: childGuid) != nil &&
+                state.bookmarkManager.bookmark(withGuid: siblingGuid) != nil
+        }) else { return }
+        state.toggleMultiSelection(for: state.tabs[1])
+        state.toggleBookmarkMultiSelection(bookmarkGuid: folderAGuid)
+        let menu = NSMenu()
+
+        XCTAssertTrue(TabMultiSelectionMenu.populateIfNeeded(menu, browserState: state))
+
+        let addToFolderItem = try XCTUnwrap(menu.items.first { $0.title == "Add to Folder" })
+        let submenu = try XCTUnwrap(addToFolderItem.submenu)
+        let titles = submenu.items
+            .filter { !$0.isSeparatorItem }
+            .map(\.title)
+        XCTAssertFalse(titles.contains("Folder A"))
+        XCTAssertFalse(titles.contains("Folder A-1"))
+        XCTAssertTrue(titles.contains("Folder B"))
+        XCTAssertTrue(titles.contains("New Folder"))
+    }
+
+    func testAddToFolderMovesSelectedBookmarkRootsAndBookmarksSelectedTabs() throws {
+        let state = try makeState()
+        seed(state, guids: [1, 2])
+        let sourceFolderGuid = "source-folder"
+        let targetFolderGuid = "target-folder"
+        state.localStore.createDirectory(title: "Source Folder",
+                                         profileId: state.profileId,
+                                         parentId: nil,
+                                         guid: sourceFolderGuid)
+        state.localStore.createDirectory(title: "Target Folder",
+                                         profileId: state.profileId,
+                                         parentId: nil,
+                                         guid: targetFolderGuid)
+        guard waitUntil(condition: {
+            state.bookmarkManager.bookmark(withGuid: sourceFolderGuid) != nil &&
+                state.bookmarkManager.bookmark(withGuid: targetFolderGuid) != nil
+        }) else { return }
+        let targetFolder = try XCTUnwrap(state.bookmarkManager.bookmark(withGuid: targetFolderGuid))
+        state.toggleMultiSelection(for: state.tabs[0])
+        state.toggleBookmarkMultiSelection(bookmarkGuid: sourceFolderGuid)
+
+        XCTAssertTrue(state.bookmarkMultiSelectedTabs(into: targetFolder))
+
+        XCTAssertTrue(waitUntil {
+            let children = state.localStore.fetchBookmarks(parentId: targetFolderGuid,
+                                                           profileId: state.profileId)
+            return children.contains(where: { $0.guid == sourceFolderGuid && $0.dataType == .bookmarkFolder }) &&
+                children.contains(where: { $0.url.absoluteString == "https://e1.example" })
+        })
+        XCTAssertFalse(state.multiSelection.isActive)
+    }
+
+    func testAddToFolderRejectsSelectedFolderDescendantTarget() throws {
+        let state = try makeState()
+        seed(state, guids: [1, 2])
+        let folderAGuid = "folder-a"
+        let childGuid = "folder-a-1"
+        state.localStore.createDirectory(title: "Folder A",
+                                         profileId: state.profileId,
+                                         parentId: nil,
+                                         guid: folderAGuid)
+        state.localStore.createDirectory(title: "Folder A-1",
+                                         profileId: state.profileId,
+                                         parentId: folderAGuid,
+                                         guid: childGuid)
+        guard waitUntil(condition: {
+            state.bookmarkManager.bookmark(withGuid: folderAGuid) != nil &&
+                state.bookmarkManager.bookmark(withGuid: childGuid) != nil
+        }) else { return }
+        let childFolder = try XCTUnwrap(state.bookmarkManager.bookmark(withGuid: childGuid))
+        state.toggleMultiSelection(for: state.tabs[0])
+        state.toggleBookmarkMultiSelection(bookmarkGuid: folderAGuid)
+
+        XCTAssertFalse(state.canBookmarkMultiSelection(into: childFolder))
+        XCTAssertFalse(state.bookmarkMultiSelectedTabs(into: childFolder))
+        XCTAssertTrue(state.multiSelection.isActive)
+    }
+
+    func testMoveBookmarkFolderToSpaceRetagsSubtree() throws {
+        let state = try makeState()
+        let targetSpaceId = "space-target"
+        let context = try XCTUnwrap(state.localStore.getMainContext())
+        context.insert(SpaceModel(spaceId: targetSpaceId,
+                                  profileId: state.profileId,
+                                  name: "Target",
+                                  colorHex: "#000000",
+                                  iconName: "circle",
+                                  sortOrder: 1))
+        try context.save()
+
+        let folderGuid = "folder-root"
+        let childGuid = "folder-child"
+        state.localStore.createDirectory(title: "Folder",
+                                         profileId: state.profileId,
+                                         parentId: nil,
+                                         guid: folderGuid,
+                                         spaceId: state.spaceId)
+        XCTAssertTrue(waitUntil {
+            state.localStore.fetchBookmarks(parentId: nil,
+                                            profileId: state.profileId,
+                                            spaceId: state.spaceId).contains { $0.guid == folderGuid }
+        })
+        state.localStore.createBookmark(url: "https://child.example",
+                                        title: "Child",
+                                        profileId: state.profileId,
+                                        parentId: folderGuid,
+                                        guid: childGuid,
+                                        spaceId: state.spaceId)
+        XCTAssertTrue(waitUntil {
+            state.localStore.fetchBookmarks(parentId: folderGuid,
+                                            profileId: state.profileId,
+                                            spaceId: state.spaceId).contains { $0.guid == childGuid }
+        })
+
+        state.localStore.moveBookmarks([folderGuid, childGuid],
+                                       sourceProfileId: state.profileId,
+                                       toSpaceId: targetSpaceId,
+                                       targetProfileId: state.profileId)
+
+        XCTAssertTrue(waitUntil {
+            let targetRoots = state.localStore.fetchBookmarks(parentId: nil,
+                                                              profileId: state.profileId,
+                                                              spaceId: targetSpaceId)
+            let targetChildren = state.localStore.fetchBookmarks(parentId: folderGuid,
+                                                                 profileId: state.profileId,
+                                                                 spaceId: targetSpaceId)
+            return targetRoots.map(\.guid) == [folderGuid] &&
+                targetChildren.contains { $0.guid == childGuid && $0.spaceId == targetSpaceId }
+        })
+        XCTAssertTrue(state.localStore.fetchBookmarks(parentId: nil,
+                                                      profileId: state.profileId,
+                                                      spaceId: state.spaceId).isEmpty)
+    }
+
+    func testCanMoveMultiSelectionAllowsLiveSplitTabWithSourceSlot() throws {
+        let state = try makeState()
+        seed(state, guids: [1, 2])
+        state.splits = [
+            SplitGroup(id: "split-1-2",
+                       primaryTabId: 1,
+                       secondaryTabId: 2,
+                       layout: .vertical,
+                       ratio: 0.5)
+        ]
+        state.focuseTab(state.tabs[0])
+        state.toggleMultiSelection(for: state.tabs[1])
+
+        XCTAssertTrue(state.canMoveMultiSelection(to: makeSpace(),
+                                                  sourceHasSpaceSlot: true))
+        XCTAssertFalse(state.canMoveMultiSelection(to: makeSpace(),
+                                                   sourceHasSpaceSlot: false))
+    }
+
+    func testCanMoveMultiSelectionRejectsPinnedLiveSplitTab() throws {
+        let state = try makeState()
+        seed(state, guids: [1, 2])
+        state.splits = [
+            SplitGroup(id: "split-1-2",
+                       primaryTabId: 1,
+                       secondaryTabId: 2,
+                       layout: .vertical,
+                       ratio: 0.5,
+                       isPinned: true)
+        ]
+        state.focuseTab(state.tabs[0])
+        state.toggleMultiSelection(for: state.tabs[1])
+
+        XCTAssertFalse(state.canMoveMultiSelection(to: makeSpace(),
+                                                   sourceHasSpaceSlot: true))
+    }
+
+    func testCanMoveMultiSelectionRejectsCrossProfileSplitWithMissingURL() throws {
+        let state = try makeState()
+        seed(state, guids: [1, 2])
+        state.tabs[1].url = nil
+        state.splits = [
+            SplitGroup(id: "split-1-2",
+                       primaryTabId: 1,
+                       secondaryTabId: 2,
+                       layout: .vertical,
+                       ratio: 0.5)
+        ]
+        state.focuseTab(state.tabs[0])
+        state.toggleMultiSelection(for: state.tabs[1])
+
+        XCTAssertFalse(state.canMoveMultiSelection(to: makeSpace(profileId: "Profile-B"),
+                                                   sourceHasSpaceSlot: true))
+    }
+
+    func testSpaceMoveUnitsExpandLiveSplitAsTwoNormalTabs() throws {
+        let state = try makeState()
+        seed(state, guids: [1, 2, 3, 4])
+        state.splits = [
+            SplitGroup(id: "split-2-3",
+                       primaryTabId: 2,
+                       secondaryTabId: 3,
+                       layout: .vertical,
+                       ratio: 0.5)
+        ]
+        let units = SpaceManager.shared.tabMoveUnits(from: [state.tabs[1], state.tabs[3]],
+                                                     sourceState: state)
+
+        XCTAssertEqual(units.map(\.normalTabCount), [2, 1])
+        guard case .split(let left, let right) = units.first else {
+            return XCTFail("Expected the selected split pane to move as a split unit.")
+        }
+        XCTAssertEqual(left.guid, 2)
+        XCTAssertEqual(right.guid, 3)
     }
 
     func testTwoUnopenedBookmarkTabsCanOpenAsSplit() throws {

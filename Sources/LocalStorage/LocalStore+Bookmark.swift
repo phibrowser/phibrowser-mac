@@ -475,6 +475,89 @@ extension LocalStore {
             }
         }
     }
+
+    /// Moves visible bookmark roots to another Space's bookmark root.
+    /// Descendants travel with a selected folder and are retagged to the
+    /// target `(profileId, spaceId)` so the destination Space publisher owns
+    /// the whole subtree.
+    func moveBookmarks(_ guids: [String],
+                       sourceProfileId: String,
+                       toSpaceId targetSpaceId: String,
+                       targetProfileId: String) {
+        performBackgroundWrite { [weak self] context in
+            guard let self else { return }
+            do {
+                guard !guids.isEmpty else { return }
+                let targetSpaceIsWritable: Bool
+                if targetSpaceId == Self.defaultSpaceId {
+                    targetSpaceIsWritable = true
+                } else {
+                    targetSpaceIsWritable = try self.importTargetSpaceIsWritable(profileId: targetProfileId,
+                                                                                 spaceId: targetSpaceId,
+                                                                                 in: context)
+                }
+                guard targetSpaceIsWritable else {
+                    AppLogError("Target Space not found when moving bookmarks")
+                    return
+                }
+                guard let targetProfile = try self.profile(with: targetProfileId,
+                                                           in: context,
+                                                           createIfNeeded: true),
+                      let targetRoot = try self.bookmarkRoot(profileId: targetProfileId,
+                                                             spaceId: targetSpaceId,
+                                                             in: context,
+                                                             createIfNeeded: true) else {
+                    AppLogError("Target bookmark root not found when moving bookmarks")
+                    return
+                }
+
+                let requestedGuids = Set(guids)
+                var sourceParentsByGuid: [String: TabDataModel] = [:]
+                var movedNodes: [TabDataModel] = []
+                var movedGuids = Set<String>()
+                let now = Date()
+
+                for guid in guids {
+                    guard let node = try self.bookmarkNode(with: guid, in: context),
+                          node.profileId == sourceProfileId,
+                          try !self.isBookmarkRoot(node, in: context),
+                          !self.hasAncestor(of: node, in: requestedGuids) else {
+                        continue
+                    }
+                    if node.spaceId == targetSpaceId && node.profileId == targetProfileId {
+                        continue
+                    }
+
+                    if let parent = node.parent {
+                        sourceParentsByGuid[parent.guid] = parent
+                    }
+                    node.parent = targetRoot
+                    try self.retagBookmarkSubtree(node,
+                                                  profileId: targetProfileId,
+                                                  profile: targetProfile,
+                                                  spaceId: targetSpaceId,
+                                                  updatedDate: now,
+                                                  in: context)
+                    movedNodes.append(node)
+                    movedGuids.insert(node.guid)
+                }
+
+                guard !movedNodes.isEmpty else { return }
+                for parent in sourceParentsByGuid.values where parent.guid != targetRoot.guid {
+                    let siblings = try self.children(of: parent, in: context)
+                    self.normalizeIndexes(for: siblings)
+                }
+
+                var targetSiblings = try self.children(of: targetRoot, in: context)
+                    .filter { !movedGuids.contains($0.guid) }
+                targetSiblings.append(contentsOf: movedNodes)
+                self.normalizeIndexes(for: targetSiblings)
+                targetRoot.updatedDate = now
+            } catch {
+                AppLogError("Failed to move bookmarks to Space: \(error)")
+            }
+        }
+    }
     
     /// Updates bookmark title and URL, normalizing the URL when provided.
     /// `secondaryUrl` / `secondaryTitle` are split-bookmark specific: pass
@@ -811,6 +894,37 @@ private extension LocalStore {
         let predicate = #Predicate<TabDataModel> { $0.guid == guid }
         let descriptor = FetchDescriptor<TabDataModel>(predicate: predicate)
         return try context.fetch(descriptor).first
+    }
+
+    func hasAncestor(of node: TabDataModel, in guids: Set<String>) -> Bool {
+        var parent = node.parent
+        while let current = parent {
+            if guids.contains(current.guid) {
+                return true
+            }
+            parent = current.parent
+        }
+        return false
+    }
+
+    func retagBookmarkSubtree(_ node: TabDataModel,
+                              profileId: String,
+                              profile: ProfileModel,
+                              spaceId: String,
+                              updatedDate: Date,
+                              in context: ModelContext) throws {
+        node.profileId = profileId
+        node.profile = profile
+        node.spaceId = spaceId
+        node.updatedDate = updatedDate
+        for child in try children(of: node, in: context) {
+            try retagBookmarkSubtree(child,
+                                     profileId: profileId,
+                                     profile: profile,
+                                     spaceId: spaceId,
+                                     updatedDate: updatedDate,
+                                     in: context)
+        }
     }
 
     func insertDirectoryNode(title: String,

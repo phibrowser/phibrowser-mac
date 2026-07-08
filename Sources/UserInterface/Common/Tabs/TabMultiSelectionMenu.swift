@@ -66,8 +66,11 @@ enum TabMultiSelectionMenu {
             let bookmarkSubmenu = NSMenu()
 
             let folders = browserState.bookmarkManager.getAllFolderWithHierarchy()
-            if !folders.isEmpty {
-                buildFolderMenuItems(from: folders, into: bookmarkSubmenu, controller: controller)
+            let folderCount = buildFolderMenuItems(from: folders,
+                                                   into: bookmarkSubmenu,
+                                                   controller: controller,
+                                                   browserState: browserState)
+            if folderCount > 0 {
                 bookmarkSubmenu.addItem(.separator())
             }
 
@@ -123,6 +126,10 @@ enum TabMultiSelectionMenu {
             }
         }
 
+        appendMoveToSpaceMenuItems(into: &items,
+                                   browserState: browserState,
+                                   controller: controller)
+
         if context.showsCloseItems {
             items.append(.separator())
 
@@ -154,10 +161,16 @@ enum TabMultiSelectionMenu {
         return true
     }
 
+    @MainActor
     private static func buildFolderMenuItems(from folders: [Bookmark],
                                              into menu: NSMenu,
-                                             controller: TabMultiSelectionMenuController) {
+                                             controller: TabMultiSelectionMenuController,
+                                             browserState: BrowserState) -> Int {
+        var addedCount = 0
         for folder in folders {
+            guard browserState.canBookmarkMultiSelection(into: folder) else {
+                continue
+            }
             let folderItem = NSMenuItem(
                 title: folder.title,
                 action: #selector(TabMultiSelectionMenuController.addToFolder(_:)),
@@ -167,12 +180,59 @@ enum TabMultiSelectionMenu {
 
             if folder.hasChildren {
                 let submenu = NSMenu()
-                buildFolderMenuItems(from: folder.children, into: submenu, controller: controller)
-                folderItem.submenu = submenu
+                let childCount = buildFolderMenuItems(from: folder.children,
+                                                      into: submenu,
+                                                      controller: controller,
+                                                      browserState: browserState)
+                if childCount > 0 {
+                    folderItem.submenu = submenu
+                }
             }
 
             menu.addItem(folderItem)
+            addedCount += 1
         }
+        return addedCount
+    }
+
+    @MainActor
+    private static func appendMoveToSpaceMenuItems(into items: inout [NSMenuItem],
+                                                   browserState: BrowserState,
+                                                   controller: TabMultiSelectionMenuController) {
+        guard PhiPreferences.GeneralSettings.spacesFeatureEnabled.loadValue(),
+              !browserState.isIncognito else {
+            return
+        }
+
+        let targets = SpaceManager.shared.spaces.filter {
+            browserState.canMoveMultiSelection(toSpaceId: $0.spaceId)
+        }
+        guard !targets.isEmpty else { return }
+
+        if items.last?.isSeparatorItem != true {
+            items.append(.separator())
+        }
+
+        let parent = NSMenuItem(
+            title: NSLocalizedString(
+                "Move to Space",
+                comment: "Tab multi-selection context menu - Submenu to move selected tabs and bookmarks to another Space"),
+            action: nil,
+            keyEquivalent: "")
+        let submenu = NSMenu()
+        for space in targets {
+            let entry = NSMenuItem(title: space.name,
+                                   action: #selector(TabMultiSelectionMenuController.moveSelectedToSpace(_:)),
+                                   keyEquivalent: "")
+            entry.target = controller
+            if let icon = NSImage(systemSymbolName: space.iconName, accessibilityDescription: nil) {
+                entry.image = icon
+            }
+            entry.representedObject = space.spaceId
+            submenu.addItem(entry)
+        }
+        parent.submenu = submenu
+        items.append(parent)
     }
 
     private static func orderedGroupsInStripOrder(state: BrowserState) -> [WebContentGroupInfo] {
@@ -210,15 +270,22 @@ final class TabMultiSelectionMenuController: NSObject {
         // Snapshot the selection now; the modal dialog clears it before the
         // completion handler runs.
         let tabs = browserState.orderedMultiSelectedTabsIncludingSplitPartners
+        let bookmarkGuids = browserState.orderedMultiSelectedBookmarkRoots.map(\.guid)
         EditPinnedTabPresenter.presentModal(mode: .newFolder, from: window) { result in
             guard let name = result.title, !name.isEmpty else { return }
-            browserState.bookmarkTabs(tabs, intoNewFolderNamed: name)
+            browserState.bookmarkSelectionSnapshot(tabs: tabs,
+                                                   bookmarkGuids: bookmarkGuids,
+                                                   intoNewFolderNamed: name)
         }
     }
     @objc func createTabGroup() { browserState?.groupMultiSelectedTabs() }
     @objc func addToExistingGroup(_ sender: NSMenuItem) {
         guard let token = sender.representedObject as? String else { return }
         browserState?.addMultiSelectedTabs(toGroup: token)
+    }
+    @objc func moveSelectedToSpace(_ sender: NSMenuItem) {
+        guard let targetSpaceId = sender.representedObject as? String else { return }
+        browserState?.moveMultiSelection(toSpaceId: targetSpaceId)
     }
 
     // Disable a group entry when every selected tab is already in that group.
@@ -232,8 +299,22 @@ final class TabMultiSelectionMenuController: NSObject {
             return !browserState.multiSelectionTargets(forAddingToGroup: token).isEmpty
         }
 
+        if menuItem.action == #selector(addToFolder(_:)) {
+            guard let folder = menuItem.representedObject as? Bookmark else {
+                return false
+            }
+            return browserState.canBookmarkMultiSelection(into: folder)
+        }
+
         if menuItem.action == #selector(openSelectedAsSplit) {
             return browserState.multiSelectionContext.canOpenAsSplit
+        }
+
+        if menuItem.action == #selector(moveSelectedToSpace(_:)) {
+            guard let targetSpaceId = menuItem.representedObject as? String else {
+                return false
+            }
+            return browserState.canMoveMultiSelection(toSpaceId: targetSpaceId)
         }
 
         if menuItem.action == #selector(closeOtherSelected) {

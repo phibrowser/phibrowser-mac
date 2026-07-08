@@ -1064,6 +1064,154 @@ final class SpaceManager: ObservableObject {
         }
     }
 
+    enum SpaceMoveTabUnit {
+        case tab(Tab)
+        case split(left: Tab, right: Tab)
+
+        var tabs: [Tab] {
+            switch self {
+            case .tab(let tab):
+                return [tab]
+            case .split(let left, let right):
+                return [left, right]
+            }
+        }
+
+        var hasRequiredURLs: Bool {
+            tabs.allSatisfy { ($0.url ?? "").isEmpty == false }
+        }
+
+        var normalTabCount: Int {
+            tabs.count
+        }
+    }
+
+    func tabMoveUnits(from tabs: [Tab], sourceState: BrowserState) -> [SpaceMoveTabUnit] {
+        let requestedIds = Set(tabs.map(\.guid))
+        var units: [SpaceMoveTabUnit] = []
+        var consumedSplitIds = Set<String>()
+
+        for tab in sourceState.normalTabs where requestedIds.contains(tab.guid) {
+            guard sourceState.tabs.contains(where: { $0.guid == tab.guid }),
+                  !tab.isPinned else {
+                continue
+            }
+
+            guard let splitGroup = sourceState.splitGroup(forTabId: tab.guid) else {
+                units.append(.tab(tab))
+                continue
+            }
+            guard !splitGroup.isPinned,
+                  !consumedSplitIds.contains(splitGroup.id),
+                  let left = sourceState.tabs.first(where: { $0.guid == splitGroup.primaryTabId }),
+                  let right = sourceState.tabs.first(where: { $0.guid == splitGroup.secondaryTabId }),
+                  !left.isPinned,
+                  !right.isPinned else {
+                continue
+            }
+
+            consumedSplitIds.insert(splitGroup.id)
+            units.append(.split(left: left, right: right))
+        }
+
+        return units
+    }
+
+    /// Batch variant used by multi-selection actions. The caller filters
+    /// bookmark-backed selections before entering this API; live split tabs are
+    /// preserved as split units instead of being torn into separate tabs.
+    @discardableResult
+    func moveTabs(_ tabs: [Tab],
+                  from sourceState: BrowserState,
+                  toSpaceId targetSpaceId: String) -> Bool {
+        let movingUnits = tabMoveUnits(from: tabs, sourceState: sourceState)
+        guard !movingUnits.isEmpty else { return false }
+        guard targetSpaceId != sourceState.spaceId else { return false }
+        guard let targetSpace = spaces.first(where: { $0.spaceId == targetSpaceId }) else {
+            AppLogWarn("[SpaceManager] moveTabs: unknown target space \(targetSpaceId)")
+            return false
+        }
+        guard let slot = slot(forWindowId: sourceState.windowId) else {
+            AppLogWarn("[SpaceManager] moveTabs: no slot owns windowId \(sourceState.windowId)")
+            return false
+        }
+
+        let sameProfile = !sourceState.isIncognito
+            && targetSpace.profileId == sourceState.profileId
+        if !sameProfile, movingUnits.contains(where: { !$0.hasRequiredURLs }) {
+            AppLogWarn("[SpaceManager] moveTabs: cross-profile move contains an empty URL")
+            return false
+        }
+
+        slot.activate(spaceId: targetSpaceId) { [weak slot] in
+            MainActor.assumeIsolated {
+                guard let slot,
+                      let targetState = slot.windowController(for: targetSpaceId)?.browserState else {
+                    AppLogWarn("[SpaceManager] moveTabs: target window unavailable after activate")
+                    return
+                }
+
+                if sameProfile {
+                    let baseNormalIndex = targetState.normalTabs.count
+                    let baseStripIndex = targetState.tabs.count
+                    var normalOffset = 0
+                    var stripOffset = 0
+                    for unit in movingUnits {
+                        switch unit {
+                        case .tab(let tab):
+                            guard let wrapper = tab.webContentWrapper else {
+                                AppLogWarn("[SpaceManager] moveTabs: source tab \(tab.guid) lost its web contents")
+                                continue
+                            }
+                            targetState.scheduleNormalTabInsertion(tabGuid: tab.guid,
+                                                                   at: baseNormalIndex + normalOffset)
+                            wrapper.moveSplit(toWindow: targetState.windowId.int64Value,
+                                              at: baseStripIndex + stripOffset)
+                            normalOffset += 1
+                            stripOffset += 1
+                        case .split(let left, let right):
+                            guard let wrapper = left.webContentWrapper ?? right.webContentWrapper else {
+                                AppLogWarn(
+                                    "[SpaceManager] moveTabs: source split " +
+                                    "\(left.guid),\(right.guid) lost its web contents"
+                                )
+                                continue
+                            }
+                            wrapper.moveSplit(toWindow: targetState.windowId.int64Value,
+                                              at: baseStripIndex + stripOffset)
+                            normalOffset += unit.normalTabCount
+                            stripOffset += unit.normalTabCount
+                        }
+                    }
+                } else {
+                    for (offset, unit) in movingUnits.enumerated() {
+                        switch unit {
+                        case .tab(let tab):
+                            targetState.createTab(tab.url, focusAfterCreate: offset == movingUnits.count - 1)
+                            sourceState.closeTab(tab.guid)
+                        case .split(let left, let right):
+                            guard let primaryURL = left.url, !primaryURL.isEmpty,
+                                  let secondaryURL = right.url, !secondaryURL.isEmpty else {
+                                AppLogWarn(
+                                    "[SpaceManager] moveTabs: source split " +
+                                    "\(left.guid),\(right.guid) lost its URLs"
+                                )
+                                continue
+                            }
+                            targetState.openTwoURLsAsSplit(primaryURL: primaryURL,
+                                                           secondaryURL: secondaryURL)
+                            sourceState.closeTab(left.guid)
+                            if sourceState.tabs.contains(where: { $0.guid == right.guid }) {
+                                sourceState.closeTab(right.guid)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        return true
+    }
+
     func renameSpace(spaceId: String, to name: String) {
         boundAccount?.localStorage.updateSpace(spaceId: spaceId, name: name)
     }

@@ -1377,6 +1377,121 @@ class BrowserState {
         }
     }
 
+    @MainActor
+    func canMoveMultiSelection(toSpaceId targetSpaceId: String) -> Bool {
+        guard let targetSpace = SpaceManager.shared.spaces.first(where: { $0.spaceId == targetSpaceId }) else {
+            return false
+        }
+        return canMoveMultiSelection(to: targetSpace)
+    }
+
+    @MainActor
+    private func canMoveMultiSelection(to targetSpace: SpaceModel) -> Bool {
+        canMoveMultiSelection(to: targetSpace,
+                              sourceHasSpaceSlot: SpaceManager.shared.slot(forWindowId: windowId) != nil)
+    }
+
+    @MainActor
+    func canMoveMultiSelection(to targetSpace: SpaceModel,
+                               sourceHasSpaceSlot: Bool) -> Bool {
+        guard PhiPreferences.GeneralSettings.spacesFeatureEnabled.loadValue(),
+              multiSelection.isActive,
+              !isIncognito,
+              targetSpace.spaceId != spaceId,
+              targetSpace.spaceId != SpaceManager.incognitoSpaceId else {
+            return false
+        }
+        guard let plan = multiSelectionSpaceMovePlan() else {
+            return false
+        }
+        guard !plan.tabs.isEmpty || !plan.bookmarkRoots.isEmpty else {
+            return false
+        }
+        if !plan.tabs.isEmpty && !sourceHasSpaceSlot {
+            return false
+        }
+        if targetSpace.profileId != profileId {
+            return plan.tabs.allSatisfy { $0.url?.isEmpty == false }
+        }
+        return true
+    }
+
+    @discardableResult
+    @MainActor
+    func moveMultiSelection(toSpaceId targetSpaceId: String) -> Bool {
+        guard let targetSpace = SpaceManager.shared.spaces.first(where: { $0.spaceId == targetSpaceId }),
+              canMoveMultiSelection(to: targetSpace),
+              let plan = multiSelectionSpaceMovePlan() else {
+            return false
+        }
+
+        clearMultiSelection()
+
+        if !plan.detachedBookmarkGuids.isEmpty {
+            detachBookmarkTabsForComfortableLayout(bookmarkGuids: plan.detachedBookmarkGuids)
+        }
+        if !plan.bookmarkRoots.isEmpty {
+            localStore.moveBookmarks(plan.bookmarkRoots.map(\.guid),
+                                     sourceProfileId: profileId,
+                                     toSpaceId: targetSpace.spaceId,
+                                     targetProfileId: targetSpace.profileId)
+        }
+
+        if !plan.tabs.isEmpty {
+            return SpaceManager.shared.moveTabs(plan.tabs,
+                                                from: self,
+                                                toSpaceId: targetSpace.spaceId)
+        }
+
+        SpaceManager.shared.activateInFocusedWindow(spaceId: targetSpace.spaceId)
+        return true
+    }
+
+    private struct MultiSelectionSpaceMovePlan {
+        let tabs: [Tab]
+        let bookmarkRoots: [Bookmark]
+        let detachedBookmarkGuids: Set<String>
+    }
+
+    @MainActor
+    private func multiSelectionSpaceMovePlan() -> MultiSelectionSpaceMovePlan? {
+        var bookmarkGuids = multiSelectionBookmarkGuidsIncludingImplicitActive
+        var movableTabs: [Tab] = []
+
+        for tab in orderedMultiSelectedTabsIncludingSplitPartners {
+            if let bookmarkGuid = bookmarkGuidBacking(tab) {
+                bookmarkGuids.insert(bookmarkGuid)
+                continue
+            }
+            guard !tab.isPinned else {
+                return nil
+            }
+            if let splitGroup = splitGroup(forTabId: tab.guid),
+               splitGroup.isPinned {
+                return nil
+            }
+            movableTabs.append(tab)
+        }
+
+        let bookmarkRoots = bookmarkRoots(for: bookmarkGuids)
+        return MultiSelectionSpaceMovePlan(tabs: movableTabs,
+                                           bookmarkRoots: bookmarkRoots,
+                                           detachedBookmarkGuids: bookmarkLeafGuids(in: bookmarkRoots))
+    }
+
+    private func bookmarkLeafGuids(in bookmarks: [Bookmark]) -> Set<String> {
+        var guids = Set<String>()
+        func collect(_ bookmark: Bookmark) {
+            if bookmark.isFolder {
+                bookmark.children.forEach(collect)
+            } else {
+                guids.insert(bookmark.guid)
+            }
+        }
+        bookmarks.forEach(collect)
+        return guids
+    }
+
     @discardableResult
     private func copyURLsToPasteboard(_ urls: [String]) -> Bool {
         guard !urls.isEmpty else { return false }
@@ -1515,11 +1630,12 @@ class BrowserState {
         return bookmarkManager.getAllBookmarks().filter { selectedGuids.contains($0.guid) }
     }
 
-    @MainActor
-    var orderedMultiSelectedBookmarkRoots: [Bookmark] {
-        let selectedGuids = multiSelectionBookmarkGuidsIncludingImplicitActive
+    private func bookmarkRoots(for selectedGuids: Set<String>) -> [Bookmark] {
         guard !selectedGuids.isEmpty else { return [] }
-        return orderedMultiSelectedBookmarks.filter { bookmark in
+        let selectedBookmarks = bookmarkManager.getAllBookmarks().filter {
+            selectedGuids.contains($0.guid)
+        }
+        return selectedBookmarks.filter { bookmark in
             var parent = bookmark.parent
             while let current = parent {
                 if selectedGuids.contains(current.guid) {
@@ -1529,6 +1645,11 @@ class BrowserState {
             }
             return true
         }
+    }
+
+    @MainActor
+    var orderedMultiSelectedBookmarkRoots: [Bookmark] {
+        bookmarkRoots(for: multiSelectionBookmarkGuidsIncludingImplicitActive)
     }
 
     @MainActor
@@ -1592,8 +1713,33 @@ class BrowserState {
         let favicon: Data?
     }
 
-    func bookmarkMultiSelectedTabs(into folder: Bookmark?) {
+    @MainActor
+    func canBookmarkMultiSelection(into folder: Bookmark?) -> Bool {
+        guard multiSelection.isActive else { return false }
+        guard !multiSelectionTabUnits.isEmpty || !orderedMultiSelectedBookmarkRoots.isEmpty else {
+            return false
+        }
+        guard let folder else { return true }
+        guard let target = bookmarkManager.bookmark(withGuid: folder.guid),
+              target.isFolder else {
+            return false
+        }
+        return canMoveCurrentBookmarkSelection(to: target)
+    }
+
+    @discardableResult
+    @MainActor
+    func bookmarkMultiSelectedTabs(into folder: Bookmark?) -> Bool {
+        guard canBookmarkMultiSelection(into: folder) else { return false }
         let units = multiSelectionTabUnits
+        let bookmarks = orderedMultiSelectedBookmarkRoots
+        let targetFolder: Bookmark?
+        if let folder {
+            targetFolder = bookmarkManager.bookmark(withGuid: folder.guid)
+        } else {
+            targetFolder = nil
+        }
+        var didChange = false
         clearMultiSelection()
         for unit in units {
             switch unit {
@@ -1601,26 +1747,48 @@ class BrowserState {
                 guard let tabURL = tab.url, !tabURL.isEmpty else { continue }
                 bookmarkManager.addBookmark(title: tab.title,
                                             url: URLProcessor.processUserInput(tabURL),
-                                            to: folder,
+                                            to: targetFolder,
                                             faviconData: tab.liveFaviconData ?? tab.cachedFaviconData)
+                didChange = true
             case .split(let left, _):
-                addSplitBookmarkFromTab(left, toFolder: folder, bindLiveSplit: false)
+                if addSplitBookmarkFromTab(left, toFolder: targetFolder, bindLiveSplit: false) {
+                    didChange = true
+                }
             }
         }
+        for bookmark in bookmarks {
+            guard let liveBookmark = bookmarkManager.bookmark(withGuid: bookmark.guid) else {
+                continue
+            }
+            moveBookmark(liveBookmark, to: targetFolder)
+            didChange = true
+        }
+        return didChange
     }
 
     /// Bookmarks a pre-captured tab snapshot into a newly created folder.
     /// The caller must snapshot the selection before any async UI (e.g. the
     /// new-folder dialog) clears it; reading the live selection here would
     /// only see the implicit active tab.
+    @MainActor
     func bookmarkTabs(_ tabs: [Tab], intoNewFolderNamed name: String) {
+        bookmarkSelectionSnapshot(tabs: tabs, bookmarkGuids: [], intoNewFolderNamed: name)
+    }
+
+    /// Bookmarks a pre-captured mixed selection into a newly created root folder.
+    @MainActor
+    func bookmarkSelectionSnapshot(tabs: [Tab],
+                                   bookmarkGuids: [String],
+                                   intoNewFolderNamed name: String) {
         let units = tabUnitsPreservingSplits(from: tabs)
         let drafts = bookmarkCreationDrafts(from: units)
+        let bookmarkRoots = bookmarkRoots(for: Set(bookmarkGuids))
         clearMultiSelection()
-        guard !drafts.isEmpty else { return }
+        guard !drafts.isEmpty || !bookmarkRoots.isEmpty else { return }
+        let folderGuid = UUID().uuidString
         localStore.createDirectoryWithBookmarks(
             folderTitle: name,
-            folderGuid: UUID().uuidString,
+            folderGuid: folderGuid,
             profileId: profileId,
             parentId: nil,
             index: nil,
@@ -1634,6 +1802,48 @@ class BrowserState {
                  favicon: $0.favicon)
             }
         )
+        for bookmark in bookmarkRoots {
+            localStore.moveBookmark(bookmark.guid,
+                                    profileId: profileId,
+                                    to: folderGuid,
+                                    newIndex: Int.max)
+        }
+    }
+
+    @MainActor
+    private func canMoveCurrentBookmarkSelection(to target: Bookmark) -> Bool {
+        for bookmark in orderedMultiSelectedBookmarkRoots {
+            if bookmark.guid == target.guid {
+                return false
+            }
+            if bookmark.isFolder && isBookmark(target, descendantOf: bookmark) {
+                return false
+            }
+        }
+        return true
+    }
+
+    private func isBookmark(_ bookmark: Bookmark, descendantOf ancestor: Bookmark) -> Bool {
+        var parent = bookmark.parent
+        while let current = parent {
+            if current.guid == ancestor.guid {
+                return true
+            }
+            parent = current.parent
+        }
+        return false
+    }
+
+    @MainActor
+    private func moveBookmark(_ bookmark: Bookmark, to folder: Bookmark?) {
+        if let folder {
+            bookmarkManager.moveBookmark(bookmark, to: folder)
+        } else {
+            localStore.moveBookmark(bookmark.guid,
+                                    profileId: profileId,
+                                    to: nil,
+                                    newIndex: Int.max)
+        }
     }
 
     private func bookmarkCreationDrafts(from units: [MultiSelectionTabUnit]) -> [BookmarkCreationDraft] {

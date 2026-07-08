@@ -1156,7 +1156,7 @@ class BrowserState {
 
     @MainActor
     var multiSelectionContext: MultiSelectionContext {
-        let bookmarkGuids = multiSelection.bookmarkGuids
+        let bookmarkGuids = multiSelectionBookmarkGuidsIncludingImplicitActive
         let selectedBookmarks = bookmarkGuids.compactMap { bookmarkManager.bookmark(withGuid: $0) }
         let containsFolder = selectedBookmarks.contains { $0.isFolder }
         return MultiSelectionContext(
@@ -1174,6 +1174,17 @@ class BrowserState {
             return
         }
         multiSelection.insertBookmark(bookmarkGuid)
+    }
+
+    private var multiSelectionBookmarkGuidsIncludingImplicitActive: Set<String> {
+        var bookmarkGuids = multiSelection.bookmarkGuids
+        guard multiSelection.isActive,
+              let activeTab = focusingTab,
+              let activeBookmarkGuid = bookmarkGuidBacking(activeTab) else {
+            return bookmarkGuids
+        }
+        bookmarkGuids.insert(activeBookmarkGuid)
+        return bookmarkGuids
     }
 
     @MainActor
@@ -1229,8 +1240,9 @@ class BrowserState {
     @MainActor
     func multiSelectionDragBookmarkGuids(startingFrom bookmark: Bookmark? = nil) -> [String]? {
         guard TabMultiSelection.isEnabled, multiSelection.isActive else { return nil }
+        let selectedBookmarkGuids = multiSelectionBookmarkGuidsIncludingImplicitActive
         if let bookmark,
-           !multiSelection.bookmarkGuids.contains(bookmark.guid) {
+           !selectedBookmarkGuids.contains(bookmark.guid) {
             return nil
         }
         let guids = orderedMultiSelectedBookmarkRoots.map(\.guid)
@@ -1350,7 +1362,7 @@ class BrowserState {
     }
 
     private func bookmarkRootsForCurrentMultiSelection() -> [Bookmark] {
-        let selectedGuids = multiSelection.bookmarkGuids
+        let selectedGuids = multiSelectionBookmarkGuidsIncludingImplicitActive
         guard !selectedGuids.isEmpty else { return [] }
         let selectedBookmarks = bookmarkManager.getAllBookmarks().filter { selectedGuids.contains($0.guid) }
         return selectedBookmarks.filter { bookmark in
@@ -1393,35 +1405,39 @@ class BrowserState {
         let candidates = multiSelectionSplitCandidates
         guard candidates.count == 2 else { return }
         let didOpen: Bool
-        switch (candidates[0], candidates[1]) {
-        case (.tab(let left), .tab(let right)):
+        if let left = candidates[0].existingTab,
+           let right = candidates[1].existingTab,
+           left.guid != right.guid {
             makeTabNormalOpened(tabId: left.guid)
             makeTabNormalOpened(tabId: right.guid)
             didOpen = createSplit(leftTabId: left.guid,
                                   rightTabId: right.guid,
                                   layout: .vertical) != nil
-        case (.tab(let tab), .bookmark(let bookmark)):
-            guard let url = bookmark.url, !url.isEmpty else { return }
+        } else if let tab = candidates[0].existingTab,
+                  let url = candidates[1].pendingURLString,
+                  !url.isEmpty {
             makeTabNormalOpened(tabId: tab.guid)
             openNewTabAsSplit(partnerTabId: tab.guid,
                               newTabSlot: .right,
                               partnerNavigateURL: URLProcessor.processUserInput(url))
             didOpen = true
-        case (.bookmark(let bookmark), .tab(let tab)):
-            guard let url = bookmark.url, !url.isEmpty else { return }
+        } else if let url = candidates[0].pendingURLString,
+                  let tab = candidates[1].existingTab,
+                  !url.isEmpty {
             makeTabNormalOpened(tabId: tab.guid)
             openNewTabAsSplit(partnerTabId: tab.guid,
                               newTabSlot: .left,
                               partnerNavigateURL: URLProcessor.processUserInput(url))
             didOpen = true
-        case (.bookmark(let first), .bookmark(let second)):
-            guard let primaryURL = first.url, !primaryURL.isEmpty,
-                  let secondaryURL = second.url, !secondaryURL.isEmpty else {
-                return
-            }
+        } else if let primaryURL = candidates[0].pendingURLString,
+                  let secondaryURL = candidates[1].pendingURLString,
+                  !primaryURL.isEmpty,
+                  !secondaryURL.isEmpty {
             openTwoURLsAsSplit(primaryURL: URLProcessor.processUserInput(primaryURL),
                                secondaryURL: URLProcessor.processUserInput(secondaryURL))
             didOpen = true
+        } else {
+            return
         }
         if didOpen {
             clearMultiSelection()
@@ -1466,7 +1482,26 @@ class BrowserState {
 
     private enum MultiSelectionSplitCandidate {
         case tab(Tab)
-        case bookmark(Bookmark)
+        case bookmark(Bookmark, attachedTab: Tab?)
+
+        var existingTab: Tab? {
+            switch self {
+            case .tab(let tab):
+                return tab
+            case .bookmark(_, let attachedTab):
+                return attachedTab
+            }
+        }
+
+        var pendingURLString: String? {
+            switch self {
+            case .tab:
+                return nil
+            case .bookmark(let bookmark, let attachedTab):
+                guard attachedTab == nil else { return nil }
+                return bookmark.url
+            }
+        }
     }
 
     private var multiSelectionTabUnits: [MultiSelectionTabUnit] {
@@ -1475,14 +1510,14 @@ class BrowserState {
 
     @MainActor
     var orderedMultiSelectedBookmarks: [Bookmark] {
-        let selectedGuids = multiSelection.bookmarkGuids
+        let selectedGuids = multiSelectionBookmarkGuidsIncludingImplicitActive
         guard !selectedGuids.isEmpty else { return [] }
         return bookmarkManager.getAllBookmarks().filter { selectedGuids.contains($0.guid) }
     }
 
     @MainActor
     var orderedMultiSelectedBookmarkRoots: [Bookmark] {
-        let selectedGuids = multiSelection.bookmarkGuids
+        let selectedGuids = multiSelectionBookmarkGuidsIncludingImplicitActive
         guard !selectedGuids.isEmpty else { return [] }
         return orderedMultiSelectedBookmarks.filter { bookmark in
             var parent = bookmark.parent
@@ -1512,7 +1547,12 @@ class BrowserState {
                   bookmark.secondaryUrl?.isEmpty != false else {
                 return nil
             }
-            return .bookmark(bookmark)
+            let attachedTab = tabs.first { tab in
+                tab.guidInLocalDB == bookmark.guid &&
+                !tab.isPinned &&
+                splitGroup(forTabId: tab.guid) == nil
+            }
+            return .bookmark(bookmark, attachedTab: attachedTab)
         }
         return tabCandidates + bookmarkCandidates
     }

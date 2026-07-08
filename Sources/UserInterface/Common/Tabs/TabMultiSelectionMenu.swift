@@ -33,14 +33,13 @@ enum TabMultiSelectionMenu {
             keyEquivalent: "")
         items.append(copyLinksItem)
 
-        if context.canOpenAsSplit || context.containsBookmarkFolder {
+        if context.canOpenAsSplit {
             let openAsSplitItem = NSMenuItem(
                 title: NSLocalizedString(
                     "Open as Split",
                     comment: "Tab multi-selection context menu - split exactly two selected tabs into paired panes"),
                 action: #selector(TabMultiSelectionMenuController.openSelectedAsSplit),
                 keyEquivalent: "")
-            openAsSplitItem.isEnabled = context.canOpenAsSplit
             items.append(openAsSplitItem)
         }
 
@@ -84,40 +83,44 @@ enum TabMultiSelectionMenu {
             addToFolderItem.submenu = bookmarkSubmenu
             items.append(addToFolderItem)
 
-            items.append(.separator())
+            if !context.containsBookmarkFolder {
+                items.append(.separator())
+            }
         }
 
-        let createGroupItem = NSMenuItem(
-            title: NSLocalizedString(
-                "Add Tabs to New Group",
-                comment: "Tab multi-selection context menu - create a new tab group from selected tabs"),
-            action: #selector(TabMultiSelectionMenuController.createTabGroup),
-            keyEquivalent: "")
-        items.append(createGroupItem)
-
-        let orderedGroups = orderedGroupsInStripOrder(state: browserState)
-        if !orderedGroups.isEmpty {
-            let addToGroup = NSMenuItem(
+        if !context.containsBookmarkFolder {
+            let createGroupItem = NSMenuItem(
                 title: NSLocalizedString(
-                    "Move Tabs to Group",
-                    comment: "Tab multi-selection context menu - submenu to move selected tabs to an existing tab group"),
-                action: nil,
+                    "Add Tabs to New Group",
+                    comment: "Tab multi-selection context menu - create a new tab group from selected tabs"),
+                action: #selector(TabMultiSelectionMenuController.createTabGroup),
                 keyEquivalent: "")
-            let groupSubmenu = NSMenu()
-            for group in orderedGroups {
-                let memberCount = browserState.normalTabs
-                    .lazy.filter { $0.groupToken == group.token }.count
-                let entry = NSMenuItem(
-                    title: group.displayTitle(memberCount: memberCount),
-                    action: #selector(TabMultiSelectionMenuController.addToExistingGroup(_:)),
+            items.append(createGroupItem)
+
+            let orderedGroups = orderedGroupsInStripOrder(state: browserState)
+            if !orderedGroups.isEmpty {
+                let addToGroup = NSMenuItem(
+                    title: NSLocalizedString(
+                        "Move Tabs to Group",
+                        comment: "Tab multi-selection context menu - submenu to move selected tabs to an existing tab group"),
+                    action: nil,
                     keyEquivalent: "")
-                entry.target = controller
-                entry.image = NSImage.tabGroupColorSwatch(for: group.color)
-                entry.representedObject = group.token
-                groupSubmenu.addItem(entry)
+                let groupSubmenu = NSMenu()
+                for group in orderedGroups {
+                    let memberCount = browserState.normalTabs
+                        .lazy.filter { $0.groupToken == group.token }.count
+                    let entry = NSMenuItem(
+                        title: group.displayTitle(memberCount: memberCount),
+                        action: #selector(TabMultiSelectionMenuController.addToExistingGroup(_:)),
+                        keyEquivalent: "")
+                    entry.target = controller
+                    entry.image = NSImage.tabGroupColorSwatch(for: group.color)
+                    entry.representedObject = group.token
+                    groupSubmenu.addItem(entry)
+                }
+                addToGroup.submenu = groupSubmenu
+                items.append(addToGroup)
             }
-            addToGroup.submenu = groupSubmenu
-            items.append(addToGroup)
         }
 
         if context.showsCloseItems {

@@ -22,7 +22,7 @@ class PinnedTabViewController: NSViewController {
         collectionView.reorderDelegate = self
 
         collectionView.isSelectable = true
-        collectionView.registerForDraggedTypes([.pinnedTab, .normalTab, .phiBookmark, .phiPinnedExtensionReorder])
+        collectionView.registerForDraggedTypes([.pinnedTab, .normalTab, .phiBookmark, .bookmarks, .phiPinnedExtensionReorder])
 
         collectionView.backgroundColors = [.clear]
         collectionView.clipsToBounds = true
@@ -306,7 +306,7 @@ class PinnedTabViewController: NSViewController {
     }
 
     private func setupDragDestination() {
-        view.registerForDraggedTypes([.normalTab, .phiBookmark])
+        view.registerForDraggedTypes([.normalTab, .phiBookmark, .bookmarks])
         view.wantsLayer = true
     }
 
@@ -1242,6 +1242,14 @@ extension PinnedTabViewController {
         let pasteboard = draggingInfo.draggingPasteboard
         updateMultiSelectionPlaceholderDragImage(for: draggingInfo)
 
+        if draggedBookmarkBatchContainsFolder(pasteboard) {
+            return []
+        }
+
+        if isMixedBookmarkBatchDrag(pasteboard) {
+            return isCrossWindowDrag(pasteboard) ? [] : .move
+        }
+
         if isCrossWindowDrag(pasteboard),
            let sourceState = sourceBrowserState(for: pasteboard),
            let targetState = browserState,
@@ -1282,6 +1290,10 @@ extension PinnedTabViewController {
         let isCrossWindow = isCrossWindowDrag(pasteboard)
         let sourceState = isCrossWindow ? sourceBrowserState(for: pasteboard) : nil
 
+        if draggedBookmarkBatchContainsFolder(pasteboard) {
+            return false
+        }
+
         // If it was an external drag, remove the placeholder before calculating the final index.
         if isExternalDrag, let placeholder = placeholderTab {
             if let placeholderIndex = pinnedTabs.firstIndex(of: placeholder) {
@@ -1293,6 +1305,12 @@ extension PinnedTabViewController {
         isDragging = false // Set isDragging to false before browserState updates.
         browserState?.tabDraggingSession.end()
         isShowingMultiSelectionPlaceholderDragImage = false
+
+        if let accepted = acceptMixedBatchDropToPinned(
+            pasteboard,
+            destinationIndex: min(finalDestinationIndex, pinnedTabs.count)) {
+            return accepted
+        }
 
         let batchTabIds = pasteboard.phiNormalTabIds()
         if batchTabIds.count > 1 {
@@ -1376,6 +1394,57 @@ extension PinnedTabViewController {
         browserState?.moveBookmarkOut(bookmark, toPinnedTabs: destinationIndex)
         return true
     }
+
+    private func draggedBookmarkBatch(_ pasteboard: NSPasteboard) -> [Bookmark] {
+        var guids = pasteboard.phiBookmarkGuids()
+        if guids.isEmpty, let singleGuid = pasteboard.string(forType: .phiBookmark) {
+            guids = [singleGuid]
+        }
+        guard !guids.isEmpty else { return [] }
+
+        var seen = Set<String>()
+        let bookmarks = guids.compactMap { guid -> Bookmark? in
+            guard seen.insert(guid).inserted else { return nil }
+            return browserState?.bookmarkManager.bookmark(withGuid: guid)
+        }
+        let selected = Set(bookmarks.map(\.guid))
+        return bookmarks.filter { bookmark in
+            var parent = bookmark.parent
+            while let current = parent {
+                if selected.contains(current.guid) {
+                    return false
+                }
+                parent = current.parent
+            }
+            return true
+        }
+    }
+
+    private func draggedBookmarkBatchContainsFolder(_ pasteboard: NSPasteboard) -> Bool {
+        draggedBookmarkBatch(pasteboard).contains { $0.isFolder }
+    }
+
+    private func isMixedBookmarkBatchDrag(_ pasteboard: NSPasteboard) -> Bool {
+        !draggedBookmarkBatch(pasteboard).isEmpty &&
+            (!pasteboard.phiBookmarkGuids().isEmpty || !pasteboard.phiNormalTabIds().isEmpty)
+    }
+
+    private func acceptMixedBatchDropToPinned(_ pasteboard: NSPasteboard,
+                                              destinationIndex: Int) -> Bool? {
+        let bookmarkBatch = draggedBookmarkBatch(pasteboard)
+        let tabIds = pasteboard.phiNormalTabIds()
+        guard !bookmarkBatch.isEmpty,
+              !pasteboard.phiBookmarkGuids().isEmpty || !tabIds.isEmpty else {
+            return nil
+        }
+        guard !isCrossWindowDrag(pasteboard),
+              !bookmarkBatch.contains(where: { $0.isFolder }) else {
+            return false
+        }
+        return browserState?.moveItemsToPinnedTabs(tabIds: tabIds,
+                                                   bookmarks: bookmarkBatch,
+                                                   toPinnedTabs: destinationIndex) ?? false
+    }
     
     private func handleCrossWindowPinnedDrop(pinnedGuid: String, sourceState: BrowserState, destinationIndex: Int) -> Bool {
         guard let targetState = browserState else { return false }
@@ -1448,6 +1517,11 @@ extension PinnedTabViewController: ReorderingCollectionViewDelegate {
         let pasteboard = draggingInfo.draggingPasteboard
         updateMultiSelectionPlaceholderDragImage(for: draggingInfo)
         let isCrossWindow = isCrossWindowDrag(pasteboard)
+
+        if draggedBookmarkBatchContainsFolder(pasteboard) {
+            restoreMultiSelectionDragImageIfNeeded()
+            return
+        }
         
         // Case 1: Internal Reorder
         if let guidString = pasteboard.string(forType: .pinnedTab),
@@ -1546,12 +1620,22 @@ extension PinnedTabViewController: NSDraggingDestination {
         updateMultiSelectionPlaceholderDragImage(for: sender)
 
         let pasteboard = sender.draggingPasteboard
+
+        if draggedBookmarkBatchContainsFolder(pasteboard) {
+            return []
+        }
         
         if isCrossWindowDrag(pasteboard),
            let sourceState = sourceBrowserState(for: pasteboard),
            let targetState = browserState,
            !targetState.canAcceptCrossWindowDrag(from: sourceState) {
             return []
+        }
+
+        if isMixedBookmarkBatchDrag(pasteboard) {
+            guard !isCrossWindowDrag(pasteboard) else { return [] }
+            emptyView.layer?.backgroundColor = NSColor.selectedControlColor.withAlphaComponent(0.4).cgColor
+            return .copy
         }
         
         // Accept normal tabs.
@@ -1596,6 +1680,10 @@ extension PinnedTabViewController: NSDraggingDestination {
             self.browserState?.tabDraggingSession.end()
             self.isShowingMultiSelectionPlaceholderDragImage = false
         }
+
+        if draggedBookmarkBatchContainsFolder(pasteboard) {
+            return false
+        }
         
         if isCrossWindowDrag(pasteboard),
            let sourceState = sourceBrowserState(for: pasteboard),
@@ -1607,6 +1695,10 @@ extension PinnedTabViewController: NSDraggingDestination {
         if pasteboard.phiNormalTabIds().count > 1,
            isCrossWindowDrag(pasteboard) {
             return false
+        }
+
+        if let accepted = acceptMixedBatchDropToPinned(pasteboard, destinationIndex: 0) {
+            return accepted
         }
         
         // Handle normal-tab drops.

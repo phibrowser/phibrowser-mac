@@ -92,6 +92,10 @@ protocol TabGroupCellViewDelegate: AnyObject {
     func tabGroupCell(_ cell: TabGroupCellView,
                       canAcceptBookmarkWithGuid guid: String) -> Bool
 
+    /// Inner table can accept a bookmark multi-selection batch.
+    func tabGroupCell(_ cell: TabGroupCellView,
+                      canAcceptBookmarksWithGuids guids: [String]) -> Bool
+
     /// Inner table can accept pinned tabs that can become group members.
     func tabGroupCell(_ cell: TabGroupCellView,
                       canAcceptPinnedTabWithGuid pinnedGuid: String) -> Bool
@@ -108,6 +112,14 @@ protocol TabGroupCellViewDelegate: AnyObject {
     /// converts it to a normal group member and removes the bookmark.
     func tabGroupCell(_ cell: TabGroupCellView,
                       didAcceptBookmarkWithGuid bookmarkGuid: String,
+                      intoGroupToken token: String,
+                      atNormalTabsIdx normalTabsIdx: Int,
+                      groupIndex: Int) -> Bool
+
+    /// Drop landed in the inner table for a bookmark multi-selection batch.
+    func tabGroupCell(_ cell: TabGroupCellView,
+                      didAcceptBookmarksWithGuids bookmarkGuids: [String],
+                      tabIds: [Int],
                       intoGroupToken token: String,
                       atNormalTabsIdx normalTabsIdx: Int,
                       groupIndex: Int) -> Bool
@@ -490,7 +502,7 @@ final class TabGroupCellView: SidebarCellView {
         innerTable.setDraggingSourceOperationMask([.move, .copy], forLocal: true)
         innerTable.setDraggingSourceOperationMask([.move, .copy], forLocal: false)
         innerTable.registerForDraggedTypes([
-            .normalTab, .normalTabs, .pinnedTab, .phiBookmark, .sourceWindowId
+            .normalTab, .normalTabs, .pinnedTab, .phiBookmark, .bookmarks, .sourceWindowId
         ])
 
         // Cell width is controlled by `GroupTabsTableView.frameOfCell`,
@@ -1267,6 +1279,15 @@ extension TabGroupCellView: GroupTabsDragSource {
                 }
                 return .move
             }
+            let bookmarkGuids = pasteboard.phiBookmarkGuids()
+            if !bookmarkGuids.isEmpty {
+                guard groupCellDelegate?.tabGroupCell(
+                    self,
+                    canAcceptBookmarksWithGuids: bookmarkGuids) == true else {
+                    return []
+                }
+                return .move
+            }
             if let bookmarkGuid = pasteboard.string(forType: .phiBookmark),
                !bookmarkGuid.isEmpty,
                groupCellDelegate?.tabGroupCell(self, canAcceptBookmarkWithGuid: bookmarkGuid) == true {
@@ -1329,12 +1350,21 @@ extension TabGroupCellView: GroupTabsDragSource {
 
         let pasteboard = info.draggingPasteboard
         let batchTabIds = pasteboard.phiNormalTabIds()
+        let bookmarkGuids = pasteboard.phiBookmarkGuids()
         let accepted: Bool
         if let pinnedGuid = pasteboard.string(forType: .pinnedTab),
            !pinnedGuid.isEmpty {
             accepted = groupCellDelegate?.tabGroupCell(
                 self,
                 didAcceptPinnedTabWithGuid: pinnedGuid,
+                intoGroupToken: group.token,
+                atNormalTabsIdx: normalTabsIdx,
+                groupIndex: groupIndex) ?? false
+        } else if !bookmarkGuids.isEmpty {
+            accepted = groupCellDelegate?.tabGroupCell(
+                self,
+                didAcceptBookmarksWithGuids: bookmarkGuids,
+                tabIds: batchTabIds,
                 intoGroupToken: group.token,
                 atNormalTabsIdx: normalTabsIdx,
                 groupIndex: groupIndex) ?? false

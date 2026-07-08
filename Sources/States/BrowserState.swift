@@ -23,6 +23,14 @@ class BrowserState {
         case split(splitId: String, tabIds: [Int], toIndex: Int)
     }
 
+    struct MultiSelectionContext: Equatable {
+        let tabIds: Set<Int>
+        let bookmarkGuids: Set<String>
+        let containsBookmarkFolder: Bool
+        let canOpenAsSplit: Bool
+        let showsCloseItems: Bool
+    }
+
     private struct NormalTabRelativeOrderSyncUnit {
         let tabIds: [Int]
         let splitId: String?
@@ -1059,20 +1067,14 @@ class BrowserState {
             return false
         }
 
-        // Pinned / bookmark-backed tabs do not participate: exit multi-select + activate.
+        // Pinned tabs stay outside sidebar multi-selection.
         if tab.isPinned {
             clearMultiSelection()
             openOrFocusPinnedTab(tab)
             return true
         }
-        if isBookmarkBackedTab(tab) {
-            clearMultiSelection()
-            focuseTab(tab)
-            return true
-        }
-        if let activeTab = focusingTab, isBookmarkBackedTab(activeTab) {
-            clearMultiSelection()
-            focuseTab(tab)
+        if let bookmarkGuid = bookmarkGuidBacking(tab) {
+            multiSelection.toggleBookmark(bookmarkGuid)
             return true
         }
         // A group overview is a separate surface where multi-selection is
@@ -1083,9 +1085,24 @@ class BrowserState {
             focuseTab(tab)
             return true
         }
+        insertActiveBookmarkIntoMultiSelectionIfNeeded()
         // The active tab is always implicitly included; toggling it is a no-op.
         if tab.guid == focusingTab?.guid { return true }
         multiSelection.toggle(tab.guid)
+        return true
+    }
+
+    @MainActor
+    @discardableResult
+    func toggleBookmarkMultiSelection(bookmarkGuid: String) -> Bool {
+        guard TabMultiSelection.isEnabled else {
+            clearMultiSelection()
+            return false
+        }
+        guard bookmarkManager.bookmark(withGuid: bookmarkGuid) != nil else {
+            return false
+        }
+        multiSelection.toggleBookmark(bookmarkGuid)
         return true
     }
 
@@ -1099,15 +1116,12 @@ class BrowserState {
         guard activeGroupOverviewToken == nil,
               !leftTab.isPinned,
               !rightTab.isPinned,
-              !isBookmarkBackedTab(leftTab),
-              !isBookmarkBackedTab(rightTab) else {
+              bookmarkGuidBacking(leftTab) == nil,
+              bookmarkGuidBacking(rightTab) == nil else {
             clearMultiSelection()
             return false
         }
-        if let activeTab = focusingTab, isBookmarkBackedTab(activeTab) {
-            clearMultiSelection()
-            return false
-        }
+        insertActiveBookmarkIntoMultiSelectionIfNeeded()
 
         let paneIds = [leftTab.guid, rightTab.guid]
         let selectableIds: [Int]
@@ -1131,10 +1145,50 @@ class BrowserState {
         multiSelection = .empty
     }
 
+    func pruneMultiSelectionBookmarks() {
+        guard multiSelection.hasBookmarkSelection else { return }
+        var pruned = multiSelection
+        pruned.formBookmarkIntersection(Set(bookmarkManager.getAllBookmarks().map(\.guid)))
+        if pruned != multiSelection {
+            multiSelection = pruned
+        }
+    }
+
+    @MainActor
+    var multiSelectionContext: MultiSelectionContext {
+        let bookmarkGuids = multiSelection.bookmarkGuids
+        let selectedBookmarks = bookmarkGuids.compactMap { bookmarkManager.bookmark(withGuid: $0) }
+        let containsFolder = selectedBookmarks.contains { $0.isFolder }
+        return MultiSelectionContext(
+            tabIds: multiSelection.guids,
+            bookmarkGuids: bookmarkGuids,
+            containsBookmarkFolder: containsFolder,
+            canOpenAsSplit: !containsFolder && multiSelectionCanOpenAsSplit,
+            showsCloseItems: !containsFolder && !orderedMultiSelectedTabs.isEmpty
+        )
+    }
+
+    private func insertActiveBookmarkIntoMultiSelectionIfNeeded() {
+        guard let activeTab = focusingTab,
+              let bookmarkGuid = bookmarkGuidBacking(activeTab) else {
+            return
+        }
+        multiSelection.insertBookmark(bookmarkGuid)
+    }
+
+    @MainActor
+    private var multiSelectionCanOpenAsSplit: Bool {
+        multiSelectionSplitCandidates.count == 2
+    }
+
     /// Selected tabs in authoritative tab order (active tab implicitly included).
     var orderedMultiSelectedTabs: [Tab] {
         var target = multiSelection.guids
-        if let active = focusingTab?.guid { target.insert(active) }
+        if multiSelection.isActive,
+           let active = focusingTab,
+           bookmarkGuidBacking(active) == nil {
+            target.insert(active.guid)
+        }
         return normalTabs.filter { target.contains($0.guid) }
     }
 
@@ -1150,11 +1204,37 @@ class BrowserState {
     /// Split panes expand to include their partner so drag/reorder never tears
     /// an active split apart. Returns `nil` when the drag should behave as a
     /// regular single-tab drag.
+    @MainActor
     func multiSelectionDragTabIds(startingFrom tab: Tab) -> [Int]? {
         guard TabMultiSelection.isEnabled, multiSelection.isActive else { return nil }
         let orderedIds = orderedMultiSelectedTabsIncludingSplitPartners.map(\.guid)
-        guard orderedIds.count > 1, orderedIds.contains(tab.guid) else { return nil }
+        let bookmarkDragGuids = orderedMultiSelectedBookmarkRoots.map(\.guid)
+        guard orderedIds.contains(tab.guid),
+              orderedIds.count > 1 || !bookmarkDragGuids.isEmpty else {
+            return nil
+        }
         return orderedIds
+    }
+
+    @MainActor
+    func multiSelectionDragTabIdsForBookmarkDrag() -> [Int]? {
+        guard TabMultiSelection.isEnabled,
+              multiSelection.isActive else {
+            return nil
+        }
+        let orderedIds = orderedMultiSelectedTabsIncludingSplitPartners.map(\.guid)
+        return orderedIds.isEmpty ? nil : orderedIds
+    }
+
+    @MainActor
+    func multiSelectionDragBookmarkGuids(startingFrom bookmark: Bookmark? = nil) -> [String]? {
+        guard TabMultiSelection.isEnabled, multiSelection.isActive else { return nil }
+        if let bookmark,
+           !multiSelection.bookmarkGuids.contains(bookmark.guid) {
+            return nil
+        }
+        let guids = orderedMultiSelectedBookmarkRoots.map(\.guid)
+        return guids.isEmpty ? nil : guids
     }
 
     private func multiSelectionTabIdsIncludingSplitPartners(selectedIds: Set<Int>) -> Set<Int> {
@@ -1173,15 +1253,19 @@ class BrowserState {
     }
 
     private func isBookmarkBackedTab(_ tab: Tab) -> Bool {
-        guard !tab.isPinned else { return false }
+        bookmarkGuidBacking(tab) != nil
+    }
+
+    private func bookmarkGuidBacking(_ tab: Tab) -> String? {
+        guard !tab.isPinned else { return nil }
         if let guid = tab.guidInLocalDB, !guid.isEmpty,
            bookmarkManager.bookmark(withGuid: guid) != nil {
-            return true
+            return guid
         }
-        guard let group = splitGroup(forTabId: tab.guid) else { return false }
-        return splitBookmarkBindings.contains { bookmarkGuid, splitId in
-            splitId == group.id && bookmarkManager.bookmark(withGuid: bookmarkGuid) != nil
-        }
+        guard let group = splitGroup(forTabId: tab.guid) else { return nil }
+        return splitBookmarkBindings.first { entry in
+            entry.value == group.id && bookmarkManager.bookmark(withGuid: entry.key) != nil
+        }?.key
     }
 
     // MARK: - Multi-selection batch actions
@@ -1208,34 +1292,35 @@ class BrowserState {
     }
 
     var selectedTabCountForURLCopy: Int {
-        tabsForCopyingSelectedURLs.count
+        urlsForCopyingSelectedURLs.count
     }
 
     var hasCopyableSelectedTabURLs: Bool {
-        !copyableURLStrings(from: tabsForCopyingSelectedURLs).isEmpty
+        !urlsForCopyingSelectedURLs.isEmpty
     }
 
     @discardableResult
     func copySelectedTabURLs() -> Bool {
         let shouldClearMultiSelection = multiSelection.isActive
-        let tabs = tabsForCopyingSelectedURLs
+        let urls = urlsForCopyingSelectedURLs
         if shouldClearMultiSelection {
             clearMultiSelection()
         }
-        return copyURLsToPasteboard(from: tabs)
+        return copyURLsToPasteboard(urls)
     }
 
+    @MainActor
     func copyLinksOfMultiSelectedTabs() {
-        let tabs = orderedMultiSelectedTabsIncludingSplitPartners
+        let urls = copyableURLStringsForCurrentMultiSelection()
         clearMultiSelection()
-        copyURLsToPasteboard(from: tabs)
+        copyURLsToPasteboard(urls)
     }
 
-    private var tabsForCopyingSelectedURLs: [Tab] {
+    private var urlsForCopyingSelectedURLs: [String] {
         if multiSelection.isActive {
-            return orderedMultiSelectedTabsIncludingSplitPartners
+            return copyableURLStringsForCurrentMultiSelection()
         }
-        return focusingTab.map { [$0] } ?? []
+        return focusingTab.map { copyableURLStrings(from: [$0]) } ?? []
     }
 
     private func copyableURLStrings(from tabs: [Tab]) -> [String] {
@@ -1245,9 +1330,43 @@ class BrowserState {
         }
     }
 
+    private func copyableURLStrings(from bookmarks: [Bookmark]) -> [String] {
+        bookmarks.flatMap { bookmark -> [String] in
+            guard !bookmark.isFolder else { return [] }
+            var urls: [String] = []
+            if let url = bookmark.url, !url.isEmpty {
+                urls.append(URLProcessor.phiBrandEnsuredUrlString(url))
+            }
+            if let secondaryURL = bookmark.secondaryUrl, !secondaryURL.isEmpty {
+                urls.append(URLProcessor.phiBrandEnsuredUrlString(secondaryURL))
+            }
+            return urls
+        }
+    }
+
+    private func copyableURLStringsForCurrentMultiSelection() -> [String] {
+        copyableURLStrings(from: orderedMultiSelectedTabsIncludingSplitPartners)
+            + copyableURLStrings(from: bookmarkRootsForCurrentMultiSelection())
+    }
+
+    private func bookmarkRootsForCurrentMultiSelection() -> [Bookmark] {
+        let selectedGuids = multiSelection.bookmarkGuids
+        guard !selectedGuids.isEmpty else { return [] }
+        let selectedBookmarks = bookmarkManager.getAllBookmarks().filter { selectedGuids.contains($0.guid) }
+        return selectedBookmarks.filter { bookmark in
+            var parent = bookmark.parent
+            while let current = parent {
+                if selectedGuids.contains(current.guid) {
+                    return false
+                }
+                parent = current.parent
+            }
+            return true
+        }
+    }
+
     @discardableResult
-    private func copyURLsToPasteboard(from tabs: [Tab]) -> Bool {
-        let urls = copyableURLStrings(from: tabs)
+    private func copyURLsToPasteboard(_ urls: [String]) -> Bool {
         guard !urls.isEmpty else { return false }
         let pasteboard = NSPasteboard.general
         pasteboard.clearContents()
@@ -1271,20 +1390,48 @@ class BrowserState {
 
     @MainActor
     func openMultiSelectedTabsAsSplit() {
-        guard let pair = multiSelectionSplitPair else { return }
-        makeTabNormalOpened(tabId: pair.left.guid)
-        makeTabNormalOpened(tabId: pair.right.guid)
-        guard createSplit(leftTabId: pair.left.guid,
-                          rightTabId: pair.right.guid,
-                          layout: .vertical) != nil else {
-            return
+        let candidates = multiSelectionSplitCandidates
+        guard candidates.count == 2 else { return }
+        let didOpen: Bool
+        switch (candidates[0], candidates[1]) {
+        case (.tab(let left), .tab(let right)):
+            makeTabNormalOpened(tabId: left.guid)
+            makeTabNormalOpened(tabId: right.guid)
+            didOpen = createSplit(leftTabId: left.guid,
+                                  rightTabId: right.guid,
+                                  layout: .vertical) != nil
+        case (.tab(let tab), .bookmark(let bookmark)):
+            guard let url = bookmark.url, !url.isEmpty else { return }
+            makeTabNormalOpened(tabId: tab.guid)
+            openNewTabAsSplit(partnerTabId: tab.guid,
+                              newTabSlot: .right,
+                              partnerNavigateURL: URLProcessor.processUserInput(url))
+            didOpen = true
+        case (.bookmark(let bookmark), .tab(let tab)):
+            guard let url = bookmark.url, !url.isEmpty else { return }
+            makeTabNormalOpened(tabId: tab.guid)
+            openNewTabAsSplit(partnerTabId: tab.guid,
+                              newTabSlot: .left,
+                              partnerNavigateURL: URLProcessor.processUserInput(url))
+            didOpen = true
+        case (.bookmark(let first), .bookmark(let second)):
+            guard let primaryURL = first.url, !primaryURL.isEmpty,
+                  let secondaryURL = second.url, !secondaryURL.isEmpty else {
+                return
+            }
+            openTwoURLsAsSplit(primaryURL: URLProcessor.processUserInput(primaryURL),
+                               secondaryURL: URLProcessor.processUserInput(secondaryURL))
+            didOpen = true
         }
-        clearMultiSelection()
+        if didOpen {
+            clearMultiSelection()
+        }
     }
 
     @MainActor
     func duplicateMultiSelectedTabs() {
         let units = multiSelectionTabUnits
+        let bookmarks = orderedMultiSelectedBookmarkRoots
         clearMultiSelection()
         for unit in units {
             switch unit {
@@ -1299,6 +1446,17 @@ class BrowserState {
                 openTwoURLsAsSplit(primaryURL: leftURL, secondaryURL: rightURL)
             }
         }
+        for bookmark in bookmarks where !bookmark.isFolder {
+            guard let url = bookmark.url, !url.isEmpty else { continue }
+            if let secondaryURL = bookmark.secondaryUrl, !secondaryURL.isEmpty {
+                openTwoURLsAsSplit(primaryURL: URLProcessor.processUserInput(url),
+                                   secondaryURL: URLProcessor.processUserInput(secondaryURL))
+            } else {
+                createTab(URLProcessor.processUserInput(url),
+                          customGuid: nil,
+                          focusAfterCreate: true)
+            }
+        }
     }
 
     private enum MultiSelectionTabUnit {
@@ -1306,8 +1464,57 @@ class BrowserState {
         case split(left: Tab, right: Tab)
     }
 
+    private enum MultiSelectionSplitCandidate {
+        case tab(Tab)
+        case bookmark(Bookmark)
+    }
+
     private var multiSelectionTabUnits: [MultiSelectionTabUnit] {
         tabUnitsPreservingSplits(from: orderedMultiSelectedTabs)
+    }
+
+    @MainActor
+    var orderedMultiSelectedBookmarks: [Bookmark] {
+        let selectedGuids = multiSelection.bookmarkGuids
+        guard !selectedGuids.isEmpty else { return [] }
+        return bookmarkManager.getAllBookmarks().filter { selectedGuids.contains($0.guid) }
+    }
+
+    @MainActor
+    var orderedMultiSelectedBookmarkRoots: [Bookmark] {
+        let selectedGuids = multiSelection.bookmarkGuids
+        guard !selectedGuids.isEmpty else { return [] }
+        return orderedMultiSelectedBookmarks.filter { bookmark in
+            var parent = bookmark.parent
+            while let current = parent {
+                if selectedGuids.contains(current.guid) {
+                    return false
+                }
+                parent = current.parent
+            }
+            return true
+        }
+    }
+
+    @MainActor
+    private var multiSelectionSplitCandidates: [MultiSelectionSplitCandidate] {
+        let tabCandidates = orderedMultiSelectedTabs.compactMap { tab -> MultiSelectionSplitCandidate? in
+            guard !tab.isPinned,
+                  !isBookmarkBackedTab(tab),
+                  splitGroup(forTabId: tab.guid) == nil else {
+                return nil
+            }
+            return .tab(tab)
+        }
+        let bookmarkCandidates = orderedMultiSelectedBookmarkRoots.compactMap { bookmark -> MultiSelectionSplitCandidate? in
+            guard !bookmark.isFolder,
+                  bookmark.url?.isEmpty == false,
+                  bookmark.secondaryUrl?.isEmpty != false else {
+                return nil
+            }
+            return .bookmark(bookmark)
+        }
+        return tabCandidates + bookmarkCandidates
     }
 
     private func tabUnitsPreservingSplits(from selectedTabs: [Tab]) -> [MultiSelectionTabUnit] {
@@ -4046,6 +4253,59 @@ class BrowserState {
     }
 
     @discardableResult
+    @MainActor
+    func moveItemsToPinnedTabs(tabIds: [Int],
+                               bookmarks: [Bookmark],
+                               toPinnedTabs pinnedIndex: Int) -> Bool {
+        let tabUnits = normalTabTransferUnits(tabIds: tabIds)
+        let bookmarkUnits = bookmarks.filter { bookmark in
+            !bookmark.isFolder && bookmark.url?.isEmpty == false
+        }
+        guard !tabUnits.isEmpty || !bookmarkUnits.isEmpty else { return false }
+
+        let clampedIndex = max(0, min(pinnedIndex, pinnedTabs.count))
+        let snappedIndex = Self.pinnedInsertIndexOutsideSplitPair(
+            clampedIndex,
+            pinnedTabs: pinnedTabs)
+        var afterGuid: String?
+        if snappedIndex > 0, !pinnedTabs.isEmpty {
+            let anchorIndex = min(snappedIndex - 1, pinnedTabs.count - 1)
+            afterGuid = pinnedTabs[anchorIndex].guidInLocalDB
+        }
+
+        var didMove = false
+        for tab in tabUnits {
+            if let splitGroup = splitGroup(forTabId: tab.guid), !splitGroup.isPinned {
+                if let pair = pinSplit(splitGroup.id, afterPinnedGuid: afterGuid) {
+                    afterGuid = pair.secondaryGuid
+                    didMove = true
+                }
+                continue
+            }
+
+            detachNormalTabFromGroupForPinning(tab)
+            if let newGuid = moveNormalTabToPinned(tab,
+                                                   after: afterGuid,
+                                                   selectAfterMove: tab.isActive) {
+                afterGuid = newGuid
+                didMove = true
+            }
+        }
+
+        for bookmark in bookmarkUnits {
+            if let newGuid = moveBookmarkOut(bookmark, afterPinnedGuid: afterGuid) {
+                afterGuid = newGuid
+                didMove = true
+            }
+        }
+
+        if didMove {
+            clearMultiSelection()
+        }
+        return didMove
+    }
+
+    @discardableResult
     func moveNormalTab(tabId: Int, toPinnd pinnedIndex: Int, selectAfterMove: Bool = false) -> String? {
         guard let tab = tabs.first(where: { $0.guid == tabId }) else {
             return nil
@@ -4598,13 +4858,26 @@ class BrowserState {
     ///   - index: Destination index inside `pinnedTabs`.
     ///   - selectAfterMove: Whether the moved tab should be selected.
     func moveBookmarkOut(_ bookmark: Bookmark, toPinnedTabs index: Int, selectAfterMove: Bool = false) {
+        var afterGuid: String?
+        if index > 0, !pinnedTabs.isEmpty {
+            let snappedIndex = Self.pinnedInsertIndexOutsideSplitPair(index, pinnedTabs: pinnedTabs)
+            let anchorIndex = min(snappedIndex - 1, pinnedTabs.count - 1)
+            afterGuid = pinnedTabs[anchorIndex].guidInLocalDB
+        }
+        moveBookmarkOut(bookmark, afterPinnedGuid: afterGuid, selectAfterMove: selectAfterMove)
+    }
+
+    @discardableResult
+    func moveBookmarkOut(_ bookmark: Bookmark,
+                         afterPinnedGuid afterGuid: String?,
+                         selectAfterMove: Bool = false) -> String? {
         guard !bookmark.isFolder, let url = bookmark.url, !url.isEmpty else {
-            return
+            return nil
         }
 
         // Resolve against the current bookmark tree before mutating local state.
         guard let realBookmark = bookmarkManager.bookmark(withGuid: bookmark.guid) else {
-            return
+            return nil
         }
 
         // Split-aware: a split-view bookmark carries two URLs; pin both as
@@ -4612,15 +4885,8 @@ class BrowserState {
         // move (otherwise only the primary URL would be pinned and the
         // split semantics would be lost).
         if let secondaryURL = realBookmark.secondaryUrl, !secondaryURL.isEmpty {
-            savePinnedSplitFromBookmark(bookmark: realBookmark, atIndex: index)
-            return
-        }
-        
-        // Map the destination index to the persisted pinned-tab ordering key.
-        var afterGuid: String?
-        if index > 0, !pinnedTabs.isEmpty {
-            let afterTab = pinnedTabs[min(index - 1, pinnedTabs.count - 1)]
-            afterGuid = afterTab.guidInLocalDB
+            return savePinnedSplitFromBookmark(bookmark: realBookmark,
+                                               afterPinnedGuid: afterGuid)
         }
         
         // Generate a new local identifier for the pinned-tab record.
@@ -4653,6 +4919,7 @@ class BrowserState {
         
         // Rebuild normal tabs after the move completes.
         updateNormalTabs()
+        return newPinnedGuid
     }
     
     /// Moves a bookmark into the normal tab strip.
@@ -5029,26 +5296,15 @@ class BrowserState {
         }
     }
 
-    /// Saves a split-view bookmark as a pinned-split pair. Two pinned-tab
-    /// records are persisted side-by-side with `splitPartnerGuid` set on
-    /// both, so the merged pinned cell renders immediately. When the
-    /// bookmark was already open as a live split, both live panes are
-    /// rebound to the new pinned guids and the live `SplitGroup.isPinned`
-    /// flag is set so the split keeps running under the pinned cell.
-    private func savePinnedSplitFromBookmark(bookmark: Bookmark, atIndex index: Int) {
+    @discardableResult
+    private func savePinnedSplitFromBookmark(bookmark: Bookmark,
+                                             afterPinnedGuid afterGuid: String?) -> String? {
         guard let primaryURL = bookmark.url, !primaryURL.isEmpty,
               let secondaryURL = bookmark.secondaryUrl, !secondaryURL.isEmpty else {
-            return
+            return nil
         }
 
         let bookmarkGuid = bookmark.guid
-
-        var afterGuid: String?
-        if index > 0, !pinnedTabs.isEmpty {
-            let afterTab = pinnedTabs[min(index - 1, pinnedTabs.count - 1)]
-            afterGuid = afterTab.guidInLocalDB
-        }
-
         let primaryPinnedGuid = UUID().uuidString
         let secondaryPinnedGuid = UUID().uuidString
 
@@ -5090,6 +5346,7 @@ class BrowserState {
 
         bookmarkManager.removeBookmark(bookmark)
         updateNormalTabs()
+        return secondaryPinnedGuid
     }
 
     /// Opens a split-view bookmark as a split pair in the normal tab list.

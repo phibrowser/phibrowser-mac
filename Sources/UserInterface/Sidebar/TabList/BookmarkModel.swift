@@ -302,6 +302,7 @@ class BookmarkManager: ObservableObject {
                     if self.hasSameSidebarTree(as: bookmarks) {
                         self.applyNonLayoutUpdates(from: bookmarks)
                         self.browserState?.syncAllBookmarksOpenedState()
+                        self.browserState?.pruneMultiSelectionBookmarks()
                         return
                     }
 
@@ -310,6 +311,7 @@ class BookmarkManager: ObservableObject {
                     self.rootFolder = Bookmark(title: "Bookmarks", children: reusedBookmarks)
                     self.rebuildIndex()
                     self.browserState?.syncAllBookmarksOpenedState()
+                    self.browserState?.pruneMultiSelectionBookmarks()
                 }
                 .store(in: &cancellables)
         }

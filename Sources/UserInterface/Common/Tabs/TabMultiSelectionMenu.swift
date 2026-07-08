@@ -14,6 +14,7 @@ enum TabMultiSelectionMenu {
         menu.removeAllItems()
 
         let controller = TabMultiSelectionMenuController(browserState: browserState)
+        let context = browserState.multiSelectionContext
         var items: [NSMenuItem] = []
 
         let duplicateItem = NSMenuItem(
@@ -32,13 +33,14 @@ enum TabMultiSelectionMenu {
             keyEquivalent: "")
         items.append(copyLinksItem)
 
-        if browserState.multiSelectionSplitPair != nil {
+        if context.canOpenAsSplit || context.containsBookmarkFolder {
             let openAsSplitItem = NSMenuItem(
                 title: NSLocalizedString(
                     "Open as Split",
                     comment: "Tab multi-selection context menu - split exactly two selected tabs into paired panes"),
                 action: #selector(TabMultiSelectionMenuController.openSelectedAsSplit),
                 keyEquivalent: "")
+            openAsSplitItem.isEnabled = context.canOpenAsSplit
             items.append(openAsSplitItem)
         }
 
@@ -118,24 +120,26 @@ enum TabMultiSelectionMenu {
             items.append(addToGroup)
         }
 
-        items.append(.separator())
+        if context.showsCloseItems {
+            items.append(.separator())
 
-        let closeItem = NSMenuItem(
-            title: NSLocalizedString(
-                "Close Tabs",
-                comment: "Tab multi-selection context menu - close all selected tabs"),
-            action: #selector(TabMultiSelectionMenuController.closeSelected),
-            keyEquivalent: "w")
-        closeItem.keyEquivalentModifierMask = [.command]
-        items.append(closeItem)
+            let closeItem = NSMenuItem(
+                title: NSLocalizedString(
+                    "Close Tabs",
+                    comment: "Tab multi-selection context menu - close all selected tabs"),
+                action: #selector(TabMultiSelectionMenuController.closeSelected),
+                keyEquivalent: "w")
+            closeItem.keyEquivalentModifierMask = [.command]
+            items.append(closeItem)
 
-        let closeOtherItem = NSMenuItem(
-            title: NSLocalizedString(
-                "Close Other Tabs",
-                comment: "Tab multi-selection context menu - close all tabs except the selected ones"),
-            action: #selector(TabMultiSelectionMenuController.closeOtherSelected),
-            keyEquivalent: "")
-        items.append(closeOtherItem)
+            let closeOtherItem = NSMenuItem(
+                title: NSLocalizedString(
+                    "Close Other Tabs",
+                    comment: "Tab multi-selection context menu - close all tabs except the selected ones"),
+                action: #selector(TabMultiSelectionMenuController.closeOtherSelected),
+                keyEquivalent: "")
+            items.append(closeOtherItem)
+        }
 
         items.forEach { item in
             if item.representedObject == nil {
@@ -223,6 +227,10 @@ final class TabMultiSelectionMenuController: NSObject {
                 return false
             }
             return !browserState.multiSelectionTargets(forAddingToGroup: token).isEmpty
+        }
+
+        if menuItem.action == #selector(openSelectedAsSplit) {
+            return browserState.multiSelectionContext.canOpenAsSplit
         }
 
         if menuItem.action == #selector(closeOtherSelected) {

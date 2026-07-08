@@ -248,7 +248,7 @@ class SidebarTabListViewController: NSViewController {
         
         outlineView.setDraggingSourceOperationMask([.move, .copy], forLocal: true)
         outlineView.setDraggingSourceOperationMask([.move, .copy], forLocal: false)
-        outlineView.registerForDraggedTypes([.pinnedTab, .normalTab, .normalTabs, .phiBookmark, .tabGroup])
+        outlineView.registerForDraggedTypes([.pinnedTab, .normalTab, .normalTabs, .phiBookmark, .bookmarks, .tabGroup])
         outlineView.phiOutlineDelegate = self
         
         let column = NSTableColumn(identifier: NSUserInterfaceItemIdentifier("SidebarColumn"))
@@ -556,7 +556,9 @@ class SidebarTabListViewController: NSViewController {
             return
         }
 
-        if let bookmark = bookmarkForRow(clickedRow), !bookmark.isFolder {
+        let isCommandClick = NSApp.currentEvent?.modifierFlags.contains(.command) ?? false
+        if !isCommandClick,
+           let bookmark = bookmarkForRow(clickedRow), !bookmark.isFolder {
             if shouldStartBookmarkRename(for: bookmark, event: NSApp.currentEvent) {
                 requestBookmarkRename(bookmark)
                 return
@@ -572,7 +574,6 @@ class SidebarTabListViewController: NSViewController {
         
         if let item = outlineView.item(atRow: clickedRow) as? SidebarItem {
             // Cmd+click toggles tab multi-selection; the owner decides eligibility.
-            let isCommandClick = NSApp.currentEvent?.modifierFlags.contains(.command) ?? false
             if isCommandClick,
                handleMultiSelectionCommandClick(for: item) {
                 return
@@ -593,6 +594,9 @@ class SidebarTabListViewController: NSViewController {
                 leftTab: pair.leftTab,
                 rightTab: pair.rightTab
             )
+        }
+        if let bookmark = bookmark(from: item) {
+            return browserState.toggleBookmarkMultiSelection(bookmarkGuid: bookmark.guid)
         }
         return false
     }
@@ -805,6 +809,38 @@ class SidebarTabListViewController: NSViewController {
         return findBookmark(withId: guid)
     }
 
+    private func rootFilteredBookmarks(forGuids guids: [String]) -> [Bookmark] {
+        var seen = Set<String>()
+        let bookmarks = guids.compactMap { guid -> Bookmark? in
+            guard seen.insert(guid).inserted else { return nil }
+            return findBookmark(withId: guid)
+        }
+        let selected = Set(bookmarks.map(\.guid))
+        return bookmarks.filter { bookmark in
+            var parent = bookmark.parent
+            while let current = parent {
+                if selected.contains(current.guid) {
+                    return false
+                }
+                parent = current.parent
+            }
+            return true
+        }
+    }
+
+    private func draggedBookmarkBatch(from pasteboard: NSPasteboard) -> [Bookmark] {
+        var guids = pasteboard.phiBookmarkGuids()
+        if guids.isEmpty, let singleGuid = pasteboard.string(forType: .phiBookmark) {
+            guids = [singleGuid]
+        }
+        guard !guids.isEmpty else { return [] }
+        return rootFilteredBookmarks(forGuids: guids)
+    }
+
+    private func draggedBookmarkBatchContainsFolder(from pasteboard: NSPasteboard) -> Bool {
+        draggedBookmarkBatch(from: pasteboard).contains { $0.isFolder }
+    }
+
     private func canMoveBookmarkToGroup(_ bookmark: Bookmark) -> Bool {
         // Split-view bookmarks (non-empty `secondaryUrl`) are allowed too:
         // `moveBookmarkOut` folds them into the group as a split.
@@ -818,9 +854,9 @@ class SidebarTabListViewController: NSViewController {
     }
 
     private func canMoveDraggedBookmarkToGroup(from pasteboard: NSPasteboard) -> Bool {
-        guard pasteboard.string(forType: .phiBookmark) != nil else { return true }
-        guard let bookmark = draggedBookmark(from: pasteboard) else { return false }
-        return canMoveBookmarkToGroup(bookmark)
+        let bookmarks = draggedBookmarkBatch(from: pasteboard)
+        guard !bookmarks.isEmpty else { return true }
+        return bookmarks.allSatisfy(canMoveBookmarkToGroup)
     }
 
     private func canMoveDraggedPinnedTabToGroup(from pasteboard: NSPasteboard) -> Bool {
@@ -875,11 +911,40 @@ extension SidebarTabListViewController: NSOutlineViewDataSource {
             pasteboardItem.setString(ids.map(String.init).joined(separator: ","),
                                      forType: .normalTabs)
         }
+        if let bookmarkGuids = browserState.multiSelectionDragBookmarkGuids() {
+            pasteboardItem.setString(bookmarkGuids.joined(separator: ","),
+                                     forType: .bookmarks)
+            if let firstGuid = bookmarkGuids.first {
+                pasteboardItem.setString(firstGuid, forType: .phiBookmark)
+            }
+        }
         AppLogDebug(
             "[SidebarMultiDrag] payload windowId=\(browserState.windowId) " +
-            "startTabId=\(tab.guid) batchIds=\(batchIds ?? []) " +
-            "selectionActive=\(browserState.multiSelection.isActive)"
+                "startTabId=\(tab.guid) batchIds=\(batchIds ?? []) " +
+                "selectionActive=\(browserState.multiSelection.isActive)"
         )
+    }
+
+    private func configureBookmarkDragPayload(_ pasteboardItem: NSPasteboardItem,
+                                              startingFrom bookmark: Bookmark) {
+        pasteboardItem.setString(bookmark.guid, forType: .phiBookmark)
+        pasteboardItem.setString(String(browserState.windowId), forType: .sourceWindowId)
+
+        if let bookmarkGuids = browserState.multiSelectionDragBookmarkGuids(startingFrom: bookmark) {
+            pasteboardItem.setString(bookmarkGuids.joined(separator: ","),
+                                     forType: .bookmarks)
+            if let firstGuid = bookmarkGuids.first {
+                pasteboardItem.setString(firstGuid, forType: .phiBookmark)
+            }
+        }
+
+        if let tabIds = browserState.multiSelectionDragTabIdsForBookmarkDrag() {
+            pasteboardItem.setString(tabIds.map(String.init).joined(separator: ","),
+                                     forType: .normalTabs)
+            if let firstTabId = tabIds.first {
+                pasteboardItem.setString(String(firstTabId), forType: .normalTab)
+            }
+        }
     }
 
     func outlineView(_ outlineView: NSOutlineView, pasteboardWriterForItem item: Any) -> NSPasteboardWriting? {
@@ -918,14 +983,12 @@ extension SidebarTabListViewController: NSOutlineViewDataSource {
         }
         
         if let bookmark = sidebarItem as? Bookmark {
-            pasteboardItem.setString(bookmark.guid, forType: .phiBookmark)
-            pasteboardItem.setString(String(browserState.windowId), forType: .sourceWindowId)
+            configureBookmarkDragPayload(pasteboardItem, startingFrom: bookmark)
             return pasteboardItem
         }
         if let provider = sidebarItem as? UnderlyingBookmarkProviding {
             let bookmark = provider.underlyingBookmark
-            pasteboardItem.setString(bookmark.guid, forType: .phiBookmark)
-            pasteboardItem.setString(String(browserState.windowId), forType: .sourceWindowId)
+            configureBookmarkDragPayload(pasteboardItem, startingFrom: bookmark)
             return pasteboardItem
         }
         
@@ -1121,6 +1184,16 @@ extension SidebarTabListViewController: NSOutlineViewDataSource {
             }
             setDropFeedback(.none)
             return .move
+        }
+
+        let bookmarkBatch = draggedBookmarkBatch(from: pasteboard)
+        let bookmarkBatchContainsFolder = bookmarkBatch.contains { $0.isFolder }
+        if bookmarkBatchContainsFolder {
+            return validateBookmarkFolderBatchDrop(bookmarkBatch,
+                                                   outlineView: outlineView,
+                                                   info: info,
+                                                   resolvedItem: originalResolvedItem,
+                                                   resolvedIndex: index)
         }
 
         let proposedRootRow = index == NSOutlineViewDropOnItemIndex ? outlineView.numberOfRows : index
@@ -1360,6 +1433,196 @@ extension SidebarTabListViewController: NSOutlineViewDataSource {
         return []
     }
 
+    private func validateBookmarkFolderBatchDrop(_ bookmarks: [Bookmark],
+                                                 outlineView: NSOutlineView,
+                                                 info: NSDraggingInfo,
+                                                 resolvedItem: Any?,
+                                                 resolvedIndex: Int) -> NSDragOperation {
+        guard !bookmarks.isEmpty else { return [] }
+
+        if let targetBookmark = resolvedItem as? Bookmark, targetBookmark.isFolder {
+            let canAccept = bookmarks.allSatisfy {
+                bookmarkSectionController.canAcceptDrop(of: $0, to: targetBookmark)
+            }
+            setDropFeedback(canAccept ? .bookmarkFolder(guid: targetBookmark.guid) : .none)
+            return canAccept ? .move : []
+        }
+
+        if let targetBookmark = resolvedItem as? Bookmark, !targetBookmark.isFolder {
+            guard let insertion = bookmarkInsertionTarget(before: targetBookmark) else {
+                setDropFeedback(.none)
+                return []
+            }
+            outlineView.setDropItem(insertion.parent, dropChildIndex: insertion.index)
+            let canAccept = bookmarks.allSatisfy {
+                bookmarkSectionController.canAcceptDrop(of: $0, to: insertion.parent)
+            }
+            setDropFeedback(.none)
+            return canAccept ? .move : []
+        }
+
+        if resolvedItem == nil {
+            let proposedRow = resolvedIndex == NSOutlineViewDropOnItemIndex
+                ? outlineView.numberOfRows
+                : resolvedIndex
+            guard isRowInBookmarkSection(proposedRow) else {
+                setDropFeedback(.none)
+                return []
+            }
+            let canAccept = bookmarks.allSatisfy {
+                bookmarkSectionController.canAcceptDrop(of: $0, to: nil)
+            }
+            setDropFeedback(.none)
+            return canAccept ? .move : []
+        }
+
+        setDropFeedback(.none)
+        return []
+    }
+
+    private func acceptBookmarkBatchDrop(bookmarks: [Bookmark],
+                                         tabIds: [Int],
+                                         outlineView: NSOutlineView,
+                                         info: NSDraggingInfo,
+                                         resolvedItem: Any?,
+                                         resolvedIndex: Int) -> Bool {
+        guard !bookmarks.isEmpty else { return false }
+
+        if let destination = favoriteGroupDropDestination(
+            outlineView: outlineView,
+            info: info,
+            resolvedItem: resolvedItem,
+            resolvedIndex: resolvedIndex) {
+            guard bookmarks.allSatisfy(canMoveBookmarkToGroup),
+                  tabIds.isEmpty || !bookmarks.contains(where: { $0.isFolder }) else {
+                return false
+            }
+            var normalTabsIndex = destination.normalTabsIndex
+            var groupIndex = destination.groupIndex
+            var didMove = false
+            if !tabIds.isEmpty {
+                guard commitNormalTabBatchDrop(tabIds: tabIds,
+                                               to: normalTabsIndex,
+                                               targetGroupToken: destination.token) else {
+                    return false
+                }
+                didMove = true
+                normalTabsIndex += tabIds.count
+                groupIndex += tabIds.count
+            }
+            for bookmark in bookmarks {
+                if browserState.moveBookmarkOut(bookmark,
+                                                toGroup: destination.token,
+                                                groupIndex: groupIndex,
+                                                normalTabsIndex: normalTabsIndex,
+                                                focusAfterCreate: false) {
+                    didMove = true
+                    normalTabsIndex += 1
+                    groupIndex += 1
+                }
+            }
+            if didMove {
+                browserState.clearMultiSelection()
+            }
+            return didMove
+        }
+
+        if let targetBookmark = resolvedItem as? Bookmark, targetBookmark.isFolder {
+            let insertion = resolvedIndex == NSOutlineViewDropOnItemIndex
+                ? nil
+                : resolvedIndex
+            return acceptBookmarkBatchToBookmarkArea(bookmarks: bookmarks,
+                                                     tabIds: tabIds,
+                                                     parent: targetBookmark,
+                                                     index: insertion)
+        }
+
+        if let targetBookmark = resolvedItem as? Bookmark,
+           let insertion = bookmarkInsertionTarget(before: targetBookmark) {
+            return acceptBookmarkBatchToBookmarkArea(bookmarks: bookmarks,
+                                                     tabIds: tabIds,
+                                                     parent: insertion.parent,
+                                                     index: insertion.index)
+        }
+
+        guard resolvedItem == nil else { return false }
+        let proposedRow = resolvedIndex == NSOutlineViewDropOnItemIndex
+            ? outlineView.numberOfRows
+            : resolvedIndex
+
+        if isRowInBookmarkSection(proposedRow) {
+            let insertion = resolvedIndex == NSOutlineViewDropOnItemIndex
+                ? nil
+                : resolvedIndex
+            return acceptBookmarkBatchToBookmarkArea(bookmarks: bookmarks,
+                                                     tabIds: tabIds,
+                                                     parent: nil,
+                                                     index: insertion)
+        }
+
+        guard !bookmarks.contains(where: { $0.isFolder }) else { return false }
+        let destinationIndex = calculateTabDestinationIndex(from: resolvedIndex)
+        var didMove = false
+        if !tabIds.isEmpty {
+            guard commitNormalTabBatchDrop(tabIds: tabIds,
+                                           to: destinationIndex,
+                                           targetGroupToken: nil) else {
+                return false
+            }
+            didMove = true
+        }
+
+        var bookmarkInsertionIndex = destinationIndex + (didMove ? tabIds.count : 0)
+        for bookmark in bookmarks {
+            guard !bookmark.isFolder else { continue }
+            if handleBookmarkDropToNormalList(bookmark: bookmark,
+                                              destinationIndex: bookmarkInsertionIndex) {
+                didMove = true
+                bookmarkInsertionIndex += bookmark.secondaryUrl?.isEmpty == false ? 2 : 1
+            }
+        }
+        if didMove {
+            browserState.clearMultiSelection()
+        }
+        return didMove
+    }
+
+    private func acceptBookmarkBatchToBookmarkArea(bookmarks: [Bookmark],
+                                                   tabIds: [Int],
+                                                   parent: Bookmark?,
+                                                   index: Int?) -> Bool {
+        guard bookmarks.allSatisfy({
+            bookmarkSectionController.canAcceptDrop(of: $0, to: parent)
+        }) else {
+            return false
+        }
+
+        var insertionIndex = index
+        var didMove = false
+        if !tabIds.isEmpty {
+            if browserState.moveNormalTabs(tabIds: tabIds,
+                                           toBookmark: parent?.guid,
+                                           index: insertionIndex) {
+                didMove = true
+                insertionIndex = insertionIndex.map { $0 + tabIds.count }
+            }
+        }
+
+        for bookmark in bookmarks {
+            if bookmarkSectionController.handleDrop(of: bookmark,
+                                                    to: parent,
+                                                    at: insertionIndex) {
+                didMove = true
+                insertionIndex = insertionIndex.map { $0 + 1 }
+            }
+        }
+
+        if didMove {
+            browserState.clearMultiSelection()
+        }
+        return didMove
+    }
+
     private func acceptNormalTabBatchDrop(tabIds: [Int],
                                           outlineView: NSOutlineView,
                                           info: NSDraggingInfo,
@@ -1445,7 +1708,7 @@ extension SidebarTabListViewController: NSOutlineViewDataSource {
                                           targetGroupToken: String?) -> Bool {
         let requestedSet = Set(tabIds)
         let draggedTabs = browserState.normalTabs.filter { requestedSet.contains($0.guid) }
-        guard draggedTabs.count > 1 else { return false }
+        guard !draggedTabs.isEmpty else { return false }
         let beforeOrder = browserState.normalTabs.map(\.guid)
 
         let desiredTokenById: [Int: String?] = Dictionary(
@@ -1680,6 +1943,17 @@ extension SidebarTabListViewController: NSOutlineViewDataSource {
         }
 
         let batchTabIds = pasteboard.phiNormalTabIds()
+        let bookmarkBatch = draggedBookmarkBatch(from: pasteboard)
+        if !bookmarkBatch.isEmpty,
+           !pasteboard.phiBookmarkGuids().isEmpty || !batchTabIds.isEmpty {
+            return acceptBookmarkBatchDrop(bookmarks: bookmarkBatch,
+                                           tabIds: batchTabIds,
+                                           outlineView: outlineView,
+                                           info: info,
+                                           resolvedItem: resolvedItem,
+                                           resolvedIndex: resolvedIndex)
+        }
+
         if batchTabIds.count > 1 {
             return acceptNormalTabBatchDrop(tabIds: batchTabIds,
                                             outlineView: outlineView,
@@ -1985,6 +2259,10 @@ extension SidebarTabListViewController: NSOutlineViewDataSource {
            browserState.multiSelection.isActive,
            browserState.multiSelectionDragTabIds(startingFrom: tab) == nil {
             browserState.clearMultiSelection()
+        } else if let bookmark = bookmark(fromDraggingSessionItem: sessionItem),
+                  browserState.multiSelection.isActive,
+                  browserState.multiSelectionDragBookmarkGuids(startingFrom: bookmark) == nil {
+            browserState.clearMultiSelection()
         }
         browserState.tabDraggingSession.begin(
             draggingItem: sessionItem,
@@ -2007,7 +2285,25 @@ extension SidebarTabListViewController: NSOutlineViewDataSource {
             if !didApplyMultiSelectionPreview {
                 applySplitPairDragImageIfNeeded(session: session, draggedTab: draggedTab)
             }
+        } else if let draggedBookmark = bookmark(fromDraggingSessionItem: sessionItem) {
+            _ = applyMultiSelectionDragImageIfNeeded(
+                session: session,
+                startingFrom: draggedBookmark,
+                sourceImage: nil,
+                browserState: browserState,
+                outlineView: self.outlineView
+            )
         }
+    }
+
+    private func bookmark(fromDraggingSessionItem item: Any?) -> Bookmark? {
+        if let bookmark = item as? Bookmark {
+            return bookmark
+        }
+        if let provider = item as? UnderlyingBookmarkProviding {
+            return provider.underlyingBookmark
+        }
+        return nil
     }
 
     /// If the dragged tab is part of a split, replace the dragging image with
@@ -2355,6 +2651,7 @@ extension SidebarTabListViewController: NSOutlineViewDataSource {
         let isTabLikeDrag = pasteboard.string(forType: .normalTab) != nil
         || pasteboard.string(forType: .pinnedTab) != nil
         || pasteboard.string(forType: .phiBookmark) != nil
+        || pasteboard.string(forType: .bookmarks) != nil
         guard isTabLikeDrag,
               childIndex == NSOutlineViewDropOnItemIndex,
               let folder = resolvedItem as? Bookmark,
@@ -3763,7 +4060,12 @@ extension SidebarTabListViewController: NSMenuDelegate {
             return
         }
 
-        if let bookmark = item as? Bookmark {
+        if let sidebarItem = item as? SidebarItem,
+           let bookmark = bookmark(from: sidebarItem) {
+            if browserState.multiSelection.containsBookmark(bookmark.guid),
+               TabMultiSelectionMenu.populateIfNeeded(menu, browserState: browserState) {
+                return
+            }
             bookmark.makeContextMenu(on: menu, source: .sidebar)
         } else {
             item.makeContextMenu(on: menu)
@@ -4078,6 +4380,18 @@ extension SidebarTabListViewController: TabGroupCellViewDelegate {
     }
 
     func tabGroupCell(_ cell: TabGroupCellView,
+                      canAcceptBookmarksWithGuids guids: [String]) -> Bool {
+        let uniqueGuids = Array(Set(guids))
+        guard !uniqueGuids.isEmpty,
+              uniqueGuids.allSatisfy({ findBookmark(withId: $0) != nil }) else {
+            return false
+        }
+        let bookmarks = rootFilteredBookmarks(forGuids: guids)
+        guard !bookmarks.isEmpty else { return false }
+        return bookmarks.allSatisfy(canMoveBookmarkToGroup)
+    }
+
+    func tabGroupCell(_ cell: TabGroupCellView,
                       canAcceptPinnedTabWithGuid pinnedGuid: String) -> Bool {
         canMovePinnedTabToGroup(pinnedGuid: pinnedGuid)
     }
@@ -4121,6 +4435,52 @@ extension SidebarTabListViewController: TabGroupCellViewDelegate {
         )
         setDropFeedback(.none)
         return accepted
+    }
+
+    func tabGroupCell(_ cell: TabGroupCellView,
+                      didAcceptBookmarksWithGuids bookmarkGuids: [String],
+                      tabIds: [Int],
+                      intoGroupToken token: String,
+                      atNormalTabsIdx normalTabsIdx: Int,
+                      groupIndex: Int) -> Bool {
+        let bookmarks = rootFilteredBookmarks(forGuids: bookmarkGuids)
+        guard !bookmarks.isEmpty,
+              bookmarks.allSatisfy(canMoveBookmarkToGroup) else {
+            setDropFeedback(.none)
+            return false
+        }
+
+        var insertionIndex = normalTabsIdx
+        var nextGroupIndex = groupIndex
+        var didMove = false
+        if !tabIds.isEmpty {
+            guard commitNormalTabBatchDrop(tabIds: tabIds,
+                                           to: insertionIndex,
+                                           targetGroupToken: token) else {
+                setDropFeedback(.none)
+                return false
+            }
+            didMove = true
+            insertionIndex += tabIds.count
+            nextGroupIndex += tabIds.count
+        }
+
+        for bookmark in bookmarks {
+            if browserState.moveBookmarkOut(bookmark,
+                                            toGroup: token,
+                                            groupIndex: nextGroupIndex,
+                                            normalTabsIndex: insertionIndex,
+                                            focusAfterCreate: false) {
+                didMove = true
+                insertionIndex += 1
+                nextGroupIndex += 1
+            }
+        }
+        if didMove {
+            browserState.clearMultiSelection()
+        }
+        setDropFeedback(.none)
+        return didMove
     }
 }
 

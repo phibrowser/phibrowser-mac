@@ -38,6 +38,7 @@ private final class BookmarkCellViewState {
     var isHovered = false
     var isPressed = false
     var isEditing = false
+    var isMultiSelected = false
     var isDropTargetHighlighted = false
 }
 
@@ -204,6 +205,7 @@ class BookmarkCellView: SidebarCellView {
         viewState.isHovered = false
         viewState.isPressed = false
         viewState.isEditing = false
+        viewState.isMultiSelected = false
         viewState.isDropTargetHighlighted = false
     }
 
@@ -274,6 +276,7 @@ class BookmarkCellView: SidebarCellView {
         viewState.isFolder = bookmark.isFolder
         viewState.isActive = bookmark.isActive
         viewState.isEditing = bookmark.isEditing
+        viewState.isMultiSelected = resolvedBrowserState?.multiSelection.containsBookmark(bookmark.guid) == true
         viewState.editText = bookmark.title
         editField.stringValue = bookmark.title
         updateEditFieldLayout()
@@ -361,6 +364,16 @@ class BookmarkCellView: SidebarCellView {
                 self.updateEditingState(isEditing, bookmark: bookmark)
             }
             .store(in: &cancellables)
+
+        if let state = resolvedBrowserState {
+            state.$multiSelection
+                .receive(on: DispatchQueue.main)
+                .sink { [weak self, weak bookmark] selection in
+                    guard let self, let bookmark else { return }
+                    self.viewState.isMultiSelected = selection.containsBookmark(bookmark.guid)
+                }
+                .store(in: &cancellables)
+        }
     }
 
     func setDropTargetHighlighted(_ highlighted: Bool) {
@@ -675,12 +688,15 @@ private struct SidebarBookmarkCellContentView: View {
     @Environment(\.phiAppearance) private var appearance
 
     private var isHighlighted: Bool {
-        state.isActive || state.isDropTargetHighlighted
+        state.isActive || state.isDropTargetHighlighted || state.isMultiSelected
     }
 
     private var backgroundColor: Color {
-        if isHighlighted {
+        if state.isActive || state.isDropTargetHighlighted {
             return Color(nsColor: NSColor(resource: .sidebarTabSelected))
+        }
+        if state.isMultiSelected {
+            return Color(nsColor: NSColor(resource: .sidebarTabSubSelected))
         }
         if state.isHovered {
             return Color(nsColor: NSColor(resource: .sidebarTabHovered))

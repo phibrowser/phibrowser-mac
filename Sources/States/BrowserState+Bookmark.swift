@@ -211,6 +211,7 @@ extension BrowserState {
         // Bookmark activation is dispatched from UI/menu paths on the main thread.
         MainActor.assumeIsolated {
             clearGroupOverview()
+            clearMultiSelection()
         }
 
         localStore.updateLastSeen(bookmark.guid)

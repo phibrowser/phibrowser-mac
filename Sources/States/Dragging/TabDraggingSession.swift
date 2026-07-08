@@ -839,14 +839,37 @@ extension TabDraggingSession {
     }
 
     private func snapshotBadgeCount(for item: SidebarItem) -> Int? {
-        guard let tab = item as? Tab,
-              let state,
-              let tabIds = state.multiSelectionDragTabIds(startingFrom: tab) else {
+        guard let state else {
+            return nil
+        }
+
+        let tabIds: [Int]
+        let bookmarkGuids: [String]
+        if let tab = item as? Tab,
+           let selectedTabIds = state.multiSelectionDragTabIds(startingFrom: tab) {
+            tabIds = selectedTabIds
+            bookmarkGuids = state.multiSelectionDragBookmarkGuids() ?? []
+        } else if let bookmark = bookmark(from: item),
+                  let selectedBookmarkGuids = state.multiSelectionDragBookmarkGuids(startingFrom: bookmark) {
+            tabIds = state.multiSelectionDragTabIdsForBookmarkDrag() ?? []
+            bookmarkGuids = selectedBookmarkGuids
+        } else {
             return nil
         }
 
         let count = TabDragCountBadge.visibleUnitCount(tabIds: tabIds, browserState: state)
+            + bookmarkGuids.count
         return count > 1 ? count : nil
+    }
+
+    private func bookmark(from item: SidebarItem) -> Bookmark? {
+        if let bookmark = item as? Bookmark {
+            return bookmark
+        }
+        if let provider = item as? UnderlyingBookmarkProviding {
+            return provider.underlyingBookmark
+        }
+        return nil
     }
 
     private func resolveOutsideWindowDragImageWithBadge(for item: SidebarItem) -> NSImage? {

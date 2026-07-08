@@ -482,7 +482,106 @@ final class BrowserStateMultiSelectionTests: XCTestCase {
         XCTAssertFalse(state.multiSelection.isActive)
     }
 
-    func testOpenExistingBookmarkAfterCommandClickNormalTabRestoresBookmarkFocus() throws {
+    func testBookmarkGuidCanMixWithNormalTabSelection() throws {
+        let state = try makeState()
+        seed(state, guids: [1, 2])
+        state.focuseTab(state.tabs[0])
+        let bookmarkGuid = "bookmark-1"
+        state.localStore.createBookmark(url: "https://bookmark.example",
+                                        title: "Bookmark",
+                                        profileId: state.profileId,
+                                        parentId: nil,
+                                        guid: bookmarkGuid,
+                                        spaceId: state.spaceId)
+        guard waitUntil(condition: {
+            state.bookmarkManager.bookmark(withGuid: bookmarkGuid) != nil
+        }) else { return }
+
+        state.toggleMultiSelection(for: state.tabs[1])
+        state.toggleBookmarkMultiSelection(bookmarkGuid: bookmarkGuid)
+
+        XCTAssertEqual(state.multiSelection.guids, [2])
+        XCTAssertEqual(state.multiSelection.bookmarkGuids, [bookmarkGuid])
+        XCTAssertTrue(state.multiSelection.hasTabSelection)
+        XCTAssertTrue(state.multiSelection.hasBookmarkSelection)
+        XCTAssertFalse(state.multiSelectionContext.containsBookmarkFolder)
+        XCTAssertTrue(state.multiSelectionContext.showsCloseItems)
+    }
+
+    func testBookmarkSelectionIncludesImplicitActiveNormalTabForContextAndDrag() throws {
+        let state = try makeState()
+        seed(state, guids: [1, 2])
+        state.focuseTab(state.tabs[0])
+        let bookmarkGuid = "bookmark-implicit-active"
+        state.localStore.createBookmark(url: "https://bookmark.example",
+                                        title: "Bookmark",
+                                        profileId: state.profileId,
+                                        parentId: nil,
+                                        guid: bookmarkGuid,
+                                        spaceId: state.spaceId)
+        guard waitUntil(condition: {
+            state.bookmarkManager.bookmark(withGuid: bookmarkGuid) != nil
+        }) else { return }
+        let bookmark = try XCTUnwrap(state.bookmarkManager.bookmark(withGuid: bookmarkGuid))
+
+        state.toggleBookmarkMultiSelection(bookmarkGuid: bookmarkGuid)
+
+        XCTAssertEqual(state.multiSelection.guids, [])
+        XCTAssertEqual(state.multiSelection.bookmarkGuids, [bookmarkGuid])
+        XCTAssertEqual(state.orderedMultiSelectedTabs.map(\.guid), [1])
+        XCTAssertTrue(state.multiSelectionContext.showsCloseItems)
+        XCTAssertEqual(state.multiSelectionDragTabIdsForBookmarkDrag(), [1])
+        XCTAssertEqual(state.multiSelectionDragBookmarkGuids(startingFrom: bookmark), [bookmarkGuid])
+    }
+
+    func testBookmarkFolderSelectionDisablesTabOnlyActions() throws {
+        let state = try makeState()
+        seed(state, guids: [1, 2])
+        state.focuseTab(state.tabs[0])
+        let folderGuid = "folder-1"
+        state.localStore.createDirectory(title: "Folder",
+                                         profileId: state.profileId,
+                                         parentId: nil,
+                                         guid: folderGuid)
+        guard waitUntil(condition: {
+            state.bookmarkManager.bookmark(withGuid: folderGuid) != nil
+        }) else { return }
+
+        state.toggleMultiSelection(for: state.tabs[1])
+        state.toggleBookmarkMultiSelection(bookmarkGuid: folderGuid)
+
+        XCTAssertEqual(state.multiSelection.guids, [2])
+        XCTAssertEqual(state.multiSelection.bookmarkGuids, [folderGuid])
+        XCTAssertTrue(state.multiSelectionContext.containsBookmarkFolder)
+        XCTAssertFalse(state.multiSelectionContext.canOpenAsSplit)
+        XCTAssertFalse(state.multiSelectionContext.showsCloseItems)
+    }
+
+    func testFolderMultiSelectionMenuDisablesSplitAndHidesCloseItems() throws {
+        let state = try makeState()
+        seed(state, guids: [1, 2])
+        state.focuseTab(state.tabs[0])
+        let folderGuid = "folder-1"
+        state.localStore.createDirectory(title: "Folder",
+                                         profileId: state.profileId,
+                                         parentId: nil,
+                                         guid: folderGuid)
+        guard waitUntil(condition: {
+            state.bookmarkManager.bookmark(withGuid: folderGuid) != nil
+        }) else { return }
+        state.toggleMultiSelection(for: state.tabs[1])
+        state.toggleBookmarkMultiSelection(bookmarkGuid: folderGuid)
+        let menu = NSMenu()
+
+        XCTAssertTrue(TabMultiSelectionMenu.populateIfNeeded(menu, browserState: state))
+
+        let openAsSplit = try XCTUnwrap(menu.items.first { $0.title == "Open as Split" })
+        XCTAssertFalse(openAsSplit.isEnabled)
+        XCTAssertFalse(menu.items.contains { $0.title == "Close Tabs" })
+        XCTAssertFalse(menu.items.contains { $0.title == "Close Other Tabs" })
+    }
+
+    func testActiveBookmarkTabCanCrossSelectNormalTab() throws {
         let state = try makeState()
         let bookmarkGuid = "bookmark-1"
         state.localStore.createBookmark(url: "https://bookmark.example",
@@ -518,19 +617,15 @@ final class BrowserStateMultiSelectionTests: XCTestCase {
         state.focuseTab(bookmarkTab)
         state.toggleMultiSelection(for: normalTab)
 
-        XCTAssertEqual(state.focusingTab?.guid, normalTab.guid)
-        XCTAssertFalse(state.multiSelection.isActive)
-
-        state.openBookmark(bookmark)
-
         XCTAssertEqual(state.focusingTab?.guid, bookmarkTab.guid)
-        XCTAssertTrue(bookmarkTab.isActive)
-        XCTAssertFalse(normalTab.isActive)
-        XCTAssertEqual(bookmarkWrapper.setAsActiveTabCallCount, 1)
-        XCTAssertFalse(state.multiSelection.isActive)
+        XCTAssertTrue(state.multiSelection.isActive)
+        XCTAssertEqual(state.multiSelection.guids, [normalTab.guid])
+        XCTAssertEqual(state.multiSelection.bookmarkGuids, [bookmark.guid])
+        XCTAssertEqual(state.orderedMultiSelectedTabs.map(\.guid), [normalTab.guid])
+        XCTAssertEqual(bookmarkWrapper.setAsActiveTabCallCount, 0)
     }
 
-    func testActiveSplitBookmarkCannotCrossSelectNormalTabOrSplitPair() throws {
+    func testActiveSplitBookmarkCanCrossSelectNormalTabOrSplitPair() throws {
         let state = try makeState()
         let bookmarkGuid = "split-bookmark-1"
         state.localStore.createBookmark(url: "https://e1.example",
@@ -567,8 +662,9 @@ final class BrowserStateMultiSelectionTests: XCTestCase {
         state.focuseTab(state.tabs[0])
         state.toggleMultiSelection(for: state.tabs[2])
 
-        XCTAssertEqual(state.focusingTab?.guid, 3)
-        XCTAssertFalse(state.multiSelection.isActive)
+        XCTAssertEqual(state.focusingTab?.guid, 1)
+        XCTAssertEqual(state.multiSelection.guids, [3])
+        XCTAssertEqual(state.multiSelection.bookmarkGuids, [bookmark.guid])
 
         state.openBookmark(bookmark)
 
@@ -582,11 +678,12 @@ final class BrowserStateMultiSelectionTests: XCTestCase {
         let handled = state.toggleMultiSelectionForSplitPair(leftTab: state.tabs[3],
                                                              rightTab: state.tabs[4])
 
-        XCTAssertFalse(handled)
-        XCTAssertFalse(state.multiSelection.isActive)
+        XCTAssertTrue(handled)
+        XCTAssertEqual(state.multiSelection.guids, [4, 5])
+        XCTAssertEqual(state.multiSelection.bookmarkGuids, [bookmark.guid])
     }
 
-    func testActiveBookmarkTabCannotCrossSelectNormalSplitPair() throws {
+    func testActiveBookmarkTabCanCrossSelectNormalSplitPair() throws {
         let state = try makeState()
         let bookmarkGuid = "bookmark-2"
         state.localStore.createBookmark(url: "https://bookmark.example",
@@ -621,8 +718,9 @@ final class BrowserStateMultiSelectionTests: XCTestCase {
         let handled = state.toggleMultiSelectionForSplitPair(leftTab: state.tabs[1],
                                                              rightTab: state.tabs[2])
 
-        XCTAssertFalse(handled)
-        XCTAssertFalse(state.multiSelection.isActive)
+        XCTAssertTrue(handled)
+        XCTAssertEqual(state.multiSelection.guids, [2, 3])
+        XCTAssertEqual(state.multiSelection.bookmarkGuids, [bookmarkGuid])
     }
 
     func testAddToGroupDedupsTabsAlreadyInThatGroup() throws {

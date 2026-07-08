@@ -11,11 +11,33 @@ private struct SidebarMultiSelectionDragPreview {
 }
 
 private struct SidebarMultiSelectionDragPreviewLayer {
-    let tabId: Int
+    let id: AnyHashable
     let image: NSImage
 }
 
 extension SidebarTabListViewController {
+    private enum SidebarMultiSelectionPreviewItem {
+        case tab(Int)
+        case bookmark(String)
+
+        var previewId: AnyHashable {
+            switch self {
+            case .tab(let tabId):
+                return AnyHashable("tab:\(tabId)")
+            case .bookmark(let guid):
+                return AnyHashable("bookmark:\(guid)")
+            }
+        }
+    }
+
+    private func tabPreviewId(_ tabId: Int) -> AnyHashable {
+        AnyHashable("tab:\(tabId)")
+    }
+
+    private func bookmarkPreviewId(_ guid: String) -> AnyHashable {
+        AnyHashable("bookmark:\(guid)")
+    }
+
     func applyMultiSelectionDragImageIfNeeded(session: NSDraggingSession,
                                               startingFrom tab: Tab,
                                               sourceImage: NSImage?,
@@ -23,10 +45,10 @@ extension SidebarTabListViewController {
                                               browserState: BrowserState,
                                               outlineView: SideBarOutlineView) -> Bool {
         guard let tabIds = browserState.multiSelectionDragTabIds(startingFrom: tab),
-              tabIds.count > 1,
               let preview = makeMultiSelectionDragPreview(
                 startingTabId: tab.guid,
                 tabIds: tabIds,
+                bookmarkGuids: browserState.multiSelectionDragBookmarkGuids() ?? [],
                 sourceImage: sourceImage,
                 sourceGroupCell: sourceGroupCell,
                 browserState: browserState,
@@ -55,8 +77,89 @@ extension SidebarTabListViewController {
         return true
     }
 
+    func applyMultiSelectionDragImageIfNeeded(session: NSDraggingSession,
+                                              startingFrom bookmark: Bookmark,
+                                              sourceImage: NSImage?,
+                                              browserState: BrowserState,
+                                              outlineView: SideBarOutlineView) -> Bool {
+        guard let bookmarkGuids = browserState.multiSelectionDragBookmarkGuids(startingFrom: bookmark) else {
+            return false
+        }
+        let tabIds = browserState.multiSelectionDragTabIdsForBookmarkDrag() ?? []
+        guard let preview = makeMultiSelectionDragPreview(
+            startingBookmarkGuid: bookmark.guid,
+            tabIds: tabIds,
+            bookmarkGuids: bookmarkGuids,
+            sourceImage: sourceImage,
+            sourceGroupCell: nil,
+            browserState: browserState,
+            outlineView: outlineView
+        ) else {
+            return false
+        }
+
+        session.enumerateDraggingItems(
+            options: [],
+            for: nil,
+            classes: [NSPasteboardItem.self],
+            searchOptions: [:]
+        ) { draggingItem, _, _ in
+            let sourceFrame = draggingItem.draggingFrame
+            let frame = NSRect(
+                x: sourceFrame.origin.x - preview.sourceImageOrigin.x,
+                y: sourceFrame.origin.y - preview.sourceImageOrigin.y,
+                width: preview.image.size.width,
+                height: preview.image.size.height
+            )
+            draggingItem.imageComponentsProvider = nil
+            draggingItem.setDraggingFrame(frame, contents: preview.image)
+        }
+        browserState.tabDraggingSession.setOriginalDragImage(preview.image)
+        return true
+    }
+
     private func makeMultiSelectionDragPreview(startingTabId: Int,
                                                tabIds: [Int],
+                                               bookmarkGuids: [String],
+                                               sourceImage: NSImage?,
+                                               sourceGroupCell: TabGroupCellView?,
+                                               browserState: BrowserState,
+                                               outlineView: SideBarOutlineView) -> SidebarMultiSelectionDragPreview? {
+        makeMultiSelectionDragPreview(
+            startingItemId: tabPreviewId(startingTabId),
+            startingTabId: startingTabId,
+            tabIds: tabIds,
+            bookmarkGuids: bookmarkGuids,
+            sourceImage: sourceImage,
+            sourceGroupCell: sourceGroupCell,
+            browserState: browserState,
+            outlineView: outlineView
+        )
+    }
+
+    private func makeMultiSelectionDragPreview(startingBookmarkGuid: String,
+                                               tabIds: [Int],
+                                               bookmarkGuids: [String],
+                                               sourceImage: NSImage?,
+                                               sourceGroupCell: TabGroupCellView?,
+                                               browserState: BrowserState,
+                                               outlineView: SideBarOutlineView) -> SidebarMultiSelectionDragPreview? {
+        makeMultiSelectionDragPreview(
+            startingItemId: bookmarkPreviewId(startingBookmarkGuid),
+            startingTabId: nil,
+            tabIds: tabIds,
+            bookmarkGuids: bookmarkGuids,
+            sourceImage: sourceImage,
+            sourceGroupCell: sourceGroupCell,
+            browserState: browserState,
+            outlineView: outlineView
+        )
+    }
+
+    private func makeMultiSelectionDragPreview(startingItemId: AnyHashable,
+                                               startingTabId: Int?,
+                                               tabIds: [Int],
+                                               bookmarkGuids: [String],
                                                sourceImage: NSImage?,
                                                sourceGroupCell: TabGroupCellView?,
                                                browserState: BrowserState,
@@ -66,46 +169,63 @@ extension SidebarTabListViewController {
             tabIds: tabIds,
             browserState: browserState
         )
-        let previewIds = TabDragCountBadge.visibleRepresentativeTabIds(
+        let previewTabIds = TabDragCountBadge.visibleRepresentativeTabIds(
             tabIds: orderedPreviewIds,
             browserState: browserState
         )
-            .prefix(3)
         let visibleCount = TabDragCountBadge.visibleUnitCount(
             tabIds: tabIds,
             browserState: browserState
+        ) + bookmarkGuids.count
+        guard visibleCount > 1 else { return nil }
+
+        let previewItems = Array(
+            mixedPreviewItems(startingItemId: startingItemId,
+                              tabIds: Array(previewTabIds),
+                              bookmarkGuids: bookmarkGuids)
+                .prefix(3)
         )
         var layers: [SidebarMultiSelectionDragPreviewLayer] = []
-        for tabId in previewIds {
-            if let image = draggingImageForSidebarTabId(
-                tabId,
-                sourceGroupCell: sourceGroupCell,
-                outlineView: outlineView
-            ) {
-                layers.append(SidebarMultiSelectionDragPreviewLayer(tabId: tabId, image: image))
-            } else if tabId == startingTabId, let sourceImage {
-                layers.append(SidebarMultiSelectionDragPreviewLayer(tabId: tabId, image: sourceImage))
+        for item in previewItems {
+            switch item {
+            case .tab(let tabId):
+                if let image = draggingImageForSidebarTabId(
+                    tabId,
+                    sourceGroupCell: sourceGroupCell,
+                    outlineView: outlineView
+                ) {
+                    layers.append(SidebarMultiSelectionDragPreviewLayer(id: tabPreviewId(tabId), image: image))
+                } else if tabPreviewId(tabId) == startingItemId, let sourceImage {
+                    layers.append(SidebarMultiSelectionDragPreviewLayer(id: tabPreviewId(tabId), image: sourceImage))
+                }
+            case .bookmark(let guid):
+                if let image = draggingImageForSidebarBookmarkGuid(guid, outlineView: outlineView) {
+                    layers.append(SidebarMultiSelectionDragPreviewLayer(id: bookmarkPreviewId(guid), image: image))
+                } else if bookmarkPreviewId(guid) == startingItemId, let sourceImage {
+                    layers.append(SidebarMultiSelectionDragPreviewLayer(id: bookmarkPreviewId(guid), image: sourceImage))
+                }
             }
         }
         if layers.isEmpty, let sourceImage {
-            layers.append(SidebarMultiSelectionDragPreviewLayer(tabId: startingTabId, image: sourceImage))
+            layers.append(SidebarMultiSelectionDragPreviewLayer(id: startingItemId, image: sourceImage))
         }
         let fallbackImage = sourceImage ?? layers.first?.image
-        for tabId in previewIds where layers.count < min(visibleCount, 3) {
-            guard layers.contains(where: { $0.tabId == tabId }) == false,
+        for item in previewItems where layers.count < min(visibleCount, 3) {
+            let id = item.previewId
+            guard layers.contains(where: { $0.id == id }) == false,
                   let fallbackImage else {
                 continue
             }
-            layers.append(SidebarMultiSelectionDragPreviewLayer(tabId: tabId, image: fallbackImage))
+            layers.append(SidebarMultiSelectionDragPreviewLayer(id: id, image: fallbackImage))
         }
         return makeStackedMultiSelectionDragPreview(
             layers: layers,
-            sourceTabId: startingTabId,
+            sourceItemId: startingItemId,
             count: visibleCount
         )
     }
 
-    private func multiSelectionDragPreviewTabIds(startingTabId: Int,
+    private func multiSelectionDragPreviewTabIds(startingTabId: Int?,
                                                  tabIds: [Int],
                                                  browserState: BrowserState) -> [Int] {
         var orderedIds: [Int] = []
@@ -124,6 +244,26 @@ extension SidebarTabListViewController {
             appendIfPresent(tabId)
         }
         return orderedIds
+    }
+
+    private func mixedPreviewItems(startingItemId: AnyHashable,
+                                   tabIds: [Int],
+                                   bookmarkGuids: [String]) -> [SidebarMultiSelectionPreviewItem] {
+        var items: [SidebarMultiSelectionPreviewItem] = []
+        func append(_ item: SidebarMultiSelectionPreviewItem) {
+            guard !items.contains(where: { $0.previewId == item.previewId }) else { return }
+            items.append(item)
+        }
+
+        if let starting = tabIds.first(where: { tabPreviewId($0) == startingItemId }) {
+            append(.tab(starting))
+        }
+        if let starting = bookmarkGuids.first(where: { bookmarkPreviewId($0) == startingItemId }) {
+            append(.bookmark(starting))
+        }
+        tabIds.forEach { append(.tab($0)) }
+        bookmarkGuids.forEach { append(.bookmark($0)) }
+        return items
     }
 
     private func draggingImageForSidebarTabId(_ tabId: Int,
@@ -164,8 +304,33 @@ extension SidebarTabListViewController {
         return nil
     }
 
+    private func draggingImageForSidebarBookmarkGuid(_ guid: String,
+                                                     outlineView: SideBarOutlineView) -> NSImage? {
+        for row in 0..<outlineView.numberOfRows {
+            guard let item = outlineView.item(atRow: row) else { continue }
+            let bookmark: Bookmark?
+            if let direct = item as? Bookmark {
+                bookmark = direct
+            } else if let provider = item as? UnderlyingBookmarkProviding {
+                bookmark = provider.underlyingBookmark
+            } else {
+                bookmark = nil
+            }
+            guard bookmark?.guid == guid,
+                  let cell = outlineView.view(
+                    atColumn: 0,
+                    row: row,
+                    makeIfNecessary: false
+                  ) as? SidebarCellView else {
+                continue
+            }
+            return cell.createDraggingImage()
+        }
+        return nil
+    }
+
     private func makeStackedMultiSelectionDragPreview(layers: [SidebarMultiSelectionDragPreviewLayer],
-                                                      sourceTabId: Int,
+                                                      sourceItemId: AnyHashable,
                                                       count: Int) -> SidebarMultiSelectionDragPreview? {
         let visibleLayers = Array(layers.prefix(3))
         guard !visibleLayers.isEmpty else { return nil }
@@ -203,7 +368,7 @@ extension SidebarTabListViewController {
                 width: snapshot.size.width,
                 height: snapshot.size.height
             )
-            if layer.tabId == sourceTabId {
+            if layer.id == sourceItemId {
                 sourceImageOrigin = rect.origin
             }
             NSGraphicsContext.saveGraphicsState()

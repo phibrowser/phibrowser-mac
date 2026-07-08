@@ -23,12 +23,20 @@ class BrowserState {
         case split(splitId: String, tabIds: [Int], toIndex: Int)
     }
 
+    struct MultiSelectionBookmarkDeletionContext: Equatable {
+        let folderCount: Int
+        let bookmarkCount: Int
+
+        var totalCount: Int { folderCount + bookmarkCount }
+    }
+
     struct MultiSelectionContext: Equatable {
         let tabIds: Set<Int>
         let bookmarkGuids: Set<String>
         let containsBookmarkFolder: Bool
         let canOpenAsSplit: Bool
         let showsCloseItems: Bool
+        let bookmarkDeletion: MultiSelectionBookmarkDeletionContext?
     }
 
     private struct NormalTabRelativeOrderSyncUnit {
@@ -1158,13 +1166,15 @@ class BrowserState {
     var multiSelectionContext: MultiSelectionContext {
         let bookmarkGuids = multiSelectionBookmarkGuidsIncludingImplicitActive
         let selectedBookmarks = bookmarkGuids.compactMap { bookmarkManager.bookmark(withGuid: $0) }
+        let selectedBookmarkRoots = bookmarkRoots(for: bookmarkGuids)
         let containsFolder = selectedBookmarks.contains { $0.isFolder }
         return MultiSelectionContext(
             tabIds: multiSelection.guids,
             bookmarkGuids: bookmarkGuids,
             containsBookmarkFolder: containsFolder,
             canOpenAsSplit: !containsFolder && multiSelectionCanOpenAsSplit,
-            showsCloseItems: !containsFolder && !orderedMultiSelectedTabs.isEmpty
+            showsCloseItems: !containsFolder && !orderedMultiSelectedTabs.isEmpty,
+            bookmarkDeletion: bookmarkDeletionContext(for: selectedBookmarkRoots)
         )
     }
 
@@ -1653,6 +1663,19 @@ class BrowserState {
     }
 
     @MainActor
+    var multiSelectionBookmarkDeletionContext: MultiSelectionBookmarkDeletionContext? {
+        bookmarkDeletionContext(for: orderedMultiSelectedBookmarkRoots)
+    }
+
+    private func bookmarkDeletionContext(for bookmarks: [Bookmark]) -> MultiSelectionBookmarkDeletionContext? {
+        let folderCount = bookmarks.filter(\.isFolder).count
+        let bookmarkCount = bookmarks.count - folderCount
+        guard folderCount + bookmarkCount > 0 else { return nil }
+        return MultiSelectionBookmarkDeletionContext(folderCount: folderCount,
+                                                     bookmarkCount: bookmarkCount)
+    }
+
+    @MainActor
     private var multiSelectionSplitCandidates: [MultiSelectionSplitCandidate] {
         let tabCandidates = orderedMultiSelectedTabs.compactMap { tab -> MultiSelectionSplitCandidate? in
             guard !tab.isPinned,
@@ -1764,6 +1787,25 @@ class BrowserState {
             didChange = true
         }
         return didChange
+    }
+
+    @discardableResult
+    @MainActor
+    func deleteMultiSelectedBookmarks() -> Bool {
+        let bookmarks = orderedMultiSelectedBookmarkRoots
+        guard !bookmarks.isEmpty else { return false }
+
+        var didDelete = false
+        clearMultiSelection()
+        for bookmark in bookmarks {
+            guard let liveBookmark = bookmarkManager.bookmark(withGuid: bookmark.guid) else {
+                continue
+            }
+            closeOpenTabsForRemovedBookmark(liveBookmark)
+            localStore.deleteBookmark(liveBookmark.guid, profileId: profileId)
+            didDelete = true
+        }
+        return didDelete
     }
 
     /// Bookmarks a pre-captured tab snapshot into a newly created folder.

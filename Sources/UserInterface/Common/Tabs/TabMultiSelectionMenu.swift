@@ -151,6 +151,19 @@ enum TabMultiSelectionMenu {
             items.append(closeOtherItem)
         }
 
+        if let bookmarkDeletion = context.bookmarkDeletion {
+            if items.last?.isSeparatorItem != true {
+                items.append(.separator())
+            }
+
+            let deleteItem = NSMenuItem(
+                title: deleteBookmarksTitle(for: bookmarkDeletion),
+                action: #selector(TabMultiSelectionMenuController.deleteSelectedBookmarks),
+                keyEquivalent: "d")
+            deleteItem.keyEquivalentModifierMask = [.command]
+            items.append(deleteItem)
+        }
+
         items.forEach { item in
             if item.representedObject == nil {
                 if item.target == nil { item.target = controller }
@@ -159,6 +172,29 @@ enum TabMultiSelectionMenu {
             menu.addItem(item)
         }
         return true
+    }
+
+    private static func deleteBookmarksTitle(
+        for context: BrowserState.MultiSelectionBookmarkDeletionContext
+    ) -> String {
+        if context.folderCount > 0, context.bookmarkCount == 0 {
+            let format = context.folderCount == 1
+                ? NSLocalizedString("Delete %d Folder", comment: "Tab multi-selection context menu - delete selected bookmark folder")
+                : NSLocalizedString("Delete %d Folders", comment: "Tab multi-selection context menu - delete selected bookmark folders")
+            return String(format: format, context.folderCount)
+        }
+
+        if context.bookmarkCount > 0, context.folderCount == 0 {
+            let format = context.bookmarkCount == 1
+                ? NSLocalizedString("Delete %d Bookmark", comment: "Tab multi-selection context menu - delete selected bookmark")
+                : NSLocalizedString("Delete %d Bookmarks", comment: "Tab multi-selection context menu - delete selected bookmarks")
+            return String(format: format, context.bookmarkCount)
+        }
+
+        let format = context.totalCount == 1
+            ? NSLocalizedString("Delete %d Item", comment: "Tab multi-selection context menu - delete selected bookmark item")
+            : NSLocalizedString("Delete %d Items", comment: "Tab multi-selection context menu - delete selected bookmark items")
+        return String(format: format, context.totalCount)
     }
 
     @MainActor
@@ -287,6 +323,14 @@ final class TabMultiSelectionMenuController: NSObject {
         guard let targetSpaceId = sender.representedObject as? String else { return }
         browserState?.moveMultiSelection(toSpaceId: targetSpaceId)
     }
+    @objc func deleteSelectedBookmarks() {
+        guard let browserState,
+              let context = browserState.multiSelectionBookmarkDeletionContext,
+              confirmBookmarkDeletion(context) else {
+            return
+        }
+        browserState.deleteMultiSelectedBookmarks()
+    }
 
     // Disable a group entry when every selected tab is already in that group.
     @objc func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
@@ -321,6 +365,83 @@ final class TabMultiSelectionMenuController: NSObject {
             return browserState.hasTabsOutsideMultiSelection
         }
 
+        if menuItem.action == #selector(deleteSelectedBookmarks) {
+            return browserState.multiSelectionBookmarkDeletionContext != nil
+        }
+
         return true
+    }
+
+    private func confirmBookmarkDeletion(_ context: BrowserState.MultiSelectionBookmarkDeletionContext) -> Bool {
+        let alert = NSAlert()
+        alert.messageText = deleteAlertTitle(for: context)
+        alert.informativeText = deleteAlertMessage(for: context)
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: NSLocalizedString("Delete", comment: "Destructive button"))
+        alert.addButton(withTitle: NSLocalizedString("Cancel", comment: "Cancel button"))
+        return alert.runModal() == .alertFirstButtonReturn
+    }
+
+    private func deleteAlertTitle(for context: BrowserState.MultiSelectionBookmarkDeletionContext) -> String {
+        if context.folderCount > 0, context.bookmarkCount == 0 {
+            let format = context.folderCount == 1
+                ? NSLocalizedString("Delete %d Folder?", comment: "Bookmark multi-selection delete confirmation title")
+                : NSLocalizedString("Delete %d Folders?", comment: "Bookmark multi-selection delete confirmation title")
+            return String(format: format, context.folderCount)
+        }
+
+        if context.bookmarkCount > 0, context.folderCount == 0 {
+            let format = context.bookmarkCount == 1
+                ? NSLocalizedString("Delete %d Bookmark?", comment: "Bookmark multi-selection delete confirmation title")
+                : NSLocalizedString("Delete %d Bookmarks?", comment: "Bookmark multi-selection delete confirmation title")
+            return String(format: format, context.bookmarkCount)
+        }
+
+        let format = NSLocalizedString("Delete %d Items?", comment: "Bookmark multi-selection delete confirmation title")
+        return String(format: format, context.totalCount)
+    }
+
+    private func deleteAlertMessage(for context: BrowserState.MultiSelectionBookmarkDeletionContext) -> String {
+        let deletionText: String
+        if context.folderCount > 0, context.bookmarkCount == 0 {
+            deletionText = String(
+                format: NSLocalizedString("%@ will be deleted.",
+                                          comment: "Bookmark multi-selection delete confirmation body for folders"),
+                folderDeletionPhrase(context.folderCount)
+            )
+        } else if context.bookmarkCount > 0, context.folderCount == 0 {
+            deletionText = String(
+                format: NSLocalizedString("%@ will be deleted.",
+                                          comment: "Bookmark multi-selection delete confirmation body for bookmarks"),
+                bookmarkDeletionPhrase(context.bookmarkCount)
+            )
+        } else {
+            deletionText = String(
+                format: NSLocalizedString("%@ and %@ will be deleted.",
+                                          comment: "Bookmark multi-selection delete confirmation body for mixed folders and bookmarks"),
+                folderDeletionPhrase(context.folderCount),
+                bookmarkDeletionPhrase(context.bookmarkCount)
+            )
+        }
+        return deletionText + " " + NSLocalizedString("This action cannot be undone.",
+                                                      comment: "Bookmark multi-selection delete confirmation irreversible warning")
+    }
+
+    private func folderDeletionPhrase(_ count: Int) -> String {
+        let format = count == 1
+            ? NSLocalizedString("%d folder and its contents",
+                                comment: "Bookmark multi-selection delete confirmation phrase for folder")
+            : NSLocalizedString("%d folders and their contents",
+                                comment: "Bookmark multi-selection delete confirmation phrase for folders")
+        return String(format: format, count)
+    }
+
+    private func bookmarkDeletionPhrase(_ count: Int) -> String {
+        let format = count == 1
+            ? NSLocalizedString("%d bookmark",
+                                comment: "Bookmark multi-selection delete confirmation phrase for bookmark")
+            : NSLocalizedString("%d bookmarks",
+                                comment: "Bookmark multi-selection delete confirmation phrase for bookmarks")
+        return String(format: format, count)
     }
 }

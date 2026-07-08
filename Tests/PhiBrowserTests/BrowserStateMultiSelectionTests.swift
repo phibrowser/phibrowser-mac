@@ -598,6 +598,131 @@ final class BrowserStateMultiSelectionTests: XCTestCase {
         XCTAssertFalse(menu.items.last?.isSeparatorItem == true)
     }
 
+    func testBookmarkDeleteMenuTitleCountsOnlyBookmarkRoots() throws {
+        let state = try makeState()
+        seed(state, guids: [1, 2])
+        state.focuseTab(state.tabs[0])
+        let firstFolderGuid = "folder-a"
+        let secondFolderGuid = "folder-b"
+        let childBookmarkGuid = "folder-a-child"
+        let firstBookmarkGuid = "bookmark-a"
+        let secondBookmarkGuid = "bookmark-b"
+        state.localStore.createDirectory(title: "Folder A",
+                                         profileId: state.profileId,
+                                         parentId: nil,
+                                         guid: firstFolderGuid)
+        state.localStore.createDirectory(title: "Folder B",
+                                         profileId: state.profileId,
+                                         parentId: nil,
+                                         guid: secondFolderGuid)
+        state.localStore.createBookmark(url: "https://child.example",
+                                        title: "Child",
+                                        profileId: state.profileId,
+                                        parentId: firstFolderGuid,
+                                        guid: childBookmarkGuid,
+                                        spaceId: state.spaceId)
+        state.localStore.createBookmark(url: "https://first.example",
+                                        title: "First",
+                                        profileId: state.profileId,
+                                        parentId: nil,
+                                        guid: firstBookmarkGuid,
+                                        spaceId: state.spaceId)
+        state.localStore.createBookmark(url: "https://second.example",
+                                        title: "Second",
+                                        profileId: state.profileId,
+                                        parentId: nil,
+                                        guid: secondBookmarkGuid,
+                                        spaceId: state.spaceId)
+        guard waitUntil(condition: {
+            [
+                firstFolderGuid,
+                secondFolderGuid,
+                childBookmarkGuid,
+                firstBookmarkGuid,
+                secondBookmarkGuid
+            ].allSatisfy { state.bookmarkManager.bookmark(withGuid: $0) != nil }
+        }) else { return }
+
+        state.toggleBookmarkMultiSelection(bookmarkGuid: firstFolderGuid)
+        state.toggleBookmarkMultiSelection(bookmarkGuid: secondFolderGuid)
+        XCTAssertEqual(deleteMenuItem(in: state)?.title, "Delete 2 Folders")
+
+        state.clearMultiSelection()
+        state.toggleBookmarkMultiSelection(bookmarkGuid: firstBookmarkGuid)
+        state.toggleBookmarkMultiSelection(bookmarkGuid: secondBookmarkGuid)
+        XCTAssertEqual(deleteMenuItem(in: state)?.title, "Delete 2 Bookmarks")
+
+        state.clearMultiSelection()
+        state.toggleMultiSelection(for: state.tabs[1])
+        state.toggleBookmarkMultiSelection(bookmarkGuid: firstFolderGuid)
+        state.toggleBookmarkMultiSelection(bookmarkGuid: childBookmarkGuid)
+        state.toggleBookmarkMultiSelection(bookmarkGuid: firstBookmarkGuid)
+
+        let context = try XCTUnwrap(state.multiSelectionBookmarkDeletionContext)
+        XCTAssertEqual(context.folderCount, 1)
+        XCTAssertEqual(context.bookmarkCount, 1)
+
+        let deleteItem = try XCTUnwrap(deleteMenuItem(in: state))
+        XCTAssertEqual(deleteItem.title, "Delete 2 Items")
+        XCTAssertEqual(deleteItem.keyEquivalent, "d")
+        XCTAssertEqual(deleteItem.keyEquivalentModifierMask, [.command])
+    }
+
+    func testDeletingMultiSelectedBookmarksDoesNotCloseNormalTabs() throws {
+        let state = try makeState()
+        let bookmarkGuid = "opened-bookmark"
+        state.localStore.createBookmark(url: "https://bookmark.example",
+                                        title: "Bookmark",
+                                        profileId: state.profileId,
+                                        parentId: nil,
+                                        guid: bookmarkGuid,
+                                        spaceId: state.spaceId)
+        guard waitUntil(condition: {
+            state.bookmarkManager.bookmark(withGuid: bookmarkGuid) != nil
+        }) else { return }
+
+        let activeWrapper = TestWebContentWrapper(urlString: "https://active.example")
+        let selectedWrapper = TestWebContentWrapper(urlString: "https://selected.example")
+        let bookmarkWrapper = TestWebContentWrapper(urlString: "https://bookmark.example")
+        let activeTab = Tab(guid: 1,
+                            url: "https://active.example",
+                            isActive: false,
+                            index: 0,
+                            webContentView: activeWrapper)
+        let selectedTab = Tab(guid: 2,
+                              url: "https://selected.example",
+                              isActive: false,
+                              index: 1,
+                              webContentView: selectedWrapper)
+        let bookmarkTab = Tab(guid: 3,
+                              url: "https://bookmark.example",
+                              isActive: false,
+                              index: 2,
+                              title: "Bookmark",
+                              webContentView: bookmarkWrapper,
+                              customGuid: bookmarkGuid)
+        state.tabs = [activeTab, selectedTab, bookmarkTab]
+        state.handleBookmarkTabOpened(bookmarkTab)
+        state.updateNormalTabs()
+        state.focuseTab(activeTab)
+        state.toggleMultiSelection(for: selectedTab)
+        state.toggleBookmarkMultiSelection(bookmarkGuid: bookmarkGuid)
+
+        XCTAssertTrue(state.deleteMultiSelectedBookmarks())
+
+        XCTAssertEqual(activeWrapper.closeCallCount, 0)
+        XCTAssertEqual(selectedWrapper.closeCallCount, 0)
+        XCTAssertEqual(bookmarkWrapper.closeCallCount, 1)
+        XCTAssertEqual(activeWrapper.updatedCustomValues, [])
+        XCTAssertEqual(selectedWrapper.updatedCustomValues, [])
+        XCTAssertEqual(bookmarkWrapper.updatedCustomValues, [""])
+        XCTAssertNil(bookmarkTab.guidInLocalDB)
+        XCTAssertFalse(state.multiSelection.isActive)
+        XCTAssertTrue(waitUntil {
+            state.bookmarkManager.bookmark(withGuid: bookmarkGuid) == nil
+        })
+    }
+
     func testFolderMultiSelectionMenuFiltersInvalidBookmarkFolderTargets() throws {
         let state = try makeState()
         seed(state, guids: [1, 2])
@@ -1227,6 +1352,20 @@ final class BrowserStateMultiSelectionTests: XCTestCase {
 
         XCTAssertEqual(state.multiSelection.guids, [3])
     }
+
+    private func deleteMenuItem(in state: BrowserState) -> NSMenuItem? {
+        let menu = NSMenu()
+        guard TabMultiSelectionMenu.populateIfNeeded(menu, browserState: state) else {
+            return nil
+        }
+        guard let item = menu.items.last, !item.isSeparatorItem else {
+            return nil
+        }
+        guard item.action == #selector(TabMultiSelectionMenuController.deleteSelectedBookmarks) else {
+            return nil
+        }
+        return item
+    }
 }
 
 private final class TestWebContentWrapper: NSObject, WebContentWrapper {
@@ -1256,13 +1395,14 @@ private final class TestWebContentWrapper: NSObject, WebContentWrapper {
 
     private(set) var setAsActiveTabCallCount = 0
     private(set) var updatedCustomValues: [String] = []
+    private(set) var closeCallCount = 0
 
     init(urlString: String?) {
         self.urlString = urlString
         super.init()
     }
 
-    func close() {}
+    func close() { closeCallCount += 1 }
     func reload() {}
     func reloadBypassingCache() {}
     func goBack() {}

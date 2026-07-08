@@ -158,8 +158,23 @@
         }
       }
     },
+    "%@ will be deleted." : {
+      "comment" : "Bookmark multi-selection delete confirmation body for bookmarks\nBookmark multi-selection delete confirmation body for folders"
+    },
+    "%d bookmark" : {
+      "comment" : "Bookmark multi-selection delete confirmation phrase for bookmark"
+    },
+    "%d bookmarks" : {
+      "comment" : "Bookmark multi-selection delete confirmation phrase for bookmarks"
+    },
     "%d days ago" : {
       "comment" : "Download item row - Relative time showing days since download completed"
+    },
+    "%d folder and its contents" : {
+      "comment" : "Bookmark multi-selection delete confirmation phrase for folder"
+    },
+    "%d folders and their contents" : {
+      "comment" : "Bookmark multi-selection delete confirmation phrase for folders"
     },
     "%d hour ago" : {
       "comment" : "Download item row - Relative time showing hours since download completed"
@@ -642,6 +657,39 @@
     },
     "Delete “%@”?" : {
       "comment" : "Title of the delete-Space confirmation"
+    },
+    "Delete %d Bookmark" : {
+      "comment" : "Tab multi-selection context menu - delete selected bookmark"
+    },
+    "Delete %d Bookmark?" : {
+      "comment" : "Bookmark multi-selection delete confirmation title"
+    },
+    "Delete %d Bookmarks" : {
+      "comment" : "Tab multi-selection context menu - delete selected bookmarks"
+    },
+    "Delete %d Bookmarks?" : {
+      "comment" : "Bookmark multi-selection delete confirmation title"
+    },
+    "Delete %d Folder" : {
+      "comment" : "Tab multi-selection context menu - delete selected bookmark folder"
+    },
+    "Delete %d Folder?" : {
+      "comment" : "Bookmark multi-selection delete confirmation title"
+    },
+    "Delete %d Folders" : {
+      "comment" : "Tab multi-selection context menu - delete selected bookmark folders"
+    },
+    "Delete %d Folders?" : {
+      "comment" : "Bookmark multi-selection delete confirmation title"
+    },
+    "Delete %d Item" : {
+      "comment" : "Tab multi-selection context menu - delete selected bookmark item"
+    },
+    "Delete %d Items" : {
+      "comment" : "Tab multi-selection context menu - delete selected bookmark items"
+    },
+    "Delete %d Items?" : {
+      "comment" : "Bookmark multi-selection delete confirmation title"
     },
     "Delete Profile" : {
       "comment" : "Spaces menu - Submenu listing deletable browser profiles"

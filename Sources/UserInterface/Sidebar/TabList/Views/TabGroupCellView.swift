@@ -42,6 +42,14 @@ protocol TabGroupCellViewDelegate: AnyObject {
     func tabGroupCell(_ cell: TabGroupCellView,
                       tabDidRequestClose tab: Tab)
 
+    func tabGroupCell(_ cell: TabGroupCellView,
+                      didRequestMultiSelectionFor tab: Tab,
+                      modifierFlags: NSEvent.ModifierFlags) -> Bool
+
+    func tabGroupCell(_ cell: TabGroupCellView,
+                      didRequestMultiSelectionFor splitPair: SplitPairSidebarItem,
+                      modifierFlags: NSEvent.ModifierFlags) -> Bool
+
     /// Inner table detected a grouped-tab row drag. The controller owns
     /// the outer outline view, so it starts the AppKit drag session from
     /// that boundary while the cell supplies the row view snapshot.
@@ -579,6 +587,7 @@ final class TabGroupCellView: SidebarCellView {
                     cell.identifier = identifier
                 }
                 cell.browserState = self.configuredBrowserState
+                cell.owner = self.groupCellDelegate as? SidebarTabListItemOwner
                 cell.configure(with: pair)
                 return cell
             }
@@ -957,20 +966,6 @@ extension TabGroupCellView {
         activateMemberRow(for: currentMemberOrder[row])
     }
 
-    fileprivate func handleMultiSelectionCommandClick(for key: Int) -> Bool {
-        guard let state = configuredBrowserState else { return false }
-        if let pair = splitPairsByKey[key] {
-            return state.toggleMultiSelectionForSplitPair(
-                leftTab: pair.leftTab,
-                rightTab: pair.rightTab
-            )
-        }
-        if let tab = tabsByGuid[key] {
-            return state.toggleMultiSelection(for: tab)
-        }
-        return false
-    }
-
     fileprivate func activateMemberRow(for key: Int) {
         if let pair = splitPairsByKey[key] {
             pair.performAction(with: nil)
@@ -1081,13 +1076,22 @@ extension TabGroupCellView: GroupTabsTableViewDelegate {
             return
         }
         let key = currentMemberOrder[row]
-        // Cmd+click toggles multi-selection; a plain click clears it first.
+        let modifierFlags = NSApp.currentEvent?.modifierFlags ?? []
+        if let pair = splitPairsByKey[key],
+           groupCellDelegate?.tabGroupCell(
+               self,
+               didRequestMultiSelectionFor: pair,
+               modifierFlags: modifierFlags) == true {
+            return
+        }
+        if let tab = tabsByGuid[key],
+           groupCellDelegate?.tabGroupCell(
+               self,
+               didRequestMultiSelectionFor: tab,
+               modifierFlags: modifierFlags) == true {
+            return
+        }
         if let state = configuredBrowserState {
-            let isCommandClick = NSApp.currentEvent?.modifierFlags.contains(.command) ?? false
-            if isCommandClick,
-               handleMultiSelectionCommandClick(for: key) {
-                return
-            }
             if state.multiSelection.isActive {
                 state.clearMultiSelection()
             }

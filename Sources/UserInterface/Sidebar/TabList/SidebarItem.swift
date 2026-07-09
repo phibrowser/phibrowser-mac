@@ -94,6 +94,13 @@ final class SplitPairSidebarItem: SidebarItem, ContextMenuRepresentable {
         target.performAction(with: owner)
     }
 
+    func boundBookmarkGuid(in state: BrowserState?) -> String? {
+        guard let state = state ?? browserState else { return nil }
+        return state.splitBookmarkBindings.first { entry in
+            entry.value == groupId && state.bookmarkManager.bookmark(withGuid: entry.key) != nil
+        }?.key
+    }
+
     /// Drives the merged cell's context menu off the left pane so the
     /// user gets split-aware items (Remove from Split, etc.) after the
     /// shared multi-selection menu gets first chance to take over.

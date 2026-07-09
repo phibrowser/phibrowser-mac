@@ -11,6 +11,10 @@ protocol SidebarTabListItemOwner: AnyObject {
     func toggleItemExpanded(_ item: SidebarItem)
     func newTabClicked(_ item: SidebarItem)
     func bookmarkClicked(_ item: SidebarItem)
+    func splitPairPaneClicked(leftTab: Tab,
+                              rightTab: Tab,
+                              selectedTab: Tab,
+                              modifierFlags: NSEvent.ModifierFlags) -> Bool
 }
 
 enum SidebarNewTabStickyResolver {
@@ -32,6 +36,32 @@ enum SidebarNewTabStickyResolver {
 class SidebarTabListViewController: NSViewController {
     private static let bottomContentInset: CGFloat = 130
     private static let bookmarkRenameClickInterval: TimeInterval = 0.5
+
+    private enum SidebarMultiSelectionUnit: Hashable {
+        case tab(Int)
+        case splitPair(left: Int, right: Int)
+        case bookmark(String)
+
+        var tabIds: Set<Int> {
+            switch self {
+            case let .tab(guid):
+                return [guid]
+            case let .splitPair(left, right):
+                return [left, right]
+            case .bookmark:
+                return []
+            }
+        }
+
+        var bookmarkGuids: Set<String> {
+            switch self {
+            case let .bookmark(guid):
+                return [guid]
+            case .tab, .splitPair:
+                return []
+            }
+        }
+    }
 
     /// A temporary, UI-only representation of the currently focusing bookmark tab.
     /// This is used to keep the focusing bookmark visible even when its real parent folders are collapsed.
@@ -124,6 +154,7 @@ class SidebarTabListViewController: NSViewController {
     private var lastFarringdonAIEnabled = PhiPreferences.AISettings.phiAIEnabled.loadValue()
     private var lastFarringdonTabCountEligible = false
     private var allItems: [SidebarItem] = []
+    private var multiSelectionRangeAnchor: SidebarMultiSelectionUnit?
     
     /// UI-only state: when non-nil, we temporarily "reparent" the focusing bookmark to keep it visible.
     /// This never mutates the real `Bookmark.parent`.
@@ -556,8 +587,11 @@ class SidebarTabListViewController: NSViewController {
             return
         }
 
-        let isCommandClick = NSApp.currentEvent?.modifierFlags.contains(.command) ?? false
+        let modifierFlags = NSApp.currentEvent?.modifierFlags ?? []
+        let isCommandClick = modifierFlags.contains(.command)
+        let isShiftClick = modifierFlags.contains(.shift)
         if !isCommandClick,
+           !isShiftClick,
            let bookmark = bookmarkForRow(clickedRow), !bookmark.isFolder {
             if shouldStartBookmarkRename(for: bookmark, event: NSApp.currentEvent) {
                 requestBookmarkRename(bookmark)
@@ -573,9 +607,7 @@ class SidebarTabListViewController: NSViewController {
         }
         
         if let item = outlineView.item(atRow: clickedRow) as? SidebarItem {
-            // Cmd+click toggles tab multi-selection; the owner decides eligibility.
-            if isCommandClick,
-               handleMultiSelectionCommandClick(for: item) {
+            if handleModifiedMultiSelectionClick(for: item, modifierFlags: modifierFlags) {
                 return
             }
             if browserState.multiSelection.isActive {
@@ -585,11 +617,47 @@ class SidebarTabListViewController: NSViewController {
         }
     }
 
+    private func handleModifiedMultiSelectionClick(
+        for item: SidebarItem,
+        modifierFlags: NSEvent.ModifierFlags
+    ) -> Bool {
+        handleModifiedMultiSelectionClick(
+            for: multiSelectionUnit(for: item),
+            modifierFlags: modifierFlags,
+            commandAction: { handleMultiSelectionCommandClick(for: item) },
+            shouldUpdateAnchorOnPlainClick: item.isSelectable
+        )
+    }
+
+    private func handleModifiedMultiSelectionClick(
+        for unit: SidebarMultiSelectionUnit?,
+        modifierFlags: NSEvent.ModifierFlags,
+        commandAction: () -> Bool,
+        shouldUpdateAnchorOnPlainClick: Bool = true
+    ) -> Bool {
+        guard let unit else { return false }
+        if modifierFlags.contains(.shift) {
+            return handleMultiSelectionRangeClick(to: unit)
+        }
+        if modifierFlags.contains(.command) {
+            guard commandAction() else { return false }
+            multiSelectionRangeAnchor = unit
+            return true
+        }
+        if shouldUpdateAnchorOnPlainClick {
+            multiSelectionRangeAnchor = unit
+        }
+        return false
+    }
+
     private func handleMultiSelectionCommandClick(for item: SidebarItem) -> Bool {
         if let tab = item as? Tab {
             return browserState.toggleMultiSelection(for: tab)
         }
         if let pair = item as? SplitPairSidebarItem {
+            if let bookmarkGuid = pair.boundBookmarkGuid(in: browserState) {
+                return browserState.toggleBookmarkMultiSelection(bookmarkGuid: bookmarkGuid)
+            }
             return browserState.toggleMultiSelectionForSplitPair(
                 leftTab: pair.leftTab,
                 rightTab: pair.rightTab
@@ -599,6 +667,192 @@ class SidebarTabListViewController: NSViewController {
             return browserState.toggleBookmarkMultiSelection(bookmarkGuid: bookmark.guid)
         }
         return false
+    }
+
+    private func handleMultiSelectionRangeClick(to target: SidebarMultiSelectionUnit) -> Bool {
+        let visibleUnits = visibleMultiSelectionUnits()
+        let anchor = multiSelectionRangeAnchor
+            ?? firstSelectedVisibleUnit(in: visibleUnits)
+            ?? focusedMultiSelectionUnit()
+            ?? target
+
+        guard let anchorIndex = visibleUnits.firstIndex(of: anchor),
+              let targetIndex = visibleUnits.firstIndex(of: target) else {
+            let didReplace = browserState.replaceMultiSelection(
+                tabIds: target.tabIds,
+                bookmarkGuids: target.bookmarkGuids
+            )
+            if didReplace {
+                multiSelectionRangeAnchor = target
+            }
+            return didReplace
+        }
+
+        let lower = min(anchorIndex, targetIndex)
+        let upper = max(anchorIndex, targetIndex)
+        let selectedUnits = visibleUnits[lower...upper]
+        let tabIds = selectedUnits.reduce(into: Set<Int>()) { result, unit in
+            result.formUnion(unit.tabIds)
+        }
+        let bookmarkGuids = selectedUnits.reduce(into: Set<String>()) { result, unit in
+            result.formUnion(unit.bookmarkGuids)
+        }
+
+        let didReplace = browserState.replaceMultiSelection(tabIds: tabIds, bookmarkGuids: bookmarkGuids)
+        if didReplace {
+            multiSelectionRangeAnchor = anchor
+        }
+        return didReplace
+    }
+
+    private func visibleMultiSelectionUnits() -> [SidebarMultiSelectionUnit] {
+        var units: [SidebarMultiSelectionUnit] = []
+        var seen: Set<SidebarMultiSelectionUnit> = []
+        dataSourceChildren(of: nil).forEach {
+            appendVisibleMultiSelectionUnits(from: $0, to: &units, seen: &seen)
+        }
+        return units
+    }
+
+    private func appendVisibleMultiSelectionUnits(
+        from item: SidebarItem,
+        to units: inout [SidebarMultiSelectionUnit],
+        seen: inout Set<SidebarMultiSelectionUnit>
+    ) {
+        if let unit = multiSelectionUnit(for: item), seen.insert(unit).inserted {
+            units.append(unit)
+        }
+
+        if let groupItem = item as? TabGroupSidebarItem {
+            guard !groupItem.group.isCollapsed else { return }
+            for unit in multiSelectionUnits(forGroupMembers: groupItem) where seen.insert(unit).inserted {
+                units.append(unit)
+            }
+            return
+        }
+
+        guard item.isExpandable, outlineView.isItemExpanded(item) else { return }
+        for child in dataSourceChildren(of: item) {
+            appendVisibleMultiSelectionUnits(from: child, to: &units, seen: &seen)
+        }
+    }
+
+    private func multiSelectionUnits(forGroupMembers groupItem: TabGroupSidebarItem) -> [SidebarMultiSelectionUnit] {
+        let members = groupItem.childrenItems.compactMap { $0 as? Tab }
+        var consumed = Set<Int>()
+        var units: [SidebarMultiSelectionUnit] = []
+
+        for (index, tab) in members.enumerated() {
+            guard !consumed.contains(tab.guid) else { continue }
+            if let splitGroup = browserState.splitGroup(forTabId: tab.guid),
+               !splitGroup.isPinned,
+               let partnerId = splitGroup.partnerTabId(of: tab.guid),
+               let partnerIndex = members.firstIndex(where: { $0.guid == partnerId }),
+               abs(index - partnerIndex) == 1 {
+                let partner = members[partnerIndex]
+                let leftTab = index < partnerIndex ? tab : partner
+                let rightTab = index < partnerIndex ? partner : tab
+                units.append(multiSelectionUnitForSplitPair(leftTab: leftTab, rightTab: rightTab))
+                consumed.insert(tab.guid)
+                consumed.insert(partner.guid)
+                continue
+            }
+
+            if let unit = multiSelectionUnit(for: tab) {
+                units.append(unit)
+            }
+            consumed.insert(tab.guid)
+        }
+        return units
+    }
+
+    private func multiSelectionUnit(for item: SidebarItem) -> SidebarMultiSelectionUnit? {
+        if let bookmark = bookmark(from: item) {
+            return .bookmark(bookmark.guid)
+        }
+        if let pair = item as? SplitPairSidebarItem {
+            return multiSelectionUnitForSplitPair(pair)
+        }
+        if let tab = item as? Tab {
+            return multiSelectionUnit(for: tab)
+        }
+        return nil
+    }
+
+    private func multiSelectionUnitForSplitPair(_ pair: SplitPairSidebarItem) -> SidebarMultiSelectionUnit {
+        if let bookmarkGuid = pair.boundBookmarkGuid(in: browserState) {
+            return .bookmark(bookmarkGuid)
+        }
+        return .splitPair(left: pair.leftTab.guid, right: pair.rightTab.guid)
+    }
+
+    private func multiSelectionUnitForSplitPair(leftTab: Tab, rightTab: Tab) -> SidebarMultiSelectionUnit {
+        let splitId = browserState.splitGroup(forTabId: leftTab.guid)?.id
+            ?? browserState.splitGroup(forTabId: rightTab.guid)?.id
+        if let splitId,
+           let bookmarkGuid = browserState.splitBookmarkBindings.first(where: { entry in
+               entry.value == splitId &&
+                   browserState.bookmarkManager.bookmark(withGuid: entry.key) != nil
+           })?.key {
+            return .bookmark(bookmarkGuid)
+        }
+        return .splitPair(left: leftTab.guid, right: rightTab.guid)
+    }
+
+    private func commandMultiSelectionActionForSplitPair(leftTab: Tab, rightTab: Tab) -> Bool {
+        let unit = multiSelectionUnitForSplitPair(leftTab: leftTab, rightTab: rightTab)
+        switch unit {
+        case let .bookmark(bookmarkGuid):
+            return browserState.toggleBookmarkMultiSelection(bookmarkGuid: bookmarkGuid)
+        case .tab, .splitPair:
+            return browserState.toggleMultiSelectionForSplitPair(leftTab: leftTab, rightTab: rightTab)
+        }
+    }
+
+    private func multiSelectionUnit(for tab: Tab) -> SidebarMultiSelectionUnit? {
+        if let bookmarkGuid = tab.guidInLocalDB,
+           browserState.bookmarkManager.bookmark(withGuid: bookmarkGuid) != nil {
+            return .bookmark(bookmarkGuid)
+        }
+        guard !tab.isPinned else { return nil }
+        if let splitGroup = browserState.splitGroup(forTabId: tab.guid),
+           !splitGroup.isPinned,
+           let partnerId = splitGroup.partnerTabId(of: tab.guid),
+           let partner = browserState.normalTabs.first(where: { $0.guid == partnerId }),
+           let tabIndex = browserState.normalTabs.firstIndex(where: { $0.guid == tab.guid }),
+           let partnerIndex = browserState.normalTabs.firstIndex(where: { $0.guid == partnerId }) {
+            if let bookmarkGuid = browserState.splitBookmarkBindings.first(where: { entry in
+                entry.value == splitGroup.id &&
+                    browserState.bookmarkManager.bookmark(withGuid: entry.key) != nil
+            })?.key {
+                return .bookmark(bookmarkGuid)
+            }
+            return tabIndex < partnerIndex
+                ? .splitPair(left: tab.guid, right: partner.guid)
+                : .splitPair(left: partner.guid, right: tab.guid)
+        }
+        return .tab(tab.guid)
+    }
+
+    private func focusedMultiSelectionUnit() -> SidebarMultiSelectionUnit? {
+        guard let focusingTab = browserState.focusingTab else { return nil }
+        return multiSelectionUnit(for: focusingTab)
+    }
+
+    private func firstSelectedVisibleUnit(
+        in visibleUnits: [SidebarMultiSelectionUnit]
+    ) -> SidebarMultiSelectionUnit? {
+        visibleUnits.first { unit in
+            switch unit {
+            case let .tab(guid):
+                return browserState.multiSelection.contains(guid)
+            case let .splitPair(left, right):
+                return browserState.multiSelection.contains(left)
+                    || browserState.multiSelection.contains(right)
+            case let .bookmark(guid):
+                return browserState.multiSelection.containsBookmark(guid)
+            }
+        }
     }
 
     @objc private func outlineViewDoubleClicked(_ sender: NSOutlineView) {
@@ -624,6 +878,7 @@ class SidebarTabListViewController: NSViewController {
         if !item.isSelectable {
             return
         }
+        multiSelectionRangeAnchor = multiSelectionUnit(for: item)
         setSelectedItem(item)
         item.performAction(with: self)
     }
@@ -3366,6 +3621,17 @@ extension SidebarTabListViewController: SidebarTabListItemOwner {
         }
         browserState.openBookmark(bookmark)
     }
+
+    func splitPairPaneClicked(leftTab: Tab,
+                              rightTab: Tab,
+                              selectedTab: Tab,
+                              modifierFlags: NSEvent.ModifierFlags) -> Bool {
+        handleModifiedMultiSelectionClick(
+            for: multiSelectionUnitForSplitPair(leftTab: leftTab, rightTab: rightTab),
+            modifierFlags: modifierFlags,
+            commandAction: { commandMultiSelectionActionForSplitPair(leftTab: leftTab, rightTab: rightTab) }
+        )
+    }
 }
 
 // MARK: - Section Controller Delegates
@@ -4179,6 +4445,26 @@ extension SidebarTabListViewController: TabGroupCellViewDelegate {
     }
 
     func tabGroupCell(_ cell: TabGroupCellView,
+                      didRequestMultiSelectionFor tab: Tab,
+                      modifierFlags: NSEvent.ModifierFlags) -> Bool {
+        handleModifiedMultiSelectionClick(
+            for: multiSelectionUnit(for: tab),
+            modifierFlags: modifierFlags,
+            commandAction: { browserState.toggleMultiSelection(for: tab) }
+        )
+    }
+
+    func tabGroupCell(_ cell: TabGroupCellView,
+                      didRequestMultiSelectionFor splitPair: SplitPairSidebarItem,
+                      modifierFlags: NSEvent.ModifierFlags) -> Bool {
+        handleModifiedMultiSelectionClick(
+            for: multiSelectionUnitForSplitPair(splitPair),
+            modifierFlags: modifierFlags,
+            commandAction: { handleMultiSelectionCommandClick(for: splitPair) }
+        )
+    }
+
+    func tabGroupCell(_ cell: TabGroupCellView,
                       beginDragging tab: Tab,
                       from rowView: SidebarCellView,
                       mouseDownEvent: NSEvent) {
@@ -4519,9 +4805,8 @@ extension SidebarTabListViewController: SideBarOutlineViewDelegate {
         // Normal tab rows are delivered here (the outline view's standard
         // action never fires for them), so multi-selection must be handled
         // on this path rather than `outlineViewClicked`.
-        let isCommandClick = NSApp.currentEvent?.modifierFlags.contains(.command) ?? false
-        if isCommandClick,
-           handleMultiSelectionCommandClick(for: item) {
+        let modifierFlags = NSApp.currentEvent?.modifierFlags ?? []
+        if handleModifiedMultiSelectionClick(for: item, modifierFlags: modifierFlags) {
             return
         }
         if browserState.multiSelection.isActive {

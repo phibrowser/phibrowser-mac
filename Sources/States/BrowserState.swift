@@ -1116,6 +1116,35 @@ class BrowserState {
 
     @MainActor
     @discardableResult
+    func replaceMultiSelection(tabIds: Set<Int>, bookmarkGuids: Set<String>) -> Bool {
+        guard TabMultiSelection.isEnabled else {
+            clearMultiSelection()
+            return false
+        }
+        guard activeGroupOverviewToken == nil else {
+            clearMultiSelection()
+            return false
+        }
+
+        var validTabIds = Set(
+            normalTabs
+                .filter { !$0.isPinned && bookmarkGuidBacking($0) == nil }
+                .map(\.guid)
+        )
+        if let active = focusingTab, bookmarkGuidBacking(active) == nil {
+            validTabIds.remove(active.guid)
+        }
+
+        let validBookmarkGuids = Set(bookmarkManager.getAllBookmarks().map(\.guid))
+        multiSelection = TabMultiSelection(
+            guids: tabIds.intersection(validTabIds),
+            bookmarkGuids: bookmarkGuids.intersection(validBookmarkGuids)
+        )
+        return true
+    }
+
+    @MainActor
+    @discardableResult
     func toggleMultiSelectionForSplitPair(leftTab: Tab, rightTab: Tab) -> Bool {
         guard TabMultiSelection.isEnabled else {
             clearMultiSelection()

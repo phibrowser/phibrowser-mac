@@ -87,6 +87,32 @@ final class BrowserStateMultiSelectionTests: XCTestCase {
         XCTAssertEqual(state.multiSelection.guids, [2])
     }
 
+    func testReplaceMultiSelectionKeepsActiveNormalTabImplicit() throws {
+        let state = try makeState()
+        seed(state, guids: [1, 2, 3])
+        state.focuseTab(state.tabs[0])
+
+        XCTAssertTrue(state.replaceMultiSelection(tabIds: [1, 2, 3], bookmarkGuids: []))
+
+        XCTAssertEqual(state.multiSelection.guids, [2, 3])
+        XCTAssertEqual(state.orderedMultiSelectedTabs.map(\.guid), [1, 2, 3])
+    }
+
+    func testReplaceMultiSelectionIsDisabledDuringGroupOverview() throws {
+        let state = try makeState()
+        seed(state, guids: [1, 2, 3])
+        state.handleTabGroupCreated(token: "A",
+                                    title: "Group A",
+                                    color: .blue,
+                                    isCollapsed: false,
+                                    initialTabIds: [2, 3])
+        state.showGroupOverview(token: "A")
+
+        XCTAssertFalse(state.replaceMultiSelection(tabIds: [2, 3], bookmarkGuids: []))
+
+        XCTAssertFalse(state.multiSelection.isActive)
+    }
+
     func testClearMultiSelection() throws {
         let state = try makeState()
         seed(state, guids: [1, 2, 3])
@@ -565,6 +591,34 @@ final class BrowserStateMultiSelectionTests: XCTestCase {
         XCTAssertTrue(state.multiSelectionContext.containsBookmarkFolder)
         XCTAssertFalse(state.multiSelectionContext.canOpenAsSplit)
         XCTAssertFalse(state.multiSelectionContext.showsCloseItems)
+    }
+
+    func testReplaceMultiSelectionKeepsFolderAndChildButActionsUseRoots() throws {
+        let state = try makeState()
+        let folderGuid = "folder-root"
+        let childGuid = "folder-child"
+        state.localStore.createDirectory(title: "Folder",
+                                         profileId: state.profileId,
+                                         parentId: nil,
+                                         guid: folderGuid)
+        state.localStore.createBookmark(url: "https://child.example",
+                                        title: "Child",
+                                        profileId: state.profileId,
+                                        parentId: folderGuid,
+                                        guid: childGuid,
+                                        spaceId: state.spaceId)
+        guard waitUntil(condition: {
+            state.bookmarkManager.bookmark(withGuid: folderGuid) != nil &&
+                state.bookmarkManager.bookmark(withGuid: childGuid) != nil
+        }) else { return }
+
+        XCTAssertTrue(state.replaceMultiSelection(tabIds: [], bookmarkGuids: [folderGuid, childGuid]))
+
+        XCTAssertEqual(state.multiSelection.bookmarkGuids, [folderGuid, childGuid])
+        XCTAssertEqual(state.orderedMultiSelectedBookmarkRoots.map(\.guid), [folderGuid])
+        let context = try XCTUnwrap(state.multiSelectionBookmarkDeletionContext)
+        XCTAssertEqual(context.folderCount, 1)
+        XCTAssertEqual(context.bookmarkCount, 0)
     }
 
     func testFolderMultiSelectionMenuHidesTabOnlyActions() throws {

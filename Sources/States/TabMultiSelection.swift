@@ -16,6 +16,11 @@ struct TabMultiSelection: Equatable {
 
     static let empty = TabMultiSelection(guids: [], bookmarkGuids: [])
 
+    init(guids: Set<Int> = [], bookmarkGuids: Set<String> = []) {
+        self.guids = guids
+        self.bookmarkGuids = bookmarkGuids
+    }
+
     var isActive: Bool { hasTabSelection || hasBookmarkSelection }
     var hasTabSelection: Bool { !guids.isEmpty }
     var hasBookmarkSelection: Bool { !bookmarkGuids.isEmpty }

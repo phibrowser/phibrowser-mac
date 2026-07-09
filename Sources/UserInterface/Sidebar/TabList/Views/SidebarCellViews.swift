@@ -599,12 +599,23 @@ class SidebarSplitPairCellView: SidebarCellView {
 
     private func handlePaneClick(isLeft: Bool) {
         guard let tab = (isLeft ? configuredLeftTab : configuredRightTab) else { return }
-        let isCommandClick = NSApp.currentEvent?.modifierFlags.contains(.command) ?? false
-        if isCommandClick,
-           let leftTab = configuredLeftTab,
-           let rightTab = configuredRightTab,
-           browserState?.toggleMultiSelectionForSplitPair(leftTab: leftTab, rightTab: rightTab) == true {
-            return
+        let modifierFlags = NSApp.currentEvent?.modifierFlags ?? []
+        if let leftTab = configuredLeftTab,
+           let rightTab = configuredRightTab {
+            if owner?.splitPairPaneClicked(
+                leftTab: leftTab,
+                rightTab: rightTab,
+                selectedTab: tab,
+                modifierFlags: modifierFlags) == true {
+                return
+            }
+            if owner == nil,
+               modifierFlags.contains(.command),
+               browserState?.toggleMultiSelectionForSplitPair(
+                   leftTab: leftTab,
+                   rightTab: rightTab) == true {
+                return
+            }
         }
         if browserState?.multiSelection.isActive == true {
             browserState?.clearMultiSelection()
@@ -968,8 +979,12 @@ class SidebarSplitPairCellView: SidebarCellView {
         // Match SideTabView: active split rows use the regular selected
         // fill, while temporary multi-selection uses the sub-selected fill.
         let state = browserState ?? pair.browserState
+        let isBookmarkSelected = pair.boundBookmarkGuid(in: state).map {
+            state?.multiSelection.containsBookmark($0) == true
+        } ?? false
         let isMultiSelected = state?.multiSelection.contains(pair.leftTab.guid) == true ||
-            state?.multiSelection.contains(pair.rightTab.guid) == true
+            state?.multiSelection.contains(pair.rightTab.guid) == true ||
+            isBookmarkSelected
         let isActive = pair.leftTab.isActive || pair.rightTab.isActive
         outerBackground.selectedColor = NSColor(
             resource: isActive ? .sidebarTabSelected : .sidebarTabSubSelected

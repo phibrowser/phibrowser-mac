@@ -1064,12 +1064,16 @@ class SidebarTabListViewController: NSViewController {
         return findBookmark(withId: guid)
     }
 
-    private func rootFilteredBookmarks(forGuids guids: [String]) -> [Bookmark] {
+    private func bookmarks(forGuids guids: [String]) -> [Bookmark] {
         var seen = Set<String>()
-        let bookmarks = guids.compactMap { guid -> Bookmark? in
+        return guids.compactMap { guid -> Bookmark? in
             guard seen.insert(guid).inserted else { return nil }
             return findBookmark(withId: guid)
         }
+    }
+
+    private func rootFilteredBookmarks(forGuids guids: [String]) -> [Bookmark] {
+        let bookmarks = bookmarks(forGuids: guids)
         let selected = Set(bookmarks.map(\.guid))
         return bookmarks.filter { bookmark in
             var parent = bookmark.parent
@@ -1089,7 +1093,7 @@ class SidebarTabListViewController: NSViewController {
             guids = [singleGuid]
         }
         guard !guids.isEmpty else { return [] }
-        return rootFilteredBookmarks(forGuids: guids)
+        return bookmarks(forGuids: guids)
     }
 
     private func draggedBookmarkBatchContainsFolder(from pasteboard: NSPasteboard) -> Bool {
@@ -1694,11 +1698,11 @@ extension SidebarTabListViewController: NSOutlineViewDataSource {
                                                  resolvedItem: Any?,
                                                  resolvedIndex: Int) -> NSDragOperation {
         guard !bookmarks.isEmpty else { return [] }
+        let bookmarkGuids = bookmarks.map(\.guid)
 
         if let targetBookmark = resolvedItem as? Bookmark, targetBookmark.isFolder {
-            let canAccept = bookmarks.allSatisfy {
-                bookmarkSectionController.canAcceptDrop(of: $0, to: targetBookmark)
-            }
+            let canAccept = browserState.canMoveSelectedBookmarks(bookmarkGuids: bookmarkGuids,
+                                                                  to: targetBookmark)
             setDropFeedback(canAccept ? .bookmarkFolder(guid: targetBookmark.guid) : .none)
             return canAccept ? .move : []
         }
@@ -1709,9 +1713,8 @@ extension SidebarTabListViewController: NSOutlineViewDataSource {
                 return []
             }
             outlineView.setDropItem(insertion.parent, dropChildIndex: insertion.index)
-            let canAccept = bookmarks.allSatisfy {
-                bookmarkSectionController.canAcceptDrop(of: $0, to: insertion.parent)
-            }
+            let canAccept = browserState.canMoveSelectedBookmarks(bookmarkGuids: bookmarkGuids,
+                                                                  to: insertion.parent)
             setDropFeedback(.none)
             return canAccept ? .move : []
         }
@@ -1724,9 +1727,8 @@ extension SidebarTabListViewController: NSOutlineViewDataSource {
                 setDropFeedback(.none)
                 return []
             }
-            let canAccept = bookmarks.allSatisfy {
-                bookmarkSectionController.canAcceptDrop(of: $0, to: nil)
-            }
+            let canAccept = browserState.canMoveSelectedBookmarks(bookmarkGuids: bookmarkGuids,
+                                                                  to: nil)
             setDropFeedback(.none)
             return canAccept ? .move : []
         }
@@ -1846,9 +1848,9 @@ extension SidebarTabListViewController: NSOutlineViewDataSource {
                                                    tabIds: [Int],
                                                    parent: Bookmark?,
                                                    index: Int?) -> Bool {
-        guard bookmarks.allSatisfy({
-            bookmarkSectionController.canAcceptDrop(of: $0, to: parent)
-        }) else {
+        let bookmarkGuids = bookmarks.map(\.guid)
+        guard browserState.canMoveSelectedBookmarks(bookmarkGuids: bookmarkGuids,
+                                                    to: parent) else {
             return false
         }
 
@@ -1863,13 +1865,10 @@ extension SidebarTabListViewController: NSOutlineViewDataSource {
             }
         }
 
-        for bookmark in bookmarks {
-            if bookmarkSectionController.handleDrop(of: bookmark,
-                                                    to: parent,
-                                                    at: insertionIndex) {
-                didMove = true
-                insertionIndex = insertionIndex.map { $0 + 1 }
-            }
+        if browserState.moveSelectedBookmarks(bookmarkGuids: bookmarkGuids,
+                                              to: parent,
+                                              index: insertionIndex) {
+            didMove = true
         }
 
         if didMove {

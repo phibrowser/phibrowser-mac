@@ -476,6 +476,112 @@ extension LocalStore {
         }
     }
 
+    /// Moves an explicit bookmark selection as a visual batch.
+    ///
+    /// When a selected folder also contains selected descendants, only the
+    /// selected descendant roots stay inside that folder. Unselected children
+    /// are lifted next to their selected parent, and selected descendant
+    /// folders shed their own unselected children recursively.
+    func moveSelectedBookmarks(_ guids: [String],
+                               profileId: String,
+                               to parentId: String?,
+                               newIndex: Int?) {
+        performBackgroundWrite { [weak self] context in
+            guard let self else { return }
+            do {
+                var uniqueGuids: [String] = []
+                var seenGuids = Set<String>()
+                for guid in guids where seenGuids.insert(guid).inserted {
+                    uniqueGuids.append(guid)
+                }
+                guard !uniqueGuids.isEmpty else { return }
+
+                var nodes: [TabDataModel] = []
+                for guid in uniqueGuids {
+                    guard let node = try self.bookmarkNode(with: guid, in: context),
+                          try !self.isBookmarkRoot(node, in: context) else {
+                        continue
+                    }
+                    nodes.append(node)
+                }
+                guard !nodes.isEmpty else { return }
+
+                let resolveSpaceId = nodes.first?.spaceId ?? Self.defaultSpaceId
+                guard let targetParent = try self.resolveParent(for: parentId,
+                                                                profileId: profileId,
+                                                                spaceId: resolveSpaceId,
+                                                                in: context) else {
+                    AppLogError("Target parent not found for selected bookmark move")
+                    return
+                }
+
+                let selectedGuids = Set(nodes.map(\.guid))
+                guard !selectedGuids.contains(targetParent.guid) else {
+                    AppLogError("Attempted to move selected bookmarks into selected folder")
+                    return
+                }
+
+                for node in nodes where node.dataType == .bookmarkFolder {
+                    if targetParent.guid == node.guid ||
+                        self.hasAncestor(of: targetParent, in: [node.guid]) {
+                        AppLogError("Attempted to move selected bookmark folder into itself")
+                        return
+                    }
+                }
+
+                let rootNodes = nodes.filter { !self.hasAncestor(of: $0, in: selectedGuids) }
+                guard !rootNodes.isEmpty else { return }
+
+                let rootGuids = Set(rootNodes.map(\.guid))
+                let originalTargetChildren = try self.children(of: targetParent, in: context)
+                let adjustedIndex: Int? = {
+                    guard var index = newIndex else { return nil }
+                    let upperBound = min(index, originalTargetChildren.count)
+                    let movingBeforeIndex = originalTargetChildren
+                        .prefix(upperBound)
+                        .filter { rootGuids.contains($0.guid) }
+                        .count
+                    index -= movingBeforeIndex
+                    return index
+                }()
+
+                var sourceParentsByGuid: [String: TabDataModel] = [:]
+                for node in rootNodes {
+                    if let originalParent = node.parent {
+                        sourceParentsByGuid[originalParent.guid] = originalParent
+                    }
+                    node.parent = targetParent
+                    node.updatedDate = Date()
+                }
+
+                for parent in sourceParentsByGuid.values where parent.guid != targetParent.guid {
+                    self.normalizeIndexes(for: try self.children(of: parent, in: context))
+                }
+
+                var targetSiblings = try self.children(of: targetParent, in: context)
+                    .filter { !rootGuids.contains($0.guid) }
+                let targetIndex = Self.clamp(index: adjustedIndex ?? Int.max,
+                                             upperBound: targetSiblings.count)
+                targetSiblings.insert(contentsOf: rootNodes, at: targetIndex)
+                self.normalizeIndexes(for: targetSiblings)
+
+                let now = Date()
+                for node in rootNodes where node.dataType == .bookmarkFolder {
+                    if try self.hasSelectedDescendant(of: node,
+                                                      selectedGuids: selectedGuids,
+                                                      in: context) {
+                        try self.liftUnselectedChildren(from: node,
+                                                        selectedGuids: selectedGuids,
+                                                        updatedDate: now,
+                                                        in: context)
+                    }
+                }
+            } catch {
+                AppLogError("Failed to move selected bookmarks: \(error)")
+            }
+        }
+    }
+
     /// Moves visible bookmark roots to another Space's bookmark root.
     /// Descendants travel with a selected folder and are retagged to the
     /// target `(profileId, spaceId)` so the destination Space publisher owns
@@ -905,6 +1011,125 @@ private extension LocalStore {
             parent = current.parent
         }
         return false
+    }
+
+    func hasSelectedDescendant(of folder: TabDataModel,
+                               selectedGuids: Set<String>,
+                               in context: ModelContext) throws -> Bool {
+        for child in try children(of: folder, in: context) {
+            if selectedGuids.contains(child.guid) {
+                return true
+            }
+            if child.dataType == .bookmarkFolder,
+               try hasSelectedDescendant(of: child,
+                                         selectedGuids: selectedGuids,
+                                         in: context) {
+                return true
+            }
+        }
+        return false
+    }
+
+    func selectedDescendantRoots(under node: TabDataModel,
+                                 selectedGuids: Set<String>,
+                                 in context: ModelContext) throws -> [TabDataModel] {
+        guard node.dataType == .bookmarkFolder else { return [] }
+        var roots: [TabDataModel] = []
+        for child in try children(of: node, in: context) {
+            if selectedGuids.contains(child.guid) {
+                roots.append(child)
+            } else {
+                roots.append(contentsOf: try selectedDescendantRoots(under: child,
+                                                                     selectedGuids: selectedGuids,
+                                                                     in: context))
+            }
+        }
+        return roots
+    }
+
+    func moveBookmarkNode(_ node: TabDataModel,
+                          to parent: TabDataModel,
+                          at index: Int,
+                          updatedDate: Date,
+                          in context: ModelContext) throws {
+        let originalParent = node.parent
+        node.parent = parent
+        node.updatedDate = updatedDate
+
+        if let originalParent, originalParent.guid != parent.guid {
+            let originalSiblings = try children(of: originalParent, in: context)
+            normalizeIndexes(for: originalSiblings)
+        }
+
+        var siblings = try children(of: parent, in: context).filter { $0.guid != node.guid }
+        let targetIndex = Self.clamp(index: index, upperBound: siblings.count)
+        siblings.insert(node, at: targetIndex)
+        normalizeIndexes(for: siblings)
+    }
+
+    func liftUnselectedChildren(from folder: TabDataModel,
+                                selectedGuids: Set<String>,
+                                updatedDate: Date,
+                                in context: ModelContext) throws {
+        guard let parent = folder.parent else { return }
+
+        let originalChildren = try children(of: folder, in: context)
+        var siblingOffsetAfterFolder = 1
+
+        for child in originalChildren {
+            if selectedGuids.contains(child.guid) {
+                if child.dataType == .bookmarkFolder,
+                   try hasSelectedDescendant(of: child,
+                                             selectedGuids: selectedGuids,
+                                             in: context) {
+                    try liftUnselectedChildren(from: child,
+                                               selectedGuids: selectedGuids,
+                                               updatedDate: updatedDate,
+                                               in: context)
+                }
+                continue
+            }
+
+            let selectedDescendantRoots = try selectedDescendantRoots(under: child,
+                                                                      selectedGuids: selectedGuids,
+                                                                      in: context)
+            if !selectedDescendantRoots.isEmpty {
+                let currentFolderChildren = try children(of: folder, in: context)
+                let childIndex = currentFolderChildren.firstIndex { $0.guid == child.guid }
+                    ?? currentFolderChildren.count
+                var descendantInsertionIndex = childIndex
+                for descendant in selectedDescendantRoots {
+                    try moveBookmarkNode(descendant,
+                                         to: folder,
+                                         at: descendantInsertionIndex,
+                                         updatedDate: updatedDate,
+                                         in: context)
+                    descendantInsertionIndex += 1
+                    if descendant.dataType == .bookmarkFolder,
+                       try hasSelectedDescendant(of: descendant,
+                                                 selectedGuids: selectedGuids,
+                                                 in: context) {
+                        try liftUnselectedChildren(from: descendant,
+                                                   selectedGuids: selectedGuids,
+                                                   updatedDate: updatedDate,
+                                                   in: context)
+                    }
+                }
+            }
+
+            let parentChildren = try children(of: parent, in: context)
+            guard let folderIndex = parentChildren.firstIndex(where: { $0.guid == folder.guid }) else {
+                continue
+            }
+            try moveBookmarkNode(child,
+                                 to: parent,
+                                 at: folderIndex + siblingOffsetAfterFolder,
+                                 updatedDate: updatedDate,
+                                 in: context)
+            siblingOffsetAfterFolder += 1
+        }
+
+        normalizeIndexes(for: try children(of: folder, in: context))
     }
 
     func retagBookmarkSubtree(_ node: TabDataModel,

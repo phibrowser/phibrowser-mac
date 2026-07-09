@@ -64,6 +64,86 @@ final class BrowserStateMultiSelectionTests: XCTestCase {
                    sortOrder: 1)
     }
 
+    private func seedPartialBookmarkMoveTree(in state: BrowserState) -> (
+        folderA: String,
+        a1: String,
+        a2: String,
+        folderB: String,
+        b1: String,
+        b2: String,
+        b3: String
+    ) {
+        let folderA = "folder-a"
+        let a1 = "folder-a-1"
+        let a2 = "folder-a-2"
+        let folderB = "folder-b"
+        let b1 = "folder-b-1"
+        let b2 = "folder-b-2"
+        let b3 = "folder-b-3"
+
+        state.localStore.createDirectory(title: "A",
+                                         profileId: state.profileId,
+                                         parentId: nil,
+                                         index: 0,
+                                         guid: folderA,
+                                         spaceId: state.spaceId)
+        state.localStore.createDirectory(title: "B",
+                                         profileId: state.profileId,
+                                         parentId: nil,
+                                         index: 1,
+                                         guid: folderB,
+                                         spaceId: state.spaceId)
+        state.localStore.createBookmark(url: "https://a1.example",
+                                        title: "A1",
+                                        profileId: state.profileId,
+                                        parentId: folderA,
+                                        index: 0,
+                                        guid: a1,
+                                        spaceId: state.spaceId)
+        state.localStore.createBookmark(url: "https://a2.example",
+                                        title: "A2",
+                                        profileId: state.profileId,
+                                        parentId: folderA,
+                                        index: 1,
+                                        guid: a2,
+                                        spaceId: state.spaceId)
+        state.localStore.createBookmark(url: "https://b1.example",
+                                        title: "B1",
+                                        profileId: state.profileId,
+                                        parentId: folderB,
+                                        index: 0,
+                                        guid: b1,
+                                        spaceId: state.spaceId)
+        state.localStore.createBookmark(url: "https://b2.example",
+                                        title: "B2",
+                                        profileId: state.profileId,
+                                        parentId: folderB,
+                                        index: 1,
+                                        guid: b2,
+                                        spaceId: state.spaceId)
+        state.localStore.createBookmark(url: "https://b3.example",
+                                        title: "B3",
+                                        profileId: state.profileId,
+                                        parentId: folderB,
+                                        index: 2,
+                                        guid: b3,
+                                        spaceId: state.spaceId)
+
+        XCTAssertTrue(waitUntil {
+            state.localStore.fetchBookmarks(parentId: folderA,
+                                            profileId: state.profileId,
+                                            spaceId: state.spaceId).map(\.guid) == [a1, a2] &&
+                state.localStore.fetchBookmarks(parentId: folderB,
+                                                profileId: state.profileId,
+                                                spaceId: state.spaceId).map(\.guid) == [b1, b2, b3] &&
+                [folderA, a1, a2, folderB, b1, b2, b3].allSatisfy {
+                    state.bookmarkManager.bookmark(withGuid: $0) != nil
+                }
+        })
+
+        return (folderA, a1, a2, folderB, b1, b2, b3)
+    }
+
     func testToggleNormalTabEntersAndExits() throws {
         let state = try makeState()
         seed(state, guids: [1, 2, 3])
@@ -619,6 +699,267 @@ final class BrowserStateMultiSelectionTests: XCTestCase {
         let context = try XCTUnwrap(state.multiSelectionBookmarkDeletionContext)
         XCTAssertEqual(context.folderCount, 1)
         XCTAssertEqual(context.bookmarkCount, 0)
+    }
+
+    func testBookmarkDragGuidsKeepExplicitFolderChildren() throws {
+        let state = try makeState()
+        let tree = seedPartialBookmarkMoveTree(in: state)
+        let folderB = try XCTUnwrap(state.bookmarkManager.bookmark(withGuid: tree.folderB))
+
+        XCTAssertTrue(state.replaceMultiSelection(tabIds: [],
+                                                  bookmarkGuids: [tree.folderB, tree.b1, tree.b3]))
+
+        XCTAssertEqual(state.orderedMultiSelectedBookmarkRoots.map(\.guid), [tree.folderB])
+        XCTAssertEqual(state.multiSelectionDragBookmarkGuids(startingFrom: folderB),
+                       [tree.folderB, tree.b1, tree.b3])
+    }
+
+    func testSelectedFolderAndChildrenMoveOnlySelectedDescendants() throws {
+        let state = try makeState()
+        let tree = seedPartialBookmarkMoveTree(in: state)
+        let folderA = try XCTUnwrap(state.bookmarkManager.bookmark(withGuid: tree.folderA))
+
+        XCTAssertTrue(state.moveSelectedBookmarks(bookmarkGuids: [tree.folderB, tree.b1, tree.b3],
+                                                  to: folderA,
+                                                  index: 1))
+
+        XCTAssertTrue(waitUntil {
+            let aChildren = state.localStore.fetchBookmarks(parentId: tree.folderA,
+                                                            profileId: state.profileId,
+                                                            spaceId: state.spaceId).map(\.guid)
+            let bChildren = state.localStore.fetchBookmarks(parentId: tree.folderB,
+                                                            profileId: state.profileId,
+                                                            spaceId: state.spaceId).map(\.guid)
+            return aChildren == [tree.a1, tree.folderB, tree.b2, tree.a2] &&
+                bChildren == [tree.b1, tree.b3]
+        })
+    }
+
+    func testSelectedFolderMoveLiftsUnselectedIntermediateFolderWithSelectedGrandchild() throws {
+        let state = try makeState()
+        let tree = seedPartialBookmarkMoveTree(in: state)
+        let nestedFolder = "folder-b-nested"
+        let nestedSelected = "folder-b-nested-selected"
+        let nestedUnselected = "folder-b-nested-unselected"
+        state.localStore.createDirectory(title: "Nested",
+                                         profileId: state.profileId,
+                                         parentId: tree.folderB,
+                                         index: 1,
+                                         guid: nestedFolder,
+                                         spaceId: state.spaceId)
+        state.localStore.createBookmark(url: "https://nested-selected.example",
+                                        title: "Nested Selected",
+                                        profileId: state.profileId,
+                                        parentId: nestedFolder,
+                                        index: 0,
+                                        guid: nestedSelected,
+                                        spaceId: state.spaceId)
+        state.localStore.createBookmark(url: "https://nested-unselected.example",
+                                        title: "Nested Unselected",
+                                        profileId: state.profileId,
+                                        parentId: nestedFolder,
+                                        index: 1,
+                                        guid: nestedUnselected,
+                                        spaceId: state.spaceId)
+        XCTAssertTrue(waitUntil {
+            state.bookmarkManager.bookmark(withGuid: nestedSelected) != nil &&
+                state.bookmarkManager.bookmark(withGuid: nestedUnselected) != nil
+        })
+        let folderA = try XCTUnwrap(state.bookmarkManager.bookmark(withGuid: tree.folderA))
+
+        XCTAssertTrue(state.moveSelectedBookmarks(bookmarkGuids: [tree.folderB, nestedSelected],
+                                                  to: folderA,
+                                                  index: 1))
+
+        XCTAssertTrue(waitUntil {
+            let aChildren = state.localStore.fetchBookmarks(parentId: tree.folderA,
+                                                            profileId: state.profileId,
+                                                            spaceId: state.spaceId).map(\.guid)
+            let bChildren = state.localStore.fetchBookmarks(parentId: tree.folderB,
+                                                            profileId: state.profileId,
+                                                            spaceId: state.spaceId).map(\.guid)
+            let nestedChildren = state.localStore.fetchBookmarks(parentId: nestedFolder,
+                                                                 profileId: state.profileId,
+                                                                 spaceId: state.spaceId).map(\.guid)
+            return aChildren == [tree.a1, tree.folderB, tree.b1, nestedFolder, tree.b2, tree.b3, tree.a2] &&
+                bChildren == [nestedSelected] &&
+                nestedChildren == [nestedUnselected]
+        })
+    }
+
+    func testSelectedDescendantFolderMoveLiftsItsUnselectedChildren() throws {
+        let state = try makeState()
+        let tree = seedPartialBookmarkMoveTree(in: state)
+        let childFolder = "folder-b-child-folder"
+        let selectedChild = "folder-b-child-selected"
+        let unselectedChild = "folder-b-child-unselected"
+        state.localStore.createDirectory(title: "Child Folder",
+                                         profileId: state.profileId,
+                                         parentId: tree.folderB,
+                                         index: 1,
+                                         guid: childFolder,
+                                         spaceId: state.spaceId)
+        state.localStore.createBookmark(url: "https://selected-child.example",
+                                        title: "Selected Child",
+                                        profileId: state.profileId,
+                                        parentId: childFolder,
+                                        index: 0,
+                                        guid: selectedChild,
+                                        spaceId: state.spaceId)
+        state.localStore.createBookmark(url: "https://unselected-child.example",
+                                        title: "Unselected Child",
+                                        profileId: state.profileId,
+                                        parentId: childFolder,
+                                        index: 1,
+                                        guid: unselectedChild,
+                                        spaceId: state.spaceId)
+        XCTAssertTrue(waitUntil {
+            state.bookmarkManager.bookmark(withGuid: childFolder) != nil &&
+                state.bookmarkManager.bookmark(withGuid: selectedChild) != nil &&
+                state.bookmarkManager.bookmark(withGuid: unselectedChild) != nil
+        })
+        let folderA = try XCTUnwrap(state.bookmarkManager.bookmark(withGuid: tree.folderA))
+
+        XCTAssertTrue(state.moveSelectedBookmarks(bookmarkGuids: [tree.folderB, childFolder, selectedChild],
+                                                  to: folderA,
+                                                  index: 1))
+
+        XCTAssertTrue(waitUntil {
+            let aChildren = state.localStore.fetchBookmarks(parentId: tree.folderA,
+                                                            profileId: state.profileId,
+                                                            spaceId: state.spaceId).map(\.guid)
+            let bChildren = state.localStore.fetchBookmarks(parentId: tree.folderB,
+                                                            profileId: state.profileId,
+                                                            spaceId: state.spaceId).map(\.guid)
+            let childFolderChildren = state.localStore.fetchBookmarks(parentId: childFolder,
+                                                                      profileId: state.profileId,
+                                                                      spaceId: state.spaceId).map(\.guid)
+            return aChildren == [tree.a1, tree.folderB, tree.b1, tree.b2, tree.b3, tree.a2] &&
+                bChildren == [childFolder, unselectedChild] &&
+                childFolderChildren == [selectedChild]
+        })
+    }
+
+    func testSelectedFolderAndChildrenMoveWithinSameParentAdjustsIndexes() throws {
+        let upwardState = try makeState()
+        let upwardTree = seedPartialBookmarkMoveTree(in: upwardState)
+        let upwardFolderC = "folder-c-upward"
+        upwardState.localStore.createDirectory(title: "C",
+                                               profileId: upwardState.profileId,
+                                               parentId: nil,
+                                               index: 2,
+                                               guid: upwardFolderC,
+                                               spaceId: upwardState.spaceId)
+        XCTAssertTrue(waitUntil {
+            upwardState.localStore.fetchBookmarks(parentId: nil,
+                                                  profileId: upwardState.profileId,
+                                                  spaceId: upwardState.spaceId).map(\.guid) == [
+                upwardTree.folderA,
+                upwardTree.folderB,
+                upwardFolderC
+            ]
+        })
+
+        XCTAssertTrue(upwardState.moveSelectedBookmarks(bookmarkGuids: [
+            upwardTree.folderB,
+            upwardTree.b1,
+            upwardTree.b3
+        ], to: nil, index: 0))
+
+        XCTAssertTrue(waitUntil {
+            let roots = upwardState.localStore.fetchBookmarks(parentId: nil,
+                                                              profileId: upwardState.profileId,
+                                                              spaceId: upwardState.spaceId).map(\.guid)
+            let bChildren = upwardState.localStore.fetchBookmarks(parentId: upwardTree.folderB,
+                                                                  profileId: upwardState.profileId,
+                                                                  spaceId: upwardState.spaceId).map(\.guid)
+            return roots == [upwardTree.folderB, upwardTree.b2, upwardTree.folderA, upwardFolderC] &&
+                bChildren == [upwardTree.b1, upwardTree.b3]
+        })
+
+        let downwardState = try makeState()
+        let downwardTree = seedPartialBookmarkMoveTree(in: downwardState)
+        let downwardFolderC = "folder-c-downward"
+        downwardState.localStore.createDirectory(title: "C",
+                                                 profileId: downwardState.profileId,
+                                                 parentId: nil,
+                                                 index: 2,
+                                                 guid: downwardFolderC,
+                                                 spaceId: downwardState.spaceId)
+        XCTAssertTrue(waitUntil {
+            downwardState.localStore.fetchBookmarks(parentId: nil,
+                                                    profileId: downwardState.profileId,
+                                                    spaceId: downwardState.spaceId).map(\.guid) == [
+                downwardTree.folderA,
+                downwardTree.folderB,
+                downwardFolderC
+            ]
+        })
+
+        XCTAssertTrue(downwardState.moveSelectedBookmarks(bookmarkGuids: [
+            downwardTree.folderB,
+            downwardTree.b1,
+            downwardTree.b3
+        ], to: nil, index: 3))
+
+        XCTAssertTrue(waitUntil {
+            let roots = downwardState.localStore.fetchBookmarks(parentId: nil,
+                                                                profileId: downwardState.profileId,
+                                                                spaceId: downwardState.spaceId).map(\.guid)
+            let bChildren = downwardState.localStore.fetchBookmarks(parentId: downwardTree.folderB,
+                                                                    profileId: downwardState.profileId,
+                                                                    spaceId: downwardState.spaceId).map(\.guid)
+            return roots == [downwardTree.folderA, downwardFolderC, downwardTree.folderB, downwardTree.b2] &&
+                bChildren == [downwardTree.b1, downwardTree.b3]
+        })
+    }
+
+    func testSelectedFolderAndChildrenMoveIntoNewFolderUsesExplicitSelection() throws {
+        let state = try makeState()
+        let tree = seedPartialBookmarkMoveTree(in: state)
+
+        state.bookmarkSelectionSnapshot(tabs: [],
+                                        bookmarkGuids: [tree.folderB, tree.b1, tree.b3],
+                                        intoNewFolderNamed: "Saved Items")
+
+        XCTAssertTrue(waitUntil {
+            let roots = state.localStore.fetchBookmarks(parentId: nil,
+                                                        profileId: state.profileId,
+                                                        spaceId: state.spaceId)
+            guard let savedFolder = roots.first(where: { $0.title == "Saved Items" }) else {
+                return false
+            }
+            let savedChildren = state.localStore.fetchBookmarks(parentId: savedFolder.guid,
+                                                                profileId: state.profileId,
+                                                                spaceId: state.spaceId).map(\.guid)
+            let bChildren = state.localStore.fetchBookmarks(parentId: tree.folderB,
+                                                            profileId: state.profileId,
+                                                            spaceId: state.spaceId).map(\.guid)
+            return roots.map(\.guid) == [tree.folderA, savedFolder.guid] &&
+                savedChildren == [tree.folderB, tree.b2] &&
+                bChildren == [tree.b1, tree.b3]
+        })
+    }
+
+    func testSelectedFolderWithoutSelectedChildrenKeepsSubtreeOnMove() throws {
+        let state = try makeState()
+        let tree = seedPartialBookmarkMoveTree(in: state)
+        let folderA = try XCTUnwrap(state.bookmarkManager.bookmark(withGuid: tree.folderA))
+
+        XCTAssertTrue(state.moveSelectedBookmarks(bookmarkGuids: [tree.folderB],
+                                                  to: folderA,
+                                                  index: 1))
+
+        XCTAssertTrue(waitUntil {
+            let aChildren = state.localStore.fetchBookmarks(parentId: tree.folderA,
+                                                            profileId: state.profileId,
+                                                            spaceId: state.spaceId).map(\.guid)
+            let bChildren = state.localStore.fetchBookmarks(parentId: tree.folderB,
+                                                            profileId: state.profileId,
+                                                            spaceId: state.spaceId).map(\.guid)
+            return aChildren == [tree.a1, tree.folderB, tree.a2] &&
+                bChildren == [tree.b1, tree.b2, tree.b3]
+        })
     }
 
     func testFolderMultiSelectionMenuHidesTabOnlyActions() throws {

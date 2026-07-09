@@ -1284,7 +1284,7 @@ class BrowserState {
            !selectedBookmarkGuids.contains(bookmark.guid) {
             return nil
         }
-        let guids = orderedMultiSelectedBookmarkRoots.map(\.guid)
+        let guids = orderedMultiSelectedBookmarkMoveGuids
         return guids.isEmpty ? nil : guids
     }
 
@@ -1692,6 +1692,11 @@ class BrowserState {
     }
 
     @MainActor
+    var orderedMultiSelectedBookmarkMoveGuids: [String] {
+        orderedMultiSelectedBookmarks.map(\.guid)
+    }
+
+    @MainActor
     var multiSelectionBookmarkDeletionContext: MultiSelectionBookmarkDeletionContext? {
         bookmarkDeletionContext(for: orderedMultiSelectedBookmarkRoots)
     }
@@ -1768,15 +1773,11 @@ class BrowserState {
     @MainActor
     func canBookmarkMultiSelection(into folder: Bookmark?) -> Bool {
         guard multiSelection.isActive else { return false }
-        guard !multiSelectionTabUnits.isEmpty || !orderedMultiSelectedBookmarkRoots.isEmpty else {
+        let bookmarkGuids = orderedMultiSelectedBookmarkMoveGuids
+        guard !multiSelectionTabUnits.isEmpty || !bookmarkGuids.isEmpty else {
             return false
         }
-        guard let folder else { return true }
-        guard let target = bookmarkManager.bookmark(withGuid: folder.guid),
-              target.isFolder else {
-            return false
-        }
-        return canMoveCurrentBookmarkSelection(to: target)
+        return canMoveSelectedBookmarks(bookmarkGuids: bookmarkGuids, to: folder)
     }
 
     @discardableResult
@@ -1784,7 +1785,7 @@ class BrowserState {
     func bookmarkMultiSelectedTabs(into folder: Bookmark?) -> Bool {
         guard canBookmarkMultiSelection(into: folder) else { return false }
         let units = multiSelectionTabUnits
-        let bookmarks = orderedMultiSelectedBookmarkRoots
+        let bookmarkGuids = orderedMultiSelectedBookmarkMoveGuids
         let targetFolder: Bookmark?
         if let folder {
             targetFolder = bookmarkManager.bookmark(withGuid: folder.guid)
@@ -1808,14 +1809,57 @@ class BrowserState {
                 }
             }
         }
-        for bookmark in bookmarks {
-            guard let liveBookmark = bookmarkManager.bookmark(withGuid: bookmark.guid) else {
-                continue
-            }
-            moveBookmark(liveBookmark, to: targetFolder)
+        if !bookmarkGuids.isEmpty,
+           moveSelectedBookmarks(bookmarkGuids: bookmarkGuids, to: targetFolder) {
             didChange = true
         }
         return didChange
+    }
+
+    @MainActor
+    func canMoveSelectedBookmarks(bookmarkGuids: [String], to folder: Bookmark?) -> Bool {
+        let bookmarks = uniqueBookmarks(for: bookmarkGuids)
+        guard !bookmarks.isEmpty else { return true }
+        guard let folder else { return true }
+        guard let target = bookmarkManager.bookmark(withGuid: folder.guid),
+              target.isFolder else {
+            return false
+        }
+        let selectedGuids = Set(bookmarks.map(\.guid))
+        guard !selectedGuids.contains(target.guid) else {
+            return false
+        }
+        for bookmark in bookmarks where bookmark.isFolder {
+            if isBookmark(target, descendantOf: bookmark) {
+                return false
+            }
+        }
+        return true
+    }
+
+    @discardableResult
+    @MainActor
+    func moveSelectedBookmarks(bookmarkGuids: [String],
+                               to folder: Bookmark?,
+                               index: Int? = nil) -> Bool {
+        guard canMoveSelectedBookmarks(bookmarkGuids: bookmarkGuids, to: folder) else {
+            return false
+        }
+        let guids = uniqueBookmarks(for: bookmarkGuids).map(\.guid)
+        guard !guids.isEmpty else { return false }
+        localStore.moveSelectedBookmarks(guids,
+                                         profileId: profileId,
+                                         to: folder?.guid,
+                                         newIndex: index)
+        return true
+    }
+
+    private func uniqueBookmarks(for guids: [String]) -> [Bookmark] {
+        var seen = Set<String>()
+        return guids.compactMap { guid -> Bookmark? in
+            guard seen.insert(guid).inserted else { return nil }
+            return bookmarkManager.bookmark(withGuid: guid)
+        }
     }
 
     @discardableResult
@@ -1853,9 +1897,9 @@ class BrowserState {
                                    intoNewFolderNamed name: String) {
         let units = tabUnitsPreservingSplits(from: tabs)
         let drafts = bookmarkCreationDrafts(from: units)
-        let bookmarkRoots = bookmarkRoots(for: Set(bookmarkGuids))
+        let bookmarkMoveGuids = uniqueBookmarks(for: bookmarkGuids).map(\.guid)
         clearMultiSelection()
-        guard !drafts.isEmpty || !bookmarkRoots.isEmpty else { return }
+        guard !drafts.isEmpty || !bookmarkMoveGuids.isEmpty else { return }
         let folderGuid = UUID().uuidString
         localStore.createDirectoryWithBookmarks(
             folderTitle: name,
@@ -1873,25 +1917,12 @@ class BrowserState {
                  favicon: $0.favicon)
             }
         )
-        for bookmark in bookmarkRoots {
-            localStore.moveBookmark(bookmark.guid,
-                                    profileId: profileId,
-                                    to: folderGuid,
-                                    newIndex: Int.max)
+        if !bookmarkMoveGuids.isEmpty {
+            localStore.moveSelectedBookmarks(bookmarkMoveGuids,
+                                             profileId: profileId,
+                                             to: folderGuid,
+                                             newIndex: Int.max)
         }
-    }
-
-    @MainActor
-    private func canMoveCurrentBookmarkSelection(to target: Bookmark) -> Bool {
-        for bookmark in orderedMultiSelectedBookmarkRoots {
-            if bookmark.guid == target.guid {
-                return false
-            }
-            if bookmark.isFolder && isBookmark(target, descendantOf: bookmark) {
-                return false
-            }
-        }
-        return true
     }
 
     private func isBookmark(_ bookmark: Bookmark, descendantOf ancestor: Bookmark) -> Bool {
@@ -1903,18 +1934,6 @@ class BrowserState {
             parent = current.parent
         }
         return false
-    }
-
-    @MainActor
-    private func moveBookmark(_ bookmark: Bookmark, to folder: Bookmark?) {
-        if let folder {
-            bookmarkManager.moveBookmark(bookmark, to: folder)
-        } else {
-            localStore.moveBookmark(bookmark.guid,
-                                    profileId: profileId,
-                                    to: nil,
-                                    newIndex: Int.max)
-        }
     }
 
     private func bookmarkCreationDrafts(from units: [MultiSelectionTabUnit]) -> [BookmarkCreationDraft] {

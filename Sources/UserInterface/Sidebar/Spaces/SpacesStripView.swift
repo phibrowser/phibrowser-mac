@@ -229,6 +229,7 @@ struct SpacesStripView: View {
         .onChange(of: slot.iconPickerRequestToken) { _ in
             openActiveIconPicker()
         }
+        .ignoresSafeArea()
     }
 
     /// Opens the icon/emoji picker for the active Space anchored below its icon —

@@ -1195,7 +1195,6 @@ class BrowserState {
     var multiSelectionContext: MultiSelectionContext {
         let bookmarkGuids = multiSelectionBookmarkGuidsIncludingImplicitActive
         let selectedBookmarks = bookmarkGuids.compactMap { bookmarkManager.bookmark(withGuid: $0) }
-        let selectedBookmarkRoots = bookmarkRoots(for: bookmarkGuids)
         let containsFolder = selectedBookmarks.contains { $0.isFolder }
         return MultiSelectionContext(
             tabIds: multiSelection.guids,
@@ -1203,7 +1202,7 @@ class BrowserState {
             containsBookmarkFolder: containsFolder,
             canOpenAsSplit: !containsFolder && multiSelectionCanOpenAsSplit,
             showsCloseItems: !containsFolder && !orderedMultiSelectedTabs.isEmpty,
-            bookmarkDeletion: bookmarkDeletionContext(for: selectedBookmarkRoots)
+            bookmarkDeletion: bookmarkDeletionContext(for: selectedBookmarks)
         )
     }
 
@@ -1438,7 +1437,7 @@ class BrowserState {
               multiSelection.isActive,
               !isIncognito,
               targetSpace.spaceId != spaceId,
-              targetSpace.spaceId != SpaceManager.incognitoSpaceId else {
+              !SpaceManager.isIncognitoSpaceId(targetSpace.spaceId) else {
             return false
         }
         guard let plan = multiSelectionSpaceMovePlan() else {
@@ -1707,7 +1706,7 @@ class BrowserState {
 
     @MainActor
     var multiSelectionBookmarkDeletionContext: MultiSelectionBookmarkDeletionContext? {
-        bookmarkDeletionContext(for: orderedMultiSelectedBookmarkRoots)
+        bookmarkDeletionContext(for: orderedMultiSelectedBookmarks)
     }
 
     private func bookmarkDeletionContext(for bookmarks: [Bookmark]) -> MultiSelectionBookmarkDeletionContext? {

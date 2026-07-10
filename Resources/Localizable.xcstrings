@@ -133,6 +133,17 @@
         }
       }
     },
+    "%@ and %@ will be deleted." : {
+      "comment" : "Bookmark multi-selection delete confirmation body for mixed folders and bookmarks",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@ and %2$@ will be deleted."
+          }
+        }
+      }
+    },
     "%@ can now use the phi-browser skill. If it isn’t already on, enable remote debugging above and relaunch so the skill can connect." : {
       "comment" : "Developer settings - Skill install success body; %@ is the agent name"
     },
@@ -1791,6 +1802,9 @@
     },
     "Theme" : {
       "comment" : "General settings - Theme section title\nSpaces settings - theme section header"
+    },
+    "This action cannot be undone." : {
+      "comment" : "Bookmark multi-selection delete confirmation irreversible warning"
     },
     "This build doesn’t include the phi-browser skill resources. Rebuild Phi Browser and try again." : {
       "comment" : "Developer settings - Skill install failure body when the resource is missing"

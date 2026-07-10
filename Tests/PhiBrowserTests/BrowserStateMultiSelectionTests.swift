@@ -691,7 +691,7 @@ final class BrowserStateMultiSelectionTests: XCTestCase {
         XCTAssertFalse(state.multiSelectionContext.showsCloseItems)
     }
 
-    func testReplaceMultiSelectionKeepsFolderAndChildButActionsUseRoots() throws {
+    func testReplaceMultiSelectionKeepsFolderAndChildButDeletionCountMatchesSelection() throws {
         let state = try makeState()
         let folderGuid = "folder-root"
         let childGuid = "folder-child"
@@ -716,7 +716,7 @@ final class BrowserStateMultiSelectionTests: XCTestCase {
         XCTAssertEqual(state.orderedMultiSelectedBookmarkRoots.map(\.guid), [folderGuid])
         let context = try XCTUnwrap(state.multiSelectionBookmarkDeletionContext)
         XCTAssertEqual(context.folderCount, 1)
-        XCTAssertEqual(context.bookmarkCount, 0)
+        XCTAssertEqual(context.bookmarkCount, 1)
     }
 
     func testBookmarkDragGuidsKeepExplicitFolderChildren() throws {
@@ -1011,7 +1011,7 @@ final class BrowserStateMultiSelectionTests: XCTestCase {
         XCTAssertFalse(menu.items.last?.isSeparatorItem == true)
     }
 
-    func testBookmarkDeleteMenuTitleCountsOnlyBookmarkRoots() throws {
+    func testBookmarkDeleteMenuTitleCountsSelectedBookmarkItems() throws {
         let state = try makeState()
         seed(state, guids: [1, 2])
         state.focuseTab(state.tabs[0])
@@ -1073,10 +1073,10 @@ final class BrowserStateMultiSelectionTests: XCTestCase {
 
         let context = try XCTUnwrap(state.multiSelectionBookmarkDeletionContext)
         XCTAssertEqual(context.folderCount, 1)
-        XCTAssertEqual(context.bookmarkCount, 1)
+        XCTAssertEqual(context.bookmarkCount, 2)
 
         let deleteItem = try XCTUnwrap(deleteMenuItem(in: state))
-        XCTAssertEqual(deleteItem.title, "Delete 2 Items")
+        XCTAssertEqual(deleteItem.title, "Delete 3 Items")
         XCTAssertEqual(deleteItem.keyEquivalent, "d")
         XCTAssertEqual(deleteItem.keyEquivalentModifierMask, [.command])
     }
@@ -1324,6 +1324,19 @@ final class BrowserStateMultiSelectionTests: XCTestCase {
         state.toggleMultiSelection(for: state.tabs[1])
 
         XCTAssertFalse(state.canMoveMultiSelection(to: makeSpace(),
+                                                   sourceHasSpaceSlot: true))
+    }
+
+    func testCanMoveMultiSelectionRejectsRuntimeIncognitoSpace() throws {
+        let state = try makeState()
+        seed(state, guids: [1, 2])
+        state.focuseTab(state.tabs[0])
+        state.toggleMultiSelection(for: state.tabs[1])
+        let incognitoSpace = makeSpace(
+            id: "\(SpaceManager.incognitoSpaceIdPrefix).runtime",
+            profileId: SpaceManager.incognitoProfileId)
+
+        XCTAssertFalse(state.canMoveMultiSelection(to: incognitoSpace,
                                                    sourceHasSpaceSlot: true))
     }
 

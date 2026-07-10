@@ -7,6 +7,74 @@ import AppKit
 import Combine
 import SnapKit
 
+enum TabStripMultiSelectionUnit: Hashable {
+    case tab(Int)
+    case splitPair(left: Int, right: Int)
+    case bookmark(String)
+
+    var tabIds: Set<Int> {
+        switch self {
+        case let .tab(guid):
+            return [guid]
+        case let .splitPair(left, right):
+            return [left, right]
+        case .bookmark:
+            return []
+        }
+    }
+
+    var bookmarkGuids: Set<String> {
+        switch self {
+        case let .bookmark(guid):
+            return [guid]
+        case .tab, .splitPair:
+            return []
+        }
+    }
+}
+
+struct TabStripMultiSelectionRangeResult: Equatable {
+    let anchor: TabStripMultiSelectionUnit
+    let tabIds: Set<Int>
+    let bookmarkGuids: Set<String>
+}
+
+enum TabStripMultiSelectionRangeResolver {
+    static func resolve(
+        visibleUnits: [TabStripMultiSelectionUnit],
+        storedAnchor: TabStripMultiSelectionUnit?,
+        firstSelectedUnit: TabStripMultiSelectionUnit?,
+        focusedUnit: TabStripMultiSelectionUnit?,
+        target: TabStripMultiSelectionUnit
+    ) -> TabStripMultiSelectionRangeResult {
+        let anchor = storedAnchor ?? firstSelectedUnit ?? focusedUnit ?? target
+
+        guard let anchorIndex = visibleUnits.firstIndex(of: anchor),
+              let targetIndex = visibleUnits.firstIndex(of: target) else {
+            return TabStripMultiSelectionRangeResult(
+                anchor: target,
+                tabIds: target.tabIds,
+                bookmarkGuids: target.bookmarkGuids
+            )
+        }
+
+        let lower = min(anchorIndex, targetIndex)
+        let upper = max(anchorIndex, targetIndex)
+        let selectedUnits = visibleUnits[lower...upper]
+        let tabIds = selectedUnits.reduce(into: Set<Int>()) { result, unit in
+            result.formUnion(unit.tabIds)
+        }
+        let bookmarkGuids = selectedUnits.reduce(into: Set<String>()) { result, unit in
+            result.formUnion(unit.bookmarkGuids)
+        }
+        return TabStripMultiSelectionRangeResult(
+            anchor: anchor,
+            tabIds: tabIds,
+            bookmarkGuids: bookmarkGuids
+        )
+    }
+}
+
 private final class DragOverlayView: NSView {
     override func hitTest(_ point: NSPoint) -> NSView? {
         // Let drag overlay events pass through to the real tab views.
@@ -179,6 +247,7 @@ final class TabStrip: NSView, TitlebarAwareHitTestable {
     /// tab hover rule).
     private var hoveredChipToken: String?
     private var selectedGroupTokenForOverviewPlaceholder: String?
+    private var multiSelectionRangeAnchor: TabStripMultiSelectionUnit?
 
     // MARK: - Layout Lock
     /// Whether layout is temporarily locked after a tab closes.
@@ -1279,6 +1348,7 @@ final class TabStrip: NSView, TitlebarAwareHitTestable {
         lastContentWidth = 0
         previousNormalTabCount = 0
         previousTrailingNormalTabId = nil
+        multiSelectionRangeAnchor = nil
         isLayoutLocked = false
         lockedTabWidth = nil
         pendingDropAction = nil
@@ -1855,8 +1925,8 @@ final class TabStrip: NSView, TitlebarAwareHitTestable {
             // the merged cell still represents both panes.
             let cellIsActive = isTabActive(tab, activeTab: activeTab)
                 || (render.pinnedMergedPartner.map { isTabActive($0, activeTab: activeTab) } ?? false)
-            let cellIsMultiSelected = browserState.multiSelection.contains(tab.guid)
-                || (render.pinnedMergedPartner.map { browserState.multiSelection.contains($0.guid) } ?? false)
+            let cellIsMultiSelected = !isPinned
+                && multiSelectionUnit(for: tab).map(isMultiSelectionUnitSelected) == true
             let renderData = TabRenderData(
                 id: id,
                 title: tab.title,
@@ -1920,24 +1990,11 @@ final class TabStrip: NSView, TitlebarAwareHitTestable {
 
             view.onSelect = { [weak self, weak tab] flags in
                 guard let self, let tab else { return }
-                // Cmd+click toggles multi-selection; owner handles pinned/active.
-                if flags.contains(.command) {
-                    if let partner = pinnedSplitPartners[id],
-                       self.browserState.toggleMultiSelectionForSplitPair(
-                           leftTab: tab,
-                           rightTab: partner
-                       ) {
-                        return
-                    }
-                    if self.browserState.toggleMultiSelection(for: tab) {
-                        return
-                    }
-                } else {
-                    if self.browserState.multiSelection.isActive {
-                        self.browserState.clearMultiSelection()
-                    }
-                }
-                self.handleTabSelection(tab: tab)
+                self.handleTabClick(
+                    tab: tab,
+                    isPinned: isPinned,
+                    modifierFlags: flags
+                )
             }
             if isPinned {
                 view.onDoubleSelect = { [weak self, weak tab] modifierFlags in
@@ -1951,20 +2008,13 @@ final class TabStrip: NSView, TitlebarAwareHitTestable {
             // pane; clicking that half should focus the partner instead of
             // the primary tab. Wire the secondary callback to the partner
             // tab captured at configure time.
-            view.onSecondarySelect = { [weak self, weak tab, weak partner = pinnedSplitPartners[id]] flags in
-                guard let self else { return }
-                if flags.contains(.command),
-                   let tab,
-                   let partner,
-                   self.browserState.toggleMultiSelectionForSplitPair(
-                       leftTab: tab,
-                       rightTab: partner
-                   ) {
-                    return
-                } else if self.browserState.multiSelection.isActive {
-                    self.browserState.clearMultiSelection()
-                }
-                self.handleTabSelection(tab: partner)
+            view.onSecondarySelect = { [weak self, weak partner = pinnedSplitPartners[id]] flags in
+                guard let self, let partner else { return }
+                self.handleTabClick(
+                    tab: partner,
+                    isPinned: isPinned,
+                    modifierFlags: flags
+                )
             }
             if isPinned, let partner = pinnedSplitPartners[id] {
                 view.onSecondaryDoubleSelect = { [weak self, weak partner] modifierFlags in
@@ -2466,6 +2516,7 @@ final class TabStrip: NSView, TitlebarAwareHitTestable {
 
     private func handleChipClick(token: String) {
         guard browserState.groups[token] != nil else { return }
+        multiSelectionRangeAnchor = nil
         // A plain click while multi-selecting exits the selection
         if browserState.multiSelection.isActive {
             browserState.clearMultiSelection()
@@ -2839,7 +2890,158 @@ final class TabStrip: NSView, TitlebarAwareHitTestable {
         }
     }
 
+    private func handleTabClick(
+        tab: Tab,
+        isPinned: Bool,
+        modifierFlags: NSEvent.ModifierFlags
+    ) {
+        guard !isPinned else {
+            multiSelectionRangeAnchor = nil
+            if browserState.multiSelection.isActive {
+                browserState.clearMultiSelection()
+            }
+            handleTabSelection(tab: tab)
+            return
+        }
+
+        let unit = multiSelectionUnit(for: tab)
+        if modifierFlags.contains(.shift) {
+            if let unit, handleMultiSelectionRangeClick(to: unit) {
+                return
+            }
+        } else if modifierFlags.contains(.command) {
+            if let unit, handleMultiSelectionCommandClick(for: unit) {
+                multiSelectionRangeAnchor = unit
+                return
+            }
+        } else {
+            multiSelectionRangeAnchor = unit
+        }
+
+        if browserState.multiSelection.isActive {
+            browserState.clearMultiSelection()
+        }
+        handleTabSelection(tab: tab)
+    }
+
+    private func handleMultiSelectionRangeClick(to target: TabStripMultiSelectionUnit) -> Bool {
+        let visibleUnits = visibleNormalMultiSelectionUnits()
+        let result = TabStripMultiSelectionRangeResolver.resolve(
+            visibleUnits: visibleUnits,
+            storedAnchor: multiSelectionRangeAnchor,
+            firstSelectedUnit: firstSelectedVisibleUnit(in: visibleUnits),
+            focusedUnit: focusedMultiSelectionUnit(),
+            target: target
+        )
+        let didReplace = browserState.replaceMultiSelection(
+            tabIds: result.tabIds,
+            bookmarkGuids: result.bookmarkGuids
+        )
+        if didReplace {
+            multiSelectionRangeAnchor = result.anchor
+        }
+        return didReplace
+    }
+
+    private func handleMultiSelectionCommandClick(for unit: TabStripMultiSelectionUnit) -> Bool {
+        switch unit {
+        case let .tab(guid):
+            guard let tab = browserState.normalTabs.first(where: { $0.guid == guid }) else {
+                return false
+            }
+            return browserState.toggleMultiSelection(for: tab)
+        case let .splitPair(left, right):
+            guard let leftTab = browserState.normalTabs.first(where: { $0.guid == left }),
+                  let rightTab = browserState.normalTabs.first(where: { $0.guid == right }) else {
+                return false
+            }
+            return browserState.toggleMultiSelectionForSplitPair(
+                leftTab: leftTab,
+                rightTab: rightTab
+            )
+        case let .bookmark(guid):
+            return browserState.toggleBookmarkMultiSelection(bookmarkGuid: guid)
+        }
+    }
+
+    private func visibleNormalMultiSelectionUnits() -> [TabStripMultiSelectionUnit] {
+        let tabs = browserState.normalTabs
+        let collapsedGroupIndices = Set(
+            currentGroupRuns()
+                .filter(\.isCollapsed)
+                .flatMap { Array($0.range) }
+        )
+        var units: [TabStripMultiSelectionUnit] = []
+        var seen = Set<TabStripMultiSelectionUnit>()
+        var consumedTabIds = Set<Int>()
+
+        for (index, tab) in tabs.enumerated() {
+            guard !collapsedGroupIndices.contains(index),
+                  !consumedTabIds.contains(tab.guid),
+                  let unit = multiSelectionUnit(for: tab) else {
+                continue
+            }
+            consumedTabIds.formUnion(unit.tabIds)
+            if seen.insert(unit).inserted {
+                units.append(unit)
+            }
+        }
+        return units
+    }
+
+    private func multiSelectionUnit(for tab: Tab) -> TabStripMultiSelectionUnit? {
+        let tabs = browserState.normalTabs
+        guard let tabIndex = tabs.firstIndex(where: { $0.guid == tab.guid }) else {
+            return nil
+        }
+
+        if let splitGroup = browserState.splitGroup(forTabId: tab.guid),
+           !splitGroup.isPinned,
+           let partnerId = splitGroup.partnerTabId(of: tab.guid),
+           let partnerIndex = tabs.firstIndex(where: { $0.guid == partnerId }) {
+            let leftTab = tabIndex < partnerIndex ? tab : tabs[partnerIndex]
+            let rightTab = tabIndex < partnerIndex ? tabs[partnerIndex] : tab
+            if let bookmarkGuid = browserState.splitBookmarkBindings.first(where: { entry in
+                entry.value == splitGroup.id &&
+                    browserState.bookmarkManager.bookmark(withGuid: entry.key) != nil
+            })?.key {
+                return .bookmark(bookmarkGuid)
+            }
+            return .splitPair(left: leftTab.guid, right: rightTab.guid)
+        }
+
+        if let bookmarkGuid = tab.guidInLocalDB,
+           browserState.bookmarkManager.bookmark(withGuid: bookmarkGuid) != nil {
+            return .bookmark(bookmarkGuid)
+        }
+        return .tab(tab.guid)
+    }
+
+    private func focusedMultiSelectionUnit() -> TabStripMultiSelectionUnit? {
+        guard let focusingTab = browserState.focusingTab else { return nil }
+        return multiSelectionUnit(for: focusingTab)
+    }
+
+    private func firstSelectedVisibleUnit(
+        in visibleUnits: [TabStripMultiSelectionUnit]
+    ) -> TabStripMultiSelectionUnit? {
+        visibleUnits.first(where: isMultiSelectionUnitSelected)
+    }
+
+    private func isMultiSelectionUnitSelected(_ unit: TabStripMultiSelectionUnit) -> Bool {
+        switch unit {
+        case let .tab(guid):
+            return browserState.multiSelection.contains(guid)
+        case let .splitPair(left, right):
+            return browserState.multiSelection.contains(left)
+                || browserState.multiSelection.contains(right)
+        case let .bookmark(guid):
+            return browserState.multiSelection.containsBookmark(guid)
+        }
+    }
+
     private func handleNewTabButtonClick() {
+        multiSelectionRangeAnchor = nil
         unsafeBrowserWindowController?.newBrowserTab(nil)
     }
 

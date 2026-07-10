@@ -1228,7 +1228,8 @@ class BrowserState {
 
     @MainActor
     private var multiSelectionCanOpenAsSplit: Bool {
-        multiSelectionSplitCandidates.count == 2
+        let selectedUnitCount = multiSelectionTabUnits.count + orderedMultiSelectedBookmarkRoots.count
+        return selectedUnitCount == 2 && multiSelectionSplitCandidates.count == selectedUnitCount
     }
 
     /// Selected tabs in authoritative tab order (active tab implicitly included).
@@ -1464,8 +1465,31 @@ class BrowserState {
             return false
         }
 
-        clearMultiSelection()
+        if !plan.tabs.isEmpty {
+            return SpaceManager.shared.moveTabs(plan.tabs,
+                                                from: self,
+                                                toSpaceId: targetSpace.spaceId) { [weak self] didMove in
+                guard didMove, let self else { return }
+                self.commitBookmarkSpaceMove(plan, to: targetSpace)
+                self.clearMultiSelection()
+            }
+        }
 
+        commitBookmarkSpaceMove(plan, to: targetSpace)
+        clearMultiSelection()
+        SpaceManager.shared.activateInFocusedWindow(spaceId: targetSpace.spaceId)
+        return true
+    }
+
+    private struct MultiSelectionSpaceMovePlan {
+        let tabs: [Tab]
+        let bookmarkRoots: [Bookmark]
+        let detachedBookmarkGuids: Set<String>
+    }
+
+    @MainActor
+    private func commitBookmarkSpaceMove(_ plan: MultiSelectionSpaceMovePlan,
+                                         to targetSpace: SpaceModel) {
         if !plan.detachedBookmarkGuids.isEmpty {
             detachBookmarkTabsForComfortableLayout(bookmarkGuids: plan.detachedBookmarkGuids)
         }
@@ -1475,21 +1499,6 @@ class BrowserState {
                                      toSpaceId: targetSpace.spaceId,
                                      targetProfileId: targetSpace.profileId)
         }
-
-        if !plan.tabs.isEmpty {
-            return SpaceManager.shared.moveTabs(plan.tabs,
-                                                from: self,
-                                                toSpaceId: targetSpace.spaceId)
-        }
-
-        SpaceManager.shared.activateInFocusedWindow(spaceId: targetSpace.spaceId)
-        return true
-    }
-
-    private struct MultiSelectionSpaceMovePlan {
-        let tabs: [Tab]
-        let bookmarkRoots: [Bookmark]
-        let detachedBookmarkGuids: Set<String>
     }
 
     @MainActor
@@ -1977,9 +1986,12 @@ class BrowserState {
 
     @MainActor
     func groupMultiSelectedTabs() {
-        let tabs = orderedMultiSelectedTabs
-        clearMultiSelection()
-        guard !tabs.isEmpty, let bridge = ChromiumLauncher.sharedInstance().bridge else { return }
+        guard let bridge = ChromiumLauncher.sharedInstance().bridge,
+              let preparation = prepareMultiSelectionForGrouping() else {
+            return
+        }
+        let tabs = preparation.tabs
+        guard !tabs.isEmpty else { return }
         let tabIds = tabs.map { NSNumber(value: Int64($0.guid)) }
         let token = bridge.createGroupFromTabs(withWindowId: Int64(windowId),
                                                tabIds: tabIds,
@@ -1989,6 +2001,21 @@ class BrowserState {
         for tab in tabs {
             applyOptimisticGroupMembership(tabId: tab.guid, newToken: token)
         }
+
+        var groupIndex = tabs.count
+        var normalTabsIndex = groupInsertionIndex(after: tabs)
+        for bookmark in preparation.pendingBookmarks {
+            if moveBookmarkIntoGroup(bookmark,
+                                     toGroup: token,
+                                     groupIndex: groupIndex,
+                                     normalTabsIndex: normalTabsIndex,
+                                     focusAfterCreate: false) {
+                let representedTabCount = bookmark.secondaryUrl?.isEmpty == false ? 2 : 1
+                groupIndex += representedTabCount
+                normalTabsIndex += representedTabCount
+            }
+        }
+        clearMultiSelection()
     }
 
     /// Targets to add to an existing group, excluding tabs already in it.
@@ -1998,16 +2025,90 @@ class BrowserState {
 
     @MainActor
     func addMultiSelectedTabs(toGroup token: String) {
-        let targets = multiSelectionTargets(forAddingToGroup: token)
-        clearMultiSelection()
-        guard !targets.isEmpty, let bridge = ChromiumLauncher.sharedInstance().bridge else { return }
-        let tabIds = targets.map { NSNumber(value: Int64($0.guid)) }
-        bridge.addTabsToGroup(withWindowId: Int64(windowId),
-                              tabIds: tabIds,
-                              tokenHex: token)
-        for tab in targets {
-            applyOptimisticGroupMembership(tabId: tab.guid, newToken: token)
+        guard let bridge = ChromiumLauncher.sharedInstance().bridge,
+              let preparation = prepareMultiSelectionForGrouping() else {
+            return
         }
+        let targets = preparation.tabs.filter { $0.groupToken != token }
+        var didMove = false
+        if !targets.isEmpty {
+            let tabIds = targets.map { NSNumber(value: Int64($0.guid)) }
+            bridge.addTabsToGroup(withWindowId: Int64(windowId),
+                                  tabIds: tabIds,
+                                  tokenHex: token)
+            for tab in targets {
+                applyOptimisticGroupMembership(tabId: tab.guid, newToken: token)
+            }
+            didMove = true
+        }
+
+        var groupIndex = normalTabs.lazy.filter { $0.groupToken == token }.count
+        var normalTabsIndex = groupInsertionIndex(forGroup: token)
+        for bookmark in preparation.pendingBookmarks {
+            if moveBookmarkIntoGroup(bookmark,
+                                     toGroup: token,
+                                     groupIndex: groupIndex,
+                                     normalTabsIndex: normalTabsIndex,
+                                     focusAfterCreate: false) {
+                let representedTabCount = bookmark.secondaryUrl?.isEmpty == false ? 2 : 1
+                groupIndex += representedTabCount
+                normalTabsIndex += representedTabCount
+                didMove = true
+            }
+        }
+        if didMove {
+            clearMultiSelection()
+        }
+    }
+
+    private struct MultiSelectionGroupPreparation {
+        let tabs: [Tab]
+        let pendingBookmarks: [Bookmark]
+    }
+
+    /// Resolves the selected group members before issuing a Chromium group
+    /// command. Open bookmark-backed tabs are graduated into ordinary tabs and
+    /// can join the initial batch; unopened and split-view bookmarks are added
+    /// after a group token exists through `moveBookmarkIntoGroup`.
+    @MainActor
+    private func prepareMultiSelectionForGrouping() -> MultiSelectionGroupPreparation? {
+        let bookmarks = orderedMultiSelectedBookmarkRoots
+        guard !bookmarks.contains(where: { $0.isFolder }) else { return nil }
+
+        var liveTabs = orderedMultiSelectedTabs
+        var pendingBookmarks: [Bookmark] = []
+        for bookmark in bookmarks {
+            if bookmark.secondaryUrl?.isEmpty == false {
+                pendingBookmarks.append(bookmark)
+                continue
+            }
+            if let attachedTab = tabs.first(where: { $0.guidInLocalDB == bookmark.guid }) {
+                graduateBookmarkTabToPlainTab(attachedTab)
+                if !liveTabs.contains(where: { $0.guid == attachedTab.guid }) {
+                    liveTabs.append(attachedTab)
+                }
+            } else {
+                pendingBookmarks.append(bookmark)
+            }
+        }
+
+        let expandedIds = multiSelectionTabIdsIncludingSplitPartners(
+            selectedIds: Set(liveTabs.map(\.guid))
+        )
+        let orderedTabs = normalTabs.filter { expandedIds.contains($0.guid) }
+        return MultiSelectionGroupPreparation(tabs: orderedTabs,
+                                              pendingBookmarks: pendingBookmarks)
+    }
+
+    private func groupInsertionIndex(after tabs: [Tab]) -> Int {
+        let selectedIds = Set(tabs.map(\.guid))
+        let lastSelectedIndex = normalTabs.indices.last { selectedIds.contains(normalTabs[$0].guid) }
+        return lastSelectedIndex.map { $0 + 1 } ?? normalTabs.count
+    }
+
+    private func groupInsertionIndex(forGroup token: String) -> Int {
+        let lastGroupIndex = normalTabs.indices.last { normalTabs[$0].groupToken == token }
+        return lastGroupIndex.map { $0 + 1 } ?? normalTabs.count
     }
     
     @MainActor
@@ -4853,10 +4954,22 @@ class BrowserState {
     func moveNormalTabs(tabIds: [Int],
                         toBookmark parentGuid: String?,
                         index: Int?) -> Bool {
-        let units = normalTabTransferUnits(tabIds: tabIds)
-        guard !units.isEmpty else { return false }
+        moveNormalTabsToBookmarks(tabIds: tabIds,
+                                  parentGuid: parentGuid,
+                                  index: index) > 0
+    }
 
-        var didMove = false
+    /// Moves normal-tab transfer units into bookmarks and returns the number of
+    /// bookmark records created. A live split has two tab ids but becomes one
+    /// split-view bookmark, so callers must advance bookmark insertion indices
+    /// by this result rather than by the raw tab-id count.
+    @discardableResult
+    func moveNormalTabsToBookmarks(tabIds: [Int],
+                                   parentGuid: String?,
+                                   index: Int?) -> Int {
+        let units = normalTabTransferUnits(tabIds: tabIds)
+        guard !units.isEmpty else { return 0 }
+
         var insertedCount = 0
         for tab in units {
             let targetIndex = index.map { $0 + insertedCount }
@@ -4865,7 +4978,6 @@ class BrowserState {
                                            toFolderGuid: parentGuid,
                                            targetIndex: targetIndex) {
                     insertedCount += 1
-                    didMove = true
                 }
                 continue
             }
@@ -4874,14 +4986,13 @@ class BrowserState {
                              toBookmark: parentGuid,
                              index: targetIndex) {
                 insertedCount += 1
-                didMove = true
             }
         }
 
-        if didMove {
+        if insertedCount > 0 {
             clearMultiSelection()
         }
-        return didMove
+        return insertedCount
     }
 
     /// Moves a normal tab into bookmarks.
@@ -5335,9 +5446,7 @@ class BrowserState {
                                           groupIndex: groupIndex,
                                           normalTabsIndex: normalTabsIndex,
                                           focusAfterCreate: focusAfterCreate)
-        // Split bookmarks are consumed inside `moveSplitBookmarkIntoGroup`;
-        // only the single-bookmark path still needs its entry removed here.
-        if moved, realBookmark.secondaryUrl?.isEmpty != false {
+        if moved {
             bookmarkManager.removeBookmark(realBookmark)
         }
         return moved
@@ -5349,10 +5458,9 @@ class BrowserState {
     /// closed bookmark opens a fresh tab inside the group. Use this when a
     /// tab that was merely *opened from* a bookmark joins a group — the
     /// bookmark stays in the bar. `moveBookmarkOut` wraps this and also
-    /// removes the single bookmark (the move-out semantics for sidebar
-    /// drags). Split bookmarks are consumed by `moveSplitBookmarkIntoGroup`
-    /// in either case. The detached tab keeps a live title (it follows the
-    /// page), matching the closed-bookmark `createTabInGroup` path.
+    /// removes the bookmark (the move-out semantics for sidebar drags). The
+    /// detached tab keeps a live title (it follows the page), matching the
+    /// closed-bookmark `createTabInGroup` path.
     @discardableResult
     @MainActor
     func moveBookmarkIntoGroup(_ bookmark: Bookmark,
@@ -5416,18 +5524,21 @@ class BrowserState {
     @MainActor
     func graduateBookmarkTabToPlainTab(_ tab: Tab) {
         guard let localGuid = tab.guidInLocalDB, !localGuid.isEmpty,
-              bookmarkManager.bookmark(withGuid: localGuid) != nil else {
+              let bookmark = bookmarkManager.bookmark(withGuid: localGuid) else {
             return
         }
         migrateAIChatTab(for: tab, toNewIdentifier: nil)
         tab.guidInLocalDB = nil
         tab.webContentWrapper?.updateTabCustomValue("")
+        clearBookmarkOpenedStateForComfortableLayout(bookmark)
+        updateNormalTabs()
     }
 
-    /// Drops a split-view bookmark into a tab group. A live-bound split folds
-    /// its two existing panes into the group as a unit; a closed bookmark
-    /// re-opens both URLs as a fresh split that joins the group once Chromium
-    /// echoes the panes back. The bookmark is removed in both cases.
+    /// Joins a split-view bookmark to a tab group while keeping the bookmark
+    /// entry. A live-bound split sheds its bookmark binding and folds its two
+    /// existing panes into the group as a unit; a closed bookmark opens both
+    /// URLs as a fresh split. `moveBookmarkOut` removes the bookmark afterward
+    /// for drag operations whose semantics explicitly move it out.
     @discardableResult
     @MainActor
     private func moveSplitBookmarkIntoGroup(_ bookmark: Bookmark,
@@ -5445,6 +5556,7 @@ class BrowserState {
             // sync would tear the live SplitTabId, so insert without syncing
             // and let `addTabsToGroup` perform the strip move as a unit.
             splitBookmarkBindings.removeValue(forKey: bookmark.guid)
+            syncSplitBookmarkOpenedState(bookmarkGuid: bookmark.guid)
             applyOptimisticGroupMembership(updates: [
                 (primaryLive.guid, tokenHex),
                 (secondaryLive.guid, tokenHex)
@@ -5459,7 +5571,6 @@ class BrowserState {
                                   tabIds: [NSNumber(value: Int64(primaryLive.guid)),
                                            NSNumber(value: Int64(secondaryLive.guid))],
                                   tokenHex: tokenHex)
-            bookmarkManager.removeBookmark(bookmark)
             return true
         }
 
@@ -5471,7 +5582,6 @@ class BrowserState {
                            secondaryURL: secondaryURL,
                            groupToken: tokenHex,
                            insertionIndex: normalTabsIndex)
-        bookmarkManager.removeBookmark(bookmark)
         return true
     }
 

@@ -1774,8 +1774,9 @@ extension SidebarTabListViewController: NSOutlineViewDataSource {
                                                 normalTabsIndex: normalTabsIndex,
                                                 focusAfterCreate: false) {
                     didMove = true
-                    normalTabsIndex += 1
-                    groupIndex += 1
+                    let representedTabCount = bookmark.secondaryUrl?.isEmpty == false ? 2 : 1
+                    normalTabsIndex += representedTabCount
+                    groupIndex += representedTabCount
                 }
             }
             if didMove {
@@ -1857,11 +1858,14 @@ extension SidebarTabListViewController: NSOutlineViewDataSource {
         var insertionIndex = index
         var didMove = false
         if !tabIds.isEmpty {
-            if browserState.moveNormalTabs(tabIds: tabIds,
-                                           toBookmark: parent?.guid,
-                                           index: insertionIndex) {
+            let insertedBookmarkCount = browserState.moveNormalTabsToBookmarks(
+                tabIds: tabIds,
+                parentGuid: parent?.guid,
+                index: insertionIndex
+            )
+            if insertedBookmarkCount > 0 {
                 didMove = true
-                insertionIndex = insertionIndex.map { $0 + tabIds.count }
+                insertionIndex = insertionIndex.map { $0 + insertedBookmarkCount }
             }
         }
 
@@ -4327,7 +4331,7 @@ extension SidebarTabListViewController: NSMenuDelegate {
 
         if let sidebarItem = item as? SidebarItem,
            let bookmark = bookmark(from: sidebarItem) {
-            if browserState.multiSelection.containsBookmark(bookmark.guid),
+            if browserState.multiSelectionContext.bookmarkGuids.contains(bookmark.guid),
                TabMultiSelectionMenu.populateIfNeeded(menu, browserState: browserState) {
                 return
             }
@@ -4757,8 +4761,9 @@ extension SidebarTabListViewController: TabGroupCellViewDelegate {
                                             normalTabsIndex: insertionIndex,
                                             focusAfterCreate: false) {
                 didMove = true
-                insertionIndex += 1
-                nextGroupIndex += 1
+                let representedTabCount = bookmark.secondaryUrl?.isEmpty == false ? 2 : 1
+                insertionIndex += representedTabCount
+                nextGroupIndex += representedTabCount
             }
         }
         if didMove {

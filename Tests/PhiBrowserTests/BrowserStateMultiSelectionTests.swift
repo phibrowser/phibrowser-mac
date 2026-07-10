@@ -548,6 +548,24 @@ final class BrowserStateMultiSelectionTests: XCTestCase {
                        "https://e3.example/")
     }
 
+    func testMoveNormalTabsToBookmarksReportsSplitAsSingleRecord() throws {
+        let state = try makeState()
+        seed(state, guids: [1, 2])
+        state.splits = [
+            SplitGroup(id: "split-1-2",
+                       primaryTabId: 1,
+                       secondaryTabId: 2,
+                       layout: .vertical,
+                       ratio: 0.5)
+        ]
+
+        let insertedBookmarkCount = state.moveNormalTabsToBookmarks(tabIds: [1, 2],
+                                                                    parentGuid: nil,
+                                                                    index: 0)
+
+        XCTAssertEqual(insertedBookmarkCount, 1)
+    }
+
     func testMoveNormalTabsToPinnedPreservesSplitAsPinnedPair() throws {
         let state = try makeState()
         seed(state, guids: [1, 2, 3, 4])
@@ -1348,6 +1366,35 @@ final class BrowserStateMultiSelectionTests: XCTestCase {
         XCTAssertEqual(right.guid, 3)
     }
 
+    func testCrossProfileMoveUnitClosesSourceWebContents() {
+        let singleWrapper = TestWebContentWrapper(urlString: "https://single.example")
+        let leftWrapper = TestWebContentWrapper(urlString: "https://left.example")
+        let rightWrapper = TestWebContentWrapper(urlString: "https://right.example")
+        let single = Tab(guid: 1,
+                         url: "https://single.example",
+                         isActive: false,
+                         index: 0,
+                         webContentView: singleWrapper)
+        let left = Tab(guid: 2,
+                       url: "https://left.example",
+                       isActive: false,
+                       index: 1,
+                       webContentView: leftWrapper)
+        let right = Tab(guid: 3,
+                        url: "https://right.example",
+                        isActive: false,
+                        index: 2,
+                        webContentView: rightWrapper)
+
+        SpaceManager.SpaceMoveTabUnit.tab(single).closeSourceTabsAfterCrossProfileMove()
+        SpaceManager.SpaceMoveTabUnit.split(left: left, right: right)
+            .closeSourceTabsAfterCrossProfileMove()
+
+        XCTAssertEqual(singleWrapper.closeCallCount, 1)
+        XCTAssertEqual(leftWrapper.closeCallCount, 1)
+        XCTAssertEqual(rightWrapper.closeCallCount, 1)
+    }
+
     func testTwoUnopenedBookmarkTabsCanOpenAsSplit() throws {
         let state = try makeState()
         let firstGuid = "bookmark-left"
@@ -1497,6 +1544,31 @@ final class BrowserStateMultiSelectionTests: XCTestCase {
         }
         XCTAssertNil(pending.boundBookmarkGuid)
         XCTAssertFalse(state.multiSelection.isActive)
+    }
+
+    func testOpenAsSplitRejectsSelectionContainingFilteredThirdItem() throws {
+        let state = try makeState()
+        seed(state, guids: [1, 2])
+        let splitBookmarkGuid = "split-bookmark-third-item"
+        state.localStore.createBookmark(url: "https://split-left.example",
+                                        title: "Split Bookmark",
+                                        profileId: state.profileId,
+                                        parentId: nil,
+                                        guid: splitBookmarkGuid,
+                                        spaceId: state.spaceId,
+                                        secondaryUrl: "https://split-right.example")
+        guard waitUntil(condition: {
+            state.bookmarkManager.bookmark(withGuid: splitBookmarkGuid) != nil
+        }) else { return }
+
+        state.focuseTab(state.tabs[0])
+        state.toggleMultiSelection(for: state.tabs[1])
+        state.toggleBookmarkMultiSelection(bookmarkGuid: splitBookmarkGuid)
+        let menu = NSMenu()
+
+        XCTAssertFalse(state.multiSelectionContext.canOpenAsSplit)
+        XCTAssertTrue(TabMultiSelectionMenu.populateIfNeeded(menu, browserState: state))
+        XCTAssertFalse(menu.items.contains { $0.title == "Open as Split" })
     }
 
     func testActiveBookmarkTabCanCrossSelectNormalTab() throws {
@@ -1655,6 +1727,102 @@ final class BrowserStateMultiSelectionTests: XCTestCase {
         state.toggleMultiSelection(for: state.tabs[2])
         let targets = state.multiSelectionTargets(forAddingToGroup: "A")
         XCTAssertEqual(targets.map(\.guid), [1, 3])
+    }
+
+    func testGraduatingOpenedBookmarkTabMakesItNormalAndClearsBookmarkState() throws {
+        let state = try makeState()
+        let bookmarkGuid = "bookmark-to-group"
+        state.localStore.createBookmark(url: "https://bookmark.example",
+                                        title: "Bookmark",
+                                        profileId: state.profileId,
+                                        parentId: nil,
+                                        guid: bookmarkGuid,
+                                        spaceId: state.spaceId)
+        guard waitUntil(condition: {
+            state.bookmarkManager.bookmark(withGuid: bookmarkGuid) != nil
+        }) else { return }
+        let bookmark = try XCTUnwrap(state.bookmarkManager.bookmark(withGuid: bookmarkGuid))
+        let wrapper = TestWebContentWrapper(urlString: "https://bookmark.example")
+        let tab = Tab(guid: 7,
+                      url: "https://bookmark.example",
+                      isActive: false,
+                      index: 0,
+                      webContentView: wrapper,
+                      customGuid: bookmarkGuid)
+        state.tabs = [tab]
+        state.handleBookmarkTabOpened(tab)
+        state.updateNormalTabs()
+
+        state.graduateBookmarkTabToPlainTab(tab)
+
+        XCTAssertNil(tab.guidInLocalDB)
+        XCTAssertEqual(wrapper.updatedCustomValues, [""])
+        XCTAssertFalse(bookmark.isOpened)
+        XCTAssertEqual(bookmark.chromiumTabGuid, -1)
+        XCTAssertEqual(state.normalTabs.map(\.guid), [tab.guid])
+    }
+
+    func testBookmarkLeafSelectionKeepsGroupActionsVisible() throws {
+        let state = try makeState()
+        seed(state, guids: [1])
+        let bookmarkGuid = "bookmark-group-menu"
+        state.localStore.createBookmark(url: "https://bookmark.example",
+                                        title: "Bookmark",
+                                        profileId: state.profileId,
+                                        parentId: nil,
+                                        guid: bookmarkGuid,
+                                        spaceId: state.spaceId)
+        guard waitUntil(condition: {
+            state.bookmarkManager.bookmark(withGuid: bookmarkGuid) != nil
+        }) else { return }
+        state.focuseTab(state.tabs[0])
+        state.toggleBookmarkMultiSelection(bookmarkGuid: bookmarkGuid)
+        let menu = NSMenu()
+
+        XCTAssertTrue(TabMultiSelectionMenu.populateIfNeeded(menu, browserState: state))
+        XCTAssertTrue(menu.items.contains { $0.title == "Add Tabs to New Group" })
+    }
+
+    func testMovingLiveSplitBookmarkIntoGroupKeepsBookmarkEntry() throws {
+        let state = try makeState()
+        let bookmarkGuid = "split-bookmark-to-group"
+        state.localStore.createBookmark(url: "https://left.example",
+                                        title: "Split Bookmark",
+                                        profileId: state.profileId,
+                                        parentId: nil,
+                                        guid: bookmarkGuid,
+                                        spaceId: state.spaceId,
+                                        secondaryUrl: "https://right.example")
+        guard waitUntil(condition: {
+            state.bookmarkManager.bookmark(withGuid: bookmarkGuid) != nil
+        }) else { return }
+        let bookmark = try XCTUnwrap(state.bookmarkManager.bookmark(withGuid: bookmarkGuid))
+        state.tabs = [
+            Tab(guid: 1, url: "https://left.example", isActive: false, index: 0),
+            Tab(guid: 2, url: "https://right.example", isActive: false, index: 1),
+        ]
+        state.splits = [
+            SplitGroup(id: "split-1-2",
+                       primaryTabId: 1,
+                       secondaryTabId: 2,
+                       layout: .vertical,
+                       ratio: 0.5)
+        ]
+        state.splitBookmarkBindings[bookmarkGuid] = "split-1-2"
+        state.syncSplitBookmarkOpenedState(bookmarkGuid: bookmarkGuid)
+        state.updateNormalTabs()
+
+        let moved = state.moveBookmarkIntoGroup(bookmark,
+                                                toGroup: "A",
+                                                groupIndex: 0,
+                                                normalTabsIndex: 0)
+
+        XCTAssertTrue(moved)
+        XCTAssertNotNil(state.bookmarkManager.bookmark(withGuid: bookmarkGuid))
+        XCTAssertNil(state.splitBookmarkBindings[bookmarkGuid])
+        XCTAssertFalse(bookmark.isOpened)
+        XCTAssertEqual(state.normalTabs.map(\.guid), [1, 2])
+        XCTAssertEqual(state.tabs.map(\.groupToken), ["A", "A"])
     }
 
     func testMultiSelectionSplitPairRequiresExactlyTwoPlainTabs() throws {

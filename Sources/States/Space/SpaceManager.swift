@@ -1023,21 +1023,26 @@ final class SpaceManager: ObservableObject {
             && targetSpace.profileId == sourceState.profileId
         let tabGuid = tab.guid
         let url = tab.url
+        let sourceWrapper = sameProfile ? tab.webContentWrapper : nil
 
         // Cross-profile recreation needs a URL to copy; bail if there is none.
         if !sameProfile, (url ?? "").isEmpty {
             AppLogWarn("[SpaceManager] moveTab: cross-profile move with empty URL — ignoring")
             return
         }
+        if sameProfile, sourceWrapper == nil {
+            AppLogWarn("[SpaceManager] moveTab: source tab lost its web contents")
+            return
+        }
 
         // `slot` is weak to avoid a retain cycle (the slot owns the swap
-        // machinery that holds this closure); `tab`/`sourceState` are captured
-        // strongly so they outlive the swap animation / async spawn.
+        // machinery that holds this closure); `tab` and `sourceWrapper` are
+        // captured strongly so they outlive the swap animation / async spawn.
         slot.activate(spaceId: targetSpaceId) { [weak slot] in
             // `onSwapSettled` always fires on the main thread (swap-animation
             // completion or the spawn path's `DispatchQueue.main.async`), so we
             // can synchronously assume main-actor isolation for the tab moves —
-            // `closeTab` and friends are main-actor isolated.
+            // `Tab.close()` and the native state updates are main-actor isolated.
             MainActor.assumeIsolated {
                 guard let slot,
                       let targetState = slot.windowController(for: targetSpaceId)?.browserState else {
@@ -1045,20 +1050,17 @@ final class SpaceManager: ObservableObject {
                     return
                 }
                 if sameProfile {
-                    guard let wrapper = tab.webContentWrapper else {
-                        AppLogWarn("[SpaceManager] moveTab: source tab lost its web contents")
-                        return
-                    }
+                    guard let sourceWrapper else { return }
                     // Append to the end of the target's normal tabs; the scheduled
                     // insertion lands the arriving tab there, mirroring the
                     // cross-window drag path in `TabStrip.moveTabToWindow`.
                     let normalIndex = targetState.normalTabs.count
                     targetState.scheduleNormalTabInsertion(tabGuid: tabGuid, at: normalIndex)
-                    wrapper.moveSplit(toWindow: targetState.windowId.int64Value,
-                                      at: targetState.tabs.count)
+                    sourceWrapper.moveSplit(toWindow: targetState.windowId.int64Value,
+                                            at: targetState.tabs.count)
                 } else {
                     targetState.createTab(url, focusAfterCreate: true)
-                    sourceState.closeTab(tabGuid)
+                    SpaceMoveTabUnit.tab(tab).closeSourceTabsAfterCrossProfileMove()
                 }
             }
         }
@@ -1083,6 +1085,20 @@ final class SpaceManager: ObservableObject {
 
         var normalTabCount: Int {
             tabs.count
+        }
+
+        var moveWrapper: (WebContentWrapper & NSObject)? {
+            switch self {
+            case .tab(let tab):
+                return tab.webContentWrapper
+            case .split(let left, let right):
+                return left.webContentWrapper ?? right.webContentWrapper
+            }
+        }
+
+        @MainActor
+        func closeSourceTabsAfterCrossProfileMove() {
+            tabs.forEach { $0.close() }
         }
     }
 
@@ -1120,10 +1136,13 @@ final class SpaceManager: ObservableObject {
     /// Batch variant used by multi-selection actions. The caller filters
     /// bookmark-backed selections before entering this API; live split tabs are
     /// preserved as split units instead of being torn into separate tabs.
+    /// `completion(true)` means every target-side command was issued after the
+    /// target window resolved; it does not wait for Chromium's later tab events.
     @discardableResult
     func moveTabs(_ tabs: [Tab],
                   from sourceState: BrowserState,
-                  toSpaceId targetSpaceId: String) -> Bool {
+                  toSpaceId targetSpaceId: String,
+                  completion: @escaping @MainActor (Bool) -> Void = { _ in }) -> Bool {
         let movingUnits = tabMoveUnits(from: tabs, sourceState: sourceState)
         guard !movingUnits.isEmpty else { return false }
         guard targetSpaceId != sourceState.spaceId else { return false }
@@ -1142,12 +1161,20 @@ final class SpaceManager: ObservableObject {
             AppLogWarn("[SpaceManager] moveTabs: cross-profile move contains an empty URL")
             return false
         }
+        let moveOperations = movingUnits.compactMap { unit in
+            unit.moveWrapper.map { (unit: unit, wrapper: $0) }
+        }
+        if sameProfile, moveOperations.count != movingUnits.count {
+            AppLogWarn("[SpaceManager] moveTabs: source selection lost its web contents")
+            return false
+        }
 
         slot.activate(spaceId: targetSpaceId) { [weak slot] in
             MainActor.assumeIsolated {
                 guard let slot,
                       let targetState = slot.windowController(for: targetSpaceId)?.browserState else {
                     AppLogWarn("[SpaceManager] moveTabs: target window unavailable after activate")
+                    completion(false)
                     return
                 }
 
@@ -1156,29 +1183,19 @@ final class SpaceManager: ObservableObject {
                     let baseStripIndex = targetState.tabs.count
                     var normalOffset = 0
                     var stripOffset = 0
-                    for unit in movingUnits {
+                    for operation in moveOperations {
+                        let unit = operation.unit
                         switch unit {
                         case .tab(let tab):
-                            guard let wrapper = tab.webContentWrapper else {
-                                AppLogWarn("[SpaceManager] moveTabs: source tab \(tab.guid) lost its web contents")
-                                continue
-                            }
                             targetState.scheduleNormalTabInsertion(tabGuid: tab.guid,
                                                                    at: baseNormalIndex + normalOffset)
-                            wrapper.moveSplit(toWindow: targetState.windowId.int64Value,
-                                              at: baseStripIndex + stripOffset)
+                            operation.wrapper.moveSplit(toWindow: targetState.windowId.int64Value,
+                                                        at: baseStripIndex + stripOffset)
                             normalOffset += 1
                             stripOffset += 1
-                        case .split(let left, let right):
-                            guard let wrapper = left.webContentWrapper ?? right.webContentWrapper else {
-                                AppLogWarn(
-                                    "[SpaceManager] moveTabs: source split " +
-                                    "\(left.guid),\(right.guid) lost its web contents"
-                                )
-                                continue
-                            }
-                            wrapper.moveSplit(toWindow: targetState.windowId.int64Value,
-                                              at: baseStripIndex + stripOffset)
+                        case .split:
+                            operation.wrapper.moveSplit(toWindow: targetState.windowId.int64Value,
+                                                        at: baseStripIndex + stripOffset)
                             normalOffset += unit.normalTabCount
                             stripOffset += unit.normalTabCount
                         }
@@ -1188,7 +1205,7 @@ final class SpaceManager: ObservableObject {
                         switch unit {
                         case .tab(let tab):
                             targetState.createTab(tab.url, focusAfterCreate: offset == movingUnits.count - 1)
-                            sourceState.closeTab(tab.guid)
+                            unit.closeSourceTabsAfterCrossProfileMove()
                         case .split(let left, let right):
                             guard let primaryURL = left.url, !primaryURL.isEmpty,
                                   let secondaryURL = right.url, !secondaryURL.isEmpty else {
@@ -1200,13 +1217,11 @@ final class SpaceManager: ObservableObject {
                             }
                             targetState.openTwoURLsAsSplit(primaryURL: primaryURL,
                                                            secondaryURL: secondaryURL)
-                            sourceState.closeTab(left.guid)
-                            if sourceState.tabs.contains(where: { $0.guid == right.guid }) {
-                                sourceState.closeTab(right.guid)
-                            }
+                            unit.closeSourceTabsAfterCrossProfileMove()
                         }
                     }
                 }
+                completion(true)
             }
         }
         return true

@@ -36,6 +36,40 @@ enum LayoutMode: String, CaseIterable, Identifiable {
     var showsNavigationAtTop: Bool { self != .performance }
 }
 
+/// The user-selectable UI language for the app. Applied through an
+/// `AppleLanguages` override written into the app's `UserDefaults` domain;
+/// because macOS resolves the bundle localization at process start, a change
+/// only takes effect after the app relaunches.
+enum AppLanguage: String, CaseIterable, Identifiable {
+    case system   // Follow the system language (no override)
+    case english
+    case french
+
+    var id: String { rawValue }
+
+    /// The `AppleLanguages` locale identifier, or `nil` to follow the system.
+    var localeIdentifier: String? {
+        switch self {
+        case .system:  return nil
+        case .english: return "en"
+        case .french:  return "fr"
+        }
+    }
+
+    var displayName: String {
+        switch self {
+        case .system:
+            // Reuses the existing "System" string; shown as "Follow the system language".
+            return NSLocalizedString("System", comment: "Language setting - Follow the system language")
+        case .english:
+            // Endonyms are conventionally left untranslated in a language picker.
+            return "English"
+        case .french:
+            return "Français"
+        }
+    }
+}
+
 enum PhiPreferences: String {
     case phiMainDebugMenuEnabled
     case phiLoginPhase
@@ -253,6 +287,51 @@ extension PhiPreferences {
 
         func save(_ value: Bool) {
             UserDefaults.standard.set(value, forKey: rawValue)
+        }
+    }
+
+    // MARK: - Language Settings
+
+    /// Persists the user's UI-language choice and mirrors it into the
+    /// `AppleLanguages` override that macOS reads at launch to pick the bundle
+    /// localization. Changing the language requires a relaunch to take effect.
+    enum LanguageSettings {
+        /// Key macOS reads (in the app's `UserDefaults` domain) to override the
+        /// preferred localization order for this app only.
+        static let appleLanguagesKey = "AppleLanguages"
+        /// Key storing the user's explicit `AppLanguage` choice.
+        static let choiceKey = "PhiAppLanguage"
+
+        static func loadChoice() -> AppLanguage {
+            guard let raw = UserDefaults.standard.string(forKey: choiceKey),
+                  let language = AppLanguage(rawValue: raw) else {
+                return .system
+            }
+            return language
+        }
+
+        /// Stores the choice and updates the `AppleLanguages` override. The new
+        /// language is applied the next time the app launches.
+        static func save(_ language: AppLanguage) {
+            UserDefaults.standard.set(language.rawValue, forKey: choiceKey)
+            apply(language)
+        }
+
+        /// Writes (or clears, for `.system`) the `AppleLanguages` override so the
+        /// next launch loads the chosen localization.
+        static func apply(_ language: AppLanguage) {
+            let defaults = UserDefaults.standard
+            if let identifier = language.localeIdentifier {
+                defaults.set([identifier], forKey: appleLanguagesKey)
+            } else {
+                defaults.removeObject(forKey: appleLanguagesKey)
+            }
+        }
+
+        /// Re-asserts the stored choice. Called early in launch (before AppKit /
+        /// Chromium read localized resources) so the override stays consistent.
+        static func applyStoredChoice() {
+            apply(loadChoice())
         }
     }
 }

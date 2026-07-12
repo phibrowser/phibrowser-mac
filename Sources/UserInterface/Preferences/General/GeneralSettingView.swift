@@ -57,6 +57,7 @@ struct GeneralSettingView: View {
                 }
                 AppearanceSectionView()
                 BrowsingSectionView()
+                LanguageSectionView()
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.vertical, 36)
@@ -361,6 +362,47 @@ private struct BrowsingSectionView: View {
             .activeWindowController?
             .browserState
             .createTab("chrome://settings")
+    }
+}
+
+private struct LanguageSectionView: View {
+    @State private var selection: AppLanguage = PhiPreferences.LanguageSettings.loadChoice()
+    /// Shown once the user changes the language this session, since the new
+    /// localization only loads on the next launch.
+    @State private var showRelaunchHint: Bool = false
+
+    var body: some View {
+        GeneralSectionView(title: NSLocalizedString("Language", comment: "General settings - Language section title")) {
+            GeneralContainerView {
+                GeneralRowView(title: NSLocalizedString("Language", comment: "General settings - App interface language row title")) {
+                    Picker("", selection: $selection) {
+                        ForEach(AppLanguage.allCases) { language in
+                            Text(language.displayName).tag(language)
+                        }
+                    }
+                    .labelsHidden()
+                    .pickerStyle(.menu)
+                    .fixedSize()
+                    .onChange(of: selection) { _, newValue in
+                        PhiPreferences.LanguageSettings.save(newValue)
+                        showRelaunchHint = true
+                    }
+                }
+
+                if showRelaunchHint {
+                    Divider()
+
+                    HStack(spacing: 12) {
+                        Text(NSLocalizedString("Restart Phi to apply the new language.", comment: "General settings - Hint shown after changing the app language, prompting a relaunch"))
+                            .font(.system(size: 11))
+                            .themedForeground(.textTertiary)
+                        Spacer(minLength: 12)
+                    }
+                    .padding(.vertical, 12)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
+            }
+        }
     }
 }
 

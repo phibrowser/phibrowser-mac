@@ -54,6 +54,11 @@
 			</array>
 		</dict>
 	</array>
+	<key>CFBundleLocalizations</key>
+	<array>
+		<string>en</string>
+		<string>fr</string>
+	</array>
 	<key>Chromium version</key>
 	<string>144.0.7559.102</string>
 	<key>CrProductDirName</key>

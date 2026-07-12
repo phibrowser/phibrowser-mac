@@ -59,6 +59,12 @@ import PostHog
         // restored windows come back as normal windows. Set in `init` (before
         // `applicationWillFinishLaunching`) so it lands before AppKit reads it.
         UserDefaults.standard.set(false, forKey: "NSQuitAlwaysKeepsWindows")
+
+        // Re-assert the stored UI-language override (`AppleLanguages`) before
+        // AppKit and Chromium read localized resources. macOS resolves the
+        // bundle localization at process start, so a language change made in
+        // Settings only takes effect on the next launch.
+        PhiPreferences.LanguageSettings.applyStoredChoice()
     }
     
     func applicationDidFinishLaunching(_ notification: Notification) {

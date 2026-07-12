@@ -10,6 +10,12 @@
             "state" : "translated",
             "value" : "This file can harm your personal and social network accounts"
           }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ce fichier peut nuire à vos comptes personnels et de réseaux sociaux"
+          }
         }
       }
     },
@@ -21,6 +27,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Your organization blocked this file because it is encrypted"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Votre organisation a bloqué ce fichier car il est chiffré"
           }
         }
       }
@@ -34,6 +46,12 @@
             "state" : "translated",
             "value" : "Your organization blocked this file because the scan failed"
           }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Votre organisation a bloqué ce fichier car l'analyse a échoué"
+          }
         }
       }
     },
@@ -45,6 +63,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Your organization blocked this file because it is too big for a security check"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Votre organisation a bloqué ce fichier car il est trop volumineux pour un contrôle de sécurité"
           }
         }
       }
@@ -58,6 +82,12 @@
             "state" : "translated",
             "value" : "This file is dangerous"
           }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ce fichier est dangereux"
+          }
         }
       }
     },
@@ -69,6 +99,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "This file type isn't commonly downloaded and it may be dangerous"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ce type de fichier est rarement téléchargé et peut être dangereux"
           }
         }
       }
@@ -82,6 +118,12 @@
             "state" : "translated",
             "value" : "This file is deceptive and may make unexpected changes to your device"
           }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ce fichier est trompeur et peut apporter des modifications inattendues à votre appareil"
+          }
         }
       }
     },
@@ -93,6 +135,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "This file is dangerous"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ce fichier est dangereux"
           }
         }
       }
@@ -106,6 +154,12 @@
             "state" : "translated",
             "value" : "This site isn't using a secure connection and the file may have been tampered with"
           }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ce site n'utilise pas de connexion sécurisée et le fichier a peut-être été altéré"
+          }
         }
       }
     },
@@ -117,6 +171,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "This file has been blocked by security policy"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ce fichier a été bloqué par la politique de sécurité"
           }
         }
       }
@@ -130,6 +190,12 @@
             "state" : "translated",
             "value" : "This file may be dangerous"
           }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ce fichier peut être dangereux"
+          }
         }
       }
     },
@@ -141,6 +207,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "This file might be a virus or malware"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ce fichier est peut-être un virus ou un logiciel malveillant"
           }
         }
       }
@@ -154,6 +226,12 @@
             "state" : "translated",
             "value" : "This file might be a virus or malware"
           }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ce fichier est peut-être un virus ou un logiciel malveillant"
+          }
         }
       }
     },
@@ -165,6 +243,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Your organization recommends deleting this file because it has sensitive content"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Votre organisation recommande de supprimer ce fichier car il contient du contenu sensible"
           }
         }
       }
@@ -178,6 +262,12 @@
             "state" : "translated",
             "value" : "This file isn't commonly downloaded and it may be dangerous"
           }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ce fichier est rarement téléchargé et peut être dangereux"
+          }
         }
       }
     },
@@ -189,6 +279,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Blocked"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bloqué"
           }
         }
       }
@@ -202,6 +298,12 @@
             "state" : "translated",
             "value" : "Dangerous download blocked"
           }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Téléchargement dangereux bloqué"
+          }
         }
       }
     },
@@ -213,6 +315,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Encrypted"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Chiffré"
           }
         }
       }
@@ -226,6 +334,12 @@
             "state" : "translated",
             "value" : "Insecure download blocked"
           }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Téléchargement non sécurisé bloqué"
+          }
         }
       }
     },
@@ -237,6 +351,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Scan failed"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Échec de l'analyse"
           }
         }
       }
@@ -250,6 +370,12 @@
             "state" : "translated",
             "value" : "Scanning…"
           }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Analyse…"
+          }
         }
       }
     },
@@ -262,6 +388,12 @@
             "state" : "translated",
             "value" : "Suspicious download blocked"
           }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Téléchargement suspect bloqué"
+          }
         }
       }
     },
@@ -273,6 +405,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Too big"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Trop volumineux"
           }
         }
       }

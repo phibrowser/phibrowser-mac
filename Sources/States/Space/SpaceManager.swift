@@ -1227,6 +1227,58 @@ final class SpaceManager: ObservableObject {
         return true
     }
 
+    /// Recreates a multi-selection in another Space without changing the
+    /// source tabs. Split units are opened as splits in their original order.
+    @discardableResult
+    func cloneTabs(_ tabs: [Tab],
+                   from sourceState: BrowserState,
+                   toSpaceId targetSpaceId: String,
+                   completion: @escaping @MainActor (Bool) -> Void = { _ in }) -> Bool {
+        let cloningUnits = tabMoveUnits(from: tabs, sourceState: sourceState)
+        guard !cloningUnits.isEmpty else { return false }
+        guard targetSpaceId != sourceState.spaceId else { return false }
+        guard spaces.contains(where: { $0.spaceId == targetSpaceId }) else {
+            AppLogWarn("[SpaceManager] cloneTabs: unknown target space \(targetSpaceId)")
+            return false
+        }
+        guard let slot = slot(forWindowId: sourceState.windowId) else {
+            AppLogWarn("[SpaceManager] cloneTabs: no slot owns windowId \(sourceState.windowId)")
+            return false
+        }
+        guard cloningUnits.allSatisfy(\.hasRequiredURLs) else {
+            AppLogWarn("[SpaceManager] cloneTabs: source selection contains an empty URL")
+            return false
+        }
+
+        slot.activate(spaceId: targetSpaceId) { [weak slot] in
+            MainActor.assumeIsolated {
+                guard let slot,
+                      let targetState = slot.windowController(for: targetSpaceId)?.browserState else {
+                    AppLogWarn("[SpaceManager] cloneTabs: target window unavailable after activate")
+                    completion(false)
+                    return
+                }
+
+                for (offset, unit) in cloningUnits.enumerated() {
+                    switch unit {
+                    case .tab(let tab):
+                        targetState.createTab(tab.url,
+                                              focusAfterCreate: offset == cloningUnits.count - 1)
+                    case .split(let left, let right):
+                        guard let primaryURL = left.url, !primaryURL.isEmpty,
+                              let secondaryURL = right.url, !secondaryURL.isEmpty else {
+                            continue
+                        }
+                        targetState.openTwoURLsAsSplit(primaryURL: primaryURL,
+                                                       secondaryURL: secondaryURL)
+                    }
+                }
+                completion(true)
+            }
+        }
+        return true
+    }
+
     func renameSpace(spaceId: String, to name: String) {
         boundAccount?.localStorage.updateSpace(spaceId: spaceId, name: name)
     }

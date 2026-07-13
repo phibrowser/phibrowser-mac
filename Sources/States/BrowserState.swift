@@ -1440,7 +1440,7 @@ class BrowserState {
               !SpaceManager.isIncognitoSpaceId(targetSpace.spaceId) else {
             return false
         }
-        guard let plan = multiSelectionSpaceMovePlan() else {
+        guard let plan = multiSelectionSpaceTransferPlan() else {
             return false
         }
         guard !plan.tabs.isEmpty || !plan.bookmarkRoots.isEmpty else {
@@ -1460,7 +1460,7 @@ class BrowserState {
     func moveMultiSelection(toSpaceId targetSpaceId: String) -> Bool {
         guard let targetSpace = SpaceManager.shared.spaces.first(where: { $0.spaceId == targetSpaceId }),
               canMoveMultiSelection(to: targetSpace),
-              let plan = multiSelectionSpaceMovePlan() else {
+              let plan = multiSelectionSpaceTransferPlan() else {
             return false
         }
 
@@ -1480,14 +1480,67 @@ class BrowserState {
         return true
     }
 
-    private struct MultiSelectionSpaceMovePlan {
+    @MainActor
+    func canCloneMultiSelection(toSpaceId targetSpaceId: String) -> Bool {
+        guard let targetSpace = SpaceManager.shared.spaces.first(where: { $0.spaceId == targetSpaceId }) else {
+            return false
+        }
+        return canCloneMultiSelection(to: targetSpace,
+                                      sourceHasSpaceSlot: SpaceManager.shared.slot(forWindowId: windowId) != nil)
+    }
+
+    @MainActor
+    func canCloneMultiSelection(to targetSpace: SpaceModel,
+                                sourceHasSpaceSlot: Bool) -> Bool {
+        guard PhiPreferences.GeneralSettings.spacesFeatureEnabled.loadValue(),
+              multiSelection.isActive,
+              !isIncognito,
+              targetSpace.spaceId != spaceId,
+              !SpaceManager.isIncognitoSpaceId(targetSpace.spaceId),
+              let plan = multiSelectionSpaceTransferPlan(),
+              !plan.tabs.isEmpty || !plan.bookmarkRoots.isEmpty else {
+            return false
+        }
+        if !plan.tabs.isEmpty && !sourceHasSpaceSlot {
+            return false
+        }
+        return plan.tabs.allSatisfy { $0.url?.isEmpty == false }
+    }
+
+    @discardableResult
+    @MainActor
+    func cloneMultiSelection(toSpaceId targetSpaceId: String) -> Bool {
+        guard let targetSpace = SpaceManager.shared.spaces.first(where: { $0.spaceId == targetSpaceId }),
+              canCloneMultiSelection(to: targetSpace,
+                                     sourceHasSpaceSlot: SpaceManager.shared.slot(forWindowId: windowId) != nil),
+              let plan = multiSelectionSpaceTransferPlan() else {
+            return false
+        }
+
+        if !plan.tabs.isEmpty {
+            return SpaceManager.shared.cloneTabs(plan.tabs,
+                                                 from: self,
+                                                 toSpaceId: targetSpace.spaceId) { [weak self] didClone in
+                guard didClone, let self else { return }
+                self.commitBookmarkSpaceClone(plan, to: targetSpace)
+                self.clearMultiSelection()
+            }
+        }
+
+        commitBookmarkSpaceClone(plan, to: targetSpace)
+        clearMultiSelection()
+        SpaceManager.shared.activateInFocusedWindow(spaceId: targetSpace.spaceId)
+        return true
+    }
+
+    private struct MultiSelectionSpaceTransferPlan {
         let tabs: [Tab]
         let bookmarkRoots: [Bookmark]
         let detachedBookmarkGuids: Set<String>
     }
 
     @MainActor
-    private func commitBookmarkSpaceMove(_ plan: MultiSelectionSpaceMovePlan,
+    private func commitBookmarkSpaceMove(_ plan: MultiSelectionSpaceTransferPlan,
                                          to targetSpace: SpaceModel) {
         if !plan.detachedBookmarkGuids.isEmpty {
             detachBookmarkTabsForComfortableLayout(bookmarkGuids: plan.detachedBookmarkGuids)
@@ -1501,7 +1554,17 @@ class BrowserState {
     }
 
     @MainActor
-    private func multiSelectionSpaceMovePlan() -> MultiSelectionSpaceMovePlan? {
+    private func commitBookmarkSpaceClone(_ plan: MultiSelectionSpaceTransferPlan,
+                                          to targetSpace: SpaceModel) {
+        guard !plan.bookmarkRoots.isEmpty else { return }
+        localStore.cloneBookmarks(plan.bookmarkRoots.map(\.guid),
+                                  sourceProfileId: profileId,
+                                  toSpaceId: targetSpace.spaceId,
+                                  targetProfileId: targetSpace.profileId)
+    }
+
+    @MainActor
+    private func multiSelectionSpaceTransferPlan() -> MultiSelectionSpaceTransferPlan? {
         var bookmarkGuids = multiSelectionBookmarkGuidsIncludingImplicitActive
         var movableTabs: [Tab] = []
 
@@ -1521,9 +1584,9 @@ class BrowserState {
         }
 
         let bookmarkRoots = bookmarkRoots(for: bookmarkGuids)
-        return MultiSelectionSpaceMovePlan(tabs: movableTabs,
-                                           bookmarkRoots: bookmarkRoots,
-                                           detachedBookmarkGuids: bookmarkLeafGuids(in: bookmarkRoots))
+        return MultiSelectionSpaceTransferPlan(tabs: movableTabs,
+                                               bookmarkRoots: bookmarkRoots,
+                                               detachedBookmarkGuids: bookmarkLeafGuids(in: bookmarkRoots))
     }
 
     private func bookmarkLeafGuids(in bookmarks: [Bookmark]) -> Set<String> {

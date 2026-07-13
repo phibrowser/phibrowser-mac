@@ -504,6 +504,9 @@
     "Click to install update" : {
       "comment" : "Phi menu - Menu item text when update is ready to install"
     },
+    "Clone to Space" : {
+      "comment" : "Tab multi-selection context menu - Submenu to clone selected tabs and bookmarks to another Space"
+    },
     "Close" : {
       "comment" : "Confirm closing an Incognito Space\nSidebar update reminder - Accessibility description for close button\nTab context menu - Menu item to close the selected tab"
     },

@@ -664,6 +664,72 @@ extension LocalStore {
             }
         }
     }
+
+    /// Clones visible bookmark roots into another Space's bookmark root.
+    /// Every copied node receives a new guid while folder hierarchy, split
+    /// bookmark metadata, favicon data, and sibling order are preserved.
+    func cloneBookmarks(_ guids: [String],
+                        sourceProfileId: String,
+                        toSpaceId targetSpaceId: String,
+                        targetProfileId: String) {
+        performBackgroundWrite { [weak self] context in
+            guard let self else { return }
+            do {
+                guard !guids.isEmpty else { return }
+                let targetSpaceIsWritable: Bool
+                if targetSpaceId == Self.defaultSpaceId {
+                    targetSpaceIsWritable = true
+                } else {
+                    targetSpaceIsWritable = try self.importTargetSpaceIsWritable(
+                        profileId: targetProfileId,
+                        spaceId: targetSpaceId,
+                        in: context)
+                }
+                guard targetSpaceIsWritable else {
+                    AppLogError("Target Space not found when cloning bookmarks")
+                    return
+                }
+                guard try self.profile(with: targetProfileId,
+                                       in: context,
+                                       createIfNeeded: true) != nil,
+                      let targetRoot = try self.bookmarkRoot(profileId: targetProfileId,
+                                                             spaceId: targetSpaceId,
+                                                             in: context,
+                                                             createIfNeeded: true) else {
+                    AppLogError("Target bookmark root not found when cloning bookmarks")
+                    return
+                }
+
+                let requestedGuids = Set(guids)
+                var sourceRoots: [TabDataModel] = []
+                for guid in guids {
+                    guard let node = try self.bookmarkNode(with: guid, in: context),
+                          node.profileId == sourceProfileId,
+                          try !self.isBookmarkRoot(node, in: context),
+                          !self.hasAncestor(of: node, in: requestedGuids) else {
+                        continue
+                    }
+                    sourceRoots.append(node)
+                }
+                guard !sourceRoots.isEmpty else { return }
+
+                let insertionIndex = try self.children(of: targetRoot, in: context).count
+                let now = Date()
+                for (offset, sourceRoot) in sourceRoots.enumerated() {
+                    _ = try self.cloneBookmarkSubtree(sourceRoot,
+                                                      to: targetRoot,
+                                                      at: insertionIndex + offset,
+                                                      profileId: targetProfileId,
+                                                      spaceId: targetSpaceId,
+                                                      createdDate: now,
+                                                      in: context)
+                }
+                targetRoot.updatedDate = now
+            } catch {
+                AppLogError("Failed to clone bookmarks to Space: \(error)")
+            }
+        }
+    }
     
     /// Updates bookmark title and URL, normalizing the URL when provided.
     /// `secondaryUrl` / `secondaryTitle` are split-bookmark specific: pass
@@ -1150,6 +1216,52 @@ private extension LocalStore {
                                      updatedDate: updatedDate,
                                      in: context)
         }
+    }
+
+    func cloneBookmarkSubtree(_ source: TabDataModel,
+                              to parent: TabDataModel,
+                              at index: Int,
+                              profileId: String,
+                              spaceId: String,
+                              createdDate: Date,
+                              in context: ModelContext) throws -> TabDataModel {
+        let clone: TabDataModel
+        if source.dataType == .bookmarkFolder {
+            clone = try insertDirectoryNode(title: source.title,
+                                            profileId: profileId,
+                                            parent: parent,
+                                            index: index,
+                                            guid: nil,
+                                            spaceId: spaceId,
+                                            now: createdDate,
+                                            in: context)
+            for (childIndex, child) in try children(of: source, in: context).enumerated() {
+                _ = try cloneBookmarkSubtree(child,
+                                             to: clone,
+                                             at: childIndex,
+                                             profileId: profileId,
+                                             spaceId: spaceId,
+                                             createdDate: createdDate,
+                                             in: context)
+            }
+        } else {
+            clone = try insertBookmarkNode(title: source.title,
+                                           profileId: profileId,
+                                           url: source.url,
+                                           parent: parent,
+                                           index: index,
+                                           guid: nil,
+                                           spaceId: spaceId,
+                                           secondaryUrl: source.secondaryUrl,
+                                           secondaryTitle: source.secondaryTitle,
+                                           favicon: source.favicon,
+                                           now: createdDate,
+                                           in: context)
+            clone.lastSeen = source.lastSeen
+        }
+        clone.overrideTitle = source.overrideTitle
+        clone.source = source.source
+        return clone
     }
 
     func insertDirectoryNode(title: String,

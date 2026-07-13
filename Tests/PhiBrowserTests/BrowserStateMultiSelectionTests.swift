@@ -1290,6 +1290,84 @@ final class BrowserStateMultiSelectionTests: XCTestCase {
                                                       spaceId: state.spaceId).isEmpty)
     }
 
+    func testCloneBookmarkFolderToSpacePreservesSourceAndCopiesSubtree() throws {
+        let state = try makeState()
+        let targetSpaceId = "space-target"
+        let context = try XCTUnwrap(state.localStore.getMainContext())
+        context.insert(SpaceModel(spaceId: targetSpaceId,
+                                  profileId: state.profileId,
+                                  name: "Target",
+                                  colorHex: "#000000",
+                                  iconName: "circle",
+                                  sortOrder: 1))
+        try context.save()
+
+        let folderGuid = "folder-root"
+        let childGuid = "folder-child"
+        let favicon = Data([0x01, 0x02, 0x03])
+        state.localStore.createDirectory(title: "Folder",
+                                         profileId: state.profileId,
+                                         parentId: nil,
+                                         guid: folderGuid,
+                                         spaceId: state.spaceId)
+        XCTAssertTrue(waitUntil {
+            state.localStore.fetchBookmarks(parentId: nil,
+                                            profileId: state.profileId,
+                                            spaceId: state.spaceId).contains { $0.guid == folderGuid }
+        })
+        state.localStore.createBookmark(url: "https://primary.example",
+                                        title: "Split Child",
+                                        profileId: state.profileId,
+                                        parentId: folderGuid,
+                                        guid: childGuid,
+                                        spaceId: state.spaceId,
+                                        secondaryUrl: "https://secondary.example",
+                                        secondaryTitle: "Secondary",
+                                        favicon: favicon)
+        XCTAssertTrue(waitUntil {
+            state.localStore.fetchBookmarks(parentId: folderGuid,
+                                            profileId: state.profileId,
+                                            spaceId: state.spaceId).contains { $0.guid == childGuid }
+        })
+
+        state.localStore.cloneBookmarks([folderGuid, childGuid],
+                                        sourceProfileId: state.profileId,
+                                        toSpaceId: targetSpaceId,
+                                        targetProfileId: state.profileId)
+
+        XCTAssertTrue(waitUntil {
+            state.localStore.fetchBookmarks(parentId: nil,
+                                            profileId: state.profileId,
+                                            spaceId: targetSpaceId).count == 1
+        })
+        let clonedFolder = try XCTUnwrap(
+            state.localStore.fetchBookmarks(parentId: nil,
+                                            profileId: state.profileId,
+                                            spaceId: targetSpaceId).first)
+        let clonedChild = try XCTUnwrap(
+            state.localStore.fetchBookmarks(parentId: clonedFolder.guid,
+                                            profileId: state.profileId,
+                                            spaceId: targetSpaceId).first)
+        let sourceChild = try XCTUnwrap(state.localStore.fetchBookmark(with: childGuid))
+
+        XCTAssertNotEqual(clonedFolder.guid, folderGuid)
+        XCTAssertNotEqual(clonedChild.guid, childGuid)
+        XCTAssertEqual(clonedFolder.title, "Folder")
+        XCTAssertEqual(clonedChild.title, "Split Child")
+        XCTAssertEqual(clonedChild.url, sourceChild.url)
+        XCTAssertEqual(clonedChild.secondaryUrl, sourceChild.secondaryUrl)
+        XCTAssertEqual(clonedChild.secondaryTitle, "Secondary")
+        XCTAssertEqual(clonedChild.favicon, favicon)
+        XCTAssertEqual(state.localStore.fetchBookmarks(parentId: nil,
+                                                       profileId: state.profileId,
+                                                       spaceId: state.spaceId).map(\.guid),
+                       [folderGuid])
+        XCTAssertEqual(state.localStore.fetchBookmarks(parentId: folderGuid,
+                                                       profileId: state.profileId,
+                                                       spaceId: state.spaceId).map(\.guid),
+                       [childGuid])
+    }
+
     func testCanMoveMultiSelectionAllowsLiveSplitTabWithSourceSlot() throws {
         let state = try makeState()
         seed(state, guids: [1, 2])
@@ -1306,6 +1384,40 @@ final class BrowserStateMultiSelectionTests: XCTestCase {
         XCTAssertTrue(state.canMoveMultiSelection(to: makeSpace(),
                                                   sourceHasSpaceSlot: true))
         XCTAssertFalse(state.canMoveMultiSelection(to: makeSpace(),
+                                                   sourceHasSpaceSlot: false))
+    }
+
+    func testCanCloneMultiSelectionRequiresURLsAndSourceSlotForLiveTabs() throws {
+        let state = try makeState()
+        seed(state, guids: [1, 2])
+        state.focuseTab(state.tabs[0])
+        state.toggleMultiSelection(for: state.tabs[1])
+
+        XCTAssertTrue(state.canCloneMultiSelection(to: makeSpace(),
+                                                   sourceHasSpaceSlot: true))
+        XCTAssertFalse(state.canCloneMultiSelection(to: makeSpace(),
+                                                    sourceHasSpaceSlot: false))
+
+        state.tabs[1].url = nil
+        XCTAssertFalse(state.canCloneMultiSelection(to: makeSpace(),
+                                                    sourceHasSpaceSlot: true))
+    }
+
+    func testCanCloneBookmarkOnlySelectionWithoutSourceSlot() throws {
+        let state = try makeState()
+        let bookmarkGuid = "bookmark-only"
+        state.localStore.createBookmark(url: "https://bookmark.example",
+                                        title: "Bookmark",
+                                        profileId: state.profileId,
+                                        parentId: nil,
+                                        guid: bookmarkGuid,
+                                        spaceId: state.spaceId)
+        guard waitUntil(condition: {
+            state.bookmarkManager.bookmark(withGuid: bookmarkGuid) != nil
+        }) else { return }
+        state.toggleBookmarkMultiSelection(bookmarkGuid: bookmarkGuid)
+
+        XCTAssertTrue(state.canCloneMultiSelection(to: makeSpace(),
                                                    sourceHasSpaceSlot: false))
     }
 

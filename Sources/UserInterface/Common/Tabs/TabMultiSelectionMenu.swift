@@ -126,9 +126,9 @@ enum TabMultiSelectionMenu {
             }
         }
 
-        appendMoveToSpaceMenuItems(into: &items,
-                                   browserState: browserState,
-                                   controller: controller)
+        appendSpaceTransferMenuItems(into: &items,
+                                     browserState: browserState,
+                                     controller: controller)
 
         if context.showsCloseItems {
             items.append(.separator())
@@ -232,43 +232,71 @@ enum TabMultiSelectionMenu {
     }
 
     @MainActor
-    private static func appendMoveToSpaceMenuItems(into items: inout [NSMenuItem],
-                                                   browserState: BrowserState,
-                                                   controller: TabMultiSelectionMenuController) {
+    private static func appendSpaceTransferMenuItems(into items: inout [NSMenuItem],
+                                                     browserState: BrowserState,
+                                                     controller: TabMultiSelectionMenuController) {
         guard PhiPreferences.GeneralSettings.spacesFeatureEnabled.loadValue(),
               !browserState.isIncognito else {
             return
         }
 
-        let targets = SpaceManager.shared.spaces.filter {
+        let moveTargets = SpaceManager.shared.spaces.filter {
             browserState.canMoveMultiSelection(toSpaceId: $0.spaceId)
         }
-        guard !targets.isEmpty else { return }
+        let cloneTargets = SpaceManager.shared.spaces.filter {
+            browserState.canCloneMultiSelection(toSpaceId: $0.spaceId)
+        }
+        guard !moveTargets.isEmpty || !cloneTargets.isEmpty else { return }
 
         if items.last?.isSeparatorItem != true {
             items.append(.separator())
         }
 
-        let parent = NSMenuItem(
-            title: NSLocalizedString(
-                "Move to Space",
-                comment: "Tab multi-selection context menu - Submenu to move selected tabs and bookmarks to another Space"),
-            action: nil,
-            keyEquivalent: "")
-        let submenu = NSMenu()
-        for space in targets {
-            let entry = NSMenuItem(title: space.name,
-                                   action: #selector(TabMultiSelectionMenuController.moveSelectedToSpace(_:)),
-                                   keyEquivalent: "")
-            entry.target = controller
-            if let icon = NSImage(systemSymbolName: space.iconName, accessibilityDescription: nil) {
-                entry.image = icon
+        if !moveTargets.isEmpty {
+            let parent = NSMenuItem(
+                title: NSLocalizedString(
+                    "Move to Space",
+                    comment: "Tab multi-selection context menu - Submenu to move selected tabs and bookmarks to another Space"),
+                action: nil,
+                keyEquivalent: "")
+            let submenu = NSMenu()
+            for space in moveTargets {
+                let entry = NSMenuItem(title: space.name,
+                                       action: #selector(TabMultiSelectionMenuController.moveSelectedToSpace(_:)),
+                                       keyEquivalent: "")
+                entry.target = controller
+                if let icon = NSImage(systemSymbolName: space.iconName, accessibilityDescription: nil) {
+                    entry.image = icon
+                }
+                entry.representedObject = space.spaceId
+                submenu.addItem(entry)
             }
-            entry.representedObject = space.spaceId
-            submenu.addItem(entry)
+            parent.submenu = submenu
+            items.append(parent)
         }
-        parent.submenu = submenu
-        items.append(parent)
+
+        if !cloneTargets.isEmpty {
+            let parent = NSMenuItem(
+                title: NSLocalizedString(
+                    "Clone to Space",
+                    comment: "Tab multi-selection context menu - Submenu to clone selected tabs and bookmarks to another Space"),
+                action: nil,
+                keyEquivalent: "")
+            let submenu = NSMenu()
+            for space in cloneTargets {
+                let entry = NSMenuItem(title: space.name,
+                                       action: #selector(TabMultiSelectionMenuController.cloneSelectedToSpace(_:)),
+                                       keyEquivalent: "")
+                entry.target = controller
+                if let icon = NSImage(systemSymbolName: space.iconName, accessibilityDescription: nil) {
+                    entry.image = icon
+                }
+                entry.representedObject = space.spaceId
+                submenu.addItem(entry)
+            }
+            parent.submenu = submenu
+            items.append(parent)
+        }
     }
 
     private static func orderedGroupsInStripOrder(state: BrowserState) -> [WebContentGroupInfo] {
@@ -323,6 +351,10 @@ final class TabMultiSelectionMenuController: NSObject {
         guard let targetSpaceId = sender.representedObject as? String else { return }
         browserState?.moveMultiSelection(toSpaceId: targetSpaceId)
     }
+    @objc func cloneSelectedToSpace(_ sender: NSMenuItem) {
+        guard let targetSpaceId = sender.representedObject as? String else { return }
+        browserState?.cloneMultiSelection(toSpaceId: targetSpaceId)
+    }
     @objc func deleteSelectedBookmarks() {
         guard let browserState,
               let context = browserState.multiSelectionBookmarkDeletionContext,
@@ -359,6 +391,13 @@ final class TabMultiSelectionMenuController: NSObject {
                 return false
             }
             return browserState.canMoveMultiSelection(toSpaceId: targetSpaceId)
+        }
+
+        if menuItem.action == #selector(cloneSelectedToSpace(_:)) {
+            guard let targetSpaceId = menuItem.representedObject as? String else {
+                return false
+            }
+            return browserState.canCloneMultiSelection(toSpaceId: targetSpaceId)
         }
 
         if menuItem.action == #selector(closeOtherSelected) {

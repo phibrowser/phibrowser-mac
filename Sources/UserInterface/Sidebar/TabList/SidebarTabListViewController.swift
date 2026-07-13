@@ -95,6 +95,7 @@ class SidebarTabListViewController: NSViewController {
             owner?.bookmarkClicked(underlyingBookmark)
         }
         
+        @MainActor
         func makeContextMenu(on menu: NSMenu) {
             underlyingBookmark.makeContextMenu(on: menu, source: .sidebar)
         }

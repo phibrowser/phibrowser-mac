@@ -46,10 +46,12 @@ enum BookmarkMenuSource {
 
 // menu
 extension Bookmark: ContextMenuRepresentable {
+    @MainActor
     func makeContextMenu(on menu: NSMenu) {
         self.makeContextMenu(on: menu, source: .sidebar)
     }
 
+    @MainActor
     func makeContextMenu(on menu: NSMenu, source: BookmarkMenuSource) {
         menu.removeAllItems()
         if !isFolder {
@@ -134,15 +136,98 @@ extension Bookmark: ContextMenuRepresentable {
                 menu.addItem(openInSplit)
             }
         }
+
+        if let state = MainBrowserWindowControllersManager.shared.activeWindowController?.browserState,
+           appendSpaceTransferMenuItems(to: menu,
+                                        browserState: state,
+                                        spaces: SpaceManager.shared.spaces) {
+            menu.addItem(.separator())
+        }
         
         let delete = NSMenuItem(title: NSLocalizedString("Delete", comment: "Delete bookmark menu item"), action: #selector(myDelete(_:)), keyEquivalent: "")
         delete.target = self
         menu.addItem(delete)
         
     }
+
+    @discardableResult
+    @MainActor
+    func appendSpaceTransferMenuItems(to menu: NSMenu,
+                                      browserState: BrowserState,
+                                      spaces: [SpaceModel]) -> Bool {
+        let moveTargets = spaces.filter { browserState.canMoveBookmark(self, to: $0) }
+        let cloneTargets = spaces.filter { browserState.canCloneBookmark(self, to: $0) }
+        guard !moveTargets.isEmpty || !cloneTargets.isEmpty else { return false }
+
+        if !menu.items.isEmpty, menu.items.last?.isSeparatorItem != true {
+            menu.addItem(.separator())
+        }
+
+        if !moveTargets.isEmpty {
+            let parent = NSMenuItem(
+                title: NSLocalizedString(
+                    "Move to Space",
+                    comment: "Bookmark context menu - Submenu to move this bookmark or folder to another Space"),
+                action: nil,
+                keyEquivalent: "")
+            let submenu = NSMenu()
+            for space in moveTargets {
+                let entry = NSMenuItem(title: space.name,
+                                       action: #selector(moveToSpace(_:)),
+                                       keyEquivalent: "")
+                entry.target = self
+                if let icon = NSImage(systemSymbolName: space.iconName, accessibilityDescription: nil) {
+                    entry.image = icon
+                }
+                entry.representedObject = space.spaceId
+                submenu.addItem(entry)
+            }
+            parent.submenu = submenu
+            menu.addItem(parent)
+        }
+
+        if !cloneTargets.isEmpty {
+            let parent = NSMenuItem(
+                title: NSLocalizedString(
+                    "Clone to Space",
+                    comment: "Bookmark context menu - Submenu to clone this bookmark or folder to another Space"),
+                action: nil,
+                keyEquivalent: "")
+            let submenu = NSMenu()
+            for space in cloneTargets {
+                let entry = NSMenuItem(title: space.name,
+                                       action: #selector(cloneToSpace(_:)),
+                                       keyEquivalent: "")
+                entry.target = self
+                if let icon = NSImage(systemSymbolName: space.iconName, accessibilityDescription: nil) {
+                    entry.image = icon
+                }
+                entry.representedObject = space.spaceId
+                submenu.addItem(entry)
+            }
+            parent.submenu = submenu
+            menu.addItem(parent)
+        }
+
+        return true
+    }
     
     @objc private func myDelete(_ item: NSMenuItem) {
         MainBrowserWindowControllersManager.shared.activeWindowController?.browserState.bookmarkManager.removeBookmark(self)
+    }
+
+    @MainActor
+    @objc private func moveToSpace(_ sender: NSMenuItem) {
+        guard let targetSpaceId = sender.representedObject as? String else { return }
+        MainBrowserWindowControllersManager.shared.activeWindowController?.browserState
+            .moveBookmark(self, toSpaceId: targetSpaceId)
+    }
+
+    @MainActor
+    @objc private func cloneToSpace(_ sender: NSMenuItem) {
+        guard let targetSpaceId = sender.representedObject as? String else { return }
+        MainBrowserWindowControllersManager.shared.activeWindowController?.browserState
+            .cloneBookmark(self, toSpaceId: targetSpaceId)
     }
     
     @objc private func openInNewTab() {

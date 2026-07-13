@@ -1433,14 +1433,30 @@ class BrowserState {
     @MainActor
     func canMoveMultiSelection(to targetSpace: SpaceModel,
                                sourceHasSpaceSlot: Bool) -> Bool {
+        guard multiSelection.isActive,
+              let plan = multiSelectionSpaceTransferPlan() else {
+            return false
+        }
+        return canMoveSpaceTransfer(plan,
+                                    to: targetSpace,
+                                    sourceHasSpaceSlot: sourceHasSpaceSlot)
+    }
+
+    @MainActor
+    func canMoveBookmark(_ bookmark: Bookmark, to targetSpace: SpaceModel) -> Bool {
+        guard let plan = spaceTransferPlan(tabs: [], bookmarkGuids: [bookmark.guid]) else {
+            return false
+        }
+        return canMoveSpaceTransfer(plan, to: targetSpace, sourceHasSpaceSlot: false)
+    }
+
+    private func canMoveSpaceTransfer(_ plan: MultiSelectionSpaceTransferPlan,
+                                      to targetSpace: SpaceModel,
+                                      sourceHasSpaceSlot: Bool) -> Bool {
         guard PhiPreferences.GeneralSettings.spacesFeatureEnabled.loadValue(),
-              multiSelection.isActive,
               !isIncognito,
               targetSpace.spaceId != spaceId,
               !SpaceManager.isIncognitoSpaceId(targetSpace.spaceId) else {
-            return false
-        }
-        guard let plan = multiSelectionSpaceTransferPlan() else {
             return false
         }
         guard !plan.tabs.isEmpty || !plan.bookmarkRoots.isEmpty else {
@@ -1480,6 +1496,30 @@ class BrowserState {
         return true
     }
 
+    @discardableResult
+    @MainActor
+    func moveBookmark(_ bookmark: Bookmark, toSpaceId targetSpaceId: String) -> Bool {
+        guard let targetSpace = SpaceManager.shared.spaces.first(where: { $0.spaceId == targetSpaceId }),
+              moveBookmark(bookmark, to: targetSpace) else {
+            return false
+        }
+
+        SpaceManager.shared.activateInFocusedWindow(spaceId: targetSpace.spaceId)
+        return true
+    }
+
+    @discardableResult
+    @MainActor
+    func moveBookmark(_ bookmark: Bookmark, to targetSpace: SpaceModel) -> Bool {
+        guard let plan = spaceTransferPlan(tabs: [], bookmarkGuids: [bookmark.guid]),
+              canMoveSpaceTransfer(plan, to: targetSpace, sourceHasSpaceSlot: false) else {
+            return false
+        }
+
+        commitBookmarkSpaceMove(plan, to: targetSpace)
+        return true
+    }
+
     @MainActor
     func canCloneMultiSelection(toSpaceId targetSpaceId: String) -> Bool {
         guard let targetSpace = SpaceManager.shared.spaces.first(where: { $0.spaceId == targetSpaceId }) else {
@@ -1492,12 +1532,30 @@ class BrowserState {
     @MainActor
     func canCloneMultiSelection(to targetSpace: SpaceModel,
                                 sourceHasSpaceSlot: Bool) -> Bool {
+        guard multiSelection.isActive,
+              let plan = multiSelectionSpaceTransferPlan() else {
+            return false
+        }
+        return canCloneSpaceTransfer(plan,
+                                     to: targetSpace,
+                                     sourceHasSpaceSlot: sourceHasSpaceSlot)
+    }
+
+    @MainActor
+    func canCloneBookmark(_ bookmark: Bookmark, to targetSpace: SpaceModel) -> Bool {
+        guard let plan = spaceTransferPlan(tabs: [], bookmarkGuids: [bookmark.guid]) else {
+            return false
+        }
+        return canCloneSpaceTransfer(plan, to: targetSpace, sourceHasSpaceSlot: false)
+    }
+
+    private func canCloneSpaceTransfer(_ plan: MultiSelectionSpaceTransferPlan,
+                                       to targetSpace: SpaceModel,
+                                       sourceHasSpaceSlot: Bool) -> Bool {
         guard PhiPreferences.GeneralSettings.spacesFeatureEnabled.loadValue(),
-              multiSelection.isActive,
               !isIncognito,
               targetSpace.spaceId != spaceId,
               !SpaceManager.isIncognitoSpaceId(targetSpace.spaceId),
-              let plan = multiSelectionSpaceTransferPlan(),
               !plan.tabs.isEmpty || !plan.bookmarkRoots.isEmpty else {
             return false
         }
@@ -1530,6 +1588,30 @@ class BrowserState {
         commitBookmarkSpaceClone(plan, to: targetSpace)
         clearMultiSelection()
         SpaceManager.shared.activateInFocusedWindow(spaceId: targetSpace.spaceId)
+        return true
+    }
+
+    @discardableResult
+    @MainActor
+    func cloneBookmark(_ bookmark: Bookmark, toSpaceId targetSpaceId: String) -> Bool {
+        guard let targetSpace = SpaceManager.shared.spaces.first(where: { $0.spaceId == targetSpaceId }),
+              cloneBookmark(bookmark, to: targetSpace) else {
+            return false
+        }
+
+        SpaceManager.shared.activateInFocusedWindow(spaceId: targetSpace.spaceId)
+        return true
+    }
+
+    @discardableResult
+    @MainActor
+    func cloneBookmark(_ bookmark: Bookmark, to targetSpace: SpaceModel) -> Bool {
+        guard let plan = spaceTransferPlan(tabs: [], bookmarkGuids: [bookmark.guid]),
+              canCloneSpaceTransfer(plan, to: targetSpace, sourceHasSpaceSlot: false) else {
+            return false
+        }
+
+        commitBookmarkSpaceClone(plan, to: targetSpace)
         return true
     }
 
@@ -1566,10 +1648,16 @@ class BrowserState {
 
     @MainActor
     func multiSelectionSpaceTransferPlan() -> MultiSelectionSpaceTransferPlan? {
-        var bookmarkGuids = multiSelectionBookmarkGuidsIncludingImplicitActive
+        spaceTransferPlan(tabs: orderedMultiSelectedTabsIncludingSplitPartners,
+                          bookmarkGuids: multiSelectionBookmarkGuidsIncludingImplicitActive)
+    }
+
+    private func spaceTransferPlan(tabs selectedTabs: [Tab],
+                                   bookmarkGuids initialBookmarkGuids: Set<String>) -> MultiSelectionSpaceTransferPlan? {
+        var bookmarkGuids = initialBookmarkGuids
         var movableTabs: [Tab] = []
 
-        for tab in orderedMultiSelectedTabsIncludingSplitPartners {
+        for tab in selectedTabs {
             if let bookmarkGuid = bookmarkGuidBacking(tab) {
                 bookmarkGuids.insert(bookmarkGuid)
                 continue

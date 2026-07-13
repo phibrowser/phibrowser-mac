@@ -1516,6 +1516,73 @@ final class BrowserStateMultiSelectionTests: XCTestCase {
                        [nestedSelected, nestedUnselected])
     }
 
+    func testSingleBookmarkSpaceTransferDoesNotRequireMultiSelection() throws {
+        let state = try makeState()
+        let targetSpace = makeSpace()
+        let context = try XCTUnwrap(state.localStore.getMainContext())
+        context.insert(targetSpace)
+        try context.save()
+        let bookmarkGuid = "single-bookmark-space-transfer"
+        state.localStore.createBookmark(url: "https://bookmark.example",
+                                        title: "Bookmark",
+                                        profileId: state.profileId,
+                                        parentId: nil,
+                                        guid: bookmarkGuid,
+                                        spaceId: state.spaceId)
+        guard waitUntil(condition: {
+            state.bookmarkManager.bookmark(withGuid: bookmarkGuid) != nil
+        }) else { return }
+        let bookmark = try XCTUnwrap(state.bookmarkManager.bookmark(withGuid: bookmarkGuid))
+
+        XCTAssertFalse(state.multiSelection.isActive)
+        XCTAssertTrue(state.canMoveBookmark(bookmark, to: targetSpace))
+        XCTAssertTrue(state.canCloneBookmark(bookmark, to: targetSpace))
+        XCTAssertTrue(state.cloneBookmark(bookmark, to: targetSpace))
+        XCTAssertTrue(waitUntil {
+            state.localStore.fetchBookmarks(parentId: nil,
+                                            profileId: state.profileId,
+                                            spaceId: targetSpace.spaceId).count == 1
+        })
+        XCTAssertTrue(state.localStore.fetchBookmarks(parentId: nil,
+                                                      profileId: state.profileId,
+                                                      spaceId: state.spaceId).contains { $0.guid == bookmarkGuid })
+
+        XCTAssertTrue(state.moveBookmark(bookmark, to: targetSpace))
+        XCTAssertTrue(waitUntil {
+            state.localStore.fetchBookmarks(parentId: nil,
+                                            profileId: state.profileId,
+                                            spaceId: state.spaceId).isEmpty
+        })
+        XCTAssertEqual(state.localStore.fetchBookmarks(parentId: nil,
+                                                       profileId: state.profileId,
+                                                       spaceId: targetSpace.spaceId).count,
+                       2)
+        XCTAssertFalse(state.multiSelection.isActive)
+    }
+
+    func testSingleFolderSpaceMenuIncludesMoveAndCloneTargets() throws {
+        let state = try makeState()
+        let folderGuid = "single-folder-space-menu"
+        state.localStore.createDirectory(title: "Folder",
+                                         profileId: state.profileId,
+                                         parentId: nil,
+                                         guid: folderGuid,
+                                         spaceId: state.spaceId)
+        guard waitUntil(condition: {
+            state.bookmarkManager.bookmark(withGuid: folderGuid) != nil
+        }) else { return }
+        let folder = try XCTUnwrap(state.bookmarkManager.bookmark(withGuid: folderGuid))
+        let menu = NSMenu()
+
+        XCTAssertTrue(folder.appendSpaceTransferMenuItems(to: menu,
+                                                          browserState: state,
+                                                          spaces: [makeSpace()]))
+        let moveItem = try XCTUnwrap(menu.items.first { $0.title == "Move to Space" })
+        let cloneItem = try XCTUnwrap(menu.items.first { $0.title == "Clone to Space" })
+        XCTAssertEqual(moveItem.submenu?.items.map(\.title), ["Target"])
+        XCTAssertEqual(cloneItem.submenu?.items.map(\.title), ["Target"])
+    }
+
     func testCanMoveMultiSelectionAllowsLiveSplitTabWithSourceSlot() throws {
         let state = try makeState()
         seed(state, guids: [1, 2])

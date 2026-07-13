@@ -505,7 +505,7 @@
       "comment" : "Phi menu - Menu item text when update is ready to install"
     },
     "Clone to Space" : {
-      "comment" : "Tab multi-selection context menu - Submenu to clone selected tabs and bookmarks to another Space"
+      "comment" : "Bookmark context menu - Submenu to clone this bookmark or folder to another Space\nTab multi-selection context menu - Submenu to clone selected tabs and bookmarks to another Space"
     },
     "Close" : {
       "comment" : "Confirm closing an Incognito Space\nSidebar update reminder - Accessibility description for close button\nTab context menu - Menu item to close the selected tab"
@@ -1162,7 +1162,7 @@
       "comment" : "Tab context menu - Move this tab out of its current group into a newly created group"
     },
     "Move to Space" : {
-      "comment" : "Tab context menu - Submenu to move this tab to another Space\nTab multi-selection context menu - Submenu to move selected tabs and bookmarks to another Space"
+      "comment" : "Bookmark context menu - Submenu to move this bookmark or folder to another Space\nTab context menu - Submenu to move this tab to another Space\nTab multi-selection context menu - Submenu to move selected tabs and bookmarks to another Space"
     },
     "Mute" : {
       "comment" : "Notification menu option - Disable auto popup for notification cards\nTab mute button tooltip - mute"

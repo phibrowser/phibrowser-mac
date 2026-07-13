@@ -1533,8 +1533,9 @@ class BrowserState {
         return true
     }
 
-    private struct MultiSelectionSpaceTransferPlan {
+    struct MultiSelectionSpaceTransferPlan {
         let tabs: [Tab]
+        let bookmarkGuids: [String]
         let bookmarkRoots: [Bookmark]
         let detachedBookmarkGuids: Set<String>
     }
@@ -1545,8 +1546,8 @@ class BrowserState {
         if !plan.detachedBookmarkGuids.isEmpty {
             detachBookmarkTabsForComfortableLayout(bookmarkGuids: plan.detachedBookmarkGuids)
         }
-        if !plan.bookmarkRoots.isEmpty {
-            localStore.moveBookmarks(plan.bookmarkRoots.map(\.guid),
+        if !plan.bookmarkGuids.isEmpty {
+            localStore.moveBookmarks(plan.bookmarkGuids,
                                      sourceProfileId: profileId,
                                      toSpaceId: targetSpace.spaceId,
                                      targetProfileId: targetSpace.profileId)
@@ -1556,15 +1557,15 @@ class BrowserState {
     @MainActor
     private func commitBookmarkSpaceClone(_ plan: MultiSelectionSpaceTransferPlan,
                                           to targetSpace: SpaceModel) {
-        guard !plan.bookmarkRoots.isEmpty else { return }
-        localStore.cloneBookmarks(plan.bookmarkRoots.map(\.guid),
+        guard !plan.bookmarkGuids.isEmpty else { return }
+        localStore.cloneBookmarks(plan.bookmarkGuids,
                                   sourceProfileId: profileId,
                                   toSpaceId: targetSpace.spaceId,
                                   targetProfileId: targetSpace.profileId)
     }
 
     @MainActor
-    private func multiSelectionSpaceTransferPlan() -> MultiSelectionSpaceTransferPlan? {
+    func multiSelectionSpaceTransferPlan() -> MultiSelectionSpaceTransferPlan? {
         var bookmarkGuids = multiSelectionBookmarkGuidsIncludingImplicitActive
         var movableTabs: [Tab] = []
 
@@ -1583,8 +1584,12 @@ class BrowserState {
             movableTabs.append(tab)
         }
 
+        let orderedBookmarkGuids = bookmarkManager.getAllBookmarks()
+            .filter { bookmarkGuids.contains($0.guid) }
+            .map(\.guid)
         let bookmarkRoots = bookmarkRoots(for: bookmarkGuids)
         return MultiSelectionSpaceTransferPlan(tabs: movableTabs,
+                                               bookmarkGuids: orderedBookmarkGuids,
                                                bookmarkRoots: bookmarkRoots,
                                                detachedBookmarkGuids: bookmarkLeafGuids(in: bookmarkRoots))
     }

@@ -582,10 +582,9 @@ extension LocalStore {
         }
     }
 
-    /// Moves visible bookmark roots to another Space's bookmark root.
-    /// Descendants travel with a selected folder and are retagged to the
-    /// target `(profileId, spaceId)` so the destination Space publisher owns
-    /// the whole subtree.
+    /// Moves an explicit bookmark selection to another Space's bookmark root.
+    /// Selected folder descendants remain inside the folder while unselected
+    /// children are lifted beside it, matching bookmark drag behavior.
     func moveBookmarks(_ guids: [String],
                        sourceProfileId: String,
                        toSpaceId targetSpaceId: String,
@@ -658,6 +657,17 @@ extension LocalStore {
                     .filter { !movedGuids.contains($0.guid) }
                 targetSiblings.append(contentsOf: movedNodes)
                 self.normalizeIndexes(for: targetSiblings)
+
+                for node in movedNodes where node.dataType == .bookmarkFolder {
+                    if try self.hasSelectedDescendant(of: node,
+                                                      selectedGuids: requestedGuids,
+                                                      in: context) {
+                        try self.liftUnselectedChildren(from: node,
+                                                        selectedGuids: requestedGuids,
+                                                        updatedDate: now,
+                                                        in: context)
+                    }
+                }
                 targetRoot.updatedDate = now
             } catch {
                 AppLogError("Failed to move bookmarks to Space: \(error)")
@@ -665,9 +675,9 @@ extension LocalStore {
         }
     }
 
-    /// Clones visible bookmark roots into another Space's bookmark root.
-    /// Every copied node receives a new guid while folder hierarchy, split
-    /// bookmark metadata, favicon data, and sibling order are preserved.
+    /// Clones an explicit bookmark selection into another Space's bookmark
+    /// root. A folder with explicitly selected descendants copies only those
+    /// descendants; a folder selected by itself still copies its whole tree.
     func cloneBookmarks(_ guids: [String],
                         sourceProfileId: String,
                         toSpaceId targetSpaceId: String,
@@ -716,13 +726,14 @@ extension LocalStore {
                 let insertionIndex = try self.children(of: targetRoot, in: context).count
                 let now = Date()
                 for (offset, sourceRoot) in sourceRoots.enumerated() {
-                    _ = try self.cloneBookmarkSubtree(sourceRoot,
-                                                      to: targetRoot,
-                                                      at: insertionIndex + offset,
-                                                      profileId: targetProfileId,
-                                                      spaceId: targetSpaceId,
-                                                      createdDate: now,
-                                                      in: context)
+                    _ = try self.cloneSelectedBookmarkSubtree(sourceRoot,
+                                                              selectedGuids: requestedGuids,
+                                                              to: targetRoot,
+                                                              at: insertionIndex + offset,
+                                                              profileId: targetProfileId,
+                                                              spaceId: targetSpaceId,
+                                                              createdDate: now,
+                                                              in: context)
                 }
                 targetRoot.updatedDate = now
             } catch {
@@ -1258,6 +1269,53 @@ private extension LocalStore {
                                            now: createdDate,
                                            in: context)
             clone.lastSeen = source.lastSeen
+        }
+        clone.overrideTitle = source.overrideTitle
+        clone.source = source.source
+        return clone
+    }
+
+    func cloneSelectedBookmarkSubtree(_ source: TabDataModel,
+                                      selectedGuids: Set<String>,
+                                      to parent: TabDataModel,
+                                      at index: Int,
+                                      profileId: String,
+                                      spaceId: String,
+                                      createdDate: Date,
+                                      in context: ModelContext) throws -> TabDataModel {
+        guard source.dataType == .bookmarkFolder,
+              try hasSelectedDescendant(of: source,
+                                        selectedGuids: selectedGuids,
+                                        in: context) else {
+            return try cloneBookmarkSubtree(source,
+                                            to: parent,
+                                            at: index,
+                                            profileId: profileId,
+                                            spaceId: spaceId,
+                                            createdDate: createdDate,
+                                            in: context)
+        }
+
+        let clone = try insertDirectoryNode(title: source.title,
+                                            profileId: profileId,
+                                            parent: parent,
+                                            index: index,
+                                            guid: nil,
+                                            spaceId: spaceId,
+                                            now: createdDate,
+                                            in: context)
+        let selectedChildren = try selectedDescendantRoots(under: source,
+                                                           selectedGuids: selectedGuids,
+                                                           in: context)
+        for (childIndex, child) in selectedChildren.enumerated() {
+            _ = try cloneSelectedBookmarkSubtree(child,
+                                                 selectedGuids: selectedGuids,
+                                                 to: clone,
+                                                 at: childIndex,
+                                                 profileId: profileId,
+                                                 spaceId: spaceId,
+                                                 createdDate: createdDate,
+                                                 in: context)
         }
         clone.overrideTitle = source.overrideTitle
         clone.source = source.source

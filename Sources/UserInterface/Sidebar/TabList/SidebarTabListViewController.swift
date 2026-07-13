@@ -36,6 +36,7 @@ enum SidebarNewTabStickyResolver {
 class SidebarTabListViewController: NSViewController {
     private static let bottomContentInset: CGFloat = 130
     private static let bookmarkRenameClickInterval: TimeInterval = 0.5
+    private static let outlineAnimationSettlePadding: TimeInterval = 0.05
 
     private enum SidebarMultiSelectionUnit: Hashable {
         case tab(Int)
@@ -154,7 +155,14 @@ class SidebarTabListViewController: NSViewController {
     private var lastFarringdonAIEnabled = PhiPreferences.AISettings.phiAIEnabled.loadValue()
     private var lastFarringdonTabCountEligible = false
     private var allItems: [SidebarItem] = []
+    /// Snapshot committed by the latest accepted `reloadWith` request.
+    /// Unlike `allItems`, its captured child IDs cannot be changed by model reuse.
+    private var lastAcceptedOutlineSnapshot: DiffableOutlineSnapshot<AnyHashable>?
     private var multiSelectionRangeAnchor: SidebarMultiSelectionUnit?
+    /// Diffable completion runs before AppKit necessarily finishes moving rows.
+    /// Keep group-local animations off until the latest structural transition settles.
+    private var groupAnimationSuppressionGeneration: UInt = 0
+    private var suppressesGroupUpdateAnimations = false
     
     /// UI-only state: when non-nil, we temporarily "reparent" the focusing bookmark to keep it visible.
     /// This never mutates the real `Bookmark.parent`.
@@ -412,12 +420,15 @@ class SidebarTabListViewController: NSViewController {
 
     private func clearInactiveUIState() {
         allItems = []
+        lastAcceptedOutlineSnapshot = nil
         focusedBookmarkPresentation = nil
         floatingBookmarkGuid = nil
         floatingAnchorFolderGuid = nil
         temporarilyHiddenRealBookmarkGuid = nil
         dropFeedbackTarget = .none
         allowExpandDuringDrag = false
+        groupAnimationSuppressionGeneration &+= 1
+        suppressesGroupUpdateAnimations = false
         scrollAnimationGeneration += 1
         scrollScheduleGeneration += 1
         lastScrolledFocusingTabId = nil
@@ -448,7 +459,7 @@ class SidebarTabListViewController: NSViewController {
     private func refreshAllItems(
         presentationState: FloatingBookmarkPresentationState? = nil,
         animated: Bool = true,
-        afterReload: (() -> Void)? = nil
+        afterReload: ((_ outlineStructureChanged: Bool) -> Void)? = nil
     ) -> Bool {
         guard isActive else { return false }
         let items = makeAllItems()
@@ -462,6 +473,16 @@ class SidebarTabListViewController: NSViewController {
             focusedPresentation: resolvedPresentationState.focusedPresentation,
             hiddenBookmarkGuid: resolvedPresentationState.hiddenBookmarkGuid
         )
+        let previousSnapshot = lastAcceptedOutlineSnapshot
+            ?? makeDiffableSnapshot(
+                rootItems: [],
+                focusedPresentation: nil,
+                hiddenBookmarkGuid: nil
+            )
+        let outlineStructureChanged = Self.hasOutlineStructureChanges(
+            from: previousSnapshot,
+            to: snapshot
+        )
 
         var didUpdateDataSource = false
         outlineView.reloadWith(
@@ -469,6 +490,10 @@ class SidebarTabListViewController: NSViewController {
             animated: animated,
             updateDataSource: { [weak self] in
                 guard let self else { return }
+                self.lastAcceptedOutlineSnapshot = snapshot
+                if animated && outlineStructureChanged {
+                    self.suppressGroupAnimationsUntilOutlineSettles()
+                }
                 self.allItems = items
                 self.focusedBookmarkPresentation = resolvedPresentationState.focusedPresentation
                 self.floatingBookmarkGuid = resolvedPresentationState.floatingBookmarkGuid
@@ -487,13 +512,62 @@ class SidebarTabListViewController: NSViewController {
 
                 DispatchQueue.main.async { [weak self] in
                     guard let self else { return }
+                    if outlineStructureChanged {
+                        self.reconcileTabGroupRowHeightsWithoutAnimation()
+                    }
                     self.updateVisibleBookmarkTabs()
                     self.updateFloatingNewTabVisibility()
-                    afterReload?()
+                    afterReload?(outlineStructureChanged)
                 }
             }
         )
         return didUpdateDataSource
+    }
+
+    static func hasOutlineStructureChanges(
+        from oldSnapshot: DiffableOutlineSnapshot<AnyHashable>,
+        to newSnapshot: DiffableOutlineSnapshot<AnyHashable>
+    ) -> Bool {
+        guard oldSnapshot.rootIDs == newSnapshot.rootIDs,
+              Set(oldSnapshot.nodes.keys) == Set(newSnapshot.nodes.keys)
+        else { return true }
+
+        for id in oldSnapshot.nodes.keys {
+            guard oldSnapshot.childIDs(of: id) == newSnapshot.childIDs(of: id),
+                  let oldItem = oldSnapshot.item(for: id),
+                  let newItem = newSnapshot.item(for: id),
+                  oldItem === newItem
+            else { return true }
+        }
+        return false
+    }
+
+    private func suppressGroupAnimationsUntilOutlineSettles() {
+        groupAnimationSuppressionGeneration &+= 1
+        let generation = groupAnimationSuppressionGeneration
+        suppressesGroupUpdateAnimations = true
+        let delay = max(NSAnimationContext.current.duration, 0.25)
+            + Self.outlineAnimationSettlePadding
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+            guard let self,
+                  self.groupAnimationSuppressionGeneration == generation
+            else { return }
+            self.suppressesGroupUpdateAnimations = false
+        }
+    }
+
+    private func reconcileTabGroupRowHeightsWithoutAnimation() {
+        var groupRows = IndexSet()
+        for row in 0..<outlineView.numberOfRows
+            where outlineView.item(atRow: row) is TabGroupSidebarItem {
+            groupRows.insert(row)
+        }
+        guard !groupRows.isEmpty else { return }
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = 0
+            context.allowsImplicitAnimation = false
+            outlineView.noteHeightOfRows(withIndexesChanged: groupRows)
+        }
     }
 
     private func makeAllItems() -> [SidebarItem] {
@@ -3534,7 +3608,7 @@ extension SidebarTabListViewController: SidebarTabListItemOwner {
                     floatingAnchorFolderGuid: folder.guid,
                     hiddenBookmarkGuid: focusingBookmark.guid
                 )
-                refreshAllItems(presentationState: presentationState) { [weak self] in
+                refreshAllItems(presentationState: presentationState) { [weak self] _ in
                     guard let self else { return }
                     self.outlineView.animator().collapseItem(item)
                     self.applyFocusingSelection(for: focusingTab)
@@ -3682,9 +3756,12 @@ extension SidebarTabListViewController: TabSectionDelegate {
     
     func tabSectionDidUpdate(with change: TabSectionChange) {
         guard isActive else { return }
-        refreshAllItems { [weak self] in
+        refreshAllItems { [weak self] outlineStructureChanged in
             guard let self else { return }
-            self.pushMemberUpdatesToGroupCells(change.affectedGroupTokens)
+            self.pushMemberUpdatesToGroupCells(
+                change.affectedGroupTokens,
+                animated: !outlineStructureChanged && !self.suppressesGroupUpdateAnimations
+            )
             self.pushPaneUpdatesToSplitPairCells(change.affectedSplitIds)
             self.updateNewTabCleanupVisibility()
             self.clearFloatingProxyIfTabClosed()
@@ -3692,11 +3769,13 @@ extension SidebarTabListViewController: TabSectionDelegate {
     }
 
     /// Push fresh member arrays into the affected `TabGroupCellView`
-    /// instances so each cell's diffable inner table animates its row
-    /// changes and notifies the outline of any height delta. Cells
+    /// instances so each cell's diffable inner table updates its rows
+    /// and notifies the outline of any height delta. Animation is disabled
+    /// when the outer root structure changed so the two layouts cannot
+    /// animate independently. Cells
     /// that aren't realized (off-screen, just-inserted root row) are
     /// skipped — they pull their initial members from `configure(with:)`.
-    private func pushMemberUpdatesToGroupCells(_ tokens: Set<String>) {
+    private func pushMemberUpdatesToGroupCells(_ tokens: Set<String>, animated: Bool) {
         guard !tokens.isEmpty else { return }
         for case let groupItem as TabGroupSidebarItem in allItems
             where tokens.contains(groupItem.group.token) {
@@ -3710,7 +3789,7 @@ extension SidebarTabListViewController: TabSectionDelegate {
             let newMembers = browserState.normalTabs.filter {
                 $0.groupToken == groupItem.group.token
             }
-            cell.applyMembers(newMembers, animated: true)
+            cell.applyMembers(newMembers, animated: animated)
         }
     }
 
@@ -3781,7 +3860,7 @@ extension SidebarTabListViewController {
         refreshAllItems(
             presentationState: .cleared,
             animated: animated,
-            afterReload: afterReload
+            afterReload: { _ in afterReload?() }
         )
     }
 
@@ -4362,13 +4441,21 @@ extension SidebarTabListViewController: TabCellDelegate {
 // MARK: - TabGroupCellViewDelegate
 
 extension SidebarTabListViewController: TabGroupCellViewDelegate {
-    func tabGroupCellNeedsHeightUpdate(_ cell: TabGroupCellView, for token: String) {
-        guard let item = cell.item else { return }
+    func tabGroupCellNeedsHeightUpdate(
+        _ cell: TabGroupCellView,
+        for token: String,
+        animated: Bool
+    ) {
+        guard cell.token == token,
+              let item = cell.item as? TabGroupSidebarItem,
+              item.group.token == token
+        else { return }
         let row = outlineView.row(forItem: item)
         guard row >= 0 else { return }
+        let shouldAnimate = animated && !suppressesGroupUpdateAnimations
         NSAnimationContext.runAnimationGroup { context in
-            context.duration = 0.2
-            context.allowsImplicitAnimation = true
+            context.duration = shouldAnimate ? 0.2 : 0
+            context.allowsImplicitAnimation = shouldAnimate
             outlineView.noteHeightOfRows(withIndexesChanged: IndexSet(integer: row))
         }
     }

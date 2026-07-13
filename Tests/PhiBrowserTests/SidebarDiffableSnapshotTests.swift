@@ -9,7 +9,7 @@ import XCTest
 private final class SnapshotSidebarItem: SidebarItem {
     let id: AnyHashable
     let title: String
-    let childrenItems: [SidebarItem]
+    var childrenItems: [SidebarItem]
     private let isExpandableOverride: Bool?
     private let itemTypeOverride: SidebarItemType?
 
@@ -134,5 +134,48 @@ final class SidebarDiffableSnapshotTests: XCTestCase {
         XCTAssertEqual(snapshot.childIDs(of: AnyHashable("group")), [])
         XCTAssertTrue(snapshot.item(for: AnyHashable("group")) === group)
         XCTAssertNil(snapshot.item(for: AnyHashable("member")))
+    }
+
+    func testStructureComparisonUsesCapturedChildrenWhenItemsMutateInPlace() {
+        let first = SnapshotSidebarItem(id: "first")
+        let second = SnapshotSidebarItem(id: "second")
+        let parent = SnapshotSidebarItem(
+            id: "parent",
+            children: [first],
+            isExpandable: true
+        )
+        let accepted = SidebarDiffableSnapshotBuilder(rootItems: [parent]).makeSnapshot()
+
+        parent.childrenItems = [second]
+        let updated = SidebarDiffableSnapshotBuilder(rootItems: [parent]).makeSnapshot()
+
+        XCTAssertTrue(
+            SidebarTabListViewController.hasOutlineStructureChanges(
+                from: accepted,
+                to: updated
+            )
+        )
+    }
+
+    func testStructureComparisonIgnoresMemberChangesInsideNonExpandableGroup() {
+        let first = SnapshotSidebarItem(id: "first")
+        let second = SnapshotSidebarItem(id: "second")
+        let group = SnapshotSidebarItem(
+            id: "group",
+            children: [first],
+            isExpandable: false,
+            itemType: .tabGroup
+        )
+        let accepted = SidebarDiffableSnapshotBuilder(rootItems: [group]).makeSnapshot()
+
+        group.childrenItems = [second]
+        let updated = SidebarDiffableSnapshotBuilder(rootItems: [group]).makeSnapshot()
+
+        XCTAssertFalse(
+            SidebarTabListViewController.hasOutlineStructureChanges(
+                from: accepted,
+                to: updated
+            )
+        )
     }
 }

@@ -48,6 +48,15 @@ enum DiffableOutlineDiffPlanner {
             replacementIDs(old: old, new: new, excludedIDs: initialStructuralCoveredIDs),
             in: new
         )
+        for id in highestReplaced {
+            guard old.parentID(of: id) == new.parentID(of: id),
+                  let oldIndex = old.index(of: id),
+                  let newIndex = new.index(of: id),
+                  oldIndex == newIndex
+            else {
+                return .unsafe
+            }
+        }
         let replacementCoveredOldIDs = coveredIDs(highestReplaced, in: old)
         let replacementCoveredNewIDs = coveredIDs(highestReplaced, in: new)
         let highestRemoved = Set(initialHighestRemoved.filter { id in

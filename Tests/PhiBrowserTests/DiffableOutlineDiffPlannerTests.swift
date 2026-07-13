@@ -95,6 +95,31 @@ final class DiffableOutlineDiffPlannerTests: XCTestCase {
         XCTAssertEqual(plan.operations, [.move(id: "b", parentID: nil, from: 1, to: 0)])
     }
 
+    func testMovingFirstRootToEndUsesForwardMovesCompatibleWithOutlineView() {
+        let group = item("group")
+        let a = item("a")
+        let b = item("b")
+        let c = item("c")
+        let items = ["group": group, "a": a, "b": b, "c": c]
+        let nodes: [String: (String?, [String])] = [
+            "group": (nil, []),
+            "a": (nil, []),
+            "b": (nil, []),
+            "c": (nil, []),
+        ]
+        let old = snapshot(["group", "a", "b", "c"], nodes, items: items)
+        let new = snapshot(["a", "b", "c", "group"], nodes, items: items)
+
+        let plan = DiffableOutlineDiffPlanner.plan(from: old, to: new)
+
+        XCTAssertEqual(plan.operations, [
+            .move(id: "a", parentID: nil, from: 1, to: 0),
+            .move(id: "b", parentID: nil, from: 2, to: 1),
+            .move(id: "c", parentID: nil, from: 3, to: 2),
+        ])
+        XCTAssertTrue(plan.isSafe)
+    }
+
     func testStableParentChildReorderProducesMove() {
         let folder = item("folder")
         let a = item("a")
@@ -200,6 +225,25 @@ final class DiffableOutlineDiffPlannerTests: XCTestCase {
             "a": (nil, []),
             "b": (nil, []),
         ], items: ["proxy": newProxy, "a": a, "b": b])
+
+        let plan = DiffableOutlineDiffPlanner.plan(from: old, to: new)
+
+        XCTAssertFalse(plan.isSafe)
+        XCTAssertTrue(plan.operations.isEmpty)
+    }
+
+    func testReplacementThatAlsoChangesSiblingIndexIsUnsafe() {
+        let oldGroup = item("old-group")
+        let newGroup = item("new-group")
+        let tab = item("tab")
+        let old = snapshot(["group", "tab"], [
+            "group": (nil, []),
+            "tab": (nil, []),
+        ], items: ["group": oldGroup, "tab": tab])
+        let new = snapshot(["tab", "group"], [
+            "group": (nil, []),
+            "tab": (nil, []),
+        ], items: ["group": newGroup, "tab": tab])
 
         let plan = DiffableOutlineDiffPlanner.plan(from: old, to: new)
 

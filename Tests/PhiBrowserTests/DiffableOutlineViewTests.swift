@@ -328,6 +328,29 @@ final class DiffableOutlineViewTests: XCTestCase {
         XCTAssertEqual(view.events, ["updateDataSource", "reloadData"])
     }
 
+    func testMovingReplacementFallsBackToReloadData() {
+        let view = RecordingDiffableOutlineView()
+        let oldGroup = OutlineApplyItem("group")
+        let newGroup = OutlineApplyItem("group")
+        let tab = OutlineApplyItem("item1")
+        let old = applySnapshot(["group", "item1"], [
+            "group": (oldGroup, nil, []),
+            "item1": (tab, nil, []),
+        ])
+        let new = applySnapshot(["item1", "group"], [
+            "group": (newGroup, nil, []),
+            "item1": (tab, nil, []),
+        ])
+        view.reloadWith(old, animated: false) {}
+        view.clearEvents()
+
+        view.reloadWith(new, animated: false) {
+            view.record("updateDataSource")
+        }
+
+        XCTAssertEqual(view.events, ["updateDataSource", "reloadData"])
+    }
+
     func testReloadOperationResolvesRowsAfterDataSourceUpdate() {
         let view = RecordingDiffableOutlineView()
         let item1 = OutlineApplyItem("item1")

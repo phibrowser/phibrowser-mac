@@ -17,8 +17,13 @@ import SwiftUI
 protocol TabGroupCellViewDelegate: AnyObject {
     /// Cell's desired height changed (collapse toggle or member-count
     /// shift). Controller forwards to
-    /// `outlineView.noteHeightOfRowsWithIndexesChanged(_)`.
-    func tabGroupCellNeedsHeightUpdate(_ cell: TabGroupCellView, for token: String)
+    /// `outlineView.noteHeightOfRowsWithIndexesChanged(_)`, using the
+    /// caller's animation policy.
+    func tabGroupCellNeedsHeightUpdate(
+        _ cell: TabGroupCellView,
+        for token: String,
+        animated: Bool
+    )
 
     /// Inner table's chevron requested a collapse toggle. Controller
     /// dispatches to the bridge (mirrors the existing user-gesture
@@ -642,12 +647,13 @@ final class TabGroupCellView: SidebarCellView {
         let captureToken = groupItem.group.token
         collapseSubscription = groupItem.group.$isCollapsed
             .removeDuplicates()
+            .dropFirst()
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in
                 guard let self else { return }
                 self.applyEffectiveCollapseState()
                 self.groupCellDelegate?.tabGroupCellNeedsHeightUpdate(
-                    self, for: captureToken)
+                    self, for: captureToken, animated: true)
             }
 
         colorSubscription?.cancel()
@@ -784,7 +790,11 @@ final class TabGroupCellView: SidebarCellView {
         }
         dataSource.apply(snap, animatingDifferences: animated)
 
-        groupCellDelegate?.tabGroupCellNeedsHeightUpdate(self, for: token)
+        groupCellDelegate?.tabGroupCellNeedsHeightUpdate(
+            self,
+            for: token,
+            animated: animated
+        )
     }
 
     /// Cell-height formula. `BrowserState` is the live source of truth

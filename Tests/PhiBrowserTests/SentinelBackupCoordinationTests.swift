@@ -195,3 +195,22 @@ extension SentinelBackupCoordinationTests {
         XCTAssertEqual(transport.activeSubscriptionCount, 0)
     }
 }
+
+extension SentinelBackupCoordinationTests {
+    func testClientTimesOutWhenNoResponseArrives() async {
+        let transport = TestSentinelNotificationTransport() // never delivers a response
+        let client = SentinelBackupCoordinationClient(transport: transport, sentinelBundleID: "com.phibrowser.Sentinel")
+
+        let result = await client.requestPrepareForRollback(
+            targetBrowserVersion: "1.6",
+            fromBrowserVersion: "2.0",
+            operationID: "op-1",
+            timeout: 0.05
+        )
+
+        guard case .timedOut = result else {
+            return XCTFail("Expected timeout, got \(result).")
+        }
+        XCTAssertEqual(transport.activeSubscriptionCount, 0)
+    }
+}

@@ -72,3 +72,207 @@ enum SentinelPrepareForRollback {
         return Response(status: status)
     }
 }
+
+// MARK: - Transport seam
+
+protocol SentinelNotificationSubscription: AnyObject {
+    func cancel()
+}
+
+protocol SentinelNotificationTransport {
+    func post(name: Notification.Name, object: String, userInfo: [String: String])
+    func observe(
+        name: Notification.Name,
+        object: String,
+        handler: @escaping ([String: String]) -> Void
+    ) -> SentinelNotificationSubscription
+}
+
+/// Real transport over `DistributedNotificationCenter`, mirroring the send
+/// convention already used by `SentinelHelper` (object routing, deliverImmediately).
+final class DistributedSentinelNotificationTransport: SentinelNotificationTransport {
+    private final class Subscription: SentinelNotificationSubscription {
+        private let token: NSObjectProtocol
+        init(token: NSObjectProtocol) { self.token = token }
+        func cancel() { DistributedNotificationCenter.default().removeObserver(token) }
+    }
+
+    func post(name: Notification.Name, object: String, userInfo: [String: String]) {
+        DistributedNotificationCenter.default().postNotificationName(
+            name,
+            object: object,
+            userInfo: userInfo,
+            deliverImmediately: true
+        )
+    }
+
+    func observe(
+        name: Notification.Name,
+        object: String,
+        handler: @escaping ([String: String]) -> Void
+    ) -> SentinelNotificationSubscription {
+        let token = DistributedNotificationCenter.default().addObserver(
+            forName: name,
+            object: object,
+            queue: nil
+        ) { note in
+            var info: [String: String] = [:]
+            for (key, value) in note.userInfo ?? [:] {
+                if let key = key as? String, let value = value as? String {
+                    info[key] = value
+                }
+            }
+            handler(info)
+        }
+        return Subscription(token: token)
+    }
+}
+
+// MARK: - Client
+
+enum SentinelCoordinationResult<Response> {
+    case response(Response)
+    case timedOut
+}
+
+/// Single request/response client for the three backup coordination contracts.
+/// Posts on the Sentinel channel, listens for the matching `.response`,
+/// dedups on `requestID`, and resolves to `.timedOut` if none arrives in time.
+final class SentinelBackupCoordinationClient {
+    private let transport: SentinelNotificationTransport
+    private let sentinelBundleID: String
+    private let browserBundleID: String
+
+    init(
+        transport: SentinelNotificationTransport = DistributedSentinelNotificationTransport(),
+        sentinelBundleID: String = SentinelHelper.loginItemIdentifier(),
+        browserBundleID: String = Bundle.main.bundleIdentifier ?? ""
+    ) {
+        self.transport = transport
+        self.sentinelBundleID = sentinelBundleID
+        self.browserBundleID = browserBundleID
+    }
+
+    func requestExportAIData(
+        destinationPath: String,
+        timeout: TimeInterval = 600
+    ) async -> SentinelCoordinationResult<SentinelAIDataExport.Response> {
+        let requestID = UUID().uuidString
+        return await send(
+            requestName: SentinelAIDataExport.requestName,
+            responseName: SentinelAIDataExport.responseName,
+            requestID: requestID,
+            userInfo: SentinelAIDataExport.requestUserInfo(requestID: requestID, destinationPath: destinationPath),
+            timeout: timeout,
+            parse: SentinelAIDataExport.parseResponse
+        )
+    }
+
+    func requestImportAIData(
+        path: String,
+        confirmed: Bool,
+        timeout: TimeInterval = 600
+    ) async -> SentinelCoordinationResult<SentinelAIDataImport.Response> {
+        let requestID = UUID().uuidString
+        return await send(
+            requestName: SentinelAIDataImport.requestName,
+            responseName: SentinelAIDataImport.responseName,
+            requestID: requestID,
+            userInfo: SentinelAIDataImport.requestUserInfo(requestID: requestID, path: path, confirmed: confirmed),
+            timeout: timeout,
+            parse: SentinelAIDataImport.parseResponse
+        )
+    }
+
+    func requestPrepareForRollback(
+        targetBrowserVersion: String,
+        fromBrowserVersion: String,
+        operationID: String,
+        timeout: TimeInterval = 120
+    ) async -> SentinelCoordinationResult<SentinelPrepareForRollback.Response> {
+        let requestID = UUID().uuidString
+        return await send(
+            requestName: SentinelPrepareForRollback.requestName,
+            responseName: SentinelPrepareForRollback.responseName,
+            requestID: requestID,
+            userInfo: SentinelPrepareForRollback.requestUserInfo(
+                requestID: requestID,
+                targetBrowserVersion: targetBrowserVersion,
+                fromBrowserVersion: fromBrowserVersion,
+                operationID: operationID
+            ),
+            timeout: timeout,
+            parse: SentinelPrepareForRollback.parseResponse
+        )
+    }
+
+    private func send<Response>(
+        requestName: Notification.Name,
+        responseName: Notification.Name,
+        requestID: String,
+        userInfo: [String: String],
+        timeout: TimeInterval,
+        parse: @escaping ([String: String]) -> Response?
+    ) async -> SentinelCoordinationResult<Response> {
+        let state = SendState()
+        return await withCheckedContinuation { (continuation: CheckedContinuation<SentinelCoordinationResult<Response>, Never>) in
+            let subscription = transport.observe(name: responseName, object: sentinelBundleID) { info in
+                guard info["requestID"] == requestID else { return }
+                guard let response = parse(info) else { return }
+                state.resolveOnce {
+                    continuation.resume(returning: .response(response))
+                }
+            }
+            state.attach(subscription)
+
+            // Centralized browserBundleID injection: every request carries the
+            // current browser bundle id so Sentinel can validate the sender.
+            var payload = userInfo
+            if !browserBundleID.isEmpty {
+                payload["browserBundleID"] = browserBundleID
+            }
+            transport.post(name: requestName, object: sentinelBundleID, userInfo: payload)
+
+            let timeoutNanoseconds = UInt64(max(0, timeout) * 1_000_000_000)
+            Task {
+                try? await Task.sleep(nanoseconds: timeoutNanoseconds)
+                state.resolveOnce {
+                    continuation.resume(returning: .timedOut)
+                }
+            }
+        }
+    }
+}
+
+/// Guards a single continuation resume and tears the observer down exactly once,
+/// even when a response arrives before `attach` runs.
+private final class SendState {
+    private let lock = NSLock()
+    private var resolved = false
+    private var subscription: SentinelNotificationSubscription?
+
+    func attach(_ subscription: SentinelNotificationSubscription) {
+        lock.lock()
+        if resolved {
+            lock.unlock()
+            subscription.cancel()
+            return
+        }
+        self.subscription = subscription
+        lock.unlock()
+    }
+
+    func resolveOnce(_ body: () -> Void) {
+        lock.lock()
+        if resolved {
+            lock.unlock()
+            return
+        }
+        resolved = true
+        let subscription = self.subscription
+        self.subscription = nil
+        lock.unlock()
+        subscription?.cancel()
+        body()
+    }
+}

@@ -58,3 +58,102 @@ final class SentinelBackupCoordinationTests: XCTestCase {
         XCTAssertNil(SentinelPrepareForRollback.parseResponse(["requestID": "req-3", "status": "restored-ish"]))
     }
 }
+
+extension SentinelBackupCoordinationTests {
+    func testClientPostsRequestOnSentinelChannelAndReturnsResponse() async {
+        let transport = TestSentinelNotificationTransport()
+        // Auto-answer any request with a matching completed response.
+        transport.onPost = { posted in
+            transport.deliver(
+                name: SentinelAIDataExport.responseName,
+                object: posted.object,
+                userInfo: [
+                    "requestID": posted.userInfo["requestID"] ?? "",
+                    "status": "completed",
+                    "path": posted.userInfo["destinationPath"] ?? ""
+                ]
+            )
+        }
+        let client = SentinelBackupCoordinationClient(
+            transport: transport,
+            sentinelBundleID: "com.phibrowser.Sentinel",
+            browserBundleID: "com.phibrowser.Mac"
+        )
+
+        let result = await client.requestExportAIData(destinationPath: "/tmp/ai-data.tar.gz", timeout: 5)
+
+        guard case .response(let response) = result else {
+            return XCTFail("Expected a response, got \(result).")
+        }
+        XCTAssertEqual(response.status, .completed)
+        XCTAssertEqual(response.path, "/tmp/ai-data.tar.gz")
+
+        let posted = try? XCTUnwrap(transport.posts.first)
+        XCTAssertEqual(posted?.name, SentinelAIDataExport.requestName)
+        XCTAssertEqual(posted?.object, "com.phibrowser.Sentinel")
+        XCTAssertEqual(posted?.userInfo["destinationPath"], "/tmp/ai-data.tar.gz")
+        XCTAssertFalse(posted?.userInfo["requestID"]?.isEmpty ?? true)
+        // browserBundleID is injected centrally by the client on every request.
+        XCTAssertEqual(posted?.userInfo["browserBundleID"], "com.phibrowser.Mac")
+        // Response observer is registered on the same Sentinel channel.
+        XCTAssertEqual(transport.observedObjects, ["com.phibrowser.Sentinel"])
+        // Subscription is torn down after resolution.
+        XCTAssertEqual(transport.activeSubscriptionCount, 0)
+    }
+}
+
+/// In-memory transport: records posts, lets tests deliver responses to observers.
+final class TestSentinelNotificationTransport: SentinelNotificationTransport {
+    struct Posted: Equatable {
+        let name: Notification.Name
+        let object: String
+        let userInfo: [String: String]
+    }
+
+    private final class Registration {
+        let name: Notification.Name
+        let object: String
+        let handler: ([String: String]) -> Void
+        var isCancelled = false
+        init(name: Notification.Name, object: String, handler: @escaping ([String: String]) -> Void) {
+            self.name = name
+            self.object = object
+            self.handler = handler
+        }
+    }
+
+    private final class Subscription: SentinelNotificationSubscription {
+        let onCancel: () -> Void
+        init(onCancel: @escaping () -> Void) { self.onCancel = onCancel }
+        func cancel() { onCancel() }
+    }
+
+    private(set) var posts: [Posted] = []
+    private var registrations: [Registration] = []
+    var onPost: ((Posted) -> Void)?
+
+    var observedObjects: [String] { registrations.filter { !$0.isCancelled }.map(\.object) }
+    var activeSubscriptionCount: Int { registrations.filter { !$0.isCancelled }.count }
+
+    func post(name: Notification.Name, object: String, userInfo: [String: String]) {
+        let posted = Posted(name: name, object: object, userInfo: userInfo)
+        posts.append(posted)
+        onPost?(posted)
+    }
+
+    func observe(
+        name: Notification.Name,
+        object: String,
+        handler: @escaping ([String: String]) -> Void
+    ) -> SentinelNotificationSubscription {
+        let registration = Registration(name: name, object: object, handler: handler)
+        registrations.append(registration)
+        return Subscription(onCancel: { registration.isCancelled = true })
+    }
+
+    func deliver(name: Notification.Name, object: String, userInfo: [String: String]) {
+        for registration in registrations where !registration.isCancelled && registration.name == name && registration.object == object {
+            registration.handler(userInfo)
+        }
+    }
+}

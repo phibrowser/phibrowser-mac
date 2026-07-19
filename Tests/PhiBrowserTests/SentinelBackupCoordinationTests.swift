@@ -157,3 +157,41 @@ final class TestSentinelNotificationTransport: SentinelNotificationTransport {
         }
     }
 }
+
+extension SentinelBackupCoordinationTests {
+    func testClientIgnoresMismatchedThenResolvesMatchingRequestID() async {
+        let transport = TestSentinelNotificationTransport()
+        transport.onPost = { posted in
+            let requestID = posted.userInfo["requestID"] ?? ""
+            // A response for some OTHER request must be ignored.
+            transport.deliver(
+                name: SentinelAIDataImport.responseName,
+                object: posted.object,
+                userInfo: ["requestID": "not-ours", "status": "completed", "needsAttention": "true"]
+            )
+            // The real response for our request.
+            transport.deliver(
+                name: SentinelAIDataImport.responseName,
+                object: posted.object,
+                userInfo: ["requestID": requestID, "status": "completed", "needsAttention": "false"]
+            )
+            // A duplicate late response must not resume the continuation twice.
+            transport.deliver(
+                name: SentinelAIDataImport.responseName,
+                object: posted.object,
+                userInfo: ["requestID": requestID, "status": "completed", "needsAttention": "true"]
+            )
+        }
+        let client = SentinelBackupCoordinationClient(transport: transport, sentinelBundleID: "com.phibrowser.Sentinel")
+
+        let result = await client.requestImportAIData(path: "/tmp/ai-data.tar.gz", confirmed: true, timeout: 5)
+
+        guard case .response(let response) = result else {
+            return XCTFail("Expected a response, got \(result).")
+        }
+        // Resolved on the FIRST matching response (needsAttention false), not the duplicate.
+        XCTAssertEqual(response.status, .completed)
+        XCTAssertFalse(response.needsAttention)
+        XCTAssertEqual(transport.activeSubscriptionCount, 0)
+    }
+}

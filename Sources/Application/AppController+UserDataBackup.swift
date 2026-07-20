@@ -39,6 +39,7 @@ extension AppController {
         let extractedPhiURL: URL
         let referencedProfileIds: Set<String>
         let profileDisplayNames: [String: String]
+        let aiDataArchiveURL: URL?
 
         func cleanup() {
             try? FileManager.default.removeItem(at: stagingURL)
@@ -533,6 +534,31 @@ extension AppController {
         errorAlert.runModal()
     }
 
+    /// Detects the Sentinel `ai-data.tar.gz` archive that an export places at the
+    /// zip root next to `Phi/`. Returns its URL in the unpacked staging directory
+    /// when present, so the import confirmation can describe the archive's actual
+    /// contents; otherwise `nil` for a browser-only backup.
+    static func importedAIDataArchiveURL(inStaging staging: URL) -> URL? {
+        let url = staging.appendingPathComponent("ai-data.tar.gz", isDirectory: false)
+        return FileManager.default.fileExists(atPath: url.path) ? url : nil
+    }
+
+    /// Confirmation body shown before replacing Phi user data. When the archive
+    /// also carries AI data, one combined message warns that both browser data
+    /// and AI data will be replaced, instead of the browser-only warning.
+    static func importConfirmationBody(hasAIData: Bool) -> String {
+        if hasAIData {
+            return NSLocalizedString(
+                "This replaces your browser data and AI data with the archive, then restarts Phi. Save your work first.",
+                comment: "Manage User Data - Combined confirmation body when the archive also contains AI data"
+            )
+        }
+        return NSLocalizedString(
+            "This replaces the Phi user data folder with the archive and restarts Phi. Save your work first.",
+            comment: "Manage User Data - Confirmation body warning browser data replacement and relaunch"
+        )
+    }
+
     private static func preparePhiUserDataImport(from zipURL: URL) throws -> PhiUserDataImportStaging {
         let fm = FileManager.default
         let staging = fm.temporaryDirectory.appendingPathComponent("PhiDataImport-\(UUID().uuidString)", isDirectory: true)
@@ -559,13 +585,15 @@ extension AppController {
         do {
             let referencedProfileIds = try importedProfileIds(in: extractedPhi)
             let profileDisplayNames = try importedProfileDisplayNames(in: extractedPhi)
+            let aiDataArchiveURL = importedAIDataArchiveURL(inStaging: staging)
             AppLogInfo("[Debug] Phi user data import found referenced profiles: \(formatProfileIds(referencedProfileIds))")
             shouldCleanupStaging = false
             return PhiUserDataImportStaging(
                 stagingURL: staging,
                 extractedPhiURL: extractedPhi,
                 referencedProfileIds: referencedProfileIds,
-                profileDisplayNames: profileDisplayNames
+                profileDisplayNames: profileDisplayNames,
+                aiDataArchiveURL: aiDataArchiveURL
             )
         }
     }

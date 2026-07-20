@@ -113,9 +113,29 @@ extension AppController {
                         try Self.applyImportedProfileIdRemaps(repairResult.profileIdRemaps, in: staging.extractedPhiURL)
                         AppLogInfo("[Debug] Phi user data import replacing Phi data directory")
                         try Self.replacePhiUserDataDirectory(withExtractedPhiAt: staging.extractedPhiURL)
-                        staging.cleanup()
-                        AppLogInfo("[Debug] Phi user data imported from \(zipURL.path), relaunching")
-                        Self.relaunchPhiApplication()
+                        // Hand any imported AI-data archive to Sentinel before
+                        // relaunch. relaunchPhiApplication() terminates Phi, so the
+                        // await must finish first; staging.cleanup() is deferred to
+                        // after the response so the tar still exists when Sentinel
+                        // reads it. Timeout/error degrades to a warning — the
+                        // relaunch always proceeds and is never blocked.
+                        Task { @MainActor in
+                            if let aiDataArchiveURL = staging.aiDataArchiveURL {
+                                let coordinator = AIDataImportCoordinator(
+                                    requestImport: { path in
+                                        await SentinelBackupCoordinationClient().requestImportAIData(path: path, confirmed: true, timeout: 600)
+                                    },
+                                    openDashboard: { section in SentinelHelper.openDashboard(section: section) }
+                                )
+                                let outcome = await coordinator.coordinate(archivePath: aiDataArchiveURL.path)
+                                if case .degraded = outcome {
+                                    AppLogWarn("[Manage User Data] AI data import degraded: \(outcome); browser data was restored")
+                                }
+                            }
+                            staging.cleanup()
+                            AppLogInfo("[Debug] Phi user data imported from \(zipURL.path), relaunching")
+                            Self.relaunchPhiApplication()
+                        }
                     } catch {
                         Self.rollbackCreatedChromiumProfiles(repairResult.createdProfileIds) {
                             staging.cleanup()
@@ -544,7 +564,14 @@ extension AppController {
     /// contents; otherwise `nil` for a browser-only backup.
     static func importedAIDataArchiveURL(inStaging staging: URL) -> URL? {
         let url = staging.appendingPathComponent("ai-data.tar.gz", isDirectory: false)
-        return FileManager.default.fileExists(atPath: url.path) ? url : nil
+        // Require a regular file. A malformed archive can unpack a DIRECTORY
+        // named ai-data.tar.gz, which cannot be handed to Sentinel as a tar;
+        // treat it as absent (browser-only import) rather than present.
+        var isDirectory: ObjCBool = false
+        guard FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory), !isDirectory.boolValue else {
+            return nil
+        }
+        return url
     }
 
     /// Confirmation body shown before replacing Phi user data. When the archive

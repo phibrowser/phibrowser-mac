@@ -31,6 +31,17 @@ final class PhiUserDataImportDetectionTests: XCTestCase {
         XCTAssertNil(AppController.importedAIDataArchiveURL(inStaging: staging))
     }
 
+    func testTreatsDirectoryNamedArchiveAsAbsent() throws {
+        let staging = try makeStaging()
+        // A malformed archive can unpack a DIRECTORY named ai-data.tar.gz; it
+        // must not be detected as a handoff-ready tar.
+        try FileManager.default.createDirectory(
+            at: staging.appendingPathComponent("ai-data.tar.gz", isDirectory: true),
+            withIntermediateDirectories: true
+        )
+        XCTAssertNil(AppController.importedAIDataArchiveURL(inStaging: staging))
+    }
+
     func testConfirmationBodyMentionsAIDataWhenPresent() {
         let combined = AppController.importConfirmationBody(hasAIData: true)
         let browserOnly = AppController.importConfirmationBody(hasAIData: false)

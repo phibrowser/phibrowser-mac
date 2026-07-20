@@ -205,6 +205,33 @@ final class TimeMachineRestoreCoordinatorTests: XCTestCase {
         )
     }
 
+    func testRollbackProceedsWhenSentinelPrepareDoesNothing() async throws {
+        let fixture = try makeFixture()
+        var launched = false
+        let coordinator = makeCoordinator(
+            fixture: fixture,
+            packageDownloader: { _, _, destinationURL in
+                try "zip".write(to: destinationURL, atomically: true, encoding: .utf8)
+                return destinationURL
+            },
+            unzipRunner: { _, arguments in
+                let destinationURL = URL(fileURLWithPath: arguments.last!)
+                try self.writeApp(
+                    at: destinationURL.appendingPathComponent("Phi.app", isDirectory: true),
+                    bundleIdentifier: "com.phibrowser.Mac",
+                    build: "590"
+                )
+            },
+            helperLauncher: { _, _ in launched = true },
+            prepareSentinelForRollback: { _, _, _ in /* simulate timeout/noSnapshot: no effect */ }
+        )
+
+        let plan = try await coordinator.prepareAndLaunchRestore(for: fixture.backup)
+
+        XCTAssertTrue(launched)
+        XCTAssertEqual(plan.operationID, fixture.operationID)
+    }
+
     func testRestoreReportsPreparationProgress() async throws {
         let fixture = try makeFixture()
         var reportedProgress: [TimeMachineRestorePreparationProgress] = []

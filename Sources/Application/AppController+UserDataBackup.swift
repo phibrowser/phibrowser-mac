@@ -8,6 +8,19 @@ import Foundation
 import SwiftData
 import UniformTypeIdentifiers
 
+struct PhiUserDataExportSelection {
+    var includeBrowserData: Bool
+    var includeAIData: Bool
+
+    init(includeBrowserData: Bool = true, includeAIData: Bool = true) {
+        self.includeBrowserData = includeBrowserData
+        self.includeAIData = includeAIData
+    }
+
+    var isExportable: Bool { includeBrowserData || includeAIData }
+    var shouldCoordinateAIData: Bool { includeAIData }
+}
+
 extension AppController {
     private enum PhiUserDataBackupPromptResult {
         case cancel

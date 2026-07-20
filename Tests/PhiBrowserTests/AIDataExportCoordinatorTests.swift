@@ -127,4 +127,34 @@ extension AIDataExportCoordinatorTests {
         XCTAssertTrue(entries.contains("ai-data.tar.gz"), "Expected ai-data.tar.gz at zip root, got \(entries)")
         XCTAssertTrue(entries.contains { $0.hasPrefix("Phi/") }, "Expected Phi/ entries preserved, got \(entries)")
     }
+
+    func testAppendAIDataArchiveNormalizesEntryNameRegardlessOfSourceBasename() throws {
+        let workDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("ai-export-name-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: workDir, withIntermediateDirectories: true)
+        addTeardownBlock { try? FileManager.default.removeItem(at: workDir) }
+
+        // Source tar with a NON-canonical basename (as if Sentinel reported a
+        // path whose last component is not ai-data.tar.gz).
+        let tarDir = workDir.appendingPathComponent("staging", isDirectory: true)
+        try FileManager.default.createDirectory(at: tarDir, withIntermediateDirectories: true)
+        let tarURL = tarDir.appendingPathComponent("sentinel-export.tgz", isDirectory: false)
+        try Data("tarball".utf8).write(to: tarURL)
+        let zipURL = workDir.appendingPathComponent("backup.zip", isDirectory: false)
+
+        try AppController.appendAIDataArchive(tarURL, to: zipURL)
+
+        let list = Process()
+        let pipe = Pipe()
+        list.executableURL = URL(fileURLWithPath: "/usr/bin/unzip")
+        list.arguments = ["-Z", "-1", zipURL.path]
+        list.standardOutput = pipe
+        try list.run(); list.waitUntilExit()
+        let output = String(data: pipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
+        let entries = Set(output.split(separator: "\n").map(String.init))
+        // The entry is normalized to the canonical name import detection expects,
+        // never the source basename.
+        XCTAssertEqual(entries, ["ai-data.tar.gz"], "Expected exactly the canonical entry name, got \(entries)")
+        XCTAssertFalse(entries.contains("sentinel-export.tgz"), "Source basename must not leak into the zip, got \(entries)")
+    }
 }

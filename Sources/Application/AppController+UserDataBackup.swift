@@ -528,9 +528,32 @@ extension AppController {
     /// Appends `ai-data.tar.gz` to an existing Manage User Data zip at the archive
     /// root, next to `Phi/`. The tar's own attribute fidelity is internal to the
     /// tar layer; the zip wrapper is irrelevant to it.
+    ///
+    /// The entry is always written under the fixed name `ai-data.tar.gz`
+    /// regardless of `tarURL`'s basename: `importedAIDataArchiveURL(inStaging:)`
+    /// detects the archive by exactly that name, so a differently-named source
+    /// (e.g. if Sentinel ever reports an export path with another basename) would
+    /// otherwise round-trip into a backup whose AI data import silently ignores.
+    /// `/usr/bin/zip` names the entry after the on-disk file, so when the source
+    /// basename differs we stage a copy under the canonical name first.
     static func appendAIDataArchive(_ tarURL: URL, to destinationZIP: URL) throws {
-        let stagingParent = tarURL.deletingLastPathComponent()
-        let entryName = tarURL.lastPathComponent
+        let fm = FileManager.default
+        let entryName = "ai-data.tar.gz"
+
+        let stagingParent: URL
+        var stagedCopyDir: URL?
+        if tarURL.lastPathComponent == entryName {
+            stagingParent = tarURL.deletingLastPathComponent()
+        } else {
+            let copyDir = fm.temporaryDirectory
+                .appendingPathComponent("PhiAIDataZip-\(UUID().uuidString)", isDirectory: true)
+            try fm.createDirectory(at: copyDir, withIntermediateDirectories: true)
+            try fm.copyItem(at: tarURL, to: copyDir.appendingPathComponent(entryName, isDirectory: false))
+            stagingParent = copyDir
+            stagedCopyDir = copyDir
+        }
+        defer { if let stagedCopyDir { try? fm.removeItem(at: stagedCopyDir) } }
+
         let stderrPipe = Pipe()
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/zip")

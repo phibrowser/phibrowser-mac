@@ -251,6 +251,50 @@ final class SentinelBackupCoordinationClient {
     }
 }
 
+// MARK: - Export coordination
+
+struct AIDataExportCoordinator {
+    enum Result: Equatable {
+        case packed(tarURL: URL)
+        case skippedBrowserOnly(reason: SkipReason)
+    }
+
+    enum SkipReason: Equatable {
+        case sentinelUnavailable
+        case timedOut
+        case exportFailed
+        case cancelled
+    }
+
+    let ensureSentinelRunning: () async -> Bool
+    let requestExport: (_ destinationPath: String) async -> SentinelCoordinationResult<SentinelAIDataExport.Response>
+    let fileExists: (String) -> Bool
+    let isCancelled: () -> Bool
+
+    func coordinate(destinationTarURL: URL) async -> Result {
+        if isCancelled() { return .skippedBrowserOnly(reason: .cancelled) }
+        guard await ensureSentinelRunning() else {
+            return .skippedBrowserOnly(reason: .sentinelUnavailable)
+        }
+        if isCancelled() { return .skippedBrowserOnly(reason: .cancelled) }
+
+        switch await requestExport(destinationTarURL.path) {
+        case .timedOut:
+            return .skippedBrowserOnly(reason: .timedOut)
+        case .response(let response):
+            switch response.status {
+            case .completed:
+                guard let path = response.path, fileExists(path) else {
+                    return .skippedBrowserOnly(reason: .exportFailed)
+                }
+                return .packed(tarURL: URL(fileURLWithPath: path))
+            case .error:
+                return .skippedBrowserOnly(reason: .exportFailed)
+            }
+        }
+    }
+}
+
 /// Guards a single continuation resume and tears the observer down exactly once,
 /// even when a response arrives before `attach` runs.
 private final class SendState {

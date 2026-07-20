@@ -63,8 +63,15 @@ enum SentinelPrepareForRollback {
         let status: Status
     }
 
-    static func requestUserInfo(requestID: String, targetBrowserVersion: String, fromBrowserVersion: String, operationID: String) -> [String: String] {
-        ["requestID": requestID, "targetBrowserVersion": targetBrowserVersion, "fromBrowserVersion": fromBrowserVersion, "operationID": operationID]
+    static func requestUserInfo(requestID: String, targetBrowserVersion: String, fromBrowserVersion: String?, operationID: String) -> [String: String] {
+        // fromBrowserVersion is optional: old backup records may predate
+        // creatingVersion. Omit the key entirely (never send an empty string)
+        // — Sentinel falls back to the installed Phi.app version when absent.
+        var userInfo = ["requestID": requestID, "targetBrowserVersion": targetBrowserVersion, "operationID": operationID]
+        if let fromBrowserVersion {
+            userInfo["fromBrowserVersion"] = fromBrowserVersion
+        }
+        return userInfo
     }
 
     static func parseResponse(_ info: [String: String]) -> Response? {
@@ -186,7 +193,7 @@ final class SentinelBackupCoordinationClient {
 
     func requestPrepareForRollback(
         targetBrowserVersion: String,
-        fromBrowserVersion: String,
+        fromBrowserVersion: String?,
         operationID: String,
         timeout: TimeInterval = 120
     ) async -> SentinelCoordinationResult<SentinelPrepareForRollback.Response> {

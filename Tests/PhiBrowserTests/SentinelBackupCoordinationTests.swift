@@ -52,6 +52,13 @@ final class SentinelBackupCoordinationTests: XCTestCase {
         let userInfo = SentinelPrepareForRollback.requestUserInfo(requestID: "req-3", targetBrowserVersion: "1.6", fromBrowserVersion: "2.0", operationID: "op-9")
         XCTAssertEqual(userInfo, ["requestID": "req-3", "targetBrowserVersion": "1.6", "fromBrowserVersion": "2.0", "operationID": "op-9"])
 
+        // fromBrowserVersion is optional: old backup records may predate
+        // creatingVersion. When absent, the key must be omitted entirely
+        // (never sent as an empty string) so Sentinel falls back correctly.
+        let userInfoWithoutFromVersion = SentinelPrepareForRollback.requestUserInfo(requestID: "req-3", targetBrowserVersion: "1.6", fromBrowserVersion: nil, operationID: "op-9")
+        XCTAssertEqual(userInfoWithoutFromVersion, ["requestID": "req-3", "targetBrowserVersion": "1.6", "operationID": "op-9"])
+        XCTAssertNil(userInfoWithoutFromVersion["fromBrowserVersion"])
+
         XCTAssertEqual(SentinelPrepareForRollback.parseResponse(["requestID": "req-3", "status": "restored"])?.status, .restored)
         XCTAssertEqual(SentinelPrepareForRollback.parseResponse(["requestID": "req-3", "status": "noSnapshot"])?.status, .noSnapshot)
         XCTAssertEqual(SentinelPrepareForRollback.parseResponse(["requestID": "req-3", "status": "error"])?.status, .error)
@@ -132,7 +139,12 @@ final class TestSentinelNotificationTransport: SentinelNotificationTransport {
     private var registrations: [Registration] = []
     var onPost: ((Posted) -> Void)?
 
-    var observedObjects: [String] { registrations.filter { !$0.isCancelled }.map(\.object) }
+    // Append-only: records every `object` an observer was ever registered for,
+    // regardless of later cancellation. Kept separate from
+    // `activeSubscriptionCount` so tests can assert both "was registered on
+    // the Sentinel channel" and "was torn down after resolution" without the
+    // two assertions being mutually exclusive.
+    private(set) var observedObjects: [String] = []
     var activeSubscriptionCount: Int { registrations.filter { !$0.isCancelled }.count }
 
     func post(name: Notification.Name, object: String, userInfo: [String: String]) {
@@ -148,6 +160,7 @@ final class TestSentinelNotificationTransport: SentinelNotificationTransport {
     ) -> SentinelNotificationSubscription {
         let registration = Registration(name: name, object: object, handler: handler)
         registrations.append(registration)
+        observedObjects.append(object)
         return Subscription(onCancel: { registration.isCancelled = true })
     }
 

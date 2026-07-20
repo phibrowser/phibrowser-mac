@@ -21,6 +21,12 @@ struct PhiUserDataExportSelection {
     var shouldCoordinateAIData: Bool { includeAIData }
 }
 
+@MainActor
+private final class PhiUserDataExportSelectionBox {
+    var selection = PhiUserDataExportSelection()
+    var readState: (() -> PhiUserDataExportSelection)?
+}
+
 extension AppController {
     private enum PhiUserDataBackupPromptResult {
         case cancel
@@ -166,6 +172,36 @@ extension AppController {
     }
 
     @MainActor
+    private func makeExportAccessoryView(box: PhiUserDataExportSelectionBox) -> NSView {
+        let browserCheckbox = NSButton(checkboxWithTitle: NSLocalizedString(
+            "Browser data",
+            comment: "Manage User Data - Export category checkbox for Phi browser data"
+        ), target: nil, action: nil)
+        browserCheckbox.state = box.selection.includeBrowserData ? .on : .off
+        let aiCheckbox = NSButton(checkboxWithTitle: NSLocalizedString(
+            "AI data",
+            comment: "Manage User Data - Export category checkbox for Sentinel AI data"
+        ), target: nil, action: nil)
+        aiCheckbox.state = box.selection.includeAIData ? .on : .off
+
+        // Read state lazily when the panel returns; no live target/action needed.
+        let stack = NSStackView(views: [browserCheckbox, aiCheckbox])
+        stack.orientation = .vertical
+        stack.alignment = .leading
+        stack.edgeInsets = NSEdgeInsets(top: 12, left: 20, bottom: 12, right: 20)
+        stack.translatesAutoresizingMaskIntoConstraints = false
+
+        // Retain the checkboxes on the box so we can read them after runModal.
+        box.readState = {
+            PhiUserDataExportSelection(
+                includeBrowserData: browserCheckbox.state == .on,
+                includeAIData: aiCheckbox.state == .on
+            )
+        }
+        return stack
+    }
+
+    @MainActor
     private func performPhiUserDataBackupExport() -> Bool {
         let fm = FileManager.default
         let phiPath = FileSystemUtils.phiBrowserDataDirectory()
@@ -187,13 +223,33 @@ extension AppController {
         panel.title = NSLocalizedString("Back Up Phi User Data", comment: "Debug clear data - NSSavePanel title for saving Phi user data directory as zip")
         panel.prompt = NSLocalizedString("Save", comment: "Debug clear data - NSSavePanel confirm button title when saving Phi user data backup zip")
 
+        let selectionBox = PhiUserDataExportSelectionBox()
+        panel.accessoryView = makeExportAccessoryView(box: selectionBox)
+
         guard panel.runModal() == .OK, let destinationZIP = panel.url else {
+            return false
+        }
+
+        let selection = selectionBox.readState?() ?? PhiUserDataExportSelection()
+        guard selection.isExportable else {
+            // Neither category selected: nothing to export.
+            let alert = NSAlert()
+            alert.messageText = NSLocalizedString(
+                "Select at least one category to back up.",
+                comment: "Manage User Data - Alert when the user unchecks both export categories"
+            )
+            alert.alertStyle = .informational
+            alert.addButton(withTitle: NSLocalizedString("OK", comment: "Generic - OK button to dismiss an alert"))
+            alert.runModal()
             return false
         }
 
         do {
             syncCurrentChromiumProfileDisplayNamesToLocalStore()
-            try zipPhiBrowserDataDirectory(to: destinationZIP)
+            if selection.includeBrowserData {
+                try zipPhiBrowserDataDirectory(to: destinationZIP)
+            }
+            // TASK 3: coordinate AI data when selection.shouldCoordinateAIData
             AppLogInfo("[Debug] Phi user data backup saved to \(destinationZIP.path)")
             return true
         } catch {

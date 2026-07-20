@@ -245,11 +245,73 @@ extension AppController {
         }
 
         do {
-            syncCurrentChromiumProfileDisplayNamesToLocalStore()
             if selection.includeBrowserData {
+                // Syncing display names mutates the live local store that
+                // zipPhiBrowserDataDirectory then archives, so it is only
+                // meaningful when browser data is actually being captured.
+                syncCurrentChromiumProfileDisplayNamesToLocalStore()
                 try zipPhiBrowserDataDirectory(to: destinationZIP)
             }
-            // TASK 3: coordinate AI data when selection.shouldCoordinateAIData
+
+            if selection.shouldCoordinateAIData {
+                let stagingDir = FileManager.default.temporaryDirectory
+                    .appendingPathComponent("PhiAIDataExport-\(UUID().uuidString)", isDirectory: true)
+                try? FileManager.default.createDirectory(at: stagingDir, withIntermediateDirectories: true)
+                defer { try? FileManager.default.removeItem(at: stagingDir) }
+                let tarURL = stagingDir.appendingPathComponent("ai-data.tar.gz", isDirectory: false)
+
+                let cancelledBox = ExportCancellationBox()
+                let coordinator = AIDataExportCoordinator(
+                    ensureSentinelRunning: {
+                        if SentinelHelper.isRunning { return true }
+                        SentinelHelper.launch()
+                        // Poll briefly for cold launch; degrade if it never appears.
+                        for _ in 0..<20 {
+                            if SentinelHelper.isRunning { return true }
+                            try? await Task.sleep(nanoseconds: 250_000_000)
+                        }
+                        return SentinelHelper.isRunning
+                    },
+                    requestExport: { destinationPath in
+                        await SentinelBackupCoordinationClient().requestExportAIData(destinationPath: destinationPath, timeout: 600)
+                    },
+                    fileExists: { FileManager.default.fileExists(atPath: $0) },
+                    isCancelled: { cancelledBox.isCancelled }
+                )
+
+                let outcome = presentAIDataExportProgress(cancelBox: cancelledBox) {
+                    await coordinator.coordinate(destinationTarURL: tarURL)
+                }
+
+                switch outcome {
+                case .packed(let packedTarURL):
+                    do {
+                        if !selection.includeBrowserData, fm.fileExists(atPath: destinationZIP.path) {
+                            // AI-only export must yield an archive containing only
+                            // ai-data.tar.gz; start from a clean file so we never
+                            // append into a stale zip the user chose to replace.
+                            try fm.removeItem(at: destinationZIP)
+                        }
+                        try Self.appendAIDataArchive(packedTarURL, to: destinationZIP)
+                    } catch {
+                        warnAIDataDegraded(reason: .exportFailed, browserDataIncluded: selection.includeBrowserData)
+                        if !selection.includeBrowserData {
+                            // AI-only export whose only content failed to pack:
+                            // no valid backup was produced, so report failure.
+                            try? fm.removeItem(at: destinationZIP)
+                            return false
+                        }
+                    }
+                case .skippedBrowserOnly(let reason):
+                    // Browser data (if selected) is already in the zip; warn explicitly.
+                    warnAIDataDegraded(reason: reason, browserDataIncluded: selection.includeBrowserData)
+                    if !selection.includeBrowserData {
+                        // AI-only export that could not produce AI data: nothing was written.
+                        return false
+                    }
+                }
+            }
+
             AppLogInfo("[Debug] Phi user data backup saved to \(destinationZIP.path)")
             return true
         } catch {
@@ -262,6 +324,96 @@ extension AppController {
             errorAlert.runModal()
             return false
         }
+    }
+
+    /// Presents an indeterminate progress modal with a single Cancel button while
+    /// `work` runs on a background task. Returns the coordinator result when the
+    /// work completes, or `.skippedBrowserOnly(reason: .cancelled)` if the user
+    /// cancels first (the background export is then abandoned; its write lands in
+    /// the discarded staging directory).
+    @MainActor
+    private func presentAIDataExportProgress(
+        cancelBox: ExportCancellationBox,
+        _ work: @escaping () async -> AIDataExportCoordinator.Result
+    ) -> AIDataExportCoordinator.Result {
+        let alert = NSAlert()
+        alert.messageText = NSLocalizedString(
+            "Backing up AI data…",
+            comment: "Manage User Data - Progress title while Sentinel exports AI data"
+        )
+        alert.addButton(withTitle: NSLocalizedString(
+            "Cancel",
+            comment: "Manage User Data - Cancel button on the AI data backup progress modal"
+        ))
+
+        let progress = NSProgressIndicator()
+        progress.style = .bar
+        progress.isIndeterminate = true
+        progress.frame = NSRect(x: 0, y: 0, width: 300, height: 20)
+        progress.startAnimation(nil)
+        alert.accessoryView = progress
+
+        var workResult: AIDataExportCoordinator.Result?
+        let task = Task { @MainActor in
+            let result = await work()
+            // If the user already cancelled, the progress modal is gone; a late
+            // stopModal here could dismiss an unrelated modal (e.g. the degraded
+            // warning), so bail out instead.
+            if Task.isCancelled { return }
+            workResult = result
+            NSApp.stopModal()
+        }
+
+        let response = alert.runModal()
+
+        if response == .stop, let workResult {
+            return workResult
+        }
+
+        // Any other outcome is a user cancel: abandon the background export.
+        cancelBox.cancel()
+        task.cancel()
+        return .skippedBrowserOnly(reason: .cancelled)
+    }
+
+    /// Explains, after the fact, that AI data was not included. When browser data
+    /// was still backed up the export degraded to browser-only; for an AI-only
+    /// export the whole backup failed and no file was produced.
+    @MainActor
+    private func warnAIDataDegraded(reason: AIDataExportCoordinator.SkipReason, browserDataIncluded: Bool) {
+        let informative: String
+        if browserDataIncluded {
+            switch reason {
+            case .sentinelUnavailable:
+                informative = NSLocalizedString("AI data was not included because the AI service could not be started. Only browser data was backed up.", comment: "Manage User Data - Warning when AI data export is skipped because Sentinel is unavailable")
+            case .timedOut:
+                informative = NSLocalizedString("AI data was not included because the AI service did not respond in time. Only browser data was backed up.", comment: "Manage User Data - Warning when AI data export does not respond in time")
+            case .exportFailed:
+                informative = NSLocalizedString("AI data was not included because the AI service reported an error. Only browser data was backed up.", comment: "Manage User Data - Warning when AI data export reports an error")
+            case .cancelled:
+                informative = NSLocalizedString("AI data backup was cancelled. Only browser data was backed up.", comment: "Manage User Data - Warning when AI data export is cancelled")
+            }
+        } else {
+            switch reason {
+            case .sentinelUnavailable:
+                informative = NSLocalizedString("AI data could not be backed up because the AI service could not be started. No backup was created.", comment: "Manage User Data - Warning when an AI-only backup fails because Sentinel is unavailable")
+            case .timedOut:
+                informative = NSLocalizedString("AI data could not be backed up because the AI service did not respond in time. No backup was created.", comment: "Manage User Data - Warning when an AI-only backup does not respond in time")
+            case .exportFailed:
+                informative = NSLocalizedString("AI data could not be backed up because the AI service reported an error. No backup was created.", comment: "Manage User Data - Warning when an AI-only backup reports an error")
+            case .cancelled:
+                informative = NSLocalizedString("AI data backup was cancelled. No backup was created.", comment: "Manage User Data - Warning when an AI-only backup is cancelled")
+            }
+        }
+
+        let alert = NSAlert()
+        alert.messageText = browserDataIncluded
+            ? NSLocalizedString("AI Data Not Backed Up", comment: "Manage User Data - Alert title when AI data is skipped but browser data was backed up")
+            : NSLocalizedString("Backup Failed", comment: "Debug clear data - Alert title when exporting Phi user data zip fails")
+        alert.informativeText = informative
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: NSLocalizedString("OK", comment: "Generic - OK button to dismiss an alert"))
+        alert.runModal()
     }
 
     private func defaultPhiUserDataBackupFileName() -> String {
@@ -884,4 +1036,14 @@ extension AppController {
             }
         }
     }
+}
+
+/// Thread-safe cancel flag shared between the AI data export progress modal and
+/// the background coordination task, which reads it through the coordinator's
+/// `isCancelled` closure.
+private final class ExportCancellationBox {
+    private let lock = NSLock()
+    private var _cancelled = false
+    var isCancelled: Bool { lock.lock(); defer { lock.unlock() }; return _cancelled }
+    func cancel() { lock.lock(); _cancelled = true; lock.unlock() }
 }

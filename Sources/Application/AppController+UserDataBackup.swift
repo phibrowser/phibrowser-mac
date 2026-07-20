@@ -348,6 +348,28 @@ extension AppController {
         }
     }
 
+    /// Appends `ai-data.tar.gz` to an existing Manage User Data zip at the archive
+    /// root, next to `Phi/`. The tar's own attribute fidelity is internal to the
+    /// tar layer; the zip wrapper is irrelevant to it.
+    static func appendAIDataArchive(_ tarURL: URL, to destinationZIP: URL) throws {
+        let stagingParent = tarURL.deletingLastPathComponent()
+        let entryName = tarURL.lastPathComponent
+        let stderrPipe = Pipe()
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/zip")
+        process.arguments = ["-q", destinationZIP.path, entryName]
+        process.currentDirectoryURL = stagingParent
+        process.standardError = stderrPipe
+        try process.run()
+        process.waitUntilExit()
+        guard process.terminationStatus == 0 else {
+            let errText = String(data: stderrPipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8)?
+                .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            let detail = errText.isEmpty ? "zip exited with status \(process.terminationStatus)." : errText
+            throw NSError(domain: "PhiUserDataBackup", code: Int(process.terminationStatus), userInfo: [NSLocalizedDescriptionKey: detail])
+        }
+    }
+
     @MainActor
     private func presentPhiUserDataImportFailure(_ error: Error) {
         AppLogWarn("[Debug] Phi user data import failed: \(error.localizedDescription)")

@@ -87,3 +87,44 @@ final class AIDataExportCoordinatorTests: XCTestCase {
         XCTAssertEqual(result, .packed(tarURL: tarURL))
     }
 }
+
+extension AIDataExportCoordinatorTests {
+    func testAppendAIDataArchiveStoresTarAtZipRootNextToPhi() throws {
+        let workDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("ai-export-pack-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: workDir, withIntermediateDirectories: true)
+        addTeardownBlock { try? FileManager.default.removeItem(at: workDir) }
+
+        // Build a base zip that already contains Phi/ (mirror zipPhiBrowserDataDirectory).
+        let phiDir = workDir.appendingPathComponent("Phi", isDirectory: true)
+        try FileManager.default.createDirectory(at: phiDir, withIntermediateDirectories: true)
+        try Data("data".utf8).write(to: phiDir.appendingPathComponent("localdb"))
+        let zipURL = workDir.appendingPathComponent("backup.zip", isDirectory: false)
+        let makeZip = Process()
+        makeZip.executableURL = URL(fileURLWithPath: "/usr/bin/zip")
+        makeZip.arguments = ["-r", "-q", zipURL.path, "Phi"]
+        makeZip.currentDirectoryURL = workDir
+        try makeZip.run(); makeZip.waitUntilExit()
+        XCTAssertEqual(makeZip.terminationStatus, 0)
+
+        // The tar sits in its own temp dir.
+        let tarDir = workDir.appendingPathComponent("staging", isDirectory: true)
+        try FileManager.default.createDirectory(at: tarDir, withIntermediateDirectories: true)
+        let tarURL = tarDir.appendingPathComponent("ai-data.tar.gz", isDirectory: false)
+        try Data("tarball".utf8).write(to: tarURL)
+
+        try AppController.appendAIDataArchive(tarURL, to: zipURL)
+
+        // Assert the zip now lists both Phi/ and ai-data.tar.gz at the root.
+        let list = Process()
+        let pipe = Pipe()
+        list.executableURL = URL(fileURLWithPath: "/usr/bin/unzip")
+        list.arguments = ["-Z", "-1", zipURL.path]
+        list.standardOutput = pipe
+        try list.run(); list.waitUntilExit()
+        let output = String(data: pipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
+        let entries = Set(output.split(separator: "\n").map(String.init))
+        XCTAssertTrue(entries.contains("ai-data.tar.gz"), "Expected ai-data.tar.gz at zip root, got \(entries)")
+        XCTAssertTrue(entries.contains { $0.hasPrefix("Phi/") }, "Expected Phi/ entries preserved, got \(entries)")
+    }
+}

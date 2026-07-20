@@ -295,6 +295,45 @@ struct AIDataExportCoordinator {
     }
 }
 
+// MARK: - Import coordination
+
+struct AIDataImportCoordinator {
+    enum Outcome: Equatable {
+        case coordinated(needsAttention: Bool)
+        case degraded(reason: DegradeReason)
+    }
+
+    enum DegradeReason: Equatable {
+        case timedOut
+        case failed
+    }
+
+    /// Sentinel dashboard section token for the Backup & Restore page.
+    /// Frozen as "backup" — Sentinel adds it to SentinelAppDelegate's
+    /// openDashboardSectionAllowlist and the UI's NAV_SECTIONS.
+    static let backupRestoreSection = "backup"
+
+    let requestImport: (_ path: String) async -> SentinelCoordinationResult<SentinelAIDataImport.Response>
+    let openDashboard: (_ section: String) -> Void
+
+    func coordinate(archivePath: String) async -> Outcome {
+        switch await requestImport(archivePath) {
+        case .timedOut:
+            return .degraded(reason: .timedOut)
+        case .response(let response):
+            switch response.status {
+            case .completed:
+                if response.needsAttention {
+                    openDashboard(Self.backupRestoreSection)
+                }
+                return .coordinated(needsAttention: response.needsAttention)
+            case .error:
+                return .degraded(reason: .failed)
+            }
+        }
+    }
+}
+
 /// Guards a single continuation resume and tears the observer down exactly once,
 /// even when a response arrives before `attach` runs.
 private final class SendState {

@@ -39,6 +39,7 @@ struct TimeMachineRestoreCoordinator {
     typealias ProcessRunner = (URL, [String]) throws -> Void
     typealias ProgressHandler = (TimeMachineRestorePreparationProgress) -> Void
     typealias RestorePreparationTraceReporter = (TimeMachineRestorePreparationTrace) -> Void
+    typealias SentinelRollbackPreparer = (_ targetBrowserVersion: String, _ fromBrowserVersion: String?, _ operationID: String) async -> Void
 
     static let packageFilename = "package.zip"
     static let extractedPackageDirectoryName = "Package"
@@ -49,6 +50,7 @@ struct TimeMachineRestoreCoordinator {
     private let packageDownloader: PackageDownloader
     private let unzipRunner: ProcessRunner
     private let helperLauncher: ProcessRunner
+    private let prepareSentinelForRollback: SentinelRollbackPreparer
     private let helperURLProvider: () -> URL?
     private let currentAppURLProvider: () -> URL
     private let applicationSupportURLProvider: () -> URL
@@ -68,6 +70,14 @@ struct TimeMachineRestoreCoordinator {
         packageDownloader: PackageDownloader? = nil,
         unzipRunner: @escaping ProcessRunner = Self.runUnzip,
         helperLauncher: @escaping ProcessRunner = Self.launchProcess,
+        prepareSentinelForRollback: @escaping SentinelRollbackPreparer = { targetBrowserVersion, fromBrowserVersion, operationID in
+            _ = await SentinelBackupCoordinationClient().requestPrepareForRollback(
+                targetBrowserVersion: targetBrowserVersion,
+                fromBrowserVersion: fromBrowserVersion,
+                operationID: operationID,
+                timeout: 120
+            )
+        },
         helperURLProvider: @escaping () -> URL? = {
             Self.bundledHelperURL()
         },
@@ -102,6 +112,7 @@ struct TimeMachineRestoreCoordinator {
         }
         self.unzipRunner = unzipRunner
         self.helperLauncher = helperLauncher
+        self.prepareSentinelForRollback = prepareSentinelForRollback
         self.helperURLProvider = helperURLProvider
         self.currentAppURLProvider = currentAppURLProvider
         self.applicationSupportURLProvider = applicationSupportURLProvider
@@ -184,6 +195,8 @@ struct TimeMachineRestoreCoordinator {
             )
             wroteJournal = true
             AppLogInfo("[TimeMachine] Restore journal prepared for operation \(operationID.uuidString).")
+            AppLogInfo("[TimeMachine] Requesting Sentinel rollback preparation for operation \(operationID.uuidString) target \(backup.rollbackVersion) from \(backup.creatingVersion).")
+            await prepareSentinelForRollback(backup.rollbackVersion, backup.creatingVersion, operationID.uuidString)
             report(.launchingInstaller, fractionCompleted: 0.95)
             try helperLauncher(helperURL, Self.helperArguments(planURL: planURL))
             AppLogInfo("[TimeMachine] Installer helper launched for operation \(operationID.uuidString).")

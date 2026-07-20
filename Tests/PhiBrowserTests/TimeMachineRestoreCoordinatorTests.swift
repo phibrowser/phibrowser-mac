@@ -173,6 +173,38 @@ final class TimeMachineRestoreCoordinatorTests: XCTestCase {
         XCTAssertEqual(journal.phase, .prepared)
     }
 
+    func testRollbackHandshakeFiresBeforeHelperLaunch() async throws {
+        let fixture = try makeFixture()
+        var events: [String] = []
+        let coordinator = makeCoordinator(
+            fixture: fixture,
+            packageDownloader: { _, _, destinationURL in
+                try "zip".write(to: destinationURL, atomically: true, encoding: .utf8)
+                return destinationURL
+            },
+            unzipRunner: { _, arguments in
+                let destinationURL = URL(fileURLWithPath: arguments.last!)
+                try self.writeApp(
+                    at: destinationURL.appendingPathComponent("Phi.app", isDirectory: true),
+                    bundleIdentifier: "com.phibrowser.Mac",
+                    build: "590"
+                )
+            },
+            helperLauncher: { _, _ in events.append("helper") },
+            prepareSentinelForRollback: { targetVersion, fromVersion, operationID in
+                events.append("prepare:\(targetVersion):\(fromVersion ?? "<nil>"):\(operationID)")
+            }
+        )
+
+        _ = try await coordinator.prepareAndLaunchRestore(for: fixture.backup)
+
+        // targetVersion = backup.rollbackVersion, fromVersion = backup.creatingVersion.
+        XCTAssertEqual(
+            events,
+            ["prepare:1.6-selected:2.0:\(fixture.operationID.uuidString)", "helper"]
+        )
+    }
+
     func testRestoreReportsPreparationProgress() async throws {
         let fixture = try makeFixture()
         var reportedProgress: [TimeMachineRestorePreparationProgress] = []
@@ -396,6 +428,7 @@ final class TimeMachineRestoreCoordinatorTests: XCTestCase {
         packageDownloader: @escaping TimeMachineRestoreCoordinator.PackageDownloader,
         unzipRunner: @escaping TimeMachineRestoreCoordinator.ProcessRunner,
         helperLauncher: @escaping TimeMachineRestoreCoordinator.ProcessRunner = { _, _ in },
+        prepareSentinelForRollback: @escaping (String, String?, String) async -> Void = { _, _, _ in },
         progressHandler: TimeMachineRestoreCoordinator.ProgressHandler? = nil,
         uptimeProvider: @escaping () -> TimeInterval = { ProcessInfo.processInfo.systemUptime },
         restorePreparationTraceReporter: @escaping TimeMachineRestoreCoordinator.RestorePreparationTraceReporter = { _ in }
@@ -405,6 +438,7 @@ final class TimeMachineRestoreCoordinatorTests: XCTestCase {
             packageDownloader: packageDownloader,
             unzipRunner: unzipRunner,
             helperLauncher: helperLauncher,
+            prepareSentinelForRollback: prepareSentinelForRollback,
             helperURLProvider: { fixture.helperURL },
             currentAppURLProvider: { fixture.currentAppURL },
             applicationSupportURLProvider: { fixture.applicationSupportURL },

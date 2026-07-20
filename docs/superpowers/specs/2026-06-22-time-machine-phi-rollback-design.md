@@ -7,7 +7,9 @@ known 1.x build to the risky 2.0 build need a local rollback point that can
 restore Phi's local data and reinstall the matching 1.x app package.
 
 This design covers the Phi side only. Sentinel data is intentionally out of
-scope for the first implementation. Time Machine restores Phi data by replacing
+scope for the first implementation; see the Sentinel-coordination contract
+referenced under Open Follow-Ups for the paired downgrade-protection
+mechanism. Time Machine restores Phi data by replacing
 the selected file-system scope as a whole, including LocalStore files. Phi's
 existing LocalStore compatibility logic remains available as its own startup
 schema preflight, but it is not the Time Machine restore path.
@@ -29,7 +31,10 @@ schema preflight, but it is not the Time Machine restore path.
 
 ## Non-Goals
 
-- Restore Sentinel data.
+- Restore Sentinel data. Sentinel data restore is now handled by Sentinel
+  itself, triggered by the browser rollback via the prepare handshake (see the
+  coordination contract referenced under Open Follow-Ups); the browser still
+  never reads or writes Sentinel's data directories.
 - Replace LocalStore compatibility behavior or call it from Time Machine.
 - Support build ranges. The trigger is an exact build number.
 - Support dmg rollback packages.
@@ -522,5 +527,11 @@ move and emergency-restore behavior without touching `/Applications`.
 - Decide whether failed backup attempts should block launch in all 2.0 builds
   or only before destructive migrations.
 - Add retention policy for old snapshots and emergency backups.
-- Extend the same Time Machine model to Sentinel storage if Sentinel 2.0 state
-  also needs downgrade protection.
+- **Resolved (2026-07-19):** Sentinel storage gets its own local snapshot/rollback
+  engine, coordinated by the browser via the `prepareForRollback`
+  distributed-notification contract sent before the installer helper launches.
+  Design: `sentinel/docs/superpowers/specs/2026-07-19-backup-restore-design.md`;
+  browser-side implementation:
+  `docs/superpowers/plans/2026-07-19-ai-data-backup-coordination.md`;
+  cross-project contract:
+  `~/.agents/company-knowledge/30-projects/cross-project/sentinel-browser-backup-coordination.md`.

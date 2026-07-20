@@ -63,16 +63,6 @@ extension AppController {
 
     @MainActor
     @objc func importUserDataFromBackup(_ sender: Any?) {
-        let confirm = NSAlert()
-        confirm.messageText = NSLocalizedString("Import Phi User Data?", comment: "Debug import user data - Confirmation alert title before replacing Phi user data from zip")
-        confirm.informativeText = NSLocalizedString("This replaces the Phi user data folder with the archive and restarts Phi. Save your work first.", comment: "Debug import user data - Confirmation alert body warning data replacement and relaunch")
-        confirm.alertStyle = .warning
-        confirm.addButton(withTitle: NSLocalizedString("Import...", comment: "Debug import user data - Alert button to open file picker for zip backup"))
-        confirm.addButton(withTitle: NSLocalizedString("Cancel", comment: "Debug import user data - Alert button to cancel importing user data"))
-        guard confirm.runModal() == .alertFirstButtonReturn else {
-            return
-        }
-
         let panel = NSOpenPanel()
         panel.allowsMultipleSelection = false
         panel.canChooseFiles = true
@@ -86,6 +76,20 @@ extension AppController {
 
         do {
             let staging = try Self.preparePhiUserDataImport(from: zipURL)
+
+            // Confirm after staging so the single warning reflects the archive's
+            // actual contents: browser data only, or browser data plus AI data.
+            let confirm = NSAlert()
+            confirm.messageText = NSLocalizedString("Import Phi User Data?", comment: "Manage User Data - Confirmation title before replacing Phi user data from zip")
+            confirm.informativeText = Self.importConfirmationBody(hasAIData: staging.aiDataArchiveURL != nil)
+            confirm.alertStyle = .warning
+            confirm.addButton(withTitle: NSLocalizedString("Import", comment: "Manage User Data - Confirmation button to replace Phi user data from the selected backup"))
+            confirm.addButton(withTitle: NSLocalizedString("Cancel", comment: "Manage User Data - Confirmation button to cancel importing Phi user data"))
+            guard confirm.runModal() == .alertFirstButtonReturn else {
+                staging.cleanup()
+                return
+            }
+
             AppLogInfo("[Debug] Phi user data import prepared: archive=\(zipURL.path) referencedProfiles=\(Self.formatProfileIds(staging.referencedProfileIds))")
             // Defer Chromium-side extension preinstall for the profiles we
             // create here: this flow relaunches before an async install can

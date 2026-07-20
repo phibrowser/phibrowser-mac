@@ -215,7 +215,9 @@ protocol SideBarOutlineViewDelegate: AnyObject {
     func outlineView(_ outlineView: SideBarOutlineView,
                      didMiddleClickRow row: Int,
                      at location: NSPoint)
-    func outlineView(_ outlineView: SideBarOutlineView, didClickRow row: Int)
+    func outlineView(_ outlineView: SideBarOutlineView,
+                     didClickRow row: Int,
+                     modifierFlags: NSEvent.ModifierFlags)
     func outlineView(_ outlineView: SideBarOutlineView,
                      beginDraggingTabAtRow row: Int,
                      with mouseDownEvent: NSEvent)
@@ -249,6 +251,12 @@ class SideBarOutlineView: DiffableOutlineView {
     
     /// Delegate for handling middle mouse button click events
     weak var phiOutlineDelegate: SideBarOutlineViewDelegate?
+    private var lastMouseDownModifierFlags: NSEvent.ModifierFlags?
+
+    func consumeMouseDownModifierFlags() -> NSEvent.ModifierFlags? {
+        defer { lastMouseDownModifierFlags = nil }
+        return lastMouseDownModifierFlags
+    }
 
     private var pendingTabDragRow: Int?
     private var pendingTabDragStartPoint: NSPoint?
@@ -303,6 +311,8 @@ class SideBarOutlineView: DiffableOutlineView {
             super.mouseDown(with: event)
             return
         }
+        lastMouseDownModifierFlags = event.modifierFlags
+
         let point = convert(event.locationInWindow, from: nil)
         let index = row(at: point)
         let itemTypeDescription: String = {
@@ -398,6 +408,7 @@ class SideBarOutlineView: DiffableOutlineView {
             "passed=\(tabDragThresholdPassed)"
         )
         defer {
+            lastMouseDownModifierFlags = nil
             resetTabDragThresholdState()
         }
         if let pendingRow = pendingTabDragRow {
@@ -405,7 +416,12 @@ class SideBarOutlineView: DiffableOutlineView {
                 let point = convert(event.locationInWindow, from: nil)
                 if pendingRow == row(at: point) {
                     AppLogDebug("[SIDEBAR_TAB_DRAG_THRESHOLD] click normal tab row=\(pendingRow)")
-                    phiOutlineDelegate?.outlineView(self, didClickRow: pendingRow)
+                    let modifierFlags = pendingTabMouseDownEvent?.modifierFlags ?? event.modifierFlags
+                    phiOutlineDelegate?.outlineView(
+                        self,
+                        didClickRow: pendingRow,
+                        modifierFlags: modifierFlags
+                    )
                 }
             }
             return

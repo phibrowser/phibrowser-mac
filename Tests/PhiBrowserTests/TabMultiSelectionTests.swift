@@ -3,6 +3,7 @@
 // Use of this source code is governed by an Apache license that can be
 // found in the LICENSE file.
 
+import AppKit
 import XCTest
 @testable import Phi
 
@@ -26,5 +27,16 @@ final class TabMultiSelectionTests: XCTestCase {
         var sel = TabMultiSelection.empty
         sel.toggle(1); sel.toggle(2); sel.toggle(3); sel.toggle(2)
         XCTAssertEqual(sel.guids, [1, 3])
+    }
+
+    func testPureOptionClickExcludesSelectionModifiers() {
+        var modifiers: NSEvent.ModifierFlags = [.option]
+        XCTAssertTrue(modifiers.isPureOptionClick)
+
+        for modifier in [NSEvent.ModifierFlags.command, .shift, .control] {
+            modifiers.insert(modifier)
+            XCTAssertFalse(modifiers.isPureOptionClick)
+            modifiers.remove(modifier)
+        }
     }
 }

@@ -68,6 +68,7 @@ final class TabItemView: NSView {
     // MARK: - Drag Gesture State
     private var isDraggingInternal = false
     private var mouseDownPoint: CGPoint?
+    private var mouseDownModifierFlags: NSEvent.ModifierFlags?
 
     // MARK: - Tracking Area
     private var hoverTrackingArea: NSTrackingArea?
@@ -883,7 +884,9 @@ final class TabItemView: NSView {
 
     override func mouseUp(with event: NSEvent) {
         viewModel.isPressed = false
-        
+        let modifierFlags = mouseDownModifierFlags ?? event.modifierFlags
+        mouseDownModifierFlags = nil
+
         if isDraggingInternal {
             isDraggingInternal = false
             onDragEnd?()
@@ -919,20 +922,22 @@ final class TabItemView: NSView {
             // pane's tab so each favicon acts as its own click target.
             if pinnedSplitPartner != nil, point.x > bounds.midX, onSecondarySelect != nil {
                 if event.clickCount == 2, let onSecondaryDoubleSelect {
-                    onSecondaryDoubleSelect(event.modifierFlags)
+                    onSecondaryDoubleSelect(modifierFlags)
                 } else {
-                    onSecondarySelect?(event.modifierFlags)
+                    onSecondarySelect?(modifierFlags)
                 }
             } else if event.clickCount == 2, let onDoubleSelect {
-                onDoubleSelect(event.modifierFlags)
+                onDoubleSelect(modifierFlags)
             } else {
-                onSelect?(event.modifierFlags)
+                onSelect?(modifierFlags)
             }
         }
         mouseDownPoint = nil
     }
 
     override func mouseDown(with event: NSEvent) {
+        mouseDownModifierFlags = event.modifierFlags
+
         mouseDownPoint = convert(event.locationInWindow, from: nil)
         isDraggingInternal = false
 

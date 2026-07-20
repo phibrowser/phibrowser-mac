@@ -7,6 +7,13 @@ import AppKit
 import Combine
 import SnapKit
 
+extension NSEvent.ModifierFlags {
+    var isPureOptionClick: Bool {
+        let selectionModifiers: Self = [.command, .option, .shift, .control]
+        return intersection(selectionModifiers) == .option
+    }
+}
+
 enum TabStripMultiSelectionUnit: Hashable {
     case tab(Int)
     case splitPair(left: Int, right: Int)
@@ -2894,6 +2901,20 @@ final class TabStrip: NSView, TitlebarAwareHitTestable {
         isPinned: Bool,
         modifierFlags: NSEvent.ModifierFlags
     ) {
+        if modifierFlags.isPureOptionClick {
+            let didPerformSplit = MainActor.assumeIsolated {
+                tab.performSplitAction()
+            }
+
+            if didPerformSplit {
+                multiSelectionRangeAnchor = nil
+                if browserState.multiSelection.isActive {
+                    browserState.clearMultiSelection()
+                }
+                return
+            }
+        }
+
         guard !isPinned else {
             multiSelectionRangeAnchor = nil
             if browserState.multiSelection.isActive {

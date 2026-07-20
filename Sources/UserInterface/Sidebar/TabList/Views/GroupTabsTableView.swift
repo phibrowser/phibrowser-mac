@@ -141,6 +141,7 @@ final class GroupTabsTableView: NSTableView {
     override func mouseUp(with event: NSEvent) {
         let point = convert(event.locationInWindow, from: nil)
         let upRow = row(at: point)
+        let modifierFlags = pendingMouseDownEvent?.modifierFlags ?? event.modifierFlags
         if !manualDragInProgress,
            let clickedRow = pendingDragRow,
            clickedRow >= 0,
@@ -152,7 +153,11 @@ final class GroupTabsTableView: NSTableView {
                                             didRequest: pendingInteractionTarget,
                                             row: clickedRow)
             } else if pendingInteractionTarget == nil {
-                phiTableDelegate?.tableView(self, didClickRow: clickedRow)
+                phiTableDelegate?.tableView(
+                    self,
+                    didClickRow: clickedRow,
+                    modifierFlags: modifierFlags
+                )
             }
         }
         resetPendingDragState()
@@ -223,7 +228,8 @@ protocol GroupTabsTableViewDelegate: AnyObject {
                    beginDraggingRow row: Int,
                    with event: NSEvent)
     func tableView(_ tableView: GroupTabsTableView,
-                   didClickRow row: Int)
+                   didClickRow row: Int,
+                   modifierFlags: NSEvent.ModifierFlags)
     func tableView(_ tableView: GroupTabsTableView,
                    didMiddleClickRow row: Int,
                    at location: NSPoint)

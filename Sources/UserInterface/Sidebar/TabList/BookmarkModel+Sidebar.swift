@@ -264,6 +264,17 @@ extension Bookmark: ContextMenuRepresentable {
     }
 
     @MainActor
+    func performSplitAction() -> Bool {
+        guard !isFolder,
+              let url, !url.isEmpty,
+              (secondaryUrl ?? "").isEmpty else {
+            return false
+        }
+        openInSplitView()
+        return true
+    }
+
+    @MainActor
     @objc private func openInSplitView() {
         guard let url, !url.isEmpty,
               let state = MainBrowserWindowControllersManager.shared.activeWindowController?.browserState else { return }

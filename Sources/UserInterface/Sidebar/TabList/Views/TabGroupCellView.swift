@@ -1081,12 +1081,22 @@ extension TabGroupCellView: GroupTabsTableViewDelegate {
     }
 
     func tableView(_ tableView: GroupTabsTableView,
-                   didClickRow row: Int) {
+                   didClickRow row: Int,
+                   modifierFlags: NSEvent.ModifierFlags) {
         guard currentMemberOrder.indices.contains(row) else {
             return
         }
         let key = currentMemberOrder[row]
-        let modifierFlags = NSApp.currentEvent?.modifierFlags ?? []
+        if modifierFlags.isPureOptionClick,
+           let tab = tabsByGuid[key] {
+            let didPerformSplit = MainActor.assumeIsolated {
+                tab.performSplitAction()
+            }
+            if didPerformSplit {
+                configuredBrowserState?.clearMultiSelection()
+                return
+            }
+        }
         if let pair = splitPairsByKey[key],
            groupCellDelegate?.tabGroupCell(
                self,

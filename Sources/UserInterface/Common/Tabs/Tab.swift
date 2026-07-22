@@ -470,6 +470,73 @@ class Tab: WebContentRepresentable {
     func makeSelfActive() {
         webContentWrapper?.setAsActiveTab()
     }
+
+    /// Performs the Option-click split action for this tab. A split may only
+    /// involve two plain, live tabs: if either the target or the focused tab
+    /// already belongs to a split, callers receive `false` and preserve their
+    /// normal selection behavior instead.
+    @MainActor
+    @discardableResult
+    func performSplitAction() -> Bool {
+        guard let browserState = MainBrowserWindowControllersManager.shared
+            .activeWindowController?.browserState else {
+            return false
+        }
+        return performSplitAction(in: browserState)
+    }
+
+    @MainActor
+    @discardableResult
+    func performSplitAction(in browserState: BrowserState) -> Bool {
+        guard let focusedTab = browserState.focusingTab,
+              browserState.tabs.contains(where: { $0.guid == focusedTab.guid }),
+              let route = TabSplitActionRoute.resolve(
+                  selectedTabId: guid,
+                  focusedTabId: focusedTab.guid,
+                  selectedTabIsInSplit: browserState.splitGroup(forTabId: guid) != nil,
+                  focusedTabIsInSplit: browserState.splitGroup(forTabId: focusedTab.guid) != nil
+              ) else {
+            return false
+        }
+
+        // A closed pinned entry has no live Chromium tab to pair directly.
+        // Treat it as the target URL, keeping the currently focused tab on
+        // the left and creating a fresh right-hand pane from the saved URL.
+        if !isOpenned {
+            guard case let .splitWithFocused(focusedTabId) = route,
+                  let pinnedDBGuid = guidInLocalDB,
+                  !pinnedDBGuid.isEmpty,
+                  let pinnedURL = pinnedUrl ?? url,
+                  !pinnedURL.isEmpty,
+                  browserState.pinnedTabs.contains(where: {
+                      $0.guidInLocalDB == pinnedDBGuid
+                  }) else {
+                return false
+            }
+            browserState.makeTabNormalOpened(tabId: focusedTabId)
+            return browserState.openNewTabAsSplit(
+                partnerTabId: focusedTabId,
+                partnerNavigateURL: URLProcessor.processUserInput(pinnedURL)
+            )
+        }
+
+        guard browserState.tabs.contains(where: { $0.guid == guid }) else {
+            return false
+        }
+
+        switch route {
+        case .openNewPartner:
+            return browserState.openNewTabAsSplit(partnerTabId: guid)
+        case let .splitWithFocused(focusedTabId):
+            browserState.makeTabNormalOpened(tabId: guid)
+            browserState.makeTabNormalOpened(tabId: focusedTabId)
+            return browserState.createSplit(
+                leftTabId: focusedTabId,
+                rightTabId: guid,
+                layout: .vertical
+            ) != nil
+        }
+    }
     
     func goBack() {
         webContentWrapper?.goBack()
@@ -516,6 +583,30 @@ class Tab: WebContentRepresentable {
     func tearDown() {
         cancellables.forEach { $0.cancel() }
         cancellables.removeAll()
+    }
+}
+
+/// Resolves the command an Option-click should dispatch without entangling
+/// pointer handling with BrowserState mutation. The route stays nil whenever
+/// a second split would be created, allowing each view to fall back to its
+/// established selection path.
+enum TabSplitActionRoute: Equatable {
+    case openNewPartner
+    case splitWithFocused(tabId: Int)
+
+    static func resolve(selectedTabId: Int,
+                        focusedTabId: Int?,
+                        selectedTabIsInSplit: Bool,
+                        focusedTabIsInSplit: Bool) -> Self? {
+        guard let focusedTabId,
+              !selectedTabIsInSplit,
+              !focusedTabIsInSplit else {
+            return nil
+        }
+        if selectedTabId == focusedTabId {
+            return .openNewPartner
+        }
+        return .splitWithFocused(tabId: focusedTabId)
     }
 }
 

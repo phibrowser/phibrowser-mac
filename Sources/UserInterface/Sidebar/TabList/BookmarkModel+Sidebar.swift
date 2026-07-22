@@ -267,11 +267,17 @@ extension Bookmark: ContextMenuRepresentable {
     func performSplitAction() -> Bool {
         guard !isFolder,
               let url, !url.isEmpty,
-              (secondaryUrl ?? "").isEmpty else {
+              (secondaryUrl ?? "").isEmpty,
+              let state = MainBrowserWindowControllersManager.shared
+                  .activeWindowController?.browserState,
+              let focusedTab = state.focusingTab,
+              state.tabs.contains(where: { $0.guid == focusedTab.guid }),
+              state.splitGroup(forTabId: focusedTab.guid) == nil else {
             return false
         }
-        openInSplitView()
-        return true
+        return state.formSplitFromBookmark(bookmarkGuid: guid,
+                                           partnerTabId: focusedTab.guid,
+                                           newTabSlot: .right)
     }
 
     @MainActor

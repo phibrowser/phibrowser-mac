@@ -1155,16 +1155,17 @@ extension BrowserState {
     /// opens a new tab on the bookmark URL via `openNewTabAsSplit`. Shared
     /// by the drag-onto-page flow, the bookmark "Open as Split" menu, and
     /// any future entry point so all three behave identically.
-    /// - Returns: `true` when a split was attempted, `false` when the
-    ///   bookmark could not be resolved (deleted mid-action, folder, or
-    ///   empty URL). The caller may fall back to other entry points.
+    /// - Returns: `true` when a split command was dispatched, `false` when
+    ///   the bookmark or partner is no longer eligible. The caller may fall
+    ///   back to other entry points.
     @discardableResult
     func formSplitFromBookmark(bookmarkGuid: String,
                                partnerTabId: Int,
                                newTabSlot: SplitSlot) -> Bool {
         guard let bookmark = bookmarkManager.bookmark(withGuid: bookmarkGuid),
               !bookmark.isFolder,
-              let url = bookmark.url, !url.isEmpty else { return false }
+              let url = bookmark.url, !url.isEmpty,
+              splitGroup(forTabId: partnerTabId) == nil else { return false }
         // Resolve the bookmark's attached live tab BEFORE the partner
         // normalization below — `makeTabNormalOpened(partnerTabId)` clears
         // the partner tab's `guidInLocalDB`, so if the attached
@@ -1183,17 +1184,18 @@ extension BrowserState {
            attachedLiveTab.guid != partnerTabId,
            splitGroup(forTabId: attachedLiveTab.guid) == nil {
             makeTabNormalOpened(tabId: attachedLiveTab.guid)
+            let splitId: String?
             switch newTabSlot {
             case .left:
-                createSplit(leftTabId: attachedLiveTab.guid,
-                            rightTabId: partnerTabId,
-                            layout: .vertical)
+                splitId = createSplit(leftTabId: attachedLiveTab.guid,
+                                      rightTabId: partnerTabId,
+                                      layout: .vertical)
             case .right:
-                createSplit(leftTabId: partnerTabId,
-                            rightTabId: attachedLiveTab.guid,
-                            layout: .vertical)
+                splitId = createSplit(leftTabId: partnerTabId,
+                                      rightTabId: attachedLiveTab.guid,
+                                      layout: .vertical)
             }
-            return true
+            return splitId != nil
         }
         // Attached-and-IS-partner: the partner tab was the bookmark's live
         // representation and is now detached above. Opening another tab on
@@ -1203,15 +1205,13 @@ extension BrowserState {
         // opposite side.
         if attachedLiveTab?.guid == partnerTabId {
             let oppositeSlot: SplitSlot = (newTabSlot == .left) ? .right : .left
-            openNewTabAsSplit(partnerTabId: partnerTabId, newTabSlot: oppositeSlot)
-            return true
+            return openNewTabAsSplit(partnerTabId: partnerTabId, newTabSlot: oppositeSlot)
         }
         // Bookmark has no live representation: materialize a fresh unbound
         // tab on the bookmark URL as the new pane.
-        openNewTabAsSplit(partnerTabId: partnerTabId,
-                          newTabSlot: newTabSlot,
-                          partnerNavigateURL: URLProcessor.processUserInput(url))
-        return true
+        return openNewTabAsSplit(partnerTabId: partnerTabId,
+                                 newTabSlot: newTabSlot,
+                                 partnerNavigateURL: URLProcessor.processUserInput(url))
     }
 
     /// Opens a fresh tab (on `partnerNavigateURL` when given, else a
@@ -1229,12 +1229,17 @@ extension BrowserState {
     ///   - boundBookmarkGuid: When non-nil, the resulting split's id is
     ///     registered in `splitBookmarkBindings` under this bookmark guid so
     ///     a subsequent click on the bookmark activates the existing split.
+    /// - Returns: `true` when the new-tab split command was dispatched.
+    @discardableResult
     func openNewTabAsSplit(partnerTabId: Int,
                            newTabSlot: SplitSlot = .right,
                            partnerNavigateURL: String? = nil,
                            boundBookmarkGuid: String? = nil,
-                           insertionIndex: Int? = nil) {
-        guard splitGroup(forTabId: partnerTabId) == nil else { return }
+                           insertionIndex: Int? = nil) -> Bool {
+        guard splitGroup(forTabId: partnerTabId) == nil,
+              ChromiumLauncher.sharedInstance().bridge != nil else {
+            return false
+        }
         // Splits never live in the pinned strip. If the partner is currently
         // pinned, demote it to the normal list first and leave a fresh
         // unopened pinned placeholder pointing at the same URL at the
@@ -1292,6 +1297,7 @@ extension BrowserState {
                 .clearPendingSplitPartner(withTabId: partnerId.int64Value,
                                           windowId: wid.int64Value)
         }
+        return true
     }
 
     /// Right-click "Open as Split" on an *unopened* pinned cell. The pinned

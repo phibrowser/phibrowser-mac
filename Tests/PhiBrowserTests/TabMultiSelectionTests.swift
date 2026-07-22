@@ -39,4 +39,52 @@ final class TabMultiSelectionTests: XCTestCase {
             modifiers.remove(modifier)
         }
     }
+
+    func testTabSplitActionRouteChoosesTheExpectedSplitCommand() {
+        XCTAssertEqual(
+            TabSplitActionRoute.resolve(
+                selectedTabId: 1,
+                focusedTabId: 1,
+                selectedTabIsInSplit: false,
+                focusedTabIsInSplit: false
+            ),
+            .openNewPartner
+        )
+        XCTAssertEqual(
+            TabSplitActionRoute.resolve(
+                selectedTabId: 2,
+                focusedTabId: 1,
+                selectedTabIsInSplit: false,
+                focusedTabIsInSplit: false
+            ),
+            .splitWithFocused(tabId: 1)
+        )
+    }
+
+    func testTabSplitActionRouteRejectsMissingOrSplitParticipants() {
+        XCTAssertNil(
+            TabSplitActionRoute.resolve(
+                selectedTabId: 1,
+                focusedTabId: nil,
+                selectedTabIsInSplit: false,
+                focusedTabIsInSplit: false
+            )
+        )
+        XCTAssertNil(
+            TabSplitActionRoute.resolve(
+                selectedTabId: 2,
+                focusedTabId: 1,
+                selectedTabIsInSplit: true,
+                focusedTabIsInSplit: false
+            )
+        )
+        XCTAssertNil(
+            TabSplitActionRoute.resolve(
+                selectedTabId: 2,
+                focusedTabId: 1,
+                selectedTabIsInSplit: false,
+                focusedTabIsInSplit: true
+            )
+        )
+    }
 }

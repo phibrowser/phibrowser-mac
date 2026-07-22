@@ -921,6 +921,24 @@ extension Tab: ContextMenuRepresentable {
         state.addSplitBookmarkFromTab(self, bindLiveSplit: false)
     }
 
+    /// Mirrors the tab context menu's split action for Option-click.
+    @MainActor
+    func performSplitAction() -> Bool {
+        guard let state = MainBrowserWindowControllersManager.shared.activeWindowController?.browserState,
+              state.splitGroup(forTabId: guid) == nil,
+              state.splitMembership(forCellTab: self) == nil else {
+            return false
+        }
+        if let focused = state.focusingTab,
+           focused.guid != guid,
+           state.splitGroup(forTabId: focused.guid) == nil {
+            splitWithCurrent()
+        } else {
+            openAsSplit()
+        }
+        return true
+    }
+
     @MainActor
     @objc private func openAsSplit() {
         guard let state = MainBrowserWindowControllersManager.shared.activeWindowController?.browserState else { return }

@@ -4,9 +4,32 @@
 // found in the LICENSE file.
 
 import AppKit
+import Darwin
 import Foundation
 import SwiftData
 import UniformTypeIdentifiers
+
+struct PhiUserDataExportSelection: Equatable {
+    var includeBrowserData: Bool
+    var includeAIData: Bool
+
+    var isExportable: Bool {
+        includeBrowserData || includeAIData
+    }
+}
+
+@MainActor
+private final class PhiUserDataExportSelectionBox {
+    var selection: PhiUserDataExportSelection
+    var readState: (() -> PhiUserDataExportSelection)?
+
+    init(browserDataAvailable: Bool) {
+        selection = PhiUserDataExportSelection(
+            includeBrowserData: browserDataAvailable,
+            includeAIData: true
+        )
+    }
+}
 
 extension AppController {
     private enum PhiUserDataBackupPromptResult {
@@ -139,7 +162,7 @@ extension AppController {
     private func promptBackupBeforeClearingPhiUserData() -> PhiUserDataBackupPromptResult {
         let alert = NSAlert()
         alert.messageText = NSLocalizedString("Back Up User Data First?", comment: "Debug clear data - Alert title asking whether to export Phi user data before clearing")
-        alert.informativeText = NSLocalizedString("You can save a zip of your Phi user data folder before local files are removed and the app quits.", comment: "Debug clear data - Alert body explaining optional zip backup before clearing user data")
+        alert.informativeText = NSLocalizedString("You can save a zip of your browser and AI data before local files are removed and the app quits.", comment: "Debug clear data - Alert body explaining optional zip backup before clearing user data")
         alert.alertStyle = .informational
         alert.addButton(withTitle: NSLocalizedString("Backup...", comment: "Debug clear data - Alert button to open the save panel for a Phi user data zip"))
         alert.addButton(withTitle: NSLocalizedString("Skip Backup", comment: "Debug clear data - Alert button to clear data without creating a backup zip"))
@@ -155,19 +178,64 @@ extension AppController {
     }
 
     @MainActor
+    private func makeExportAccessoryView(
+        box: PhiUserDataExportSelectionBox,
+        browserDataAvailable: Bool
+    ) -> NSView {
+        let browserCheckbox = NSButton(
+            checkboxWithTitle: NSLocalizedString(
+                "Browser data",
+                comment: "Manage User Data - Export category checkbox for Phi browser data"
+            ),
+            target: nil,
+            action: nil
+        )
+        browserCheckbox.state = box.selection.includeBrowserData ? .on : .off
+        browserCheckbox.isEnabled = browserDataAvailable
+
+        let aiCheckbox = NSButton(
+            checkboxWithTitle: NSLocalizedString(
+                "AI data",
+                comment: "Manage User Data - Export category checkbox for Sentinel AI data"
+            ),
+            target: nil,
+            action: nil
+        )
+        aiCheckbox.state = box.selection.includeAIData ? .on : .off
+
+        box.readState = {
+            PhiUserDataExportSelection(
+                includeBrowserData: browserCheckbox.state == .on,
+                includeAIData: aiCheckbox.state == .on
+            )
+        }
+
+        let stack = NSStackView(views: [browserCheckbox, aiCheckbox])
+        stack.orientation = .vertical
+        stack.alignment = .leading
+        stack.spacing = 8
+        stack.translatesAutoresizingMaskIntoConstraints = false
+
+        let container = NSView(frame: NSRect(x: 0, y: 0, width: 320, height: 64))
+        container.addSubview(stack)
+        NSLayoutConstraint.activate([
+            stack.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 12),
+            stack.trailingAnchor.constraint(lessThanOrEqualTo: container.trailingAnchor, constant: -12),
+            stack.topAnchor.constraint(equalTo: container.topAnchor, constant: 8),
+            stack.bottomAnchor.constraint(equalTo: container.bottomAnchor, constant: -8)
+        ])
+        return container
+    }
+
+    @MainActor
     private func performPhiUserDataBackupExport() -> Bool {
         let fm = FileManager.default
-        let phiPath = FileSystemUtils.phiBrowserDataDirectory()
-
-        if !fm.fileExists(atPath: phiPath) {
-            let alert = NSAlert()
-            alert.messageText = NSLocalizedString("No Phi User Data to Back Up", comment: "Debug clear data - Alert title when the Phi data folder is missing before backup")
-            alert.informativeText = NSLocalizedString("The Phi user data folder was not found. Continuing will still remove other local application data and quit.", comment: "Debug clear data - Alert body when Phi folder is missing; clearing will still proceed for other locations")
-            alert.alertStyle = .informational
-            alert.addButton(withTitle: NSLocalizedString("OK", comment: "Generic - OK button to dismiss an alert"))
-            alert.runModal()
-            return true
-        }
+        let browserDataAvailable = Self.isDirectory(
+            at: URL(
+                fileURLWithPath: FileSystemUtils.phiBrowserDataDirectory(),
+                isDirectory: true
+            )
+        )
 
         let panel = NSSavePanel()
         panel.canCreateDirectories = true
@@ -176,13 +244,102 @@ extension AppController {
         panel.title = NSLocalizedString("Back Up Phi User Data", comment: "Debug clear data - NSSavePanel title for saving Phi user data directory as zip")
         panel.prompt = NSLocalizedString("Save", comment: "Debug clear data - NSSavePanel confirm button title when saving Phi user data backup zip")
 
+        let selectionBox = PhiUserDataExportSelectionBox(
+            browserDataAvailable: browserDataAvailable
+        )
+        panel.accessoryView = makeExportAccessoryView(
+            box: selectionBox,
+            browserDataAvailable: browserDataAvailable
+        )
+
         guard panel.runModal() == .OK, let destinationZIP = panel.url else {
             return false
         }
 
+        let selection = selectionBox.readState?() ?? selectionBox.selection
+        guard selection.isExportable else {
+            let alert = NSAlert()
+            alert.messageText = NSLocalizedString(
+                "Select at least one category to back up.",
+                comment: "Manage User Data - Alert when the user unchecks both export categories"
+            )
+            alert.alertStyle = .informational
+            alert.addButton(withTitle: NSLocalizedString("OK", comment: "Generic - OK button to dismiss an alert"))
+            alert.runModal()
+            return false
+        }
+
+        let stagingDirectory = fm.temporaryDirectory.appendingPathComponent(
+            "PhiDataExport-\(UUID().uuidString)",
+            isDirectory: true
+        )
+        let stagedZIP = stagingDirectory.appendingPathComponent(
+            "Phi-data.zip",
+            isDirectory: false
+        )
+
         do {
-            syncCurrentChromiumProfileDisplayNamesToLocalStore()
-            try zipPhiBrowserDataDirectory(to: destinationZIP)
+            try fm.createDirectory(
+                at: stagingDirectory,
+                withIntermediateDirectories: false,
+                attributes: [.posixPermissions: 0o700]
+            )
+            defer {
+                try? fm.removeItem(at: stagingDirectory)
+            }
+
+            if selection.includeBrowserData {
+                guard browserDataAvailable else {
+                    throw NSError(
+                        domain: "PhiUserDataBackup",
+                        code: 2,
+                        userInfo: [
+                            NSLocalizedDescriptionKey: NSLocalizedString(
+                                "The Phi browser data folder is no longer available.",
+                                comment: "Manage User Data - Error when browser data disappears before backup starts"
+                            )
+                        ]
+                    )
+                }
+                syncCurrentChromiumProfileDisplayNamesToLocalStore()
+                try zipPhiBrowserDataDirectory(to: stagedZIP)
+            }
+
+            if selection.includeAIData {
+                let aiResult = coordinateAIDataExport()
+                switch aiResult.result {
+                case .packed(let tarURL):
+                    do {
+                        try Self.appendAIDataArchive(tarURL, to: stagedZIP)
+                        aiResult.session?.cleanup()
+                    } catch {
+                        aiResult.session?.cleanup()
+                        AppLogWarn("[Manage User Data] Failed to add AI data to backup: \(error.localizedDescription)")
+                        warnAIDataDegraded(
+                            reason: .exportFailed,
+                            browserDataIncluded: selection.includeBrowserData
+                        )
+                        guard selection.includeBrowserData else {
+                            return false
+                        }
+                    }
+                case .skipped(let reason):
+                    if reason.shouldRetainSessionForLateWrite {
+                        aiResult.session?.scheduleCleanup()
+                    } else {
+                        aiResult.session?.cleanup()
+                    }
+                    warnAIDataDegraded(
+                        reason: reason,
+                        browserDataIncluded: selection.includeBrowserData
+                    )
+                    guard selection.includeBrowserData else {
+                        return false
+                    }
+                }
+            }
+
+            try Self.publishBackup(from: stagedZIP, to: destinationZIP)
             AppLogInfo("[Debug] Phi user data backup saved to \(destinationZIP.path)")
             return true
         } catch {
@@ -195,6 +352,114 @@ extension AppController {
             errorAlert.runModal()
             return false
         }
+    }
+
+    @MainActor
+    private func coordinateAIDataExport() -> (
+        result: AIDataExportCoordinator.Result,
+        session: SentinelAIDataExportSession?
+    ) {
+        let service = SentinelAIDataExportService()
+        let session: SentinelAIDataExportSession
+        do {
+            session = try service.prepareSession()
+        } catch {
+            AppLogWarn("[Manage User Data] Cannot prepare AI data export: \(error.localizedDescription)")
+            return (.skipped(reason: .exportFailed), nil)
+        }
+
+        let cancellation = SentinelExportCancellation()
+        let result = presentAIDataExportProgress(cancelBox: cancellation) {
+            await service.coordinate(
+                session: session,
+                isCancelled: {
+                    cancellation.isCancelled
+                }
+            )
+        }
+        return (result, session)
+    }
+
+    @MainActor
+    private func presentAIDataExportProgress(
+        cancelBox: SentinelExportCancellation,
+        _ work: @escaping () async -> AIDataExportCoordinator.Result
+    ) -> AIDataExportCoordinator.Result {
+        let alert = NSAlert()
+        alert.messageText = NSLocalizedString(
+            "Backing Up AI Data",
+            comment: "Manage User Data - Progress title while Sentinel exports AI data"
+        )
+        alert.addButton(withTitle: NSLocalizedString(
+            "Cancel",
+            comment: "Manage User Data - Cancel button on the AI data backup progress modal"
+        ))
+
+        let progress = NSProgressIndicator(
+            frame: NSRect(x: 0, y: 0, width: 300, height: 20)
+        )
+        progress.style = .bar
+        progress.isIndeterminate = true
+        progress.startAnimation(nil)
+        alert.accessoryView = progress
+
+        var workResult: AIDataExportCoordinator.Result?
+        let task = Task { @MainActor in
+            let result = await work()
+            guard !Task.isCancelled else {
+                return
+            }
+            workResult = result
+            NSApp.stopModal()
+        }
+
+        let response = alert.runModal()
+        if response == .stop, let workResult {
+            return workResult
+        }
+
+        cancelBox.cancel()
+        task.cancel()
+        return .skipped(reason: .cancelled)
+    }
+
+    @MainActor
+    private func warnAIDataDegraded(
+        reason: AIDataExportCoordinator.SkipReason,
+        browserDataIncluded: Bool
+    ) {
+        let detail: String
+        switch (browserDataIncluded, reason) {
+        case (true, .sentinelUnavailable):
+            detail = NSLocalizedString("AI data was not included because Sentinel could not be started. Only browser data was backed up.", comment: "Manage User Data - Warning when AI export is skipped because Sentinel is unavailable")
+        case (true, .timedOut):
+            detail = NSLocalizedString("AI data was not included because Sentinel did not respond in time. Only browser data was backed up.", comment: "Manage User Data - Warning when AI export times out")
+        case (true, .exportFailed):
+            detail = NSLocalizedString("AI data was not included because Sentinel could not export it. Only browser data was backed up.", comment: "Manage User Data - Warning when AI export fails")
+        case (true, .invalidResponsePath):
+            detail = NSLocalizedString("AI data was not included because Sentinel returned an unexpected file. Only browser data was backed up.", comment: "Manage User Data - Warning when AI export returns an unexpected path")
+        case (true, .cancelled):
+            detail = NSLocalizedString("AI data backup was cancelled. Only browser data was backed up.", comment: "Manage User Data - Warning when AI export is cancelled")
+        case (false, .sentinelUnavailable):
+            detail = NSLocalizedString("AI data could not be backed up because Sentinel could not be started. No backup was created.", comment: "Manage User Data - Warning when an AI-only export cannot start Sentinel")
+        case (false, .timedOut):
+            detail = NSLocalizedString("AI data could not be backed up because Sentinel did not respond in time. No backup was created.", comment: "Manage User Data - Warning when an AI-only export times out")
+        case (false, .exportFailed):
+            detail = NSLocalizedString("AI data could not be backed up because Sentinel could not export it. No backup was created.", comment: "Manage User Data - Warning when an AI-only export fails")
+        case (false, .invalidResponsePath):
+            detail = NSLocalizedString("AI data could not be backed up because Sentinel returned an unexpected file. No backup was created.", comment: "Manage User Data - Warning when an AI-only export returns an unexpected path")
+        case (false, .cancelled):
+            detail = NSLocalizedString("AI data backup was cancelled. No backup was created.", comment: "Manage User Data - Warning when an AI-only export is cancelled")
+        }
+
+        let alert = NSAlert()
+        alert.messageText = browserDataIncluded
+            ? NSLocalizedString("AI Data Not Backed Up", comment: "Manage User Data - Alert title when AI data is skipped but browser data succeeds")
+            : NSLocalizedString("Backup Failed", comment: "Debug clear data - Alert title when exporting Phi user data zip fails")
+        alert.informativeText = detail
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: NSLocalizedString("OK", comment: "Generic - OK button to dismiss an alert"))
+        alert.runModal()
     }
 
     private func defaultPhiUserDataBackupFileName() -> String {
@@ -265,19 +530,181 @@ extension AppController {
             try fm.removeItem(at: destinationZIP)
         }
 
+        try Self.runZip(
+            arguments: ["-r", "-q", destinationZIP.path, phiFolderName],
+            currentDirectoryURL: parentURL
+        )
+    }
+
+    static func appendAIDataArchive(_ tarURL: URL, to destinationZIP: URL) throws {
+        let fm = FileManager.default
+        let entryName = SentinelAIDataExportSession.archiveFileName
+        let stagingParent = fm.temporaryDirectory.appendingPathComponent(
+            "PhiAIDataZip-\(UUID().uuidString)",
+            isDirectory: true
+        )
+        try fm.createDirectory(
+            at: stagingParent,
+            withIntermediateDirectories: false,
+            attributes: [.posixPermissions: 0o700]
+        )
+        defer {
+            try? fm.removeItem(at: stagingParent)
+        }
+
+        try copyOpenedRegularFile(
+            from: tarURL,
+            to: stagingParent.appendingPathComponent(entryName)
+        )
+        try runZip(
+            arguments: ["-q", destinationZIP.path, entryName],
+            currentDirectoryURL: stagingParent
+        )
+    }
+
+    private static func copyOpenedRegularFile(
+        from sourceURL: URL,
+        to destinationURL: URL
+    ) throws {
+        let sourceDescriptor = sourceURL.withUnsafeFileSystemRepresentation {
+            guard let fileSystemPath = $0 else {
+                return Int32(-1)
+            }
+            return Darwin.open(
+                fileSystemPath,
+                O_RDONLY | O_NOFOLLOW | O_CLOEXEC
+            )
+        }
+        guard sourceDescriptor >= 0 else {
+            throw NSError(
+                domain: NSPOSIXErrorDomain,
+                code: Int(errno),
+                userInfo: [
+                    NSLocalizedDescriptionKey:
+                        "Could not safely open the AI data archive."
+                ]
+            )
+        }
+
+        let sourceHandle = FileHandle(
+            fileDescriptor: sourceDescriptor,
+            closeOnDealloc: true
+        )
+        defer {
+            try? sourceHandle.close()
+        }
+
+        var fileStatus = stat()
+        guard Darwin.fstat(sourceDescriptor, &fileStatus) == 0 else {
+            throw NSError(
+                domain: NSPOSIXErrorDomain,
+                code: Int(errno),
+                userInfo: [
+                    NSLocalizedDescriptionKey:
+                        "Could not inspect the AI data archive."
+                ]
+            )
+        }
+        guard fileStatus.st_mode & S_IFMT == S_IFREG else {
+            throw NSError(
+                domain: "PhiUserDataBackup",
+                code: 5,
+                userInfo: [
+                    NSLocalizedDescriptionKey:
+                        "The AI data archive is not a regular file."
+                ]
+            )
+        }
+
+        guard FileManager.default.createFile(
+            atPath: destinationURL.path,
+            contents: nil,
+            attributes: [.posixPermissions: 0o600]
+        ) else {
+            throw NSError(
+                domain: "PhiUserDataBackup",
+                code: 6,
+                userInfo: [
+                    NSLocalizedDescriptionKey:
+                        "Could not stage the AI data archive."
+                ]
+            )
+        }
+
+        let destinationHandle = try FileHandle(forWritingTo: destinationURL)
+        defer {
+            try? destinationHandle.close()
+        }
+        while let chunk = try sourceHandle.read(upToCount: 1024 * 1024),
+              !chunk.isEmpty {
+            try destinationHandle.write(contentsOf: chunk)
+        }
+        try destinationHandle.synchronize()
+    }
+
+    private static func runZip(
+        arguments: [String],
+        currentDirectoryURL: URL
+    ) throws {
         let stderrPipe = Pipe()
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/zip")
-        process.arguments = ["-r", "-q", destinationZIP.path, phiFolderName]
-        process.currentDirectoryURL = parentURL
+        process.arguments = arguments
+        process.currentDirectoryURL = currentDirectoryURL
         process.standardError = stderrPipe
         try process.run()
         process.waitUntilExit()
         guard process.terminationStatus == 0 else {
-            let errText = String(data: stderrPipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8)?
-                .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-            let detail = errText.isEmpty ? "zip exited with status \(process.terminationStatus)." : errText
-            throw NSError(domain: "PhiUserDataBackup", code: Int(process.terminationStatus), userInfo: [NSLocalizedDescriptionKey: detail])
+            let errText = String(
+                data: stderrPipe.fileHandleForReading.readDataToEndOfFile(),
+                encoding: .utf8
+            )?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            let detail = errText.isEmpty
+                ? "zip exited with status \(process.terminationStatus)."
+                : errText
+            throw NSError(
+                domain: "PhiUserDataBackup",
+                code: Int(process.terminationStatus),
+                userInfo: [NSLocalizedDescriptionKey: detail]
+            )
+        }
+    }
+
+    private static func publishBackup(
+        from stagedZIP: URL,
+        to destinationZIP: URL
+    ) throws {
+        let fm = FileManager.default
+        guard fm.fileExists(atPath: stagedZIP.path) else {
+            throw NSError(
+                domain: "PhiUserDataBackup",
+                code: 3,
+                userInfo: [
+                    NSLocalizedDescriptionKey: NSLocalizedString(
+                        "No backup archive was produced.",
+                        comment: "Manage User Data - Error when export produced no zip"
+                    )
+                ]
+            )
+        }
+
+        let temporaryDestination = destinationZIP
+            .deletingLastPathComponent()
+            .appendingPathComponent(
+                ".\(destinationZIP.lastPathComponent).\(UUID().uuidString).tmp"
+            )
+        defer {
+            try? fm.removeItem(at: temporaryDestination)
+        }
+
+        try fm.copyItem(at: stagedZIP, to: temporaryDestination)
+        if fm.fileExists(atPath: destinationZIP.path) {
+            _ = try fm.replaceItemAt(
+                destinationZIP,
+                withItemAt: temporaryDestination
+            )
+        } else {
+            try fm.moveItem(at: temporaryDestination, to: destinationZIP)
         }
     }
 

@@ -936,6 +936,15 @@ typedef NS_ENUM(NSUInteger, PhiOmniboxSuggestionDisposition) {
 - (BOOL)isRestorePreviousSessionEnabled;
 - (void)setRestorePreviousSessionEnabled:(BOOL)enabled;
 
+/// Restores the previous session mid-session for a Dock reopen or an external
+/// link that arrives with no window open, mirroring cold start: every profile
+/// that owned a window when the app last had windows is reloaded and its last
+/// session replayed. `completion` runs once, after all profiles are attempted,
+/// with YES iff at least one window will appear, so the caller can fall back to
+/// opening a plain window on NO. Gate this on isRestorePreviousSessionEnabled.
+/// Main thread only.
+- (void)restorePreviousSessionWithCompletion:(void (^)(BOOL restoredAnyWindow))completion;
+
 #pragma mark - Security / Certificate
 
 /// Get security state and certificate chain for a tab.

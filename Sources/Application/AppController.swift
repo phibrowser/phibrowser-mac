@@ -284,6 +284,12 @@ import PostHog
     /// window). Cold launch retries in `coldOpenURLForwardDelay` steps up to
     /// `coldOpenURLForwardMaxAttempts`, then forwards anyway.
     private func scheduleForwardOpenURLsToChromium(application: NSApplication, urls: [URL]) {
+        // No window but a restorable history and the switch is on: bring the
+        // previous session back first so the link lands as a new tab in the
+        // restored active window instead of a bare new one. The queue below
+        // then forwards once a (restored) window exists. A no-op otherwise.
+        SpaceManager.shared.beginSessionRestoreForExternalOpenIfEligible()
+
         if isReadyToForwardOpenURLs {
             let urlsToForward = pendingColdOpenForwardURLs + urls
             pendingColdOpenForwardURLs.removeAll()

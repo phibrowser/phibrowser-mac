@@ -460,6 +460,13 @@ final class SpaceManager: ObservableObject {
     private var restoreReattachDeadline: Date?
     private static let restoreReattachGracePeriod: TimeInterval = 60
 
+    /// True from the moment a windowless session restore is requested until
+    /// Chromium reports every profile has been attempted (see
+    /// `beginWindowlessSessionRestore`). Gates the plain-window fallback and
+    /// defers windowless new-window commands so they cannot race the restore's
+    /// per-profile session commit. Read by `AppController`.
+    private(set) var isSessionRestoreInFlight = false
+
     /// One queued "reopen these tabs after the profile change lands" intent
     /// per Space, recorded by `changeProfile` before it closes the Space's
     /// windows. `handleSpacesUpdate` fires the respawn once the persisted
@@ -616,12 +623,38 @@ final class SpaceManager: ObservableObject {
     /// to one bound to that polluted profile, so the reopen lands on the
     /// wrong (typically default) Space instead of the one the user closed.
     func reopenOnPersistedSpaceIfWindowless() -> Bool {
-        guard hasEverHostedSlotWindow, slots.isEmpty else { return false }
-        // Non-slot windows don't count as "windowless": a standalone
-        // Incognito window is focused by Chromium's own reopen, and shadow
-        // windows are invisible background hosts either way.
-        guard !MainBrowserWindowControllersManager.shared.getAllWindows()
-            .contains(where: { $0.browserType != .shadow }) else { return false }
+        guard isWindowlessWithHostedSlots else { return false }
+        // Switch on: replay the whole closed window group (each Space with its
+        // tabs, the active one visible, fullscreen preserved), mirroring a cold
+        // start. Switch off keeps the plain single-window spawn.
+        if SessionRestorePreference.isEnabled {
+            // A restore from a rapid earlier Dock click is already running; its
+            // windows will arrive, so don't start a second one.
+            if isSessionRestoreInFlight {
+                return true
+            }
+            return beginWindowlessSessionRestore()
+        }
+        return spawnPersistedSpaceWindow()
+    }
+
+    /// True when the app has no browser window but has hosted a slot window this
+    /// session — the state a Dock reopen or an external-link open handles.
+    /// Non-slot windows don't count as "windowless": a standalone Incognito
+    /// window is focused by Chromium's own reopen, and shadow windows are
+    /// invisible background hosts either way.
+    private var isWindowlessWithHostedSlots: Bool {
+        hasEverHostedSlotWindow && slots.isEmpty
+            && !MainBrowserWindowControllersManager.shared.getAllWindows()
+                .contains(where: { $0.browserType != .shadow })
+    }
+
+    /// Opens a single plain window on the persisted last-active Space — the
+    /// windowless-reopen behavior when session restore is off, and the fallback
+    /// when a restore turns up nothing. Returns false (declining the reopen)
+    /// when no Space resolves, so Chromium's own handler runs.
+    @discardableResult
+    private func spawnPersistedSpaceWindow() -> Bool {
         // Same resolution shape as `handleSpacesUpdate`'s fallback: the
         // persisted id when it names a live, automatically-switchable Space,
         // else the first such Space. `activate` refuses unknown spaceIds, so
@@ -638,6 +671,54 @@ final class SpaceManager: ObservableObject {
         AppLogInfo("[SpaceManager] windowless reopen — spawning persisted Space \(spaceId)")
         createSlot(initialSpaceId: spaceId).activate(spaceId: spaceId)
         return true
+    }
+
+    /// Re-arms the persisted slot snapshot and asks Chromium to restore every
+    /// last-active profile's session, mirroring a cold start. Marks a restore
+    /// in flight until Chromium reports every profile has been attempted; if
+    /// nothing was restorable it falls back to a plain window. Returns true
+    /// (handled).
+    @discardableResult
+    private func beginWindowlessSessionRestore() -> Bool {
+        guard let bridge = ChromiumLauncher.sharedInstance().bridge else {
+            // No bridge to drive the restore; still open something.
+            return spawnPersistedSpaceWindow()
+        }
+        // Re-arm the snapshot with the `restoredFromWindowId == 0` reattach
+        // fallback disarmed — see `loadRestoreSnapshot(armReattachDeadline:)` for
+        // why a mid-session re-arm must not arm it.
+        loadRestoreSnapshot(armReattachDeadline: false)
+        isSessionRestoreInFlight = true
+        bridge.restorePreviousSession { [weak self] restoredAnyWindow in
+            DispatchQueue.main.async {
+                guard let self else { return }
+                // Every profile has been attempted, so the CommitPendingCloses
+                // race the flag guards against is over — clear it here rather
+                // than on window arrival. A restored window can come back
+                // without a claimable id (an emptied session's
+                // ALWAYS_CREATE_TABBED_BROWSER fallback) and would never reach
+                // the claim path, so clearing on arrival could wedge the flag
+                // on. This completion is guaranteed to run (the Chromium barrier
+                // always fires), so the flag can never get stuck.
+                self.isSessionRestoreInFlight = false
+                if !restoredAnyWindow {
+                    // Nothing restorable: open a plain window.
+                    self.spawnPersistedSpaceWindow()
+                }
+            }
+        }
+        return true
+    }
+
+    /// If the app is windowless with a restorable history and the switch is on,
+    /// begins a session restore so a subsequently-forwarded external link lands
+    /// in the restored active window instead of a bare new one. A no-op when
+    /// not eligible or a restore is already in flight; the caller queues its
+    /// URLs to forward once a window exists either way.
+    func beginSessionRestoreForExternalOpenIfEligible() {
+        guard isWindowlessWithHostedSlots, SessionRestorePreference.isEnabled,
+              !isSessionRestoreInFlight else { return }
+        beginWindowlessSessionRestore()
     }
 
     /// Walks every slot looking for one that recorded a pending spawn
@@ -898,7 +979,7 @@ final class SpaceManager: ObservableObject {
         userDefaults.set(dicts, forKey: AccountUserDefaults.DefaultsKey.slotsRestoreSnapshot.rawValue)
     }
 
-    private func loadRestoreSnapshot() {
+    private func loadRestoreSnapshot(armReattachDeadline: Bool = true) {
         restoreEntries.removeAll()
         restoreIndexByWindowId.removeAll()
         restoredSlotsByIndex.removeAll()
@@ -926,8 +1007,11 @@ final class SpaceManager: ObservableObject {
         // Arm the profile-match fallback only when there is something to
         // reattach, and only briefly — long enough for the cold-launch restore
         // burst to land, short enough that later user-opened windows aren't
-        // absorbed (see `claimRestoredWindow`).
-        if !restoreEntries.isEmpty {
+        // absorbed (see `claimRestoredWindow`). A mid-session re-arm passes
+        // `armReattachDeadline: false`: those restored windows carry their real
+        // ids, and arming the fallback would let a concurrent Cmd+N misclaim a
+        // stale slot.
+        if armReattachDeadline && !restoreEntries.isEmpty {
             restoreReattachDeadline = Date().addingTimeInterval(Self.restoreReattachGracePeriod)
         }
     }

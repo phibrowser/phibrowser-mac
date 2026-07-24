@@ -2057,7 +2057,26 @@ extension AppController {
         return ChromiumLauncher.sharedInstance().bridge?.validateUserInterfaceItem(fromMenu: item) ?? false
     }
     
+    // New-window/new-tab commands that spawn a window when none is open. They
+    // are dropped while a session restore is in flight so their Chromium window
+    // cannot race the restore's per-profile session commit (see below).
+    private static let windowlessSpawnCommandTags: Set<Int> = [
+        CommandWrapper.IDC_NEW_WINDOW.rawValue,
+        CommandWrapper.IDC_NEW_INCOGNITO_WINDOW.rawValue,
+        CommandWrapper.IDC_NEW_TAB.rawValue,
+    ]
+
     @IBAction @objc func commandDispatch(_ sender: Any?) {
+        // A windowless session restore is in flight: dropping a new-window/tab
+        // command here keeps its Chromium window from racing the restore's
+        // per-profile commit (which would conclude the profile still has a
+        // window and suppress its restore). The user can reissue once the
+        // restored windows arrive.
+        if SpaceManager.shared.isSessionRestoreInFlight,
+           let tag = (sender as? NSMenuItem)?.tag,
+           Self.windowlessSpawnCommandTags.contains(tag) {
+            return
+        }
         // No key browser window handled this command, so it reached the app
         // delegate. Forward to PhiAppController (via the bridge), which contains
         // the no-window handling for File-menu commands like New Tab/New Window.

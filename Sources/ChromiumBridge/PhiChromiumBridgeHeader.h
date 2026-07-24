@@ -811,6 +811,21 @@ typedef NS_ENUM(NSUInteger, PhiOmniboxSuggestionDisposition) {
 /// @param windowId The window ID to execute the command on
 - (void)executeCommand:(int)commandId windowId:(int64_t)windowId;
 
+// ==========================================================================
+// Window-group close (Mac → Chromium)
+// ==========================================================================
+
+/// Tells Chromium that a browser-window close has finished settling on the Mac
+/// side — either the closed window was the whole gesture, or the Space slot's
+/// teardown cascade has drained. Chromium records every window close as pending
+/// and waits for this: profiles that still have a window commit their pending
+/// closes (the user closed that window group and kept working), profiles left
+/// without one keep them, so the stored session still describes the layout that
+/// was closed. Must NOT be sent while a slot is still tearing down, or the
+/// group gets committed a window at a time and only its last Space survives a
+/// restore.
+- (void)windowGroupCloseDidSettle;
+
 // Favicon service
 - (void)getFaviconForURL:(NSString *)urlString completion:(void (^)(NSData * _Nullable faviconData))completion;
 - (void)getFaviconForURL:(NSString *)urlString profileId:(NSString * _Nullable)profileId completion:(void (^)(NSData * _Nullable faviconData))completion;

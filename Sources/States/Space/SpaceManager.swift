@@ -557,6 +557,29 @@ final class SpaceManager: ObservableObject {
         // mid-session would be retained here (and never deinit) until the next
         // account bind clears the map.
         restoredSlotsByIndex = restoredSlotsByIndex.filter { $0.value !== slot }
+        // Shrink the restore snapshot now that the slot is gone. Nothing on the
+        // close path writes it — `unregisterWindow` and the cascade deliberately
+        // don't, and the deferred fullscreen reconcile skips itself mid-cascade
+        // — so without this the snapshot kept describing a window group the user
+        // closed, and it came back (as loose windows) at the next cold launch.
+        // When this was the LAST slot the write is a no-op: `persistSlotsSnapshot`
+        // never overwrites a saved snapshot with an empty one, which is exactly
+        // what freezes the final layout for a reopen.
+        persistSlotsSnapshot()
+    }
+
+    /// Reports a settled window-group close to Chromium, which holds every
+    /// window close pending until it hears one — see `windowGroupCloseDidSettle`
+    /// in `PhiChromiumBridgeHeader.h` for the contract.
+    ///
+    /// Silent while any slot is still draining its Space windows: reporting
+    /// mid-cascade is exactly the per-window decision the deferral exists to
+    /// avoid, and it would leave only the group's last Space restorable. Nothing
+    /// is lost by staying silent — the draining slot's last window reports for
+    /// everyone as it goes.
+    func reportWindowGroupCloseSettled() {
+        guard !slots.contains(where: { $0.isTearingDown }) else { return }
+        ChromiumLauncher.sharedInstance().bridge?.windowGroupCloseDidSettle()
     }
 
     /// Re-asserts every slot's one-visible-window invariant after an app
@@ -5827,7 +5850,17 @@ final class SpaceWindowSlot: ObservableObject {
         // promotion lands after willClose.
         if isFullScreen {
             DispatchQueue.main.async { [weak self] in
-                self?.reconcileFullScreenWithWindowState()
+                guard let self else { return }
+                // Never mid-cascade. The slot's window map is half-drained
+                // there, so the reconcile reads "no fullscreen window left",
+                // flips the flag, and persists a snapshot of a window group
+                // that is already half gone — the group the next launch is
+                // supposed to restore. The teardown settles the state either
+                // way: it ends in `removeSlot` (which persists the surviving
+                // slots) or, if vetoed, in `recoverFromVetoedCascade` (which
+                // reconciles against the survivors).
+                guard !self.isCascadingSlotClose else { return }
+                self.reconcileFullScreenWithWindowState()
             }
         }
         // A window the controlled slot teardown is closing. It is already out
@@ -5978,9 +6011,17 @@ final class SpaceWindowSlot: ObservableObject {
         // undoing the drop-out the stuck flag caused.
         visibleController = survivor.value
         makeKeyAndOrderFrontHidingSlotTabBar(survivor.value.window)
+        // `unregisterWindow`'s deferred reconcile skipped itself while the
+        // cascade was armed, so a fullscreen slot whose teardown was vetoed
+        // still carries the closed window's flag. Re-derive it from the
+        // survivors before the snapshot below records it.
+        reconcileFullScreenWithWindowState()
         manager?.persistActiveSpaceId(survivor.key)
         manager?.persistSlotsSnapshot()
         manager?.notifySlotBecameKey(self)
+        // Windows survived the gesture, so the closes Chromium deferred are
+        // plain window closes after all — let it commit them.
+        manager?.reportWindowGroupCloseSettled()
         // A multi-veto (several dirty Spaces kept) can leave more than one
         // window on screen; collapse the rest behind the adopted one over the
         // standard sweep ladder.

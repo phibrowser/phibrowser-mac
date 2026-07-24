@@ -306,6 +306,10 @@ class MainBrowserWindowControllersManager: MainBrowserWindowLookup {
             windowController.slot?.unregisterWindow(windowController, for: windowController.spaceId)
         }
         windowControllers.remove(windowController)
+        // Chromium keeps every window close pending until it is told the gesture
+        // is over; a cascade in flight makes this a no-op (see
+        // `SpaceManager.reportWindowGroupCloseSettled`).
+        SpaceManager.shared.reportWindowGroupCloseSettled()
     }
     
     @objc private func windowDidBecomeKey(_ noti: NSNotification) {

@@ -6319,6 +6319,21 @@ final class SpaceWindowSlot: ObservableObject {
         // wrong Space instead of the one that was on screen when the window was
         // closed. The whole slot is going away; there is nothing to adopt.
         if isCascadingSlotClose { return }
+        // Ignore key changes while session restore is still surfacing this
+        // slot's windows. On restore a slot owns several Chromium windows (one
+        // per Space ever surfaced) and Chromium `makeKeyAndOrderFront`s every
+        // one as its tabs finish loading, so each restored sibling briefly
+        // becomes key. Adopting those as external switches thrashes
+        // `activeSpaceId` and lands the slot on whichever window keyed last
+        // instead of the Space the snapshot recorded (`slotForRestoreIndex`'s
+        // `initialSpaceId`) — the "reopen flashes one Space then jumps to
+        // another" symptom. `reconcileRestoreVisibility` owns visibility during
+        // this window; a genuine user pip-switch goes through `activate`
+        // (`userInitiated`), not here, so it is unaffected. Covers both
+        // cold-launch and Dock reopen: both arm this flag via
+        // `scheduleRestoreVisibilityReconcile`, and it clears once the reconcile
+        // sequence settles.
+        if restoreVisibilityReconcileScheduled { return }
         // Ignore key changes on an agent Space's hidden window that isn't the
         // slot's current Space. An agent Space is an ephemeral background
         // workspace: its window is spawned hidden (`spawnHiddenWindow`) and

@@ -224,6 +224,7 @@
 		8E4C949A2F10D01500B09A80 /* TabStripLayout.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8E4C94992F10D01500B09A80 /* TabStripLayout.swift */; };
 		8E4C949C2F10DA5800B09A80 /* NewTabButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8E4C949B2F10DA5800B09A80 /* NewTabButton.swift */; };
 		8E4FD9BF2EF7D98C007D97A4 /* ZeroSafeAreaHostingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8E4FD9BE2EF7D98C007D97A4 /* ZeroSafeAreaHostingView.swift */; };
+		8E571D5030131FEF00E3FBE7 /* SessionRestorePreference.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8E571D4F30131FEF00E3FBE7 /* SessionRestorePreference.swift */; };
 		8E5D8B012FDFFAD30039CBE3 /* WebContentSnapshotter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8E5D8B002FDFFAD30039CBE3 /* WebContentSnapshotter.swift */; };
 		8E6145822F753114001919BA /* LayoutSelectionViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8E6145802F753114001919BA /* LayoutSelectionViewController.swift */; };
 		8E6145BE2F753469001919BA /* ImportDataTypeViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8E6145BD2F753469001919BA /* ImportDataTypeViewController.swift */; };
@@ -792,6 +793,7 @@
 		8E4C94992F10D01500B09A80 /* TabStripLayout.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TabStripLayout.swift; sourceTree = "<group>"; };
 		8E4C949B2F10DA5800B09A80 /* NewTabButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NewTabButton.swift; sourceTree = "<group>"; };
 		8E4FD9BE2EF7D98C007D97A4 /* ZeroSafeAreaHostingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ZeroSafeAreaHostingView.swift; sourceTree = "<group>"; };
+		8E571D4F30131FEF00E3FBE7 /* SessionRestorePreference.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionRestorePreference.swift; sourceTree = "<group>"; };
 		8E5D8B002FDFFAD30039CBE3 /* WebContentSnapshotter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WebContentSnapshotter.swift; sourceTree = "<group>"; };
 		8E6145802F753114001919BA /* LayoutSelectionViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LayoutSelectionViewController.swift; sourceTree = "<group>"; };
 		8E6145BD2F753469001919BA /* ImportDataTypeViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImportDataTypeViewController.swift; sourceTree = "<group>"; };
@@ -1725,6 +1727,7 @@
 		B02586F92E42FDA9001B08FC /* ChromiumBridge */ = {
 			isa = PBXGroup;
 			children = (
+				8E571D4F30131FEF00E3FBE7 /* SessionRestorePreference.swift */,
 				ACDC00000000000000000C01 /* AgentCDP */,
 				B00179592E49CF84007B4635 /* PhiChromiumCoordinator.swift */,
 				CC288AA82E55824A004A6C1C /* PhiChromiumBridgeHeader.h */,
@@ -2597,6 +2600,7 @@
 				D1F600042FD6000000000004 /* DiffableOutlineDiffPlanner.swift in Sources */,
 				D1F600062FD6000000000006 /* DiffableOutlineView.swift in Sources */,
 				D1F600082FD6000000000008 /* SidebarDiffableSnapshotBuilder.swift in Sources */,
+				8E571D5030131FEF00E3FBE7 /* SessionRestorePreference.swift in Sources */,
 				CCEB64CB2E98DD520036C763 /* InsetTableRowView.swift in Sources */,
 				37C1B1E42EDEA03400DD4496 /* FeedbackView.swift in Sources */,
 				FBD200012FD0000000000001 /* FeedbackOutbox.swift in Sources */,

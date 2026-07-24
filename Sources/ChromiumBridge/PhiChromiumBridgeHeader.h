@@ -929,6 +929,13 @@ typedef NS_ENUM(NSUInteger, PhiOmniboxSuggestionDisposition) {
 /// created. Main thread only.
 - (NSString * _Nullable)getMetricsClientId;
 
+/// The app-level "restore previous session" switch, held in Chromium local
+/// state (an absent key means on). The Mac settings toggle reads and writes it
+/// through these; the cold-start path reads the same pref directly, so the two
+/// never diverge. Main thread only.
+- (BOOL)isRestorePreviousSessionEnabled;
+- (void)setRestorePreviousSessionEnabled:(BOOL)enabled;
+
 #pragma mark - Security / Certificate
 
 /// Get security state and certificate chain for a tab.

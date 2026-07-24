@@ -349,6 +349,16 @@ private struct BrowsingSectionView: View {
     @AppStorage(PhiPreferences.GeneralSettings.autoPictureInPictureModeKey)
     private var autoPictureInPictureModeRawValue: String = PhiPreferences.GeneralSettings.loadAutoPictureInPictureMode().rawValue
 
+    // Backed by Chromium local state through the bridge, not @AppStorage: the
+    // cold-start path reads the same pref, so it is the single source of truth.
+    @State private var restoreLastSessionEnabled = SessionRestorePreference.isEnabled
+
+    private var restoreLastSessionHint: String {
+        restoreLastSessionEnabled
+            ? NSLocalizedString("Reopen your windows and tabs the next time you open Phi.", comment: "General settings - Hint shown when restore-last-session is on")
+            : NSLocalizedString("Phi starts with a new window. Closing a window may sign you out of some sites.", comment: "General settings - Hint shown when restore-last-session is off, noting session cookies may be cleared when a window closes")
+    }
+
     private var selectedBehavior: Binding<NewTabBehaviour> {
         Binding(
             get: { openNewTabPageOnCmdT ? .newTabPage : .omnibox },
@@ -438,7 +448,32 @@ private struct BrowsingSectionView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
 
                     Divider()
-                    
+
+                    HStack(alignment: .center, spacing: 12) {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(NSLocalizedString("Restore last session", comment: "General settings - Row title for the app-level restore-previous-session toggle"))
+                                .font(.system(size: 13))
+                                .themedForeground(.textPrimary)
+                            Text(restoreLastSessionHint)
+                                .font(.system(size: 11))
+                                .themedForeground(.textTertiary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                        Spacer(minLength: 12)
+                        Toggle("", isOn: $restoreLastSessionEnabled)
+                            .labelsHidden()
+                            .toggleStyle(.switch)
+                            .controlSize(.mini)
+                            .themedTint(.themeColor)
+                    }
+                    .padding(.vertical, 12)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .onChange(of: restoreLastSessionEnabled) { _, newValue in
+                        SessionRestorePreference.isEnabled = newValue
+                    }
+
+                    Divider()
+
                     Button(action: handleAdditionalBrowserSettingsTap) {
                         GeneralRowView(title: NSLocalizedString("settings.general.additionalBrowserSettings.title", value: "Additional browser settings", comment: "General settings - Title for always more settings")) {
                             Image(systemName: "chevron.right")

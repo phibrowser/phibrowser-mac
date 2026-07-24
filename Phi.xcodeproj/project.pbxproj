@@ -14,6 +14,7 @@
 		3703C9822F69558C00E7CF6D /* BrowserState+ToggleAI.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3703C9812F69558C00E7CF6D /* BrowserState+ToggleAI.swift */; };
 		3703C9842F6956E600E7CF6D /* SentinelHelper.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3703C9832F6956E600E7CF6D /* SentinelHelper.swift */; };
 		3703C9862F6956E600E7CF6D /* SentinelVersionGuard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3703C9852F6956E600E7CF6D /* SentinelVersionGuard.swift */; };
+		F9E478A224C44EA7BC0D85CC /* AccountDeletedEventAuthentication.swift in Sources */ = {isa = PBXBuildFile; fileRef = 19B477B37CF44BC48335A032 /* AccountDeletedEventAuthentication.swift */; };
 		370D03AC2F0E463B0087A1C9 /* Mapper.swift in Sources */ = {isa = PBXBuildFile; fileRef = 370D03A32F0E463B0087A1C9 /* Mapper.swift */; };
 		370D03AD2F0E463B0087A1C9 /* ThemedColor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 370D03A82F0E463B0087A1C9 /* ThemedColor.swift */; };
 		370D03AE2F0E463B0087A1C9 /* Key.swift in Sources */ = {isa = PBXBuildFile; fileRef = 370D03A22F0E463B0087A1C9 /* Key.swift */; };
@@ -573,6 +574,7 @@
 		3703C9812F69558C00E7CF6D /* BrowserState+ToggleAI.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "BrowserState+ToggleAI.swift"; sourceTree = "<group>"; };
 		3703C9832F6956E600E7CF6D /* SentinelHelper.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SentinelHelper.swift; sourceTree = "<group>"; };
 		3703C9852F6956E600E7CF6D /* SentinelVersionGuard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SentinelVersionGuard.swift; sourceTree = "<group>"; };
+		19B477B37CF44BC48335A032 /* AccountDeletedEventAuthentication.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccountDeletedEventAuthentication.swift; sourceTree = "<group>"; };
 		370D039F2F0E463B0087A1C9 /* Appearance.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Appearance.swift; sourceTree = "<group>"; };
 		370D03A02F0E463B0087A1C9 /* Bags.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Bags.swift; sourceTree = "<group>"; };
 		370D03A12F0E463B0087A1C9 /* ColorRole.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ColorRole.swift; sourceTree = "<group>"; };
@@ -1863,6 +1865,7 @@
 				8EB01BEA3010BCED0043E59D /* UserDataRemoval.swift */,
 				CC9AF3432EC192BC00C27C98 /* AppControlle+LaunchInfo.swift */,
 				CCBF0F9F2ECEC1AE005E729B /* AppController+Deeplink.swift */,
+				19B477B37CF44BC48335A032 /* AccountDeletedEventAuthentication.swift */,
 				3703C9832F6956E600E7CF6D /* SentinelHelper.swift */,
 				3703C9852F6956E600E7CF6D /* SentinelVersionGuard.swift */,
 				6A44C5FF60DF6F7860A061D4 /* SentinelWatchdog.swift */,
@@ -2591,6 +2594,7 @@
 				CCB53DCE2E6EC437004BF233 /* OmniBoxModels.swift in Sources */,
 				37C1B28F2EE1364D00DD4496 /* EnvironmentChecker.swift in Sources */,
 				37C1B28A2EE0457F00DD4496 /* LivingDownloadsListView.swift in Sources */,
+				F9E478A224C44EA7BC0D85CC /* AccountDeletedEventAuthentication.swift in Sources */,
 				3703C9842F6956E600E7CF6D /* SentinelHelper.swift in Sources */,
 				3703C9862F6956E600E7CF6D /* SentinelVersionGuard.swift in Sources */,
 				793C1DDEA1022CC850FEFFF9 /* SentinelWatchdog.swift in Sources */,

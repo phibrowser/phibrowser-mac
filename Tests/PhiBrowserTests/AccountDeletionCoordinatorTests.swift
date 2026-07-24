@@ -12,8 +12,8 @@ final class AccountDeletionCoordinatorTests: XCTestCase {
 
     /// Records every invocation of the finalize edges in order — the
     /// Sentinel announcement plus the destructive edges. Only the finalize
-    /// may reach them — the announcement strictly first, each clear exactly
-    /// once, quit last — and every other path asserts the log stays empty.
+    /// may reach them: the credential fence precedes the announcement and
+    /// surrounds the long local-data removal, and quit runs last.
     private var destructiveEdgeEvents: [String] = []
 
     private func makeCoordinator(
@@ -24,7 +24,10 @@ final class AccountDeletionCoordinatorTests: XCTestCase {
         renewCredentials: @escaping AccountDeletionCoordinator.RenewCredentials = { false },
         makeIdempotencyKey: @escaping () -> String = { "key-1" },
         now: @escaping () -> Date = Date.init,
-        clearCredentials: AccountDeletionCoordinator.ClearCredentials? = nil
+        beginCredentialDeletion: AccountDeletionCoordinator.BeginCredentialDeletion? = nil,
+        clearInitialCredentials: AccountDeletionCoordinator.ClearInitialCredentials? = nil,
+        clearCredentials: AccountDeletionCoordinator.ClearCredentials? = nil,
+        clearLocalData: AccountDeletionCoordinator.ClearLocalData? = nil
     ) -> AccountDeletionCoordinator {
         let coordinator = AccountDeletionCoordinator(
             requestDeletion: requestDeletion,
@@ -33,11 +36,22 @@ final class AccountDeletionCoordinatorTests: XCTestCase {
             announceAccountDeleted: { [weak self] in
                 self?.destructiveEdgeEvents.append("announceAccountDeleted")
             },
+            beginCredentialDeletion: { [weak self] in
+                self?.destructiveEdgeEvents.append("beginCredentialDeletion")
+                return beginCredentialDeletion?() ?? true
+            },
+            clearInitialCredentials: { [weak self] in
+                self?.destructiveEdgeEvents.append("clearInitialCredentials")
+                await clearInitialCredentials?()
+            },
             clearCredentials: { [weak self] in
                 self?.destructiveEdgeEvents.append("clearCredentials")
                 await clearCredentials?()
             },
-            clearLocalData: { [weak self] in self?.destructiveEdgeEvents.append("clearLocalData") },
+            clearLocalData: { [weak self] in
+                self?.destructiveEdgeEvents.append("clearLocalData")
+                await clearLocalData?()
+            },
             quit: { [weak self] in self?.destructiveEdgeEvents.append("quit") },
             now: now,
             makeIdempotencyKey: makeIdempotencyKey
@@ -774,22 +788,49 @@ final class AccountDeletionCoordinatorTests: XCTestCase {
 
     // MARK: - Finalize
 
-    func testFinalizeAnnouncesThenRunsBothClearsOnceThenQuitsLast() async {
-        let coordinator = makeCoordinator()
+    func testFinalizeClearsCredentialsBeforeAndAfterLongLocalDataRemoval() async {
+        var resumeLocalDataRemoval: CheckedContinuation<Void, Never>?
+        let coordinator = makeCoordinator(clearLocalData: {
+            await withCheckedContinuation { resumeLocalDataRemoval = $0 }
+        })
 
         await coordinator.start()
         await coordinator.submitCode("123456")
-        await coordinator.finalizeDeletion()
+
+        let finalize = Task { await coordinator.finalizeDeletion() }
+        await waitUntil { resumeLocalDataRemoval != nil }
 
         XCTAssertEqual(
             destructiveEdgeEvents,
-            ["announceAccountDeleted", "clearLocalData", "clearCredentials", "quit"],
-            "The Sentinel announcement strictly first, before the wipe; each clear exactly once; credentials after the local data's long suspensions, and the quit strictly last"
+            [
+                "beginCredentialDeletion",
+                "announceAccountDeleted",
+                "clearInitialCredentials",
+                "clearLocalData",
+            ],
+            "Credentials must be gone while the long local-data removal is still running"
+        )
+        XCTAssertEqual(coordinator.state, .finalizing)
+
+        resumeLocalDataRemoval?.resume()
+        await finalize.value
+
+        XCTAssertEqual(
+            destructiveEdgeEvents,
+            [
+                "beginCredentialDeletion",
+                "announceAccountDeleted",
+                "clearInitialCredentials",
+                "clearLocalData",
+                "clearCredentials",
+                "quit",
+            ],
+            "The final credential clear catches any write that landed during local-data removal"
         )
         XCTAssertEqual(coordinator.state, .finalizing)
     }
 
-    func testFinalizeFromAlreadyRunningRunsBothClearsOnceThenQuitsLast() async {
+    func testFinalizeFromAlreadyRunningUsesTheSameSafeClearOrder() async {
         var verifyCallCount = 0
         let coordinator = makeCoordinator(
             requestDeletion: { _ in .deletionAlreadyRunning },
@@ -802,10 +843,36 @@ final class AccountDeletionCoordinatorTests: XCTestCase {
         XCTAssertEqual(verifyCallCount, 0, "The already-running branch never verifies")
         XCTAssertEqual(
             destructiveEdgeEvents,
-            ["announceAccountDeleted", "clearLocalData", "clearCredentials", "quit"],
-            "The already-running branch shares the normal finalize: announcement first, each clear exactly once, quit last"
+            [
+                "beginCredentialDeletion",
+                "announceAccountDeleted",
+                "clearInitialCredentials",
+                "clearLocalData",
+                "clearCredentials",
+                "quit",
+            ],
+            "The already-running branch shares the normal safe finalize order"
         )
         XCTAssertEqual(coordinator.state, .finalizing)
+    }
+
+    func testFinalizeStopsWhenCredentialSafetyPreflightFails() async {
+        let coordinator = makeCoordinator(beginCredentialDeletion: { false })
+
+        await coordinator.start()
+        await coordinator.submitCode("123456")
+        await coordinator.finalizeDeletion()
+
+        XCTAssertEqual(
+            destructiveEdgeEvents,
+            ["beginCredentialDeletion"],
+            "A failed lock or fence preflight must stop before notifying Sentinel, suspending cleanup, or quit"
+        )
+        XCTAssertEqual(
+            coordinator.state,
+            .requestSubmitted,
+            "The booked deletion remains retryable from the confirmation step"
+        )
     }
 
     func testFinalizeBeforeSubmissionIsIgnored() async {
@@ -822,45 +889,52 @@ final class AccountDeletionCoordinatorTests: XCTestCase {
     }
 
     func testFinalizeWhileFinalizeInFlightIsIgnored() async {
-        var resumeClear: CheckedContinuation<Void, Never>?
-        let coordinator = makeCoordinator(clearCredentials: {
-            await withCheckedContinuation { resumeClear = $0 }
+        var resumeLocalDataRemoval: CheckedContinuation<Void, Never>?
+        let coordinator = makeCoordinator(clearLocalData: {
+            await withCheckedContinuation { resumeLocalDataRemoval = $0 }
         })
 
         await coordinator.start()
         await coordinator.submitCode("123456")
 
         let firstFinalize = Task { await coordinator.finalizeDeletion() }
-        await waitUntil { resumeClear != nil }
+        await waitUntil { resumeLocalDataRemoval != nil }
 
         await coordinator.finalizeDeletion()
 
-        resumeClear?.resume()
+        resumeLocalDataRemoval?.resume()
         await firstFinalize.value
 
         XCTAssertEqual(
             destructiveEdgeEvents,
-            ["announceAccountDeleted", "clearLocalData", "clearCredentials", "quit"],
-            "A double click on the confirmation must not announce or run the clears twice"
+            [
+                "beginCredentialDeletion",
+                "announceAccountDeleted",
+                "clearInitialCredentials",
+                "clearLocalData",
+                "clearCredentials",
+                "quit",
+            ],
+            "A double click on the confirmation must not start another finalize sequence"
         )
     }
 
     func testCancelDuringFinalizeIsIgnored() async {
-        var resumeClear: CheckedContinuation<Void, Never>?
-        let coordinator = makeCoordinator(clearCredentials: {
-            await withCheckedContinuation { resumeClear = $0 }
+        var resumeLocalDataRemoval: CheckedContinuation<Void, Never>?
+        let coordinator = makeCoordinator(clearLocalData: {
+            await withCheckedContinuation { resumeLocalDataRemoval = $0 }
         })
 
         await coordinator.start()
         await coordinator.submitCode("123456")
 
         let finalize = Task { await coordinator.finalizeDeletion() }
-        await waitUntil { resumeClear != nil }
+        await waitUntil { resumeLocalDataRemoval != nil }
 
         coordinator.cancel()
         XCTAssertEqual(coordinator.state, .finalizing)
 
-        resumeClear?.resume()
+        resumeLocalDataRemoval?.resume()
         await finalize.value
 
         XCTAssertEqual(destructiveEdgeEvents.last, "quit")
@@ -868,14 +942,14 @@ final class AccountDeletionCoordinatorTests: XCTestCase {
 
     func testStartDuringFinalizeIsIgnored() async {
         var requestCallCount = 0
-        var resumeClear: CheckedContinuation<Void, Never>?
+        var resumeLocalDataRemoval: CheckedContinuation<Void, Never>?
         let coordinator = makeCoordinator(
             requestDeletion: { _ in
                 requestCallCount += 1
                 return .verificationCodeSent(requestID: "req-1")
             },
-            clearCredentials: {
-                await withCheckedContinuation { resumeClear = $0 }
+            clearLocalData: {
+                await withCheckedContinuation { resumeLocalDataRemoval = $0 }
             }
         )
 
@@ -883,12 +957,12 @@ final class AccountDeletionCoordinatorTests: XCTestCase {
         await coordinator.submitCode("123456")
 
         let finalize = Task { await coordinator.finalizeDeletion() }
-        await waitUntil { resumeClear != nil }
+        await waitUntil { resumeLocalDataRemoval != nil }
 
         await coordinator.start()
         XCTAssertEqual(requestCallCount, 1)
 
-        resumeClear?.resume()
+        resumeLocalDataRemoval?.resume()
         await finalize.value
     }
 
@@ -933,5 +1007,64 @@ final class AccountDeletionCoordinatorTests: XCTestCase {
             ),
             "With nothing cached beforehand, any renewed credentials are worth the retry"
         )
+    }
+}
+
+final class AccountDeletionCredentialFenceTests: XCTestCase {
+    func testFencePersistsUntilExplicitlyDeactivated() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
+            UUID().uuidString,
+            isDirectory: true
+        )
+        let markerURL = directory.appendingPathComponent("credential-fence")
+        let firstInstance = AccountDeletionCredentialFence(markerURL: markerURL)
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        XCTAssertFalse(firstInstance.isActive)
+        XCTAssertTrue(firstInstance.activate())
+
+        let relaunchedInstance = AccountDeletionCredentialFence(markerURL: markerURL)
+        XCTAssertTrue(relaunchedInstance.isActive)
+        XCTAssertTrue(relaunchedInstance.deactivate())
+        XCTAssertFalse(firstInstance.isActive)
+    }
+}
+
+final class AccountDeletionExternalBrowserAuthGateTests: XCTestCase {
+    func testOnlyAuthorizedReplacementLoginCallbackPassesDeletionFence() {
+        let authManager = AuthManager()
+        let authorizedToken = UUID()
+        let callbackURL = URL(string: "https://\(authManager.domain)/callback")!
+        var receivedURL: URL?
+
+        authManager.setAccountDeletionInProgress(true)
+        authManager.setAccountDeletionReplacementLoginToken(authorizedToken)
+        defer {
+            authManager.clearBrowserAuthCallbackListener()
+            authManager.clearAccountDeletionReplacementLoginToken()
+            authManager.setAccountDeletionInProgress(false)
+        }
+
+        _ = authManager.registerBrowserAuthCallbackListener(
+            { receivedURL = $0 },
+            accountDeletionReplacementLoginToken: nil
+        )
+        XCTAssertFalse(authManager.resumeExternalBrowserAuthentication(with: callbackURL))
+        XCTAssertNil(receivedURL)
+
+        _ = authManager.registerBrowserAuthCallbackListener(
+            { receivedURL = $0 },
+            accountDeletionReplacementLoginToken: UUID()
+        )
+        XCTAssertFalse(authManager.resumeExternalBrowserAuthentication(with: callbackURL))
+        XCTAssertNil(receivedURL)
+
+        let unregister = authManager.registerBrowserAuthCallbackListener(
+            { receivedURL = $0 },
+            accountDeletionReplacementLoginToken: authorizedToken
+        )
+        XCTAssertTrue(authManager.resumeExternalBrowserAuthentication(with: callbackURL))
+        XCTAssertEqual(receivedURL, callbackURL)
+        unregister()
     }
 }

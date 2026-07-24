@@ -175,10 +175,15 @@ final class SharedAuthTokenStore {
         return nil
     }
 
-    func clear() {
+    /// Removes the shared token. Account deletion suppresses the first change
+    /// notification so the signed `accountDeleted` event reaches Sentinel
+    /// before Sentinel drops its in-memory account identity; the final clear
+    /// posts the normal notification.
+    @discardableResult
+    func clear(postChangeNotification: Bool = true) -> Bool {
         guard let accessGroup = resolvedAccessGroup() else {
             log(.error, "[SharedAuthTokenStore] clear failed: no resolvable access group")
-            return
+            return false
         }
 
         let query: [String: Any] = [
@@ -194,13 +199,16 @@ final class SharedAuthTokenStore {
             SecItemDelete(query as CFDictionary)
         }
         if status == errSecSuccess || status == errSecItemNotFound {
-            postDistributedChangeNotification(hasToken: false, auth0Sub: nil)
-            return
+            if postChangeNotification {
+                postDistributedChangeNotification(hasToken: false, auth0Sub: nil)
+            }
+            return true
         }
         // A failed clear leaves a stale (and possibly server-revoked) RT in the
         // shared store. Surface this loudly because subsequent recovery flows
         // will pick that token up and ferrt again.
         log(.error, "[SharedAuthTokenStore] SecItemDelete failed: \(Self.describe(status))")
+        return false
     }
 
     private func resolvedAccessGroup() -> String? {

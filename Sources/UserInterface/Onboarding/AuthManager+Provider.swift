@@ -8,11 +8,16 @@
 import Foundation
 import Auth0
 extension AuthManager {
-    func makeExternalBrowserAuthProvider() -> WebAuthProvider {
+    func makeExternalBrowserAuthProvider(
+        accountDeletionReplacementLoginToken: UUID? = nil
+    ) -> WebAuthProvider {
         return { [weak self] authorizeURL, callback in
             let listenerRegistration: (@escaping (URL) -> Void) -> (() -> Void) = { listener in
                 guard let self else { return {} }
-                return self.registerBrowserAuthCallbackListener(listener)
+                return self.registerBrowserAuthCallbackListener(
+                    listener,
+                    accountDeletionReplacementLoginToken: accountDeletionReplacementLoginToken
+                )
             }
 
             return AuthManagerExternalBrowserWebAuthUserAgent(
@@ -27,7 +32,17 @@ extension AuthManager {
         guard url.host == domain else {
             return false
         }
-        let callback = browserAuthCallbackQueue.sync { pendingBrowserAuthCallback }
+        let (callback, replacementLoginToken) = browserAuthCallbackQueue.sync {
+            (
+                pendingBrowserAuthCallback,
+                pendingBrowserAuthCallbackReplacementLoginToken
+            )
+        }
+        guard permitsExternalBrowserAuthentication(
+            accountDeletionReplacementLoginToken: replacementLoginToken
+        ) else {
+            return false
+        }
         guard let callback else {
             return false
         }
@@ -40,11 +55,21 @@ extension AuthManager {
         clearBrowserAuthCallbackListener()
     }
 
-    func registerBrowserAuthCallbackListener(_ listener: @escaping (URL) -> Void) -> (() -> Void) {
+    func registerBrowserAuthCallbackListener(
+        _ listener: @escaping (URL) -> Void,
+        accountDeletionReplacementLoginToken: UUID? = nil
+    ) -> (() -> Void) {
+        guard permitsExternalBrowserAuthentication(
+            accountDeletionReplacementLoginToken: accountDeletionReplacementLoginToken
+        ) else {
+            return {}
+        }
         let token = UUID()
         browserAuthCallbackQueue.sync {
             pendingBrowserAuthCallbackToken = token
             pendingBrowserAuthCallback = listener
+            pendingBrowserAuthCallbackReplacementLoginToken =
+                accountDeletionReplacementLoginToken
         }
         return { [weak self] in
             self?.clearBrowserAuthCallbackListener(for: token)
@@ -58,6 +83,7 @@ extension AuthManager {
             }
             pendingBrowserAuthCallbackToken = nil
             pendingBrowserAuthCallback = nil
+            pendingBrowserAuthCallbackReplacementLoginToken = nil
         }
     }
 

@@ -54,6 +54,11 @@ final class AccountDeletionCoordinator {
     /// Sentinel that chooses to exit is not resurrected), then posts the
     /// Account Deleted Event. Fire-and-forget — no wait, no retry.
     typealias AnnounceAccountDeleted = @MainActor () -> Void
+    /// Returns false when the shared-token lock or durable credential fence
+    /// is unavailable; the finalize must not notify Sentinel, suspend, or
+    /// quit.
+    typealias BeginCredentialDeletion = @MainActor () -> Bool
+    typealias ClearInitialCredentials = () async -> Void
     typealias ClearCredentials = () async -> Void
     /// Removes everything Phi keeps on this Mac outside the credential
     /// layer. Async because the WKWebView website-data clearing only
@@ -112,6 +117,8 @@ final class AccountDeletionCoordinator {
     private let verifyDeletion: VerifyDeletion
     private let renewCredentials: RenewCredentials
     private let announceAccountDeleted: AnnounceAccountDeleted
+    private let beginCredentialDeletion: BeginCredentialDeletion
+    private let clearInitialCredentials: ClearInitialCredentials
     private let clearCredentials: ClearCredentials
     private let clearLocalData: ClearLocalData
     private let quit: Quit
@@ -189,6 +196,18 @@ final class AccountDeletionCoordinator {
             SentinelWatchdog.shared.stop()
             SentinelHelper.postAccountDeletedEvent()
         },
+        beginCredentialDeletion: @escaping BeginCredentialDeletion = {
+            // Persist the crash-recovery fence and freeze credential writers
+            // before Sentinel is notified. No suspension is allowed between
+            // this and the announcement.
+            return AuthManager.shared.beginAccountDeletionFinalization()
+        },
+        clearInitialCredentials: @escaping ClearInitialCredentials = {
+            // The signed event has captured the account identity. Clear both
+            // credential stores without posting the ordinary token-change
+            // notification, which could otherwise race Sentinel's verifier.
+            await AuthManager.shared.clearInitialAccountDeletionCredentials()
+        },
         clearCredentials: @escaping ClearCredentials = {
             // Local-only by design (2026-07-23 decision) — unlike logout,
             // no remote Auth0 `clearSession` runs here. The deletion is
@@ -196,11 +215,10 @@ final class AccountDeletionCoordinator {
             // account anyway; the external-browser teardown would flash
             // the default browser right before the quit, and a callback
             // arriving after the quit would relaunch the freshly wiped
-            // Phi. A reauthentication still in flight cannot resurrect
-            // credentials either: the finalize runs this clear after its
-            // last long suspension (see `finalizeDeletion`), and the quit
-            // destroys the process holding the pending transaction, so a
-            // later callback is dropped.
+            // Phi. The account-deletion fence already cleared credentials
+            // before the long-running local-data removal; this final clear
+            // verifies the stores again and posts the ordinary shared-token
+            // change notification.
             await AuthManager.shared.clearLocalAccountData()
         },
         clearLocalData: @escaping ClearLocalData = {
@@ -225,6 +243,8 @@ final class AccountDeletionCoordinator {
         self.verifyDeletion = verifyDeletion
         self.renewCredentials = renewCredentials
         self.announceAccountDeleted = announceAccountDeleted
+        self.beginCredentialDeletion = beginCredentialDeletion
+        self.clearInitialCredentials = clearInitialCredentials
         self.clearCredentials = clearCredentials
         self.clearLocalData = clearLocalData
         self.quit = quit
@@ -379,22 +399,23 @@ final class AccountDeletionCoordinator {
     }
 
     /// Runs the finalize after the user confirmed it on the submitted or
-    /// already-running dialog: the deletion is announced to Sentinel, the
-    /// credential layer and the on-disk data are each cleared exactly once,
-    /// then the process force-quits. Only valid once the deletion is booked
-    /// server-side; the immediate `.finalizing` transition doubles as the
-    /// re-entry guard, so a double click cannot run the clears twice.
+    /// already-running dialog: the credential layer is fenced, the deletion
+    /// is announced to Sentinel, credentials and on-disk data are cleared,
+    /// credentials are verified clear again, then the process force-quits.
+    /// Only valid once the deletion is booked server-side; the immediate
+    /// `.finalizing` transition doubles as the re-entry guard, so a double
+    /// click cannot start another finalize sequence.
     ///
-    /// The Sentinel announcement runs first, before the wipe: the shared
-    /// token is still readable there (the event carries the account
-    /// identifier), and the local-data clear's long suspensions keep Phi
-    /// alive afterwards, giving Sentinel the longest receive window.
+    /// The durable fence is persisted immediately before the Sentinel
+    /// announcement, with no suspension between them. The shared token is
+    /// still readable for the event, and a crash after Sentinel accepts it
+    /// cannot leave the browser able to restore deleted credentials.
     ///
-    /// The credential clear runs last, after the local-data clear's long
-    /// suspensions (the WKWebView sweep): an in-flight reauthentication or
-    /// token renewal landing mid-finalize gets wiped by the clear instead
-    /// of outliving it, and no suspension remains between the clear and
-    /// the quit for a late callback to slip into.
+    /// The credential fence runs before the local-data clear's long
+    /// suspensions (the WKWebView sweep), so reopening Phi during cleanup
+    /// cannot restore the deleted account from Auth0's local keychain. The
+    /// final clear catches an in-flight Auth0 write, and the durable fence
+    /// makes a crash fail closed on the next launch.
     func finalizeDeletion() async {
         switch state {
         case .requestSubmitted, .deletionAlreadyRunning:
@@ -404,8 +425,17 @@ final class AccountDeletionCoordinator {
             AppLogInfo("🗑️ [AccountDeletion] No deletion booked server-side, ignoring finalize")
             return
         }
+        let bookedState = state
         state = .finalizing
+        guard beginCredentialDeletion() else {
+            state = bookedState
+            AppLogError(
+                "🗑️ [AccountDeletion] Credential safety preflight unavailable; finalize remains pending"
+            )
+            return
+        }
         announceAccountDeleted()
+        await clearInitialCredentials()
         await clearLocalData()
         await clearCredentials()
         quit()

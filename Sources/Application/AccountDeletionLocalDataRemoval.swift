@@ -20,10 +20,12 @@ import WebKit
 ///    confirmation, so a crash anywhere later in the finalize leaves a
 ///    marked, startup-recoverable removal instead of untouched data —
 ///    without this ordering the unprotected window would span the website
-///    data sweep's 10-second ceiling. What a late crash can still leave
-///    behind — website data and credentials — are both accepted residue
-///    directions (the sweep-timeout residue below, and the credential
-///    layer's 401 forced sign-out on the next launch).
+///    data sweep's 10-second ceiling. Credentials are handled separately:
+///    the finalize clears them before entering this removal and leaves a
+///    durable startup fence active across relaunches. Automatic restoration
+///    remains blocked until an explicit new login takes the shared-token
+///    lock, clears both stores again, and releases the fence. Website-data
+///    sweep timeout remains the only accepted residue direction here.
 /// 2. WKWebView website data (`~/Library/WebKit/<bundleId>`): the account
 ///    web windows keep their signed-in sessions there, outside the data
 ///    roots above. Cleared in-process before the quit, with the same

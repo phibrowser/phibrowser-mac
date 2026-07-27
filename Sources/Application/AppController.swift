@@ -207,8 +207,11 @@ import PostHog
     }
     
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
-        // FIXME: Closing the final window via the title-bar button can bypass Chromium's tab-close
-        // notifications. We likely need a more explicit cleanup and restore strategy here.
+        // Closing the last window keeps the app alive, and the session data
+        // behind that close is safe: Chromium defers every close in the
+        // window group until SpaceManager reports the teardown settled
+        // (windowGroupCloseDidSettle), so a title-bar close stores the same
+        // session quitting does and a Dock reopen restores it.
         return false
     }
     

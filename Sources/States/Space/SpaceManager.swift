@@ -2472,6 +2472,32 @@ final class SpaceManager: ObservableObject {
         applyResolvedTheme(forSpaceId: spaceId, to: controller)
     }
 
+    /// Pre-view variant of `applyPersistedTheme`: seeds a freshly-created
+    /// `BrowserState`'s theme context with the Space's persisted theme
+    /// BEFORE any view is built from it. The registerWindow-time apply runs
+    /// inside the same controller init but AFTER the view hierarchy is
+    /// assembled (`MainSplitViewController(state:)` precedes
+    /// `slot.registerWindow`), so views capture the context's default
+    /// shared-theme initial value; the corrective `setTheme` then reaches
+    /// them through `receive(on: .main)` sinks, which a session replay
+    /// holding the main thread defers past first paint — the restored
+    /// window visibly repaints from the default theme to the Space's one.
+    /// Same guard semantics as above: untouched when nothing is persisted
+    /// (shared mirroring / fixed incognito theme stay as configured). The
+    /// register-time apply still runs afterwards and is an idempotent
+    /// re-assert.
+    func seedPersistedTheme(into browserState: BrowserState, spaceId: String) {
+        guard hasThemeCustomization(forSpaceId: spaceId) else { return }
+        MainActor.assumeIsolated {
+            let context = browserState.themeContext
+            context.mirrorsSharedTheme = false
+            context.spaceThemeResolver = { [weak self] in
+                self?.resolvedTheme(forSpaceId: spaceId)
+            }
+            context.setTheme(resolvedTheme(forSpaceId: spaceId))
+        }
+    }
+
     /// The Theme instance `spaceId`'s windows display: its resolved registry
     /// theme with fixed V2 alpha, then the Space's saturation or Pure
     /// brightness when stored. The copy keeps the registry id so a pinned
@@ -2627,6 +2653,39 @@ final class SpaceManager: ObservableObject {
         // `claimRestoredWindow` can answer for session-restore callbacks
         // that race the SwiftData publishers below.
         loadRestoreSnapshot()
+
+        // Seed `spaces` from a direct fetch SYNCHRONOUSLY, for the same
+        // reason `loadRestoreSnapshot` runs here and not in the task below:
+        // this bind runs on the main thread before Chromium is up, while the
+        // task is queued on the MainActor and a cold-launch session replay
+        // holds the main thread for seconds — measured ~1.4s from bind to
+        // task entry, well past the restored windows' first paint, which
+        // therefore rendered every `spaces` reader (Space pips, tints,
+        // profile lookups) with defaults until the late delivery re-colored
+        // them.
+        //
+        // DATA ONLY — deliberately NOT `handleSpacesUpdate`: bind can run
+        // inside `SpaceManager.init` (the singleton's first touch), and the
+        // full update path's side effects are unsafe that early — its login
+        // gate (`checkLoginStatusOnChromiumLaunch`) reaches
+        // `AccountController.account`'s didSet, whose shortcut reload asks
+        // the bridge to rebuild the main menu before AppKit is ready
+        // (startup crash in `NSMenu _setMenuName:`). Assigning the
+        // @Published array is effect-free here (no subscribers exist yet);
+        // slot reconciliation, migrations, and the default-space theme
+        // publish all run on the publisher's first emission, which replaces
+        // this seed wholesale through `handleSpacesUpdate` as before. The
+        // store fetch itself is the established synchronous main-context
+        // pattern (`handleLoginCompleted` / `boundProfileId`); bind runs on
+        // the main thread (account notifications post there), matching this
+        // file's other `assumeIsolated` entries.
+        let seededSpaces = MainActor.assumeIsolated {
+            account.localStorage.getAllSpaces()
+        }
+        if !seededSpaces.isEmpty {
+            lastStoreSpaces = seededSpaces
+            spaces = seededSpaces
+        }
 
         Task { @MainActor [weak self] in
             guard let self else { return }
@@ -5263,6 +5322,10 @@ final class SpaceWindowSlot: ObservableObject {
     private func makeKeyAndOrderFrontHidingSlotTabBar(_ window: NSWindow?) {
         guard let window else { return }
 
+        // Every explicit fronting un-conceals: covers a mid-restore
+        // pip-switch to a Space whose window is still alpha-concealed.
+        revealConcealedWindow(window)
+
         hideSlotTabBars()
         if let tabGroup = window.tabGroup,
            tabGroup.windows.count > 1,
@@ -5510,6 +5573,65 @@ final class SpaceWindowSlot: ObservableObject {
         orderOutRearmingMoveToActiveSpace(window)
     }
 
+    /// Space ids whose next `registerWindow` belongs to a restored
+    /// sibling-Space window that must stay invisible for the whole restore
+    /// burst. Marked by `PhiChromiumCoordinator.mainBrowserWindowCreated`
+    /// BEFORE the controller init (registration runs inside that init, so a
+    /// post-init conceal would lose the race against the registration-time
+    /// tab-group enrollment below); consumed by `registerWindow`.
+    private var pendingRestoreConcealSpaceIds: Set<String> = []
+
+    /// Marks the restored window that is about to register for `spaceId` as
+    /// a concealed sibling: `registerWindow` then skips the slot tab-group
+    /// enrollment for it and conceals the window before Chromium's
+    /// post-construction Show() can surface it.
+    ///
+    /// Why concealment must include staying OUT of the native tab group:
+    /// grouped windows share one frame, and AppKit's automatic tabbing makes
+    /// the last-shown window the group's selected tab — a transparent
+    /// selected tab renders the whole shared frame transparent (the visible
+    /// active window "disappears" behind it until the reconcile pops the
+    /// siblings out). As an ungrouped window it surfaces alone — transparent
+    /// and inert — while the active window's frame stays untouched. The next
+    /// `syncSlotTabGroup` regroups it once it is genuinely surfaced — the
+    /// same regroup-on-resurface contract hidden siblings already follow
+    /// after a hard orderOut (see `deferGroupingForReveal` in
+    /// `registerWindow`).
+    func markRestoredSiblingForConcealment(spaceId: String) {
+        pendingRestoreConcealSpaceIds.insert(spaceId)
+    }
+
+    /// Applies the conceal to a just-registered restored sibling: invisible
+    /// (alpha survives every ordering call Chromium makes, unlike orderOut),
+    /// inert to clicks, and barred from automatic tab-group enrollment while
+    /// concealed. Reversed idempotently by `revealConcealedWindow` from
+    /// every settle path; `syncSlotTabGroup` restores the preferred tabbing
+    /// mode when the window is regrouped. Mirrors the dangling-window alpha
+    /// conceal/restore pair in
+    /// `MainBrowserWindowControllersManager.hideDanglingWindow`.
+    private func concealRestoredSiblingWindow(_ window: NSWindow) {
+        window.alphaValue = 0
+        window.ignoresMouseEvents = true
+        window.tabbingMode = .disallowed
+    }
+
+    /// Idempotent undo of `concealRestoredSiblingWindow`; safe on windows
+    /// that were never concealed.
+    private func revealConcealedWindow(_ window: NSWindow) {
+        if window.alphaValue != 1 { window.alphaValue = 1 }
+        if window.ignoresMouseEvents { window.ignoresMouseEvents = false }
+    }
+
+    /// Catch-all for the reconcile's final pass: no restored window may stay
+    /// transparent past the restore burst, even when the reconcile bailed on
+    /// every pass (e.g. the active Space's window never arrived).
+    private func revealAllConcealedWindows() {
+        for controller in windowsBySpaceId.values {
+            guard let window = controller.window else { continue }
+            revealConcealedWindow(window)
+        }
+    }
+
     /// Re-asserts this slot's one-visible-window invariant after Chromium
     /// surfaces several of the slot's windows at once. Scheduled (coalesced)
     /// by `PhiChromiumCoordinator.mainBrowserWindowCreated` for every restored
@@ -5547,6 +5669,9 @@ final class SpaceWindowSlot: ObservableObject {
                 guard let self else { return }
                 if delay == 3.0 { self.restoreVisibilityReconcileScheduled = false }
                 self.reconcileRestoreVisibility()
+                // Final pass: whatever the reconcile did (or bailed on), no
+                // window may stay alpha-concealed past the restore burst.
+                if delay == 3.0 { self.revealAllConcealedWindows() }
             }
         }
     }
@@ -5582,12 +5707,21 @@ final class SpaceWindowSlot: ObservableObject {
         for (siblingSpaceId, controller) in windowsBySpaceId where siblingSpaceId != activeId {
             guard let window = controller.window, window.isVisible else { continue }
             if inSharedFullScreen, windowsShareTabGroup(window, activeWindow) {
+                // Left stacked behind the active tab — safe to un-conceal
+                // (its z-order keeps it out of sight).
+                revealConcealedWindow(window)
                 continue
             }
             orderOutRearmingMoveToActiveSpace(window)
+            // Off screen now; restore visibility properties so the next
+            // pip-switch surfaces a fully opaque, interactive window.
+            revealConcealedWindow(window)
             hidCount += 1
         }
         visibleController = activeController
+        // The active window is never concealed on the claim path, but reveal
+        // defensively before fronting it.
+        revealConcealedWindow(activeWindow)
         // Re-front the active window only when something was actually hidden (or
         // it isn't the selected tab yet), so settled passes don't repeatedly
         // steal key focus.
@@ -5796,7 +5930,16 @@ final class SpaceWindowSlot: ObservableObject {
         // siblings already follow after a hard orderOut detaches them.
         let deferGroupingForReveal = verticalSwapCancel != nil
             && controller.window?.isVisible != true
-        if !deferGroupingForReveal {
+        // Restored sibling marked for concealment: conceal NOW (before
+        // Chromium's post-construction Show()) and keep it out of the slot
+        // tab group for the same span — a transparent window selected into
+        // the shared group frame would render the whole group invisible.
+        // See `markRestoredSiblingForConcealment`.
+        let concealAsRestoredSibling = pendingRestoreConcealSpaceIds.remove(spaceId) != nil
+        if let window = controller.window, concealAsRestoredSibling {
+            concealRestoredSiblingWindow(window)
+        }
+        if !deferGroupingForReveal && !concealAsRestoredSibling {
             syncSlotTabGroup(selecting: shouldBecomeVisible ? controller.window : visibleController?.window)
         }
         if shouldBecomeVisible {

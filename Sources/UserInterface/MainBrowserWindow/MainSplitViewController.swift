@@ -41,6 +41,8 @@ class MainSplitViewController: NSViewController {
         self.view = TitlebarTransparentView()
     }
 
+    private static let splitViewAutosaveName = "phiMainBrowserSplitView"
+
     override func viewDidLoad() {
         super.viewDidLoad()
 
@@ -49,8 +51,19 @@ class MainSplitViewController: NSViewController {
         setupTitlebarAwareLayout()
 
         DispatchQueue.main.async { [weak self] in
-            self?.splitViewController.splitView.autosaveName = "phiMainBrowserSplitView"
+            self?.splitViewController.splitView.autosaveName = Self.splitViewAutosaveName
         }
+    }
+
+    /// Applies the persisted split position now instead of waiting for the
+    /// deferred viewDidLoad tick above. Session-restored windows are surfaced
+    /// by Chromium while the main thread is still replaying the session, so
+    /// that tick cannot run before their first visible frame — the sidebar
+    /// would show its default width and visibly jump once the tick lands.
+    /// AppKit restores the saved divider position when `autosaveName` is
+    /// assigned; the deferred tick re-assigning the same name is a no-op.
+    func adoptAutosavedSplitPositionNow() {
+        splitViewController.splitView.autosaveName = Self.splitViewAutosaveName
     }
 
     override func viewWillAppear() {

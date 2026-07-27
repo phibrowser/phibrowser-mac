@@ -487,6 +487,19 @@ extension PhiChromiumCoordinator: PhiChromiumBridgeDelegate {
         }
 
         if userLoggedIn, MainBrowserWindowControllersManager.shared.findControllerWith(window: window) == nil {
+            // Restored sibling-Space windows must be concealed for the whole
+            // restore burst — Chromium's post-construction Show()/re-orders
+            // (and the startup activation of the last-used profile's browser)
+            // undo any eager orderOut, but alpha survives them all. The mark
+            // must precede the controller init: slot registration runs inside
+            // it, and the conceal has to land before the registration-time
+            // tab-group enrollment (a transparent window selected into the
+            // shared group frame blanks the visible active window). Revealed
+            // by the slot's visibility reconcile once the burst settles.
+            if isRestoredWindow, let resolvedSlot,
+               resolvedSlot.activeSpaceId != spaceId {
+                resolvedSlot.markRestoredSiblingForConcealment(spaceId: spaceId)
+            }
             let mainWindowController = MainBrowserWindowController(
                 window: window,
                 windowId: Int(windowId),
@@ -533,6 +546,14 @@ extension PhiChromiumCoordinator: PhiChromiumBridgeDelegate {
                 // linger. Re-assert the slot's one-visible-window invariant on
                 // the next runloop turn, after Chromium finishes showing them.
                 if isRestoredWindow {
+                    // Restored windows are surfaced by Chromium before the
+                    // deferred autosave tick in MainSplitViewController can
+                    // run (the main thread is busy replaying the session), so
+                    // their first visible frame would show the default
+                    // sidebar width and jump later. Adopt the persisted split
+                    // position now, ahead of any Show().
+                    mainWindowController.mainSplitViewController
+                        .adoptAutosavedSplitPositionNow()
                     resolvedSlot?.scheduleRestoreVisibilityReconcile()
                 }
             } else {

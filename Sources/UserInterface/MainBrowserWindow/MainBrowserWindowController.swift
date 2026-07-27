@@ -74,6 +74,14 @@ class MainBrowserWindowController: NSWindowController {
         self.browserType = browserType
         self.profileId = profileId
         self.spaceId = spaceId
+        // Adopt the Space's persisted theme BEFORE any view reads the theme
+        // context: the register-time apply below runs after the view
+        // hierarchy is built, and its corrective update is deferred behind a
+        // busy main queue during session restore — the restored window's
+        // first paint would show the default theme and repaint later. No-op
+        // for Spaces without persisted customization (incognito's fixed
+        // theme and shared mirroring stay as configured).
+        SpaceManager.shared.seedPersistedTheme(into: state, spaceId: spaceId)
         self.mainSplitViewController = MainSplitViewController(state: state)
         super.init(window: window)
         self.slot = slot

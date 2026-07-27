@@ -9,6 +9,7 @@ import SwiftData
 /// Modification record:
 /// - V2 replaces the legacy `isPinned`, `isBookmark`, and `isFolder` flags with
 ///   the integer `type` discriminator used by `TabDataType`.
+@available(macOS 14, *)
 enum TabDataModelSchemaV2: VersionedSchema {
     static var versionIdentifier = Schema.Version(2, 0, 0)
     static var models: [any PersistentModel.Type] {

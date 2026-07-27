@@ -9,6 +9,7 @@ import SwiftData
 /// Modification record:
 /// - V4 adds optional `secondaryUrl` and `secondaryTitle` fields so a bookmark
 ///   can persist a split-view pair.
+@available(macOS 14, *)
 enum TabDataModelSchemaV4: VersionedSchema {
     static var versionIdentifier = Schema.Version(4, 0, 0)
 

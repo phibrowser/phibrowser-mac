@@ -5,7 +5,7 @@
 
 import Foundation
 import SwiftUI
-import SwiftData
+import CoreData
 #if canImport(AppKit)
 import AppKit
 import ObjectiveC
@@ -156,7 +156,7 @@ enum EditPinnedTabPresenter {
         urlString: String = "",
         secondaryUrlString: String? = nil,
         secondaryTitleString: String? = nil,
-        modelContainer: ModelContainer? = nil,
+        modelContainer: NSPersistentContainer? = nil,
         profileId: String = "",
         spaceId: String = LocalStore.defaultSpaceId,
         initialFolderGuid: String? = nil,
@@ -192,7 +192,7 @@ enum EditPinnedTabPresenter {
 
         let hosting: ThemedHostingController<AnyView>
         if let modelContainer {
-            hosting = ThemedHostingController(rootView: AnyView(contentView.modelContainer(modelContainer)))
+            hosting = ThemedHostingController(rootView: AnyView(contentView.environment(\.managedObjectContext, modelContainer.viewContext)))
         } else {
             hosting = ThemedHostingController(rootView: AnyView(contentView))
         }
@@ -378,7 +378,7 @@ struct EditPinnedTabView: View {
         .onAppear {
             setInitialFocus()
         }
-        .onChange(of: isCreatingFolder) { _, creating in
+        .onChange(of: isCreatingFolder) { creating in
             if creating {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
                     focusedField = .newFolderName
@@ -825,7 +825,7 @@ private struct BookmarkFolderPicker: View {
     @Binding var selectedFolderGuid: String?
     var onNewFolder: (() -> Void)?
 
-    @Query private var folderModels: [TabDataModel]
+    @FetchRequest private var folderModels: FetchedResults<TabDataModel>
 
     init(
         profileId: String,
@@ -838,9 +838,11 @@ private struct BookmarkFolderPicker: View {
         self._selectedFolderGuid = selectedFolderGuid
         self.onNewFolder = onNewFolder
         let folderRaw = TabDataType.bookmarkFolder.rawValue
-        _folderModels = Query(
-            filter: #Predicate<TabDataModel> { $0.type == folderRaw },
-            sort: \.index
+        _folderModels = FetchRequest(
+            fetchRequest: TabDataModel.request(
+                NSPredicate(format: "type == %d", folderRaw),
+                sortBy: [NSSortDescriptor(key: "index", ascending: true)]
+            )
         )
     }
 

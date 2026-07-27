@@ -211,6 +211,9 @@ private struct AboutAcknowledgementsTextView: NSViewRepresentable {
         textView.alignment = .center
     }
 
+    // The sizeThatFits requirement only exists on macOS 13+; macOS 12 falls
+    // back to the hosting view's intrinsic sizing.
+    @available(macOS 13.0, *)
     func sizeThatFits(_ proposal: ProposedViewSize, nsView textView: NSTextView, context: Context) -> CGSize? {
         let width = proposal.width.map { min($0, layoutWidth) } ?? layoutWidth
         textView.textContainer?.containerSize = NSSize(width: width, height: CGFloat.greatestFiniteMagnitude)

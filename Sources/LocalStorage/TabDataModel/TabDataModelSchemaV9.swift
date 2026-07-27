@@ -12,6 +12,7 @@ import SwiftData
 ///   Physical pinned rows can then be copied or merged between Space, Profile,
 ///   and App collections without losing data or the logical identity used by
 ///   live browser windows.
+@available(macOS 14, *)
 enum TabDataModelSchemaV9: VersionedSchema {
     static var versionIdentifier = Schema.Version(9, 0, 0)
 

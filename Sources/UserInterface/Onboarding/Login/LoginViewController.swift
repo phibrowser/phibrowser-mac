@@ -310,7 +310,9 @@ class LoginViewController: NSViewController {
     
     private func attachWebView(_ webView: WKWebView) {
         #if DEBUG || NIGHTLY_BUILD
+        if #available(macOS 13.3, *) {
         webView.isInspectable = true
+        }
         #endif
         self.view.window?.contentView = webView
     }
@@ -328,7 +330,12 @@ class LoginViewController: NSViewController {
         
         Task {
             do {
-                let (cgImage, _) = try await imageGenerator.image(at: currentTime)
+                let cgImage: CGImage
+                if #available(macOS 13, *) {
+                    (cgImage, _) = try await imageGenerator.image(at: currentTime)
+                } else {
+                    cgImage = try imageGenerator.copyCGImage(at: currentTime, actualTime: nil)
+                }
                 let originalImage = NSImage(cgImage: cgImage, size: view.bounds.size)
                 
                 if let blurredImage = applyGaussianBlur(to: originalImage, radius: blurRadius) {

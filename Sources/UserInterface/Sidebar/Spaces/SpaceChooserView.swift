@@ -77,13 +77,13 @@ struct SpaceChooserView: View {
                 .shadow(color: .black.opacity(0.28), radius: 22, y: 8)
         }
         .focusable()
-        .focusEffectDisabled()
         .focused($focused)
         .onAppear { focused = true }
-        .onKeyPress(.upArrow) { moveSelection(by: -1); return .handled }
-        .onKeyPress(.downArrow) { moveSelection(by: 1); return .handled }
-        .onKeyPress(.return) { onChoose(selection); return .handled }
-        .onKeyPress(.escape) { onChoose(nil); return .handled }
+        .chooserKeyHandling(
+            moveSelection: { moveSelection(by: $0) },
+            choose: { onChoose(selection) },
+            cancel: { onChoose(nil) }
+        )
     }
 
     private var spaceList: some View {
@@ -96,7 +96,7 @@ struct SpaceChooserView: View {
                 }
             }
             .frame(height: listHeight)
-            .onChange(of: selection) {
+            .onChange(of: selection) { _ in
                 withAnimation(.easeOut(duration: 0.12)) {
                     proxy.scrollTo(selection, anchor: .center)
                 }
@@ -157,5 +157,26 @@ struct SpaceChooserView: View {
         let currentIndex = items.firstIndex { $0.id == selection } ?? 0
         let nextIndex = max(0, min(items.count - 1, currentIndex + delta))
         selection = items[nextIndex].id
+    }
+}
+
+private extension View {
+    /// Arrow/return/escape handling rides on `onKeyPress`, which requires
+    /// macOS 14; on older systems the chooser is mouse-driven only.
+    @ViewBuilder
+    func chooserKeyHandling(
+        moveSelection: @escaping (Int) -> Void,
+        choose: @escaping () -> Void,
+        cancel: @escaping () -> Void
+    ) -> some View {
+        if #available(macOS 14.0, *) {
+            self.focusEffectDisabled()
+                .onKeyPress(.upArrow) { moveSelection(-1); return .handled }
+                .onKeyPress(.downArrow) { moveSelection(1); return .handled }
+                .onKeyPress(.return) { choose(); return .handled }
+                .onKeyPress(.escape) { cancel(); return .handled }
+        } else {
+            self
+        }
     }
 }

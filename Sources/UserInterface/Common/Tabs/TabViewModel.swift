@@ -7,51 +7,50 @@ import SwiftUI
 import Combine
 import AppKit
 
-@Observable
 @MainActor
-final class TabViewModel {
-    var title: String = ""
-    var url: String?
-    var faviconUrl: String?
-    var liveFaviconImage: NSImage?
-    var profileFaviconImage: NSImage?
-    private(set) var liveFaviconRevision: Int = 0
+final class TabViewModel: ObservableObject {
+    @Published var title: String = ""
+    @Published var url: String?
+    @Published var faviconUrl: String?
+    @Published var liveFaviconImage: NSImage?
+    @Published var profileFaviconImage: NSImage?
+    @Published private(set) var liveFaviconRevision: Int = 0
     /// The last non-nil URL used for favicon loading. Prevents globe flash
     /// when viewModel is briefly reconfigured with a nil-url tab during layout.
-    private(set) var faviconLoadURL: String?
-    var isActive: Bool = false
-    var isActiveSuppressed: Bool = false
+    @Published private(set) var faviconLoadURL: String?
+    @Published var isActive: Bool = false
+    @Published var isActiveSuppressed: Bool = false
     /// True when this tab is part of the temporary multi-selection (the active
     /// tab is implicitly included but never carries this flag).
-    var isMultiSelected: Bool = false
-    var isHovered: Bool = false
-    var isHoverSuppressed: Bool = false
-    var isPressed: Bool = false
+    @Published var isMultiSelected: Bool = false
+    @Published var isHovered: Bool = false
+    @Published var isHoverSuppressed: Bool = false
+    @Published var isPressed: Bool = false
     /// Progress-gated visual loading used by sidebar title effects.
     /// Raw Chromium loading can lag or pulse after progress reaches completion.
-    var isLoading: Bool = false
-    var loadingProgress: Double = 1.0
-    var isCurrentlyAudible: Bool = false
-    var isAudioMuted: Bool = false
-    var isCapturingMedia: Bool = false
-    var isHorizontalCompactMode: Bool = false
+    @Published var isLoading: Bool = false
+    @Published var loadingProgress: Double = 1.0
+    @Published var isCurrentlyAudible: Bool = false
+    @Published var isAudioMuted: Bool = false
+    @Published var isCapturingMedia: Bool = false
+    @Published var isHorizontalCompactMode: Bool = false
     /// Color of the tab group this tab belongs to, if any. Drives the
     /// vertical group-affiliation bar on the leading edge of the cell.
     /// Tracks live: changes when the tab joins / leaves a group, when the
     /// group is closed, or when the group's color is recolored.
-    var groupColor: GroupColor?
+    @Published var groupColor: GroupColor?
     /// Membership flag derived directly from `tab.groupToken`. Distinct
     /// from `groupColor != nil`: a tab can be a group member momentarily
     /// before its color resolves (kJoined arrives on the data side
     /// before `state.groups` re-emits onto the main runloop), so this
     /// flag is the authoritative signal for layout decisions like
     /// indentation that should not flicker on color settling.
-    var isInGroup: Bool = false
+    @Published var isInGroup: Bool = false
 
     var onToggleMute: (() -> Void)?
     var onToolTipUpdated: (() -> Void)?
-    
-    private(set) var faviconRevision: Int = 0
+
+    @Published private(set) var faviconRevision: Int = 0
     
     private var cancellables = Set<AnyCancellable>()
     private var rawIsLoading: Bool = false

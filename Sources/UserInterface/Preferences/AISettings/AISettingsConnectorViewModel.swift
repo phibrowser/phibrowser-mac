@@ -39,9 +39,8 @@ struct ConnectorTemplate: Identifiable {
 
 // MARK: - ConnectorItemState
 
-@Observable
 @MainActor
-final class ConnectorItemState: @MainActor Identifiable {
+final class ConnectorItemState: ObservableObject, @MainActor Identifiable {
     enum ConnectionStatus {
         case connected
         case disconnected
@@ -51,11 +50,11 @@ final class ConnectorItemState: @MainActor Identifiable {
 
     let template: ConnectorTemplate
     var id: String { template.id }
-    var status: ConnectionStatus = .disconnected
-    var lastSyncTime: String = ""
-    var isLoading: Bool = false
-    var isAuthorizationPending: Bool = false
-    var errorMessage: String?
+    @Published var status: ConnectionStatus = .disconnected
+    @Published var lastSyncTime: String = ""
+    @Published var isLoading: Bool = false
+    @Published var isAuthorizationPending: Bool = false
+    @Published var errorMessage: String?
     private var oauthConnection: OAuthConnection?
 
     init(template: ConnectorTemplate) {
@@ -116,10 +115,9 @@ final class ConnectorItemState: @MainActor Identifiable {
 
 // MARK: - AISettingsConnectorViewModel
 
-@Observable
 @MainActor
-final class AISettingsConnectorViewModel {
-    var connectors: [ConnectorItemState]
+final class AISettingsConnectorViewModel: ObservableObject {
+    @Published var connectors: [ConnectorItemState]
     private let apiClient = APIClient.shared
     private var oauthConnections: [OAuthConnection] = []
     private var isRefreshingConnections = false

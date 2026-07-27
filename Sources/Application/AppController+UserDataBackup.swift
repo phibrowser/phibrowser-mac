@@ -6,7 +6,7 @@
 import AppKit
 import Darwin
 import Foundation
-import SwiftData
+import CoreData
 import UniformTypeIdentifiers
 
 struct PhiUserDataExportSelection: Equatable {
@@ -932,15 +932,19 @@ extension AppController {
 
     private static func profileIdsReferencedBySpaces(inStoreDirectory storeDirectoryURL: URL) throws -> Set<String> {
         let container = try openImportedLocalStoreContainer(at: storeDirectoryURL)
-        let context = ModelContext(container)
-        let spaces = try context.fetch(FetchDescriptor<SpaceModel>())
+        let context = container.viewContext
+        let spaces = try context.performAndWait {
+            try context.fetch(SpaceModel.request())
+        }
         return Set(spaces.map(\.profileId))
     }
 
     private static func profileDisplayNames(inStoreDirectory storeDirectoryURL: URL) throws -> [String: String] {
         let container = try openImportedLocalStoreContainer(at: storeDirectoryURL)
-        let context = ModelContext(container)
-        let profiles = try context.fetch(FetchDescriptor<ProfileModel>())
+        let context = container.viewContext
+        let profiles = try context.performAndWait {
+            try context.fetch(ProfileModel.request())
+        }
         var displayNames: [String: String] = [:]
         for profile in profiles {
             guard let displayName = profile.displayName?.trimmingCharacters(in: .whitespacesAndNewlines),
@@ -952,7 +956,7 @@ extension AppController {
         return displayNames
     }
 
-    private static func openImportedLocalStoreContainer(at storeDirectoryURL: URL) throws -> ModelContainer {
+    private static func openImportedLocalStoreContainer(at storeDirectoryURL: URL) throws -> NSPersistentContainer {
         let compatibilityController = LocalStoreCompatibilityController(
             configuration: LocalStore.compatibilityConfiguration
         )
@@ -971,18 +975,18 @@ extension AppController {
             )
         }
 
-        let configuration = ModelConfiguration(
-            url: storeDirectoryURL.appendingPathComponent(LocalStore.compatibilityConfiguration.storeFilename)
+        let storeFileURL = storeDirectoryURL.appendingPathComponent(LocalStore.compatibilityConfiguration.storeFilename)
+        // Backups written by SwiftData builds (format <= 9) are converted in
+        // place before opening, exactly like the main store.
+        if openPlan.activeStoreFormatVersion < 10,
+           FileManager.default.fileExists(atPath: storeFileURL.path) {
+            try LocalStoreLegacyImport.convertStore(
+                at: storeDirectoryURL,
+                storeFilename: LocalStore.compatibilityConfiguration.storeFilename
         )
-        let container = try ModelContainer(
-            for: TabDataModel.self,
-            ProfileModel.self,
-            SpaceModel.self,
-            SpaceURLRule.self,
-            BrowserDataSettingsModel.self,
-            migrationPlan: TabDataModelMigrationPlan.self,
-            configurations: configuration
-        )
+        }
+
+        let container = try LocalStore.makeContainer(storeFileURL: storeFileURL)
         try compatibilityController.markStoreOpenedSuccessfully(openPlan, at: storeDirectoryURL)
         return container
     }
@@ -1171,10 +1175,16 @@ extension AppController {
 
     private static func applyImportedProfileIdRemaps(_ profileIdRemaps: [String: String], inStoreDirectory storeDirectoryURL: URL) throws {
         let container = try openImportedLocalStoreContainer(at: storeDirectoryURL)
-        let context = ModelContext(container)
+        let context = container.viewContext
+        try context.performAndWait {
+            try applyImportedProfileIdRemaps(profileIdRemaps, in: context)
+        }
+    }
+
+    private static func applyImportedProfileIdRemaps(_ profileIdRemaps: [String: String], in context: NSManagedObjectContext) throws {
         var didChange = false
 
-        let spaces = try context.fetch(FetchDescriptor<SpaceModel>())
+        let spaces = try context.fetch(SpaceModel.request())
         for space in spaces {
             guard let newProfileId = profileIdRemaps[space.profileId] else {
                 continue
@@ -1184,7 +1194,7 @@ extension AppController {
             didChange = true
         }
 
-        let tabs = try context.fetch(FetchDescriptor<TabDataModel>())
+        let tabs = try context.fetch(TabDataModel.request())
         for tab in tabs {
             guard let oldProfileId = tab.profileId,
                   let newProfileId = profileIdRemaps[oldProfileId] else {
@@ -1195,7 +1205,7 @@ extension AppController {
             didChange = true
         }
 
-        let profiles = try context.fetch(FetchDescriptor<ProfileModel>())
+        let profiles = try context.fetch(ProfileModel.request())
         var profilesById: [String: ProfileModel] = Dictionary(
             uniqueKeysWithValues: profiles.map { ($0.profileId, $0) }
         )

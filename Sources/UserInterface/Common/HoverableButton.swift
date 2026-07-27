@@ -18,6 +18,13 @@ enum HoverableButtonDisplayMode {
     }
 }
 
+// MARK: - Image Transition
+/// Version-safe stand-in for SwiftUI's `ContentTransition.symbolEffect`,
+/// which requires macOS 14; older systems swap the image with no transition.
+enum HoverableImageTransition {
+    case symbolReplace(speed: Double)
+}
+
 // MARK: - Configuration
 struct HoverableButtonConfig {
     var title: String
@@ -45,8 +52,9 @@ struct HoverableButtonConfig {
     /// NSImage shown after trigger (ignored when `triggeredSystemName` is set).
     var triggeredImage: NSImage?
     var triggeredImageTintColor: ThemedColor?
-    /// Content transition applied to the image (e.g. `.symbolEffect(.replace)`).
-    var imageContentTransition: ContentTransition?
+    /// Content transition applied to the image; rendered with
+    /// `.symbolEffect(.replace)` on macOS 14+ and ignored on older systems.
+    var imageContentTransition: HoverableImageTransition?
     /// Auto-revert delay in seconds; `nil` means the triggered state persists.
     var triggeredRevertDelay: TimeInterval?
 
@@ -59,7 +67,7 @@ struct HoverableButtonConfig {
         symbolWeight: Font.Weight? = nil,
         triggeredImage: NSImage? = nil,
         triggeredImageTintColor: ThemedColor? = nil,
-        imageContentTransition: ContentTransition? = nil,
+        imageContentTransition: HoverableImageTransition? = nil,
         triggeredRevertDelay: TimeInterval? = nil,
         displayMode: HoverableButtonDisplayMode = .imageOnly,
         backgroundColor: ThemedColor = .clear,
@@ -233,18 +241,16 @@ struct HoverableButton: View {
     @ViewBuilder
     private func symbolImageView(_ name: String) -> some View {
         let tintColor = resolvedDisplayImageTintColor ?? .primary
-        let transition = config.imageContentTransition ?? .identity
 
         Image(systemName: name)
             .font(.system(size: config.imageSize?.height ?? 16, weight: config.symbolWeight ?? .medium))
             .foregroundStyle(tintColor)
-            .contentTransition(transition)
+            .hoverableImageTransition(config.imageContentTransition)
     }
 
     @ViewBuilder
     private func imageView(_ image: NSImage) -> some View {
         let tintColor = resolvedDisplayImageTintColor
-        let transition = config.imageContentTransition ?? .identity
 
         if let imageSize = config.imageSize {
             if let tintColor {
@@ -254,13 +260,13 @@ struct HoverableButton: View {
                     .aspectRatio(contentMode: .fit)
                     .foregroundColor(tintColor)
                     .frame(width: imageSize.width, height: imageSize.height)
-                    .contentTransition(transition)
+                    .hoverableImageTransition(config.imageContentTransition)
             } else {
                 Image(nsImage: image)
                     .resizable()
                     .aspectRatio(contentMode: .fit)
                     .frame(width: imageSize.width, height: imageSize.height)
-                    .contentTransition(transition)
+                    .hoverableImageTransition(config.imageContentTransition)
             }
         } else {
             if let tintColor {
@@ -269,13 +275,24 @@ struct HoverableButton: View {
                     .resizable()
                     .aspectRatio(contentMode: .fit)
                     .foregroundColor(tintColor)
-                    .contentTransition(transition)
+                    .hoverableImageTransition(config.imageContentTransition)
             } else {
                 Image(nsImage: image)
                     .resizable()
                     .aspectRatio(contentMode: .fit)
-                    .contentTransition(transition)
+                    .hoverableImageTransition(config.imageContentTransition)
             }
+        }
+    }
+}
+
+private extension View {
+    @ViewBuilder
+    func hoverableImageTransition(_ transition: HoverableImageTransition?) -> some View {
+        if #available(macOS 14.0, *), case let .symbolReplace(speed)? = transition {
+            self.contentTransition(.symbolEffect(.replace, options: .speed(speed)))
+        } else {
+            self
         }
     }
 }

@@ -11,6 +11,7 @@ import SwiftData
 ///   profile-scoped tabs and bookmarks.
 /// - V3 removes `associatedProfileIdentifier`; `profileId` remains as the
 ///   denormalized profile lookup key.
+@available(macOS 14, *)
 enum TabDataModelSchemaV3: VersionedSchema {
     static var versionIdentifier = Schema.Version(3, 0, 0)
 

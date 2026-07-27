@@ -9,6 +9,7 @@ import SwiftData
 /// Modification record:
 /// - V8 adds optional `displayName` to `ProfileModel` as a local snapshot of
 ///   Chromium's profile display name for backup/restore.
+@available(macOS 14, *)
 enum TabDataModelSchemaV8: VersionedSchema {
     static var versionIdentifier = Schema.Version(8, 0, 0)
 

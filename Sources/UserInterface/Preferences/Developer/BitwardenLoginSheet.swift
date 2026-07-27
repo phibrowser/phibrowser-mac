@@ -154,7 +154,7 @@ struct BitwardenLoginSheet: View {
                     requiredLabel(NSLocalizedString("settings.bitwardenLoginSheet.selfHostedServer.fieldLabel", value: "Self-hosted server URL", comment: "Bitwarden login sheet - self-hosted server URL field label"))
                     styledField {
                         TextField("https://vault.example.com", text: $selfHostURL)
-                            .textContentType(.URL)
+                            .urlTextContentType()
                             .disableAutocorrection(true)
                             .onSubmit { continueToPassword() }
                     }
@@ -441,6 +441,19 @@ struct BitwardenLoginSheet: View {
                     errorMessage = error.localizedDescription
                 }
             }
+        }
+    }
+}
+
+private extension View {
+    /// `NSTextContentType.URL` requires macOS 14; older systems skip the
+    /// content-type hint (autofill nicety only).
+    @ViewBuilder
+    func urlTextContentType() -> some View {
+        if #available(macOS 14.0, *) {
+            self.textContentType(.URL)
+        } else {
+            self
         }
     }
 }

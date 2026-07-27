@@ -9,6 +9,7 @@ import SwiftData
 /// Modification record:
 /// - V6 adds optional `lastSeen` for persisted last-opened tracking on pinned
 ///   tabs and bookmarks.
+@available(macOS 14, *)
 enum TabDataModelSchemaV6: VersionedSchema {
     static var versionIdentifier = Schema.Version(6, 0, 0)
 

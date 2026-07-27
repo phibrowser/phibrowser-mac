@@ -119,12 +119,11 @@ struct ShortcutsSettingsView: View {
                                 // macOS list rows add 4pt padding by default, so use 4pt
                                 // here to land on the designed 12pt visual spacing.
                                 .listRowInsets(EdgeInsets(top: 0, leading: 4, bottom: 4, trailing: 4))
-                                .listRowSeparator(.hidden)
+                                .hiddenListRowSeparator()
                             }
                         }
                         .listStyle(.plain)
-                        .listSectionSeparator(.hidden)
-                        .scrollContentBackground(.hidden)
+                        .hiddenListChrome()
                         .opacity(sections.isEmpty ? 0 : 1)
                         
                         if sections.isEmpty {
@@ -389,4 +388,29 @@ extension View {
 
 #Preview {
     ShortcutsSettingsView()
+}
+
+private extension View {
+    /// `listRowSeparator` requires macOS 13; macOS 12 keeps the default
+    /// separators (visual-only degradation).
+    @ViewBuilder
+    func hiddenListRowSeparator() -> some View {
+        if #available(macOS 13.0, *) {
+            self.listRowSeparator(.hidden)
+        } else {
+            self
+        }
+    }
+
+    /// `listSectionSeparator` / `scrollContentBackground` require macOS 13;
+    /// macOS 12 keeps the default list chrome (visual-only degradation).
+    @ViewBuilder
+    func hiddenListChrome() -> some View {
+        if #available(macOS 13.0, *) {
+            self.listSectionSeparator(.hidden)
+                .scrollContentBackground(.hidden)
+        } else {
+            self
+        }
+    }
 }

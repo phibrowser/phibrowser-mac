@@ -196,6 +196,17 @@ extension PhiPreferences {
     enum AISettings: String, CaseIterable {
         case phiAIEnabled, enableConnectors, enableConnectorContext , enableChatWithTabs, enableBrowserMemories, launchSentinelOnLogin, enableProactiveSuggestionsOnNTP
 
+        /// Chat and memory are backed by Sentinel-managed local components
+        /// (phi-agent and friends) that publish no x86_64 artifacts yet, so
+        /// Intel builds hide the AI entry points entirely.
+        static var supportedOnThisArchitecture: Bool {
+            #if arch(x86_64)
+            return false
+            #else
+            return true
+            #endif
+        }
+
         var defaultValue: Bool {
             switch self {
             case .phiAIEnabled:

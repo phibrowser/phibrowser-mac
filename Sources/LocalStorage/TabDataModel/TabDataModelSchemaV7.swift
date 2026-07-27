@@ -9,6 +9,7 @@ import SwiftData
 /// Modification record:
 /// - V7 introduces `SpaceModel` and `SpaceURLRule` for the Phi Spaces feature.
 ///   `TabDataModel` is unchanged from V6 (it retains the V6 `lastSeen` column).
+@available(macOS 14, *)
 enum TabDataModelSchemaV7: VersionedSchema {
     static var versionIdentifier = Schema.Version(7, 0, 0)
 

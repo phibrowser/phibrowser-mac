@@ -563,7 +563,7 @@ private struct DeveloperModeSectionView: View {
                 hintRow
             }
         }
-        .onChange(of: developerModeEnabled) { _, newValue in
+        .onChange(of: developerModeEnabled) { newValue in
             // Deferred: applying the change rebuilds the settings window,
             // which closes the window hosting this very view — that must not
             // happen mid view-update.

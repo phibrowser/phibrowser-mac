@@ -9,6 +9,7 @@ import SwiftData
 /// Modification record:
 /// - V5 adds optional `splitPartnerGuid` so pinned split pairs can be restored
 ///   after app restart.
+@available(macOS 14, *)
 enum TabDataModelSchemaV5: VersionedSchema {
     static var versionIdentifier = Schema.Version(5, 0, 0)
 

@@ -60,7 +60,7 @@ struct ProfileDetailSettingsView: View {
             activeProfileId = profileId
             loadDetail(profileId)
         }
-        .onChange(of: profileId) { _, newProfileId in
+        .onChange(of: profileId) { newProfileId in
             activeProfileId = newProfileId
             // In-flight install spinners are per-profile UI state; dropping
             // them also stops their polls. The installs themselves keep
@@ -122,7 +122,8 @@ struct ProfileDetailSettingsView: View {
             // .button + .plain renders the label exactly as given (like the
             // download Button's pill); .borderlessButton would impose a native
             // popup look instead, dropping the pill and its trailing chevron.
-            .menuStyle(.button)
+            // It requires macOS 13, so macOS 12 gets the borderless fallback.
+            .pillMenuStyle()
             .buttonStyle(.plain)
             .menuIndicator(.hidden)
             .fixedSize()
@@ -330,7 +331,7 @@ struct ProfileDetailSettingsView: View {
                     .themedForeground(.textSecondary)
             }
         }
-        .menuStyle(.button)
+        .pillMenuStyle()
         .buttonStyle(.plain)
         .menuIndicator(.hidden)
         .fixedSize()
@@ -439,6 +440,19 @@ struct ProfileDetailSettingsView: View {
         downloadPath = newPath
         profileManager.setDownloadLocation(newPath, forProfile: profileId) { success, _ in
             if !success, activeProfileId == profileId { downloadPath = previous }
+        }
+    }
+}
+
+private extension View {
+    /// `ButtonMenuStyle` requires macOS 13; macOS 12 falls back to the
+    /// borderless native popup look for these pill menus.
+    @ViewBuilder
+    func pillMenuStyle() -> some View {
+        if #available(macOS 13.0, *) {
+            self.menuStyle(.button)
+        } else {
+            self.menuStyle(.borderlessButton)
         }
     }
 }

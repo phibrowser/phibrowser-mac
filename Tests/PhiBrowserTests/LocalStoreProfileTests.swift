@@ -4,6 +4,7 @@
 // found in the LICENSE file.
 
 import XCTest
+import CoreData
 import SwiftData
 import Cocoa
 @testable import Phi
@@ -21,6 +22,9 @@ final class LocalStoreProfileTests: XCTestCase {
     }
 
     func testMigratingLegacyStoreAssignsRowsToDefaultProfile() throws {
+        guard #available(macOS 14, *) else {
+            throw XCTSkip("Legacy SwiftData stores require macOS 14 to seed and convert.")
+        }
         let directory = try makeTemporaryStoreDirectory()
         try seedLegacyStore(at: directory)
 
@@ -30,10 +34,10 @@ final class LocalStoreProfileTests: XCTestCase {
         )
         let context = try XCTUnwrap(store.getMainContext())
 
-        let profiles: [ProfileModel] = try context.fetch(FetchDescriptor<ProfileModel>())
+        let profiles: [ProfileModel] = try context.fetch(ProfileModel.request())
         XCTAssertEqual(profiles.map { $0.profileId }, ["Default"])
 
-        let tabs: [TabDataModel] = try context.fetch(FetchDescriptor<TabDataModel>())
+        let tabs: [TabDataModel] = try context.fetch(TabDataModel.request())
         XCTAssertEqual(tabs.count, 1)
         XCTAssertEqual(tabs.first?.profile?.profileId, "Default")
         XCTAssertEqual(tabs.first?.pinLineageId, "legacy-guid")
@@ -44,17 +48,17 @@ final class LocalStoreProfileTests: XCTestCase {
         let store = try makeStore()
         let context = try XCTUnwrap(store.getMainContext())
 
-        let defaultProfile = ProfileModel(profileId: "Default")
-        let workProfile = ProfileModel(profileId: "Work")
+        let defaultProfile = ProfileModel(insertInto: context, profileId: "Default")
+        let workProfile = ProfileModel(insertInto: context, profileId: "Work")
         context.insert(defaultProfile)
         context.insert(workProfile)
 
-        let defaultPinned = makeTab(guid: "default-pinned", title: "Default", url: "https://default.example")
+        let defaultPinned = makeTab(in: context, guid: "default-pinned", title: "Default", url: "https://default.example")
         defaultPinned.dataType = TabDataType.pinnedTab
         defaultPinned.profile = defaultProfile
         context.insert(defaultPinned)
 
-        let workPinned = makeTab(guid: "work-pinned", title: "Work", url: "https://work.example")
+        let workPinned = makeTab(in: context, guid: "work-pinned", title: "Work", url: "https://work.example")
         workPinned.dataType = TabDataType.pinnedTab
         workPinned.profile = workProfile
         context.insert(workPinned)
@@ -69,7 +73,7 @@ final class LocalStoreProfileTests: XCTestCase {
         let store = try makeStore()
         let context = try XCTUnwrap(store.getMainContext())
 
-        let defaultProfile = ProfileModel(profileId: "Default", displayName: "Old Default")
+        let defaultProfile = ProfileModel(insertInto: context, profileId: "Default", displayName: "Old Default")
         context.insert(defaultProfile)
         try context.save()
 
@@ -78,7 +82,7 @@ final class LocalStoreProfileTests: XCTestCase {
             "Profile 1": " Work "
         ])
 
-        let profiles = try context.fetch(FetchDescriptor<ProfileModel>())
+        let profiles = try context.fetch(ProfileModel.request())
         XCTAssertEqual(profiles.first(where: { $0.profileId == "Default" })?.displayName, "Personal")
         XCTAssertEqual(profiles.first(where: { $0.profileId == "Profile 1" })?.displayName, "Work")
     }
@@ -87,28 +91,28 @@ final class LocalStoreProfileTests: XCTestCase {
         let store = try makeStore()
         let context = try XCTUnwrap(store.getMainContext())
 
-        let defaultProfile = ProfileModel(profileId: "Default")
-        let workProfile = ProfileModel(profileId: "Work")
+        let defaultProfile = ProfileModel(insertInto: context, profileId: "Default")
+        let workProfile = ProfileModel(insertInto: context, profileId: "Work")
         context.insert(defaultProfile)
         context.insert(workProfile)
 
-        let defaultRoot = makeFolder(guid: "root-default", title: "Bookmarks")
+        let defaultRoot = makeFolder(in: context, guid: "root-default", title: "Bookmarks")
         defaultRoot.profile = defaultProfile
         defaultProfile.bookmarkRoot = defaultRoot
         context.insert(defaultRoot)
 
-        let workRoot = makeFolder(guid: "root-work", title: "Bookmarks")
+        let workRoot = makeFolder(in: context, guid: "root-work", title: "Bookmarks")
         workRoot.profile = workProfile
         workProfile.bookmarkRoot = workRoot
         context.insert(workRoot)
 
-        let defaultBookmark = makeTab(guid: "bookmark-default", title: "Default Bookmark", url: "https://default.example")
+        let defaultBookmark = makeTab(in: context, guid: "bookmark-default", title: "Default Bookmark", url: "https://default.example")
         defaultBookmark.dataType = TabDataType.bookmark
         defaultBookmark.parent = defaultRoot
         defaultBookmark.profile = defaultProfile
         context.insert(defaultBookmark)
 
-        let workBookmark = makeTab(guid: "bookmark-work", title: "Work Bookmark", url: "https://work.example")
+        let workBookmark = makeTab(in: context, guid: "bookmark-work", title: "Work Bookmark", url: "https://work.example")
         workBookmark.dataType = TabDataType.bookmark
         workBookmark.parent = workRoot
         workBookmark.profile = workProfile
@@ -123,7 +127,7 @@ final class LocalStoreProfileTests: XCTestCase {
         try waitForBackgroundWrite()
 
         let refreshedDefaultRoot: [TabDataModel] = try context.fetch(
-            FetchDescriptor<TabDataModel>(predicate: #Predicate<TabDataModel> { $0.guid == "root-default" })
+            TabDataModel.request(NSPredicate(format: "guid == %@", "root-default"))
         )
         XCTAssertEqual(refreshedDefaultRoot.count, 1)
     }
@@ -226,10 +230,10 @@ final class LocalStoreProfileTests: XCTestCase {
     func testBrowserStateRefreshesPersistedPinnedTabURLWhenLocalStoreChanges() throws {
         let store = try makeStore()
         let context = try XCTUnwrap(store.getMainContext())
-        let profile = ProfileModel(profileId: "Default")
+        let profile = ProfileModel(insertInto: context, profileId: "Default")
         context.insert(profile)
 
-        let pinnedModel = makeTab(guid: "pinned-guid", title: "Pinned", url: "https://163.com")
+        let pinnedModel = makeTab(in: context, guid: "pinned-guid", title: "Pinned", url: "https://163.com")
         pinnedModel.dataType = TabDataType.pinnedTab
         pinnedModel.profile = profile
         context.insert(pinnedModel)
@@ -264,9 +268,9 @@ final class LocalStoreProfileTests: XCTestCase {
     func testBrowserStatePinnedTabEditingURLPrefersPersistedURLOverRuntimeNavigationURL() throws {
         let store = try makeStore()
         let context = try XCTUnwrap(store.getMainContext())
-        let profile = ProfileModel(profileId: "Default")
+        let profile = ProfileModel(insertInto: context, profileId: "Default")
         context.insert(profile)
-        let pinnedModel = makeTab(guid: "github-pinned", title: "GitHub", url: "https://github.com")
+        let pinnedModel = makeTab(in: context, guid: "github-pinned", title: "GitHub", url: "https://github.com")
         pinnedModel.dataType = TabDataType.pinnedTab
         pinnedModel.profile = profile
         context.insert(pinnedModel)
@@ -300,35 +304,35 @@ final class LocalStoreProfileTests: XCTestCase {
     func testUpdateLastSeenOnlyPersistsForPinnedTabsAndBookmarks() throws {
         let store = try makeStore()
         let context = try XCTUnwrap(store.getMainContext())
-        let profile = ProfileModel(profileId: "Default")
+        let profile = ProfileModel(insertInto: context, profileId: "Default")
         context.insert(profile)
 
-        let root = makeFolder(guid: "root", title: "Bookmarks")
+        let root = makeFolder(in: context, guid: "root", title: "Bookmarks")
         root.profile = profile
         root.profileId = "Default"
         profile.bookmarkRoot = root
         context.insert(root)
 
-        let pinned = makeTab(guid: "pinned", title: "Pinned", url: "https://pinned.example")
+        let pinned = makeTab(in: context, guid: "pinned", title: "Pinned", url: "https://pinned.example")
         pinned.dataType = TabDataType.pinnedTab
         pinned.profile = profile
         pinned.profileId = "Default"
         context.insert(pinned)
 
-        let bookmark = makeTab(guid: "bookmark", title: "Bookmark", url: "https://bookmark.example")
+        let bookmark = makeTab(in: context, guid: "bookmark", title: "Bookmark", url: "https://bookmark.example")
         bookmark.dataType = TabDataType.bookmark
         bookmark.profile = profile
         bookmark.profileId = "Default"
         bookmark.parent = root
         context.insert(bookmark)
 
-        let folder = makeFolder(guid: "folder", title: "Folder")
+        let folder = makeFolder(in: context, guid: "folder", title: "Folder")
         folder.profile = profile
         folder.profileId = "Default"
         folder.parent = root
         context.insert(folder)
 
-        let normal = makeTab(guid: "normal", title: "Normal", url: "https://normal.example")
+        let normal = makeTab(in: context, guid: "normal", title: "Normal", url: "https://normal.example")
         normal.dataType = TabDataType.tab
         normal.profile = profile
         normal.profileId = "Default"
@@ -602,6 +606,7 @@ final class LocalStoreProfileTests: XCTestCase {
         return directory
     }
 
+    @available(macOS 14, *)
     private func seedLegacyStore(at directory: URL) throws {
         let configuration = ModelConfiguration(url: directory.appendingPathComponent("LocalStore.sqlite"))
         let container = try ModelContainer(for: TabDataModelSchemaV2.TabDataModel.self, configurations: configuration)
@@ -622,8 +627,9 @@ final class LocalStoreProfileTests: XCTestCase {
         try context.save()
     }
 
-    private func makeFolder(guid: String, title: String) -> TabDataModel {
+    private func makeFolder(in context: NSManagedObjectContext, guid: String, title: String) -> TabDataModel {
         let folder = TabDataModel(
+            insertInto: context,
             title: title,
             guid: guid,
             index: 0,
@@ -636,8 +642,9 @@ final class LocalStoreProfileTests: XCTestCase {
         return folder
     }
 
-    private func makeTab(guid: String, title: String, url: String) -> TabDataModel {
+    private func makeTab(in context: NSManagedObjectContext, guid: String, title: String, url: String) -> TabDataModel {
         TabDataModel(
+            insertInto: context,
             title: title,
             guid: guid,
             index: 0,

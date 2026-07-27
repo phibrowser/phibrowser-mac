@@ -4,6 +4,7 @@
 // found in the LICENSE file.
 
 import XCTest
+import CoreData
 import SwiftData
 @testable import Phi
 
@@ -292,6 +293,9 @@ final class LocalStoreCompatibilityTests: XCTestCase {
     }
 
     func testSwiftDataStoreBackupRestoresReadableStoreForOlderSchema() throws {
+        guard #available(macOS 14, *) else {
+            throw XCTSkip("SwiftData store fixtures require macOS 14.")
+        }
         let directory = try makeTemporaryStoreDirectory()
         let storeURL = directory.appendingPathComponent("LocalStore.sqlite")
         try createVersionOneSwiftDataStore(at: storeURL)
@@ -420,6 +424,7 @@ final class LocalStoreCompatibilityTests: XCTestCase {
         return String(decoding: data, as: UTF8.self)
     }
 
+    @available(macOS 14, *)
     private func createVersionOneSwiftDataStore(at url: URL) throws {
         let configuration = ModelConfiguration(url: url)
         let container = try ModelContainer(
@@ -431,6 +436,7 @@ final class LocalStoreCompatibilityTests: XCTestCase {
         try context.save()
     }
 
+    @available(macOS 14, *)
     private func openAndMigrateStoreToVersionTwo(at url: URL) throws {
         let configuration = ModelConfiguration(url: url)
         let container = try ModelContainer(
@@ -445,6 +451,7 @@ final class LocalStoreCompatibilityTests: XCTestCase {
         try context.save()
     }
 
+    @available(macOS 14, *)
     private func fetchVersionOneItem(at url: URL) throws -> (id: String, title: String) {
         let configuration = ModelConfiguration(url: url)
         let container = try ModelContainer(
@@ -458,6 +465,7 @@ final class LocalStoreCompatibilityTests: XCTestCase {
     }
 }
 
+@available(macOS 14, *)
 private enum CompatibilityTestMigrationPlan: SchemaMigrationPlan {
     static var schemas: [any VersionedSchema.Type] {
         [CompatibilityTestSchemaV1.self, CompatibilityTestSchemaV2.self]
@@ -473,6 +481,7 @@ private enum CompatibilityTestMigrationPlan: SchemaMigrationPlan {
     }
 }
 
+@available(macOS 14, *)
 private enum CompatibilityTestSchemaV1: VersionedSchema {
     static var versionIdentifier = Schema.Version(1, 0, 0)
 
@@ -492,6 +501,7 @@ private enum CompatibilityTestSchemaV1: VersionedSchema {
     }
 }
 
+@available(macOS 14, *)
 private enum CompatibilityTestSchemaV2: VersionedSchema {
     static var versionIdentifier = Schema.Version(2, 0, 0)
 

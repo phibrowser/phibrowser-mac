@@ -143,6 +143,10 @@ struct AccountDeletionFlowView: View {
     let finalize: () -> Void
 
     @State private var code = ""
+    /// Mirrors the last state seen by `onChange` so transitions can compare
+    /// against the previous value (the pre-macOS 14 `onChange` only delivers
+    /// the new one).
+    @State private var lastObservedState: AccountDeletionCoordinator.State = .idle
 
     @Environment(\.phiAppearance) private var appearance
 
@@ -177,7 +181,12 @@ struct AccountDeletionFlowView: View {
         } actions: {
             stateActions
         }
-        .onChange(of: viewState.state) { oldState, newState in
+        .onAppear {
+            lastObservedState = viewState.state
+        }
+        .onChange(of: viewState.state) { newState in
+            let oldState = lastObservedState
+            lastObservedState = newState
             // A failed verification falls back to code entry with the error
             // copy in the status line. Clear the boxes so the user re-enters
             // a code instead of resubmitting the rejected one.
@@ -481,7 +490,7 @@ private struct AccountDeletionCodeEntry: View {
         }
         .disabled(isDisabled)
         .opacity(isDisabled ? 0.5 : 1)
-        .defaultFocus($isFocused, true)
+        .compatDefaultFocus($isFocused)
         .onAppear {
             // The flow sheet is a borderless window, where .defaultFocus is
             // not guaranteed to resolve; nudge focus once the view settles
@@ -490,13 +499,13 @@ private struct AccountDeletionCodeEntry: View {
                 isFocused = true
             }
         }
-        .onChange(of: code) { _, newValue in
+        .onChange(of: code) { newValue in
             let sanitized = AccountDeletionCodeInput.sanitized(newValue)
             if sanitized != newValue {
                 code = sanitized
             }
         }
-        .onChange(of: isDisabled) { _, disabled in
+        .onChange(of: isDisabled) { disabled in
             // Re-enabling means a failed submission fell back to code entry;
             // put the caret back so the user can just type again.
             if !disabled {
@@ -539,5 +548,18 @@ private struct AccountDeletionCodeEntry: View {
 
     private var activeBorder: Color {
         ThemedColor.themeColor.swiftUIColor(theme: theme, appearance: appearance)
+    }
+}
+
+private extension View {
+    /// `defaultFocus` requires macOS 13; macOS 12 relies on the `.onAppear`
+    /// focus nudge below the call site, which runs on every version anyway.
+    @ViewBuilder
+    func compatDefaultFocus(_ binding: FocusState<Bool>.Binding) -> some View {
+        if #available(macOS 13.0, *) {
+            self.defaultFocus(binding, true)
+        } else {
+            self
+        }
     }
 }

@@ -5,15 +5,14 @@
 
 import Foundation
 
-@Observable
-final class IMChannelsViewModel {
+final class IMChannelsViewModel: ObservableObject {
     // MARK: - Official Bot State
 
-    var pairing: ChannelPairing?
-    var activeSession: PairingSession?
-    var isOfficialBotLoading = false
-    var isOfficialBotExpanded = true
-    var officialBotErrorMessage: String?
+    @Published var pairing: ChannelPairing?
+    @Published var activeSession: PairingSession?
+    @Published var isOfficialBotLoading = false
+    @Published var isOfficialBotExpanded = true
+    @Published var officialBotErrorMessage: String?
 
     var officialBotNeedsReconnect: Bool {
         pairing?.localStatus == "needs_reconnect"
@@ -39,15 +38,15 @@ final class IMChannelsViewModel {
 
     // MARK: - Custom Bot State
 
-    var customBot: CustomBotChannel?
-    var isImServerConnected = false
-    var customBotToken = ""
-    var isCustomBotSaving = false
-    var isCustomBotExpanded = false
-    var showTokenPlaintext = false
-    var verifyResult: (success: Bool, error: String?)?
-    var isVerifying = false
-    var customBotErrorMessage: String?
+    @Published var customBot: CustomBotChannel?
+    @Published var isImServerConnected = false
+    @Published var customBotToken = ""
+    @Published var isCustomBotSaving = false
+    @Published var isCustomBotExpanded = false
+    @Published var showTokenPlaintext = false
+    @Published var verifyResult: (success: Bool, error: String?)?
+    @Published var isVerifying = false
+    @Published var customBotErrorMessage: String?
 
     var customBotServiceIssueMessage: String? {
         if let customBotErrorMessage {
@@ -67,11 +66,11 @@ final class IMChannelsViewModel {
 
     // MARK: - Agent Persona
 
-    var agentName: String = "Phi"
+    @Published var agentName: String = "Phi"
 
     // MARK: - Shared State
 
-    var hasLoaded = false
+    @Published var hasLoaded = false
 
     var topNoticeMessages: [String] {
         var messages: [String] = []

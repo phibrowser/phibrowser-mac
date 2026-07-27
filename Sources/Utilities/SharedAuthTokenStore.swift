@@ -61,6 +61,23 @@ final class SharedAuthTokenStore {
     #endif
     private let accessibility = kSecAttrAccessibleAfterFirstUnlock
 
+    /// The data-protection keychain grants access groups only to processes
+    /// whose group entitlement is backed by a provisioning profile, which
+    /// securityd surfaces via `com.apple.application-identifier`. Builds
+    /// signed without one (ad-hoc or profile-stripped re-signs for machines
+    /// outside the team's device list) always fail with
+    /// errSecMissingEntitlement, so they fall back to a token file in the
+    /// app-group container — user-only (0600), same directory the heartbeat
+    /// and Auth0 config already use. Provisioned builds never touch it.
+    private static let hasProvisionedIdentity: Bool = {
+        guard let task = SecTaskCreateFromSelf(nil) else { return false }
+        return SecTaskCopyValueForEntitlement(
+            task, "com.apple.application-identifier" as CFString, nil) != nil
+    }()
+
+    private let fallbackLogLock = NSLock()
+    private var didLogFallbackMode = false
+
     private init() {}
 
     private func log(_ level: SharedAuthTokenStoreLogLevel, _ message: String) {
@@ -96,6 +113,10 @@ final class SharedAuthTokenStore {
         guard let data = try? JSONEncoder().encode(payload) else {
             log(.error, "[SharedAuthTokenStore] upsert refused: failed to JSON-encode SharedAuthToken payload")
             return false
+        }
+
+        if !Self.hasProvisionedIdentity {
+            return fileFallbackUpsert(data, auth0Sub: auth0Sub)
         }
 
         let baseQuery: [String: Any] = [
@@ -140,6 +161,11 @@ final class SharedAuthTokenStore {
     }
 
     func read() -> SharedAuthToken? {
+        if !Self.hasProvisionedIdentity {
+            guard let data = fileFallbackRead() else { return nil }
+            return try? JSONDecoder().decode(SharedAuthToken.self, from: data)
+        }
+
         guard let accessGroup = resolvedAccessGroup() else {
             log(.error, "[SharedAuthTokenStore] read failed: no resolvable access group")
             return nil
@@ -181,6 +207,10 @@ final class SharedAuthTokenStore {
     /// posts the normal notification.
     @discardableResult
     func clear(postChangeNotification: Bool = true) -> Bool {
+        if !Self.hasProvisionedIdentity {
+            return fileFallbackClear(postChangeNotification: postChangeNotification)
+        }
+
         guard let accessGroup = resolvedAccessGroup() else {
             log(.error, "[SharedAuthTokenStore] clear failed: no resolvable access group")
             return false
@@ -209,6 +239,67 @@ final class SharedAuthTokenStore {
         // will pick that token up and ferrt again.
         log(.error, "[SharedAuthTokenStore] SecItemDelete failed: \(Self.describe(status))")
         return false
+    }
+
+    // MARK: - Unprovisioned-build file fallback
+
+    private var fileFallbackURL: URL? {
+        FileManager.default
+            .containerURL(forSecurityApplicationGroupIdentifier: appGroupAccessGroup)?
+            .appendingPathComponent("\(account).json", isDirectory: false)
+    }
+
+    private func noteFileFallbackMode() {
+        fallbackLogLock.lock()
+        let firstUse = !didLogFallbackMode
+        didLogFallbackMode = true
+        fallbackLogLock.unlock()
+        if firstUse {
+            log(.warning, "[SharedAuthTokenStore] no provisioned identity; using app-group file fallback (unprovisioned test builds only)")
+        }
+    }
+
+    private func fileFallbackUpsert(_ data: Data, auth0Sub: String?) -> Bool {
+        noteFileFallbackMode()
+        guard let url = fileFallbackURL else {
+            log(.error, "[SharedAuthTokenStore] file fallback upsert failed: no app-group container")
+            return false
+        }
+        do {
+            try FileManager.default.createDirectory(
+                at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try data.write(to: url, options: [.atomic])
+            try FileManager.default.setAttributes(
+                [.posixPermissions: 0o600], ofItemAtPath: url.path)
+            postDistributedChangeNotification(hasToken: true, auth0Sub: auth0Sub)
+            return true
+        } catch {
+            log(.error, "[SharedAuthTokenStore] file fallback upsert failed: \(error)")
+            return false
+        }
+    }
+
+    private func fileFallbackRead() -> Data? {
+        noteFileFallbackMode()
+        guard let url = fileFallbackURL else { return nil }
+        return try? Data(contentsOf: url)
+    }
+
+    private func fileFallbackClear(postChangeNotification: Bool) -> Bool {
+        noteFileFallbackMode()
+        guard let url = fileFallbackURL else { return false }
+        do {
+            if FileManager.default.fileExists(atPath: url.path) {
+                try FileManager.default.removeItem(at: url)
+            }
+            if postChangeNotification {
+                postDistributedChangeNotification(hasToken: false, auth0Sub: nil)
+            }
+            return true
+        } catch {
+            log(.error, "[SharedAuthTokenStore] file fallback clear failed: \(error)")
+            return false
+        }
     }
 
     private func resolvedAccessGroup() -> String? {

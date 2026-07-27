@@ -4,6 +4,7 @@
 // found in the LICENSE file.
 
 import Combine
+import CoreData
 import SwiftData
 import XCTest
 @testable import Phi
@@ -22,6 +23,9 @@ final class PinnedTabScopeTests: XCTestCase {
     }
 
     func testV8MigrationDefaultsToProfileAndBackfillsPinnedLineage() throws {
+        guard #available(macOS 14, *) else {
+            throw XCTSkip("Legacy SwiftData stores require macOS 14 to seed and convert.")
+        }
         let directory = try makeTemporaryDirectory()
         try seedV8Store(at: directory)
 
@@ -130,7 +134,7 @@ final class PinnedTabScopeTests: XCTestCase {
 
         let context = try XCTUnwrap(store.getMainContext())
         let workSpace = try XCTUnwrap(
-            try context.fetch(FetchDescriptor<SpaceModel>()).first(where: {
+            try context.fetch(SpaceModel.request()).first(where: {
                 $0.profileId == fixture.workProfile.profileId
             })
         )
@@ -207,7 +211,7 @@ final class PinnedTabScopeTests: XCTestCase {
 
         let context = try XCTUnwrap(store.getMainContext())
         let workSpace = try XCTUnwrap(
-            try context.fetch(FetchDescriptor<SpaceModel>()).first(where: {
+            try context.fetch(SpaceModel.request()).first(where: {
                 $0.profileId == fixture.workProfile.profileId
             })
         )
@@ -265,7 +269,7 @@ final class PinnedTabScopeTests: XCTestCase {
 
         let context = try XCTUnwrap(store.getMainContext())
         let workSpace = try XCTUnwrap(
-            try context.fetch(FetchDescriptor<SpaceModel>()).first(where: {
+            try context.fetch(SpaceModel.request()).first(where: {
                 $0.profileId == fixture.workProfile.profileId
             })
         )
@@ -657,6 +661,7 @@ final class PinnedTabScopeTests: XCTestCase {
         return directory
     }
 
+    @available(macOS 14, *)
     private func seedV8Store(at directory: URL) throws {
         let configuration = ModelConfiguration(
             url: directory.appendingPathComponent("LocalStore.sqlite")
@@ -689,11 +694,12 @@ final class PinnedTabScopeTests: XCTestCase {
 
     private func seedProfilesAndSpaces(in store: LocalStore) throws -> Fixture {
         let context = try XCTUnwrap(store.getMainContext())
-        let defaultProfile = ProfileModel(profileId: "Default")
-        let workProfile = ProfileModel(profileId: "Work")
+        let defaultProfile = ProfileModel(insertInto: context, profileId: "Default")
+        let workProfile = ProfileModel(insertInto: context, profileId: "Work")
         context.insert(defaultProfile)
         context.insert(workProfile)
         context.insert(SpaceModel(
+            insertInto: context,
             spaceId: "space-a",
             profileId: "Default",
             name: "A",
@@ -702,6 +708,7 @@ final class PinnedTabScopeTests: XCTestCase {
             sortOrder: 0
         ))
         context.insert(SpaceModel(
+            insertInto: context,
             spaceId: "space-b",
             profileId: "Default",
             name: "B",
@@ -710,6 +717,7 @@ final class PinnedTabScopeTests: XCTestCase {
             sortOrder: 1
         ))
         context.insert(SpaceModel(
+            insertInto: context,
             spaceId: "space-c",
             profileId: "Work",
             name: "C",
@@ -734,6 +742,7 @@ final class PinnedTabScopeTests: XCTestCase {
     ) throws -> TabDataModel {
         let context = try XCTUnwrap(store.getMainContext())
         let model = TabDataModel(
+            insertInto: context,
             title: title,
             guid: guid,
             index: index,

@@ -10,7 +10,7 @@ import AppKit
 struct SideTabView: View {
     static let trailingHoverDeadZoneWidth: CGFloat = 6
 
-    var model: TabViewModel
+    @ObservedObject var model: TabViewModel
     var onClose: (() -> Void)? = nil
 
     @Environment(\.phiAppearance) private var appearance

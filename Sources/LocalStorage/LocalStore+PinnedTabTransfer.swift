@@ -4,7 +4,7 @@
 // found in the LICENSE file.
 
 import Foundation
-import SwiftData
+import CoreData
 
 enum PinnedTabTransferError: LocalizedError, Sendable, Equatable {
     case sourceNotFound(String)
@@ -52,7 +52,7 @@ private struct PinnedTabTransferOwner: Equatable {
 
 extension LocalStore {
     /// Moves an existing pinned record to the target window's owner in one
-    /// SwiftData transaction. Shared owners only reorder the existing physical
+    /// local-store transaction. Shared owners only reorder the existing physical
     /// rows; Space-owned records are copied with fresh guids and deleted from
     /// the source only after the complete target unit has been materialized.
     func transferPinnedTab(
@@ -133,14 +133,13 @@ extension LocalStore {
                 guard let newGuid = guidMapping[sourceTab.guid] else {
                     throw PinnedTabTransferError.sourceNotFound(sourceTab.guid)
                 }
-                let copied = Self.copyPinnedTab(sourceTab, newGuid: newGuid)
+                let copied = Self.copyPinnedTab(sourceTab, newGuid: newGuid, in: context)
                 try self.applyCurrentPinnedTabOwner(
                     profileId: targetProfileId,
                     spaceId: targetSpaceId,
                     to: copied,
                     in: context
                 )
-                context.insert(copied)
                 copiedTabs.append(copied)
             }
 
@@ -208,6 +207,7 @@ extension LocalStore {
                     throw PinnedTabTransferError.invalidURL(input.tabId)
                 }
                 let model = TabDataModel(
+                    insertInto: context,
                     title: input.title,
                     guid: guid,
                     index: 0,
@@ -226,7 +226,6 @@ extension LocalStore {
                     to: model,
                     in: context
                 )
-                context.insert(model)
                 createdTabs.append(model)
             }
 
@@ -304,9 +303,11 @@ extension LocalStore {
 
     private static func copyPinnedTab(
         _ source: TabDataModel,
-        newGuid: String
+        newGuid: String,
+        in context: NSManagedObjectContext
     ) -> TabDataModel {
         let copied = TabDataModel(
+            insertInto: context,
             title: source.title,
             guid: newGuid,
             index: source.index,

@@ -317,7 +317,7 @@ struct SpacesStripView: View {
         }
         .padding(.horizontal, showsEllipsisAffordance ? Self.horizontalPadding : Self.compactChipHorizontalPadding)
         .contentShape(Rectangle())
-        .onChange(of: slot.iconPickerRequestToken) { _, _ in
+        .onChange(of: slot.iconPickerRequestToken) { _ in
             openActiveIconPicker()
         }
     }
@@ -1796,6 +1796,9 @@ struct SpaceIconView: View {
         // variant — ImageRenderer defaults to light, which leaves dark-mode menus
         // showing the dark-ink variant on a dark background. Unlike the import
         // label (always dark) this follows the current system appearance.
+        // `ImageRenderer` requires macOS 13; on older systems non-symbol
+        // icons simply have no menu image.
+        guard #available(macOS 13.0, *) else { return nil }
         let icon = SpaceIconView(
             storedValue: stored,
             size: max(canvasSize - 4, 1),

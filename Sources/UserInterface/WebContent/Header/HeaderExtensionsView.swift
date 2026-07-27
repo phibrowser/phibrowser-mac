@@ -77,16 +77,15 @@ extension View {
     }
 }
 
-@Observable
 @MainActor
-final class WebContentHeaderExtensionsModel {
+final class WebContentHeaderExtensionsModel: ObservableObject {
     /// The full sorted pinned set.
-    private(set) var pinnedExtensions: [Extension] = []
+    @Published private(set) var pinnedExtensions: [Extension] = []
     /// Pinned extensions whose action is visible on the current tab — what the
     /// header actually lays out. Filtering here (not just per-button EmptyView)
     /// stops a hidden page action from consuming a width slot and truncating a
     /// genuinely visible extension off the header.
-    private(set) var visiblePinnedExtensions: [Extension] = []
+    @Published private(set) var visiblePinnedExtensions: [Extension] = []
 
     private weak var browserState: BrowserState?
     private var cancellables = Set<AnyCancellable>()

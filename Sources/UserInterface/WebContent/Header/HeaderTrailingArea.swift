@@ -75,7 +75,7 @@ struct HeaderMoreButton: View {
                     }
                 }
         }
-        .menuStyle(.button)
+        .pillMenuStyle()
         .buttonStyle(.plain)
     }
 }
@@ -336,6 +336,19 @@ struct HeaderTrailingArea: View {
         )
         .popover(isPresented: $isDownloadPopoverShown, arrowEdge: .bottom) {
             downloadPopoverContent
+        }
+    }
+}
+
+private extension View {
+    /// `ButtonMenuStyle` requires macOS 13; macOS 12 falls back to the
+    /// borderless native popup look.
+    @ViewBuilder
+    func pillMenuStyle() -> some View {
+        if #available(macOS 13.0, *) {
+            self.menuStyle(.button)
+        } else {
+            self.menuStyle(.borderlessButton)
         }
     }
 }

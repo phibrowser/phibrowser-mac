@@ -32,7 +32,7 @@ struct StatusURLView: View {
             .truncationMode(.middle)
             .opacity(isVisible ? 1 : 0)
             .animation(.easeInOut(duration: 0.05), value: isVisible)
-            .onChange(of: viewModel.url) { _, newURL in
+            .onChange(of: viewModel.url) { newURL in
                 handleURLChange(newURL)
             }
             .onAppear {

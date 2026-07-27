@@ -29,7 +29,8 @@ class WebContentHeaderState: ObservableObject {
         let layoutMode = PhiPreferences.GeneralSettings.loadLayoutMode()
         let navigationAtTop = layoutMode.showsNavigationAtTop
         let traditionalLayout = layoutMode.isTraditional
-        let phiAIEnabled = UserDefaults.standard.bool(forKey: PhiPreferences.AISettings.phiAIEnabled.rawValue)
+        let phiAIEnabled = PhiPreferences.AISettings.supportedOnThisArchitecture
+            && UserDefaults.standard.bool(forKey: PhiPreferences.AISettings.phiAIEnabled.rawValue)
         self.showAddressBar = navigationAtTop
         self.showNavigationButtons = navigationAtTop
         self.showDownloadButton = traditionalLayout
@@ -340,7 +341,8 @@ class WebContentHeader: NSView {
         let partnerAIChat = splitPartner()?.aiChatEnabled ?? false
         let aiChatEnabled = focusedAIChat || partnerAIChat
         let isInPlaceholder = unsafeBrowserState?.isInPlaceholderMode ?? false
-        let phiAIEnabled = UserDefaults.standard.bool(forKey: PhiPreferences.AISettings.phiAIEnabled.rawValue)
+        let phiAIEnabled = PhiPreferences.AISettings.supportedOnThisArchitecture
+            && UserDefaults.standard.bool(forKey: PhiPreferences.AISettings.phiAIEnabled.rawValue)
 
         DispatchQueue.main.async { [weak self] in
             guard let self = self else { return }

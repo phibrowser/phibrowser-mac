@@ -4,7 +4,7 @@
 // found in the LICENSE file.
 
 import XCTest
-import SwiftData
+import CoreData
 import Cocoa
 @testable import Phi
 
@@ -334,6 +334,7 @@ final class BrowserStatePinnedTabEditCrossSpaceTests: XCTestCase {
         )
         let context = try XCTUnwrap(store.getMainContext())
         context.insert(SpaceModel(
+            insertInto: context,
             spaceId: "space-a",
             profileId: "Default",
             name: "A",
@@ -395,6 +396,7 @@ final class BrowserStatePinnedTabEditCrossSpaceTests: XCTestCase {
         try seedPinnedTab(in: store, guid: "pinned-guid", url: "https://old.example")
         let context = try XCTUnwrap(store.getMainContext())
         context.insert(SpaceModel(
+            insertInto: context,
             spaceId: "space-a",
             profileId: "Default",
             name: "A",
@@ -463,10 +465,11 @@ final class BrowserStatePinnedTabEditCrossSpaceTests: XCTestCase {
         favicon: Data? = nil
     ) throws {
         let context = try XCTUnwrap(store.getMainContext())
-        let profile = ProfileModel(profileId: "Default")
+        let profile = ProfileModel(insertInto: context, profileId: "Default")
         context.insert(profile)
 
         let pinnedModel = TabDataModel(
+            insertInto: context,
             title: "Pinned",
             guid: guid,
             index: 0,
@@ -497,6 +500,7 @@ final class BrowserStatePinnedTabEditCrossSpaceTests: XCTestCase {
         if scope == .space {
             let context = try XCTUnwrap(store.getMainContext())
             context.insert(SpaceModel(
+                insertInto: context,
                 spaceId: "space-a",
                 profileId: "Default",
                 name: "A",

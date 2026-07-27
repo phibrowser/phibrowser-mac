@@ -137,10 +137,13 @@ extension AppController {
         guard let item = menu.item(withTag: Self.checkForUpdateItemTag) else { return }
         
         func setupBadgeView(title: String, badge: String) {
+            if #available(macOS 14.0, *) {
             item.title = title
-            let badge = NSMenuItemBadge(string: badge)
-            item.badge = badge
-            
+                item.badge = NSMenuItemBadge(string: badge)
+            } else {
+                // NSMenuItemBadge is macOS 14+; fold the version into the title.
+                item.title = "\(title) (\(badge))"
+            }
         }
         
         switch updateState {

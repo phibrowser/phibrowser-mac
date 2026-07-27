@@ -320,8 +320,7 @@ struct SettingsIconChip: View {
     let color: Color
 
     var body: some View {
-        RoundedRectangle(cornerRadius: 6, style: .continuous)
-            .fill(color.gradient)
+        chipBackground
             .frame(width: 24, height: 24)
             .overlay(
                 Image(systemName: systemName)
@@ -596,5 +595,19 @@ struct CredentialApprovalListSheet: View {
         return String(
             format: NSLocalizedString("settings.developer.passwordManager.approvals.remainingMinutesStatus", value: "expires in %d min", comment: "Approvals sheet - timed grant remaining"),
             minutes)
+    }
+}
+
+private extension SettingsIconChip {
+    /// `Color.gradient` requires macOS 13; macOS 12 renders a flat fill.
+    @ViewBuilder
+    var chipBackground: some View {
+        if #available(macOS 13.0, *) {
+            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                .fill(color.gradient)
+        } else {
+            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                .fill(color)
+        }
     }
 }

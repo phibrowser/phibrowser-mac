@@ -15,6 +15,13 @@ class GeneralSettingViewController: NSViewController, SettingsPane {
     
     let hostingController = GeneralSettingHostingViewController()
     
+    // AppKit only synthesizes an empty view for a nib-less `loadView` on
+    // macOS 14+; macOS 12/13 raise an NSNib exception instead. Panes are
+    // built purely in code, so provide the view explicitly.
+    override func loadView() {
+        view = NSView()
+    }
+
     override func viewDidLoad() {
         super.viewDidLoad()
         

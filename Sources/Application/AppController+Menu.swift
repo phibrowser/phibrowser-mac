@@ -102,7 +102,15 @@ extension AppController {
                     submenu.addItem(topSeparator)
                 }
                 
-                let layoutTtitle = NSMenuItem.sectionHeader(title: NSLocalizedString("app.viewMenu.layoutModeSectionTitle", value: "Layout Mode", comment: "View menu - Layout mode section header in View menu"))
+                let layoutTitleText = NSLocalizedString("app.viewMenu.layoutModeSectionTitle", value: "Layout Mode", comment: "View menu - Layout mode section header in View menu")
+                let layoutTtitle: NSMenuItem
+                if #available(macOS 14.0, *) {
+                    layoutTtitle = NSMenuItem.sectionHeader(title: layoutTitleText)
+                } else {
+                    // Pre-macOS 14 section headers are plain disabled items.
+                    layoutTtitle = NSMenuItem(title: layoutTitleText, action: nil, keyEquivalent: "")
+                    layoutTtitle.isEnabled = false
+                }
                 layoutTtitle.tag = AppController.layoutModeTitleItemTag
                 submenu.addItem(layoutTtitle)
                 

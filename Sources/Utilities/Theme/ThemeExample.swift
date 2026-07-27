@@ -112,7 +112,7 @@ struct ThemeSwiftUIExampleView: View {
                 }
             }
             .pickerStyle(.segmented)
-            .onChange(of: selectedChoice) { _, newValue in
+            .onChange(of: selectedChoice) { newValue in
                 ThemeManager.shared.setUserAppearanceChoice(newValue)
             }
             

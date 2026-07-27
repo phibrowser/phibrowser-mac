@@ -219,7 +219,7 @@ extension FaviconDataProvider.FaviconCache {
     static func setupCache() {
         let diskCacheDir = (FileSystemUtils.cacheDirctory() as NSString).appendingPathComponent("KFImageCaches")
         try? FileManager.default.createDirectory(atPath: diskCacheDir, withIntermediateDirectories: true)
-        guard let customCache = try? ImageCache(name: "PhiImageCache", cacheDirectoryURL: URL(filePath: diskCacheDir)) else {
+        guard let customCache = try? ImageCache(name: "PhiImageCache", cacheDirectoryURL: URL(fileURLWithPath: diskCacheDir)) else {
             return
         }
         customCache.memoryStorage.config.cleanInterval = 60 * 60

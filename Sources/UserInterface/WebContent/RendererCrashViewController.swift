@@ -45,7 +45,11 @@ final class RendererCrashViewController: NSViewController {
         // Do NOT let the SwiftUI content's ideal size propagate as the hosting
         // controller's preferredContentSize — that climbs the VC chain and
         // resizes the window. The overlay must only fill its container.
+        // (sizingOptions is macOS 13+; macOS 12 hosting controllers don't
+        // propagate preferredContentSize automatically.)
+        if #available(macOS 13.0, *) {
         hosting.sizingOptions = []
+        }
         addChild(hosting)
         view.addSubview(hosting.view)
         hosting.view.snp.makeConstraints { make in

@@ -25,7 +25,7 @@ struct WebContentHeaderView: View {
     var onSidebarAnchorResolved: ((NSView?) -> Void)?
     var onChatAnchorResolved: ((NSView?) -> Void)?
 
-    @State private var extensionsModel: WebContentHeaderExtensionsModel
+    @StateObject private var extensionsModel: WebContentHeaderExtensionsModel
     @State private var isExtensionPopoverShown = false
     @State private var totalHeaderWidth: CGFloat = 10000
 
@@ -63,7 +63,7 @@ struct WebContentHeaderView: View {
         self.onAnchorResolved = onAnchorResolved
         self.onSidebarAnchorResolved = onSidebarAnchorResolved
         self.onChatAnchorResolved = onChatAnchorResolved
-        _extensionsModel = State(wrappedValue: WebContentHeaderExtensionsModel(browserState: browserState))
+        _extensionsModel = StateObject(wrappedValue: WebContentHeaderExtensionsModel(browserState: browserState))
     }
 
     var body: some View {
@@ -113,9 +113,7 @@ struct WebContentHeaderView: View {
                 .frame(height: HeaderTrailingLayout.rowHeight)
             }
             .frame(maxWidth: .infinity)
-            .onGeometryChange(for: CGFloat.self) { proxy in
-                proxy.size.width
-            } action: { newValue in
+            .measureWidth { newValue in
                 totalHeaderWidth = newValue
             }
 
@@ -346,4 +344,27 @@ struct HeaderControlAnchorView: NSViewRepresentable {
     )
     .frame(height: 30)
     .border(Color.green, width: 2)
+}
+
+private extension View {
+    /// Width observation: `onGeometryChange` requires macOS 13; macOS 12
+    /// falls back to a background `GeometryReader`.
+    @ViewBuilder
+    func measureWidth(_ action: @escaping (CGFloat) -> Void) -> some View {
+        if #available(macOS 13.0, *) {
+            self.onGeometryChange(for: CGFloat.self) { proxy in
+                proxy.size.width
+            } action: { newValue in
+                action(newValue)
+            }
+        } else {
+            self.background(
+                GeometryReader { proxy in
+                    Color.clear
+                        .onAppear { action(proxy.size.width) }
+                        .onChange(of: proxy.size.width) { action($0) }
+                }
+            )
+        }
+    }
 }

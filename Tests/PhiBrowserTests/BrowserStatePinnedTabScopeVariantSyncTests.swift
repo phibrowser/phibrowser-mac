@@ -4,7 +4,7 @@
 // found in the LICENSE file.
 
 import Cocoa
-import SwiftData
+import CoreData
 import XCTest
 @testable import Phi
 
@@ -295,9 +295,10 @@ final class BrowserStatePinnedTabScopeVariantSyncTests: XCTestCase {
 
     private func seedProfileAndSpaces(in store: LocalStore) throws -> ProfileModel {
         let context = try XCTUnwrap(store.getMainContext())
-        let profile = ProfileModel(profileId: "Default")
+        let profile = ProfileModel(insertInto: context, profileId: "Default")
         context.insert(profile)
         context.insert(SpaceModel(
+            insertInto: context,
             spaceId: "space-a",
             profileId: "Default",
             name: "A",
@@ -306,6 +307,7 @@ final class BrowserStatePinnedTabScopeVariantSyncTests: XCTestCase {
             sortOrder: 0
         ))
         context.insert(SpaceModel(
+            insertInto: context,
             spaceId: "space-b",
             profileId: "Default",
             name: "B",
@@ -329,6 +331,7 @@ final class BrowserStatePinnedTabScopeVariantSyncTests: XCTestCase {
     ) throws {
         let context = try XCTUnwrap(store.getMainContext())
         let model = TabDataModel(
+            insertInto: context,
             title: title,
             guid: guid,
             index: index,

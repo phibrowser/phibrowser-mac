@@ -29,7 +29,7 @@ class SideAddressBar: NSView {
             triggeredSystemName: "checkmark",
             symbolWeight: .medium,
             triggeredImageTintColor: .textPrimary,
-            imageContentTransition: .symbolEffect(.replace, options: .speed(3)),
+            imageContentTransition: .symbolReplace(speed: 3),
             triggeredRevertDelay: 1,
             hoverBackgroundColor: .hover,
             cornerRadius: 4

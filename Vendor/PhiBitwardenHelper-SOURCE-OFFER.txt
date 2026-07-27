@@ -23,7 +23,7 @@ The complete Corresponding Source for this binary consists of:
 
        https://github.com/phibrowser/phi-bitwarden-helper
 
-   This binary was built from commit e01b9e3 (v0.1.0).
+   This binary was built from commit 426daca (v0.1.0).
 
 2. The Bitwarden SDK at upstream tag rust-v3.0.0 (commit 7fd530e4) of
 

@@ -5,7 +5,6 @@
 
 import Cocoa
 import AuthenticationServices
-import SwiftData
 import CocoaLumberjackSwift
 import Kingfisher
 import Auth0
@@ -25,7 +24,6 @@ import PostHog
     /// `developerModeDidChange()` consults it to rebuild the window.
     var settingsPanesIncludeDeveloper = false
 
-    var container: ModelContainer?
     var updater: SPUUpdater?
     var sparkleUserDriver: PhiSparkleUserDriver?
     /// Sparkle update state
@@ -405,7 +403,10 @@ extension AppController {
             if let id = Locale.preferredLanguages.first, let lang = id.split(separator: "-").first {
                 return String(lang)
             }
+            if #available(macOS 13, *) {
             return Locale.current.language.languageCode?.identifier ?? "en"
+            }
+            return Locale.current.languageCode ?? "en"
         }()
 
         let country = (Locale.current as NSLocale).object(forKey: .countryCode) as? String ?? "US"

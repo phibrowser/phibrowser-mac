@@ -153,7 +153,7 @@ struct PhiAlert<Icon: View, AlertContent: View, Actions: View>: View {
     }
 
     private var scrollableContent: some View {
-        ScrollView(.vertical) {
+        let scrollView = ScrollView(.vertical) {
             content
                 .font(.system(size: 14))
                 .themedForeground(.textPrimary)
@@ -170,7 +170,14 @@ struct PhiAlert<Icon: View, AlertContent: View, Actions: View>: View {
             alignment: .top
         )
         .fixedSize(horizontal: false, vertical: true)
-        .scrollBounceBehavior(.basedOnSize)
+
+        return Group {
+            if #available(macOS 13.3, *) {
+                scrollView.scrollBounceBehavior(.basedOnSize)
+            } else {
+                scrollView
+            }
+        }
     }
 }
 
@@ -527,10 +534,10 @@ private struct PhiAlertAppKitActions: View {
     let defaultButton: PhiAlertAppKitConfiguration.DefaultButton
     let dismiss: PhiAlertDismissAction
 
-    /// Nil leaves the confirmation button off the Return key, which is what
-    /// `DefaultButton.noButton` asks for.
-    private var confirmationShortcut: KeyboardShortcut? {
-        defaultButton == .confirmation ? .defaultAction : nil
+    /// `DefaultButton.noButton` asks for the confirmation button to stay off
+    /// the Return key, so the shortcut is applied conditionally.
+    private var bindsConfirmationToReturn: Bool {
+        defaultButton == .confirmation
     }
 
     @ViewBuilder
@@ -538,8 +545,7 @@ private struct PhiAlertAppKitActions: View {
         switch actions.count {
         case 1:
             PhiAlertActions {
-                button(for: actions[0], role: confirmationButtonRole)
-                    .keyboardShortcut(confirmationShortcut)
+                confirmationButton(for: actions[0])
             }
         case 2:
             PhiAlertActions(
@@ -548,8 +554,7 @@ private struct PhiAlertAppKitActions: View {
                         .keyboardShortcut(.cancelAction)
                 },
                 primaryAction: {
-                    button(for: actions[1], role: confirmationButtonRole)
-                        .keyboardShortcut(confirmationShortcut)
+                    confirmationButton(for: actions[1])
                 }
             )
         case 3:
@@ -562,12 +567,21 @@ private struct PhiAlertAppKitActions: View {
                         .keyboardShortcut(.cancelAction)
                 },
                 primaryAction: {
-                    button(for: actions[2], role: confirmationButtonRole)
-                        .keyboardShortcut(confirmationShortcut)
+                    confirmationButton(for: actions[2])
                 }
             )
         default:
             EmptyView()
+        }
+    }
+
+    @ViewBuilder
+    private func confirmationButton(for action: PhiAlertAppKitAction) -> some View {
+        if bindsConfirmationToReturn {
+            button(for: action, role: confirmationButtonRole)
+                .keyboardShortcut(.defaultAction)
+        } else {
+            button(for: action, role: confirmationButtonRole)
         }
     }
 

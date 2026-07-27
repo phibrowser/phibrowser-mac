@@ -5,7 +5,7 @@
 
 import Cocoa
 import SwiftUI
-import SwiftData
+import CoreData
 
 extension MainBrowserWindowController {
     @IBAction func newBrowserTab(_ sender: Any?) {

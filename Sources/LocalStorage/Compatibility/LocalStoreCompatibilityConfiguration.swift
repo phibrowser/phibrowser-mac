@@ -11,6 +11,11 @@ struct LocalStoreCompatibilityConfiguration {
 
     let currentStoreFormatVersion: Int
     let readableStoreFormatVersions: ClosedRange<Int>
+    /// Format assumed for an existing store that predates manifests when the
+    /// bundle build number maps to no specific version. Defaults to
+    /// `currentStoreFormatVersion`; `LocalStore` pins it to the last SwiftData
+    /// format because a Core Data (format 10+) store always has a manifest.
+    let legacyFallbackStoreFormatVersion: Int
     let storeFilename: String
     let manifestFilename: String
     let backupsDirectoryName: String
@@ -22,6 +27,7 @@ struct LocalStoreCompatibilityConfiguration {
     init(
         currentStoreFormatVersion: Int,
         readableStoreFormatVersions: ClosedRange<Int>,
+        legacyFallbackStoreFormatVersion: Int? = nil,
         storeFilename: String,
         manifestFilename: String = Self.defaultManifestFilename,
         backupsDirectoryName: String = Self.defaultBackupsDirectoryName,
@@ -32,6 +38,7 @@ struct LocalStoreCompatibilityConfiguration {
     ) {
         self.currentStoreFormatVersion = currentStoreFormatVersion
         self.readableStoreFormatVersions = readableStoreFormatVersions
+        self.legacyFallbackStoreFormatVersion = legacyFallbackStoreFormatVersion ?? currentStoreFormatVersion
         self.storeFilename = storeFilename
         self.manifestFilename = manifestFilename
         self.backupsDirectoryName = backupsDirectoryName
@@ -47,7 +54,7 @@ struct LocalStoreCompatibilityConfiguration {
 
     func legacyStoreFormatVersionForCurrentBundle() -> Int {
         guard let buildNumber = bundleBuildNumberProvider() else {
-            return currentStoreFormatVersion
+            return legacyFallbackStoreFormatVersion
         }
 
         if buildNumber >= 585 {
@@ -58,7 +65,7 @@ struct LocalStoreCompatibilityConfiguration {
             return 3
         }
 
-        return currentStoreFormatVersion
+        return legacyFallbackStoreFormatVersion
     }
 
     private static func currentBundleBuildNumber() -> Int? {

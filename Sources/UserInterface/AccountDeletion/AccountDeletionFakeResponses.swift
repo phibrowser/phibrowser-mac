@@ -85,13 +85,13 @@ enum AccountDeletionFakeResponses {
 
     /// Artificial latency so the in-flight UI states stay observable.
     /// Tests set it to zero.
-    static var responseDelay: Duration = .seconds(1)
+    static var responseDelay: TimeInterval = 1
 
     static func playRequest(
         _ scenario: AccountDeletionFakeScenario
     ) async throws -> AccountDeletionRequestOutcome {
         AppLogInfo("🗑️ [AccountDeletion] Playing fake deletion request: \(scenario)")
-        try await Task.sleep(for: responseDelay)
+        try await Task.sleep(nanoseconds: UInt64(responseDelay * 1_000_000_000))
         return try requestOutcome(for: scenario)
     }
 
@@ -100,7 +100,7 @@ enum AccountDeletionFakeResponses {
     ) async throws {
         // Never log the code, fake or not.
         AppLogInfo("🗑️ [AccountDeletion] Playing fake verification: \(scenario)")
-        try await Task.sleep(for: responseDelay)
+        try await Task.sleep(nanoseconds: UInt64(responseDelay * 1_000_000_000))
         try verifyOutcome(for: scenario, code: code)
     }
 

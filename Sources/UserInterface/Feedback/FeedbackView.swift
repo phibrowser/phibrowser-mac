@@ -81,7 +81,7 @@ struct FeedbackView: View {
             .safeAreaInset(edge: .bottom, spacing: 0) {
                 footer
             }
-            .onChange(of: viewModel.attachments.count) { _, _ in
+            .onChange(of: viewModel.attachments.count) { _ in
                 scrollToLastAttachment(proxy)
             }
         }
@@ -141,7 +141,7 @@ struct FeedbackView: View {
                 .font(.headline)
 
             TextEditor(text: $viewModel.descriptionText)
-                .scrollContentBackground(.hidden)
+                .compatHiddenScrollContentBackground()
                 .font(.body)
                 .frame(height: 144)
                 .padding(4)
@@ -151,7 +151,7 @@ struct FeedbackView: View {
                     RoundedRectangle(cornerRadius: 8)
                         .stroke(separatorColor, lineWidth: 1)
                 )
-                .onChange(of: viewModel.descriptionText, { _, newValue in
+                .onChange(of: viewModel.descriptionText, perform: { newValue in
                     if newValue.count > maxDescriptionLength {
                         viewModel.descriptionText = String(newValue.prefix(maxDescriptionLength))
                     }
@@ -178,7 +178,7 @@ struct FeedbackView: View {
                     Spacer()
                     TextField("URL", text: $urlString)
                         .textFieldStyle(.plain)
-                        .focusEffectDisabled()
+                        .compatFocusEffectDisabled()
                         .multilineTextAlignment(.trailing)
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
@@ -473,4 +473,28 @@ private struct FeedbackPasteImageMonitor: NSViewRepresentable {
 
 #Preview {
     FeedbackView(viewModel: FeedbackViewModel())
+}
+
+private extension View {
+    /// `scrollContentBackground` requires macOS 13; macOS 12 keeps the
+    /// default editor background (visual-only degradation).
+    @ViewBuilder
+    func compatHiddenScrollContentBackground() -> some View {
+        if #available(macOS 13.0, *) {
+            self.scrollContentBackground(.hidden)
+        } else {
+            self
+        }
+    }
+
+    /// `focusEffectDisabled` requires macOS 14; macOS 12/13 keep the focus
+    /// ring (visual-only degradation).
+    @ViewBuilder
+    func compatFocusEffectDisabled() -> some View {
+        if #available(macOS 14.0, *) {
+            self.focusEffectDisabled()
+        } else {
+            self
+        }
+    }
 }

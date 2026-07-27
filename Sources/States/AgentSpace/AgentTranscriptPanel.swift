@@ -178,7 +178,10 @@ final class AgentTranscriptPanelController: NSObject {
         // reaches into the docked console's frame and NSHostingView would pad
         // the layout down by it — a blank strip above the header. The console
         // draws its own chrome; opt out of safe-area handling entirely.
+        // (`safeAreaRegions` is macOS 13.3+; older systems keep the padding.)
+        if #available(macOS 13.3, *) {
         view.safeAreaRegions = []
+        }
         hostingView = view
         return view
     }

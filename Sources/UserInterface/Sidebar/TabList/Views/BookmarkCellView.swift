@@ -20,28 +20,27 @@ protocol BookmarkCellViewDelegate: AnyObject {
     func bookmarkCellDidEndEditing(_ bookmark: Bookmark, newTitle: String)
 }
 
-@Observable
-private final class BookmarkCellViewState {
-    var title = ""
-    var editText = ""
-    var primaryPageURL: String?
-    var secondaryPageURL: String?
-    var primaryFaviconImage: NSImage?
-    var secondaryFaviconImage: NSImage?
-    var primaryFaviconRevision = 0
-    var secondaryFaviconRevision = 0
-    var showsSecondaryFavicon = false
-    var primaryTabIsLive = false
-    var secondaryTabIsLive = false
-    var isFolder = false
-    var isFolderExpanded = false
-    var isActive = false
-    var isOpened = false
-    var isHovered = false
-    var isPressed = false
-    var isEditing = false
-    var isMultiSelected = false
-    var isDropTargetHighlighted = false
+private final class BookmarkCellViewState: ObservableObject {
+    @Published var title = ""
+    @Published var editText = ""
+    @Published var primaryPageURL: String?
+    @Published var secondaryPageURL: String?
+    @Published var primaryFaviconImage: NSImage?
+    @Published var secondaryFaviconImage: NSImage?
+    @Published var primaryFaviconRevision = 0
+    @Published var secondaryFaviconRevision = 0
+    @Published var showsSecondaryFavicon = false
+    @Published var primaryTabIsLive = false
+    @Published var secondaryTabIsLive = false
+    @Published var isFolder = false
+    @Published var isFolderExpanded = false
+    @Published var isActive = false
+    @Published var isOpened = false
+    @Published var isHovered = false
+    @Published var isPressed = false
+    @Published var isEditing = false
+    @Published var isMultiSelected = false
+    @Published var isDropTargetHighlighted = false
 }
 
 private final class VerticallyCenteredBookmarkTextFieldCell: NSTextFieldCell {
@@ -681,9 +680,9 @@ private enum BookmarkFaviconHoverAction {
 }
 
 private struct SidebarBookmarkCellContentView: View {
-    let state: BookmarkCellViewState
-    let primaryTabViewModel: TabViewModel
-    let secondaryTabViewModel: TabViewModel
+    @ObservedObject var state: BookmarkCellViewState
+    @ObservedObject var primaryTabViewModel: TabViewModel
+    @ObservedObject var secondaryTabViewModel: TabViewModel
     let onClose: () -> Void
     let onNavigatePrimaryToOriginalURL: (Bool) -> Void
     let onNavigateSecondaryToOriginalURL: (Bool) -> Void
@@ -778,7 +777,7 @@ private struct SidebarBookmarkCellContentView: View {
                     isPressed: state.isFolder ? false : state.isPressed
                 )
                 .themedForeground(textColor)
-                .fontWeight(state.isFolder ? .medium : .regular)
+                .folderTitleWeight(state.isFolder ? .medium : .regular)
                 .frame(height: 16, alignment: .center)
                 .offset(y: showBookmarkFaviconHint ? -7 : 0)
 
@@ -871,7 +870,7 @@ private struct BookmarkFaviconView: View {
                 .opacity(canNavigateToOriginalURL && isReturnButtonHovered ? 1 : 0)
         )
         .onHover(perform: updateReturnButtonHover)
-        .onChange(of: canNavigateToOriginalURL) { _, canNavigate in
+        .onChange(of: canNavigateToOriginalURL) { canNavigate in
             if !canNavigate {
                 updateReturnButtonHover(false)
             }
@@ -1109,5 +1108,18 @@ extension BookmarkCellView: NSTextFieldDelegate {
             return true
         }
         return false
+    }
+}
+
+private extension View {
+    /// `View.fontWeight` requires macOS 13; macOS 12 renders folder titles at
+    /// regular weight (visual-only degradation).
+    @ViewBuilder
+    func folderTitleWeight(_ weight: Font.Weight) -> some View {
+        if #available(macOS 13.0, *) {
+            self.fontWeight(weight)
+        } else {
+            self
+        }
     }
 }

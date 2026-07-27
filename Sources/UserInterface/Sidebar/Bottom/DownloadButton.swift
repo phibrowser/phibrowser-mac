@@ -93,8 +93,7 @@ struct DownloadButtonView: View {
     var body: some View {
         Button(action: onTap) {
             ZStack(alignment: .bottom) {
-                hoverBackground
-                    .fill(isHovered ? Color(nsColor: .sidebarTabHovered) : Color.clear)
+                hoverBackground(isHovered ? Color(nsColor: .sidebarTabHovered) : Color.clear)
 
                 iconView
                 
@@ -119,13 +118,18 @@ struct DownloadButtonView: View {
                 isHovered = hovering
             }
         }
-        .onChange(of: viewModel.animationPlayCount, { _, _ in
+        .onChange(of: viewModel.animationPlayCount, perform: { _ in
             triggerAnimation()
         })
     }
     
-    private var hoverBackground: AnyShape {
-        useCircularHoverShape ? AnyShape(Circle()) : AnyShape(RoundedRectangle(cornerRadius: cornerRadius))
+    @ViewBuilder
+    private func hoverBackground(_ fill: Color) -> some View {
+        if useCircularHoverShape {
+            Circle().fill(fill)
+        } else {
+            RoundedRectangle(cornerRadius: cornerRadius).fill(fill)
+        }
     }
 
     /// Resolved tint color based on current theme and appearance

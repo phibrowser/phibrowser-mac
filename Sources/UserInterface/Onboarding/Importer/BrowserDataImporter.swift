@@ -5,7 +5,7 @@
 
 import Foundation
 import Combine
-import SwiftData
+import CoreData
 class BrowserDataImporter {
     enum Phase {
         case waiting

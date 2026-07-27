@@ -24,8 +24,7 @@ struct MemoryButton: View {
                 .aspectRatio(contentMode: .fit)
                 .frame(width: buttonSize, height: buttonSize)
                 .background(
-                    hoverBackground
-                        .fill(isHovering ? Color.sidebarTabHovered : Color.clear)
+                    hoverBackground(isHovering ? Color.sidebarTabHovered : Color.clear)
                 )
         }
         .buttonStyle(.plain)
@@ -42,7 +41,12 @@ struct MemoryButton: View {
         ))
     }
 
-    private var hoverBackground: AnyShape {
-        useCircularHoverShape ? AnyShape(Circle()) : AnyShape(RoundedRectangle(cornerRadius: cornerRadius))
+    @ViewBuilder
+    private func hoverBackground(_ fill: Color) -> some View {
+        if useCircularHoverShape {
+            Circle().fill(fill)
+        } else {
+            RoundedRectangle(cornerRadius: cornerRadius).fill(fill)
+        }
     }
 }

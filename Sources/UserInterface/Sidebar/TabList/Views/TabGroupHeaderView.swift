@@ -12,12 +12,11 @@ import AppKit
 /// from `BrowserState.normalTabs.filter { $0.groupToken == token }`. Membership
 /// is not stored on the group; the count is computed live and republished
 /// whenever `normalTabs` changes.
-@Observable
 @MainActor
-final class TabGroupHeaderViewModel {
-    var color: GroupColor = .grey
-    var displayTitle: String = ""
-    var tabCount: Int = 0
+final class TabGroupHeaderViewModel: ObservableObject {
+    @Published var color: GroupColor = .grey
+    @Published var displayTitle: String = ""
+    @Published var tabCount: Int = 0
     /// `true` when the pointer is over the header strip specifically
     /// (not the full group cell). Drives the close button's visibility
     /// — collapsed groups have header == cell so it's effectively
@@ -25,11 +24,11 @@ final class TabGroupHeaderViewModel {
     /// Written by SwiftUI's `.onHover` on the header HStack; read by
     /// `TabGroupHeaderHostingView`'s hit-test guard so a click in the
     /// close zone is only counted when the button is visible.
-    var isHeaderHovered: Bool = false
+    @Published var isHeaderHovered: Bool = false
     /// Mirrors `WebContentGroupInfo.isCollapsed` so the inline chevron
     /// in `TabGroupHeaderView` can rotate without driving the state.
-    var isCollapsed: Bool = false
-    var isOverviewSelected: Bool = false
+    @Published var isCollapsed: Bool = false
+    @Published var isOverviewSelected: Bool = false
 
     private var configuredToken: String?
     private var cancellables = Set<AnyCancellable>()
@@ -101,7 +100,7 @@ final class TabGroupHeaderViewModel {
 /// Compact header row for a tab group. Interaction is handled by
 /// `TabGroupHeaderHostingView` so the title area can stay draggable.
 struct TabGroupHeaderView: View {
-    var viewModel: TabGroupHeaderViewModel
+    @ObservedObject var viewModel: TabGroupHeaderViewModel
     @State private var isCloseButtonHovered = false
 
     var body: some View {

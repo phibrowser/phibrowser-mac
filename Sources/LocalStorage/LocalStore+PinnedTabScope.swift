@@ -4,7 +4,7 @@
 // found in the LICENSE file.
 
 import Foundation
-import SwiftData
+import CoreData
 
 enum PinnedTabScope: String, CaseIterable, Identifiable {
     case space
@@ -105,7 +105,7 @@ extension LocalStore {
         }
     }
 
-    func pinnedTabScope(in context: ModelContext) throws -> PinnedTabScope {
+    func pinnedTabScope(in context: NSManagedObjectContext) throws -> PinnedTabScope {
         let settings = try browserDataSettings(in: context, createIfNeeded: false)
         return settings.flatMap { PinnedTabScope(rawValue: $0.pinnedTabScopeRawValue) } ?? .profile
     }
@@ -114,48 +114,39 @@ extension LocalStore {
         profileId: String,
         spaceId: String,
         scope: PinnedTabScope,
-        in context: ModelContext
+        in context: NSManagedObjectContext
     ) throws -> [TabDataModel] {
         let pinnedRaw = TabDataType.pinnedTab.rawValue
-        let sortBy = [SortDescriptor<TabDataModel>(\.index), SortDescriptor(\.guid)]
-        let descriptor: FetchDescriptor<TabDataModel>
+        let sortBy = [
+            NSSortDescriptor(key: "index", ascending: true),
+            NSSortDescriptor(key: "guid", ascending: true),
+        ]
+        let predicate: NSPredicate
         switch scope {
         case .space:
-            descriptor = FetchDescriptor(
-                predicate: #Predicate<TabDataModel> {
-                    $0.type == pinnedRaw &&
-                    ($0.profileId == profileId || $0.profile?.profileId == profileId) &&
-                    $0.spaceId == spaceId
-                },
-                sortBy: sortBy
+            predicate = NSPredicate(
+                format: "type == %d AND (profileId == %@ OR profile.profileId == %@) AND spaceId == %@",
+                pinnedRaw, profileId, profileId, spaceId
             )
         case .profile:
-            descriptor = FetchDescriptor(
-                predicate: #Predicate<TabDataModel> {
-                    $0.type == pinnedRaw &&
-                    ($0.profileId == profileId || $0.profile?.profileId == profileId) &&
-                    $0.spaceId == nil
-                },
-                sortBy: sortBy
+            predicate = NSPredicate(
+                format: "type == %d AND (profileId == %@ OR profile.profileId == %@) AND spaceId == nil",
+                pinnedRaw, profileId, profileId
             )
         case .app:
-            descriptor = FetchDescriptor(
-                predicate: #Predicate<TabDataModel> {
-                    $0.type == pinnedRaw &&
-                    $0.profileId == nil &&
-                    $0.spaceId == nil
-                },
-                sortBy: sortBy
+            predicate = NSPredicate(
+                format: "type == %d AND profileId == nil AND spaceId == nil",
+                pinnedRaw
             )
         }
-        return try context.fetch(descriptor)
+        return try context.fetch(TabDataModel.request(predicate, sortBy: sortBy))
     }
 
     func applyCurrentPinnedTabOwner(
         profileId: String,
         spaceId: String,
         to tab: TabDataModel,
-        in context: ModelContext
+        in context: NSManagedObjectContext
     ) throws {
         let owner: PinnedTabOwner
         switch try pinnedTabScope(in: context) {
@@ -202,7 +193,7 @@ extension LocalStore {
         resolving guid: String,
         profileId: String,
         spaceId: String,
-        in context: ModelContext
+        in context: NSManagedObjectContext
     ) throws -> TabDataModel? {
         let scope = try pinnedTabScope(in: context)
         let activeTabs = try pinnedTabs(
@@ -216,10 +207,10 @@ extension LocalStore {
         }
 
         let pinnedRaw = TabDataType.pinnedTab.rawValue
-        let sourceDescriptor = FetchDescriptor<TabDataModel>(
-            predicate: #Predicate { $0.guid == guid && $0.type == pinnedRaw }
+        let sourceRequest = TabDataModel.request(
+            NSPredicate(format: "guid == %@ AND type == %d", guid, pinnedRaw)
         )
-        guard let source = try context.fetch(sourceDescriptor).first,
+        guard let source = try context.fetch(sourceRequest).first,
               !pinnedTab(source, belongsTo: scope) else {
             // A guid owned by another active Space/Profile must never be
             // redirected into this window's collection.
@@ -232,8 +223,8 @@ extension LocalStore {
         }
         guard !lineageMatches.isEmpty else { return nil }
 
-        let allPinned = try context.fetch(FetchDescriptor<TabDataModel>(
-            predicate: #Predicate { $0.type == pinnedRaw }
+        let allPinned = try context.fetch(TabDataModel.request(
+            NSPredicate(format: "type == %d", pinnedRaw)
         ))
         let rowsByGuid = Dictionary(uniqueKeysWithValues: allPinned.map { ($0.guid, $0) })
         let sourceSignature = pinnedTabVariantSignature(for: source, rowsByGuid: rowsByGuid)
@@ -293,10 +284,10 @@ extension LocalStore {
         performBackgroundWrite { context in
             do {
                 let pinnedRaw = TabDataType.pinnedTab.rawValue
-                let descriptor = FetchDescriptor<TabDataModel>(
-                    predicate: #Predicate { $0.guid == guid && $0.type == pinnedRaw }
+                let request = TabDataModel.request(
+                    NSPredicate(format: "guid == %@ AND type == %d", guid, pinnedRaw)
                 )
-                guard let tab = try context.fetch(descriptor).first,
+                guard let tab = try context.fetch(request).first,
                       self.pinnedTab(tab, belongsTo: try self.pinnedTabScope(in: context)) else {
                     AppLogWarn("[LocalStore] Rejecting inactive pinned-tab update: \(guid)")
                     return
@@ -319,10 +310,10 @@ extension LocalStore {
         performBackgroundWrite { context in
             do {
                 let pinnedRaw = TabDataType.pinnedTab.rawValue
-                let descriptor = FetchDescriptor<TabDataModel>(
-                    predicate: #Predicate { $0.guid == guid && $0.type == pinnedRaw }
+                let request = TabDataModel.request(
+                    NSPredicate(format: "guid == %@ AND type == %d", guid, pinnedRaw)
                 )
-                guard let tab = try context.fetch(descriptor).first,
+                guard let tab = try context.fetch(request).first,
                       self.pinnedTab(tab, belongsTo: try self.pinnedTabScope(in: context)) else {
                     AppLogWarn("[LocalStore] Rejecting inactive pinned-tab removal: \(guid)")
                     return
@@ -349,7 +340,7 @@ extension LocalStore {
     private func applyPinnedTabOwner(
         _ owner: PinnedTabOwner,
         to tab: TabDataModel,
-        in context: ModelContext
+        in context: NSManagedObjectContext
     ) throws {
         tab.profileId = owner.profileId
         tab.spaceId = owner.spaceId
@@ -361,20 +352,17 @@ extension LocalStore {
     }
 
     private func browserDataSettings(
-        in context: ModelContext,
+        in context: NSManagedObjectContext,
         createIfNeeded: Bool
     ) throws -> BrowserDataSettingsModel? {
-        let singletonId = BrowserDataSettingsModel.singletonId
-        let descriptor = FetchDescriptor<BrowserDataSettingsModel>(
-            predicate: #Predicate { $0.id == singletonId }
+        let request = BrowserDataSettingsModel.request(
+            NSPredicate(format: "id == %@", BrowserDataSettingsModel.singletonId)
         )
-        if let settings = try context.fetch(descriptor).first {
+        if let settings = try context.fetch(request).first {
             return settings
         }
         guard createIfNeeded else { return nil }
-        let settings = BrowserDataSettingsModel()
-        context.insert(settings)
-        return settings
+        return BrowserDataSettingsModel(insertInto: context)
     }
 
     private func migratePinnedTabs(
@@ -382,12 +370,15 @@ extension LocalStore {
         to targetScope: PinnedTabScope,
         preferredProfileId: String?,
         preferredSpaceId: String?,
-        in context: ModelContext
+        in context: NSManagedObjectContext
     ) throws {
         let pinnedRaw = TabDataType.pinnedTab.rawValue
-        let allPinned = try context.fetch(FetchDescriptor<TabDataModel>(
-            predicate: #Predicate { $0.type == pinnedRaw },
-            sortBy: [SortDescriptor(\.index), SortDescriptor(\.guid)]
+        let allPinned = try context.fetch(TabDataModel.request(
+            NSPredicate(format: "type == %d", pinnedRaw),
+            sortBy: [
+                NSSortDescriptor(key: "index", ascending: true),
+                NSSortDescriptor(key: "guid", ascending: true),
+            ]
         ))
         let activeSourceRows = allPinned.filter { pinnedTab($0, belongsTo: sourceScope) }
         // A Profile collection with no Space cannot be represented while Space
@@ -441,7 +432,7 @@ extension LocalStore {
 
         if sourceScope == .profile, targetScope == .space {
             let profileIdsWithSpaces = Set(
-                try context.fetch(FetchDescriptor<SpaceModel>()).map(\.profileId)
+                try context.fetch(SpaceModel.request()).map(\.profileId)
             )
             for row in activeSourceRows {
                 guard let profileId = row.profileId ?? row.profile?.profileId else {
@@ -473,18 +464,18 @@ extension LocalStore {
     private func pinnedTabTargetOwners(
         for scope: PinnedTabScope,
         sourceRows: [TabDataModel],
-        in context: ModelContext
+        in context: NSManagedObjectContext
     ) throws -> Set<PinnedTabOwner> {
         switch scope {
         case .app:
             return [PinnedTabOwner(profileId: nil, spaceId: nil)]
         case .profile:
-            let profiles = try context.fetch(FetchDescriptor<ProfileModel>())
+            let profiles = try context.fetch(ProfileModel.request())
             let profileIds = Set(profiles.map(\.profileId))
                 .union(sourceRows.compactMap { $0.profileId ?? $0.profile?.profileId })
             return Set(profileIds.map { PinnedTabOwner(profileId: $0, spaceId: nil) })
         case .space:
-            let spaces = try context.fetch(FetchDescriptor<SpaceModel>())
+            let spaces = try context.fetch(SpaceModel.request())
             return Set(spaces.map {
                 PinnedTabOwner(profileId: $0.profileId, spaceId: $0.spaceId)
             })
@@ -619,7 +610,7 @@ extension LocalStore {
     private func insertPinnedTabs(
         _ candidates: [PinnedTabMergeCandidate],
         for owner: PinnedTabOwner,
-        in context: ModelContext
+        in context: NSManagedObjectContext
     ) throws {
         var targetModels: [TabDataModel] = []
         var candidateIndexBySourceGuid: [String: Int] = [:]
@@ -627,6 +618,7 @@ extension LocalStore {
         for (index, candidate) in candidates.enumerated() {
             let source = candidate.source
             let model = TabDataModel(
+                insertInto: context,
                 title: source.title,
                 guid: UUID().uuidString,
                 index: index,
@@ -646,7 +638,6 @@ extension LocalStore {
             model.lastSeen = candidate.lastSeen
             model.pinLineageId = candidate.lineageId
             try applyPinnedTabOwner(owner, to: model, in: context)
-            context.insert(model)
             targetModels.append(model)
             for sourceGuid in candidate.sourceGuids {
                 candidateIndexBySourceGuid[sourceGuid] = index

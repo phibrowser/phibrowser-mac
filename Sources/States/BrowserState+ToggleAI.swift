@@ -41,7 +41,13 @@ extension BrowserState {
                 for _ in 0..<10 {
                     try? await Task.sleep(nanoseconds: 200_000_000)
                     if await !NSApp.isActive {
-                        await MainActor.run { NSApp.activate() }
+                        await MainActor.run {
+                            if #available(macOS 14.0, *) {
+                                NSApp.activate()
+                            } else {
+                                NSApp.activate(ignoringOtherApps: true)
+                            }
+                        }
                         break
                     }
                 }

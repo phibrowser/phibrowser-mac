@@ -192,19 +192,19 @@ struct LottieAnimationView: View {
             isHovering = hovering
             handleHoverChange(hovering)
         }
-        .onChange(of: state.playCount) { oldValue, newValue in
-            AppLogDebug("🎬 [\(config.animationName)] playCount changed: \(oldValue) → \(newValue), trigger: \(config.animationTrigger)")
+        .onChange(of: state.playCount) { newValue in
+            AppLogDebug("🎬 [\(config.animationName)] playCount changed to \(newValue), trigger: \(config.animationTrigger)")
             if config.animationTrigger == .manual {
                 playAnimation()
             }
         }
-        .onChange(of: state.reversePlayCount) { oldValue, newValue in
-            AppLogDebug("🎬 [\(config.animationName)] reversePlayCount changed: \(oldValue) → \(newValue), trigger: \(config.animationTrigger)")
+        .onChange(of: state.reversePlayCount) { newValue in
+            AppLogDebug("🎬 [\(config.animationName)] reversePlayCount changed to \(newValue), trigger: \(config.animationTrigger)")
             if config.animationTrigger == .manual {
                 playReverseAnimation()
             }
         }
-        .onChange(of: state.stopCount) { _, _ in
+        .onChange(of: state.stopCount) { _ in
             stopAnimation()
         }
         .allowsHitTesting(state.isEnabled && config.allowsHitTesting)

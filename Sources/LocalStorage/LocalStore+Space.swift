@@ -5,7 +5,7 @@
 
 import Combine
 import Foundation
-import SwiftData
+import CoreData
 
 extension LocalStore {
     /// Stable id of the implicit "Default" space created on first launch so
@@ -23,14 +23,13 @@ extension LocalStore {
     func ensureDefaultSpace(profileId: String) {
         performBackgroundWrite { context in
             do {
-                let descriptor = FetchDescriptor<SpaceModel>(
-                    predicate: #Predicate { $0.profileId == profileId }
-                )
+                let request = SpaceModel.request(NSPredicate(format: "profileId == %@", profileId))
                 let defaultSpace: SpaceModel
-                if let existing = try context.fetch(descriptor).first(where: { $0.spaceId == Self.defaultSpaceId }) {
+                if let existing = try context.fetch(request).first(where: { $0.spaceId == Self.defaultSpaceId }) {
                     defaultSpace = existing
-                } else if try context.fetchCount(descriptor) == 0 {
-                    let created = SpaceModel(
+                } else if try context.count(for: request) == 0 {
+                    defaultSpace = SpaceModel(
+                        insertInto: context,
                         spaceId: Self.defaultSpaceId,
                         profileId: profileId,
                         name: Self.defaultSpaceName,
@@ -38,8 +37,6 @@ extension LocalStore {
                         iconName: Self.defaultSpaceIconName,
                         sortOrder: 0
                     )
-                    context.insert(created)
-                    defaultSpace = created
                 } else {
                     // Spaces exist for this profile but none is the default —
                     // don't fabricate one, the data shape is something we
@@ -69,12 +66,11 @@ extension LocalStore {
                      spaceId: String = UUID().uuidString) {
         performBackgroundWrite { context in
             do {
-                let descriptor = FetchDescriptor<SpaceModel>(
-                    predicate: #Predicate { $0.profileId == profileId }
-                )
-                let existing = try context.fetch(descriptor)
+                let request = SpaceModel.request(NSPredicate(format: "profileId == %@", profileId))
+                let existing = try context.fetch(request)
                 let nextOrder = (existing.map(\.sortOrder).max() ?? -1) + 1
-                let space = SpaceModel(
+                _ = SpaceModel(
+                    insertInto: context,
                     spaceId: spaceId,
                     profileId: profileId,
                     name: name,
@@ -82,7 +78,6 @@ extension LocalStore {
                     iconName: iconName,
                     sortOrder: nextOrder
                 )
-                context.insert(space)
                 // Materialize an empty bookmark root immediately so the first
                 // bookmark write in this Space doesn't have to discover it
                 // lazily — `bookmarkRoot(profileId:spaceId:)` will simply
@@ -103,10 +98,8 @@ extension LocalStore {
                      iconName: String? = nil) {
         performBackgroundWrite { context in
             do {
-                let descriptor = FetchDescriptor<SpaceModel>(
-                    predicate: #Predicate { $0.spaceId == spaceId }
-                )
-                guard let space = try context.fetch(descriptor).first else { return }
+                let request = SpaceModel.request(NSPredicate(format: "spaceId == %@", spaceId))
+                guard let space = try context.fetch(request).first else { return }
                 if let name { space.name = name }
                 if let colorHex { space.colorHex = colorHex }
                 if let iconName { space.iconName = iconName }
@@ -133,10 +126,8 @@ extension LocalStore {
         performBackgroundWrite { context in
             do {
                 guard spaceId != Self.defaultSpaceId else { return }
-                let descriptor = FetchDescriptor<SpaceModel>(
-                    predicate: #Predicate { $0.spaceId == spaceId }
-                )
-                guard let space = try context.fetch(descriptor).first,
+                let request = SpaceModel.request(NSPredicate(format: "spaceId == %@", spaceId))
+                guard let space = try context.fetch(request).first,
                       space.profileId != newProfileId else { return }
                 guard let newProfile = try self.profile(with: newProfileId,
                                                         in: context,
@@ -146,8 +137,8 @@ extension LocalStore {
                 // the heal-on-read path in `bookmarkRoot(profileId:spaceId:)`,
                 // which would otherwise stay keyed to the old profile and
                 // become unreachable.
-                let rows = try context.fetch(FetchDescriptor<TabDataModel>(
-                    predicate: #Predicate { $0.spaceId == spaceId }
+                let rows = try context.fetch(TabDataModel.request(
+                    NSPredicate(format: "spaceId == %@", spaceId)
                 ))
                 let bookmarkTypes = [TabDataType.bookmark.rawValue,
                                      TabDataType.bookmarkFolder.rawValue]
@@ -173,10 +164,8 @@ extension LocalStore {
     func deleteSpace(spaceId: String) {
         performBackgroundWrite { context in
             do {
-                let descriptor = FetchDescriptor<SpaceModel>(
-                    predicate: #Predicate { $0.spaceId == spaceId }
-                )
-                for space in try context.fetch(descriptor) {
+                let request = SpaceModel.request(NSPredicate(format: "spaceId == %@", spaceId))
+                for space in try context.fetch(request) {
                     context.delete(space)
                 }
             } catch {
@@ -194,10 +183,8 @@ extension LocalStore {
     func deleteTaggedRows(forSpaceId spaceId: String) {
         performBackgroundWrite { context in
             do {
-                let descriptor = FetchDescriptor<TabDataModel>(
-                    predicate: #Predicate { $0.spaceId == spaceId }
-                )
-                for row in try context.fetch(descriptor) {
+                let request = TabDataModel.request(NSPredicate(format: "spaceId == %@", spaceId))
+                for row in try context.fetch(request) {
                     context.delete(row)
                 }
             } catch {
@@ -219,18 +206,18 @@ extension LocalStore {
     func deleteSpaceCascade(spaceId: String) {
         performBackgroundWrite { context in
             do {
-                for row in try context.fetch(FetchDescriptor<TabDataModel>(
-                    predicate: #Predicate { $0.spaceId == spaceId }
+                for row in try context.fetch(TabDataModel.request(
+                    NSPredicate(format: "spaceId == %@", spaceId)
                 )) {
                     context.delete(row)
                 }
-                for rule in try context.fetch(FetchDescriptor<SpaceURLRule>(
-                    predicate: #Predicate { $0.spaceId == spaceId }
+                for rule in try context.fetch(SpaceURLRule.request(
+                    NSPredicate(format: "spaceId == %@", spaceId)
                 )) {
                     context.delete(rule)
                 }
-                for space in try context.fetch(FetchDescriptor<SpaceModel>(
-                    predicate: #Predicate { $0.spaceId == spaceId }
+                for space in try context.fetch(SpaceModel.request(
+                    NSPredicate(format: "spaceId == %@", spaceId)
                 )) {
                     context.delete(space)
                 }
@@ -249,7 +236,7 @@ extension LocalStore {
     func reorderSpaces(orderedSpaceIds: [String]) {
         performBackgroundWrite { context in
             do {
-                let spaces = try context.fetch(FetchDescriptor<SpaceModel>())
+                let spaces = try context.fetch(SpaceModel.request())
                 let byId = Dictionary(uniqueKeysWithValues: spaces.map { ($0.spaceId, $0) })
                 for (index, spaceId) in orderedSpaceIds.enumerated() {
                     byId[spaceId]?.sortOrder = index
@@ -276,23 +263,13 @@ extension LocalStore {
             // without stable tiebreaks the strip's interleave would
             // reshuffle between launches. profileId then createdDate makes
             // the combined order deterministic.
-            let tiebreaks: [SortDescriptor<SpaceModel>] = [
-                SortDescriptor(\.sortOrder),
-                SortDescriptor(\.profileId),
-                SortDescriptor(\.createdDate),
+            let tiebreaks = [
+                NSSortDescriptor(key: "sortOrder", ascending: true),
+                NSSortDescriptor(key: "profileId", ascending: true),
+                NSSortDescriptor(key: "createdDate", ascending: true),
             ]
-            let descriptor: FetchDescriptor<SpaceModel>
-            if let profileId {
-                descriptor = FetchDescriptor<SpaceModel>(
-                    predicate: #Predicate { $0.profileId == profileId },
-                    sortBy: tiebreaks
-                )
-            } else {
-                descriptor = FetchDescriptor<SpaceModel>(
-                    sortBy: tiebreaks
-                )
-            }
-            return try context.fetch(descriptor)
+            let predicate = profileId.map { NSPredicate(format: "profileId == %@", $0) }
+            return try context.fetch(SpaceModel.request(predicate, sortBy: tiebreaks))
         } catch {
             AppLogError("[LocalStore] getAllSpaces failed: \(error)")
             return []

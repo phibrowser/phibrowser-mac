@@ -39,6 +39,17 @@ class BrowserState {
         let bookmarkDeletion: MultiSelectionBookmarkDeletionContext?
     }
 
+    /// One restored saved window handed over by the Chromium bridge as a
+    /// single batch (T3A snapshot seam). `tabs` is in Chromium's final strip
+    /// order with each context's `insertAfterTabId` anchoring the preceding
+    /// entry; `splitActions` replay after the tabs (their pane wiring needs
+    /// the tabs present); `activeTabId` applies last.
+    struct RestoredWindowSnapshot {
+        let tabs: [(tab: Tab, context: NativeTabCreationContext)]
+        let activeTabId: Int?
+        let splitActions: [SplitEvent.SplitAction]
+    }
+
     private struct NormalTabRelativeOrderSyncUnit {
         let tabIds: [Int]
         let splitId: String?
@@ -2598,6 +2609,48 @@ class BrowserState {
         updateNormalTabs()
         let elapsed = (CFAbsoluteTimeGetCurrent() - t0) * 1000
         AppLogDebug("[NativeTab] ⏱ handleNewTabFromChromium tabId=\(tab.guid) took \(String(format: "%.2f", elapsed))ms")
+    }
+
+    /// Applies one restored-window snapshot by replaying the existing
+    /// per-item paths in delivery order — the transport is batched (T3A),
+    /// the semantics are unchanged. T3B replaces this body with a
+    /// single-transaction apply; the contract (tabs in final strip order,
+    /// split replay after tabs, active tab last) is owned by the bridge and
+    /// does not change here.
+    @MainActor
+    func handleRestoredWindowSnapshot(_ snapshot: RestoredWindowSnapshot) {
+        for item in snapshot.tabs {
+            handleNewTabFromChromium(item.tab, context: item.context)
+        }
+        // Mirrors EventBus.handleSplitEvent's dispatch. The bridge buffers a
+        // restored window's split events into the snapshot because the split
+        // pane wiring silently skips (with no replay) when a split arrives
+        // before its tabs exist.
+        for action in snapshot.splitActions {
+            switch action {
+            case let .created(splitId, primaryTabId, secondaryTabId, layout, ratio):
+                handleSplitCreated(splitId: splitId,
+                                   primaryTabId: primaryTabId,
+                                   secondaryTabId: secondaryTabId,
+                                   layout: layout,
+                                   ratio: ratio)
+            case let .visualsChanged(splitId, layout, ratio):
+                handleSplitVisualsChanged(splitId: splitId, layout: layout, ratio: ratio)
+            case let .contentsChanged(splitId, primaryTabId, secondaryTabId):
+                handleSplitContentsChanged(splitId: splitId,
+                                           primaryTabId: primaryTabId,
+                                           secondaryTabId: secondaryTabId)
+            case .removed(let splitId):
+                handleSplitRemoved(splitId: splitId)
+            case let .openLinkAsSplitPartner(partnerTabId, url):
+                // Never buffered by the bridge (a request, not window state);
+                // handled for switch exhaustiveness only.
+                handleOpenLinkAsSplitPartner(partnerTabId: partnerTabId, url: url)
+            }
+        }
+        if let activeTabId = snapshot.activeTabId {
+            handleChromiumActiveTabChanged(activeTabId)
+        }
     }
 
     private func preseedHiddenOpenerInsertionIfNeeded(

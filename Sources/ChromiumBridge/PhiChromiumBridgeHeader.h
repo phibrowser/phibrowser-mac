@@ -378,6 +378,28 @@ typedef NS_ENUM(NSUInteger, PhiOmniboxSuggestionDisposition) {
 - (void)tabRelationshipSnapshotChanged:(NSDictionary *)snapshot
                              windowId:(int64_t)windowId
                                version:(int64_t)version;
+/// One restored saved window delivered as a single batch (T3A snapshot seam).
+/// Called SYNCHRONOUSLY inside Chromium's session-restore replay stack when
+/// the window's replay finishes; per-tab newTabCreatedWithInfo /
+/// activeTabChanged / tabIndicesUpdated / split / relationship events for
+/// this window were withheld while it replayed. Ownership of the payload
+/// transfers to the Mac client before this returns; the client may defer
+/// application, but MUST NOT call back into Chromium synchronously here.
+/// Snapshot keys:
+///   tabs — NSArray<NSDictionary*> of newTabCreatedWithInfo-shaped payloads
+///     in Chromium's final strip order; index/url/title/groupIdHex are
+///     final values, and each creationContext's insertAfterTabId anchors the
+///     PRECEDING entry (first entry has none).
+///   splitEvents — NSArray<NSDictionary*> of this window's split events in
+///     fire order ("type": created|visualsChanged|contentsChanged|removed,
+///     plus splitId/primaryTabId/secondaryTabId/layout/ratio as applicable);
+///     apply after the tabs.
+///   activeTabId — NSNumber (int64), the window's final active tab; absent
+///     when the window has none. Apply last.
+/// A trailing tabRelationshipSnapshotChanged for this window follows this
+/// call when the replay produced one.
+- (void)restoredWindowSnapshot:(NSDictionary<NSString *, id> *)snapshot
+                      windowId:(int64_t)windowId;
 // Returns a custom shortcut override, or nil to use Chromium defaults.
 - (nullable NSDictionary<NSString*, id>*)keyEquivalentOverrideForCommand:
     (int)commandId;

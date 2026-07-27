@@ -643,9 +643,12 @@ extension PhiChromiumCoordinator: PhiChromiumBridgeDelegate {
         }
     }
     
-    func newTabCreated(withInfo tabInfo: [AnyHashable : Any], windowId: Int64) {
-        AppLogDebug("[Tab] newTabCreated: \(tabInfo) \n, windowId: \(windowId)")
-        
+    /// Builds the (Tab, NativeTabCreationContext) pair from one
+    /// newTabCreatedWithInfo-shaped bridge payload. Shared by the per-tab
+    /// path and the restored-window snapshot path (T3A) so the two parses
+    /// cannot drift.
+    private func makeTab(fromBridgeInfo tabInfo: [AnyHashable: Any],
+                         windowId: Int64) -> (tab: Tab, context: NativeTabCreationContext) {
         let title = tabInfo["title"] as? String
         let url = tabInfo["url"] as? String
         let index = tabInfo["index"] as? Int ?? -1
@@ -675,12 +678,19 @@ extension PhiChromiumCoordinator: PhiChromiumBridgeDelegate {
         }
         let creationPayload = (tabInfo["creationContext"] as? [AnyHashable: Any]) ?? tabInfo
         let creationContext = NativeTabCreationContext(dictionary: creationPayload)
+        return (tab, creationContext)
+    }
+
+    func newTabCreated(withInfo tabInfo: [AnyHashable : Any], windowId: Int64) {
+        AppLogDebug("[Tab] newTabCreated: \(tabInfo) \n, windowId: \(windowId)")
+
+        let (tab, creationContext) = makeTab(fromBridgeInfo: tabInfo, windowId: windowId)
+        let id = tab.guid
         AppLogDebug(
             "[NativeTab] mac newTabCreated " +
-            "tabId=\(id) windowId=\(windowId) index=\(index) " +
-            "creationPayload=\(creationPayload)"
+            "tabId=\(id) windowId=\(windowId) index=\(tab.index) " +
+            "creationPayload=\((tabInfo["creationContext"] as? [AnyHashable: Any]) ?? tabInfo)"
         )
-        
         if MainBrowserWindowControllersManager.shared.hasDanglingWindow(for: windowId.intValue) {
             MainBrowserWindowControllersManager.shared.addPendingTabToDanglingWindow(tab, windowId: windowId.intValue)
             AppLogInfo("🪟 [Chromium] Tab added to dangling window pending tabs - windowId: \(windowId), tabGuid: \(id)")
@@ -688,6 +698,106 @@ extension PhiChromiumCoordinator: PhiChromiumBridgeDelegate {
             EventBus.shared
                 .send(TabEvent(browserId: windowId.intValue,
                                action: .newTabWithContext(tab, context: creationContext)))
+        }
+    }
+
+    /// One restored saved window delivered as a single batch (T3A snapshot
+    /// seam). Called SYNCHRONOUSLY inside Chromium's session-restore replay
+    /// stack: parse and take ownership of the whole payload here, then defer
+    /// application to ONE MainActor task. Deliberately NOT routed through
+    /// EventBus — queue delivery would re-tie the handoff to main-queue
+    /// availability (T3A amendment decision 1); T3B replaces the task below
+    /// with synchronous in-stack application. Do not touch BrowserState or
+    /// call back into Chromium in this stack.
+    @objc(restoredWindowSnapshot:windowId:)
+    func restoredWindowSnapshot(_ snapshot: [String: Any], windowId: Int64) {
+        let tabInfos = (snapshot["tabs"] as? [[AnyHashable: Any]]) ?? []
+        let items = tabInfos.map { makeTab(fromBridgeInfo: $0, windowId: windowId) }
+        let activeTabId = snapshot["activeTabId"] as? Int
+        let splitActions = parseSplitActions(fromBridgeEvents: snapshot["splitEvents"])
+
+        guard !items.isEmpty else { return }
+
+        if MainBrowserWindowControllersManager.shared.hasDanglingWindow(for: windowId.intValue) {
+            // Pre-login dangling window: mirror the per-tab path's dangling
+            // semantics (tabs buffered; split/active events were never
+            // buffered for dangling windows).
+            for item in items {
+                MainBrowserWindowControllersManager.shared
+                    .addPendingTabToDanglingWindow(item.tab, windowId: windowId.intValue)
+            }
+            AppLogInfo("🪟 [Chromium] Restored snapshot buffered to dangling window - windowId: \(windowId), tabs: \(items.count)")
+            return
+        }
+
+        let payload = BrowserState.RestoredWindowSnapshot(tabs: items,
+                                                          activeTabId: activeTabId,
+                                                          splitActions: splitActions)
+        // Application stays deferred in T3A: ONE unstructured
+        // `Task { @MainActor }` per window, no priority override, created
+        // synchronously here — the same shape as EventBus.send, so
+        // MainActor-executor FIFO keeps it after this replay's already-queued
+        // group events and before the trailing relationship snapshot.
+        Task { @MainActor in
+            guard let browserState = MainBrowserWindowControllersManager.shared
+                .getBrowserState(for: windowId.intValue) else {
+                // Same drop semantics as a queued event whose window closed:
+                // the payload (tabs + wrappers) is simply released.
+                AppLogWarn("Window not found for restored snapshot: \(windowId)")
+                return
+            }
+            browserState.handleRestoredWindowSnapshot(payload)
+        }
+    }
+
+    /// Decodes the snapshot's buffered split events into the same actions
+    /// the individual split delegate methods would have sent.
+    private func parseSplitActions(fromBridgeEvents events: Any?) -> [SplitEvent.SplitAction] {
+        guard let dicts = events as? [[AnyHashable: Any]], !dicts.isEmpty else { return [] }
+        return dicts.compactMap { event in
+            guard let type = event["type"] as? String,
+                  let splitId = event["splitId"] as? String else {
+                AppLogError("[Split] restored snapshot: malformed split event \(event)")
+                return nil
+            }
+            switch type {
+            case "created":
+                guard let primary = event["primaryTabId"] as? Int,
+                      let secondary = event["secondaryTabId"] as? Int,
+                      let layout = event["layout"] as? String,
+                      let ratio = event["ratio"] as? Double else {
+                    AppLogError("[Split] restored snapshot: malformed created event \(event)")
+                    return nil
+                }
+                return .created(splitId: splitId,
+                                primaryTabId: primary,
+                                secondaryTabId: secondary,
+                                layout: parseBridgeLayout(layout),
+                                ratio: ratio)
+            case "visualsChanged":
+                guard let layout = event["layout"] as? String,
+                      let ratio = event["ratio"] as? Double else {
+                    AppLogError("[Split] restored snapshot: malformed visualsChanged event \(event)")
+                    return nil
+                }
+                return .visualsChanged(splitId: splitId,
+                                       layout: parseBridgeLayout(layout),
+                                       ratio: ratio)
+            case "contentsChanged":
+                guard let primary = event["primaryTabId"] as? Int,
+                      let secondary = event["secondaryTabId"] as? Int else {
+                    AppLogError("[Split] restored snapshot: malformed contentsChanged event \(event)")
+                    return nil
+                }
+                return .contentsChanged(splitId: splitId,
+                                        primaryTabId: primary,
+                                        secondaryTabId: secondary)
+            case "removed":
+                return .removed(splitId: splitId)
+            default:
+                AppLogError("[Split] restored snapshot: unknown split event type \(type)")
+                return nil
+            }
         }
     }
 

@@ -2871,6 +2871,17 @@ final class SpaceManager: ObservableObject {
                 if let current = slot.activeSpaceId, validIds.contains(current) {
                     continue
                 }
+                // A slot whose restore reconcile is still running may sit on a
+                // Space the store simply hasn't delivered yet: on cold launch
+                // the SwiftData publisher's first emission races the restored
+                // windows, and a partial list would misread the snapshot's
+                // active Space as deleted — kicking the slot to a fallback and
+                // overwriting the persisted active Space mid-restore. Skip it;
+                // a genuinely deleted Space is re-reconciled by the next store
+                // emission once the restore settles.
+                if slot.restoreVisibilityReconcileScheduled {
+                    continue
+                }
                 if let fallback {
                     slot.activate(spaceId: fallback)
                 } else {
@@ -5470,7 +5481,7 @@ final class SpaceWindowSlot: ObservableObject {
     /// turns (Chromium's re-orders trail window creation by up to ~2s) and each
     /// pass orders every non-active window off screen, then re-fronts the
     /// active one.
-    private var restoreVisibilityReconcileScheduled = false
+    fileprivate var restoreVisibilityReconcileScheduled = false
     func scheduleRestoreVisibilityReconcile() {
         guard !restoreVisibilityReconcileScheduled else { return }
         restoreVisibilityReconcileScheduled = true

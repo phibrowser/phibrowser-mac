@@ -940,6 +940,16 @@ final class SpaceManager: ObservableObject {
     /// drain it before the next launch reads it.
     fileprivate func persistSlotsSnapshot() {
         guard !isTerminating else { return }
+        // Never write while a slot is mid-cascade: its window map is
+        // half-drained, so a write from ANY trigger (AppKit's fullscreen
+        // teardown notifications, tab-bar churn, a sibling's key change)
+        // persists a partial group — dropping already-closed windows and the
+        // fullscreen marker from the very snapshot the next reopen restores,
+        // which splits the group into separate slots. The teardown's own
+        // endpoints persist the settled state after clearing the cascade
+        // flag: `removeSlot` shrinks the snapshot once the cascade drains,
+        // and `recoverFromVetoedCascade` rewrites it after a veto.
+        guard !slots.contains(where: { $0.isTearingDown }) else { return }
         guard let userDefaults = boundAccount?.userDefaults else { return }
         var dicts: [[String: Any]] = []
         for slot in slots {

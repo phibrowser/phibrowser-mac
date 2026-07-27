@@ -50,6 +50,23 @@ class BrowserState {
         let splitActions: [SplitEvent.SplitAction]
     }
 
+    /// Fires synchronously at the end of a restored-window snapshot
+    /// transaction, right after its single `normalTabs` publish. Subscribed
+    /// WITHOUT `receive(on:)` (mirrors the synchronous `$isInPlaceholderMode`
+    /// sink) so the sidebar builds its one root snapshot in the same
+    /// main-thread turn as the state application — queue-hopping here would
+    /// re-tie the visible list to main-queue availability (T3B amendment 1).
+    let restoredWindowTransactionSignal = PassthroughSubject<Void, Never>()
+
+    /// Guids of the restored-window batch that the in-flight transaction has
+    /// not walked yet. Non-nil only while `handleRestoredWindowSnapshot` is
+    /// applying. Gates `updateNormalTabs()` into order-maintenance-only mode
+    /// (the single publish happens in the transaction epilogue), and keeps
+    /// unwalked batch tabs out of the order backfill so each walked tab's
+    /// anchor resolution sees exactly the order the per-tab path would have
+    /// produced at the same point.
+    private var restoreTransactionPendingGuids: Set<Int>?
+
     private struct NormalTabRelativeOrderSyncUnit {
         let tabIds: [Int]
         let splitId: String?
@@ -831,14 +848,23 @@ class BrowserState {
             return tab.guid
         }
         let normalTabGuidSet = Set(normalTabGuids)
-        
+
         normalTabOrder.removeAll { !normalTabGuidSet.contains($0) }
 
         for guid in normalTabGuids where !normalTabOrder.contains(guid) {
+            // Restore transaction: batch tabs the transaction has not walked
+            // yet are already in `tabs` (single append) but must not enter
+            // the order early — each one is placed when its turn comes, so
+            // anchor lookups match the per-tab path's intermediate states.
+            if restoreTransactionPendingGuids?.contains(guid) == true { continue }
             normalTabOrder.append(guid)
         }
 
         enforceSplitAdjacency()
+
+        // Restore transaction: order maintenance only. The projection publish
+        // and the multi-selection prune run once in the transaction epilogue.
+        if restoreTransactionPendingGuids != nil { return }
 
         normalTabs = normalTabOrder.compactMap { guid in
             tabs.first { $0.guid == guid }
@@ -2414,6 +2440,15 @@ class BrowserState {
     /// Chromium's selection logic).
     func closeAIChatTab(for identifier: String) {
         guard let aiTab = aiChatTabs.removeValue(forKey: identifier) else { return }
+        // Restore transaction: this can be reached from split replay
+        // (`handleSplitCreated` → `reconcileSplitChatBinding`) while the
+        // transaction is executing inside Chromium's replay stack — defer
+        // the bridge close to the next turn (in-stack discipline). The
+        // bookkeeping removal above stays synchronous either way.
+        if restoreTransactionPendingGuids != nil {
+            DispatchQueue.main.async { aiTab.webContentWrapper?.close() }
+            return
+        }
         aiTab.webContentWrapper?.close()
     }
     
@@ -2505,33 +2540,66 @@ class BrowserState {
         nativeRelationGraph.applyOptimisticCreation(tabId: tab.guid, context: context)
 
         // Reattach to a pinned tab entry when the local guid matches.
-        if let localGuid = tab.guidInLocalDB,
-           let pinnedTab = pinnedTabs.first(where: { $0.guidInLocalDB == localGuid }) {
-            localStore.updateLastSeen(localGuid)
-            pinnedTab.isOpenned = true
-            pinnedTab.setWebContentsWrapper(wrapper: tab.webContentWrapper)
-            pinnedTab.guid = tab.guid
-            // If this pinned tab was part of a pinned-split before the last
-            // shutdown and its partner is also live now, re-create the split
-            // so the pair shows as one again. Skipped when a `SplitGroup`
-            // already covers the pair (e.g. Chromium's own session restore).
-            maybeRecreatePersistedPinnedSplit(forJustOpenedPinnedTab: pinnedTab)
-            // Drain a pending "Open as Split" intent recorded against this
-            // pinned guid. Deferred one runloop tick so the surrounding
-            // new-tab event finishes unwinding before `openNewTabAsSplit`
-            // calls back into Chromium (matches the same defer used by the
-            // pinned-split recreate path for the same reason).
-            if pendingSplitAfterPinnedOpen.remove(localGuid) != nil {
-                let liveTabId = tab.guid
-                DispatchQueue.main.async { [weak self] in
-                    self?.openNewTabAsSplit(partnerTabId: liveTabId)
-                }
-            }
-        }
+        reattachToPinnedRecordIfNeeded(tab)
 
         // Reattach to a bookmark entry when the local guid matches.
         handleBookmarkTabOpened(tab)
 
+        placeArrivedTabInNormalOrder(tab,
+                                     context: context,
+                                     hiddenOpenerTabIds: preseededHiddenOpenerTabIds,
+                                     visibleNormalTabIds: normalTabs.map(\.guid))
+        let elapsed = (CFAbsoluteTimeGetCurrent() - t0) * 1000
+        AppLogDebug("[NativeTab] ⏱ handleNewTabFromChromium tabId=\(tab.guid) took \(String(format: "%.2f", elapsed))ms")
+    }
+
+    /// Reattaches an arriving live tab to its pinned record when the local
+    /// guid matches: marks the record opened, rebinds wrapper/guid, and
+    /// drains persisted pinned-split intents. Shared by
+    /// `handleNewTabFromChromium` and the restored-window transaction. The
+    /// Chromium-reaching follow-ups (`createSplit` inside the recreate
+    /// helper, `openNewTabAsSplit`) are deferred a runloop tick, keeping
+    /// both entry points free of synchronous bridge calls.
+    private func reattachToPinnedRecordIfNeeded(_ tab: Tab) {
+        guard let localGuid = tab.guidInLocalDB,
+              let pinnedTab = pinnedTabs.first(where: { $0.guidInLocalDB == localGuid }) else {
+            return
+        }
+        localStore.updateLastSeen(localGuid)
+        pinnedTab.isOpenned = true
+        pinnedTab.setWebContentsWrapper(wrapper: tab.webContentWrapper)
+        pinnedTab.guid = tab.guid
+        // If this pinned tab was part of a pinned-split before the last
+        // shutdown and its partner is also live now, re-create the split
+        // so the pair shows as one again. Skipped when a `SplitGroup`
+        // already covers the pair (e.g. Chromium's own session restore).
+        maybeRecreatePersistedPinnedSplit(forJustOpenedPinnedTab: pinnedTab)
+        // Drain a pending "Open as Split" intent recorded against this
+        // pinned guid. Deferred one runloop tick so the surrounding
+        // new-tab event finishes unwinding before `openNewTabAsSplit`
+        // calls back into Chromium (matches the same defer used by the
+        // pinned-split recreate path for the same reason).
+        if pendingSplitAfterPinnedOpen.remove(localGuid) != nil {
+            let liveTabId = tab.guid
+            DispatchQueue.main.async { [weak self] in
+                self?.openNewTabAsSplit(partnerTabId: liveTabId)
+            }
+        }
+    }
+
+    /// Replays the per-arrival normal-order decision chain for one tab:
+    /// cross-window group insertion → pending normal-tab insertion →
+    /// decision engine placement → projection fallback. Shared by
+    /// `handleNewTabFromChromium` and the restored-window transaction
+    /// (which passes `normalTabOrder` as the visible ids while its publish
+    /// is deferred) so the two entry points cannot drift; they must never
+    /// call each other.
+    private func placeArrivedTabInNormalOrder(
+        _ tab: Tab,
+        context: NativeTabCreationContext?,
+        hiddenOpenerTabIds: Set<Int>,
+        visibleNormalTabIds: [Int]
+    ) {
         // Honor cross-window group arrival first (priority over single-
         // tab pending). Each of the N members lands at
         // `atIndex + arrivedCount`; arrival order should match
@@ -2566,20 +2634,15 @@ class BrowserState {
                     updated.arrivedCount = newCount
                     pendingGroupInsertion = updated
                 }
-                let elapsed = (CFAbsoluteTimeGetCurrent() - t0) * 1000
-                AppLogDebug("[NativeTab] ⏱ handleNewTabFromChromium tabId=\(tab.guid) took \(String(format: "%.2f", elapsed))ms")
                 return
             }
         }
 
         // Honor any pending insertion target for tabs promoted into the normal tab list.
         if consumePendingNormalTabInsertion(for: tab) {
-            let elapsed = (CFAbsoluteTimeGetCurrent() - t0) * 1000
-            AppLogDebug("[NativeTab] ⏱ handleNewTabFromChromium tabId=\(tab.guid) took \(String(format: "%.2f", elapsed))ms")
             return
         }
 
-        let hiddenOpenerTabIds = preseededHiddenOpenerTabIds
         let shouldSyncHiddenOpenerOrder: Bool = {
             guard let context,
                   let openerTabId = context.openerTabId,
@@ -2590,7 +2653,7 @@ class BrowserState {
         }()
 
         if let insertionIndex = NativeTabDecisionEngine.insertionIndex(
-            visibleNormalTabIds: normalTabs.map(\.guid),
+            visibleNormalTabIds: visibleNormalTabIds,
             context: context,
             relationGraph: nativeRelationGraph,
             splitPartnerByTabId: splitPartnerByTabIdMap(),
@@ -2600,32 +2663,105 @@ class BrowserState {
             insertIntoNormalTabOrder(tabGuid: tab.guid,
                                      at: insertionIndex,
                                      syncChromiumOrder: shouldSyncHiddenOpenerOrder)
-            let elapsed = (CFAbsoluteTimeGetCurrent() - t0) * 1000
-            AppLogDebug("[NativeTab] ⏱ handleNewTabFromChromium tabId=\(tab.guid) took \(String(format: "%.2f", elapsed))ms")
             return
         }
-        
+
         AppLogDebug("[NativeTab] handleNewTabFromChromium falling back to updateNormalTabs for tabId=\(tab.guid)")
         updateNormalTabs()
-        let elapsed = (CFAbsoluteTimeGetCurrent() - t0) * 1000
-        AppLogDebug("[NativeTab] ⏱ handleNewTabFromChromium tabId=\(tab.guid) took \(String(format: "%.2f", elapsed))ms")
     }
 
-    /// Applies one restored-window snapshot by replaying the existing
-    /// per-item paths in delivery order — the transport is batched (T3A),
-    /// the semantics are unchanged. T3B replaces this body with a
-    /// single-transaction apply; the contract (tabs in final strip order,
-    /// split replay after tabs, active tab last) is owned by the bridge and
-    /// does not change here.
+    /// Applies one restored-window snapshot as a single transaction (T3B):
+    /// one `tabs` append, per-tab arrival side effects with the projection
+    /// publish deferred, split replay, final active tab, then exactly one
+    /// `normalTabs` publish followed by the synchronous UI transaction
+    /// signal. The contract (tabs in final strip order, split replay after
+    /// tabs, active tab last) is owned by the bridge and does not change.
+    ///
+    /// Runs SYNCHRONOUSLY inside Chromium's session-restore replay stack —
+    /// nothing in here may call back into Chromium synchronously; every
+    /// bridge-touching side effect is dispatched after the stack unwinds.
     @MainActor
     func handleRestoredWindowSnapshot(_ snapshot: RestoredWindowSnapshot) {
+        // Validation & filtering. AI Chat payloads keep their bookkeeping
+        // path and never join `tabs` (mirrors the per-tab handler's early
+        // return); duplicate Chromium guids fail closed — the duplicate
+        // payload is dropped, the rest of the batch proceeds.
+        var batch: [(tab: Tab, context: NativeTabCreationContext)] = []
+        batch.reserveCapacity(snapshot.tabs.count)
+        var seenGuids = Set<Int>()
         for item in snapshot.tabs {
-            handleNewTabFromChromium(item.tab, context: item.context)
+            let tab = item.tab
+            if let customGuid = tab.guidInLocalDB,
+               Self.isAIChatId(customGuid),
+               let identifier = Self.associatedIdentifier(from: customGuid) {
+                aiChatTabsBeingCreated.remove(identifier)
+                if let existing = aiChatTabs[identifier] {
+                    AppLogWarn("🤖 [AIChat] duplicate AI tab for identifier=\(identifier) existing=\(existing.guid) duplicate=\(tab.guid); closing duplicate")
+                    // In-stack discipline: close via the next turn, never
+                    // synchronously from the replay stack.
+                    DispatchQueue.main.async { tab.webContentWrapper?.close() }
+                    continue
+                }
+                aiChatTabs[identifier] = tab
+                _ = PhiChromiumCoordinator.shared.drainPendingCrash(tabId: tab.guid)
+                continue
+            }
+            guard seenGuids.insert(tab.guid).inserted,
+                  !tabs.contains(where: { $0.guid == tab.guid }) else {
+                AppLogError("[NativeTab] restored snapshot: duplicate tabId=\(tab.guid); dropping payload")
+                continue
+            }
+            batch.append(item)
         }
+        guard !batch.isEmpty else { return }
+
+        // Per-tab object preparation; published state untouched. The
+        // hidden-opener preseed is skipped: its guard only admits link
+        // creations, and restored payloads carry `.restore`.
+        for (tab, _) in batch {
+            if consumePendingNativeNTP() {
+                tab.usesNativeNTP = true
+            }
+            if let stashedFavicon = Self.consumeCrossWindowFavicon(for: tab.guid) {
+                tab.updateCachedFaviconData(stashedFavicon)
+            }
+        }
+
+        // Transaction scope: exactly one `tabs` mutation, and
+        // `updateNormalTabs()` runs in order-maintenance-only mode until the
+        // epilogue. The defer guarantees the transaction cannot stay latched
+        // no matter how this unwinds.
+        restoreTransactionPendingGuids = Set(batch.map { $0.tab.guid })
+        defer { restoreTransactionPendingGuids = nil }
+
+        tabs.append(contentsOf: batch.map { $0.tab })
+
+        for (tab, context) in batch {
+            restoreTransactionPendingGuids?.remove(tab.guid)
+            if let bufferedCrash = PhiChromiumCoordinator.shared.drainPendingCrash(tabId: tab.guid) {
+                tab.crashState = bufferedCrash
+            }
+            drainPendingGroupClaim(for: tab)
+            nativeRelationGraph.applyOptimisticCreation(tabId: tab.guid, context: context)
+
+            // Reattach to a pinned tab entry when the local guid matches
+            // (shared with the per-tab handler).
+            reattachToPinnedRecordIfNeeded(tab)
+
+            // Reattach to a bookmark entry when the local guid matches.
+            handleBookmarkTabOpened(tab)
+
+            placeArrivedTabInNormalOrder(tab,
+                                         context: context,
+                                         hiddenOpenerTabIds: hiddenPinnedOrBookmarkTabIds(),
+                                         visibleNormalTabIds: normalTabOrder)
+        }
+
         // Mirrors EventBus.handleSplitEvent's dispatch. The bridge buffers a
         // restored window's split events into the snapshot because the split
         // pane wiring silently skips (with no replay) when a split arrives
-        // before its tabs exist.
+        // before its tabs exist. Interior `updateNormalTabs()` calls stay in
+        // order-maintenance mode.
         for action in snapshot.splitActions {
             switch action {
             case let .created(splitId, primaryTabId, secondaryTabId, layout, ratio):
@@ -2648,8 +2784,39 @@ class BrowserState {
                 handleOpenLinkAsSplitPartner(partnerTabId: partnerTabId, url: url)
             }
         }
+
+        if pendingSelectionOverride != nil {
+            // A leftover close-time override could route the active-tab
+            // application into a synchronous `setAsActiveTab` bridge call
+            // mid-replay. Any pre-restore override is stale against a
+            // full-window snapshot — drop it (the per-tab path likewise
+            // discards stale overrides).
+            AppLogWarn("[NativeTab] restored snapshot: dropping stale pendingSelectionOverride")
+            pendingSelectionOverride = nil
+        }
         if let activeTabId = snapshot.activeTabId {
             handleChromiumActiveTabChanged(activeTabId)
+        }
+
+        // Epilogue: one projection, one `normalTabs` publish, then the
+        // synchronous UI signal so the sidebar's single root snapshot lands
+        // in this same main-thread turn.
+        restoreTransactionPendingGuids = nil
+        updateNormalTabs()
+        restoredWindowTransactionSignal.send()
+
+        // Split-pending consumers run in the per-tab handler's defer; they
+        // can synchronously reach the bridge (marker clearing via
+        // `updateTabCustomValue`), so from the replay stack they wait for
+        // the unwind. No-ops unless a stale split-pending marker survived
+        // into the session snapshot.
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            for (tab, _) in batch {
+                self.consumePendingSplitPartner(for: tab)
+                self.consumePendingPrimarySplit(for: tab)
+                self.consumePendingSplitSlotSwap(for: tab)
+            }
         }
     }
 

@@ -703,12 +703,12 @@ extension PhiChromiumCoordinator: PhiChromiumBridgeDelegate {
 
     /// One restored saved window delivered as a single batch (T3A snapshot
     /// seam). Called SYNCHRONOUSLY inside Chromium's session-restore replay
-    /// stack: parse and take ownership of the whole payload here, then defer
-    /// application to ONE MainActor task. Deliberately NOT routed through
-    /// EventBus — queue delivery would re-tie the handoff to main-queue
-    /// availability (T3A amendment decision 1); T3B replaces the task below
-    /// with synchronous in-stack application. Do not touch BrowserState or
-    /// call back into Chromium in this stack.
+    /// stack: parse, take ownership, and apply the whole payload here in the
+    /// same stack (T3B) — data and the visible list no longer wait for the
+    /// main queue to drain the replay backlog. Deliberately NOT routed
+    /// through EventBus (T3A amendment decision 1). The applied transaction
+    /// must never call back into Chromium synchronously; BrowserState's
+    /// snapshot transaction owns that discipline.
     @objc(restoredWindowSnapshot:windowId:)
     func restoredWindowSnapshot(_ snapshot: [String: Any], windowId: Int64) {
         let tabInfos = (snapshot["tabs"] as? [[AnyHashable: Any]]) ?? []
@@ -733,21 +733,34 @@ extension PhiChromiumCoordinator: PhiChromiumBridgeDelegate {
         let payload = BrowserState.RestoredWindowSnapshot(tabs: items,
                                                           activeTabId: activeTabId,
                                                           splitActions: splitActions)
-        // Application stays deferred in T3A: ONE unstructured
-        // `Task { @MainActor }` per window, no priority override, created
-        // synchronously here — the same shape as EventBus.send, so
-        // MainActor-executor FIFO keeps it after this replay's already-queued
-        // group events and before the trailing relationship snapshot.
-        Task { @MainActor in
-            guard let browserState = MainBrowserWindowControllersManager.shared
-                .getBrowserState(for: windowId.intValue) else {
-                // Same drop semantics as a queued event whose window closed:
-                // the payload (tabs + wrappers) is simply released.
-                AppLogWarn("Window not found for restored snapshot: \(windowId)")
-                return
+        // T3B: apply synchronously in this replay stack. The bridge calls on
+        // Chromium's UI thread (= AppKit main = MainActor) but that isn't
+        // type-enforced — mirror showCrashPage's assert-and-degrade rather
+        // than trap; the off-main fallback keeps the T3A task shape so the
+        // window still restores.
+        guard Thread.isMainThread else {
+            assertionFailure("restoredWindowSnapshot off the main thread; deferring application")
+            Task { @MainActor in
+                self.applyRestoredWindowSnapshot(payload, windowId: windowId)
             }
-            browserState.handleRestoredWindowSnapshot(payload)
+            return
         }
+        MainActor.assumeIsolated {
+            applyRestoredWindowSnapshot(payload, windowId: windowId)
+        }
+    }
+
+    @MainActor
+    private func applyRestoredWindowSnapshot(_ payload: BrowserState.RestoredWindowSnapshot,
+                                             windowId: Int64) {
+        guard let browserState = MainBrowserWindowControllersManager.shared
+            .getBrowserState(for: windowId.intValue) else {
+            // Same drop semantics as a queued event whose window closed:
+            // the payload (tabs + wrappers) is simply released.
+            AppLogWarn("Window not found for restored snapshot: \(windowId)")
+            return
+        }
+        browserState.handleRestoredWindowSnapshot(payload)
     }
 
     /// Decodes the snapshot's buffered split events into the same actions

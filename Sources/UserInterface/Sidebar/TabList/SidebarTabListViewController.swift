@@ -3955,7 +3955,11 @@ extension SidebarTabListViewController: TabSectionDelegate {
             }
             return
         }
+        // Restore transaction (T3B): apply the root snapshot without
+        // insertion animations so the restored list lands fully formed in
+        // the same main-thread turn as the state application.
         refreshAllItems(
+            animated: !change.isRestoreTransaction,
             allowsInsertedRootTabLayoutRepair: change.allowsInsertedRootTabLayoutRepair
         ) { [weak self] outlineStructureChanged in
             guard let self else { return }

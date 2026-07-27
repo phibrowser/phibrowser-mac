@@ -26,6 +26,22 @@ struct TabSectionChange {
     /// attach to the new Tab.
     let affectedSplitIds: Set<String>
 
+    /// True when this update was driven synchronously by a restored-window
+    /// snapshot transaction (T3B): the consumer applies the root snapshot
+    /// without animations so the list lands fully formed in the same
+    /// main-thread turn. Ordinary interactive updates leave this false.
+    let isRestoreTransaction: Bool
+
+    init(rootItemsChanged: Bool,
+         affectedGroupTokens: Set<String>,
+         affectedSplitIds: Set<String>,
+         isRestoreTransaction: Bool = false) {
+        self.rootItemsChanged = rootItemsChanged
+        self.affectedGroupTokens = affectedGroupTokens
+        self.affectedSplitIds = affectedSplitIds
+        self.isRestoreTransaction = isRestoreTransaction
+    }
+
     /// PHI-1099's outer-outline repair is safe only when the root change is
     /// isolated from group membership and split-pair mutations that the outer
     /// snapshot intentionally does not represent.
@@ -80,6 +96,13 @@ class TabSectionController: NSObject {
     /// this the diff path never re-binds the cell to the new Tab.
     private var previousSplitMembers: [String: [Int]] = [:]
 
+    /// Identity snapshot of the `normalTabs` array a restore-transaction
+    /// signal already rendered synchronously. The @Published pipeline still
+    /// delivers that same publish one main-queue turn later; matching it
+    /// here skips the redundant rebuild. One-shot: ANY delivery clears it,
+    /// so a stale token can never suppress a future legitimate update.
+    private var syncHandledNormalTabs: [Tab]?
+
     weak var delegate: TabSectionDelegate?
     var browserState: BrowserState? {
         didSet {
@@ -127,7 +150,27 @@ class TabSectionController: NSObject {
             .dropFirst()
             .receive(on: DispatchQueue.main)
             .sink { [weak self] tabs in
-                self?.refreshTabItems(tabs)
+                guard let self else { return }
+                if let handled = self.syncHandledNormalTabs {
+                    self.syncHandledNormalTabs = nil
+                    if handled.count == tabs.count,
+                       zip(handled, tabs).allSatisfy({ $0 === $1 }) {
+                        return
+                    }
+                }
+                self.refreshTabItems(tabs)
+            }
+            .store(in: &cancellables)
+
+        // Restore-transaction signal: synchronous by design (no
+        // receive(on:), mirroring the $isInPlaceholderMode precedent) so the
+        // one root snapshot lands in the same main-thread turn as the state
+        // application (T3B amendment 1). The trailing @Published delivery of
+        // the same publish is suppressed one-shot via
+        // `syncHandledNormalTabs`.
+        browserState.restoredWindowTransactionSignal
+            .sink { [weak self] in
+                self?.applyRestoredTransactionRefresh()
             }
             .store(in: &cancellables)
 
@@ -301,7 +344,18 @@ class TabSectionController: NSObject {
         return items
     }
 
-    private func refreshTabItems(_ tabs: [Tab]) {
+    /// Rebuilds the tab section synchronously off the restore-transaction
+    /// signal. Reads `normalTabs` directly — the signal fires after the
+    /// transaction's single publish, so the value is already written — and
+    /// arms the one-shot suppression for the trailing @Published delivery.
+    private func applyRestoredTransactionRefresh() {
+        guard let browserState else { return }
+        let tabs = browserState.normalTabs
+        syncHandledNormalTabs = tabs
+        refreshTabItems(tabs, isRestoreTransaction: true)
+    }
+
+    private func refreshTabItems(_ tabs: [Tab], isRestoreTransaction: Bool = false) {
         let previousItems = tabItems
         guard let browserState else {
             tabItems = []
@@ -310,7 +364,8 @@ class TabSectionController: NSObject {
             delegate?.tabSectionDidUpdate(with: TabSectionChange(
                 rootItemsChanged: !previousItems.isEmpty,
                 affectedGroupTokens: [],
-                affectedSplitIds: []
+                affectedSplitIds: [],
+                isRestoreTransaction: isRestoreTransaction
             ))
             return
         }
@@ -331,7 +386,8 @@ class TabSectionController: NSObject {
         delegate?.tabSectionDidUpdate(with: TabSectionChange(
             rootItemsChanged: rootItemsChanged,
             affectedGroupTokens: affectedTokens,
-            affectedSplitIds: affectedSplits
+            affectedSplitIds: affectedSplits,
+            isRestoreTransaction: isRestoreTransaction
         ))
     }
 

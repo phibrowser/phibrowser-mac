@@ -5705,15 +5705,6 @@
     "Icon" : {
       "comment" : "Spaces settings - icon section header"
     },
-    "Phi starts with a new window. Closing a window may sign you out of some sites." : {
-      "comment" : "General settings - Hint shown when restore-last-session is off, noting session cookies may be cleared when a window closes"
-    },
-    "Reopen your windows and tabs the next time you open Phi." : {
-      "comment" : "General settings - Hint shown when restore-last-session is on"
-    },
-    "Restore last session" : {
-      "comment" : "General settings - Row title for the app-level restore-previous-session toggle"
-    },
     "imagePreview.error.failedToDecodeImage" : {
       "comment" : "Image preview error",
       "extractionState" : "extracted_with_value",
@@ -9046,6 +9037,42 @@
           "stringUnit" : {
             "state" : "new",
             "value" : "Profile"
+          }
+        }
+      }
+    },
+    "settings.general.restoreLastSession.disabledHint" : {
+      "comment" : "General settings - Hint shown when restore-last-session is off, noting session cookies may be cleared when a window closes",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Phi starts with a new window. Closing a window may sign you out of some sites."
+          }
+        }
+      }
+    },
+    "settings.general.restoreLastSession.enabledHint" : {
+      "comment" : "General settings - Hint shown when restore-last-session is on",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Reopen your windows and tabs the next time you open Phi."
+          }
+        }
+      }
+    },
+    "settings.general.restoreLastSession.toggle" : {
+      "comment" : "General settings - Row title for the app-level restore-previous-session toggle",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Restore last session"
           }
         }
       }

@@ -355,8 +355,8 @@ private struct BrowsingSectionView: View {
 
     private var restoreLastSessionHint: String {
         restoreLastSessionEnabled
-            ? NSLocalizedString("Reopen your windows and tabs the next time you open Phi.", comment: "General settings - Hint shown when restore-last-session is on")
-            : NSLocalizedString("Phi starts with a new window. Closing a window may sign you out of some sites.", comment: "General settings - Hint shown when restore-last-session is off, noting session cookies may be cleared when a window closes")
+            ? NSLocalizedString("settings.general.restoreLastSession.enabledHint", value: "Reopen your windows and tabs the next time you open Phi.", comment: "General settings - Hint shown when restore-last-session is on")
+            : NSLocalizedString("settings.general.restoreLastSession.disabledHint", value: "Phi starts with a new window. Closing a window may sign you out of some sites.", comment: "General settings - Hint shown when restore-last-session is off, noting session cookies may be cleared when a window closes")
     }
 
     private var selectedBehavior: Binding<NewTabBehaviour> {
@@ -451,7 +451,7 @@ private struct BrowsingSectionView: View {
 
                     HStack(alignment: .center, spacing: 12) {
                         VStack(alignment: .leading, spacing: 4) {
-                            Text(NSLocalizedString("Restore last session", comment: "General settings - Row title for the app-level restore-previous-session toggle"))
+                            Text(NSLocalizedString("settings.general.restoreLastSession.toggle", value: "Restore last session", comment: "General settings - Row title for the app-level restore-previous-session toggle"))
                                 .font(.system(size: 13))
                                 .themedForeground(.textPrimary)
                             Text(restoreLastSessionHint)

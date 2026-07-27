@@ -808,7 +808,15 @@ final class SpaceManager: ObservableObject {
         // must NOT be reattached by profile to some stale closed slot — that
         // would surface it as a closed Space (and force fullscreen). Returning
         // nil lets the coordinator mint a fresh slot on the resolved Space.
+        // With the restore switch off there are no restored windows to
+        // reattach: the only zero-id window a cold launch produces is its
+        // plain NTP window, and profile-matching it against a stale snapshot
+        // entry would land it on the previous session's Space and inherit
+        // that entry's fullscreen marker. Checked here rather than when the
+        // snapshot loads: `bind(to:)` runs before Chromium is up, where the
+        // preference read falls back to its enabled default.
         guard restoredFromWindowId == 0,
+              SessionRestorePreference.isEnabled,
               !profileId.isEmpty,
               let deadline = restoreReattachDeadline,
               Date() < deadline else { return nil }

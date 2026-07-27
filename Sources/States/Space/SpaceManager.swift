@@ -979,6 +979,29 @@ final class SpaceManager: ObservableObject {
         userDefaults.set(dicts, forKey: AccountUserDefaults.DefaultsKey.slotsRestoreSnapshot.rawValue)
     }
 
+    /// Rewrites the persisted snapshot entry containing `windowId` to carry
+    /// `spaceId` as its active Space, touching nothing else. Used by the
+    /// window-driven cascade to undo a close-driven key promotion that
+    /// persisted a sibling as the entry's active Space (a fullscreen tab
+    /// group promotes synchronously with the closing window's teardown,
+    /// before any close signal reaches this side, so no key guard can
+    /// suppress it). A full `persistSlotsSnapshot()` cannot repair this: the
+    /// closing window has already left the slot's window map, so a full
+    /// rewrite would drop its entry from the very snapshot a reopen
+    /// restores from.
+    fileprivate func amendPersistedSnapshotActiveSpaceId(windowId: Int, to spaceId: String) {
+        guard !isTerminating, let userDefaults = boundAccount?.userDefaults else { return }
+        let key = AccountUserDefaults.DefaultsKey.slotsRestoreSnapshot.rawValue
+        guard var dicts = userDefaults.object(forKey: key) as? [[String: Any]] else { return }
+        for index in dicts.indices {
+            guard let map = dicts[index]["windowMap"] as? [String: String],
+                  map[String(windowId)] != nil else { continue }
+            dicts[index]["activeSpaceId"] = spaceId
+            userDefaults.set(dicts, forKey: key)
+            return
+        }
+    }
+
     private func loadRestoreSnapshot(armReattachDeadline: Bool = true) {
         restoreEntries.removeAll()
         restoreIndexByWindowId.removeAll()
@@ -3482,6 +3505,11 @@ final class SpaceWindowSlot: ObservableObject {
             AppLogInfo("[SpaceWindowSlot] activate(\(spaceId)) dropped: switch animation in flight")
             return
         }
+        // An explicit activation supersedes any earlier key-event adoption:
+        // from here on the active Space reflects a deliberate switch, so the
+        // window-driven cascade must not "undo" it (see
+        // `activeSpaceAdoptedFromKeyEvent`).
+        activeSpaceAdoptedFromKeyEvent = false
         isPerformingActivate = true
         defer { isPerformingActivate = false }
         guard let manager,
@@ -5481,6 +5509,17 @@ final class SpaceWindowSlot: ObservableObject {
     /// turns (Chromium's re-orders trail window creation by up to ~2s) and each
     /// pass orders every non-active window off screen, then re-fronts the
     /// active one.
+    /// True while the slot's active Space was last changed by a window key
+    /// event (`handleWindowDidBecomeKey` adoption) rather than an explicit
+    /// `activate`. The window-driven cascade uses this to tell a close-driven
+    /// key promotion (AppKit re-keys a fullscreen sibling before the closing
+    /// window's willClose, and the adoption pollutes the active-Space
+    /// bookkeeping — must be undone) from a deliberate user switch made
+    /// before closing the group (must be preserved): at cascade time both
+    /// look identical (`activeSpaceId != closing spaceId`), only the source
+    /// of the last change distinguishes them. Cleared by `activate`.
+    private var activeSpaceAdoptedFromKeyEvent = false
+
     fileprivate var restoreVisibilityReconcileScheduled = false
     func scheduleRestoreVisibilityReconcile() {
         guard !restoreVisibilityReconcileScheduled else { return }
@@ -6017,6 +6056,25 @@ final class SpaceWindowSlot: ObservableObject {
                 AppLogInfo("[SpaceWindowSlot] window-driven close of \(spaceId); no siblings")
             } else {
                 AppLogInfo("[SpaceWindowSlot] window-driven close of \(spaceId); cascading \(windowsBySpaceId.count) sibling(s) via Chromium")
+                // In a fullscreen tab group AppKit promotes a sibling to key
+                // synchronously with the closing window's teardown, BEFORE
+                // this willClose runs, so no key guard can suppress that
+                // event: the adoption has already overwritten
+                // `activeSpaceId`, the persisted last-active Space, and the
+                // snapshot entry's active Space. Undo all three — but ONLY
+                // when the change actually came from a key adoption. A
+                // deliberate `activate` before closing the group leaves the
+                // same `activeSpaceId != spaceId` state (the fullscreen
+                // cascade can start on a background tab AppKit still reports
+                // as selected), and that switch is the user's real intent —
+                // it must survive the close.
+                if activeSpaceId != spaceId, activeSpaceAdoptedFromKeyEvent {
+                    activeSpaceAdoptedFromKeyEvent = false
+                    activeSpaceId = spaceId
+                    manager?.persistActiveSpaceId(spaceId)
+                    manager?.amendPersistedSnapshotActiveSpaceId(
+                        windowId: controller.windowId, to: spaceId)
+                }
                 isCascadingSlotClose = true
                 cascadeCloseRemainingWindows()
                 scheduleCascadeVetoRecovery()
@@ -6431,6 +6489,7 @@ final class SpaceWindowSlot: ObservableObject {
         }
         let previousSpaceId = activeSpaceId
         let previous = visibleController
+        activeSpaceAdoptedFromKeyEvent = true
 
         // External (non-`activate`) trigger — Chromium routing a navigation
         // into a sibling Space's window via the URL rule throttle made that

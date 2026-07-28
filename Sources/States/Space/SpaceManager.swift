@@ -689,7 +689,17 @@ final class SpaceManager: ObservableObject {
         // why a mid-session re-arm must not arm it.
         loadRestoreSnapshot(armReattachDeadline: false)
         isSessionRestoreInFlight = true
-        bridge.restorePreviousSession { [weak self] restoredAnyWindow in
+        // Name the last-active Space's profile so Chromium replays it first:
+        // its window is the one revealed the moment its own snapshot lands
+        // (`frontRestoredWindowOnSnapshotApplied`), so it must not queue
+        // behind sibling profiles' synchronous replays. Order only — every
+        // profile still restores immediately; nil (unknown Space/profile)
+        // keeps the stored order.
+        let preferredProfileId = persistedActiveSpaceId
+            .flatMap { boundProfileId(forSpaceId: $0) }
+        bridge.restorePreviousSession(
+            withPreferredProfile: preferredProfileId
+        ) { [weak self] restoredAnyWindow in
             DispatchQueue.main.async {
                 guard let self else { return }
                 // Every profile has been attempted, so the CommitPendingCloses
@@ -5630,6 +5640,29 @@ final class SpaceWindowSlot: ObservableObject {
             guard let window = controller.window else { continue }
             revealConcealedWindow(window)
         }
+    }
+
+    /// Fronts the restore's target window the moment its own content is fully
+    /// applied, instead of after the whole multi-profile burst settles. Called
+    /// by `PhiChromiumCoordinator` right after a restored window's snapshot
+    /// transaction lands. Only the app-level last-active Space's window
+    /// qualifies — the exact window the settle reconcile would front anyway —
+    /// so this merely moves that reveal earlier: siblings stay concealed until
+    /// the reconcile, which still runs unchanged afterwards (idempotent
+    /// re-front, sibling sweep, fullscreen re-entry). Gated to the restore
+    /// burst via `restoreVisibilityReconcileScheduled`, whose becomeKey
+    /// suppression also keeps this early key change out of the active-Space
+    /// bookkeeping; a genuine mid-restore user switch flips `activeSpaceId`
+    /// away and disarms this. An apply landing after the burst window (the
+    /// flag self-clears on the reconcile's final pass) simply falls back to
+    /// the settle reveal — later, never wrong.
+    func frontRestoredWindowOnSnapshotApplied(_ controller: MainBrowserWindowController) {
+        guard restoreVisibilityReconcileScheduled,
+              controller.spaceId == activeSpaceId,
+              controller.spaceId == manager?.persistedActiveSpaceId,
+              windowsBySpaceId[controller.spaceId] === controller,
+              let window = controller.window else { return }
+        makeKeyAndOrderFrontHidingSlotTabBar(window)
     }
 
     /// Re-asserts this slot's one-visible-window invariant after Chromium

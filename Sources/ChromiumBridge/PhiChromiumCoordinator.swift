@@ -782,6 +782,15 @@ extension PhiChromiumCoordinator: PhiChromiumBridgeDelegate {
             return
         }
         browserState.handleRestoredWindowSnapshot(payload)
+        // This window's restored content is fully formed now. If it is the
+        // restore's front target (the last-active Space's window), reveal it
+        // immediately instead of leaving it to the settle reconcile after
+        // every profile has replayed; the slot re-checks eligibility and the
+        // reconcile still runs unchanged afterwards.
+        if let controller = MainBrowserWindowControllersManager.shared
+            .controller(for: windowId.intValue) {
+            controller.slot?.frontRestoredWindowOnSnapshotApplied(controller)
+        }
     }
 
     /// Decodes the snapshot's buffered split events into the same actions

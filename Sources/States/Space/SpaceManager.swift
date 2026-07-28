@@ -6335,13 +6335,16 @@ final class SpaceWindowSlot: ObservableObject {
         }
     }
 
-    /// Grace period after arming a window-driven cascade before it is treated
-    /// as vetoed. Each `IDC_CLOSE_WINDOW` roundtrip (Chromium close → browser
-    /// teardown → `windowWillClose` → `unregisterWindow`) is well under 100ms,
-    /// so a genuine cascade — even of several siblings — empties the slot far
-    /// inside this window; anything still standing at the deadline was blocked
-    /// by a `beforeunload` prompt the user cancelled. Matches the
-    /// `tabDrivenCloseTTL` reasoning for the tab-level version of this veto.
+    /// Poll interval for a window-driven cascade's veto check. Each
+    /// `IDC_CLOSE_WINDOW` roundtrip (Chromium close → browser teardown →
+    /// `windowWillClose` → `unregisterWindow`) is well under 100ms, so a
+    /// genuine cascade — even of several siblings — empties the slot far
+    /// inside one interval; the value matches the `tabDrivenCloseTTL` sizing
+    /// of that roundtrip. A deadline alone proves nothing about the windows
+    /// still standing, though: a `beforeunload` prompt stays up for as long
+    /// as the user cares to read it, so each deadline polls their close
+    /// state through the bridge instead of assuming a veto (see
+    /// `scheduleCascadeVetoRecovery`).
     private static let cascadeVetoRecoveryDelay: TimeInterval = 2.0
 
     /// Recovers a slot whose window-driven teardown was vetoed. The cascade
@@ -6354,11 +6357,43 @@ final class SpaceWindowSlot: ObservableObject {
     /// with `visibleController` nil the slot vanishes from
     /// `currentSpaceWindowMap` — its Spaces become unroutable and drop out of
     /// the "Open Link In Space" menu. If the cascade hasn't emptied the slot by
-    /// the deadline, treat it as vetoed and re-adopt a surviving window.
+    /// the deadline, poll every survivor's close state over the bridge: only
+    /// when all of them report `.notAttempting` (alive with the beforeunload
+    /// flag cleared — the user kept that window) is the cascade vetoed and a
+    /// survivor re-adopted. Any `.attemptingClose` (prompt up, or unwinding
+    /// after "leave") or `.gone` (mid-teardown; it drops from the map on its
+    /// own) re-arms the timer — with no cap, because the only unbounded state
+    /// is a prompt nobody has answered yet, and a recovery fired mid-gesture
+    /// is exactly the false veto this poll exists to prevent: it reports the
+    /// group close settled while siblings are still deciding, committing the
+    /// already-closed windows as plain closes.
     private func scheduleCascadeVetoRecovery() {
         DispatchQueue.main.asyncAfter(deadline: .now() + Self.cascadeVetoRecoveryDelay) { [weak self] in
             guard let self, self.isCascadingSlotClose,
                   !self.windowsBySpaceId.isEmpty else { return }
+            var attempting = 0
+            var gone = 0
+            var kept = 0
+            if let bridge = ChromiumLauncher.sharedInstance().bridge {
+                for controller in self.windowsBySpaceId.values {
+                    switch bridge.windowCloseState(forWindowId: Int64(controller.windowId)) {
+                    case .attemptingClose: attempting += 1
+                    case .gone: gone += 1
+                    case .notAttempting: kept += 1
+                    @unknown default: attempting += 1
+                    }
+                }
+            } else {
+                // No bridge to interrogate — read as not-yet-terminal. Waiting
+                // is always safe; recovering on a guess is the bug this poll
+                // exists to prevent.
+                attempting = self.windowsBySpaceId.count
+            }
+            guard attempting == 0, gone == 0 else {
+                AppLogInfo("[SpaceWindowSlot] cascade close still in flight; re-polling (survivors=\(self.windowsBySpaceId.count) attempting=\(attempting) gone=\(gone) kept=\(kept))")
+                self.scheduleCascadeVetoRecovery()
+                return
+            }
             self.recoverFromVetoedCascade()
         }
     }

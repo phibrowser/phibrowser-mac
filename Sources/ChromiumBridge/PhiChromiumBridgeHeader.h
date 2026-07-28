@@ -74,6 +74,19 @@ typedef NS_ENUM(NSUInteger, PhiOmniboxSuggestionDisposition) {
     PhiOmniboxSuggestionDispositionSwitchToTab
 };
 
+/// Where a window is in Browser's two-phase close model (browser.h), as
+/// reported by `windowCloseStateForWindowId:`.
+typedef NS_ENUM(NSInteger, PhiWindowCloseState) {
+    /// No resolvable browser (mid-teardown or delete-scheduled) — the window
+    /// will drop from the Mac window map on its own.
+    PhiWindowCloseStateGone = 0,
+    /// The beforeunload phase is in flight: a prompt is up, or the close is
+    /// unwinding after the user chose to leave.
+    PhiWindowCloseStateAttemptingClose = 1,
+    /// Alive with the attempting flag cleared — the user kept this window.
+    PhiWindowCloseStateNotAttempting = 2,
+};
+
 @protocol PhiChromiumBridgeDelegate <NSObject>
 @property (nonatomic, copy, readonly, nullable) void (^extensionChangedCallback)(NSArray<NSDictionary *> *list, int64_t windowId);
 - (NSView * _Nullable)getWebContentSuperView;
@@ -296,11 +309,12 @@ typedef NS_ENUM(NSUInteger, PhiOmniboxSuggestionDisposition) {
                     url:(NSString *)urlString
          sourceWindowId:(int64_t)sourceWindowId;
 
-/// A Space URL rule routed a navigation that started from a new tab page to a
-/// DIFFERENT Space, so the URL is opening elsewhere. The Mac client should reset
-/// `windowId`'s active new-tab page back to a clean state because the source
-/// navigation was cancelled before it could complete. A no-op if that window's
-/// active tab is not a new tab page.
+/// A Space URL rule routed a navigation that started from a new tab / native NTP
+/// to a DIFFERENT Space, so the URL is opening elsewhere. The Mac client should
+/// reset `windowId`'s active new-tab page back to a clean state: submitting the
+/// URL from the NTP omnibox hid the NTP's native controls in anticipation of a
+/// page load that never happens here, leaving a blank tab. A no-op if that
+/// window's active tab is not a new tab / NTP.
 - (void)refreshNewTabInWindow:(int64_t)windowId;
 
 // ==========================================================================
@@ -342,7 +356,11 @@ typedef NS_ENUM(NSUInteger, PhiOmniboxSuggestionDisposition) {
 @optional
 // Per-window extension action badge state (text/colors/visibility/enabled).
 // Keys: windowId, extensionId, tabId, badgeText, backgroundColor, textColor,
-// visible, enabled.
+// visible (false only for a page action hidden on this tab — remove from
+// layout), enabled (false => a click falls back to the context menu),
+// grayscale (true => render the icon grayed out, keep it laid out).
+// Semantics mirror Chrome's ExtensionActionViewModel: grayscale only when the
+// action is disabled AND the extension cannot interact with the page.
 - (void)badgeInfoChanged:(NSDictionary *)info;
 // Per-window dynamic extension action icon. Keys: windowId, extensionId, tabId,
 // iconData (PNG NSData, empty => no dynamic icon), dipSize, scale.
@@ -847,6 +865,13 @@ typedef NS_ENUM(NSUInteger, PhiOmniboxSuggestionDisposition) {
 /// group gets committed a window at a time and only its last Space survives a
 /// restore.
 - (void)windowGroupCloseDidSettle;
+
+/// Read-only probe for the window-group close cascade: reports where a
+/// window is in Browser's two-phase close (browser.h). The Mac client polls
+/// this at each veto-recovery deadline and treats a cascade as vetoed only
+/// when every surviving window reports NotAttempting; see
+/// `windowGroupCloseDidSettle` for the settle contract this protects.
+- (PhiWindowCloseState)windowCloseStateForWindowId:(int64_t)windowId;
 
 // Favicon service
 - (void)getFaviconForURL:(NSString *)urlString completion:(void (^)(NSData * _Nullable faviconData))completion;

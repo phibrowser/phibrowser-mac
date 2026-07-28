@@ -2504,11 +2504,18 @@ final class SpaceManager: ObservableObject {
     /// them through `receive(on: .main)` sinks, which a session replay
     /// holding the main thread defers past first paint — the restored
     /// window visibly repaints from the default theme to the Space's one.
-    /// Same guard semantics as above: untouched when nothing is persisted
-    /// (shared mirroring / fixed incognito theme stay as configured). The
-    /// register-time apply still runs afterwards and is an idempotent
+    /// Untouched when nothing is persisted (shared mirroring stays as
+    /// configured). Incognito windows are skipped outright: a standalone
+    /// incognito window is created with the persisted *normal* Space id, so
+    /// the customization guard alone would let that Space's theme override
+    /// the fixed incognito theme — and, being excluded from registerWindow,
+    /// the window would never be corrected afterwards. (Incognito-Space
+    /// windows are skipped too; their synthetic Space never carries
+    /// customization, so nothing changes for them.) For normal windows
+    /// the register-time apply still runs afterwards and is an idempotent
     /// re-assert.
     func seedPersistedTheme(into browserState: BrowserState, spaceId: String) {
+        guard !browserState.isIncognito else { return }
         guard hasThemeCustomization(forSpaceId: spaceId) else { return }
         MainActor.assumeIsolated {
             let context = browserState.themeContext

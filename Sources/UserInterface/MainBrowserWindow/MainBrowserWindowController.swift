@@ -79,8 +79,9 @@ class MainBrowserWindowController: NSWindowController {
         // hierarchy is built, and its corrective update is deferred behind a
         // busy main queue during session restore — the restored window's
         // first paint would show the default theme and repaint later. No-op
-        // for Spaces without persisted customization (incognito's fixed
-        // theme and shared mirroring stay as configured).
+        // for Spaces without persisted customization (shared mirroring stays
+        // as configured) and for incognito windows, whose fixed incognito
+        // theme must survive the real Space id they are created with.
         SpaceManager.shared.seedPersistedTheme(into: state, spaceId: spaceId)
         self.mainSplitViewController = MainSplitViewController(state: state)
         super.init(window: window)

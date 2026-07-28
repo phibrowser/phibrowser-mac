@@ -965,10 +965,13 @@ typedef NS_ENUM(NSUInteger, PhiOmniboxSuggestionDisposition) {
 /// same wire id mainBrowserWindowCreated reports) names the profile whose
 /// session replays first — pass the active Space's profile so its window's
 /// content is ready earliest; pass nil to keep the stored order. Every profile
-/// is still restored immediately either way. `completion` runs once, after all
-/// profiles are attempted, with YES iff at least one window will appear, so
-/// the caller can fall back to opening a plain window on NO. Gate this on
-/// isRestorePreviousSessionEnabled. Main thread only.
+/// is still restored immediately either way. `completion` runs once, after
+/// every profile's restore has settled (a started replay settles when its
+/// browsers and tabs have been created; a skipped or refused profile settles
+/// immediately), so no more restored windows can appear after it runs. YES
+/// iff at least one window will appear; the caller can fall back to opening a
+/// plain window on NO, which settles as promptly as before since nothing
+/// replayed. Gate this on isRestorePreviousSessionEnabled. Main thread only.
 - (void)restorePreviousSessionWithPreferredProfile:(NSString * _Nullable)preferredProfileId
                                         completion:(void (^)(BOOL restoredAnyWindow))completion;
 

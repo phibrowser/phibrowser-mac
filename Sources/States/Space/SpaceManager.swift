@@ -461,10 +461,13 @@ final class SpaceManager: ObservableObject {
     private static let restoreReattachGracePeriod: TimeInterval = 60
 
     /// True from the moment a windowless session restore is requested until
-    /// Chromium reports every profile has been attempted (see
-    /// `beginWindowlessSessionRestore`). Gates the plain-window fallback and
-    /// defers windowless new-window commands so they cannot race the restore's
-    /// per-profile session commit. Read by `AppController`.
+    /// Chromium reports every profile's restore has settled — a started replay
+    /// settles once its windows and tabs exist, a skipped or refused profile
+    /// settles immediately (see `beginWindowlessSessionRestore`). Gates the
+    /// plain-window fallback, absorbs repeat Dock reopens, and defers
+    /// windowless new-window commands, so none of them can race the restore —
+    /// neither its per-profile session commit nor the replay itself. Read by
+    /// `AppController`.
     private(set) var isSessionRestoreInFlight = false
 
     /// One queued "reopen these tabs after the profile change lands" intent
@@ -675,9 +678,9 @@ final class SpaceManager: ObservableObject {
 
     /// Re-arms the persisted slot snapshot and asks Chromium to restore every
     /// last-active profile's session, mirroring a cold start. Marks a restore
-    /// in flight until Chromium reports every profile has been attempted; if
-    /// nothing was restorable it falls back to a plain window. Returns true
-    /// (handled).
+    /// in flight until Chromium reports every profile's restore has settled
+    /// (windows and tabs created, or skipped/refused); if nothing was
+    /// restorable it falls back to a plain window. Returns true (handled).
     @discardableResult
     private func beginWindowlessSessionRestore() -> Bool {
         guard let bridge = ChromiumLauncher.sharedInstance().bridge else {
@@ -702,14 +705,23 @@ final class SpaceManager: ObservableObject {
         ) { [weak self] restoredAnyWindow in
             DispatchQueue.main.async {
                 guard let self else { return }
-                // Every profile has been attempted, so the CommitPendingCloses
-                // race the flag guards against is over — clear it here rather
-                // than on window arrival. A restored window can come back
-                // without a claimable id (an emptied session's
-                // ALWAYS_CREATE_TABBED_BROWSER fallback) and would never reach
-                // the claim path, so clearing on arrival could wedge the flag
-                // on. This completion is guaranteed to run (the Chromium barrier
-                // always fires), so the flag can never get stuck.
+                // Every profile's restore has settled: started replays have
+                // finished creating their windows and tabs, skipped or refused
+                // profiles settled immediately. Both races the flag guards
+                // against are over — the session-commit race, and the old
+                // attempted-to-settled gap in which a second Dock click
+                // re-began a restore that could only be refused (every profile
+                // still mid-replay), reported restoredAny=false, and spawned a
+                // stray plain window, while a windowless Cmd+N slipped past
+                // `AppController`'s drop gate into the same replay.
+                // Still clear here rather than on window arrival: a restored
+                // window can come back without a claimable id (an emptied
+                // session's ALWAYS_CREATE_TABBED_BROWSER fallback) and would
+                // never reach the claim path, so clearing on arrival could
+                // wedge the flag on. This completion is guaranteed to run
+                // (every per-profile terminal — settled, skipped, refused, or
+                // failed — signals the Chromium barrier), so the flag can
+                // never get stuck.
                 self.isSessionRestoreInFlight = false
                 if !restoredAnyWindow {
                     // Nothing restorable: open a plain window.

@@ -503,6 +503,12 @@ final class SpaceManager: ObservableObject {
             name: .mainAccountChanged,
             object: nil
         )
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(handleScreenParametersChanged),
+            name: NSApplication.didChangeScreenParametersNotification,
+            object: nil
+        )
         // Always bind eagerly so the persisted last-active Space is primed
         // before the very first Chromium window arrives. In login flows
         // where the real account isn't set yet, `defaultAccount` provides a
@@ -2675,6 +2681,23 @@ final class SpaceManager: ObservableObject {
         }
     }
 
+    /// Displays were added, removed, or re-configured. A slot parks its windows
+    /// wherever the user dragged the group, and nothing else re-checks that
+    /// placement against the screens: AppKit's own repair runs through
+    /// `constrainFrameRect:toScreen:`, which Phi's `BrowserNativeWidgetWindow`
+    /// overrides so the client's deliberate off-screen placement survives being
+    /// ordered in. That trade is only safe if the client notices when a layout
+    /// change turns its placement into one the user cannot undo.
+    ///
+    /// Fires for far more than resolution changes (Dock and menu-bar geometry,
+    /// display sleep/wake), which is fine — every slot whose placement is still
+    /// usable is a no-op.
+    @objc private func handleScreenParametersChanged() {
+        for slot in slots {
+            slot.revalidatePlacementForScreenChange()
+        }
+    }
+
     private func bind(to account: Account) {
         guard boundAccount !== account else { return }
         boundAccount = account
@@ -3490,24 +3513,6 @@ final class SpaceWindowSlot: ObservableObject {
     /// has ever had a positioned window.
     private var lastKnownFrame: NSRect?
 
-    /// Post-swap frame pin. When a switch/spawn surfaces a window, Chromium
-    /// asynchronously re-applies that window's stale *creation* bounds a few
-    /// hundred ms later, clobbering the position the swap set — the user-visible
-    /// "jump back to where the window was before I moved it". The user's drag
-    /// updates the live NSWindow frame (and our `lastKnownFrame`) but never
-    /// reaches whatever stored bounds Chromium re-applies on re-show, so a
-    /// one-shot re-assert at surface time is simply too early to win.
-    ///
-    /// While armed, the frame observer holds the surfaced window at this frame:
-    /// a programmatic reposition (Chromium's stale re-apply — no mouse button
-    /// held) is reverted and the pin then releases, having served its purpose;
-    /// a user drag (mouse held) instead moves the pin *with* the user and keeps
-    /// it armed, so a re-apply that lands mid/post-drag still snaps back to the
-    /// user's chosen spot. This is event-driven rather than time-bounded: it
-    /// waits for the actual re-apply however late it lands, and never fights a
-    /// deliberate drag. Nil when disarmed.
-    private var pinnedFrame: NSRect?
-
     /// True for the duration of a `performHorizontalWindowSlide`. Read by
     /// the `observeFrameChanges` propagation closure to early-return — the
     /// previous window's animated `didMove` would otherwise overwrite the
@@ -3705,17 +3710,6 @@ final class SpaceWindowSlot: ObservableObject {
                 // already torn down.
                 if let inheritedFrame, let targetWindow = target.window {
                     targetWindow.setFrame(inheritedFrame, display: false)
-                    // Hold this position against Chromium's late re-apply of the
-                    // window's stale creation bounds after it surfaces. A one-shot
-                    // re-assert is too early; the pin reverts that re-apply
-                    // whenever it lands. See `pinnedFrame`. Not armed in
-                    // fullscreen: the inherited frame is the screen-sized rect
-                    // there, no didMove fires in fullscreen to consume the pin,
-                    // and a stale pin would then "revert" AppKit's windowed-frame
-                    // restore on fullscreen exit, leaving the window screen-sized.
-                    if !slotHasFullScreenWindow {
-                        pinnedFrame = inheritedFrame
-                    }
                 }
                 // Align the target's sidebar shape to the previously visible
                 // Space *before* it surfaces so the user reads a single
@@ -5256,12 +5250,6 @@ final class SpaceWindowSlot: ObservableObject {
     /// come in through `reconcileFullScreenWithWindowState`.
     func windowFullScreenStateChanged(isFullScreen: Bool) {
         self.isFullScreen = isFullScreen
-        // A Space switch's frame pin must not survive a fullscreen transition:
-        // armed inside fullscreen it holds the screen-sized rect, no didMove
-        // ever fires in fullscreen to consume it, and AppKit's programmatic
-        // frame restore on exit looks exactly like the "stale re-apply" the
-        // pin exists to revert — snapping the window back to full-screen size.
-        pinnedFrame = nil
         for controller in windowsBySpaceId.values {
             guard let window = controller.window else { continue }
             if isFullScreen {
@@ -6430,6 +6418,16 @@ final class SpaceWindowSlot: ObservableObject {
         // still carries the closed window's flag. Re-derive it from the
         // survivors before the snapshot below records it.
         reconcileFullScreenWithWindowState()
+        // The frame observer refused every frame change while the cascade was
+        // armed, so the slot's shared frame can be stale by now — a fullscreen
+        // exit that landed mid-cascade is the concrete case. Re-seed it from the
+        // window the user is actually left looking at. Skipped while the slot is
+        // still fullscreen (the reconcile above has just refreshed that): the
+        // survivor's frame is the screen rect there, and recording it would
+        // discard the windowed frame every later switch and spawn inherits.
+        if !slotHasFullScreenWindow {
+            _ = resolveInheritedFrame(from: survivor.value)
+        }
         manager?.persistActiveSpaceId(survivor.key)
         manager?.persistSlotsSnapshot()
         manager?.notifySlotBecameKey(self)
@@ -6830,25 +6828,14 @@ final class SpaceWindowSlot: ObservableObject {
             // paths produce real pixels.
             if isExternalSwitch, let previous, let previousSpaceId {
                 // Chromium surfaced the target window itself for the URL-rule
-                // route, so the clicked path's swap-time frame pin never ran —
-                // yet Chromium still re-applies the target's stale creation
-                // bounds a few hundred ms after it surfaces, the same late
-                // clobber `activate` defends against. Without the pin that
-                // re-apply lands as a visible jump and, worse, the frame
-                // observer records the jumped-back bounds as `lastKnownFrame`
-                // and propagates them to every sibling. Hold the target at the
-                // leaving window's frame (still alive here, so authoritative)
-                // and arm the pin so the re-apply is reverted. Mirrors
-                // `activate`'s swap path; safe with both animation styles
-                // below. See `pinnedFrame`.
+                // route, so `activate`'s swap-time frame inheritance never ran.
+                // Do it here instead, from the leaving window (still alive, so
+                // authoritative), or the target surfaces at whatever position it
+                // was last left at. Mirrors `activate`'s swap path; safe with
+                // both animation styles below.
                 if let inheritedFrame = resolveInheritedFrame(from: previous),
                    let targetWindow = controller.window {
                     targetWindow.setFrame(inheritedFrame, display: false)
-                    // Not armed in fullscreen — same reasoning as the matching
-                    // guard in `activate`'s swap path.
-                    if !slotHasFullScreenWindow {
-                        pinnedFrame = inheritedFrame
-                    }
                 }
                 let direction = swapDirection(
                     previousSpaceId: previousSpaceId,
@@ -6913,26 +6900,77 @@ final class SpaceWindowSlot: ObservableObject {
                   let visible = self.visibleController,
                   visible.window === window else { return }
             let frame = window.frame
-            // Post-swap pin: hold the just-surfaced window where the switch put
-            // it until Chromium's late re-apply of the window's stale creation
-            // bounds has been countered. A reposition with no mouse button held
-            // is that programmatic re-apply — revert it and release the pin. A
-            // reposition the user is driving (mouse held) moves the pin with
-            // them and keeps it armed. See `pinnedFrame`.
-            if let pinned = self.pinnedFrame {
-                if NSEvent.pressedMouseButtons == 0 {
-                    if !frame.equalTo(pinned) {
-                        window.setFrame(pinned, display: false)
-                        self.pinnedFrame = nil
-                    }
-                    return
-                }
-                self.pinnedFrame = frame
+            // Every frame change that reaches here is adopted as the slot's
+            // position — including programmatic ones. This slot used to keep a
+            // post-swap "pin" that reverted repositions no mouse button was
+            // driving, because AppKit rewrote a just-ordered-in window's frame
+            // into the screen's `visibleFrame` and the slot legitimately parks
+            // its windows partly off-screen. That rewrite is now refused at the
+            // source (Phi's `BrowserNativeWidgetWindow` overrides
+            // `constrainFrameRect:toScreen:`), which left the pin with nothing
+            // to consume it and therefore permanently armed after every switch —
+            // at which point it only undid legitimate repositioning: Window >
+            // Zoom, keyboard tiling, and AppKit re-homing a window off a display
+            // the user just unplugged. "No mouse button held" was never a sound
+            // proxy for "not the user" either; it also matches the didMove
+            // AppKit posts right after a drag's mouse-up.
+            // A frame change landing while the slot is cascading its windows
+            // shut is teardown churn, not placement: Chromium is surfacing
+            // whichever sibling still has a `beforeunload` prompt to answer.
+            // Refuse it as the slot's authoritative frame — that value seeds
+            // every later switch and spawn, so letting one in here outlives the
+            // gesture (measured before this guard: a cascade rewrote
+            // `lastKnownFrame` from the user's position to the screen work area,
+            // and the surviving window kept it after "Cancel").
+            //
+            // Deliberately not qualified by `pressedMouseButtons`: that reads
+            // any button anywhere, not "this window is being dragged", so it
+            // would only open a hole for a reposition landing while the user
+            // happens to be holding the mouse down. Nor is it safe to assume the
+            // user cannot move the window meanwhile — a `beforeunload` prompt is
+            // app-modal in Chromium's dialog queue, but its view is
+            // `ModalType::kWindow`, i.e. a sheet, and a sheet does not stop the
+            // parent being dragged. What makes refusing safe is the recovery
+            // path, not the assumption: a vetoed cascade re-seeds this from the
+            // survivor's live frame (`recoverFromVetoedCascade`), and a cascade
+            // that runs to completion takes the slot with it.
+            //
+            // Known cost, accepted: with several dirty Spaces the user can drag
+            // the window while the FIRST prompt is up, answer "Leave" to it, and
+            // then "Cancel" a later sibling's prompt. That drag is refused here
+            // and the dragged window is gone before the recovery runs, so the
+            // slot settles on the survivor's older position instead. Every way
+            // of keeping the drag re-opens the hole this guard closes —
+            // propagating to siblings mid-cascade carries a clobbered frame the
+            // same way, and `pressedMouseButtons` is the unreliable proxy that
+            // was removed from here for good reason. Losing one drag on that
+            // path is the cheaper failure.
+            if self.isCascadingSlotClose {
+                return
             }
             // The visible window is the slot's authoritative position now;
             // record it so a later spawn/switch inherits the user's drag even
             // if the source window is gone by then.
             self.lastKnownFrame = frame
+            // Never push a fullscreen rect onto the siblings. A sibling that has
+            // been ordered out is a plain windowed NSWindow, and a screen-sized
+            // rect puts its title bar above the menu bar — AppKit used to shove
+            // that back down on order-in, but Phi's
+            // `constrainFrameRect:toScreen:` override deliberately hands such a
+            // frame back untouched now, so an unreachable sibling would stay
+            // unreachable. The slot's own frame still follows fullscreen above:
+            // the in-fullscreen swap path inherits it.
+            //
+            // Keyed on the frame rather than on the window's `.fullScreen`
+            // styleMask, so that re-aligning the siblings on the way out of
+            // fullscreen does not hinge on when AppKit flips that mask — a point
+            // this code cannot observe (`windowFullScreenStateChanged` runs off
+            // the WILL hooks, which by design fire before the flip). The
+            // didResize that lands while leaving fullscreen already carries the
+            // windowed rect, so it propagates whatever the mask says.
+            if NSScreen.screens.contains(where: { $0.frame.equalTo(frame) }) {
+                return
+            }
             for (_, sibling) in self.windowsBySpaceId where sibling !== visible {
                 sibling.window?.setFrame(frame, display: false)
             }
@@ -6950,6 +6988,61 @@ final class SpaceWindowSlot: ObservableObject {
             using: { _ in propagate() }
         )
         visibleFrameObservers = [move, resize]
+    }
+
+    /// The frame `frame` has to be corrected to for the current screen layout,
+    /// or nil when it is still usable as-is.
+    ///
+    /// Deliberately far weaker than AppKit's own constraint, which pulls a frame
+    /// fully inside `visibleFrame`: a window the user dragged halfway off an
+    /// edge is exactly where they put it and must stay there. Only the states
+    /// the user cannot get out of are repaired — a window too large for every
+    /// screen, or one whose title bar sits above every screen's work area, with
+    /// nothing left on screen to grab.
+    private static func screenRepairedFrame(for frame: NSRect) -> NSRect? {
+        let screens = NSScreen.screens
+        guard !screens.isEmpty else { return nil }
+        // A frame that exactly covers a display is a fullscreen frame; macOS
+        // resizes those itself across a layout change. Checked on the frame
+        // rather than the styleMask for the same reason the sibling propagation
+        // is — the mask flips at a point in the transition this code cannot
+        // observe.
+        guard !screens.contains(where: { $0.frame.equalTo(frame) }) else { return nil }
+        // The screen this window belongs to: whichever it covers most.
+        let host = screens.max {
+            let lhs = NSIntersectionRect(frame, $0.frame)
+            let rhs = NSIntersectionRect(frame, $1.frame)
+            return lhs.width * lhs.height < rhs.width * rhs.height
+        } ?? screens[0]
+        let workArea = host.visibleFrame
+        var repaired = frame
+        repaired.size.width = min(repaired.width, workArea.width)
+        repaired.size.height = min(repaired.height, workArea.height)
+        if repaired.maxY > workArea.maxY {
+            repaired.origin.y = workArea.maxY - repaired.height
+        }
+        if !NSIntersectsRect(repaired, workArea) {
+            repaired.origin.x = workArea.minX
+            repaired.origin.y = workArea.maxY - repaired.height
+        }
+        return repaired.equalTo(frame) ? nil : repaired
+    }
+
+    /// Re-checks this slot's placement after a screen-layout change and pulls
+    /// the windows back when the new layout left them unreachable. Only the
+    /// visible window is moved; the frame observer mirrors the correction onto
+    /// the siblings and records it, exactly as it does for a user drag.
+    ///
+    /// Skipped in fullscreen (the frame is legitimately the whole screen there)
+    /// and mid-cascade (the slot is tearing down, and the observer refuses
+    /// frame changes for the duration anyway).
+    fileprivate func revalidatePlacementForScreenChange() {
+        guard !isCascadingSlotClose, !slotHasFullScreenWindow,
+              let visibleWindow = visibleController?.window,
+              let repaired = Self.screenRepairedFrame(for: visibleWindow.frame)
+        else { return }
+        AppLogInfo("[SpaceWindowSlot] screen layout changed; repairing unreachable slot frame \(visibleWindow.frame) -> \(repaired)")
+        visibleWindow.setFrame(repaired, display: true)
     }
 
     /// The frame a window surfaced in this slot should adopt so every Space

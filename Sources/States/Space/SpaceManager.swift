@@ -5550,12 +5550,14 @@ final class SpaceWindowSlot: ObservableObject {
     /// leftover swap overlay". No-op while a swap animates (the push-in draws on
     /// the still-front leaving window, and its overlay is legitimately live) or
     /// in a shared fullscreen Space (ordering a tab out flashes a blank
-    /// workspace). A miniaturized active window still gets its surfaced siblings
-    /// hidden, but is not brought back on screen. Keyed on `activeSpaceId` — the
-    /// slot's source of truth — not `visibleController`, which rapid switching
-    /// can leave transiently stale.
+    /// workspace), or while a window-driven cascade drains the slot (nothing to
+    /// re-assert, and the display adoption keeps `activeSpaceId` on a live window,
+    /// so the bail below no longer covers it). A miniaturized active window still
+    /// gets its surfaced siblings hidden, but is not brought back on screen.
+    /// Keyed on `activeSpaceId` — the slot's source of truth — not
+    /// `visibleController`, which rapid switching can leave transiently stale.
     private func enforceSlotSingleWindowInvariant() {
-        guard !isSwitchAnimationInFlight, !slotHasFullScreenWindow else { return }
+        guard !isSwitchAnimationInFlight, !slotHasFullScreenWindow, !isCascadingSlotClose else { return }
         guard let activeId = activeSpaceId,
               let activeController = windowsBySpaceId[activeId],
               let activeWindow = activeController.window else { return }
@@ -5729,6 +5731,11 @@ final class SpaceWindowSlot: ObservableObject {
     }
 
     private func reconcileRestoreVisibility() {
+        // Nothing to re-assert while a window-driven cascade drains the slot; the
+        // display adoption keeps `activeSpaceId` on a live window, so the bail
+        // below no longer covers it. `revealAllConcealedWindows` runs outside
+        // this pass, so no sibling stays concealed.
+        guard !isCascadingSlotClose else { return }
         // `activeSpaceId` names the Space that belongs on screen (it tracks the
         // restored windows' key events; a genuine mid-restore user switch also
         // lands here, and showing that Space while hiding the rest stays
@@ -6291,6 +6298,12 @@ final class SpaceWindowSlot: ObservableObject {
                 isCascadingSlotClose = true
                 cascadeCloseRemainingWindows()
                 scheduleCascadeVetoRecovery()
+                // In fullscreen a sibling can already hold key (the promotion the
+                // undo above exists for), and AppKit posts no further key event
+                // for a window that is already key — so follow it from here.
+                if let keyed = windowsBySpaceId.first(where: { $0.value.window?.isKeyWindow == true }) {
+                    adoptSpaceForDisplayDuringCascade(keyed.key)
+                }
             }
         }
         if windowsBySpaceId.isEmpty {
@@ -6427,6 +6440,35 @@ final class SpaceWindowSlot: ObservableObject {
         // window on screen; collapse the rest behind the adopted one over the
         // standard sweep ladder.
         scheduleNonTargetSlotWindowSweep()
+    }
+
+    /// Lets the slot's DISPLAY follow the window on screen during a window-driven
+    /// cascade, without touching the persisted state that
+    /// `handleWindowDidBecomeKey`'s cascade guard protects.
+    ///
+    /// That guard drops mid-cascade key changes as teardown churn — but
+    /// `IDC_CLOSE_WINDOW` honors `beforeunload`, so a background Space's prompt
+    /// keeps its window on screen for as long as the user takes to answer, while
+    /// `activeSpaceId` stays frozen on the Space whose window already closed
+    /// (measured: 6.3s of wrong icon, since `recoverFromVetoedCascade` unfreezes
+    /// it only after the answer).
+    ///
+    /// Writes the display-facing pair only. Persistence must keep the closing
+    /// group's own active Space (see the undo in `unregisterWindow`) so a "Leave"
+    /// still reopens on it; `recoverFromVetoedCascade` persists the settled state.
+    private func adoptSpaceForDisplayDuringCascade(_ spaceId: String) {
+        // `isVisible` is not enough: `concealRestoredSiblingWindow` hides restore
+        // siblings by zeroing alpha only, and Chromium keys them as their tabs
+        // load — a cascade can arm inside that burst. Every other off-screen path
+        // orders the window out, which `isVisible` already catches.
+        guard isCascadingSlotClose,
+              let controller = windowsBySpaceId[spaceId],
+              let window = controller.window,
+              window.isVisible, window.alphaValue > 0 else { return }
+        if activeSpaceId == spaceId, visibleController === controller { return }
+        AppLogInfo("[SpaceWindowSlot] cascade close in flight; following on-screen Space \(spaceId) for display")
+        activeSpaceId = spaceId
+        visibleController = controller
     }
 
     /// Removes the controller registered for `spaceId` from this slot
@@ -6635,7 +6677,12 @@ final class SpaceWindowSlot: ObservableObject {
         // and rewrite the restore snapshot, so the next reopen surfaces the
         // wrong Space instead of the one that was on screen when the window was
         // closed. The whole slot is going away; there is nothing to adopt.
-        if isCascadingSlotClose { return }
+        if isCascadingSlotClose {
+            // Not adopted as a switch, but the display should still follow
+            // whatever window is on screen now.
+            adoptSpaceForDisplayDuringCascade(spaceId)
+            return
+        }
         // Ignore key changes while session restore is still surfacing this
         // slot's windows. On restore a slot owns several Chromium windows (one
         // per Space ever surfaced) and Chromium `makeKeyAndOrderFront`s every

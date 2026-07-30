@@ -393,7 +393,20 @@ extension PhiChromiumCoordinator: PhiChromiumBridgeDelegate {
     }
 
     func mainBrowserWindowCreated(_ window: NSWindow, type browserType: ChromiumBrowserType, profileId: String, windowId: Int64, restoredFromWindowId: Int64) {
-        AppLogInfo("🌐 [Chromium] mainBrowserWindowCreated called - windowId: \(windowId), restoredFrom: \(restoredFromWindowId), type: \(browserType.rawValue)")
+        // Legacy entry point kept for framework/client version skew: a Phi
+        // Framework built before `restoredSpaceId` was added calls this
+        // selector. Nil means "not a tab-restore re-creation", so the
+        // restored-Space branch below never fires on this path.
+        mainBrowserWindowCreated(window,
+                                 type: browserType,
+                                 profileId: profileId,
+                                 windowId: windowId,
+                                 restoredFromWindowId: restoredFromWindowId,
+                                 restoredSpaceId: nil)
+    }
+
+    func mainBrowserWindowCreated(_ window: NSWindow, type browserType: ChromiumBrowserType, profileId: String, windowId: Int64, restoredFromWindowId: Int64, restoredSpaceId: String?) {
+        AppLogInfo("🌐 [Chromium] mainBrowserWindowCreated called - windowId: \(windowId), restoredFrom: \(restoredFromWindowId), restoredSpace: \(restoredSpaceId ?? "nil"), type: \(browserType.rawValue)")
 
 
         guard browserType == .normal || browserType == .incognito
@@ -454,6 +467,21 @@ extension PhiChromiumCoordinator: PhiChromiumBridgeDelegate {
                 resolvedSlot = claim.slot
                 spaceId = SpaceManager.shared.spaceId(boundTo: profileId,
                                                       preferring: claim.spaceId)
+            } else if let restoredSpace = SpaceManager.shared.restoredSpaceTarget(
+                restoredSpaceId, profileId: profileId) {
+                // Tab-restore path ("Reopen Closed Window"): the restore entry
+                // carried the Space its window belonged to, so honor it instead
+                // of inheriting the active Space. Ranked above the
+                // session-restore claim below because a Space stamped into the
+                // entry is exact, where that claim's zero-id branch only
+                // profile-matches a snapshot.
+                //
+                // A NEW slot, not the key slot: joining the key slot would
+                // register this window as a non-active sibling Space and hide
+                // it, so the reopen would look like nothing happened. Its own
+                // slot opens on the restored Space and is visible.
+                spaceId = restoredSpace
+                resolvedSlot = SpaceManager.shared.createSlot(initialSpaceId: spaceId)
             } else if let restored = SpaceManager.shared.claimRestoredWindow(
                 forRestoredFromWindowId: Int(restoredFromWindowId),
                 profileId: profileId) {

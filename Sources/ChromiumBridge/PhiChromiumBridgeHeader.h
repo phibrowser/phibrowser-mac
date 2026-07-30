@@ -392,6 +392,23 @@ typedef NS_ENUM(NSInteger, PhiWindowCloseState) {
                        profileId:(NSString *)profileId
                         windowId:(int64_t)windowId
             restoredFromWindowId:(int64_t)restoredFromWindowId;
+/// Space-aware variant of the above — preferred by the bridge when implemented.
+/// `restoredSpaceId` is non-nil only when the tab-restore stack (Cmd+Shift+T,
+/// "Reopen Closed Window") re-created this window, and then names the Space it
+/// belonged to when it closed.
+///
+/// It is NOT interchangeable with `restoredFromWindowId`: that one is a window
+/// id the client matches against its own snapshot, whereas tab restore keeps no
+/// usable window id at all (a restored entry's tab `browser_id` is 0 and its
+/// `original_id` is another entry's id), so the Space identity itself travels
+/// inside the restore entry. The two are mutually exclusive — session restore
+/// reports the window id, tab restore reports the Space.
+- (void)mainBrowserWindowCreated:(NSWindow *)window
+                            type:(ChromiumBrowserType)browserType
+                       profileId:(NSString *)profileId
+                        windowId:(int64_t)windowId
+            restoredFromWindowId:(int64_t)restoredFromWindowId
+                 restoredSpaceId:(NSString * _Nullable)restoredSpaceId;
 // Relationship snapshot version increases monotonically per window.
 - (void)tabRelationshipSnapshotChanged:(NSDictionary *)snapshot
                              windowId:(int64_t)windowId
@@ -560,6 +577,21 @@ typedef NS_ENUM(NSInteger, PhiWindowCloseState) {
 /// targetSpaceId is not in the map are treated as no-match.
 - (void)setSpaceRoutingTable:(NSArray<NSDictionary<NSString *, id> *> *)rules
               spaceWindowMap:(NSDictionary<NSString *, NSNumber *> *)spaceWindowMap;
+
+/// Tell Chromium which Space a window is presented as.
+///
+/// Chromium needs its own copy because the tab-restore stack ("recently closed")
+/// is recorded inside Chromium's close handshake, synchronously in
+/// `Browser::OnWindowClosing()` — before AppKit delivers `windowWillClose`. It
+/// must therefore already hold the Space to stamp into the restore entry; the
+/// Mac client cannot supply it after the fact. The `spaceWindowMap` above cannot
+/// serve: it carries one entry per slot's VISIBLE window, so a Space whose
+/// window is hidden behind a sibling is absent from it.
+///
+/// Call once per window as it registers with its slot — a window's Space never
+/// changes. Pass an empty `spaceId` to forget a window early; Chromium
+/// otherwise drops the entry when the window's Browser is destroyed.
+- (void)setWindowSpace:(NSString *)spaceId forWindowId:(int64_t)windowId;
 
 /// Push the Space list shown in the web-content right-click "Open Link In
 /// Space" submenu. Replaces the whole list atomically; send on every change to

@@ -948,6 +948,44 @@ final class SpaceManager: ObservableObject {
         return resolved
     }
 
+    /// The Space a tab-restored window ("Reopen Closed Window") should come
+    /// back on, or nil when the Space Chromium reported is unusable and the
+    /// caller should fall back to its normal placement.
+    ///
+    /// `restoredSpaceId` is stamped into the restore entry when the window
+    /// closes and travels with it, so unlike the session-restore snapshot it
+    /// stays valid across a relaunch. It can still go stale: the Space may have
+    /// been deleted since, or — for an Incognito Space — reaped along with its
+    /// last window. Agent Spaces are excluded for the same reason automatic
+    /// switches skip them.
+    ///
+    /// The result is re-bound to `profileId` so the window is never presented
+    /// as a Space belonging to another profile (which would surface that
+    /// profile's pinned tabs), matching every other resolution path.
+    func restoredSpaceTarget(_ restoredSpaceId: String?, profileId: String) -> String? {
+        guard let restoredSpaceId, !restoredSpaceId.isEmpty else { return nil }
+        // Same cold-launch caveat as `spaceId(boundTo:preferring:)`: the first
+        // windows of a launch arrive before the `spaces` publisher delivers.
+        var known = spaces
+        if known.isEmpty, let account = boundAccount {
+            known = MainActor.assumeIsolated {
+                account.localStorage.getAllSpaces()
+            }
+        }
+        guard let model = known.first(where: { $0.spaceId == restoredSpaceId }),
+              isAutomaticSwitchTarget(model) else { return nil }
+        // Validate what we are about to RETURN, not just what was asked for:
+        // `spaceId(boundTo:)` re-resolves to another Space of `profileId` when
+        // the stamped one no longer belongs to it (the user changed the Space's
+        // profile after the window closed), and that replacement is picked in
+        // strip order — it could land on an Agent Space, which no automatic
+        // placement may use. Decline instead, and let the caller fall back.
+        let resolved = spaceId(boundTo: profileId, preferring: model.spaceId)
+        guard let resolvedModel = known.first(where: { $0.spaceId == resolved }),
+              isAutomaticSwitchTarget(resolvedModel) else { return nil }
+        return resolved
+    }
+
     /// Set once app termination begins (see `markTerminating`). Quit tears the
     /// slots down window-by-window, and every teardown step that reaches
     /// `persistSlotsSnapshot` would otherwise rewrite the snapshot with the
@@ -5885,6 +5923,14 @@ final class SpaceWindowSlot: ObservableObject {
             pendingCloseOnReplacementBySpaceId[spaceId] = existing
         }
         windowsBySpaceId[spaceId] = controller
+        // Chromium records its "recently closed" stack inside its own close
+        // handshake, before AppKit reports the close, so it needs this pairing
+        // up front to stamp the Space into the restore entry — that is what
+        // lets a reopened window return to this Space instead of whichever one
+        // is active. A window's Space never changes, so publishing once here is
+        // enough; Chromium drops the entry with the window's Browser.
+        ChromiumLauncher.sharedInstance().bridge?.setWindowSpace(
+            spaceId, forWindowId: Int64(controller.windowId))
         manager?.hasEverHostedSlotWindow = true
         // The spawn for this Space has landed — clear the in-flight gate.
         pendingSpawnSpaceIds.remove(spaceId)

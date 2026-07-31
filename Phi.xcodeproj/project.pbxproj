@@ -7,6 +7,10 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		5B0000010000000000000001 /* ServiceBrokerTypes.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5B0000010000000000000011 /* ServiceBrokerTypes.swift */; };
+		5B0000010000000000000002 /* ServiceBrokerSocketPath.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5B0000010000000000000012 /* ServiceBrokerSocketPath.swift */; };
+		5B0000010000000000000003 /* ServiceBrokerClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5B0000010000000000000013 /* ServiceBrokerClient.swift */; };
+		5B0000010000000000000004 /* ServiceBrokerHTTPConnection.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5B0000010000000000000014 /* ServiceBrokerHTTPConnection.swift */; };
 		04FE4637EFE3A1396687DD63 /* AISettingsConnectorViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = D8FCAEAE328C802016D87943 /* AISettingsConnectorViewModel.swift */; };
 		15B618E574463D94C98AEA5F /* AISettingHostingViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1B584F695BF7833FAA99558 /* AISettingHostingViewController.swift */; };
 		2ABF91DB68C2445BAA58C9BA /* GroupTabsTableView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 457F461C0F164136A46FF641 /* GroupTabsTableView.swift */; };
@@ -657,6 +661,10 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		5B0000010000000000000011 /* ServiceBrokerTypes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ServiceBrokerTypes.swift; sourceTree = "<group>"; };
+		5B0000010000000000000012 /* ServiceBrokerSocketPath.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ServiceBrokerSocketPath.swift; sourceTree = "<group>"; };
+		5B0000010000000000000013 /* ServiceBrokerClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ServiceBrokerClient.swift; sourceTree = "<group>"; };
+		5B0000010000000000000014 /* ServiceBrokerHTTPConnection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ServiceBrokerHTTPConnection.swift; sourceTree = "<group>"; };
 		11E8BEE1510290AB35D5C5AD /* SentinelBackupCoordination.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SentinelBackupCoordination.swift; sourceTree = "<group>"; };
 		19B477B37CF44BC48335A032 /* AccountDeletedEventAuthentication.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccountDeletedEventAuthentication.swift; sourceTree = "<group>"; };
 		3703C88B2F68F78500E7CF6D /* AISettingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AISettingView.swift; sourceTree = "<group>"; };
@@ -1257,6 +1265,17 @@
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
+		5B0000010000000000000020 /* ServiceBroker */ = {
+			isa = PBXGroup;
+			children = (
+				5B0000010000000000000011 /* ServiceBrokerTypes.swift */,
+				5B0000010000000000000012 /* ServiceBrokerSocketPath.swift */,
+				5B0000010000000000000013 /* ServiceBrokerClient.swift */,
+				5B0000010000000000000014 /* ServiceBrokerHTTPConnection.swift */,
+			);
+			path = ServiceBroker;
+			sourceTree = "<group>";
+		};
 		370D03AB2F0E463B0087A1C9 /* Theme */ = {
 			isa = PBXGroup;
 			children = (
@@ -1378,6 +1397,7 @@
 			isa = PBXGroup;
 			children = (
 				376CE40F2F2897D30093D937 /* Models */,
+				5B0000010000000000000020 /* ServiceBroker */,
 				376CE4102F2897D30093D937 /* APIClient.swift */,
 				8EB020143020000000000014 /* OblivionDataExportAPI.swift */,
 				8EB01BE23010BCED0043E59D /* OblivionDeletionAPI.swift */,
@@ -3377,6 +3397,10 @@
 				EAD000000000000000000028 /* ReaderImageInliner.swift in Sources */,
 				FBD200012FD0000000000003 /* FeedbackV2.swift in Sources */,
 				AE00FFFE0000000000000002 /* PhiAgentEndpointResolver.swift in Sources */,
+				5B0000010000000000000001 /* ServiceBrokerTypes.swift in Sources */,
+				5B0000010000000000000002 /* ServiceBrokerSocketPath.swift in Sources */,
+				5B0000010000000000000003 /* ServiceBrokerClient.swift in Sources */,
+				5B0000010000000000000004 /* ServiceBrokerHTTPConnection.swift in Sources */,
 				CC6335F72E4B29E000A176DA /* Logging.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;

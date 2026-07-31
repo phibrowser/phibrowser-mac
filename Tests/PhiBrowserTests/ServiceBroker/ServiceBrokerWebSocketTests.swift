@@ -28,6 +28,10 @@ final class ServiceBrokerWebSocketTests: XCTestCase {
             BrokerWebSocketFrame(kind: .text, data: Data("hello".utf8)),
             BrokerWebSocketFrame(kind: .binary, data: Data([0, 1, 2]))
         ])
+        let echoedClose = await server.waitForCloseEcho()
+        XCTAssertEqual(echoedClose.opcode, 0x8)
+        XCTAssertTrue(echoedClose.masked)
+        XCTAssertEqual(echoedClose.payload, Data([0x03, 0xE8]) + Data("done".utf8))
     }
 
     func testWebSocketReassemblesContinuationAndAnswersPing() async throws {
@@ -70,14 +74,123 @@ final class ServiceBrokerWebSocketTests: XCTestCase {
             XCTAssertEqual(error, .protocolError)
         }
     }
+
+    func testWebSocketRejectsHandshakeWithBadStatus() async {
+        await assertInvalidHandshake(.badStatus)
+    }
+
+    func testWebSocketRejectsHandshakeWithBadUpgrade() async {
+        await assertInvalidHandshake(.badUpgrade)
+    }
+
+    func testWebSocketRejectsHandshakeWithBadConnection() async {
+        await assertInvalidHandshake(.badConnection)
+    }
+
+    func testWebSocketRejectsHandshakeWithBadAccept() async {
+        await assertInvalidHandshake(.badAccept)
+    }
+
+    func testWebSocketRejectsUnexpectedContinuation() async throws {
+        try await assertProtocolError(.unexpectedContinuation)
+    }
+
+    func testWebSocketRejectsDataFrameDuringFragmentation() async throws {
+        try await assertProtocolError(.dataDuringFragmentation)
+    }
+
+    func testWebSocketRejectsFragmentedControlFrame() async throws {
+        try await assertProtocolError(.fragmentedControl)
+    }
+
+    func testWebSocketRejectsOversizedControlFrame() async throws {
+        try await assertProtocolError(.oversizedControl)
+    }
+
+    func testWebSocketRejectsInvalidTextUTF8() async throws {
+        try await assertProtocolError(.invalidTextUTF8)
+    }
+
+    func testWebSocketRejectsInvalidCloseReasonUTF8() async throws {
+        try await assertProtocolError(.invalidCloseUTF8)
+    }
+
+    func testWebSocketRejectsInvalidCloseCode() async throws {
+        try await assertProtocolError(.invalidCloseCode)
+    }
+
+    func testWebSocketRejectsFragmentedAggregateOverflow() async throws {
+        try await assertProtocolError(.fragmentedAggregateOverflow, maximumMessageBytes: 4)
+    }
+
+    func testInvalidLocalCloseStillClosesDescriptor() async throws {
+        let eof = expectation(description: "server observes client descriptor close")
+        let server = UnixWebSocketTestServer(script: .waitForClientEOF, onClientEOF: { eof.fulfill() })
+        let socket = ServiceBrokerWebSocket(socketPath: server.socketPath, maximumMessageBytes: 1_024)
+        try await socket.connect(path: "/ws/phi-agent/execute", headers: [:])
+
+        await socket.close(code: nil, reason: "reason without code")
+
+        await fulfillment(of: [eof], timeout: 1)
+    }
+
+    private func assertInvalidHandshake(
+        _ script: UnixWebSocketTestServer.Script,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) async {
+        let server = UnixWebSocketTestServer(script: script)
+        let socket = ServiceBrokerWebSocket(socketPath: server.socketPath, maximumMessageBytes: 1_024)
+        do {
+            try await socket.connect(path: "/ws/phi-agent/execute", headers: [:])
+            XCTFail("Expected invalid handshake.", file: file, line: line)
+        } catch let error as ServiceBrokerWebSocketError {
+            XCTAssertEqual(error, .invalidResponse, file: file, line: line)
+        } catch {
+            XCTFail("Expected invalidResponse, got \(error).", file: file, line: line)
+        }
+    }
+
+    private func assertProtocolError(
+        _ script: UnixWebSocketTestServer.Script,
+        maximumMessageBytes: Int = 1_024,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) async throws {
+        let server = UnixWebSocketTestServer(script: script)
+        let socket = ServiceBrokerWebSocket(
+            socketPath: server.socketPath,
+            maximumMessageBytes: maximumMessageBytes
+        )
+        try await socket.connect(path: "/ws/phi-agent/execute", headers: [:])
+        do {
+            _ = try await socket.receive()
+            XCTFail("Expected a protocol error.", file: file, line: line)
+        } catch let error as ServiceBrokerWebSocketError {
+            XCTAssertEqual(error, .protocolError, file: file, line: line)
+        }
+    }
 }
 
 private final class UnixWebSocketTestServer: @unchecked Sendable {
-    enum Script {
+    enum Script: Equatable {
         case roundTrip
         case continuationAndPing
         case maskedServerFrame
         case oversizedServerFrame
+        case badStatus
+        case badUpgrade
+        case badConnection
+        case badAccept
+        case unexpectedContinuation
+        case dataDuringFragmentation
+        case fragmentedControl
+        case oversizedControl
+        case invalidTextUTF8
+        case invalidCloseUTF8
+        case invalidCloseCode
+        case fragmentedAggregateOverflow
+        case waitForClientEOF
     }
 
     let socketPath: String
@@ -88,10 +201,14 @@ private final class UnixWebSocketTestServer: @unchecked Sendable {
     private var capturedRequest = Data()
     private var frames = [BrokerWebSocketFrame]()
     private var pong: Data?
+    private var closeEcho: (opcode: UInt8, masked: Bool, payload: Data)?
+    private var closeEchoWaiters = [CheckedContinuation<(opcode: UInt8, masked: Bool, payload: Data), Never>]()
+    private let onClientEOF: @Sendable () -> Void
 
-    init(script: Script = .roundTrip) {
+    init(script: Script = .roundTrip, onClientEOF: @escaping @Sendable () -> Void = {}) {
         socketPath = "/tmp/phi-broker-ws-\(UUID().uuidString).sock"
         self.script = script
+        self.onClientEOF = onClientEOF
         listener = socket(AF_UNIX, SOCK_STREAM, 0)
         precondition(listener >= 0)
 
@@ -148,6 +265,19 @@ private final class UnixWebSocketTestServer: @unchecked Sendable {
         return pong
     }
 
+    func waitForCloseEcho() async -> (opcode: UInt8, masked: Bool, payload: Data) {
+        await withCheckedContinuation { continuation in
+            lock.lock()
+            if let closeEcho {
+                lock.unlock()
+                continuation.resume(returning: closeEcho)
+            } else {
+                closeEchoWaiters.append(continuation)
+                lock.unlock()
+            }
+        }
+    }
+
     private var requestData: Data {
         lock.lock()
         defer { lock.unlock() }
@@ -170,11 +300,15 @@ private final class UnixWebSocketTestServer: @unchecked Sendable {
         guard let key = requestHeaders["sec-websocket-key"] else { return }
         let digest = Insecure.SHA1.hash(data: Data((key + "258EAFA5-E914-47DA-95CA-C5AB0DC85B11").utf8))
         let accept = Data(digest).base64EncodedString()
+        let status = script == .badStatus ? "HTTP/1.1 200 OK" : "HTTP/1.1 101 Switching Protocols"
+        let upgrade = script == .badUpgrade ? "not-websocket" : "websocket"
+        let connectionHeader = script == .badConnection ? "keep-alive" : "Upgrade"
+        let acceptHeader = script == .badAccept ? "wrong" : accept
         writeAll(Data((
-            "HTTP/1.1 101 Switching Protocols\r\n" +
-            "Upgrade: websocket\r\n" +
-            "Connection: Upgrade\r\n" +
-            "Sec-WebSocket-Accept: \(accept)\r\n\r\n"
+            "\(status)\r\n" +
+            "Upgrade: \(upgrade)\r\n" +
+            "Connection: \(connectionHeader)\r\n" +
+            "Sec-WebSocket-Accept: \(acceptHeader)\r\n\r\n"
         ).utf8), to: connection)
 
         switch script {
@@ -188,7 +322,7 @@ private final class UnixWebSocketTestServer: @unchecked Sendable {
             var closePayload = Data([0x03, 0xE8])
             closePayload.append(Data("done".utf8))
             writeServerFrame(opcode: 0x8, payload: closePayload, to: connection)
-            _ = readRawFrame(connection)
+            if let echo = readRawFrame(connection) { recordCloseEcho(echo) }
         case .continuationAndPing:
             writeServerFrame(opcode: 0x9, payload: Data("ping".utf8), to: connection)
             writeServerFrame(final: false, opcode: 0x1, payload: Data("hel".utf8), to: connection)
@@ -205,7 +339,47 @@ private final class UnixWebSocketTestServer: @unchecked Sendable {
         case .oversizedServerFrame:
             writeServerFrame(opcode: 0x2, payload: Data([0, 1, 2, 3, 4]), to: connection)
             _ = readRawFrame(connection)
+        case .badStatus, .badUpgrade, .badConnection, .badAccept:
+            return
+        case .unexpectedContinuation:
+            writeServerFrame(opcode: 0x0, payload: Data("bad".utf8), to: connection)
+            _ = readRawFrame(connection)
+        case .dataDuringFragmentation:
+            writeServerFrame(final: false, opcode: 0x1, payload: Data("a".utf8), to: connection)
+            writeServerFrame(opcode: 0x2, payload: Data("b".utf8), to: connection)
+            _ = readRawFrame(connection)
+        case .fragmentedControl:
+            writeServerFrame(final: false, opcode: 0x9, payload: Data("bad".utf8), to: connection)
+            _ = readRawFrame(connection)
+        case .oversizedControl:
+            writeServerFrame(opcode: 0x9, payload: Data(repeating: 0, count: 126), to: connection)
+            _ = readRawFrame(connection)
+        case .invalidTextUTF8:
+            writeServerFrame(opcode: 0x1, payload: Data([0xC3, 0x28]), to: connection)
+            _ = readRawFrame(connection)
+        case .invalidCloseUTF8:
+            writeServerFrame(opcode: 0x8, payload: Data([0x03, 0xE8, 0xC3, 0x28]), to: connection)
+            _ = readRawFrame(connection)
+        case .invalidCloseCode:
+            writeServerFrame(opcode: 0x8, payload: Data([0x03, 0xED]), to: connection)
+            _ = readRawFrame(connection)
+        case .fragmentedAggregateOverflow:
+            writeServerFrame(final: false, opcode: 0x2, payload: Data([0, 1, 2]), to: connection)
+            writeServerFrame(opcode: 0x0, payload: Data([3, 4]), to: connection)
+            _ = readRawFrame(connection)
+        case .waitForClientEOF:
+            var byte: UInt8 = 0
+            if Darwin.read(connection, &byte, 1) == 0 { onClientEOF() }
         }
+    }
+
+    private func recordCloseEcho(_ frame: (opcode: UInt8, masked: Bool, payload: Data)) {
+        lock.lock()
+        closeEcho = frame
+        let waiters = closeEchoWaiters
+        closeEchoWaiters.removeAll()
+        lock.unlock()
+        waiters.forEach { $0.resume(returning: frame) }
     }
 
     private func readThroughHeaders(_ descriptor: Int32) -> Data {
@@ -253,8 +427,15 @@ private final class UnixWebSocketTestServer: @unchecked Sendable {
         payload: Data,
         to descriptor: Int32
     ) {
-        precondition(payload.count < 126)
-        var frame = Data([(final ? 0x80 : 0) | opcode, (masked ? 0x80 : 0) | UInt8(payload.count)])
+        var frame = Data([(final ? 0x80 : 0) | opcode])
+        if payload.count < 126 {
+            frame.append((masked ? 0x80 : 0) | UInt8(payload.count))
+        } else {
+            precondition(payload.count <= Int(UInt16.max))
+            frame.append((masked ? 0x80 : 0) | 126)
+            frame.append(UInt8(payload.count >> 8))
+            frame.append(UInt8(payload.count & 0xFF))
+        }
         if masked {
             let mask: [UInt8] = [1, 2, 3, 4]
             frame.append(contentsOf: mask)

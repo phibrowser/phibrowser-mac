@@ -141,12 +141,12 @@ final class ServiceBrokerWebSocket: @unchecked Sendable {
 
     func close(code: UInt16?, reason: String?) async {
         _ = try? await Self.runBlocking { [self] in
+            defer { closeDescriptor() }
             let payload = try closePayload(code: code, reason: reason)
             if isConnected && !isCloseSent {
                 try sendFrame(opcode: 0x8, payload: payload)
                 markCloseSent()
             }
-            closeDescriptor()
         }
     }
 

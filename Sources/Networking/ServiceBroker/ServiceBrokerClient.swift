@@ -41,7 +41,8 @@ final class ServiceBrokerClient: Sendable {
 
         var body = Data()
         while let chunk = try await stream.read(maxBytes: 64 * 1024) {
-            guard body.count <= nonStreamingResponseBytes - chunk.count else {
+            guard chunk.count <= nonStreamingResponseBytes,
+                  body.count <= nonStreamingResponseBytes - chunk.count else {
                 throw ServiceBrokerHTTPError.responseTooLarge
             }
             body.append(chunk)
@@ -56,7 +57,7 @@ final class ServiceBrokerClient: Sendable {
     func openStream(_ request: BrokerHTTPRequest) async throws -> BrokerHTTPStream {
         let connection = ServiceBrokerHTTPConnection(
             socketPath: socketPath,
-            bodyLimit: nonStreamingResponseBytes
+            bodyLimit: nil
         )
         return try await connection.execute(request)
     }

@@ -10,13 +10,13 @@ final class ServiceBrokerHTTPConnection: @unchecked Sendable {
     private static let maximumHeaderBytes = 64 * 1024
 
     private let socketPath: String
-    private let bodyLimit: Int
+    private let bodyLimit: Int?
     private let stateLock = NSLock()
     private var fileDescriptor: Int32 = -1
     private var buffered = Data()
     private var closed = false
 
-    init(socketPath: String, bodyLimit: Int = 16 * 1024 * 1024) {
+    init(socketPath: String, bodyLimit: Int? = nil) {
         self.socketPath = socketPath
         self.bodyLimit = bodyLimit
     }
@@ -280,7 +280,7 @@ final class BrokerHTTPStream: @unchecked Sendable {
     let response: BrokerHTTPResponseHead
 
     private let connection: ServiceBrokerHTTPConnection
-    private let bodyLimit: Int
+    private let bodyLimit: Int?
     private let lock = NSLock()
     private var framing: BrokerHTTPBodyFraming
     private var bytesRead = 0
@@ -292,7 +292,7 @@ final class BrokerHTTPStream: @unchecked Sendable {
         response: BrokerHTTPResponseHead,
         framing: BrokerHTTPBodyFraming,
         connection: ServiceBrokerHTTPConnection,
-        bodyLimit: Int
+        bodyLimit: Int?
     ) {
         self.response = response
         self.framing = framing
@@ -376,7 +376,7 @@ final class BrokerHTTPStream: @unchecked Sendable {
                 completed = true
                 return nil
             }
-            guard bytesRead <= bodyLimit - size else {
+            if let bodyLimit, (size > bodyLimit || bytesRead > bodyLimit - size) {
                 throw ServiceBrokerHTTPError.responseTooLarge
             }
             chunkBytesRemaining = size
@@ -413,7 +413,7 @@ final class BrokerHTTPStream: @unchecked Sendable {
     }
 
     private func record(_ data: Data) throws {
-        guard bytesRead <= bodyLimit - data.count else {
+        if let bodyLimit, (data.count > bodyLimit || bytesRead > bodyLimit - data.count) {
             throw ServiceBrokerHTTPError.responseTooLarge
         }
         bytesRead += data.count

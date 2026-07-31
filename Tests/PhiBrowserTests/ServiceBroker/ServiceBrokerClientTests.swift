@@ -123,6 +123,31 @@ final class ServiceBrokerClientTests: XCTestCase {
         XCTAssertEqual(secondChunk, Data("lo".utf8))
         XCTAssertNil(end)
     }
+
+    func testOpenStreamMayConsumeBeyondNonStreamingResponseLimit() async throws {
+        let server = UnixHTTPTestServer(response:
+            "HTTP/1.1 200 OK\r\nContent-Length: 8\r\n\r\n12345678")
+        let client = ServiceBrokerClient(socketPath: server.socketPath, nonStreamingResponseBytes: 4)
+        let stream = try await client.openStream(BrokerHTTPRequest(service: .phiAgent, path: "/stream"))
+        defer { stream.cancel() }
+
+        let first = try await stream.read(maxBytes: 4)
+        let second = try await stream.read(maxBytes: 4)
+        let end = try await stream.read(maxBytes: 4)
+        XCTAssertEqual(first, Data("1234".utf8))
+        XCTAssertEqual(second, Data("5678".utf8))
+        XCTAssertNil(end)
+    }
+
+    func testNonStreamingRequestStillEnforcesAggregateResponseLimit() async {
+        let server = UnixHTTPTestServer(response:
+            "HTTP/1.1 200 OK\r\nContent-Length: 8\r\n\r\n12345678")
+        let client = ServiceBrokerClient(socketPath: server.socketPath, nonStreamingResponseBytes: 4)
+
+        await assertBrokerHTTPError(.responseTooLarge) {
+            _ = try await client.request(BrokerHTTPRequest(service: .phiAgent, path: "/request"))
+        }
+    }
 }
 
 private func assertBrokerHTTPError(

@@ -10,6 +10,8 @@ actor ServiceBrokerChannelStore {
 
     typealias HTTPStreamOpener = @Sendable (BrokerHTTPRequest) async throws -> BrokerHTTPStreamSource
     typealias WebSocketOpener = @Sendable (String, [String: String]) async throws -> BrokerWebSocketSource
+    typealias PendingPullObserver = @Sendable (String) -> Void
+    typealias PullTimeoutSleeper = @Sendable (Duration) async throws -> Void
 
     private struct PendingHTTPPull {
         let token: UUID
@@ -56,6 +58,9 @@ actor ServiceBrokerChannelStore {
     private let configuration: ServiceBrokerChannelConfiguration
     private let httpStreamOpener: HTTPStreamOpener
     private let webSocketOpener: WebSocketOpener
+    private let pendingPullObserver: PendingPullObserver
+    private let pullTimeoutSleeper: PullTimeoutSleeper
+    private let idleTimeoutSleeper: PullTimeoutSleeper
     private var channels = [String: Channel]()
 
     init(
@@ -71,6 +76,9 @@ actor ServiceBrokerChannelStore {
         )
         let client = ServiceBrokerClient(socketPath: socketPath, limits: limits)
         self.configuration = configuration
+        pendingPullObserver = { _ in }
+        pullTimeoutSleeper = { duration in try await Task.sleep(for: duration) }
+        idleTimeoutSleeper = { duration in try await Task.sleep(for: duration) }
         httpStreamOpener = { request in
             let stream = try await client.openStream(request)
             return BrokerHTTPStreamSource(
@@ -92,11 +100,21 @@ actor ServiceBrokerChannelStore {
     init(
         configuration: ServiceBrokerChannelConfiguration,
         httpStreamOpener: @escaping HTTPStreamOpener,
-        webSocketOpener: @escaping WebSocketOpener
+        webSocketOpener: @escaping WebSocketOpener,
+        pendingPullObserver: @escaping PendingPullObserver = { _ in },
+        pullTimeoutSleeper: @escaping PullTimeoutSleeper = { duration in
+            try await Task.sleep(for: duration)
+        },
+        idleTimeoutSleeper: @escaping PullTimeoutSleeper = { duration in
+            try await Task.sleep(for: duration)
+        }
     ) {
         self.configuration = configuration
         self.httpStreamOpener = httpStreamOpener
         self.webSocketOpener = webSocketOpener
+        self.pendingPullObserver = pendingPullObserver
+        self.pullTimeoutSleeper = pullTimeoutSleeper
+        self.idleTimeoutSleeper = idleTimeoutSleeper
     }
 
     func openHTTPStream(
@@ -153,8 +171,9 @@ actor ServiceBrokerChannelStore {
         return await withCheckedContinuation { continuation in
             let token = UUID()
             let timeout = configuration.pullTimeout
+            let sleeper = pullTimeoutSleeper
             let timeoutTask = Task { [weak self] in
-                try? await Task.sleep(for: timeout)
+                try? await sleeper(timeout)
                 guard !Task.isCancelled else { return }
                 await self?.timeoutHTTPPull(channelID: channelID, token: token)
             }
@@ -164,6 +183,7 @@ actor ServiceBrokerChannelStore {
                 timeoutTask: timeoutTask
             )
             channels[channelID] = .http(channel)
+            pendingPullObserver(channelID)
         }
     }
 
@@ -243,8 +263,9 @@ actor ServiceBrokerChannelStore {
         return await withCheckedContinuation { continuation in
             let token = UUID()
             let timeout = configuration.pullTimeout
+            let sleeper = pullTimeoutSleeper
             let timeoutTask = Task { [weak self] in
-                try? await Task.sleep(for: timeout)
+                try? await sleeper(timeout)
                 guard !Task.isCancelled else { return }
                 await self?.timeoutWebSocketPull(channelID: channelID, token: token)
             }
@@ -254,6 +275,7 @@ actor ServiceBrokerChannelStore {
                 timeoutTask: timeoutTask
             )
             channels[channelID] = .webSocket(channel)
+            pendingPullObserver(channelID)
         }
     }
 
@@ -264,19 +286,24 @@ actor ServiceBrokerChannelStore {
         reason: String?
     ) async {
         guard let channel = channels[channelID] else { return }
+        let isOwned: Bool
         switch channel {
-        case .http(let http) where http.owner == owner:
+        case .http(let http):
+            isOwned = http.owner == owner
+        case .webSocket(let webSocket):
+            isOwned = webSocket.owner == owner
+        }
+        guard isOwned, let detachedChannel = removeChannel(channelID) else { return }
+
+        switch detachedChannel {
+        case .http(let http):
             http.source.cancel()
             http.pendingPull?.continuation.resume(returning: BrokerStreamPullResponse(event: .end))
-            removeChannel(channelID)
-        case .webSocket(let webSocket) where webSocket.owner == owner:
-            await webSocket.source.close(code: code, reason: reason)
+        case .webSocket(let webSocket):
             webSocket.pendingPull?.continuation.resume(returning: BrokerWebSocketPullResponse(
                 event: .close(code: code, reason: reason)
             ))
-            removeChannel(channelID)
-        default:
-            return
+            await webSocket.source.close(code: code, reason: reason)
         }
     }
 
@@ -471,8 +498,9 @@ actor ServiceBrokerChannelStore {
         let generation = channel.activityGeneration
         channel.idleTask?.cancel()
         let timeout = configuration.idleTimeout
+        let sleeper = idleTimeoutSleeper
         channel.idleTask = Task { [weak self] in
-            try? await Task.sleep(for: timeout)
+            try? await sleeper(timeout)
             guard !Task.isCancelled else { return }
             await self?.expireHTTP(channelID: channelID, generation: generation)
         }
@@ -485,8 +513,9 @@ actor ServiceBrokerChannelStore {
         let generation = channel.activityGeneration
         channel.idleTask?.cancel()
         let timeout = configuration.idleTimeout
+        let sleeper = idleTimeoutSleeper
         channel.idleTask = Task { [weak self] in
-            try? await Task.sleep(for: timeout)
+            try? await sleeper(timeout)
             guard !Task.isCancelled else { return }
             await self?.expireWebSocket(channelID: channelID, generation: generation)
         }
@@ -525,8 +554,9 @@ actor ServiceBrokerChannelStore {
         return channel
     }
 
-    private func removeChannel(_ channelID: String) {
-        guard let channel = channels.removeValue(forKey: channelID) else { return }
+    @discardableResult
+    private func removeChannel(_ channelID: String) -> Channel? {
+        guard let channel = channels.removeValue(forKey: channelID) else { return nil }
         switch channel {
         case .http(let channel):
             channel.readTask?.cancel()
@@ -537,6 +567,7 @@ actor ServiceBrokerChannelStore {
             channel.idleTask?.cancel()
             channel.pendingPull?.timeoutTask.cancel()
         }
+        return channel
     }
 
     private func validateConfiguration() throws {

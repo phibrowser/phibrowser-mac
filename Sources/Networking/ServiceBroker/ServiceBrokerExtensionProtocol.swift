@@ -32,6 +32,7 @@ actor ServiceBrokerExtensionProtocol {
     typealias RequestExecutor = @Sendable (BrokerHTTPRequest) async throws -> BrokerHTTPResponse
 
     private struct Runtime: Sendable {
+        let accountID: String?
         let socketPath: String?
         let limits: ServiceBrokerLimits
         let channelStore: ServiceBrokerChannelStore
@@ -103,35 +104,37 @@ actor ServiceBrokerExtensionProtocol {
     private static let maximumEnvelopeMetadataBytes = 64 * 1024
 
     private let injectedRuntime: Runtime?
-    private let socketPathProvider: @Sendable () throws -> String
-    private let accessTokenProvider: () -> String?
+    private let socketPathProvider: @Sendable (String) throws -> String
+    private let authSnapshotProvider: @Sendable () -> SharedAuthTokenSnapshot?
     private var productionRuntime: Runtime?
 
     private init() {
         injectedRuntime = nil
         socketPathProvider = Self.currentSocketPath
-        accessTokenProvider = { SharedAuthTokenStore.shared.read()?.accessToken }
+        authSnapshotProvider = { SharedAuthTokenStore.shared.authenticatedSnapshot() }
     }
 
     init(
         limits: ServiceBrokerLimits,
         channelStore: ServiceBrokerChannelStore,
+        runtimeAccountID: String? = nil,
         requestExecutor: @escaping RequestExecutor,
-        accessTokenProvider: @escaping () -> String? = {
-            SharedAuthTokenStore.shared.read()?.accessToken
+        authSnapshotProvider: @escaping @Sendable () -> SharedAuthTokenSnapshot? = {
+            SharedAuthTokenStore.shared.authenticatedSnapshot()
         }
     ) {
         injectedRuntime = Runtime(
+            accountID: runtimeAccountID,
             socketPath: nil,
             limits: limits,
             channelStore: channelStore,
             requestExecutor: requestExecutor
         )
-        socketPathProvider = { throw ProtocolFailure(
+        socketPathProvider = { _ in throw ProtocolFailure(
             code: .upstreamError,
             message: "The service broker socket is unavailable."
         ) }
-        self.accessTokenProvider = accessTokenProvider
+        self.authSnapshotProvider = authSnapshotProvider
     }
 
     static func isAllowedSidecarSender(_ senderID: String) -> Bool {
@@ -279,7 +282,11 @@ actor ServiceBrokerExtensionProtocol {
         }
     }
 
-    func loadImagePreviewFile(path: String, senderID: String) async throws -> BrokerHTTPResponse {
+    func loadImagePreviewFile(
+        path: String,
+        senderID: String,
+        expectedAuth: SharedAuthScope
+    ) async throws -> BrokerHTTPResponse {
         guard Self.isAllowedSidecarSender(senderID) else {
             throw ProtocolFailure(code: .unauthorizedSender, message: "The extension sender is not authorized.")
         }
@@ -292,31 +299,56 @@ actor ServiceBrokerExtensionProtocol {
         guard pathname.hasPrefix("/api/v1/files/") || pathname.hasPrefix("/v1/files/") else {
             throw ProtocolFailure(code: .invalidPath, message: "The image preview path is invalid.")
         }
-        guard let accessToken = accessTokenProvider(), !accessToken.isEmpty else {
-            throw ProtocolFailure(code: .upstreamError, message: "The Phi Agent access token is unavailable.")
-        }
+        let authSnapshot = try requireAuthSnapshot(matching: expectedAuth)
 
-        let runtime = try await resolveRuntime()
+        let runtime = try await resolveRuntime(expectedAccountID: expectedAuth.accountID)
+        guard try requireAuthSnapshot(matching: expectedAuth) == authSnapshot else {
+            throw ProtocolFailure(code: .upstreamError, message: "The Phi Agent authentication changed.")
+        }
         let request = BrokerHTTPRequest(
             service: .phiAgent,
             path: path,
             method: "GET",
             headers: try authorizedHeaders(
-                ["Authorization": "Bearer \(accessToken)"],
+                ["Authorization": "Bearer \(authSnapshot.accessToken)"],
                 senderID: senderID
             )
         )
         let response = try await runtime.requestExecutor(request)
+        guard try requireAuthSnapshot(matching: expectedAuth) == authSnapshot else {
+            throw ProtocolFailure(code: .upstreamError, message: "The Phi Agent authentication changed.")
+        }
         guard response.body.count <= runtime.limits.nonStreamingResponseBytes else {
             throw ProtocolFailure(code: .responseTooLarge, message: "The image preview response is too large.")
         }
         return response
     }
 
-    private func resolveRuntime() async throws -> Runtime {
-        if let injectedRuntime { return injectedRuntime }
-        let socketPath = try socketPathProvider()
-        if let productionRuntime, productionRuntime.socketPath == socketPath {
+    private func resolveRuntime(expectedAccountID: String? = nil) async throws -> Runtime {
+        if let injectedRuntime {
+            guard expectedAccountID == nil || injectedRuntime.accountID == expectedAccountID else {
+                throw ProtocolFailure(
+                    code: .upstreamError,
+                    message: "The service broker runtime belongs to another account."
+                )
+            }
+            return injectedRuntime
+        }
+        let accountID: String
+        if let expectedAccountID {
+            accountID = expectedAccountID
+        } else if let currentAccountID = authSnapshotProvider()?.scope.accountID {
+            accountID = currentAccountID
+        } else {
+            throw ProtocolFailure(
+                code: .upstreamError,
+                message: "The service broker account context is unavailable."
+            )
+        }
+        let socketPath = try socketPathProvider(accountID)
+        if let productionRuntime,
+           productionRuntime.accountID == accountID,
+           productionRuntime.socketPath == socketPath {
             return productionRuntime
         }
 
@@ -341,6 +373,7 @@ actor ServiceBrokerExtensionProtocol {
         let client = ServiceBrokerClient(socketPath: socketPath, limits: version.limits)
         let channelLimits = Self.channelSafeLimits(version.limits)
         let runtime = Runtime(
+            accountID: accountID,
             socketPath: socketPath,
             limits: version.limits,
             channelStore: ServiceBrokerChannelStore(socketPath: socketPath, limits: channelLimits),
@@ -348,6 +381,15 @@ actor ServiceBrokerExtensionProtocol {
         )
         productionRuntime = runtime
         return runtime
+    }
+
+    private func requireAuthSnapshot(matching expectedAuth: SharedAuthScope) throws -> SharedAuthTokenSnapshot {
+        guard let snapshot = authSnapshotProvider(),
+              snapshot.scope == expectedAuth,
+              !snapshot.accessToken.isEmpty else {
+            throw ProtocolFailure(code: .upstreamError, message: "The Phi Agent authentication changed.")
+        }
+        return snapshot
     }
 
     private func decodeHTTPRequest(_ payload: String, limits: ServiceBrokerLimits) throws -> BrokerHTTPRequest {
@@ -589,9 +631,8 @@ actor ServiceBrokerExtensionProtocol {
         }
     }
 
-    private static func currentSocketPath() throws -> String {
-        guard let auth0Subject = SharedAuthTokenStore.shared.read()?.auth0Sub,
-              !auth0Subject.isEmpty,
+    private static func currentSocketPath(auth0Subject: String) throws -> String {
+        guard !auth0Subject.isEmpty,
               let applicationSupportPath = NSSearchPathForDirectoriesInDomains(
                   .applicationSupportDirectory,
                   .userDomainMask,

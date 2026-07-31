@@ -84,13 +84,19 @@ final class ServiceBrokerExtensionProtocolTests: XCTestCase {
 
     func testImagePreviewFileFetchRequiresExactSenderAndUsesBrokerAuth() async throws {
         let recorder = BrokerRequestRecorder()
-        let handler = makeHandler(recorder: recorder, accessToken: "native-access-token")
+        let expectedAuth = authSnapshot(
+            accountID: "auth0|test-account",
+            accessToken: "native-access-token",
+            generation: 1
+        )
+        let handler = makeHandler(recorder: recorder, authSnapshot: expectedAuth)
 
         for sender in ["", "cdp", "debug-extension", "other-extension"] {
             do {
                 _ = try await handler.loadImagePreviewFile(
                     path: "/api/v1/files/image-1",
-                    senderID: sender
+                    senderID: sender,
+                    expectedAuth: expectedAuth.scope
                 )
                 XCTFail("Expected unauthorized sender: \(sender)")
             } catch {}
@@ -100,7 +106,8 @@ final class ServiceBrokerExtensionProtocolTests: XCTestCase {
 
         let response = try await handler.loadImagePreviewFile(
             path: "/api/v1/files/image-1?variant=full",
-            senderID: allowedSender
+            senderID: allowedSender,
+            expectedAuth: expectedAuth.scope
         )
         XCTAssertEqual(response.statusCode, 401)
         let recordedRequest = await recorder.lastRequest()
@@ -112,8 +119,58 @@ final class ServiceBrokerExtensionProtocolTests: XCTestCase {
         XCTAssertEqual(request.headers["X-Phi-Extension-ID"], allowedSender)
     }
 
+    func testImagePreviewFileFetchRejectsAuthOrRuntimeAccountMismatchBeforeBrokerRequest() async {
+        let expectedAuth = authSnapshot(
+            accountID: "auth0|account-a",
+            accessToken: "token-a",
+            generation: 1
+        )
+        let currentOtherAccount = authSnapshot(
+            accountID: "auth0|account-b",
+            accessToken: "token-b",
+            generation: 2
+        )
+        let authMismatchRecorder = BrokerRequestRecorder()
+        let runtimeMismatchRecorder = BrokerRequestRecorder()
+
+        for (handler, recorder) in [
+            (
+                makeHandler(
+                    recorder: authMismatchRecorder,
+                    authSnapshot: currentOtherAccount,
+                    runtimeAccountID: expectedAuth.scope.accountID
+                ),
+                authMismatchRecorder
+            ),
+            (
+                makeHandler(
+                    recorder: runtimeMismatchRecorder,
+                    authSnapshot: expectedAuth,
+                    runtimeAccountID: currentOtherAccount.scope.accountID
+                ),
+                runtimeMismatchRecorder
+            ),
+        ] {
+            do {
+                _ = try await handler.loadImagePreviewFile(
+                    path: "/api/v1/files/image-1",
+                    senderID: allowedSender,
+                    expectedAuth: expectedAuth.scope
+                )
+                XCTFail("Expected mismatched authenticated runtime scope to fail closed")
+            } catch {}
+            let requestCount = await recorder.count()
+            XCTAssertEqual(requestCount, 0)
+        }
+    }
+
     func testImagePreviewFileFetchRejectsNonFilePathsAndOversizedResponses() async {
         let recorder = BrokerRequestRecorder()
+        let expectedAuth = authSnapshot(
+            accountID: "auth0|test-account",
+            accessToken: "native-access-token",
+            generation: 1
+        )
         let handler = makeHandler(
             limits: limits(nonStreamingResponseBytes: 4),
             response: BrokerHTTPResponse(
@@ -122,12 +179,16 @@ final class ServiceBrokerExtensionProtocolTests: XCTestCase {
                 body: Data(repeating: 0x41, count: 5)
             ),
             recorder: recorder,
-            accessToken: "native-access-token"
+            authSnapshot: expectedAuth
         )
 
         for path in ["/api/v1/chats", "/api/v1/files/../secret", "https://localhost/api/v1/files/x"] {
             do {
-                _ = try await handler.loadImagePreviewFile(path: path, senderID: allowedSender)
+                _ = try await handler.loadImagePreviewFile(
+                    path: path,
+                    senderID: allowedSender,
+                    expectedAuth: expectedAuth.scope
+                )
                 XCTFail("Expected rejected path: \(path)")
             } catch {}
         }
@@ -137,7 +198,8 @@ final class ServiceBrokerExtensionProtocolTests: XCTestCase {
         do {
             _ = try await handler.loadImagePreviewFile(
                 path: "/api/v1/files/too-large",
-                senderID: allowedSender
+                senderID: allowedSender,
+                expectedAuth: expectedAuth.scope
             )
             XCTFail("Expected oversized response rejection")
         } catch {}
@@ -153,9 +215,14 @@ final class ServiceBrokerExtensionProtocolTests: XCTestCase {
             headers: [BrokerHTTPHeader(name: "content-type", value: "image/png")],
             body: png
         ))
+        let expectedAuth = authSnapshot(
+            accountID: "auth0|test-account",
+            accessToken: "native-access-token",
+            generation: 1
+        )
         let loader = ImagePreviewLoader(
-            phiAgentAccountIDProvider: { "auth0|test-account" },
-            phiAgentFileLoader: { path, senderID in
+            phiAgentAuthSnapshotProvider: { expectedAuth.scope },
+            phiAgentFileLoader: { path, senderID, _ in
                 try await calls.load(path: path, senderID: senderID)
             }
         )
@@ -179,15 +246,17 @@ final class ServiceBrokerExtensionProtocolTests: XCTestCase {
     func testImagePreviewLoaderRefetchesSamePathAfterAccountSwitch() async throws {
         let png = try XCTUnwrap(Data(base64Encoded:
             "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="))
-        let accountScope = ImagePreviewAccountScopeBox("auth0|account-a")
+        let accountA = authSnapshot(accountID: "auth0|account-a", accessToken: "token-a", generation: 1)
+        let accountB = authSnapshot(accountID: "auth0|account-b", accessToken: "token-b", generation: 2)
+        let authState = ImagePreviewAuthSnapshotBox(accountA)
         let calls = ImagePreviewBrokerAccountSwitchRecorder(response: BrokerHTTPResponse(
             statusCode: 200,
             headers: [BrokerHTTPHeader(name: "content-type", value: "image/png")],
             body: png
         ))
         let loader = ImagePreviewLoader(
-            phiAgentAccountIDProvider: { accountScope.current() },
-            phiAgentFileLoader: { path, senderID in
+            phiAgentAuthSnapshotProvider: { authState.current()?.scope },
+            phiAgentFileLoader: { path, senderID, _ in
                 try await calls.load(path: path, senderID: senderID)
             }
         )
@@ -205,7 +274,7 @@ final class ServiceBrokerExtensionProtocolTests: XCTestCase {
         let sameAccountCallCount = await calls.count()
         XCTAssertEqual(sameAccountCallCount, 1)
 
-        accountScope.set("auth0|account-b")
+        authState.set(accountB)
         do {
             _ = try await loader.load(item)
             XCTFail("Expected account B broker failure instead of account A cached bytes")
@@ -219,15 +288,16 @@ final class ServiceBrokerExtensionProtocolTests: XCTestCase {
     func testImagePreviewLoaderDoesNotReturnPrivilegedCacheAfterLogout() async throws {
         let png = try XCTUnwrap(Data(base64Encoded:
             "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="))
-        let accountScope = ImagePreviewAccountScopeBox("auth0|account-a")
+        let accountA = authSnapshot(accountID: "auth0|account-a", accessToken: "token-a", generation: 1)
+        let authState = ImagePreviewAuthSnapshotBox(accountA)
         let calls = ImagePreviewBrokerLoadRecorder(response: BrokerHTTPResponse(
             statusCode: 200,
             headers: [BrokerHTTPHeader(name: "content-type", value: "image/png")],
             body: png
         ))
         let loader = ImagePreviewLoader(
-            phiAgentAccountIDProvider: { accountScope.current() },
-            phiAgentFileLoader: { path, senderID in
+            phiAgentAuthSnapshotProvider: { authState.current()?.scope },
+            phiAgentFileLoader: { path, senderID, _ in
                 try await calls.load(path: path, senderID: senderID)
             }
         )
@@ -240,7 +310,7 @@ final class ServiceBrokerExtensionProtocolTests: XCTestCase {
         )
 
         _ = try await loader.load(item)
-        accountScope.set(nil)
+        authState.set(nil)
 
         do {
             _ = try await loader.load(item)
@@ -255,17 +325,19 @@ final class ServiceBrokerExtensionProtocolTests: XCTestCase {
     func testImagePreviewLoaderRejectsBytesWhenAccountChangesDuringBrokerLoad() async throws {
         let png = try XCTUnwrap(Data(base64Encoded:
             "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="))
-        let accountScope = ImagePreviewAccountScopeBox("auth0|account-a")
+        let accountA = authSnapshot(accountID: "auth0|account-a", accessToken: "token-a", generation: 1)
+        let accountB = authSnapshot(accountID: "auth0|account-b", accessToken: "token-b", generation: 2)
+        let authState = ImagePreviewAuthSnapshotBox(accountA)
         let calls = ImagePreviewBrokerLoadRecorder(response: BrokerHTTPResponse(
             statusCode: 200,
             headers: [BrokerHTTPHeader(name: "content-type", value: "image/png")],
             body: png
         ))
         let loader = ImagePreviewLoader(
-            phiAgentAccountIDProvider: { accountScope.current() },
-            phiAgentFileLoader: { path, senderID in
+            phiAgentAuthSnapshotProvider: { authState.current()?.scope },
+            phiAgentFileLoader: { path, senderID, _ in
                 let response = try await calls.load(path: path, senderID: senderID)
-                accountScope.set("auth0|account-b")
+                authState.set(accountB)
                 return response
             }
         )
@@ -287,12 +359,209 @@ final class ServiceBrokerExtensionProtocolTests: XCTestCase {
         XCTAssertEqual(brokerCallCount, 1)
     }
 
+    func testImagePreviewLoaderRejectsABASwitchBytesWithoutCachingThemUnderOriginalAccount() async throws {
+        let accountAImage = try XCTUnwrap(Data(base64Encoded:
+            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="))
+        let accountBImage = try XCTUnwrap(Data(base64Encoded:
+            "iVBORw0KGgoAAAANSUhEUgAAAAIAAAABCAYAAAD0In+KAAAAAXNSR0IArs4c6QAAADhlWElmTU0AKgAAAAgAAYdpAAQAAAABAAAAGgAAAAAAAqACAAQAAAABAAAAAqADAAQAAAABAAAAAQAAAACJcORAAAAADklEQVQIHWP4z8DwHwQBEPgD/dkGjrgAAAAASUVORK5CYII="))
+        let accountAInitial = authSnapshot(
+            accountID: "auth0|account-a",
+            accessToken: "token-a-initial",
+            generation: 1
+        )
+        let accountB = authSnapshot(
+            accountID: "auth0|account-b",
+            accessToken: "token-b",
+            generation: 2
+        )
+        let accountARestored = authSnapshot(
+            accountID: "auth0|account-a",
+            accessToken: "token-a-restored",
+            generation: 3
+        )
+        let authState = ImagePreviewAuthSnapshotBox(accountAInitial)
+        let calls = ImagePreviewBrokerABARecorder(
+            authState: authState,
+            accountB: accountB,
+            accountARestored: accountARestored,
+            accountAResponse: BrokerHTTPResponse(
+                statusCode: 200,
+                headers: [BrokerHTTPHeader(name: "content-type", value: "image/png")],
+                body: accountAImage
+            ),
+            accountBResponse: BrokerHTTPResponse(
+                statusCode: 200,
+                headers: [BrokerHTTPHeader(name: "content-type", value: "image/png")],
+                body: accountBImage
+            )
+        )
+        let handler = makeHandler(
+            requestExecutor: { request in await calls.execute(request) },
+            authSnapshotProvider: { authState.current() },
+            runtimeAccountID: accountAInitial.scope.accountID
+        )
+        let loader = ImagePreviewLoader(
+            phiAgentAuthSnapshotProvider: { authState.current()?.scope },
+            phiAgentFileLoader: { path, senderID, expectedAuth in
+                let response = try await handler.loadImagePreviewFile(
+                    path: path,
+                    senderID: senderID,
+                    expectedAuth: expectedAuth
+                )
+                await calls.recordProtocolReturn()
+                return response
+            }
+        )
+        let item = ImagePreviewItem(
+            id: "broker-image-account-aba-race",
+            source: .phiAgentFile(path: "/api/v1/files/shared-path", senderID: allowedSender),
+            title: nil,
+            mimeType: nil,
+            suggestedFilename: nil
+        )
+
+        do {
+            let leakedAsset = try await loader.load(item)
+            XCTFail("Expected A-B-A auth transition to reject B bytes, got \(leakedAsset.pixelSize)")
+        } catch {
+            XCTAssertEqual(error as? ImagePreviewError, .networkFailed)
+        }
+
+        let accountAAsset = try await loader.load(item)
+        XCTAssertEqual(accountAAsset.pixelSize, CGSize(width: 1, height: 1))
+        let brokerCallCount = await calls.count()
+        XCTAssertEqual(brokerCallCount, 2)
+        let protocolReturnCount = await calls.protocolReturnCount()
+        XCTAssertEqual(protocolReturnCount, 1)
+        let authorizationHeaders = await calls.authorizationHeaders()
+        XCTAssertEqual(authorizationHeaders, [
+            "Bearer token-a-initial",
+            "Bearer token-a-restored",
+        ])
+    }
+
+    func testImagePreviewLoaderRejectsSameAccountTokenRotationDuringBrokerLoad() async throws {
+        let png = try XCTUnwrap(Data(base64Encoded:
+            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="))
+        let initialAuth = authSnapshot(
+            accountID: "auth0|account-a",
+            accessToken: "token-a-initial",
+            generation: 1
+        )
+        let rotatedAuth = authSnapshot(
+            accountID: "auth0|account-a",
+            accessToken: "token-a-rotated",
+            generation: 2
+        )
+        let authState = ImagePreviewAuthSnapshotBox(initialAuth)
+        let calls = ImagePreviewBrokerTokenRotationRecorder(
+            authState: authState,
+            rotatedAuth: rotatedAuth,
+            response: BrokerHTTPResponse(
+                statusCode: 200,
+                headers: [BrokerHTTPHeader(name: "content-type", value: "image/png")],
+                body: png
+            )
+        )
+        let handler = makeHandler(
+            requestExecutor: { request in await calls.execute(request) },
+            authSnapshotProvider: { authState.current() },
+            runtimeAccountID: initialAuth.scope.accountID
+        )
+        let loader = ImagePreviewLoader(
+            phiAgentAuthSnapshotProvider: { authState.current()?.scope },
+            phiAgentFileLoader: { path, senderID, expectedAuth in
+                let response = try await handler.loadImagePreviewFile(
+                    path: path,
+                    senderID: senderID,
+                    expectedAuth: expectedAuth
+                )
+                await calls.recordProtocolReturn()
+                return response
+            }
+        )
+        let item = ImagePreviewItem(
+            id: "broker-image-token-rotation",
+            source: .phiAgentFile(path: "/api/v1/files/shared-path", senderID: allowedSender),
+            title: nil,
+            mimeType: nil,
+            suggestedFilename: nil
+        )
+
+        do {
+            _ = try await loader.load(item)
+            XCTFail("Expected same-account token rotation to reject in-flight bytes")
+        } catch {
+            XCTAssertEqual(error as? ImagePreviewError, .networkFailed)
+        }
+
+        _ = try await loader.load(item)
+        let brokerCallCount = await calls.count()
+        XCTAssertEqual(brokerCallCount, 2)
+        let protocolReturnCount = await calls.protocolReturnCount()
+        XCTAssertEqual(protocolReturnCount, 1)
+        let authorizationHeaders = await calls.authorizationHeaders()
+        XCTAssertEqual(authorizationHeaders, [
+            "Bearer token-a-initial",
+            "Bearer token-a-rotated",
+        ])
+    }
+
+    func testImagePreviewLoaderRevalidatesAuthSnapshotBeforeReturningCacheHit() async throws {
+        let png = try XCTUnwrap(Data(base64Encoded:
+            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="))
+        let initialAuth = authSnapshot(
+            accountID: "auth0|account-a",
+            accessToken: "token-a-initial",
+            generation: 1
+        )
+        let restoredAuth = authSnapshot(
+            accountID: "auth0|account-a",
+            accessToken: "token-a-restored",
+            generation: 2
+        )
+        let authSequence = ImagePreviewAuthSnapshotSequence([
+            initialAuth,
+            initialAuth,
+            initialAuth,
+            restoredAuth,
+        ])
+        let calls = ImagePreviewBrokerLoadRecorder(response: BrokerHTTPResponse(
+            statusCode: 200,
+            headers: [BrokerHTTPHeader(name: "content-type", value: "image/png")],
+            body: png
+        ))
+        let loader = ImagePreviewLoader(
+            phiAgentAuthSnapshotProvider: { authSequence.next()?.scope },
+            phiAgentFileLoader: { path, senderID, _ in
+                try await calls.load(path: path, senderID: senderID)
+            }
+        )
+        let item = ImagePreviewItem(
+            id: "broker-image-cache-hit-auth-race",
+            source: .phiAgentFile(path: "/api/v1/files/shared-path", senderID: allowedSender),
+            title: nil,
+            mimeType: nil,
+            suggestedFilename: nil
+        )
+
+        _ = try await loader.load(item)
+        do {
+            _ = try await loader.load(item)
+            XCTFail("Expected changed auth generation to reject the cache hit")
+        } catch {
+            XCTAssertEqual(error as? ImagePreviewError, .networkFailed)
+        }
+        let brokerCallCount = await calls.count()
+        XCTAssertEqual(brokerCallCount, 1)
+    }
+
     func testImagePreviewLoaderKeepsNonPrivilegedCacheIndependentOfAccountScope() async throws {
         let png = try XCTUnwrap(Data(base64Encoded:
             "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="))
-        let accountScope = ImagePreviewAccountScopeBox(nil)
+        let authState = ImagePreviewAuthSnapshotBox(nil)
         let loader = ImagePreviewLoader(
-            phiAgentAccountIDProvider: { accountScope.current() }
+            phiAgentAuthSnapshotProvider: { authState.current()?.scope }
         )
         let item = ImagePreviewItem(
             id: "inline-image",
@@ -303,14 +572,19 @@ final class ServiceBrokerExtensionProtocolTests: XCTestCase {
         )
 
         let first = try await loader.load(item)
-        accountScope.set("auth0|account-b")
+        authState.set(authSnapshot(accountID: "auth0|account-b", accessToken: "token-b", generation: 2))
         let second = try await loader.load(item)
 
         XCTAssertTrue(first.image === second.image)
-        XCTAssertEqual(accountScope.readCount(), 0)
+        XCTAssertEqual(authState.readCount(), 0)
     }
 
     func testImagePreviewLoaderMapsBrokerStatusAndTransportFailures() async {
+        let expectedAuth = authSnapshot(
+            accountID: "auth0|test-account",
+            accessToken: "native-access-token",
+            generation: 1
+        )
         let item = ImagePreviewItem(
             id: "broker-image-error",
             source: .phiAgentFile(path: "/api/v1/files/image-1", senderID: allowedSender),
@@ -319,14 +593,14 @@ final class ServiceBrokerExtensionProtocolTests: XCTestCase {
             suggestedFilename: nil
         )
         let statusLoader = ImagePreviewLoader(
-            phiAgentAccountIDProvider: { "auth0|test-account" },
-            phiAgentFileLoader: { _, _ in
+            phiAgentAuthSnapshotProvider: { expectedAuth.scope },
+            phiAgentFileLoader: { _, _, _ in
                 BrokerHTTPResponse(statusCode: 404, headers: [], body: Data())
             }
         )
         let transportLoader = ImagePreviewLoader(
-            phiAgentAccountIDProvider: { "auth0|test-account" },
-            phiAgentFileLoader: { _, _ in
+            phiAgentAuthSnapshotProvider: { expectedAuth.scope },
+            phiAgentFileLoader: { _, _, _ in
                 throw TestUpstreamError()
             }
         )
@@ -746,6 +1020,19 @@ final class ServiceBrokerExtensionProtocolTests: XCTestCase {
         }
     }
 
+    private func authSnapshot(
+        accountID: String,
+        accessToken: String,
+        generation: TimeInterval
+    ) -> SharedAuthTokenSnapshot {
+        let suffix = String(format: "%012lld", Int64(generation))
+        let revisionID = UUID(uuidString: "00000000-0000-0000-0000-\(suffix)")!
+        return SharedAuthTokenSnapshot(
+            scope: SharedAuthScope(accountID: accountID, revisionID: revisionID),
+            accessToken: accessToken
+        )
+    }
+
     private func makeHandler(
         limits: ServiceBrokerLimits? = nil,
         response: BrokerHTTPResponse = BrokerHTTPResponse(
@@ -756,19 +1043,36 @@ final class ServiceBrokerExtensionProtocolTests: XCTestCase {
         error: Error? = nil,
         recorder: BrokerRequestRecorder = BrokerRequestRecorder(),
         channelStore: ServiceBrokerChannelStore? = nil,
-        accessToken: String? = "test-access-token"
+        requestExecutor: (@Sendable (BrokerHTTPRequest) async throws -> BrokerHTTPResponse)? = nil,
+        authSnapshot: SharedAuthTokenSnapshot? = SharedAuthTokenSnapshot(
+            scope: SharedAuthScope(
+                accountID: "auth0|test-account",
+                revisionID: UUID(uuidString: "00000000-0000-0000-0000-000000000001")!
+            ),
+            accessToken: "test-access-token"
+        ),
+        authSnapshotProvider: (@Sendable () -> SharedAuthTokenSnapshot?)? = nil,
+        runtimeAccountID: String? = "auth0|test-account"
     ) -> ServiceBrokerExtensionProtocol {
         let resolvedLimits = limits ?? self.limits()
         let resolvedStore = channelStore ?? makeStore(httpReader: HTTPChunkReader([nil]))
-        return ServiceBrokerExtensionProtocol(
-            limits: resolvedLimits,
-            channelStore: resolvedStore,
-            requestExecutor: { request in
+        let resolvedExecutor: @Sendable (BrokerHTTPRequest) async throws -> BrokerHTTPResponse
+        if let requestExecutor {
+            resolvedExecutor = requestExecutor
+        } else {
+            resolvedExecutor = { request in
                 await recorder.record(request)
                 if let error { throw error }
                 return response
-            },
-            accessTokenProvider: { accessToken }
+            }
+        }
+        let resolvedAuthSnapshotProvider = authSnapshotProvider ?? { authSnapshot }
+        return ServiceBrokerExtensionProtocol(
+            limits: resolvedLimits,
+            channelStore: resolvedStore,
+            runtimeAccountID: runtimeAccountID,
+            requestExecutor: resolvedExecutor,
+            authSnapshotProvider: resolvedAuthSnapshotProvider
         )
     }
 
@@ -927,23 +1231,119 @@ private actor ImagePreviewBrokerAccountSwitchRecorder {
     }
 }
 
-private final class ImagePreviewAccountScopeBox: @unchecked Sendable {
+private actor ImagePreviewBrokerABARecorder {
+    private let authState: ImagePreviewAuthSnapshotBox
+    private let accountB: SharedAuthTokenSnapshot
+    private let accountARestored: SharedAuthTokenSnapshot
+    private let accountAResponse: BrokerHTTPResponse
+    private let accountBResponse: BrokerHTTPResponse
+    private var requests = [BrokerHTTPRequest]()
+    private var calls = 0
+    private var returnedResponses = 0
+
+    init(
+        authState: ImagePreviewAuthSnapshotBox,
+        accountB: SharedAuthTokenSnapshot,
+        accountARestored: SharedAuthTokenSnapshot,
+        accountAResponse: BrokerHTTPResponse,
+        accountBResponse: BrokerHTTPResponse
+    ) {
+        self.authState = authState
+        self.accountB = accountB
+        self.accountARestored = accountARestored
+        self.accountAResponse = accountAResponse
+        self.accountBResponse = accountBResponse
+    }
+
+    func execute(_ request: BrokerHTTPRequest) async -> BrokerHTTPResponse {
+        requests.append(request)
+        calls += 1
+        if calls == 1 {
+            authState.set(accountB)
+            await Task.yield()
+            authState.set(accountARestored)
+            return accountBResponse
+        }
+        return accountAResponse
+    }
+
+    func count() -> Int {
+        calls
+    }
+
+    func recordProtocolReturn() {
+        returnedResponses += 1
+    }
+
+    func protocolReturnCount() -> Int {
+        returnedResponses
+    }
+
+    func authorizationHeaders() -> [String?] {
+        requests.map { $0.headers["Authorization"] }
+    }
+}
+
+private actor ImagePreviewBrokerTokenRotationRecorder {
+    private let authState: ImagePreviewAuthSnapshotBox
+    private let rotatedAuth: SharedAuthTokenSnapshot
+    private let response: BrokerHTTPResponse
+    private var requests = [BrokerHTTPRequest]()
+    private var returnedResponses = 0
+
+    init(
+        authState: ImagePreviewAuthSnapshotBox,
+        rotatedAuth: SharedAuthTokenSnapshot,
+        response: BrokerHTTPResponse
+    ) {
+        self.authState = authState
+        self.rotatedAuth = rotatedAuth
+        self.response = response
+    }
+
+    func execute(_ request: BrokerHTTPRequest) async -> BrokerHTTPResponse {
+        requests.append(request)
+        if requests.count == 1 {
+            authState.set(rotatedAuth)
+            await Task.yield()
+        }
+        return response
+    }
+
+    func count() -> Int {
+        requests.count
+    }
+
+    func recordProtocolReturn() {
+        returnedResponses += 1
+    }
+
+    func protocolReturnCount() -> Int {
+        returnedResponses
+    }
+
+    func authorizationHeaders() -> [String?] {
+        requests.map { $0.headers["Authorization"] }
+    }
+}
+
+private final class ImagePreviewAuthSnapshotBox: @unchecked Sendable {
     private let lock = NSLock()
-    private var value: String?
+    private var value: SharedAuthTokenSnapshot?
     private var reads = 0
 
-    init(_ value: String?) {
+    init(_ value: SharedAuthTokenSnapshot?) {
         self.value = value
     }
 
-    func current() -> String? {
+    func current() -> SharedAuthTokenSnapshot? {
         lock.lock()
         defer { lock.unlock() }
         reads += 1
         return value
     }
 
-    func set(_ value: String?) {
+    func set(_ value: SharedAuthTokenSnapshot?) {
         lock.lock()
         defer { lock.unlock() }
         self.value = value
@@ -953,6 +1353,22 @@ private final class ImagePreviewAccountScopeBox: @unchecked Sendable {
         lock.lock()
         defer { lock.unlock() }
         return reads
+    }
+}
+
+private final class ImagePreviewAuthSnapshotSequence: @unchecked Sendable {
+    private let lock = NSLock()
+    private var values: [SharedAuthTokenSnapshot?]
+
+    init(_ values: [SharedAuthTokenSnapshot?]) {
+        self.values = values
+    }
+
+    func next() -> SharedAuthTokenSnapshot? {
+        lock.lock()
+        defer { lock.unlock() }
+        guard !values.isEmpty else { return nil }
+        return values.removeFirst()
     }
 }
 

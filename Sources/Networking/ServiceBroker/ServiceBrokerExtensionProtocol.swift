@@ -399,7 +399,10 @@ actor ServiceBrokerExtensionProtocol {
             allowedKeys: ["path", "method", "headers", "bodyBase64"]
         )
         try validateEnvelopeMetadata(payload, base64Value: request.bodyBase64)
-        try validateHTTPPath(request.path)
+        let isBrokerHealth = request.path == "/broker/healthz"
+        if !isBrokerHealth {
+            try validateHTTPPath(request.path)
+        }
         let method = (request.method ?? "GET").uppercased()
         guard Self.supportedMethods.contains(method) else {
             throw ProtocolFailure(code: .unsupportedMethod, message: "The HTTP method is not supported.")
@@ -408,9 +411,12 @@ actor ServiceBrokerExtensionProtocol {
         guard (body?.count ?? 0) <= limits.jsonRequestBytes else {
             throw ProtocolFailure(code: .requestTooLarge, message: "The broker request body is too large.")
         }
+        if isBrokerHealth, (method != "GET" || body != nil) {
+            throw ProtocolFailure(code: .invalidPayload, message: "The broker health request is invalid.")
+        }
         return BrokerHTTPRequest(
-            service: .phiAgent,
-            path: request.path,
+            service: isBrokerHealth ? .broker : .phiAgent,
+            path: isBrokerHealth ? "/healthz" : request.path,
             method: method,
             headers: try authorizedHeaders(
                 request.headers ?? [:],

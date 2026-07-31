@@ -634,8 +634,40 @@ final class ServiceBrokerExtensionProtocolTests: XCTestCase {
         }
     }
 
+    func testBrokerHealthReadinessUsesOnlyTheReservedBrokerEndpoint() async throws {
+        let recorder = BrokerRequestRecorder()
+        let handler = makeHandler(
+            response: BrokerHTTPResponse(
+                statusCode: 200,
+                headers: [BrokerHTTPHeader(name: "content-type", value: "application/json")],
+                body: Data(#"{"ready":true}"#.utf8)
+            ),
+            recorder: recorder
+        )
+
+        let health = await handler.handle(
+            type: "broker.http.request",
+            payload: #"{"path":"/broker/healthz","method":"GET"}"#,
+            senderID: allowedSender
+        )
+
+        XCTAssertEqual(try successResult(health)["status"] as? Int, 200)
+        let lastRequest = await recorder.lastRequest()
+        let recorded = try XCTUnwrap(lastRequest)
+        XCTAssertEqual(recorded.service, .broker)
+        XCTAssertEqual(recorded.path, "/healthz")
+
+        let version = await handler.handle(
+            type: "broker.http.request",
+            payload: #"{"path":"/broker/version","method":"GET"}"#,
+            senderID: allowedSender
+        )
+        XCTAssertEqual(version.error?.code, "invalid_path")
+    }
+
     func testRejectsMalformedPayloadPathsMethodsBase64AndOversizedBodies() async {
         let handler = makeHandler(limits: limits(jsonRequestBytes: 96))
+        let oversizedBody = Data(repeating: 0x00, count: 97).base64EncodedString()
         let cases: [(String, String)] = [
             ("not-json", "invalid_payload"),
             (#"{"path":"https://localhost/api","method":"GET"}"#, "invalid_path"),
@@ -645,7 +677,7 @@ final class ServiceBrokerExtensionProtocolTests: XCTestCase {
             (#"{"path":"/not-authorized","method":"GET"}"#, "invalid_path"),
             (#"{"path":"/api/health","method":"CONNECT"}"#, "unsupported_method"),
             (#"{"path":"/api/health","method":"POST","bodyBase64":"%%%"}"#, "invalid_base64"),
-            (#"{"path":"/api/health","method":"POST","bodyBase64":"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"}"#, "request_too_large"),
+            (#"{"path":"/api/health","method":"POST","bodyBase64":"\#(oversizedBody)"}"#, "request_too_large"),
         ]
 
         for (payload, expectedCode) in cases {
@@ -878,16 +910,11 @@ final class ServiceBrokerExtensionProtocolTests: XCTestCase {
             payload: #"{"channelId":"\#(channelID)"}"#,
             senderID: allowedSender
         )
-        XCTAssertNil(cancelled.error)
-        XCTAssertEqual(try successResult(cancelled)["cancelled"] as? Bool, true)
+        XCTAssertEqual(cancelled.error?.code, "channel_not_found")
     }
 
     func testWebSocketOpenSendPullAndCloseUseExactJSONMapping() async throws {
-        let socket = FakeProtocolWebSocket(events: [
-            .frame(sequence: 0, BrokerWebSocketFrame(kind: .text, data: Data(#"{"type":"event"}"#.utf8))),
-            .frame(sequence: 1, BrokerWebSocketFrame(kind: .binary, data: Data([1, 2, 3]))),
-            .close(code: 1000, reason: "done"),
-        ])
+        let socket = FakeProtocolWebSocket(events: [])
         let store = makeStore(webSocket: socket)
         let handler = makeHandler(channelStore: store)
 
@@ -908,8 +935,14 @@ final class ServiceBrokerExtensionProtocolTests: XCTestCase {
             BrokerWebSocketFrame(kind: .binary, data: Data([4, 5])),
         ])
 
+        await socket.enqueue(
+            .frame(sequence: 0, BrokerWebSocketFrame(
+                kind: .text, data: Data(#"{"type":"event"}"#.utf8))))
         let text = await pull(type: "broker.ws.pull", channelID: channelID, handler: handler)
+        await socket.enqueue(
+            .frame(sequence: 1, BrokerWebSocketFrame(kind: .binary, data: Data([1, 2, 3]))))
         let binary = await pull(type: "broker.ws.pull", channelID: channelID, handler: handler)
+        await socket.enqueue(.close(code: 1000, reason: "done"))
         let close = await pull(type: "broker.ws.pull", channelID: channelID, handler: handler)
         XCTAssertEqual(try firstEvent(text)["type"] as? String, "text")
         XCTAssertEqual(try firstEvent(text)["sequence"] as? Int, 0)
@@ -924,7 +957,7 @@ final class ServiceBrokerExtensionProtocolTests: XCTestCase {
             payload: #"{"channelId":"\#(channelID)","code":1000,"reason":"done"}"#,
             senderID: allowedSender
         )
-        XCTAssertEqual(try successResult(closed)["closed"] as? Bool, true)
+        XCTAssertEqual(closed.error?.code, "channel_not_found")
     }
 
     func testUnknownAndCrossOwnerChannelsHaveStableErrors() async throws {
@@ -1418,6 +1451,14 @@ private actor FakeProtocolWebSocket {
 
     func sentFrames() -> [BrokerWebSocketFrame] {
         sent
+    }
+
+    func enqueue(_ event: BrokerWebSocketEvent) {
+        if !waiters.isEmpty {
+            waiters.removeFirst().resume(returning: event)
+        } else {
+            events.append(event)
+        }
     }
 
     private func record(_ frame: BrokerWebSocketFrame) {

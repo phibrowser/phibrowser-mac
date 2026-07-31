@@ -7,6 +7,7 @@ import Foundation
 
 enum BrokerService: String, Codable, Sendable {
     case phiAgent = "phi-agent"
+    case broker
 }
 
 struct BrokerSenderContext: Equatable, Sendable {

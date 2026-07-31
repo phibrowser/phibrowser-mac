@@ -545,7 +545,9 @@ typedef NS_ENUM(NSInteger, PhiGhostMaterializeOutcome) {
 /// @param type Message type from the extension
 /// @param payload Message payload (JSON string)
 /// @param requestId The unique request ID for response correlation
-/// @param senderId The extension ID that sent the message
+/// @param senderId The Chromium-attributed extension ID that sent the message.
+/// Security-sensitive handlers must authorize this value exactly; payload data
+/// must never be used as sender identity.
 /// @return Response string if handled synchronously, nil for async handling
 - (NSString * _Nullable)handleExtensionMessage:(NSString *)type
                                       payload:(NSString *)payload
@@ -1494,7 +1496,9 @@ typedef NS_ENUM(NSInteger, PhiGhostMaterializeOutcome) {
 /// @param type Message type from the extension
 /// @param payload Message payload (JSON string)
 /// @param requestId The unique request ID for response correlation
-/// @param senderId The extension ID that sent the message
+/// @param senderId The Chromium-attributed extension ID that sent the message.
+/// Async request-scoped responses must use sendResponseForExtensionRequest;
+/// broadcastMessageToExtensions must not carry private response data.
 - (void)onExtensionMessage:(NSString *)type
                    payload:(NSString *)payload
                  requestId:(NSString *)requestId

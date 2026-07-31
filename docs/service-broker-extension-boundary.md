@@ -16,13 +16,18 @@ Replies use the request-scoped `sendMessageToApp` return value because the exist
 
 - Only the exact Canary Sidecar extension ID `fenmfiepnpdlhplemgijlimpbebebljo` is authorized. Empty, debug, CDP, differently cased, and other extension senders are rejected before transport access.
 - Extensions select only an allowed relative request path and method. They cannot supply a socket path, host, port, service name, or extension identity header.
-- Phi Browser resolves the account-scoped broker socket from shared authentication state. There is no TCP host/port fallback.
+- Phi Browser resolves the account-scoped broker socket from shared authentication state. The preferred `/tmp/phi-sentinel-<hash>/sockets` path is used only when each existing short-path component is a real directory owned by the current uid; otherwise both Sentinel and the browser select `<storage>/state/sockets`. There is no TCP host/port fallback.
+- A successful UDS connect is not proof of broker identity. Before sending a request, credential, or WebSocket handshake byte, the browser requires the peer uid to match its effective uid and validates the `LOCAL_PEERPID` process against the signed `service-broker` code requirement for Team ID `87DQ3HMK5G`. Failure is terminal and never falls back to another transport.
 - The browser enforces the broker's negotiated request, response, streaming, and WebSocket limits.
+- Chromium keeps the legacy 1 MiB native-message JSON limit for non-broker traffic. `broker.*` envelopes admit exactly `ceil(16 MiB / 3) * 4 + 64 KiB` bytes so a negotiated 16 MiB raw request plus bounded base64/JSON overhead reaches the browser protocol; the Mac layer remains the semantic and decoded-size enforcement point.
+- Each HTTP connect/write/response-head sequence and each WebSocket operation has one monotonic 30-second I/O budget. HTTP body reads receive the same per-read budget. Swift task cancellation closes the UDS descriptor so a stalled peer cannot leave a detached poll/read/write running indefinitely.
 - `/broker` is reserved for broker-owned management routes. Only `broker.http.request` admits exact `GET /broker/healthz` with no body and maps it to broker service path `/healthz`. Query suffixes, encoded spellings, path variations, other methods, bodies, streaming attempts, `/broker/version`, and every other extension-supplied `/broker` path are rejected.
 
 ## Request and channel lifecycle
 
 Ordinary readiness and bounded HTTP calls use `broker.http.request`. Streaming HTTP and WebSocket calls use sender-owned opaque channels with one outstanding long-pull at a time. A pull waits for data, a terminal event, an error, or a bounded timeout; timeout keeps the channel alive and permits the next pull.
+
+Every generic request captures one nonempty immutable shared-auth snapshot before runtime resolution. The runtime account must match that snapshot, and channel ownership includes the exact extension ID, account ID, and opaque auth revision. After every asynchronous transport or channel operation, the protocol revalidates the complete snapshot before returning the request-scoped reply. Logout, account change, or same-account token rotation therefore rejects an in-flight result; a channel created by an older revision cannot be reused by the newer revision. The current Chromium sender API does not expose a distinct browser profile identity, so the owner profile field remains unset until that identity is carried across the bridge.
 
 End, close, failure, explicit cancel/close, idle expiry, UDS loss, and browser shutdown are terminal. Once the terminal event has been delivered, the channel is removed. Later pull, send, cancel, or close requests return `channel_not_found`; they cannot resurrect the channel.
 

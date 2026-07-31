@@ -5,9 +5,88 @@ import XCTest
 @testable import Phi
 
 final class ServiceBrokerWebSocketTests: XCTestCase {
+    private func makeSocket(
+        socketPath: String,
+        maximumMessageBytes: Int
+    ) -> ServiceBrokerWebSocket {
+        ServiceBrokerWebSocket(
+            socketPath: socketPath,
+            maximumMessageBytes: maximumMessageBytes,
+            peerAuthenticator: .allowingTests
+        )
+    }
+
+    func testRejectsUnauthenticatedBrokerPeerBeforeWebSocketHandshake() async {
+        let server = UnixWebSocketTestServer()
+        let socket = ServiceBrokerWebSocket(
+            socketPath: server.socketPath,
+            maximumMessageBytes: 1_024,
+            peerAuthenticator: ServiceBrokerPeerAuthenticator { _ in
+                throw ServiceBrokerWebSocketError.peerAuthentication
+            }
+        )
+
+        do {
+            try await socket.connect(
+                path: "/ws/phi-agent/execute",
+                headers: ["Authorization": "Bearer must-not-leak"]
+            )
+            XCTFail("Expected peer authentication to fail closed.")
+        } catch let error as ServiceBrokerWebSocketError {
+            XCTAssertEqual(error, .peerAuthentication)
+        } catch {
+            XCTFail("Expected peerAuthentication, got \(error).")
+        }
+        XCTAssertNil(server.requestTarget)
+    }
+
+    func testTimesOutWhenWebSocketPeerStallsDuringHandshake() async {
+        let server = UnixWebSocketTestServer(script: .stallHandshake)
+        let socket = ServiceBrokerWebSocket(
+            socketPath: server.socketPath,
+            maximumMessageBytes: 1_024,
+            peerAuthenticator: .allowingTests,
+            ioTimeoutMilliseconds: 50
+        )
+
+        do {
+            try await socket.connect(path: "/ws/phi-agent/execute", headers: [:])
+            XCTFail("Expected the stalled WebSocket handshake to time out.")
+        } catch let error as ServiceBrokerWebSocketError {
+            XCTAssertEqual(error, .timedOut)
+        } catch {
+            XCTFail("Expected timedOut, got \(error).")
+        }
+    }
+
+    func testTaskCancellationClosesStalledWebSocketHandshake() async throws {
+        let server = UnixWebSocketTestServer(script: .stallHandshake)
+        let socket = ServiceBrokerWebSocket(
+            socketPath: server.socketPath,
+            maximumMessageBytes: 1_024,
+            peerAuthenticator: .allowingTests,
+            ioTimeoutMilliseconds: 5_000
+        )
+        let connection = Task {
+            try await socket.connect(path: "/ws/phi-agent/execute", headers: [:])
+        }
+        try await Task.sleep(for: .milliseconds(25))
+
+        connection.cancel()
+
+        do {
+            try await connection.value
+            XCTFail("Expected cancellation to close the stalled handshake.")
+        } catch let error as ServiceBrokerWebSocketError {
+            XCTAssertEqual(error, .cancelled)
+        } catch {
+            XCTFail("Expected cancelled, got \(error).")
+        }
+    }
+
     func testWebSocketTextBinaryAndCloseFramesRoundTrip() async throws {
         let server = UnixWebSocketTestServer()
-        let socket = ServiceBrokerWebSocket(socketPath: server.socketPath, maximumMessageBytes: 1_024)
+        let socket = makeSocket(socketPath: server.socketPath, maximumMessageBytes: 1_024)
 
         try await socket.connect(
             path: "/ws/phi-agent/execute",
@@ -38,7 +117,7 @@ final class ServiceBrokerWebSocketTests: XCTestCase {
 
     func testWebSocketReassemblesContinuationAndAnswersPing() async throws {
         let server = UnixWebSocketTestServer(script: .continuationAndPing)
-        let socket = ServiceBrokerWebSocket(socketPath: server.socketPath, maximumMessageBytes: 1_024)
+        let socket = makeSocket(socketPath: server.socketPath, maximumMessageBytes: 1_024)
         try await socket.connect(path: "/ws/phi-agent/execute", headers: [:])
 
         let event = try await socket.receive()
@@ -54,7 +133,7 @@ final class ServiceBrokerWebSocketTests: XCTestCase {
 
     func testWebSocketRejectsMaskedServerFrameAsProtocolError() async throws {
         let server = UnixWebSocketTestServer(script: .maskedServerFrame)
-        let socket = ServiceBrokerWebSocket(socketPath: server.socketPath, maximumMessageBytes: 1_024)
+        let socket = makeSocket(socketPath: server.socketPath, maximumMessageBytes: 1_024)
         try await socket.connect(path: "/ws/phi-agent/execute", headers: [:])
 
         do {
@@ -67,7 +146,7 @@ final class ServiceBrokerWebSocketTests: XCTestCase {
 
     func testWebSocketRejectsOversizedServerFrameAsProtocolError() async throws {
         let server = UnixWebSocketTestServer(script: .oversizedServerFrame)
-        let socket = ServiceBrokerWebSocket(socketPath: server.socketPath, maximumMessageBytes: 4)
+        let socket = makeSocket(socketPath: server.socketPath, maximumMessageBytes: 4)
         try await socket.connect(path: "/ws/phi-agent/execute", headers: [:])
 
         do {
@@ -129,7 +208,7 @@ final class ServiceBrokerWebSocketTests: XCTestCase {
     func testInvalidLocalCloseStillClosesDescriptor() async throws {
         let eof = expectation(description: "server observes client descriptor close")
         let server = UnixWebSocketTestServer(script: .waitForClientEOF, onClientEOF: { eof.fulfill() })
-        let socket = ServiceBrokerWebSocket(socketPath: server.socketPath, maximumMessageBytes: 1_024)
+        let socket = makeSocket(socketPath: server.socketPath, maximumMessageBytes: 1_024)
         try await socket.connect(path: "/ws/phi-agent/execute", headers: [:])
 
         await socket.close(code: nil, reason: "reason without code")
@@ -143,7 +222,7 @@ final class ServiceBrokerWebSocketTests: XCTestCase {
         line: UInt = #line
     ) async {
         let server = UnixWebSocketTestServer(script: script)
-        let socket = ServiceBrokerWebSocket(socketPath: server.socketPath, maximumMessageBytes: 1_024)
+        let socket = makeSocket(socketPath: server.socketPath, maximumMessageBytes: 1_024)
         do {
             try await socket.connect(path: "/ws/phi-agent/execute", headers: [:])
             XCTFail("Expected invalid handshake.", file: file, line: line)
@@ -161,7 +240,7 @@ final class ServiceBrokerWebSocketTests: XCTestCase {
         line: UInt = #line
     ) async throws {
         let server = UnixWebSocketTestServer(script: script)
-        let socket = ServiceBrokerWebSocket(
+        let socket = makeSocket(
             socketPath: server.socketPath,
             maximumMessageBytes: maximumMessageBytes
         )
@@ -194,6 +273,7 @@ private final class UnixWebSocketTestServer: @unchecked Sendable {
         case invalidCloseCode
         case fragmentedAggregateOverflow
         case waitForClientEOF
+        case stallHandshake
     }
 
     let socketPath: String
@@ -300,6 +380,12 @@ private final class UnixWebSocketTestServer: @unchecked Sendable {
         lock.lock()
         capturedRequest = request
         lock.unlock()
+        if script == .stallHandshake {
+            var byte: UInt8 = 0
+            while Darwin.read(connection, &byte, 1) > 0 {}
+            onClientEOF()
+            return
+        }
         guard let key = requestHeaders["sec-websocket-key"] else { return }
         let digest = Insecure.SHA1.hash(data: Data((key + "258EAFA5-E914-47DA-95CA-C5AB0DC85B11").utf8))
         let accept = Data(digest).base64EncodedString()
@@ -373,6 +459,8 @@ private final class UnixWebSocketTestServer: @unchecked Sendable {
         case .waitForClientEOF:
             var byte: UInt8 = 0
             if Darwin.read(connection, &byte, 1) == 0 { onClientEOF() }
+        case .stallHandshake:
+            return
         }
     }
 

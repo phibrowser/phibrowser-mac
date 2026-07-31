@@ -11,14 +11,23 @@ final class ServiceBrokerHTTPConnection: @unchecked Sendable {
 
     private let socketPath: String
     private let bodyLimit: Int?
+    private let peerAuthenticator: ServiceBrokerPeerAuthenticator
+    fileprivate let ioTimeoutMilliseconds: Int
     private let stateLock = NSLock()
     private var fileDescriptor: Int32 = -1
     private var buffered = Data()
     private var closed = false
 
-    init(socketPath: String, bodyLimit: Int? = nil) {
+    init(
+        socketPath: String,
+        bodyLimit: Int? = nil,
+        peerAuthenticator: ServiceBrokerPeerAuthenticator = .production,
+        ioTimeoutMilliseconds: Int = 30_000
+    ) {
         self.socketPath = socketPath
         self.bodyLimit = bodyLimit
+        self.peerAuthenticator = peerAuthenticator
+        self.ioTimeoutMilliseconds = max(1, ioTimeoutMilliseconds)
     }
 
     deinit {
@@ -26,19 +35,37 @@ final class ServiceBrokerHTTPConnection: @unchecked Sendable {
     }
 
     func execute(_ request: BrokerHTTPRequest) async throws -> BrokerHTTPStream {
-        try await Self.runBlocking { [self] in
-            try connectIfNeeded()
-            try writeAll(try serialize(request))
-            let parsed = try readResponseHead()
-            return BrokerHTTPStream(
-                response: BrokerHTTPResponseHead(
-                    statusCode: parsed.statusCode,
-                    headers: parsed.headers
-                ),
-                framing: parsed.framing,
-                connection: self,
-                bodyLimit: bodyLimit
-            )
+        try await withTaskCancellationHandler {
+            guard !Task.isCancelled else { throw ServiceBrokerHTTPError.cancelled }
+            do {
+                let stream = try await Self.runBlocking(
+                    timeoutMilliseconds: ioTimeoutMilliseconds
+                ) { [self] deadline in
+                    try connectIfNeeded(deadline: deadline)
+                    try writeAll(try serialize(request), deadline: deadline)
+                    let parsed = try readResponseHead(deadline: deadline)
+                    return BrokerHTTPStream(
+                        response: BrokerHTTPResponseHead(
+                            statusCode: parsed.statusCode,
+                            headers: parsed.headers
+                        ),
+                        framing: parsed.framing,
+                        connection: self,
+                        bodyLimit: bodyLimit
+                    )
+                }
+                guard !Task.isCancelled else {
+                    close()
+                    throw ServiceBrokerHTTPError.cancelled
+                }
+                return stream
+            } catch {
+                close()
+                if Task.isCancelled { throw ServiceBrokerHTTPError.cancelled }
+                throw error
+            }
+        } onCancel: {
+            self.close()
         }
     }
 
@@ -52,7 +79,7 @@ final class ServiceBrokerHTTPConnection: @unchecked Sendable {
         buffered.removeAll(keepingCapacity: false)
     }
 
-    fileprivate func readRaw(maxBytes: Int) throws -> Data? {
+    fileprivate func readRaw(maxBytes: Int, deadline: ServiceBrokerDeadline) throws -> Data? {
         guard maxBytes > 0 else { throw ServiceBrokerHTTPError.invalidRequest }
 
         stateLock.lock()
@@ -68,28 +95,21 @@ final class ServiceBrokerHTTPConnection: @unchecked Sendable {
         stateLock.unlock()
 
         guard !isClosed, descriptor >= 0 else { throw ServiceBrokerHTTPError.cancelled }
-        var descriptorToPoll = pollfd(fd: descriptor, events: Int16(POLLIN), revents: 0)
-        while Darwin.poll(&descriptorToPoll, 1, 100) == 0 {
-            stateLock.lock()
-            let shouldStop = closed || fileDescriptor != descriptor
-            stateLock.unlock()
-            if shouldStop { throw ServiceBrokerHTTPError.cancelled }
-        }
-        guard descriptorToPoll.revents & Int16(POLLERR | POLLNVAL) == 0 else {
-            throw ServiceBrokerHTTPError.connectionClosed
-        }
+        try waitForIO(descriptor: descriptor, events: Int16(POLLIN), deadline: deadline)
 
         var bytes = [UInt8](repeating: 0, count: maxBytes)
         let count = Darwin.read(descriptor, &bytes, maxBytes)
         if count == 0 { return nil }
         if count < 0 {
-            if errno == EAGAIN || errno == EWOULDBLOCK { return try readRaw(maxBytes: maxBytes) }
+            if errno == EAGAIN || errno == EWOULDBLOCK {
+                return try readRaw(maxBytes: maxBytes, deadline: deadline)
+            }
             throw ServiceBrokerHTTPError.connectionClosed
         }
         return Data(bytes.prefix(count))
     }
 
-    private func connectIfNeeded() throws {
+    private func connectIfNeeded(deadline: ServiceBrokerDeadline) throws {
         stateLock.lock()
         let existing = fileDescriptor
         stateLock.unlock()
@@ -98,6 +118,17 @@ final class ServiceBrokerHTTPConnection: @unchecked Sendable {
         let descriptor = socket(AF_UNIX, SOCK_STREAM, 0)
         guard descriptor >= 0 else { throw ServiceBrokerHTTPError.connectionClosed }
         guard fcntl(descriptor, F_SETFL, fcntl(descriptor, F_GETFL) | O_NONBLOCK) == 0 else {
+            Darwin.close(descriptor)
+            throw ServiceBrokerHTTPError.connectionClosed
+        }
+        var noSigPipe: Int32 = 1
+        guard setsockopt(
+            descriptor,
+            SOL_SOCKET,
+            SO_NOSIGPIPE,
+            &noSigPipe,
+            socklen_t(MemoryLayout<Int32>.size)
+        ) == 0 else {
             Darwin.close(descriptor)
             throw ServiceBrokerHTTPError.connectionClosed
         }
@@ -125,10 +156,11 @@ final class ServiceBrokerHTTPConnection: @unchecked Sendable {
             throw ServiceBrokerHTTPError.connectionClosed
         }
         if result != 0 {
-            var descriptorToPoll = pollfd(fd: descriptor, events: Int16(POLLOUT), revents: 0)
-            guard Darwin.poll(&descriptorToPoll, 1, 10_000) > 0 else {
+            do {
+                try waitForIO(descriptor: descriptor, events: Int16(POLLOUT), deadline: deadline)
+            } catch {
                 Darwin.close(descriptor)
-                throw ServiceBrokerHTTPError.connectionClosed
+                throw error
             }
             var socketError: Int32 = 0
             var length = socklen_t(MemoryLayout<Int32>.size)
@@ -136,6 +168,13 @@ final class ServiceBrokerHTTPConnection: @unchecked Sendable {
                 Darwin.close(descriptor)
                 throw ServiceBrokerHTTPError.connectionClosed
             }
+        }
+
+        do {
+            try peerAuthenticator.authenticate(fileDescriptor: descriptor)
+        } catch {
+            Darwin.close(descriptor)
+            throw ServiceBrokerHTTPError.peerAuthentication
         }
 
         stateLock.lock()
@@ -148,9 +187,12 @@ final class ServiceBrokerHTTPConnection: @unchecked Sendable {
         stateLock.unlock()
     }
 
-    private func writeAll(_ data: Data) throws {
+    private func writeAll(_ data: Data, deadline: ServiceBrokerDeadline) throws {
         var offset = 0
         while offset < data.count {
+            guard deadline.pollTimeoutMilliseconds() != nil else {
+                throw ServiceBrokerHTTPError.timedOut
+            }
             stateLock.lock()
             let descriptor = fileDescriptor
             let isClosed = closed
@@ -165,10 +207,7 @@ final class ServiceBrokerHTTPConnection: @unchecked Sendable {
                 continue
             }
             if written < 0 && (errno == EAGAIN || errno == EWOULDBLOCK) {
-                var descriptorToPoll = pollfd(fd: descriptor, events: Int16(POLLOUT), revents: 0)
-                guard Darwin.poll(&descriptorToPoll, 1, 10_000) > 0 else {
-                    throw ServiceBrokerHTTPError.connectionClosed
-                }
+                try waitForIO(descriptor: descriptor, events: Int16(POLLOUT), deadline: deadline)
                 continue
             }
             throw ServiceBrokerHTTPError.connectionClosed
@@ -236,11 +275,11 @@ final class ServiceBrokerHTTPConnection: @unchecked Sendable {
         ] + connectionTokens)
     }
 
-    private func readResponseHead() throws -> ParsedResponseHead {
+    private func readResponseHead(deadline: ServiceBrokerDeadline) throws -> ParsedResponseHead {
         var response = Data()
         let delimiter = Data("\r\n\r\n".utf8)
         while response.range(of: delimiter) == nil {
-            guard let chunk = try readRaw(maxBytes: 4 * 1024) else {
+            guard let chunk = try readRaw(maxBytes: 4 * 1024, deadline: deadline) else {
                 throw ServiceBrokerHTTPError.connectionClosed
             }
             response.append(chunk)
@@ -263,11 +302,43 @@ final class ServiceBrokerHTTPConnection: @unchecked Sendable {
         return try ParsedResponseHead(head)
     }
 
-    fileprivate static func runBlocking<T: Sendable>(_ operation: @escaping @Sendable () throws -> T) async throws -> T {
+    private func waitForIO(
+        descriptor: Int32,
+        events: Int16,
+        deadline: ServiceBrokerDeadline
+    ) throws {
+        while true {
+            stateLock.lock()
+            let isClosed = closed
+            stateLock.unlock()
+            guard !isClosed else { throw ServiceBrokerHTTPError.cancelled }
+            guard let timeout = deadline.pollTimeoutMilliseconds() else {
+                throw ServiceBrokerHTTPError.timedOut
+            }
+            var polled = pollfd(fd: descriptor, events: events, revents: 0)
+            let result = Darwin.poll(&polled, 1, timeout)
+            if result > 0 {
+                guard polled.revents & Int16(POLLERR | POLLNVAL) == 0 else {
+                    throw ServiceBrokerHTTPError.connectionClosed
+                }
+                return
+            }
+            if result < 0, errno != EINTR {
+                throw ServiceBrokerHTTPError.connectionClosed
+            }
+        }
+    }
+
+    fileprivate static func runBlocking<T: Sendable>(
+        timeoutMilliseconds: Int,
+        _ operation: @escaping @Sendable (ServiceBrokerDeadline) throws -> T
+    ) async throws -> T {
         try await withCheckedThrowingContinuation { continuation in
             DispatchQueue.global(qos: .userInitiated).async {
                 do {
-                    continuation.resume(returning: try operation())
+                    continuation.resume(returning: try operation(ServiceBrokerDeadline(
+                        timeoutMilliseconds: timeoutMilliseconds
+                    )))
                 } catch {
                     continuation.resume(throwing: error)
                 }
@@ -305,8 +376,28 @@ final class BrokerHTTPStream: @unchecked Sendable {
     }
 
     func read(maxBytes: Int) async throws -> Data? {
-        try await ServiceBrokerHTTPConnection.runBlocking { [self] in
-            try readSynchronously(maxBytes: maxBytes)
+        try await withTaskCancellationHandler {
+            guard !Task.isCancelled else { throw ServiceBrokerHTTPError.cancelled }
+            do {
+                let data = try await ServiceBrokerHTTPConnection.runBlocking(
+                    timeoutMilliseconds: connection.ioTimeoutMilliseconds
+                ) { [self] deadline in
+                    try readSynchronously(maxBytes: maxBytes, deadline: deadline)
+                }
+                guard !Task.isCancelled else {
+                    cancel()
+                    throw ServiceBrokerHTTPError.cancelled
+                }
+                return data
+            } catch {
+                if Task.isCancelled { throw ServiceBrokerHTTPError.cancelled }
+                if error as? ServiceBrokerHTTPError == .timedOut {
+                    cancel()
+                }
+                throw error
+            }
+        } onCancel: {
+            self.cancel()
         }
     }
 
@@ -314,7 +405,7 @@ final class BrokerHTTPStream: @unchecked Sendable {
         connection.close()
     }
 
-    private func readSynchronously(maxBytes: Int) throws -> Data? {
+    private func readSynchronously(maxBytes: Int, deadline: ServiceBrokerDeadline) throws -> Data? {
         guard maxBytes > 0 else { throw ServiceBrokerHTTPError.invalidRequest }
         let boundedMaxBytes = min(maxBytes, 64 * 1024)
         lock.lock()
@@ -330,28 +421,34 @@ final class BrokerHTTPStream: @unchecked Sendable {
                 completed = true
                 return nil
             }
-            guard let data = try connection.readRaw(maxBytes: min(boundedMaxBytes, remaining)) else {
+            guard let data = try connection.readRaw(
+                maxBytes: min(boundedMaxBytes, remaining),
+                deadline: deadline
+            ) else {
                 throw ServiceBrokerHTTPError.connectionClosed
             }
             framing = .fixedLength(remaining - data.count)
             try record(data)
             return data
         case .eofDelimited:
-            guard let data = try connection.readRaw(maxBytes: boundedMaxBytes) else {
+            guard let data = try connection.readRaw(maxBytes: boundedMaxBytes, deadline: deadline) else {
                 completed = true
                 return nil
             }
             try record(data)
             return data
         case .chunked:
-            return try readChunked(maxBytes: boundedMaxBytes)
+            return try readChunked(maxBytes: boundedMaxBytes, deadline: deadline)
         }
     }
 
-    private func readChunked(maxBytes: Int) throws -> Data? {
+    private func readChunked(maxBytes: Int, deadline: ServiceBrokerDeadline) throws -> Data? {
         while true {
             if let remaining = chunkBytesRemaining, remaining > 0 {
-                guard let data = try connection.readRaw(maxBytes: min(maxBytes, remaining)) else {
+                guard let data = try connection.readRaw(
+                    maxBytes: min(maxBytes, remaining),
+                    deadline: deadline
+                ) else {
                     throw ServiceBrokerHTTPError.connectionClosed
                 }
                 chunkBytesRemaining = remaining - data.count
@@ -360,19 +457,19 @@ final class BrokerHTTPStream: @unchecked Sendable {
                 return data
             }
             if needsChunkTerminator {
-                guard try readExact(2) == Data("\r\n".utf8) else {
+                guard try readExact(2, deadline: deadline) == Data("\r\n".utf8) else {
                     throw ServiceBrokerHTTPError.invalidResponse
                 }
                 needsChunkTerminator = false
                 chunkBytesRemaining = nil
             }
-            let line = try readLine()
+            let line = try readLine(deadline: deadline)
             let sizeText = line.split(separator: ";", maxSplits: 1).first ?? ""
             guard !sizeText.isEmpty, sizeText.allSatisfy({ $0.isHexDigit }), let size = Int(sizeText, radix: 16) else {
                 throw ServiceBrokerHTTPError.invalidResponse
             }
             if size == 0 {
-                while !(try readLine()).isEmpty {}
+                while !(try readLine(deadline: deadline)).isEmpty {}
                 completed = true
                 return nil
             }
@@ -383,10 +480,10 @@ final class BrokerHTTPStream: @unchecked Sendable {
         }
     }
 
-    private func readLine() throws -> String {
+    private func readLine(deadline: ServiceBrokerDeadline) throws -> String {
         var data = Data()
         while true {
-            guard let byte = try connection.readRaw(maxBytes: 1) else {
+            guard let byte = try connection.readRaw(maxBytes: 1, deadline: deadline) else {
                 throw ServiceBrokerHTTPError.connectionClosed
             }
             data.append(byte)
@@ -401,10 +498,13 @@ final class BrokerHTTPStream: @unchecked Sendable {
         }
     }
 
-    private func readExact(_ count: Int) throws -> Data {
+    private func readExact(_ count: Int, deadline: ServiceBrokerDeadline) throws -> Data {
         var data = Data()
         while data.count < count {
-            guard let chunk = try connection.readRaw(maxBytes: count - data.count) else {
+            guard let chunk = try connection.readRaw(
+                maxBytes: count - data.count,
+                deadline: deadline
+            ) else {
                 throw ServiceBrokerHTTPError.connectionClosed
             }
             data.append(chunk)

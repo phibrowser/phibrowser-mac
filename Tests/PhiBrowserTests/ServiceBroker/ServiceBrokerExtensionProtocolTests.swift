@@ -48,6 +48,68 @@ final class ServiceBrokerExtensionProtocolTests: XCTestCase {
         XCTAssertEqual(requestCount, 0)
     }
 
+    func testRejectsHTTPReplyWhenAuthRevisionChangesDuringRequest() async {
+        let accountA = authSnapshot(
+            accountID: "auth0|account-a",
+            accessToken: "token-a",
+            generation: 1
+        )
+        let rotatedA = authSnapshot(
+            accountID: "auth0|account-a",
+            accessToken: "token-a-rotated",
+            generation: 2
+        )
+        let authState = ImagePreviewAuthSnapshotBox(accountA)
+        let handler = makeHandler(
+            requestExecutor: { _ in
+                authState.set(rotatedA)
+                await Task.yield()
+                return BrokerHTTPResponse(statusCode: 200, headers: [], body: Data("secret".utf8))
+            },
+            authSnapshotProvider: { authState.current() },
+            runtimeAccountID: accountA.scope.accountID
+        )
+
+        let reply = await handler.handle(
+            type: "broker.http.request",
+            payload: #"{"path":"/api/private","method":"GET"}"#,
+            senderID: allowedSender
+        )
+
+        XCTAssertEqual(reply.error?.code, "upstream_error")
+    }
+
+    func testAuthRevisionOwnsChannelAndRejectsPullAfterTokenRotation() async throws {
+        let accountA = authSnapshot(
+            accountID: "auth0|account-a",
+            accessToken: "token-a",
+            generation: 1
+        )
+        let rotatedA = authSnapshot(
+            accountID: "auth0|account-a",
+            accessToken: "token-a-rotated",
+            generation: 2
+        )
+        let authState = ImagePreviewAuthSnapshotBox(accountA)
+        let store = makeStore(httpReader: HTTPChunkReader([Data("secret".utf8), nil]))
+        let handler = makeHandler(
+            channelStore: store,
+            authSnapshotProvider: { authState.current() },
+            runtimeAccountID: accountA.scope.accountID
+        )
+        let opened = await handler.handle(
+            type: "broker.stream.open",
+            payload: #"{"path":"/api/private"}"#,
+            senderID: allowedSender
+        )
+        let channelID = try XCTUnwrap(try successResult(opened)["channelId"] as? String)
+
+        authState.set(rotatedA)
+        let pulled = await pull(type: "broker.stream.pull", channelID: channelID, handler: handler)
+
+        XCTAssertEqual(pulled.error?.code, "owner_mismatch")
+    }
+
     func testImagePreviewItemsUseBrokerOnlyForExactSidecarSenderAndFilePath() {
         let addresses = [
             "/api/v1/files/image-1?variant=full",
@@ -1041,7 +1103,12 @@ final class ServiceBrokerExtensionProtocolTests: XCTestCase {
         let duplicate = await pull(type: "broker.stream.pull", channelID: channelID, handler: handler)
         XCTAssertEqual(duplicate.error?.code, "pull_already_pending")
         try await store.cancelHTTP(
-            owner: BrokerSenderContext(extensionID: allowedSender, profileID: nil, accountID: nil),
+            owner: BrokerSenderContext(
+                extensionID: allowedSender,
+                profileID: nil,
+                accountID: "auth0|test-account",
+                authRevisionID: UUID(uuidString: "00000000-0000-0000-0000-000000000001")!
+            ),
             channelID: channelID
         )
         _ = await pending.value

@@ -2,7 +2,22 @@ import Darwin
 import XCTest
 @testable import Phi
 
+extension ServiceBrokerPeerAuthenticator {
+    static let allowingTests = ServiceBrokerPeerAuthenticator { _ in }
+}
+
 final class ServiceBrokerClientTests: XCTestCase {
+    private func makeClient(
+        socketPath: String,
+        nonStreamingResponseBytes: Int = 16 * 1024 * 1024
+    ) -> ServiceBrokerClient {
+        ServiceBrokerClient(
+            socketPath: socketPath,
+            nonStreamingResponseBytes: nonStreamingResponseBytes,
+            peerAuthenticator: .allowingTests
+        )
+    }
+
     func testVersionNegotiationAcceptsCurrentMajorOnly() {
         XCTAssertEqual(
             ServiceBrokerNegotiation.evaluate(protocolVersion: 1),
@@ -23,10 +38,101 @@ final class ServiceBrokerClientTests: XCTestCase {
         XCTAssertFalse(ServiceBrokerFallbackReason.sizeLimitExceeded.allowsLoopback)
     }
 
+    func testRejectsUnauthenticatedBrokerPeerBeforeSendingCredentials() async {
+        let server = UnixHTTPTestServer(response:
+            "HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n")
+        let client = ServiceBrokerClient(
+            socketPath: server.socketPath,
+            peerAuthenticator: ServiceBrokerPeerAuthenticator { _ in
+                throw ServiceBrokerHTTPError.peerAuthentication
+            }
+        )
+
+        await assertBrokerHTTPError(.peerAuthentication) {
+            _ = try await client.request(BrokerHTTPRequest(
+                service: .phiAgent,
+                path: "/api/private",
+                headers: ["Authorization": "Bearer must-not-leak"]
+            ))
+        }
+        XCTAssertNil(server.requestMethod)
+    }
+
+    func testConfiguresNoSigPipeBeforePeerAuthenticationAndHTTPWrite() async throws {
+        let server = UnixHTTPTestServer(response:
+            "HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n")
+        let client = ServiceBrokerClient(
+            socketPath: server.socketPath,
+            peerAuthenticator: ServiceBrokerPeerAuthenticator { descriptor in
+                var enabled: Int32 = 0
+                var length = socklen_t(MemoryLayout<Int32>.size)
+                guard getsockopt(
+                    descriptor,
+                    SOL_SOCKET,
+                    SO_NOSIGPIPE,
+                    &enabled,
+                    &length
+                ) == 0, enabled == 1 else {
+                    throw ServiceBrokerHTTPError.peerAuthentication
+                }
+            }
+        )
+
+        let response = try await client.request(BrokerHTTPRequest(
+            service: .phiAgent,
+            path: "/api/health"
+        ))
+
+        XCTAssertEqual(response.statusCode, 200)
+    }
+
+    func testTimesOutWhenHTTPPeerStallsBeforeResponseHeaders() async {
+        let server = UnixHTTPStallServer()
+        let client = ServiceBrokerClient(
+            socketPath: server.socketPath,
+            peerAuthenticator: .allowingTests,
+            ioTimeoutMilliseconds: 50
+        )
+
+        await assertBrokerHTTPError(.timedOut) {
+            _ = try await client.request(BrokerHTTPRequest(
+                service: .phiAgent,
+                path: "/api/stall"
+            ))
+        }
+    }
+
+    func testTaskCancellationClosesStalledHTTPConnection() async throws {
+        let server = UnixHTTPStallServer()
+        let client = ServiceBrokerClient(
+            socketPath: server.socketPath,
+            peerAuthenticator: .allowingTests,
+            ioTimeoutMilliseconds: 5_000
+        )
+        let request = Task {
+            try await client.request(BrokerHTTPRequest(
+                service: .phiAgent,
+                path: "/api/stall"
+            ))
+        }
+        try await Task.sleep(for: .milliseconds(25))
+
+        request.cancel()
+
+        do {
+            _ = try await request.value
+            XCTFail("Expected cancellation to close the stalled connection.")
+        } catch let error as ServiceBrokerHTTPError {
+            XCTAssertEqual(error, .cancelled)
+        } catch {
+            XCTFail("Expected cancelled, got \(error).")
+        }
+    }
+
     func testRequestRoutesPhiAgentPathOverUnixSocket() async throws {
         let server = UnixHTTPTestServer(response:
             "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: 11\r\n\r\n{\"ok\":true}")
-        let client = ServiceBrokerClient(socketPath: server.socketPath)
+        let client = makeClient(socketPath: server.socketPath)
 
         let response = try await client.request(BrokerHTTPRequest(
             service: .phiAgent,
@@ -55,7 +161,7 @@ final class ServiceBrokerClientTests: XCTestCase {
                 "Set-Cookie: second=2\r\n" +
                 "WWW-Authenticate: Basic realm=two\r\n" +
                 "Content-Length: 0\r\n\r\n")
-        let client = ServiceBrokerClient(socketPath: server.socketPath)
+        let client = makeClient(socketPath: server.socketPath)
 
         let response = try await client.request(BrokerHTTPRequest(service: .phiAgent, path: "/auth"))
 
@@ -71,7 +177,7 @@ final class ServiceBrokerClientTests: XCTestCase {
     func testRequestParsesChunkedBody() async throws {
         let server = UnixHTTPTestServer(response:
             "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n5\r\nhello\r\n6\r\n world\r\n0\r\n\r\n")
-        let client = ServiceBrokerClient(socketPath: server.socketPath)
+        let client = makeClient(socketPath: server.socketPath)
 
         let response = try await client.request(BrokerHTTPRequest(service: .phiAgent, path: "/stream"))
 
@@ -81,7 +187,7 @@ final class ServiceBrokerClientTests: XCTestCase {
     func testRequestParsesEOFDelimitedBody() async throws {
         let server = UnixHTTPTestServer(response:
             "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\n\r\nconnection closed body")
-        let client = ServiceBrokerClient(socketPath: server.socketPath)
+        let client = makeClient(socketPath: server.socketPath)
 
         let response = try await client.request(BrokerHTTPRequest(service: .phiAgent, path: "/logs"))
 
@@ -91,7 +197,7 @@ final class ServiceBrokerClientTests: XCTestCase {
     func testRequestRejectsInvalidContentLengthForNoBodyStatus() async {
         let server = UnixHTTPTestServer(response:
             "HTTP/1.1 204 No Content\r\nContent-Length: invalid\r\n\r\n")
-        let client = ServiceBrokerClient(socketPath: server.socketPath)
+        let client = makeClient(socketPath: server.socketPath)
 
         await assertBrokerHTTPError(.invalidResponse) {
             _ = try await client.request(BrokerHTTPRequest(service: .phiAgent, path: "/empty"))
@@ -101,7 +207,7 @@ final class ServiceBrokerClientTests: XCTestCase {
     func testRequestRejectsConflictingFramingForNoBodyStatus() async {
         let server = UnixHTTPTestServer(response:
             "HTTP/1.1 204 No Content\r\nContent-Length: 0\r\nTransfer-Encoding: chunked\r\n\r\n")
-        let client = ServiceBrokerClient(socketPath: server.socketPath)
+        let client = makeClient(socketPath: server.socketPath)
 
         await assertBrokerHTTPError(.invalidResponse) {
             _ = try await client.request(BrokerHTTPRequest(service: .phiAgent, path: "/empty"))
@@ -111,7 +217,7 @@ final class ServiceBrokerClientTests: XCTestCase {
     func testRequestRejectsControlCharacterInStatusLine() async {
         let server = UnixHTTPTestServer(response:
             "HTTP/1.1 200 O\u{000B}K\r\nContent-Length: 0\r\n\r\n")
-        let client = ServiceBrokerClient(socketPath: server.socketPath)
+        let client = makeClient(socketPath: server.socketPath)
 
         await assertBrokerHTTPError(.invalidResponse) {
             _ = try await client.request(BrokerHTTPRequest(service: .phiAgent, path: "/status"))
@@ -121,7 +227,7 @@ final class ServiceBrokerClientTests: XCTestCase {
     func testRequestRejectsPercentEncodedDotSegment() async {
         let server = UnixHTTPTestServer(response:
             "HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n")
-        let client = ServiceBrokerClient(socketPath: server.socketPath)
+        let client = makeClient(socketPath: server.socketPath)
 
         await assertBrokerHTTPError(.invalidRequest) {
             _ = try await client.request(BrokerHTTPRequest(
@@ -134,7 +240,7 @@ final class ServiceBrokerClientTests: XCTestCase {
     func testOpenStreamReadsFixedLengthResponseInChunks() async throws {
         let server = UnixHTTPTestServer(response:
             "HTTP/1.1 200 OK\r\nContent-Length: 5\r\n\r\nhello")
-        let client = ServiceBrokerClient(socketPath: server.socketPath)
+        let client = makeClient(socketPath: server.socketPath)
 
         let stream = try await client.openStream(BrokerHTTPRequest(service: .phiAgent, path: "/stream"))
         defer { stream.cancel() }
@@ -151,7 +257,7 @@ final class ServiceBrokerClientTests: XCTestCase {
     func testOpenStreamMayConsumeBeyondNonStreamingResponseLimit() async throws {
         let server = UnixHTTPTestServer(response:
             "HTTP/1.1 200 OK\r\nContent-Length: 8\r\n\r\n12345678")
-        let client = ServiceBrokerClient(socketPath: server.socketPath, nonStreamingResponseBytes: 4)
+        let client = makeClient(socketPath: server.socketPath, nonStreamingResponseBytes: 4)
         let stream = try await client.openStream(BrokerHTTPRequest(service: .phiAgent, path: "/stream"))
         defer { stream.cancel() }
 
@@ -166,7 +272,7 @@ final class ServiceBrokerClientTests: XCTestCase {
     func testNonStreamingRequestStillEnforcesAggregateResponseLimit() async {
         let server = UnixHTTPTestServer(response:
             "HTTP/1.1 200 OK\r\nContent-Length: 8\r\n\r\n12345678")
-        let client = ServiceBrokerClient(socketPath: server.socketPath, nonStreamingResponseBytes: 4)
+        let client = makeClient(socketPath: server.socketPath, nonStreamingResponseBytes: 4)
 
         await assertBrokerHTTPError(.responseTooLarge) {
             _ = try await client.request(BrokerHTTPRequest(service: .phiAgent, path: "/request"))
@@ -299,5 +405,46 @@ private final class UnixHTTPTestServer: @unchecked Sendable {
                 written += count
             }
         }
+    }
+}
+
+private final class UnixHTTPStallServer: @unchecked Sendable {
+    let socketPath: String
+
+    private let listener: Int32
+
+    init() {
+        socketPath = "/tmp/phi-broker-stall-\(UUID().uuidString).sock"
+        listener = socket(AF_UNIX, SOCK_STREAM, 0)
+        precondition(listener >= 0)
+
+        var address = sockaddr_un()
+        address.sun_len = UInt8(MemoryLayout<sockaddr_un>.size)
+        address.sun_family = sa_family_t(AF_UNIX)
+        _ = withUnsafeMutableBytes(of: &address.sun_path) { buffer in
+            socketPath.withCString { source in
+                strncpy(buffer.baseAddress!.assumingMemoryBound(to: CChar.self), source, buffer.count - 1)
+            }
+        }
+        let result = withUnsafePointer(to: &address) {
+            $0.withMemoryRebound(to: sockaddr.self, capacity: 1) {
+                Darwin.bind(listener, $0, socklen_t(MemoryLayout<sockaddr_un>.size))
+            }
+        }
+        precondition(result == 0)
+        precondition(listen(listener, 1) == 0)
+
+        DispatchQueue.global().async { [self] in
+            let connection = accept(listener, nil, nil)
+            guard connection >= 0 else { return }
+            defer { Darwin.close(connection) }
+            var byte: UInt8 = 0
+            while Darwin.read(connection, &byte, 1) > 0 {}
+        }
+    }
+
+    deinit {
+        Darwin.close(listener)
+        unlink(socketPath)
     }
 }

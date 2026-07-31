@@ -154,14 +154,21 @@ actor ServiceBrokerExtensionProtocol {
         }
 
         do {
-            let runtime = try await resolveRuntime()
+            let authSnapshot = try requireAuthenticatedSnapshot()
+            let runtime = try await resolveRuntime(expectedAccountID: authSnapshot.scope.accountID)
+            try requireUnchangedAuth(authSnapshot)
             guard payload.lengthOfBytes(using: .utf8) <= Self.envelopeLimit(
                 for: type,
                 limits: runtime.limits
             ) else {
                 throw ProtocolFailure(code: .requestTooLarge, message: "The broker request is too large.")
             }
-            let owner = BrokerSenderContext(extensionID: senderID, profileID: nil, accountID: nil)
+            let owner = BrokerSenderContext(
+                extensionID: senderID,
+                profileID: nil,
+                accountID: authSnapshot.scope.accountID,
+                authRevisionID: authSnapshot.scope.revisionID
+            )
             switch type {
             case "broker.http.request":
                 let request = try decodeHTTPRequest(
@@ -170,6 +177,7 @@ actor ServiceBrokerExtensionProtocol {
                     allowsBrokerHealth: true
                 )
                 let response = try await runtime.requestExecutor(request)
+                try requireUnchangedAuth(authSnapshot)
                 guard response.body.count <= runtime.limits.nonStreamingResponseBytes else {
                     throw ProtocolFailure(code: .responseTooLarge, message: "The broker response is too large.")
                 }
@@ -182,6 +190,12 @@ actor ServiceBrokerExtensionProtocol {
             case "broker.stream.open":
                 let request = try decodeHTTPRequest(payload, limits: runtime.limits)
                 let opened = try await runtime.channelStore.openHTTPStream(owner: owner, request: request)
+                do {
+                    try requireUnchangedAuth(authSnapshot)
+                } catch {
+                    try? await runtime.channelStore.cancelHTTP(owner: owner, channelID: opened.channelID)
+                    throw error
+                }
                 return try success([
                     "channelId": opened.channelID,
                     "status": opened.statusCode,
@@ -196,6 +210,12 @@ actor ServiceBrokerExtensionProtocol {
                 )
                 try validateChannelID(request.channelId)
                 let pulled = try await runtime.channelStore.pullHTTP(owner: owner, channelID: request.channelId)
+                do {
+                    try requireUnchangedAuth(authSnapshot)
+                } catch {
+                    try? await runtime.channelStore.cancelHTTP(owner: owner, channelID: request.channelId)
+                    throw error
+                }
                 return try encode(pulled.event)
 
             case "broker.stream.cancel":
@@ -206,6 +226,7 @@ actor ServiceBrokerExtensionProtocol {
                 )
                 try validateChannelID(request.channelId)
                 try await runtime.channelStore.cancelHTTP(owner: owner, channelID: request.channelId)
+                try requireUnchangedAuth(authSnapshot)
                 return try success(["cancelled": true])
 
             case "broker.ws.open":
@@ -223,6 +244,17 @@ actor ServiceBrokerExtensionProtocol {
                     path: request.path,
                     headers: headers
                 )
+                do {
+                    try requireUnchangedAuth(authSnapshot)
+                } catch {
+                    try? await runtime.channelStore.closeWebSocket(
+                        owner: owner,
+                        channelID: opened.channelID,
+                        code: 1008,
+                        reason: nil
+                    )
+                    throw error
+                }
                 return try success(["channelId": opened.channelID])
 
             case "broker.ws.send":
@@ -242,6 +274,17 @@ actor ServiceBrokerExtensionProtocol {
                     channelID: request.channelId,
                     frame: BrokerWebSocketFrame(kind: request.kind, data: data)
                 )
+                do {
+                    try requireUnchangedAuth(authSnapshot)
+                } catch {
+                    try? await runtime.channelStore.closeWebSocket(
+                        owner: owner,
+                        channelID: request.channelId,
+                        code: 1008,
+                        reason: nil
+                    )
+                    throw error
+                }
                 return try success(["sent": true])
 
             case "broker.ws.pull":
@@ -252,6 +295,17 @@ actor ServiceBrokerExtensionProtocol {
                 )
                 try validateChannelID(request.channelId)
                 let pulled = try await runtime.channelStore.pullWebSocket(owner: owner, channelID: request.channelId)
+                do {
+                    try requireUnchangedAuth(authSnapshot)
+                } catch {
+                    try? await runtime.channelStore.closeWebSocket(
+                        owner: owner,
+                        channelID: request.channelId,
+                        code: 1008,
+                        reason: nil
+                    )
+                    throw error
+                }
                 return try encode(pulled.event)
 
             case "broker.ws.close":
@@ -276,6 +330,7 @@ actor ServiceBrokerExtensionProtocol {
                     code: request.code,
                     reason: request.reason
                 )
+                try requireUnchangedAuth(authSnapshot)
                 return try success(["closed": true])
 
             default:
@@ -394,6 +449,25 @@ actor ServiceBrokerExtensionProtocol {
             throw ProtocolFailure(code: .upstreamError, message: "The Phi Agent authentication changed.")
         }
         return snapshot
+    }
+
+    private func requireAuthenticatedSnapshot() throws -> SharedAuthTokenSnapshot {
+        guard let snapshot = authSnapshotProvider(), !snapshot.accessToken.isEmpty else {
+            throw ProtocolFailure(
+                code: .upstreamError,
+                message: "The Phi Agent authentication is unavailable."
+            )
+        }
+        return snapshot
+    }
+
+    private func requireUnchangedAuth(_ expected: SharedAuthTokenSnapshot) throws {
+        guard authSnapshotProvider() == expected else {
+            throw ProtocolFailure(
+                code: .upstreamError,
+                message: "The Phi Agent authentication changed."
+            )
+        }
     }
 
     private func decodeHTTPRequest(
@@ -597,6 +671,10 @@ actor ServiceBrokerExtensionProtocol {
             case .responseTooLarge: return failure(.responseTooLarge, "The broker response is too large.")
             case .invalidRequest: return failure(.invalidPayload, "The upstream HTTP request is invalid.")
             case .invalidResponse: return failure(.protocolError, "The upstream HTTP response is invalid.")
+            case .peerAuthentication:
+                return failure(.upstreamError, "The service-broker peer could not be authenticated.")
+            case .timedOut:
+                return failure(.upstreamError, "The upstream HTTP request timed out.")
             case .connectionClosed, .cancelled:
                 return failure(.upstreamError, "The upstream HTTP connection failed.")
             }
@@ -607,6 +685,10 @@ actor ServiceBrokerExtensionProtocol {
                 return failure(.protocolError, "The upstream WebSocket protocol failed.")
             case .invalidRequest:
                 return failure(.invalidPayload, "The WebSocket request is invalid.")
+            case .peerAuthentication:
+                return failure(.upstreamError, "The service-broker peer could not be authenticated.")
+            case .timedOut:
+                return failure(.upstreamError, "The upstream WebSocket operation timed out.")
             case .connectionClosed, .cancelled:
                 return failure(.upstreamError, "The upstream WebSocket connection failed.")
             }

@@ -34,4 +34,31 @@ final class ServiceBrokerSocketPathTests: XCTestCase {
             "auth0_a_b_c_d"
         )
     }
+
+    func testFallsBackToStorageWhenShortSocketRootIsSymlinked() throws {
+        let storage = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+            .path
+        let digest = SHA256.hash(data: Data(storage.utf8))
+            .prefix(8)
+            .map { String(format: "%02x", $0) }
+            .joined()
+        let shortRoot = "/tmp/phi-sentinel-\(digest)"
+        let symlinkTarget = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: symlinkTarget, withIntermediateDirectories: true)
+        try FileManager.default.createSymbolicLink(
+            atPath: shortRoot,
+            withDestinationPath: symlinkTarget.path
+        )
+        defer {
+            try? FileManager.default.removeItem(atPath: shortRoot)
+            try? FileManager.default.removeItem(at: symlinkTarget)
+        }
+
+        XCTAssertEqual(
+            ServiceBrokerSocketPath.dataSocketPath(storagePath: storage),
+            (storage as NSString).appendingPathComponent("state/sockets/service-broker.sock")
+        )
+    }
 }

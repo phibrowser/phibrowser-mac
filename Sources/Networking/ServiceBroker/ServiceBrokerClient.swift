@@ -8,16 +8,30 @@ import Foundation
 final class ServiceBrokerClient: Sendable {
     private let socketPath: String
     private let nonStreamingResponseBytes: Int
+    private let peerAuthenticator: ServiceBrokerPeerAuthenticator
+    private let ioTimeoutMilliseconds: Int
 
-    init(socketPath: String, nonStreamingResponseBytes: Int = 16 * 1024 * 1024) {
+    init(
+        socketPath: String,
+        nonStreamingResponseBytes: Int = 16 * 1024 * 1024,
+        peerAuthenticator: ServiceBrokerPeerAuthenticator = .production,
+        ioTimeoutMilliseconds: Int = 30_000
+    ) {
         self.socketPath = socketPath
         self.nonStreamingResponseBytes = nonStreamingResponseBytes
+        self.peerAuthenticator = peerAuthenticator
+        self.ioTimeoutMilliseconds = max(1, ioTimeoutMilliseconds)
     }
 
-    convenience init(socketPath: String, limits: ServiceBrokerLimits) {
+    convenience init(
+        socketPath: String,
+        limits: ServiceBrokerLimits,
+        peerAuthenticator: ServiceBrokerPeerAuthenticator = .production
+    ) {
         self.init(
             socketPath: socketPath,
-            nonStreamingResponseBytes: limits.nonStreamingResponseBytes
+            nonStreamingResponseBytes: limits.nonStreamingResponseBytes,
+            peerAuthenticator: peerAuthenticator
         )
     }
 
@@ -57,7 +71,9 @@ final class ServiceBrokerClient: Sendable {
     func openStream(_ request: BrokerHTTPRequest) async throws -> BrokerHTTPStream {
         let connection = ServiceBrokerHTTPConnection(
             socketPath: socketPath,
-            bodyLimit: nil
+            bodyLimit: nil,
+            peerAuthenticator: peerAuthenticator,
+            ioTimeoutMilliseconds: ioTimeoutMilliseconds
         )
         return try await connection.execute(request)
     }

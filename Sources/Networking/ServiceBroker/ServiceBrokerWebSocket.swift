@@ -13,6 +13,8 @@ enum ServiceBrokerWebSocketError: Error, Equatable, Sendable {
     case connectionClosed
     case protocolError
     case cancelled
+    case peerAuthentication
+    case timedOut
 }
 
 final class ServiceBrokerWebSocket: @unchecked Sendable {
@@ -21,6 +23,8 @@ final class ServiceBrokerWebSocket: @unchecked Sendable {
 
     private let socketPath: String
     private let maximumMessageBytes: Int
+    private let peerAuthenticator: ServiceBrokerPeerAuthenticator
+    private let ioTimeoutMilliseconds: Int
     private let stateLock = NSLock()
     private let writeLock = NSLock()
     private let receiveLock = NSLock()
@@ -33,9 +37,16 @@ final class ServiceBrokerWebSocket: @unchecked Sendable {
     private var fragmentedOpcode: UInt8?
     private var fragmentedPayload = Data()
 
-    init(socketPath: String, maximumMessageBytes: Int) {
+    init(
+        socketPath: String,
+        maximumMessageBytes: Int,
+        peerAuthenticator: ServiceBrokerPeerAuthenticator = .production,
+        ioTimeoutMilliseconds: Int = 30_000
+    ) {
         self.socketPath = socketPath
         self.maximumMessageBytes = maximumMessageBytes
+        self.peerAuthenticator = peerAuthenticator
+        self.ioTimeoutMilliseconds = max(1, ioTimeoutMilliseconds)
     }
 
     deinit {
@@ -51,14 +62,17 @@ final class ServiceBrokerWebSocket: @unchecked Sendable {
     }
 
     func connect(path: String, headers: [String: String]) async throws {
-        try await Self.runBlocking { [self] in
+        try await performBlocking { [self] deadline in
             guard maximumMessageBytes > 0 else { throw ServiceBrokerWebSocketError.invalidRequest }
             let target = try normalizedTarget(path)
             let key = makeClientKey()
-            try connectSocket()
+            try connectSocket(deadline: deadline)
             do {
-                try writeAll(try serializeHandshake(target: target, key: key, headers: headers))
-                try validateHandshake(key: key)
+                try writeAll(
+                    try serializeHandshake(target: target, key: key, headers: headers),
+                    deadline: deadline
+                )
+                try validateHandshake(key: key, deadline: deadline)
                 stateLock.lock()
                 connected = true
                 stateLock.unlock()
@@ -70,82 +84,86 @@ final class ServiceBrokerWebSocket: @unchecked Sendable {
     }
 
     func send(_ frame: BrokerWebSocketFrame) async throws {
-        try await Self.runBlocking { [self] in
+        try await performBlocking { [self] deadline in
             guard frame.data.count <= maximumMessageBytes else {
-                try failProtocol(code: 1009)
+                try failProtocol(code: 1009, deadline: deadline)
             }
             let opcode: UInt8
             switch frame.kind {
             case .text:
                 guard String(data: frame.data, encoding: .utf8) != nil else {
-                    try failProtocol(code: 1007)
+                    try failProtocol(code: 1007, deadline: deadline)
                 }
                 opcode = 0x1
             case .binary:
                 opcode = 0x2
             }
-            try sendFrame(opcode: opcode, payload: frame.data)
+            try sendFrame(opcode: opcode, payload: frame.data, deadline: deadline)
         }
     }
 
     func receive() async throws -> BrokerWebSocketEvent {
-        try await Self.runBlocking { [self] in
+        try await performBlocking { [self] deadline in
             receiveLock.lock()
             defer { receiveLock.unlock() }
             while true {
-                let frame = try readFrame()
+                let frame = try readFrame(deadline: deadline)
                 if frame.isControl {
                     switch frame.opcode {
                     case 0x8:
-                        let close = try parseClose(frame.payload)
+                        let close = try parseClose(frame.payload, deadline: deadline)
                         if !isCloseSent {
-                            try sendFrame(opcode: 0x8, payload: frame.payload)
+                            try sendFrame(opcode: 0x8, payload: frame.payload, deadline: deadline)
                             markCloseSent()
                         }
                         closeDescriptor()
                         return .close(code: close.code, reason: close.reason)
                     case 0x9:
-                        try sendFrame(opcode: 0xA, payload: frame.payload)
+                        try sendFrame(opcode: 0xA, payload: frame.payload, deadline: deadline)
                         continue
                     case 0xA:
                         continue
                     default:
-                        try failProtocol()
+                        try failProtocol(deadline: deadline)
                     }
                 }
 
                 switch frame.opcode {
                 case 0x0:
-                    guard let opcode = fragmentedOpcode else { try failProtocol() }
+                    guard let opcode = fragmentedOpcode else { try failProtocol(deadline: deadline) }
                     guard fragmentedPayload.count <= maximumMessageBytes - frame.payload.count else {
-                        try failProtocol(code: 1009)
+                        try failProtocol(code: 1009, deadline: deadline)
                     }
                     fragmentedPayload.append(frame.payload)
                     guard frame.final else { continue }
                     let payload = fragmentedPayload
                     fragmentedOpcode = nil
                     fragmentedPayload.removeAll(keepingCapacity: false)
-                    return try messageEvent(opcode: opcode, payload: payload)
+                    return try messageEvent(opcode: opcode, payload: payload, deadline: deadline)
                 case 0x1, 0x2:
-                    guard fragmentedOpcode == nil else { try failProtocol() }
+                    guard fragmentedOpcode == nil else { try failProtocol(deadline: deadline) }
                     if frame.final {
-                        return try messageEvent(opcode: frame.opcode, payload: frame.payload)
+                        return try messageEvent(
+                            opcode: frame.opcode,
+                            payload: frame.payload,
+                            deadline: deadline
+                        )
                     }
                     fragmentedOpcode = frame.opcode
                     fragmentedPayload = frame.payload
                 default:
-                    try failProtocol()
+                    try failProtocol(deadline: deadline)
                 }
             }
         }
     }
 
     func close(code: UInt16?, reason: String?) async {
-        _ = try? await Self.runBlocking { [self] in
+        _ = try? await performBlocking { [self] deadline in
             defer { closeDescriptor() }
             let payload = try closePayload(code: code, reason: reason)
             if isConnected && !isCloseSent {
-                try sendFrame(opcode: 0x8, payload: payload)
+                try sendFrame(opcode: 0x8, payload: payload, deadline: deadline)
                 markCloseSent()
             }
         }
@@ -220,8 +238,8 @@ final class ServiceBrokerWebSocket: @unchecked Sendable {
         return Data(request.utf8)
     }
 
-    private func validateHandshake(key: String) throws {
-        let headerData = try readThroughHeaderTerminator()
+    private func validateHandshake(key: String, deadline: ServiceBrokerDeadline) throws {
+        let headerData = try readThroughHeaderTerminator(deadline: deadline)
         guard let header = String(data: headerData, encoding: .utf8) else {
             throw ServiceBrokerWebSocketError.invalidResponse
         }
@@ -250,7 +268,7 @@ final class ServiceBrokerWebSocket: @unchecked Sendable {
         }
     }
 
-    private func connectSocket() throws {
+    private func connectSocket(deadline: ServiceBrokerDeadline) throws {
         stateLock.lock()
         let mayConnect = fileDescriptor < 0 && !closed
         stateLock.unlock()
@@ -286,10 +304,11 @@ final class ServiceBrokerWebSocket: @unchecked Sendable {
             throw ServiceBrokerWebSocketError.connectionClosed
         }
         if result != 0 {
-            var pollDescriptor = pollfd(fd: descriptor, events: Int16(POLLOUT), revents: 0)
-            guard Darwin.poll(&pollDescriptor, 1, 10_000) > 0 else {
+            do {
+                try waitForIO(descriptor: descriptor, events: Int16(POLLOUT), deadline: deadline)
+            } catch {
                 Darwin.close(descriptor)
-                throw ServiceBrokerWebSocketError.connectionClosed
+                throw error
             }
             var socketError: Int32 = 0
             var length = socklen_t(MemoryLayout<Int32>.size)
@@ -298,6 +317,13 @@ final class ServiceBrokerWebSocket: @unchecked Sendable {
                 Darwin.close(descriptor)
                 throw ServiceBrokerWebSocketError.connectionClosed
             }
+        }
+
+        do {
+            try peerAuthenticator.authenticate(fileDescriptor: descriptor)
+        } catch {
+            Darwin.close(descriptor)
+            throw ServiceBrokerWebSocketError.peerAuthentication
         }
 
         stateLock.lock()
@@ -310,11 +336,11 @@ final class ServiceBrokerWebSocket: @unchecked Sendable {
         stateLock.unlock()
     }
 
-    private func readThroughHeaderTerminator() throws -> Data {
+    private func readThroughHeaderTerminator(deadline: ServiceBrokerDeadline) throws -> Data {
         let delimiter = Data("\r\n\r\n".utf8)
         var data = Data()
         while data.range(of: delimiter) == nil {
-            guard let chunk = try readRaw(maxBytes: 4 * 1024) else {
+            guard let chunk = try readRaw(maxBytes: 4 * 1024, deadline: deadline) else {
                 throw ServiceBrokerWebSocketError.connectionClosed
             }
             data.append(chunk)
@@ -333,43 +359,52 @@ final class ServiceBrokerWebSocket: @unchecked Sendable {
         return header
     }
 
-    private func readFrame() throws -> RawFrame {
-        let header = [UInt8](try readExact(2))
+    private func readFrame(deadline: ServiceBrokerDeadline) throws -> RawFrame {
+        let header = [UInt8](try readExact(2, deadline: deadline))
         let final = header[0] & 0x80 != 0
         let reservedBits = header[0] & 0x70
         let opcode = header[0] & 0x0F
         let masked = header[1] & 0x80 != 0
-        guard reservedBits == 0, !masked else { try failProtocol() }
+        guard reservedBits == 0, !masked else { try failProtocol(deadline: deadline) }
 
         let isControl = opcode & 0x08 != 0
         var payloadLength = UInt64(header[1] & 0x7F)
         if payloadLength == 126 {
-            let extended = [UInt8](try readExact(2))
+            let extended = [UInt8](try readExact(2, deadline: deadline))
             payloadLength = UInt64(extended[0]) << 8 | UInt64(extended[1])
-            guard payloadLength >= 126 else { try failProtocol() }
+            guard payloadLength >= 126 else { try failProtocol(deadline: deadline) }
         } else if payloadLength == 127 {
-            let extended = [UInt8](try readExact(8))
-            guard extended[0] & 0x80 == 0 else { try failProtocol() }
+            let extended = [UInt8](try readExact(8, deadline: deadline))
+            guard extended[0] & 0x80 == 0 else { try failProtocol(deadline: deadline) }
             payloadLength = extended.reduce(0) { ($0 << 8) | UInt64($1) }
-            guard payloadLength >= 65_536 else { try failProtocol() }
+            guard payloadLength >= 65_536 else { try failProtocol(deadline: deadline) }
         }
         guard !isControl || (final && payloadLength <= 125),
               payloadLength <= UInt64(maximumMessageBytes),
               payloadLength <= UInt64(Int.max) else {
-            try failProtocol(code: payloadLength > UInt64(maximumMessageBytes) ? 1009 : 1002)
+            try failProtocol(
+                code: payloadLength > UInt64(maximumMessageBytes) ? 1009 : 1002,
+                deadline: deadline
+            )
         }
         return RawFrame(
             final: final,
             opcode: opcode,
             isControl: isControl,
-            payload: try readExact(Int(payloadLength))
+            payload: try readExact(Int(payloadLength), deadline: deadline)
         )
     }
 
-    private func messageEvent(opcode: UInt8, payload: Data) throws -> BrokerWebSocketEvent {
+    private func messageEvent(
+        opcode: UInt8,
+        payload: Data,
+        deadline: ServiceBrokerDeadline
+    ) throws -> BrokerWebSocketEvent {
         switch opcode {
         case 0x1:
-            guard String(data: payload, encoding: .utf8) != nil else { try failProtocol(code: 1007) }
+            guard String(data: payload, encoding: .utf8) != nil else {
+                try failProtocol(code: 1007, deadline: deadline)
+            }
             let sequence = nextSequence
             nextSequence &+= 1
             return .frame(sequence: sequence, BrokerWebSocketFrame(kind: .text, data: payload))
@@ -378,18 +413,23 @@ final class ServiceBrokerWebSocket: @unchecked Sendable {
             nextSequence &+= 1
             return .frame(sequence: sequence, BrokerWebSocketFrame(kind: .binary, data: payload))
         default:
-            try failProtocol()
+            try failProtocol(deadline: deadline)
         }
     }
 
-    private func parseClose(_ payload: Data) throws -> (code: UInt16?, reason: String?) {
-        guard payload.count != 1 else { try failProtocol() }
+    private func parseClose(
+        _ payload: Data,
+        deadline: ServiceBrokerDeadline
+    ) throws -> (code: UInt16?, reason: String?) {
+        guard payload.count != 1 else { try failProtocol(deadline: deadline) }
         guard payload.count >= 2 else { return (nil, nil) }
         let bytes = [UInt8](payload)
         let code = UInt16(bytes[0]) << 8 | UInt16(bytes[1])
-        guard Self.isValidCloseCode(code) else { try failProtocol() }
+        guard Self.isValidCloseCode(code) else { try failProtocol(deadline: deadline) }
         let reasonData = Data(bytes.dropFirst(2))
-        guard let reason = String(data: reasonData, encoding: .utf8) else { try failProtocol(code: 1007) }
+        guard let reason = String(data: reasonData, encoding: .utf8) else {
+            try failProtocol(code: 1007, deadline: deadline)
+        }
         return (code, reason.isEmpty ? nil : reason)
     }
 
@@ -404,7 +444,11 @@ final class ServiceBrokerWebSocket: @unchecked Sendable {
         return payload
     }
 
-    private func sendFrame(opcode: UInt8, payload: Data) throws {
+    private func sendFrame(
+        opcode: UInt8,
+        payload: Data,
+        deadline: ServiceBrokerDeadline
+    ) throws {
         writeLock.lock()
         defer { writeLock.unlock() }
         guard isConnected else {
@@ -431,23 +475,29 @@ final class ServiceBrokerWebSocket: @unchecked Sendable {
         var encoded = [UInt8](payload)
         for index in encoded.indices { encoded[index] ^= mask[index % 4] }
         frame.append(contentsOf: encoded)
-        try writeAll(frame)
+        try writeAll(frame, deadline: deadline)
     }
 
-    private func failProtocol(code: UInt16 = 1002) throws -> Never {
+    private func failProtocol(
+        code: UInt16 = 1002,
+        deadline: ServiceBrokerDeadline
+    ) throws -> Never {
         if isConnected && !isCloseSent {
             let payload = Data([UInt8(code >> 8), UInt8(code & 0xFF)])
-            try? sendFrame(opcode: 0x8, payload: payload)
+            try? sendFrame(opcode: 0x8, payload: payload, deadline: deadline)
             markCloseSent()
         }
         closeDescriptor()
         throw ServiceBrokerWebSocketError.protocolError
     }
 
-    private func readExact(_ count: Int) throws -> Data {
+    private func readExact(_ count: Int, deadline: ServiceBrokerDeadline) throws -> Data {
         var data = Data()
         while data.count < count {
-            guard let chunk = try readRaw(maxBytes: count - data.count) else {
+            guard let chunk = try readRaw(
+                maxBytes: count - data.count,
+                deadline: deadline
+            ) else {
                 throw ServiceBrokerWebSocketError.connectionClosed
             }
             data.append(chunk)
@@ -455,7 +505,7 @@ final class ServiceBrokerWebSocket: @unchecked Sendable {
         return data
     }
 
-    private func readRaw(maxBytes: Int) throws -> Data? {
+    private func readRaw(maxBytes: Int, deadline: ServiceBrokerDeadline) throws -> Data? {
         stateLock.lock()
         if !buffered.isEmpty {
             let count = min(maxBytes, buffered.count)
@@ -469,29 +519,25 @@ final class ServiceBrokerWebSocket: @unchecked Sendable {
         stateLock.unlock()
         guard !isClosed, descriptor >= 0 else { throw ServiceBrokerWebSocketError.cancelled }
 
-        var pollDescriptor = pollfd(fd: descriptor, events: Int16(POLLIN), revents: 0)
-        while Darwin.poll(&pollDescriptor, 1, 100) == 0 {
-            stateLock.lock()
-            let shouldStop = closed || fileDescriptor != descriptor
-            stateLock.unlock()
-            if shouldStop { throw ServiceBrokerWebSocketError.cancelled }
-        }
-        guard pollDescriptor.revents & Int16(POLLERR | POLLNVAL) == 0 else {
-            throw ServiceBrokerWebSocketError.connectionClosed
-        }
+        try waitForIO(descriptor: descriptor, events: Int16(POLLIN), deadline: deadline)
         var bytes = [UInt8](repeating: 0, count: maxBytes)
         let count = Darwin.read(descriptor, &bytes, maxBytes)
         if count == 0 { return nil }
         if count < 0 {
-            if errno == EAGAIN || errno == EWOULDBLOCK { return try readRaw(maxBytes: maxBytes) }
+            if errno == EAGAIN || errno == EWOULDBLOCK {
+                return try readRaw(maxBytes: maxBytes, deadline: deadline)
+            }
             throw ServiceBrokerWebSocketError.connectionClosed
         }
         return Data(bytes.prefix(count))
     }
 
-    private func writeAll(_ data: Data) throws {
+    private func writeAll(_ data: Data, deadline: ServiceBrokerDeadline) throws {
         var offset = 0
         while offset < data.count {
+            guard deadline.pollTimeoutMilliseconds() != nil else {
+                throw ServiceBrokerWebSocketError.timedOut
+            }
             stateLock.lock()
             let descriptor = fileDescriptor
             let isClosed = closed
@@ -503,10 +549,7 @@ final class ServiceBrokerWebSocket: @unchecked Sendable {
             if written > 0 {
                 offset += written
             } else if written < 0 && (errno == EAGAIN || errno == EWOULDBLOCK) {
-                var pollDescriptor = pollfd(fd: descriptor, events: Int16(POLLOUT), revents: 0)
-                guard Darwin.poll(&pollDescriptor, 1, 10_000) > 0 else {
-                    throw ServiceBrokerWebSocketError.connectionClosed
-                }
+                try waitForIO(descriptor: descriptor, events: Int16(POLLOUT), deadline: deadline)
             } else {
                 throw ServiceBrokerWebSocketError.connectionClosed
             }
@@ -524,12 +567,74 @@ final class ServiceBrokerWebSocket: @unchecked Sendable {
         if descriptor >= 0 { Darwin.close(descriptor) }
     }
 
+    private func waitForIO(
+        descriptor: Int32,
+        events: Int16,
+        deadline: ServiceBrokerDeadline
+    ) throws {
+        while true {
+            stateLock.lock()
+            let isClosed = closed
+            stateLock.unlock()
+            guard !isClosed else { throw ServiceBrokerWebSocketError.cancelled }
+            guard let timeout = deadline.pollTimeoutMilliseconds() else {
+                throw ServiceBrokerWebSocketError.timedOut
+            }
+            var polled = pollfd(fd: descriptor, events: events, revents: 0)
+            let result = Darwin.poll(&polled, 1, timeout)
+            if result > 0 {
+                guard polled.revents & Int16(POLLERR | POLLNVAL) == 0 else {
+                    throw ServiceBrokerWebSocketError.connectionClosed
+                }
+                return
+            }
+            if result < 0, errno != EINTR {
+                throw ServiceBrokerWebSocketError.connectionClosed
+            }
+        }
+    }
+
+    private func performBlocking<T: Sendable>(
+        _ operation: @escaping @Sendable (ServiceBrokerDeadline) throws -> T
+    ) async throws -> T {
+        try await withTaskCancellationHandler {
+            guard !Task.isCancelled else { throw ServiceBrokerWebSocketError.cancelled }
+            do {
+                let result = try await Self.runBlocking(
+                    timeoutMilliseconds: ioTimeoutMilliseconds,
+                    operation
+                )
+                guard !Task.isCancelled else {
+                    closeDescriptor()
+                    throw ServiceBrokerWebSocketError.cancelled
+                }
+                return result
+            } catch {
+                if Task.isCancelled {
+                    closeDescriptor()
+                    throw ServiceBrokerWebSocketError.cancelled
+                }
+                if error as? ServiceBrokerWebSocketError == .timedOut {
+                    closeDescriptor()
+                }
+                throw error
+            }
+        } onCancel: {
+            self.closeDescriptor()
+        }
+    }
+
     private static func runBlocking<T: Sendable>(
-        _ operation: @escaping @Sendable () throws -> T
+        timeoutMilliseconds: Int,
+        _ operation: @escaping @Sendable (ServiceBrokerDeadline) throws -> T
     ) async throws -> T {
         try await withCheckedThrowingContinuation { continuation in
             DispatchQueue.global(qos: .userInitiated).async {
-                continuation.resume(with: Result { try operation() })
+                continuation.resume(with: Result {
+                    try operation(ServiceBrokerDeadline(
+                        timeoutMilliseconds: timeoutMilliseconds
+                    ))
+                })
             }
         }
     }

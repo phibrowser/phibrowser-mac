@@ -3,7 +3,9 @@
 // Use of this source code is governed by an Apache license that can be
 // found in the LICENSE file.
 
+import Darwin
 import Foundation
+import Security
 
 enum BrokerService: String, Codable, Sendable {
     case phiAgent = "phi-agent"
@@ -14,6 +16,19 @@ struct BrokerSenderContext: Equatable, Sendable {
     let extensionID: String
     let profileID: String?
     let accountID: String?
+    let authRevisionID: UUID?
+
+    init(
+        extensionID: String,
+        profileID: String?,
+        accountID: String?,
+        authRevisionID: UUID? = nil
+    ) {
+        self.extensionID = extensionID
+        self.profileID = profileID
+        self.accountID = accountID
+        self.authRevisionID = authRevisionID
+    }
 }
 
 struct BrokerHTTPRequest: Sendable {
@@ -60,6 +75,80 @@ enum ServiceBrokerHTTPError: Error, Equatable, Sendable {
     case responseTooLarge
     case connectionClosed
     case cancelled
+    case peerAuthentication
+    case timedOut
+}
+
+struct ServiceBrokerDeadline: Sendable {
+    private let expirationNanoseconds: UInt64
+
+    init(timeoutMilliseconds: Int) {
+        let milliseconds = UInt64(max(1, timeoutMilliseconds))
+        let (duration, durationOverflow) = milliseconds.multipliedReportingOverflow(by: 1_000_000)
+        let now = DispatchTime.now().uptimeNanoseconds
+        let (expiration, expirationOverflow) = now.addingReportingOverflow(duration)
+        expirationNanoseconds = durationOverflow || expirationOverflow ? UInt64.max : expiration
+    }
+
+    func pollTimeoutMilliseconds(maximumSlice: Int32 = 100) -> Int32? {
+        let now = DispatchTime.now().uptimeNanoseconds
+        guard now < expirationNanoseconds else { return nil }
+        let remainingNanoseconds = expirationNanoseconds - now
+        let wholeMilliseconds = remainingNanoseconds / 1_000_000
+        let partialMillisecond = remainingNanoseconds % 1_000_000 == 0 ? 0 : 1
+        let remainingMilliseconds = max(1, wholeMilliseconds + UInt64(partialMillisecond))
+        return Int32(min(UInt64(maximumSlice), remainingMilliseconds))
+    }
+}
+
+struct ServiceBrokerPeerAuthenticator: Sendable {
+    private let authenticatePeer: @Sendable (Int32) throws -> Void
+
+    init(_ authenticate: @escaping @Sendable (Int32) throws -> Void) {
+        authenticatePeer = authenticate
+    }
+
+    func authenticate(fileDescriptor: Int32) throws {
+        try authenticatePeer(fileDescriptor)
+    }
+
+    static let production = ServiceBrokerPeerAuthenticator { descriptor in
+        var peerUID: uid_t = 0
+        var peerGID: gid_t = 0
+        guard getpeereid(descriptor, &peerUID, &peerGID) == 0,
+              peerUID == geteuid(),
+              let pidBefore = peerProcessID(descriptor) else {
+            throw ServiceBrokerHTTPError.peerAuthentication
+        }
+
+        let requirementText = "anchor apple generic and identifier \"service-broker\""
+            + " and certificate leaf[subject.OU] = \"87DQ3HMK5G\""
+        var requirement: SecRequirement?
+        guard SecRequirementCreateWithString(requirementText as CFString, [], &requirement) == errSecSuccess,
+              let requirement else {
+            throw ServiceBrokerHTTPError.peerAuthentication
+        }
+
+        let attributes = [kSecGuestAttributePid: pidBefore] as CFDictionary
+        var code: SecCode?
+        let validationFlags = SecCSFlags(rawValue: kSecCSStrictValidate)
+        guard SecCodeCopyGuestWithAttributes(nil, attributes, [], &code) == errSecSuccess,
+              let code,
+              SecCodeCheckValidity(code, validationFlags, requirement) == errSecSuccess,
+              peerProcessID(descriptor) == pidBefore else {
+            throw ServiceBrokerHTTPError.peerAuthentication
+        }
+    }
+
+    private static func peerProcessID(_ descriptor: Int32) -> pid_t? {
+        var pid: pid_t = -1
+        var length = socklen_t(MemoryLayout<pid_t>.size)
+        guard getsockopt(descriptor, SOL_LOCAL, LOCAL_PEERPID, &pid, &length) == 0,
+              pid > 0 else {
+            return nil
+        }
+        return pid
+    }
 }
 
 struct ServiceBrokerLimits: Codable, Equatable, Sendable {

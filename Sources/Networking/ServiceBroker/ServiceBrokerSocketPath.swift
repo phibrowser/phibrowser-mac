@@ -4,6 +4,7 @@
 // found in the LICENSE file.
 
 import CryptoKit
+import Darwin
 import Foundation
 
 enum ServiceBrokerSocketPath {
@@ -42,6 +43,36 @@ enum ServiceBrokerSocketPath {
     static func dataSocketPath(storagePath: String) -> String {
         let digest = SHA256.hash(data: Data(storagePath.utf8))
         let shortHash = digest.prefix(8).map { String(format: "%02x", $0) }.joined()
-        return "/tmp/phi-sentinel-\(shortHash)/sockets/service-broker.sock"
+        let shortRoot = "/tmp/phi-sentinel-\(shortHash)"
+        let shortSocketDirectory = (shortRoot as NSString).appendingPathComponent("sockets")
+
+        // Sentinel repairs permissions on owned, real directories before binding,
+        // but falls back when either short-path component is poisoned. Predict the
+        // same choice from the shared storage path so no extra discovery protocol
+        // or credential-bearing probe is needed.
+        if directoryTrust(atPath: shortRoot) == .unsafe
+            || directoryTrust(atPath: shortSocketDirectory) == .unsafe {
+            return (storagePath as NSString)
+                .appendingPathComponent("state/sockets/service-broker.sock")
+        }
+        return (shortSocketDirectory as NSString).appendingPathComponent("service-broker.sock")
+    }
+
+    private enum DirectoryTrust {
+        case missing
+        case ownedDirectory
+        case unsafe
+    }
+
+    private static func directoryTrust(atPath path: String) -> DirectoryTrust {
+        var information = stat()
+        guard lstat(path, &information) == 0 else {
+            return errno == ENOENT ? .missing : .unsafe
+        }
+        guard information.st_mode & S_IFMT == S_IFDIR,
+              information.st_uid == geteuid() else {
+            return .unsafe
+        }
+        return .ownedDirectory
     }
 }

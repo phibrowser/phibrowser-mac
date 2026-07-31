@@ -15,6 +15,8 @@ The Sidecar may send a normalized relative phi-agent file address, under `/api/v
 
 For an authorized file address, `ImagePreviewLoader` asks `ServiceBrokerExtensionProtocol` to fetch the bytes from phi-agent through the negotiated service-broker UDS. The browser supplies the current shared access token as a Bearer credential and pins `X-Phi-Extension-ID` to the authorized sender. Path validation and the negotiated non-streaming response-size limit are applied before image decoding.
 
+Privileged preview cache and preload keys include the current nonempty shared-auth `auth0Sub`, matching the account identity used to resolve the broker socket. The account scope is read before any privileged cache lookup and checked again after loading and decoding, before bytes may be cached or returned. A logout or account change therefore cannot reuse a prior account's cached preview; bearer tokens are never included in cache keys or logs. Non-privileged preview cache keys are unchanged.
+
 Other image-preview sources preserve their existing behavior: `http` and `https` use the image preview's URL session, `data:` is decoded inline, and local/file addresses read from disk. Unauthorized senders do not gain broker file access; a matching-looking relative path retains the prior local-file interpretation and fails normally if it does not exist.
 
 Image bytes are never base64-encoded through the extension bridge. Blob object URLs remain renderer-local and therefore are not sent to the native preview.

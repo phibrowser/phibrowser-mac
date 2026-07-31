@@ -153,9 +153,12 @@ final class ServiceBrokerExtensionProtocolTests: XCTestCase {
             headers: [BrokerHTTPHeader(name: "content-type", value: "image/png")],
             body: png
         ))
-        let loader = ImagePreviewLoader(phiAgentFileLoader: { path, senderID in
-            try await calls.load(path: path, senderID: senderID)
-        })
+        let loader = ImagePreviewLoader(
+            phiAgentAccountIDProvider: { "auth0|test-account" },
+            phiAgentFileLoader: { path, senderID in
+                try await calls.load(path: path, senderID: senderID)
+            }
+        )
         let item = ImagePreviewItem(
             id: "broker-image",
             source: .phiAgentFile(path: "/api/v1/files/image-1", senderID: allowedSender),
@@ -173,6 +176,140 @@ final class ServiceBrokerExtensionProtocolTests: XCTestCase {
         XCTAssertEqual(loadedSenderID, allowedSender)
     }
 
+    func testImagePreviewLoaderRefetchesSamePathAfterAccountSwitch() async throws {
+        let png = try XCTUnwrap(Data(base64Encoded:
+            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="))
+        let accountScope = ImagePreviewAccountScopeBox("auth0|account-a")
+        let calls = ImagePreviewBrokerAccountSwitchRecorder(response: BrokerHTTPResponse(
+            statusCode: 200,
+            headers: [BrokerHTTPHeader(name: "content-type", value: "image/png")],
+            body: png
+        ))
+        let loader = ImagePreviewLoader(
+            phiAgentAccountIDProvider: { accountScope.current() },
+            phiAgentFileLoader: { path, senderID in
+                try await calls.load(path: path, senderID: senderID)
+            }
+        )
+        let item = ImagePreviewItem(
+            id: "broker-image-account-scope",
+            source: .phiAgentFile(path: "/api/v1/files/shared-path", senderID: allowedSender),
+            title: nil,
+            mimeType: nil,
+            suggestedFilename: nil
+        )
+
+        let first = try await loader.load(item)
+        let sameAccount = try await loader.load(item)
+        XCTAssertTrue(first.image === sameAccount.image)
+        let sameAccountCallCount = await calls.count()
+        XCTAssertEqual(sameAccountCallCount, 1)
+
+        accountScope.set("auth0|account-b")
+        do {
+            _ = try await loader.load(item)
+            XCTFail("Expected account B broker failure instead of account A cached bytes")
+        } catch {
+            XCTAssertEqual(error as? ImagePreviewError, .networkFailed)
+        }
+        let switchedAccountCallCount = await calls.count()
+        XCTAssertEqual(switchedAccountCallCount, 2)
+    }
+
+    func testImagePreviewLoaderDoesNotReturnPrivilegedCacheAfterLogout() async throws {
+        let png = try XCTUnwrap(Data(base64Encoded:
+            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="))
+        let accountScope = ImagePreviewAccountScopeBox("auth0|account-a")
+        let calls = ImagePreviewBrokerLoadRecorder(response: BrokerHTTPResponse(
+            statusCode: 200,
+            headers: [BrokerHTTPHeader(name: "content-type", value: "image/png")],
+            body: png
+        ))
+        let loader = ImagePreviewLoader(
+            phiAgentAccountIDProvider: { accountScope.current() },
+            phiAgentFileLoader: { path, senderID in
+                try await calls.load(path: path, senderID: senderID)
+            }
+        )
+        let item = ImagePreviewItem(
+            id: "broker-image-logout",
+            source: .phiAgentFile(path: "/api/v1/files/shared-path", senderID: allowedSender),
+            title: nil,
+            mimeType: nil,
+            suggestedFilename: nil
+        )
+
+        _ = try await loader.load(item)
+        accountScope.set(nil)
+
+        do {
+            _ = try await loader.load(item)
+            XCTFail("Expected logout to reject account A cached bytes")
+        } catch {
+            XCTAssertEqual(error as? ImagePreviewError, .networkFailed)
+        }
+        let brokerCallCount = await calls.count()
+        XCTAssertEqual(brokerCallCount, 1)
+    }
+
+    func testImagePreviewLoaderRejectsBytesWhenAccountChangesDuringBrokerLoad() async throws {
+        let png = try XCTUnwrap(Data(base64Encoded:
+            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="))
+        let accountScope = ImagePreviewAccountScopeBox("auth0|account-a")
+        let calls = ImagePreviewBrokerLoadRecorder(response: BrokerHTTPResponse(
+            statusCode: 200,
+            headers: [BrokerHTTPHeader(name: "content-type", value: "image/png")],
+            body: png
+        ))
+        let loader = ImagePreviewLoader(
+            phiAgentAccountIDProvider: { accountScope.current() },
+            phiAgentFileLoader: { path, senderID in
+                let response = try await calls.load(path: path, senderID: senderID)
+                accountScope.set("auth0|account-b")
+                return response
+            }
+        )
+        let item = ImagePreviewItem(
+            id: "broker-image-account-race",
+            source: .phiAgentFile(path: "/api/v1/files/shared-path", senderID: allowedSender),
+            title: nil,
+            mimeType: nil,
+            suggestedFilename: nil
+        )
+
+        do {
+            _ = try await loader.load(item)
+            XCTFail("Expected account change during load to reject account A bytes")
+        } catch {
+            XCTAssertEqual(error as? ImagePreviewError, .networkFailed)
+        }
+        let brokerCallCount = await calls.count()
+        XCTAssertEqual(brokerCallCount, 1)
+    }
+
+    func testImagePreviewLoaderKeepsNonPrivilegedCacheIndependentOfAccountScope() async throws {
+        let png = try XCTUnwrap(Data(base64Encoded:
+            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="))
+        let accountScope = ImagePreviewAccountScopeBox(nil)
+        let loader = ImagePreviewLoader(
+            phiAgentAccountIDProvider: { accountScope.current() }
+        )
+        let item = ImagePreviewItem(
+            id: "inline-image",
+            source: .rawData(png, mimeType: "image/png"),
+            title: nil,
+            mimeType: nil,
+            suggestedFilename: nil
+        )
+
+        let first = try await loader.load(item)
+        accountScope.set("auth0|account-b")
+        let second = try await loader.load(item)
+
+        XCTAssertTrue(first.image === second.image)
+        XCTAssertEqual(accountScope.readCount(), 0)
+    }
+
     func testImagePreviewLoaderMapsBrokerStatusAndTransportFailures() async {
         let item = ImagePreviewItem(
             id: "broker-image-error",
@@ -181,12 +318,18 @@ final class ServiceBrokerExtensionProtocolTests: XCTestCase {
             mimeType: nil,
             suggestedFilename: nil
         )
-        let statusLoader = ImagePreviewLoader(phiAgentFileLoader: { _, _ in
-            BrokerHTTPResponse(statusCode: 404, headers: [], body: Data())
-        })
-        let transportLoader = ImagePreviewLoader(phiAgentFileLoader: { _, _ in
-            throw TestUpstreamError()
-        })
+        let statusLoader = ImagePreviewLoader(
+            phiAgentAccountIDProvider: { "auth0|test-account" },
+            phiAgentFileLoader: { _, _ in
+                BrokerHTTPResponse(statusCode: 404, headers: [], body: Data())
+            }
+        )
+        let transportLoader = ImagePreviewLoader(
+            phiAgentAccountIDProvider: { "auth0|test-account" },
+            phiAgentFileLoader: { _, _ in
+                throw TestUpstreamError()
+            }
+        )
 
         do {
             _ = try await statusLoader.load(item)
@@ -737,6 +880,7 @@ private actor ImagePreviewBrokerLoadRecorder {
     private let response: BrokerHTTPResponse
     private var path: String?
     private var senderID: String?
+    private var calls = 0
 
     init(response: BrokerHTTPResponse) {
         self.response = response
@@ -745,7 +889,12 @@ private actor ImagePreviewBrokerLoadRecorder {
     func load(path: String, senderID: String) throws -> BrokerHTTPResponse {
         self.path = path
         self.senderID = senderID
+        calls += 1
         return response
+    }
+
+    func count() -> Int {
+        calls
     }
 
     func lastPath() -> String? {
@@ -754,6 +903,56 @@ private actor ImagePreviewBrokerLoadRecorder {
 
     func lastSenderID() -> String? {
         senderID
+    }
+}
+
+private actor ImagePreviewBrokerAccountSwitchRecorder {
+    private let response: BrokerHTTPResponse
+    private var calls = 0
+
+    init(response: BrokerHTTPResponse) {
+        self.response = response
+    }
+
+    func load(path: String, senderID: String) throws -> BrokerHTTPResponse {
+        calls += 1
+        if calls == 1 {
+            return response
+        }
+        throw TestUpstreamError()
+    }
+
+    func count() -> Int {
+        calls
+    }
+}
+
+private final class ImagePreviewAccountScopeBox: @unchecked Sendable {
+    private let lock = NSLock()
+    private var value: String?
+    private var reads = 0
+
+    init(_ value: String?) {
+        self.value = value
+    }
+
+    func current() -> String? {
+        lock.lock()
+        defer { lock.unlock() }
+        reads += 1
+        return value
+    }
+
+    func set(_ value: String?) {
+        lock.lock()
+        defer { lock.unlock() }
+        self.value = value
+    }
+
+    func readCount() -> Int {
+        lock.lock()
+        defer { lock.unlock() }
+        return reads
     }
 }
 

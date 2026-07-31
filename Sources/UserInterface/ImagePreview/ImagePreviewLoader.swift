@@ -9,7 +9,13 @@ import ImageIO
 import UniformTypeIdentifiers
 
 final class ImagePreviewLoader: ImagePreviewLoading {
+    typealias PhiAgentAccountIDProvider = @Sendable () -> String?
     typealias PhiAgentFileLoader = @Sendable (String, String) async throws -> BrokerHTTPResponse
+
+    private struct CacheContext {
+        let key: String
+        let phiAgentAccountID: String?
+    }
 
     private final class CacheEntry {
         let asset: ImagePreviewAsset
@@ -20,12 +26,16 @@ final class ImagePreviewLoader: ImagePreviewLoading {
     }
 
     private let urlSession: URLSession
+    private let phiAgentAccountIDProvider: PhiAgentAccountIDProvider
     private let phiAgentFileLoader: PhiAgentFileLoader
     private let cache = NSCache<NSString, CacheEntry>()
     private var preloadTasks: [String: Task<Void, Never>] = [:]
 
     init(
         urlSession: URLSession = .shared,
+        phiAgentAccountIDProvider: @escaping PhiAgentAccountIDProvider = {
+            SharedAuthTokenStore.shared.read()?.auth0Sub
+        },
         phiAgentFileLoader: @escaping PhiAgentFileLoader = { path, senderID in
             try await ServiceBrokerExtensionProtocol.shared.loadImagePreviewFile(
                 path: path,
@@ -34,11 +44,13 @@ final class ImagePreviewLoader: ImagePreviewLoading {
         }
     ) {
         self.urlSession = urlSession
+        self.phiAgentAccountIDProvider = phiAgentAccountIDProvider
         self.phiAgentFileLoader = phiAgentFileLoader
     }
 
     func load(_ item: ImagePreviewItem) async throws -> ImagePreviewAsset {
-        if let cached = cache.object(forKey: item.source.cacheKey as NSString)?.asset {
+        let cacheContext = try cacheContext(for: item.source)
+        if let cached = cache.object(forKey: cacheContext.key as NSString)?.asset {
             return cached
         }
 
@@ -100,7 +112,8 @@ final class ImagePreviewLoader: ImagePreviewLoading {
             }
         }
 
-        cache.setObject(CacheEntry(asset: asset), forKey: item.source.cacheKey as NSString)
+        try validateAccountScope(cacheContext)
+        cache.setObject(CacheEntry(asset: asset), forKey: cacheContext.key as NSString)
         return asset
     }
 
@@ -113,7 +126,7 @@ final class ImagePreviewLoader: ImagePreviewLoading {
         let adjacentIndices = [currentIndex - 1, currentIndex + 1].filter { items.indices.contains($0) }
         for index in adjacentIndices {
             let item = items[index]
-            let key = item.source.cacheKey
+            guard let key = try? cacheContext(for: item.source).key else { continue }
             guard cache.object(forKey: key as NSString) == nil else { continue }
             preloadTasks[key] = Task.detached(priority: .utility) { [weak self] in
                 guard let self else { return }
@@ -127,6 +140,26 @@ final class ImagePreviewLoader: ImagePreviewLoading {
             task.cancel()
         }
         preloadTasks.removeAll()
+    }
+
+    private func cacheContext(for source: ImagePreviewSource) throws -> CacheContext {
+        guard case .phiAgentFile = source else {
+            return CacheContext(key: source.cacheKey, phiAgentAccountID: nil)
+        }
+        guard let accountID = phiAgentAccountIDProvider(), !accountID.isEmpty else {
+            throw ImagePreviewError.networkFailed
+        }
+        return CacheContext(
+            key: "phi-agent-account:\(accountID.utf8.count):\(accountID):\(source.cacheKey)",
+            phiAgentAccountID: accountID
+        )
+    }
+
+    private func validateAccountScope(_ context: CacheContext) throws {
+        guard let expectedAccountID = context.phiAgentAccountID else { return }
+        guard phiAgentAccountIDProvider() == expectedAccountID else {
+            throw ImagePreviewError.networkFailed
+        }
     }
 
     private func decode(data: Data, sourceURL: URL?, mimeType: String?) throws -> ImagePreviewAsset {

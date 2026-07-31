@@ -214,8 +214,13 @@ final class ServiceBrokerHTTPConnection: @unchecked Sendable {
               !path.lowercased().contains("://") else {
             return nil
         }
-        let pathname = path.split(separator: "?", maxSplits: 1, omittingEmptySubsequences: false).first ?? ""
-        let components = pathname.split(separator: "/", omittingEmptySubsequences: true)
+        let pathname = String(path.split(separator: "?", maxSplits: 1, omittingEmptySubsequences: false).first ?? "")
+        guard let decodedPath = pathname.removingPercentEncoding,
+              !containsControlCharacters(decodedPath),
+              !decodedPath.lowercased().contains("://") else {
+            return nil
+        }
+        let components = decodedPath.split(separator: "/", omittingEmptySubsequences: true)
         guard !components.contains("."), !components.contains(".."), components.first != "broker" else {
             return nil
         }
@@ -430,6 +435,9 @@ private struct ParsedResponseHead {
     init(_ raw: String) throws {
         let lines = raw.components(separatedBy: "\r\n")
         guard let statusLine = lines.first else { throw ServiceBrokerHTTPError.invalidResponse }
+        guard !containsControlCharacters(statusLine) else {
+            throw ServiceBrokerHTTPError.invalidResponse
+        }
         let statusParts = statusLine.split(separator: " ", maxSplits: 2, omittingEmptySubsequences: true)
         guard statusParts.count >= 2,
               statusParts[0] == "HTTP/1.1" || statusParts[0] == "HTTP/1.0",
@@ -458,20 +466,29 @@ private struct ParsedResponseHead {
         guard transferEncodings.count <= 1, contentLengths.count <= 1 else {
             throw ServiceBrokerHTTPError.invalidResponse
         }
+        let contentLength: Int?
+        if let rawContentLength = contentLengths.first {
+            guard !rawContentLength.isEmpty,
+                  rawContentLength.allSatisfy({ $0.isNumber }),
+                  let parsedContentLength = Int(rawContentLength) else {
+                throw ServiceBrokerHTTPError.invalidResponse
+            }
+            contentLength = parsedContentLength
+        } else {
+            contentLength = nil
+        }
+        if let transferEncoding = transferEncodings.first {
+            guard contentLength == nil, transferEncoding == "chunked" else {
+                throw ServiceBrokerHTTPError.invalidResponse
+            }
+        }
+
         if (100...199).contains(statusCode) || statusCode == 204 || statusCode == 304 {
             framing = .none
-        } else if let transferEncoding = transferEncodings.first {
-            guard contentLengths.isEmpty, transferEncoding == "chunked" else {
-                throw ServiceBrokerHTTPError.invalidResponse
-            }
+        } else if transferEncodings.first != nil {
             framing = .chunked
-        } else if let contentLength = contentLengths.first {
-            guard !contentLength.isEmpty,
-                  contentLength.allSatisfy({ $0.isNumber }),
-                  let length = Int(contentLength) else {
-                throw ServiceBrokerHTTPError.invalidResponse
-            }
-            framing = .fixedLength(length)
+        } else if let contentLength {
+            framing = .fixedLength(contentLength)
         } else {
             framing = .eofDelimited
         }

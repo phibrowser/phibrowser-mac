@@ -63,6 +63,82 @@ final class ServiceBrokerClientTests: XCTestCase {
 
         XCTAssertEqual(response.body, Data("connection closed body".utf8))
     }
+
+    func testRequestRejectsInvalidContentLengthForNoBodyStatus() async {
+        let server = UnixHTTPTestServer(response:
+            "HTTP/1.1 204 No Content\r\nContent-Length: invalid\r\n\r\n")
+        let client = ServiceBrokerClient(socketPath: server.socketPath)
+
+        await assertBrokerHTTPError(.invalidResponse) {
+            _ = try await client.request(BrokerHTTPRequest(service: .phiAgent, path: "/empty"))
+        }
+    }
+
+    func testRequestRejectsConflictingFramingForNoBodyStatus() async {
+        let server = UnixHTTPTestServer(response:
+            "HTTP/1.1 204 No Content\r\nContent-Length: 0\r\nTransfer-Encoding: chunked\r\n\r\n")
+        let client = ServiceBrokerClient(socketPath: server.socketPath)
+
+        await assertBrokerHTTPError(.invalidResponse) {
+            _ = try await client.request(BrokerHTTPRequest(service: .phiAgent, path: "/empty"))
+        }
+    }
+
+    func testRequestRejectsControlCharacterInStatusLine() async {
+        let server = UnixHTTPTestServer(response:
+            "HTTP/1.1 200 O\u{000B}K\r\nContent-Length: 0\r\n\r\n")
+        let client = ServiceBrokerClient(socketPath: server.socketPath)
+
+        await assertBrokerHTTPError(.invalidResponse) {
+            _ = try await client.request(BrokerHTTPRequest(service: .phiAgent, path: "/status"))
+        }
+    }
+
+    func testRequestRejectsPercentEncodedDotSegment() async {
+        let server = UnixHTTPTestServer(response:
+            "HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n")
+        let client = ServiceBrokerClient(socketPath: server.socketPath)
+
+        await assertBrokerHTTPError(.invalidRequest) {
+            _ = try await client.request(BrokerHTTPRequest(
+                service: .phiAgent,
+                path: "/%2e%2e/broker"
+            ))
+        }
+    }
+
+    func testOpenStreamReadsFixedLengthResponseInChunks() async throws {
+        let server = UnixHTTPTestServer(response:
+            "HTTP/1.1 200 OK\r\nContent-Length: 5\r\n\r\nhello")
+        let client = ServiceBrokerClient(socketPath: server.socketPath)
+
+        let stream = try await client.openStream(BrokerHTTPRequest(service: .phiAgent, path: "/stream"))
+        defer { stream.cancel() }
+
+        XCTAssertEqual(stream.response.statusCode, 200)
+        let firstChunk = try await stream.read(maxBytes: 3)
+        let secondChunk = try await stream.read(maxBytes: 3)
+        let end = try await stream.read(maxBytes: 3)
+        XCTAssertEqual(firstChunk, Data("hel".utf8))
+        XCTAssertEqual(secondChunk, Data("lo".utf8))
+        XCTAssertNil(end)
+    }
+}
+
+private func assertBrokerHTTPError(
+    _ expected: ServiceBrokerHTTPError,
+    file: StaticString = #filePath,
+    line: UInt = #line,
+    _ operation: @escaping () async throws -> Void
+) async {
+    do {
+        try await operation()
+        XCTFail("Expected ServiceBrokerHTTPError.\(expected)", file: file, line: line)
+    } catch let error as ServiceBrokerHTTPError {
+        XCTAssertEqual(error, expected, file: file, line: line)
+    } catch {
+        XCTFail("Expected ServiceBrokerHTTPError.\(expected), got \(error)", file: file, line: line)
+    }
 }
 
 private final class UnixHTTPTestServer: @unchecked Sendable {
@@ -74,8 +150,7 @@ private final class UnixHTTPTestServer: @unchecked Sendable {
     private var capturedRequest = Data()
 
     init(response: String) {
-        socketPath = (NSTemporaryDirectory() as NSString)
-            .appendingPathComponent("phi-service-broker-\(UUID().uuidString).sock")
+        socketPath = "/tmp/phi-broker-\(UUID().uuidString).sock"
         self.response = Data(response.utf8)
         listener = socket(AF_UNIX, SOCK_STREAM, 0)
         precondition(listener >= 0)
@@ -143,6 +218,14 @@ private final class UnixHTTPTestServer: @unchecked Sendable {
         let connection = accept(listener, nil, nil)
         guard connection >= 0 else { return }
         defer { close(connection) }
+        var noSigPipe: Int32 = 1
+        _ = setsockopt(
+            connection,
+            SOL_SOCKET,
+            SO_NOSIGPIPE,
+            &noSigPipe,
+            socklen_t(MemoryLayout<Int32>.size)
+        )
 
         var request = Data()
         var buffer = [UInt8](repeating: 0, count: 4_096)

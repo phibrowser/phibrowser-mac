@@ -100,11 +100,11 @@ actor ServiceBrokerExtensionProtocol {
     private static let javascriptMaximumSafeInteger = UInt64(9_007_199_254_740_991)
     private static let supportedMethods = Set(["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"])
     private static let brokerExtensionHeader = "X-Phi-Extension-ID"
+    private static let maximumEnvelopeMetadataBytes = 64 * 1024
 
     private let injectedRuntime: Runtime?
     private let socketPathProvider: @Sendable () throws -> String
     private var productionRuntime: Runtime?
-    private var webSocketSequences = [String: UInt64]()
 
     private init() {
         injectedRuntime = nil
@@ -142,7 +142,10 @@ actor ServiceBrokerExtensionProtocol {
 
         do {
             let runtime = try await resolveRuntime()
-            guard payload.lengthOfBytes(using: .utf8) <= runtime.limits.jsonRequestBytes else {
+            guard payload.lengthOfBytes(using: .utf8) <= Self.envelopeLimit(
+                for: type,
+                limits: runtime.limits
+            ) else {
                 throw ProtocolFailure(code: .requestTooLarge, message: "The broker request is too large.")
             }
             let owner = BrokerSenderContext(extensionID: senderID, profileID: nil, accountID: nil)
@@ -185,7 +188,7 @@ actor ServiceBrokerExtensionProtocol {
                     allowedKeys: ["channelId"]
                 )
                 try validateChannelID(request.channelId)
-                await runtime.channelStore.close(owner: owner, channelID: request.channelId, code: nil, reason: nil)
+                try await runtime.channelStore.cancelHTTP(owner: owner, channelID: request.channelId)
                 return try success(["cancelled": true])
 
             case "broker.ws.open":
@@ -203,7 +206,6 @@ actor ServiceBrokerExtensionProtocol {
                     path: request.path,
                     headers: headers
                 )
-                webSocketSequences[opened.channelID] = 0
                 return try success(["channelId": opened.channelID])
 
             case "broker.ws.send":
@@ -212,6 +214,7 @@ actor ServiceBrokerExtensionProtocol {
                     payload: payload,
                     allowedKeys: ["channelId", "kind", "data"]
                 )
+                try validateEnvelopeMetadata(payload, base64Value: request.data)
                 try validateChannelID(request.channelId)
                 let data = try decodeBase64(request.data)
                 guard data.count <= runtime.limits.webSocketMessageBytes else {
@@ -232,7 +235,7 @@ actor ServiceBrokerExtensionProtocol {
                 )
                 try validateChannelID(request.channelId)
                 let pulled = try await runtime.channelStore.pullWebSocket(owner: owner, channelID: request.channelId)
-                return try encode(pulled.event, channelID: request.channelId)
+                return try encode(pulled.event)
 
             case "broker.ws.close":
                 let request = try decode(
@@ -247,8 +250,10 @@ actor ServiceBrokerExtensionProtocol {
                 guard (request.reason?.lengthOfBytes(using: .utf8) ?? 0) <= 123 else {
                     throw ProtocolFailure(code: .invalidPayload, message: "The WebSocket close reason is too large.")
                 }
-                webSocketSequences.removeValue(forKey: request.channelId)
-                await runtime.channelStore.close(
+                guard request.code.map(Self.isValidWebSocketCloseCode) ?? true else {
+                    throw ProtocolFailure(code: .invalidPayload, message: "The WebSocket close code is invalid.")
+                }
+                try await runtime.channelStore.closeWebSocket(
                     owner: owner,
                     channelID: request.channelId,
                     code: request.code,
@@ -307,6 +312,7 @@ actor ServiceBrokerExtensionProtocol {
             payload: payload,
             allowedKeys: ["path", "method", "headers", "bodyBase64"]
         )
+        try validateEnvelopeMetadata(payload, base64Value: request.bodyBase64)
         try validateHTTPPath(request.path)
         let method = (request.method ?? "GET").uppercased()
         guard Self.supportedMethods.contains(method) else {
@@ -364,6 +370,15 @@ actor ServiceBrokerExtensionProtocol {
         return data
     }
 
+    private func validateEnvelopeMetadata(_ payload: String, base64Value: String?) throws {
+        let payloadBytes = payload.lengthOfBytes(using: .utf8)
+        let base64Bytes = base64Value?.utf8.count ?? 0
+        guard payloadBytes >= base64Bytes,
+              payloadBytes - base64Bytes <= Self.maximumEnvelopeMetadataBytes else {
+            throw ProtocolFailure(code: .requestTooLarge, message: "The broker request metadata is too large.")
+        }
+    }
+
     private func validateHTTPPath(_ path: String) throws {
         guard path.hasPrefix("/"), !path.hasPrefix("//"), !path.contains("#"),
               !path.contains("\\"), !Self.hasControlCharacters(path),
@@ -409,25 +424,19 @@ actor ServiceBrokerExtensionProtocol {
         return try success(["events": [encoded]])
     }
 
-    private func encode(
-        _ event: BrokerWebSocketEvent,
-        channelID: String
-    ) throws -> ServiceBrokerExtensionReply {
+    private func encode(_ event: BrokerWebSocketEvent) throws -> ServiceBrokerExtensionReply {
         let encoded: [String: Any]
         switch event {
-        case .frame(let frame):
-            let sequence = webSocketSequences[channelID] ?? 0
+        case .frame(let sequence, let frame):
             guard sequence <= Self.javascriptMaximumSafeInteger else {
                 throw ProtocolFailure(code: .protocolError, message: "The broker sequence exceeds JavaScript precision.")
             }
-            webSocketSequences[channelID] = sequence + 1
             encoded = [
                 "type": frame.kind.rawValue,
                 "sequence": sequence,
                 "data": frame.data.base64EncodedString(),
             ]
         case .close(let code, let reason):
-            webSocketSequences.removeValue(forKey: channelID)
             var close: [String: Any] = ["type": "close"]
             if let code { close["code"] = Int(code) }
             if let reason { close["reason"] = reason }
@@ -435,7 +444,6 @@ actor ServiceBrokerExtensionProtocol {
         case .timeout:
             encoded = ["type": "timeout"]
         case .failure(let code, let message):
-            webSocketSequences.removeValue(forKey: channelID)
             encoded = ["type": "error", "code": code.rawValue, "message": message]
         }
         return try success(["events": [encoded]])
@@ -506,9 +514,34 @@ actor ServiceBrokerExtensionProtocol {
         return failure(.upstreamError, "The upstream service request failed.")
     }
 
-    private func headerPairs(_ headers: [String: String]) -> [[String]] {
-        headers.map { [$0.key.lowercased(), $0.value] }.sorted { lhs, rhs in
-            lhs[0] == rhs[0] ? lhs[1] < rhs[1] : lhs[0] < rhs[0]
+    private func headerPairs(_ headers: [BrokerHTTPHeader]) -> [[String]] {
+        headers.map { [$0.name, $0.value] }
+    }
+
+    private static func envelopeLimit(for type: String, limits: ServiceBrokerLimits) -> Int {
+        let rawBytes: Int
+        switch type {
+        case "broker.http.request", "broker.stream.open":
+            rawBytes = limits.jsonRequestBytes
+        case "broker.ws.send":
+            rawBytes = limits.webSocketMessageBytes
+        default:
+            rawBytes = 0
+        }
+        let encodedBytes: Int
+        if rawBytes > ((Int.max - 2) / 4) * 3 {
+            encodedBytes = Int.max
+        } else {
+            encodedBytes = ((rawBytes + 2) / 3) * 4
+        }
+        guard encodedBytes <= Int.max - maximumEnvelopeMetadataBytes else { return Int.max }
+        return encodedBytes + maximumEnvelopeMetadataBytes
+    }
+
+    private static func isValidWebSocketCloseCode(_ code: UInt16) -> Bool {
+        switch code {
+        case 1000...1003, 1007...1014, 3000...4999: true
+        default: false
         }
     }
 

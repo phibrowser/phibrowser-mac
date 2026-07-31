@@ -86,7 +86,13 @@ final class ServiceBrokerExtensionProtocolTests: XCTestCase {
     func testHTTPStatusAndHeadersRemainSuccessfulEnvelope() async throws {
         let handler = makeHandler(response: BrokerHTTPResponse(
             statusCode: 401,
-            headers: ["www-authenticate": "Bearer", "content-type": "application/json"],
+            headers: [
+                BrokerHTTPHeader(name: "set-cookie", value: "first=1"),
+                BrokerHTTPHeader(name: "www-authenticate", value: "Bearer realm=one"),
+                BrokerHTTPHeader(name: "set-cookie", value: "second=2"),
+                BrokerHTTPHeader(name: "www-authenticate", value: "Basic realm=two"),
+                BrokerHTTPHeader(name: "content-type", value: "application/json"),
+            ],
             body: Data(#"{"error":"expired"}"#.utf8)
         ))
 
@@ -101,12 +107,173 @@ final class ServiceBrokerExtensionProtocolTests: XCTestCase {
         XCTAssertEqual(result["status"] as? Int, 401)
         XCTAssertEqual(
             result["headers"] as? [[String]],
-            [["content-type", "application/json"], ["www-authenticate", "Bearer"]]
+            [
+                ["set-cookie", "first=1"],
+                ["www-authenticate", "Bearer realm=one"],
+                ["set-cookie", "second=2"],
+                ["www-authenticate", "Basic realm=two"],
+                ["content-type", "application/json"],
+            ]
         )
         XCTAssertEqual(
             Data(base64Encoded: try XCTUnwrap(result["bodyBase64"] as? String)),
             Data(#"{"error":"expired"}"#.utf8)
         )
+    }
+
+    func testDecodedHTTPAndWebSocketPayloadLimitsIgnoreBase64EnvelopeOverhead() async throws {
+        let exact = Data(repeating: 0x41, count: 12).base64EncodedString()
+        let over = Data(repeating: 0x41, count: 13).base64EncodedString()
+        let socket = FakeProtocolWebSocket(events: [])
+        let store = makeStore(webSocket: socket)
+        let handler = makeHandler(
+            limits: limits(jsonRequestBytes: 12, webSocketMessageBytes: 12),
+            channelStore: store
+        )
+
+        let exactHTTP = await handler.handle(
+            type: "broker.http.request",
+            payload: #"{"path":"/api/upload","method":"POST","bodyBase64":"\#(exact)"}"#,
+            senderID: allowedSender
+        )
+        XCTAssertNil(exactHTTP.error)
+        let overHTTP = await handler.handle(
+            type: "broker.http.request",
+            payload: #"{"path":"/api/upload","method":"POST","bodyBase64":"\#(over)"}"#,
+            senderID: allowedSender
+        )
+        XCTAssertEqual(overHTTP.error?.code, "request_too_large")
+
+        let opened = await handler.handle(
+            type: "broker.ws.open",
+            payload: #"{"path":"/ws/phi-agent/execute"}"#,
+            senderID: allowedSender
+        )
+        let channelID = try XCTUnwrap(try successResult(opened)["channelId"] as? String)
+        let exactWebSocket = await handler.handle(
+            type: "broker.ws.send",
+            payload: #"{"channelId":"\#(channelID)","kind":"binary","data":"\#(exact)"}"#,
+            senderID: allowedSender
+        )
+        XCTAssertNil(exactWebSocket.error)
+        let overWebSocket = await handler.handle(
+            type: "broker.ws.send",
+            payload: #"{"channelId":"\#(channelID)","kind":"binary","data":"\#(over)"}"#,
+            senderID: allowedSender
+        )
+        XCTAssertEqual(overWebSocket.error?.code, "request_too_large")
+    }
+
+    func testRequestEnvelopeMetadataRemainsBoundedAndBase64Canonical() async {
+        let handler = makeHandler(limits: limits(
+            jsonRequestBytes: 1_048_576,
+            webSocketMessageBytes: 1_048_576
+        ))
+        let oversizedMetadata = String(repeating: "a", count: 65_537)
+        let metadata = await handler.handle(
+            type: "broker.http.request",
+            payload: #"{"path":"/api/\#(oversizedMetadata)","method":"GET"}"#,
+            senderID: allowedSender
+        )
+        XCTAssertEqual(metadata.error?.code, "request_too_large")
+
+        let nonCanonical = await handler.handle(
+            type: "broker.http.request",
+            payload: #"{"path":"/api/upload","method":"POST","bodyBase64":"QQ"}"#,
+            senderID: allowedSender
+        )
+        XCTAssertEqual(nonCanonical.error?.code, "invalid_base64")
+    }
+
+    func testCancelAndCloseRejectTheWrongChannelKind() async throws {
+        let reader = HTTPChunkReader([])
+        let socket = FakeProtocolWebSocket(events: [])
+        let store = makeStore(httpReader: reader, webSocket: socket)
+        let handler = makeHandler(channelStore: store)
+        let stream = await handler.handle(
+            type: "broker.stream.open",
+            payload: #"{"path":"/api/stream"}"#,
+            senderID: allowedSender
+        )
+        let streamID = try XCTUnwrap(try successResult(stream)["channelId"] as? String)
+        let webSocket = await handler.handle(
+            type: "broker.ws.open",
+            payload: #"{"path":"/ws/phi-agent/execute"}"#,
+            senderID: allowedSender
+        )
+        let webSocketID = try XCTUnwrap(try successResult(webSocket)["channelId"] as? String)
+
+        let closeStream = await handler.handle(
+            type: "broker.ws.close",
+            payload: #"{"channelId":"\#(streamID)","code":1000}"#,
+            senderID: allowedSender
+        )
+        XCTAssertEqual(closeStream.error?.code, "invalid_payload")
+        let cancelWebSocket = await handler.handle(
+            type: "broker.stream.cancel",
+            payload: #"{"channelId":"\#(webSocketID)"}"#,
+            senderID: allowedSender
+        )
+        XCTAssertEqual(cancelWebSocket.error?.code, "invalid_payload")
+
+        let cancelStream = await handler.handle(
+            type: "broker.stream.cancel",
+            payload: #"{"channelId":"\#(streamID)"}"#,
+            senderID: allowedSender
+        )
+        XCTAssertNil(cancelStream.error)
+        let closeWebSocket = await handler.handle(
+            type: "broker.ws.close",
+            payload: #"{"channelId":"\#(webSocketID)","code":1000}"#,
+            senderID: allowedSender
+        )
+        XCTAssertNil(closeWebSocket.error)
+    }
+
+    func testInvalidWebSocketCloseCodeDoesNotRemoveChannel() async throws {
+        let socket = FakeProtocolWebSocket(events: [])
+        let store = makeStore(webSocket: socket)
+        let handler = makeHandler(channelStore: store)
+        let opened = await handler.handle(
+            type: "broker.ws.open",
+            payload: #"{"path":"/ws/phi-agent/execute"}"#,
+            senderID: allowedSender
+        )
+        let channelID = try XCTUnwrap(try successResult(opened)["channelId"] as? String)
+
+        for code in [999, 1005, 1015, 2000, 5000] {
+            let invalid = await handler.handle(
+                type: "broker.ws.close",
+                payload: #"{"channelId":"\#(channelID)","code":\#(code)}"#,
+                senderID: allowedSender
+            )
+            XCTAssertEqual(invalid.error?.code, "invalid_payload", "code: \(code)")
+        }
+
+        let valid = await handler.handle(
+            type: "broker.ws.close",
+            payload: #"{"channelId":"\#(channelID)","code":1000}"#,
+            senderID: allowedSender
+        )
+        XCTAssertNil(valid.error)
+    }
+
+    func testWebSocketSequenceComesFromChannelLifecycle() async throws {
+        let socket = FakeProtocolWebSocket(events: [
+            .frame(sequence: 41, BrokerWebSocketFrame(kind: .binary, data: Data([1]))),
+        ])
+        let store = makeStore(webSocket: socket)
+        let handler = makeHandler(channelStore: store)
+        let opened = await handler.handle(
+            type: "broker.ws.open",
+            payload: #"{"path":"/ws/phi-agent/execute"}"#,
+            senderID: allowedSender
+        )
+        let channelID = try XCTUnwrap(try successResult(opened)["channelId"] as? String)
+
+        let pulled = await pull(type: "broker.ws.pull", channelID: channelID, handler: handler)
+
+        XCTAssertEqual(try firstEvent(pulled)["sequence"] as? Int, 41)
     }
 
     func testStreamOpenPullAndCancelUseExactJSONMapping() async throws {
@@ -145,8 +312,8 @@ final class ServiceBrokerExtensionProtocolTests: XCTestCase {
 
     func testWebSocketOpenSendPullAndCloseUseExactJSONMapping() async throws {
         let socket = FakeProtocolWebSocket(events: [
-            .frame(BrokerWebSocketFrame(kind: .text, data: Data(#"{"type":"event"}"#.utf8))),
-            .frame(BrokerWebSocketFrame(kind: .binary, data: Data([1, 2, 3]))),
+            .frame(sequence: 0, BrokerWebSocketFrame(kind: .text, data: Data(#"{"type":"event"}"#.utf8))),
+            .frame(sequence: 1, BrokerWebSocketFrame(kind: .binary, data: Data([1, 2, 3]))),
             .close(code: 1000, reason: "done"),
         ])
         let store = makeStore(webSocket: socket)
@@ -219,11 +386,9 @@ final class ServiceBrokerExtensionProtocolTests: XCTestCase {
         await signal.wait()
         let duplicate = await pull(type: "broker.stream.pull", channelID: channelID, handler: handler)
         XCTAssertEqual(duplicate.error?.code, "pull_already_pending")
-        await store.close(
+        try await store.cancelHTTP(
             owner: BrokerSenderContext(extensionID: allowedSender, profileID: nil, accountID: nil),
-            channelID: channelID,
-            code: nil,
-            reason: nil
+            channelID: channelID
         )
         _ = await pending.value
 
@@ -286,7 +451,9 @@ final class ServiceBrokerExtensionProtocolTests: XCTestCase {
     private func makeHandler(
         limits: ServiceBrokerLimits? = nil,
         response: BrokerHTTPResponse = BrokerHTTPResponse(
-            statusCode: 401, headers: ["content-type": "application/json"], body: Data("{}".utf8)
+            statusCode: 401,
+            headers: [BrokerHTTPHeader(name: "content-type", value: "application/json")],
+            body: Data("{}".utf8)
         ),
         error: Error? = nil,
         recorder: BrokerRequestRecorder = BrokerRequestRecorder(),
@@ -323,7 +490,7 @@ final class ServiceBrokerExtensionProtocolTests: XCTestCase {
                 return BrokerHTTPStreamSource(
                     response: BrokerHTTPResponseHead(
                         statusCode: 200,
-                        headers: ["content-type": "text/event-stream"]
+                        headers: [BrokerHTTPHeader(name: "content-type", value: "text/event-stream")]
                     ),
                     read: { maxBytes in try await reader.read(maxBytes: maxBytes) },
                     cancel: { Task { await reader.cancel() } }
@@ -339,12 +506,15 @@ final class ServiceBrokerExtensionProtocolTests: XCTestCase {
         )
     }
 
-    private func limits(jsonRequestBytes: Int = 1_024) -> ServiceBrokerLimits {
+    private func limits(
+        jsonRequestBytes: Int = 1_024,
+        webSocketMessageBytes: Int = 1_024
+    ) -> ServiceBrokerLimits {
         ServiceBrokerLimits(
             bridgeChunkBytes: 512,
             jsonRequestBytes: jsonRequestBytes,
             nonStreamingResponseBytes: 1_024,
-            webSocketMessageBytes: 1_024,
+            webSocketMessageBytes: webSocketMessageBytes,
             unacknowledgedWindowBytes: 1_024,
             stagedFileBytes: 1_024,
             stagedAccountBytes: 1_024

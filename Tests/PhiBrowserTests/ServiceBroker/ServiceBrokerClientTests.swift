@@ -40,8 +40,32 @@ final class ServiceBrokerClientTests: XCTestCase {
         XCTAssertEqual(server.requestTarget, "/phi-agent/api/v1/chats?limit=20")
         XCTAssertEqual(server.requestHeaders["authorization"], "Bearer token")
         XCTAssertEqual(response.statusCode, 200)
-        XCTAssertEqual(response.headers["content-type"], "application/json")
+        XCTAssertEqual(response.headers, [
+            BrokerHTTPHeader(name: "content-type", value: "application/json"),
+            BrokerHTTPHeader(name: "content-length", value: "11"),
+        ])
         XCTAssertEqual(response.body, Data(#"{"ok":true}"#.utf8))
+    }
+
+    func testResponsePreservesRepeatedHeadersInWireOrder() async throws {
+        let server = UnixHTTPTestServer(response:
+            "HTTP/1.1 401 Unauthorized\r\n" +
+                "Set-Cookie: first=1\r\n" +
+                "WWW-Authenticate: Bearer realm=one\r\n" +
+                "Set-Cookie: second=2\r\n" +
+                "WWW-Authenticate: Basic realm=two\r\n" +
+                "Content-Length: 0\r\n\r\n")
+        let client = ServiceBrokerClient(socketPath: server.socketPath)
+
+        let response = try await client.request(BrokerHTTPRequest(service: .phiAgent, path: "/auth"))
+
+        XCTAssertEqual(response.headers, [
+            BrokerHTTPHeader(name: "set-cookie", value: "first=1"),
+            BrokerHTTPHeader(name: "www-authenticate", value: "Bearer realm=one"),
+            BrokerHTTPHeader(name: "set-cookie", value: "second=2"),
+            BrokerHTTPHeader(name: "www-authenticate", value: "Basic realm=two"),
+            BrokerHTTPHeader(name: "content-length", value: "0"),
+        ])
     }
 
     func testRequestParsesChunkedBody() async throws {

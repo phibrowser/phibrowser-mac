@@ -19,8 +19,10 @@ final class ServiceBrokerWebSocketTests: XCTestCase {
         let text = try await socket.receive()
         let binary = try await socket.receive()
         let close = try await socket.receive()
-        XCTAssertEqual(text, .frame(BrokerWebSocketFrame(kind: .text, data: Data("reply".utf8))))
-        XCTAssertEqual(binary, .frame(BrokerWebSocketFrame(kind: .binary, data: Data([3, 4, 5]))))
+        XCTAssertEqual(text, .frame(
+            sequence: 0, BrokerWebSocketFrame(kind: .text, data: Data("reply".utf8))))
+        XCTAssertEqual(binary, .frame(
+            sequence: 1, BrokerWebSocketFrame(kind: .binary, data: Data([3, 4, 5]))))
         XCTAssertEqual(close, .close(code: 1000, reason: "done"))
         XCTAssertEqual(server.requestTarget, "/phi-agent/ws/phi-agent/execute")
         XCTAssertEqual(server.requestHeaders["authorization"], "Bearer token")
@@ -41,7 +43,8 @@ final class ServiceBrokerWebSocketTests: XCTestCase {
 
         let event = try await socket.receive()
 
-        XCTAssertEqual(event, .frame(BrokerWebSocketFrame(kind: .text, data: Data("hello".utf8))))
+        XCTAssertEqual(event, .frame(
+            sequence: 0, BrokerWebSocketFrame(kind: .text, data: Data("hello".utf8))))
         for _ in 0..<20 where server.receivedPong != Data("ping".utf8) {
             try await Task.sleep(for: .milliseconds(5))
         }

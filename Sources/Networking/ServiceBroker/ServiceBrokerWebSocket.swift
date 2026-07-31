@@ -29,6 +29,7 @@ final class ServiceBrokerWebSocket: @unchecked Sendable {
     private var connected = false
     private var closed = false
     private var closeSent = false
+    private var nextSequence: UInt64 = 0
     private var fragmentedOpcode: UInt8?
     private var fragmentedPayload = Data()
 
@@ -369,9 +370,13 @@ final class ServiceBrokerWebSocket: @unchecked Sendable {
         switch opcode {
         case 0x1:
             guard String(data: payload, encoding: .utf8) != nil else { try failProtocol(code: 1007) }
-            return .frame(BrokerWebSocketFrame(kind: .text, data: payload))
+            let sequence = nextSequence
+            nextSequence &+= 1
+            return .frame(sequence: sequence, BrokerWebSocketFrame(kind: .text, data: payload))
         case 0x2:
-            return .frame(BrokerWebSocketFrame(kind: .binary, data: payload))
+            let sequence = nextSequence
+            nextSequence &+= 1
+            return .frame(sequence: sequence, BrokerWebSocketFrame(kind: .binary, data: payload))
         default:
             try failProtocol()
         }

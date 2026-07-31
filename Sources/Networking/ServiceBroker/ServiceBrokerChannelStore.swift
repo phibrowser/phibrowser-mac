@@ -279,32 +279,36 @@ actor ServiceBrokerChannelStore {
         }
     }
 
-    func close(
+    func cancelHTTP(
+        owner: BrokerSenderContext,
+        channelID: String
+    ) throws {
+        guard case .http = try ownedChannel(owner: owner, channelID: channelID) else {
+            throw BrokerChannelError.invalidChannelKind
+        }
+        guard case .http(let http) = removeChannel(channelID) else {
+            throw BrokerChannelError.channelNotFound
+        }
+        http.source.cancel()
+        http.pendingPull?.continuation.resume(returning: BrokerStreamPullResponse(event: .end))
+    }
+
+    func closeWebSocket(
         owner: BrokerSenderContext,
         channelID: String,
         code: UInt16?,
         reason: String?
-    ) async {
-        guard let channel = channels[channelID] else { return }
-        let isOwned: Bool
-        switch channel {
-        case .http(let http):
-            isOwned = http.owner == owner
-        case .webSocket(let webSocket):
-            isOwned = webSocket.owner == owner
+    ) async throws {
+        guard case .webSocket = try ownedChannel(owner: owner, channelID: channelID) else {
+            throw BrokerChannelError.invalidChannelKind
         }
-        guard isOwned, let detachedChannel = removeChannel(channelID) else { return }
-
-        switch detachedChannel {
-        case .http(let http):
-            http.source.cancel()
-            http.pendingPull?.continuation.resume(returning: BrokerStreamPullResponse(event: .end))
-        case .webSocket(let webSocket):
-            webSocket.pendingPull?.continuation.resume(returning: BrokerWebSocketPullResponse(
-                event: .close(code: code, reason: reason)
-            ))
-            await webSocket.source.close(code: code, reason: reason)
+        guard case .webSocket(let webSocket) = removeChannel(channelID) else {
+            throw BrokerChannelError.channelNotFound
         }
+        webSocket.pendingPull?.continuation.resume(returning: BrokerWebSocketPullResponse(
+            event: .close(code: code, reason: reason)
+        ))
+        await webSocket.source.close(code: code, reason: reason)
     }
 
     private func readHTTP(channelID: String, source: BrokerHTTPStreamSource) async {
@@ -596,7 +600,7 @@ private extension BrokerPullEvent {
 
 private extension BrokerWebSocketEvent {
     var byteCount: Int {
-        if case .frame(let frame) = self { return frame.data.count }
+        if case .frame(_, let frame) = self { return frame.data.count }
         return 0
     }
 }

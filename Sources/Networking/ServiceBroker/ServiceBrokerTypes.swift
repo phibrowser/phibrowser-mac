@@ -40,13 +40,18 @@ struct BrokerHTTPRequest: Sendable {
 
 struct BrokerHTTPResponse: Sendable {
     let statusCode: Int
-    let headers: [String: String]
+    let headers: [BrokerHTTPHeader]
     let body: Data
+}
+
+struct BrokerHTTPHeader: Equatable, Sendable {
+    let name: String
+    let value: String
 }
 
 struct BrokerHTTPResponseHead: Sendable {
     let statusCode: Int
-    let headers: [String: String]
+    let headers: [BrokerHTTPHeader]
 }
 
 enum ServiceBrokerHTTPError: Error, Equatable, Sendable {
@@ -167,7 +172,7 @@ enum BrokerPullEvent: Equatable, Sendable {
 struct BrokerStreamOpenResponse: Equatable, Sendable {
     let channelID: String
     let statusCode: Int
-    let headers: [String: String]
+    let headers: [BrokerHTTPHeader]
 }
 
 struct BrokerStreamPullResponse: Equatable, Sendable {
@@ -185,7 +190,7 @@ struct BrokerWebSocketFrame: Equatable, Sendable {
 }
 
 enum BrokerWebSocketEvent: Equatable, Sendable {
-    case frame(BrokerWebSocketFrame)
+    case frame(sequence: UInt64, BrokerWebSocketFrame)
     case close(code: UInt16?, reason: String?)
     case timeout
     case failure(code: NativeBrokerErrorCode, message: String)

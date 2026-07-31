@@ -15,7 +15,7 @@ final class ServiceBrokerChannelStoreTests: XCTestCase {
             _ = try await store.pullHTTP(owner: otherOwner, channelID: opened.channelID)
         }
 
-        await store.close(owner: owner, channelID: opened.channelID, code: nil, reason: nil)
+        try await store.cancelHTTP(owner: owner, channelID: opened.channelID)
     }
 
     func testOnlyOnePullMayWaitPerChannel() async throws {
@@ -52,8 +52,8 @@ final class ServiceBrokerChannelStoreTests: XCTestCase {
 
         let response = try await waitingPull.value
         XCTAssertEqual(response.event, .data(sequence: 0, data: Data("ready".utf8)))
-        await signalledStore.close(owner: owner, channelID: signalledOpened.channelID, code: nil, reason: nil)
-        await store.close(owner: owner, channelID: opened.channelID, code: nil, reason: nil)
+        try await signalledStore.cancelHTTP(owner: owner, channelID: signalledOpened.channelID)
+        try await store.cancelHTTP(owner: owner, channelID: opened.channelID)
     }
 
     func testHTTPChunksHaveMonotonicSequenceNumbers() async throws {
@@ -81,7 +81,7 @@ final class ServiceBrokerChannelStoreTests: XCTestCase {
         let pull = Task { try await store.pullHTTP(owner: owner, channelID: opened.channelID) }
         await pendingPull.wait()
 
-        await store.close(owner: owner, channelID: opened.channelID, code: nil, reason: nil)
+        try await store.cancelHTTP(owner: owner, channelID: opened.channelID)
 
         let response = try await pull.value
         XCTAssertEqual(response.event, .end)
@@ -105,7 +105,7 @@ final class ServiceBrokerChannelStoreTests: XCTestCase {
         await timeoutGate.release()
         let result = try await pull.value
         XCTAssertEqual(result.event, .timeout)
-        await store.close(owner: owner, channelID: opened.channelID, code: nil, reason: nil)
+        try await store.cancelHTTP(owner: owner, channelID: opened.channelID)
         XCTAssertTrue(stream.isCancelled)
     }
 
@@ -120,7 +120,7 @@ final class ServiceBrokerChannelStoreTests: XCTestCase {
         stream.send(Data("reader wins".utf8))
         let result = try await pull.value
         XCTAssertEqual(result.event, .data(sequence: 0, data: Data("reader wins".utf8)))
-        await store.close(owner: owner, channelID: opened.channelID, code: nil, reason: nil)
+        try await store.cancelHTTP(owner: owner, channelID: opened.channelID)
         XCTAssertTrue(stream.isCancelled)
     }
 
@@ -138,7 +138,7 @@ final class ServiceBrokerChannelStoreTests: XCTestCase {
         await pendingPull.wait()
         await timeoutGate.waitUntilEntered()
 
-        await store.close(owner: owner, channelID: opened.channelID, code: nil, reason: nil)
+        try await store.cancelHTTP(owner: owner, channelID: opened.channelID)
         let result = try await pull.value
         XCTAssertEqual(result.event, .end)
         await timeoutGate.release()
@@ -158,7 +158,7 @@ final class ServiceBrokerChannelStoreTests: XCTestCase {
         stream.send(Data("stale reader".utf8))
         await deliveryGate.waitUntilEntered()
 
-        await store.close(owner: owner, channelID: opened.channelID, code: nil, reason: nil)
+        try await store.cancelHTTP(owner: owner, channelID: opened.channelID)
         let result = try await pull.value
         XCTAssertEqual(result.event, .end)
         await deliveryGate.release()
@@ -182,7 +182,7 @@ final class ServiceBrokerChannelStoreTests: XCTestCase {
         await pendingPull.wait()
         await idleGate.waitUntilEntered(2)
 
-        await store.close(owner: owner, channelID: opened.channelID, code: nil, reason: nil)
+        try await store.cancelHTTP(owner: owner, channelID: opened.channelID)
         let result = try await pull.value
         XCTAssertEqual(result.event, .end)
         await idleGate.release()
@@ -240,15 +240,72 @@ final class ServiceBrokerChannelStoreTests: XCTestCase {
         )
         let outgoing = BrokerWebSocketFrame(kind: .text, data: Data("request".utf8))
         try await store.sendWebSocket(owner: owner, channelID: opened.channelID, frame: outgoing)
-        socket.receive(.frame(BrokerWebSocketFrame(kind: .binary, data: Data([1, 2, 3]))))
+        socket.receive(.frame(
+            sequence: 0, BrokerWebSocketFrame(kind: .binary, data: Data([1, 2, 3]))))
         socket.receive(.close(code: 1000, reason: "done"))
 
         let frame = try await store.pullWebSocket(owner: owner, channelID: opened.channelID)
         let close = try await store.pullWebSocket(owner: owner, channelID: opened.channelID)
 
         XCTAssertEqual(socket.sentFrames, [outgoing])
-        XCTAssertEqual(frame.event, .frame(BrokerWebSocketFrame(kind: .binary, data: Data([1, 2, 3]))))
+        XCTAssertEqual(
+            frame.event,
+            .frame(sequence: 0, BrokerWebSocketFrame(kind: .binary, data: Data([1, 2, 3])))
+        )
         XCTAssertEqual(close.event, .close(code: 1000, reason: "done"))
+    }
+
+    func testWebSocketFramesHaveChannelOwnedSequenceNumbers() async throws {
+        let socket = FakeBrokerWebSocket()
+        let store = makeWebSocketStore(socket: socket)
+        let opened = try await store.openWebSocket(
+            owner: owner, path: "/ws/phi-agent/execute", headers: [:])
+        socket.receive(.frame(
+            sequence: 0, BrokerWebSocketFrame(kind: .text, data: Data("one".utf8))))
+        socket.receive(.frame(
+            sequence: 1, BrokerWebSocketFrame(kind: .text, data: Data("two".utf8))))
+
+        let first = try await store.pullWebSocket(owner: owner, channelID: opened.channelID)
+        let second = try await store.pullWebSocket(owner: owner, channelID: opened.channelID)
+
+        XCTAssertEqual(first.event, .frame(
+            sequence: 0, BrokerWebSocketFrame(kind: .text, data: Data("one".utf8))))
+        XCTAssertEqual(second.event, .frame(
+            sequence: 1, BrokerWebSocketFrame(kind: .text, data: Data("two".utf8))))
+        try await store.closeWebSocket(
+            owner: owner, channelID: opened.channelID, code: 1000, reason: nil)
+    }
+
+    func testKindSpecificCloseOperationsRejectTheWrongChannelKind() async throws {
+        let stream = FakeBrokerHTTPStream()
+        let socket = FakeBrokerWebSocket()
+        let store = ServiceBrokerChannelStore(
+            configuration: ServiceBrokerChannelConfiguration(
+                bridgeChunkBytes: 64,
+                webSocketMessageBytes: 1_024,
+                unacknowledgedWindowBytes: 1_024,
+                pullTimeout: .seconds(1),
+                idleTimeout: .seconds(1)
+            ),
+            httpStreamOpener: { _ in stream.source },
+            webSocketOpener: { _, _ in socket.source }
+        )
+        let http = try await store.openHTTPStream(owner: owner, request: request())
+        let webSocket = try await store.openWebSocket(
+            owner: owner, path: "/ws/phi-agent/execute", headers: [:])
+
+        await assertChannelError(.invalidChannelKind) {
+            try await store.closeWebSocket(
+                owner: self.owner, channelID: http.channelID, code: 1000, reason: nil)
+        }
+        await assertChannelError(.invalidChannelKind) {
+            try await store.cancelHTTP(owner: self.owner, channelID: webSocket.channelID)
+        }
+        XCTAssertFalse(stream.isCancelled)
+        XCTAssertFalse(socket.isClosed)
+        try await store.cancelHTTP(owner: owner, channelID: http.channelID)
+        try await store.closeWebSocket(
+            owner: owner, channelID: webSocket.channelID, code: 1000, reason: nil)
     }
 
     func testLocalWebSocketCloseUnblocksPendingPullExactlyOnce() async throws {
@@ -259,7 +316,8 @@ final class ServiceBrokerChannelStoreTests: XCTestCase {
         let pull = Task { try await store.pullWebSocket(owner: owner, channelID: opened.channelID) }
         await pendingPull.wait()
 
-        await store.close(owner: owner, channelID: opened.channelID, code: 1000, reason: "done")
+        try await store.closeWebSocket(
+            owner: owner, channelID: opened.channelID, code: 1000, reason: "done")
 
         let result = try await pull.value
         XCTAssertEqual(result.event, .close(code: 1000, reason: "done"))
@@ -275,7 +333,8 @@ final class ServiceBrokerChannelStoreTests: XCTestCase {
         let store = makeWebSocketStore(socket: socket)
         let opened = try await store.openWebSocket(owner: owner, path: "/ws/phi-agent/execute", headers: [:])
         let close = Task {
-            await store.close(owner: owner, channelID: opened.channelID, code: 1000, reason: nil)
+            try await store.closeWebSocket(
+                owner: owner, channelID: opened.channelID, code: 1000, reason: nil)
         }
         await closeGate.waitUntilEntered()
 
@@ -284,7 +343,27 @@ final class ServiceBrokerChannelStoreTests: XCTestCase {
         }
 
         await closeGate.release()
-        await close.value
+        try await close.value
+    }
+
+    func testWebSocketIdleExpiryRemovesChannelState() async throws {
+        let idleGate = AsyncGate()
+        let socket = FakeBrokerWebSocket()
+        let store = makeWebSocketStore(
+            socket: socket,
+            idleTimeoutSleeper: { _ in await idleGate.enter() }
+        )
+        let opened = try await store.openWebSocket(
+            owner: owner, path: "/ws/phi-agent/execute", headers: [:])
+        await idleGate.waitUntilEntered()
+
+        await idleGate.release()
+        await socket.waitUntilClosed()
+
+        XCTAssertTrue(socket.isClosed)
+        await assertChannelError(.channelNotFound) {
+            _ = try await store.pullWebSocket(owner: self.owner, channelID: opened.channelID)
+        }
     }
 
     private func request() -> BrokerHTTPRequest {
@@ -322,7 +401,10 @@ final class ServiceBrokerChannelStoreTests: XCTestCase {
 
     private func makeWebSocketStore(
         socket: FakeBrokerWebSocket,
-        pendingPull: AsyncSignal? = nil
+        pendingPull: AsyncSignal? = nil,
+        idleTimeoutSleeper: @escaping ServiceBrokerChannelStore.PullTimeoutSleeper = { duration in
+            try await Task.sleep(for: duration)
+        }
     ) -> ServiceBrokerChannelStore {
         ServiceBrokerChannelStore(
             configuration: ServiceBrokerChannelConfiguration(
@@ -334,7 +416,8 @@ final class ServiceBrokerChannelStoreTests: XCTestCase {
             ),
             httpStreamOpener: { _ in throw BrokerChannelError.invalidChannelKind },
             webSocketOpener: { _, _ in socket.source },
-            pendingPullObserver: { _ in pendingPull?.signal() }
+            pendingPullObserver: { _ in pendingPull?.signal() },
+            idleTimeoutSleeper: idleTimeoutSleeper
         )
     }
 }
@@ -371,6 +454,17 @@ private final class FakeBrokerWebSocket: @unchecked Sendable {
         condition.lock()
         defer { condition.unlock() }
         return closed
+    }
+
+    func waitUntilClosed() async {
+        await withCheckedContinuation { continuation in
+            DispatchQueue.global().async { [self] in
+                condition.lock()
+                while !closed { condition.wait() }
+                condition.unlock()
+                continuation.resume()
+            }
+        }
     }
 
     func receive(_ event: BrokerWebSocketEvent) {
@@ -420,7 +514,10 @@ private final class FakeBrokerHTTPStream: @unchecked Sendable {
 
     var source: BrokerHTTPStreamSource {
         BrokerHTTPStreamSource(
-            response: BrokerHTTPResponseHead(statusCode: 200, headers: ["content-type": "text/event-stream"]),
+            response: BrokerHTTPResponseHead(
+                statusCode: 200,
+                headers: [BrokerHTTPHeader(name: "content-type", value: "text/event-stream")]
+            ),
             read: { [self] _ in try await next() },
             cancel: { [self] in cancel() }
         )

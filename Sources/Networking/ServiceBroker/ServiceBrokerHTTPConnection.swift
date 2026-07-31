@@ -429,7 +429,7 @@ private enum BrokerHTTPBodyFraming: Sendable {
 
 private struct ParsedResponseHead {
     let statusCode: Int
-    let headers: [String: String]
+    let headers: [BrokerHTTPHeader]
     let framing: BrokerHTTPBodyFraming
 
     init(_ raw: String) throws {
@@ -447,7 +447,7 @@ private struct ParsedResponseHead {
         }
         statusCode = parsedStatus
 
-        var parsedHeaders = [String: String]()
+        var parsedHeaders = [BrokerHTTPHeader]()
         var contentLengths = [String]()
         var transferEncodings = [String]()
         for line in lines.dropFirst() {
@@ -457,7 +457,7 @@ private struct ParsedResponseHead {
             guard isToken(name), !containsControlCharacters(value) else {
                 throw ServiceBrokerHTTPError.invalidResponse
             }
-            parsedHeaders[name] = value
+            parsedHeaders.append(BrokerHTTPHeader(name: name, value: value))
             if name == "content-length" { contentLengths.append(value) }
             if name == "transfer-encoding" { transferEncodings.append(value.lowercased()) }
         }

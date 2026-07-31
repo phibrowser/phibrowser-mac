@@ -9,6 +9,8 @@ import ImageIO
 import UniformTypeIdentifiers
 
 final class ImagePreviewLoader: ImagePreviewLoading {
+    typealias PhiAgentFileLoader = @Sendable (String, String) async throws -> BrokerHTTPResponse
+
     private final class CacheEntry {
         let asset: ImagePreviewAsset
 
@@ -18,11 +20,21 @@ final class ImagePreviewLoader: ImagePreviewLoading {
     }
 
     private let urlSession: URLSession
+    private let phiAgentFileLoader: PhiAgentFileLoader
     private let cache = NSCache<NSString, CacheEntry>()
     private var preloadTasks: [String: Task<Void, Never>] = [:]
 
-    init(urlSession: URLSession = .shared) {
+    init(
+        urlSession: URLSession = .shared,
+        phiAgentFileLoader: @escaping PhiAgentFileLoader = { path, senderID in
+            try await ServiceBrokerExtensionProtocol.shared.loadImagePreviewFile(
+                path: path,
+                senderID: senderID
+            )
+        }
+    ) {
         self.urlSession = urlSession
+        self.phiAgentFileLoader = phiAgentFileLoader
     }
 
     func load(_ item: ImagePreviewItem) async throws -> ImagePreviewAsset {
@@ -67,6 +79,25 @@ final class ImagePreviewLoader: ImagePreviewLoading {
         case .rawData(let data, let mimeType):
             let effectiveMIME = item.mimeType ?? mimeType
             asset = try decode(data: data, sourceURL: nil, mimeType: effectiveMIME)
+        case .phiAgentFile(let path, let senderID):
+            do {
+                let response = try await phiAgentFileLoader(path, senderID)
+                guard (200 ... 299).contains(response.statusCode) else {
+                    throw ImagePreviewError.networkFailed
+                }
+                let responseMIME = response.headers.first {
+                    $0.name.caseInsensitiveCompare("content-type") == .orderedSame
+                }?.value.split(separator: ";", maxSplits: 1).first.map(String.init)
+                asset = try decode(
+                    data: response.body,
+                    sourceURL: nil,
+                    mimeType: item.mimeType ?? responseMIME
+                )
+            } catch let error as ImagePreviewError {
+                throw error
+            } catch {
+                throw ImagePreviewError.networkFailed
+            }
         }
 
         cache.setObject(CacheEntry(asset: asset), forKey: item.source.cacheKey as NSString)

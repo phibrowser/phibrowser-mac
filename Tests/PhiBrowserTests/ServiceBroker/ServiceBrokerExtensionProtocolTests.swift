@@ -48,6 +48,161 @@ final class ServiceBrokerExtensionProtocolTests: XCTestCase {
         XCTAssertEqual(requestCount, 0)
     }
 
+    func testImagePreviewItemsUseBrokerOnlyForExactSidecarSenderAndFilePath() {
+        let addresses = [
+            "/api/v1/files/image-1?variant=full",
+            "https://images.example/image.png",
+        ]
+
+        let allowed = ImagePreviewItem.items(
+            fromAddressStrings: addresses,
+            authorizedPhiAgentSenderID: allowedSender
+        )
+        XCTAssertEqual(
+            allowed.first?.source,
+            .phiAgentFile(
+                path: "/api/v1/files/image-1?variant=full",
+                senderID: allowedSender
+            )
+        )
+        XCTAssertEqual(
+            allowed.last?.source,
+            .remoteURL(URL(string: "https://images.example/image.png")!)
+        )
+
+        for sender in ["", "cdp", "debug-extension", "other-extension"] {
+            let rejected = ImagePreviewItem.items(
+                fromAddressStrings: addresses,
+                authorizedPhiAgentSenderID: sender
+            )
+            XCTAssertEqual(
+                rejected.first?.source,
+                .localFile(URL(fileURLWithPath: "/api/v1/files/image-1?variant=full"))
+            )
+        }
+    }
+
+    func testImagePreviewFileFetchRequiresExactSenderAndUsesBrokerAuth() async throws {
+        let recorder = BrokerRequestRecorder()
+        let handler = makeHandler(recorder: recorder, accessToken: "native-access-token")
+
+        for sender in ["", "cdp", "debug-extension", "other-extension"] {
+            do {
+                _ = try await handler.loadImagePreviewFile(
+                    path: "/api/v1/files/image-1",
+                    senderID: sender
+                )
+                XCTFail("Expected unauthorized sender: \(sender)")
+            } catch {}
+        }
+        let rejectedRequestCount = await recorder.count()
+        XCTAssertEqual(rejectedRequestCount, 0)
+
+        let response = try await handler.loadImagePreviewFile(
+            path: "/api/v1/files/image-1?variant=full",
+            senderID: allowedSender
+        )
+        XCTAssertEqual(response.statusCode, 401)
+        let recordedRequest = await recorder.lastRequest()
+        let request = try XCTUnwrap(recordedRequest)
+        XCTAssertEqual(request.service, .phiAgent)
+        XCTAssertEqual(request.path, "/api/v1/files/image-1?variant=full")
+        XCTAssertEqual(request.method, "GET")
+        XCTAssertEqual(request.headers["Authorization"], "Bearer native-access-token")
+        XCTAssertEqual(request.headers["X-Phi-Extension-ID"], allowedSender)
+    }
+
+    func testImagePreviewFileFetchRejectsNonFilePathsAndOversizedResponses() async {
+        let recorder = BrokerRequestRecorder()
+        let handler = makeHandler(
+            limits: limits(nonStreamingResponseBytes: 4),
+            response: BrokerHTTPResponse(
+                statusCode: 200,
+                headers: [],
+                body: Data(repeating: 0x41, count: 5)
+            ),
+            recorder: recorder,
+            accessToken: "native-access-token"
+        )
+
+        for path in ["/api/v1/chats", "/api/v1/files/../secret", "https://localhost/api/v1/files/x"] {
+            do {
+                _ = try await handler.loadImagePreviewFile(path: path, senderID: allowedSender)
+                XCTFail("Expected rejected path: \(path)")
+            } catch {}
+        }
+        let invalidPathRequestCount = await recorder.count()
+        XCTAssertEqual(invalidPathRequestCount, 0)
+
+        do {
+            _ = try await handler.loadImagePreviewFile(
+                path: "/api/v1/files/too-large",
+                senderID: allowedSender
+            )
+            XCTFail("Expected oversized response rejection")
+        } catch {}
+        let oversizedRequestCount = await recorder.count()
+        XCTAssertEqual(oversizedRequestCount, 1)
+    }
+
+    func testImagePreviewLoaderDecodesBrokerFileWithoutURLSession() async throws {
+        let png = try XCTUnwrap(Data(base64Encoded:
+            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="))
+        let calls = ImagePreviewBrokerLoadRecorder(response: BrokerHTTPResponse(
+            statusCode: 200,
+            headers: [BrokerHTTPHeader(name: "content-type", value: "image/png")],
+            body: png
+        ))
+        let loader = ImagePreviewLoader(phiAgentFileLoader: { path, senderID in
+            try await calls.load(path: path, senderID: senderID)
+        })
+        let item = ImagePreviewItem(
+            id: "broker-image",
+            source: .phiAgentFile(path: "/api/v1/files/image-1", senderID: allowedSender),
+            title: nil,
+            mimeType: nil,
+            suggestedFilename: nil
+        )
+
+        let asset = try await loader.load(item)
+
+        XCTAssertEqual(asset.pixelSize, CGSize(width: 1, height: 1))
+        let loadedPath = await calls.lastPath()
+        let loadedSenderID = await calls.lastSenderID()
+        XCTAssertEqual(loadedPath, "/api/v1/files/image-1")
+        XCTAssertEqual(loadedSenderID, allowedSender)
+    }
+
+    func testImagePreviewLoaderMapsBrokerStatusAndTransportFailures() async {
+        let item = ImagePreviewItem(
+            id: "broker-image-error",
+            source: .phiAgentFile(path: "/api/v1/files/image-1", senderID: allowedSender),
+            title: nil,
+            mimeType: nil,
+            suggestedFilename: nil
+        )
+        let statusLoader = ImagePreviewLoader(phiAgentFileLoader: { _, _ in
+            BrokerHTTPResponse(statusCode: 404, headers: [], body: Data())
+        })
+        let transportLoader = ImagePreviewLoader(phiAgentFileLoader: { _, _ in
+            throw TestUpstreamError()
+        })
+
+        do {
+            _ = try await statusLoader.load(item)
+            XCTFail("Expected non-success broker status to fail")
+        } catch {
+            XCTAssertEqual(error as? ImagePreviewError, .networkFailed)
+        }
+
+        do {
+            _ = try await transportLoader.load(item)
+            XCTFail("Expected broker transport failure to fail")
+        } catch {
+            XCTAssertEqual(error as? ImagePreviewError, .networkFailed)
+        }
+    }
+
     func testRejectsUnknownMessageAndForbiddenTransportSelectorFields() async {
         let handler = makeHandler()
 
@@ -457,7 +612,8 @@ final class ServiceBrokerExtensionProtocolTests: XCTestCase {
         ),
         error: Error? = nil,
         recorder: BrokerRequestRecorder = BrokerRequestRecorder(),
-        channelStore: ServiceBrokerChannelStore? = nil
+        channelStore: ServiceBrokerChannelStore? = nil,
+        accessToken: String? = "test-access-token"
     ) -> ServiceBrokerExtensionProtocol {
         let resolvedLimits = limits ?? self.limits()
         let resolvedStore = channelStore ?? makeStore(httpReader: HTTPChunkReader([nil]))
@@ -468,7 +624,8 @@ final class ServiceBrokerExtensionProtocolTests: XCTestCase {
                 await recorder.record(request)
                 if let error { throw error }
                 return response
-            }
+            },
+            accessTokenProvider: { accessToken }
         )
     }
 
@@ -508,12 +665,13 @@ final class ServiceBrokerExtensionProtocolTests: XCTestCase {
 
     private func limits(
         jsonRequestBytes: Int = 1_024,
-        webSocketMessageBytes: Int = 1_024
+        webSocketMessageBytes: Int = 1_024,
+        nonStreamingResponseBytes: Int = 1_024
     ) -> ServiceBrokerLimits {
         ServiceBrokerLimits(
             bridgeChunkBytes: 512,
             jsonRequestBytes: jsonRequestBytes,
-            nonStreamingResponseBytes: 1_024,
+            nonStreamingResponseBytes: nonStreamingResponseBytes,
             webSocketMessageBytes: webSocketMessageBytes,
             unacknowledgedWindowBytes: 1_024,
             stagedFileBytes: 1_024,
@@ -572,6 +730,30 @@ private actor BrokerRequestRecorder {
 
     func count() -> Int {
         requests.count
+    }
+}
+
+private actor ImagePreviewBrokerLoadRecorder {
+    private let response: BrokerHTTPResponse
+    private var path: String?
+    private var senderID: String?
+
+    init(response: BrokerHTTPResponse) {
+        self.response = response
+    }
+
+    func load(path: String, senderID: String) throws -> BrokerHTTPResponse {
+        self.path = path
+        self.senderID = senderID
+        return response
+    }
+
+    func lastPath() -> String? {
+        path
+    }
+
+    func lastSenderID() -> String? {
+        senderID
     }
 }
 

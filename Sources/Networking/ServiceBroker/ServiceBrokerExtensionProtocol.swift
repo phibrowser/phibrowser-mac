@@ -104,17 +104,22 @@ actor ServiceBrokerExtensionProtocol {
 
     private let injectedRuntime: Runtime?
     private let socketPathProvider: @Sendable () throws -> String
+    private let accessTokenProvider: () -> String?
     private var productionRuntime: Runtime?
 
     private init() {
         injectedRuntime = nil
         socketPathProvider = Self.currentSocketPath
+        accessTokenProvider = { SharedAuthTokenStore.shared.read()?.accessToken }
     }
 
     init(
         limits: ServiceBrokerLimits,
         channelStore: ServiceBrokerChannelStore,
-        requestExecutor: @escaping RequestExecutor
+        requestExecutor: @escaping RequestExecutor,
+        accessTokenProvider: @escaping () -> String? = {
+            SharedAuthTokenStore.shared.read()?.accessToken
+        }
     ) {
         injectedRuntime = Runtime(
             socketPath: nil,
@@ -126,6 +131,11 @@ actor ServiceBrokerExtensionProtocol {
             code: .upstreamError,
             message: "The service broker socket is unavailable."
         ) }
+        self.accessTokenProvider = accessTokenProvider
+    }
+
+    static func isAllowedSidecarSender(_ senderID: String) -> Bool {
+        senderID == allowedCanarySidecarExtensionID
     }
 
     func handle(_ context: ExtensionMessageContext) async -> String {
@@ -133,7 +143,7 @@ actor ServiceBrokerExtensionProtocol {
     }
 
     func handle(type: String, payload: String, senderID: String) async -> ServiceBrokerExtensionReply {
-        guard senderID == Self.allowedCanarySidecarExtensionID else {
+        guard Self.isAllowedSidecarSender(senderID) else {
             return failure(.unauthorizedSender, "The extension sender is not authorized.")
         }
         guard Self.messageTypes.contains(type) else {
@@ -267,6 +277,40 @@ actor ServiceBrokerExtensionProtocol {
         } catch {
             return map(error)
         }
+    }
+
+    func loadImagePreviewFile(path: String, senderID: String) async throws -> BrokerHTTPResponse {
+        guard Self.isAllowedSidecarSender(senderID) else {
+            throw ProtocolFailure(code: .unauthorizedSender, message: "The extension sender is not authorized.")
+        }
+        try validateHTTPPath(path)
+        let pathname = String(path.split(
+            separator: "?",
+            maxSplits: 1,
+            omittingEmptySubsequences: false
+        ).first ?? "")
+        guard pathname.hasPrefix("/api/v1/files/") || pathname.hasPrefix("/v1/files/") else {
+            throw ProtocolFailure(code: .invalidPath, message: "The image preview path is invalid.")
+        }
+        guard let accessToken = accessTokenProvider(), !accessToken.isEmpty else {
+            throw ProtocolFailure(code: .upstreamError, message: "The Phi Agent access token is unavailable.")
+        }
+
+        let runtime = try await resolveRuntime()
+        let request = BrokerHTTPRequest(
+            service: .phiAgent,
+            path: path,
+            method: "GET",
+            headers: try authorizedHeaders(
+                ["Authorization": "Bearer \(accessToken)"],
+                senderID: senderID
+            )
+        )
+        let response = try await runtime.requestExecutor(request)
+        guard response.body.count <= runtime.limits.nonStreamingResponseBytes else {
+            throw ProtocolFailure(code: .responseTooLarge, message: "The image preview response is too large.")
+        }
+        return response
     }
 
     private func resolveRuntime() async throws -> Runtime {

@@ -663,6 +663,55 @@ final class ServiceBrokerExtensionProtocolTests: XCTestCase {
             senderID: allowedSender
         )
         XCTAssertEqual(version.error?.code, "invalid_path")
+
+        let rejected: [(type: String, payload: String, code: String)] = [
+            (
+                "broker.http.request",
+                #"{"path":"/broker/healthz?probe=1","method":"GET"}"#,
+                "invalid_path"
+            ),
+            (
+                "broker.http.request",
+                #"{"path":"/%62roker/healthz","method":"GET"}"#,
+                "invalid_path"
+            ),
+            (
+                "broker.http.request",
+                #"{"path":"/broker%2Fhealthz","method":"GET"}"#,
+                "invalid_path"
+            ),
+            (
+                "broker.http.request",
+                #"{"path":"/broker//healthz","method":"GET"}"#,
+                "invalid_path"
+            ),
+            (
+                "broker.http.request",
+                #"{"path":"/broker/healthz","method":"POST"}"#,
+                "invalid_payload"
+            ),
+            (
+                "broker.http.request",
+                #"{"path":"/broker/healthz","method":"GET","bodyBase64":"e30="}"#,
+                "invalid_payload"
+            ),
+            (
+                "broker.stream.open",
+                #"{"path":"/broker/healthz","method":"GET"}"#,
+                "invalid_path"
+            ),
+        ]
+
+        for item in rejected {
+            let response = await handler.handle(
+                type: item.type,
+                payload: item.payload,
+                senderID: allowedSender
+            )
+            XCTAssertEqual(response.error?.code, item.code, "\(item.type): \(item.payload)")
+        }
+        let requestCount = await recorder.count()
+        XCTAssertEqual(requestCount, 1)
     }
 
     func testRejectsMalformedPayloadPathsMethodsBase64AndOversizedBodies() async {

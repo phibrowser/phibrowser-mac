@@ -18,7 +18,7 @@ Replies use the request-scoped `sendMessageToApp` return value because the exist
 - Extensions select only an allowed relative request path and method. They cannot supply a socket path, host, port, service name, or extension identity header.
 - Phi Browser resolves the account-scoped broker socket from shared authentication state. There is no TCP host/port fallback.
 - The browser enforces the broker's negotiated request, response, streaming, and WebSocket limits.
-- `/broker` is reserved for broker-owned management routes. The extension protocol admits only exact `GET /broker/healthz`, maps it to broker service path `/healthz`, and continues to reject `/broker/version` and every other extension-supplied `/broker` path.
+- `/broker` is reserved for broker-owned management routes. Only `broker.http.request` admits exact `GET /broker/healthz` with no body and maps it to broker service path `/healthz`. Query suffixes, encoded spellings, path variations, other methods, bodies, streaming attempts, `/broker/version`, and every other extension-supplied `/broker` path are rejected.
 
 ## Request and channel lifecycle
 
@@ -26,7 +26,7 @@ Ordinary readiness and bounded HTTP calls use `broker.http.request`. Streaming H
 
 End, close, failure, explicit cancel/close, idle expiry, UDS loss, and browser shutdown are terminal. Once the terminal event has been delivered, the channel is removed. Later pull, send, cancel, or close requests return `channel_not_found`; they cannot resurrect the channel.
 
-Stable extension errors include `unauthorized_sender`, `invalid_payload`, `invalid_path`, `request_too_large`, `response_too_large`, `channel_not_found`, `owner_mismatch`, `pull_already_pending`, `flow_control_timeout`, `upstream_error`, and `protocol_error`. HTTP statuses such as `401` remain successful broker envelopes so Sidecar can perform its normal token refresh. A bridge error is terminal for transport selection and must never fall back to loopback TCP.
+The exact stable extension error set is `unauthorized_sender`, `unsupported_message`, `invalid_payload`, `invalid_path`, `unsupported_method`, `invalid_base64`, `request_too_large`, `response_too_large`, `channel_not_found`, `owner_mismatch`, `pull_already_pending`, `flow_control_timeout`, `upstream_error`, and `protocol_error`. These codes are protocol failures, including transport failures normalized as `upstream_error` and malformed upstream/protocol state normalized as `protocol_error`. HTTP statuses such as `401` remain successful broker envelopes so Sidecar can perform its normal token refresh. A bridge error is terminal for transport selection and must never fall back to loopback TCP.
 
 ## Development and packet capture
 

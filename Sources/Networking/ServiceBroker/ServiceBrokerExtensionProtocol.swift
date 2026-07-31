@@ -164,7 +164,11 @@ actor ServiceBrokerExtensionProtocol {
             let owner = BrokerSenderContext(extensionID: senderID, profileID: nil, accountID: nil)
             switch type {
             case "broker.http.request":
-                let request = try decodeHTTPRequest(payload, limits: runtime.limits)
+                let request = try decodeHTTPRequest(
+                    payload,
+                    limits: runtime.limits,
+                    allowsBrokerHealth: true
+                )
                 let response = try await runtime.requestExecutor(request)
                 guard response.body.count <= runtime.limits.nonStreamingResponseBytes else {
                     throw ProtocolFailure(code: .responseTooLarge, message: "The broker response is too large.")
@@ -392,14 +396,18 @@ actor ServiceBrokerExtensionProtocol {
         return snapshot
     }
 
-    private func decodeHTTPRequest(_ payload: String, limits: ServiceBrokerLimits) throws -> BrokerHTTPRequest {
+    private func decodeHTTPRequest(
+        _ payload: String,
+        limits: ServiceBrokerLimits,
+        allowsBrokerHealth: Bool = false
+    ) throws -> BrokerHTTPRequest {
         let request = try decode(
             HTTPPayload.self,
             payload: payload,
             allowedKeys: ["path", "method", "headers", "bodyBase64"]
         )
         try validateEnvelopeMetadata(payload, base64Value: request.bodyBase64)
-        let isBrokerHealth = request.path == "/broker/healthz"
+        let isBrokerHealth = allowsBrokerHealth && request.path == "/broker/healthz"
         if !isBrokerHealth {
             try validateHTTPPath(request.path)
         }

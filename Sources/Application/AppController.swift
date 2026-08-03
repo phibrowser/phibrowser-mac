@@ -156,20 +156,26 @@ import PostHog
         // Set up PostHog before `didFinishLaunchingNotification` fires so the
         // SDK can observe the app-opened lifecycle event. If either value is
         // missing the app runs without analytics.
+        let metricsReportingEnabled = chromiumBridge?.isMetricsReportingEnabled() ?? false
+        let metricsClientID = metricsReportingEnabled ? chromiumBridge?.getMetricsClientId() : nil
+        lastMetricsReportingEnabled = metricsReportingEnabled
+        PhiChromiumCoordinator.shared.updateMetricsReportingSnapshot(
+            isEnabled: metricsReportingEnabled,
+            clientID: metricsClientID
+        )
         if let token = PostHogEnv.projectToken.value,
            let host = PostHogEnv.host.value {
             let postHogConfig = PostHogConfig(apiKey: token, host: host)
             // The Chromium-owned measurement setting is the sole opt-in
             // source. Starting opted out prevents remote-config, lifecycle,
             // identity, and queue activity from racing launch.
-            postHogConfig.optOut = !(chromiumBridge?.isMetricsReportingEnabled() ?? false)
+            postHogConfig.optOut = !metricsReportingEnabled
             postHogConfig.captureApplicationLifecycleEvents = true
             #if DEBUG
             postHogConfig.debug = true
             #endif
             postHogConfig.setBeforeSend { event in
-                guard ChromiumLauncher.sharedInstance().bridge?
-                    .isMetricsReportingEnabled() == true else { return nil }
+                guard PhiChromiumCoordinator.shared.metricsReportingEnabledSnapshot else { return nil }
                 guard event.event == "Application Opened" else { return event }
                 event.properties["layout_mode"] = PhiPreferences.GeneralSettings.loadLayoutMode().rawValue
                 event.properties["ai_enabled"] = PhiPreferences.AISettings.phiAIEnabled.loadValue()
@@ -199,9 +205,9 @@ import PostHog
         }
     }
 
-    /// Chromium owns the user-facing measurement toggle and exposes a live
-    /// getter but no change callback. Polling this one boolean lets native and
-    /// extension telemetry react promptly without duplicating the preference.
+    /// Chromium owns the user-facing measurement toggle and exposes live
+    /// getters but no change callback. Polling consent, and lazily filling its
+    /// client ID, lets telemetry react promptly without duplicating ownership.
     private func startMetricsReportingObservation() {
         refreshMetricsReportingState()
         let timer = Timer(timeInterval: 1, repeats: true) { [weak self] _ in
@@ -212,10 +218,17 @@ import PostHog
     }
 
     private func refreshMetricsReportingState() {
-        guard let enabled = ChromiumLauncher.sharedInstance().bridge?
-            .isMetricsReportingEnabled(), enabled != lastMetricsReportingEnabled else { return }
+        guard let bridge = ChromiumLauncher.sharedInstance().bridge else { return }
+        let enabled = bridge.isMetricsReportingEnabled()
+        let currentSnapshot = PhiChromiumCoordinator.shared.metricsReportingSnapshot
+        let clientID = enabled ? currentSnapshot.clientID ?? bridge.getMetricsClientId() : nil
+        guard enabled != lastMetricsReportingEnabled || clientID != currentSnapshot.clientID else { return }
         lastMetricsReportingEnabled = enabled
-        AccountController.shared.refreshTelemetryPrivacy()
+        PhiChromiumCoordinator.shared.updateMetricsReportingSnapshot(
+            isEnabled: enabled,
+            clientID: clientID
+        )
+        AccountController.shared.refreshTelemetryPrivacy(metricsReportingEnabled: enabled)
         PhiChromiumCoordinator.shared.publishNativeSettingsChanged()
     }
     

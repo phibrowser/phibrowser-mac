@@ -219,6 +219,27 @@ final class TimeMachineCoreTests: XCTestCase {
         XCTAssertEqual(try TimeMachineSentryTraceStore(paths: paths).drain(), [])
     }
 
+    func testSentryTraceStoreClearDropsPersistedRecoveryTrace() throws {
+        let root = try makeTemporaryDirectory()
+        let paths = TimeMachinePaths(rootURL: root, bundleIdentifier: "com.phibrowser.Mac")
+        let trace = TimeMachineRestoreRecoveryTrace(
+            status: .blocked,
+            operationID: nil,
+            bundleIdentifier: "com.phibrowser.Mac",
+            phase: .dataSwapped,
+            hasStartedDestructiveSwap: true,
+            reason: "measurement disabled",
+            errorDescription: nil,
+            errorType: nil
+        )
+        let store = TimeMachineSentryTraceStore(paths: paths)
+
+        try store.append(.restoreRecovery(trace))
+        try store.clear()
+
+        XCTAssertEqual(try store.drain(), [])
+    }
+
     private func makeTemporaryDirectory() throws -> URL {
         let url = FileManager.default.temporaryDirectory
             .appendingPathComponent("TimeMachineCoreTests-\(UUID().uuidString)", isDirectory: true)

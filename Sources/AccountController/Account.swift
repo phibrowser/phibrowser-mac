@@ -75,14 +75,14 @@ class AccountController {
     private func syncTelemetryIdentity(for account: Account?) {
         SentryService.configureUser(account)
 
-        guard let bridge = ChromiumLauncher.sharedInstance().bridge,
-              bridge.isMetricsReportingEnabled(),
+        let metricsReportingSnapshot = PhiChromiumCoordinator.shared.metricsReportingSnapshot
+        guard metricsReportingSnapshot.isEnabled,
               let sub = account?.userInfo?.sub else {
             PostHogSDK.shared.reset()
             return
         }
 
-        let properties = bridge.getMetricsClientId().map {
+        let properties = metricsReportingSnapshot.clientID.map {
             ["chromium_metrics_client_id": $0] as [String: Any]
         }
         PostHogSDK.shared.identify(sub, userProperties: properties)
@@ -90,12 +90,13 @@ class AccountController {
 
     /// Re-apply identity persistence when Chromium's measurement preference
     /// changes without an account transition.
-    func refreshTelemetryPrivacy() {
-        if ChromiumLauncher.sharedInstance().bridge?.isMetricsReportingEnabled() == true {
+    func refreshTelemetryPrivacy(metricsReportingEnabled: Bool) {
+        if metricsReportingEnabled {
             PostHogSDK.shared.optIn()
         } else {
             PostHogSDK.shared.optOut()
         }
+        SentryService.refreshTelemetryPrivacy(enabled: metricsReportingEnabled)
         syncTelemetryIdentity(for: account)
     }
 

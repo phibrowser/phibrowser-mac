@@ -90,6 +90,11 @@ struct TimeMachineSentryTraceStore {
         return try load()
     }
 
+    func clear() throws {
+        guard fileManager.fileExists(atPath: queueURL.path) else { return }
+        try fileManager.removeItem(at: queueURL)
+    }
+
     private func load() throws -> [TimeMachineSentryTrace] {
         let data = try Data(contentsOf: queueURL)
         return try Self.decoder.decode([TimeMachineSentryTrace].self, from: data)
@@ -121,8 +126,25 @@ struct TimeMachineSentryTraceStore {
     private static let pendingTimeMachineTraceLock = NSLock()
     private static var pendingTimeMachineTraces: [TimeMachineSentryTrace] = []
     private static var timeMachineTraceStore = TimeMachineSentryTraceStore()
+    private static var sentryURLSession: URLSession?
+
+    private static var cacheDirectoryURL: URL? {
+        guard let basePath = NSSearchPathForDirectoriesInDomains(
+            .applicationSupportDirectory,
+            .userDomainMask,
+            true
+        ).first,
+        let appName = Bundle.main.bundleIdentifier else { return nil }
+        return URL(fileURLWithPath: basePath, isDirectory: true)
+            .appendingPathComponent(appName, isDirectory: true)
+    }
 
     @objc static func setup() {
+        guard PhiChromiumCoordinator.shared.metricsReportingEnabledSnapshot else {
+            stopAndPurge()
+            return
+        }
+
         pendingTimeMachineTraceLock.lock()
         guard !hasStarted, !isStarting else {
             pendingTimeMachineTraceLock.unlock()
@@ -131,18 +153,21 @@ struct TimeMachineSentryTraceStore {
         isStarting = true
         pendingTimeMachineTraceLock.unlock()
 
+        let urlSession = URLSession(configuration: .ephemeral)
+        sentryURLSession = urlSession
+
         SentrySDK.start { options in
             options.dsn = ""
+            options.shutdownTimeInterval = 0
+            options.urlSession = urlSession
             options.experimental.enableLogs = true
             options.beforeSendLog = { log in
-                guard ChromiumLauncher.sharedInstance().bridge?
-                    .isMetricsReportingEnabled() == true else { return nil }
+                guard PhiChromiumCoordinator.shared.metricsReportingEnabledSnapshot else { return nil }
                 return log
             }
             
-            if let basePath = NSSearchPathForDirectoriesInDomains(.applicationSupportDirectory, .userDomainMask, true).first,
-               let appName = Bundle.main.infoDictionary?["CFBundleIdentifier"] as? String {
-                options.cacheDirectoryPath = (basePath as NSString).appendingPathComponent(appName)
+            if let cacheDirectoryURL {
+                options.cacheDirectoryPath = cacheDirectoryURL.path
             }
             
             // https://docs.sentry.io/platforms/apple/guides/macos/usage/#capturing-uncaught-exceptions-in-macos
@@ -154,7 +179,7 @@ struct TimeMachineSentryTraceStore {
             options.enableCoreDataTracing = false
             options.enableFileIOTracing = false
             options.enableNetworkTracking = false
-            options.enableAutoSessionTracking = false
+            options.enableAutoSessionTracking = true
             options.enableCaptureFailedRequests = false
             options.enableAutoPerformanceTracing = false
             options.enableAppHangTracking = false
@@ -162,8 +187,7 @@ struct TimeMachineSentryTraceStore {
             options.enableMetricKitRawPayload = true
             
             options.beforeSend = { event in
-                guard ChromiumLauncher.sharedInstance().bridge?
-                    .isMetricsReportingEnabled() == true else { return nil }
+                guard PhiChromiumCoordinator.shared.metricsReportingEnabledSnapshot else { return nil }
                 let isMetricKitDiskWrite =
                 event.exceptions?.contains {
                     $0.type == "MXDiskWriteException" ||
@@ -181,8 +205,7 @@ struct TimeMachineSentryTraceStore {
                 scope.clearAttachments()
                 // Do not retain logs collected while measurement is disabled:
                 // a later opt-in must not attach prior off-period activity.
-                if ChromiumLauncher.sharedInstance().bridge?
-                    .isMetricsReportingEnabled() == true,
+                if PhiChromiumCoordinator.shared.metricsReportingEnabledSnapshot,
                    let stringData = PhiLogging.applicationLog(maxLength: Int(maxSentryLogSize))?.data(using: .utf8) {
                     let attachment = Attachment(data: stringData, filename: "logs.txt")
                     scope.addAttachment(attachment)
@@ -233,10 +256,22 @@ struct TimeMachineSentryTraceStore {
         configureUser(AccountController.shared.account)
         flushPendingTimeMachineTraces(pendingTimeMachineTraces)
     }
+
+    static func refreshTelemetryPrivacy(enabled: Bool) {
+        if enabled {
+            setup()
+            configureUser(AccountController.shared.account)
+        } else {
+            stopAndPurge()
+        }
+    }
     
     static func configureUser(_ account: Account?) {
-        guard hasStarted else { return }
-        guard ChromiumLauncher.sharedInstance().bridge?.isMetricsReportingEnabled() ?? false,
+        pendingTimeMachineTraceLock.lock()
+        let started = hasStarted
+        pendingTimeMachineTraceLock.unlock()
+        guard started else { return }
+        guard PhiChromiumCoordinator.shared.metricsReportingEnabledSnapshot,
               let userInfo = account?.userInfo,
               let sub = userInfo.sub else {
             SentrySDK.setUser(nil)
@@ -472,6 +507,9 @@ struct TimeMachineSentryTraceStore {
             pendingTimeMachineTraceLock.unlock()
         }
 
+        guard PhiChromiumCoordinator.shared.metricsReportingEnabledSnapshot else {
+            return true
+        }
         guard !hasStarted else {
             return false
         }
@@ -483,6 +521,50 @@ struct TimeMachineSentryTraceStore {
             AppLogError("[TimeMachine] Failed to persist pending Sentry trace: \(error.localizedDescription)")
         }
         return true
+    }
+
+    private static func stopAndPurge() {
+        pendingTimeMachineTraceLock.lock()
+        let shouldClose = hasStarted || isStarting
+        hasStarted = false
+        isStarting = false
+        pendingTimeMachineTraces.removeAll()
+        let urlSession = sentryURLSession
+        sentryURLSession = nil
+        do {
+            try timeMachineTraceStore.clear()
+        } catch {
+            AppLogError("[Sentry] Failed to clear pending Time Machine traces: \(error.localizedDescription)")
+        }
+        pendingTimeMachineTraceLock.unlock()
+
+        if shouldClose {
+            urlSession?.invalidateAndCancel()
+            SentrySDK.setUser(nil)
+            SentrySDK.close()
+        }
+        purgeCachedTelemetry()
+    }
+
+    private static func purgeCachedTelemetry() {
+        guard let cacheDirectoryURL else { return }
+        do {
+            try purgeCachedTelemetry(at: cacheDirectoryURL)
+        } catch {
+            AppLogError("[Sentry] Failed to purge cached telemetry: \(error.localizedDescription)")
+        }
+    }
+
+    static func purgeCachedTelemetry(
+        at cacheDirectoryURL: URL,
+        fileManager: FileManager = .default
+    ) throws {
+        for url in [
+            cacheDirectoryURL.appendingPathComponent("io.sentry", isDirectory: true),
+            cacheDirectoryURL.appendingPathComponent("INSTALLATION", isDirectory: false),
+        ] where fileManager.fileExists(atPath: url.path) {
+            try fileManager.removeItem(at: url)
+        }
     }
 
     private static func flushPendingTimeMachineTraces(_ traces: [TimeMachineSentryTrace]) {

@@ -5,7 +5,8 @@ Last updated: 2026-08-03
 Phi Browser uses PostHog for product analytics and Sentry for crash/error reporting. Both
 pipelines are controlled by Chromium's **Help improve Phi's features and performance**
 setting. When that setting is off, outbound events are rejected and persisted analytics
-identity is reset.
+identity is reset. Sentry is stopped, its transport is cancelled, and its queued cache is
+deleted so previously accepted offline envelopes cannot upload after opt-out.
 
 ## Initialization
 
@@ -21,8 +22,16 @@ If the project token or host is empty, `AppController` logs a warning and skips 
 `PhiChromiumCoordinator.currentNativeSettings()` publishes the same live measurement state,
 account presence, Phi AI master switch, and Browser Memories switch to preinstalled
 extensions. `AppController` observes the Chromium-owned measurement setting and republishes
-changes; account and AI-setting changes publish through the same snapshot. Missing bridge
-state fails closed.
+changes; account and AI-setting changes publish through the same snapshot. The main-thread
+observer caches measurement consent and Chromium's metrics client ID in
+`PhiChromiumCoordinator`; account and telemetry SDK worker callbacks read that locked snapshot
+rather than calling Chromium off-thread. Missing bridge state fails closed.
+
+Sentry starts only while measurement consent is enabled. Opt-out cancels its URL session, closes
+the SDK with a zero-second shutdown window, and removes both cached envelopes and its persisted
+installation identifier. Opt-in starts a fresh SDK transport. Automatic session tracking remains
+enabled for opted-in periods so release-health metrics remain complete without crossing an
+opted-out period.
 
 ### PostHog config pipeline
 

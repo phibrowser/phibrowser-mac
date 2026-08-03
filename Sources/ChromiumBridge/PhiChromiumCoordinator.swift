@@ -9,6 +9,36 @@ import SwiftUI
 @objc class PhiChromiumCoordinator: NSObject {
     @objc static var shared = PhiChromiumCoordinator()
 
+    struct MetricsReportingSnapshot {
+        let isEnabled: Bool
+        let clientID: String?
+    }
+
+    private let metricsReportingStateLock = NSLock()
+    private var _metricsReportingSnapshot = MetricsReportingSnapshot(isEnabled: false, clientID: nil)
+
+    /// Thread-safe telemetry consent snapshot. Only the main-thread Chromium
+    /// integration updates it; telemetry SDK callbacks may read it from their
+    /// worker queues without crossing into Chromium.
+    var metricsReportingEnabledSnapshot: Bool {
+        metricsReportingSnapshot.isEnabled
+    }
+
+    var metricsReportingSnapshot: MetricsReportingSnapshot {
+        metricsReportingStateLock.lock()
+        defer { metricsReportingStateLock.unlock() }
+        return _metricsReportingSnapshot
+    }
+
+    func updateMetricsReportingSnapshot(isEnabled: Bool, clientID: String?) {
+        metricsReportingStateLock.lock()
+        _metricsReportingSnapshot = MetricsReportingSnapshot(
+            isEnabled: isEnabled,
+            clientID: isEnabled ? clientID : nil
+        )
+        metricsReportingStateLock.unlock()
+    }
+
     /// Live ask-Space overlays keyed by the source windowId, so a second
     /// match for the same window replaces (rather than stacks) the prompt and
     /// dismissal can tear the right one down.
@@ -131,10 +161,8 @@ extension PhiChromiumCoordinator: PhiChromiumBridgeDelegate {
     /// One source of truth for preinstalled extensions' privacy-sensitive
     /// runtime state. Missing bridge state fails closed for measurement.
     func currentNativeSettings() -> String {
-        let metricsReportingEnabled = ChromiumLauncher.sharedInstance().bridge?
-            .isMetricsReportingEnabled() ?? false
         return PhiPreferences.AISettings.buildConfig(additional: [
-            "metricsReportingEnabled": metricsReportingEnabled,
+            "metricsReportingEnabled": metricsReportingEnabledSnapshot,
             "signedIn": AccountController.shared.account != nil,
         ])
     }

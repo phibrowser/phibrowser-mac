@@ -836,8 +836,13 @@ final class SpaceManager: ObservableObject {
         // keeps the stored order.
         let preferredProfileId = persistedActiveSpaceId
             .flatMap { boundProfileId(forSpaceId: $0) }
-        bridge.restorePreviousSession(
-            withPreferredProfile: preferredProfileId
+        // No eager set is computed yet — nil restores every window over the
+        // legacy selector; the Space classifier that will supply real sets
+        // arrives with the lazy-restore wiring.
+        requestChromiumSessionRestore(
+            bridge,
+            preferredProfileId: preferredProfileId,
+            eagerWindowIds: nil
         ) { [weak self] restoredAnyWindow in
             DispatchQueue.main.async {
                 guard let self else { return }
@@ -885,6 +890,41 @@ final class SpaceManager: ObservableObject {
             }
         }
         return true
+    }
+
+    /// Sends the reopen's restore request over the bridge. A non-nil
+    /// `eagerWindowIds` asks for the lazy-restore eager filter — only those
+    /// previous-session windows rebuild now, the rest park as ghosts — and is
+    /// honored only when the loaded Phi Framework knows the eager-filter
+    /// selector. An older framework falls back to the legacy full-restore
+    /// selector, every window rebuilding and nothing parking, which is the
+    /// safe side of a framework/client version skew (the caller-side mirror
+    /// of the coordinator's legacy mainBrowserWindowCreated entry points).
+    /// nil always takes the legacy selector.
+    private func requestChromiumSessionRestore(
+        _ bridge: PhiChromiumBridgeProtocol,
+        preferredProfileId: String?,
+        eagerWindowIds: [NSNumber]?,
+        completion: @escaping (Bool) -> Void
+    ) {
+        let eagerSelector = #selector(PhiChromiumBridgeProtocol
+            .restorePreviousSession(withPreferredProfile:eagerWindowIds:completion:))
+        if let eagerWindowIds {
+            if bridge.responds(to: eagerSelector) {
+                bridge.restorePreviousSession(
+                    withPreferredProfile: preferredProfileId,
+                    eagerWindowIds: eagerWindowIds,
+                    completion: completion
+                )
+                return
+            }
+            // Not silent: an eager set was asked for and cannot be honored.
+            AppLogWarn("[SpaceManager] eager-filter selector unavailable (older framework) — restoring everything")
+        }
+        bridge.restorePreviousSession(
+            withPreferredProfile: preferredProfileId,
+            completion: completion
+        )
     }
 
     /// Ends the reopen's restore transaction: the live layout is trustworthy

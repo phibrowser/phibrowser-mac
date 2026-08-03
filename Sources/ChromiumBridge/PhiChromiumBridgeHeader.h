@@ -1103,6 +1103,39 @@ typedef NS_ENUM(NSInteger, PhiWindowCloseState) {
 - (void)restorePreviousSessionWithPreferredProfile:(NSString * _Nullable)preferredProfileId
                                         completion:(void (^)(BOOL restoredAnyWindow))completion;
 
+/// Same restore, plus the lazy-restore eager filter. `eagerWindowIds` names
+/// the previous-session window ids (the wire ids the previous run's windows
+/// carried, which restored windows echo as `restoredFromWindowId`) to rebuild
+/// eagerly this reopen; every other window of the previous session is parked
+/// as a ghost — kept in its profile's session file, ready to materialize on
+/// demand — instead of being rebuilt. Pass nil to restore everything: exactly
+/// the selector above, and the safe fallback whenever no eager set is known.
+/// An empty array is a valid armed state in which every window parks; ids
+/// that name no window of the previous session are ignored. The
+/// `restoredAnyWindow` contract is unchanged — it reports whether any
+/// profile started a replay, not whether a window appeared — so keep at
+/// least one eager window per slot and the two cannot diverge. Main thread
+/// only.
+- (void)restorePreviousSessionWithPreferredProfile:(NSString * _Nullable)preferredProfileId
+                                    eagerWindowIds:(NSArray<NSNumber *> * _Nullable)eagerWindowIds
+                                        completion:(void (^)(BOOL restoredAnyWindow))completion;
+
+/// Materializes the ghost window parked as `previousSessionWindowId` for
+/// `profileId` (a profile directory basename, the same wire id
+/// mainBrowserWindowCreated reports): rebuilds it as a live window — tabs,
+/// pins, groups and split layout intact — that shows immediately and is
+/// announced through mainBrowserWindowCreated with restoredFromWindowId ==
+/// previousSessionWindowId before `completion` runs, which is how the caller
+/// re-attaches it to its Space. `completion` runs synchronously before this
+/// returns: YES on success; NO when no such ghost is parked or the profile is
+/// not loaded, and then nothing changed — no window appeared, and a parked
+/// ghost stays materializable. Do not fall back to opening a plain window on
+/// NO: the session file may still describe the parked window, and a fallback
+/// would stand beside it as a doubled Space. Main thread only.
+- (void)materializeGhostWindow:(int32_t)previousSessionWindowId
+                     profileId:(NSString *)profileId
+                    completion:(void (^)(BOOL ok))completion;
+
 #pragma mark - Security / Certificate
 
 /// Get security state and certificate chain for a tab.

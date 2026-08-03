@@ -55,6 +55,8 @@ import PostHog
     private var pendingOpenURLsAwaitingLoginStatus: [URL] = []
     /// Cached in `applicationWillFinishLaunching`; weak — owned by `ChromiumLauncher`, not AppController.
     private weak var chromiumBridge: (any PhiChromiumBridgeProtocol)?
+    private var metricsReportingObservationTimer: Timer?
+    private var lastMetricsReportingEnabled: Bool?
 
     override init() {
         super.init()
@@ -79,6 +81,7 @@ import PostHog
         //        ASWebAuthenticationSessionWebBrowserSessionManager.shared.sessionHandler = self
         
         ChromiumLauncher.sharedInstance().bridge?.applicationDidFinishLaunching(notification)
+        startMetricsReportingObservation()
         
         //        ASWebAuthenticationSessionWebBrowserSessionManager.shared.sessionHandler = self
         
@@ -156,11 +159,17 @@ import PostHog
         if let token = PostHogEnv.projectToken.value,
            let host = PostHogEnv.host.value {
             let postHogConfig = PostHogConfig(apiKey: token, host: host)
+            // The Chromium-owned measurement setting is the sole opt-in
+            // source. Starting opted out prevents remote-config, lifecycle,
+            // identity, and queue activity from racing launch.
+            postHogConfig.optOut = !(chromiumBridge?.isMetricsReportingEnabled() ?? false)
             postHogConfig.captureApplicationLifecycleEvents = true
             #if DEBUG
             postHogConfig.debug = true
             #endif
             postHogConfig.setBeforeSend { event in
+                guard ChromiumLauncher.sharedInstance().bridge?
+                    .isMetricsReportingEnabled() == true else { return nil }
                 guard event.event == "Application Opened" else { return event }
                 event.properties["layout_mode"] = PhiPreferences.GeneralSettings.loadLayoutMode().rawValue
                 event.properties["ai_enabled"] = PhiPreferences.AISettings.phiAIEnabled.loadValue()
@@ -177,6 +186,8 @@ import PostHog
     func applicationWillTerminate(_ notification: Notification) {
         coldOpenURLForwardWorkItem?.cancel()
         coldOpenURLForwardWorkItem = nil
+        metricsReportingObservationTimer?.invalidate()
+        metricsReportingObservationTimer = nil
         AppLogInfo("-------applicationWillTerminate----")
         MemoryUsageMonitor.shared.stop()
         AgentCDPListener.shared.stop()
@@ -186,6 +197,26 @@ import PostHog
             AppLogWarn("[AppController] applicationWillTerminate: chromium bridge not cached; using launcher fallback")
             ChromiumLauncher.sharedInstance().bridge?.applicationWillTerminate(notification)
         }
+    }
+
+    /// Chromium owns the user-facing measurement toggle and exposes a live
+    /// getter but no change callback. Polling this one boolean lets native and
+    /// extension telemetry react promptly without duplicating the preference.
+    private func startMetricsReportingObservation() {
+        refreshMetricsReportingState()
+        let timer = Timer(timeInterval: 1, repeats: true) { [weak self] _ in
+            self?.refreshMetricsReportingState()
+        }
+        metricsReportingObservationTimer = timer
+        RunLoop.main.add(timer, forMode: .common)
+    }
+
+    private func refreshMetricsReportingState() {
+        guard let enabled = ChromiumLauncher.sharedInstance().bridge?
+            .isMetricsReportingEnabled(), enabled != lastMetricsReportingEnabled else { return }
+        lastMetricsReportingEnabled = enabled
+        AccountController.shared.refreshTelemetryPrivacy()
+        PhiChromiumCoordinator.shared.publishNativeSettingsChanged()
     }
     
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {

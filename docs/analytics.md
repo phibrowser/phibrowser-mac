@@ -1,19 +1,28 @@
 # Analytics
 
-Last updated: 2026-05-21
+Last updated: 2026-08-03
 
-Phi Browser emits product analytics to both [Countly](https://phi-browser-eaade70cfd902.flex.countly.com) (legacy) and [PostHog](https://us.posthog.com/project/385742) (current). Both pipelines run side-by-side; PostHog is the forward-looking source of truth.
+Phi Browser uses PostHog for product analytics and Sentry for crash/error reporting. Both
+pipelines are controlled by Chromium's **Help improve Phi's features and performance**
+setting. When that setting is off, outbound events are rejected and persisted analytics
+identity is reset.
 
 ## Initialization
 
 | Pipeline | Init site | Config source |
 | --- | --- | --- |
 | PostHog | `AppController.applicationWillFinishLaunching` (`Sources/Application/AppController.swift`) | `PostHogEnv` → `PostHogGeneratedConfig` (compiled-in constants from `Sources/Utilities/PostHogConfig.generated.swift`) |
-| Countly | `EventTracker.initTracker()` (`Sources/Utilities/EventTrack/EventTracker.swift`) | Hardcoded in source, split by `NIGHTLY_BUILD || DEBUG` |
+| Sentry | `SentryService.setup()` (`Sources/Utilities/Sentry/Sentry.swift`) | Native Sentry configuration |
 
 PostHog SDK config uses `captureApplicationLifecycleEvents = true`, so `$app_installed`, `$app_updated`, `$app_opened`, `$app_backgrounded` are auto-captured — these power DAU and retention.
 
 If the project token or host is empty, `AppController` logs a warning and skips PostHog init; the app runs without analytics rather than crashing.
+
+`PhiChromiumCoordinator.currentNativeSettings()` publishes the same live measurement state,
+account presence, Phi AI master switch, and Browser Memories switch to preinstalled
+extensions. `AppController` observes the Chromium-owned measurement setting and republishes
+changes; account and AI-setting changes publish through the same snapshot. Missing bridge
+state fails closed.
 
 ### PostHog config pipeline
 
@@ -40,7 +49,7 @@ A plain Xcode Run/Debug compiles the empty-value default and runs without PostHo
 | Active account changed | `identify(auth0.sub, userProperties)` | `AccountController/Account.swift` |
 | Logout | `capture("user_logged_out")` then `reset()` | `Onboarding/AuthManager.swift` |
 
-Distinct ID == Auth0 `sub`. When Chromium metrics reporting is enabled, identify also sets `chromium_metrics_client_id` to Chromium's UMA client ID. A temporarily unavailable client ID does not prevent identification.
+Distinct ID == Auth0 `sub`. When Chromium metrics reporting is enabled, identify also sets `chromium_metrics_client_id` to Chromium's UMA client ID. A temporarily unavailable client ID does not prevent identification. Turning measurement off resets PostHog identity and clears the Sentry user.
 
 ## Super properties
 
@@ -77,5 +86,6 @@ Naming rule: **don't reuse PostHog-reserved names** (anything starting with `$`,
 ## Adding a new event
 
 1. Call `PostHogSDK.shared.capture("snake_case_name", properties: [...])` at the action site. Import `PostHog` in the file.
-2. If a matching Countly event already exists, keep both calls side-by-side during migration.
+2. Do not add a second telemetry transport; the global PostHog consent hook is the required
+   enforcement boundary.
 3. Add a row to the Events table above.

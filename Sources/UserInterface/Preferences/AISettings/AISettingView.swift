@@ -563,9 +563,7 @@ private struct AINavigationRow: View {
 // MARK: - Helpers
 
 private func notifyNativeSettingsChanged() {
-    let settings = PhiPreferences.AISettings.buildConfig()
-    ChromiumLauncher.sharedInstance().bridge?.nativeSettingsChanged(settings)
-    AppLogDebug("[AISettings] Native settings changed notification sent: \(settings)")
+    PhiChromiumCoordinator.shared.publishNativeSettingsChanged()
 }
 
 #Preview {

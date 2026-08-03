@@ -219,13 +219,13 @@ extension PhiPreferences {
             UserDefaults.standard.bool(forKey: rawValue, default: defaultValue)
         }
 
-        static func buildConfig() -> String {
+        static func buildConfig(additional: [String: Any] = [:]) -> String {
             var result = [String: Any]()
             allCases
-                .filter { $0 != .enableBrowserMemories}
                 .forEach {
-                result[$0.rawValue] = UserDefaults.standard.bool(forKey: $0.rawValue)
+                result[$0.rawValue] = $0.loadValue()
             }
+            additional.forEach { result[$0.key] = $0.value }
             let data = try? JSONSerialization.data(withJSONObject: result, options: [])
             return String(data: data ?? Data(), encoding: .utf8) ?? "{}"
         }

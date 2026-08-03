@@ -134,6 +134,11 @@ struct TimeMachineSentryTraceStore {
         SentrySDK.start { options in
             options.dsn = ""
             options.experimental.enableLogs = true
+            options.beforeSendLog = { log in
+                guard ChromiumLauncher.sharedInstance().bridge?
+                    .isMetricsReportingEnabled() == true else { return nil }
+                return log
+            }
             
             if let basePath = NSSearchPathForDirectoriesInDomains(.applicationSupportDirectory, .userDomainMask, true).first,
                let appName = Bundle.main.infoDictionary?["CFBundleIdentifier"] as? String {
@@ -149,7 +154,7 @@ struct TimeMachineSentryTraceStore {
             options.enableCoreDataTracing = false
             options.enableFileIOTracing = false
             options.enableNetworkTracking = false
-            options.enableAutoSessionTracking = true
+            options.enableAutoSessionTracking = false
             options.enableCaptureFailedRequests = false
             options.enableAutoPerformanceTracing = false
             options.enableAppHangTracking = false
@@ -157,6 +162,8 @@ struct TimeMachineSentryTraceStore {
             options.enableMetricKitRawPayload = true
             
             options.beforeSend = { event in
+                guard ChromiumLauncher.sharedInstance().bridge?
+                    .isMetricsReportingEnabled() == true else { return nil }
                 let isMetricKitDiskWrite =
                 event.exceptions?.contains {
                     $0.type == "MXDiskWriteException" ||
@@ -171,9 +178,12 @@ struct TimeMachineSentryTraceStore {
             }
             
             options.initialScope = { scope in
-                // Attach recent logs up front because startup may immediately report a previous crash.
                 scope.clearAttachments()
-                if let stringData = PhiLogging.applicationLog(maxLength: Int(maxSentryLogSize))?.data(using: .utf8) {
+                // Do not retain logs collected while measurement is disabled:
+                // a later opt-in must not attach prior off-period activity.
+                if ChromiumLauncher.sharedInstance().bridge?
+                    .isMetricsReportingEnabled() == true,
+                   let stringData = PhiLogging.applicationLog(maxLength: Int(maxSentryLogSize))?.data(using: .utf8) {
                     let attachment = Attachment(data: stringData, filename: "logs.txt")
                     scope.addAttachment(attachment)
                 }

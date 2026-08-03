@@ -62,6 +62,7 @@ class AccountController {
     var account: Account? {
         didSet {
             syncTelemetryIdentity(for: account)
+            PhiChromiumCoordinator.shared.publishNativeSettingsChanged()
             NotificationCenter.default.post(name: .mainAccountChanged, object: account)
             /// FIXME: Chromium builds the main menu before the account exists, but shortcut overrides
             /// are account-scoped. Reloading here works, but this probably deserves a cleaner hook.
@@ -85,6 +86,17 @@ class AccountController {
             ["chromium_metrics_client_id": $0] as [String: Any]
         }
         PostHogSDK.shared.identify(sub, userProperties: properties)
+    }
+
+    /// Re-apply identity persistence when Chromium's measurement preference
+    /// changes without an account transition.
+    func refreshTelemetryPrivacy() {
+        if ChromiumLauncher.sharedInstance().bridge?.isMetricsReportingEnabled() == true {
+            PostHogSDK.shared.optIn()
+        } else {
+            PostHogSDK.shared.optOut()
+        }
+        syncTelemetryIdentity(for: account)
     }
 
     /// Best-effort refresh of the existing per-account profile cache. The

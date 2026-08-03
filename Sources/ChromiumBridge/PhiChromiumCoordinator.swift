@@ -125,7 +125,26 @@ extension PhiChromiumCoordinator: PhiChromiumBridgeDelegate {
     }
     
     func getNativeSettings() -> String {
-        return PhiPreferences.AISettings.buildConfig()
+        return currentNativeSettings()
+    }
+
+    /// One source of truth for preinstalled extensions' privacy-sensitive
+    /// runtime state. Missing bridge state fails closed for measurement.
+    func currentNativeSettings() -> String {
+        let metricsReportingEnabled = ChromiumLauncher.sharedInstance().bridge?
+            .isMetricsReportingEnabled() ?? false
+        return PhiPreferences.AISettings.buildConfig(additional: [
+            "metricsReportingEnabled": metricsReportingEnabled,
+            "signedIn": AccountController.shared.account != nil,
+        ])
+    }
+
+    /// Push a complete snapshot so extension realms can apply account, AI,
+    /// browser-memory, and measurement changes without a relaunch.
+    func publishNativeSettingsChanged() {
+        let settings = currentNativeSettings()
+        ChromiumLauncher.sharedInstance().bridge?.nativeSettingsChanged(settings)
+        AppLogDebug("[NativeSettings] Changed notification sent: \(settings)")
     }
     
     func handleDeeplink(withUrlString urlString: String, windowId: Int64) -> Bool {

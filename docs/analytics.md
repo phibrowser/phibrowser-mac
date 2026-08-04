@@ -1,6 +1,6 @@
 # Analytics
 
-Last updated: 2026-05-21
+Last updated: 2026-08-04
 
 Phi Browser emits product analytics to both [Countly](https://phi-browser-eaade70cfd902.flex.countly.com) (legacy) and [PostHog](https://us.posthog.com/project/385742) (current). Both pipelines run side-by-side; PostHog is the forward-looking source of truth.
 
@@ -32,6 +32,30 @@ The values are no longer written into `PhiBrowser-Info.plist`, so they can't be 
 Nightly and release builds share the same self-hosted PostHog instance; the bundle identifier (`$app_namespace`) — which contains `.canary.` for nightly — is the way to split the channels in dashboards. Each archive script (`adhoc-build.sh`, `nightly-build.sh`, `public-build.sh`) invokes the generator before `xcodebuild`.
 
 A plain Xcode Run/Debug compiles the empty-value default and runs without PostHog; no setup script is needed. After a local archive, the generated file will show up as locally modified — don't commit that.
+
+## Sentinel telemetry consent contract
+
+Chromium owns the device-level metrics preference. Phi publishes its current
+value to the `group.com.phibrowser.shared` App Group so Sentinel and its managed
+services can apply the same consent without duplicating the preference.
+
+| Channel | Shared file | Notification |
+| --- | --- | --- |
+| Stable | `telemetry-consent.plist` | `com.phibrowser.telemetryConsentDidChange` |
+| Canary | `telemetry-consent-canary.plist` | `com.phibrowser.canary.telemetryConsentDidChange` |
+| Dev | `telemetry-consent-dev.plist` | `com.phibrowser.dev.telemetryConsentDidChange` |
+
+The atomically written plist contains `SchemaVersion` (`1`), `Enabled`, a UUID
+`Revision`, and `UpdatedAtMillis`. A revision is retained across browser
+restarts while the effective state remains unchanged and replaced whenever the
+state changes or an invalid snapshot is repaired.
+
+The Chromium bridge exposes a live getter but no change callback, so Phi polls
+it once per second after Chromium finishes launching. A temporarily unavailable
+bridge does not overwrite an existing snapshot; consumers fail closed when no
+valid snapshot exists. Distributed notifications are wake-up hints only. A
+consumer must reread and validate the shared plist instead of trusting a
+notification payload.
 
 ## Identity
 

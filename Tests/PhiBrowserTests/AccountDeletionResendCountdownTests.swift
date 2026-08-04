@@ -11,21 +11,21 @@ final class AccountDeletionResendCountdownTests: XCTestCase {
 
     func testNoDeadlineMeansNoCooldown() {
         XCTAssertEqual(
-            AccountDeletionResendCountdown.remainingSeconds(until: nil, now: reference),
+            AccountVerificationResendCountdown.remainingSeconds(until: nil, now: reference),
             0
         )
     }
 
     func testElapsedDeadlineMeansNoCooldown() {
         XCTAssertEqual(
-            AccountDeletionResendCountdown.remainingSeconds(
+            AccountVerificationResendCountdown.remainingSeconds(
                 until: reference,
                 now: reference
             ),
             0
         )
         XCTAssertEqual(
-            AccountDeletionResendCountdown.remainingSeconds(
+            AccountVerificationResendCountdown.remainingSeconds(
                 until: reference,
                 now: reference.addingTimeInterval(5)
             ),
@@ -35,7 +35,7 @@ final class AccountDeletionResendCountdownTests: XCTestCase {
 
     func testFractionalRemainderRoundsUp() {
         XCTAssertEqual(
-            AccountDeletionResendCountdown.remainingSeconds(
+            AccountVerificationResendCountdown.remainingSeconds(
                 until: reference.addingTimeInterval(0.4),
                 now: reference
             ),
@@ -46,7 +46,7 @@ final class AccountDeletionResendCountdownTests: XCTestCase {
 
     func testFullCooldownReadsSixtySeconds() {
         XCTAssertEqual(
-            AccountDeletionResendCountdown.remainingSeconds(
+            AccountVerificationResendCountdown.remainingSeconds(
                 until: reference.addingTimeInterval(60),
                 now: reference
             ),

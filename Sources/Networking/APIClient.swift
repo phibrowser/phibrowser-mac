@@ -743,6 +743,68 @@ class APIClient {
         return response
     }
 
+    // MARK: - Account Data Export (Oblivion)
+
+    func requestAccountDataExport(
+        idempotencyKey: String,
+        expectedAuthSession: UInt64? = nil
+    ) async throws -> AccountDataExportRequestOutcome {
+        let url = URL(string: "\(oblivionBaseURL)/v1/data-export-requests")!
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        guard let token = await activeOblivionAccessToken(
+            expectedSession: expectedAuthSession
+        ) else {
+            throw AccountDataExportServiceError.unauthorized
+        }
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        request.setValue(idempotencyKey, forHTTPHeaderField: "Idempotency-Key")
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw APIError.invalidResponse
+        }
+        return try OblivionDataExportAPI.requestOutcome(
+            statusCode: httpResponse.statusCode,
+            body: data,
+            responseRequestID: httpResponse.value(forHTTPHeaderField: "X-Request-ID")
+        )
+    }
+
+    func verifyAccountDataExport(
+        requestID: String,
+        code: String,
+        expectedAuthSession: UInt64? = nil
+    ) async throws -> AccountDataExportVerificationOutcome {
+        guard let baseURL = URL(string: oblivionBaseURL) else {
+            throw APIError.invalidRequest(message: "Cannot build data export verify URL")
+        }
+        let url = try OblivionDataExportAPI.verificationURL(
+            baseURL: baseURL,
+            requestID: requestID
+        )
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        guard let token = await activeOblivionAccessToken(
+            expectedSession: expectedAuthSession
+        ) else {
+            throw AccountDataExportServiceError.unauthorized
+        }
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try JSONEncoder().encode(["code": code])
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw APIError.invalidResponse
+        }
+        return try OblivionDataExportAPI.verificationOutcome(
+            statusCode: httpResponse.statusCode,
+            body: data,
+            responseRequestID: httpResponse.value(forHTTPHeaderField: "X-Request-ID")
+        )
+    }
+
     // MARK: - Account Deletion (Oblivion)
 
     /// Starts an account deletion request. Oblivion answers 202 both for a
@@ -752,7 +814,9 @@ class APIClient {
         let url = URL(string: "\(oblivionBaseURL)/v1/deletion-requests")!
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
-        let token = try await oblivionAccessToken()
+        guard let token = await activeOblivionAccessToken() else {
+            throw AccountDeletionServiceError.unauthorized
+        }
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         request.setValue(idempotencyKey, forHTTPHeaderField: "Idempotency-Key")
 
@@ -772,7 +836,9 @@ class APIClient {
         }
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
-        let token = try await oblivionAccessToken()
+        guard let token = await activeOblivionAccessToken() else {
+            throw AccountDeletionServiceError.unauthorized
+        }
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.httpBody = try JSONEncoder().encode(["code": code])
@@ -788,11 +854,12 @@ class APIClient {
     /// of the synchronous cache: the flow spans user think-time, so renewing
     /// up front avoids a spurious mid-flow 401. Missing credentials map to
     /// `unauthorized`, which the flow presents as re-login guidance.
-    private func oblivionAccessToken() async throws -> String {
-        guard let token = await AuthManager.shared.getActiveCredentials()?.accessToken else {
-            throw AccountDeletionServiceError.unauthorized
-        }
-        return token
+    private func activeOblivionAccessToken(
+        expectedSession: UInt64? = nil
+    ) async -> String? {
+        await AuthManager.shared.getActiveCredentials(
+            expectedSession: expectedSession
+        )?.accessToken
     }
 
     private func executeAccountJSONRequest<T: Codable>(_ request: URLRequest) async throws -> Response<T> {

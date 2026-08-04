@@ -5,39 +5,6 @@
 
 import SwiftUI
 
-/// Masks an email address for the deletion flow dialog: the local part
-/// collapses to its first character plus "•••" while the domain stays
-/// readable, so the user can tell which inbox received the verification code
-/// without the dialog spelling the address out.
-enum AccountDeletionEmailMasking {
-    static func masked(_ email: String) -> String {
-        guard let at = email.firstIndex(of: "@") else { return "•••" }
-        let domain = email[at...]
-        guard at != email.startIndex else { return "•••\(domain)" }
-        return "\(email[email.startIndex])•••\(domain)"
-    }
-}
-
-/// Normalizes verification-code input to what Oblivion accepts: ASCII digits
-/// only, capped at six. Pasted text keeps its digits instead of being
-/// rejected wholesale, so "123 456" from the email still fills the boxes.
-enum AccountDeletionCodeInput {
-    static let length = 6
-
-    static func sanitized(_ raw: String) -> String {
-        String(raw.filter { $0.isASCII && $0.isNumber }.prefix(length))
-    }
-}
-
-/// Seconds left on the resend cooldown, for the countdown label. Rounds up
-/// so the label never reads 0 while the resend is still locked.
-enum AccountDeletionResendCountdown {
-    static func remainingSeconds(until availableAt: Date?, now: Date) -> Int {
-        guard let availableAt else { return 0 }
-        return max(0, Int(availableAt.timeIntervalSince(now).rounded(.up)))
-    }
-}
-
 /// User-facing copy for deletion flow failures. Two contexts share most
 /// entries but diverge where the meaning depends on where the flow stands:
 /// `inlineMessage` renders in the code-entry dialog, where the request is
@@ -211,7 +178,11 @@ struct AccountDeletionFlowView: View {
         case .awaitingVerificationCode, .verifyingCode:
             VStack(alignment: .leading, spacing: 12) {
                 statusLine
-                AccountDeletionCodeEntry(code: $code, isDisabled: isVerifying)
+                AccountVerificationCodeEntry(
+                    code: $code,
+                    isDisabled: isVerifying,
+                    accessibilityLabel: Self.codeAccessibilityLabel
+                )
                 resendRow
             }
         case .requestSubmitted:
@@ -348,7 +319,7 @@ struct AccountDeletionFlowView: View {
     }
 
     private var isCodeComplete: Bool {
-        code.count == AccountDeletionCodeInput.length
+        code.count == AccountVerificationCodeInput.length
     }
 
     /// The resend affordance under the digit boxes. The countdown ticks
@@ -356,7 +327,7 @@ struct AccountDeletionFlowView: View {
     /// and re-rendering each second is purely presentational.
     private var resendRow: some View {
         TimelineView(.periodic(from: .now, by: 1)) { context in
-            let remaining = AccountDeletionResendCountdown.remainingSeconds(
+            let remaining = AccountVerificationResendCountdown.remainingSeconds(
                 until: viewState.resendAvailableAt,
                 now: context.date
             )
@@ -433,111 +404,10 @@ struct AccountDeletionFlowView: View {
     private static let alreadyRunningText = NSLocalizedString("accountDeletion.submission.alreadyInProgressMessage", value: "A deletion request for this account is already being processed. You will receive an email receipt once the deletion is complete.\n\nPhi will now sign you out, remove its data from this Mac, and quit.",
         comment: "Account deletion - Text shown when a previous deletion request is already running server-side; the finalize confirmation comes next, as after a submission"
     )
-}
 
-/// Six large digit boxes backed by one invisible text field. The field owns
-/// the string, so typing appends (auto-advancing the highlight), backspace
-/// removes the last digit, and Cmd+V pastes a whole code — the boxes only
-/// render the field's characters. The box after the last digit doubles as
-/// the insertion-point highlight.
-private struct AccountDeletionCodeEntry: View {
-    @Binding var code: String
-    let isDisabled: Bool
-
-    @FocusState private var isFocused: Bool
-
-    @Environment(\.phiTheme) private var theme
-    @Environment(\.phiAppearance) private var appearance
-
-    private static let boxHeight: CGFloat = 64
-    // Wider gaps make the flexible boxes narrower: at the alert's 417pt
-    // content width the row solves to 52pt-wide portrait boxes while still
-    // spanning the full width, keeping the right edge on the Verify button.
-    private static let boxSpacing: CGFloat = 21
-    private static let boxCornerRadius: CGFloat = 8
-
-    var body: some View {
-        HStack(spacing: Self.boxSpacing) {
-            ForEach(0..<AccountDeletionCodeInput.length, id: \.self) { index in
-                digitBox(at: index)
-            }
-        }
-        // The boxes are purely visual; hide them from accessibility so the
-        // overlaid text field is the single verification-code element
-        // VoiceOver announces, instead of the code being read twice.
-        .accessibilityHidden(true)
-        .overlay {
-            // The real input: kept at a near-zero opacity instead of zero so
-            // it stays hit-testable — clicking the boxes focuses it, and all
-            // keyboard input and pasting land here.
-            TextField("", text: $code)
-                .textFieldStyle(.plain)
-                .autocorrectionDisabled()
-                .focused($isFocused)
-                .opacity(0.02)
-                .accessibilityLabel(Text(NSLocalizedString("accountDeletion.verification.codeField.accessibilityLabel", value: "Verification code",
-                    comment: "Account deletion - Accessibility label of the verification code input"
-                )))
-        }
-        .disabled(isDisabled)
-        .opacity(isDisabled ? 0.5 : 1)
-        .defaultFocus($isFocused, true)
-        .onAppear {
-            // The flow sheet is a borderless window, where .defaultFocus is
-            // not guaranteed to resolve; nudge focus once the view settles
-            // so typing or pasting works without a click.
-            DispatchQueue.main.async {
-                isFocused = true
-            }
-        }
-        .onChange(of: code) { _, newValue in
-            let sanitized = AccountDeletionCodeInput.sanitized(newValue)
-            if sanitized != newValue {
-                code = sanitized
-            }
-        }
-        .onChange(of: isDisabled) { _, disabled in
-            // Re-enabling means a failed submission fell back to code entry;
-            // put the caret back so the user can just type again.
-            if !disabled {
-                isFocused = true
-            }
-        }
-    }
-
-    private func digitBox(at index: Int) -> some View {
-        let digits = Array(code)
-        let digit = index < digits.count ? String(digits[index]) : ""
-        let isActive = isFocused && !isDisabled && index == digits.count
-        return RoundedRectangle(cornerRadius: Self.boxCornerRadius, style: .continuous)
-            .fill(boxFill)
-            .overlay {
-                RoundedRectangle(cornerRadius: Self.boxCornerRadius, style: .continuous)
-                    .strokeBorder(
-                        isActive ? activeBorder : inactiveBorder,
-                        lineWidth: isActive ? 2 : 1
-                    )
-            }
-            .overlay {
-                Text(digit)
-                    .font(.system(size: 24, weight: .medium, design: .monospaced))
-                    .themedForeground(.textPrimaryStrong)
-            }
-            // Boxes flex to share the alert's content width equally, so the
-            // row's right edge lines up with the Verify button below it.
-            .frame(maxWidth: .infinity)
-            .frame(height: Self.boxHeight)
-    }
-
-    private var boxFill: Color {
-        appearance.isLight ? Color.black.opacity(0.04) : Color.white.opacity(0.06)
-    }
-
-    private var inactiveBorder: Color {
-        appearance.isLight ? Color.black.opacity(0.15) : Color.white.opacity(0.18)
-    }
-
-    private var activeBorder: Color {
-        ThemedColor.themeColor.swiftUIColor(theme: theme, appearance: appearance)
-    }
+    private static let codeAccessibilityLabel = NSLocalizedString(
+        "accountDeletion.verification.codeField.accessibilityLabel",
+        value: "Verification code",
+        comment: "Account deletion - Accessibility label of the verification code input"
+    )
 }

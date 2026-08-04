@@ -17,6 +17,10 @@ final class AccountDeletionController {
     private var isPresentingWarning = false
     private var flowPresenter: PhiAlertPresenter?
 
+    var isFlowActive: Bool {
+        isPresentingWarning || flowPresenter != nil
+    }
+
     private init() {}
 
     /// Warns about the consequences and names the account being deleted.
@@ -33,6 +37,10 @@ final class AccountDeletionController {
         // network side, but the first dialog keeps the screen.
         guard flowPresenter == nil else {
             AppLogInfo("🗑️ [AccountDeletion] Flow dialog already on screen, ignoring request")
+            return
+        }
+        guard !AccountDataExportController.shared.isFlowActive else {
+            AppLogInfo("🗑️ [AccountDeletion] Account data export flow is active, ignoring request")
             return
         }
 
@@ -83,7 +91,7 @@ final class AccountDeletionController {
         }, content: { dismiss in
             AccountDeletionFlowView(
                 viewState: viewState,
-                maskedEmail: AccountDeletionEmailMasking.masked(email),
+                maskedEmail: AccountVerificationEmailMasking.masked(email),
                 dismiss: dismiss,
                 submit: { [coordinator] code in
                     // Never log the code itself.
@@ -148,12 +156,17 @@ final class AccountDeletionController {
         let messageFormat = NSLocalizedString("accountDeletion.confirmation.message", value: "This deletes the Phi account %@ and everything Phi has stored on this Mac — browsing history, cookies, passwords, bookmarks, and Spaces. None of it can be recovered.\n\nOnce the deletion request is submitted, Phi signs you out and quits.",
             comment: "Account deletion - Warning explaining what deleting the Phi account destroys. %@ is the account's email address"
         )
+        let exportWarning = NSLocalizedString(
+            "accountDeletion.confirmation.exportWarning",
+            value: "Download any data export you want to keep before deleting your account. Deletion cancels exports in progress and permanently removes existing download files and links.",
+            comment: "Account deletion - Warning that account deletion cancels and removes data exports"
+        )
 
         return PhiAlertAppKitConfiguration(
             title: NSLocalizedString("accountDeletion.confirmation.title", value: "Delete your Phi account?",
                 comment: "Account deletion - Title of the warning shown before deleting the Phi account"
             ),
-            message: String(format: messageFormat, email),
+            message: String(format: messageFormat, email) + "\n\n" + exportWarning,
             style: .critical,
             // Deletion is irreversible, so no button answers the Return key —
             // a reflexive Return must not confirm it. Escape still cancels.

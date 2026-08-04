@@ -1034,6 +1034,31 @@ class AuthManager {
         return credentialManager.canRenew()
     }
     
+    @MainActor
+    func captureAuthenticatedSession(expectedUserID: String) -> UInt64? {
+        let session = authSessionGeneration.capture()
+        guard authSessionGeneration.isCurrent(session),
+              AccountController.shared.account?.userID == expectedUserID,
+              ApplicationState.shared.isAuthenticated,
+              !ApplicationState.shared.isGuest,
+              !isAccountDeletionInProgress else {
+            return nil
+        }
+        return session
+    }
+
+    @MainActor
+    func isAuthenticatedSessionCurrent(
+        _ session: UInt64,
+        expectedUserID: String
+    ) -> Bool {
+        authSessionGeneration.isCurrent(session) &&
+            AccountController.shared.account?.userID == expectedUserID &&
+            ApplicationState.shared.isAuthenticated &&
+            !ApplicationState.shared.isGuest &&
+            !isAccountDeletionInProgress
+    }
+
     func getActiveCredentials(expectedSession: UInt64? = nil) async -> Credentials? {
 #if DEBUG
         if EnvironmentChecker.isRunningPreview {
@@ -1327,7 +1352,8 @@ class AuthManager {
     @discardableResult
     func renewCredentialsAsync(
         operation: String,
-        expectedSession: UInt64? = nil
+        expectedSession: UInt64? = nil,
+        force: Bool = false
     ) async -> Credentials? {
         let session = expectedSession ?? authSessionGeneration.capture()
         await MainActor.run {
@@ -1360,7 +1386,7 @@ class AuthManager {
                 AppLogDebug("[TokenRenew] skip renew: already in progress")
                 return .skip
             }
-            if !shouldRenewNow() {
+            if !force && !shouldRenewNow() {
                 var details: [String: String] = [
                     "reason": "not_in_urgent_window",
                     "lastRenewAttemptAt": iso8601String(lastRenewAttemptAt)

@@ -215,6 +215,306 @@
         }
       }
     },
+    "accountDataExport.cancelButton" : {
+      "comment" : "Account data export - Button abandoning verification without cancelling a server task",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Cancel"
+          }
+        }
+      }
+    },
+    "accountDataExport.closeButton" : {
+      "comment" : "Account data export - Button closing the flow dialog",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Close"
+          }
+        }
+      }
+    },
+    "accountDataExport.confirmation.cancelButton" : {
+      "comment" : "Account data export - Button dismissing the confirmation",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Cancel"
+          }
+        }
+      }
+    },
+    "accountDataExport.confirmation.message" : {
+      "comment" : "Account data export - Confirmation message before requesting a code. %@ is the account email",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "We'll send a verification code to %@. Once verified, we'll prepare a copy of the personal data associated with your Phi Browser account and email you a download link. The link will be available for seven days."
+          }
+        }
+      }
+    },
+    "accountDataExport.confirmation.sendCodeButton" : {
+      "comment" : "Account data export - Button requesting the verification email",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Send Code"
+          }
+        }
+      }
+    },
+    "accountDataExport.confirmation.title" : {
+      "comment" : "Account data export - Title of the confirmation shown before requesting a code",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Export your account data?"
+          }
+        }
+      }
+    },
+    "accountDataExport.failure.retryButton" : {
+      "comment" : "Account data export - Button retrying a failed export request",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Try Again"
+          }
+        }
+      }
+    },
+    "accountDataExport.genericError" : {
+      "comment" : "Account data export - Generic failure that does not reveal account existence",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Something went wrong. Please try again later."
+          }
+        }
+      }
+    },
+    "accountDataExport.networkError" : {
+      "comment" : "Account data export - Error when the network request cannot complete",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Couldn't reach the data export service. Check your internet connection and try again."
+          }
+        }
+      }
+    },
+    "accountDataExport.previousTaskEndedError" : {
+      "comment" : "Account data export - Error when a previously returned export task has ended without an available download",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "That export is no longer available. Try again to request a new one."
+          }
+        }
+      }
+    },
+    "accountDataExport.serviceUnavailableError" : {
+      "comment" : "Account data export - Error when the service reports a server error",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "The data export service is temporarily unavailable. Please try again later."
+          }
+        }
+      }
+    },
+    "accountDataExport.sessionExpiredError" : {
+      "comment" : "Account data export - Error when the access token remains rejected after renewal",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Your session has expired. Please sign in again, then restart the export."
+          }
+        }
+      }
+    },
+    "accountDataExport.submission.acceptedMessage" : {
+      "comment" : "Account data export - Message after an export task is accepted but not yet complete",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "We're preparing your data export. We'll email you a download link when it's ready. The link will be available for seven days."
+          }
+        }
+      }
+    },
+    "accountDataExport.submission.deliveredMessage" : {
+      "comment" : "Account data export - Message when an existing task has already sent its download email",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Your data export is ready. Check your email for the download link. The link will be available for seven days."
+          }
+        }
+      }
+    },
+    "accountDataExport.verification.codeField.accessibilityLabel" : {
+      "comment" : "Account data export - Accessibility label for the verification code field",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Verification code"
+          }
+        }
+      }
+    },
+    "accountDataExport.verification.codePrompt" : {
+      "comment" : "Account data export - Verification prompt. %@ is the masked account email",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Enter the 6-digit code sent to %@."
+          }
+        }
+      }
+    },
+    "accountDataExport.verification.expiredCodeError" : {
+      "comment" : "Account data export - Inline error when the verification code expired",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "That code has expired. Click Resend Code to get a new one."
+          }
+        }
+      }
+    },
+    "accountDataExport.verification.invalidCodeError" : {
+      "comment" : "Account data export - Inline error when the submitted verification code is rejected",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "That code isn't correct. Check the code from the email and try again."
+          }
+        }
+      }
+    },
+    "accountDataExport.verification.rateLimitError" : {
+      "comment" : "Account data export - Error when the service rate limit is hit",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Too many attempts for now. Please wait a few minutes and try again."
+          }
+        }
+      }
+    },
+    "accountDataExport.verification.resendButton" : {
+      "comment" : "Account data export - Button requesting a fresh verification code",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Resend Code"
+          }
+        }
+      }
+    },
+    "accountDataExport.verification.resendCooldownButton" : {
+      "comment" : "Account data export - Disabled resend label. %d is the seconds remaining",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Resend Code (%ds)"
+          }
+        }
+      }
+    },
+    "accountDataExport.verification.sendingCodeProgress" : {
+      "comment" : "Account data export - Progress while requesting a code. %@ is the masked account email",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Sending a verification code to %@…"
+          }
+        }
+      }
+    },
+    "accountDataExport.verification.verifyingProgress" : {
+      "comment" : "Account data export - Progress while checking the verification code",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Verifying the code…"
+          }
+        }
+      }
+    },
+    "accountDataExport.verification.verifyButton" : {
+      "comment" : "Account data export - Button submitting the emailed verification code",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Verify"
+          }
+        }
+      }
+    },
+    "accountDataExport.window.title" : {
+      "comment" : "Account data export - Title of the verification and status dialog",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Export Account Data"
+          }
+        }
+      }
+    },
     "accountDeletion.cancelButton" : {
       "comment" : "Account deletion - Button abandoning the deletion flow without deleting anything",
       "extractionState" : "extracted_with_value",
@@ -511,6 +811,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "刪除帳號"
+          }
+        }
+      }
+    },
+    "accountDeletion.confirmation.exportWarning" : {
+      "comment" : "Account deletion - Warning that account deletion cancels and removes data exports",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Download any data export you want to keep before deleting your account. Deletion cancels exports in progress and permanently removes existing download files and links."
           }
         }
       }

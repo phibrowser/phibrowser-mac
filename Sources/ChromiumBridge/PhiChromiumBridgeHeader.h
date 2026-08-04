@@ -490,6 +490,12 @@ typedef NS_ENUM(NSInteger, PhiWindowCloseState) {
 /// thread per settings page load — must not block (answer from cache).
 - (NSDictionary<NSString *, id> * _Nullable)getPhiAccountInfo;
 
+/// The user pressed "export account data" on the Phi account subpage in
+/// chrome://settings. Mac owns the verification UI and all authenticated
+/// network calls; Chromium only relays the action. Called on the UI thread —
+/// return promptly and present asynchronously.
+- (void)startPhiAccountDataExport;
+
 /// The user pressed "delete account and data" on the Phi account subpage in
 /// chrome://settings. Mac owns everything from here: the warning dialog that
 /// names the account, the deletion request, clearing the local credentials

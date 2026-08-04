@@ -9,28 +9,28 @@ import XCTest
 final class AccountDeletionEmailMaskingTests: XCTestCase {
     func testMasksLocalPartAndKeepsDomain() {
         XCTAssertEqual(
-            AccountDeletionEmailMasking.masked("someone@example.com"),
+            AccountVerificationEmailMasking.masked("someone@example.com"),
             "s•••@example.com"
         )
     }
 
     func testKeepsOnlyTheFirstLocalCharacter() {
-        XCTAssertEqual(AccountDeletionEmailMasking.masked("ab@c.d"), "a•••@c.d")
+        XCTAssertEqual(AccountVerificationEmailMasking.masked("ab@c.d"), "a•••@c.d")
     }
 
     func testSingleCharacterLocalPartStaysRecognizable() {
-        XCTAssertEqual(AccountDeletionEmailMasking.masked("a@b.c"), "a•••@b.c")
+        XCTAssertEqual(AccountVerificationEmailMasking.masked("a@b.c"), "a•••@b.c")
     }
 
     func testEmptyLocalPartMasksWithoutLeadingCharacter() {
-        XCTAssertEqual(AccountDeletionEmailMasking.masked("@b.c"), "•••@b.c")
+        XCTAssertEqual(AccountVerificationEmailMasking.masked("@b.c"), "•••@b.c")
     }
 
     func testValueWithoutAtSignMasksEntirely() {
-        XCTAssertEqual(AccountDeletionEmailMasking.masked("not-an-email"), "•••")
+        XCTAssertEqual(AccountVerificationEmailMasking.masked("not-an-email"), "•••")
     }
 
     func testEmptyValueMasksEntirely() {
-        XCTAssertEqual(AccountDeletionEmailMasking.masked(""), "•••")
+        XCTAssertEqual(AccountVerificationEmailMasking.masked(""), "•••")
     }
 }

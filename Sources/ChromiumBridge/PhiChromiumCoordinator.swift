@@ -386,6 +386,22 @@ extension PhiChromiumCoordinator: PhiChromiumBridgeDelegate {
         }
     }
 
+    /// The settings page asked to export the signed-in account's data. The
+    /// native side owns the access token, verification UI and Oblivion calls.
+    func startPhiAccountDataExport() {
+        guard ApplicationState.shared.isAuthenticated else {
+            AppLogWarn(
+                "🌐 [Chromium] Ignoring account data export without an " +
+                "authenticated browser session"
+            )
+            return
+        }
+        AppLogInfo("🌐 [Chromium] startPhiAccountDataExport called by Chromium")
+        Task { @MainActor in
+            AccountDataExportController.shared.start()
+        }
+    }
+
     /// The settings page asked to delete the Phi account and its data. The
     /// hop off this call is required: presenting from inside it would run a
     /// sheet while a Chromium message handler is still on the stack.

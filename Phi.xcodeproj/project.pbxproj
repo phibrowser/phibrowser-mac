@@ -254,6 +254,11 @@
 		8EB01BE93010BCED0043E59D /* AccountDeletionFakeResponses.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8EB01BE83010BCED0043E59D /* AccountDeletionFakeResponses.swift */; };
 		8EB01BEB3010BCED0043E59D /* UserDataRemoval.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8EB01BEA3010BCED0043E59D /* UserDataRemoval.swift */; };
 		8EB01BED3010BCED0043E59D /* AccountDeletionLocalDataRemoval.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8EB01BEC3010BCED0043E59D /* AccountDeletionLocalDataRemoval.swift */; };
+		8EB020013020000000000001 /* AccountDataExportController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8EB020113020000000000011 /* AccountDataExportController.swift */; };
+		8EB020023020000000000002 /* AccountDataExportCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8EB020123020000000000012 /* AccountDataExportCoordinator.swift */; };
+		8EB020033020000000000003 /* AccountDataExportFlowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8EB020133020000000000013 /* AccountDataExportFlowView.swift */; };
+		8EB020043020000000000004 /* OblivionDataExportAPI.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8EB020143020000000000014 /* OblivionDataExportAPI.swift */; };
+		8EB020263020000000000026 /* AccountVerificationCodeEntry.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8EB020253020000000000025 /* AccountVerificationCodeEntry.swift */; };
 		8EC502132F67AE2300CE7338 /* DownloadSafetyTypes.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8EC502122F67AE2300CE7338 /* DownloadSafetyTypes.swift */; };
 		8EC70DB52F0A5E04009FE2CD /* BookmarkBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8EC70DB42F0A5DFD009FE2CD /* BookmarkBar.swift */; };
 		8EC70E162F0BBF3D009FE2CD /* BookmarkItemView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8EC70E152F0BBF3D009FE2CD /* BookmarkItemView.swift */; };
@@ -856,6 +861,11 @@
 		8EB01BE83010BCED0043E59D /* AccountDeletionFakeResponses.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccountDeletionFakeResponses.swift; sourceTree = "<group>"; };
 		8EB01BEA3010BCED0043E59D /* UserDataRemoval.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UserDataRemoval.swift; sourceTree = "<group>"; };
 		8EB01BEC3010BCED0043E59D /* AccountDeletionLocalDataRemoval.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccountDeletionLocalDataRemoval.swift; sourceTree = "<group>"; };
+		8EB020113020000000000011 /* AccountDataExportController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccountDataExportController.swift; sourceTree = "<group>"; };
+		8EB020123020000000000012 /* AccountDataExportCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccountDataExportCoordinator.swift; sourceTree = "<group>"; };
+		8EB020133020000000000013 /* AccountDataExportFlowView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccountDataExportFlowView.swift; sourceTree = "<group>"; };
+		8EB020143020000000000014 /* OblivionDataExportAPI.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OblivionDataExportAPI.swift; sourceTree = "<group>"; };
+		8EB020253020000000000025 /* AccountVerificationCodeEntry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccountVerificationCodeEntry.swift; sourceTree = "<group>"; };
 		8EC502122F67AE2300CE7338 /* DownloadSafetyTypes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DownloadSafetyTypes.swift; sourceTree = "<group>"; };
 		8EC70DB42F0A5DFD009FE2CD /* BookmarkBar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BookmarkBar.swift; sourceTree = "<group>"; };
 		8EC70E152F0BBF3D009FE2CD /* BookmarkItemView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BookmarkItemView.swift; sourceTree = "<group>"; };
@@ -1284,6 +1294,7 @@
 			children = (
 				376CE40F2F2897D30093D937 /* Models */,
 				376CE4102F2897D30093D937 /* APIClient.swift */,
+				8EB020143020000000000014 /* OblivionDataExportAPI.swift */,
 				8EB01BE23010BCED0043E59D /* OblivionDeletionAPI.swift */,
 				54A1001B2FE000000000001B /* TimeMachinePackageDownloader.swift */,
 				AE00FFFE0000000000000001 /* PhiAgentEndpointResolver.swift */,
@@ -1694,6 +1705,16 @@
 			path = AccountDeletion;
 			sourceTree = "<group>";
 		};
+		8EB020203020000000000020 /* AccountDataExport */ = {
+			isa = PBXGroup;
+			children = (
+				8EB020113020000000000011 /* AccountDataExportController.swift */,
+				8EB020123020000000000012 /* AccountDataExportCoordinator.swift */,
+				8EB020133020000000000013 /* AccountDataExportFlowView.swift */,
+			);
+			path = AccountDataExport;
+			sourceTree = "<group>";
+		};
 		8EC70DAD2F0A5CFD009FE2CD /* HorizontalBar */ = {
 			isa = PBXGroup;
 			children = (
@@ -1883,6 +1904,7 @@
 		B0F370CC2E432646000B51F9 /* UserInterface */ = {
 			isa = PBXGroup;
 			children = (
+				8EB020203020000000000020 /* AccountDataExport */,
 				8EB01BE03010BCED0043E59D /* AccountDeletion */,
 				CC6B000D2E77E03000D4F133 /* AboutWindow */,
 				CCB53DC42E6EBF6E004BF233 /* AddressBar */,
@@ -2289,6 +2311,7 @@
 				37C1B3312EE691E700DD4496 /* LottieAnimationView.swift */,
 				3769C6B22EFA540300A94DE0 /* GradientColorLabel.swift */,
 				3769C6EC2EFA6CBE00A94DE0 /* GaussianEffectView.swift */,
+				8EB020253020000000000025 /* AccountVerificationCodeEntry.swift */,
 				8E4FD9BE2EF7D98C007D97A4 /* ZeroSafeAreaHostingView.swift */,
 				37289F4C2EFE8A9B0003624E /* EditPinnedTabView.swift */,
 			);
@@ -2897,6 +2920,10 @@
 				8EB01BE93010BCED0043E59D /* AccountDeletionFakeResponses.swift in Sources */,
 				8EB01BE73010BCED0043E59D /* AccountDeletionFlowView.swift in Sources */,
 				8EB01BED3010BCED0043E59D /* AccountDeletionLocalDataRemoval.swift in Sources */,
+				8EB020013020000000000001 /* AccountDataExportController.swift in Sources */,
+				8EB020023020000000000002 /* AccountDataExportCoordinator.swift in Sources */,
+				8EB020033020000000000003 /* AccountDataExportFlowView.swift in Sources */,
+				8EB020263020000000000026 /* AccountVerificationCodeEntry.swift in Sources */,
 				CC4F00040000000000000001 /* CreateSpacePanel.swift in Sources */,
 				CC4F00050000000000000001 /* SpaceChooserView.swift in Sources */,
 				8E762C1A2F15F5AE00631087 /* TabStripDragController.swift in Sources */,
@@ -3114,6 +3141,7 @@
 				376CE4162F2897D30093D937 /* Response.swift in Sources */,
 				8EF36C032F4E9E7000FCC91E /* TabViewModel.swift in Sources */,
 				376CE4172F2897D30093D937 /* APIClient.swift in Sources */,
+				8EB020043020000000000004 /* OblivionDataExportAPI.swift in Sources */,
 				8EB01BE33010BCED0043E59D /* OblivionDeletionAPI.swift in Sources */,
 				54A1000B2FE000000000000B /* TimeMachinePackageDownloader.swift in Sources */,
 				FBD200012FD0000000000003 /* FeedbackV2.swift in Sources */,

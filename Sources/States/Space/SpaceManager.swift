@@ -510,15 +510,17 @@ final class SpaceManager: ObservableObject {
     /// slot reattach to the same `SpaceWindowSlot`.
     private var restoredSlotsByIndex: [Int: SpaceWindowSlot] = [:]
     /// Previous-session windowId → spaceId for every window the last armed
-    /// (lazy) reopen parked as a ghost instead of replaying. Nothing records
-    /// into it yet — arming arrives with the lazy-restore wiring — so it is
-    /// empty today and `persistSlotsSnapshot` writes exactly what it always
-    /// wrote. Once armed, it is what lets the persisted snapshot keep naming
-    /// a parked window's Space (`persistedWindowMap`): the ghost's Space
-    /// stays on the strip while its window exists only in the session file,
-    /// and this map is the one record tying the two together. Cleared with
-    /// the rest of the restore bookkeeping when a snapshot loads — a new
-    /// reopen's classification supersedes the last one's.
+    /// (lazy) reopen parked as a ghost instead of replaying. Written by
+    /// `armLazyRestoreForReopen` in the same tick as the snapshot load (an
+    /// unarmed run keeps it empty, and `persistSlotsSnapshot` then writes
+    /// exactly what it always wrote). It is what lets the persisted snapshot
+    /// keep naming a parked window's Space (`persistedWindowMap`): the
+    /// ghost's Space stays on the strip while its window exists only in the
+    /// session file, and this map is the one record tying the two together.
+    /// Entries retire one at a time through `consumeParkedGhost` — a
+    /// materialization claims the window, an invalidation (Space deleted,
+    /// slot closed) drops it on both sides — and wholesale when a snapshot
+    /// loads: a new reopen's classification supersedes the last one's.
     private var parkedGhostSpaceIdsByWindowId: [Int: String] = [:]
     /// Index into `restoreEntries` → the loading window standing in for that
     /// slot. `slotForRestoreIndex` lends each one to the slot that claims its
@@ -687,6 +689,9 @@ final class SpaceManager: ObservableObject {
     /// Drops a slot from the registry. Called by the slot itself when its
     /// last controller closes (see `SpaceWindowSlot.unregisterWindow`).
     func removeSlot(_ slot: SpaceWindowSlot) {
+        // Resolved before the reattach binding below is dropped — it is the
+        // binding that scopes the park set to this slot's entries.
+        let parkedGhosts = parkedGhostEntries(for: slot)
         slots.removeAll { $0 === slot }
         if keySlot === slot {
             keySlot = slots.last
@@ -713,6 +718,19 @@ final class SpaceManager: ObservableObject {
         // Space-close semantics for a slot that goes away — its ghosts go with
         // it rather than resurfacing somewhere the user never put them.
         persistSlotsSnapshot()
+        // The wiring half of the same semantics: the parked windows leave the
+        // chromium store and the session file too, or the next unfiltered
+        // restore would replay them as loose windows of a group the user
+        // closed. Skipped exactly when the record above deliberately keeps
+        // the entries — quit (`isTerminating`; the next cold start replays
+        // the ghosts with everything else) and the close of the LAST slot
+        // (the empty-write backstop freezes the group's entries, which is
+        // precisely what the next windowless reopen re-classifies; dropping
+        // the ghosts then would strand those entries as windows the session
+        // no longer holds).
+        if !isTerminating && !slots.isEmpty {
+            dropParkedGhosts(parkedGhosts, reason: "removeSlot")
+        }
     }
 
     /// Reports a settled window-group close to Chromium, which holds every
@@ -852,13 +870,16 @@ final class SpaceManager: ObservableObject {
         // keeps the stored order.
         let preferredProfileId = persistedActiveSpaceId
             .flatMap { boundProfileId(forSpaceId: $0) }
-        // No eager set is computed yet — nil restores every window over the
-        // legacy selector; the Space classifier that will supply real sets
-        // arrives with the lazy-restore wiring.
+        // The lazy switch decides how much of the group comes back NOW:
+        // armed, only the classifier's eager set replays and the rest park
+        // as ghosts — recorded this tick, after `loadRestoreSnapshot` above
+        // cleared the previous reopen's records. nil keeps the legacy full
+        // replay: switch off, an older framework, or a classification that
+        // would park nothing anyway.
         requestChromiumSessionRestore(
             bridge,
             preferredProfileId: preferredProfileId,
-            eagerWindowIds: nil
+            eagerWindowIds: armLazyRestoreForReopen(bridge)
         ) { [weak self] restoredAnyWindow in
             DispatchQueue.main.async {
                 guard let self else { return }
@@ -1565,6 +1586,247 @@ final class SpaceManager: ObservableObject {
         )
     }
 
+    /// Mac-side switch for the lazy Space reopen (standard defaults, off by
+    /// default). Gates ONLY whether the next windowless reopen computes and
+    /// sends an eager set: a ghost already parked stays materializable,
+    /// droppable, persisted and pinned for its whole life regardless, so
+    /// flipping the switch off mid-run cannot strand records that already
+    /// exist.
+    static let lazySpaceRestoreEnabledKey = "PhiLazySpaceRestoreEnabled"
+    static var isLazySpaceRestoreEnabled: Bool {
+        UserDefaults.standard.bool(forKey: lazySpaceRestoreEnabledKey)
+    }
+
+    /// Whether the loaded framework knows the whole lazy-restore selector
+    /// family. Probed as a family, not per call: arming with a framework
+    /// that cannot materialize would strand every parked window, and one
+    /// that cannot drop would leak session records on every invalidation —
+    /// so an older framework simply keeps full restores (the caller-side
+    /// mirror of the coordinator's legacy-entry-point tolerance).
+    private static func bridgeSupportsLazyRestore(
+        _ bridge: PhiChromiumBridgeProtocol
+    ) -> Bool {
+        bridge.responds(to: #selector(PhiChromiumBridgeProtocol
+            .restorePreviousSession(withPreferredProfile:eagerWindowIds:completion:)))
+            && bridge.responds(to: #selector(PhiChromiumBridgeProtocol
+                .materializeGhostWindow(_:profileId:completion:)))
+            && bridge.responds(to: #selector(PhiChromiumBridgeProtocol
+                .dropGhostWindow(_:profileId:completion:)))
+    }
+
+    /// The eager set a reopen sends over the bridge, or nil to keep the
+    /// legacy full restore. nil when the switch is off or the framework
+    /// predates the selector family — and also when the classification
+    /// parked nothing: the eager set is a whitelist to the replay (a saved
+    /// window outside it parks), so arming then buys nothing over a full
+    /// replay and only widens what a snapshot gap could fall through.
+    /// Sorted ascending so the wire order is deterministic. Pure and static
+    /// so the gate is pinned by table (`LazySpaceRestoreWiringTests`).
+    static func armedEagerWindowIds(
+        featureEnabled: Bool,
+        bridgeSupportsLazyRestore: Bool,
+        classification: RestoreWindowClassification
+    ) -> [NSNumber]? {
+        guard featureEnabled, bridgeSupportsLazyRestore,
+              !classification.ghostSpaceIdsByWindowId.isEmpty else { return nil }
+        return classification.eagerWindowIds.sorted().map { NSNumber(value: $0) }
+    }
+
+    /// Classifies this reopen's snapshot and, when the reopen should be
+    /// lazy, records the park set and returns the eager set for the bridge;
+    /// nil keeps the legacy full restore. Must run AFTER `loadRestoreSnapshot`
+    /// in the same tick: loading clears `parkedGhostSpaceIdsByWindowId`, and
+    /// the write below is what arms this reopen's ghosts.
+    private func armLazyRestoreForReopen(
+        _ bridge: PhiChromiumBridgeProtocol
+    ) -> [NSNumber]? {
+        // R2's liveness check and R5's agent exclusion read the live store —
+        // converged by now on a mid-session reopen; a gap only widens the
+        // eager set (fail-eager). Agent Spaces are known two ways: the
+        // persisted model signature, and the live task registry (a
+        // PERSISTENT agent Space mid-task looks regular by signature).
+        let agentSpaceIds = Set(spaces.filter { space in
+            space.isAgentSpace == true || MainActor.assumeIsolated {
+                AgentSpaceManager.shared.isAgentSpace(space.spaceId)
+            }
+        }.map(\.spaceId))
+        let classification = Self.classifyRestoreWindows(
+            slots: restoreEntries.map {
+                (activeSpaceId: $0.activeSpaceId, windowMap: $0.windowMap)
+            },
+            liveSpaceIds: Set(spaces.map(\.spaceId)),
+            agentSpaceIds: agentSpaceIds
+        )
+        guard let eagerWindowIds = Self.armedEagerWindowIds(
+            featureEnabled: Self.isLazySpaceRestoreEnabled,
+            bridgeSupportsLazyRestore: Self.bridgeSupportsLazyRestore(bridge),
+            classification: classification
+        ) else { return nil }
+        parkedGhostSpaceIdsByWindowId = classification.ghostSpaceIdsByWindowId
+        // Logged like the restore transitions: the park set decides what the
+        // reopen deliberately does NOT bring back, which a log bundle must
+        // be able to answer.
+        AppLogInfo("[SpaceManager] lazy reopen armed: \(eagerWindowIds.count) eager, \(parkedGhostSpaceIdsByWindowId.count) parked")
+        return eagerWindowIds
+    }
+
+    /// The parked ghost window an activation of `spaceId` materializes, or
+    /// nil when none is parked. Lowest id on a corrupt duplicate (two parked
+    /// ids naming one Space) so the pick is deterministic rather than a hash
+    /// walk — the same ordering rule every other snapshot pick uses. Pure
+    /// and static so the rule is pinned by table.
+    static func parkedGhostWindowId(in parkedGhosts: [Int: String],
+                                    forSpaceId spaceId: String) -> Int? {
+        parkedGhosts.filter { $0.value == spaceId }.keys.min()
+    }
+
+    /// The parked ghost a live activation of `spaceId` should materialize,
+    /// or nil. Read by `SpaceWindowSlot.activate` (the F4 ghost row) and by
+    /// `changeProfile` (which materializes before it re-binds).
+    func parkedGhostWindowId(forSpaceId spaceId: String) -> Int? {
+        Self.parkedGhostWindowId(in: parkedGhostSpaceIdsByWindowId,
+                                 forSpaceId: spaceId)
+    }
+
+    /// Retires the ghost bookkeeping for one parked window. Both records go
+    /// together: the park entry is what routes an activation to
+    /// materialization, and the unclaimed restore index is what folds the
+    /// entry into the persisted snapshot — whether the window just
+    /// materialized (it is live now; the live map speaks for it) or its
+    /// record turned out stale (nothing can ever satisfy it), keeping either
+    /// half would hand the next persist or reopen a window that no longer
+    /// exists to park.
+    fileprivate func consumeParkedGhost(windowId: Int) {
+        parkedGhostSpaceIdsByWindowId.removeValue(forKey: windowId)
+        restoreIndexByWindowId.removeValue(forKey: windowId)
+    }
+
+    /// Retires parked ghosts (windowId → spaceId) everywhere they are
+    /// recorded: the Mac bookkeeping now, and the chromium store + session
+    /// file once each ghost's profile is loaded. This is the wiring half of
+    /// Space-close semantics for a window that exists only in the session
+    /// file — its Space was deleted, or the window group it was saved with
+    /// went away — and without the chromium half the next unfiltered
+    /// restore would replay the window as a loose one.
+    ///
+    /// Profiles are resolved synchronously, before the caller mutates the
+    /// store (a deleted Space's row is gone by the time the async load
+    /// completes). A drop the chromium side refuses (record already gone,
+    /// profile never loaded this run) is logged and accepted: the Mac
+    /// records are gone either way, and the residue self-heals at the next
+    /// cold start's unfiltered replay.
+    fileprivate func dropParkedGhosts(_ ghosts: [Int: String], reason: String) {
+        guard !ghosts.isEmpty else { return }
+        // Absence from this map IS the "no profile resolves" case below.
+        let profileIdsByWindowId: [Int: String] = ghosts.compactMapValues {
+            boundProfileId(forSpaceId: $0)
+        }
+        for windowId in ghosts.keys {
+            consumeParkedGhost(windowId: windowId)
+        }
+        guard let bridge = ChromiumLauncher.sharedInstance().bridge,
+              bridge.responds(to: #selector(PhiChromiumBridgeProtocol
+                  .dropGhostWindow(_:profileId:completion:))) else {
+            AppLogWarn("[SpaceManager] \(reason): bridge unavailable or too old — \(ghosts.count) ghost record(s) dropped Mac-side only")
+            return
+        }
+        for (windowId, spaceId) in ghosts.sorted(by: { $0.key < $1.key }) {
+            guard let profileId = profileIdsByWindowId[windowId],
+                  !profileId.isEmpty else {
+                AppLogWarn("[SpaceManager] \(reason): no profile resolves for ghost \(windowId) (Space \(spaceId)) — dropped Mac-side only")
+                continue
+            }
+            bridge.ensureProfileLoaded(profileId) { success in
+                guard success else {
+                    AppLogWarn("[SpaceManager] \(reason): profile \(profileId) failed to load — ghost \(windowId) dropped Mac-side only")
+                    return
+                }
+                bridge.dropGhostWindow(Int32(windowId), profileId: profileId) { ok in
+                    if ok {
+                        AppLogInfo("[SpaceManager] \(reason): dropped ghost window \(windowId) (Space \(spaceId))")
+                    } else {
+                        AppLogWarn("[SpaceManager] \(reason): chromium held no ghost \(windowId) (Space \(spaceId)) — record was stale")
+                    }
+                }
+            }
+        }
+    }
+
+    /// Where the coordinator's fallback mint may land, as a pure rule:
+    /// `resolved` stands unless it names a Space whose window is parked —
+    /// minting a fresh window there would stand beside the parked one as a
+    /// doubled Space, and the live window would then shadow the ghost for
+    /// good — in which case the first clear automatic-switch target of the
+    /// window's profile (strip order; any profile when unconstrained) takes
+    /// its place. With no clear alternative the resolution stands: the
+    /// doubled record is the lesser evil next to presenting the window as
+    /// another profile's Space. Pure and static so the steering is pinned by
+    /// table (`LazySpaceRestoreWiringTests`).
+    static func steeredFallbackMintSpaceId(
+        resolved: String,
+        ghostSpaceIds: Set<String>,
+        candidates: [(spaceId: String, profileId: String, isSwitchTarget: Bool)],
+        profileId: String
+    ) -> String {
+        guard ghostSpaceIds.contains(resolved) else { return resolved }
+        let alternative = candidates.first { candidate in
+            candidate.isSwitchTarget
+                && !ghostSpaceIds.contains(candidate.spaceId)
+                && (profileId.isEmpty || candidate.profileId == profileId)
+        }
+        return alternative?.spaceId ?? resolved
+    }
+
+    /// `spaceId(boundTo:preferring:)` for the coordinator's fallback mint —
+    /// the one resolution that CREATES a window for the Space it answers,
+    /// which must therefore steer off ghost Spaces (see
+    /// `steeredFallbackMintSpaceId`). Every other resolution path is free to
+    /// answer one: an activation materializes it, and the tab-restore mint
+    /// is protected at the source (parked ids never enter the undo stack).
+    func fallbackMintSpaceId(boundTo profileId: String,
+                             preferring preferred: String) -> String {
+        let resolved = spaceId(boundTo: profileId, preferring: preferred)
+        let steered = Self.steeredFallbackMintSpaceId(
+            resolved: resolved,
+            ghostSpaceIds: Set(parkedGhostSpaceIdsByWindowId.values),
+            candidates: spaces.map {
+                (spaceId: $0.spaceId, profileId: $0.profileId,
+                 isSwitchTarget: isAutomaticSwitchTarget($0))
+            },
+            profileId: profileId
+        )
+        if steered != resolved {
+            AppLogInfo("[SpaceManager] fallback mint steered off ghost Space \(resolved) to \(steered)")
+        }
+        return steered
+    }
+
+    /// D7: a failed materialization is the one lazy-restore state with UI.
+    /// Same presentation shape as the other Space-operation refusals here
+    /// (`deleteSpace`, `changeProfile`). The alert deliberately promises
+    /// nothing about recovery — a transient failure (profile load) keeps the
+    /// records and the next activation retries; a stale record was dropped
+    /// and the next activation opens the Space fresh.
+    fileprivate static func presentGhostMaterializeFailureAlert() {
+        let alert = NSAlert()
+        alert.messageText = NSLocalizedString(
+            "spaces.spaceSwitch.reopenWindowFailed.title",
+            value: "Can’t reopen this Space’s window",
+            comment: "Title of the alert shown when switching to a Space whose saved window could not be brought back"
+        )
+        alert.informativeText = NSLocalizedString(
+            "spaces.spaceSwitch.reopenWindowFailed.message",
+            value: "The window saved for this Space couldn’t be reopened. Try switching to it again.",
+            comment: "Body of the alert shown when switching to a Space whose saved window could not be brought back"
+        )
+        alert.addButton(withTitle: NSLocalizedString(
+            "spaces.spaceSwitch.reopenWindowFailed.dismissButton",
+            value: "OK",
+            comment: "Dismiss button of the alert shown when a Space's saved window could not be brought back"
+        ))
+        alert.runModal()
+    }
+
     /// The profileId a Space is bound to, or nil if unknown. Reads the live
     /// `spaces` cache, falling back to a direct main-context fetch on the
     /// cold-launch path where the async publisher hasn't delivered yet (same
@@ -1860,7 +2122,8 @@ final class SpaceManager: ObservableObject {
     /// with — a slot that closes takes its parked entries out of the snapshot
     /// with it (its Spaces closed with it), and an entry may not migrate into
     /// another slot's windowMap. Empty whenever nothing is recorded, which is
-    /// every run until the lazy-restore wiring arms a reopen.
+    /// every run whose reopen did not arm the lazy filter (switch off, older
+    /// framework, nothing to park) — and every cold start, which never arms.
     private func parkedGhostEntries(for slot: SpaceWindowSlot) -> [Int: String] {
         guard !parkedGhostSpaceIdsByWindowId.isEmpty else { return [:] }
         guard let index = restoredSlotsByIndex.first(where: { $0.value === slot })?.key,
@@ -1899,9 +2162,10 @@ final class SpaceManager: ObservableObject {
             // The slot's still-parked ghosts ride along, so the record that
             // maps each parked window back to its Space survives this write
             // (`persistedWindowMap` retires claimed and deleted-Space entries
-            // on its own). Guarded on the fast path: nothing is parked until
-            // the lazy-restore wiring arms a reopen, and skipping the merge
-            // keeps today's write byte-identical by construction.
+            // on its own). Guarded on the fast path: nothing is parked on an
+            // unarmed run (switch off, older framework, cold start), and
+            // skipping the merge keeps that write byte-identical to the
+            // pre-lazy one by construction.
             let parkedGhosts = parkedGhostEntries(for: slot)
             let persistedMap = parkedGhosts.isEmpty ? windowMap : Self.persistedWindowMap(
                 liveWindowMap: windowMap,
@@ -2716,6 +2980,16 @@ final class SpaceManager: ObservableObject {
             alert.runModal()
             return
         }
+        // A parked ghost of this Space dies with it: deleting the Space is
+        // the window close its parked window never got, so the record leaves
+        // both sides — the Mac bookkeeping and the chromium store + session
+        // file — before the row goes (the profile resolution below needs the
+        // live row). Without this the next unfiltered restore would replay
+        // the deleted Space's window as a loose one.
+        dropParkedGhosts(
+            parkedGhostSpaceIdsByWindowId.filter { $0.value == spaceId },
+            reason: "deleteSpace(\(spaceId))"
+        )
         // If this Space hosts a live agent task, drop the task record with the
         // Space — otherwise it lingers and a stateless CDP client keeps
         // "finding" a task whose window is gone, forcing a dedicated purge
@@ -2895,6 +3169,23 @@ final class SpaceManager: ObservableObject {
         }
         guard ProfileManager.shared.profile(for: newProfileId) != nil else {
             AppLogWarn("[SpaceManager] changeProfile: unknown profile \(newProfileId)")
+            return
+        }
+        // A parked ghost re-binds by materializing FIRST: its tabs exist only
+        // in the OLD profile's session file, and the capture below can read
+        // live windows only. The re-entry finds no ghost and runs the
+        // unchanged flow — which closes the just-materialized window like any
+        // background window and replays its tabs on the new profile. A failed
+        // materialization aborts the change with everything as it was (alert
+        // shown by the materialize): re-binding anyway would strand the
+        // parked window under a profile its Space no longer names.
+        if let ghostWindowId = parkedGhostWindowId(forSpaceId: spaceId) {
+            let slot = keySlot ?? slots.first ?? createSlot(initialSpaceId: spaceId)
+            AppLogInfo("[SpaceManager] changeProfile: materializing ghost window \(ghostWindowId) of \(spaceId) first")
+            slot.materializeParkedGhost(windowId: ghostWindowId, spaceId: spaceId) { [weak self] ok in
+                guard ok else { return }
+                self?.changeProfile(spaceId: spaceId, toProfileId: newProfileId)
+            }
             return
         }
         AppLogInfo("[SpaceManager] changeProfile: \(spaceId) \(space.profileId) → \(newProfileId)")
@@ -4971,6 +5262,20 @@ final class SpaceWindowSlot: ObservableObject {
         // and always run — they must, to keep the slot consistent. Re-activating
         // the current Space is a no-op and never gated.
         AppLogInfo("[SpaceWindowSlot] activate(\(spaceId)) from=\(activeSpaceId ?? "nil") userInitiated=\(userInitiated) animated=\(animated)")
+        // First row of the switch decision, ahead of every side effect: while
+        // a windowless reopen's replay is in flight, every activation is
+        // dropped — switching, spawning or materializing against a
+        // half-restored group would race the replay and its per-profile
+        // session commit (the same race AppController's windowless-command
+        // drop gate closes). The restore's own follow-ups run after the flag
+        // clears, and a dropped store reconcile re-runs on the next store
+        // emission, so nothing is lost — the log line is what makes the drop
+        // diagnosable.
+        if manager?.isSessionRestoreInFlight == true {
+            AppLogInfo("[SpaceWindowSlot] activate(\(spaceId)) dropped: session restore in flight")
+            onActivationFailed?()
+            return
+        }
         if userInitiated, spaceId != activeSpaceId, isSwitchAnimationInFlight {
             AppLogInfo("[SpaceWindowSlot] activate(\(spaceId)) dropped: switch animation in flight")
             onActivationFailed?()
@@ -5221,6 +5526,39 @@ final class SpaceWindowSlot: ObservableObject {
         verticalSwapCancel?()
         activeSidebarOverlay?.cancel()
         windowSlideCancel?()
+        // Ghost row of the switch decision: a Space whose window is parked in
+        // the session file materializes it instead of spawning fresh — the
+        // parked tabs ARE the Space's content, and a fresh window would stand
+        // beside the parked record as a doubled Space. The window arrives
+        // through the same pending-spawn claim as a spawned one and Chromium
+        // shows it itself (the foreign restore path), so this leg only
+        // finishes the switch the way an instant present does; the slide
+        // animation is deliberately not run (the accepted product semantics
+        // of materialization: the window appears at once). Failure keeps the
+        // slot as it is — alert shown by the materialize, no fallback spawn
+        // (the session file may still describe the parked window).
+        if let ghostWindowId = manager.parkedGhostWindowId(forSpaceId: spaceId) {
+            materializeParkedGhost(windowId: ghostWindowId, spaceId: spaceId) {
+                [weak self, weak previous] ok in
+                guard let self, ok else {
+                    onActivationFailed?()
+                    return
+                }
+                guard let registered = self.windowsBySpaceId[spaceId] else {
+                    // The bridge reported success but no window claimed into
+                    // this slot — nothing to present; leave the previous
+                    // window in place.
+                    AppLogWarn("[SpaceWindowSlot] activate(\(spaceId)): materialized window did not register")
+                    onActivationFailed?()
+                    return
+                }
+                self.makeKeyAndOrderFrontHidingSlotTabBar(registered.window)
+                self.orderOutIfNotTabbedWithTarget(previous?.window,
+                                                   targetWindow: registered.window)
+                onSwapSettled?()
+            }
+            return
+        }
         // Bind the new Chromium Browser to the Space's profile, re-read from
         // `spaces` on every spawn. When a Space is re-bound to another
         // profile (`changeProfile`), its windows are closed and the next
@@ -5503,6 +5841,119 @@ final class SpaceWindowSlot: ObservableObject {
             DispatchQueue.main.async(execute: kickSpawn)
         } else {
             kickSpawn()
+        }
+    }
+
+    /// Materializes the parked ghost window `windowId` for `spaceId` into
+    /// this slot: the window rebuilds from the session file — tabs, pins,
+    /// groups and split layout intact — arrives through the same
+    /// pending-spawn claim as a spawned window (`currentSpawn`; the
+    /// window-created callback fires inside the bridge call, before any
+    /// windowId-keyed intent could exist), and registers here. It must never
+    /// travel the restore claim instead: that track concealment-marks
+    /// non-active siblings and routes by the SAVED slot, where this window
+    /// belongs to the slot that asked for it. Chromium shows the window
+    /// itself (the foreign restore path), so the caller only decides what to
+    /// do with the previously visible one.
+    ///
+    /// The ghost bookkeeping is consumed just before the bridge call — the
+    /// registration inside it persists a snapshot, and that write must not
+    /// fold the park entry in next to the live window — and deliberately not
+    /// restored on failure past a successful profile load: NO then means the
+    /// store holds no such ghost, and keeping the record would pin the Space
+    /// on a materialization that can never succeed, where dropping it lets
+    /// the next activation open the Space fresh. A profile that fails to
+    /// LOAD keeps every record — that failure is transient and the ghost is
+    /// still real.
+    ///
+    /// `completion` runs with the outcome once the attempt settles (the
+    /// profile load may be asynchronous); on failure nothing is on screen,
+    /// the alert has been presented, and — load failures aside — the stale
+    /// records are gone.
+    func materializeParkedGhost(windowId: Int, spaceId: String,
+                                completion: @escaping (Bool) -> Void) {
+        guard let manager else {
+            completion(false)
+            return
+        }
+        // Same repeat gate as a spawn, spanning the async profile load: a
+        // second activation of the Space while this attempt is in flight
+        // must not queue a second window.
+        if pendingSpawnSpaceIds.contains(spaceId) {
+            AppLogInfo("[SpaceWindowSlot] materialize(\(spaceId)): attempt already in flight, ignoring repeat")
+            completion(false)
+            return
+        }
+        guard let bridge = ChromiumLauncher.sharedInstance().bridge,
+              bridge.responds(to: #selector(PhiChromiumBridgeProtocol
+                  .materializeGhostWindow(_:profileId:completion:))) else {
+            // Unreachable in practice — records only exist when arming
+            // probed the selector family — but a stale build combination
+            // must fail loudly rather than trap.
+            AppLogWarn("[SpaceWindowSlot] materialize(\(spaceId)): bridge unavailable or too old")
+            completion(false)
+            return
+        }
+        // The ghost was parked under the profile its Space is bound to —
+        // an unresolvable binding means the record cannot be honored.
+        guard let profileId = manager.spaces.first(where: { $0.spaceId == spaceId })?.profileId,
+              !profileId.isEmpty else {
+            AppLogWarn("[SpaceWindowSlot] materialize(\(spaceId)): no bound profile")
+            SpaceManager.presentGhostMaterializeFailureAlert()
+            completion(false)
+            return
+        }
+        // Captured before the (possibly asynchronous) profile load, exactly
+        // like the spawn path: the source window can close during the gap,
+        // and the slot's shared frame resolution is only valid while it is
+        // alive.
+        let previous = visibleController
+        let inheritedFrame = resolveInheritedFrame(from: previous)
+        let inheritedSidebarWidth = previous?.browserState.sidebarWidth ?? 0
+        let inheritedSidebarCollapsed = previous?.browserState.sidebarCollapsed
+        pendingSpawnSpaceIds.insert(spaceId)
+        bridge.ensureProfileLoaded(profileId) { [weak self, weak manager] success in
+            guard let self, let manager else {
+                completion(false)
+                return
+            }
+            guard success else {
+                // Transient: the records stay, a later attempt may succeed.
+                AppLogWarn("[SpaceWindowSlot] materialize(\(spaceId)): ensureProfileLoaded failed for \(profileId)")
+                self.pendingSpawnSpaceIds.remove(spaceId)
+                SpaceManager.presentGhostMaterializeFailureAlert()
+                completion(false)
+                return
+            }
+            manager.consumeParkedGhost(windowId: windowId)
+            // The intent claim: the coordinator's first-priority pending-spawn
+            // lookup resolves the arriving window to THIS slot and Space via
+            // `currentSpawn`, and `registerWindow` applies the inherited
+            // frame and sidebar shape — the reopened Space surfaces where the
+            // slot sits, keeping the one-window illusion.
+            manager.currentSpawn = SpaceManager.SpawnContext(
+                slot: self,
+                spaceId: spaceId,
+                inheritedFrame: inheritedFrame,
+                inheritedSidebarWidth: inheritedSidebarWidth,
+                inheritedSidebarCollapsed: inheritedSidebarCollapsed
+            )
+            var materialized = false
+            // Synchronous: the window callback (claim + registration) and the
+            // completion both run inside this call.
+            bridge.materializeGhostWindow(Int32(windowId), profileId: profileId) { ok in
+                materialized = ok
+            }
+            manager.currentSpawn = nil
+            self.pendingSpawnSpaceIds.remove(spaceId)
+            guard materialized else {
+                AppLogError("[SpaceWindowSlot] materialize(\(spaceId)): chromium held no ghost \(windowId) — stale record dropped")
+                SpaceManager.presentGhostMaterializeFailureAlert()
+                completion(false)
+                return
+            }
+            AppLogInfo("[SpaceWindowSlot] materialize(\(spaceId)): window \(windowId) rebuilt live")
+            completion(true)
         }
     }
 

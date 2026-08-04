@@ -575,9 +575,13 @@ extension PhiChromiumCoordinator: PhiChromiumBridgeDelegate {
                     ?? LocalStore.defaultSpaceId
                 // Correct BEFORE creating the slot so it starts on the
                 // resolved Space and the window surfaces as the slot's
-                // active window below.
-                spaceId = SpaceManager.shared.spaceId(boundTo: profileId,
-                                                      preferring: initial)
+                // active window below. The mint variant also steers off a
+                // Space whose window is parked as a lazy-restore ghost —
+                // this is the one path that CREATES a window for the Space
+                // it answers, and a fresh window there would stand beside
+                // the parked record as a doubled Space.
+                spaceId = SpaceManager.shared.fallbackMintSpaceId(boundTo: profileId,
+                                                                  preferring: initial)
                 resolvedSlot = SpaceManager.shared.createSlot(initialSpaceId: spaceId)
             }
         } else {

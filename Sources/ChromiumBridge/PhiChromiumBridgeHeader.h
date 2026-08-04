@@ -1136,6 +1136,19 @@ typedef NS_ENUM(NSInteger, PhiWindowCloseState) {
                      profileId:(NSString *)profileId
                     completion:(void (^)(BOOL ok))completion;
 
+/// Drops the ghost window parked as `previousSessionWindowId` for `profileId`
+/// without rebuilding it — the session-side half of closing a Space whose
+/// window exists only as a ghost (the Space was deleted, or its window group
+/// was closed). The parked record is retired under a window-closed command
+/// and the session file is rewritten without it, so the window can neither be
+/// materialized later nor replayed as a loose window by the next unfiltered
+/// restore. `completion` runs synchronously before this returns: YES on
+/// success; NO when no such ghost is parked or the profile is not loaded, and
+/// then nothing changed. Main thread only.
+- (void)dropGhostWindow:(int32_t)previousSessionWindowId
+              profileId:(NSString *)profileId
+             completion:(void (^)(BOOL ok))completion;
+
 #pragma mark - Security / Certificate
 
 /// Get security state and certificate chain for a tab.

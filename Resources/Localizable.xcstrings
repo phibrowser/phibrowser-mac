@@ -72005,6 +72005,42 @@
         }
       }
     },
+    "spaces.spaceSwitch.reopenWindowFailed.dismissButton" : {
+      "comment" : "Dismiss button of the alert shown when a Space's saved window could not be brought back",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "OK"
+          }
+        }
+      }
+    },
+    "spaces.spaceSwitch.reopenWindowFailed.message" : {
+      "comment" : "Body of the alert shown when switching to a Space whose saved window could not be brought back",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "The window saved for this Space couldn’t be reopened. Try switching to it again."
+          }
+        }
+      }
+    },
+    "spaces.spaceSwitch.reopenWindowFailed.title" : {
+      "comment" : "Title of the alert shown when switching to a Space whose saved window could not be brought back",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Can’t reopen this Space’s window"
+          }
+        }
+      }
+    },
     "tabs.tabGroup.colorName.blue" : {
       "comment" : "Tab Groups - color name shown in auto-named group title and color picker",
       "extractionState" : "extracted_with_value",

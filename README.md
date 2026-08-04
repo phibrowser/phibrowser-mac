@@ -46,6 +46,10 @@ Contributions are welcome. Found a bug, have an idea, or want to add a feature? 
 
 We welcome bug reports, feature requests, documentation improvements, and pull requests.
 
+### Translations
+
+Phi ships in 8 languages, currently machine-seeded and waiting for native speakers to make them feel right. If you can read a JSON file, you can help: every user-visible string in the Phi product family lives in [phibrowser/phi-i18n](https://github.com/phibrowser/phi-i18n), each with context on where it appears and what it does. Translations merged there flow into the next Phi build automatically, credited to you. A web UI (Weblate) is on the way for contributors who would rather never see a git command.
+
 ## License
 
 Apache License 2.0. See [LICENSE](LICENSE).

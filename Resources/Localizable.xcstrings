@@ -66,7 +66,7 @@
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Chromiumエンジンバージョン %@"
+            "value" : "Chromiumエンジンバージョン%@"
           }
         },
         "ko" : {
@@ -186,7 +186,7 @@
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "バージョン %1$@ (%2$@)"
+            "value" : "バージョン%1$@ (%2$@)"
           }
         },
         "ko" : {
@@ -43337,7 +43337,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "批准智能体请求（10分钟或始终）后，相应授权会显示在这里。"
+            "value" : "批准智能体请求（10 分钟或始终）后，相应授权会显示在这里。"
           }
         },
         "zh-Hant" : {
@@ -45617,7 +45617,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "4小时"
+            "value" : "4 小时"
           }
         },
         "zh-Hant" : {
@@ -45737,7 +45737,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "1小时"
+            "value" : "1 小时"
           }
         },
         "zh-Hant" : {
@@ -68339,7 +68339,7 @@
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "シークレット %d"
+            "value" : "シークレット%d"
           }
         },
         "ko" : {

@@ -15,13 +15,18 @@ import XCTest
 /// The rule used to be inline guards nobody could test. These pin it down by
 /// table, so a fourth reason added later cannot quietly drop one of the three.
 ///
+/// A fourth reason — a record with nothing live in it — cannot be answered
+/// from these three, so it reaches the second table below as an argument; what
+/// decides it is pinned separately by `SlotSnapshotEntryPlanTests`.
+///
 /// What a table cannot reach, and what therefore rests on the comments at each
-/// site plus on-device evidence: that `persistSlotsSnapshot` consults this at
+/// site plus on-device evidence: that `persistSlotsSnapshot` consults these at
 /// all, that its arguments are bound to the right properties, that the reopen's
-/// completion clears the flag and writes in that order, and that the
-/// empty-snapshot backstop — which lives at the call site, not here — still
-/// holds. Building a `SpaceManager` to cover them is not something this suite
-/// can do; `SlotRestoreFrameTests` draws the same line.
+/// completion clears the flag and writes in that order, and — the one the
+/// second table is closest to but still does not reach — that `removeSlot`
+/// really pairs its ghost drop to the write's answer. Building a
+/// `SpaceManager` to cover them is not something this suite can do;
+/// `SlotRestoreFrameTests` draws the same line.
 final class SlotsSnapshotPersistGateTests: XCTestCase {
     /// A settled single-window session: nothing is tearing down, quitting, or
     /// being restored. Overriding one argument is how each case below names the
@@ -69,6 +74,54 @@ final class SlotsSnapshotPersistGateTests: XCTestCase {
         XCTAssertFalse(mayPersist(isTerminating: true, isAnySlotTearingDown: true))
         XCTAssertFalse(mayPersist(
             isTerminating: true, isSessionRestoreInFlight: true, isAnySlotTearingDown: true))
+    }
+
+    // MARK: - The answer the ghost drop pairs to
+
+    /// `removeSlot` retires a removed slot's parked ghosts from the chromium
+    /// store — the session file included — only when the write that took them
+    /// out of the snapshot actually landed. That answer is this function, and
+    /// it has to name all four refusals: the three above, plus a record with
+    /// nothing live in it (which only the built record can answer, so it
+    /// arrives as `hasLiveSlotEntry`).
+    ///
+    /// `removeSlot` used to keep its own copy of the list and held one and a
+    /// half of the four: a slot closing while a sibling drained its windows
+    /// dropped ghosts out of Chromium while the write meant to drop them from
+    /// the snapshot was refused, leaving entries the next reopen classified as
+    /// ghosts nothing could ever materialize.
+    private func writeLands(
+        isTerminating: Bool = false,
+        isSessionRestoreInFlight: Bool = false,
+        isAnySlotTearingDown: Bool = false,
+        hasLiveSlotEntry: Bool = true
+    ) -> Bool {
+        SpaceManager.slotsSnapshotWriteLands(
+            isTerminating: isTerminating,
+            isSessionRestoreInFlight: isSessionRestoreInFlight,
+            isAnySlotTearingDown: isAnySlotTearingDown,
+            hasLiveSlotEntry: hasLiveSlotEntry
+        )
+    }
+
+    func testAWriteOnASettledLayoutLands() {
+        // Load-bearing for the cases below, the same way the first case of the
+        // gate table is: a function that answered false to everything would
+        // satisfy all of them, and no ghost would ever leave the store.
+        XCTAssertTrue(writeLands())
+    }
+
+    func testARecordWithNothingLiveInItNeverLands() {
+        XCTAssertFalse(writeLands(hasLiveSlotEntry: false))
+    }
+
+    func testEveryReasonTheGateRefusesIsAReasonNothingLanded() {
+        XCTAssertFalse(writeLands(isTerminating: true))
+        XCTAssertFalse(writeLands(isSessionRestoreInFlight: true))
+        // The one the hand-copied guard was missing, and the one with no
+        // bound on how long it lasts: a cascade stalls on an unanswered
+        // beforeunload prompt for as long as the user ignores it.
+        XCTAssertFalse(writeLands(isAnySlotTearingDown: true))
     }
 
     // MARK: - The watchdog on the reopen freeze

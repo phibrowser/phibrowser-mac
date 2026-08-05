@@ -6,18 +6,27 @@
 import XCTest
 @testable import Phi
 
-/// The lazy-restore wiring hangs three decisions off pure rules, pinned here
+/// The lazy-restore wiring hangs its decisions off pure rules, pinned here
 /// the way the classifier and the snapshot writer already are:
 ///
 ///   * whether a reopen arms the eager filter at all (`armedEagerWindowIds`)
 ///     — the switch, the framework probe, and the "parking nothing buys
 ///     nothing" floor;
+///   * whether an activation arriving during that reopen is dropped
+///     (`reopenDropsActivations`) — which is what keeps the switch a real
+///     rollback rather than a change to the default reopen;
 ///   * which parked window an activation of a Space materializes
 ///     (`parkedGhostWindowId(in:forSpaceId:)`) — including the deterministic
 ///     pick on a corrupt duplicate;
+///   * what a failed materialization tells the user
+///     (`GhostMaterializeFailureCopy`) — the two outcomes promise opposite
+///     things about switching again;
 ///   * where the coordinator's fallback mint may land
 ///     (`steeredFallbackMintSpaceId`) — the one resolution that CREATES a
-///     window, which must not land on a Space whose window is parked.
+///     window, which must not land on a Space whose window is parked;
+///   * which arriving window the coordinator conceals
+///     (`concealsRestoredSibling`) — a rebase-fragile anchor whose drift
+///     makes a materialized window permanently invisible.
 ///
 /// What they cannot reach — that `activate`, `deleteSpace`, `changeProfile`
 /// and the coordinator feed these rules their real state — rests on the
@@ -73,6 +82,40 @@ final class LazySpaceRestoreWiringTests: XCTestCase {
         )
     }
 
+    // MARK: - Whether a reopen in flight drops activations
+
+    /// The drop exists because an armed reopen leaves part of the group in the
+    /// session file while it replays the rest: switching, spawning or
+    /// materializing into that races the replay and its per-profile session
+    /// commit. An UNARMED reopen replays what this app has always replayed, so
+    /// it has to keep meeting activations exactly as it always did — that is
+    /// what makes the switch a rollback instead of a change to the shipped
+    /// reopen path, which every Dock click takes.
+
+    func testActivationsSurviveAnOrdinaryReopen() {
+        // The switch off (and an older framework, and a run that classified
+        // nothing as parkable) all land here: a reopen is in flight and
+        // activations go through, byte for byte as before the feature.
+        XCTAssertFalse(SpaceManager.reopenDropsActivations(
+            isSessionRestoreInFlight: true, isLazyReopenArmed: false))
+    }
+
+    func testActivationsAreDroppedWhileAnArmedReopenReplays() {
+        XCTAssertTrue(SpaceManager.reopenDropsActivations(
+            isSessionRestoreInFlight: true, isLazyReopenArmed: true))
+    }
+
+    func testNothingIsDroppedOutsideAReopen() {
+        // Load-bearing: the latch outlives the reopen that set it (nothing
+        // clears it until the next one arms), so the in-flight flag is what
+        // bounds the drop. A rule that forgot it would drop every activation
+        // for the rest of the run.
+        XCTAssertFalse(SpaceManager.reopenDropsActivations(
+            isSessionRestoreInFlight: false, isLazyReopenArmed: true))
+        XCTAssertFalse(SpaceManager.reopenDropsActivations(
+            isSessionRestoreInFlight: false, isLazyReopenArmed: false))
+    }
+
     // MARK: - Which parked window an activation materializes
 
     func testNoParkedWindowMeansNoMaterialization() {
@@ -101,6 +144,52 @@ final class LazySpaceRestoreWiringTests: XCTestCase {
                 forSpaceId: "space-b"),
             55
         )
+    }
+
+    // MARK: - What a failed materialization tells the user
+
+    /// The two outcomes differ in the one way the user acts on: whether the
+    /// parked record survived. Kept, switching again retries the same window;
+    /// dropped, switching again opens an empty Space. One copy for both made
+    /// the second case a lie — it told the user to try again, and trying
+    /// again silently replaced their saved tabs with a blank window.
+
+    private static func copy(
+        _ outcome: SpaceManager.GhostMaterializeFailure
+    ) -> SpaceManager.GhostMaterializeFailureAlertCopy {
+        SpaceManager.GhostMaterializeFailureCopy.alert(for: outcome)
+    }
+
+    func testEveryFailureHasCopy() {
+        // Over `allCases`, not a hand-written pair: a third outcome added
+        // later has to bring its copy with it rather than silently escaping.
+        for outcome in SpaceManager.GhostMaterializeFailure.allCases {
+            XCTAssertFalse(Self.copy(outcome).title.isEmpty, "Missing title for \(outcome)")
+            XCTAssertFalse(Self.copy(outcome).message.isEmpty, "Missing message for \(outcome)")
+            XCTAssertFalse(Self.copy(outcome).dismissButton.isEmpty,
+                           "Missing dismiss button for \(outcome)")
+        }
+    }
+
+    func testAKeptRecordInvitesAnotherAttempt() {
+        XCTAssertTrue(
+            Self.copy(.recordKept).message
+                .localizedCaseInsensitiveContains("try switching to it again"),
+            "A record that survived the failure is worth retrying, and the copy has to say so")
+    }
+
+    func testADroppedRecordSaysSwitchingAgainOpensAnEmptyWindow() {
+        // The specific promise that has to be there: not "try again", but
+        // what actually happens next.
+        XCTAssertTrue(
+            Self.copy(.recordDropped).message
+                .localizedCaseInsensitiveContains("empty window"),
+            "A dropped record cannot be retried — the copy has to name what a second switch does")
+    }
+
+    func testTheTwoOutcomesNeverReadAlike() {
+        XCTAssertNotEqual(Self.copy(.recordKept).message, Self.copy(.recordDropped).message)
+        XCTAssertNotEqual(Self.copy(.recordKept).title, Self.copy(.recordDropped).title)
     }
 
     // MARK: - Where the fallback mint may land
@@ -161,5 +250,52 @@ final class LazySpaceRestoreWiringTests: XCTestCase {
                 profileId: "p1"),
             "ghosted"
         )
+    }
+
+    // MARK: - Which arriving window the coordinator conceals
+
+    /// One of the rebase-fragile anchors this feature registers: concealment
+    /// is applied before the window controller exists and undone only by the
+    /// restore burst's reveal, so a window concealed by mistake is simply
+    /// never seen again.
+
+    func testARestoredSiblingSpaceIsConcealed() {
+        XCTAssertTrue(SpaceWindowSlot.concealsRestoredSibling(
+            isRestoredWindow: true,
+            slotActiveSpaceId: "landing",
+            windowSpaceId: "sibling"))
+    }
+
+    func testTheRestoredWindowTheSlotLandsOnIsNotConcealed() {
+        XCTAssertFalse(SpaceWindowSlot.concealsRestoredSibling(
+            isRestoredWindow: true,
+            slotActiveSpaceId: "landing",
+            windowSpaceId: "landing"))
+    }
+
+    func testAWindowThatDidNotComeBackThroughSessionRestoreIsNeverConcealed() {
+        // The half that matters for lazy restore: a materialized ghost
+        // arrives through the pending-spawn claim, into a slot still showing
+        // the Space being switched away from. Comparing Spaces alone would
+        // conceal the very window the user asked for.
+        XCTAssertFalse(SpaceWindowSlot.concealsRestoredSibling(
+            isRestoredWindow: false,
+            slotActiveSpaceId: "previous",
+            windowSpaceId: "materialized"))
+        XCTAssertFalse(SpaceWindowSlot.concealsRestoredSibling(
+            isRestoredWindow: false,
+            slotActiveSpaceId: nil,
+            windowSpaceId: "materialized"))
+    }
+
+    func testARestoredWindowIsConcealedWhenTheSlotHasNoLandingSpace() {
+        // Pinned because it is the case an extraction is most likely to
+        // "clean up" into the opposite answer: a slot whose entry named no
+        // active Space conceals its restored windows all the same, and the
+        // post-burst reconcile picks which one becomes visible.
+        XCTAssertTrue(SpaceWindowSlot.concealsRestoredSibling(
+            isRestoredWindow: true,
+            slotActiveSpaceId: nil,
+            windowSpaceId: "sibling"))
     }
 }

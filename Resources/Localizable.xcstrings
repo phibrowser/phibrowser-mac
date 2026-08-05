@@ -72006,7 +72006,7 @@
       }
     },
     "spaces.spaceSwitch.reopenWindowFailed.dismissButton" : {
-      "comment" : "Dismiss button of the alert shown when a Space's saved window could not be brought back",
+      "comment" : "Spaces - Dismiss button of the alert shown when a Space's saved window could not be brought back this time",
       "extractionState" : "extracted_with_value",
       "localizations" : {
         "en" : {
@@ -72018,7 +72018,7 @@
       }
     },
     "spaces.spaceSwitch.reopenWindowFailed.message" : {
-      "comment" : "Body of the alert shown when switching to a Space whose saved window could not be brought back",
+      "comment" : "Spaces - Body of the alert shown when a Space's saved window could not be brought back this time and switching again may still work",
       "extractionState" : "extracted_with_value",
       "localizations" : {
         "en" : {
@@ -72030,13 +72030,49 @@
       }
     },
     "spaces.spaceSwitch.reopenWindowFailed.title" : {
-      "comment" : "Title of the alert shown when switching to a Space whose saved window could not be brought back",
+      "comment" : "Spaces - Title of the alert shown when a Space's saved window could not be brought back this time",
       "extractionState" : "extracted_with_value",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "new",
             "value" : "Can’t reopen this Space’s window"
+          }
+        }
+      }
+    },
+    "spaces.spaceSwitch.savedWindowGone.dismissButton" : {
+      "comment" : "Spaces - Dismiss button of the alert shown when a Space's saved window turned out to be no longer available at all",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "OK"
+          }
+        }
+      }
+    },
+    "spaces.spaceSwitch.savedWindowGone.message" : {
+      "comment" : "Spaces - Body of the alert shown when a Space's saved window turned out to be no longer available at all, so switching again opens an empty window instead",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "The tabs saved for this Space are no longer available. Switching to it will open a new, empty window."
+          }
+        }
+      }
+    },
+    "spaces.spaceSwitch.savedWindowGone.title" : {
+      "comment" : "Spaces - Title of the alert shown when a Space's saved window turned out to be no longer available at all",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "This Space’s saved window is gone"
           }
         }
       }

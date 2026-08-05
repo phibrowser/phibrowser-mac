@@ -2404,6 +2404,14 @@ extension AppController {
         // per-profile commit (which would conclude the profile still has a
         // window and suppress its restore). The user can reissue once the
         // restored windows arrive.
+        //
+        // This gate reads the flag directly, so it applies to EVERY windowless
+        // reopen. The Space-switch gate next door
+        // (`SpaceManager.reopenDropsActivations`) additionally requires that
+        // the reopen armed the lazy filter. The asymmetry is deliberate and
+        // documented there: this one shipped before that feature, so leaving it
+        // unconditional is what keeps "the lazy switch off means today's
+        // behavior" true.
         if SpaceManager.shared.isSessionRestoreInFlight,
            let tag = (sender as? NSMenuItem)?.tag,
            Self.windowlessSpawnCommandTags.contains(tag) {

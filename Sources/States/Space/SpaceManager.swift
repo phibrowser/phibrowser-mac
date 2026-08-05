@@ -596,6 +596,27 @@ final class SpaceManager: ObservableObject {
     /// for exactly that reason.
     private(set) var isSessionRestoreInFlight = false
 
+    /// Whether the most recent reopen armed the eager filter — that is,
+    /// whether it parked any of its saved windows as ghosts instead of
+    /// replaying them. Written on every reopen from the one place that
+    /// decides it (`armLazyRestoreForReopen`, true and false alike) and never
+    /// cleared, which is why it is named for the LAST reopen rather than a
+    /// current one: what makes it mean "this reopen" is that its only reader
+    /// pairs it with `isSessionRestoreInFlight`, and that pairing is a rule
+    /// on the table (`reopenDropsActivations`) rather than an assumption.
+    /// Clearing it instead would buy a shorter-lived flag at the cost of a
+    /// second and third write point — the transaction end and the watchdog —
+    /// which is precisely the drift the single write point avoids.
+    ///
+    /// A latch rather than a live read of the switch: the switch is allowed
+    /// to be flipped mid-run, and both directions have to leave the reopen
+    /// already under way alone. A reopen that parked ghosts keeps the
+    /// behavior it armed for even if the switch goes off underneath it, and a
+    /// reopen that armed nothing must not acquire that behavior because the
+    /// switch came on halfway through — with the switch off, a reopen is
+    /// byte-for-byte what it was before the feature existed.
+    private(set) var lastReopenArmedLazyRestore = false
+
     /// One queued "reopen these tabs after the profile change lands" intent
     /// per Space, recorded by `changeProfile` before it closes the Space's
     /// windows. `handleSpacesUpdate` fires the respawn once the persisted
@@ -1599,8 +1620,13 @@ final class SpaceManager: ObservableObject {
     }
 
     /// Mac-side switch for the lazy Space reopen (standard defaults, off by
-    /// default). Gates ONLY whether the next windowless reopen computes and
-    /// sends an eager set: a ghost already parked stays materializable,
+    /// default). Gates whether the next windowless reopen computes and sends
+    /// an eager set — and, through the latch that reopen leaves behind
+    /// (`lastReopenArmedLazyRestore`), whether that reopen's replay also drops
+    /// activations while it runs (`reopenDropsActivations`). Those are the
+    /// two things it decides, and both are decided per reopen at its start.
+    ///
+    /// What it does NOT gate: a ghost already parked stays materializable,
     /// droppable, persisted and pinned for its whole life regardless, so
     /// flipping the switch off mid-run cannot strand records that already
     /// exist.
@@ -1644,6 +1670,34 @@ final class SpaceManager: ObservableObject {
         return classification.eagerWindowIds.sorted().map { NSNumber(value: $0) }
     }
 
+    /// Whether an activation arriving right now must be dropped instead of
+    /// switching, spawning or materializing: only while an ARMED reopen is
+    /// still replaying. Such a replay is rebuilding part of the group while
+    /// the rest sits parked in the session file, and every activation shape
+    /// collides with that — a switch and a spawn race the replay and its
+    /// per-profile session commit, and a materialization asks Chromium to
+    /// rebuild from a session file the replay is still reading. The restore's
+    /// own follow-ups run after the flag clears, and a dropped store
+    /// reconcile re-runs on the next store emission, so nothing is lost.
+    ///
+    /// `AppController`'s windowless-command drop gate closes the first of
+    /// those races for New Window / New Tab, and it does so for EVERY reopen,
+    /// not just an armed one. That asymmetry is deliberate, not an oversight
+    /// to harmonize away: that gate shipped before this feature, so leaving
+    /// it alone is what "the switch off means today's behavior" requires,
+    /// while this one is new and therefore has to be earned by arming.
+    ///
+    /// An unarmed reopen parks nothing, so its replay is the one this app has
+    /// always run and activations keep meeting it exactly as they always did.
+    /// That is what makes the switch a real rollback: off (or an older
+    /// framework, or a classification that parked nothing) is today's
+    /// behavior, here as everywhere else. Pure and static so the gate is
+    /// pinned by table.
+    static func reopenDropsActivations(isSessionRestoreInFlight: Bool,
+                                       isLazyReopenArmed: Bool) -> Bool {
+        isSessionRestoreInFlight && isLazyReopenArmed
+    }
+
     /// Classifies this reopen's snapshot and, when the reopen should be
     /// lazy, records the park set and returns the eager set for the bridge;
     /// nil keeps the legacy full restore. Must run AFTER `loadRestoreSnapshot`
@@ -1669,11 +1723,16 @@ final class SpaceManager: ObservableObject {
             liveSpaceIds: Set(spaces.map(\.spaceId)),
             agentSpaceIds: agentSpaceIds
         )
-        guard let eagerWindowIds = Self.armedEagerWindowIds(
+        let armed = Self.armedEagerWindowIds(
             featureEnabled: Self.isLazySpaceRestoreEnabled,
             bridgeSupportsLazyRestore: Self.bridgeSupportsLazyRestore(bridge),
             classification: classification
-        ) else { return nil }
+        )
+        // The single write point for the latch, on both answers: what the
+        // reopen sends over the bridge and what it tells `activate` for the
+        // rest of its replay are decided here, together, and cannot drift.
+        lastReopenArmedLazyRestore = armed != nil
+        guard let eagerWindowIds = armed else { return nil }
         parkedGhostSpaceIdsByWindowId = classification.ghostSpaceIdsByWindowId
         // Logged like the restore transitions: the park set decides what the
         // reopen deliberately does NOT bring back, which a log bundle must
@@ -1813,29 +1872,98 @@ final class SpaceManager: ObservableObject {
         return steered
     }
 
+    /// How a failed materialization left the parked record — the only thing
+    /// the user has to be told apart, because it decides what switching to
+    /// the Space again will do.
+    enum GhostMaterializeFailure: CaseIterable {
+        /// The attempt never got as far as Chromium's store: the Space's
+        /// profile did not resolve, or it failed to load. Both are transient,
+        /// the record is still parked, and the next switch retries it.
+        case recordKept
+        /// Chromium held no such ghost, so the record was stale and has been
+        /// dropped. Nothing can materialize now; the next switch opens the
+        /// Space as a fresh window.
+        case recordDropped
+    }
+
+    /// The three strings one failure alert shows. They are chosen together,
+    /// as one answer, because they are one surface: each outcome is its own
+    /// alert with its own localization keys, which is how the two sibling
+    /// Space refusals in this file (`deleteSpace`, `changeProfile`) are keyed
+    /// as well.
+    struct GhostMaterializeFailureAlertCopy {
+        let title: String
+        let message: String
+        let dismissButton: String
+    }
+
     /// D7: a failed materialization is the one lazy-restore state with UI.
-    /// Same presentation shape as the other Space-operation refusals here
-    /// (`deleteSpace`, `changeProfile`). The alert deliberately promises
-    /// nothing about recovery — a transient failure (profile load) keeps the
-    /// records and the next activation retries; a stale record was dropped
-    /// and the next activation opens the Space fresh.
-    fileprivate static func presentGhostMaterializeFailureAlert() {
+    /// The two outcomes get different copy because they promise opposite
+    /// things — telling a user to "try switching again" after the record was
+    /// dropped describes an action that will silently open an empty Space
+    /// instead of their tabs. Pure and static so the choice is pinned by
+    /// table, the way the repo's other error copy is.
+    enum GhostMaterializeFailureCopy {
+        static func alert(
+            for outcome: GhostMaterializeFailure
+        ) -> GhostMaterializeFailureAlertCopy {
+            switch outcome {
+            case .recordKept:
+                return GhostMaterializeFailureAlertCopy(
+                    title: retryableTitle,
+                    message: retryableMessage,
+                    dismissButton: retryableDismissButton)
+            case .recordDropped:
+                return GhostMaterializeFailureAlertCopy(
+                    title: recordGoneTitle,
+                    message: recordGoneMessage,
+                    dismissButton: recordGoneDismissButton)
+            }
+        }
+
+        private static let retryableTitle = NSLocalizedString("spaces.spaceSwitch.reopenWindowFailed.title", value: "Can’t reopen this Space’s window",
+            comment: "Spaces - Title of the alert shown when a Space's saved window could not be brought back this time"
+        )
+
+        private static let retryableMessage = NSLocalizedString("spaces.spaceSwitch.reopenWindowFailed.message", value: "The window saved for this Space couldn’t be reopened. Try switching to it again.",
+            comment: "Spaces - Body of the alert shown when a Space's saved window could not be brought back this time and switching again may still work"
+        )
+
+        private static let retryableDismissButton = NSLocalizedString("spaces.spaceSwitch.reopenWindowFailed.dismissButton", value: "OK",
+            comment: "Spaces - Dismiss button of the alert shown when a Space's saved window could not be brought back this time"
+        )
+
+        private static let recordGoneTitle = NSLocalizedString("spaces.spaceSwitch.savedWindowGone.title", value: "This Space’s saved window is gone",
+            comment: "Spaces - Title of the alert shown when a Space's saved window turned out to be no longer available at all"
+        )
+
+        private static let recordGoneMessage = NSLocalizedString("spaces.spaceSwitch.savedWindowGone.message", value: "The tabs saved for this Space are no longer available. Switching to it will open a new, empty window.",
+            comment: "Spaces - Body of the alert shown when a Space's saved window turned out to be no longer available at all, so switching again opens an empty window instead"
+        )
+
+        private static let recordGoneDismissButton = NSLocalizedString("spaces.spaceSwitch.savedWindowGone.dismissButton", value: "OK",
+            comment: "Spaces - Dismiss button of the alert shown when a Space's saved window turned out to be no longer available at all"
+        )
+    }
+
+    /// Presents the failure. Same presentation shape as the other
+    /// Space-operation refusals here (`deleteSpace`, `changeProfile`).
+    ///
+    /// Its one caller, `SpaceWindowSlot.failMaterialize`, reaches it from a
+    /// fresh turn of the runloop rather than straight out of a bridge
+    /// completion — a profile that was already loaded completes synchronously
+    /// inside Chromium's own call stack, where `runModal` would spin a nested
+    /// runloop in the middle of it. The hop lives there rather than here
+    /// because that caller also has to release the repeat gate AFTER the
+    /// modal returns, which it can only do around a synchronous call.
+    fileprivate static func presentGhostMaterializeFailureAlert(
+        _ outcome: GhostMaterializeFailure
+    ) {
+        let copy = GhostMaterializeFailureCopy.alert(for: outcome)
         let alert = NSAlert()
-        alert.messageText = NSLocalizedString(
-            "spaces.spaceSwitch.reopenWindowFailed.title",
-            value: "Can’t reopen this Space’s window",
-            comment: "Title of the alert shown when switching to a Space whose saved window could not be brought back"
-        )
-        alert.informativeText = NSLocalizedString(
-            "spaces.spaceSwitch.reopenWindowFailed.message",
-            value: "The window saved for this Space couldn’t be reopened. Try switching to it again.",
-            comment: "Body of the alert shown when switching to a Space whose saved window could not be brought back"
-        )
-        alert.addButton(withTitle: NSLocalizedString(
-            "spaces.spaceSwitch.reopenWindowFailed.dismissButton",
-            value: "OK",
-            comment: "Dismiss button of the alert shown when a Space's saved window could not be brought back"
-        ))
+        alert.messageText = copy.title
+        alert.informativeText = copy.message
+        alert.addButton(withTitle: copy.dismissButton)
         alert.runModal()
     }
 
@@ -1843,7 +1971,13 @@ final class SpaceManager: ObservableObject {
     /// `spaces` cache, falling back to a direct main-context fetch on the
     /// cold-launch path where the async publisher hasn't delivered yet (same
     /// assumption as `spaceId(boundTo:preferring:)`).
-    private func boundProfileId(forSpaceId spaceId: String) -> String? {
+    ///
+    /// The one resolution both halves of the ghost lifecycle use — the drop
+    /// and the materialization. They used to each have their own, and the
+    /// materialization's read the cache only: before the store converged it
+    /// refused a perfectly good record with "no bound profile" while the drop
+    /// path resolved the same Space fine.
+    fileprivate func boundProfileId(forSpaceId spaceId: String) -> String? {
         if let cached = spaces.first(where: { $0.spaceId == spaceId })?.profileId {
             return cached
         }
@@ -5538,38 +5672,43 @@ final class SpaceWindowSlot: ObservableObject {
         // and always run — they must, to keep the slot consistent. Re-activating
         // the current Space is a no-op and never gated.
         AppLogInfo("[SpaceWindowSlot] activate(\(spaceId)) from=\(activeSpaceId ?? "nil") userInitiated=\(userInitiated) animated=\(animated)")
-        // First row of the switch decision, ahead of every side effect: while
-        // a windowless reopen's replay is in flight, every activation is
-        // dropped — switching, spawning or materializing against a
-        // half-restored group would race the replay and its per-profile
-        // session commit (the same race AppController's windowless-command
-        // drop gate closes). The restore's own follow-ups run after the flag
-        // clears, and a dropped store reconcile re-runs on the next store
-        // emission, so nothing is lost — the log line is what makes the drop
-        // diagnosable.
-        if manager?.isSessionRestoreInFlight == true {
-            AppLogInfo("[SpaceWindowSlot] activate(\(spaceId)) dropped: session restore in flight")
-            onActivationFailed?()
-            return
-        }
         if userInitiated, spaceId != activeSpaceId, isSwitchAnimationInFlight {
             AppLogInfo("[SpaceWindowSlot] activate(\(spaceId)) dropped: switch animation in flight")
             onActivationFailed?()
             return
         }
-        // An explicit activation supersedes any earlier key-event adoption:
-        // from here on the active Space reflects a deliberate switch, so the
-        // window-driven cascade must not "undo" it (see
-        // `activeSpaceAdoptedFromKeyEvent`).
-        activeSpaceAdoptedFromKeyEvent = false
-        isPerformingActivate = true
-        defer { isPerformingActivate = false }
         guard let manager,
               manager.spaces.contains(where: { $0.spaceId == spaceId }) else {
             AppLogWarn("[SpaceWindowSlot] activate ignored: unknown spaceId \(spaceId)")
             onActivationFailed?()
             return
         }
+        // The reopen row of the switch decision — behind the validity guard
+        // above, so a Space this side does not know is still answered as
+        // unknown rather than as "dropped", and ahead of every side effect
+        // below, so a dropped activation leaves nothing half-done. While an ARMED
+        // windowless reopen's replay is in flight, every activation is
+        // dropped; see `reopenDropsActivations` for why, for why an unarmed
+        // reopen (the switch off, an older framework, a run that parked
+        // nothing) keeps meeting activations exactly as it always did, and
+        // for why `AppController`'s neighbouring gate is deliberately not
+        // conditioned the same way. The log line makes the drop diagnosable.
+        if SpaceManager.reopenDropsActivations(
+            isSessionRestoreInFlight: manager.isSessionRestoreInFlight,
+            isLazyReopenArmed: manager.lastReopenArmedLazyRestore) {
+            AppLogInfo("[SpaceWindowSlot] activate(\(spaceId)) dropped: lazy session restore in flight")
+            onActivationFailed?()
+            return
+        }
+        // An explicit activation supersedes any earlier key-event adoption:
+        // from here on the active Space reflects a deliberate switch, so the
+        // window-driven cascade must not "undo" it (see
+        // `activeSpaceAdoptedFromKeyEvent`). Below the guard above because an
+        // activation that names a Space this side does not know changes no
+        // active Space, and so supersedes nothing.
+        activeSpaceAdoptedFromKeyEvent = false
+        isPerformingActivate = true
+        defer { isPerformingActivate = false }
 
         // Agent Space pre-hook. An agent Space's hidden window is spawned into a
         // single slot; if the user switches to it from a DIFFERENT slot, adopt
@@ -6140,12 +6279,13 @@ final class SpaceWindowSlot: ObservableObject {
     /// on a materialization that can never succeed, where dropping it lets
     /// the next activation open the Space fresh. A profile that fails to
     /// LOAD keeps every record — that failure is transient and the ghost is
-    /// still real.
+    /// still real. Which of the two happened is what the failure alert says
+    /// (`GhostMaterializeFailure`).
     ///
     /// `completion` runs with the outcome once the attempt settles (the
     /// profile load may be asynchronous); on failure nothing is on screen,
-    /// the alert has been presented, and — load failures aside — the stale
-    /// records are gone.
+    /// an alert is on its way, and — load failures aside — the stale records
+    /// are gone.
     func materializeParkedGhost(windowId: Int, spaceId: String,
                                 completion: @escaping (Bool) -> Void) {
         guard let manager else {
@@ -6165,18 +6305,22 @@ final class SpaceWindowSlot: ObservableObject {
                   .materializeGhostWindow(_:profileId:completion:))) else {
             // Unreachable in practice — records only exist when arming
             // probed the selector family — but a stale build combination
-            // must fail loudly rather than trap.
+            // must fail loudly rather than trap. No alert: this one is a
+            // build accident, not a state the user can act on.
             AppLogWarn("[SpaceWindowSlot] materialize(\(spaceId)): bridge unavailable or too old")
             completion(false)
             return
         }
+        // Claimed here rather than after the profile resolves, so that EVERY
+        // path from this point on — including the failing ones — holds the
+        // repeat gate until its alert has been dismissed (`failMaterialize`).
+        pendingSpawnSpaceIds.insert(spaceId)
         // The ghost was parked under the profile its Space is bound to —
         // an unresolvable binding means the record cannot be honored.
-        guard let profileId = manager.spaces.first(where: { $0.spaceId == spaceId })?.profileId,
+        guard let profileId = manager.boundProfileId(forSpaceId: spaceId),
               !profileId.isEmpty else {
             AppLogWarn("[SpaceWindowSlot] materialize(\(spaceId)): no bound profile")
-            SpaceManager.presentGhostMaterializeFailureAlert()
-            completion(false)
+            failMaterialize(.recordKept, spaceId: spaceId, completion: completion)
             return
         }
         // Captured before the (possibly asynchronous) profile load, exactly
@@ -6187,7 +6331,6 @@ final class SpaceWindowSlot: ObservableObject {
         let inheritedFrame = resolveInheritedFrame(from: previous)
         let inheritedSidebarWidth = previous?.browserState.sidebarWidth ?? 0
         let inheritedSidebarCollapsed = previous?.browserState.sidebarCollapsed
-        pendingSpawnSpaceIds.insert(spaceId)
         bridge.ensureProfileLoaded(profileId) { [weak self, weak manager] success in
             guard let self, let manager else {
                 completion(false)
@@ -6196,9 +6339,7 @@ final class SpaceWindowSlot: ObservableObject {
             guard success else {
                 // Transient: the records stay, a later attempt may succeed.
                 AppLogWarn("[SpaceWindowSlot] materialize(\(spaceId)): ensureProfileLoaded failed for \(profileId)")
-                self.pendingSpawnSpaceIds.remove(spaceId)
-                SpaceManager.presentGhostMaterializeFailureAlert()
-                completion(false)
+                self.failMaterialize(.recordKept, spaceId: spaceId, completion: completion)
                 return
             }
             manager.consumeParkedGhost(windowId: windowId)
@@ -6221,15 +6362,50 @@ final class SpaceWindowSlot: ObservableObject {
                 materialized = ok
             }
             manager.currentSpawn = nil
-            self.pendingSpawnSpaceIds.remove(spaceId)
             guard materialized else {
                 AppLogError("[SpaceWindowSlot] materialize(\(spaceId)): chromium held no ghost \(windowId) — stale record dropped")
-                SpaceManager.presentGhostMaterializeFailureAlert()
-                completion(false)
+                self.failMaterialize(.recordDropped, spaceId: spaceId, completion: completion)
                 return
             }
+            self.pendingSpawnSpaceIds.remove(spaceId)
             AppLogInfo("[SpaceWindowSlot] materialize(\(spaceId)): window \(windowId) rebuilt live")
             completion(true)
+        }
+    }
+
+    /// Ends a failed materialization: reports it to the caller now, and puts
+    /// the alert up on the next turn of the runloop.
+    ///
+    /// Both halves of that are load-bearing. The alert is deferred because a
+    /// profile that was already loaded completes `ensureProfileLoaded`
+    /// synchronously from inside Chromium's own callback stack, where
+    /// `runModal` would spin a nested runloop in the middle of it. And the
+    /// repeat gate is held across the deferral AND the alert, because until
+    /// the user has seen and dismissed it the failure is not yet something
+    /// they can act on: a second activation of the same Space arriving in
+    /// that span used to open a window beside the alert — and on the
+    /// dropped-record branch an EMPTY one, since the record that routes an
+    /// activation to a materialization is exactly what has just gone.
+    ///
+    /// The alert is not conditional on the slot surviving the hop: what it
+    /// reports is about the Space and its saved tabs, which outlive this
+    /// slot, and the dropped-record branch is precisely where staying silent
+    /// would leave the user with no account of where their tabs went.
+    ///
+    /// Residue, accepted: the gate is released by Space id, so an account
+    /// transition that re-keys the pending-spawn claim underneath a modal
+    /// (`prepareAccountTransitionPendingWindow`) leaves the destination Space
+    /// claimed until a window registers for it. Every asynchronous spawn in
+    /// this class releases by id across its own await and carries the same
+    /// residue; what is new here is only how long the window stays open,
+    /// since a modal is bounded by the user rather than by a profile load.
+    private func failMaterialize(_ outcome: SpaceManager.GhostMaterializeFailure,
+                                 spaceId: String,
+                                 completion: @escaping (Bool) -> Void) {
+        completion(false)
+        DispatchQueue.main.async { [weak self] in
+            SpaceManager.presentGhostMaterializeFailureAlert(outcome)
+            self?.pendingSpawnSpaceIds.remove(spaceId)
         }
     }
 
@@ -7777,6 +7953,35 @@ final class SpaceWindowSlot: ObservableObject {
     /// `registerWindow`).
     func markRestoredSiblingForConcealment(spaceId: String) {
         pendingRestoreConcealSpaceIds.insert(spaceId)
+    }
+
+    /// Which arriving window the coordinator marks: a window that came back
+    /// through Chromium's session restore and is NOT the Space its slot is
+    /// landing on. Every other window surfaces normally.
+    ///
+    /// `isRestoredWindow` is the load-bearing half, and the reason this is a
+    /// rule rather than one more condition inline: a materialized ghost
+    /// arrives through the pending-spawn claim, not the restore claim, and
+    /// its slot is very often still showing the Space the user is switching
+    /// AWAY from — so a predicate that only compared Spaces would conceal the
+    /// window the user just asked for, and lose it (the restore-burst reveal
+    /// that undoes concealment never runs for it).
+    ///
+    /// A slot with no landing Space still conceals: nil is the state of a
+    /// slot whose entry named no active Space, and a restored sibling has no
+    /// claim to be the one on screen just because nothing else has claimed it
+    /// yet — the reconcile picks the visible window once the burst settles.
+    ///
+    /// Whether the window has a slot at all stays at the call site: an
+    /// unslotted window (Incognito, shadow) is outside the whole question,
+    /// not an answer of "do not conceal". Pure and static so the rule is
+    /// pinned by table: it is one of the places a Chromium rebase is most
+    /// likely to shift underneath this feature, and drift here shows up as a
+    /// materialized window that is simply never visible.
+    static func concealsRestoredSibling(isRestoredWindow: Bool,
+                                        slotActiveSpaceId: String?,
+                                        windowSpaceId: String) -> Bool {
+        isRestoredWindow && slotActiveSpaceId != windowSpaceId
     }
 
     /// Applies the conceal to a just-registered restored sibling: invisible

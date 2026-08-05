@@ -601,8 +601,14 @@ extension PhiChromiumCoordinator: PhiChromiumBridgeDelegate {
             // tab-group enrollment (a transparent window selected into the
             // shared group frame blanks the visible active window). Revealed
             // by the slot's visibility reconcile once the burst settles.
-            if isRestoredWindow, let resolvedSlot,
-               resolvedSlot.activeSpaceId != spaceId {
+            //
+            // Which windows qualify is `SpaceWindowSlot.concealsRestoredSibling`;
+            // having a slot at all is the call site's question and stays here.
+            if let resolvedSlot,
+               SpaceWindowSlot.concealsRestoredSibling(
+                   isRestoredWindow: isRestoredWindow,
+                   slotActiveSpaceId: resolvedSlot.activeSpaceId,
+                   windowSpaceId: spaceId) {
                 resolvedSlot.markRestoredSiblingForConcealment(spaceId: spaceId)
             }
             let mainWindowController = MainBrowserWindowController(

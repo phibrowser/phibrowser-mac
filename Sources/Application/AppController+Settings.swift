@@ -29,7 +29,6 @@ extension AppController {
          ProfilesSettingViewController(),
          SpacesSettingViewController(),
          AISettingsViewController(),
-         IMChannelsSettingViewController(),
          ShortcutsSettingViewController(),
         ]
         settingsPanesIncludeDeveloper = PhiPreferences.AgentSpaces.developerModeEnabled

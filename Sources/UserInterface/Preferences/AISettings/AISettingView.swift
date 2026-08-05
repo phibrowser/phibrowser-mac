@@ -51,6 +51,7 @@ struct AISettingView: View {
                     connectorViewModel: connectorViewModel,
                     enabled: aiFeaturesAvailable
                 )
+                PhiLinkSettingsSectionView()
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.vertical, 36)

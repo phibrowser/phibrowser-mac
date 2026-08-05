@@ -7,45 +7,43 @@ import AppKit
 import SwiftUI
 import CoreImage.CIFilterBuiltins
 
-struct IMChannelsSettingView: View {
+struct PhiLinkSettingsSectionView: View {
     @State private var vm = IMChannelsViewModel()
     @State private var isGuest = ApplicationState.shared.isGuest
 
     var body: some View {
-        ScrollView(.vertical) {
-            VStack(alignment: .leading, spacing: 24) {
-                IMSectionHeader(
-                    title: NSLocalizedString("settings.phiLink.sectionTitle", value: "Telegram", comment: "Phi Link - Section title"),
-                    subtitle: String(
-                        format: NSLocalizedString("settings.phiLink.sectionDescription", value: "Using Telegram to send and receive messages with %@",
-                            comment: "Phi Link - Section subtitle with agent name"
-                        ),
-                        vm.agentName
-                    )
+        VStack(alignment: .leading, spacing: 24) {
+            IMSectionHeader(
+                title: NSLocalizedString(
+                    "settings.ai.phiLink.sectionTitle",
+                    value: "Phi Link",
+                    comment: "Phi & AI settings - Section title for Phi Link messaging options"
+                ),
+                subtitle: String(
+                    format: NSLocalizedString("settings.phiLink.sectionDescription", value: "Using Telegram to send and receive messages with %@",
+                        comment: "Phi Link - Section subtitle with agent name"
+                    ),
+                    vm.agentName
                 )
+            )
 
-                if isGuest {
-                    IMContainerView {
-                        LoginRequiredPresentationView()
-                    }
-                } else {
-                    if !vm.topNoticeMessages.isEmpty {
-                        VStack(spacing: 10) {
-                            ForEach(vm.topNoticeMessages, id: \.self) { message in
-                                IMNoticeBanner(message: message)
-                            }
+            if isGuest {
+                IMContainerView {
+                    LoginRequiredPresentationView()
+                }
+            } else {
+                if !vm.topNoticeMessages.isEmpty {
+                    VStack(spacing: 10) {
+                        ForEach(vm.topNoticeMessages, id: \.self) { message in
+                            IMNoticeBanner(message: message)
                         }
                     }
-
-                    TelegramChannelsSection(vm: vm)
                 }
+
+                TelegramChannelsSection(vm: vm)
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.vertical, 36)
-            .padding(.horizontal, 36)
         }
-        .themedBackground(PhiPreferences.fixedWindowBackground)
-        .frame(width: 680, height: 561)
+        .frame(maxWidth: .infinity, alignment: .leading)
         .task(id: isGuest) {
             if isGuest {
                 await vm.stopPolling()
@@ -70,13 +68,13 @@ private struct IMSectionHeader: View {
     var subtitle: String? = nil
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: 4) {
             Text(title)
-                .font(.system(size: 13, weight: .semibold))
+                .font(.system(size: 12))
                 .themedForeground(.textSecondary)
             if let subtitle {
                 Text(subtitle)
-                    .font(.system(size: 12))
+                    .font(.system(size: 11))
                     .themedForeground(.textTertiary)
             }
         }
@@ -932,5 +930,11 @@ private func openBotFather() {
 }
 
 #Preview {
-    IMChannelsSettingView()
+    ScrollView(.vertical) {
+        PhiLinkSettingsSectionView()
+            .padding(.vertical, 36)
+            .padding(.horizontal, 36)
+    }
+    .themedBackground(PhiPreferences.fixedWindowBackground)
+    .frame(width: 680, height: 561)
 }

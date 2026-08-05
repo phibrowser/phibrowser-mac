@@ -210,8 +210,6 @@
 		897C09F42F6BEDA000E5CA9B /* IMChannelsViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 897C09F22F6BEDA000E5CA9B /* IMChannelsViewModel.swift */; };
 		897C09F52F6BEDA000E5CA9B /* IMChannelAPIClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 897C09EE2F6BEDA000E5CA9B /* IMChannelAPIClient.swift */; };
 		897C09F62F6BEDA000E5CA9B /* IMChannelsSettingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 897C09F02F6BEDA000E5CA9B /* IMChannelsSettingView.swift */; };
-		897C09F72F6BEDA000E5CA9B /* IMChannelsSettingHostingViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 897C09EF2F6BEDA000E5CA9B /* IMChannelsSettingHostingViewController.swift */; };
-		897C09F82F6BEDA000E5CA9B /* IMChannelsSettingViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 897C09F12F6BEDA000E5CA9B /* IMChannelsSettingViewController.swift */; };
 		8E0A10052FEA000000000001 /* OverlayToastModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8E0A10012FEA000000000001 /* OverlayToastModels.swift */; };
 		8E0A10062FEA000000000001 /* OverlayToastCenter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8E0A10022FEA000000000001 /* OverlayToastCenter.swift */; };
 		8E0A10072FEA000000000001 /* OverlayToastView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8E0A10032FEA000000000001 /* OverlayToastView.swift */; };
@@ -817,9 +815,7 @@
 		7C0A10013041000100000001 /* SentinelTelemetryConsentSync.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SentinelTelemetryConsentSync.swift; sourceTree = "<group>"; };
 		8417101CC460A0D12720DE81 /* Cocoa.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Cocoa.framework; path = Platforms/MacOSX.platform/Developer/SDKs/MacOSX15.0.sdk/System/Library/Frameworks/Cocoa.framework; sourceTree = DEVELOPER_DIR; };
 		897C09EE2F6BEDA000E5CA9B /* IMChannelAPIClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IMChannelAPIClient.swift; sourceTree = "<group>"; };
-		897C09EF2F6BEDA000E5CA9B /* IMChannelsSettingHostingViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IMChannelsSettingHostingViewController.swift; sourceTree = "<group>"; };
 		897C09F02F6BEDA000E5CA9B /* IMChannelsSettingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IMChannelsSettingView.swift; sourceTree = "<group>"; };
-		897C09F12F6BEDA000E5CA9B /* IMChannelsSettingViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IMChannelsSettingViewController.swift; sourceTree = "<group>"; };
 		897C09F22F6BEDA000E5CA9B /* IMChannelsViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IMChannelsViewModel.swift; sourceTree = "<group>"; };
 		8E0A10012FEA000000000001 /* OverlayToastModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OverlayToastModels.swift; sourceTree = "<group>"; };
 		8E0A10022FEA000000000001 /* OverlayToastCenter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OverlayToastCenter.swift; sourceTree = "<group>"; };
@@ -1603,9 +1599,7 @@
 			isa = PBXGroup;
 			children = (
 				897C09EE2F6BEDA000E5CA9B /* IMChannelAPIClient.swift */,
-				897C09EF2F6BEDA000E5CA9B /* IMChannelsSettingHostingViewController.swift */,
 				897C09F02F6BEDA000E5CA9B /* IMChannelsSettingView.swift */,
-				897C09F12F6BEDA000E5CA9B /* IMChannelsSettingViewController.swift */,
 				897C09F22F6BEDA000E5CA9B /* IMChannelsViewModel.swift */,
 			);
 			path = IMChannels;
@@ -2821,8 +2815,6 @@
 				897C09F42F6BEDA000E5CA9B /* IMChannelsViewModel.swift in Sources */,
 				897C09F52F6BEDA000E5CA9B /* IMChannelAPIClient.swift in Sources */,
 				897C09F62F6BEDA000E5CA9B /* IMChannelsSettingView.swift in Sources */,
-				897C09F72F6BEDA000E5CA9B /* IMChannelsSettingHostingViewController.swift in Sources */,
-				897C09F82F6BEDA000E5CA9B /* IMChannelsSettingViewController.swift in Sources */,
 				CC8B74C02EA8BF490075F58C /* CrashSample.swift in Sources */,
 				37289F122EFE602F0003624E /* EventTracker.swift in Sources */,
 				37289F132EFE602F0003624E /* ExperimentConfigProvider.swift in Sources */,

@@ -17,7 +17,7 @@ extension AppController {
             case .general:
                 showSettings(pane: .general)
             case .imchannels:
-                showSettings(pane: .imchannels)
+                showSettings(pane: .aisettings)
             case .shortcus:
                 showSettings(pane: .shortcuts)
             case .profiles:

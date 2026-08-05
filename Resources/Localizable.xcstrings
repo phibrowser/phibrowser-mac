@@ -39988,6 +39988,18 @@
         }
       }
     },
+    "settings.ai.phiLink.sectionTitle" : {
+      "comment" : "Phi & AI settings - Section title for Phi Link messaging options",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Phi Link"
+          }
+        }
+      }
+    },
     "settings.ai.phiSentinel.sectionTitle" : {
       "comment" : "AI settings - Section title for Phi Sentinel background helper",
       "extractionState" : "extracted_with_value",

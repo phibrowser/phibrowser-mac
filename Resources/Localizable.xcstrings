@@ -44,6 +44,54 @@
             "state" : "new",
             "value" : "Chromium"
           }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Chromium"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Chromium"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Chromium"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Chromium"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Chromium"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Chromium"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Chromium"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Chromium"
+          }
         }
       }
     },
@@ -55,6 +103,54 @@
           "stringUnit" : {
             "state" : "new",
             "value" : "open source software"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "开源软件"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "開放原始碼軟體"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "オープンソースソフトウェア"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "오픈 소스 소프트웨어"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "logiciels open source"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Open-Source-Software"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "opensourcesoftware"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "software de código abierto"
           }
         }
       }
@@ -68,6 +164,54 @@
             "state" : "new",
             "value" : "open source software"
           }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "开源软件"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "開放原始碼軟體"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "オープンソースソフトウェア"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "오픈 소스 소프트웨어"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "logiciels open source"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Open-Source-Software"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "opensourcesoftware"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "software de código abierto"
+          }
         }
       }
     },
@@ -79,6 +223,54 @@
           "stringUnit" : {
             "state" : "new",
             "value" : "Phi is made possible by the %1$@ open source project, Chromium's %2$@, as well as other %3$@."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Phi 的实现离不开 %1$@ 开源项目、Chromium 的 %2$@，以及其他 %3$@。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Phi 的誕生要歸功於 %1$@ 開放原始碼專案、Chromium 的 %2$@，以及其他 %3$@。"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Phiは、オープンソースプロジェクトの%1$@、Chromiumの%2$@、そしてその他の%3$@によって実現しています。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Phi는 %1$@ 오픈 소스 프로젝트와 Chromium의 %2$@, 그리고 기타 %3$@ 덕분에 만들어졌어요."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Phi est rendu possible par le projet open source %1$@, les %2$@ de Chromium, ainsi que d'autres %3$@."
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Phi wird ermöglicht durch das Open-Source-Projekt %1$@, die %2$@ von Chromium sowie weitere %3$@."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Phi is mogelijk gemaakt door het opensourceproject %1$@, de %2$@ van Chromium en andere %3$@."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Phi es posible gracias al proyecto de código abierto %1$@, al %2$@ de Chromium y a otro %3$@."
           }
         }
       }
@@ -272,6 +464,54 @@
             "state" : "new",
             "value" : "Cancel"
           }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "取消"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "取消"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "キャンセル"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "취소"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Annuler"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Abbrechen"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Annuleer"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cancelar"
+          }
         }
       }
     },
@@ -283,6 +523,54 @@
           "stringUnit" : {
             "state" : "new",
             "value" : "Close"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "关闭"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "關閉"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "閉じる"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "닫기"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fermer"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Schließen"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sluit"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cerrar"
           }
         }
       }
@@ -296,6 +584,54 @@
             "state" : "new",
             "value" : "Cancel"
           }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "取消"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "取消"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "キャンセル"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "취소"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Annuler"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Abbrechen"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Annuleer"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cancelar"
+          }
         }
       }
     },
@@ -307,6 +643,54 @@
           "stringUnit" : {
             "state" : "new",
             "value" : "We'll send a verification code to %@. Once verified, we'll prepare a copy of the personal data associated with your Phi Browser account and email you a download link. The link will be available for seven days."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "我们将向 %@ 发送验证码。验证通过后，我们会准备一份与你的 Phi Browser 账号关联的个人数据副本，并通过电子邮件向你发送下载链接。该链接有效期为 7 天。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "我們會傳送驗證碼至 %@。驗證完成後，我們會準備一份與你的 Phi Browser 帳號相關的個人資料副本，並以電子郵件寄送下載連結給你。連結的有效期限為七天。"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@に確認コードを送信します。確認が完了すると、Phi Browserアカウントに関連付けられた個人データのコピーを準備し、ダウンロードリンクをメールでお送りします。リンクの有効期間は7日間です。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@(으)로 인증 코드를 전송해요. 인증이 완료되면 Phi Browser 계정과 연결된 개인 데이터의 사본을 준비해 다운로드 링크를 이메일로 보내 드려요. 링크는 7일 동안 유효해요."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nous enverrons un code de vérification à %@. Une fois le code vérifié, nous préparerons une copie des données personnelles associées à votre compte Phi Browser et vous enverrons un lien de téléchargement par e-mail. Le lien sera disponible pendant sept jours."
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wir senden einen Bestätigungscode an %@. Nach der Bestätigung erstellen wir eine Kopie der mit deinem Phi Browser-Konto verknüpften personenbezogenen Daten und senden dir per E-Mail einen Download-Link. Der Link ist sieben Tage lang verfügbar."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "We sturen een verificatiecode naar %@. Na verificatie stellen we een kopie samen van de persoonsgegevens die aan je Phi Browser-account zijn gekoppeld en e-mailen we je een downloadlink. De link blijft zeven dagen beschikbaar."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Te enviaremos un código de verificación a %@. Una vez verificado, prepararemos una copia de los datos personales asociados a tu cuenta de Phi Browser y te enviaremos un enlace de descarga por correo electrónico. El enlace estará disponible durante siete días."
           }
         }
       }
@@ -320,6 +704,54 @@
             "state" : "new",
             "value" : "Send Code"
           }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "发送验证码"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "傳送驗證碼"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "コードを送信"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "코드 전송"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Envoyer le code"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Code senden"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Verstuur code"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Enviar código"
+          }
         }
       }
     },
@@ -331,6 +763,54 @@
           "stringUnit" : {
             "state" : "new",
             "value" : "Export your account data?"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "要导出你的账号数据吗？"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "要匯出你的帳號資料嗎？"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "アカウントデータをエクスポートしますか？"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "계정 데이터를 내보낼까요?"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Exporter les données de votre compte ?"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Deine Kontodaten exportieren?"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Je accountgegevens exporteren?"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "¿Exportar los datos de tu cuenta?"
           }
         }
       }
@@ -344,6 +824,54 @@
             "state" : "new",
             "value" : "Try Again"
           }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "重试"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "再試一次"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "再試行"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "다시 시도"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Réessayer"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Erneut versuchen"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Probeer opnieuw"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Volver a intentar"
+          }
         }
       }
     },
@@ -355,6 +883,54 @@
           "stringUnit" : {
             "state" : "new",
             "value" : "Something went wrong. Please try again later."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "出了点问题。请稍后再试。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "發生問題，請稍後再試。"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "問題が発生しました。しばらくしてからもう一度お試しください。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "문제가 발생했어요. 잠시 후 다시 시도해 주세요."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Un problème est survenu. Veuillez réessayer plus tard."
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Etwas ist schiefgelaufen. Bitte versuche es später erneut."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Er is iets misgegaan. Probeer het later opnieuw."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Algo salió mal. Inténtalo de nuevo más tarde."
           }
         }
       }
@@ -368,6 +944,54 @@
             "state" : "new",
             "value" : "Couldn't reach the data export service. Check your internet connection and try again."
           }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "无法连接数据导出服务。请检查网络连接后重试。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "無法連線至資料匯出服務。請檢查網路連線後再試一次。"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "データエクスポートサービスに接続できませんでした。インターネット接続を確認して、もう一度お試しください。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "데이터 내보내기 서비스에 연결할 수 없어요. 인터넷 연결을 확인하고 다시 시도해 주세요."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Impossible de joindre le service d'exportation de données. Vérifiez votre connexion Internet et réessayez."
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Der Datenexport-Dienst ist nicht erreichbar. Überprüfe deine Internetverbindung und versuche es erneut."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kan de gegevensexportservice niet bereiken. Controleer je internetverbinding en probeer het opnieuw."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No se pudo conectar con el servicio de exportación de datos. Revisa tu conexión a internet y vuelve a intentarlo."
+          }
         }
       }
     },
@@ -379,6 +1003,54 @@
           "stringUnit" : {
             "state" : "new",
             "value" : "That export is no longer available. Try again to request a new one."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "该导出已不再可用。请再试一次以请求新的导出。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "這份匯出已無法使用。請再試一次以申請新的匯出。"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "このエクスポートは利用できなくなりました。もう一度新しいエクスポートをリクエストしてください。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "해당 내보내기는 더 이상 사용할 수 없어요. 다시 시도해 새 내보내기를 요청해 주세요."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cette exportation n'est plus disponible. Réessayez pour en demander une nouvelle."
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dieser Export ist nicht mehr verfügbar. Versuche es erneut, um einen neuen anzufordern."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Die export is niet meer beschikbaar. Probeer het opnieuw om een nieuwe aan te vragen."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Esa exportación ya no está disponible. Vuelve a intentarlo para solicitar una nueva."
           }
         }
       }
@@ -392,6 +1064,54 @@
             "state" : "new",
             "value" : "The data export service is temporarily unavailable. Please try again later."
           }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "数据导出服务暂时不可用。请稍后再试。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "資料匯出服務暫時無法使用。請稍後再試。"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "データエクスポートサービスは一時的に利用できません。しばらくしてからもう一度お試しください。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "데이터 내보내기 서비스를 일시적으로 사용할 수 없어요. 나중에 다시 시도해 주세요."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Le service d'exportation de données est temporairement indisponible. Veuillez réessayer plus tard."
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Der Datenexport-Dienst ist vorübergehend nicht verfügbar. Bitte versuche es später erneut."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "De gegevensexportservice is tijdelijk niet beschikbaar. Probeer het later opnieuw."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "El servicio de exportación de datos no está disponible por el momento. Vuelve a intentarlo más tarde."
+          }
         }
       }
     },
@@ -403,6 +1123,54 @@
           "stringUnit" : {
             "state" : "new",
             "value" : "Your session has expired. Please sign in again, then restart the export."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "你的会话已过期。请重新登录，然后重新开始导出。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "你的工作階段已過期。請重新登入，然後重新開始匯出。"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "セッションの有効期限が切れました。もう一度ログインしてから、エクスポートをやり直してください。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "세션이 만료됐어요. 다시 로그인한 다음 내보내기를 다시 시작해 주세요."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Votre session a expiré. Veuillez vous reconnecter, puis relancer l'exportation."
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Deine Sitzung ist abgelaufen. Bitte melde dich erneut an und starte den Export dann neu."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Je sessie is verlopen. Log opnieuw in en start daarna de export opnieuw."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tu sesión expiró. Inicia sesión de nuevo y reinicia la exportación."
           }
         }
       }
@@ -416,6 +1184,54 @@
             "state" : "new",
             "value" : "We're preparing your data export. We'll email you a download link when it's ready. The link will be available for seven days."
           }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "我们正在准备你的数据导出。准备就绪后，我们会通过电子邮件向你发送下载链接。该链接有效期为 7 天。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "我們正在準備你的資料匯出。完成後會以電子郵件寄送下載連結給你。連結的有效期限為七天。"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "データエクスポートを準備しています。準備ができ次第、ダウンロードリンクをメールでお送りします。リンクの有効期間は7日間です。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "데이터 내보내기를 준비하고 있어요. 준비가 끝나면 다운로드 링크를 이메일로 보내 드려요. 링크는 7일 동안 유효해요."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nous préparons l'exportation de vos données. Nous vous enverrons un lien de téléchargement par e-mail dès qu'elle sera prête. Le lien sera disponible pendant sept jours."
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dein Datenexport wird vorbereitet. Sobald er fertig ist, senden wir dir per E-Mail einen Download-Link. Der Link ist sieben Tage lang verfügbar."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "We bereiden je gegevensexport voor. Zodra deze klaar is, e-mailen we je een downloadlink. De link blijft zeven dagen beschikbaar."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Estamos preparando la exportación de tus datos. Te enviaremos un enlace de descarga por correo electrónico cuando esté lista. El enlace estará disponible durante siete días."
+          }
         }
       }
     },
@@ -427,6 +1243,54 @@
           "stringUnit" : {
             "state" : "new",
             "value" : "Your data export is ready. Check your email for the download link. The link will be available for seven days."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "你的数据导出已就绪。请查收电子邮件获取下载链接。该链接有效期为 7 天。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "你的資料匯出已準備完成。請查看電子郵件中的下載連結。連結的有效期限為七天。"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "データエクスポートの準備ができました。メールでダウンロードリンクをご確認ください。リンクの有効期間は7日間です。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "데이터 내보내기가 준비됐어요. 이메일에서 다운로드 링크를 확인해 주세요. 링크는 7일 동안 유효해요."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "L'exportation de vos données est prête. Consultez votre boîte de réception pour obtenir le lien de téléchargement. Le lien sera disponible pendant sept jours."
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dein Datenexport ist fertig. Du findest den Download-Link in deinem E-Mail-Postfach. Der Link ist sieben Tage lang verfügbar."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Je gegevensexport is klaar. Check je e-mail voor de downloadlink. De link blijft zeven dagen beschikbaar."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tu exportación de datos está lista. Revisa tu correo electrónico para encontrar el enlace de descarga. El enlace estará disponible durante siete días."
           }
         }
       }
@@ -440,6 +1304,54 @@
             "state" : "new",
             "value" : "Verification code"
           }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "验证码"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "驗證碼"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "確認コード"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "인증 코드"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Code de vérification"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bestätigungscode"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Verificatiecode"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Código de verificación"
+          }
         }
       }
     },
@@ -451,6 +1363,54 @@
           "stringUnit" : {
             "state" : "new",
             "value" : "Enter the 6-digit code sent to %@."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "输入发送到 %@ 的 6 位验证码。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "請輸入傳送至 %@ 的 6 位數驗證碼。"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@に送信された6桁のコードを入力してください。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@(으)로 전송된 6자리 코드를 입력하세요."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Saisissez le code à 6 chiffres envoyé à %@."
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Gib den 6-stelligen Code ein, der an %@ gesendet wurde."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Voer de 6-cijferige code in die naar %@ is gestuurd."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Introduce el código de 6 dígitos que se envió a %@."
           }
         }
       }
@@ -464,6 +1424,54 @@
             "state" : "new",
             "value" : "That code has expired. Click Resend Code to get a new one."
           }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "该验证码已过期。请点按「重新发送验证码」获取新的验证码。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "驗證碼已過期。請點按「重新傳送驗證碼」以取得新的驗證碼。"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "コードの有効期限が切れています。「コードを再送信」をクリックして新しいコードを取得してください。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "코드가 만료됐어요. “코드 다시 보내기”를 눌러 새 코드를 받으세요."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ce code a expiré. Cliquez sur « Renvoyer le code » pour en obtenir un nouveau."
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dieser Code ist abgelaufen. Klicke auf „Code erneut senden“, um einen neuen zu erhalten."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Die code is verlopen. Klik op Verstuur code opnieuw om een nieuwe te krijgen."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ese código caducó. Haz clic en Reenviar código para obtener uno nuevo."
+          }
         }
       }
     },
@@ -475,6 +1483,54 @@
           "stringUnit" : {
             "state" : "new",
             "value" : "That code isn't correct. Check the code from the email and try again."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "验证码不正确。请核对邮件中的验证码后重试。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "驗證碼不正確。請核對郵件中的驗證碼後再試一次。"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "コードが正しくありません。メールに記載されたコードを確認して、もう一度お試しください。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "코드가 올바르지 않아요. 이메일에 있는 코드를 확인하고 다시 시도해 주세요."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ce code est incorrect. Vérifiez le code reçu par e-mail et réessayez."
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dieser Code ist nicht korrekt. Prüfe den Code aus der E-Mail und versuche es erneut."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Die code klopt niet. Controleer de code uit de e-mail en probeer het opnieuw."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ese código no es correcto. Revisa el código del correo electrónico y vuelve a intentarlo."
           }
         }
       }
@@ -488,6 +1544,54 @@
             "state" : "new",
             "value" : "Too many attempts for now. Please wait a few minutes and try again."
           }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "当前尝试次数过多。请等待几分钟后重试。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "嘗試次數過多，請等幾分鐘後再試一次。"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "試行回数が多すぎます。数分待ってから、もう一度お試しください。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "시도 횟수가 너무 많아요. 몇 분 기다렸다가 다시 시도해 주세요."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Trop de tentatives pour le moment. Veuillez patienter quelques minutes, puis réessayer."
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Zu viele Versuche. Bitte warte ein paar Minuten und versuche es erneut."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Te veel pogingen op dit moment. Wacht een paar minuten en probeer het opnieuw."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Demasiados intentos por ahora. Espera unos minutos y vuelve a intentarlo."
+          }
         }
       }
     },
@@ -499,6 +1603,54 @@
           "stringUnit" : {
             "state" : "new",
             "value" : "Resend Code"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "重新发送验证码"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "重新傳送驗證碼"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "コードを再送信"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "코드 다시 보내기"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Renvoyer le code"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Code erneut senden"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Verstuur code opnieuw"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Reenviar código"
           }
         }
       }
@@ -512,6 +1664,54 @@
             "state" : "new",
             "value" : "Resend Code (%ds)"
           }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "重新发送验证码（%d 秒）"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "重新傳送驗證碼（%d 秒）"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "コードを再送信（%d秒）"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "코드 재전송 (%d초)"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Renvoyer le code (%d s)"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Code erneut senden (%d s)"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Verstuur code opnieuw (%ds)"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Reenviar código (%ds)"
+          }
         }
       }
     },
@@ -523,6 +1723,54 @@
           "stringUnit" : {
             "state" : "new",
             "value" : "Sending a verification code to %@…"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在向 %@ 发送验证码…"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在將驗證碼傳送至 %@…"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@に確認コードを送信しています…"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@(으)로 인증 코드를 보내는 중…"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Envoi d'un code de vérification à %@…"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bestätigungscode wird an %@ gesendet…"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Er wordt een verificatiecode naar %@ gestuurd…"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Enviando un código de verificación a %@…"
           }
         }
       }
@@ -536,6 +1784,54 @@
             "state" : "new",
             "value" : "Verify"
           }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "验证"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "驗證"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "確認"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "확인"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vérifier"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bestätigen"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Verifieer"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Verificar"
+          }
         }
       }
     },
@@ -548,6 +1844,54 @@
             "state" : "new",
             "value" : "Verifying the code…"
           }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在校验验证码…"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在檢查驗證碼…"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "コードを確認しています…"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "코드를 확인하는 중…"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vérification du code…"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bestätigungscode wird geprüft…"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "De code wordt geverifieerd…"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Verificando el código…"
+          }
         }
       }
     },
@@ -559,6 +1903,54 @@
           "stringUnit" : {
             "state" : "new",
             "value" : "Export Account Data"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "导出账号数据"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "匯出帳號資料"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "アカウントデータのエクスポート"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "계정 데이터 내보내기"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Exportation des données du compte"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kontodaten exportieren"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Accountgegevens exporteren"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Exportar datos de la cuenta"
           }
         }
       }
@@ -872,6 +2264,54 @@
             "state" : "new",
             "value" : "Download any data export you want to keep before deleting your account. Deletion cancels exports in progress and permanently removes existing download files and links."
           }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "请在删除账号前下载你想保留的数据导出。删除操作会取消正在进行的导出，并永久移除现有的下载文件和链接。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "刪除帳號前，請先下載你要保留的資料匯出檔。刪除帳號會取消進行中的匯出，並永久移除現有的下載檔案和連結。"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "アカウントを削除する前に、残しておきたいデータエクスポートをダウンロードしてください。削除すると、進行中のエクスポートはキャンセルされ、既存のダウンロードファイルとリンクは完全に削除されます。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "계정을 삭제하기 전에 보관할 데이터 내보내기를 모두 다운로드해 주세요. 계정을 삭제하면 진행 중인 내보내기가 취소되고 기존 다운로드 파일과 링크가 영구적으로 삭제돼요."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Téléchargez les exportations de données que vous souhaitez conserver avant de supprimer votre compte. La suppression annule les exportations en cours et supprime définitivement les fichiers et les liens de téléchargement existants."
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lade alle Datenexporte herunter, die du behalten möchtest, bevor du dein Konto löschst. Beim Löschen werden laufende Exporte abgebrochen und vorhandene Download-Dateien und Links endgültig entfernt."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Download alle gegevensexports die je wilt bewaren voordat je je account verwijdert. Bij verwijdering worden lopende exports geannuleerd en worden bestaande downloadbestanden en -links definitief verwijderd."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Descarga las exportaciones de datos que quieras conservar antes de eliminar tu cuenta. La eliminación cancela las exportaciones en curso y elimina definitivamente los archivos y enlaces de descarga existentes."
+          }
         }
       }
     },
@@ -1014,7 +2454,7 @@
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Volver a intentar"
+            "value" : "Reintentar"
           }
         },
         "fr" : {
@@ -1134,13 +2574,13 @@
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Algo salió mal. Inténtalo de nuevo más tarde."
+            "value" : "Algo salió mal. Vuelve a intentarlo más tarde."
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Un problème est survenu. Veuillez réessayer plus tard."
+            "value" : "Une erreur s'est produite. Veuillez réessayer plus tard."
           }
         },
         "ja" : {
@@ -1152,7 +2592,7 @@
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "문제가 발생했어요. 잠시 후 다시 시도해 주세요."
+            "value" : "문제가 발생했어요. 나중에 다시 시도해 주세요."
           }
         },
         "nl" : {
@@ -1170,7 +2610,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "發生問題，請稍後再試。"
+            "value" : "發生錯誤。請稍後再試。"
           }
         }
       }
@@ -1302,7 +2742,7 @@
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Deine Sitzung ist abgelaufen. Bitte melde dich erneut an und starte die Löschung dann neu."
+            "value" : "Deine Sitzung ist abgelaufen. Bitte melde dich erneut an und starte den Löschvorgang dann neu."
           }
         },
         "en" : {
@@ -1314,7 +2754,7 @@
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Tu sesión caducó. Inicia sesión de nuevo y reinicia la eliminación."
+            "value" : "Tu sesión expiró. Inicia sesión de nuevo y reinicia la eliminación."
           }
         },
         "fr" : {
@@ -1332,13 +2772,13 @@
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "세션이 만료됐어요. 다시 로그인한 뒤 삭제를 다시 시작해 주세요."
+            "value" : "세션이 만료됐어요. 다시 로그인한 다음 삭제를 다시 시작해 주세요."
           }
         },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Je sessie is verlopen. Log opnieuw in en start de verwijdering daarna opnieuw."
+            "value" : "Je sessie is verlopen. Log opnieuw in en start daarna de verwijdering opnieuw."
           }
         },
         "zh-Hans" : {
@@ -1554,7 +2994,7 @@
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Introduce el código de 6 dígitos que se envió a %@."
+            "value" : "Escribe el código de 6 dígitos que enviamos a %@."
           }
         },
         "fr" : {
@@ -1572,19 +3012,19 @@
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%@(으)로 전송된 6자리 코드를 입력하세요."
+            "value" : "%@(으)로 전송된 6자리 코드를 입력해 주세요."
           }
         },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Voer de 6-cijferige code in die naar %@ is gestuurd."
+            "value" : "Voer de 6-cijferige code in die naar %@ is verstuurd."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "输入发送到 %@ 的 6 位验证码。"
+            "value" : "输入发送至 %@ 的 6 位验证码。"
           }
         },
         "zh-Hant" : {
@@ -1614,43 +3054,43 @@
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Ese código caducó. Haz clic en Reenviar código para obtener uno nuevo."
+            "value" : "Ese código expiró. Haz clic en Reenviar código para recibir uno nuevo."
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Ce code a expiré. Cliquez sur « Renvoyer le code » pour en obtenir un nouveau."
+            "value" : "Ce code a expiré. Cliquez sur « Renvoyer le code » pour en recevoir un nouveau."
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "コードの有効期限が切れています。「コードを再送信」をクリックして新しいコードを取得してください。"
+            "value" : "このコードは有効期限が切れています。「コードを再送信」をクリックして新しいコードを取得してください。"
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "코드가 만료됐어요. “코드 다시 보내기”를 눌러 새 코드를 받으세요."
+            "value" : "코드가 만료됐어요. 코드 재전송 버튼을 클릭해 새 코드를 받아 주세요."
           }
         },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Die code is verlopen. Klik op Verstuur code opnieuw om een nieuwe te krijgen."
+            "value" : "Die code is verlopen. Klik op 'Verstuur code opnieuw' om een nieuwe code te ontvangen."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "该验证码已过期。请点按「重新发送验证码」获取新的验证码。"
+            "value" : "验证码已过期。点击「重新发送验证码」获取新验证码。"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "驗證碼已過期。請點按「重新傳送驗證碼」以取得新的驗證碼。"
+            "value" : "驗證碼已過期。請點選「重新傳送驗證碼」以取得新的驗證碼。"
           }
         }
       }
@@ -1662,7 +3102,7 @@
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Dieser Code ist nicht korrekt. Prüfe den Code aus der E-Mail und versuche es erneut."
+            "value" : "Dieser Code ist nicht korrekt. Überprüfe den Code aus der E-Mail und versuche es erneut."
           }
         },
         "en" : {
@@ -1692,7 +3132,7 @@
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "코드가 올바르지 않아요. 이메일에 있는 코드를 확인하고 다시 시도해 주세요."
+            "value" : "코드가 올바르지 않아요. 이메일로 받은 코드를 확인하고 다시 시도해 주세요."
           }
         },
         "nl" : {
@@ -1710,7 +3150,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "驗證碼不正確。請核對郵件中的驗證碼後再試一次。"
+            "value" : "驗證碼不正確。請核對電子郵件中的驗證碼後再試一次。"
           }
         }
       }
@@ -1722,7 +3162,7 @@
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Zu viele Versuche. Bitte warte ein paar Minuten und versuche es erneut."
+            "value" : "Zu viele Versuche. Bitte warte ein paar Minuten und versuche es dann erneut."
           }
         },
         "en" : {
@@ -1740,7 +3180,7 @@
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Trop de tentatives pour le moment. Veuillez patienter quelques minutes, puis réessayer."
+            "value" : "Trop de tentatives pour le moment. Veuillez patienter quelques minutes avant de réessayer."
           }
         },
         "ja" : {
@@ -1752,7 +3192,7 @@
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "시도 횟수가 너무 많아요. 몇 분 기다렸다가 다시 시도해 주세요."
+            "value" : "지금은 시도 횟수가 너무 많아요. 몇 분 기다렸다가 다시 시도해 주세요."
           }
         },
         "nl" : {
@@ -1764,13 +3204,13 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "当前尝试次数过多。请等待几分钟后重试。"
+            "value" : "目前尝试次数过多。请等待几分钟后重试。"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "嘗試次數過多，請等幾分鐘後再試一次。"
+            "value" : "目前嘗試次數過多。請稍等幾分鐘再試一次。"
           }
         }
       }
@@ -1812,7 +3252,7 @@
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "코드 다시 보내기"
+            "value" : "코드 재전송"
           }
         },
         "nl" : {
@@ -1932,13 +3372,13 @@
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%@(으)로 인증 코드를 보내는 중…"
+            "value" : "%@(으)로 인증 코드를 전송하고 있어요…"
           }
         },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Er wordt een verificatiecode naar %@ gestuurd…"
+            "value" : "Verificatiecode wordt verstuurd naar %@…"
           }
         },
         "zh-Hans" : {
@@ -1950,7 +3390,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "正在將驗證碼傳送至 %@…"
+            "value" : "正在傳送驗證碼至 %@…"
           }
         }
       }
@@ -1992,7 +3432,7 @@
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "확인"
+            "value" : "인증"
           }
         },
         "nl" : {
@@ -2022,7 +3462,7 @@
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Bestätigungscode wird geprüft…"
+            "value" : "Code wird überprüft…"
           }
         },
         "en" : {
@@ -2052,25 +3492,25 @@
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "코드를 확인하는 중…"
+            "value" : "코드를 확인하고 있어요…"
           }
         },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "De code wordt geverifieerd…"
+            "value" : "Code wordt geverifieerd…"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "正在校验验证码…"
+            "value" : "正在核对验证码…"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "正在檢查驗證碼…"
+            "value" : "正在核對驗證碼…"
           }
         }
       }
@@ -7844,6 +9284,54 @@
             "state" : "new",
             "value" : "Improve Translations for Phi Browser"
           }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "改进 Phi Browser 的翻译"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "協助改善 Phi Browser 的翻譯"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Phi Browserの翻訳を改善"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Phi Browser 번역 개선하기"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Améliorer les traductions de Phi Browser"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Übersetzungen für Phi Browser verbessern"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Verbeter de vertalingen voor Phi Browser"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mejorar las traducciones de Phi Browser"
+          }
         }
       }
     },
@@ -11874,7 +13362,7 @@
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Es wurden keine Daten gelöscht. %@"
+            "value" : "Phi und die zugehörigen lokalen Dateien wurden nicht entfernt. Einige Anmeldedaten wurden möglicherweise bereits gelöscht. %@"
           }
         },
         "en" : {
@@ -11886,43 +13374,43 @@
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "No se eliminó ningún dato. %@"
+            "value" : "No se eliminaron Phi ni sus archivos locales. Es posible que ya se hayan eliminado algunos datos de inicio de sesión. %@"
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Aucune donnée n'a été supprimée. %@"
+            "value" : "Phi et ses fichiers locaux n'ont pas été supprimés. Certaines données de connexion ont peut-être déjà été effacées. %@"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "データは削除されていません。%@"
+            "value" : "Phiとそのローカルファイルは削除されませんでした。一部のログインデータはすでに消去されている可能性があります。%@"
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "삭제된 데이터는 없어요. %@"
+            "value" : "Phi와 로컬 파일이 제거되지 않았어요. 일부 로그인 데이터는 이미 삭제됐을 수 있어요. %@"
           }
         },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Er zijn geen gegevens verwijderd. %@"
+            "value" : "Phi en de bijbehorende lokale bestanden zijn niet verwijderd. Mogelijk zijn sommige inloggegevens al gewist. %@"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "未删除任何数据。%@"
+            "value" : "Phi 及其本地文件未被移除。部分登录数据可能已被清除。%@"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "沒有刪除任何資料。%@"
+            "value" : "Phi 及其本機檔案並未移除。部分登入資料可能已被清除。%@"
           }
         }
       }
@@ -32425,6 +33913,54 @@
             "state" : "new",
             "value" : "No AI features until you sign in"
           }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "登录后才能使用 AI 功能"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "登入後才能使用 AI 功能"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ログインするまでAI機能は利用できません"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "로그인하기 전에는 AI 기능을 사용할 수 없어요"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aucune fonctionnalité IA sans connexion"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "KI-Funktionen erst nach der Anmeldung"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Geen AI-functies totdat je inlogt"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sin funciones de IA hasta que inicies sesión"
+          }
         }
       }
     },
@@ -32436,6 +33972,54 @@
           "stringUnit" : {
             "state" : "new",
             "value" : "Let's Begin"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "开始使用"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "開始使用"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "はじめる"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "시작하기"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Commencer"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Los geht’s"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aan de slag"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Empecemos"
           }
         }
       }
@@ -32449,6 +34033,54 @@
             "state" : "new",
             "value" : "No Browser Memory either"
           }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "浏览器记忆也无法使用"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "瀏覽器記憶也無法使用"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ブラウザメモリも利用できません"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "브라우저 메모리도 사용할 수 없어요"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pas de Mémoire de navigation non plus"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Auch keine Browser-Erinnerung"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ook geen Browsergeheugen"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tampoco habrá Memoria del navegador"
+          }
         }
       }
     },
@@ -32460,6 +34092,54 @@
           "stringUnit" : {
             "state" : "new",
             "value" : "I agree to the %1$@ and %2$@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "我同意 %1$@ 和 %2$@"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "我同意 %1$@ 和 %2$@"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@と%2$@に同意します"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ 및 %2$@에 동의해요"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "J'accepte la %1$@ et les %2$@"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ich stimme der %1$@ und den %2$@ zu"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ik ga akkoord met het %1$@ en de %2$@"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Acepto la %1$@ y los %2$@"
           }
         }
       }
@@ -32473,6 +34153,54 @@
             "state" : "new",
             "value" : "Help make Phi better by sharing usage metrics and crash reports"
           }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "分享使用统计信息和崩溃报告，帮助改进 Phi"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "分享使用統計資料和當機報告，協助改善 Phi"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "使用状況データとクラッシュレポートを共有してPhiの改善に協力する"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "사용 통계 및 오류 보고서를 공유해 Phi 개선에 참여하기"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Contribuer à améliorer Phi en partageant les statistiques d'utilisation et les rapports d'erreur"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hilf mit, Phi zu verbessern, indem du Nutzungsstatistiken und Absturzberichte teilst"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Help Phi te verbeteren door gebruiksstatistieken en crashrapporten te delen"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ayuda a mejorar Phi compartiendo métricas de uso e informes de errores"
+          }
         }
       }
     },
@@ -32484,6 +34212,54 @@
           "stringUnit" : {
             "state" : "new",
             "value" : "Privacy Policy"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "隐私政策"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "隱私權政策"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "プライバシーポリシー"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "개인정보 처리방침"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Politique de confidentialité"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Datenschutzerklärung"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Privacybeleid"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Política de Privacidad"
           }
         }
       }
@@ -32497,6 +34273,54 @@
             "state" : "new",
             "value" : "Sign in whenever you're ready"
           }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "准备好后随时登录"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "等你準備好，隨時都能登入"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "準備ができたらいつでもログインできます"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "준비되면 언제든지 로그인하세요"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Connectez-vous quand vous le souhaitez"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Melde dich an, wann immer du bereit bist"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Log in wanneer je er klaar voor bent"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Inicia sesión cuando quieras"
+          }
         }
       }
     },
@@ -32509,6 +34333,54 @@
             "state" : "new",
             "value" : "Terms of Service"
           }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "服务条款"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "服務條款"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "利用規約"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "서비스 이용약관"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Conditions d'utilisation"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nutzungsbedingungen"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Servicevoorwaarden"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Términos del Servicio"
+          }
         }
       }
     },
@@ -32520,6 +34392,54 @@
           "stringUnit" : {
             "state" : "new",
             "value" : "Before we begin"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "开始之前"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "開始之前"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "はじめる前に"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "시작하기 전에"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Avant de commencer"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bevor es losgeht"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Voordat we beginnen"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Antes de empezar"
           }
         }
       }
@@ -34693,6 +36613,54 @@
             "state" : "new",
             "value" : "Let's Begin"
           }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "开始使用"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "開始使用"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "はじめる"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "시작하기"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Commencer"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Los geht’s"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aan de slag"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Empecemos"
+          }
         }
       }
     },
@@ -34704,6 +36672,54 @@
           "stringUnit" : {
             "state" : "new",
             "value" : "Enjoy using Phi Browser 🎉"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "祝你使用 Phi Browser 愉快 🎉"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "盡情使用 Phi Browser 🎉"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Phi Browserをお楽しみください🎉"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Phi Browser를 즐겁게 사용해 보세요 🎉"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Profitez de Phi Browser 🎉"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Viel Spaß mit Phi Browser 🎉"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Veel plezier met Phi Browser 🎉"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Disfruta de Phi Browser 🎉"
           }
         }
       }
@@ -34717,6 +36733,54 @@
             "state" : "new",
             "value" : "Import data from another browser"
           }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "从其他浏览器导入数据"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "從其他瀏覽器匯入資料"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "他のブラウザからデータをインポートしましょう"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "다른 브라우저에서 데이터 가져오기"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Importez les données d'un autre navigateur"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Daten aus einem anderen Browser importieren"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Importeer gegevens uit een andere browser"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Importa datos de otro navegador"
+          }
         }
       }
     },
@@ -34728,6 +36792,54 @@
           "stringUnit" : {
             "state" : "new",
             "value" : "I agree to the %1$@ and %2$@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "我同意 %1$@ 和 %2$@"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "我同意 %1$@ 和 %2$@"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@と%2$@に同意します"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ 및 %2$@에 동의해요"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "J'accepte la %1$@ et les %2$@"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ich stimme der %1$@ und den %2$@ zu"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ik ga akkoord met %1$@ en %2$@"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Acepto la %1$@ y los %2$@"
           }
         }
       }
@@ -34741,6 +36853,54 @@
             "state" : "new",
             "value" : "Help make Phi better by sharing usage metrics and crash reports"
           }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "分享使用统计信息和崩溃报告，帮助改进 Phi"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "分享使用統計資料和當機報告，協助改善 Phi"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "使用状況データとクラッシュレポートを共有してPhiの改善に協力する"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "사용 통계 및 오류 보고서를 공유해 Phi 개선에 참여하기"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Contribuer à améliorer Phi en partageant les statistiques d'utilisation et les rapports d'erreur"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hilf mit, Phi zu verbessern, indem du Nutzungsstatistiken und Absturzberichte teilst"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Help Phi te verbeteren door gebruiksstatistieken en crashrapporten te delen"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ayuda a mejorar Phi compartiendo métricas de uso e informes de errores"
+          }
         }
       }
     },
@@ -34752,6 +36912,54 @@
           "stringUnit" : {
             "state" : "new",
             "value" : "Onboard your AI assistant"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "设置你的 AI 助手"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "設定你的 AI 助理"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "AIアシスタントをセットアップしましょう"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "AI 어시스턴트 설정하기"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Configurez votre assistant IA"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Deinen KI-Assistenten einrichten"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Stel je AI-assistent in"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Configura tu asistente de IA"
           }
         }
       }
@@ -34765,6 +36973,54 @@
             "state" : "new",
             "value" : "Privacy"
           }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "隐私政策"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "隱私權政策"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "プライバシー"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "개인정보 처리방침"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Politique de confidentialité"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Datenschutzerklärung"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Privacy"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Privacidad"
+          }
         }
       }
     },
@@ -34776,6 +37032,54 @@
           "stringUnit" : {
             "state" : "new",
             "value" : "Terms"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "条款"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "服務條款"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "利用規約"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "이용약관"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Conditions d'utilisation"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nutzungsbedingungen"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Voorwaarden"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Términos"
           }
         }
       }
@@ -34789,6 +37093,54 @@
             "state" : "new",
             "value" : "Next steps"
           }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "后续步骤"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "後續步驟"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "次のステップ"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "다음 단계"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Prochaines étapes"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nächste Schritte"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Volgende stappen"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Próximos pasos"
+          }
         }
       }
     },
@@ -34800,6 +37152,54 @@
           "stringUnit" : {
             "state" : "new",
             "value" : "Have your AI assistant help you understand the fine print 👇"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "让你的 AI 助手帮你读懂细则 👇"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "讓 AI 助理協助你看懂條款細節 👇"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "細かい注意書きはAIアシスタントに読み解いてもらいましょう👇"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "작은 글씨로 된 세부 내용도 AI 어시스턴트의 도움을 받아 이해해 보세요 👇"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Laissez votre assistant IA vous aider à comprendre les petits caractères 👇"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lass dir von deinem KI-Assistenten das Kleingedruckte erklären 👇"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Laat je AI-assistent je helpen de kleine lettertjes te begrijpen 👇"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Deja que tu asistente de IA te ayude a entender la letra pequeña 👇"
           }
         }
       }
@@ -40031,6 +42431,54 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
+            "value" : "Phi Link"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Phi Link"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Phi Link"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Phi Link"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Phi Link"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Phi Link"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Phi Link"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Phi Link"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
             "value" : "Phi Link"
           }
         }

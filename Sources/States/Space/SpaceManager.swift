@@ -898,7 +898,28 @@ final class SpaceManager: ObservableObject {
     /// to one bound to that polluted profile, so the reopen lands on the
     /// wrong (typically default) Space instead of the one the user closed.
     func reopenOnPersistedSpaceIfWindowless() -> Bool {
-        guard isWindowlessWithHostedSlots else { return false }
+        guard isWindowlessWithHostedSlots else {
+            // The refusal is otherwise completely silent, so the only trace it
+            // leaves in a log bundle is the ABSENCE of the lines below — and an
+            // absent line cannot be told apart from a build that never had
+            // them, or from a reopen that never reached the app at all. Stated
+            // positively instead: it appears when this path was skipped, and
+            // its three numbers ARE the predicate's three inputs, so the same
+            // line says which one refused. A live non-shadow window is the
+            // ordinary case; zero of those with a non-empty `slots` is the
+            // stranded-mint chain in `reclaimsMintedSlot`'s doc, which
+            // disables this path for the rest of the run.
+            //
+            // Reports the predicate's outcome and nothing beyond it: what a
+            // refusal costs is the caller's, not this function's. The Dock
+            // reopen falls back to Chromium's handler (the wrong-Space landing
+            // this whole function exists to avoid), while `createAgentSpace`
+            // just fails its spawn and says so itself — reading either of them
+            // into this line would put a Dock-reopen fault in the bundle every
+            // time an agent Space was requested with no window open.
+            AppLogInfo("[SpaceManager] windowless reopen declined, the persisted-Space reopen did not run: hasEverHostedSlotWindow=\(hasEverHostedSlotWindow), slots=\(slots.count), liveNonShadowWindows=\(liveNonShadowWindowCount)")
+            return false
+        }
         // Switch on: replay the whole closed window group (each Space with its
         // tabs, the active one visible, fullscreen preserved), mirroring a cold
         // start. Switch off keeps the plain single-window spawn.
@@ -936,9 +957,17 @@ final class SpaceManager: ObservableObject {
     /// window is focused by Chromium's own reopen, and shadow windows are
     /// invisible background hosts either way.
     private var isWindowlessWithHostedSlots: Bool {
-        hasEverHostedSlotWindow && slots.isEmpty
-            && !MainBrowserWindowControllersManager.shared.getAllWindows()
-                .contains(where: { $0.browserType != .shadow })
+        hasEverHostedSlotWindow && slots.isEmpty && liveNonShadowWindowCount == 0
+    }
+
+    /// The third input of `isWindowlessWithHostedSlots`, counted rather than
+    /// merely tested so the log line that reports a refusal can name it. One
+    /// expression, not two: a second spelling of the same rule would drift
+    /// from the predicate, and the drifted line would misattribute the refusal
+    /// — the one thing that line exists to say.
+    private var liveNonShadowWindowCount: Int {
+        MainBrowserWindowControllersManager.shared.getAllWindows()
+            .filter { $0.browserType != .shadow }.count
     }
 
     /// Opens a single plain window on the persisted last-active Space — the
@@ -1687,7 +1716,7 @@ final class SpaceManager: ObservableObject {
     /// would fall through to `keySlot.activeSpaceId` and collapse all
     /// tabs into that one Space.
     func claimRestoredWindow(forRestoredFromWindowId restoredFromWindowId: Int,
-                             profileId: String) -> (slot: SpaceWindowSlot, spaceId: String)? {
+                             profileId: String) -> RestoredWindowClaim? {
         // Primary: exact previous-session windowId match. Positive ids only —
         // a SessionID is always positive, so both `0` and the reserved
         // `restoreFallbackWindowId` name a window that re-created no saved
@@ -1697,7 +1726,12 @@ final class SpaceManager: ObservableObject {
            index < restoreEntries.count,
            let spaceId = restoreEntries[index].windowMap[restoredFromWindowId] {
             restoreIndexByWindowId.removeValue(forKey: restoredFromWindowId)
-            return (slotForRestoreIndex(index, fallbackSpaceId: spaceId), spaceId)
+            let entryActiveSpaceId = restoreEntries[index].activeSpaceId
+            return RestoredWindowClaim(
+                slot: slotForRestoreIndex(index, fallbackSpaceId: spaceId),
+                spaceId: spaceId,
+                matchedBy: .previousSessionWindowId,
+                entryActiveSpaceId: entryActiveSpaceId)
         }
         // Fallback: reattach by PROFILE instead of by id. Open to the two window
         // shapes that carry no usable previous-session id:
@@ -1770,7 +1804,37 @@ final class SpaceManager: ObservableObject {
         }
         guard let pick = candidates.min(by: { $0.key < $1.key }) else { return nil }
         restoreIndexByWindowId.removeValue(forKey: pick.windowId)
-        return (slotForRestoreIndex(pick.index, fallbackSpaceId: pick.spaceId), pick.spaceId)
+        let entryActiveSpaceId = restoreEntries[pick.index].activeSpaceId
+        return RestoredWindowClaim(
+            slot: slotForRestoreIndex(pick.index, fallbackSpaceId: pick.spaceId),
+            spaceId: pick.spaceId,
+            matchedBy: .profile,
+            entryActiveSpaceId: entryActiveSpaceId)
+    }
+
+    /// What a session-restored window matched in the saved snapshot: the slot
+    /// and Space it claimed, plus which of the two lookups made the match and
+    /// the snapshot entry's OWN visible Space.
+    ///
+    /// The last two carry no behavior — they exist so the coordinator can put
+    /// the whole attribution on one line. A window that lands on the wrong
+    /// Space can fail in two places that look identical from the outside: the
+    /// claim picked the wrong entry, or the entry's `activeSpaceId` was
+    /// already wrong when the snapshot was written. Reporting the claimed
+    /// Space next to the entry's own is what separates them.
+    struct RestoredWindowClaim {
+        let slot: SpaceWindowSlot
+        let spaceId: String
+        let matchedBy: Match
+        let entryActiveSpaceId: String?
+
+        /// Which lookup in `claimRestoredWindow` produced the match. The raw
+        /// value names the key that was matched on, so the log site owns the
+        /// sentence it goes into.
+        enum Match: String {
+            case previousSessionWindowId = "previous-session windowId"
+            case profile = "profile"
+        }
     }
 
     /// The claim index the by-profile fallback ranks over: the snapshot

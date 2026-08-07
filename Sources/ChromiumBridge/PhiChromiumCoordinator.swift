@@ -569,6 +569,14 @@ extension PhiChromiumCoordinator: PhiChromiumBridgeDelegate {
                 spaceId = SpaceManager.shared.spaceId(boundTo: profileId,
                                                       preferring: restored.spaceId)
                 isRestoredWindow = true
+                // Where a restored window ends up is decided in three steps —
+                // which snapshot entry claimed it, what that entry said its
+                // visible Space was, and the profile-consistency re-resolve
+                // above — and today a wrong landing Space leaves no record of
+                // which one of them was wrong. All three go on this one line,
+                // stated positively so the reading never rests on a line being
+                // absent.
+                AppLogInfo("🌐 [Chromium] restore attribution: restoredFrom=\(restoredFromWindowId) claimed by \(restored.matchedBy.rawValue) → space=\(spaceId) (claimed=\(restored.spaceId), snapshot entry active=\(restored.entryActiveSpaceId ?? "nil"))")
             } else {
                 let initial = SpaceManager.shared.keySlot?.activeSpaceId
                     ?? SpaceManager.shared.persistedActiveSpaceId
@@ -583,6 +591,15 @@ extension PhiChromiumCoordinator: PhiChromiumBridgeDelegate {
                 spaceId = SpaceManager.shared.fallbackMintSpaceId(boundTo: profileId,
                                                                   preferring: initial)
                 resolvedSlot = SpaceManager.shared.createSlot(initialSpaceId: spaceId)
+                // The other half of the attribution line above, and the one
+                // that matters: a window Chromium replayed but no snapshot
+                // entry claimed lands on whatever `initial` seeded — the key
+                // slot's Space, else the persisted one, else the default —
+                // which is the wrong-Space symptom itself. Logged for every
+                // window taking this branch, ordinary Cmd+N included
+                // (`restoredFrom=0` with no restore running names those), so
+                // the judgement never has to rest on a missing line.
+                AppLogInfo("🌐 [Chromium] restore attribution: restoredFrom=\(restoredFromWindowId) claimed nothing in the snapshot → space=\(spaceId) (minted preferring=\(initial))")
             }
         } else {
             // Incognito / shadow windows are orthogonal to Spaces.

@@ -2236,9 +2236,10 @@ final class SpaceManager: ObservableObject {
     func fallbackMintSpaceId(boundTo profileId: String,
                              preferring preferred: String) -> String {
         let resolved = spaceId(boundTo: profileId, preferring: preferred)
+        let ghostSpaceIds = Set(parkedGhostSpaceIdsByWindowId.values)
         let steered = Self.steeredFallbackMintSpaceId(
             resolved: resolved,
-            ghostSpaceIds: Set(parkedGhostSpaceIdsByWindowId.values),
+            ghostSpaceIds: ghostSpaceIds,
             candidates: spaces.map {
                 (spaceId: $0.spaceId, profileId: $0.profileId,
                  isSwitchTarget: isAutomaticSwitchTarget($0))
@@ -2247,6 +2248,13 @@ final class SpaceManager: ObservableObject {
         )
         if steered != resolved {
             AppLogInfo("[SpaceManager] fallback mint steered off ghost Space \(resolved) to \(steered)")
+        } else if ghostSpaceIds.contains(steered) {
+            // Un-steered onto a ghost Space, i.e. no clear alternative
+            // existed. The branch with a user-visible consequence, and the
+            // only trace of it: the new window doubles the Space, so
+            // switching there finds it instead of the parked window, whose
+            // tabs stay off screen until the next cold start replays them.
+            AppLogWarn("[SpaceManager] fallback mint kept ghost Space \(steered) for profile \"\(profileId)\" — no clear alternative; that Space's parked window will not materialize this run")
         }
         return steered
     }

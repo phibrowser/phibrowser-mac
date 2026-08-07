@@ -300,6 +300,35 @@ final class LazySpaceRestoreWiringTests: XCTestCase {
         )
     }
 
+    func testMintWithNoCandidatesKeepsTheGhostSpace() {
+        // Early in a launch the Spaces list is delivered partially and can
+        // still be empty — with nothing to steer to, the resolution stands
+        // rather than answering an id no Space carries.
+        XCTAssertEqual(
+            SpaceManager.steeredFallbackMintSpaceId(
+                resolved: "ghosted",
+                ghostSpaceIds: ["ghosted"],
+                candidates: [],
+                profileId: "p1"),
+            "ghosted"
+        )
+    }
+
+    func testMintWhoseOnlyCandidateIsTheGhostKeepsIt() {
+        // The ghost Space is never its own alternative: steering to it would
+        // read as a steer in the log while changing nothing.
+        XCTAssertEqual(
+            SpaceManager.steeredFallbackMintSpaceId(
+                resolved: "ghosted",
+                ghostSpaceIds: ["ghosted"],
+                candidates: [
+                    (spaceId: "ghosted", profileId: "p1", isSwitchTarget: true),
+                ],
+                profileId: "p1"),
+            "ghosted"
+        )
+    }
+
     // MARK: - Which arriving window the coordinator conceals
 
     /// One of the rebase-fragile anchors this feature registers: concealment

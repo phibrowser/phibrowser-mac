@@ -1511,6 +1511,10 @@ final class SpaceManager: ObservableObject {
         // snapshot windows: anything else that has to pick among a saved slot's
         // windows uses this one rather than inventing a near-synonym.
         let persistedActive = persistedActiveSpaceId
+        // Windows this reopen parked are not candidates — see
+        // `fallbackClaimIndex`.
+        let claimIndex = Self.fallbackClaimIndex(
+            restoreIndexByWindowId, parkedGhosts: parkedGhostSpaceIdsByWindowId)
         var candidates: [(key: (Int, Int, Int, Int),
                           index: Int, windowId: Int, spaceId: String)] = []
         for index in restoreEntries.indices {
@@ -1519,7 +1523,7 @@ final class SpaceManager: ObservableObject {
                 entry.windowMap.values.contains($0)
             } ?? false
             for (windowId, spaceId) in entry.windowMap {
-                guard restoreIndexByWindowId[windowId] == index,
+                guard claimIndex[windowId] == index,
                       boundProfileId(forSpaceId: spaceId) == profileId else { continue }
                 candidates.append((key: (spaceId == entry.activeSpaceId ? 0 : 1,
                                          holdsPersistedActive ? 0 : 1,
@@ -1533,6 +1537,24 @@ final class SpaceManager: ObservableObject {
         guard let pick = candidates.min(by: { $0.key < $1.key }) else { return nil }
         restoreIndexByWindowId.removeValue(forKey: pick.windowId)
         return (slotForRestoreIndex(pick.index, fallbackSpaceId: pick.spaceId), pick.spaceId)
+    }
+
+    /// The claim index the by-profile fallback ranks over: the snapshot
+    /// windows still unclaimed, minus the ones this reopen parked.
+    ///
+    /// A parked window's claim surface is already spoken for — the
+    /// materialization that brings it back claims it BY id — so letting the
+    /// by-profile fallback take it over would retire the snapshot entry while
+    /// the park record stayed behind, and that Space would answer every later
+    /// click with a materialization that has nothing left to claim. Narrowed
+    /// here rather than by dropping parked ids from the restore index, because
+    /// the by-id claim (and the persist that keeps ghost entries alive) needs
+    /// those index entries intact: each window's claim surface is consumed
+    /// once, by whichever half of the lifecycle owns it. Pure and static so
+    /// the rule is pinned by table (`LazySpaceRestoreWiringTests`).
+    static func fallbackClaimIndex(_ restoreIndexByWindowId: [Int: Int],
+                                   parkedGhosts: [Int: String]) -> [Int: Int] {
+        restoreIndexByWindowId.filter { parkedGhosts[$0.key] == nil }
     }
 
     /// Resolves (and reuses for later siblings) the live slot for a saved

@@ -30,7 +30,11 @@ import XCTest
 ///   * whether a slot minted for a window that never arrived is reclaimed
 ///     (`reclaimsMintedSlot`) — the drop above gave every mint-then-activate
 ///     call site a new way to end without a window, and a slot stranded that
-///     way disables the windowless reopen for the rest of the run.
+///     way disables the windowless reopen for the rest of the run;
+///   * which snapshot windows a by-profile claim may take over
+///     (`fallbackClaimIndex`) — restore's own stand-in window claims by
+///     profile with no grace period, and a parked window's claim surface
+///     belongs to the materialization that brings it back.
 ///
 /// What they cannot reach — that `activate`, `deleteSpace`, `changeProfile`
 /// and the coordinator feed these rules their real state — rests on the
@@ -344,5 +348,56 @@ final class LazySpaceRestoreWiringTests: XCTestCase {
         // manager no longer knows about.
         XCTAssertFalse(SpaceManager.reclaimsMintedSlot(
             mintedForThisAttempt: true, hostsWindow: false, awaitsSpawnedWindow: true))
+    }
+
+    // MARK: - Which snapshot windows a by-profile claim may take over
+
+    /// The by-profile fallback is how restore's own stand-in window finds its
+    /// slot, and it matches on profile alone — no id, no grace period. A
+    /// parked window is in the restore index all the same (the by-id claim a
+    /// materialization makes needs it there, and the persist keeps its ghost
+    /// entry alive off it), so without this narrowing that stand-in window
+    /// could consume a parked window's claim surface: the entry would retire
+    /// while the park record stayed, and the user's Space would answer every
+    /// click with a materialization that has nothing left to claim.
+
+    func testAParkedWindowIsNotAvailableToAByProfileClaim() {
+        XCTAssertEqual(
+            SpaceManager.fallbackClaimIndex(
+                [55: 0, 7: 0], parkedGhosts: [55: "space-b"]),
+            [7: 0]
+        )
+    }
+
+    func testUnparkedWindowsOfTheSameEntryStayAvailable() {
+        // The park set is per window, not per snapshot entry: a slot that had
+        // one Space parked and another restored eagerly still offers the
+        // eager one to a by-profile claim.
+        XCTAssertEqual(
+            SpaceManager.fallbackClaimIndex(
+                [55: 0, 7: 0, 102: 1], parkedGhosts: [55: "space-b"]),
+            [7: 0, 102: 1]
+        )
+    }
+
+    func testEveryWindowParkedLeavesNothingToClaim() {
+        // The shape the defect surfaced in: a profile whose windows were all
+        // parked. The claim finds nobody and the coordinator mints a fresh
+        // slot, which is what keeps every parked Space materializable.
+        XCTAssertEqual(
+            SpaceManager.fallbackClaimIndex(
+                [55: 0, 7: 0], parkedGhosts: [55: "space-b", 7: "space-a"]),
+            [:]
+        )
+    }
+
+    func testAReopenThatParkedNothingOffersTheWholeIndex() {
+        // The rollback story, here as everywhere else: with nothing parked
+        // (switch off, older framework, nothing parkable, or any cold start)
+        // the fallback ranks exactly the candidates it always did.
+        XCTAssertEqual(
+            SpaceManager.fallbackClaimIndex([55: 0, 7: 0], parkedGhosts: [:]),
+            [55: 0, 7: 0]
+        )
     }
 }

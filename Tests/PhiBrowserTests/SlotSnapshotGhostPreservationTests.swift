@@ -132,12 +132,13 @@ final class SlotSnapshotGhostPreservationTests: XCTestCase {
         // bridge through a trapping 32-bit conversion, so a wider key would
         // survive the decoder only to crash the first Space switch or Space
         // deletion that touched it. The readable rest of the same map still
-        // survives, exactly as for an unparseable key.
+        // survives, exactly as for an unparseable key. Only the top of the
+        // range is tested here — anything past the bottom is negative, which
+        // the case below already excludes on its own.
         XCTAssertEqual(
             SpaceManager.decodedWindowMap([
                 "7": "space-a",
                 String(Int(Int32.max) + 1): "space-past-the-top",
-                String(Int(Int32.min) - 1): "space-past-the-bottom",
             ]),
             [7: "space-a"]
         )

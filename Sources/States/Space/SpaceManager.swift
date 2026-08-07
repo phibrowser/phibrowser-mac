@@ -1542,16 +1542,23 @@ final class SpaceManager: ObservableObject {
     /// The claim index the by-profile fallback ranks over: the snapshot
     /// windows still unclaimed, minus the ones this reopen parked.
     ///
-    /// A parked window's claim surface is already spoken for — the
-    /// materialization that brings it back claims it BY id — so letting the
-    /// by-profile fallback take it over would retire the snapshot entry while
-    /// the park record stayed behind, and that Space would answer every later
-    /// click with a materialization that has nothing left to claim. Narrowed
-    /// here rather than by dropping parked ids from the restore index, because
-    /// the by-id claim (and the persist that keeps ghost entries alive) needs
-    /// those index entries intact: each window's claim surface is consumed
-    /// once, by whichever half of the lifecycle owns it. Pure and static so
-    /// the rule is pinned by table (`LazySpaceRestoreWiringTests`).
+    /// Consuming a parked window's entry costs the user that Space twice
+    /// over. The entry is what `persistSlotsSnapshot` writes the ghost back
+    /// from (its `unclaimedWindowIds` filter), so the one record mapping the
+    /// parked window to its Space leaves at the next persist and the saved
+    /// window is gone for good. And the claiming window registers ON the
+    /// ghost's own Space in the ghost's own slot, so `activate` finds a live
+    /// window there and returns before it ever reaches the ghost row: an
+    /// empty stand-in shadows the parked session for the rest of the run,
+    /// with no materialization and no alert to say so.
+    ///
+    /// Narrowed here rather than by dropping parked ids from the restore
+    /// index when they are parked, because that index is what the persist
+    /// above reads. A materialization needs nothing from it: it retires both
+    /// records itself (`consumeParkedGhost`) before asking the bridge, and
+    /// its window arrives through the pending-spawn claim rather than through
+    /// any lookup here. Pure and static so the rule is pinned by table
+    /// (`LazySpaceRestoreWiringTests`).
     static func fallbackClaimIndex(_ restoreIndexByWindowId: [Int: Int],
                                    parkedGhosts: [Int: String]) -> [Int: Int] {
         restoreIndexByWindowId.filter { parkedGhosts[$0.key] == nil }

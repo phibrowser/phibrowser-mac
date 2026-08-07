@@ -449,6 +449,7 @@ extension AppController {
             } else
             
             if menuRole == .app, let subMenu = menuItem.submenu {
+                #if !PHI_OSS_BUILD
                 subMenu.items.removeAll { $0.tag == AppController.checkForUpdateItemTag }
 
                 for (index, item) in subMenu.items.enumerated() {
@@ -462,7 +463,7 @@ extension AppController {
                         break
                     }
                 }
-
+                #endif
             } else
             
             if menuRole == .edit, let subMenu = menuItem.submenu {
@@ -2150,6 +2151,7 @@ extension AppController {
             return ApplicationState.shared.canUseBrowser
         }
         
+        #if !PHI_OSS_BUILD
         if item.action == #selector(checkForUpdate(_:)) {
             guard updater?.canCheckForUpdates == true else { return false }
 
@@ -2160,6 +2162,7 @@ extension AppController {
                 return true
             }
         }
+        #endif
 
         if item.action == #selector(selectLayoutMode(_:)) {
             if let menuItem = item as? NSMenuItem {

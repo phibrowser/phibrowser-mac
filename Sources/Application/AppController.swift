@@ -9,7 +9,9 @@ import SwiftData
 import CocoaLumberjackSwift
 import Kingfisher
 import Auth0
+#if !PHI_OSS_BUILD
 import Sparkle
+#endif
 import WebKit
 import Settings
 import PostHog
@@ -26,6 +28,7 @@ import PostHog
     var settingsPanesIncludeDeveloper = false
 
     var container: ModelContainer?
+    #if !PHI_OSS_BUILD
     var updater: SPUUpdater?
     var sparkleUserDriver: PhiSparkleUserDriver?
     /// Sparkle update state
@@ -36,6 +39,7 @@ import PostHog
             }
         }
     }
+    #endif
     
     var menuObservation: NSKeyValueObservation?
 
@@ -102,7 +106,9 @@ import PostHog
         
         //        ASWebAuthenticationSessionWebBrowserSessionManager.shared.sessionHandler = self
         
+        #if !PHI_OSS_BUILD
         setupSparkle()
+        #endif
         setupKinfisherCache()
         
         SentryService.setup()

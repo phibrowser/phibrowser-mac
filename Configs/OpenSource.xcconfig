@@ -9,9 +9,9 @@ APP_ENTITLEMENTS = Resources/PhiBrowser-OpenSource.entitlements
 // Asset Catalog
 ASSETCATALOG_COMPILER_APPICON_NAME = PhiIcon
 
-// Sparkle Update Feed
-APPCAST_PATH = 
-
 // Build Settings
+PHI_OSS_BUILD = YES
 ONLY_ACTIVE_ARCH = YES
 SWIFT_OPTIMIZATION_LEVEL = -Onone
+SWIFT_ACTIVE_COMPILATION_CONDITIONS = $(inherited) PHI_OSS_BUILD
+EXCLUDED_SOURCE_FILE_NAMES = $(inherited) Sparkle.framework

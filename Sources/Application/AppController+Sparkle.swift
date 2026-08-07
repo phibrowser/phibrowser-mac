@@ -3,6 +3,7 @@
 // Use of this source code is governed by an Apache license that can be
 // found in the LICENSE file.
 
+#if !PHI_OSS_BUILD
 import Foundation
 import Sparkle
 
@@ -163,3 +164,4 @@ extension AppController {
         }
     }
 }
+#endif

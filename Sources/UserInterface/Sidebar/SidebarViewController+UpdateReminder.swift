@@ -3,9 +3,10 @@
 // Use of this source code is governed by an Apache license that can be
 // found in the LICENSE file.
 
+#if !PHI_OSS_BUILD
 import Cocoa
 import SnapKit
-import Sparkle
+
 extension SidebarViewController {
     func showUpdateReminder(version: String) {
         let reminderView = ReminderView(version: version)
@@ -184,3 +185,4 @@ class ReminderView: NSView {
         addTrackingArea(trackingArea)
     }
 }
+#endif

@@ -584,6 +584,7 @@ class SidebarHeaderView: NSView, TitlebarAwareHitTestable {
                 .store(in: &cancellables)
         }
 
+        #if !PHI_OSS_BUILD
         // Show the upgrade button once Sparkle reports a downloaded update.
         NotificationCenter.default.publisher(for: .sparkleDidDownloadUpdate)
             .receive(on: RunLoop.main)
@@ -599,6 +600,7 @@ class SidebarHeaderView: NSView, TitlebarAwareHitTestable {
                 self?.hideUpgradeButton()
             }
             .store(in: &cancellables)
+        #endif
 
         #if DEBUG
         applyUITestUpdateOverrideIfNeeded()
@@ -673,7 +675,9 @@ class SidebarHeaderView: NSView, TitlebarAwareHitTestable {
 
     private func upgradeButtonClicked() {
         guard availableUpdateVersion != nil else { return }
+        #if !PHI_OSS_BUILD
         AppController.shared.checkForUpdate(nil)
+        #endif
     }
 
     /// Shows the upgrade button for a downloaded update.

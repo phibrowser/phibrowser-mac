@@ -5,6 +5,7 @@
 // found in the LICENSE file.
     
 
+#if !PHI_OSS_BUILD
 import Cocoa
 import Sparkle
 import WebKit
@@ -901,3 +902,4 @@ enum PhiSparkleUpdateWindowMode {
         }
     }
 }
+#endif

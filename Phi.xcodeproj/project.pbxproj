@@ -2537,6 +2537,7 @@
 				A8F100312FF0000000000031 /* Copy Uninstall Helper */,
 				B17DE00000000000000000E2 /* Copy Bitwarden Helper */,
 				B17DE00000000000000000E7 /* Copy Bitwarden GPL Notices */,
+				E10000000000000000000010 /* Prune OpenSource Build */,
 			);
 			buildRules = (
 			);
@@ -2699,6 +2700,31 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXResourcesBuildPhase section */
+
+/* Begin PBXShellScriptBuildPhase section */
+		E10000000000000000000010 /* Prune OpenSource Build */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+				"$(TARGET_BUILD_DIR)/$(EXECUTABLE_PATH)",
+				"$(TARGET_BUILD_DIR)/$(INFOPLIST_PATH)",
+			);
+			name = "Prune OpenSource Build";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "if [ \"$PHI_OSS_BUILD\" != \"YES\" ]; then\n    exit 0\nfi\n\n/bin/sh \"$SRCROOT/scripts/prune_open_source_build.sh\" \"$TARGET_BUILD_DIR/$WRAPPER_NAME\"\n";
+			showEnvVarsInLog = 0;
+		};
+/* End PBXShellScriptBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
 		54A200332FE1000000000033 /* Sources */ = {
@@ -4087,10 +4113,16 @@
 				CODE_SIGN_STYLE = Manual;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 4;
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				ENABLE_HARDENED_RUNTIME = NO;
 				FRAMEWORK_SEARCH_PATHS = (
 					"$(inherited)",
 					"$(PROJECT_DIR)/Frameworks",
+				);
+				OTHER_LDFLAGS = (
+					"$(inherited)",
+					"-Wl,-dead_strip_dylibs",
+					"-Wl,-needed_framework,Phi\\ Framework",
 				);
 				GCC_PREPROCESSOR_DEFINITIONS = (
 					"$(inherited)",

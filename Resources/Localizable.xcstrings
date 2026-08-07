@@ -55822,8 +55822,6 @@
         },
         "es" : {
           "stringUnit" : {
-            "state" : "new",
-            "value" : "Pop out playing video when you switch tabs or apps"
             "state" : "translated",
             "value" : "Notificaciones"
           }
@@ -56520,8 +56518,6 @@
         },
         "zh-Hant" : {
           "stringUnit" : {
-            "state" : "new",
-            "value" : "Apply theme to text selection on web pages"
             "state" : "translated",
             "value" : "選取設定檔以查看其設定。"
           }
@@ -56966,8 +56962,6 @@
         },
         "es" : {
           "stringUnit" : {
-            "state" : "new",
-            "value" : "Click "
             "state" : "translated",
             "value" : "Nuevo perfil"
           }

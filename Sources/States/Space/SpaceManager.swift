@@ -936,6 +936,61 @@ final class SpaceManager: ObservableObject {
         return true
     }
 
+    /// What a windowless reopen does once every profile's restore has settled.
+    enum ReopenSettleOutcome: Equatable {
+        /// Open a plain window on the persisted Space.
+        ///
+        /// `restoreProducedNoWindow` separates the two ways of arriving here:
+        /// the ordinary "nothing was restorable", and the fault below — a
+        /// restore that reported a replay and still put no window on screen,
+        /// the one worth a loud line in the log bundle. Carried rather than
+        /// re-derived at the call site so a test pins which quadrant is the
+        /// anomaly, the way `SessionRestoreWatchdogOutcome` carries
+        /// `writesSnapshot`.
+        case spawnPersistedSpaceWindow(restoreProducedNoWindow: Bool)
+        /// Re-point the slots whose active Space did not come back.
+        case repairSlotsWithAbsentActiveSpace
+    }
+
+    /// Whether the settled reopen produced a usable layout, or owes the user a
+    /// window.
+    ///
+    /// `restoredAnyWindow` is not that answer. Its contract (bridge header,
+    /// verbatim) is "whether any profile started a replay, not whether a
+    /// window appeared", and the two diverge the moment every window of the
+    /// session parks: chromium's eager filter is a reverse whitelist, so an
+    /// eager set naming ids the session file no longer holds matches nothing
+    /// and parks EVERY window rather than none. That run takes the
+    /// all-parked early return, reports success, and hands this side a settled
+    /// restore with no window in it.
+    ///
+    /// Deciding on `restoredAnyWindow` alone sent that case to
+    /// `repairSlotsWithAbsentActiveSpace`, which walks `slots` — empty, so it
+    /// did nothing, and nothing had changed by the next Dock click either:
+    /// same snapshot, same stale eager set, same zero windows. The user's tabs
+    /// were never lost, but only a restart brought a window back.
+    ///
+    /// So the second input asks whether a window actually ARRIVED, and asks it
+    /// with the very guard that routed the reopen here
+    /// (`isWindowlessWithHostedSlots`) rather than a second predicate that
+    /// could drift from it. Sound to read at this point precisely because of
+    /// the completion's contract: no restored window can appear after it runs.
+    ///
+    /// `restoredAnyWindow == false` keeps spawning either way. That half
+    /// predates this rule and is left exactly as it was — a window that turned
+    /// up from somewhere else in the gap is not a reason to withhold the one
+    /// the reopen owes the user. Pure and static so the rule is pinned by
+    /// table.
+    static func reopenSettleOutcome(restoredAnyWindow: Bool,
+                                    isStillWindowless: Bool) -> ReopenSettleOutcome {
+        guard restoredAnyWindow else {
+            return .spawnPersistedSpaceWindow(restoreProducedNoWindow: false)
+        }
+        return isStillWindowless
+            ? .spawnPersistedSpaceWindow(restoreProducedNoWindow: true)
+            : .repairSlotsWithAbsentActiveSpace
+    }
+
     /// Re-arms the persisted slot snapshot and asks Chromium to restore every
     /// last-active profile's session, mirroring a cold start. Marks a restore
     /// in flight until Chromium reports every profile's restore has settled
@@ -1012,10 +1067,26 @@ final class SpaceManager: ObservableObject {
                 // the unusual one, which is the cheaper trade than holding the
                 // transaction open across a spawn.
                 self.endSessionRestoreTransaction(restoredAnyWindow: restoredAnyWindow)
-                if !restoredAnyWindow {
-                    // Nothing restorable: open a plain window.
-                    self.spawnPersistedSpaceWindow()
-                } else {
+                switch Self.reopenSettleOutcome(
+                    restoredAnyWindow: restoredAnyWindow,
+                    isStillWindowless: self.isWindowlessWithHostedSlots
+                ) {
+                case .spawnPersistedSpaceWindow(let restoreProducedNoWindow):
+                    // Nothing restorable, or nothing that made it to screen:
+                    // open a plain window.
+                    let spawned = self.spawnPersistedSpaceWindow()
+                    if restoreProducedNoWindow {
+                        // Loud, and the only trace this leaves: the restore
+                        // succeeded on chromium's terms while not one window
+                        // reached this side. Without the spawn above the Dock
+                        // click did nothing at all, and so did every later one.
+                        // Reported AFTER the attempt because the spawn can
+                        // decline (no Space resolves) — a bundle that read the
+                        // intent as the result would send its reader down the
+                        // wrong branch of the triage this line exists for.
+                        AppLogError("[SpaceManager] windowless reopen — the restore reported a replay but no window arrived; plain-window spawn \(spawned ? "requested" : "DECLINED, no Space resolved")")
+                    }
+                case .repairSlotsWithAbsentActiveSpace:
                     self.repairSlotsWithAbsentActiveSpace()
                 }
                 // Every window this reopen was going to produce now exists, so

@@ -35,7 +35,11 @@ import XCTest
 ///     (`fallbackClaimIndex`) — restore's own stand-in window claims by
 ///     profile with no grace period, and consuming a parked window's entry
 ///     would drop that ghost from the next persist AND leave an empty window
-///     shadowing the Space it was saved for.
+///     shadowing the Space it was saved for;
+///   * what the reopen does once its restore settles
+///     (`reopenSettleOutcome`) — a restore can report success and still put no
+///     window on screen, which leaves the app windowless and repeating that
+///     same result on every later Dock click until it is restarted.
 ///
 /// What they cannot reach — that `activate`, `deleteSpace`, `changeProfile`
 /// and the coordinator feed these rules their real state — rests on the
@@ -393,5 +397,56 @@ final class LazySpaceRestoreWiringTests: XCTestCase {
             SpaceManager.fallbackClaimIndex([55: 0, 7: 0], parkedGhosts: [:]),
             [55: 0, 7: 0]
         )
+    }
+
+    // MARK: - What the reopen does once its restore settles
+
+    /// `restoredAnyWindow` answers whether a profile STARTED a replay, not
+    /// whether a window appeared, and a reopen that parks every window of the
+    /// session satisfies the first while failing the second. Deciding on it
+    /// alone left the app windowless and self-repeating; `reopenSettleOutcome`
+    /// takes "did one arrive" as its own input. The source comment carries the
+    /// mechanism; this table pins the four quadrants and which one is the
+    /// anomaly.
+
+    func testAReopenThatBroughtWindowsBackRepairsTheirSlots() {
+        // Load-bearing for the three below: a rule that spawned in every
+        // quadrant would satisfy them all, and every ordinary reopen would end
+        // with a stray extra window.
+        XCTAssertEqual(
+            SpaceManager.reopenSettleOutcome(
+                restoredAnyWindow: true, isStillWindowless: false),
+            .repairSlotsWithAbsentActiveSpace)
+    }
+
+    func testARestoreThatReportedAReplayButProducedNoWindowStillSpawns() {
+        // The defect. The restore succeeded on chromium's terms and the user's
+        // tabs are safe in the session file, but not one window reached this
+        // side, so the Dock click the user just made has to produce one — and
+        // this is the quadrant that says so in the log.
+        XCTAssertEqual(
+            SpaceManager.reopenSettleOutcome(
+                restoredAnyWindow: true, isStillWindowless: true),
+            .spawnPersistedSpaceWindow(restoreProducedNoWindow: true))
+    }
+
+    func testNothingRestorableSpawnsAsItAlwaysDid() {
+        // Not the anomaly: nothing replayed, so no window was owed by one.
+        XCTAssertEqual(
+            SpaceManager.reopenSettleOutcome(
+                restoredAnyWindow: false, isStillWindowless: true),
+            .spawnPersistedSpaceWindow(restoreProducedNoWindow: false))
+    }
+
+    func testNothingRestorableSpawnsEvenWithAWindowAlreadyThere() {
+        // The quadrant nothing in the product is known to reach, pinned so the
+        // narrowing above cannot quietly change it: `restoredAnyWindow ==
+        // false` spawned before this rule existed and still does. A window
+        // arriving from somewhere else in the gap is not a reason to withhold
+        // the one the reopen owes the user.
+        XCTAssertEqual(
+            SpaceManager.reopenSettleOutcome(
+                restoredAnyWindow: false, isStillWindowless: false),
+            .spawnPersistedSpaceWindow(restoreProducedNoWindow: false))
     }
 }

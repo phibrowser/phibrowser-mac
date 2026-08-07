@@ -1132,12 +1132,44 @@ typedef NS_ENUM(NSInteger, PhiGhostMaterializeOutcome) {
 /// An empty array is a valid armed state in which every window parks; ids
 /// that name no window of the previous session are ignored. The
 /// `restoredAnyWindow` contract is unchanged — it reports whether any
-/// profile started a replay, not whether a window appeared — so keep at
-/// least one eager window per slot and the two cannot diverge. Main thread
-/// only.
+/// profile started a replay, not whether a window appeared, and the two DO
+/// diverge: the filter is a reverse whitelist, so an eager set naming only
+/// ids the session file no longer holds matches nothing, parks every window
+/// and still reports YES. The receipt selector below reports that case and
+/// says what actually got parked, and is what the client calls today; this
+/// one is kept as the rollback carrier — parking without a receipt leaves
+/// the client holding a prediction nothing ever checks. Main thread only.
 - (void)restorePreviousSessionWithPreferredProfile:(NSString * _Nullable)preferredProfileId
                                     eagerWindowIds:(NSArray<NSNumber *> * _Nullable)eagerWindowIds
                                         completion:(void (^)(BOOL restoredAnyWindow))completion;
+
+/// Same restore and the same `eagerWindowIds` contract as the selector
+/// above, with the settlement reported instead of a bare BOOL.
+///
+/// `parkedWindowIdsByProfileId` is what Chromium ACTUALLY has parked when
+/// the restore settles: profile directory basename → previous-session window
+/// ids, in adoption order. It is the whole ghost registry, not just what this
+/// reopen diverted — a profile this reopen never replayed keeps whatever an
+/// earlier one parked for it — and it is authoritative: replace whatever the
+/// caller predicted with it rather than merging the two. An empty dictionary
+/// means nothing is parked (including when Chromium refused to arm), so the
+/// caller must clear its records, not keep its prediction. A window in it
+/// that the caller cannot map back to a Space is a real parked window with no
+/// way to reach it: report it, never drop it silently.
+///
+/// `eagerFilterMatchedNothing` is YES when this reopen armed a non-empty
+/// eager set and none of those ids named a window of any replayed profile:
+/// everything parked and no window came back, whatever `restoredAnyWindow`
+/// says. The caller's eager set went stale.
+///
+/// The `parkedCompletion:` label distinguishes this from the BOOL-only shape
+/// above, so a caller's selector probe rejects a framework that cannot report
+/// a receipt instead of silently keeping its own guess. Main thread only.
+- (void)restorePreviousSessionWithPreferredProfile:(NSString * _Nullable)preferredProfileId
+                                    eagerWindowIds:(NSArray<NSNumber *> * _Nullable)eagerWindowIds
+                                  parkedCompletion:(void (^)(BOOL restoredAnyWindow,
+                                                             NSDictionary<NSString *, NSArray<NSNumber *> *> *parkedWindowIdsByProfileId,
+                                                             BOOL eagerFilterMatchedNothing))completion;
 
 /// Materializes the ghost window parked as `previousSessionWindowId` for
 /// `profileId` (a profile directory basename, the same wire id

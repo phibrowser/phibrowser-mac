@@ -43,7 +43,13 @@ import XCTest
 ///   * what the reopen does once its restore settles
 ///     (`reopenSettleOutcome`) — a restore can report success and still put no
 ///     window on screen, which leaves the app windowless and repeating that
-///     same result on every later Dock click until it is restarted.
+///     same result on every later Dock click until it is restarted;
+///   * what Chromium's park receipt does to the recorded ghosts
+///     (`reconcileGhostReceipt`) — the record is replaced by the receipt
+///     rather than merged with the prediction, and the two ways they can
+///     disagree have opposite answers: a predicted ghost Chromium never
+///     parked is retired, a parked window this side cannot place is reported
+///     and left alone.
 ///
 /// What they cannot reach — that `activate`, `deleteSpace`, `changeProfile`
 /// and the coordinator feed these rules their real state — rests on the
@@ -477,5 +483,81 @@ final class LazySpaceRestoreWiringTests: XCTestCase {
             SpaceManager.reopenSettleOutcome(
                 restoredAnyWindow: false, isStillWindowless: false),
             .spawnPersistedSpaceWindow(restoreProducedNoWindow: false))
+    }
+
+    // MARK: - The park receipt (what chromium says it actually parked)
+
+    func testReceiptReplacesThePredictionRatherThanMergingWithIt() {
+        // 10 was predicted and really parked; 11 was predicted and never
+        // parked; 12 parked without being predicted. Only the receipt
+        // survives — a merge would keep 11 and route a Space switch to a
+        // materialization that can only fail.
+        let reconciliation = SpaceManager.reconcileGhostReceipt(
+            receiptWindowIds: [10, 12],
+            predicted: [10: "space-a", 11: "space-b"],
+            snapshotSpaceIdsByWindowId: [10: "space-a", 11: "space-b",
+                                         12: "space-c"])
+
+        XCTAssertEqual(reconciliation.parkedGhostSpaceIdsByWindowId,
+                       [10: "space-a", 12: "space-c"])
+        XCTAssertEqual(reconciliation.unparked, [11])
+        XCTAssertEqual(reconciliation.unmapped, [])
+    }
+
+    func testEmptyReceiptClearsEveryRecord() {
+        // The arming chromium refused, and the profile that never replayed:
+        // nothing is parked, so nothing may stay recorded.
+        let reconciliation = SpaceManager.reconcileGhostReceipt(
+            receiptWindowIds: [],
+            predicted: [10: "space-a", 11: "space-b"],
+            snapshotSpaceIdsByWindowId: [10: "space-a", 11: "space-b"])
+
+        XCTAssertEqual(reconciliation.parkedGhostSpaceIdsByWindowId, [:])
+        XCTAssertEqual(reconciliation.unparked, [10, 11])
+        XCTAssertEqual(reconciliation.unmapped, [])
+    }
+
+    func testReceiptWindowNoSpaceMapsToIsReportedNotRecorded() {
+        // The reverse divergence, and the half the receipt cannot fix:
+        // windowId → spaceId lives only in the snapshot, so a window it never
+        // named cannot be placed. It stays parked on the chromium side (the
+        // next full restore hands it back) and is reported here.
+        let reconciliation = SpaceManager.reconcileGhostReceipt(
+            receiptWindowIds: [10, 99],
+            predicted: [10: "space-a"],
+            snapshotSpaceIdsByWindowId: [10: "space-a"])
+
+        XCTAssertEqual(reconciliation.parkedGhostSpaceIdsByWindowId,
+                       [10: "space-a"])
+        XCTAssertEqual(reconciliation.unparked, [])
+        XCTAssertEqual(reconciliation.unmapped, [99])
+    }
+
+    func testReceiptPlacesGhostsOfAProfileThatDidNotReplayFromTheSnapshot() {
+        // A profile this reopen never replayed keeps the ghosts an earlier one
+        // parked, and this reopen's classification never predicted them. The
+        // snapshot still names their Spaces, which is what keeps them
+        // reachable instead of stranded.
+        let reconciliation = SpaceManager.reconcileGhostReceipt(
+            receiptWindowIds: [7],
+            predicted: [:],
+            snapshotSpaceIdsByWindowId: [7: "space-old"])
+
+        XCTAssertEqual(reconciliation.parkedGhostSpaceIdsByWindowId,
+                       [7: "space-old"])
+        XCTAssertEqual(reconciliation.unmapped, [])
+    }
+
+    func testReceiptReportsBothDivergencesSorted() {
+        // Both directions at once, and the order is deterministic so a log
+        // bundle reads the same way twice.
+        let reconciliation = SpaceManager.reconcileGhostReceipt(
+            receiptWindowIds: [30, 20],
+            predicted: [12: "space-a", 11: "space-b"],
+            snapshotSpaceIdsByWindowId: [11: "space-b", 12: "space-a"])
+
+        XCTAssertEqual(reconciliation.parkedGhostSpaceIdsByWindowId, [:])
+        XCTAssertEqual(reconciliation.unparked, [11, 12])
+        XCTAssertEqual(reconciliation.unmapped, [20, 30])
     }
 }

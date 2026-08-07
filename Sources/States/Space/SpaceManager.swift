@@ -1040,9 +1040,17 @@ final class SpaceManager: ObservableObject {
             bridge,
             preferredProfileId: preferredProfileId,
             eagerWindowIds: armLazyRestoreForReopen(bridge)
-        ) { [weak self] restoredAnyWindow in
+        ) { [weak self] restoredAnyWindow, parkedGhostReceipt in
             DispatchQueue.main.async {
                 guard let self else { return }
+                // First, and ahead of the snapshot write below: what this
+                // reopen predicted it parked is a guess made before Chromium
+                // was asked for anything, and the receipt is what Chromium
+                // actually holds. Nil only on the legacy paths, which park
+                // nothing and so leave the (empty) records alone.
+                if let parkedGhostReceipt {
+                    self.applyParkedGhostReceipt(parkedGhostReceipt)
+                }
                 // Every profile's restore has settled: started replays have
                 // finished creating their windows and tabs, skipped or refused
                 // profiles settled immediately. Both races the flag guards
@@ -1105,39 +1113,158 @@ final class SpaceManager: ObservableObject {
         return true
     }
 
+    /// What Chromium reports it ACTUALLY parked once a reopen settles — the
+    /// answer this side replaces its own prediction with.
+    ///
+    /// The prediction (`armLazyRestoreForReopen`) is written before Chromium
+    /// is asked for anything and is never checked afterwards, so every reason
+    /// the slot snapshot and the session file can disagree ends as a park
+    /// record naming a window Chromium does not hold. That record is what
+    /// tells a Space switch to materialize, and the failure surfaces to the
+    /// user as "the saved window is gone".
+    struct ChromiumParkedGhostReceipt {
+        /// Profile directory basename → previous-session window ids parked
+        /// for it. The whole ghost registry, not just what this reopen
+        /// diverted: a profile this reopen never replayed still carries the
+        /// windows an earlier reopen parked for it.
+        let windowIdsByProfileId: [String: [Int]]
+        /// Chromium armed a non-empty eager set and matched none of it: the
+        /// ids named windows the session file no longer holds, so its
+        /// reverse whitelist parked every window and handed back none.
+        let eagerFilterMatchedNothing: Bool
+
+        var windowIds: Set<Int> { Set(windowIdsByProfileId.values.joined()) }
+    }
+
     /// Sends the reopen's restore request over the bridge. A non-nil
     /// `eagerWindowIds` asks for the lazy-restore eager filter — only those
     /// previous-session windows rebuild now, the rest park as ghosts — and is
-    /// honored only when the loaded Phi Framework knows the eager-filter
-    /// selector. An older framework falls back to the legacy full-restore
-    /// selector, every window rebuilding and nothing parking, which is the
-    /// safe side of a framework/client version skew (the caller-side mirror
-    /// of the coordinator's legacy mainBrowserWindowCreated entry points).
-    /// nil always takes the legacy selector.
+    /// honored only when the loaded Phi Framework knows the receipt selector.
+    /// An older framework falls back to the legacy full-restore selector,
+    /// every window rebuilding and nothing parking, which is the safe side of
+    /// a framework/client version skew (the caller-side mirror of the
+    /// coordinator's legacy mainBrowserWindowCreated entry points). nil always
+    /// takes the legacy selector.
+    ///
+    /// The receipt is nil on both legacy paths, and it means "no answer", not
+    /// "nothing parked": nothing was asked to park either way, so the caller
+    /// leaves its records alone.
     private func requestChromiumSessionRestore(
         _ bridge: PhiChromiumBridgeProtocol,
         preferredProfileId: String?,
         eagerWindowIds: [NSNumber]?,
-        completion: @escaping (Bool) -> Void
+        completion: @escaping (Bool, ChromiumParkedGhostReceipt?) -> Void
     ) {
-        let eagerSelector = #selector(PhiChromiumBridgeProtocol
-            .restorePreviousSession(withPreferredProfile:eagerWindowIds:completion:))
+        let receiptSelector = #selector(PhiChromiumBridgeProtocol
+            .restorePreviousSession(withPreferredProfile:eagerWindowIds:parkedCompletion:))
         if let eagerWindowIds {
-            if bridge.responds(to: eagerSelector) {
+            if bridge.responds(to: receiptSelector) {
                 bridge.restorePreviousSession(
                     withPreferredProfile: preferredProfileId,
                     eagerWindowIds: eagerWindowIds,
-                    completion: completion
+                    parkedCompletion: { restoredAnyWindow, parked, matchedNothing in
+                        completion(restoredAnyWindow, ChromiumParkedGhostReceipt(
+                            windowIdsByProfileId: parked.mapValues { $0.map(\.intValue) },
+                            eagerFilterMatchedNothing: matchedNothing))
+                    }
                 )
                 return
             }
             // Not silent: an eager set was asked for and cannot be honored.
-            AppLogWarn("[SpaceManager] eager-filter selector unavailable (older framework) — restoring everything")
+            // Parking without a receipt is what this ticket removed, so the
+            // fallback is a full restore rather than a predicted park set.
+            AppLogWarn("[SpaceManager] park-receipt selector unavailable (older framework) — restoring everything")
         }
         bridge.restorePreviousSession(
             withPreferredProfile: preferredProfileId,
-            completion: completion
+            completion: { completion($0, nil) }
         )
+    }
+
+    /// Replaces the reopen's PREDICTED park set with what Chromium reports it
+    /// actually parked. Not a merge: the prediction has no authority at all
+    /// once the receipt is in, and every way the two can disagree is a way
+    /// the prediction was wrong.
+    ///
+    /// `windowId → spaceId` is the one thing the receipt cannot carry — only
+    /// the slot snapshot knows it — so each reported window is mapped back
+    /// through the prediction and, failing that, the snapshot's own window
+    /// maps. A window neither can place is a real parked window with no Space
+    /// to reach it from; it is reported and left where it is, because it
+    /// still lives in the session file and the next unfiltered restore hands
+    /// it back as an ordinary window, while dropping it would destroy those
+    /// tabs for good.
+    ///
+    /// Must run BEFORE `endSessionRestoreTransaction`: that is the write
+    /// which folds the park records into the persisted snapshot, and it has
+    /// to fold the receipt rather than the prediction.
+    private func applyParkedGhostReceipt(_ receipt: ChromiumParkedGhostReceipt) {
+        let snapshotSpaceIdsByWindowId = restoreEntries
+            .reduce(into: [Int: String]()) { merged, entry in
+                // First wins on a (corrupt) duplicate, the same rule
+                // `classifyRestoreWindows` applies across slots.
+                merged.merge(entry.windowMap) { first, _ in first }
+            }
+        let reconciliation = Self.reconcileGhostReceipt(
+            receiptWindowIds: receipt.windowIds,
+            predicted: parkedGhostSpaceIdsByWindowId,
+            snapshotSpaceIdsByWindowId: snapshotSpaceIdsByWindowId)
+        // Retired through the ordinary path so the unclaimed restore index
+        // leaves with the park entry, exactly as a materialization or an
+        // invalidation retires them.
+        for windowId in reconciliation.unparked {
+            consumeParkedGhost(windowId: windowId)
+        }
+        parkedGhostSpaceIdsByWindowId = reconciliation.parkedGhostSpaceIdsByWindowId
+        AppLogInfo("[SpaceManager] ghost receipt: chromium parked \(receipt.windowIds.count) window(s) across \(receipt.windowIdsByProfileId.count) profile(s); \(parkedGhostSpaceIdsByWindowId.count) recorded")
+        if !reconciliation.unparked.isEmpty {
+            // The divergence that used to reach the user as "the saved
+            // window is gone": predicted parked, never actually parked.
+            AppLogWarn("[SpaceManager] ghost receipt: dropped \(reconciliation.unparked.count) predicted ghost(s) chromium never parked \(reconciliation.unparked)")
+        }
+        if !reconciliation.unmapped.isEmpty {
+            AppLogError("[SpaceManager] ghost receipt: chromium parked \(reconciliation.unmapped.count) window(s) no Space maps to \(reconciliation.unmapped) — unreachable until the next full restore brings them back")
+        }
+        if receipt.eagerFilterMatchedNothing {
+            AppLogError("[SpaceManager] ghost receipt: the eager set matched no saved window — every window parked and none came back")
+        }
+    }
+
+    /// What a reopen's receipt does to the recorded park set. Pure and static
+    /// so the rule is pinned by table (`LazySpaceRestoreWiringTests`).
+    struct GhostReceiptReconciliation: Equatable {
+        /// The record that REPLACES the prediction: every window Chromium
+        /// reports parked that this side can still map to a Space.
+        let parkedGhostSpaceIdsByWindowId: [Int: String]
+        /// Predicted parked and absent from the receipt — Chromium never
+        /// parked them (the window was not in the session file, its profile
+        /// never replayed, the arming was refused). Retiring them is what
+        /// keeps a Space switch from being routed to a materialization that
+        /// can only fail. Ascending.
+        let unparked: [Int]
+        /// Reported parked, but no Space maps to them. Ascending.
+        let unmapped: [Int]
+    }
+
+    static func reconcileGhostReceipt(
+        receiptWindowIds: Set<Int>,
+        predicted: [Int: String],
+        snapshotSpaceIdsByWindowId: [Int: String]
+    ) -> GhostReceiptReconciliation {
+        var parked: [Int: String] = [:]
+        var unmapped: [Int] = []
+        for windowId in receiptWindowIds {
+            if let spaceId = predicted[windowId]
+                ?? snapshotSpaceIdsByWindowId[windowId] {
+                parked[windowId] = spaceId
+            } else {
+                unmapped.append(windowId)
+            }
+        }
+        return GhostReceiptReconciliation(
+            parkedGhostSpaceIdsByWindowId: parked,
+            unparked: predicted.keys.filter { !receiptWindowIds.contains($0) }.sorted(),
+            unmapped: unmapped.sorted())
     }
 
     /// Ends the reopen's restore transaction: the live layout is trustworthy
@@ -1816,12 +1943,17 @@ final class SpaceManager: ObservableObject {
     ///
     /// `materializeGhostWindow` is probed under its outcome-reporting label:
     /// a framework that still answers a bare BOOL counts as older here, which
-    /// is what keeps its yes-or-no from being read as an outcome.
+    /// is what keeps its yes-or-no from being read as an outcome. The restore
+    /// itself is probed under its receipt-reporting label for the same
+    /// reason, and for one more: arming a framework that cannot say what it
+    /// parked leaves this side holding a prediction that nothing ever checks,
+    /// which is the defect the receipt exists to remove — an older framework
+    /// keeps full restores instead.
     private static func bridgeSupportsLazyRestore(
         _ bridge: PhiChromiumBridgeProtocol
     ) -> Bool {
         bridge.responds(to: #selector(PhiChromiumBridgeProtocol
-            .restorePreviousSession(withPreferredProfile:eagerWindowIds:completion:)))
+            .restorePreviousSession(withPreferredProfile:eagerWindowIds:parkedCompletion:)))
             && bridge.responds(to: #selector(PhiChromiumBridgeProtocol
                 .materializeGhostWindow(_:profileId:outcomeCompletion:)))
             && bridge.responds(to: #selector(PhiChromiumBridgeProtocol

@@ -596,6 +596,24 @@ final class SpaceManager: ObservableObject {
     /// for exactly that reason.
     private(set) var isSessionRestoreInFlight = false
 
+    /// When the restore above went in flight, for the absorbed-reopen line in
+    /// `reopenOnPersistedSpaceIfWindowless`. The elapsed time is the one
+    /// number that separates a reopen absorbed by an ordinary ~2s replay from
+    /// one absorbed by a replay the watchdog is about to give up on, without
+    /// the reader having to find the transition line and subtract.
+    ///
+    /// Uptime rather than wall clock, so it stays comparable with the deadline
+    /// it is read against: `armSessionRestoreWatchdog` fires off
+    /// `asyncAfter`, which does not count time the machine spends asleep. A
+    /// wall clock could report minutes in flight while the watchdog sat
+    /// seconds in, which is precisely the misreading this line exists to
+    /// prevent.
+    ///
+    /// Written only where the flag is set and read only while it is true, so
+    /// it is never cleared — the same trade `lastReopenArmedLazyRestore`
+    /// makes, and for the same reason: a second write point is the drift.
+    private var sessionRestoreInFlightSince: DispatchTime?
+
     /// Whether the most recent reopen armed the eager filter — that is,
     /// whether it parked any of its saved windows as ghosts instead of
     /// replaying them. Written on every reopen from the one place that
@@ -888,6 +906,23 @@ final class SpaceManager: ObservableObject {
             // A restore from a rapid earlier Dock click is already running; its
             // windows will arrive, so don't start a second one.
             if isSessionRestoreInFlight {
+                // Answering "handled" and doing nothing is the whole of this
+                // branch, so the line below is the only trace the reopen
+                // leaves. Without it a reopen absorbed here reads in a log
+                // bundle exactly like one that never reached the app — and
+                // while a replay hangs, that is every reopen for the whole
+                // `sessionRestoreWatchdogDeadline`, a stretch in which the
+                // Dock looks broken to the user. The elapsed time tells the
+                // two apart on sight and pairs this line with the watchdog's
+                // `never settled` one: a fraction of a second in is a double
+                // click on an ordinary replay, most of the way to the deadline
+                // is the replay itself being the problem.
+                let inFlightFor = sessionRestoreInFlightSince.map {
+                    String(format: " for %.1fs",
+                           Double(DispatchTime.now().uptimeNanoseconds
+                                  - $0.uptimeNanoseconds) / 1_000_000_000)
+                } ?? ""
+                AppLogInfo("[SpaceManager] windowless reopen absorbed: a session restore has been in flight\(inFlightFor); its windows are the ones that will arrive")
                 return true
             }
             return beginWindowlessSessionRestore()
@@ -1016,6 +1051,7 @@ final class SpaceManager: ObservableObject {
         // see `ReopenLoadingWindow.featureEnabledKey`.
         showReopenLoadingWindows()
         isSessionRestoreInFlight = true
+        sessionRestoreInFlightSince = DispatchTime.now()
         // Both transitions are logged because snapshot persistence is frozen
         // between them: a completion that never arrives leaves an app that
         // looks entirely normal and silently never records its layout again,

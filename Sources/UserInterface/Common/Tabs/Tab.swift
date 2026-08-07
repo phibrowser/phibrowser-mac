@@ -599,6 +599,11 @@ class Tab: WebContentRepresentable {
     
     /// Toggles the AI Chat sidebar for this tab.
     func toggleAIChat(_ collapse: Bool? = nil) {
+        guard collapse == true
+                || PhiPreferences.AISettings.phiAIEnabled.loadValue() else {
+            aiChatCollapsed = true
+            return
+        }
         if let collapse {
             aiChatCollapsed = collapse
         } else {

@@ -32,9 +32,17 @@ struct PostLoginAIEnableIntent {
 
     @discardableResult
     mutating func enableAIIfRequested(
-        defaults: UserDefaults = .standard
+        defaults: UserDefaults = .standard,
+        supportsAI: Bool = PhiBuildCapabilities.supportsAI
     ) -> Bool {
         guard consume() else { return false }
+        guard supportsAI else {
+            defaults.set(
+                false,
+                forKey: PhiPreferences.AISettings.phiAIEnabled.rawValue
+            )
+            return false
+        }
 
         defaults.set(
             true,
@@ -126,6 +134,12 @@ class LoginController {
     
     @MainActor
     func showLoginWindow() {
+        guard PhiBuildCapabilities.supportsAuthentication else {
+            ApplicationState.shared.enterGuestMode()
+            GuestModePreferences.disableAI()
+            return
+        }
+
         AppLogDebug("🔐 [Login] showLoginWindow called")
         if enterGuestModeInsteadOfOnboardingIfRequested() {
             return
@@ -164,6 +178,10 @@ class LoginController {
 
     @MainActor
     func showLoginWindowToEnableAI() {
+        guard PhiBuildCapabilities.supportsAI else {
+            GuestModePreferences.disableAI()
+            return
+        }
         postLoginAIEnableIntent.request()
         showLoginWindow()
     }
@@ -369,6 +387,15 @@ class LoginController {
     }
     
     func refreshLoginStatusOnLaunching() {
+        guard PhiBuildCapabilities.supportsAuthentication else {
+            ApplicationState.shared.enterGuestMode()
+            NotificationCenter.default.post(
+                name: .loginStatusRefreshCompleted,
+                object: nil
+            )
+            return
+        }
+
         Task { @MainActor in
             if ApplicationState.shared.isGuest,
                !ApplicationState.shared.isGuestMigrationRecoveryInProgress {

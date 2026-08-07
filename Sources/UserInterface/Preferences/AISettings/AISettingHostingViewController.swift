@@ -41,7 +41,11 @@ final class AISettingHostingViewController: NSViewController {
     override func viewWillAppear() {
         super.viewWillAppear()
         hostingController?.view.needsLayout = true
-        connectorViewModel.loadConnectionsIfNeeded()
+        if PhiBuildCapabilities.supportsAI {
+            connectorViewModel.loadConnectionsIfNeeded()
+        } else {
+            connectorViewModel.suspendForUnauthenticatedAccess()
+        }
     }
 
 }

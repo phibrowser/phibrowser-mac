@@ -30,7 +30,10 @@ import SwiftUI
 }
 
 extension PhiChromiumCoordinator: PhiChromiumBridgeDelegate {
-    func shouldEnablePhiExtensions() -> Bool { PhiPreferences.AISettings.phiAIEnabled.loadValue() }
+    func shouldEnablePhiExtensions() -> Bool {
+        PhiBuildCapabilities.supportsAI
+            && PhiPreferences.AISettings.phiAIEnabled.loadValue()
+    }
 
     /// Source of truth for the browser-process DevTools gate that blocks
     /// remote-debugging clients from the user's own Spaces. Read live per gated
@@ -328,6 +331,10 @@ extension PhiChromiumCoordinator: PhiChromiumBridgeDelegate {
     }
     
     func canShowChromiumWindow() -> Bool {
+        guard PhiBuildCapabilities.supportsAuthentication else {
+            return true
+        }
+
         if ApplicationState.shared.isGuest {
             let canUseBrowser = ApplicationState.shared.canUseBrowser
             AppLogDebug(
@@ -352,13 +359,15 @@ extension PhiChromiumCoordinator: PhiChromiumBridgeDelegate {
     }
 
     func isPhiGuestMode() -> Bool {
-        ApplicationState.shared.isGuest
+        !PhiBuildCapabilities.supportsAuthentication
+            || ApplicationState.shared.isGuest
     }
 
     /// Returns the current Phi account identity from the same per-account
     /// profile cache used by the Mac account settings page. The ID-token
     /// identity covers the short window before the init prefetch completes.
     func getPhiAccountInfo() -> [String: Any]? {
+        guard PhiBuildCapabilities.supportsAuthentication else { return nil }
         guard ApplicationState.shared.isAuthenticated else { return nil }
         guard let account = AccountController.shared.account else { return nil }
         let profile: Profile? = account.userDefaults.codableValue(
@@ -380,6 +389,7 @@ extension PhiChromiumCoordinator: PhiChromiumBridgeDelegate {
     }
     
     func showLoginUI() {
+        guard PhiBuildCapabilities.supportsAuthentication else { return }
         AppLogInfo("🌐 [Chromium] showLoginUI called by Chromium")
         Task { @MainActor in
             LoginController.shared.showLoginWindow()
@@ -426,6 +436,7 @@ extension PhiChromiumCoordinator: PhiChromiumBridgeDelegate {
     }
 
     func getAuth0AccessTokenSyncly() -> String {
+        guard PhiBuildCapabilities.supportsAuthentication else { return "" }
         guard ApplicationState.shared.isAuthenticated else {
             AppLogDebug("🌐 [Chromium] getAuth0AccessTokenSyncly called without an authenticated browser session")
             return ""

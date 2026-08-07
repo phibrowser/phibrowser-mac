@@ -81,23 +81,27 @@ import PostHog
         // whether its windows may be shown. The async refresh below can still
         // recover a fresher shared credential snapshot afterwards.
         resolveBrowserAccessFromAuthentication(checkChromiumLaunchStatus: true)
-        if ApplicationState.shared.isGuest {
+        if ApplicationState.shared.isGuest || !PhiBuildCapabilities.supportsAI {
             GuestModePreferences.disableAI()
         }
-        LoginController.shared.prepareGuestMigrationRecoveryBeforeChromiumLaunch()
         let permitsSentinelLaunch: Bool
-        if ApplicationState.shared.isGuest {
-            permitsSentinelLaunch =
-                AuthManager.shared
-                    .prepareGuestSessionBoundaryBeforeServiceLaunch(
-                        preserveLocalRecoveryCredentials:
-                            ApplicationState.shared
-                                .isGuestMigrationRecoveryInProgress
-                    )
+        if PhiBuildCapabilities.supportsAuthentication {
+            LoginController.shared.prepareGuestMigrationRecoveryBeforeChromiumLaunch()
+            if ApplicationState.shared.isGuest {
+                permitsSentinelLaunch =
+                    AuthManager.shared
+                        .prepareGuestSessionBoundaryBeforeServiceLaunch(
+                            preserveLocalRecoveryCredentials:
+                                ApplicationState.shared
+                                    .isGuestMigrationRecoveryInProgress
+                        )
+            } else {
+                permitsSentinelLaunch = true
+            }
+            LoginController.shared.refreshLoginStatusOnLaunching()
         } else {
             permitsSentinelLaunch = true
         }
-        LoginController.shared.refreshLoginStatusOnLaunching()
         
         //        ASWebAuthenticationSessionWebBrowserSessionManager.shared.sessionHandler = self
         
@@ -264,7 +268,9 @@ import PostHog
     }
     
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows: Bool) -> Bool {
-        if !ApplicationState.shared.canUseBrowser {
+        let canUseBrowser = !PhiBuildCapabilities.supportsAuthentication
+            || ApplicationState.shared.canUseBrowser
+        if !canUseBrowser {
             if !ApplicationState.shared.isGuestMigrationRecoveryInProgress {
                 LoginController.shared.showLoginWindow()
             }
@@ -312,8 +318,10 @@ import PostHog
     }
     
     func application(_ application: NSApplication, open urls: [URL]) {
-        for url in urls where AuthManager.shared.resumeExternalBrowserAuthentication(with: url) {
-            return
+        if PhiBuildCapabilities.supportsAuthentication {
+            for url in urls where AuthManager.shared.resumeExternalBrowserAuthentication(with: url) {
+                return
+            }
         }
 
         if !ApplicationState.shared.canUseBrowser {
@@ -422,7 +430,9 @@ import PostHog
     }
 
     @objc private func loginCompleted(_ notification: Notification) {
-        if LoginController.shared.isLoggedin() {
+        if !PhiBuildCapabilities.supportsAuthentication {
+            ApplicationState.shared.enterGuestMode()
+        } else if LoginController.shared.isLoggedin() {
             ApplicationState.shared.markSignedIn()
         } else {
             resolveBrowserAccessFromAuthentication(checkChromiumLaunchStatus: false)
@@ -485,6 +495,11 @@ import PostHog
     private func resolveBrowserAccessFromAuthentication(
         checkChromiumLaunchStatus: Bool
     ) {
+        guard PhiBuildCapabilities.supportsAuthentication else {
+            ApplicationState.shared.enterGuestMode()
+            return
+        }
+
         // A persisted Guest choice deliberately outranks credentials that were
         // staged but never committed. LoginController performs the one
         // identity-bound recovery when a migration journal exists; ordinary

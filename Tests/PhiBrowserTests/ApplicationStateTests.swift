@@ -35,6 +35,35 @@ final class ApplicationStateTests: XCTestCase {
         XCTAssertFalse(state.isAuthenticated)
     }
 
+    func testAuthenticationDisabledAlwaysUsesGuestBrowserAccess() {
+        let state = makeState(supportsAuthentication: false)
+
+        XCTAssertEqual(state.browserAccessState, .guest)
+        XCTAssertTrue(state.canUseBrowser)
+        XCTAssertTrue(state.isGuest)
+        XCTAssertFalse(state.isAuthenticated)
+
+        state.resolveInitialAccess(
+            isAuthenticationBlocked: true,
+            hasRecoverableLoginSession: true,
+            isAuthenticated: true
+        )
+        state.markSignedIn()
+        state.requireLogin()
+        state.clearPersistedGuestChoice()
+
+        XCTAssertEqual(state.browserAccessState, .guest)
+        XCTAssertTrue(state.canUseBrowser)
+        XCTAssertTrue(state.isGuest)
+        XCTAssertFalse(state.isAuthenticated)
+        XCTAssertFalse(state.beginGuestMigrationRecovery())
+        XCTAssertFalse(state.beginGuestAccountPromotion())
+        XCTAssertEqual(
+            makeState(supportsAuthentication: false).browserAccessState,
+            .guest
+        )
+    }
+
     func testGuestChoicePersistsAcrossInstances() {
         let state = makeState()
         state.enterGuestMode()
@@ -262,10 +291,13 @@ final class ApplicationStateTests: XCTestCase {
         wait(for: [stateChanges], timeout: 0.1)
     }
 
-    private func makeState() -> ApplicationState {
+    private func makeState(
+        supportsAuthentication: Bool = true
+    ) -> ApplicationState {
         ApplicationState(
             defaults: defaults,
-            notificationCenter: notificationCenter
+            notificationCenter: notificationCenter,
+            supportsAuthentication: supportsAuthentication
         )
     }
 }

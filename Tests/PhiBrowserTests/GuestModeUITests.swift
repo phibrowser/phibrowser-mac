@@ -60,10 +60,14 @@ final class GuestModeUITests: XCTestCase {
         intent.request()
 
         XCTAssertTrue(intent.isPending)
-        XCTAssertTrue(intent.enableAIIfRequested(defaults: defaults))
+        XCTAssertTrue(
+            intent.enableAIIfRequested(defaults: defaults, supportsAI: true)
+        )
         XCTAssertTrue(defaults.bool(forKey: GuestModePreferences.aiEnabledKey))
         XCTAssertFalse(intent.isPending)
-        XCTAssertFalse(intent.enableAIIfRequested(defaults: defaults))
+        XCTAssertFalse(
+            intent.enableAIIfRequested(defaults: defaults, supportsAI: true)
+        )
     }
 
     func testPostLoginAIEnableIntentCanBeCancelled() {
@@ -74,7 +78,21 @@ final class GuestModeUITests: XCTestCase {
         intent.cancel()
 
         XCTAssertFalse(intent.isPending)
-        XCTAssertFalse(intent.enableAIIfRequested(defaults: defaults))
+        XCTAssertFalse(
+            intent.enableAIIfRequested(defaults: defaults, supportsAI: true)
+        )
+        XCTAssertFalse(defaults.bool(forKey: GuestModePreferences.aiEnabledKey))
+    }
+
+    func testUnsupportedBuildCannotEnableAIFromPostLoginIntent() {
+        var intent = PostLoginAIEnableIntent()
+        defaults.set(true, forKey: GuestModePreferences.aiEnabledKey)
+        intent.request()
+
+        XCTAssertFalse(
+            intent.enableAIIfRequested(defaults: defaults, supportsAI: false)
+        )
+        XCTAssertFalse(intent.isPending)
         XCTAssertFalse(defaults.bool(forKey: GuestModePreferences.aiEnabledKey))
     }
 

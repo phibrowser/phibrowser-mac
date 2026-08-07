@@ -199,7 +199,7 @@ extension PhiPreferences {
         var defaultValue: Bool {
             switch self {
             case .phiAIEnabled:
-                return true
+                return PhiBuildCapabilities.supportsAI
             case .enableConnectors:
                 return true
             case .enableConnectorContext:
@@ -216,7 +216,10 @@ extension PhiPreferences {
         }
 
         func loadValue() -> Bool {
-            UserDefaults.standard.bool(forKey: rawValue, default: defaultValue)
+            if self == .phiAIEnabled && !PhiBuildCapabilities.supportsAI {
+                return false
+            }
+            return UserDefaults.standard.bool(forKey: rawValue, default: defaultValue)
         }
 
         static func buildConfig() -> String {
@@ -224,7 +227,7 @@ extension PhiPreferences {
             allCases
                 .filter { $0 != .enableBrowserMemories}
                 .forEach {
-                result[$0.rawValue] = UserDefaults.standard.bool(forKey: $0.rawValue)
+                result[$0.rawValue] = $0.loadValue()
             }
             let data = try? JSONSerialization.data(withJSONObject: result, options: [])
             return String(data: data ?? Data(), encoding: .utf8) ?? "{}"

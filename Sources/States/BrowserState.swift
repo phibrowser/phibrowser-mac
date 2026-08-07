@@ -995,6 +995,10 @@ class BrowserState {
     /// Toggle AI Chat for the currently focused tab
     /// The collapse state is now managed per-tab, not globally
     func toggleAIChat(_ collapse: Bool? = nil) {
+        guard collapse == true
+                || PhiPreferences.AISettings.phiAIEnabled.loadValue() else {
+            return
+        }
         // Defense in depth: any caller (extension, debug, etc.) hitting this
         // path during placeholder mode would operate on a stale focusingTab.
         // Primary entry points are gated upstream; this is the safety net.

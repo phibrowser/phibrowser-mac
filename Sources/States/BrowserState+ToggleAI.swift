@@ -8,12 +8,13 @@ import Cocoa
 
 extension BrowserState {
     func onAIEnabledChanged(_ enabled: Bool, sentinelOnLogin: Bool) {
-        if enabled {
+        let effectiveEnabled = enabled && PhiBuildCapabilities.supportsAI
+        if effectiveEnabled {
             ChromiumLauncher.sharedInstance().bridge?.enablePhiExtensions()
         } else {
             ChromiumLauncher.sharedInstance().bridge?.disablePhiExtensions(false)
         }
-        if enabled {
+        if effectiveEnabled {
             updateSentinelRegistration(sentinelOnLogin)
         } else {
             Task {

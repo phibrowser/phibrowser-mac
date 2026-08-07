@@ -19,13 +19,25 @@ struct AISettingView: View {
     }
 
     private var aiFeaturesAvailable: Bool {
-        phiAIEnabled && !isGuest
+        PhiBuildCapabilities.supportsAI && phiAIEnabled && !isGuest
+    }
+
+    private var canToggleAI: Bool {
+        PhiBuildCapabilities.supportsAI && !isGuest
+    }
+
+    private var shouldShowGuestLoginPrompt: Bool {
+        PhiBuildCapabilities.supportsAI && isGuest
     }
 
     private var aiEnabledBinding: Binding<Bool> {
         Binding(
-            get: { phiAIEnabled },
+            get: { PhiBuildCapabilities.supportsAI && phiAIEnabled },
             set: { newValue in
+                guard PhiBuildCapabilities.supportsAI else {
+                    phiAIEnabled = false
+                    return
+                }
                 if newValue {
                     phiAIEnabled = true
                 } else {
@@ -40,7 +52,8 @@ struct AISettingView: View {
             VStack(alignment: .leading, spacing: 24) {
                 AIMasterControlSection(
                     isOn: aiEnabledBinding,
-                    isGuest: isGuest,
+                    enabled: canToggleAI,
+                    showsLoginPrompt: shouldShowGuestLoginPrompt,
                     loginAction: logInToEnableAI
                 )
                 BrowserMemorySectionView(enabled: aiFeaturesAvailable)
@@ -51,7 +64,9 @@ struct AISettingView: View {
                     connectorViewModel: connectorViewModel,
                     enabled: aiFeaturesAvailable
                 )
-                PhiLinkSettingsSectionView(enabled: phiAIEnabled)
+                PhiLinkSettingsSectionView(
+                    enabled: PhiBuildCapabilities.supportsAI && phiAIEnabled
+                )
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.vertical, 36)
@@ -60,6 +75,12 @@ struct AISettingView: View {
         .themedBackground(PhiPreferences.fixedWindowBackground)
         .frame(width: 680, height: 561)
         .onChange(of: phiAIEnabled) { oldValue, newValue in
+            guard PhiBuildCapabilities.supportsAI else {
+                if newValue {
+                    phiAIEnabled = false
+                }
+                return
+            }
             if newValue == false {
                 connectorViewModel.disconnectAll()
             }
@@ -108,18 +129,19 @@ struct AISettingView: View {
 
 private struct AIMasterControlSection: View {
     @Binding var isOn: Bool
-    let isGuest: Bool
+    let enabled: Bool
+    let showsLoginPrompt: Bool
     let loginAction: () -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            if isGuest {
+            if showsLoginPrompt {
                 GuestAILoginPromptRow(loginAction: loginAction)
             }
 
             AIEnableToggleRow(
                 isOn: $isOn,
-                enabled: !isGuest
+                enabled: enabled
             )
         }
     }

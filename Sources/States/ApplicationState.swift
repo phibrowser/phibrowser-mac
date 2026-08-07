@@ -5,6 +5,16 @@
 
 import Foundation
 
+enum PhiBuildCapabilities {
+    #if PHI_OSS_BUILD
+    static let supportsAuthentication = false
+    static let supportsAI = false
+    #else
+    static let supportsAuthentication = true
+    static let supportsAI = true
+    #endif
+}
+
 enum BrowserAccessState: Equatable {
     case loginRequired
     case guest
@@ -26,6 +36,7 @@ final class ApplicationState {
 
     private let defaults: UserDefaults
     private let notificationCenter: NotificationCenter
+    private let supportsAuthentication: Bool
     private let stateLock = NSLock()
     private var storedBrowserAccessState: BrowserAccessState
     /// In-memory fence spanning authenticated-account publication and Native
@@ -77,13 +88,20 @@ final class ApplicationState {
 
     init(
         defaults: UserDefaults = .standard,
-        notificationCenter: NotificationCenter = .default
+        notificationCenter: NotificationCenter = .default,
+        supportsAuthentication: Bool = PhiBuildCapabilities.supportsAuthentication
     ) {
         self.defaults = defaults
         self.notificationCenter = notificationCenter
-        storedBrowserAccessState = defaults.bool(forKey: Self.guestModeEnabledKey)
-            ? .guest
-            : .loginRequired
+        self.supportsAuthentication = supportsAuthentication
+        if supportsAuthentication {
+            storedBrowserAccessState = defaults.bool(forKey: Self.guestModeEnabledKey)
+                ? .guest
+                : .loginRequired
+        } else {
+            storedBrowserAccessState = .guest
+            defaults.set(true, forKey: Self.guestModeEnabledKey)
+        }
     }
 
     /// Resolves the synchronous launch state before Chromium asks whether its
@@ -94,6 +112,16 @@ final class ApplicationState {
         hasRecoverableLoginSession: Bool,
         isAuthenticated: Bool
     ) {
+        guard supportsAuthentication else {
+            transition(
+                to: .guest,
+                persistedGuestChoice: true,
+                guestPromotionInProgress: false,
+                guestMigrationRecoveryInProgress: false
+            )
+            return
+        }
+
         let transitionSnapshot = guestTransitionSnapshot()
         if isAuthenticationBlocked && persistedGuestChoice {
             // The fence blocks authenticated access, not local browsing. A
@@ -166,6 +194,7 @@ final class ApplicationState {
     func beginGuestMigrationRecovery(
         notifyBrowserAccessChange: Bool = true
     ) -> Bool {
+        guard supportsAuthentication else { return false }
         stateLock.lock()
         guard storedBrowserAccessState == .guest,
               defaults.bool(forKey: Self.guestModeEnabledKey) else {
@@ -208,6 +237,7 @@ final class ApplicationState {
     /// regular login or account refresh.
     @discardableResult
     func beginGuestAccountPromotion() -> Bool {
+        guard supportsAuthentication else { return false }
         stateLock.lock()
         defer { stateLock.unlock() }
         guard storedBrowserAccessState == .guest,
@@ -232,6 +262,7 @@ final class ApplicationState {
     /// until `markSignedIn()` commits the transaction.
     @discardableResult
     func resumeBrowserAccessForGuestAccountPromotion() -> Bool {
+        guard supportsAuthentication else { return false }
         stateLock.lock()
         guard storedBrowserAccessState == .guest,
               guestAccountPromotionInProgress,
@@ -282,7 +313,7 @@ final class ApplicationState {
     /// removal drops the whole preferences domain.
     func clearPersistedGuestChoice() {
         stateLock.lock()
-        defaults.set(false, forKey: Self.guestModeEnabledKey)
+        defaults.set(!supportsAuthentication, forKey: Self.guestModeEnabledKey)
         stateLock.unlock()
     }
 
@@ -297,20 +328,28 @@ final class ApplicationState {
         guestMigrationRecoveryInProgress: Bool? = nil
     ) {
         stateLock.lock()
-        if let persistedGuestChoice {
-            defaults.set(persistedGuestChoice, forKey: Self.guestModeEnabledKey)
-        }
-        if let guestPromotionInProgress {
-            self.guestAccountPromotionInProgress = guestPromotionInProgress
+        let effectiveState = supportsAuthentication ? newState : .guest
+        if supportsAuthentication {
+            if let persistedGuestChoice {
+                defaults.set(persistedGuestChoice, forKey: Self.guestModeEnabledKey)
+            }
+            if let guestPromotionInProgress {
+                self.guestAccountPromotionInProgress = guestPromotionInProgress
+            }
+        } else {
+            defaults.set(true, forKey: Self.guestModeEnabledKey)
+            self.guestAccountPromotionInProgress = false
         }
         let oldRecoveryState = self.guestMigrationRecoveryInProgress
-        if let guestMigrationRecoveryInProgress {
+        if !supportsAuthentication {
+            self.guestMigrationRecoveryInProgress = false
+        } else if let guestMigrationRecoveryInProgress {
             self.guestMigrationRecoveryInProgress =
                 guestMigrationRecoveryInProgress
         }
-        let didChange = storedBrowserAccessState != newState
+        let didChange = storedBrowserAccessState != effectiveState
             || oldRecoveryState != self.guestMigrationRecoveryInProgress
-        storedBrowserAccessState = newState
+        storedBrowserAccessState = effectiveState
         stateLock.unlock()
 
         guard didChange else { return }

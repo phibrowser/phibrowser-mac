@@ -2890,10 +2890,18 @@ final class SpaceManager: ObservableObject {
     /// decoders here are: a missing or differently-typed value decodes to
     /// empty, and a key that no longer parses as a window id drops that pair
     /// while the readable rest survives.
+    ///
+    /// "Parses as a window id" means the range a window id can actually have:
+    /// a positive `SessionID`, narrowed to 32 bits by the bridge calls a
+    /// parked window reaches. A snapshot is user-writable state on disk, and
+    /// a key outside that range would otherwise ride all the way to a
+    /// trapping `Int32` conversion and crash the first Space switch or Space
+    /// deletion that touched it — the one shape this decoder's tolerance is
+    /// supposed to absorb.
     static func decodedWindowMap(_ raw: Any?) -> [Int: String] {
         guard let rawMap = raw as? [String: String] else { return [:] }
         return rawMap.reduce(into: [:]) { partial, pair in
-            if let id = Int(pair.key) { partial[id] = pair.value }
+            if let id = Int32(pair.key), id > 0 { partial[Int(id)] = pair.value }
         }
     }
 

@@ -125,4 +125,34 @@ final class SlotSnapshotGhostPreservationTests: XCTestCase {
             [7: "space-a"]
         )
     }
+
+    func testDecodingDropsKeysOutsideTheRangeAWindowIdCanHave() {
+        // "Parses as an id" has to mean the range an id can actually have,
+        // not merely "parses as an Int": a parked window's id reaches the
+        // bridge through a trapping 32-bit conversion, so a wider key would
+        // survive the decoder only to crash the first Space switch or Space
+        // deletion that touched it. The readable rest of the same map still
+        // survives, exactly as for an unparseable key.
+        XCTAssertEqual(
+            SpaceManager.decodedWindowMap([
+                "7": "space-a",
+                String(Int(Int32.max) + 1): "space-past-the-top",
+                String(Int(Int32.min) - 1): "space-past-the-bottom",
+            ]),
+            [7: "space-a"]
+        )
+    }
+
+    func testDecodingDropsKeysNoSavedWindowCouldBe() {
+        // A SessionID is always positive. `0` and `-1` are the two ids the
+        // claim path reserves for windows that re-created nothing saved, so a
+        // snapshot naming one describes a window that cannot exist — and
+        // parking it would strand its Space behind a claim nobody can answer.
+        XCTAssertEqual(
+            SpaceManager.decodedWindowMap([
+                "0": "space-zero", "-1": "space-stand-in", "7": "space-a",
+            ]),
+            [7: "space-a"]
+        )
+    }
 }

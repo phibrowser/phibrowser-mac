@@ -852,12 +852,16 @@ extension PhiScriptingDependencies {
             return .failed
         }
 
-        let slot = PhiScriptingSlotRouting.preferredSlot(
+        let routedSlot = PhiScriptingSlotRouting.preferredSlot(
             focusedSlot: manager.keySlot,
             slots: manager.slots,
             containsTargetSpace: { $0.windowController(for: spaceId) != nil }
         )
-            ?? manager.createSlot(initialSpaceId: spaceId)
+        // Nil only when the app holds no slot at all, so every path below that
+        // ends without a window has to reclaim what this mints — see
+        // `SpaceManager.reclaimsMintedSlot` for what a stranded mint costs.
+        let slot = routedSlot ?? manager.createSlot(initialSpaceId: spaceId)
+        let didMintSlot = routedSlot == nil
         let retryWhenReady = {
             retryLiveSavedItemAction(
                 in: slot,
@@ -878,10 +882,14 @@ extension PhiScriptingDependencies {
         }
         guard slot.windowController(for: spaceId) != nil
                 || ChromiumLauncher.sharedInstance().bridge != nil else {
+            manager.reclaimMintedSlot(slot, mintedForThisAttempt: didMintSlot)
             return .failed
         }
         slot.activate(
             spaceId: spaceId,
+            onActivationFailed: {
+                manager.reclaimMintedSlot(slot, mintedForThisAttempt: didMintSlot)
+            },
             onSwapSettled: retryWhenReady
         )
         return .accepted
@@ -946,7 +954,11 @@ extension PhiScriptingDependencies {
               manager.userSpaces.contains(where: { $0.spaceId == targetSpaceId }) else {
             return .failed
         }
+        // Same pairing as `performLiveSavedItemAction` above. The bounded retry
+        // below cannot stand in for it — that only polls for a window a refused
+        // activation will never produce.
         let slot = preferredSlot ?? manager.createSlot(initialSpaceId: targetSpaceId)
+        let didMintSlot = preferredSlot == nil
         let processedAddress = URLProcessor.processUserInput(address)
 
         var didOpen = false
@@ -976,7 +988,12 @@ extension PhiScriptingDependencies {
         }
 
         let hadRegisteredController = slot.windowController(for: targetSpaceId) != nil
-        slot.activate(spaceId: targetSpaceId) {
+        slot.activate(
+            spaceId: targetSpaceId,
+            onActivationFailed: {
+                manager.reclaimMintedSlot(slot, mintedForThisAttempt: didMintSlot)
+            }
+        ) {
             _ = openWhenReady()
         }
         if !hadRegisteredController {
@@ -1065,7 +1082,10 @@ extension PhiScriptingDependencies {
                 }) ?? userSpaces.first?.spaceId else {
                 return .failed
             }
-            manager.createSlot(initialSpaceId: spaceId).activate(spaceId: spaceId)
+            let slot = manager.createSlot(initialSpaceId: spaceId)
+            slot.activate(spaceId: spaceId, onActivationFailed: {
+                manager.reclaimMintedSlot(slot, mintedForThisAttempt: true)
+            })
             return .accepted
         case .incognito:
             return bridge.createBrowser(

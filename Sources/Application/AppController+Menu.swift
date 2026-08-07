@@ -1977,7 +1977,25 @@ extension AppController {
                 // No browser window open (menu-bar-only state): mint a slot
                 // and spawn the Space's window into it, the same shape a
                 // Chromium-initiated Cmd+N takes.
-                manager.createSlot(initialSpaceId: spaceId).activate(spaceId: spaceId)
+                let slot = manager.createSlot(initialSpaceId: spaceId)
+                slot.activate(spaceId: spaceId, onActivationFailed: {
+                    // Undo the whole menu action rather than half of it: with
+                    // nothing on screen, a Space left in the strip behind a
+                    // reclaimed slot is one the user has no surface to reach.
+                    //
+                    // Conditioned on the reclaim, not on the failure report:
+                    // `activate` also reports failure with the spawned window
+                    // registered (the user switched Space mid-spawn), and
+                    // closing the Space there would tear down a window that
+                    // did arrive. `reclaimMintedSlot` is the one place that
+                    // tells those two apart.
+                    //
+                    // Slot first: `closeIncognitoSpace` retreats any slot
+                    // showing the Space to the default one, which would spawn
+                    // a window into the very slot being reclaimed.
+                    guard manager.reclaimMintedSlot(slot, mintedForThisAttempt: true) else { return }
+                    manager.closeIncognitoSpace(spaceId: spaceId)
+                })
             }
         }
     }

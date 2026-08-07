@@ -710,8 +710,10 @@ final class SpaceManager: ObservableObject {
         return slot
     }
 
-    /// Drops a slot from the registry. Called by the slot itself when its
-    /// last controller closes (see `SpaceWindowSlot.unregisterWindow`).
+    /// Drops a slot from the registry. Reached three ways: the slot itself when
+    /// its last controller closes (see `SpaceWindowSlot.unregisterWindow`),
+    /// `MainBrowserWindowControllersManager.removeEmptyDanglingSlots`, and
+    /// `reclaimMintedSlot` below when a mint's window never arrived.
     func removeSlot(_ slot: SpaceWindowSlot) {
         // Resolved before the reattach binding below is dropped — it is the
         // binding that scopes the park set to this slot's entries.
@@ -764,6 +766,70 @@ final class SpaceManager: ObservableObject {
         if persistSlotsSnapshot(retiringGhostWindowIds: Set(parkedGhosts.keys)) {
             dropParkedGhosts(parkedGhosts, reason: "removeSlot")
         }
+    }
+
+    /// Whether a slot minted for a window that never arrived has to be dropped
+    /// from the registry.
+    ///
+    /// Several call sites mint a slot AHEAD of the window that will host it —
+    /// `changeProfile`'s ghost pre-hook, `spawnPersistedSpaceWindow`, the
+    /// windowless Incognito menu spawn, and three in the scripting service (its
+    /// two routing fallbacks and its plain window spawn).
+    /// Every one of them can end without a window: a materialization the
+    /// framework refuses, an `activate` the reopen gate drops, a profile that
+    /// fails to load, a `createBrowser` that returns nil. A slot left behind by
+    /// one of those never hosts a window, and `slots.isEmpty` — what
+    /// `isWindowlessWithHostedSlots` gates on — is then false for the rest of
+    /// the run: every later Dock reopen bypasses the windowless path and falls
+    /// back to Chromium's own handler, which lands on the wrong Space (the
+    /// whole reason that path exists). Only a restart clears it.
+    ///
+    /// All three inputs rule out a distinct way of being wrong:
+    ///
+    ///   * `mintedForThisAttempt` — those same call sites usually resolve an
+    ///     EXISTING slot (`keySlot ?? slots.first ?? mint`), and dropping that
+    ///     one on a failure would take a slot full of the user's windows out of
+    ///     the registry.
+    ///   * `hostsWindow` — a reported failure does not imply no window: the
+    ///     spawn path reports one when the user switched Space mid-spawn, with
+    ///     the spawned window registered and merely left hidden.
+    ///   * `awaitsSpawnedWindow` — nor does it imply none is coming: a
+    ///     `createBrowser` whose registration callback did not run
+    ///     synchronously reports failure while the windowId-keyed claim still
+    ///     routes the arriving window into this slot.
+    ///
+    /// Pure and static so the rule is pinned by table.
+    static func reclaimsMintedSlot(mintedForThisAttempt: Bool,
+                                   hostsWindow: Bool,
+                                   awaitsSpawnedWindow: Bool) -> Bool {
+        mintedForThisAttempt && !hostsWindow && !awaitsSpawnedWindow
+    }
+
+    /// Drops `slot` when this attempt minted it and no window ever reached it —
+    /// the paired half of every mint whose window may not arrive. See
+    /// `reclaimsMintedSlot` for what each input rules out.
+    ///
+    /// Safe on a slot that never registered a window, which is the only kind it
+    /// acts on: `removeSlot`'s park set is scoped by a reattach binding such a
+    /// slot never had (so nothing is dropped from the ghost record), and its
+    /// snapshot write plans the same entries as before (a slot with an empty
+    /// window map is not an entry) — down to refusing the write outright when
+    /// this was the last slot, leaving the frozen layout as it is.
+    ///
+    /// Returns whether the slot was actually dropped, so a caller that has more
+    /// of its own action to undo can hang it off this answer rather than off
+    /// "the activation reported failure" — the two are NOT the same, and a
+    /// failure reported over a live window is exactly where they part.
+    @discardableResult
+    func reclaimMintedSlot(_ slot: SpaceWindowSlot, mintedForThisAttempt: Bool) -> Bool {
+        guard Self.reclaimsMintedSlot(
+            mintedForThisAttempt: mintedForThisAttempt,
+            hostsWindow: !slot.windowsBySpaceId.isEmpty,
+            awaitsSpawnedWindow: slot.isAwaitingSpawnedWindow
+        ) else { return false }
+        AppLogInfo("[SpaceManager] reclaiming the slot minted for \(slot.activeSpaceId ?? "nil") — no window arrived")
+        removeSlot(slot)
+        return true
     }
 
     /// Reports a settled window-group close to Chromium, which holds every
@@ -860,7 +926,13 @@ final class SpaceManager: ObservableObject {
         }()
         guard let spaceId = resolved else { return false }
         AppLogInfo("[SpaceManager] windowless reopen — spawning persisted Space \(spaceId)")
-        createSlot(initialSpaceId: spaceId).activate(spaceId: spaceId)
+        let slot = createSlot(initialSpaceId: spaceId)
+        slot.activate(spaceId: spaceId, onActivationFailed: { [weak self] in
+            // Paired per `reclaimMintedSlot`, and pointedly here: a mint
+            // stranded on THIS path disables the very guard that routed the
+            // reopen into it.
+            self?.reclaimMintedSlot(slot, mintedForThisAttempt: true)
+        })
         return true
     }
 
@@ -3580,11 +3652,20 @@ final class SpaceManager: ObservableObject {
         // shown by the materialize): re-binding anyway would strand the
         // parked window under a profile its Space no longer names.
         if let ghostWindowId = parkedGhostWindowId(forSpaceId: spaceId) {
-            let slot = keySlot ?? slots.first ?? createSlot(initialSpaceId: spaceId)
+            // The third fallback is the expected one here, not a defensive
+            // tail: a ghost Space has no live window by definition, so a user
+            // who re-profiles one from a windowless app reaches it every time.
+            // What it mints is therefore paired per `reclaimMintedSlot`.
+            let hostSlot = keySlot ?? slots.first
+            let slot = hostSlot ?? createSlot(initialSpaceId: spaceId)
             AppLogInfo("[SpaceManager] changeProfile: materializing ghost window \(ghostWindowId) of \(spaceId) first")
             slot.materializeParkedGhost(windowId: ghostWindowId, spaceId: spaceId) { [weak self] ok in
-                guard ok else { return }
-                self?.changeProfile(spaceId: spaceId, toProfileId: newProfileId)
+                guard let self else { return }
+                guard ok else {
+                    self.reclaimMintedSlot(slot, mintedForThisAttempt: hostSlot == nil)
+                    return
+                }
+                self.changeProfile(spaceId: spaceId, toProfileId: newProfileId)
             }
             return
         }
@@ -5312,6 +5393,12 @@ final class SpaceWindowSlot: ObservableObject {
     /// Space removal landing mid-cascade (an Incognito Space reaped as its
     /// windows close) doesn't respawn a window into a dying slot.
     var isTearingDown: Bool { isCascadingSlotClose }
+
+    /// True while Chromium has created a window for this slot that has not
+    /// registered here yet — the gap `pendingSpawnSpaceIdByWindowId` covers.
+    /// Such a slot reads as windowless but is not one, which is why reclaiming
+    /// a minted slot consults it (see `SpaceManager.reclaimsMintedSlot`).
+    var isAwaitingSpawnedWindow: Bool { !pendingSpawnSpaceIdByWindowId.isEmpty }
 
     /// windowId → spaceId we asked Chromium to spawn that window for, for
     /// THIS slot. `activate(spaceId:)` populates this synchronously right

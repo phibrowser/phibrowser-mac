@@ -26,7 +26,11 @@ import XCTest
 ///     window, which must not land on a Space whose window is parked;
 ///   * which arriving window the coordinator conceals
 ///     (`concealsRestoredSibling`) — a rebase-fragile anchor whose drift
-///     makes a materialized window permanently invisible.
+///     makes a materialized window permanently invisible;
+///   * whether a slot minted for a window that never arrived is reclaimed
+///     (`reclaimsMintedSlot`) — the drop above gave every mint-then-activate
+///     call site a new way to end without a window, and a slot stranded that
+///     way disables the windowless reopen for the rest of the run.
 ///
 /// What they cannot reach — that `activate`, `deleteSpace`, `changeProfile`
 /// and the coordinator feed these rules their real state — rests on the
@@ -297,5 +301,48 @@ final class LazySpaceRestoreWiringTests: XCTestCase {
             isRestoredWindow: true,
             slotActiveSpaceId: nil,
             windowSpaceId: "sibling"))
+    }
+
+    // MARK: - Whether a minted slot is reclaimed when no window arrives
+
+    /// A slot minted for a window that never arrives is not merely untidy: it
+    /// makes `slots.isEmpty` false forever, and that is the whole test the
+    /// windowless Dock reopen gates on. Every later reopen then falls back to
+    /// Chromium's handler and lands on the wrong Space until the app restarts.
+    /// The three inputs are what keeps the cure from being worse than that.
+
+    func testAMintThatNeverGotAWindowIsReclaimed() {
+        XCTAssertTrue(SpaceManager.reclaimsMintedSlot(
+            mintedForThisAttempt: true, hostsWindow: false, awaitsSpawnedWindow: false))
+    }
+
+    func testASlotThisAttemptDidNotMintIsNeverReclaimed() {
+        // The call sites resolve `keySlot ?? slots.first ?? mint`, so the
+        // failure path routinely holds a slot full of the user's windows —
+        // and, while the app is windowless, an empty one another attempt is
+        // still waiting on. Neither is this attempt's to drop.
+        XCTAssertFalse(SpaceManager.reclaimsMintedSlot(
+            mintedForThisAttempt: false, hostsWindow: true, awaitsSpawnedWindow: false))
+        XCTAssertFalse(SpaceManager.reclaimsMintedSlot(
+            mintedForThisAttempt: false, hostsWindow: false, awaitsSpawnedWindow: false))
+    }
+
+    func testAFailureReportedOverALiveWindowReclaimsNothing() {
+        // A reported failure does not mean no window: the spawn path reports
+        // one when the user switched Space mid-spawn, leaving the spawned
+        // window registered and merely hidden. Reclaiming there would take a
+        // live window's slot out of the registry.
+        XCTAssertFalse(SpaceManager.reclaimsMintedSlot(
+            mintedForThisAttempt: true, hostsWindow: true, awaitsSpawnedWindow: false))
+    }
+
+    func testAWindowStillOnItsWayKeepsTheSlot() {
+        // Nor does a reported failure mean none is coming: a `createBrowser`
+        // whose registration callback did not run synchronously reports
+        // failure while the windowId-keyed claim still routes the arriving
+        // window into this slot — which would then register into a slot the
+        // manager no longer knows about.
+        XCTAssertFalse(SpaceManager.reclaimsMintedSlot(
+            mintedForThisAttempt: true, hostsWindow: false, awaitsSpawnedWindow: true))
     }
 }

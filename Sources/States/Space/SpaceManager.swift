@@ -1813,13 +1813,17 @@ final class SpaceManager: ObservableObject {
     /// that cannot drop would leak session records on every invalidation —
     /// so an older framework simply keeps full restores (the caller-side
     /// mirror of the coordinator's legacy-entry-point tolerance).
+    ///
+    /// `materializeGhostWindow` is probed under its outcome-reporting label:
+    /// a framework that still answers a bare BOOL counts as older here, which
+    /// is what keeps its yes-or-no from being read as an outcome.
     private static func bridgeSupportsLazyRestore(
         _ bridge: PhiChromiumBridgeProtocol
     ) -> Bool {
         bridge.responds(to: #selector(PhiChromiumBridgeProtocol
             .restorePreviousSession(withPreferredProfile:eagerWindowIds:completion:)))
             && bridge.responds(to: #selector(PhiChromiumBridgeProtocol
-                .materializeGhostWindow(_:profileId:completion:)))
+                .materializeGhostWindow(_:profileId:outcomeCompletion:)))
             && bridge.responds(to: #selector(PhiChromiumBridgeProtocol
                 .dropGhostWindow(_:profileId:completion:)))
     }
@@ -1931,17 +1935,52 @@ final class SpaceManager: ObservableObject {
                                  forSpaceId: spaceId)
     }
 
-    /// Retires the ghost bookkeeping for one parked window. Both records go
-    /// together: the park entry is what routes an activation to
-    /// materialization, and the unclaimed restore index is what folds the
-    /// entry into the persisted snapshot — whether the window just
+    /// The two records `consumeParkedGhost` retires, kept together so a
+    /// materialization Chromium refuses only for now can put them back
+    /// exactly as it found them (`reinstateParkedGhost`).
+    struct ParkedGhostRecord {
+        let windowId: Int
+        let spaceId: String
+        /// nil when the window held no unclaimed restore index — putting the
+        /// record back must then leave it out rather than invent one.
+        let restoreIndex: Int?
+    }
+
+    /// Retires the ghost bookkeeping for one parked window, handing back what
+    /// it removed. Both records go together: the park entry is what routes an
+    /// activation to materialization, and the unclaimed restore index is what
+    /// folds the entry into the persisted snapshot — whether the window just
     /// materialized (it is live now; the live map speaks for it) or its
     /// record turned out stale (nothing can ever satisfy it), keeping either
     /// half would hand the next persist or reopen a window that no longer
     /// exists to park.
-    fileprivate func consumeParkedGhost(windowId: Int) {
-        parkedGhostSpaceIdsByWindowId.removeValue(forKey: windowId)
-        restoreIndexByWindowId.removeValue(forKey: windowId)
+    ///
+    /// nil when nothing was parked under `windowId`.
+    @discardableResult
+    fileprivate func consumeParkedGhost(windowId: Int) -> ParkedGhostRecord? {
+        guard let spaceId = parkedGhostSpaceIdsByWindowId.removeValue(forKey: windowId) else {
+            restoreIndexByWindowId.removeValue(forKey: windowId)
+            return nil
+        }
+        return ParkedGhostRecord(
+            windowId: windowId,
+            spaceId: spaceId,
+            restoreIndex: restoreIndexByWindowId.removeValue(forKey: windowId))
+    }
+
+    /// Puts a consumed record back, for the one caller that consumes before
+    /// it knows the answer: `materializeParkedGhost` has to retire the
+    /// bookkeeping BEFORE the bridge call (a window arriving inside that call
+    /// persists a snapshot, which must not fold the park entry in next to the
+    /// live window), and a refusal that leaves the ghost parked has to undo
+    /// that. Nothing else may run in between — a refused materialization
+    /// creates no window and touches nothing on the Chromium side — so the
+    /// pair is a plain save-and-restore rather than a merge.
+    fileprivate func reinstateParkedGhost(_ record: ParkedGhostRecord) {
+        parkedGhostSpaceIdsByWindowId[record.windowId] = record.spaceId
+        if let restoreIndex = record.restoreIndex {
+            restoreIndexByWindowId[record.windowId] = restoreIndex
+        }
     }
 
     /// Retires parked ghosts (windowId → spaceId) everywhere they are
@@ -2048,14 +2087,39 @@ final class SpaceManager: ObservableObject {
     /// the user has to be told apart, because it decides what switching to
     /// the Space again will do.
     enum GhostMaterializeFailure: CaseIterable {
-        /// The attempt never got as far as Chromium's store: the Space's
-        /// profile did not resolve, or it failed to load. Both are transient,
-        /// the record is still parked, and the next switch retries it.
+        /// Nothing is lost, only delayed: the Space's profile did not
+        /// resolve, it failed to load, or Chromium refused for now (its
+        /// profile is not loaded there either, or a reopen replay of it is
+        /// still in flight). The parked window is still real on both sides
+        /// and the next switch retries it.
         case recordKept
         /// Chromium held no such ghost, so the record was stale and has been
         /// dropped. Nothing can materialize now; the next switch opens the
         /// Space as a fresh window.
         case recordDropped
+    }
+
+    /// What Chromium's answer means for the record: nil when the window was
+    /// rebuilt, otherwise the failure whose copy the user sees. Only "no such
+    /// ghost" retires the record — a refusal that leaves the ghost parked
+    /// must not, because the session file still describes that window and a
+    /// Space without its record opens a fresh window beside it. An outcome
+    /// this build does not know keeps the record for the same reason. Pure
+    /// and static so the rule is pinned by table
+    /// (`LazySpaceRestoreWiringTests`).
+    static func materializeFailure(
+        for outcome: PhiGhostMaterializeOutcome
+    ) -> GhostMaterializeFailure? {
+        switch outcome {
+        case .materialized:
+            return nil
+        case .noSuchGhost:
+            return .recordDropped
+        case .refusedForNow:
+            return .recordKept
+        @unknown default:
+            return .recordKept
+        }
     }
 
     /// The three strings one failure alert shows. They are chosen together,
@@ -6468,19 +6532,23 @@ final class SpaceWindowSlot: ObservableObject {
     ///
     /// The ghost bookkeeping is consumed just before the bridge call — the
     /// registration inside it persists a snapshot, and that write must not
-    /// fold the park entry in next to the live window — and deliberately not
-    /// restored on failure past a successful profile load: NO then means the
-    /// store holds no such ghost, and keeping the record would pin the Space
-    /// on a materialization that can never succeed, where dropping it lets
-    /// the next activation open the Space fresh. A profile that fails to
-    /// LOAD keeps every record — that failure is transient and the ghost is
-    /// still real. Which of the two happened is what the failure alert says
-    /// (`GhostMaterializeFailure`).
+    /// fold the park entry in next to the live window — and put back
+    /// (`reinstateParkedGhost`) whenever the answer leaves the ghost parked.
+    /// Only "no such ghost" retires it for good: keeping the record then
+    /// would pin the Space on a materialization that can never succeed, where
+    /// dropping it lets the next activation open the Space fresh. Every other
+    /// refusal — an unresolvable profile, a load failure, and Chromium's own
+    /// "not right now" (its profile still loading, or a reopen replay of it
+    /// still in flight) — is transient with the parked window still described
+    /// by the session file, so the record has to survive: without it the next
+    /// switch spawns an empty window that stands beside the parked one as a
+    /// doubled Space. Which of the two happened is what the failure alert
+    /// says (`GhostMaterializeFailure`).
     ///
     /// `completion` runs with the outcome once the attempt settles (the
     /// profile load may be asynchronous); on failure nothing is on screen,
-    /// an alert is on its way, and — load failures aside — the stale records
-    /// are gone.
+    /// an alert is on its way, and the records are exactly as retryable as
+    /// the failure was.
     func materializeParkedGhost(windowId: Int, spaceId: String,
                                 completion: @escaping (Bool) -> Void) {
         guard let manager else {
@@ -6497,7 +6565,7 @@ final class SpaceWindowSlot: ObservableObject {
         }
         guard let bridge = ChromiumLauncher.sharedInstance().bridge,
               bridge.responds(to: #selector(PhiChromiumBridgeProtocol
-                  .materializeGhostWindow(_:profileId:completion:))) else {
+                  .materializeGhostWindow(_:profileId:outcomeCompletion:))) else {
             // Unreachable in practice — records only exist when arming
             // probed the selector family — but a stale build combination
             // must fail loudly rather than trap. No alert: this one is a
@@ -6537,7 +6605,7 @@ final class SpaceWindowSlot: ObservableObject {
                 self.failMaterialize(.recordKept, spaceId: spaceId, completion: completion)
                 return
             }
-            manager.consumeParkedGhost(windowId: windowId)
+            let consumed = manager.consumeParkedGhost(windowId: windowId)
             // The intent claim: the coordinator's first-priority pending-spawn
             // lookup resolves the arriving window to THIS slot and Space via
             // `currentSpawn`, and `registerWindow` applies the inherited
@@ -6550,16 +6618,33 @@ final class SpaceWindowSlot: ObservableObject {
                 inheritedSidebarWidth: inheritedSidebarWidth,
                 inheritedSidebarCollapsed: inheritedSidebarCollapsed
             )
-            var materialized = false
+            // Seeded with the answer that keeps every record: a framework
+            // that returns without calling back must not be read as "your
+            // saved window is gone".
+            var outcome = PhiGhostMaterializeOutcome.refusedForNow
             // Synchronous: the window callback (claim + registration) and the
             // completion both run inside this call.
-            bridge.materializeGhostWindow(Int32(windowId), profileId: profileId) { ok in
-                materialized = ok
+            bridge.materializeGhostWindow(Int32(windowId), profileId: profileId) { reported in
+                outcome = reported
             }
             manager.currentSpawn = nil
-            guard materialized else {
-                AppLogError("[SpaceWindowSlot] materialize(\(spaceId)): chromium held no ghost \(windowId) — stale record dropped")
-                self.failMaterialize(.recordDropped, spaceId: spaceId, completion: completion)
+            if let failure = SpaceManager.materializeFailure(for: outcome) {
+                switch failure {
+                case .recordKept:
+                    // Refused with the ghost still parked: put the
+                    // bookkeeping back so the next switch materializes again
+                    // instead of opening a window beside it. Nothing to put
+                    // back if the record had already gone (an invalidation
+                    // landing inside the profile load) — which is a refusal
+                    // no later switch will reach anyway.
+                    if let consumed {
+                        manager.reinstateParkedGhost(consumed)
+                    }
+                    AppLogWarn("[SpaceWindowSlot] materialize(\(spaceId)): chromium refused ghost \(windowId) for now — record kept")
+                case .recordDropped:
+                    AppLogError("[SpaceWindowSlot] materialize(\(spaceId)): chromium held no ghost \(windowId) — stale record dropped")
+                }
+                self.failMaterialize(failure, spaceId: spaceId, completion: completion)
                 return
             }
             self.pendingSpawnSpaceIds.remove(spaceId)

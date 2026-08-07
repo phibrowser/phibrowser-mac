@@ -21,6 +21,10 @@ import XCTest
 ///   * what a failed materialization tells the user
 ///     (`GhostMaterializeFailureCopy`) — the two outcomes promise opposite
 ///     things about switching again;
+///   * what Chromium's answer does to the parked record
+///     (`materializeFailure(for:)`) — a refusal that leaves the ghost parked
+///     must keep it, or the next switch opens an empty window beside the
+///     window the session file still describes;
 ///   * where the coordinator's fallback mint may land
 ///     (`steeredFallbackMintSpaceId`) — the one resolution that CREATES a
 ///     window, which must not land on a Space whose window is parked;
@@ -203,6 +207,31 @@ final class LazySpaceRestoreWiringTests: XCTestCase {
     func testTheTwoOutcomesNeverReadAlike() {
         XCTAssertNotEqual(Self.copy(.recordKept).message, Self.copy(.recordDropped).message)
         XCTAssertNotEqual(Self.copy(.recordKept).title, Self.copy(.recordDropped).title)
+    }
+
+    // MARK: - What Chromium's answer does to the parked record
+
+    /// The record is the only thing between a refusal and a doubled Space:
+    /// drop it and the next switch spawns a fresh window beside the one the
+    /// session file still describes, while the alert has already told the
+    /// user their tabs are gone. So only the one answer that means "nothing
+    /// will ever satisfy this intent" may retire it.
+
+    func testARebuiltGhostIsNotAFailure() {
+        XCTAssertNil(SpaceManager.materializeFailure(for: .materialized))
+    }
+
+    func testARefusalForNowKeepsTheRecord() {
+        // Chromium's transient refusals — the profile not loaded there, a
+        // reopen replay of it still in flight — all arrive as this one
+        // answer, and every one of them leaves the ghost parked.
+        XCTAssertEqual(SpaceManager.materializeFailure(for: .refusedForNow),
+                       .recordKept)
+    }
+
+    func testOnlyAMissingGhostDropsTheRecord() {
+        XCTAssertEqual(SpaceManager.materializeFailure(for: .noSuchGhost),
+                       .recordDropped)
     }
 
     // MARK: - Where the fallback mint may land

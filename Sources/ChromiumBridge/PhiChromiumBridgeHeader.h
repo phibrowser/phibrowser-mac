@@ -87,6 +87,25 @@ typedef NS_ENUM(NSInteger, PhiWindowCloseState) {
     PhiWindowCloseStateNotAttempting = 2,
 };
 
+/// What a `materializeGhostWindow:` attempt did. The two refusals are told
+/// apart because they demand opposite things of the caller's own parked
+/// record — the one thing it can act on.
+typedef NS_ENUM(NSInteger, PhiGhostMaterializeOutcome) {
+    /// Rebuilt as a live window, announced through mainBrowserWindowCreated.
+    PhiGhostMaterializeOutcomeMaterialized = 0,
+    /// Refused for now, with nothing changed: the profile is not loaded
+    /// (deleted, never loaded, or still initializing), a reopen replay of it
+    /// is still in flight, or a service the rebuild needs is not up. The
+    /// ghost is still parked and asking again once that replay has settled
+    /// can still succeed, so the caller must KEEP its record — dropping it
+    /// would send the next switch to a fresh window that stands beside the
+    /// parked one as a doubled Space.
+    PhiGhostMaterializeOutcomeRefusedForNow = 1,
+    /// No such ghost is parked. Nothing changed either, but nothing ever
+    /// will: the caller's record is stale and may be dropped.
+    PhiGhostMaterializeOutcomeNoSuchGhost = 2,
+};
+
 @protocol PhiChromiumBridgeDelegate <NSObject>
 @property (nonatomic, copy, readonly, nullable) void (^extensionChangedCallback)(NSArray<NSDictionary *> *list, int64_t windowId);
 - (NSView * _Nullable)getWebContentSuperView;
@@ -1127,14 +1146,19 @@ typedef NS_ENUM(NSInteger, PhiWindowCloseState) {
 /// announced through mainBrowserWindowCreated with restoredFromWindowId ==
 /// previousSessionWindowId before `completion` runs, which is how the caller
 /// re-attaches it to its Space. `completion` runs synchronously before this
-/// returns: YES on success; NO when no such ghost is parked or the profile is
-/// not loaded, and then nothing changed — no window appeared, and a parked
-/// ghost stays materializable. Do not fall back to opening a plain window on
-/// NO: the session file may still describe the parked window, and a fallback
-/// would stand beside it as a doubled Space. Main thread only.
+/// returns, with what happened (`PhiGhostMaterializeOutcome`): rebuilt,
+/// refused for now, or refused because no such ghost is parked. On either
+/// refusal nothing changed — no window appeared — and only the last one means
+/// the record is stale; a ghost refused for now stays materializable. Do not
+/// fall back to opening a plain window on a refusal: the session file may
+/// still describe the parked window, and a fallback would stand beside it as
+/// a doubled Space. The `outcomeCompletion:` label distinguishes this from
+/// the earlier `completion:(void (^)(BOOL))` shape, so a caller's selector
+/// probe rejects a framework that can only answer yes-or-no instead of
+/// misreading its result. Main thread only.
 - (void)materializeGhostWindow:(int32_t)previousSessionWindowId
                      profileId:(NSString *)profileId
-                    completion:(void (^)(BOOL ok))completion;
+             outcomeCompletion:(void (^)(PhiGhostMaterializeOutcome outcome))completion;
 
 /// Drops the ghost window parked as `previousSessionWindowId` for `profileId`
 /// without rebuilding it — the session-side half of closing a Space whose

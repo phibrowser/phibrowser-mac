@@ -319,48 +319,64 @@ final class TabStripBarController: NSViewController {
         // switch Space from the same row that hosts the tabs. Falls back to the
         // manager's key slot during early window bringup before the controller
         // wires up.
-        let slot = browserState.windowController?.slot
-            ?? SpaceManager.shared.keySlot
-            ?? SpaceManager.shared.createSlot(initialSpaceId: nil)
-        let spacesPicker = SpacesStripView(
-            manager: SpaceManager.shared,
-            slot: slot,
-            showsEllipsisAffordance: false,
-            resolveOwnerController: { [weak browserState] in browserState?.windowController },
-            chipTooltipController: chipHoverTooltipController
-        )
-        let spacesHostingView = SafeAreaIgnoringThemedHostingView(
-            rootView: spacesPicker,
-            themeSource: browserState.themeContext
-        )
-        spacesHostingView.setContentHuggingPriority(.required, for: .horizontal)
-        spacesHostingView.setContentCompressionResistancePriority(.required, for: .horizontal)
-        spacesPickerHostingView = spacesHostingView
-        view.addSubview(spacesHostingView)
+        //
+        // Windows that don't participate in Spaces (standalone incognito) skip
+        // the picker entirely instead of building it and hiding it, mirroring
+        // the guard the two sidebars already apply before mounting their strip:
+        // the fallback chain below ends in `createSlot`, which appends to the
+        // manager's registry, and this window never registers itself against
+        // that slot. The orphan left behind makes the manager look non-windowless
+        // for the rest of the session, so every later Dock reopen falls back to
+        // Chromium's own handler and lands on the wrong Space.
+        //
+        // Shadow windows do participate in Spaces and would mint here — they are
+        // spared only because nobody ever calls `Show()` on a shadow browser, so
+        // this controller never appears; `BrowserView::Show()` itself does not
+        // reject them.
+        if browserState.participatesInSpaces {
+            let slot = browserState.windowController?.slot
+                ?? SpaceManager.shared.keySlot
+                ?? SpaceManager.shared.createSlot(initialSpaceId: nil)
+            let spacesPicker = SpacesStripView(
+                manager: SpaceManager.shared,
+                slot: slot,
+                showsEllipsisAffordance: false,
+                resolveOwnerController: { [weak browserState] in browserState?.windowController },
+                chipTooltipController: chipHoverTooltipController
+            )
+            let spacesHostingView = SafeAreaIgnoringThemedHostingView(
+                rootView: spacesPicker,
+                themeSource: browserState.themeContext
+            )
+            spacesHostingView.setContentHuggingPriority(.required, for: .horizontal)
+            spacesHostingView.setContentCompressionResistancePriority(.required, for: .horizontal)
+            spacesPickerHostingView = spacesHostingView
+            view.addSubview(spacesHostingView)
+            // Right-clicking the active-Space chip shows the same strip context
+            // menu as the rest of the tab bar (the active-Space controls).
+            // Left-clicking it instead drops the Space-switcher menu, popped by
+            // SafeAreaIgnoringThemedHostingView (mouseDown); hovering shows the
+            // active Space's hover card (SpacesStripView.compactChip), matching
+            // the sidebar pips.
+            spacesHostingView.menu = stripContextMenu
+            spacesHostingView.primaryMenu = spaceSwitcherMenu
+            // Opening the switcher is a click, not a hover: drop the chip's card
+            // NOW (the menu's modal loop would defer anything queued) and arm the
+            // same click suppression the sidebar pips use, so the card doesn't
+            // reappear under the resting cursor after the menu closes or the
+            // selected Space's window swaps in.
+            spacesHostingView.onPrimaryMenuWillOpen = { [chipHoverTooltipController] in
+                if let activeId = slot.activeSpaceId {
+                    slot.suppressHoverCard(spaceId: activeId)
+                }
+                chipHoverTooltipController.dismissImmediately()
+            }
+        }
 
         view.addSubview(tabStrip)
         view.menu = stripContextMenu
         tabStrip.menu = stripContextMenu
         hostingView.menu = stripContextMenu
-        // Right-clicking the active-Space chip shows the same strip context menu
-        // as the rest of the tab bar (the active-Space controls). Left-clicking
-        // it instead drops the Space-switcher menu, popped by
-        // SafeAreaIgnoringThemedHostingView (mouseDown); hovering shows the
-        // active Space's hover card (SpacesStripView.compactChip), matching
-        // the sidebar pips.
-        spacesHostingView.menu = stripContextMenu
-        spacesHostingView.primaryMenu = spaceSwitcherMenu
-        // Opening the switcher is a click, not a hover: drop the chip's card
-        // NOW (the menu's modal loop would defer anything queued) and arm the
-        // same click suppression the sidebar pips use, so the card doesn't
-        // reappear under the resting cursor after the menu closes or the
-        // selected Space's window swaps in.
-        spacesHostingView.onPrimaryMenuWillOpen = { [chipHoverTooltipController] in
-            if let activeId = slot.activeSpaceId {
-                slot.suppressHoverCard(spaceId: activeId)
-            }
-            chipHoverTooltipController.dismissImmediately()
-        }
 
         // The tab strip's leading edge depends on the active-Space picker (it
         // starts just after it), so its constraints are made alongside the
@@ -413,18 +429,20 @@ final class TabStripBarController: NSViewController {
     }
 
     private func applySpacesPickerVisibility() {
-        guard let spacesView = spacesPickerHostingView,
-              let rightButtons = rightButtonsHostingView else { return }
+        guard let rightButtons = rightButtonsHostingView else { return }
         // With a single Space there is nothing to switch to, so the chip is
         // pure noise next to the traffic lights — hide it until a second Space
         // exists. The swipe gesture keeps its eligibility-only guard so the
-        // rubber-band end feedback still plays.
+        // rubber-band end feedback still plays. Windows that never built the
+        // picker (see `setupUI`) always take the disabled layout, which is
+        // exactly what they got before when it was built and hidden.
+        let spacesView = spacesPickerHostingView
         let enabled = spacesPickerEligible && SpaceManager.shared.spaces.count > 1
         guard lastSpacesPickerEnabled != enabled else { return }
         lastSpacesPickerEnabled = enabled
 
-        spacesView.isHidden = !enabled
-        spacesView.snp.remakeConstraints { make in
+        spacesView?.isHidden = !enabled
+        spacesView?.snp.remakeConstraints { make in
             make.leading.equalToSuperview().inset(Self.trafficLightInset)
             make.centerY.equalToSuperview().offset(-2)
             if enabled {
@@ -444,7 +462,7 @@ final class TabStripBarController: NSViewController {
         tabStrip.snp.remakeConstraints { make in
             make.top.bottom.equalToSuperview()
             make.trailing.equalTo(rightButtons.snp.leading)
-            if enabled {
+            if enabled, let spacesView {
                 make.leading.equalTo(spacesView.snp.trailing).offset(6)
             } else {
                 make.leading.equalToSuperview().inset(Self.horizontalInset)

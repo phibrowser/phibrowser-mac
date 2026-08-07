@@ -5325,6 +5325,54 @@
             "state" : "new",
             "value" : "If you allow, every agent that connects gets full control without asking you. Reverse it anytime in Settings ▸ Developer."
           }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "如果允许，之后连接的每个智能体都会直接获得完全控制权，不会再询问你。你可以随时在「设置 ▸ 开发者」中撤销。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "如果你允許，每個連線的 AI 代理都能在不詢問你的情況下取得完整控制權。你隨時可以在「設定 ▸ 開發者」中取消。"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "許可すると、接続するすべてのエージェントが確認なしに完全な制御権を得ます。「設定」▸「開発者」でいつでも元に戻せます。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "허용하면 연결하는 모든 에이전트가 따로 묻지 않고 전체 제어 권한을 갖게 돼요. 설정 ▸ 개발자에서 언제든지 되돌릴 수 있어요."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Si vous autorisez, chaque agent qui se connecte obtient le contrôle total sans rien vous demander. Vous pouvez annuler ce choix à tout moment dans Paramètres ▸ Développeur."
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wenn du erlaubst, erhält jeder Agent, der sich verbindet, volle Kontrolle, ohne dich zu fragen. Du kannst das jederzeit unter Einstellungen ▸ Entwickler rückgängig machen."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Als je dit toestaat, krijgt elke agent die verbinding maakt volledige controle zonder het je te vragen. Je kunt dit altijd terugdraaien in Instellingen ▸ Ontwikkelaar."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Si lo permites, todos los agentes que se conecten obtendrán control total sin preguntarte. Puedes revertirlo en cualquier momento en Configuración ▸ Desarrollador."
+          }
         }
       }
     },
@@ -5337,6 +5385,54 @@
             "state" : "new",
             "value" : "Your answer covers every agent, not just “%@”."
           }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "你的选择适用于所有智能体，而不仅限于「%@」。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "你的回答適用於所有 AI 代理，而不僅限於「%@」。"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "この回答は「%@」に限らず、すべてのエージェントに適用されます。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "이 답변은 “%@”뿐만 아니라 모든 에이전트에 적용돼요."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Votre réponse s'applique à tous les agents, pas seulement à « %@ »."
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Deine Antwort gilt für jeden Agenten, nicht nur für „%@“."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Je antwoord geldt voor elke agent, niet alleen “%@”."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tu respuesta cubre a todos los agentes, no solo a “%@”."
+          }
         }
       }
     },
@@ -5348,6 +5444,54 @@
           "stringUnit" : {
             "state" : "new",
             "value" : "Apply to all agents"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "应用于所有智能体"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "套用到所有 AI 代理"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "すべてのエージェントに適用"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "모든 에이전트에 적용"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Appliquer à tous les agents"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Auf alle Agenten anwenden"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Toepassen op alle agents"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aplicar a todos los agentes"
           }
         }
       }
@@ -5601,6 +5745,54 @@
             "state" : "new",
             "value" : "Back"
           }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "返回"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "上一頁"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "戻る"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "뒤로"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Retour"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Zurück"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Terug"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Atrás"
+          }
         }
       }
     },
@@ -5731,7 +5923,7 @@
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Wenn du ablehnst:"
+            "value" : "Wie lange soll Phi ablehnen?"
           }
         },
         "en" : {
@@ -5743,43 +5935,43 @@
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Si lo rechazas:"
+            "value" : "¿Durante cuánto tiempo debe Phi rechazarlo?"
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Si vous refusez :"
+            "value" : "Pendant combien de temps Phi doit-il refuser ?"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "拒否した場合："
+            "value" : "どのくらいの期間、Phiが拒否するようにしますか？"
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "거부하면:"
+            "value" : "Phi가 얼마 동안 거부할까요?"
           }
         },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Als je weigert:"
+            "value" : "Hoe lang moet Phi weigeren?"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "如果你拒绝："
+            "value" : "要让 Phi 拒绝多久？"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "如果你拒絕："
+            "value" : "要讓 Phi 拒絕多久？"
           }
         }
       }
@@ -18552,7 +18744,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "上一頁"
+            "value" : "返回"
           }
         }
       }
@@ -44102,6 +44294,54 @@
             "state" : "new",
             "value" : "Lets every agent connect without asking you, including ones Phi has never seen. The approval prompt stops appearing while this is on, and turning it on lifts any standing refusal. Applies immediately."
           }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "让所有智能体无需询问你即可连接，包括 Phi 从未见过的智能体。开启期间不再显示批准提示，开启时会解除任何仍在生效的拒绝。立即生效。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "讓每個 AI 代理都能在不詢問你的情況下連線，包括 Phi 從未見過的 AI 代理。開啟時將不再顯示核准提示，且開啟後會解除任何現行的拒絕。此設定立即生效。"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Phiが一度も見たことのないエージェントも含め、すべてのエージェントが確認なしに接続できるようになります。オンにしている間は承認プロンプトが表示されず、オンにすると継続中の拒否も解除されます。すぐに適用されます。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Phi가 처음 보는 에이전트를 포함해 모든 에이전트가 따로 묻지 않고 연결할 수 있게 돼요. 이 설정이 켜져 있는 동안에는 승인 요청이 표시되지 않고, 켜면 유지 중이던 거부도 해제돼요. 즉시 적용돼요."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Permet à chaque agent de se connecter sans rien vous demander, y compris ceux que Phi n'a jamais vus. La demande d'approbation ne s'affiche plus tant que cette option est activée, et son activation annule tout refus en vigueur. S'applique immédiatement."
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lässt jeden Agenten eine Verbindung herstellen, ohne dich zu fragen, auch Agenten, die Phi noch nie gesehen hat. Solange diese Option aktiviert ist, erscheint keine Genehmigungsabfrage mehr, und das Aktivieren hebt eine bestehende Ablehnung auf. Gilt sofort."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Laat elke agent verbinding maken zonder het je te vragen, ook agents die Phi nog nooit heeft gezien. De vraag om goedkeuring verschijnt niet meer zolang dit aanstaat, en inschakelen heft een eventuele lopende weigering op. Geldt direct."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Permite que todos los agentes se conecten sin preguntarte, incluidos los que Phi nunca ha visto. Mientras esté activado, la solicitud de aprobación deja de aparecer, y al activarlo se anula cualquier rechazo vigente. Se aplica de inmediato."
+          }
         }
       }
     },
@@ -44114,6 +44354,54 @@
             "state" : "new",
             "value" : "Allow all agents"
           }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "允许所有智能体"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "允許所有 AI 代理"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "すべてのエージェントを許可"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "모든 에이전트 허용"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Autoriser tous les agents"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Alle Agenten zulassen"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Alle agents toestaan"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Permitir todos los agentes"
+          }
         }
       }
     },
@@ -44125,6 +44413,54 @@
           "stringUnit" : {
             "state" : "new",
             "value" : "Every agent is allowed, so none is approved individually."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已允许所有智能体，因此无需单独批准任何智能体。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已允許所有 AI 代理，因此沒有個別核准的項目。"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "すべてのエージェントが許可されているため、個別に承認されているエージェントはありません。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "모든 에이전트가 허용되어 있어서 개별적으로 승인된 에이전트는 없어요."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tous les agents sont autorisés, aucun n'est donc approuvé individuellement."
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Jeder Agent ist zugelassen, daher ist keiner einzeln genehmigt."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Elke agent is toegestaan, dus geen enkele wordt afzonderlijk goedgekeurd."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Todos los agentes están permitidos, así que ninguno se aprueba individualmente."
           }
         }
       }

@@ -525,6 +525,26 @@ final class SpaceManager: ObservableObject {
     /// family this belongs to; the records describe a session this side can
     /// no longer reach).
     private var parkedGhostSpaceIdsByWindowId: [Int: String] = [:]
+    /// Index into `restoreEntries` → the windows a live slot last had recorded
+    /// against that entry, ghosts excluded. Refreshed by every snapshot write
+    /// that lands while a slot still speaks for the entry, and read once the
+    /// slot is gone: closing a window group must not take the group out of the
+    /// record, and by the time `removeSlot` runs the slot can no longer
+    /// describe what it closed — its last window left it before it left the
+    /// registry, draining the map. The record's own last word about the group
+    /// is therefore the only description of it that still exists.
+    ///
+    /// Presence is also what separates the two ways an entry ends up with no
+    /// live slot. A group that was on screen THIS run and closed has one, and
+    /// its entry is kept; a group that was already closed when the snapshot was
+    /// written has none, and still needs a parked ghost to be written at all —
+    /// which is what stops a group the user closed in an earlier run from being
+    /// resurrected on every launch forever.
+    ///
+    /// Cleared with the rest of the restore family: a fresh snapshot re-derives
+    /// the indices these are keyed by, and an unbound account's records describe
+    /// a session this side can no longer reach.
+    private var liveWindowMapsByRestoreIndex: [Int: [Int: String]] = [:]
     /// Index into `restoreEntries` → the loading window standing in for that
     /// slot. `slotForRestoreIndex` lends each one to the slot that claims its
     /// entry, so the slot can drop it behind its restored window and close it
@@ -746,13 +766,19 @@ final class SpaceManager: ObservableObject {
         // mid-session would be retained here (and never deinit) until the next
         // account bind clears the map.
         restoredSlotsByIndex = restoredSlotsByIndex.filter { $0.value !== slot }
-        // Shrink the restore snapshot now that the slot is gone. Nothing on the
-        // close path rewrites it from the settled layout — `unregisterWindow`
-        // only flushes a debounced frame write, before it drains anything, and
-        // the cascade and the deferred fullscreen reconcile both skip
-        // themselves mid-cascade — so without this the snapshot kept describing
-        // a window group the user closed, and it came back (as loose windows)
-        // at the next cold launch.
+        // Rewrite the restore snapshot now that the slot is gone. Nothing else
+        // on the close path does — `unregisterWindow` only flushes a debounced
+        // frame write, before it drains anything, and the cascade and the
+        // deferred fullscreen reconcile both skip themselves mid-cascade — so
+        // this is where the record learns the group is no longer on screen.
+        //
+        // Learns, not forgets: the group keeps its entry, rebuilt from what the
+        // record last said about it (`liveWindowMapsByRestoreIndex`), because
+        // closing a window group is not the same operation as deleting its
+        // Spaces and only the second may take a group out of the record. What
+        // this write does drop is the group's claim on being ON SCREEN — the
+        // entry stops being a live slot and becomes one nothing live speaks
+        // for.
         // When this was the LAST slot the write is a no-op: `persistSlotsSnapshot`
         // never overwrites a saved snapshot with an empty one, which is exactly
         // what freezes the final layout for a reopen.
@@ -2830,10 +2856,21 @@ final class SpaceManager: ObservableObject {
     /// ghosts of its OWN saved entry (`entryParkedGhosts`, then
     /// `persistedWindowMap` to retire the ones that stopped describing a
     /// parked window). Saved entries no live slot speaks for follow, in saved
-    /// order, carrying whatever they still have parked: that is what keeps a
-    /// closed group's parked Spaces in the record until something actually
-    /// retires them, instead of the next unrelated write erasing them while
-    /// Chromium still holds their windows.
+    /// order, carrying what they still have parked AND the windows their group
+    /// had on screen when it closed (`closedGroupWindowMaps`): that is what
+    /// keeps a closed group in the record until something actually retires it,
+    /// instead of the next unrelated write erasing it while Chromium still
+    /// holds its windows.
+    ///
+    /// Closing a window group and deleting a Space are different operations,
+    /// and only the second may take a group out of the record. Closing is
+    /// therefore not a retirement rule here at all; deleting is, and it acts
+    /// through `liveSpaceIds` — the deleted Space leaves the store, every
+    /// window naming it drops out of the map below, and an entry left naming
+    /// nothing is not written. Before this, a group that closed while another
+    /// slot stayed open was filtered out whole (no live slot, and nothing
+    /// parked either), so the freeze below went on to freeze a record that had
+    /// already lost it.
     ///
     /// A plan with no live entry is empty, refusing the write outright. That is
     /// the existing "never overwrite a saved snapshot with an empty one"
@@ -2850,6 +2887,7 @@ final class SpaceManager: ObservableObject {
         liveSlots: [(restoreIndex: Int?, windowMap: [Int: String])],
         restoreEntryWindowMaps: [[Int: String]],
         parkedGhosts: [Int: String],
+        closedGroupWindowMaps: [Int: [Int: String]],
         unclaimedWindowIds: Set<Int>,
         liveSpaceIds: Set<String>
     ) -> [PlannedSnapshotEntry] {
@@ -2889,9 +2927,16 @@ final class SpaceManager: ObservableObject {
             let ghosts = entryParkedGhosts(
                 recorded: parkedGhosts,
                 entryWindowMap: restoreEntryWindowMaps[index])
-            guard !ghosts.isEmpty else { continue }
+            // What the group had on screen when it closed, minus the Spaces
+            // that have since been deleted. Empty for a group that was never
+            // live this run, which then still needs a parked ghost to be
+            // written — the entry cannot be stood up by a record of a close
+            // that never happened here.
+            let closed = (closedGroupWindowMaps[index] ?? [:])
+                .filter { liveSpaceIds.contains($0.value) }
+            guard !ghosts.isEmpty || !closed.isEmpty else { continue }
             let windowMap = persistedWindowMap(
-                liveWindowMap: [:],
+                liveWindowMap: closed,
                 parkedGhosts: ghosts,
                 unclaimedWindowIds: unclaimedWindowIds,
                 liveSpaceIds: liveSpaceIds)
@@ -3033,6 +3078,7 @@ final class SpaceManager: ObservableObject {
             parkedGhosts: parkedGhostSpaceIdsByWindowId.filter {
                 !retiringGhostWindowIds.contains($0.key)
             },
+            closedGroupWindowMaps: liveWindowMapsByRestoreIndex,
             unclaimedWindowIds: Set(restoreIndexByWindowId.keys),
             liveSpaceIds: Set(spaces.map(\.spaceId))
         )
@@ -3100,6 +3146,16 @@ final class SpaceManager: ObservableObject {
                     into: &dict)
             }
             dicts.append(dict)
+        }
+        // What this write says about each saved entry a live slot still speaks
+        // for, kept so the entry can outlive the slot (`removeSlot` finds the
+        // slot already drained — see `liveWindowMapsByRestoreIndex`). Ghosts
+        // are left out: they retire on their own terms, and a retired one must
+        // not come back through here.
+        for slot in liveSlots where !slot.windowMap.isEmpty {
+            guard let index = slot.restoreIndex,
+                  restoreEntries.indices.contains(index) else { continue }
+            liveWindowMapsByRestoreIndex[index] = slot.windowMap
         }
         // This write supersedes any debounced one. Dropped only here, past
         // every guard above: a refused write must leave the timer armed so the
@@ -3201,6 +3257,7 @@ final class SpaceManager: ObservableObject {
         restoreIndexByWindowId.removeAll()
         restoredSlotsByIndex.removeAll()
         parkedGhostSpaceIdsByWindowId.removeAll()
+        liveWindowMapsByRestoreIndex.removeAll()
         restoreReattachDeadline = nil
         guard let raw = boundAccount?.userDefaults.object(
             forKey: AccountUserDefaults.DefaultsKey.slotsRestoreSnapshot.rawValue
@@ -5377,6 +5434,7 @@ final class SpaceManager: ObservableObject {
         restoreIndexByWindowId.removeAll()
         restoredSlotsByIndex.removeAll()
         parkedGhostSpaceIdsByWindowId.removeAll()
+        liveWindowMapsByRestoreIndex.removeAll()
         restoreReattachDeadline = nil
         pendingProfileChangeReopens.removeAll()
         // Incognito Spaces are session-scoped; sign-out ends them with

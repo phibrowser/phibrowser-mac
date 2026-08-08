@@ -38,6 +38,7 @@ final class SlotSnapshotEntryPlanTests: XCTestCase {
         liveSlots: [(restoreIndex: Int?, windowMap: [Int: String])] = [],
         savedEntries: [[Int: String]] = [],
         parkedGhosts: [Int: String] = [:],
+        closedGroups: [Int: [Int: String]] = [:],
         unclaimedWindowIds: Set<Int>? = nil,
         liveSpaceIds: Set<String> = allSpaces
     ) -> [SpaceManager.PlannedSnapshotEntry] {
@@ -45,6 +46,7 @@ final class SlotSnapshotEntryPlanTests: XCTestCase {
             liveSlots: liveSlots,
             restoreEntryWindowMaps: savedEntries,
             parkedGhosts: parkedGhosts,
+            closedGroupWindowMaps: closedGroups,
             unclaimedWindowIds: unclaimedWindowIds ?? Set(parkedGhosts.keys),
             liveSpaceIds: liveSpaceIds
         )
@@ -217,6 +219,83 @@ final class SlotSnapshotEntryPlanTests: XCTestCase {
         )
     }
 
+    // MARK: - Groups closed while another slot kept writing
+
+    func testAClosedGroupStaysInTheRecordWhileAnotherSlotWrites() {
+        // Two groups on screen, and the user closes the one they were working
+        // in first. Nothing of it is parked — every Space it held was on
+        // screen — so before this the entry matched no rule at all and the
+        // surviving slot's next write dropped it. The user then closed that
+        // slot too, and the freeze froze a record already missing a whole
+        // group: not one window of it came back.
+        XCTAssertEqual(
+            plan(liveSlots: [(restoreIndex: 1, windowMap: [102: "space-c"])],
+                 savedEntries: [[7: "space-a"], [9: "space-c"]],
+                 closedGroups: [0: [101: "space-a", 103: "space-b"]]),
+            [
+                SpaceManager.PlannedSnapshotEntry(
+                    source: .liveSlot(0), windowMap: [102: "space-c"]),
+                SpaceManager.PlannedSnapshotEntry(
+                    source: .parkedOnly(0),
+                    windowMap: [101: "space-a", 103: "space-b"]),
+            ]
+        )
+    }
+
+    func testDeletingASpaceTakesItOutOfAClosedGroupsEntry() {
+        // The other half of the rule: closing a group keeps it, deleting its
+        // Spaces is what removes it. Space-b's row is gone, so the window
+        // naming it goes with it and the group comes back with what is left.
+        XCTAssertEqual(
+            plan(liveSlots: [(restoreIndex: 1, windowMap: [102: "space-c"])],
+                 savedEntries: [[7: "space-a"], [9: "space-c"]],
+                 closedGroups: [0: [101: "space-a", 103: "space-b"]],
+                 liveSpaceIds: ["space-a", "space-c"]).last,
+            SpaceManager.PlannedSnapshotEntry(
+                source: .parkedOnly(0), windowMap: [101: "space-a"])
+        )
+    }
+
+    func testDeletingEverySpaceOfAClosedGroupDropsTheEntry() {
+        XCTAssertEqual(
+            plan(liveSlots: [(restoreIndex: 1, windowMap: [102: "space-c"])],
+                 savedEntries: [[7: "space-a"], [9: "space-c"]],
+                 closedGroups: [0: [101: "space-a", 103: "space-b"]],
+                 liveSpaceIds: ["space-c"]),
+            [SpaceManager.PlannedSnapshotEntry(
+                source: .liveSlot(0), windowMap: [102: "space-c"])]
+        )
+    }
+
+    func testAGroupThatWasNeverOnScreenThisRunIsNotResurrected() {
+        // No live slot ever spoke for entry 0 and it has nothing parked, so
+        // there is no close to remember: the group was already gone when the
+        // record was written. Writing it anyway is how a group the user closed
+        // in an earlier run comes back on every launch forever.
+        XCTAssertEqual(
+            plan(liveSlots: [(restoreIndex: 1, windowMap: [102: "space-c"])],
+                 savedEntries: [[7: "space-a"], [9: "space-c"]]),
+            [SpaceManager.PlannedSnapshotEntry(
+                source: .liveSlot(0), windowMap: [102: "space-c"])]
+        )
+    }
+
+    func testAClosedGroupCarriesItsStillParkedGhostsToo() {
+        // A group can close with some of its Spaces parked from an earlier
+        // reopen. Both halves ride the same entry, each on its own terms: the
+        // ghost retires when its window is claimed, the closed window when its
+        // Space is deleted.
+        XCTAssertEqual(
+            plan(liveSlots: [(restoreIndex: 1, windowMap: [102: "space-c"])],
+                 savedEntries: [[7: "space-a", 55: "space-b"], [9: "space-c"]],
+                 parkedGhosts: [55: "space-b"],
+                 closedGroups: [0: [101: "space-a"]]).last,
+            SpaceManager.PlannedSnapshotEntry(
+                source: .parkedOnly(0),
+                windowMap: [101: "space-a", 55: "space-b"])
+        )
+    }
+
     // MARK: - When the whole write is refused
 
     func testNoLiveEntryRefusesTheWholeWrite() {
@@ -234,6 +313,18 @@ final class SlotSnapshotEntryPlanTests: XCTestCase {
         XCTAssertEqual(
             plan(savedEntries: [[7: "space-a", 55: "space-b"]],
                  parkedGhosts: [55: "space-b"]),
+            []
+        )
+    }
+
+    func testAClosedGroupCannotStandAWriteUpOnItsOwnEither() {
+        // The last window group to close leaves a remembered map behind like
+        // any other. It must not count as content: the freeze is what the next
+        // reopen restores from, and a record naming only groups that are gone
+        // would come back without the one that was on screen.
+        XCTAssertEqual(
+            plan(savedEntries: [[7: "space-a"]],
+                 closedGroups: [0: [101: "space-a"]]),
             []
         )
     }

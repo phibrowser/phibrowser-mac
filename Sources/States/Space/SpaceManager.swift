@@ -451,6 +451,13 @@ final class SpaceManager: ObservableObject {
     /// and only coincide with the persisted ones by accident.
     private struct SlotRestoreEntry {
         let activeSpaceId: String?
+        /// True on the one entry a reopen lands on — the window group that was
+        /// still on screen when the record froze, i.e. the last one closed.
+        /// Its `activeSpaceId` is the only Space a reopen replays; every other
+        /// window in the record parks (`classifyRestoreWindows`). False on
+        /// every entry of a record written before this field existed, which
+        /// falls back to entry 0.
+        let isLandingEntry: Bool
         /// Previous-session Chromium windowId → spaceId for every window
         /// the slot owned.
         let windowMap: [Int: String]
@@ -545,6 +552,14 @@ final class SpaceManager: ObservableObject {
     /// the indices these are keyed by, and an unbound account's records describe
     /// a session this side can no longer reach.
     private var liveWindowMapsByRestoreIndex: [Int: [Int: String]] = [:]
+    /// Index into `restoreEntries` → the Space that entry's slot was showing
+    /// the last time it was written as a live slot. The landing Space half of
+    /// `liveWindowMapsByRestoreIndex`, recorded at the same moment and for the
+    /// same reason: once the group closes, the slot is gone and this is the
+    /// only record of where the user actually was in it. Written back out on
+    /// the entry so the group comes back on the Space it was left on, instead
+    /// of wherever a promote rule would put it.
+    private var liveActiveSpaceIdsByRestoreIndex: [Int: String] = [:]
     /// Index into `restoreEntries` → the loading window standing in for that
     /// slot. `slotForRestoreIndex` lends each one to the slot that claims its
     /// entry, so the slot can drop it behind its restored window and close it
@@ -1966,24 +1981,35 @@ final class SpaceManager: ObservableObject {
     /// Splits the restore snapshot's windows into the set a lazy reopen
     /// replays now (eager) and the set it parks behind their Spaces (ghosts).
     ///
-    /// The costs are asymmetric — an extra eager window costs its replay
-    /// time, while a wrong ghost strands a window nothing can navigate to —
-    /// so every rule fails toward eager, and only a window whose Space is
-    /// provably on the strip may park:
+    /// A reopen brings back ONE window: the landing entry's active Space —
+    /// the Space the user was on in the window group that closed last. Every
+    /// other window in the record parks, whether it is a sibling Space of that
+    /// same group or belongs to another group entirely, and comes back when
+    /// its Space is activated. The rules:
     ///
-    ///   * The slot's landing Space (`activeSpaceId`) replays: it is what the
-    ///     reopened slot shows first.
-    ///   * A window whose Space is alive but not the landing point parks.
+    ///   * The landing entry is the one the snapshot marks (`isLandingEntry`),
+    ///     or entry 0 when nothing is marked — a record written before the
+    ///     marker existed still has its live slots first, so entry 0 is that
+    ///     record's landing group.
+    ///   * In the landing entry, the window whose Space is the entry's
+    ///     `activeSpaceId` replays. Exactly that one: if the landing Space
+    ///     owns no window in the record, NOTHING is promoted in its place and
+    ///     the reopen replays no window at all — the Space comes back as an
+    ///     empty slot with its placeholder, which is what the user left. (An
+    ///     earlier rule promoted the entry's first surviving Space instead, so
+    ///     a Dock reopen always produced at least one window per entry. That
+    ///     is what made closing one window give several back.)
+    ///   * Every other window whose Space is alive parks.
     ///   * A window whose Space is not in the store replays — deleted and
     ///     not-yet-delivered look the same here, which is exactly why absence
-    ///     must widen the eager set rather than park anything. Callers owe
-    ///     this the CONVERGED store; a partial first delivery only costs
-    ///     replay time.
-    ///   * A slot whose landing Space owns no window promotes its first
-    ///     surviving Space's window — snapshot order within one slot is
-    ///     ascending previous-session window id, the same rule
-    ///     `firstPresentSpaceInSnapshotOrder` spells out — so a Dock reopen
-    ///     always brings back at least one window per slot.
+    ///     must widen the eager set rather than park anything: a wrong ghost
+    ///     strands a window nothing can navigate to. Callers owe this the
+    ///     CONVERGED store; a partial first delivery only costs replay time.
+    ///     This is the one rule that can put a second window on screen, and it
+    ///     stays that way on purpose — losing a window is worse than showing
+    ///     an extra one. In practice the record cannot name a deleted Space:
+    ///     `plannedSnapshotEntries` filters every window map through the same
+    ///     `liveSpaceIds` before writing.
     ///   * Windows on Incognito Spaces (by id shape) and agent Spaces (by
     ///     `agentSpaceIds`) join neither set: neither kind exists in the
     ///     saved session, so eager would name a window the replay cannot
@@ -1996,46 +2022,34 @@ final class SpaceManager: ObservableObject {
     /// (`RestoreWindowClassificationTests`); the reopen wiring feeds it the
     /// decoded snapshot and the live store.
     static func classifyRestoreWindows(
-        slots: [(activeSpaceId: String?, windowMap: [Int: String])],
+        slots: [(activeSpaceId: String?, windowMap: [Int: String], isLandingEntry: Bool)],
         liveSpaceIds: Set<String>,
         agentSpaceIds: Set<String>
     ) -> RestoreWindowClassification {
+        // First marked wins, so a corrupt record naming several landing
+        // entries still resolves to one; entry 0 is the pre-marker fallback.
+        let landingIndex = slots.firstIndex(where: \.isLandingEntry)
+            ?? (slots.isEmpty ? nil : 0)
         var eagerWindowIds: Set<Int> = []
         var ghostSpaceIdsByWindowId: [Int: String] = [:]
-        for slot in slots {
+        for (index, slot) in slots.enumerated() {
             let eligible = slot.windowMap.filter { entry in
                 !isIncognitoSpaceId(entry.value) && !agentSpaceIds.contains(entry.value)
             }
-            var slotGhosts: [Int: String] = [:]
+            let landingSpaceId = index == landingIndex ? slot.activeSpaceId : nil
             for (windowId, spaceId) in eligible {
-                if spaceId == slot.activeSpaceId {
+                if spaceId == landingSpaceId {
                     eagerWindowIds.insert(windowId)
                 } else if liveSpaceIds.contains(spaceId) {
-                    slotGhosts[windowId] = spaceId
+                    ghostSpaceIdsByWindowId[windowId] = spaceId
                 } else {
                     eagerWindowIds.insert(windowId)
                 }
             }
-            // The per-slot floor: no landing window (the entry predates
-            // `activeSpaceId`, its Space's window was closed separately, or
-            // the landing Space was excluded above) means the would-be ghosts
-            // give up their first window in snapshot order. Nothing to
-            // promote means everything eligible was already eager.
-            let hasLandingWindow = slot.activeSpaceId.map { landing in
-                eligible.values.contains(landing)
-            } ?? false
-            if !hasLandingWindow, let promoted = slotGhosts.keys.min() {
-                eagerWindowIds.insert(promoted)
-                slotGhosts.removeValue(forKey: promoted)
-            }
-            // Window ids are unique across slots; keeping the first on a
-            // (corrupt) duplicate makes the answer independent of slot order
-            // rather than last-writer-wins.
-            ghostSpaceIdsByWindowId.merge(slotGhosts) { first, _ in first }
         }
-        // Same corrupt shape, other axis: an id one slot replays and another
-        // would park. The sets are a partition to every consumer, and eager
-        // is the safe side of it, so eager wins.
+        // A (corrupt) record naming one id in two entries could put it in both
+        // sets. The sets are a partition to every consumer, and eager is the
+        // safe side of it, so eager wins.
         return RestoreWindowClassification(
             eagerWindowIds: eagerWindowIds,
             ghostSpaceIdsByWindowId: ghostSpaceIdsByWindowId.filter {
@@ -2152,7 +2166,9 @@ final class SpaceManager: ObservableObject {
         }.map(\.spaceId))
         let classification = Self.classifyRestoreWindows(
             slots: restoreEntries.map {
-                (activeSpaceId: $0.activeSpaceId, windowMap: $0.windowMap)
+                (activeSpaceId: $0.activeSpaceId,
+                 windowMap: $0.windowMap,
+                 isLandingEntry: $0.isLandingEntry)
             },
             liveSpaceIds: Set(spaces.map(\.spaceId)),
             agentSpaceIds: agentSpaceIds
@@ -2950,6 +2966,34 @@ final class SpaceManager: ObservableObject {
         return planned
     }
 
+    /// Which planned entry a reopen lands on — the one whose `isLandingEntry`
+    /// is written, and therefore the only entry whose active Space a reopen
+    /// replays (`classifyRestoreWindows`).
+    ///
+    /// The key slot's entry, because that is the window group the user is in:
+    /// when groups are closed one at a time the last one standing is the key
+    /// one, so "the group closed last" and "the group the user was in" are the
+    /// same entry. They only come apart when the app goes to zero windows
+    /// without an intervening write (a quit, whose teardown refuses the
+    /// persist), and there the key slot is the better answer of the two
+    /// anyway.
+    ///
+    /// Falls back to the first entry when there is no key slot, or when the
+    /// key slot contributed no entry (every window on an Incognito Space).
+    /// Live slots are planned first, so the first entry is always a live slot
+    /// — never a group that is already closed.
+    ///
+    /// Pure and static so the rule is pinned by table.
+    static func landingEntryPosition(planned: [PlannedSnapshotEntry],
+                                     keyLiveSlotPosition: Int?) -> Int? {
+        guard !planned.isEmpty else { return nil }
+        if let keyLiveSlotPosition,
+           let match = planned.firstIndex(where: { $0.source == .liveSlot(keyLiveSlotPosition) }) {
+            return match
+        }
+        return 0
+    }
+
     /// Writes the geometry half of one snapshot entry: the fullscreen marker
     /// and the three fields the reopen loading window is drawn from. One
     /// encoder for both entry kinds — a live slot measures these off its
@@ -3093,12 +3137,23 @@ final class SpaceManager: ObservableObject {
             isAnySlotTearingDown: isAnySlotTearingDown,
             hasLiveSlotEntry: !planned.isEmpty
         ) else { return false }
+        // Which entry a reopen lands on. Decided here rather than in the
+        // planner because it is a property of the CURRENT screen — the slot
+        // the user is in — not of how the entries were composed.
+        let landingPosition = Self.landingEntryPosition(
+            planned: planned,
+            keyLiveSlotPosition: keySlot.flatMap { key in
+                slots.firstIndex(where: { $0 === key })
+            })
         var dicts: [[String: Any]] = []
         var parkedOnlyCount = 0
-        for entry in planned {
+        for (entryPosition, entry) in planned.enumerated() {
             var dict: [String: Any] = [:]
             // Plist keys must be strings; convert the windowId map.
             dict["windowMap"] = Self.encodedWindowMap(entry.windowMap)
+            if entryPosition == landingPosition {
+                dict["isLandingEntry"] = true
+            }
             switch entry.source {
             case .liveSlot(let position):
                 // Positions index `liveSlots`, which is `slots` mapped one for
@@ -3122,13 +3177,23 @@ final class SpaceManager: ObservableObject {
                     trafficLightOrigin: slot.snapshotTrafficLightOrigin(),
                     into: &dict)
             case .parkedOnly(let index):
-                // A saved entry nothing live speaks for carries everything but
-                // the landing Space, passed through from the entry these
-                // windows were saved with, so the group comes back where and
-                // how it was. No landing Space on purpose — nothing is on
-                // screen to land on, and the classifier's existing "no landing
-                // window ⇒ promote the first surviving Space in snapshot order"
-                // rule is what picks one at the next reopen.
+                // A saved entry nothing live speaks for carries the same
+                // fields, passed through from the entry these windows were
+                // saved with, so the group comes back where and how it was.
+                //
+                // The landing Space is one of them. It used to be left out
+                // deliberately — nothing is on screen to land on, and the
+                // classifier's old "no landing window ⇒ promote the first
+                // surviving Space" rule picked one at the next reopen. That
+                // reasoning held while a parked-only entry was nothing but
+                // ghosts; it does not hold for a group the user closed, which
+                // has a perfectly good landing point: the Space it was left
+                // on. Without it, the group came back wherever the promote
+                // rule happened to point.
+                //
+                // Prefer what the slot was showing when it was last written
+                // live THIS run; fall back to what the record already said for
+                // a group that has not been on screen since it was saved.
                 //
                 // The frame is the one the snapshot LOAD clamped to the screens
                 // attached then (`loadRestoreSnapshot`), not the raw saved rect.
@@ -3138,6 +3203,14 @@ final class SpaceManager: ObservableObject {
                 // its display was unplugged forgets the geometry it had on it.
                 let saved = restoreEntries[index]
                 parkedOnlyCount += 1
+                // Only a Space that still exists, for the same reason the
+                // window map is filtered through `liveSpaceIds`: landing a
+                // group on a deleted Space strands it.
+                if let active = liveActiveSpaceIdsByRestoreIndex[index]
+                    ?? saved.activeSpaceId,
+                   spaces.contains(where: { $0.spaceId == active }) {
+                    dict["activeSpaceId"] = active
+                }
                 Self.encodeSnapshotGeometry(
                     isFullScreen: saved.wasFullScreen,
                     frame: saved.frame,
@@ -3152,10 +3225,15 @@ final class SpaceManager: ObservableObject {
         // slot already drained — see `liveWindowMapsByRestoreIndex`). Ghosts
         // are left out: they retire on their own terms, and a retired one must
         // not come back through here.
-        for slot in liveSlots where !slot.windowMap.isEmpty {
+        for (position, slot) in liveSlots.enumerated() where !slot.windowMap.isEmpty {
             guard let index = slot.restoreIndex,
                   restoreEntries.indices.contains(index) else { continue }
             liveWindowMapsByRestoreIndex[index] = slot.windowMap
+            // The landing half of the same record. Read back by the
+            // `.parkedOnly` branch above once this slot is gone.
+            if let active = slots[position].activeSpaceId {
+                liveActiveSpaceIdsByRestoreIndex[index] = active
+            }
         }
         // This write supersedes any debounced one. Dropped only here, past
         // every guard above: a refused write must leave the timer armed so the
@@ -3258,6 +3336,7 @@ final class SpaceManager: ObservableObject {
         restoredSlotsByIndex.removeAll()
         parkedGhostSpaceIdsByWindowId.removeAll()
         liveWindowMapsByRestoreIndex.removeAll()
+        liveActiveSpaceIdsByRestoreIndex.removeAll()
         restoreReattachDeadline = nil
         guard let raw = boundAccount?.userDefaults.object(
             forKey: AccountUserDefaults.DefaultsKey.slotsRestoreSnapshot.rawValue
@@ -3271,6 +3350,7 @@ final class SpaceManager: ObservableObject {
             guard !windowMap.isEmpty else { continue }
             let entry = SlotRestoreEntry(
                 activeSpaceId: dict["activeSpaceId"] as? String,
+                isLandingEntry: (dict["isLandingEntry"] as? Bool) ?? false,
                 windowMap: windowMap,
                 wasFullScreen: (dict["isFullScreen"] as? Bool) ?? false,
                 frame: Self.decodedSlotFrame(dict["frame"]).map {
@@ -5435,6 +5515,7 @@ final class SpaceManager: ObservableObject {
         restoredSlotsByIndex.removeAll()
         parkedGhostSpaceIdsByWindowId.removeAll()
         liveWindowMapsByRestoreIndex.removeAll()
+        liveActiveSpaceIdsByRestoreIndex.removeAll()
         restoreReattachDeadline = nil
         pendingProfileChangeReopens.removeAll()
         // Incognito Spaces are session-scoped; sign-out ends them with

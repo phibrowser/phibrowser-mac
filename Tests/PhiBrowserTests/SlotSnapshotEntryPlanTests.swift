@@ -339,4 +339,57 @@ final class SlotSnapshotEntryPlanTests: XCTestCase {
             []
         )
     }
+
+    // MARK: - Which planned entry the reopen lands on
+
+    /// The landing marker is what tells the next reopen which group the user
+    /// was in, and therefore which single Space it may replay. Everything else
+    /// in the record parks (`RestoreWindowClassificationTests`), so picking the
+    /// wrong entry here means reopening onto the wrong Space — with every
+    /// window of the right one parked behind it.
+    func testTheKeySlotsEntryIsTheLandingEntry() {
+        let planned = plan(
+            liveSlots: [(restoreIndex: 0, windowMap: [1: "space-a"]),
+                        (restoreIndex: 1, windowMap: [2: "space-b"])])
+
+        XCTAssertEqual(
+            SpaceManager.landingEntryPosition(planned: planned,
+                                              keyLiveSlotPosition: 1),
+            1)
+    }
+
+    func testTheFirstEntryLandsWhenThereIsNoKeySlot() {
+        // No key slot at all (the weak reference cleared as the group came
+        // down). Live slots are planned first, so entry 0 is a live one.
+        let planned = plan(
+            liveSlots: [(restoreIndex: 0, windowMap: [1: "space-a"])],
+            savedEntries: [[1: "space-a"], [9: "space-b"]],
+            parkedGhosts: [9: "space-b"])
+
+        XCTAssertEqual(planned.count, 2)
+        XCTAssertEqual(
+            SpaceManager.landingEntryPosition(planned: planned,
+                                              keyLiveSlotPosition: nil),
+            0)
+    }
+
+    func testAKeySlotThatContributedNoEntryFallsBackToTheFirst() {
+        // The key slot had every window on an Incognito Space, so it is not in
+        // the plan at all. Landing must still name a real entry.
+        let planned = plan(
+            liveSlots: [(restoreIndex: 0, windowMap: [1: "space-a"]),
+                        (restoreIndex: 1, windowMap: [:])])
+
+        XCTAssertEqual(planned.count, 1)
+        XCTAssertEqual(
+            SpaceManager.landingEntryPosition(planned: planned,
+                                              keyLiveSlotPosition: 1),
+            0)
+    }
+
+    func testAnEmptyPlanHasNoLandingEntry() {
+        XCTAssertNil(
+            SpaceManager.landingEntryPosition(planned: [],
+                                              keyLiveSlotPosition: 0))
+    }
 }

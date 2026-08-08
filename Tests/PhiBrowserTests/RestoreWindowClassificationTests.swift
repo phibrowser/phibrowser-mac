@@ -8,20 +8,24 @@ import XCTest
 
 /// A lazy reopen replays only part of the restore snapshot and parks the rest
 /// in the session file, so this classification decides what the user gets back
-/// immediately and what waits behind its Space. Misclassifying eager costs one
-/// window's replay time; misclassifying ghost strands a window nothing can
-/// navigate to — so every rule here fails toward eager, and only a window
-/// whose Space is provably on the strip may park.
+/// immediately and what waits behind its Space.
 ///
-/// The rules, pinned row by row below: a slot's landing Space replays (R1);
-/// a window whose Space is alive but not the landing point parks (R2); a
-/// window whose Space is gone replays (R3); a slot whose landing Space owns
-/// no window promotes its first surviving window, so a Dock reopen never
-/// comes back empty-handed (R4); and Incognito / agent Space windows join
-/// neither set, because neither kind exists in the saved session (R5).
+/// A reopen brings back ONE window: the landing entry's active Space — the
+/// Space the user was on in the window group that closed last. Everything else
+/// parks and comes back when its Space is activated, whether it is a sibling
+/// Space of that same group or another group entirely.
+///
+/// The rules, pinned row by row below: the landing entry's active Space
+/// replays (R1); every other window whose Space is alive parks, including the
+/// landing entry's own siblings and every window of every other entry (R2); a
+/// window whose Space is gone replays instead, because a wrong ghost strands a
+/// window nothing can navigate to (R3); a landing entry whose active Space
+/// owns no window promotes NOTHING in its place (R4); and Incognito / agent
+/// Space windows join neither set, because neither kind exists in the saved
+/// session (R5).
 final class RestoreWindowClassificationTests: XCTestCase {
     private func classify(
-        slots: [(activeSpaceId: String?, windowMap: [Int: String])],
+        slots: [(activeSpaceId: String?, windowMap: [Int: String], isLandingEntry: Bool)],
         liveSpaceIds: Set<String>,
         agentSpaceIds: Set<String> = []
     ) -> SpaceManager.RestoreWindowClassification {
@@ -32,11 +36,13 @@ final class RestoreWindowClassificationTests: XCTestCase {
         )
     }
 
-    // MARK: - R1 / R2: landing replays, the rest of the slot parks
+    // MARK: - R1 / R2: the landing Space replays, everything else parks
 
     func testLandingSpaceWindowIsEagerAndSiblingsPark() {
         let result = classify(
-            slots: [(activeSpaceId: "space-a", windowMap: [1: "space-a", 2: "space-b"])],
+            slots: [(activeSpaceId: "space-a",
+                     windowMap: [1: "space-a", 2: "space-b"],
+                     isLandingEntry: true)],
             liveSpaceIds: ["space-a", "space-b"]
         )
 
@@ -46,11 +52,13 @@ final class RestoreWindowClassificationTests: XCTestCase {
         XCTAssertEqual(result.ghostSpaceIdsByWindowId, [2: "space-b"])
     }
 
-    func testSingleSpaceSlotDegeneratesToAllEager() {
-        // The common case — one Space per slot — must classify exactly as
+    func testSingleSpaceLandingEntryDegeneratesToAllEager() {
+        // The common case — one Space, one window — must classify exactly as
         // today's full restore: everything eager, nothing parked.
         let result = classify(
-            slots: [(activeSpaceId: "space-a", windowMap: [1: "space-a"])],
+            slots: [(activeSpaceId: "space-a",
+                     windowMap: [1: "space-a"],
+                     isLandingEntry: true)],
             liveSpaceIds: ["space-a"]
         )
 
@@ -64,8 +72,12 @@ final class RestoreWindowClassificationTests: XCTestCase {
         // "space-b" is no longer in the store, so no strip entry could ever
         // materialize its window. Parking it would strand the window's tabs in
         // the session file for good; replaying it hands them back visibly.
+        // This is the one rule that can put a second window on screen, and it
+        // stays that way on purpose.
         let result = classify(
-            slots: [(activeSpaceId: "space-a", windowMap: [1: "space-a", 2: "space-b"])],
+            slots: [(activeSpaceId: "space-a",
+                     windowMap: [1: "space-a", 2: "space-b"],
+                     isLandingEntry: true)],
             liveSpaceIds: ["space-a"]
         )
 
@@ -81,7 +93,9 @@ final class RestoreWindowClassificationTests: XCTestCase {
         // the eager set rather than park anything. Callers owe it the
         // converged store; a partial one only costs replay time.
         let result = classify(
-            slots: [(activeSpaceId: "space-a", windowMap: [1: "space-a", 2: "space-b"])],
+            slots: [(activeSpaceId: "space-a",
+                     windowMap: [1: "space-a", 2: "space-b"],
+                     isLandingEntry: true)],
             liveSpaceIds: ["space-a"]  // "space-b" exists but has not been delivered yet.
         )
 
@@ -89,68 +103,50 @@ final class RestoreWindowClassificationTests: XCTestCase {
         XCTAssertTrue(result.ghostSpaceIdsByWindowId.isEmpty)
     }
 
-    // MARK: - R4: a slot with no landing window still replays one
+    // MARK: - R4: no landing window means no window, not a substitute one
 
-    func testSlotWithoutLandingWindowPromotesFirstSurvivingSpaceWindow() {
-        // The landing Space owns no window (closed separately last session),
-        // so the slot would otherwise park everything and a Dock reopen would
-        // bring back nothing. Snapshot order within one slot is ascending
-        // previous-session window id, and the space names sort the opposite
-        // way from their ids — a promotion keyed on names or on dictionary
-        // iteration would pick window 7.
+    func testLandingEntryWithoutItsLandingWindowPromotesNothing() {
+        // The landing Space owns no window — the user left the slot on a Space
+        // showing its placeholder. That Space is still the only thing the
+        // reopen may bring back, so nothing is promoted in its place and the
+        // reopen replays no window at all. The old rule promoted the first
+        // surviving Space's window here, which is what made closing one window
+        // give a different one back.
         let result = classify(
-            slots: [(activeSpaceId: "space-c", windowMap: [7: "aaa-space", 3: "zzz-space"])],
+            slots: [(activeSpaceId: "space-c",
+                     windowMap: [7: "aaa-space", 3: "zzz-space"],
+                     isLandingEntry: true)],
             liveSpaceIds: ["aaa-space", "zzz-space", "space-c"]
         )
 
-        XCTAssertEqual(result.eagerWindowIds, [3])
-        XCTAssertEqual(result.ghostSpaceIdsByWindowId, [7: "aaa-space"])
+        XCTAssertTrue(result.eagerWindowIds.isEmpty)
+        XCTAssertEqual(result.ghostSpaceIdsByWindowId,
+                       [7: "aaa-space", 3: "zzz-space"])
     }
 
-    func testSlotWithNoRecordedLandingSpacePromotesToo() {
+    func testEntryWithNoRecordedLandingSpaceParksEverything() {
         // An entry written before activeSpaceId existed names no landing
-        // Space at all; the slot still owes the reopen one window.
+        // Space at all. Nothing is promoted for it either.
         let result = classify(
-            slots: [(activeSpaceId: nil, windowMap: [5: "space-a", 8: "space-b"])],
+            slots: [(activeSpaceId: nil,
+                     windowMap: [5: "space-a", 8: "space-b"],
+                     isLandingEntry: true)],
             liveSpaceIds: ["space-a", "space-b"]
         )
 
-        XCTAssertEqual(result.eagerWindowIds, [5])
-        XCTAssertEqual(result.ghostSpaceIdsByWindowId, [8: "space-b"])
+        XCTAssertTrue(result.eagerWindowIds.isEmpty)
+        XCTAssertEqual(result.ghostSpaceIdsByWindowId,
+                       [5: "space-a", 8: "space-b"])
     }
 
-    func testPromotionPicksTheFirstSurvivingSpaceNotTheFirstWindow() {
-        // Window 2 comes first in snapshot order but its Space is gone — R3
-        // already replays it. The promotion is what guarantees a window the
-        // user can WANT back (a surviving Space's), so it must skip the dead
-        // one rather than count it as the slot's guaranteed window.
-        let result = classify(
-            slots: [(activeSpaceId: "space-c", windowMap: [2: "deleted-space", 9: "space-b"])],
-            liveSpaceIds: ["space-b", "space-c"]
-        )
-
-        XCTAssertEqual(result.eagerWindowIds, [2, 9])
-        XCTAssertTrue(result.ghostSpaceIdsByWindowId.isEmpty)
-    }
-
-    func testSlotWhoseEverySpaceIsGoneReplaysEverythingWithNothingToPromote() {
-        let result = classify(
-            slots: [(activeSpaceId: "space-c", windowMap: [1: "gone-a", 2: "gone-b"])],
-            liveSpaceIds: ["space-c"]
-        )
-
-        XCTAssertEqual(result.eagerWindowIds, [1, 2])
-        XCTAssertTrue(result.ghostSpaceIdsByWindowId.isEmpty)
-    }
-
-    func testSlotWithALandingWindowDoesNotPromoteASecondOne() {
-        // The guarantee is "at least one", delivered by the landing window
-        // itself here — a promotion on top would eat into the lazy win for
-        // nothing.
+    func testLandingEntryReplaysExactlyOneWindow() {
+        // Three Spaces in the group the user closed; only the one they were
+        // on comes back.
         let result = classify(
             slots: [(
                 activeSpaceId: "space-a",
-                windowMap: [1: "space-a", 2: "space-b", 3: "space-c"]
+                windowMap: [1: "space-a", 2: "space-b", 3: "space-c"],
+                isLandingEntry: true
             )],
             liveSpaceIds: ["space-a", "space-b", "space-c"]
         )
@@ -173,7 +169,8 @@ final class RestoreWindowClassificationTests: XCTestCase {
                     1: "space-a",
                     2: "space.incognito-1A2B",
                     3: "agent-space",
-                ]
+                ],
+                isLandingEntry: true
             )],
             liveSpaceIds: ["space-a", "agent-space"],
             agentSpaceIds: ["agent-space"]
@@ -183,18 +180,20 @@ final class RestoreWindowClassificationTests: XCTestCase {
         XCTAssertTrue(result.ghostSpaceIdsByWindowId.isEmpty)
     }
 
-    func testAgentLandingSpaceStillLeavesTheSlotOneEagerWindow() {
+    func testAgentLandingSpaceLeavesTheReopenWithNoEagerWindow() {
         // An old snapshot can name an agent Space as the landing point. Its
-        // window is excluded wholesale, so the slot falls back to promoting
-        // its first surviving user-Space window.
+        // window is excluded wholesale, and nothing is promoted in its place,
+        // so the surviving user Space simply parks.
         let result = classify(
-            slots: [(activeSpaceId: "agent-space", windowMap: [4: "agent-space", 6: "space-b"])],
+            slots: [(activeSpaceId: "agent-space",
+                     windowMap: [4: "agent-space", 6: "space-b"],
+                     isLandingEntry: true)],
             liveSpaceIds: ["agent-space", "space-b"],
             agentSpaceIds: ["agent-space"]
         )
 
-        XCTAssertEqual(result.eagerWindowIds, [6])
-        XCTAssertTrue(result.ghostSpaceIdsByWindowId.isEmpty)
+        XCTAssertTrue(result.eagerWindowIds.isEmpty)
+        XCTAssertEqual(result.ghostSpaceIdsByWindowId, [6: "space-b"])
     }
 
     func testSweptAgentSpaceWindowFallsBackToEager() {
@@ -204,7 +203,9 @@ final class RestoreWindowClassificationTests: XCTestCase {
         // is harmless: no saved window matches its id, so the replay simply
         // has nothing to do for it. The fail direction matters, not the label.
         let result = classify(
-            slots: [(activeSpaceId: nil, windowMap: [8: "swept-agent-space"])],
+            slots: [(activeSpaceId: nil,
+                     windowMap: [8: "swept-agent-space"],
+                     isLandingEntry: true)],
             liveSpaceIds: []
         )
 
@@ -212,37 +213,107 @@ final class RestoreWindowClassificationTests: XCTestCase {
         XCTAssertTrue(result.ghostSpaceIdsByWindowId.isEmpty)
     }
 
-    // MARK: - Several slots
+    // MARK: - Several entries: only the landing one contributes an eager window
 
-    func testSlotsClassifyIndependentlyAndTheSetsUnion() {
-        // Two slots, deliberately on Spaces bound to different profiles — the
-        // classification is per window and profile-blind, so each slot
-        // contributes its own landing window and its own parked sibling.
+    func testNonLandingEntryParksEverythingIncludingItsOwnActiveSpace() {
+        // Two groups, deliberately on Spaces bound to different profiles. The
+        // group the user did not close last contributes NO eager window — not
+        // even for its own active Space. That is what makes a reopen give back
+        // one window instead of one per group, and it holds across profiles
+        // exactly as it does within one.
         let result = classify(
             slots: [
-                (activeSpaceId: "space-a", windowMap: [1: "space-a", 2: "space-b"]),
-                (activeSpaceId: "space-c", windowMap: [10: "space-c", 11: "space-d"]),
+                (activeSpaceId: "space-a",
+                 windowMap: [1: "space-a", 2: "space-b"],
+                 isLandingEntry: true),
+                (activeSpaceId: "space-c",
+                 windowMap: [10: "space-c", 11: "space-d"],
+                 isLandingEntry: false),
             ],
             liveSpaceIds: ["space-a", "space-b", "space-c", "space-d"]
         )
 
-        XCTAssertEqual(result.eagerWindowIds, [1, 10])
-        XCTAssertEqual(result.ghostSpaceIdsByWindowId, [2: "space-b", 11: "space-d"])
+        XCTAssertEqual(result.eagerWindowIds, [1])
+        XCTAssertEqual(result.ghostSpaceIdsByWindowId,
+                       [2: "space-b", 10: "space-c", 11: "space-d"])
     }
 
-    func testEverySingleSpaceSlotReopensExactlyAsToday() {
-        // The multi-slot shape most users actually have: one Space per slot.
-        // Lazy restore must be invisible here — all eager, nothing parked.
+    func testLandingEntryNeedNotBeTheFirstEntry() {
+        // The record lists live slots in registry order, which is not the
+        // order they were closed in; the marker is what says which one the
+        // user was in.
         let result = classify(
             slots: [
-                (activeSpaceId: "space-a", windowMap: [1: "space-a"]),
-                (activeSpaceId: "space-b", windowMap: [10: "space-b"]),
+                (activeSpaceId: "space-a",
+                 windowMap: [1: "space-a"],
+                 isLandingEntry: false),
+                (activeSpaceId: "space-b",
+                 windowMap: [10: "space-b"],
+                 isLandingEntry: true),
             ],
             liveSpaceIds: ["space-a", "space-b"]
         )
 
-        XCTAssertEqual(result.eagerWindowIds, [1, 10])
-        XCTAssertTrue(result.ghostSpaceIdsByWindowId.isEmpty)
+        XCTAssertEqual(result.eagerWindowIds, [10])
+        XCTAssertEqual(result.ghostSpaceIdsByWindowId, [1: "space-a"])
+    }
+
+    func testEverySingleSpaceEntryStillReopensExactlyOneWindow() {
+        // One Space per group, several groups: still one window back.
+        let result = classify(
+            slots: [
+                (activeSpaceId: "space-a",
+                 windowMap: [1: "space-a"],
+                 isLandingEntry: true),
+                (activeSpaceId: "space-b",
+                 windowMap: [10: "space-b"],
+                 isLandingEntry: false),
+            ],
+            liveSpaceIds: ["space-a", "space-b"]
+        )
+
+        XCTAssertEqual(result.eagerWindowIds, [1])
+        XCTAssertEqual(result.ghostSpaceIdsByWindowId, [10: "space-b"])
+    }
+
+    func testUnmarkedRecordLandsOnItsFirstEntry() {
+        // A record written before the marker existed has its live slots first,
+        // so entry 0 is that record's landing group. Without this fallback such
+        // a record would park every window it names and the reopen would come
+        // back with nothing.
+        let result = classify(
+            slots: [
+                (activeSpaceId: "space-a",
+                 windowMap: [1: "space-a"],
+                 isLandingEntry: false),
+                (activeSpaceId: "space-b",
+                 windowMap: [10: "space-b"],
+                 isLandingEntry: false),
+            ],
+            liveSpaceIds: ["space-a", "space-b"]
+        )
+
+        XCTAssertEqual(result.eagerWindowIds, [1])
+        XCTAssertEqual(result.ghostSpaceIdsByWindowId, [10: "space-b"])
+    }
+
+    func testSeveralMarkedEntriesResolveToTheFirstMarked() {
+        // Only a corrupt record marks two. Resolving to the first keeps the
+        // answer deterministic and still yields exactly one eager window.
+        let result = classify(
+            slots: [
+                (activeSpaceId: "space-a",
+                 windowMap: [1: "space-a"],
+                 isLandingEntry: true),
+                (activeSpaceId: "space-b",
+                 windowMap: [10: "space-b"],
+                 isLandingEntry: true),
+            ],
+            liveSpaceIds: ["space-a", "space-b"]
+        )
+
+        XCTAssertEqual(result.eagerWindowIds, [1])
+        XCTAssertEqual(result.ghostSpaceIdsByWindowId, [10: "space-b"])
     }
 
     func testEmptySnapshotClassifiesToNothing() {
@@ -252,21 +323,25 @@ final class RestoreWindowClassificationTests: XCTestCase {
         XCTAssertTrue(result.ghostSpaceIdsByWindowId.isEmpty)
     }
 
-    func testDuplicateWindowIdAcrossSlotsStaysEagerNotGhost() {
-        // A window id can appear in two slots only in a corrupt snapshot —
+    func testDuplicateWindowIdAcrossEntriesStaysEagerNotGhost() {
+        // A window id can appear in two entries only in a corrupt snapshot —
         // live registration puts each window in exactly one slot. The two
         // sets are a partition to every consumer, and eager is its safe
-        // side: honoring the ghost claim would park a window another slot
+        // side: honoring the ghost claim would park a window the reopen
         // replays.
         let result = classify(
             slots: [
-                (activeSpaceId: "space-a", windowMap: [1: "space-a"]),
-                (activeSpaceId: "space-b", windowMap: [10: "space-b", 1: "space-c"]),
+                (activeSpaceId: "space-a",
+                 windowMap: [1: "space-a"],
+                 isLandingEntry: true),
+                (activeSpaceId: "space-b",
+                 windowMap: [10: "space-b", 1: "space-c"],
+                 isLandingEntry: false),
             ],
             liveSpaceIds: ["space-a", "space-b", "space-c"]
         )
 
-        XCTAssertEqual(result.eagerWindowIds, [1, 10])
-        XCTAssertTrue(result.ghostSpaceIdsByWindowId.isEmpty)
+        XCTAssertEqual(result.eagerWindowIds, [1])
+        XCTAssertEqual(result.ghostSpaceIdsByWindowId, [10: "space-b"])
     }
 }

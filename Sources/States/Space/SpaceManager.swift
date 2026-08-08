@@ -3371,8 +3371,19 @@ final class SpaceManager: ObservableObject {
                   map[String(windowId)] != nil else { continue }
             dicts[index]["activeSpaceId"] = spaceId
             userDefaults.set(dicts, forKey: key)
+            // Permanent instrumentation. The two guards above stay silent on
+            // purpose (teardown is noisy and neither is what this pair is here
+            // to tell apart); these two lines cover the outcomes that decide
+            // where the next reopen lands.
+            AppLogInfo("[SpaceManager] amended the snapshot entry's active Space: "
+                + "windowId=\(windowId) → \(spaceId)")
             return
         }
+        // The real failure: the caller wanted the promotion undone on disk and
+        // no entry claims this window, so the promoted Space stays in the
+        // record and the next reopen restores onto it.
+        AppLogWarn("[SpaceManager] snapshot amend found no entry for windowId=\(windowId) "
+            + "— the promotion stays on disk")
     }
 
     private func loadRestoreSnapshot(armReattachDeadline: Bool = true) {
@@ -9510,6 +9521,18 @@ final class SpaceWindowSlot: ObservableObject {
                 // as selected), and that switch is the user's real intent —
                 // it must survive the close.
                 if activeSpaceId != spaceId, activeSpaceAdoptedFromKeyEvent {
+                    // Permanent instrumentation, not a debugging leftover. This
+                    // undo is the only thing standing between a synchronous
+                    // AppKit promotion and a snapshot that sends the next
+                    // reopen to the wrong Space, and it used to run completely
+                    // silently — so a batch of green rounds could not be told
+                    // apart from a batch where the promotion never happened at
+                    // all. Read it as "the promotion DID happen and the undo
+                    // caught it"; its ABSENCE proves nothing on its own (a
+                    // promotion that never registered as a key adoption skips
+                    // this branch entirely and leaves the snapshot wrong).
+                    AppLogInfo("[SpaceWindowSlot] undoing a close-driven key promotion: "
+                        + "windowId=\(controller.windowId), promotedTo=\(activeSpaceId ?? "nil"), restoringTo=\(spaceId)")
                     activeSpaceAdoptedFromKeyEvent = false
                     activeSpaceId = spaceId
                     manager?.persistActiveSpaceId(spaceId)

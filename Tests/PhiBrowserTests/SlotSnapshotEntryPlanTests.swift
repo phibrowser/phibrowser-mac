@@ -392,4 +392,60 @@ final class SlotSnapshotEntryPlanTests: XCTestCase {
             SpaceManager.landingEntryPosition(planned: [],
                                               keyLiveSlotPosition: 0))
     }
+
+    // MARK: - Which Space an entry records as its landing point
+
+    /// An ephemeral Space cannot be a landing point — restoring onto one
+    /// surfaces a Space that no longer exists. The retreat target is the
+    /// slot's OWN last regular Space, which is the anchor `deleteSpace`
+    /// already retreats to; writing the global default here instead is what
+    /// made merely opening an Incognito Space move the slot to `default-space`
+    /// and hide the user's real Space behind it as a sibling window.
+    private func landing(_ active: String?,
+                         lastRegular: String? = nil,
+                         agents: Set<String> = []) -> String? {
+        SpaceManager.persistableLandingSpaceId(activeSpaceId: active,
+                                               lastRegularSpaceId: lastRegular,
+                                               agentSpaceIds: agents)
+    }
+
+    func testARegularActiveSpaceIsRecordedAsIs() {
+        XCTAssertEqual(landing("space-b", lastRegular: "space-a"), "space-b")
+    }
+
+    func testAnIncognitoActiveSpaceRetreatsToTheSlotsLastRegularSpace() {
+        // The bug, in one row: the slot was on "space-b", the user opened an
+        // Incognito Space, and the record used to say "default-space".
+        XCTAssertEqual(landing("space.incognito-1A2B", lastRegular: "space-b"),
+                       "space-b")
+    }
+
+    func testAnAgentActiveSpaceRetreatsTheSameWay() {
+        // Agent Spaces reach the same branch as Incognito ones; an agent that
+        // leaves its Space up when the user closes the window must not move
+        // the slot either.
+        XCTAssertEqual(landing("agent-space",
+                               lastRegular: "space-b",
+                               agents: ["agent-space"]),
+                       "space-b")
+    }
+
+    func testAnEphemeralSpaceWithNoRegularHistoryFallsBackToTheDefault() {
+        // The slot never surfaced a regular Space, so the global default
+        // really is the only answer left.
+        XCTAssertEqual(landing("space.incognito-1A2B"), LocalStore.defaultSpaceId)
+    }
+
+    func testASlotWithNoActiveSpaceRecordsNoLandingSpace() {
+        XCTAssertNil(landing(nil, lastRegular: "space-b"))
+    }
+
+    func testAnAgentSpaceNotInTheSignatureSetIsTreatedAsRegular() {
+        // The set is the model signature, matching what this write point has
+        // always asked. A Space absent from it is a regular Space here — the
+        // live task registry deliberately does not enter, so the recorded
+        // value cannot depend on whether a task happens to be running.
+        XCTAssertEqual(landing("agent-space", lastRegular: "space-b"),
+                       "agent-space")
+    }
 }

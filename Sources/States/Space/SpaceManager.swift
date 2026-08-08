@@ -2994,6 +2994,44 @@ final class SpaceManager: ObservableObject {
         return 0
     }
 
+    /// The Space a slot must be RESTORED onto, given the Space it is showing
+    /// right now.
+    ///
+    /// An ephemeral Space cannot be one: an Incognito Space's session dies
+    /// with its windows, and an agent Space is orphan-swept at the next
+    /// launch, so a slot restored onto either would surface a Space that no
+    /// longer exists. It retreats to the slot's own last regular Space
+    /// instead — `lastRegularSpaceId`, the anchor `deleteSpace` already
+    /// retreats to, whose own documentation says the retreat must land the
+    /// user "on the Space they came from, not the global default".
+    ///
+    /// This write point used to be the one place that ignored that rule and
+    /// wrote the global default. The cost was not theoretical: merely OPENING
+    /// an Incognito Space in a slot rewrote the slot's landing Space to
+    /// `default-space` on the spot, and the next reopen landed there with the
+    /// user's real Space restored-but-hidden behind it as a sibling window.
+    ///
+    /// A nil `lastRegularSpaceId` means the slot never surfaced a regular
+    /// Space at all, and the global default really is the only answer left.
+    /// A nil `activeSpaceId` means the slot records no landing Space, exactly
+    /// as before.
+    ///
+    /// `agentSpaceIds` is the model-signature set, matching what this write
+    /// point has always asked (the live task registry is deliberately not
+    /// consulted here, so the recorded value cannot depend on whether a task
+    /// happens to be running at persist time).
+    ///
+    /// Pure and static so the rule is pinned by table.
+    static func persistableLandingSpaceId(activeSpaceId: String?,
+                                          lastRegularSpaceId: String?,
+                                          agentSpaceIds: Set<String>) -> String? {
+        guard let active = activeSpaceId else { return nil }
+        guard isIncognitoSpaceId(active) || agentSpaceIds.contains(active) else {
+            return active
+        }
+        return lastRegularSpaceId ?? LocalStore.defaultSpaceId
+    }
+
     /// Writes the geometry half of one snapshot entry: the fullscreen marker
     /// and the three fields the reopen loading window is drawn from. One
     /// encoder for both entry kinds — a live slot measures these off its
@@ -3137,6 +3175,10 @@ final class SpaceManager: ObservableObject {
             isAnySlotTearingDown: isAnySlotTearingDown,
             hasLiveSlotEntry: !planned.isEmpty
         ) else { return false }
+        // Read once for the whole write, by model signature only — see
+        // `persistableLandingSpaceId`.
+        let agentSpaceIds = Set(
+            spaces.filter { $0.isAgentSpace == true }.map(\.spaceId))
         // Which entry a reopen lands on. Decided here rather than in the
         // planner because it is a property of the CURRENT screen — the slot
         // the user is in — not of how the entries were composed.
@@ -3160,15 +3202,13 @@ final class SpaceManager: ObservableObject {
                 // one — the plan names live entries by where they sit in the
                 // registry.
                 let slot = slots[position]
-                if let active = slot.activeSpaceId {
-                    // Ephemeral Spaces are rewritten to the default Space: an
-                    // Incognito Space's session dies with its windows, and an
-                    // agent Space is orphan-swept at the next launch — restoring
-                    // a slot ONTO either would surface a Space that no longer
-                    // exists (or is about to be deleted).
-                    let isEphemeral = SpaceManager.isIncognitoSpaceId(active)
-                        || spaces.first(where: { $0.spaceId == active })?.isAgentSpace == true
-                    dict["activeSpaceId"] = isEphemeral ? LocalStore.defaultSpaceId : active
+                // An ephemeral Space retreats to this slot's own last regular
+                // Space, not the global default (`persistableLandingSpaceId`).
+                if let landing = Self.persistableLandingSpaceId(
+                    activeSpaceId: slot.activeSpaceId,
+                    lastRegularSpaceId: slot.lastRegularSpaceId,
+                    agentSpaceIds: agentSpaceIds) {
+                    dict["activeSpaceId"] = landing
                 }
                 Self.encodeSnapshotGeometry(
                     isFullScreen: slot.snapshotIsFullScreen(),
@@ -3230,9 +3270,14 @@ final class SpaceManager: ObservableObject {
                   restoreEntries.indices.contains(index) else { continue }
             liveWindowMapsByRestoreIndex[index] = slot.windowMap
             // The landing half of the same record. Read back by the
-            // `.parkedOnly` branch above once this slot is gone.
-            if let active = slots[position].activeSpaceId {
-                liveActiveSpaceIdsByRestoreIndex[index] = active
+            // `.parkedOnly` branch above once this slot is gone — and put
+            // through the same ephemeral retreat, or a group closed while an
+            // Incognito Space was up would be remembered as landing on one.
+            if let landing = Self.persistableLandingSpaceId(
+                activeSpaceId: slots[position].activeSpaceId,
+                lastRegularSpaceId: slots[position].lastRegularSpaceId,
+                agentSpaceIds: agentSpaceIds) {
+                liveActiveSpaceIdsByRestoreIndex[index] = landing
             }
         }
         // This write supersedes any debounced one. Dropped only here, past

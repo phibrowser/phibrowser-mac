@@ -545,6 +545,44 @@ typedef NS_ENUM(NSInteger, PhiGhostMaterializeOutcome) {
 /// entry/exit alone does not fire this — no preference write happens, and
 /// the Mac client owns those transitions.
 - (void)metricsReportingEnabledChanged:(BOOL)enabled;
+
+/// The eager window id set for a COLD START replay, or nil to replay
+/// everything the session file holds (today's behaviour).
+///
+/// A cold start's replay is started by Chromium, not by the client, so the
+/// client has no call of its own to attach an eager set to the way a Dock
+/// reopen does (`restorePreviousSessionWithPreferredProfile:eagerWindowIds:…`).
+/// Chromium asks instead: once per profile it is about to replay,
+/// SYNCHRONOUSLY, on the main thread, from inside the replay. Answer from
+/// state already in memory — the restore snapshot — and do not block.
+///
+/// The contract of the returned set is the reopen one, unchanged: every saved
+/// normal window whose id is absent from it is parked instead of rebuilt, and
+/// the client hears what was actually parked through
+/// `coldStartParkedGhostWindows:`. It is therefore a reverse whitelist, and an
+/// EMPTY array is a valid answer meaning "park everything" — return nil, not
+/// an empty array, when there is nothing to gate (no snapshot, feature off,
+/// no account bound yet). Asked once per profile with the same snapshot in
+/// hand, so the answer must be idempotent.
+///
+/// Never asked while the client's own reopen is in flight: that replay
+/// already carries its eager set, or deliberately carries none.
+- (nullable NSArray<NSNumber *> *)coldStartEagerWindowIds;
+
+/// What Chromium has parked after a cold-start replay: profile directory
+/// basename → previous-session window ids, in adoption order — the whole
+/// ghost registry, exactly as `parkedCompletion:` reports it for a reopen.
+///
+/// Delivered once per replayed profile rather than once for the whole cold
+/// start, because a cold start has no single settlement: the primary
+/// profile replays synchronously and secondary profiles asynchronously, with
+/// no point at which all of them are known to be done. The registry only
+/// grows across those calls, so a window missing from one of them may simply
+/// belong to a profile that has not replayed yet — absence here is NOT
+/// evidence that a window was not parked, which is the one way this differs
+/// from the reopen receipt.
+- (void)coldStartParkedGhostWindows:
+    (NSDictionary<NSString *, NSArray<NSNumber *> *> *)parkedWindowIdsByProfileId;
 @end
 
 @protocol PhiChromiumBridgeProtocol <NSObject>

@@ -35,6 +35,27 @@ extension PhiChromiumCoordinator: PhiChromiumBridgeDelegate {
             && PhiPreferences.AISettings.phiAIEnabled.loadValue()
     }
 
+    /// Chromium is about to replay a profile's session at cold start and is
+    /// asking which windows to rebuild now. Answered from the restore
+    /// snapshot already in memory; nil keeps the full replay. Synchronous by
+    /// contract — the replay is waiting on this stack.
+    func coldStartEagerWindowIds() -> [NSNumber]? {
+        MainActor.assumeIsolated { SpaceManager.shared.coldStartEagerWindowIds() }
+    }
+
+    /// What that replay actually parked, per profile, as it happens.
+    func coldStartParkedGhostWindows(
+        _ parkedWindowIdsByProfileId: [String: [NSNumber]]
+    ) {
+        let windowIdsByProfileId = parkedWindowIdsByProfileId.mapValues {
+            $0.map(\.intValue)
+        }
+        MainActor.assumeIsolated {
+            SpaceManager.shared.applyColdStartParkedGhostReceipt(
+                windowIdsByProfileId: windowIdsByProfileId)
+        }
+    }
+
     /// Source of truth for the browser-process DevTools gate that blocks
     /// remote-debugging clients from the user's own Spaces. Read live per gated
     /// command, so the Settings toggle applies without a relaunch.

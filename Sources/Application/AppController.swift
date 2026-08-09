@@ -230,6 +230,15 @@ import PostHog
         }
         #endif
 
+        // Warm the Space registry before Chromium's cold-start replay can ask
+        // it anything. That replay queries `coldStartEagerWindowIds` from its
+        // own stack, and the singleton's first touch is what loads the restore
+        // snapshot and seeds the Space list; doing it here means the answer is
+        // read from memory instead of built inside the replay. A launch that
+        // has no account bound yet warms nothing and the pull answers nil,
+        // which is the full replay this app has always done.
+        MainActor.assumeIsolated { _ = SpaceManager.shared }
+
         chromiumBridge?.applicationWillFinishLaunching(notification)
     }
     

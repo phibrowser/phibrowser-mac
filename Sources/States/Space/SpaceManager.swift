@@ -458,6 +458,21 @@ final class SpaceManager: ObservableObject {
         /// every entry of a record written before this field existed, which
         /// falls back to entry 0.
         let isLandingEntry: Bool
+        /// True on an entry written for a window group that was ALREADY closed
+        /// when the record froze — no live slot spoke for it, only its parked
+        /// windows and what it had on screen when it closed
+        /// (`PlannedSnapshotEntry.Source.parkedOnly`). False on an entry a live
+        /// slot wrote: a window group that was still on screen.
+        ///
+        /// The distinction exists at write time and used to stop there. A cold
+        /// start reads only this record, so without it every retained group
+        /// looks like a window that was open at quit.
+        ///
+        /// False on every entry of a record written before this field existed,
+        /// which reads such an entry as live. That polarity is the safe one:
+        /// an entry mistaken for live is restored eagerly — today's behaviour
+        /// — while one mistaken for closed would never come back at all.
+        let isParkedOnlyEntry: Bool
         /// Previous-session Chromium windowId → spaceId for every window
         /// the slot owned.
         let windowMap: [Int: String]
@@ -2018,13 +2033,44 @@ final class SpaceManager: ObservableObject {
     ///     indistinguishable from a deleted one and falls back to eager,
     ///     which is the harmless direction — no saved window matches it.
     ///
+    /// Which entries of the record may land a window — the one thing that
+    /// differs between the two replays sharing the rules above.
+    ///
+    /// Those rules are written for a Dock reopen, where exactly one window
+    /// comes back. A cold start restores what was on screen when the app
+    /// quit, which is as many groups as the user had open — each still eager
+    /// only on its OWN active Space, i.e. the same rule applied once per
+    /// group instead of once per replay.
+    ///
+    /// A mode rather than a change to the rule: reopen must keep landing
+    /// exactly one window, and turning the landing entry into a list would
+    /// put both behaviours in one code path where a cold-start edit could
+    /// quietly widen a reopen.
+    enum RestoreLandingMode: Equatable {
+        /// Dock reopen (R1). Only the marked landing entry lands.
+        case landingOnly
+        /// Cold start (R2). Every entry that was still on screen when the
+        /// record froze lands on its own active Space. `parkedOnlyEntryIndices`
+        /// are the positions in `slots` the record marks as window groups the
+        /// user had already closed (`SlotRestoreEntry.isParkedOnlyEntry`);
+        /// those land nothing, which is what keeps a closed group from coming
+        /// back. An index absent from the set is treated as on-screen — the
+        /// fail-eager direction the marker itself is written in.
+        case everyOnScreenEntry(parkedOnlyEntryIndices: Set<Int>)
+    }
+
+    /// Splits the restore snapshot's windows into the set a replay rebuilds
+    /// now (eager) and the set it parks behind their Spaces (ghosts), by the
+    /// rules documented above, with `mode` deciding which entries may land.
+    ///
     /// Pure and static so the rules can be pinned down by table
     /// (`RestoreWindowClassificationTests`); the reopen wiring feeds it the
     /// decoded snapshot and the live store.
     static func classifyRestoreWindows(
         slots: [(activeSpaceId: String?, windowMap: [Int: String], isLandingEntry: Bool)],
         liveSpaceIds: Set<String>,
-        agentSpaceIds: Set<String>
+        agentSpaceIds: Set<String>,
+        mode: RestoreLandingMode = .landingOnly
     ) -> RestoreWindowClassification {
         // First marked wins, so a corrupt record naming several landing
         // entries still resolves to one; entry 0 is the pre-marker fallback.
@@ -2036,7 +2082,17 @@ final class SpaceManager: ObservableObject {
             let eligible = slot.windowMap.filter { entry in
                 !isIncognitoSpaceId(entry.value) && !agentSpaceIds.contains(entry.value)
             }
-            let landingSpaceId = index == landingIndex ? slot.activeSpaceId : nil
+            // The one line the mode decides: which entries have a Space to
+            // land on. Everything below it is the same for both modes.
+            let landingSpaceId: String? = {
+                switch mode {
+                case .landingOnly:
+                    return index == landingIndex ? slot.activeSpaceId : nil
+                case .everyOnScreenEntry(let parkedOnlyEntryIndices):
+                    return parkedOnlyEntryIndices.contains(index)
+                        ? nil : slot.activeSpaceId
+                }
+            }()
             for (windowId, spaceId) in eligible {
                 if spaceId == landingSpaceId {
                     eagerWindowIds.insert(windowId)
@@ -2154,25 +2210,7 @@ final class SpaceManager: ObservableObject {
     private func armLazyRestoreForReopen(
         _ bridge: PhiChromiumBridgeProtocol
     ) -> [NSNumber]? {
-        // R2's liveness check and R5's agent exclusion read the live store —
-        // converged by now on a mid-session reopen; a gap only widens the
-        // eager set (fail-eager). Agent Spaces are known two ways: the
-        // persisted model signature, and the live task registry (a
-        // PERSISTENT agent Space mid-task looks regular by signature).
-        let agentSpaceIds = Set(spaces.filter { space in
-            space.isAgentSpace == true || MainActor.assumeIsolated {
-                AgentSpaceManager.shared.isAgentSpace(space.spaceId)
-            }
-        }.map(\.spaceId))
-        let classification = Self.classifyRestoreWindows(
-            slots: restoreEntries.map {
-                (activeSpaceId: $0.activeSpaceId,
-                 windowMap: $0.windowMap,
-                 isLandingEntry: $0.isLandingEntry)
-            },
-            liveSpaceIds: Set(spaces.map(\.spaceId)),
-            agentSpaceIds: agentSpaceIds
-        )
+        let classification = classifyLoadedRestoreSnapshot(mode: .landingOnly)
         let armed = Self.armedEagerWindowIds(
             featureEnabled: Self.isLazySpaceRestoreEnabled,
             bridgeSupportsLazyRestore: Self.bridgeSupportsLazyRestore(bridge),
@@ -2189,6 +2227,113 @@ final class SpaceManager: ObservableObject {
         // be able to answer.
         AppLogInfo("[SpaceManager] lazy reopen armed: \(eagerWindowIds.count) eager, \(parkedGhostSpaceIdsByWindowId.count) parked")
         return eagerWindowIds
+    }
+
+    /// Classifies the loaded snapshot against the live Space store, in `mode`.
+    ///
+    /// The two replays that need this — a Dock reopen and a cold start —
+    /// differ only in that mode. Everything else they hand the classifier is
+    /// the same, and it is the kind of sameness that drifts apart if written
+    /// twice: R2's liveness check and R5's agent exclusion both read the live
+    /// store (converged by now on a mid-session reopen; a gap only widens the
+    /// eager set, which is the fail-eager direction), and agent Spaces are
+    /// known two ways — the persisted model signature, and the live task
+    /// registry, because a PERSISTENT agent Space mid-task looks regular by
+    /// signature.
+    private func classifyLoadedRestoreSnapshot(
+        mode: RestoreLandingMode
+    ) -> RestoreWindowClassification {
+        let agentSpaceIds = Set(spaces.filter { space in
+            space.isAgentSpace == true || MainActor.assumeIsolated {
+                AgentSpaceManager.shared.isAgentSpace(space.spaceId)
+            }
+        }.map(\.spaceId))
+        return Self.classifyRestoreWindows(
+            slots: restoreEntries.map {
+                (activeSpaceId: $0.activeSpaceId,
+                 windowMap: $0.windowMap,
+                 isLandingEntry: $0.isLandingEntry)
+            },
+            liveSpaceIds: Set(spaces.map(\.spaceId)),
+            agentSpaceIds: agentSpaceIds,
+            mode: mode)
+    }
+
+    /// Answers Chromium's cold-start pull: the eager window id set for a
+    /// replay this side did not start, or nil to keep the full replay.
+    ///
+    /// The same classifier the Dock reopen uses, in `.everyOnScreenEntry`
+    /// mode: a cold start brings back the window groups that were on screen
+    /// when the app quit, each eager only on its own active Space, and brings
+    /// back nothing for the groups the user had already closed.
+    ///
+    /// Four ways to answer nil, all of them landing on today's full replay:
+    ///   * the feature switch is off;
+    ///   * this side's own reopen is in flight — that replay carries its own
+    ///     eager set, or deliberately carries none, and this must not speak
+    ///     for it;
+    ///   * the record is empty (no account bound yet, first launch, snapshot
+    ///     cleared) — there is nothing to gate, and an empty ARRAY would mean
+    ///     the opposite: park every window and hand back none;
+    ///   * the classification named no eager window at all, which would park
+    ///     the whole session for the same reason. A record whose every entry
+    ///     is already-closed can produce that, and eager is the safe side.
+    ///
+    /// Deliberately records NO predicted park set, unlike the reopen
+    /// (`armLazyRestoreForReopen`). Chromium reports what it actually parked
+    /// through `coldStartParkedGhostWindows:` from inside the very replay
+    /// this answer feeds, so there is no window in which a prediction could
+    /// be consulted — and not having one is what makes the per-profile
+    /// receipts safe to apply as they arrive: nothing can be retired for
+    /// being absent from a receipt that is still growing.
+    func coldStartEagerWindowIds() -> [NSNumber]? {
+        guard Self.isLazySpaceRestoreEnabled else { return nil }
+        // Not a cold start: this side already started a replay of its own, or
+        // has hosted a window this run and so is answering for some later
+        // unarmed replay (an app-shim reopen, a second instance's URLs). Those
+        // are reopens, and R1's "only the last window comes back" rule is
+        // theirs, not this one.
+        guard !isSessionRestoreInFlight, !hasEverHostedSlotWindow else {
+            return nil
+        }
+        guard !restoreEntries.isEmpty else { return nil }
+        let parkedOnlyEntryIndices = Set(
+            restoreEntries.indices.filter { restoreEntries[$0].isParkedOnlyEntry })
+        let classification = classifyLoadedRestoreSnapshot(
+            mode: .everyOnScreenEntry(
+                parkedOnlyEntryIndices: parkedOnlyEntryIndices))
+        if classification.eagerWindowIds.isEmpty {
+            // Naming no eager window has two very different causes, and the
+            // right answer differs by cause. Every entry already closed is
+            // R2a — the user quit with nothing on screen — and the empty
+            // ARRAY is the correct answer there: it parks the whole session
+            // and restore stands in one new window. Any other cause (a record
+            // that names only Incognito or agent Spaces, say) means this side
+            // cannot speak for the file, and nil restores everything, which
+            // is the fail-eager side.
+            guard parkedOnlyEntryIndices.count == restoreEntries.count else {
+                AppLogWarn("[SpaceManager] cold start gate: \(restoreEntries.count) entry(ies) named no eager window and not every group is closed — restoring everything")
+                return nil
+            }
+            AppLogInfo("[SpaceManager] cold start gate: every one of \(restoreEntries.count) entry(ies) was already closed — parking the whole session")
+            return []
+        }
+        AppLogInfo("[SpaceManager] cold start gate: \(classification.eagerWindowIds.count) eager, \(classification.ghostSpaceIdsByWindowId.count) to park across \(restoreEntries.count) entry(ies)")
+        return classification.eagerWindowIds.sorted().map { NSNumber(value: $0) }
+    }
+
+    /// Applies one of the cold start's per-profile park receipts. The receipt
+    /// channel is the reopen's, unchanged — see `applyParkedGhostReceipt` for
+    /// why the receipt outranks any guess — and it is safe to apply the
+    /// partial ones a cold start delivers because this side made no guess:
+    /// with nothing predicted, nothing can be retired for being absent from a
+    /// receipt that later profiles are still adding to.
+    func applyColdStartParkedGhostReceipt(windowIdsByProfileId: [String: [Int]]) {
+        applyParkedGhostReceipt(ChromiumParkedGhostReceipt(
+            windowIdsByProfileId: windowIdsByProfileId,
+            // A cold start never arms through ArmForReopen, so the stale-set
+            // tally this reports is never about it.
+            eagerFilterMatchedNothing: false))
     }
 
     /// The parked ghost window an activation of `spaceId` materializes, or
@@ -3243,6 +3388,11 @@ final class SpaceManager: ObservableObject {
                 // its display was unplugged forgets the geometry it had on it.
                 let saved = restoreEntries[index]
                 parkedOnlyCount += 1
+                // The one thing this entry kind knows that the record did not
+                // carry: nothing was on screen for it when this was written.
+                // Written only here, so an entry without the key reads as live
+                // (`decodedIsParkedOnlyEntry`).
+                dict["isParkedOnlyEntry"] = true
                 // Only a Space that still exists, for the same reason the
                 // window map is filtered through `liveSpaceIds`: landing a
                 // group on a deleted Space strands it.
@@ -3407,6 +3557,8 @@ final class SpaceManager: ObservableObject {
             let entry = SlotRestoreEntry(
                 activeSpaceId: dict["activeSpaceId"] as? String,
                 isLandingEntry: (dict["isLandingEntry"] as? Bool) ?? false,
+                isParkedOnlyEntry:
+                    Self.decodedIsParkedOnlyEntry(dict["isParkedOnlyEntry"]),
                 windowMap: windowMap,
                 wasFullScreen: (dict["isFullScreen"] as? Bool) ?? false,
                 frame: Self.decodedSlotFrame(dict["frame"]).map {
@@ -3459,6 +3611,20 @@ final class SpaceManager: ObservableObject {
     /// is pinned by test rather than by two inline expressions agreeing.
     static func encodedWindowMap(_ windowMap: [Int: String]) -> [String: String] {
         Dictionary(uniqueKeysWithValues: windowMap.map { (String($0.key), $0.value) })
+    }
+
+    /// Whether a snapshot entry describes a window group that was already
+    /// closed when the record was written
+    /// (`SlotRestoreEntry.isParkedOnlyEntry`).
+    ///
+    /// Absent — every record written before the key existed — and anything
+    /// that is not a boolean both decode to false, i.e. "this group was on
+    /// screen". That direction is deliberate and load-bearing: an entry read
+    /// as live is restored eagerly, exactly as it is today, whereas defaulting
+    /// the other way would read every pre-existing record as closed and bring
+    /// back no window at all on the first launch after the upgrade.
+    static func decodedIsParkedOnlyEntry(_ raw: Any?) -> Bool {
+        (raw as? Bool) ?? false
     }
 
     /// The windowMap stored in a snapshot entry. Tolerant the way the other

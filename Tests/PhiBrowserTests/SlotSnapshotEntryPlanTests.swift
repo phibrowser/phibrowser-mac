@@ -448,4 +448,31 @@ final class SlotSnapshotEntryPlanTests: XCTestCase {
         XCTAssertEqual(landing("agent-space", lastRegular: "space-b"),
                        "agent-space")
     }
+
+    // MARK: - Was the group on screen when the record froze
+
+    // The plan above already separates the two entry kinds; these pin the one
+    // bit of that separation the record carries across a launch, and the
+    // direction it fails in. A cold start has nothing else to tell a window
+    // group the user closed from one that was still on screen at quit.
+
+    func testAnEntryWrittenWithTheMarkerReadsAsAlreadyClosed() {
+        XCTAssertTrue(SpaceManager.decodedIsParkedOnlyEntry(true))
+    }
+
+    func testAnEntryWithoutTheMarkerReadsAsOnScreen() {
+        // Every record written before the key existed. Read as on-screen, so
+        // it is restored eagerly — the pre-upgrade behaviour.
+        XCTAssertFalse(SpaceManager.decodedIsParkedOnlyEntry(nil))
+    }
+
+    func testAnEntryWritingTheMarkerFalseReadsAsOnScreen() {
+        XCTAssertFalse(SpaceManager.decodedIsParkedOnlyEntry(false))
+    }
+
+    func testAMarkerOfTheWrongTypeReadsAsOnScreen() {
+        // A snapshot is user-writable state on disk. Anything unreadable has
+        // to fail towards restoring the group, never towards dropping it.
+        XCTAssertFalse(SpaceManager.decodedIsParkedOnlyEntry("yes"))
+    }
 }

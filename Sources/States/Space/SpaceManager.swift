@@ -2267,11 +2267,18 @@ final class SpaceManager: ObservableObject {
     /// when the app quit, each eager only on its own active Space, and brings
     /// back nothing for the groups the user had already closed.
     ///
-    /// Four ways to answer nil, all of them landing on today's full replay:
+    /// Whether a cold start or a reopen is asking is now decided on the
+    /// Chromium side, by the replay's initiator (only a startup-initiated
+    /// replay pulls; a reopen never does — see SessionRestore::
+    /// PHI_STARTUP_INITIATED). So this only ever answers a genuine cold start
+    /// and does not itself have to tell a cold start from a reopen. In
+    /// particular there is no "have I hosted a window yet" guard here: it used
+    /// to deny the second profile of a multi-profile cold start, because the
+    /// first profile's window had already flipped that flag by the time the
+    /// second profile's replay asked.
+    ///
+    /// Three ways to answer nil, all of them landing on today's full replay:
     ///   * the feature switch is off;
-    ///   * this side's own reopen is in flight — that replay carries its own
-    ///     eager set, or deliberately carries none, and this must not speak
-    ///     for it;
     ///   * the record is empty (no account bound yet, first launch, snapshot
     ///     cleared) — there is nothing to gate, and an empty ARRAY would mean
     ///     the opposite: park every window and hand back none;
@@ -2288,14 +2295,12 @@ final class SpaceManager: ObservableObject {
     /// being absent from a receipt that is still growing.
     func coldStartEagerWindowIds() -> [NSNumber]? {
         guard Self.isLazySpaceRestoreEnabled else { return nil }
-        // Not a cold start: this side already started a replay of its own, or
-        // has hosted a window this run and so is answering for some later
-        // unarmed replay (an app-shim reopen, a second instance's URLs). Those
-        // are reopens, and R1's "only the last window comes back" rule is
-        // theirs, not this one.
-        guard !isSessionRestoreInFlight, !hasEverHostedSlotWindow else {
-            return nil
-        }
+        // Defence in depth behind the Chromium-side initiator check: a reopen
+        // this side is still replaying must never be answered by the cold-start
+        // gate. Chromium already withholds the pull from any reopen, so this
+        // guard only ever holds when the two disagree; keeping it costs nothing
+        // and preserves the old refusal for that case.
+        guard !isSessionRestoreInFlight else { return nil }
         guard !restoreEntries.isEmpty else { return nil }
         let parkedOnlyEntryIndices = Set(
             restoreEntries.indices.filter { restoreEntries[$0].isParkedOnlyEntry })

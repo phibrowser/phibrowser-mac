@@ -2164,20 +2164,33 @@ final class SpaceManager: ObservableObject {
     }
 
     /// The eager set a reopen sends over the bridge, or nil to keep the
-    /// legacy full restore. nil when the switch is off or the framework
-    /// predates the selector family — and also when the classification
-    /// parked nothing: the eager set is a whitelist to the replay (a saved
-    /// window outside it parks), so arming then buys nothing over a full
-    /// replay and only widens what a snapshot gap could fall through.
+    /// legacy full restore. nil only when this side cannot speak for the
+    /// session file at all: the switch is off, the framework predates the
+    /// selector family, the record has no entry (nothing to gate a replay
+    /// with), or the record names no window in either set (every window on
+    /// an Incognito or agent Space) — the fail-eager side, mirroring the
+    /// cold-start gate's same refusal.
+    ///
+    /// A classification that parked nothing still arms. The eager set is not
+    /// only a whitelist to the replay — it is the one gate on the replay's
+    /// SCALE: the session file can hold records the snapshot has lost (an
+    /// erased entry's windows, groups closed in earlier cycles), and an
+    /// unarmed reopen replays every one of them, minting a window apiece.
+    /// Armed, the windows outside the eager set park instead, and the reopen
+    /// brings back only the last-closed group (REQUIREMENTS R1) — which is
+    /// why "parks nothing" must not be a reason to drop the gate.
     /// Sorted ascending so the wire order is deterministic. Pure and static
     /// so the gate is pinned by table (`LazySpaceRestoreWiringTests`).
     static func armedEagerWindowIds(
         featureEnabled: Bool,
         bridgeSupportsLazyRestore: Bool,
+        hasSnapshotEntries: Bool,
         classification: RestoreWindowClassification
     ) -> [NSNumber]? {
-        guard featureEnabled, bridgeSupportsLazyRestore,
-              !classification.ghostSpaceIdsByWindowId.isEmpty else { return nil }
+        guard featureEnabled, bridgeSupportsLazyRestore, hasSnapshotEntries,
+              !(classification.eagerWindowIds.isEmpty
+                  && classification.ghostSpaceIdsByWindowId.isEmpty)
+        else { return nil }
         return classification.eagerWindowIds.sorted().map { NSNumber(value: $0) }
     }
 
@@ -2201,7 +2214,7 @@ final class SpaceManager: ObservableObject {
     /// An unarmed reopen parks nothing, so its replay is the one this app has
     /// always run and activations keep meeting it exactly as they always did.
     /// That is what makes the switch a real rollback: off (or an older
-    /// framework, or a classification that parked nothing) is today's
+    /// framework, or a record with nothing to gate) is today's
     /// behavior, here as everywhere else. Pure and static so the gate is
     /// pinned by table.
     static func reopenDropsActivations(isSessionRestoreInFlight: Bool,
@@ -2218,11 +2231,23 @@ final class SpaceManager: ObservableObject {
         _ bridge: PhiChromiumBridgeProtocol
     ) -> [NSNumber]? {
         let classification = classifyLoadedRestoreSnapshot(mode: .landingOnly)
+        let featureEnabled = Self.isLazySpaceRestoreEnabled
+        let bridgeSupports = Self.bridgeSupportsLazyRestore(bridge)
+        let hasSnapshotEntries = !restoreEntries.isEmpty
         let armed = Self.armedEagerWindowIds(
-            featureEnabled: Self.isLazySpaceRestoreEnabled,
-            bridgeSupportsLazyRestore: Self.bridgeSupportsLazyRestore(bridge),
+            featureEnabled: featureEnabled,
+            bridgeSupportsLazyRestore: bridgeSupports,
+            hasSnapshotEntries: hasSnapshotEntries,
             classification: classification
         )
+        if featureEnabled, bridgeSupports, hasSnapshotEntries, armed == nil {
+            // By the gate's rule table this is the one way an able side ends
+            // up unarmed: a record whose every window is on an Incognito or
+            // agent Space. This side cannot speak for the session file then,
+            // and the full restore is the fail-eager answer — the reopen twin
+            // of the cold-start gate's warn.
+            AppLogWarn("[SpaceManager] lazy reopen gate: \(restoreEntries.count) entry(ies) named no window — keeping the full restore")
+        }
         // The single write point for the latch, on both answers: what the
         // reopen sends over the bridge and what it tells `activate` for the
         // rest of its replay are decided here, together, and cannot drift.
@@ -3270,7 +3295,7 @@ final class SpaceManager: ObservableObject {
     /// to. Read by `removeSlot`, which retires them from both sides when the
     /// write that takes them out of the record lands. Empty whenever nothing
     /// is recorded, which is every run whose reopen did not arm the lazy
-    /// filter (switch off, older framework, nothing to park) — and every cold
+    /// filter (switch off, older framework, an empty record) — and every cold
     /// start, which never arms.
     private func parkedGhostEntries(for slot: SpaceWindowSlot) -> [Int: String] {
         guard !parkedGhostSpaceIdsByWindowId.isEmpty else { return [:] }

@@ -10,8 +10,7 @@ import XCTest
 /// the way the classifier and the snapshot writer already are:
 ///
 ///   * whether a reopen arms the eager filter at all (`armedEagerWindowIds`)
-///     — the switch, the framework probe, and the "parking nothing buys
-///     nothing" floor;
+///     — the switch, the framework probe, and the two empty-record refusals;
 ///   * which live slots a landed snapshot write adopts into the saved-entry
 ///     system (`slotAdoptionPlan`) — a minted group without an entry used to
 ///     fall out of the record on the write that followed its close;
@@ -71,6 +70,7 @@ final class LazySpaceRestoreWiringTests: XCTestCase {
         XCTAssertNil(SpaceManager.armedEagerWindowIds(
             featureEnabled: false,
             bridgeSupportsLazyRestore: true,
+            hasSnapshotEntries: true,
             classification: Self.classification(eager: [1], ghosts: [2: "space-b"])
         ))
     }
@@ -81,19 +81,50 @@ final class LazySpaceRestoreWiringTests: XCTestCase {
         XCTAssertNil(SpaceManager.armedEagerWindowIds(
             featureEnabled: true,
             bridgeSupportsLazyRestore: false,
+            hasSnapshotEntries: true,
             classification: Self.classification(eager: [1], ghosts: [2: "space-b"])
         ))
     }
 
-    func testArmingThatParksNothingStaysUnarmed() {
-        // The eager set is a whitelist to the replay: a saved window outside
-        // it parks. With nothing to park, arming buys nothing over the full
-        // replay and only widens what a snapshot gap could fall through.
+    func testArmingRequiresASnapshotEntry() {
+        // No record means nothing to gate a replay with — the one shape
+        // where the legacy full restore is the only possible answer.
         XCTAssertNil(SpaceManager.armedEagerWindowIds(
             featureEnabled: true,
             bridgeSupportsLazyRestore: true,
-            classification: Self.classification(eager: [1, 2], ghosts: [:])
+            hasSnapshotEntries: false,
+            classification: Self.classification(eager: [], ghosts: [:])
         ))
+    }
+
+    func testArmingWithARecordNamingNoWindowStaysUnarmed() {
+        // Entries exist but every window fell in the neither set (Incognito
+        // or agent Spaces): this side cannot speak for the session file, and
+        // an empty ARMED set would park the whole session instead.
+        XCTAssertNil(SpaceManager.armedEagerWindowIds(
+            featureEnabled: true,
+            bridgeSupportsLazyRestore: true,
+            hasSnapshotEntries: true,
+            classification: Self.classification(eager: [], ghosts: [:])
+        ))
+    }
+
+    func testArmingThatParksNothingStillArmsWithItsEagerSet() {
+        // The gate's reason to exist: the session file can hold records the
+        // snapshot has lost, and only an armed replay parks them. A
+        // classification that parked nothing must still arm, or those records
+        // replay in full and mint a window apiece (tickets 21/25). This is
+        // the deliberate reversal of the earlier "parks nothing stays
+        // unarmed" pin.
+        XCTAssertEqual(
+            SpaceManager.armedEagerWindowIds(
+                featureEnabled: true,
+                bridgeSupportsLazyRestore: true,
+                hasSnapshotEntries: true,
+                classification: Self.classification(eager: [1, 2], ghosts: [:])
+            ),
+            [1, 2].map { NSNumber(value: $0) }
+        )
     }
 
     func testArmedEagerSetIsSortedAscending() {
@@ -101,6 +132,7 @@ final class LazySpaceRestoreWiringTests: XCTestCase {
             SpaceManager.armedEagerWindowIds(
                 featureEnabled: true,
                 bridgeSupportsLazyRestore: true,
+                hasSnapshotEntries: true,
                 classification: Self.classification(
                     eager: [55, 7, 102], ghosts: [9: "space-b"])
             ),

@@ -12,6 +12,9 @@ import XCTest
 ///   * whether a reopen arms the eager filter at all (`armedEagerWindowIds`)
 ///     — the switch, the framework probe, and the "parking nothing buys
 ///     nothing" floor;
+///   * which live slots a landed snapshot write adopts into the saved-entry
+///     system (`slotAdoptionPlan`) — a minted group without an entry used to
+///     fall out of the record on the write that followed its close;
 ///   * whether an activation arriving during that reopen is dropped
 ///     (`reopenDropsActivations`) — which is what keeps the switch a real
 ///     rollback rather than a change to the default reopen;
@@ -103,6 +106,35 @@ final class LazySpaceRestoreWiringTests: XCTestCase {
             ),
             [7, 55, 102].map { NSNumber(value: $0) }
         )
+    }
+
+    // MARK: - Adoption (which live slots a landed write gives a saved entry)
+
+    func testAdoptionPlanSkipsSlotsWithASavedEntry() {
+        XCTAssertTrue(SpaceManager.slotAdoptionPlan(
+            savedEntryCount: 1,
+            liveSlots: [(restoreIndex: 0, windowMap: [1: "space-a"])]
+        ).isEmpty)
+    }
+
+    func testAdoptionPlanSkipsSlotsWithNothingWritable() {
+        // The bar a live slot must clear to be planned at all — and what
+        // keeps a slot minted ahead of a window that never arrived from
+        // occupying an entry.
+        XCTAssertTrue(SpaceManager.slotAdoptionPlan(
+            savedEntryCount: 0,
+            liveSlots: [(restoreIndex: nil, windowMap: [:])]
+        ).isEmpty)
+    }
+
+    func testAdoptionAppendsMintedSlotsAfterTheExistingEntries() {
+        let plan = SpaceManager.slotAdoptionPlan(
+            savedEntryCount: 2,
+            liveSlots: [(restoreIndex: 0, windowMap: [1: "space-a"]),
+                        (restoreIndex: nil, windowMap: [2: "space-b"]),
+                        (restoreIndex: nil, windowMap: [3: "space-c"])])
+        XCTAssertEqual(plan.map(\.position), [1, 2])
+        XCTAssertEqual(plan.map(\.newIndex), [2, 3])
     }
 
     // MARK: - Whether a reopen in flight drops activations

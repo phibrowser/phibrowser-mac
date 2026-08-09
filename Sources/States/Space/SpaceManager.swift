@@ -449,6 +449,13 @@ final class SpaceManager: ObservableObject {
     /// session-restored window — never against current-run windowIds, which
     /// are allocated fresh every launch from a counter shared with tab ids
     /// and only coincide with the persisted ones by accident.
+    ///
+    /// The one exception is an entry adopted mid-run for a slot no saved
+    /// entry spoke for (`slotAdoptionPlan`): its map holds CURRENT-run ids.
+    /// Those never enter `restoreIndexByWindowId`, so no claim can match
+    /// them; the entry exists so the close-time retention has an index to
+    /// record its group under, and its ids become ordinary previous-session
+    /// ids once the persisted record is read back next launch.
     private struct SlotRestoreEntry {
         let activeSpaceId: String?
         /// True on the one entry a reopen lands on — the window group that was
@@ -3274,6 +3281,40 @@ final class SpaceManager: ObservableObject {
             entryWindowMap: restoreEntries[index].windowMap)
     }
 
+    /// Which live slots a landed snapshot write adopts into the saved-entry
+    /// system, and the entry index each one takes: slots holding windows no
+    /// saved entry speaks for (Cmd+N, a spawn, a fallback mint), in registry
+    /// order, appended after the entries that already exist.
+    ///
+    /// Adoption is what lets a minted group outlive its close. The record's
+    /// close-time retention — `liveWindowMapsByRestoreIndex`, and the
+    /// planner's parked-only pass reading it — is keyed by saved-entry
+    /// index, so a slot without one fell out of the record on the write that
+    /// followed its close; the reopen then found nothing to park, kept the
+    /// unfiltered full replay, and the closed group came back beside the one
+    /// window a reopen owes (the ticket-21/22 blow-up).
+    ///
+    /// Only positions with a non-empty writable window map adopt: the same
+    /// bar a live slot must clear to be planned at all, which keeps a slot
+    /// minted ahead of a window that never arrived from occupying an entry.
+    ///
+    /// Pure and static so the rule is pinned by table
+    /// (`LazySpaceRestoreWiringTests`); `persistSlotsSnapshot` applies it on
+    /// the one write path there is.
+    static func slotAdoptionPlan(
+        savedEntryCount: Int,
+        liveSlots: [(restoreIndex: Int?, windowMap: [Int: String])]
+    ) -> [(position: Int, newIndex: Int)] {
+        var nextIndex = savedEntryCount
+        var plan: [(position: Int, newIndex: Int)] = []
+        for (position, slot) in liveSlots.enumerated()
+        where slot.restoreIndex == nil && !slot.windowMap.isEmpty {
+            plan.append((position: position, newIndex: nextIndex))
+            nextIndex += 1
+        }
+        return plan
+    }
+
     /// Writes the current slot/window/Space layout to
     /// `AccountUserDefaults.slotsRestoreSnapshot`. Called from
     /// `SpaceWindowSlot.registerWindow` (and a few live-state mutations) so the
@@ -3432,13 +3473,46 @@ final class SpaceManager: ObservableObject {
             }
             dicts.append(dict)
         }
+        // Adopt live slots no saved entry speaks for (Cmd+N, a spawn, a
+        // fallback mint) into the saved-entry system, so the retention below
+        // has an index to record their groups under and a closed one survives
+        // as a parked-only entry exactly like a restored slot's. Plan
+        // positions index `liveSlots`, which is `slots` mapped one for one —
+        // the same alignment the retention loop below stands on. Appended at
+        // the end, so every existing index keeps meaning what it meant — and
+        // kept OUT of `restoreIndexByWindowId` on purpose: these are
+        // current-run windows, not unclaimed saved ones, and the claim and
+        // ghost-retirement paths keyed by that map must never see them.
+        var adoptedIndexByPosition: [Int: Int] = [:]
+        for adoption in Self.slotAdoptionPlan(
+            savedEntryCount: restoreEntries.count, liveSlots: liveSlots) {
+            let slot = slots[adoption.position]
+            restoreEntries.append(SlotRestoreEntry(
+                activeSpaceId: Self.persistableLandingSpaceId(
+                    activeSpaceId: slot.activeSpaceId,
+                    lastRegularSpaceId: slot.lastRegularSpaceId,
+                    agentSpaceIds: agentSpaceIds),
+                isLandingEntry: false,
+                isParkedOnlyEntry: false,
+                windowMap: liveSlots[adoption.position].windowMap,
+                wasFullScreen: slot.snapshotIsFullScreen(),
+                frame: slot.snapshotFrame(),
+                sidebarWidth: slot.snapshotSidebarWidth(),
+                trafficLightOrigin: slot.snapshotTrafficLightOrigin()))
+            restoredSlotsByIndex[adoption.newIndex] = slot
+            adoptedIndexByPosition[adoption.position] = adoption.newIndex
+            // Logged like the restore transitions: from here on the record
+            // remembers this group across its close, which a log bundle must
+            // be able to date.
+            AppLogInfo("[SpaceManager] adopted a minted slot into the restore record as entry \(adoption.newIndex)")
+        }
         // What this write says about each saved entry a live slot still speaks
         // for, kept so the entry can outlive the slot (`removeSlot` finds the
         // slot already drained — see `liveWindowMapsByRestoreIndex`). Ghosts
         // are left out: they retire on their own terms, and a retired one must
         // not come back through here.
         for (position, slot) in liveSlots.enumerated() where !slot.windowMap.isEmpty {
-            guard let index = slot.restoreIndex,
+            guard let index = slot.restoreIndex ?? adoptedIndexByPosition[position],
                   restoreEntries.indices.contains(index) else { continue }
             liveWindowMapsByRestoreIndex[index] = slot.windowMap
             // The landing half of the same record. Read back by the

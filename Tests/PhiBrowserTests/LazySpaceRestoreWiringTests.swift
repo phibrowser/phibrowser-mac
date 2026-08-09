@@ -169,6 +169,66 @@ final class LazySpaceRestoreWiringTests: XCTestCase {
         )
     }
 
+    // MARK: - Which parked window an activation FROM A SLOT materializes
+
+    /// The activation lookup is scoped to the saved entry the activating slot
+    /// reattached to — `entryParkedGhosts` (the snapshot writer's ownership
+    /// rule) feeding the same deterministic pick as the unscoped lookup. A
+    /// ghost belongs to the (entry, Space) combination it was parked from,
+    /// and a slot that owns no entry — Cmd+N, a spawn, a materialization —
+    /// owns no ghosts. Before this scope, whichever window activated a Space
+    /// first claimed any entry's parked ghost (ticket 26).
+
+    private static func entryScopedGhost(
+        recorded: [Int: String],
+        entryWindowMap: [Int: String],
+        spaceId: String
+    ) -> Int? {
+        SpaceManager.parkedGhostWindowId(
+            in: SpaceManager.entryParkedGhosts(
+                recorded: recorded, entryWindowMap: entryWindowMap),
+            forSpaceId: spaceId)
+    }
+
+    func testAnEntryScopedLookupFindsTheEntrysOwnGhost() {
+        XCTAssertEqual(
+            Self.entryScopedGhost(
+                recorded: [55: "space-b", 7: "space-a"],
+                entryWindowMap: [55: "space-b", 3: "space-c"],
+                spaceId: "space-b"),
+            55
+        )
+    }
+
+    func testAGhostParkedForAnotherEntryIsNotClaimed() {
+        // The ticket-26 shape: space-b's ghost (55) was parked from an entry
+        // this slot did not reattach to. The unscoped rule handed it over;
+        // the scoped one must spawn fresh instead.
+        XCTAssertNil(Self.entryScopedGhost(
+            recorded: [55: "space-b"],
+            entryWindowMap: [9: "space-a"],
+            spaceId: "space-b"))
+    }
+
+    func testAnEmptyEntryOwnsNoGhosts() {
+        XCTAssertNil(Self.entryScopedGhost(
+            recorded: [55: "space-b"],
+            entryWindowMap: [:],
+            spaceId: "space-b"))
+    }
+
+    func testEntryScopedDuplicatePickStaysTheLowestId() {
+        // Same deterministic ordering as the unscoped rule, applied after the
+        // entry filter: only the entry's own duplicates compete.
+        XCTAssertEqual(
+            Self.entryScopedGhost(
+                recorded: [102: "space-b", 55: "space-b", 7: "space-b"],
+                entryWindowMap: [102: "space-b", 55: "space-b"],
+                spaceId: "space-b"),
+            55
+        )
+    }
+
     // MARK: - What a failed materialization tells the user
 
     /// The two outcomes differ in the one way the user acts on: whether the

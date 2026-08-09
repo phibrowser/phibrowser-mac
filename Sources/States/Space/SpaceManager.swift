@@ -2351,11 +2351,28 @@ final class SpaceManager: ObservableObject {
         parkedGhosts.filter { $0.value == spaceId }.keys.min()
     }
 
-    /// The parked ghost a live activation of `spaceId` should materialize,
-    /// or nil. Read by `SpaceWindowSlot.activate` (the F4 ghost row) and by
-    /// `changeProfile` (which materializes before it re-binds).
+    /// The parked ghost a Space-wide operation should materialize, or nil.
+    /// Read by `changeProfile` only: re-profiling retires the Space's ghost
+    /// no matter which entry parked it, so the lookup is deliberately
+    /// unscoped. Activations must NOT use this — they go through the
+    /// entry-scoped overload below, or a ghost surfaces in a window group
+    /// the user never put it in (ticket 26).
     func parkedGhostWindowId(forSpaceId spaceId: String) -> Int? {
         Self.parkedGhostWindowId(in: parkedGhostSpaceIdsByWindowId,
+                                 forSpaceId: spaceId)
+    }
+
+    /// The parked window an activation of `spaceId` FROM `slot` should
+    /// materialize, or nil. Scoped to the saved entry the slot reattached
+    /// to (`parkedGhostEntries`, the same ownership rule the snapshot
+    /// writer applies): a ghost belongs to the (entry, Space) combination
+    /// it was parked from, so only the slot that inherited that entry may
+    /// claim it. A slot that claimed no entry — Cmd+N, a spawn, a
+    /// materialization — owns no ghosts and spawns fresh. Read by
+    /// `SpaceWindowSlot.activate` (the F4 ghost row).
+    func parkedGhostWindowId(forSpaceId spaceId: String,
+                             in slot: SpaceWindowSlot) -> Int? {
+        Self.parkedGhostWindowId(in: parkedGhostEntries(for: slot),
                                  forSpaceId: spaceId)
     }
 
@@ -6806,18 +6823,24 @@ final class SpaceWindowSlot: ObservableObject {
         verticalSwapCancel?()
         activeSidebarOverlay?.cancel()
         windowSlideCancel?()
-        // Ghost row of the switch decision: a Space whose window is parked in
-        // the session file materializes it instead of spawning fresh — the
-        // parked tabs ARE the Space's content, and a fresh window would stand
-        // beside the parked record as a doubled Space. The window arrives
-        // through the same pending-spawn claim as a spawned one and Chromium
-        // shows it itself (the foreign restore path), so this leg only
-        // finishes the switch the way an instant present does; the slide
-        // animation is deliberately not run (the accepted product semantics
-        // of materialization: the window appears at once). Failure keeps the
-        // slot as it is — alert shown by the materialize, no fallback spawn
-        // (the session file may still describe the parked window).
-        if let ghostWindowId = manager.parkedGhostWindowId(forSpaceId: spaceId) {
+        // Ghost row of the switch decision: a Space whose window THIS SLOT'S
+        // entry parked in the session file materializes it instead of
+        // spawning fresh — the parked tabs ARE that combination's content,
+        // and a fresh window would stand beside the parked record as a
+        // doubled Space. The lookup is entry-scoped (ticket 26): a ghost
+        // belongs to the (entry, Space) combination it was parked from, so a
+        // slot that owns no entry — or whose entry parked nothing for this
+        // Space — falls through to the fresh spawn below and the ghost stays
+        // where it is. The window arrives through the same pending-spawn
+        // claim as a spawned one and Chromium shows it itself (the foreign
+        // restore path), so this leg only finishes the switch the way an
+        // instant present does; the slide animation is deliberately not run
+        // (the accepted product semantics of materialization: the window
+        // appears at once). Failure keeps the slot as it is — alert shown by
+        // the materialize, no fallback spawn (the session file may still
+        // describe the parked window).
+        if let ghostWindowId = manager.parkedGhostWindowId(forSpaceId: spaceId,
+                                                           in: self) {
             materializeParkedGhost(windowId: ghostWindowId, spaceId: spaceId) {
                 [weak self, weak previous] ok in
                 guard let self, ok else {
@@ -7129,12 +7152,15 @@ final class SpaceWindowSlot: ObservableObject {
     /// groups and split layout intact — arrives through the same
     /// pending-spawn claim as a spawned window (`currentSpawn`; the
     /// window-created callback fires inside the bridge call, before any
-    /// windowId-keyed intent could exist), and registers here. It must never
-    /// travel the restore claim instead: that track concealment-marks
-    /// non-active siblings and routes by the SAVED slot, where this window
-    /// belongs to the slot that asked for it. Chromium shows the window
-    /// itself (the foreign restore path), so the caller only decides what to
-    /// do with the previously visible one.
+    /// windowId-keyed intent could exist), and registers here. A ghost
+    /// belongs to the (entry, Space) combination it was parked from, and the
+    /// activation lookup is entry-scoped to match
+    /// (`parkedGhostWindowId(forSpaceId:in:)`), so the asking slot IS the
+    /// owner by the time this runs. The window still must not travel the
+    /// restore claim: that track concealment-marks non-active siblings,
+    /// which a user-initiated materialization must never do. Chromium shows
+    /// the window itself (the foreign restore path), so the caller only
+    /// decides what to do with the previously visible one.
     ///
     /// The ghost bookkeeping is consumed just before the bridge call — the
     /// registration inside it persists a snapshot, and that write must not

@@ -4665,6 +4665,14 @@ final class SpaceManager: ObservableObject {
                     return
                 }
                 self.changeProfile(spaceId: spaceId, toProfileId: newProfileId)
+                // The window arrived alpha-concealed (staged for a reveal it
+                // owes nobody on this path). The re-entry above retires it as
+                // a background window on the common path — a window never
+                // seen, which is the point — but the respawn-slot path keeps
+                // it on screen until the persisted write round-trips, so
+                // un-conceal whatever survived. No-op when the window is
+                // already gone or was never concealed (fullscreen slots).
+                slot.revealMaterializedWindow(forSpaceId: spaceId)
             }
             return
         }
@@ -7038,26 +7046,101 @@ final class SpaceWindowSlot: ObservableObject {
         // slot that owns no entry — or whose entry parked nothing for this
         // Space — falls through to the fresh spawn below and the ghost stays
         // where it is. The window arrives through the same pending-spawn
-        // claim as a spawned one and Chromium shows it itself (the foreign
-        // restore path), so this leg only finishes the switch the way an
-        // instant present does; the slide animation is deliberately not run
-        // (the accepted product semantics of materialization: the window
-        // appears at once). Failure keeps the slot as it is — alert shown by
-        // the materialize, no fallback spawn (the session file may still
+        // claim as a spawned one, alpha-concealed (`materializeParkedGhost`
+        // stages it for a reveal), and this leg presents it the same
+        // animate-first way a spawn does: the push-in starts NOW against a
+        // transparent entering band, the synchronous foreign-restore rebuild
+        // runs behind the slide (committed to the render server by the
+        // materialize's one-turn hop), and the reveal fires once BOTH have
+        // finished. nil when the animated push-in can't run (horizontal
+        // layout, `animated: false`, fullscreen slot, no visible previous
+        // window) — the completion then presents the target instantly, which
+        // un-conceals it (`makeKeyAndOrderFrontHidingSlotTabBar` reveals at
+        // its head). Failure keeps the slot as it is — alert shown by the
+        // materialize, no fallback spawn (the session file may still
         // describe the parked window).
         if let ghostWindowId = manager.parkedGhostWindowId(forSpaceId: spaceId,
                                                            in: self) {
+            let materializeSwitch: SpawnSwitchAnimation? =
+                (animated && SpaceWindowSlot.materializeStagesForReveal(
+                    slotHasFullScreenWindow: slotHasFullScreenWindow))
+                ? beginSpawnVerticalPushIn(
+                    targetSpaceId: spaceId,
+                    previous: previous,
+                    leavingBand: verticalLeavingBand,
+                    direction: direction,
+                    sourceColorHex: sourceColorHex,
+                    targetColorHex: targetColorHex,
+                    onActivationFailed: onActivationFailed,
+                    onSwapSettled: onSwapSettled
+                )
+                : nil
             materializeParkedGhost(windowId: ghostWindowId, spaceId: spaceId) {
                 [weak self, weak previous] ok in
-                guard let self, ok else {
-                    onActivationFailed?()
+                guard let self else {
+                    if let materializeSwitch {
+                        materializeSwitch.settle()
+                    } else {
+                        onActivationFailed?()
+                    }
+                    return
+                }
+                guard ok else {
+                    // Mid-slide the slide is left to land and restore the
+                    // leaving window; the failure alert is already on its way.
+                    if let materializeSwitch {
+                        materializeSwitch.spawnFailed()
+                    } else {
+                        onActivationFailed?()
+                    }
                     return
                 }
                 guard let registered = self.windowsBySpaceId[spaceId] else {
                     // The bridge reported success but no window claimed into
                     // this slot — nothing to present; leave the previous
-                    // window in place.
+                    // window in place (settle resolves the slide back onto
+                    // it).
                     AppLogWarn("[SpaceWindowSlot] activate(\(spaceId)): materialized window did not register")
+                    if let materializeSwitch {
+                        materializeSwitch.settle()
+                    } else {
+                        onActivationFailed?()
+                    }
+                    return
+                }
+                if let materializeSwitch,
+                   materializeSwitch.spawnCompleted(registered) {
+                    // Unlike a spawn (created hidden, never key), the foreign
+                    // restore's own Show() made the concealed window key. If
+                    // the slide is still flying, hand key back to the leaving
+                    // window so it keeps the key appearance until the reveal
+                    // formally passes it on; a reveal that already ran inside
+                    // `spawnCompleted` cleared `verticalSwapCancel` and made
+                    // the target key — leave that alone.
+                    if self.verticalSwapCancel != nil {
+                        previous?.window?.makeKey()
+                    }
+                    return
+                }
+                // Instant present — no animation is running (bandless layout,
+                // `animated: false`, fullscreen slot, or a superseded
+                // push-in). Same tail as the spawn path, including the guard:
+                // if the user switched elsewhere mid-materialize, the window
+                // stays registered and a later switch back surfaces it
+                // through the normal swap path (which also reveals a
+                // concealed arrival). Unlike a spawned window — created
+                // hidden, never shown — this one was Show()n by the foreign
+                // restore and may hold key, so align it with the spawn shape:
+                // order it out and pass key back to the window the user is
+                // looking at, or the invisible window would sit key on top
+                // of the Space they switched to.
+                guard self.activeSpaceId == spaceId else {
+                    if let window = registered.window {
+                        if window.isKeyWindow {
+                            self.visibleController?.window?.makeKey()
+                        }
+                        window.orderOut(nil)
+                    }
                     onActivationFailed?()
                     return
                 }
@@ -7085,8 +7168,10 @@ final class SpaceWindowSlot: ObservableObject {
         // should be in FS") on the next tab swap that uses it as the frame
         // source (e.g. Chromium re-activating a sibling) and crashes the
         // app. In fullscreen, Chromium's own Show() surfaces the window
-        // exactly as before the animate-first change.
-        let spawnHidden = !slotHasFullScreenWindow
+        // exactly as before the animate-first change. One definition with the
+        // materialize leg — the two must never drift.
+        let spawnHidden = SpaceWindowSlot.materializeStagesForReveal(
+            slotHasFullScreenWindow: slotHasFullScreenWindow)
         // Animate-first: start the push-in NOW, on the leaving window, against
         // a transparent entering band — the target window doesn't exist yet,
         // so there is nothing to snapshot. The spawn below runs behind the
@@ -7432,62 +7517,86 @@ final class SpaceWindowSlot: ObservableObject {
         let inheritedFrame = resolveInheritedFrame(from: previous)
         let inheritedSidebarWidth = previous?.browserState.sidebarWidth ?? 0
         let inheritedSidebarCollapsed = previous?.browserState.sidebarCollapsed
-        bridge.ensureProfileLoaded(profileId) { [weak self, weak manager] success in
-            guard let self, let manager else {
-                completion(false)
-                return
-            }
-            guard success else {
-                // Transient: the records stay, a later attempt may succeed.
-                AppLogWarn("[SpaceWindowSlot] materialize(\(spaceId)): ensureProfileLoaded failed for \(profileId)")
-                self.failMaterialize(.recordKept, spaceId: spaceId, completion: completion)
-                return
-            }
-            let consumed = manager.consumeParkedGhost(windowId: windowId)
-            // The intent claim: the coordinator's first-priority pending-spawn
-            // lookup resolves the arriving window to THIS slot and Space via
-            // `currentSpawn`, and `registerWindow` applies the inherited
-            // frame and sidebar shape — the reopened Space surfaces where the
-            // slot sits, keeping the one-window illusion.
-            manager.currentSpawn = SpaceManager.SpawnContext(
-                slot: self,
-                spaceId: spaceId,
-                inheritedFrame: inheritedFrame,
-                inheritedSidebarWidth: inheritedSidebarWidth,
-                inheritedSidebarCollapsed: inheritedSidebarCollapsed
-            )
-            // Seeded with the answer that keeps every record: a framework
-            // that returns without calling back must not be read as "your
-            // saved window is gone".
-            var outcome = PhiGhostMaterializeOutcome.refusedForNow
-            // Synchronous: the window callback (claim + registration) and the
-            // completion both run inside this call.
-            bridge.materializeGhostWindow(Int32(windowId), profileId: profileId) { reported in
-                outcome = reported
-            }
-            manager.currentSpawn = nil
-            if let failure = SpaceManager.materializeFailure(for: outcome) {
-                switch failure {
-                case .recordKept:
-                    // Refused with the ghost still parked: put the
-                    // bookkeeping back so the next switch materializes again
-                    // instead of opening a window beside it. Nothing to put
-                    // back if the record had already gone (an invalidation
-                    // landing inside the profile load) — which is a refusal
-                    // no later switch will reach anyway.
-                    if let consumed {
-                        manager.reinstateParkedGhost(consumed)
-                    }
-                    AppLogWarn("[SpaceWindowSlot] materialize(\(spaceId)): chromium refused ghost \(windowId) for now — record kept")
-                case .recordDropped:
-                    AppLogError("[SpaceWindowSlot] materialize(\(spaceId)): chromium held no ghost \(windowId) — stale record dropped")
+        // One-turn hop before the (possibly synchronous) profile load and the
+        // synchronous foreign-restore rebuild, for the same reason the spawn
+        // path hops before `createBrowser`: the switch's push-in commits its
+        // Core Animation transaction at the end of THIS turn, and only an
+        // already-committed slide keeps playing in the render server through
+        // the rebuild's main-thread block. Unconditional (the `changeProfile`
+        // leg pays one harmless turn) so the primitive has one shape; the
+        // repeat gate was claimed synchronously above, so a second activation
+        // arriving inside the hop is still refused.
+        DispatchQueue.main.async {
+            bridge.ensureProfileLoaded(profileId) { [weak self, weak manager] success in
+                guard let self, let manager else {
+                    completion(false)
+                    return
                 }
-                self.failMaterialize(failure, spaceId: spaceId, completion: completion)
-                return
+                guard success else {
+                    // Transient: the records stay, a later attempt may succeed.
+                    AppLogWarn("[SpaceWindowSlot] materialize(\(spaceId)): ensureProfileLoaded failed for \(profileId)")
+                    self.failMaterialize(.recordKept, spaceId: spaceId, completion: completion)
+                    return
+                }
+                let consumed = manager.consumeParkedGhost(windowId: windowId)
+                // The intent claim: the coordinator's first-priority pending-spawn
+                // lookup resolves the arriving window to THIS slot and Space via
+                // `currentSpawn`, and `registerWindow` applies the inherited
+                // frame and sidebar shape — the reopened Space surfaces where the
+                // slot sits, keeping the one-window illusion.
+                manager.currentSpawn = SpaceManager.SpawnContext(
+                    slot: self,
+                    spaceId: spaceId,
+                    inheritedFrame: inheritedFrame,
+                    inheritedSidebarWidth: inheritedSidebarWidth,
+                    inheritedSidebarCollapsed: inheritedSidebarCollapsed
+                )
+                // Seeded with the answer that keeps every record: a framework
+                // that returns without calling back must not be read as "your
+                // saved window is gone".
+                var outcome = PhiGhostMaterializeOutcome.refusedForNow
+                // Arrive concealed so the caller's present — the switch's reveal,
+                // or `changeProfile`'s re-entry — decides when the window becomes
+                // visible, instead of the foreign restore's own Show(). Armed and
+                // disarmed around the synchronous bridge call inside which the
+                // window registers, so no failure can leave the arm behind.
+                // Fullscreen slots keep the legacy visible arrival
+                // (`materializeStagesForReveal`).
+                let stagedForReveal = SpaceWindowSlot.materializeStagesForReveal(
+                    slotHasFullScreenWindow: self.slotHasFullScreenWindow)
+                if stagedForReveal {
+                    self.materializeConcealSpaceId = spaceId
+                }
+                // Synchronous: the window callback (claim + registration) and the
+                // completion both run inside this call.
+                bridge.materializeGhostWindow(Int32(windowId), profileId: profileId) { reported in
+                    outcome = reported
+                }
+                self.materializeConcealSpaceId = nil
+                manager.currentSpawn = nil
+                if let failure = SpaceManager.materializeFailure(for: outcome) {
+                    switch failure {
+                    case .recordKept:
+                        // Refused with the ghost still parked: put the
+                        // bookkeeping back so the next switch materializes again
+                        // instead of opening a window beside it. Nothing to put
+                        // back if the record had already gone (an invalidation
+                        // landing inside the profile load) — which is a refusal
+                        // no later switch will reach anyway.
+                        if let consumed {
+                            manager.reinstateParkedGhost(consumed)
+                        }
+                        AppLogWarn("[SpaceWindowSlot] materialize(\(spaceId)): chromium refused ghost \(windowId) for now — record kept")
+                    case .recordDropped:
+                        AppLogError("[SpaceWindowSlot] materialize(\(spaceId)): chromium held no ghost \(windowId) — stale record dropped")
+                    }
+                    self.failMaterialize(failure, spaceId: spaceId, completion: completion)
+                    return
+                }
+                self.pendingSpawnSpaceIds.remove(spaceId)
+                AppLogInfo("[SpaceWindowSlot] materialize(\(spaceId)): window \(windowId) rebuilt live")
+                completion(true)
             }
-            self.pendingSpawnSpaceIds.remove(spaceId)
-            AppLogInfo("[SpaceWindowSlot] materialize(\(spaceId)): window \(windowId) rebuilt live")
-            completion(true)
         }
     }
 
@@ -7953,9 +8062,12 @@ final class SpaceWindowSlot: ObservableObject {
         }
     }
 
-    /// State machine for an animate-first SPAWN switch. Constructed by
-    /// `beginSpawnVerticalPushIn` and driven from two independent sides: the
-    /// slide's completion (`slideSettled`, also fired by the dropped-completion
+    /// State machine for an animate-first switch whose target window does not
+    /// exist yet — the SPAWN path and the ghost MATERIALIZE path share it
+    /// (one reveal path, no parallel machinery; the `spawn*` names predate
+    /// the second caller). Constructed by `beginSpawnVerticalPushIn` and
+    /// driven from two independent sides: the slide's completion
+    /// (`slideSettled`, also fired by the dropped-completion
     /// fallback) and the spawn's outcome (`spawnCompleted` / `spawnFailed`).
     /// The reveal — fronting the spawned window and hiding the leaving one —
     /// runs once BOTH sides have finished, in either order. `settle()` is the
@@ -9053,6 +9165,17 @@ final class SpaceWindowSlot: ObservableObject {
     /// tab-group enrollment below); consumed by `registerWindow`.
     private var pendingRestoreConcealSpaceIds: Set<String> = []
 
+    /// The Space whose materializing ghost window must arrive alpha-concealed
+    /// (`concealWindowUntilRevealed` — never the Chromium restored-sibling
+    /// mark, see the split on `concealRestoredSiblingWindow`). A single value,
+    /// not a set: one materialization rebuilds one window, and the arm/disarm
+    /// bracket the synchronous `bridge.materializeGhostWindow` call inside
+    /// which the window registers, so a failure cannot leave a stale arm
+    /// behind. Consumed by `registerWindow`; both materialize call sites then
+    /// owe the window a reveal (the switch's present, or
+    /// `revealMaterializedWindow` after a `changeProfile` re-entry).
+    private var materializeConcealSpaceId: String?
+
     /// Marks the restored window that is about to register for `spaceId` as
     /// a concealed sibling: `registerWindow` then skips the slot tab-group
     /// enrollment for it and conceals the window before Chromium's
@@ -9117,10 +9240,49 @@ final class SpaceWindowSlot: ObservableObject {
     /// the main thread. This runs inside Chromium's window-created callback,
     /// ahead of the tab replay, so the mark is in place when it decides.
     private func concealRestoredSiblingWindow(_ window: NSWindow, windowId: Int) {
+        concealWindowUntilRevealed(window)
+        Self.setRestoredSiblingConcealedIfSupported(true, windowId: Int64(windowId))
+    }
+
+    /// The Mac-only half of the conceal: invisible, inert to clicks, and
+    /// barred from automatic tab-group enrollment until a reveal restores it.
+    /// Split out of `concealRestoredSiblingWindow` because a materialized
+    /// ghost needs exactly this half and MUST NOT get the other: the Chromium
+    /// restored-sibling mark makes `LoadRestoredTabIfVisible` skip the
+    /// selected tab's eager load, and a user-initiated materialization has to
+    /// start that navigation at once (alpha is invisible to Chromium — the
+    /// window still counts as VISIBLE, so the load proceeds). Reversed by
+    /// `revealConcealedWindow` from every settle path.
+    private func concealWindowUntilRevealed(_ window: NSWindow) {
         window.alphaValue = 0
         window.ignoresMouseEvents = true
         window.tabbingMode = .disallowed
-        Self.setRestoredSiblingConcealedIfSupported(true, windowId: Int64(windowId))
+    }
+
+    /// Whether a materializing ghost window is staged for a deferred reveal
+    /// (arrive alpha-concealed, surface only when the switch presents it) or
+    /// arrives VISIBLE through Chromium's own Show(), exactly as the spawn
+    /// path's `spawnHidden` decides for a spawned window. Fullscreen slots
+    /// keep the legacy visible arrival for the same reason spawn does:
+    /// surfacing a window that has never been ordered in through the
+    /// fullscreen tab group corrupts NSWindowStackController's bookkeeping
+    /// ("windowToTakeFrom should be in FS") and crashes the app. Pure and
+    /// static so the rule is pinned by table, same as
+    /// `concealsRestoredSibling`.
+    static func materializeStagesForReveal(slotHasFullScreenWindow: Bool) -> Bool {
+        !slotHasFullScreenWindow
+    }
+
+    /// Restores a materialized window that arrived concealed
+    /// (`materializeConcealSpaceId`) but is presented by its caller in place
+    /// rather than through the switch reveal — `changeProfile`'s ghost
+    /// pre-hook keeps the materialized window on screen when the slot it
+    /// landed in is the respawn slot. Idempotent and a no-op when the window
+    /// was already retired by the re-entered flow (the common path) or was
+    /// never concealed (fullscreen slots).
+    func revealMaterializedWindow(forSpaceId spaceId: String) {
+        guard let window = windowsBySpaceId[spaceId]?.window else { return }
+        revealConcealedWindow(window)
     }
 
     /// The framework half of the bridge pair can lag this header during
@@ -9547,6 +9709,21 @@ final class SpaceWindowSlot: ObservableObject {
         if let window = controller.window, concealAsRestoredSibling {
             concealRestoredSiblingWindow(window, windowId: controller.windowId)
         }
+        // Materializing ghost staged for a deferred reveal: conceal NOW
+        // (before Chromium's foreign-restore Show() inside the same bridge
+        // call), Mac half only — the Chromium mark would defer the selected
+        // tab's eager load, which a user-initiated materialization must start
+        // at once. Shares the restored sibling's gates below: a transparent
+        // window selected into the native tab group renders the whole group
+        // invisible, and an invisible window is not one the loading window
+        // hands off to.
+        let concealForMaterializeReveal = materializeConcealSpaceId == spaceId
+        if concealForMaterializeReveal {
+            materializeConcealSpaceId = nil
+            if let window = controller.window {
+                concealWindowUntilRevealed(window)
+            }
+        }
         // This slot now has a window the user will see, so the loading window
         // standing in for it drops behind that window rather than being taken
         // away. Nothing here can tell when the restored window paints — it is
@@ -9581,7 +9758,8 @@ final class SpaceWindowSlot: ObservableObject {
         // combination was tried: a loading window stays out of the group
         // (`tabbingMode` never opts it in), and grouping, selecting another tab
         // and ordering a grouped sibling out all leave it attached and visible.
-        if !concealAsRestoredSibling, shouldBecomeVisible,
+        if !concealAsRestoredSibling, !concealForMaterializeReveal,
+           shouldBecomeVisible,
            let loading = reopenLoadingWindow,
            let window = controller.window {
             loading.yieldShadow()
@@ -9589,7 +9767,8 @@ final class SpaceWindowSlot: ObservableObject {
             manager?.noteReopenLoadingHandoffWindowRegistered()
             AppLogInfo("[SpaceManager] reopen: loading window put under the restored one")
         }
-        if !deferGroupingForReveal && !concealAsRestoredSibling {
+        if !deferGroupingForReveal && !concealAsRestoredSibling
+            && !concealForMaterializeReveal {
             syncSlotTabGroup(selecting: shouldBecomeVisible ? controller.window : visibleController?.window)
         }
         if shouldBecomeVisible {

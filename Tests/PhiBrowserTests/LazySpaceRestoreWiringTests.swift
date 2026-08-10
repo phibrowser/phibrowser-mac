@@ -551,6 +551,27 @@ final class LazySpaceRestoreWiringTests: XCTestCase {
             windowSpaceId: "sibling"))
     }
 
+    // MARK: - Whether a materializing ghost is staged for a deferred reveal
+
+    /// One rule feeds both halves of the animate-first materialization — the
+    /// alpha conceal on arrival and the push-in that reveals it — so the two
+    /// can never disagree (a concealed window nothing reveals is invisible
+    /// forever; an animated switch to a visibly-arriving window double
+    /// presents).
+
+    func testAMaterializingGhostIsStagedForTheReveal() {
+        XCTAssertTrue(SpaceWindowSlot.materializeStagesForReveal(
+            slotHasFullScreenWindow: false))
+    }
+
+    func testAFullscreenSlotKeepsTheVisibleArrival() {
+        // Same exception as spawn's `spawnHidden`: revealing a window that
+        // has never been ordered in through a fullscreen tab group corrupts
+        // NSWindowStackController's bookkeeping and crashes the app.
+        XCTAssertFalse(SpaceWindowSlot.materializeStagesForReveal(
+            slotHasFullScreenWindow: true))
+    }
+
     // MARK: - Whether a minted slot is reclaimed when no window arrives
 
     /// A slot minted for a window that never arrives is not merely untidy: it

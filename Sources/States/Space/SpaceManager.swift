@@ -7189,6 +7189,7 @@ final class SpaceWindowSlot: ObservableObject {
                 direction: direction,
                 sourceColorHex: sourceColorHex,
                 targetColorHex: targetColorHex,
+                clampThemeCatchUp: true,
                 onActivationFailed: onActivationFailed,
                 onSwapSettled: onSwapSettled
             )
@@ -8163,6 +8164,7 @@ final class SpaceWindowSlot: ObservableObject {
         direction: SwapDirection,
         sourceColorHex: String?,
         targetColorHex: String?,
+        clampThemeCatchUp: Bool = false,
         onActivationFailed: (() -> Void)?,
         onSwapSettled: (() -> Void)?
     ) -> SpawnSwitchAnimation? {
@@ -8282,7 +8284,8 @@ final class SpaceWindowSlot: ObservableObject {
 
         // Ramp + slide, starting this very turn: with a placeholder entering
         // band there is nothing to wait a runloop for.
-        rampWindowTheme(prevThemeContext, from: sourceTheme, to: targetTheme, duration: duration)
+        rampWindowTheme(prevThemeContext, from: sourceTheme, to: targetTheme,
+                        duration: duration, clampCatchUpStep: clampThemeCatchUp)
         prevSurface.rampSpaceTint(fromHex: sourceColorHex, toHex: targetColorHex, duration: duration)
         overlay.runAnimation(duration: duration) { [weak handle] in
             handle?.slideSettled()
@@ -8316,11 +8319,24 @@ final class SpaceWindowSlot: ObservableObject {
     /// don't animate on their own — so driving the model each frame is what
     /// makes the whole-window color transition visible. Mirroring is disabled
     /// for the duration so a global theme tick can't fight the ramp.
+    ///
+    /// `clampCatchUpStep` caps how much progress a single tick may advance
+    /// after a main-thread block froze the timer (the spawn's createBrowser),
+    /// so the stalled span lands across the few ticks left before the reveal
+    /// instead of in one frame. The tick cadence and the progress→time
+    /// mapping are unchanged (no rebase); landing trails the uncapped
+    /// catch-up by at most two ticks (~33 ms). Only the fresh-spawn leg opts
+    /// in: the clicked path stays behavior-identical to the pre-existing
+    /// ramp, and the materialize leg deliberately does not opt in — its
+    /// rebuild covers the whole slide, so a capped catch-up would freeze the
+    /// leaving window's color mid-way and make the reveal cut LARGER, not
+    /// smaller.
     private func rampWindowTheme(
         _ context: BrowserThemeContext,
         from: Theme,
         to: Theme,
-        duration: TimeInterval
+        duration: TimeInterval,
+        clampCatchUpStep: Bool = false
     ) {
         themeRampTimer?.invalidate()
         themeRampTimer = nil
@@ -8330,9 +8346,14 @@ final class SpaceWindowSlot: ObservableObject {
         }
         context.mirrorsSharedTheme = false
         let start = CACurrentMediaTime()
+        var lastProgress = 0.0
         let timer = Timer(timeInterval: 1.0 / 60.0, repeats: true) { [weak context] t in
             guard let context else { t.invalidate(); return }
-            let progress = min(1.0, (CACurrentMediaTime() - start) / duration)
+            var progress = min(1.0, (CACurrentMediaTime() - start) / duration)
+            if clampCatchUpStep, progress - lastProgress > 0.35 {
+                progress = lastProgress + 0.35
+            }
+            lastProgress = progress
             let eased: CGFloat = progress < 0.5
                 ? 2 * progress * progress
                 : 1 - pow(-2 * progress + 2, 2) / 2

@@ -1167,7 +1167,7 @@ final class SpaceManager: ObservableObject {
         requestChromiumSessionRestore(
             bridge,
             preferredProfileId: preferredProfileId,
-            eagerWindowIds: armLazyRestoreForReopen(bridge)
+            restorePlan: armLazyRestoreForReopen(bridge)
         ) { [weak self] restoredAnyWindow, parkedGhostReceipt in
             DispatchQueue.main.async {
                 guard let self else { return }
@@ -1280,21 +1280,39 @@ final class SpaceManager: ObservableObject {
     private func requestChromiumSessionRestore(
         _ bridge: PhiChromiumBridgeProtocol,
         preferredProfileId: String?,
-        eagerWindowIds: [NSNumber]?,
+        restorePlan: ArmedRestorePlan?,
         completion: @escaping (Bool, ChromiumParkedGhostReceipt?) -> Void
     ) {
         let receiptSelector = #selector(PhiChromiumBridgeProtocol
             .restorePreviousSession(withPreferredProfile:eagerWindowIds:parkedCompletion:))
-        if let eagerWindowIds {
-            if bridge.responds(to: receiptSelector) {
+        let planSelector = #selector(PhiChromiumBridgeProtocol
+            .restorePreviousSession(withPreferredProfile:restorePlan:parkedCompletion:))
+        if let restorePlan {
+            let parkedCompletion = { (restoredAnyWindow: Bool,
+                                      parked: [String: [NSNumber]],
+                                      matchedNothing: Bool) in
+                completion(restoredAnyWindow, ChromiumParkedGhostReceipt(
+                    windowIdsByProfileId: parked.mapValues { $0.map(\.intValue) },
+                    eagerFilterMatchedNothing: matchedNothing))
+            }
+            if bridge.responds(to: planSelector) {
                 bridge.restorePreviousSession(
                     withPreferredProfile: preferredProfileId,
-                    eagerWindowIds: eagerWindowIds,
-                    parkedCompletion: { restoredAnyWindow, parked, matchedNothing in
-                        completion(restoredAnyWindow, ChromiumParkedGhostReceipt(
-                            windowIdsByProfileId: parked.mapValues { $0.map(\.intValue) },
-                            eagerFilterMatchedNothing: matchedNothing))
-                    }
+                    restorePlan: restorePlan.wireDictionary,
+                    parkedCompletion: parkedCompletion
+                )
+                return
+            }
+            if bridge.responds(to: receiptSelector) {
+                // A framework that reports a receipt but predates the plan:
+                // arm with the eager set alone. The closed groups park as
+                // they always did on that framework — nothing regresses,
+                // cmd+shift+t just cannot bring them back there either.
+                AppLogWarn("[SpaceManager] restore-plan selector unavailable (older framework) — closed groups park as before")
+                bridge.restorePreviousSession(
+                    withPreferredProfile: preferredProfileId,
+                    eagerWindowIds: restorePlan.eagerWindowIds,
+                    parkedCompletion: parkedCompletion
                 )
                 return
             }
@@ -1998,6 +2016,16 @@ final class SpaceManager: ObservableObject {
         /// `persistSlotsSnapshot` writes back into the slot's windowMap so
         /// that mapping survives the persist cycle that follows the reopen.
         let ghostSpaceIdsByWindowId: [Int: String]
+        /// Previous-session windowIds of the record's closed groups — every
+        /// window of a parked-only entry (a window group the user closed by
+        /// hand). Chromium retires these at the replay seam instead of
+        /// parking them: not rebuilt, their session records dropped, and
+        /// their "Reopen Closed Window" undo entries left alone so cmd+
+        /// shift+t is what brings a closed group back (REQUIREMENTS R3).
+        /// They are deliberately NOT in `ghostSpaceIdsByWindowId`: nothing
+        /// on screen can materialize them, so predicting them as parked
+        /// would only pin records the receipt is about to retire.
+        let closedGroupWindowIds: Set<Int>
     }
 
     /// Splits the restore snapshot's windows into the set a lazy reopen
@@ -2057,13 +2085,12 @@ final class SpaceManager: ObservableObject {
         /// Dock reopen (R1). Only the marked landing entry lands.
         case landingOnly
         /// Cold start (R2). Every entry that was still on screen when the
-        /// record froze lands on its own active Space. `parkedOnlyEntryIndices`
-        /// are the positions in `slots` the record marks as window groups the
-        /// user had already closed (`SlotRestoreEntry.isParkedOnlyEntry`);
-        /// those land nothing, which is what keeps a closed group from coming
-        /// back. An index absent from the set is treated as on-screen — the
+        /// record froze lands on its own active Space. An entry the record
+        /// marks as a closed group (`isParkedOnlyEntry` on the slot tuple)
+        /// lands nothing, which is what keeps a closed group from coming
+        /// back as a window. A missing marker is treated as on-screen — the
         /// fail-eager direction the marker itself is written in.
-        case everyOnScreenEntry(parkedOnlyEntryIndices: Set<Int>)
+        case everyOnScreenEntry
     }
 
     /// Splits the restore snapshot's windows into the set a replay rebuilds
@@ -2074,7 +2101,8 @@ final class SpaceManager: ObservableObject {
     /// (`RestoreWindowClassificationTests`); the reopen wiring feeds it the
     /// decoded snapshot and the live store.
     static func classifyRestoreWindows(
-        slots: [(activeSpaceId: String?, windowMap: [Int: String], isLandingEntry: Bool)],
+        slots: [(activeSpaceId: String?, windowMap: [Int: String],
+                 isLandingEntry: Bool, isParkedOnlyEntry: Bool)],
         liveSpaceIds: Set<String>,
         agentSpaceIds: Set<String>,
         mode: RestoreLandingMode = .landingOnly
@@ -2085,39 +2113,55 @@ final class SpaceManager: ObservableObject {
             ?? (slots.isEmpty ? nil : 0)
         var eagerWindowIds: Set<Int> = []
         var ghostSpaceIdsByWindowId: [Int: String] = [:]
+        var closedGroupWindowIds: Set<Int> = []
         for (index, slot) in slots.enumerated() {
             let eligible = slot.windowMap.filter { entry in
                 !isIncognitoSpaceId(entry.value) && !agentSpaceIds.contains(entry.value)
             }
             // The one line the mode decides: which entries have a Space to
-            // land on. Everything below it is the same for both modes.
+            // land on. Everything below it is the same for both modes. The
+            // landing rule outranks the closed-group marker on purpose: a
+            // record whose landing entry is somehow also marked closed still
+            // lands its one window (R1's "the reopen brings one back" beats
+            // retiring it), and in practice the writer never marks the
+            // landing entry — the freeze that protects it runs first.
             let landingSpaceId: String? = {
                 switch mode {
                 case .landingOnly:
                     return index == landingIndex ? slot.activeSpaceId : nil
-                case .everyOnScreenEntry(let parkedOnlyEntryIndices):
-                    return parkedOnlyEntryIndices.contains(index)
-                        ? nil : slot.activeSpaceId
+                case .everyOnScreenEntry:
+                    return slot.isParkedOnlyEntry ? nil : slot.activeSpaceId
                 }
             }()
             for (windowId, spaceId) in eligible {
                 if spaceId == landingSpaceId {
                     eagerWindowIds.insert(windowId)
-                } else if liveSpaceIds.contains(spaceId) {
-                    ghostSpaceIdsByWindowId[windowId] = spaceId
-                } else {
+                } else if !liveSpaceIds.contains(spaceId) {
+                    // Fail-eager, unchanged: deleted and not-yet-delivered
+                    // look the same here, and losing a window is worse than
+                    // showing an extra one.
                     eagerWindowIds.insert(windowId)
+                } else if slot.isParkedOnlyEntry {
+                    closedGroupWindowIds.insert(windowId)
+                } else {
+                    ghostSpaceIdsByWindowId[windowId] = spaceId
                 }
             }
         }
-        // A (corrupt) record naming one id in two entries could put it in both
-        // sets. The sets are a partition to every consumer, and eager is the
-        // safe side of it, so eager wins.
+        // A (corrupt) record naming one id in two entries could put it in
+        // several sets. The sets are a partition to every consumer; eager is
+        // the safe side of it, and between the other two the ghost (parked,
+        // still reachable by activating its Space) is safer than the
+        // closed-group retirement, so the order is eager > ghost > closed.
+        let ghosts = ghostSpaceIdsByWindowId.filter {
+            !eagerWindowIds.contains($0.key)
+        }
         return RestoreWindowClassification(
             eagerWindowIds: eagerWindowIds,
-            ghostSpaceIdsByWindowId: ghostSpaceIdsByWindowId.filter {
-                !eagerWindowIds.contains($0.key)
-            }
+            ghostSpaceIdsByWindowId: ghosts,
+            closedGroupWindowIds: closedGroupWindowIds
+                .subtracting(eagerWindowIds)
+                .subtracting(ghosts.keys)
         )
     }
 
@@ -2181,17 +2225,53 @@ final class SpaceManager: ObservableObject {
     /// why "parks nothing" must not be a reason to drop the gate.
     /// Sorted ascending so the wire order is deterministic. Pure and static
     /// so the gate is pinned by table (`LazySpaceRestoreWiringTests`).
+    /// The wire shape of an armed reopen: the eager set, plus the closed-
+    /// group set the replay seam retires to the undo stack. Sent as the
+    /// restore-plan dictionary when the framework understands it; an older
+    /// framework gets `eagerWindowIds` alone and parks the closed groups
+    /// exactly as before.
+    struct ArmedRestorePlan: Equatable {
+        let eagerWindowIds: [NSNumber]
+        let closedGroupWindowIds: [NSNumber]
+
+        /// The wire encoding both plan channels send — the reopen selector's
+        /// `restorePlan:` argument and the cold-start pull's answer. One
+        /// place, pinned by table, so the two channels cannot drift apart on
+        /// key names Chromium parses by string.
+        var wireDictionary: [String: [NSNumber]] {
+            ["eager": eagerWindowIds, "closedGroup": closedGroupWindowIds]
+        }
+    }
+
+    static func armedRestorePlan(
+        featureEnabled: Bool,
+        bridgeSupportsLazyRestore: Bool,
+        hasSnapshotEntries: Bool,
+        classification: RestoreWindowClassification
+    ) -> ArmedRestorePlan? {
+        guard featureEnabled, bridgeSupportsLazyRestore, hasSnapshotEntries,
+              !(classification.eagerWindowIds.isEmpty
+                  && classification.ghostSpaceIdsByWindowId.isEmpty
+                  && classification.closedGroupWindowIds.isEmpty)
+        else { return nil }
+        return ArmedRestorePlan(
+            eagerWindowIds:
+                classification.eagerWindowIds.sorted().map { NSNumber(value: $0) },
+            closedGroupWindowIds:
+                classification.closedGroupWindowIds.sorted().map { NSNumber(value: $0) })
+    }
+
     static func armedEagerWindowIds(
         featureEnabled: Bool,
         bridgeSupportsLazyRestore: Bool,
         hasSnapshotEntries: Bool,
         classification: RestoreWindowClassification
     ) -> [NSNumber]? {
-        guard featureEnabled, bridgeSupportsLazyRestore, hasSnapshotEntries,
-              !(classification.eagerWindowIds.isEmpty
-                  && classification.ghostSpaceIdsByWindowId.isEmpty)
-        else { return nil }
-        return classification.eagerWindowIds.sorted().map { NSNumber(value: $0) }
+        armedRestorePlan(
+            featureEnabled: featureEnabled,
+            bridgeSupportsLazyRestore: bridgeSupportsLazyRestore,
+            hasSnapshotEntries: hasSnapshotEntries,
+            classification: classification)?.eagerWindowIds
     }
 
     /// Whether an activation arriving right now must be dropped instead of
@@ -2229,12 +2309,12 @@ final class SpaceManager: ObservableObject {
     /// the write below is what arms this reopen's ghosts.
     private func armLazyRestoreForReopen(
         _ bridge: PhiChromiumBridgeProtocol
-    ) -> [NSNumber]? {
+    ) -> ArmedRestorePlan? {
         let classification = classifyLoadedRestoreSnapshot(mode: .landingOnly)
         let featureEnabled = Self.isLazySpaceRestoreEnabled
         let bridgeSupports = Self.bridgeSupportsLazyRestore(bridge)
         let hasSnapshotEntries = !restoreEntries.isEmpty
-        let armed = Self.armedEagerWindowIds(
+        let armed = Self.armedRestorePlan(
             featureEnabled: featureEnabled,
             bridgeSupportsLazyRestore: bridgeSupports,
             hasSnapshotEntries: hasSnapshotEntries,
@@ -2252,13 +2332,19 @@ final class SpaceManager: ObservableObject {
         // reopen sends over the bridge and what it tells `activate` for the
         // rest of its replay are decided here, together, and cannot drift.
         lastReopenArmedLazyRestore = armed != nil
-        guard let eagerWindowIds = armed else { return nil }
+        guard let plan = armed else { return nil }
+        // The prediction covers the in-window ghosts only. The closed-group
+        // windows are asked to RETIRE, not to park: predicting them would
+        // pin records the receipt is about to shed, and nothing on screen
+        // could materialize them anyway. Until the receipt replaces this
+        // guess, persistence is frozen by the restore-in-flight gate, so the
+        // narrower prediction cannot leak into a persisted snapshot.
         parkedGhostSpaceIdsByWindowId = classification.ghostSpaceIdsByWindowId
         // Logged like the restore transitions: the park set decides what the
         // reopen deliberately does NOT bring back, which a log bundle must
         // be able to answer.
-        AppLogInfo("[SpaceManager] lazy reopen armed: \(eagerWindowIds.count) eager, \(parkedGhostSpaceIdsByWindowId.count) parked")
-        return eagerWindowIds
+        AppLogInfo("[SpaceManager] lazy reopen armed: \(plan.eagerWindowIds.count) eager, \(parkedGhostSpaceIdsByWindowId.count) parked, \(plan.closedGroupWindowIds.count) closed-group")
+        return plan
     }
 
     /// Classifies the loaded snapshot against the live Space store, in `mode`.
@@ -2284,7 +2370,8 @@ final class SpaceManager: ObservableObject {
             slots: restoreEntries.map {
                 (activeSpaceId: $0.activeSpaceId,
                  windowMap: $0.windowMap,
-                 isLandingEntry: $0.isLandingEntry)
+                 isLandingEntry: $0.isLandingEntry,
+                 isParkedOnlyEntry: $0.isParkedOnlyEntry)
             },
             liveSpaceIds: Set(spaces.map(\.spaceId)),
             agentSpaceIds: agentSpaceIds,
@@ -2326,6 +2413,22 @@ final class SpaceManager: ObservableObject {
     /// receipts safe to apply as they arrive: nothing can be retired for
     /// being absent from a receipt that is still growing.
     func coldStartEagerWindowIds() -> [NSNumber]? {
+        // The array-shaped legacy pull, kept for an older framework. It must
+        // answer consistently with `coldStartRestorePlan()` — same gate, same
+        // classification, the closed-group half simply dropped (an older
+        // framework parks those windows, exactly as before).
+        coldStartClassifiedAnswer()?.eagerWindowIds
+    }
+
+    /// The plan-shaped cold-start answer (delegate `coldStartRestorePlan`):
+    /// the same gate and classification as the legacy pull, with the
+    /// closed-group set alongside so the replay seam can retire those
+    /// windows to the undo stack instead of parking them.
+    func coldStartRestorePlan() -> [String: [NSNumber]]? {
+        coldStartClassifiedAnswer()?.wireDictionary
+    }
+
+    private func coldStartClassifiedAnswer() -> ArmedRestorePlan? {
         guard Self.isLazySpaceRestoreEnabled else { return nil }
         // Defence in depth behind the Chromium-side initiator check: a reopen
         // this side is still replaying must never be answered by the cold-start
@@ -2334,29 +2437,33 @@ final class SpaceManager: ObservableObject {
         // and preserves the old refusal for that case.
         guard !isSessionRestoreInFlight else { return nil }
         guard !restoreEntries.isEmpty else { return nil }
-        let parkedOnlyEntryIndices = Set(
-            restoreEntries.indices.filter { restoreEntries[$0].isParkedOnlyEntry })
         let classification = classifyLoadedRestoreSnapshot(
-            mode: .everyOnScreenEntry(
-                parkedOnlyEntryIndices: parkedOnlyEntryIndices))
+            mode: .everyOnScreenEntry)
+        let closedGroupWindowIds = classification.closedGroupWindowIds
+            .sorted().map { NSNumber(value: $0) }
         if classification.eagerWindowIds.isEmpty {
             // Naming no eager window has two very different causes, and the
             // right answer differs by cause. Every entry already closed is
             // R2a — the user quit with nothing on screen — and the empty
-            // ARRAY is the correct answer there: it parks the whole session
-            // and restore stands in one new window. Any other cause (a record
-            // that names only Incognito or agent Spaces, say) means this side
-            // cannot speak for the file, and nil restores everything, which
-            // is the fail-eager side.
-            guard parkedOnlyEntryIndices.count == restoreEntries.count else {
+            // eager array is the correct answer there: nothing lands and
+            // restore stands in one new window, while the closed groups
+            // retire to the undo stack. Any other cause (a record that names
+            // only Incognito or agent Spaces, say) means this side cannot
+            // speak for the file, and nil restores everything, which is the
+            // fail-eager side.
+            guard restoreEntries.allSatisfy(\.isParkedOnlyEntry) else {
                 AppLogWarn("[SpaceManager] cold start gate: \(restoreEntries.count) entry(ies) named no eager window and not every group is closed — restoring everything")
                 return nil
             }
             AppLogInfo("[SpaceManager] cold start gate: every one of \(restoreEntries.count) entry(ies) was already closed — parking the whole session")
-            return []
+            return ArmedRestorePlan(eagerWindowIds: [],
+                                    closedGroupWindowIds: closedGroupWindowIds)
         }
-        AppLogInfo("[SpaceManager] cold start gate: \(classification.eagerWindowIds.count) eager, \(classification.ghostSpaceIdsByWindowId.count) to park across \(restoreEntries.count) entry(ies)")
-        return classification.eagerWindowIds.sorted().map { NSNumber(value: $0) }
+        AppLogInfo("[SpaceManager] cold start gate: \(classification.eagerWindowIds.count) eager, \(classification.ghostSpaceIdsByWindowId.count) to park, \(classification.closedGroupWindowIds.count) closed-group across \(restoreEntries.count) entry(ies)")
+        return ArmedRestorePlan(
+            eagerWindowIds:
+                classification.eagerWindowIds.sorted().map { NSNumber(value: $0) },
+            closedGroupWindowIds: closedGroupWindowIds)
     }
 
     /// Applies one of the cold start's per-profile park receipts. The receipt

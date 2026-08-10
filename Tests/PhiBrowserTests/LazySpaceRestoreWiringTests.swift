@@ -60,10 +60,11 @@ final class LazySpaceRestoreWiringTests: XCTestCase {
     // MARK: - Arming (what the reopen sends over the bridge)
 
     private static func classification(
-        eager: Set<Int>, ghosts: [Int: String]
+        eager: Set<Int>, ghosts: [Int: String], closedGroups: Set<Int> = []
     ) -> SpaceManager.RestoreWindowClassification {
         SpaceManager.RestoreWindowClassification(
-            eagerWindowIds: eager, ghostSpaceIdsByWindowId: ghosts)
+            eagerWindowIds: eager, ghostSpaceIdsByWindowId: ghosts,
+            closedGroupWindowIds: closedGroups)
     }
 
     func testArmingRequiresTheSwitch() {
@@ -137,6 +138,56 @@ final class LazySpaceRestoreWiringTests: XCTestCase {
                     eager: [55, 7, 102], ghosts: [9: "space-b"])
             ),
             [7, 55, 102].map { NSNumber(value: $0) }
+        )
+    }
+
+    func testArmedPlanCarriesTheClosedGroupSetSorted() {
+        // The plan is the eager wire array plus the closed-group windows the
+        // replay seam retires to the undo stack (REQUIREMENTS R3/R4); both
+        // halves sorted so the wire order is deterministic.
+        XCTAssertEqual(
+            SpaceManager.armedRestorePlan(
+                featureEnabled: true,
+                bridgeSupportsLazyRestore: true,
+                hasSnapshotEntries: true,
+                classification: Self.classification(
+                    eager: [1], ghosts: [2: "space-b"], closedGroups: [30, 12])
+            ),
+            SpaceManager.ArmedRestorePlan(
+                eagerWindowIds: [NSNumber(value: 1)],
+                closedGroupWindowIds: [12, 30].map { NSNumber(value: $0) })
+        )
+    }
+
+    func testPlanWireDictionaryUsesTheKeysChromiumParses() {
+        // The two key strings are what Chromium's parse looks up verbatim
+        // (PhiChromiumBridge.mm / phi_bridge_wrapper.mm); both plan channels
+        // send this one encoding, so a drifted key would silently read as
+        // "missing" — which the receiver treats as an empty set.
+        let plan = SpaceManager.ArmedRestorePlan(
+            eagerWindowIds: [NSNumber(value: 1)],
+            closedGroupWindowIds: [NSNumber(value: 2)])
+        XCTAssertEqual(plan.wireDictionary,
+                       ["eager": [NSNumber(value: 1)],
+                        "closedGroup": [NSNumber(value: 2)]])
+    }
+
+    func testARecordOfOnlyClosedGroupsStillArms() {
+        // Scenario 2's record after every group closed by hand: no eager
+        // window, no ghost, closed groups only. The gate must still arm —
+        // unarmed would replay every retained record in full — and the empty
+        // eager set parks nothing on screen while the closed groups retire.
+        XCTAssertEqual(
+            SpaceManager.armedRestorePlan(
+                featureEnabled: true,
+                bridgeSupportsLazyRestore: true,
+                hasSnapshotEntries: true,
+                classification: Self.classification(
+                    eager: [], ghosts: [:], closedGroups: [4])
+            ),
+            SpaceManager.ArmedRestorePlan(
+                eagerWindowIds: [],
+                closedGroupWindowIds: [NSNumber(value: 4)])
         )
     }
 

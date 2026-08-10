@@ -569,6 +569,21 @@ typedef NS_ENUM(NSInteger, PhiGhostMaterializeOutcome) {
 /// already carries its eager set, or deliberately carries none.
 - (nullable NSArray<NSNumber *> *)coldStartEagerWindowIds;
 
+/// The plan-shaped cold-start answer, asked INSTEAD of
+/// `coldStartEagerWindowIds` by a framework that understands it (the old
+/// selector stays as the older-framework fallback and must keep answering
+/// consistently). Same pull, same timing, same idempotency contract.
+///
+/// Keys: @"eager" carries exactly what `coldStartEagerWindowIds` would have
+/// returned; @"closedGroup" names the saved windows that belong to window
+/// groups the user closed by hand (the snapshot's parked-only entries).
+/// Chromium retires a closed-group window at the replay seam — neither
+/// rebuilt nor parked, and its "Reopen Closed Window" undo entry survives —
+/// instead of parking it forever. A window in neither array parks exactly as
+/// before. A missing @"closedGroup" key reads as empty. nil = unarmed, the
+/// full replay, exactly like the old selector's nil.
+- (nullable NSDictionary<NSString *, NSArray<NSNumber *> *> *)coldStartRestorePlan;
+
 /// What Chromium has parked after a cold-start replay: profile directory
 /// basename → previous-session window ids, in adoption order — the whole
 /// ghost registry, exactly as `parkedCompletion:` reports it for a reopen.
@@ -1205,6 +1220,30 @@ typedef NS_ENUM(NSInteger, PhiGhostMaterializeOutcome) {
 /// a receipt instead of silently keeping its own guess. Main thread only.
 - (void)restorePreviousSessionWithPreferredProfile:(NSString * _Nullable)preferredProfileId
                                     eagerWindowIds:(NSArray<NSNumber *> * _Nullable)eagerWindowIds
+                                  parkedCompletion:(void (^)(BOOL restoredAnyWindow,
+                                                             NSDictionary<NSString *, NSArray<NSNumber *> *> *parkedWindowIdsByProfileId,
+                                                             BOOL eagerFilterMatchedNothing))completion;
+
+/// Same restore and the same settlement receipt as the selector above, with
+/// the arming carried as a plan dictionary instead of a bare eager array.
+///
+/// Keys: @"eager" is the eager array, contract unchanged. @"closedGroup"
+/// names the saved windows belonging to window groups the user closed by
+/// hand (the caller's parked-only entries). Chromium retires a closed-group
+/// window at the replay seam instead of parking it: not rebuilt, its session
+/// record dropped at the next rebuild, and its "Reopen Closed Window" undo
+/// entry left alone so cmd+shift+t can bring the group back. Retirement is
+/// per window and only with the undo entry actually on the stack — a
+/// closed-group window with no undo entry to answer for it parks exactly as
+/// before, so nothing can be lost to a record the undo stack never got. A
+/// window in neither array parks as before. A missing @"closedGroup" key
+/// reads as empty; a nil `restorePlan` restores everything, exactly like a
+/// nil `eagerWindowIds`. The receipt may still name a closed-group window
+/// whose retirement is pending (it is checked against the undo stack after
+/// the stack loads); such a window disappears from the registry once its
+/// retirement lands. Main thread only.
+- (void)restorePreviousSessionWithPreferredProfile:(NSString * _Nullable)preferredProfileId
+                                       restorePlan:(NSDictionary<NSString *, NSArray<NSNumber *> *> * _Nullable)restorePlan
                                   parkedCompletion:(void (^)(BOOL restoredAnyWindow,
                                                              NSDictionary<NSString *, NSArray<NSNumber *> *> *parkedWindowIdsByProfileId,
                                                              BOOL eagerFilterMatchedNothing))completion;

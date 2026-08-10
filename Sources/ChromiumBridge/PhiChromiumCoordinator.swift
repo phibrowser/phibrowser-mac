@@ -43,6 +43,10 @@ extension PhiChromiumCoordinator: PhiChromiumBridgeDelegate {
         MainActor.assumeIsolated { SpaceManager.shared.coldStartEagerWindowIds() }
     }
 
+    func coldStartRestorePlan() -> [String: [NSNumber]]? {
+        MainActor.assumeIsolated { SpaceManager.shared.coldStartRestorePlan() }
+    }
+
     /// What that replay actually parked, per profile, as it happens.
     func coldStartParkedGhostWindows(
         _ parkedWindowIdsByProfileId: [String: [NSNumber]]

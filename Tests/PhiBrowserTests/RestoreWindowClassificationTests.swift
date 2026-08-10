@@ -30,9 +30,30 @@ final class RestoreWindowClassificationTests: XCTestCase {
         agentSpaceIds: Set<String> = []
     ) -> SpaceManager.RestoreWindowClassification {
         SpaceManager.classifyRestoreWindows(
-            slots: slots,
+            slots: slots.map {
+                (activeSpaceId: $0.activeSpaceId, windowMap: $0.windowMap,
+                 isLandingEntry: $0.isLandingEntry, isParkedOnlyEntry: false)
+            },
             liveSpaceIds: liveSpaceIds,
             agentSpaceIds: agentSpaceIds
+        )
+    }
+
+    /// The marker-aware variant, for the closed-group rows below. The plain
+    /// helper above maps every entry as on-screen so the pre-existing rows
+    /// keep pinning the unchanged rules verbatim.
+    private func classifyMarked(
+        slots: [(activeSpaceId: String?, windowMap: [Int: String],
+                 isLandingEntry: Bool, isParkedOnlyEntry: Bool)],
+        liveSpaceIds: Set<String>,
+        agentSpaceIds: Set<String> = [],
+        mode: SpaceManager.RestoreLandingMode = .landingOnly
+    ) -> SpaceManager.RestoreWindowClassification {
+        SpaceManager.classifyRestoreWindows(
+            slots: slots,
+            liveSpaceIds: liveSpaceIds,
+            agentSpaceIds: agentSpaceIds,
+            mode: mode
         )
     }
 
@@ -359,11 +380,14 @@ final class RestoreWindowClassificationTests: XCTestCase {
         agentSpaceIds: Set<String> = []
     ) -> SpaceManager.RestoreWindowClassification {
         SpaceManager.classifyRestoreWindows(
-            slots: slots,
+            slots: slots.enumerated().map { index, slot in
+                (activeSpaceId: slot.activeSpaceId, windowMap: slot.windowMap,
+                 isLandingEntry: slot.isLandingEntry,
+                 isParkedOnlyEntry: parkedOnlyEntryIndices.contains(index))
+            },
             liveSpaceIds: liveSpaceIds,
             agentSpaceIds: agentSpaceIds,
-            mode: .everyOnScreenEntry(
-                parkedOnlyEntryIndices: parkedOnlyEntryIndices)
+            mode: .everyOnScreenEntry
         )
     }
 
@@ -390,6 +414,11 @@ final class RestoreWindowClassificationTests: XCTestCase {
     func testAGroupTheUserAlreadyClosedLandsNothing() {
         // Entry 0 is a window group closed before the quit; entry 1 was on
         // screen. Only the second comes back — the whole point of the marker.
+        // The closed group's window is a CLOSED-GROUP window, not a ghost:
+        // it used to park here, which is what made it unreachable (no live
+        // window can materialize it) while the prune deleted its undo entry.
+        // Classifying it out lets the replay seam retire it to the undo
+        // stack instead (REQUIREMENTS R3, scenario 6).
         let result = classifyColdStart(
             slots: [
                 (activeSpaceId: "space-a",
@@ -404,7 +433,30 @@ final class RestoreWindowClassificationTests: XCTestCase {
         )
 
         XCTAssertEqual(result.eagerWindowIds, [3])
-        XCTAssertEqual(result.ghostSpaceIdsByWindowId, [1: "space-a"])
+        XCTAssertTrue(result.ghostSpaceIdsByWindowId.isEmpty)
+        XCTAssertEqual(result.closedGroupWindowIds, [1])
+    }
+
+    func testEveryEntryClosedYieldsOnlyClosedGroupWindows() {
+        // R2a's record shape — the user closed everything, then quit, and the
+        // freeze happened to mark every entry. Nothing lands, nothing parks;
+        // the whole record retires to the undo stack.
+        let result = classifyColdStart(
+            slots: [
+                (activeSpaceId: "space-a",
+                 windowMap: [1: "space-a"],
+                 isLandingEntry: false),
+                (activeSpaceId: "space-c",
+                 windowMap: [3: "space-c"],
+                 isLandingEntry: false),
+            ],
+            liveSpaceIds: ["space-a", "space-c"],
+            parkedOnlyEntryIndices: [0, 1]
+        )
+
+        XCTAssertTrue(result.eagerWindowIds.isEmpty)
+        XCTAssertTrue(result.ghostSpaceIdsByWindowId.isEmpty)
+        XCTAssertEqual(result.closedGroupWindowIds, [1, 3])
     }
 
     func testAnUnmarkedEntryIsTreatedAsHavingBeenOnScreen() {
@@ -443,6 +495,72 @@ final class RestoreWindowClassificationTests: XCTestCase {
         )
 
         XCTAssertEqual(result.eagerWindowIds, [1, 3])
+    }
+
+    // MARK: - Closed groups (parked-only entries) classify to their own set
+
+    func testAClosedGroupsWindowsAreClosedGroupNotGhostOnAReopen() {
+        // Scenario 6's record shape: the landing entry is the group closed
+        // last (the one the reopen brings back), the parked-only entry is a
+        // group closed earlier. Its windows join the closed-group set — the
+        // replay seam retires them to the undo stack — instead of parking as
+        // unreachable ghosts.
+        let result = classifyMarked(
+            slots: [
+                (activeSpaceId: "space-a",
+                 windowMap: [1: "space-a"],
+                 isLandingEntry: true, isParkedOnlyEntry: false),
+                (activeSpaceId: "space-b",
+                 windowMap: [10: "space-b", 11: "space-c"],
+                 isLandingEntry: false, isParkedOnlyEntry: true),
+            ],
+            liveSpaceIds: ["space-a", "space-b", "space-c"]
+        )
+
+        XCTAssertEqual(result.eagerWindowIds, [1])
+        XCTAssertTrue(result.ghostSpaceIdsByWindowId.isEmpty)
+        XCTAssertEqual(result.closedGroupWindowIds, [10, 11])
+    }
+
+    func testAClosedGroupsDeletedSpaceWindowStillFailsEager() {
+        // The fail-eager rule outranks the closed-group marker, unchanged: a
+        // window whose Space is gone (or not yet delivered) replays rather
+        // than being retired on a record this side cannot vouch for.
+        let result = classifyMarked(
+            slots: [
+                (activeSpaceId: "space-a",
+                 windowMap: [1: "space-a"],
+                 isLandingEntry: true, isParkedOnlyEntry: false),
+                (activeSpaceId: "space-b",
+                 windowMap: [10: "space-b"],
+                 isLandingEntry: false, isParkedOnlyEntry: true),
+            ],
+            liveSpaceIds: ["space-a"]
+        )
+
+        XCTAssertEqual(result.eagerWindowIds, [1, 10])
+        XCTAssertTrue(result.closedGroupWindowIds.isEmpty)
+    }
+
+    func testDuplicateWindowIdPrefersGhostOverClosedGroup() {
+        // Corrupt-record partition order: eager > ghost > closed-group. A
+        // ghost stays reachable by activating its Space; retirement is the
+        // more destructive read, so it loses the tie.
+        let result = classifyMarked(
+            slots: [
+                (activeSpaceId: "space-a",
+                 windowMap: [1: "space-a", 2: "space-b"],
+                 isLandingEntry: true, isParkedOnlyEntry: false),
+                (activeSpaceId: "space-b",
+                 windowMap: [2: "space-b"],
+                 isLandingEntry: false, isParkedOnlyEntry: true),
+            ],
+            liveSpaceIds: ["space-a", "space-b"]
+        )
+
+        XCTAssertEqual(result.eagerWindowIds, [1])
+        XCTAssertEqual(result.ghostSpaceIdsByWindowId, [2: "space-b"])
+        XCTAssertTrue(result.closedGroupWindowIds.isEmpty)
     }
 
     func testTheSameSnapshotStillLandsOneWindowForAReopen() {

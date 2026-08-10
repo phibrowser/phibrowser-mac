@@ -106,7 +106,9 @@ import PostHog
         //        ASWebAuthenticationSessionWebBrowserSessionManager.shared.sessionHandler = self
         
         ChromiumLauncher.sharedInstance().bridge?.applicationDidFinishLaunching(notification)
+        #if !PHI_OSS_BUILD
         SentinelTelemetryConsentPublisher.shared.start()
+        #endif
         
         //        ASWebAuthenticationSessionWebBrowserSessionManager.shared.sessionHandler = self
         

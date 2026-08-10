@@ -229,6 +229,7 @@ enum AuthenticatedSentinelSessionLifecycle {
         launchOnLogin: Bool =
             PhiPreferences.AISettings.launchSentinelOnLogin.loadValue()
     ) {
+        guard PhiBuildCapabilities.supportsAI else { return }
         let browserAccessState =
             ApplicationState.shared.browserAccessState
         let isAuthenticated = ApplicationState.shared.isAuthenticated

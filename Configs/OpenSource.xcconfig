@@ -3,7 +3,7 @@
 
 // Product Settings
 PRODUCT_NAME = Phi
-PRODUCT_BUNDLE_IDENTIFIER = com.phibrowser.canary.Mac
+PRODUCT_BUNDLE_IDENTIFIER = com.phibrowser.opensource.Mac
 APP_ENTITLEMENTS = Resources/PhiBrowser-OpenSource.entitlements
 
 // Asset Catalog
@@ -14,4 +14,5 @@ PHI_OSS_BUILD = YES
 ONLY_ACTIVE_ARCH = YES
 SWIFT_OPTIMIZATION_LEVEL = -Onone
 SWIFT_ACTIVE_COMPILATION_CONDITIONS = $(inherited) PHI_OSS_BUILD
+GCC_PREPROCESSOR_DEFINITIONS = $(inherited) PHI_OSS_BUILD=1
 EXCLUDED_SOURCE_FILE_NAMES = $(inherited) Sparkle.framework

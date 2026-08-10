@@ -15,12 +15,13 @@ Swift compiler:
 ```xcconfig
 PHI_OSS_BUILD = YES
 SWIFT_ACTIVE_COMPILATION_CONDITIONS = $(inherited) PHI_OSS_BUILD
+GCC_PREPROCESSOR_DEFINITIONS = $(inherited) PHI_OSS_BUILD=1
 ```
 
 The setting has two purposes:
 
-- Swift code uses `#if PHI_OSS_BUILD` and `#if !PHI_OSS_BUILD` to include or
-  exclude behavior at compile time.
+- Swift and Objective-C code use `#if PHI_OSS_BUILD` and
+  `#if !PHI_OSS_BUILD` to include or exclude behavior at compile time.
 - Xcode exposes the build setting to build phases as the
   `PHI_OSS_BUILD` environment variable. The `Prune OpenSource Build` phase
   runs only when its value is `YES`.
@@ -41,11 +42,14 @@ The flag currently changes these parts of the application:
 
 | Area | Open-source behavior |
 | --- | --- |
+| Application identity | The product uses `com.phibrowser.opensource.Mac`, giving it separate preferences, Application Support, and Chromium user-data storage from Canary and public builds. |
 | Updates | Sparkle imports, updater state, initialization, update windows, update reminders, and the **Check for Update** menu item are compiled out. |
 | Authentication | `PhiBuildCapabilities.supportsAuthentication` is `false`. The application remains in Guest mode, Chromium may open without a login, Dock reopen does not show the login window, account information is unavailable, and token requests return an empty value. |
 | AI | `PhiBuildCapabilities.supportsAI` is `false`. The AI preference always reads as disabled, the master switch and dependent settings are disabled, and Chromium is instructed not to enable Phi AI extensions. |
 | Account settings | Only the default-browser section is added to the Account settings pane. Profile, sign-in, guest sign-in notice, sharing, and account controls are omitted. |
-| Crash reporting | `SentryService.setup()` is compiled out, and the Sentry framework is removed from the final app bundle. |
+| Sentinel | The authenticated Sentinel lifecycle and telemetry publisher are not started, and any bundled Sentinel login item is removed from the final product. |
+| Chromium telemetry | Metrics reporting is set to off by default after Chromium initializes. |
+| Native crash reporting | `SentryService.setup()` is compiled out, and the Sentry framework is removed from the final app bundle. |
 | Product analytics | PostHog setup and its launch-time snapshot are compiled out, and the PostHog resource bundle is removed from the final app bundle. |
 
 The flag defines startup and capability behavior; it does not promise that
@@ -64,15 +68,17 @@ and public builds.
 The script accepts one argument: the path to the built `.app`. It then:
 
 1. Validates that the app, its `Contents/MacOS` directory, and its
-   `Info.plist` exist.
+   `Info.plist` exist, and that the bundle identifier is
+   `com.phibrowser.opensource.Mac`.
 2. Removes these non-open-source runtime components:
    - `Contents/Frameworks/Sparkle.framework`
    - `Contents/Frameworks/Sentry.framework`
    - `Contents/Resources/PostHog_PostHog.bundle`
+   - any bundled Phi Sentinel login item
 3. Verifies that the required `Phi Framework.framework` still exists and that
    an app executable has a load command for it.
 4. Fails the build if Sparkle content, Sparkle load commands, Sparkle symbols,
-   or a Sentry load command remains in an app executable.
+   a Sentry load command, or a bundled Sentinel component remains.
 5. Deletes and verifies the absence of the Sparkle `Info.plist` keys
    `SUAutomaticallyUpdate`, `SUEnableAutomaticChecks`, `SUFeedURL`,
    `SUPublicEDKey`, and `SUScheduledCheckInterval`.

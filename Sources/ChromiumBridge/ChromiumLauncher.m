@@ -205,7 +205,13 @@
     if ([self.bridge conformsToProtocol:@protocol(PhiChromiumBridgeProtocol)]) {
         self.bridge.delegate = [PhiChromiumCoordinator shared];
     }
+#if PHI_OSS_BUILD
+    if ([self initializeChromiumWithLaunchArgc:argc launchArgv:argv]) {
+        [self.bridge setMetricsReportingEnabled:NO completion:^(__unused BOOL effectiveEnabled) {}];
+    }
+#else
     [self initializeChromiumWithLaunchArgc:argc launchArgv:argv];
+#endif
 
 }
 

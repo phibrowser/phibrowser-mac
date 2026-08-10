@@ -11,9 +11,16 @@ app_path=$1
 contents_path="$app_path/Contents"
 macos_path="$contents_path/MacOS"
 info_plist_path="$contents_path/Info.plist"
+expected_bundle_identifier="com.phibrowser.opensource.Mac"
 
 if [ ! -d "$app_path" ] || [ ! -d "$macos_path" ] || [ ! -f "$info_plist_path" ]; then
     echo "error: OpenSource app product is incomplete: $app_path" >&2
+    exit 1
+fi
+
+bundle_identifier=$(/usr/libexec/PlistBuddy -c "Print :CFBundleIdentifier" "$info_plist_path" 2>/dev/null || true)
+if [ "$bundle_identifier" != "$expected_bundle_identifier" ]; then
+    echo "error: OpenSource bundle identifier is '$bundle_identifier', expected '$expected_bundle_identifier'" >&2
     exit 1
 fi
 
@@ -31,6 +38,8 @@ remove_component() {
 remove_component "$contents_path/Frameworks/Sparkle.framework"
 remove_component "$contents_path/Frameworks/Sentry.framework"
 remove_component "$contents_path/Resources/PostHog_PostHog.bundle"
+remove_component "$contents_path/Library/LoginItems/Phi Sentinel.app"
+remove_component "$contents_path/Library/LoginItems/Sentinel.app"
 
 phi_framework="$contents_path/Frameworks/Phi Framework.framework"
 if [ ! -d "$phi_framework" ]; then
@@ -41,6 +50,14 @@ fi
 sparkle_path=$(/usr/bin/find "$app_path" -iname '*sparkle*' -print -quit)
 if [ -n "$sparkle_path" ]; then
     echo "error: Sparkle content remains in app product: $sparkle_path" >&2
+    exit 1
+fi
+
+sentinel_component_path=$(/usr/bin/find "$app_path" \
+    \( -iname '*sentinel*.app' -o -iname '*sentinel*.framework' -o -iname '*sentinel*.bundle' \) \
+    -print -quit)
+if [ -n "$sentinel_component_path" ]; then
+    echo "error: Sentinel component remains in app product: $sentinel_component_path" >&2
     exit 1
 fi
 

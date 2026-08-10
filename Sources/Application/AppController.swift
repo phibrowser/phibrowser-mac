@@ -106,6 +106,14 @@ import PostHog
         //        ASWebAuthenticationSessionWebBrowserSessionManager.shared.sessionHandler = self
         
         ChromiumLauncher.sharedInstance().bridge?.applicationDidFinishLaunching(notification)
+        #if PHI_OSS_BUILD
+        ChromiumLauncher.sharedInstance().bridge?.setMetricsReportingEnabled(false) { effectiveEnabled in
+            if effectiveEnabled {
+                AppLogWarn("[OSS] Failed to disable Chromium metrics reporting")
+            }
+        }
+        #endif
+        
         #if !PHI_OSS_BUILD
         SentinelTelemetryConsentPublisher.shared.start()
         #endif

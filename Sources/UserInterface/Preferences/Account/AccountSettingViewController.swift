@@ -144,6 +144,13 @@ class AccountSettingViewController: NSViewController, SettingsPane {
     }
 
     private func setupUI() {
+        #if PHI_OSS_BUILD
+        view.addSubview(defaultBrowserView)
+        defaultBrowserView.snp.makeConstraints { make in
+            make.top.equalToSuperview().offset(36)
+            make.left.right.equalToSuperview().inset(36)
+        }
+        #else
         // Profile card on the left
         view.addSubview(profileCardView)
         profileCardView.snp.makeConstraints { make in
@@ -232,6 +239,7 @@ class AccountSettingViewController: NSViewController, SettingsPane {
         }
 
         updateAccessPresentation()
+        #endif
     }
 
     private func openAvatarEditor() {

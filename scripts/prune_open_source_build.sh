@@ -17,10 +17,20 @@ if [ ! -d "$app_path" ] || [ ! -d "$macos_path" ] || [ ! -f "$info_plist_path" ]
     exit 1
 fi
 
-sparkle_framework="$contents_path/Frameworks/Sparkle.framework"
-if [ -e "$sparkle_framework" ]; then
-    /bin/rm -rf "$sparkle_framework"
-fi
+remove_component() {
+    component_path=$1
+    if [ -e "$component_path" ]; then
+        /bin/rm -rf "$component_path"
+    fi
+    if [ -e "$component_path" ]; then
+        echo "error: OpenSource component remains in app product: $component_path" >&2
+        exit 1
+    fi
+}
+
+remove_component "$contents_path/Frameworks/Sparkle.framework"
+remove_component "$contents_path/Frameworks/Sentry.framework"
+remove_component "$contents_path/Resources/PostHog_PostHog.bundle"
 
 phi_framework="$contents_path/Frameworks/Phi Framework.framework"
 if [ ! -d "$phi_framework" ]; then
@@ -42,6 +52,10 @@ for binary_path in "$macos_path"/*; do
     linked_libraries=$(/usr/bin/otool -L "$binary_path")
     if printf '%s\n' "$linked_libraries" | /usr/bin/grep -q 'Sparkle.framework'; then
         echo "error: Sparkle load command remains in $binary_path" >&2
+        exit 1
+    fi
+    if printf '%s\n' "$linked_libraries" | /usr/bin/grep -q 'Sentry.framework'; then
+        echo "error: Sentry load command remains in $binary_path" >&2
         exit 1
     fi
     if printf '%s\n' "$linked_libraries" | /usr/bin/grep -q 'Phi Framework.framework'; then

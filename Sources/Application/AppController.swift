@@ -115,7 +115,9 @@ import PostHog
         #endif
         setupKinfisherCache()
         
+        #if !PHI_OSS_BUILD
         SentryService.setup()
+        #endif
         
         MemoryUsageMonitor.shared.start()
 
@@ -193,6 +195,7 @@ import PostHog
         // The startup takeover for the user-data removal mechanism runs in
         // main() (UserDataRemovalBootstrap), before Chromium reads any state.
 
+        #if !PHI_OSS_BUILD
         // Set up PostHog before `didFinishLaunchingNotification` fires so the
         // SDK can observe the app-opened lifecycle event. If either value is
         // missing the app runs without analytics.
@@ -215,6 +218,7 @@ import PostHog
         } else {
             AppLogInfo("PostHog: project token or host not set in PostHogConfig.generated.swift; skipping init")
         }
+        #endif
 
         chromiumBridge?.applicationWillFinishLaunching(notification)
     }

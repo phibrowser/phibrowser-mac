@@ -131,6 +131,7 @@ class AccountController {
     }
 
     private func syncTelemetryIdentity(for account: Account?) {
+        #if !PHI_OSS_BUILD
         SentryService.configureUser(account)
 
         guard let bridge = ChromiumLauncher.sharedInstance().bridge,
@@ -144,6 +145,7 @@ class AccountController {
             ["chromium_metrics_client_id": $0] as [String: Any]
         }
         PostHogSDK.shared.identify(sub, userProperties: properties)
+        #endif
     }
 
     /// Best-effort refresh of the existing per-account profile cache. The

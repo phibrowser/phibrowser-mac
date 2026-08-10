@@ -1,6 +1,6 @@
 # Analytics
 
-Last updated: 2026-08-04
+Last updated: 2026-08-10
 
 Phi Browser emits product analytics to both [Countly](https://phi-browser-eaade70cfd902.flex.countly.com) (legacy) and [PostHog](https://us.posthog.com/project/385742) (current). Both pipelines run side-by-side; PostHog is the forward-looking source of truth.
 
@@ -10,6 +10,10 @@ Phi Browser emits product analytics to both [Countly](https://phi-browser-eaade7
 | --- | --- | --- |
 | PostHog | `AppController.applicationWillFinishLaunching` (`Sources/Application/AppController.swift`) | `PostHogEnv` → `PostHogGeneratedConfig` (compiled-in constants from `Sources/Utilities/PostHogConfig.generated.swift`) |
 | Countly | `EventTracker.initTracker()` (`Sources/Utilities/EventTrack/EventTracker.swift`) | Hardcoded in source, split by `NIGHTLY_BUILD || DEBUG` |
+
+The `OpenSource` configuration compiles the PostHog initialization block out
+and removes its resource bundle from the final app. See
+[Open-source build](open-source-build.md) for the complete build boundary.
 
 PostHog SDK config uses `captureApplicationLifecycleEvents = true`, so `$app_installed`, `$app_updated`, `$app_opened`, `$app_backgrounded` are auto-captured — these power DAU and retention.
 

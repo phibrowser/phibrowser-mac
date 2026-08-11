@@ -7066,6 +7066,7 @@ final class SpaceWindowSlot: ObservableObject {
                     slotHasFullScreenWindow: slotHasFullScreenWindow))
                 ? beginSpawnVerticalPushIn(
                     targetSpaceId: spaceId,
+                    fromSpaceId: previousSpaceId,
                     previous: previous,
                     leavingBand: verticalLeavingBand,
                     direction: direction,
@@ -7184,6 +7185,7 @@ final class SpaceWindowSlot: ObservableObject {
         let spawnSwitch: SpawnSwitchAnimation? = (animated && spawnHidden)
             ? beginSpawnVerticalPushIn(
                 targetSpaceId: spaceId,
+                fromSpaceId: previousSpaceId,
                 previous: previous,
                 leavingBand: verticalLeavingBand,
                 direction: direction,
@@ -8159,6 +8161,7 @@ final class SpaceWindowSlot: ObservableObject {
     /// spawn path then presents the target instantly when it's ready.
     private func beginSpawnVerticalPushIn(
         targetSpaceId spaceId: String,
+        fromSpaceId: String?,
         previous: MainBrowserWindowController?,
         leavingBand: NSImage?,
         direction: SwapDirection,
@@ -8206,12 +8209,25 @@ final class SpaceWindowSlot: ObservableObject {
         prevSurface.view.addSubview(overlay, positioned: .above, relativeTo: nil)
         activeSidebarOverlay = overlay
 
+        // The strip's glass chip flies the same switch as an explicit CA
+        // layer animation, committed in this same turn's transaction — the
+        // SwiftUI chip freezes with the rest of the app-driven animations
+        // through the build's main-thread block, so the stand-in is the only
+        // thing that can actually slide. No-op (SwiftUI chip keeps today's
+        // behavior) when the strip can't fly; swept by restoreLeaving.
+        if let fromSpaceId {
+            _ = prevSurface.beginSpacesChipFlight(fromSpaceId: fromSpaceId,
+                                                  toSpaceId: spaceId,
+                                                  duration: duration)
+        }
+
         let handle = SpawnSwitchAnimation()
 
         // Settles the animation state on the LEAVING window; shared by both
         // resolutions below.
         let restoreLeaving: () -> Void = { [weak self, weak prevSurface, weak overlay] in
             overlay?.cancel()
+            prevSurface?.cancelSpacesChipFlight()
             prevSurface?.setSwitchBandContentHidden(false)
             self?.themeRampTimer?.invalidate()
             self?.themeRampTimer = nil

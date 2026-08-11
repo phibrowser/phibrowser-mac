@@ -146,6 +146,35 @@ final class SpacesStripWheelTracker {
     }
 }
 
+/// Live geometry the sidebar Spaces strip publishes for the chip-flight
+/// stand-in (see `SpacesStripHostingView.beginSpacesChipFlight`): each pip's
+/// frame and the pip viewport's clip frame, in the strip root's coordinate
+/// space (== the hosting view's bounds; the hosting view is flipped, so the
+/// rects are directly usable as layer frames there).
+///
+/// The frame stores are deliberately NOT `@Published`: layout writes them on
+/// every pass and must not re-render the strip. Only `isChipConcealed` — the
+/// flag that hides the SwiftUI glass chip while the CA stand-in flies —
+/// publishes, flipped exactly twice per flight (begin/sweep).
+final class SpacesStripGeometry: ObservableObject {
+    /// Each pip's frame keyed by its spaceId, written by the pip's layout.
+    /// Entries are only added or refreshed — nothing prunes a deleted
+    /// Space's entry, and that residue is memory-only by an invariant the
+    /// CALLERS maintain: both flight endpoints are live-Space ids (activate
+    /// guards its target against the Space list, and every `activeSpaceId`
+    /// write point holds a live Space or nil, with the delete path's
+    /// retreat running before the row is cascaded away). A stale entry
+    /// therefore has no consumer. Revisit if a flight is ever started
+    /// outside the activate path.
+    var pipFrames: [String: CGRect] = [:]
+    /// The sliding pip viewport's clip frame. The stand-in layer is not
+    /// subject to SwiftUI's `.clipped()`, so a flight is only allowed
+    /// between pips wholly inside this rect.
+    var viewportFrame: CGRect = .zero
+    /// Hides the SwiftUI glass chip while the CA stand-in stands in for it.
+    @Published var isChipConcealed = false
+}
+
 /// Compact active-Space header that sits between the pinned-tab strip and
 /// the regular tab list. Shows the active Space's icon + name on the left
 /// and an ellipsis affordance on the right that opens a popover listing
@@ -179,6 +208,11 @@ struct SpacesStripView: View {
     /// SpacesStripWheelTracker), letting the user scroll an overflowing row
     /// directly. Nil for the horizontal chip, which renders no pip row.
     var wheelTracker: SpacesStripWheelTracker? = nil
+    /// Pip/viewport geometry shared with the hosting view's chip flight, and
+    /// the flag concealing the SwiftUI chip while the CA stand-in flies.
+    /// Injected by both sidebar variants; previews/horizontal chip keep the
+    /// default idle instance.
+    @ObservedObject var stripGeometry: SpacesStripGeometry = SpacesStripGeometry()
     @ObservedObject private var profileManager: ProfileManager = .shared
     @ObservedObject private var agentSpaceManager: AgentSpaceManager = .shared
     @Environment(\.phiAppearance) private var windowAppearance: Appearance
@@ -318,8 +352,29 @@ struct SpacesStripView: View {
         }
         .padding(.horizontal, showsEllipsisAffordance ? Self.horizontalPadding : Self.compactChipHorizontalPadding)
         .contentShape(Rectangle())
+        // Root coordinate space for the geometry published to the hosting
+        // view's chip flight — outermost, so the frames include the strip's
+        // own padding and match the hosting view's bounds.
+        .coordinateSpace(name: Self.stripRootSpaceName)
         .onChange(of: slot.iconPickerRequestToken) { _, _ in
             openActiveIconPicker()
+        }
+    }
+
+    /// Name of the strip-root coordinate space the pip/viewport geometry is
+    /// measured in (see `SpacesStripGeometry`).
+    private static let stripRootSpaceName = "phiSpacesStripRoot"
+
+    /// Publishes a measured frame into the shared strip geometry. Layout-time
+    /// writes into plain (non-published) storage — deliberately no SwiftUI
+    /// state, so publishing can never re-render the strip (see
+    /// `SpacesStripGeometry`).
+    private func publishGeometry(_ write: @escaping (SpacesStripGeometry, CGRect) -> Void) -> some View {
+        GeometryReader { geo in
+            let frame = geo.frame(in: .named(Self.stripRootSpaceName))
+            Color.clear
+                .onAppear { write(stripGeometry, frame) }
+                .onChange(of: frame) { _, newFrame in write(stripGeometry, newFrame) }
         }
     }
 
@@ -688,18 +743,32 @@ struct SpacesStripView: View {
         // switch animates it as a slide. It rides inside the viewport so it
         // shifts and clips with the row.
         .background {
-            if let activeId = slot.activeSpaceId,
+            // Concealed while the hosting view's CA stand-in flies a
+            // spawn/materialize switch (the only animation kind that plays
+            // through the rebuild's main-thread block). `.identity` on both
+            // edges: the concealment flips in the same update pass as the
+            // `activeSpaceId` switch, whose row-level animation would
+            // otherwise fade the removal — a doubled chip beside the
+            // stand-in.
+            if !stripGeometry.isChipConcealed,
+               let activeId = slot.activeSpaceId,
                stripOrderedSpaces.contains(where: { $0.spaceId == activeId }) {
                 RoundedRectangle(cornerRadius: 8, style: .continuous)
                     .fill(Color.sidebarTabSelected)
                     .shadow(color: Color.black.opacity(0.15), radius: 1, x: 0, y: 1)
                     .matchedGeometryEffect(id: activeId, in: pipGlassNamespace, isSource: false)
                     .allowsHitTesting(false)
+                    .transition(.identity)
             }
         }
         .offset(x: -CGFloat(start) * step + leadingPeek)
         .frame(width: pipRowWidth(visibleCount) + leadingPeek + trailingPeek, alignment: .leading)
         .clipped()
+        // The clip frame bounds where the chip flight may fly (its layer is
+        // not subject to the `.clipped()` above).
+        .background(publishGeometry { geometry, frame in
+            geometry.viewportFrame = frame
+        })
         // Interactive stand-ins for the peeked half-pips, sized to exactly the
         // sliver that shows through the clip so no hit region leaks past it.
         // The peek conditions guarantee the indexed neighbor exists.
@@ -930,6 +999,11 @@ struct SpacesStripView: View {
             // Publishes this pip's frame under its spaceId, for the
             // strip-level glass chip to target (see `iconStrip`).
             .matchedGeometryEffect(id: space.spaceId, in: pipGlassNamespace)
+            // Same frame again, measured for the hosting view's chip flight
+            // (matchedGeometryEffect anchors are SwiftUI-internal).
+            .background(publishGeometry { geometry, frame in
+                geometry.pipFrames[space.spaceId] = frame
+            })
             .background {
                 // A hovered inactive pip gets the sidebar's dim hover wash,
                 // which stays flat (no shadow). The active pip's liquid-glass

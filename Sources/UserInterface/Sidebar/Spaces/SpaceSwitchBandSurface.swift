@@ -40,6 +40,12 @@ protocol SpaceSwitchBandSurface: NSViewController {
     /// background follows the window theme ramp `performSwap` drives) and
     /// no-ops.
     func rampSpaceTint(fromHex: String?, toHex: String?, duration: TimeInterval)
+
+    /// The Spaces strip row's AppKit view — a `SpacesStripHostingView` when
+    /// the strip is mounted, nil otherwise (incognito never mounts it). Both
+    /// surfaces already expose it for the slot's pointer-vs-row test; the
+    /// chip flight below rides the same reference.
+    var spacesStripRowView: NSView? { get }
 }
 
 extension SpaceSwitchBandSurface {
@@ -73,6 +79,29 @@ extension SpaceSwitchBandSurface {
         let image = NSImage(size: bandInContainer.size)
         image.addRepresentation(rep)
         return image
+    }
+
+    /// Flies the strip's glass chip from the source pip to the target pip as
+    /// an explicit CA layer animation for a spawn/materialize switch — the
+    /// one animation kind that keeps playing while the switch's synchronous
+    /// window build blocks the main thread. False (zero side effects) when
+    /// the strip isn't mounted or can't fly (see
+    /// `SpacesStripHostingView.beginSpacesChipFlight`); the SwiftUI chip
+    /// then keeps today's behavior.
+    func beginSpacesChipFlight(fromSpaceId: String, toSpaceId: String,
+                               duration: TimeInterval) -> Bool {
+        guard let strip = spacesStripRowView as? SpacesStripHostingView else { return false }
+        return strip.beginSpacesChipFlight(fromSpaceId: fromSpaceId,
+                                           toSpaceId: toSpaceId,
+                                           duration: duration)
+    }
+
+    /// Sweeps the chip flight's stand-in and restores the SwiftUI chip.
+    /// Idempotent; wired into the switch's shared leaving-side restore so
+    /// every resolution — reveal, failure, supersession — sweeps exactly
+    /// once.
+    func cancelSpacesChipFlight() {
+        (spacesStripRowView as? SpacesStripHostingView)?.cancelSpacesChipFlight()
     }
 
     /// Hides/reveals the live band content while the push-in overlay (which

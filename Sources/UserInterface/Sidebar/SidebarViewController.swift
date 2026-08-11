@@ -17,9 +17,137 @@ final class SpacesStripHostingView: ThemedHostingView {
     /// swipe-to-switch-Space handler up the responder chain.
     var wheelTracker: SpacesStripWheelTracker?
 
+    /// The hosted strip's live pip/viewport geometry and chip-concealment
+    /// flag, assigned by the controller that builds the strip (same wiring
+    /// shape as `wheelTracker`). Nil only if a builder skips it — every
+    /// flight entry point guards.
+    var stripGeometry: SpacesStripGeometry?
+
+    /// The stand-in chip currently flying, nil when idle. One flight at a
+    /// time: a new begin sweeps the previous one first.
+    private var chipFlightLayer: CALayer?
+
     override func scrollWheel(with event: NSEvent) {
         if wheelTracker?.handle(event) == true { return }
         super.scrollWheel(with: event)
+    }
+
+    /// Flies the glass chip from the source pip to the target pip as an
+    /// EXPLICIT Core Animation layer animation — the one animation kind that
+    /// keeps playing in the render server while the main thread is blocked
+    /// (the materialize rebuild, the spawn's createBrowser; SwiftUI and
+    /// NSAnimationContext view animations both freeze there). The SwiftUI
+    /// chip is concealed in the same runloop turn, so the same CATransaction
+    /// commits the swap — no doubled and no missing chip frame. The stand-in
+    /// is swept by `cancelSpacesChipFlight` when the switch resolves.
+    ///
+    /// Returns false — with zero side effects — when the flight can't run
+    /// (no geometry published yet, either pip not wholly inside the
+    /// viewport's clip frame, degenerate input); the strip then behaves
+    /// exactly as it did before this feature existed.
+    func beginSpacesChipFlight(fromSpaceId: String,
+                               toSpaceId: String,
+                               duration: TimeInterval) -> Bool {
+        guard let geometry = stripGeometry, let hostLayer = layer else { return false }
+        // Eligibility first, sweep second: an ineligible begin must leave a
+        // flight already on this strip untouched, or "returns false with
+        // zero side effects" would hold only while no flight is live.
+        guard let endpoints = Self.chipFlightEndpoints(
+            fromSpaceId: fromSpaceId,
+            toSpaceId: toSpaceId,
+            pipFrames: geometry.pipFrames,
+            viewportFrame: geometry.viewportFrame,
+            duration: duration) else { return false }
+        cancelSpacesChipFlight()
+        let from = Self.chipLayerRect(endpoints.from, boundsHeight: bounds.height,
+                                      isFlipped: isFlipped)
+        let to = Self.chipLayerRect(endpoints.to, boundsHeight: bounds.height,
+                                    isFlipped: isFlipped)
+        var fill = NSColor(resource: .sidebarTabSelected).cgColor
+        effectiveAppearance.performAsCurrentDrawingAppearance {
+            fill = NSColor(resource: .sidebarTabSelected).cgColor
+        }
+        let chip = Self.makeChipFlightLayer(from: from, to: to, duration: duration,
+                                            fillColor: fill)
+        // Below the SwiftUI content, like the chip it stands in for — the
+        // pips draw on top of it (zPosition < 0 sublayers composite under
+        // the hosting view's SwiftUI layers; probed for the design).
+        hostLayer.insertSublayer(chip, at: 0)
+        chipFlightLayer = chip
+        geometry.isChipConcealed = true
+        return true
+    }
+
+    /// Sweeps the stand-in and restores the SwiftUI chip. Idempotent — wired
+    /// into the switch's shared restoreLeaving, which every resolution
+    /// (reveal, failure, supersession) funnels through.
+    func cancelSpacesChipFlight() {
+        chipFlightLayer?.removeFromSuperlayer()
+        chipFlightLayer = nil
+        if let geometry = stripGeometry, geometry.isChipConcealed {
+            geometry.isChipConcealed = false
+        }
+    }
+
+    /// Resolves a flight's endpoints, or nil ("don't fly") unless both pips
+    /// have published frames lying ENTIRELY inside the viewport's clip
+    /// frame. The stand-in layer is not subject to SwiftUI's `.clipped()`,
+    /// so flying to or from a pip in the overflow region would show a chip
+    /// floating outside the row; those switches keep today's behavior.
+    static func chipFlightEndpoints(
+        fromSpaceId: String,
+        toSpaceId: String,
+        pipFrames: [String: CGRect],
+        viewportFrame: CGRect,
+        duration: TimeInterval
+    ) -> (from: CGRect, to: CGRect)? {
+        guard duration > 0,
+              fromSpaceId != toSpaceId,
+              !viewportFrame.isEmpty,
+              let from = pipFrames[fromSpaceId],
+              let to = pipFrames[toSpaceId],
+              viewportFrame.contains(from),
+              viewportFrame.contains(to) else { return nil }
+        return (from, to)
+    }
+
+    /// A frame measured in the strip root's SwiftUI coordinate space as this
+    /// view's layer frame. NSHostingView is flipped (probed for the design),
+    /// so the rect passes through; the y-flip branch guards a framework
+    /// change, not a live path.
+    static func chipLayerRect(_ rect: CGRect, boundsHeight: CGFloat,
+                              isFlipped: Bool) -> CGRect {
+        guard !isFlipped else { return rect }
+        return CGRect(x: rect.minX, y: boundsHeight - rect.maxY,
+                      width: rect.width, height: rect.height)
+    }
+
+    /// Builds the stand-in: the glass chip's look (8pt continuous corners,
+    /// sidebar-tab-selected fill, the SwiftUI shadow's black 0.15 / radius 1
+    /// / 1pt-down offset), with its MODEL geometry already at the target —
+    /// the explicit animation plays the travel, and when CA removes it on
+    /// completion the settled model shows. A model left at the source would
+    /// snap the chip back mid-block the moment the animation expired.
+    static func makeChipFlightLayer(from: CGRect, to: CGRect,
+                                    duration: TimeInterval,
+                                    fillColor: CGColor) -> CALayer {
+        let chip = CALayer()
+        chip.frame = to
+        chip.backgroundColor = fillColor
+        chip.cornerRadius = 8
+        chip.cornerCurve = .continuous
+        chip.shadowColor = NSColor.black.cgColor
+        chip.shadowOpacity = 0.15
+        chip.shadowRadius = 1
+        chip.shadowOffset = CGSize(width: 0, height: 1)
+        chip.zPosition = -1
+        let slide = CABasicAnimation(keyPath: "position")
+        slide.fromValue = CGPoint(x: from.midX, y: from.midY)
+        slide.toValue = CGPoint(x: to.midX, y: to.midY)
+        slide.duration = duration
+        slide.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+        chip.add(slide, forKey: "phiSpacesChipFlight")
+        return chip
     }
 
     // Native AppKit tab groups can temporarily adjust titlebar/safe-area metrics
@@ -155,17 +283,20 @@ class SidebarViewController: NSViewController {
 
     private lazy var spacesStripHostingView: SpacesStripHostingView = {
         let wheelTracker = SpacesStripWheelTracker()
+        let stripGeometry = SpacesStripGeometry()
         let hostingView = SpacesStripHostingView(
             rootView: SpacesStripView(
                 manager: SpaceManager.shared,
                 slot: spacesStripSlot,
                 rowHeight: SpacesStripView.sidebarHeight,
                 resolveOwnerController: { [weak state] in state?.windowController },
-                wheelTracker: wheelTracker
+                wheelTracker: wheelTracker,
+                stripGeometry: stripGeometry
             ),
             themeSource: state.themeContext
         )
         hostingView.wheelTracker = wheelTracker
+        hostingView.stripGeometry = stripGeometry
         if #available(macOS 13.0, *) {
             hostingView.sizingOptions = []
         }

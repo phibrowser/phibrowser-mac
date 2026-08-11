@@ -52,17 +52,20 @@ class FloatingSidebarViewController: NSViewController {
     /// floating panel offers the same Space switching.
     private lazy var spacesStripHostingView: SpacesStripHostingView = {
         let wheelTracker = SpacesStripWheelTracker()
+        let stripGeometry = SpacesStripGeometry()
         let hostingView = SpacesStripHostingView(
             rootView: SpacesStripView(
                 manager: SpaceManager.shared,
                 slot: spacesStripSlot,
                 rowHeight: SpacesStripView.sidebarHeight,
                 resolveOwnerController: { [weak state] in state?.windowController },
-                wheelTracker: wheelTracker
+                wheelTracker: wheelTracker,
+                stripGeometry: stripGeometry
             ),
             themeSource: state.themeContext
         )
         hostingView.wheelTracker = wheelTracker
+        hostingView.stripGeometry = stripGeometry
         if #available(macOS 13.0, *) {
             hostingView.sizingOptions = []
         }

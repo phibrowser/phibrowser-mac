@@ -598,6 +598,25 @@ typedef NS_ENUM(NSInteger, PhiGhostMaterializeOutcome) {
 /// from the reopen receipt.
 - (void)coldStartParkedGhostWindows:
     (NSDictionary<NSString *, NSArray<NSNumber *> *> *)parkedWindowIdsByProfileId;
+
+/// The receipt with the replay half attached, delivered INSTEAD of
+/// `coldStartParkedGhostWindows:` by a framework that knows this selector
+/// (implement both; the plain one keeps serving an older framework). Same
+/// parked registry, same per-profile timing and growth contract.
+///
+/// `profileBasename` names the profile whose replay this receipt settles;
+/// `replayedWindowIds` are the previous-session window ids that replay
+/// matched from the eager set — the windows being rebuilt right now. The
+/// replay scanned that profile's WHOLE session file before reporting, so an
+/// eager id whose window belongs to this profile and which is absent from
+/// `replayedWindowIds` names a window the file no longer holds: no window
+/// will ever arrive for it, this launch or any later one. That is the
+/// settlement signal the client's cold-start repair hangs on — per profile,
+/// with no timer and no all-profiles barrier.
+- (void)coldStartParkedGhostWindows:
+            (NSDictionary<NSString *, NSArray<NSNumber *> *> *)parkedWindowIdsByProfileId
+        replayedForProfile:(NSString *)profileBasename
+         replayedWindowIds:(NSArray<NSNumber *> *)replayedWindowIds;
 @end
 
 @protocol PhiChromiumBridgeProtocol <NSObject>

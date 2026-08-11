@@ -2480,6 +2480,190 @@ final class SpaceManager: ObservableObject {
             eagerFilterMatchedNothing: false))
     }
 
+    /// One launch's cold-start replay receipts, retained until the snapshot
+    /// reloads: reporting profile → previous-session window ids its replay
+    /// matched from the eager set. A receipt names everything its profile's
+    /// session file still holds for the eager set, so retaining it is what
+    /// lets an adjudication deferred on an unresolved Space→profile binding
+    /// re-run later without asking Chromium anything again.
+    private var coldStartReplayedWindowIdsByProfileId: [String: Set<Int>] = [:]
+    /// Every previous-session window id any cold-start receipt has named so
+    /// far, parked or replayed. The drift double-guard: an id seen anywhere
+    /// is a window some profile still holds, so the repair must never spawn
+    /// beside it.
+    private var coldStartReceiptWindowIds: Set<Int> = []
+    /// Saved-entry indices this launch has already repaired (spawn
+    /// requested). One repair per entry per launch, ever — R6's "window
+    /// count must not grow" is enforced here, not downstream.
+    private var coldStartRepairedEntryIndices: Set<Int> = []
+    /// Saved-entry indices whose adjudication hit an unresolved
+    /// Space→profile binding (store not fully delivered yet).
+    /// Re-adjudicated on the next store emission; never judged "not mine"
+    /// on a missing binding.
+    private var pendingColdStartRepairEntryIndices: Set<Int> = []
+
+    /// What the cold-start repair should do with one saved entry, given the
+    /// receipts so far. Pure and static so the three-way rule — repair /
+    /// pending / none — is pinned by table (`LazySpaceRestoreWiringTests`).
+    ///
+    /// `.pending` is the load-bearing third state: receipts arrive well
+    /// inside the cold start's first second, before the SwiftData store's
+    /// first full delivery, and a nil binding read then means "not known
+    /// yet", not "not this profile". Collapsing it into `.none` would judge
+    /// the entry once, wrongly — and the one-shot receipt would never
+    /// re-ask.
+    enum ColdStartRepairDecision: Equatable {
+        case repair
+        case pending
+        case none
+    }
+
+    static func coldStartRepairDecision(
+        activeSpaceId: String?,
+        activeSpaceEligible: Bool,
+        entryWindowMap: [Int: String],
+        isParkedOnlyEntry: Bool,
+        isClaimed: Bool,
+        isRepaired: Bool,
+        boundProfileId: String?,
+        replayedWindowIdsByProfileId: [String: Set<Int>],
+        receiptWindowIds: Set<Int>
+    ) -> ColdStartRepairDecision {
+        guard !isParkedOnlyEntry, !isClaimed, !isRepaired,
+              let activeSpaceId, activeSpaceEligible else { return .none }
+        // The ids the classifier named eager for this entry: its windows on
+        // its active Space. None ⇒ nothing was eager ⇒ nothing to repair
+        // (the entry's windows all park, by design).
+        let eagerIds = Set(
+            entryWindowMap.filter { $0.value == activeSpaceId }.keys)
+        guard !eagerIds.isEmpty else { return .none }
+        guard let profileId = boundProfileId else { return .pending }
+        guard let replayed = replayedWindowIdsByProfileId[profileId] else {
+            // The binding is known and that profile has not reported yet;
+            // its own receipt settles this entry when it does. Distinct from
+            // `.pending`, which waits on the binding, not the receipt.
+            return .none
+        }
+        guard replayed.isDisjoint(with: eagerIds) else { return .none }
+        guard receiptWindowIds.isDisjoint(with: eagerIds) else { return .none }
+        return .repair
+    }
+
+    /// Applies the replay-half receipt (delegate
+    /// `coldStartParkedGhostWindows:replayedForProfile:replayedWindowIds:`):
+    /// the parked half exactly as the plain receipt, then the repair
+    /// adjudication the replay half makes possible — the reporting profile's
+    /// replay scanned its whole session file before sending this, so an
+    /// eager id of one of its entries that it did not replay names a window
+    /// no launch will ever get back on its own (REQUIREMENTS R2 violation,
+    /// the placeholder-at-quit shape).
+    func applyColdStartReplayReceipt(windowIdsByProfileId: [String: [Int]],
+                                     reportingProfileId: String,
+                                     replayedWindowIds: [Int]) {
+        coldStartReplayedWindowIdsByProfileId[reportingProfileId, default: []]
+            .formUnion(replayedWindowIds)
+        coldStartReceiptWindowIds.formUnion(replayedWindowIds)
+        for windowIds in windowIdsByProfileId.values {
+            coldStartReceiptWindowIds.formUnion(windowIds)
+        }
+        applyColdStartParkedGhostReceipt(
+            windowIdsByProfileId: windowIdsByProfileId)
+        settleColdStartRepairs()
+    }
+
+    /// Re-runs adjudications parked on an unresolved binding. Called from
+    /// `handleSpacesUpdate` — the store delivery is the very signal the
+    /// deferral waited for.
+    fileprivate func settlePendingColdStartRepairsIfNeeded() {
+        guard !pendingColdStartRepairEntryIndices.isEmpty else { return }
+        settleColdStartRepairs()
+    }
+
+    /// Adjudicates every saved entry against the receipts so far; spawns
+    /// the repairs, records the deferrals. Idempotent: claimed, repaired
+    /// and settled entries answer `.none` and drop out.
+    private func settleColdStartRepairs() {
+        guard !coldStartReplayedWindowIdsByProfileId.isEmpty else { return }
+        let agentSpaceIds = Set(spaces.filter { space in
+            space.isAgentSpace == true || MainActor.assumeIsolated {
+                AgentSpaceManager.shared.isAgentSpace(space.spaceId)
+            }
+        }.map(\.spaceId))
+        var stillPending: Set<Int> = []
+        for index in restoreEntries.indices {
+            let entry = restoreEntries[index]
+            let eligible = entry.activeSpaceId.map { active in
+                !Self.isIncognitoSpaceId(active)
+                    && !agentSpaceIds.contains(active)
+            } ?? false
+            let decision = Self.coldStartRepairDecision(
+                activeSpaceId: entry.activeSpaceId,
+                activeSpaceEligible: eligible,
+                entryWindowMap: entry.windowMap,
+                isParkedOnlyEntry: entry.isParkedOnlyEntry,
+                isClaimed: restoredSlotsByIndex[index] != nil,
+                isRepaired: coldStartRepairedEntryIndices.contains(index),
+                boundProfileId: entry.activeSpaceId.flatMap {
+                    boundProfileId(forSpaceId: $0)
+                },
+                replayedWindowIdsByProfileId:
+                    coldStartReplayedWindowIdsByProfileId,
+                receiptWindowIds: coldStartReceiptWindowIds)
+            switch decision {
+            case .none:
+                continue
+            case .pending:
+                stillPending.insert(index)
+            case .repair:
+                performColdStartRepair(entryIndex: index)
+            }
+        }
+        if !stillPending.isEmpty,
+           stillPending != pendingColdStartRepairEntryIndices {
+            AppLogInfo("[SpaceManager] cold start repair: \(stillPending.count) entry(ies) pending an unresolved Space→profile binding — re-adjudicating on the next store delivery")
+        }
+        pendingColdStartRepairEntryIndices = stillPending
+    }
+
+    /// Spawns the missing entry back per REQUIREMENTS D8: one NTP window on
+    /// the entry's active Space, claiming the entry so its parked siblings
+    /// materialize on a Space switch exactly as if the window had been
+    /// replayed (R5). Screening mirrors `repairSlotsWithAbsentActiveSpace`:
+    /// only an automatically-switchable Space spawns, and never one whose
+    /// window another slot already owns.
+    private func performColdStartRepair(entryIndex: Int) {
+        guard let activeId = restoreEntries[entryIndex].activeSpaceId else {
+            return
+        }
+        coldStartRepairedEntryIndices.insert(entryIndex)
+        guard let model = spaces.first(where: { $0.spaceId == activeId }),
+              isAutomaticSwitchTarget(model) else {
+            AppLogWarn("[SpaceManager] cold start repair: entry \(entryIndex)'s active Space \(activeId) is not an automatic switch target — left unrepaired")
+            return
+        }
+        guard !slots.contains(where: {
+            $0.windowController(for: activeId) != nil
+        }) else {
+            AppLogWarn("[SpaceManager] cold start repair: another window already surfaces Space \(activeId) — left unrepaired")
+            return
+        }
+        AppLogInfo("[SpaceManager] cold start repair: no saved window arrived for entry \(entryIndex)'s active Space \(activeId) — spawning it")
+        let slot = slotForRestoreIndex(entryIndex, fallbackSpaceId: activeId)
+        slot.activate(
+            spaceId: activeId, animated: false,
+            onActivationFailed: { [weak self, weak slot] in
+                guard let self, let slot else { return }
+                AppLogError("[SpaceManager] cold start repair: the spawn for Space \(activeId) failed — reclaiming the minted slot")
+                // Unbind only our own mint: a stand-in window claiming by
+                // profile may have attached to this entry between the spawn
+                // request and this failure, and its binding must survive.
+                if self.restoredSlotsByIndex[entryIndex] === slot {
+                    self.restoredSlotsByIndex.removeValue(forKey: entryIndex)
+                }
+                _ = self.reclaimMintedSlot(slot, mintedForThisAttempt: true)
+            })
+    }
+
     /// The parked ghost window an activation of `spaceId` materializes, or
     /// nil when none is parked. Lowest id on a corrupt duplicate (two parked
     /// ids naming one Space) so the pick is deterministic rather than a hash
@@ -3772,6 +3956,10 @@ final class SpaceManager: ObservableObject {
         liveWindowMapsByRestoreIndex.removeAll()
         liveActiveSpaceIdsByRestoreIndex.removeAll()
         restoreReattachDeadline = nil
+        coldStartReplayedWindowIdsByProfileId.removeAll()
+        coldStartReceiptWindowIds.removeAll()
+        coldStartRepairedEntryIndices.removeAll()
+        pendingColdStartRepairEntryIndices.removeAll()
         guard let raw = boundAccount?.userDefaults.object(
             forKey: AccountUserDefaults.DefaultsKey.slotsRestoreSnapshot.rawValue
         ) as? [[String: Any]] else { return }
@@ -5975,6 +6163,10 @@ final class SpaceManager: ObservableObject {
         liveWindowMapsByRestoreIndex.removeAll()
         liveActiveSpaceIdsByRestoreIndex.removeAll()
         restoreReattachDeadline = nil
+        coldStartReplayedWindowIdsByProfileId.removeAll()
+        coldStartReceiptWindowIds.removeAll()
+        coldStartRepairedEntryIndices.removeAll()
+        pendingColdStartRepairEntryIndices.removeAll()
         pendingProfileChangeReopens.removeAll()
         // Incognito Spaces are session-scoped; sign-out ends them with
         // everything else.
@@ -6122,6 +6314,11 @@ final class SpaceManager: ObservableObject {
         // Space set / names / icons / order may have changed (routing rules
         // didn't, so only the submenu list needs refreshing).
         pushOpenLinkSpaceMenuToChromium()
+
+        // A cold-start repair adjudication deferred on an unresolved
+        // Space→profile binding re-runs on this delivery — the store
+        // arriving is the very signal it waited for.
+        settlePendingColdStartRepairsIfNeeded()
     }
 }
 

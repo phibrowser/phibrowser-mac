@@ -60,6 +60,26 @@ extension PhiChromiumCoordinator: PhiChromiumBridgeDelegate {
         }
     }
 
+    /// The receipt with the replay half: the same parked registry, plus
+    /// which profile's replay this receipt settles and the saved window ids
+    /// that replay matched — the cold-start repair hook. A framework that
+    /// knows this selector calls it INSTEAD of the plain one above.
+    func coldStartParkedGhostWindows(
+        _ parkedWindowIdsByProfileId: [String: [NSNumber]],
+        replayedForProfile profileBasename: String,
+        replayedWindowIds: [NSNumber]
+    ) {
+        let windowIdsByProfileId = parkedWindowIdsByProfileId.mapValues {
+            $0.map(\.intValue)
+        }
+        MainActor.assumeIsolated {
+            SpaceManager.shared.applyColdStartReplayReceipt(
+                windowIdsByProfileId: windowIdsByProfileId,
+                reportingProfileId: profileBasename,
+                replayedWindowIds: replayedWindowIds.map(\.intValue))
+        }
+    }
+
     /// Source of truth for the browser-process DevTools gate that blocks
     /// remote-debugging clients from the user's own Spaces. Read live per gated
     /// command, so the Settings toggle applies without a relaunch.

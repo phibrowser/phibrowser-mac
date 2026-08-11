@@ -785,4 +785,102 @@ final class LazySpaceRestoreWiringTests: XCTestCase {
         XCTAssertEqual(reconciliation.unparked, [11, 12])
         XCTAssertEqual(reconciliation.unmapped, [20, 30])
     }
+
+    // MARK: - Cold-start repair (what an entry does with a replay receipt)
+
+    /// The default inputs describe the repairable shape: an unclaimed,
+    /// on-screen entry whose active-Space window the reporting profile's
+    /// file no longer holds. Each test flips one input.
+    private static func repairDecision(
+        activeSpaceId: String? = "space-a",
+        activeSpaceEligible: Bool = true,
+        entryWindowMap: [Int: String] = [10: "space-a", 11: "space-b"],
+        isParkedOnlyEntry: Bool = false,
+        isClaimed: Bool = false,
+        isRepaired: Bool = false,
+        boundProfileId: String? = "profile-1",
+        replayedWindowIdsByProfileId: [String: Set<Int>] = ["profile-1": []],
+        receiptWindowIds: Set<Int> = [11]
+    ) -> SpaceManager.ColdStartRepairDecision {
+        SpaceManager.coldStartRepairDecision(
+            activeSpaceId: activeSpaceId,
+            activeSpaceEligible: activeSpaceEligible,
+            entryWindowMap: entryWindowMap,
+            isParkedOnlyEntry: isParkedOnlyEntry,
+            isClaimed: isClaimed,
+            isRepaired: isRepaired,
+            boundProfileId: boundProfileId,
+            replayedWindowIdsByProfileId: replayedWindowIdsByProfileId,
+            receiptWindowIds: receiptWindowIds)
+    }
+
+    func testRepairsAnEntryWhoseEagerWindowTheFileNoLongerHolds() {
+        XCTAssertEqual(Self.repairDecision(), .repair)
+    }
+
+    func testAReplayedEagerWindowNeedsNoRepair() {
+        XCTAssertEqual(Self.repairDecision(
+            replayedWindowIdsByProfileId: ["profile-1": [10]],
+            receiptWindowIds: [10, 11]
+        ), .none)
+    }
+
+    func testAnUnresolvedProfileBindingDefersInsteadOfJudging() {
+        // The store may not have delivered the Space→profile binding when
+        // the receipt lands. "Not known yet" must not read as "not this
+        // profile" — the receipt is one-shot and would never re-ask.
+        XCTAssertEqual(Self.repairDecision(boundProfileId: nil), .pending)
+    }
+
+    func testAResolvedBindingReJudgesAPendingEntry() {
+        // The re-adjudication leg: same retained receipt, and the binding
+        // arriving is the only thing that changed — the deferral above must
+        // land on the repair it was deferring, not start over. (That
+        // `handleSpacesUpdate` re-runs the adjudication with the retained
+        // receipts is wiring, pinned by its call-site comment.)
+        XCTAssertEqual(Self.repairDecision(boundProfileId: nil), .pending)
+        XCTAssertEqual(Self.repairDecision(boundProfileId: "profile-1"),
+                       .repair)
+    }
+
+    func testAnotherProfilesReceiptDoesNotSettleThisEntry() {
+        // The binding is known and names a profile that has not reported
+        // yet; its own receipt settles this entry when it arrives.
+        XCTAssertEqual(Self.repairDecision(
+            replayedWindowIdsByProfileId: ["profile-2": [77]]
+        ), .none)
+    }
+
+    func testAWindowNamedAnywhereInAReceiptBlocksTheSpawn() {
+        // Drift double-guard: an id seen in any receipt — parked, or
+        // replayed by another profile — is a window some file still holds,
+        // and spawning beside it would double the window (R6).
+        XCTAssertEqual(Self.repairDecision(receiptWindowIds: [10]), .none)
+    }
+
+    func testAClaimedEntryIsNeverRepaired() {
+        XCTAssertEqual(Self.repairDecision(isClaimed: true), .none)
+    }
+
+    func testARepairedEntryIsNeverRepairedTwice() {
+        XCTAssertEqual(Self.repairDecision(isRepaired: true), .none)
+    }
+
+    func testAParkedOnlyEntryIsNeverRepaired() {
+        // Closed window groups retire through the undo stack (D1), not
+        // through the repair.
+        XCTAssertEqual(Self.repairDecision(isParkedOnlyEntry: true), .none)
+    }
+
+    func testAnIneligibleActiveSpaceIsNeverRepaired() {
+        // Incognito and agent Spaces never entered the eager set, so their
+        // absence from the replayed list is not evidence of anything.
+        XCTAssertEqual(Self.repairDecision(activeSpaceEligible: false), .none)
+    }
+
+    func testAnEntryWithNoWindowOnItsActiveSpaceHasNothingToRepair() {
+        XCTAssertEqual(Self.repairDecision(
+            entryWindowMap: [11: "space-b"]
+        ), .none)
+    }
 }

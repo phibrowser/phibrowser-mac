@@ -15,6 +15,8 @@ Replies use the request-scoped `sendMessageToApp` return value because the exist
 ## Trust and transport invariants
 
 - Only the exact Canary Sidecar extension ID `fenmfiepnpdlhplemgijlimpbebebljo` is authorized. Empty, debug, CDP, differently cased, and other extension senders are rejected before transport access.
+- Sidecar service requests use `/phi-agent/<upstream-path>`. The native boundary consumes the exact `/phi-agent` service prefix before validating and forwarding the upstream path; lookalike prefixes such as `/phi-agent-x` are rejected.
+- Release-Canary Swift sources must compile with the `NIGHTLY_BUILD` condition. This keeps shared authentication, locks, heartbeats, API endpoints, and Auth0 configuration on Canary-specific accounts and endpoints; a C/Objective-C preprocessor definition alone does not affect Swift `#if` branches.
 - Extensions select only an allowed relative request path and method. They cannot supply a socket path, host, port, service name, or extension identity header.
 - Phi Browser resolves the account-scoped broker socket from shared authentication state. The preferred `/tmp/phi-sentinel-<hash>/sockets` path is used only when each existing short-path component is a real directory owned by the current uid; otherwise both Sentinel and the browser select `<storage>/state/sockets`. There is no TCP host/port fallback.
 - A successful UDS connect is not proof of broker identity. Before sending a request, credential, or WebSocket handshake byte, the browser requires the peer uid to match its effective uid and validates the `LOCAL_PEERPID` process against the signed `service-broker` code requirement for Team ID `87DQ3HMK5G`. Failure is terminal and never falls back to another transport.

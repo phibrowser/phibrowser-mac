@@ -31,6 +31,23 @@ final class ServiceBrokerExtensionProtocolTests: XCTestCase {
         XCTAssertEqual(ServiceBrokerExtensionProtocol.allowedCanarySidecarExtensionID, allowedSender)
     }
 
+    func testRoutesServicePrefixedHTTPPathToPhiAgent() async throws {
+        let recorder = BrokerRequestRecorder()
+        let handler = makeHandler(recorder: recorder)
+
+        let reply = await handler.handle(
+            type: "broker.http.request",
+            payload: #"{"path":"/phi-agent/api/v1/chats","method":"POST"}"#,
+            senderID: allowedSender
+        )
+
+        XCTAssertNil(reply.error)
+        let recordedRequest = await recorder.lastRequest()
+        let request = try XCTUnwrap(recordedRequest)
+        XCTAssertEqual(request.service, .phiAgent)
+        XCTAssertEqual(request.path, "/api/v1/chats")
+    }
+
     func testRejectsEveryNonSidecarSenderBeforeTransportAccess() async {
         let recorder = BrokerRequestRecorder()
         let handler = makeHandler(recorder: recorder)

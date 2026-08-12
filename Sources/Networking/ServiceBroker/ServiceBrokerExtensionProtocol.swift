@@ -482,8 +482,9 @@ actor ServiceBrokerExtensionProtocol {
         )
         try validateEnvelopeMetadata(payload, base64Value: request.bodyBase64)
         let isBrokerHealth = allowsBrokerHealth && request.path == "/broker/healthz"
+        let routedPath = isBrokerHealth ? request.path : try phiAgentPath(from: request.path)
         if !isBrokerHealth {
-            try validateHTTPPath(request.path)
+            try validateHTTPPath(routedPath)
         }
         let method = (request.method ?? "GET").uppercased()
         guard Self.supportedMethods.contains(method) else {
@@ -498,7 +499,7 @@ actor ServiceBrokerExtensionProtocol {
         }
         return BrokerHTTPRequest(
             service: isBrokerHealth ? .broker : .phiAgent,
-            path: isBrokerHealth ? "/healthz" : request.path,
+            path: isBrokerHealth ? "/healthz" : routedPath,
             method: method,
             headers: try authorizedHeaders(
                 request.headers ?? [:],
@@ -506,6 +507,16 @@ actor ServiceBrokerExtensionProtocol {
             ),
             body: body
         )
+    }
+
+    private func phiAgentPath(from path: String) throws -> String {
+        let prefix = "/phi-agent"
+        guard path.hasPrefix(prefix) else { return path }
+        let suffix = String(path.dropFirst(prefix.count))
+        guard suffix.hasPrefix("/") else {
+            throw ProtocolFailure(code: .invalidPath, message: "The broker request path is invalid.")
+        }
+        return suffix
     }
 
     private func decode<T: Decodable>(

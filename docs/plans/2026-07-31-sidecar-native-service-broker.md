@@ -6,17 +6,26 @@
 
 **Architecture:** Sidecar uses request-scoped native messages for complete HTTP responses and opaque long-pull channels for streams and WebSockets. Phi Browser validates the Sidecar sender, owns all channel state, and speaks HTTP/1.1 or WebSocket over Sentinel's service broker UDS. Existing direct networking remains available only for standalone mode and explicit test/debug base URL overrides.
 
+**Follow-on scope:** The same native protocol now serves the pinned Canary
+Sidecar, Lexington, and Kensington IDs. The first path segment selects one of
+`phi-agent`, `phi-memory`, `pi-agent`, or `ai-gateway`; Phi Browser strips that
+segment and Sentinel remains authoritative for each extension's allowed
+service, method, and upstream path prefixes.
+
 **Tech Stack:** Swift 6, Foundation networking and streams, XCTest, TypeScript, Chrome extension APIs, WHATWG `Response`/`ReadableStream`, RxJS, pnpm, Vite, CRX3.
 
 ## Global Constraints
 
-- Preserve the Sidecar extension ID derived from `ai-extension/sidecar/key.pem`.
+- Preserve the pinned Sidecar, Lexington, and Kensington extension IDs derived
+  from their packaged keys.
 - Do not modify or rebuild Phi Framework.
 - Do not change phi-agent HTTP or WebSocket payload protocols.
 - Do not send broker response data through `onAppMessage` broadcasts.
-- Accept `broker.*` messages only from the exact Canary Sidecar extension ID.
-- Sidecar must not supply a socket path, host, port, or service name.
-- Route phi-agent requests by path prefix through Sentinel; `/broker` remains broker-owned.
+- Accept `broker.*` messages only from the exact pinned Canary first-party IDs.
+- Extensions must not supply a socket path, host, port, or separate service
+  field; the service is selected only by the validated path prefix.
+- Route maintained service requests by path prefix through Sentinel;
+  `/broker` remains broker-owned.
 - Preserve static test/debug URL overrides and standalone direct networking.
 - Enforce the negotiated broker limits after accounting for base64 and JSON overhead.
 - Write all code, comments, tests, and documentation in English.
@@ -228,7 +237,7 @@ git commit -m "Add native broker stream and WebSocket channels"
   `broker.ws.pull`, and `broker.ws.close`
 - Produces TypeScript request/response declarations for every message type
 
-- [ ] **Step 1: Determine and pin the Canary Sidecar extension ID**
+- [ ] **Step 1: Determine and pin the Canary first-party broker extension IDs**
 
 Run:
 
@@ -237,9 +246,11 @@ cd ../phi-ai/ai-extension/sidecar
 pnpm exec crx3 id key.pem
 ```
 
-Record the resulting ID as
-`ServiceBrokerExtensionProtocol.allowedCanarySidecarExtensionID` and assert it
-in a test. Do not derive it from an untrusted runtime payload.
+Record the Sidecar, Lexington, and Kensington IDs as compile-time constants in
+`ServiceBrokerExtensionProtocol` and assert them in a test. Only these pinned
+first-party IDs may use the broker message types. Keep Sidecar-specific native
+features, including staged file and image preview reads, guarded by the Sidecar
+ID alone. Do not derive any allowed ID from an untrusted runtime payload.
 
 - [ ] **Step 2: Write failing authorization and codec tests**
 

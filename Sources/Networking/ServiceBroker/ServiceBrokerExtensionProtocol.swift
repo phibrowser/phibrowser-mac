@@ -17,6 +17,13 @@ struct ServiceBrokerExtensionReply: Sendable {
 
 actor ServiceBrokerExtensionProtocol {
     static let allowedCanarySidecarExtensionID = "fenmfiepnpdlhplemgijlimpbebebljo"
+    static let allowedCanaryLexingtonExtensionID = "pjgdkljlcbjgedgeppodjijjphfcplno"
+    static let allowedCanaryKensingtonExtensionID = "pjlnhbfabokjejbhmgghmjiaknfhnima"
+    private static let allowedCanaryBrokerExtensionIDs = Set([
+        allowedCanarySidecarExtensionID,
+        allowedCanaryLexingtonExtensionID,
+        allowedCanaryKensingtonExtensionID,
+    ])
     static let messageTypes = [
         "broker.http.request",
         "broker.stream.open",
@@ -89,6 +96,11 @@ actor ServiceBrokerExtensionProtocol {
         let reason: String?
     }
 
+    private struct RoutedServicePath {
+        let service: BrokerService
+        let path: String
+    }
+
     private static let defaultLimits = ServiceBrokerLimits(
         bridgeChunkBytes: 512 * 1024,
         jsonRequestBytes: 16 * 1024 * 1024,
@@ -141,12 +153,16 @@ actor ServiceBrokerExtensionProtocol {
         senderID == allowedCanarySidecarExtensionID
     }
 
+    static func isAllowedBrokerSender(_ senderID: String) -> Bool {
+        allowedCanaryBrokerExtensionIDs.contains(senderID)
+    }
+
     func handle(_ context: ExtensionMessageContext) async -> String {
         await handle(type: context.type, payload: context.payload, senderID: context.senderId).json
     }
 
     func handle(type: String, payload: String, senderID: String) async -> ServiceBrokerExtensionReply {
-        guard Self.isAllowedSidecarSender(senderID) else {
+        guard Self.isAllowedBrokerSender(senderID) else {
             return failure(.unauthorizedSender, "The extension sender is not authorized.")
         }
         guard Self.messageTypes.contains(type) else {
@@ -174,7 +190,8 @@ actor ServiceBrokerExtensionProtocol {
                 let request = try decodeHTTPRequest(
                     payload,
                     limits: runtime.limits,
-                    allowsBrokerHealth: true
+                    allowsBrokerHealth: true,
+                    senderID: senderID
                 )
                 let response = try await runtime.requestExecutor(request)
                 try requireUnchangedAuth(authSnapshot)
@@ -188,7 +205,11 @@ actor ServiceBrokerExtensionProtocol {
                 ])
 
             case "broker.stream.open":
-                let request = try decodeHTTPRequest(payload, limits: runtime.limits)
+                let request = try decodeHTTPRequest(
+                    payload,
+                    limits: runtime.limits,
+                    senderID: senderID
+                )
                 let opened = try await runtime.channelStore.openHTTPStream(owner: owner, request: request)
                 do {
                     try requireUnchangedAuth(authSnapshot)
@@ -235,13 +256,12 @@ actor ServiceBrokerExtensionProtocol {
                     payload: payload,
                     allowedKeys: ["path", "headers"]
                 )
-                guard request.path == "/ws/phi-agent/execute" else {
-                    throw ProtocolFailure(code: .invalidPath, message: "The broker request path is invalid.")
-                }
+                let routed = try routedServicePath(from: request.path)
                 let headers = try authorizedHeaders(request.headers ?? [:], senderID: senderID)
                 let opened = try await runtime.channelStore.openWebSocket(
                     owner: owner,
-                    path: request.path,
+                    service: routed.service,
+                    path: routed.path,
                     headers: headers
                 )
                 do {
@@ -473,7 +493,8 @@ actor ServiceBrokerExtensionProtocol {
     private func decodeHTTPRequest(
         _ payload: String,
         limits: ServiceBrokerLimits,
-        allowsBrokerHealth: Bool = false
+        allowsBrokerHealth: Bool = false,
+        senderID: String
     ) throws -> BrokerHTTPRequest {
         let request = try decode(
             HTTPPayload.self,
@@ -482,9 +503,11 @@ actor ServiceBrokerExtensionProtocol {
         )
         try validateEnvelopeMetadata(payload, base64Value: request.bodyBase64)
         let isBrokerHealth = allowsBrokerHealth && request.path == "/broker/healthz"
-        let routedPath = isBrokerHealth ? request.path : try phiAgentPath(from: request.path)
-        if !isBrokerHealth {
-            try validateHTTPPath(routedPath)
+        let routed: RoutedServicePath
+        if isBrokerHealth {
+            routed = RoutedServicePath(service: .broker, path: "/healthz")
+        } else {
+            routed = try routedServicePath(from: request.path)
         }
         let method = (request.method ?? "GET").uppercased()
         guard Self.supportedMethods.contains(method) else {
@@ -498,25 +521,44 @@ actor ServiceBrokerExtensionProtocol {
             throw ProtocolFailure(code: .invalidPayload, message: "The broker health request is invalid.")
         }
         return BrokerHTTPRequest(
-            service: isBrokerHealth ? .broker : .phiAgent,
-            path: isBrokerHealth ? "/healthz" : routedPath,
+            service: routed.service,
+            path: routed.path,
             method: method,
             headers: try authorizedHeaders(
                 request.headers ?? [:],
-                senderID: Self.allowedCanarySidecarExtensionID
+                senderID: senderID
             ),
             body: body
         )
     }
 
-    private func phiAgentPath(from path: String) throws -> String {
-        let prefix = "/phi-agent"
-        guard path.hasPrefix(prefix) else { return path }
-        let suffix = String(path.dropFirst(prefix.count))
-        guard suffix.hasPrefix("/") else {
-            throw ProtocolFailure(code: .invalidPath, message: "The broker request path is invalid.")
+    private func routedServicePath(from path: String) throws -> RoutedServicePath {
+        try validateCanonicalPath(path)
+        let pathname = String(path.split(
+            separator: "?",
+            maxSplits: 1,
+            omittingEmptySubsequences: false
+        ).first ?? "")
+        let first = pathname.dropFirst().split(
+            separator: "/",
+            maxSplits: 1,
+            omittingEmptySubsequences: false
+        ).first.map(String.init) ?? ""
+
+        if let service = BrokerService(rawValue: first), service != .broker {
+            let prefix = "/\(service.rawValue)"
+            let suffix = String(path.dropFirst(prefix.count))
+            guard suffix.hasPrefix("/") else {
+                throw ProtocolFailure(code: .invalidPath, message: "The broker request path is invalid.")
+            }
+            try validateCanonicalPath(suffix)
+            return RoutedServicePath(service: service, path: suffix)
         }
-        return suffix
+
+        // Preserve the original Sidecar bridge shape while all maintained
+        // extensions migrate to explicit service-prefixed paths.
+        try validateHTTPPath(path)
+        return RoutedServicePath(service: .phiAgent, path: path)
     }
 
     private func decode<T: Decodable>(
@@ -565,21 +607,33 @@ actor ServiceBrokerExtensionProtocol {
     }
 
     private func validateHTTPPath(_ path: String) throws {
+        try validateCanonicalPath(path)
+        let pathname = String(path.split(separator: "?", maxSplits: 1, omittingEmptySubsequences: false).first ?? "")
+        let components = pathname.split(separator: "/", omittingEmptySubsequences: true)
+        guard let first = components.first,
+              first == "api" || first == "v1" || first == "ws" else {
+            throw ProtocolFailure(code: .invalidPath, message: "The broker request path is invalid.")
+        }
+    }
+
+    private func validateCanonicalPath(_ path: String) throws {
         guard path.hasPrefix("/"), !path.hasPrefix("//"), !path.contains("#"),
               !path.contains("\\"), !Self.hasControlCharacters(path),
               !path.lowercased().contains("://") else {
             throw ProtocolFailure(code: .invalidPath, message: "The broker request path is invalid.")
         }
         let pathname = String(path.split(separator: "?", maxSplits: 1, omittingEmptySubsequences: false).first ?? "")
+        let lowerPathname = pathname.lowercased()
         guard let decoded = pathname.removingPercentEncoding,
+              !lowerPathname.contains("%2f"), !lowerPathname.contains("%5c"),
+              !lowerPathname.contains("%00"),
               !Self.hasControlCharacters(decoded), !decoded.contains("\\"),
               !Self.containsEncodedOctet(decoded) else {
             throw ProtocolFailure(code: .invalidPath, message: "The broker request path is invalid.")
         }
         let components = decoded.split(separator: "/", omittingEmptySubsequences: true)
         guard !components.contains("."), !components.contains(".."),
-              let first = components.first,
-              first == "api" || first == "v1" || first == "ws" else {
+              components.first != nil else {
             throw ProtocolFailure(code: .invalidPath, message: "The broker request path is invalid.")
         }
     }

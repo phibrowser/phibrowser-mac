@@ -4,6 +4,30 @@ import XCTest
 
 final class ServiceBrokerExtensionProtocolTests: XCTestCase {
     private let allowedSender = "fenmfiepnpdlhplemgijlimpbebebljo"
+    private let lexingtonSender = "pjgdkljlcbjgedgeppodjijjphfcplno"
+    private let kensingtonSender = "pjlnhbfabokjejbhmgghmjiaknfhnima"
+
+    func testAcceptsPinnedFirstPartyBrokerSendersAndPinsTheirIdentity() async throws {
+        XCTAssertEqual(ServiceBrokerExtensionProtocol.allowedCanarySidecarExtensionID, allowedSender)
+        XCTAssertEqual(ServiceBrokerExtensionProtocol.allowedCanaryLexingtonExtensionID, lexingtonSender)
+        XCTAssertEqual(ServiceBrokerExtensionProtocol.allowedCanaryKensingtonExtensionID, kensingtonSender)
+
+        for sender in [allowedSender, lexingtonSender, kensingtonSender] {
+            let recorder = BrokerRequestRecorder()
+            let handler = makeHandler(recorder: recorder)
+
+            let reply = await handler.handle(
+                type: "broker.http.request",
+                payload: #"{"path":"/broker/healthz","method":"GET"}"#,
+                senderID: sender
+            )
+
+            XCTAssertNil(reply.error, "sender: \(sender)")
+            let lastRequest = await recorder.lastRequest()
+            let recordedRequest = try XCTUnwrap(lastRequest)
+            XCTAssertEqual(recordedRequest.headers["X-Phi-Extension-ID"], sender)
+        }
+    }
 
     func testAcceptsOnlyPinnedCanarySidecarSenderAndPinsServiceIdentity() async throws {
         let recorder = BrokerRequestRecorder()
@@ -48,7 +72,33 @@ final class ServiceBrokerExtensionProtocolTests: XCTestCase {
         XCTAssertEqual(request.path, "/api/v1/chats")
     }
 
-    func testRejectsEveryNonSidecarSenderBeforeTransportAccess() async {
+    func testRoutesEveryMaintainedServicePrefixAndPinsTheActualSender() async throws {
+        let cases: [(String, String, BrokerService, String)] = [
+            (lexingtonSender, "/phi-memory/v1/skill/read", .phiMemory, "/v1/skill/read"),
+            (lexingtonSender, "/ai-gateway/v1/models", .aiGateway, "/v1/models"),
+            (kensingtonSender, "/phi-agent/api/health", .phiAgent, "/api/health"),
+            (allowedSender, "/pi-agent/api/tasks", .piAgent, "/api/tasks"),
+        ]
+
+        for (sender, path, service, upstreamPath) in cases {
+            let recorder = BrokerRequestRecorder()
+            let handler = makeHandler(recorder: recorder)
+            let reply = await handler.handle(
+                type: "broker.http.request",
+                payload: #"{"path":"\#(path)","method":"GET"}"#,
+                senderID: sender
+            )
+
+            XCTAssertNil(reply.error, "path: \(path)")
+            let lastRequest = await recorder.lastRequest()
+            let request = try XCTUnwrap(lastRequest)
+            XCTAssertEqual(request.service, service)
+            XCTAssertEqual(request.path, upstreamPath)
+            XCTAssertEqual(request.headers["X-Phi-Extension-ID"], sender)
+        }
+    }
+
+    func testRejectsEveryNonFirstPartyBrokerSenderBeforeTransportAccess() async {
         let recorder = BrokerRequestRecorder()
         let handler = makeHandler(recorder: recorder)
 
@@ -1048,7 +1098,7 @@ final class ServiceBrokerExtensionProtocolTests: XCTestCase {
 
         let opened = await handler.handle(
             type: "broker.ws.open",
-            payload: #"{"path":"/ws/phi-agent/execute","headers":{"Authorization":"Bearer token"}}"#,
+            payload: #"{"path":"/phi-agent/ws/phi-agent/execute","headers":{"Authorization":"Bearer token"}}"#,
             senderID: allowedSender
         )
         let channelID = try XCTUnwrap(try successResult(opened)["channelId"] as? String)
@@ -1086,6 +1136,26 @@ final class ServiceBrokerExtensionProtocolTests: XCTestCase {
             senderID: allowedSender
         )
         XCTAssertEqual(closed.error?.code, "channel_not_found")
+    }
+
+    func testKensingtonCanOpenItsAuthorizedPhiAgentWebSocketPath() async throws {
+        let socket = FakeProtocolWebSocket(events: [])
+        let recorder = BrokerWebSocketOpenRecorder()
+        let store = makeStore(webSocket: socket, webSocketOpenRecorder: recorder)
+        let handler = makeHandler(channelStore: store)
+
+        let opened = await handler.handle(
+            type: "broker.ws.open",
+            payload: #"{"path":"/phi-agent/agents/phi-agent/kensington-user?token=token"}"#,
+            senderID: kensingtonSender
+        )
+
+        XCTAssertNil(opened.error)
+        XCTAssertNotNil(try successResult(opened)["channelId"] as? String)
+        let lastOpen = await recorder.lastOpen()
+        let recorded = try XCTUnwrap(lastOpen)
+        XCTAssertEqual(recorded.path, "/phi-agent/agents/phi-agent/kensington-user?token=token")
+        XCTAssertEqual(recorded.headers["X-Phi-Extension-ID"], kensingtonSender)
     }
 
     func testUnknownAndCrossOwnerChannelsHaveStableErrors() async throws {
@@ -1245,6 +1315,7 @@ final class ServiceBrokerExtensionProtocolTests: XCTestCase {
     private func makeStore(
         httpReader: HTTPChunkReader? = nil,
         webSocket: FakeProtocolWebSocket? = nil,
+        webSocketOpenRecorder: BrokerWebSocketOpenRecorder? = nil,
         pendingPull: AsyncTestSignal? = nil
     ) -> ServiceBrokerChannelStore {
         ServiceBrokerChannelStore(
@@ -1266,8 +1337,11 @@ final class ServiceBrokerExtensionProtocolTests: XCTestCase {
                     cancel: { Task { await reader.cancel() } }
                 )
             },
-            webSocketOpener: { _, _ in
-                try XCTUnwrap(webSocket).source
+            webSocketOpener: { path, headers in
+                if let webSocketOpenRecorder {
+                    await webSocketOpenRecorder.record(path: path, headers: headers)
+                }
+                return try XCTUnwrap(webSocket).source
             },
             pendingPullObserver: { _ in
                 guard let pendingPull else { return }
@@ -1562,6 +1636,18 @@ private actor HTTPChunkReader {
     func cancel() {
         for waiter in waiters { waiter.resume(returning: nil) }
         waiters.removeAll()
+    }
+}
+
+private actor BrokerWebSocketOpenRecorder {
+    private var opens = [(path: String, headers: [String: String])]()
+
+    func record(path: String, headers: [String: String]) {
+        opens.append((path, headers))
+    }
+
+    func lastOpen() -> (path: String, headers: [String: String])? {
+        opens.last
     }
 }
 

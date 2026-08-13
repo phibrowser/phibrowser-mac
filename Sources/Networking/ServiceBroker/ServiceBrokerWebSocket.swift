@@ -62,9 +62,13 @@ final class ServiceBrokerWebSocket: @unchecked Sendable {
     }
 
     func connect(path: String, headers: [String: String]) async throws {
+        try await connect(brokerPath: "/\(BrokerService.phiAgent.rawValue)\(path)", headers: headers)
+    }
+
+    func connect(brokerPath: String, headers: [String: String]) async throws {
         try await performBlocking { [self] deadline in
             guard maximumMessageBytes > 0 else { throw ServiceBrokerWebSocketError.invalidRequest }
-            let target = try normalizedTarget(path)
+            let target = try normalizedTarget(brokerPath)
             let key = makeClientKey()
             try connectSocket(deadline: deadline)
             do {
@@ -193,10 +197,33 @@ final class ServiceBrokerWebSocket: @unchecked Sendable {
     }
 
     private func normalizedTarget(_ path: String) throws -> String {
-        guard path == "/ws/phi-agent/execute" else {
+        guard path.hasPrefix("/"), !path.hasPrefix("//"), !path.contains("#"),
+              !path.contains("\\"), !Self.containsControlCharacters(path),
+              !path.lowercased().contains("://") else {
             throw ServiceBrokerWebSocketError.invalidRequest
         }
-        return "/phi-agent\(path)"
+        let pathname = String(path.split(
+            separator: "?",
+            maxSplits: 1,
+            omittingEmptySubsequences: false
+        ).first ?? "")
+        let lowerPathname = pathname.lowercased()
+        guard let decoded = pathname.removingPercentEncoding,
+              !lowerPathname.contains("%2f"), !lowerPathname.contains("%5c"),
+              !lowerPathname.contains("%00"),
+              !Self.containsControlCharacters(decoded), !decoded.contains("\\"),
+              !Self.containsEncodedOctet(decoded) else {
+            throw ServiceBrokerWebSocketError.invalidRequest
+        }
+        let rawComponents = pathname.split(separator: "/", omittingEmptySubsequences: true)
+        let decodedComponents = decoded.split(separator: "/", omittingEmptySubsequences: true)
+        guard let rawServiceID = rawComponents.first,
+              let service = BrokerService(rawValue: String(rawServiceID)),
+              service != .broker,
+              !decodedComponents.contains("."), !decodedComponents.contains("..") else {
+            throw ServiceBrokerWebSocketError.invalidRequest
+        }
+        return path
     }
 
     private func makeClientKey() -> String {
@@ -653,6 +680,21 @@ final class ServiceBrokerWebSocket: @unchecked Sendable {
 
     private static func containsControlCharacters(_ value: String) -> Bool {
         value.unicodeScalars.contains { $0.value < 0x20 || $0.value == 0x7F }
+    }
+
+    private static func containsEncodedOctet(_ value: String) -> Bool {
+        let bytes = Array(value.utf8)
+        guard bytes.count >= 3 else { return false }
+        for index in 0...(bytes.count - 3) where bytes[index] == 0x25 {
+            if isHex(bytes[index + 1]), isHex(bytes[index + 2]) { return true }
+        }
+        return false
+    }
+
+    private static func isHex(_ value: UInt8) -> Bool {
+        (0x30...0x39).contains(value) ||
+            (0x41...0x46).contains(value) ||
+            (0x61...0x66).contains(value)
     }
 
     private static func isValidCloseCode(_ code: UInt16) -> Bool {

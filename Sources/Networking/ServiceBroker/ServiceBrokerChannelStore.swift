@@ -87,12 +87,12 @@ actor ServiceBrokerChannelStore {
                 cancel: { stream.cancel() }
             )
         }
-        webSocketOpener = { path, headers in
+        webSocketOpener = { brokerPath, headers in
             let socket = ServiceBrokerWebSocket(
                 socketPath: socketPath,
                 maximumMessageBytes: configuration.webSocketMessageBytes
             )
-            try await socket.connect(path: path, headers: headers)
+            try await socket.connect(brokerPath: brokerPath, headers: headers)
             return socket.source
         }
     }
@@ -189,11 +189,15 @@ actor ServiceBrokerChannelStore {
 
     func openWebSocket(
         owner: BrokerSenderContext,
+        service: BrokerService = .phiAgent,
         path: String,
         headers: [String: String]
     ) async throws -> BrokerWebSocketOpenResponse {
         try validateConfiguration()
-        let source = try await webSocketOpener(path, headers)
+        guard service != .broker, path.hasPrefix("/"), !path.hasPrefix("//") else {
+            throw BrokerChannelError.invalidConfiguration
+        }
+        let source = try await webSocketOpener("/\(service.rawValue)\(path)", headers)
         let channelID = makeChannelID()
         channels[channelID] = .webSocket(WebSocketChannel(owner: owner, source: source))
         touchWebSocket(channelID: channelID)

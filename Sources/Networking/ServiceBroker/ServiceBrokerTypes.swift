@@ -9,6 +9,9 @@ import Security
 
 enum BrokerService: String, Codable, Sendable {
     case phiAgent = "phi-agent"
+    case phiMemory = "phi-memory"
+    case piAgent = "pi-agent"
+    case aiGateway = "ai-gateway"
     case broker
 }
 

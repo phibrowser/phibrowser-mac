@@ -115,6 +115,43 @@ final class ServiceBrokerWebSocketTests: XCTestCase {
         XCTAssertEqual(echoedClose.payload, Data([0x03, 0xE8]) + Data("done".utf8))
     }
 
+    func testWebSocketPreservesAServicePrefixedBrokerTarget() async throws {
+        let eof = expectation(description: "server observes client descriptor close")
+        let server = UnixWebSocketTestServer(script: .waitForClientEOF, onClientEOF: { eof.fulfill() })
+        let socket = makeSocket(socketPath: server.socketPath, maximumMessageBytes: 1_024)
+
+        try await socket.connect(
+            brokerPath: "/pi-agent/ws/phi-agent/execute?token=one",
+            headers: [:]
+        )
+
+        XCTAssertEqual(server.requestTarget, "/pi-agent/ws/phi-agent/execute?token=one")
+        await socket.close(code: 1000, reason: nil)
+        await fulfillment(of: [eof], timeout: 1)
+    }
+
+    func testWebSocketRejectsBrokerOwnedUnknownAndMalformedTargetsBeforeConnecting() async {
+        let socket = makeSocket(socketPath: "/tmp/not-used.sock", maximumMessageBytes: 1_024)
+        let targets = [
+            "/broker/healthz",
+            "/unknown/ws",
+            "//phi-agent/ws",
+            "/phi-agent/ws/../secret",
+            "https://localhost/phi-agent/ws",
+        ]
+
+        for target in targets {
+            do {
+                try await socket.connect(brokerPath: target, headers: [:])
+                XCTFail("Expected invalid target: \(target)")
+            } catch let error as ServiceBrokerWebSocketError {
+                XCTAssertEqual(error, .invalidRequest, "target: \(target)")
+            } catch {
+                XCTFail("Expected invalidRequest for \(target), got \(error).")
+            }
+        }
+    }
+
     func testWebSocketReassemblesContinuationAndAnswersPing() async throws {
         let server = UnixWebSocketTestServer(script: .continuationAndPing)
         let socket = makeSocket(socketPath: server.socketPath, maximumMessageBytes: 1_024)

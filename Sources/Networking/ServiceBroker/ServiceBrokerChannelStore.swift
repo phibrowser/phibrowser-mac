@@ -368,14 +368,10 @@ actor ServiceBrokerChannelStore {
             removeChannel(channelID)
             return
         }
-        if channel.queue.count < Self.maximumQueuedEvents {
-            channel.queue.append(event)
-            channels[channelID] = .http(channel)
-        } else {
-            channel.terminal = false
-            channels[channelID] = .http(channel)
-            failHTTPBackpressure(channelID: channelID)
-        }
+        // A terminal event carries no unacknowledged payload and must remain
+        // observable even when the data queue is exactly full.
+        channel.queue.append(event)
+        channels[channelID] = .http(channel)
     }
 
     private func failHTTPBackpressure(channelID: String) {
@@ -433,15 +429,17 @@ actor ServiceBrokerChannelStore {
             if terminal { removeChannel(channelID) } else { touchWebSocket(channelID: channelID) }
             return
         }
-        guard channel.queue.count < Self.maximumQueuedEvents,
-              channel.queuedBytes <= configuration.unacknowledgedWindowBytes - event.byteCount else {
-            channels[channelID] = .webSocket(channel)
-            failWebSocket(
-                channelID: channelID,
-                code: .flowControlTimeout,
-                message: "Channel backpressure limit exceeded."
-            )
-            return
+        if !terminal {
+            guard channel.queue.count < Self.maximumQueuedEvents,
+                  channel.queuedBytes <= configuration.unacknowledgedWindowBytes - event.byteCount else {
+                channels[channelID] = .webSocket(channel)
+                failWebSocket(
+                    channelID: channelID,
+                    code: .flowControlTimeout,
+                    message: "Channel backpressure limit exceeded."
+                )
+                return
+            }
         }
         channel.terminal = terminal
         channel.queue.append(event)

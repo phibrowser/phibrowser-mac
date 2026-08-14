@@ -25,6 +25,7 @@ actor ServiceBrokerExtensionProtocol {
         allowedCanaryKensingtonExtensionID,
     ])
     static let messageTypes = [
+        "broker.capabilities",
         "broker.http.request",
         "broker.stream.open",
         "broker.stream.pull",
@@ -74,6 +75,8 @@ actor ServiceBrokerExtensionProtocol {
         let headers: [String: String]?
         let bodyBase64: String?
     }
+
+    private struct CapabilitiesPayload: Decodable {}
 
     private struct ChannelPayload: Decodable {
         let channelId: String
@@ -168,6 +171,19 @@ actor ServiceBrokerExtensionProtocol {
         guard Self.messageTypes.contains(type) else {
             return failure(.unsupportedMessage, "The broker message type is not supported.")
         }
+        if type == "broker.capabilities" {
+            do {
+                guard payload.lengthOfBytes(using: .utf8) <= Self.maximumEnvelopeMetadataBytes else {
+                    throw ProtocolFailure(code: .requestTooLarge, message: "The broker request is too large.")
+                }
+                _ = try decode(CapabilitiesPayload.self, payload: payload, allowedKeys: [])
+                return try success(["protocolVersion": 1])
+            } catch let error as ProtocolFailure {
+                return failure(error.code, error.message)
+            } catch {
+                return failure(.protocolError, "The broker capability response could not be encoded.")
+            }
+        }
 
         do {
             let authSnapshot = try requireAuthenticatedSnapshot()
@@ -256,7 +272,7 @@ actor ServiceBrokerExtensionProtocol {
                     payload: payload,
                     allowedKeys: ["path", "headers"]
                 )
-                let routed = try routedServicePath(from: request.path)
+                let routed = try routedServicePath(from: request.path, senderID: senderID)
                 let headers = try authorizedHeaders(request.headers ?? [:], senderID: senderID)
                 let opened = try await runtime.channelStore.openWebSocket(
                     owner: owner,
@@ -507,7 +523,7 @@ actor ServiceBrokerExtensionProtocol {
         if isBrokerHealth {
             routed = RoutedServicePath(service: .broker, path: "/healthz")
         } else {
-            routed = try routedServicePath(from: request.path)
+            routed = try routedServicePath(from: request.path, senderID: senderID)
         }
         let method = (request.method ?? "GET").uppercased()
         guard Self.supportedMethods.contains(method) else {
@@ -532,7 +548,7 @@ actor ServiceBrokerExtensionProtocol {
         )
     }
 
-    private func routedServicePath(from path: String) throws -> RoutedServicePath {
+    private func routedServicePath(from path: String, senderID: String) throws -> RoutedServicePath {
         try validateCanonicalPath(path)
         let pathname = String(path.split(
             separator: "?",
@@ -554,9 +570,15 @@ actor ServiceBrokerExtensionProtocol {
             try validateCanonicalPath(suffix)
             return RoutedServicePath(service: service, path: suffix)
         }
+        guard first != BrokerService.broker.rawValue else {
+            throw ProtocolFailure(code: .invalidPath, message: "The broker request path is invalid.")
+        }
 
         // Preserve the original Sidecar bridge shape while all maintained
         // extensions migrate to explicit service-prefixed paths.
+        guard Self.isAllowedSidecarSender(senderID) else {
+            throw ProtocolFailure(code: .invalidPath, message: "The broker request path is invalid.")
+        }
         try validateHTTPPath(path)
         return RoutedServicePath(service: .phiAgent, path: path)
     }

@@ -7,6 +7,32 @@ final class ServiceBrokerExtensionProtocolTests: XCTestCase {
     private let lexingtonSender = "pjgdkljlcbjgedgeppodjijjphfcplno"
     private let kensingtonSender = "pjlnhbfabokjejbhmgghmjiaknfhnima"
 
+    func testCapabilityHandshakeIsExplicitAndDoesNotRequireRuntimeAuth() async throws {
+        let handler = makeHandler(authSnapshot: nil, runtimeAccountID: nil)
+        let reply = await handler.handle(
+            type: "broker.capabilities",
+            payload: "{}",
+            senderID: allowedSender
+        )
+
+        XCTAssertNil(reply.error)
+        XCTAssertEqual(try successResult(reply)["protocolVersion"] as? Int, 1)
+
+        let denied = await handler.handle(
+            type: "broker.capabilities",
+            payload: "{}",
+            senderID: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        )
+        XCTAssertEqual(denied.error?.code, "unauthorized_sender")
+
+        let malformed = await handler.handle(
+            type: "broker.capabilities",
+            payload: #"{"unexpected":true}"#,
+            senderID: allowedSender
+        )
+        XCTAssertEqual(malformed.error?.code, "invalid_payload")
+    }
+
     func testAcceptsPinnedFirstPartyBrokerSendersAndPinsTheirIdentity() async throws {
         XCTAssertEqual(ServiceBrokerExtensionProtocol.allowedCanarySidecarExtensionID, allowedSender)
         XCTAssertEqual(ServiceBrokerExtensionProtocol.allowedCanaryLexingtonExtensionID, lexingtonSender)
@@ -95,6 +121,33 @@ final class ServiceBrokerExtensionProtocolTests: XCTestCase {
             XCTAssertEqual(request.service, service)
             XCTAssertEqual(request.path, upstreamPath)
             XCTAssertEqual(request.headers["X-Phi-Extension-ID"], sender)
+        }
+    }
+
+    func testLegacyUnprefixedPhiAgentPathsRemainSidecarOnly() async {
+        let handler = makeHandler()
+
+        let sidecar = await handler.handle(
+            type: "broker.http.request",
+            payload: #"{"path":"/api/health","method":"GET"}"#,
+            senderID: allowedSender
+        )
+        XCTAssertNil(sidecar.error)
+
+        for sender in [lexingtonSender, kensingtonSender] {
+            let http = await handler.handle(
+                type: "broker.http.request",
+                payload: #"{"path":"/api/health","method":"GET"}"#,
+                senderID: sender
+            )
+            XCTAssertEqual(http.error?.code, "invalid_path", "sender: \(sender)")
+
+            let webSocket = await handler.handle(
+                type: "broker.ws.open",
+                payload: #"{"path":"/ws/phi-agent/execute"}"#,
+                senderID: sender
+            )
+            XCTAssertEqual(webSocket.error?.code, "invalid_path", "sender: \(sender)")
         }
     }
 

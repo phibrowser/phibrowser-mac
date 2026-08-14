@@ -260,7 +260,7 @@ final class ServiceBrokerHTTPConnection: @unchecked Sendable {
             return nil
         }
         let components = decodedPath.split(separator: "/", omittingEmptySubsequences: true)
-        guard !components.contains("."), !components.contains(".."), components.first != "broker" else {
+        guard !components.contains("."), !components.contains("..") else {
             return nil
         }
         return path

@@ -255,6 +255,37 @@ final class ServiceBrokerChannelStoreTests: XCTestCase {
         XCTAssertEqual(close.event, .close(code: 1000, reason: "done"))
     }
 
+    func testWebSocketTerminalCloseSurvivesAFullDataQueue() async throws {
+        let socket = FakeBrokerWebSocket()
+        let store = ServiceBrokerChannelStore(
+            configuration: ServiceBrokerChannelConfiguration(
+                bridgeChunkBytes: 64,
+                webSocketMessageBytes: 1_024,
+                unacknowledgedWindowBytes: 4_096,
+                pullTimeout: .seconds(1),
+                idleTimeout: .seconds(1)
+            ),
+            httpStreamOpener: { _ in throw BrokerChannelError.invalidChannelKind },
+            webSocketOpener: { _, _ in socket.source }
+        )
+        let opened = try await store.openWebSocket(
+            owner: owner, path: "/ws/phi-agent/execute", headers: [:])
+        for sequence in 0..<128 {
+            socket.receive(.frame(
+                sequence: UInt64(sequence),
+                BrokerWebSocketFrame(kind: .text, data: Data([UInt8(sequence % 255)]))
+            ))
+        }
+        socket.receive(.close(code: 1000, reason: "done"))
+
+        var terminal: BrokerWebSocketEvent?
+        for _ in 0...128 {
+            terminal = try await store.pullWebSocket(
+                owner: owner, channelID: opened.channelID).event
+        }
+        XCTAssertEqual(terminal, .close(code: 1000, reason: "done"))
+    }
+
     func testWebSocketFramesHaveChannelOwnedSequenceNumbers() async throws {
         let socket = FakeBrokerWebSocket()
         let store = makeWebSocketStore(socket: socket)

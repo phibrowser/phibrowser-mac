@@ -237,6 +237,19 @@ final class ServiceBrokerClientTests: XCTestCase {
         }
     }
 
+    func testServiceSubpathNamedBrokerIsForwardedToTheSelectedService() async throws {
+        let server = UnixHTTPTestServer(response:
+            "HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n")
+        let client = makeClient(socketPath: server.socketPath)
+
+        _ = try await client.request(BrokerHTTPRequest(
+            service: .phiAgent,
+            path: "/broker/status"
+        ))
+
+        XCTAssertEqual(server.requestTarget, "/phi-agent/broker/status")
+    }
+
     func testOpenStreamReadsFixedLengthResponseInChunks() async throws {
         let server = UnixHTTPTestServer(response:
             "HTTP/1.1 200 OK\r\nContent-Length: 5\r\n\r\nhello")

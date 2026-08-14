@@ -1,6 +1,9 @@
 # Service Broker Extension Boundary
 
-Phi Browser exposes the Sentinel service broker to the packaged Canary Sidecar through a pinned native-extension boundary. The browser, rather than the extension, discovers the account-scoped Unix domain socket and negotiates broker limits.
+Phi Browser exposes the Sentinel service broker to the packaged Sidecar,
+Lexington, and Kensington extensions through a pinned native-extension
+boundary. The browser, rather than an extension, discovers the account-scoped
+Unix domain socket and negotiates broker limits.
 
 ```text
 Sidecar request-scoped adapter
@@ -14,8 +17,18 @@ Replies use the request-scoped `sendMessageToApp` return value because the exist
 
 ## Trust and transport invariants
 
-- Only the exact Canary Sidecar extension ID `fenmfiepnpdlhplemgijlimpbebebljo` is authorized. Empty, debug, CDP, differently cased, and other extension senders are rejected before transport access.
-- Sidecar service requests use `/phi-agent/<upstream-path>`. The native boundary consumes the exact `/phi-agent` service prefix before validating and forwarding the upstream path; lookalike prefixes such as `/phi-agent-x` are rejected.
+- Only the exact pinned Sidecar (`fenmfiepnpdlhplemgijlimpbebebljo`),
+  Lexington (`pjgdkljlcbjgedgeppodjijjphfcplno`), and Kensington
+  (`pjlnhbfabokjejbhmgghmjiaknfhnima`) extension IDs are authorized. These IDs
+  derive from the manifest keys shared by internal dev, Canary, and Stable
+  deployment variants; the `allowedCanary...` source names are historical, not
+  channel-specific identities. Standalone keyless builds, empty/debug/CDP
+  senders, differently cased IDs, and all other extensions are rejected before
+  transport access.
+- Service requests use `/<service>/<upstream-path>`. The native boundary
+  consumes one exact known service prefix before validating and forwarding the
+  upstream path; lookalike prefixes are rejected. The legacy unprefixed
+  phi-agent `/api`, `/v1`, and `/ws` shape remains available only to Sidecar.
 - Release-Canary Swift sources must compile with the `NIGHTLY_BUILD` condition. This keeps shared authentication, locks, heartbeats, API endpoints, and Auth0 configuration on Canary-specific accounts and endpoints; a C/Objective-C preprocessor definition alone does not affect Swift `#if` branches.
 - Extensions select only an allowed relative request path and method. They cannot supply a socket path, host, port, service name, or extension identity header.
 - Phi Browser resolves the account-scoped broker socket from shared authentication state. The preferred `/tmp/phi-sentinel-<hash>/sockets` path is used only when each existing short-path component is a real directory owned by the current uid; otherwise both Sentinel and the browser select `<storage>/state/sockets`. There is no TCP host/port fallback.
@@ -24,6 +37,10 @@ Replies use the request-scoped `sendMessageToApp` return value because the exist
 - Chromium keeps the legacy 1 MiB native-message JSON limit for non-broker traffic. `broker.*` envelopes admit exactly `ceil(16 MiB / 3) * 4 + 64 KiB` bytes so a negotiated 16 MiB raw request plus bounded base64/JSON overhead reaches the browser protocol; the Mac layer remains the semantic and decoded-size enforcement point.
 - Each HTTP connect/write/response-head sequence and each WebSocket operation has one monotonic 30-second I/O budget. HTTP body reads receive the same per-read budget. Swift task cancellation closes the UDS descriptor so a stalled peer cannot leave a detached poll/read/write running indefinitely.
 - `/broker` is reserved for broker-owned management routes. Only `broker.http.request` admits exact `GET /broker/healthz` with no body and maps it to broker service path `/healthz`. Query suffixes, encoded spellings, path variations, other methods, bodies, streaming attempts, `/broker/version`, and every other extension-supplied `/broker` path are rejected.
+- `broker.capabilities` is the explicit bridge handshake. After exact sender
+  authorization it returns `protocolVersion: 1` without requiring account auth
+  or Sentinel runtime resolution. This lets newer extensions distinguish an
+  older browser from a supported broker before selecting a business transport.
 
 ## Request and channel lifecycle
 
@@ -33,7 +50,12 @@ Every generic request captures one nonempty immutable shared-auth snapshot befor
 
 End, close, failure, explicit cancel/close, idle expiry, UDS loss, and browser shutdown are terminal. Once the terminal event has been delivered, the channel is removed. Later pull, send, cancel, or close requests return `channel_not_found`; they cannot resurrect the channel.
 
-The exact stable extension error set is `unauthorized_sender`, `unsupported_message`, `invalid_payload`, `invalid_path`, `unsupported_method`, `invalid_base64`, `request_too_large`, `response_too_large`, `channel_not_found`, `owner_mismatch`, `pull_already_pending`, `flow_control_timeout`, `upstream_error`, and `protocol_error`. These codes are protocol failures, including transport failures normalized as `upstream_error` and malformed upstream/protocol state normalized as `protocol_error`. HTTP statuses such as `401` remain successful broker envelopes so Sidecar can perform its normal token refresh. A bridge error is terminal for transport selection and must never fall back to loopback TCP.
+Terminal HTTP and WebSocket events are not ordinary queued data: EOF, close,
+and failure remain enqueueable when the 128-event data window is full. This
+preserves the actual terminal reason instead of replacing it with a synthetic
+flow-control timeout.
+
+The exact stable extension error set is `unauthorized_sender`, `unsupported_message`, `invalid_payload`, `invalid_path`, `unsupported_method`, `invalid_base64`, `request_too_large`, `response_too_large`, `channel_not_found`, `owner_mismatch`, `pull_already_pending`, `flow_control_timeout`, `upstream_error`, and `protocol_error`. These codes are protocol failures, including transport failures normalized as `upstream_error` and malformed upstream/protocol state normalized as `protocol_error`. HTTP statuses such as `401` remain successful broker envelopes so Sidecar can perform its normal token refresh. Only the capability handshake may select legacy discovery. After protocol support is confirmed, a bridge or business error is terminal for transport selection and must never fall back to loopback TCP.
 
 ## Development and packet capture
 

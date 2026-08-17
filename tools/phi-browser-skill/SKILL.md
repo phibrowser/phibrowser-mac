@@ -125,24 +125,35 @@ Core surface — full semantics in this file:
   `screenshotBrowser(path?)` (the WHOLE browser window — native chrome + web
   content), `pageInfo()` — see "Observing a page"
 - Input: `click(target | x, y)`, `hover(target | x, y)`, `fillInput(target,
-  text, {instant})` (types at a watchable pace, verified by readback,
-  deterministic-setter fallback; `{instant: true}` sets in one shot),
+  text, {instant})` (clicks/focuses, types physical-key text through real key
+  events and IME/emoji as composed graphemes, verifies by readback, then uses
+  a verified deterministic-setter fallback; `{instant: true}` sets in one shot),
   `uploadFile(target, ...paths)`, `typeText(text)`, `pressKey(key)`,
-  `scroll({dy, x, y})`. Clicks and typing are mirrored to the watching user
-  as cursor movement + overlay animations, so actions carry a small
-  deliberate pace.
-- Challenges/consent: `detectChallenge()`, `acceptCookies(opts?)` — see
-  "Cloudflare challenges" and "Cookie-consent banners"
+  `scroll({dy, dx, x, y})` (a paced wheel gesture under the remembered cursor;
+  explicit `x`/`y` move there first). Pointer moves use bounded curved paths
+  with distance-sensitive acceleration, deceleration, and variable sampling.
+  Clicks, typing, and scrolling are mirrored to the watching user as cursor
+  movement + overlay animations, so actions carry a small deliberate pace.
+  Before high-level input, Phi rechecks document readiness, Cloudflare, and
+  late blocking consent. Element actions also require the exact input point
+  to be the browser's topmost hit-test result; a covered/disabled control is
+  refused rather than reached through page JS.
+- Challenges/consent: `detectChallenge()`,
+  `waitForChallengeClearance({attempts, interval})`, `acceptCookies(opts?)` —
+  see "Cloudflare challenges" and "Cookie-consent banners"
 - Dialogs: `handleDialog(accept, promptText?)` (current tab),
   `dismissDialog(targetId, accept, promptText?)` (browser-level — frees any
   tab wedged behind a dialog) — see "Caveats"
-- Page JS: `js(expression)` — Runtime.evaluate, returns by value
+- Page JS: `js(expression)` — Runtime.evaluate, returns by value. Never use
+  `element.click()`, focus/value writes, or dispatched events as user input;
+  those bypass human hit-testing. Use the input helpers.
 - Presence: `setStatus(caption)` (alias `narrate(text)`),
   `markError(message)`, `say(text, {role})` — see "Task lifecycle"
 - User console: `readUserMessages()`, `waitForUserMessage({timeout})` — see
   "Task lifecycle"
 - Raw protocol: `cdp(method, params)` — current tab session for page domains,
-  browser session for Target/Browser/PhiAgentSpace
+  browser session for Target/Browser/PhiAgentSpace. Raw `Input.*` commands
+  still pass the pre-input operability gate (release phases stay unblocked).
 - Misc: `cliLog(value)` (the only terminal output channel), `wait(seconds)`
 
 Deferred surface — signatures here, semantics in the reference file. READ IT
@@ -271,8 +282,10 @@ auto-scrolled into view.
 Acting helpers (`click`, `fillInput`, `hover`, `uploadFile`) retry target
 RESOLUTION for up to ~3s before failing, so a control that mounts a beat after
 your scan self-heals — no need to sprinkle `wait()` before every action. A
-resolved target acts immediately; only a missing one waits. For longer or
-conditional readiness, wait explicitly: `waitForElement` (existence/count) or
+resolved target must also be visible, enabled, inside the viewport, and the
+topmost element at its intended input point—the same reachability a human
+cursor has. A covering modal is not bypassed. For longer or conditional
+readiness, wait explicitly: `waitForElement` (existence/count) or
 `waitForFunction` (any page condition).
 
 ## Reading an article
@@ -489,33 +502,40 @@ page), kill it.
 
 ## Cloudflare challenges
 
-"Just a moment…" interstitials, Turnstile widgets, and hard blocks are the
-USER's step from the moment they appear. Confirm with `detectChallenge()` →
-`null` or `{vendor, kind, url, title}`; full detail in
+"Just a moment…" interstitials and some Turnstile widgets can finish a managed
+browser check without input. Confirm with `detectChallenge()` → `null` or
+`{vendor, kind, url, title}`, then call `waitForChallengeClearance()` once.
+It performs at most two short passive rechecks across the whole encounter—no
+click, reload, navigation, iframe access, or page mutation. High-level input
+uses the same shared two-check budget automatically. Full detail is in
 `references/challenges.md`.
 
-- `kind` `interstitial`/`turnstile` → hand off the FIRST time you see one:
+- `kind` `interstitial`/`turnstile` → if the bounded passive checks clear it,
+  re-observe and continue. If it remains, hand off immediately:
   `handOff('… wants a human check — complete the verification, then click
-  "Hand back"')`, end the round, start the hand-back watcher. NEVER try to
-  pass a challenge yourself — no waiting it out, no reloading, no clicking
-  the widget or `js()` into it.
+  "Hand back"')`, end the round, and start the hand-back watcher. NEVER click
+  the widget, inject `js()` into it, reload, re-navigate, or start another
+  retry loop.
 - `kind: 'blocked'` → nothing for the user to click either: report it and
-  ask how to proceed; do not retry the navigation.
+  ask how to proceed; it gets no passive attempts and no navigation retry.
 - After hand-back, re-check `detectChallenge()` and re-observe — passing the
   challenge reloads the page, old refs are gone. Repeats are normal; each
-  new challenge gets the same handoff.
+  genuinely new challenge encounter gets the same bounded passive checks,
+  then the same handoff if unresolved.
 
 ## Cookie-consent banners
 
 `goto()` and `openTab()` automatically dismiss the common cookie/GDPR
 banners with a deterministic per-CMP rule set before returning (opt out per
 call with `{acceptCookies: false}`), so most of the time a banner is already
-gone by the time you look. When one is still covering the page, call
-`acceptCookies()` yourself; its fallback tiers and return shapes are in
-`references/challenges.md`. Distinguish a routine cookie notice (accept and
-move on) from a genuinely consequential choice — a login, a paywall, a
-purchase, or an account-level privacy setting: don't click those through on
-the user's behalf; hand off or ask.
+gone by the time you look. The first high-level input runs one bounded late-
+banner pass too. Consent controls are hit-tested and activated with trusted
+pointer events, never `element.click()`; an unmatched blocking consent layer
+stops input. When one survives, call `acceptCookies()` yourself; its fallback
+tiers and return shapes are in `references/challenges.md`. Distinguish a
+routine cookie notice (accept and move on) from a genuinely consequential
+choice — a login, a paywall, a purchase, or an account-level privacy setting:
+don't click those through on the user's behalf; hand off or ask.
 
 ## Credentials
 

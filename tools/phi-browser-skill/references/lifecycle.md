@@ -126,8 +126,11 @@ with the tab inventory in hand — check it before opening more tabs.
 
 - It is PASSIVE: safe while the user holds control (no activation, no
   viewport override), and it does not refresh the keep-alive clock it
-  reports. `{gone: true}` means the Space no longer exists — the task is
-  over; do not recreate it just to look around.
+  reports. A fresh round also defers its page-session attachment while the
+  user owns the Space; `takeOver()` or a successful `waitForAgentControl()`
+  attaches the remembered current tab only after control returns.
+  `{gone: true}` means the Space no longer exists — the task is over; do not
+  recreate it just to look around.
 - `{shots: 'current'}` adds `shot`, a PNG path of the ATTACHED tab (view
   it), or null if the capture fails. Only the attached tab can be shot:
   background tabs of the hidden window do not paint, so there is no

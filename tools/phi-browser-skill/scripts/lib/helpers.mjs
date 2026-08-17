@@ -59,10 +59,23 @@ const state = {
                         // the CURRENT tab, armed at attach (see readNetwork)
   sessionDisposers: [], // unsubscribers for the current page session's
                         // listeners; drained on every re-attach
-  // targetId -> {request: {width?, height?}, scale} — the tab's viewport
+  // targetId -> {request: {width?, height?}, width, height, scale} — the tab's viewport
   // override for this heredoc round; `scale` is the last applied compositing
   // scale (input coords must be multiplied by it, see inputScale).
   viewportByTarget: new Map(),
+  // {x, y, windowId} in widget coordinates — the last mouse position this
+  // round dispatched in the bound window. click()/hover() use it to emit the
+  // intermediate move events a real cursor produces instead of teleporting;
+  // windowId prevents a context switch from leaking an unrelated origin.
+  pointer: null,
+  // {documentKey, checkedAt} for the current page's pre-input operability
+  // gate. A new execution context/navigation invalidates it; repeated actions
+  // still run a cheap consent probe so a later banner cannot be ignored.
+  inputGate: null,
+  // {targetId, attempts} for passive Cloudflare clearance checks. The budget
+  // is per challenge encounter and is reset by an explicit navigation, tab
+  // attach, or a confirmed clear page—never by the challenge's own reloads.
+  challengeGate: null,
   windowBounds: null,        // last seen agent-window OS size ("WxH"), and
   windowBoundsCheckedAt: 0,  // when it was checked — see maybeTrackWindowResize
   lastPingAt: 0,             // epoch ms of the last keep-alive ping (see maybePing)
@@ -110,6 +123,26 @@ async function cdpClient() {
 
 /** Raw escape hatch: send any CDP command on the current page session. */
 export async function cdp(method, params = {}) {
+  // The escape hatch must not be an escape from page safety. Release phases
+  // always remain available so a held key/pointer cannot get stuck; every
+  // phase that can begin or mutate user input goes through the same document
+  // gate as the high-level helpers. Raw coordinates are still natively
+  // hit-tested by Chromium, so they land on the topmost surface.
+  const releaseOnly =
+    (method === 'Input.dispatchKeyEvent' && params.type === 'keyUp') ||
+    (method === 'Input.dispatchMouseEvent' &&
+      (params.type === 'mouseReleased' || params.type === 'mouseMoved')) ||
+    (method === 'Input.dispatchTouchEvent' && params.type === 'touchEnd') ||
+    method === 'Input.cancelDragging'
+  if (method.startsWith('Input.') && !releaseOnly) {
+    await guardAgentControl()
+    const gate = await ensurePageOperable()
+    const keyboardInput = method === 'Input.dispatchKeyEvent' || method === 'Input.insertText'
+    if (keyboardInput && gate.consent?.clicked) {
+      throw new Error(`cdp ${method}: a late cookie-consent overlay was dismissed and ` +
+                      'changed focus — refocus the intended control before typing')
+    }
+  }
   const client = await cdpClient()
   logAction(`cdp ${method}`)
   const browserLevel = method.startsWith('Target.') ||
@@ -471,7 +504,16 @@ async function enterAgentContext(name, { profile = '', persistent = false } = {}
     // (persisted on every attach), falling back to the first tab.
     const last = readLastTargetId(task.taskId)
     const tab = tabs.find((t) => t.targetId === last) ?? tabs[0]
-    await attachTab(tab.targetId)
+    if (task.ownership === 'user') {
+      // A fresh watcher/resume round must stay wholly passive while the user
+      // drives. Attaching Page/Runtime here can wait on the renderer and
+      // prevent the following explicit takeOver()/waitForAgentControl() from
+      // ever running. Remember the intended tab now; attach immediately after
+      // ownership returns to the agent below.
+      state.targetId = tab.targetId
+    } else {
+      await attachTab(tab.targetId)
+    }
     // Re-apply an explicit viewport the session set in an earlier round — the
     // CDP override died with that round's session. Skip when the user holds
     // control (their takeover deliberately clears emulation) or the attach
@@ -807,8 +849,8 @@ async function resolveBaseViewport(client, sessionId, targetId) {
  * unchanged — but Input.dispatchMouseEvent coords are widget-space, so input
  * helpers multiply by the stored scale (see inputScale). Per CDP session, so
  * the override stays isolated to this tab and never touches Chrome's
- * per-origin HostZoomMap. Records {request, scale} in state.viewportByTarget
- * and returns the applied {width, height, scale}.
+ * per-origin HostZoomMap. Records {request, width, height, scale} in
+ * state.viewportByTarget and returns the applied {width, height, scale}.
  */
 async function applyAgentViewport(client, sessionId, targetId, request = null) {
   const base = await resolveBaseViewport(client, sessionId, targetId)
@@ -819,7 +861,7 @@ async function applyAgentViewport(client, sessionId, targetId, request = null) {
   if (scale < 1) params.scale = scale
   await client.send('Emulation.setDeviceMetricsOverride', params, sessionId)
     .catch(() => {})
-  if (targetId) state.viewportByTarget.set(targetId, { request, scale })
+  if (targetId) state.viewportByTarget.set(targetId, { request, width, height, scale })
   return { width, height, scale }
 }
 
@@ -907,9 +949,9 @@ export async function ping(ttlSeconds) {
 const TASK_DIR = join(tmpdir(), 'phi-browser-tasks')
 
 // Per-session disk state (survives the per-round Node process): the tab a
-// round last drove and any explicit viewport override, so a later round of
-// the same session resumes both. Reads/writes MERGE so the two fields don't
-// clobber each other.
+// round last drove, any explicit viewport override, and the window cursor
+// position, so a later round resumes the same surface. Reads/writes MERGE so
+// the fields don't clobber each other.
 function readSessionState(key) {
   try {
     return JSON.parse(readFileSync(
@@ -944,6 +986,23 @@ function readStoredViewport(key) {
 
 function writeStoredViewport(key, request) {
   writeSessionState(key, { viewport: request ?? null })
+}
+
+// Window-level pointer memory lets a later heredoc round resume the cursor
+// where the previous round left it. The window id rejects stale coordinates
+// after a task is healed/recreated under the same name.
+function readStoredPointer(key, windowId) {
+  const pointer = readSessionState(key).pointer
+  return pointer && pointer.windowId === windowId &&
+    Number.isFinite(pointer.x) && Number.isFinite(pointer.y)
+    ? { x: pointer.x, y: pointer.y, windowId }
+    : null
+}
+
+function writeStoredPointer(key, windowId, point) {
+  writeSessionState(key, {
+    pointer: point ? { windowId, x: point.x, y: point.y } : null,
+  })
 }
 
 // The tailer daemon (scripts/mirror-tailer.mjs): the session mirror. When
@@ -1204,6 +1263,7 @@ async function attachTabNow(targetId) {
   state.openDialog = null
   state.dialogBlocked = false
   state.contextId = null
+  state.inputGate = null
   const ctx = currentContext()
   if (ctx?.kind === 'agent') writeLastTargetId(ctx.taskId, targetId)
   else if (ctx?.kind === 'user') writeLastTargetId(`space:${ctx.spaceId}`, targetId)
@@ -1270,9 +1330,13 @@ async function attachTabNow(targetId) {
   })
   on('Runtime.executionContextsCleared', () => {
     state.contextId = null
+    state.inputGate = null
   })
   on('Runtime.executionContextDestroyed', ({ executionContextId }) => {
-    if (state.contextId === executionContextId) state.contextId = null
+    if (state.contextId === executionContextId) {
+      state.contextId = null
+      state.inputGate = null
+    }
   })
   await client.send('Runtime.enable', {}, sessionId)
   // Refs are backendNodeIds; DOM.resolveNode / DOM.describeNode need the DOM
@@ -1371,7 +1435,7 @@ async function prepareTab(client, targetId, { navigateTo = null, acceptCookies }
   const { sessionId } = await client.send('Target.attachToTarget',
                                           { targetId, flatten: true })
   try {
-    await applyAgentViewport(client, sessionId, targetId, null)
+    const viewport = await applyAgentViewport(client, sessionId, targetId, null)
     if (navigateTo) {
       const res = await client.send('Page.navigate', { url: navigateTo }, sessionId)
       if (res.errorText) {
@@ -1387,7 +1451,8 @@ async function prepareTab(client, targetId, { navigateTo = null, acceptCookies }
     }
     if (acceptCookies) {
       await autoAcceptConsent(
-        typeof acceptCookies === 'object' ? acceptCookies : {}, sessionId)
+        typeof acceptCookies === 'object' ? acceptCookies : {},
+        sessionId, viewport.scale)
     }
   } finally {
     // The emulation override dies with this session; the caller's attachTab
@@ -1491,6 +1556,7 @@ export async function closeTab(targetId = state.targetId) {
   const client = await cdpClient()
   if (!targetId) throw new Error('closeTab: no target')
   logAction('close tab')
+  clearChallengeGate(targetId)
   await client.send('Target.closeTarget', { targetId })
   state.viewportByTarget.delete(targetId)
   if (targetId === state.targetId) {
@@ -1513,6 +1579,8 @@ export async function goto(url, { timeout = 25, acceptCookies = true } = {}) {
   await guardAgentControl()
   const client = await cdpClient()
   logAction(`goto ${shortUrl(url)}`)
+  clearChallengeGate(state.targetId)
+  state.challengeGate = null
   const deadline = Date.now() + timeout * 1000
   // Page.navigate answers at commit — normally fast, but budget it inside
   // {timeout} (capped at the 40s send default) instead of always allowing 40s.
@@ -1780,7 +1848,9 @@ async function evalOnSession(sessionId, expression, timeoutMs = 20000) {
  *  Ownership-gated: arbitrary page JS can mutate the page (click, submit,
  *  navigate), so it must respect a user takeover like every other acting
  *  helper. Internal observation paths use evalInPage directly and stay
- *  available while the user drives. */
+ *  available while the user drives. Do not use this to synthesize user input
+ *  (`element.click()`, focus/value writes): page JS can reach through overlays
+ *  and emits untrusted events. Use click/fillInput/pressKey instead. */
 export async function js(expression) {
   await guardAgentControl()
   if (state.openDialog) {
@@ -1851,37 +1921,161 @@ export async function pageInfo() {
  *   'blocked'      — a Cloudflare block/error page ("Attention Required",
  *                    "Sorry, you have been blocked"); nothing to solve —
  *                    report it to the user instead of handing off
- * Observation only — not ownership-gated. NEVER try to solve or wait out a
- * challenge: hand off to the user the FIRST time one appears (the widget is a
- * cross-origin iframe and synthetic input is exactly what it scores). See
- * SKILL.md ("Cloudflare challenges") and references/challenges.md.
+ * Observation only — not ownership-gated. Use waitForChallengeClearance for
+ * the bounded passive settling window; never click, reload, navigate, or
+ * inject JS to solve a challenge. See SKILL.md ("Cloudflare challenges") and
+ * references/challenges.md.
  */
 export async function detectChallenge() {
   if (state.openDialog) return { dialog: state.openDialog }
   return evalInPage(`(() => {
     const title = document.title || ''
     const has = (sel) => !!document.querySelector(sel)
-    const hit = (kind) => ({ vendor: 'cloudflare', kind, url: location.href, title })
+    const hit = (kind, evidence) => ({
+      vendor: 'cloudflare', kind, url: location.href, title, evidence
+    })
     // Block/error page: no challenge to pass, nothing for a user to click.
     if (has('#cf-error-details') || /^Attention Required!/i.test(title)) {
-      return hit('blocked')
+      return hit('blocked', has('#cf-error-details') ? 'cf-error-details' : 'title')
     }
-    // Full-page interstitial. The DOM/global markers also cover localized
-    // titles; the title test is a fallback for early-load states.
-    if (typeof window._cf_chl_opt !== 'undefined' ||
-        has('#challenge-form, #challenge-running, #challenge-stage, #challenge-error-title') ||
-        /^Just a moment/i.test(title)) {
-      return hit('interstitial')
+    // Full-page interstitial. Do not classify from the title alone: managed
+    // checks can leave "Just a moment..." behind briefly after the real page
+    // has already replaced the challenge DOM. Require a Cloudflare marker or
+    // characteristic verification copy as corroborating evidence.
+    if (typeof window._cf_chl_opt !== 'undefined') {
+      return hit('interstitial', '_cf_chl_opt')
+    }
+    if (has('#challenge-form, #challenge-running, #challenge-stage, ' +
+            '#challenge-error-title, script[src*="/cdn-cgi/challenge-platform/"], ' +
+            'form[action*="/cdn-cgi/challenge-platform/"]')) {
+      return hit('interstitial', 'challenge-dom')
+    }
+    const bodyText = (document.body?.innerText || '').replace(/\\s+/g, ' ').trim()
+    const challengeCopy = /checking your browser|performing security verification|verifying you are human|enable javascript and cookies to continue|browser will redirect/i.test(bodyText)
+    if (/^Just a moment/i.test(title) && challengeCopy) {
+      return hit('interstitial', 'title-and-copy')
     }
     // Turnstile widget embedded in a regular page: a challenge only while
     // unsolved — passing it fills the hidden response input.
     if (has('iframe[src*="challenges.cloudflare.com"], .cf-turnstile')) {
       const resp = document.querySelector(
         'input[name="cf-turnstile-response"], input[name="cf-challenge-response"]')
-      if (!resp || !resp.value) return hit('turnstile')
+      if (!resp || !resp.value) return hit('turnstile', 'turnstile-widget')
     }
     return null
   })()`)
+}
+
+const CHALLENGE_PASSIVE_MAX_ATTEMPTS = 2
+const CHALLENGE_PASSIVE_INTERVAL_SECONDS = 2.5
+const CHALLENGE_GATE_CACHE_DIR = join(tmpdir(), 'phi-browser-challenge-gates')
+
+function challengeGateFile(targetId) {
+  return targetId ? join(CHALLENGE_GATE_CACHE_DIR, `${targetId}.json`) : null
+}
+
+function readChallengeGate(targetId) {
+  const file = challengeGateFile(targetId)
+  if (!file) return null
+  try {
+    const gate = JSON.parse(readFileSync(file, 'utf8'))
+    return gate?.targetId === targetId && Number.isInteger(gate.attempts) ? gate : null
+  } catch { return null }
+}
+
+function writeChallengeGate(gate) {
+  const file = challengeGateFile(gate?.targetId)
+  if (!file) return
+  try {
+    mkdirSync(CHALLENGE_GATE_CACHE_DIR, { recursive: true })
+    writeFileSync(file, JSON.stringify(gate))
+  } catch {}
+}
+
+function clearChallengeGate(targetId = state.targetId) {
+  if (state.challengeGate?.targetId === targetId) state.challengeGate = null
+  const file = challengeGateFile(targetId)
+  if (file) { try { unlinkSync(file) } catch {} }
+}
+
+function gateForChallenge(challenge) {
+  const targetId = state.targetId
+  const cached = readChallengeGate(targetId)
+  const url = String(challenge?.url || '')
+  if (state.challengeGate?.targetId === targetId && state.challengeGate.url === url) {
+    return state.challengeGate
+  }
+  state.challengeGate = cached?.url === url
+    ? cached
+    : { targetId, url, attempts: 0 }
+  return state.challengeGate
+}
+
+// Cloudflare interstitials and Turnstile sometimes finish their own managed
+// browser check without user input. Give that path a tiny, observation-only
+// window before handoff: no reload, navigation, click, iframe access, or JS
+// mutation. State makes the two-check cap apply to the whole encounter, not
+// once per helper call (which would turn caller retries into an unbounded
+// loop). A hard block never gets a retry because it cannot self-resolve.
+async function passiveChallengeRechecks(initialChallenge, {
+  attempts = CHALLENGE_PASSIVE_MAX_ATTEMPTS,
+  interval = CHALLENGE_PASSIVE_INTERVAL_SECONDS,
+} = {}) {
+  if (!initialChallenge) {
+    clearChallengeGate()
+    return { cleared: true, attempts: 0, totalAttempts: 0, challenge: null }
+  }
+  const gate = gateForChallenge(initialChallenge)
+  if (initialChallenge.kind === 'blocked') {
+    return { cleared: false, attempts: 0,
+             totalAttempts: gate.attempts,
+             challenge: initialChallenge, exhausted: true }
+  }
+
+  const requested = Math.min(CHALLENGE_PASSIVE_MAX_ATTEMPTS,
+    Math.max(1, Math.trunc(Number(attempts) || CHALLENGE_PASSIVE_MAX_ATTEMPTS)))
+  const delay = Math.min(5, Math.max(0.25,
+    Number(interval) || CHALLENGE_PASSIVE_INTERVAL_SECONDS))
+  const remaining = Math.max(0,
+    CHALLENGE_PASSIVE_MAX_ATTEMPTS - gate.attempts)
+  const checks = Math.min(requested, remaining)
+  let challenge = initialChallenge
+  let performed = 0
+  for (let i = 0; i < checks; i++) {
+    gate.attempts++
+    writeChallengeGate(gate)
+    performed++
+    await wait(delay)
+    challenge = await detectChallenge()
+    if (!challenge) {
+      const totalAttempts = gate.attempts
+      clearChallengeGate()
+      return { cleared: true, attempts: performed, totalAttempts, challenge: null }
+    }
+    if (challenge.kind === 'blocked') break
+  }
+  return {
+    cleared: false,
+    attempts: performed,
+    totalAttempts: gate.attempts,
+    challenge,
+    exhausted: challenge?.kind === 'blocked' ||
+      gate.attempts >= CHALLENGE_PASSIVE_MAX_ATTEMPTS,
+  }
+}
+
+/**
+ * Observation-only Cloudflare settling window. Performs at most two passive
+ * rechecks across the current challenge encounter and returns
+ * `{cleared, attempts, totalAttempts, challenge, exhausted?}`. It never
+ * clicks, reloads, navigates, or touches the cross-origin challenge frame.
+ */
+export async function waitForChallengeClearance({
+  attempts = CHALLENGE_PASSIVE_MAX_ATTEMPTS,
+  interval = CHALLENGE_PASSIVE_INTERVAL_SECONDS,
+} = {}) {
+  const challenge = await detectChallenge()
+  return passiveChallengeRechecks(challenge, { attempts, interval })
 }
 
 // ---------------------------------------------------------------------------
@@ -1898,11 +2092,63 @@ export async function detectChallenge() {
 // heuristic. Accept always outranks close. Runs against the top document and
 // every same-origin frame; cross-origin CMP iframes can't be reached from
 // page JS and are reported back so the caller can fall back.
+const PAGE_OPERABLE_POINT_DECL = `
+  function __phiOperablePoint(el, offX, offY) {
+    if (!el || !el.isConnected) return null;
+    var doc = el.ownerDocument;
+    var win = doc && doc.defaultView;
+    if (!doc || !win) return null;
+    try {
+      if (el.matches(':disabled') || el.closest('[inert]') ||
+          el.closest('[aria-disabled="true"]')) return null;
+    } catch (e) {}
+    var r = el.getBoundingClientRect();
+    if (r.width < 2 || r.height < 2) return null;
+    var s = win.getComputedStyle(el);
+    if (!s || s.visibility === 'hidden' || s.display === 'none' ||
+        s.pointerEvents === 'none' || parseFloat(s.opacity || '1') < 0.05) return null;
+    var x = offX != null ? r.left + offX : r.left + r.width / 2;
+    var y = offY != null ? r.top + offY : r.top + r.height / 2;
+    if (x < 0 || y < 0 || x >= win.innerWidth || y >= win.innerHeight) return null;
+    var hit = doc.elementFromPoint(x, y);
+    var hitMatches = hit === el || (hit && el.contains(hit));
+    if (!hitMatches) {
+      // document.elementFromPoint returns a shadow host for a point inside a
+      // closed shadow tree. Accept that host, but never an arbitrary ancestor
+      // (which would turn a covering overlay into a false positive).
+      var root = null;
+      try { root = el.getRootNode(); } catch (e) {}
+      hitMatches = !!(root && root.host &&
+        (hit === root.host || (hit && root.host.contains(hit))));
+    }
+    if (!hitMatches) return null;
+
+    // Prove the same point remains topmost through every same-origin frame.
+    // A child document can see its button while the iframe itself is covered
+    // in the parent; a human still cannot reach it in that state.
+    var topX = x, topY = y, currentWin = win;
+    try {
+      while (currentWin && currentWin.frameElement) {
+        var frame = currentWin.frameElement;
+        var fr = frame.getBoundingClientRect();
+        topX += fr.left + (frame.clientLeft || 0);
+        topY += fr.top + (frame.clientTop || 0);
+        var parentDoc = frame.ownerDocument;
+        if (parentDoc.elementFromPoint(topX, topY) !== frame) return null;
+        currentWin = parentDoc.defaultView;
+      }
+    } catch (e) { return null; }
+    return { operable: true, x: Math.round(topX), y: Math.round(topY),
+             w: Math.round(r.width), h: Math.round(r.height) };
+  }
+`;
+
 const CONSENT_ACCEPT_FN = `function (opts) {
   opts = opts || {};
   var wantHeuristic = opts.heuristic !== false;
   var wantFrames = opts.frames !== false;
   var wantDismiss = opts.dismiss !== false;
+  ${PAGE_OPERABLE_POINT_DECL}
 
   // Vendor-specific accept-all controls, most common CMPs first.
   var CMP_SELECTORS = [
@@ -1963,7 +2209,12 @@ const CONSENT_ACCEPT_FN = `function (opts) {
     if (parseFloat(s.opacity || '1') < 0.05) return false;
     return true;
   }
-  function clickIt(el) { try { el.scrollIntoView({ block: 'center' }); } catch (e) {} el.click(); }
+  function candidateFor(el) {
+    if (opts.scroll !== false) {
+      try { el.scrollIntoView({ block: 'center', inline: 'center' }); } catch (e) {}
+    }
+    return __phiOperablePoint(el, null, null);
+  }
 
   // Top document plus same-origin frame documents (cross-origin throws).
   function docs() {
@@ -1984,12 +2235,33 @@ const CONSENT_ACCEPT_FN = `function (opts) {
     var xo = document.querySelector(
       'iframe[id^="sp_message_iframe"], iframe[src*="consensu.org"], ' +
       'iframe[src*="privacy-mgmt"], iframe[src*="cmp."], iframe[title*="consent" i]');
-    if (xo) return { clicked: false, reason: 'cross-origin-frame', pending: true,
-                     frameSrc: String(xo.src || xo.id || '').slice(0, 120) };
-    var box = document.querySelector(
+    if (xo && isVisible(xo)) {
+      var xr = xo.getBoundingClientRect();
+      var xs = viewOf(xo).getComputedStyle(xo);
+      var xblock = xo.getAttribute('aria-modal') === 'true' ||
+        ((xs.position === 'fixed' || xs.position === 'sticky') &&
+         (xr.width >= viewOf(xo).innerWidth * 0.45 ||
+          xr.height >= viewOf(xo).innerHeight * 0.35));
+      return { clicked: false, reason: 'cross-origin-frame', pending: true,
+               blocking: xblock,
+               frameSrc: String(xo.src || xo.id || '').slice(0, 120) };
+    }
+    var boxes = document.querySelectorAll(
       '[id*="cookie" i],[class*="cookie" i],[id*="consent" i],' +
       '[class*="consent" i],[aria-label*="cookie" i]');
-    return { clicked: false, reason: 'none', pending: !!(box && isVisible(box)) };
+    var pending = false, blocking = false;
+    for (var bi = 0; bi < boxes.length; bi++) {
+      var box = boxes[bi];
+      if (!isVisible(box)) continue;
+      pending = true;
+      var br = box.getBoundingClientRect();
+      var bs = viewOf(box).getComputedStyle(box);
+      if (box.getAttribute('aria-modal') === 'true' ||
+          ((bs.position === 'fixed' || bs.position === 'sticky') &&
+           (br.width >= viewOf(box).innerWidth * 0.45 ||
+            br.height >= viewOf(box).innerHeight * 0.35))) blocking = true;
+    }
+    return { clicked: false, reason: 'none', pending: pending, blocking: blocking };
   }
 
   function inConsentCtx(el) {
@@ -2003,18 +2275,20 @@ const CONSENT_ACCEPT_FN = `function (opts) {
     return false;
   }
 
-  function clickBySelectors(selectors, rule) {
+  function findBySelectors(selectors, rule) {
     for (var s = 0; s < selectors.length; s++) {
       for (var di = 0; di < allDocs.length; di++) {
         var nodes;
         try { nodes = allDocs[di].querySelectorAll(selectors[s]); } catch (e) { continue; }
         for (var n = 0; n < nodes.length; n++) {
           if (isVisible(nodes[n])) {
-            clickIt(nodes[n]);
+            var point = candidateFor(nodes[n]);
+            if (!point) continue;
             var t = String(nodes[n].textContent || '').trim() ||
                     String(nodes[n].getAttribute('aria-label') || '');
-            return { clicked: true, rule: rule, selector: selectors[s],
-                     text: t.slice(0, 60) };
+            return { clicked: false, candidate: true, rule: rule,
+                     selector: selectors[s], text: t.slice(0, 60),
+                     x: point.x, y: point.y };
           }
         }
       }
@@ -2025,7 +2299,7 @@ const CONSENT_ACCEPT_FN = `function (opts) {
   var CLICKABLE = 'button, a[href], [role="button"], input[type="button"], input[type="submit"], [onclick]';
 
   // 1) Per-CMP accept selectors (highest precision).
-  var hit = clickBySelectors(CMP_SELECTORS, 'cmp');
+  var hit = findBySelectors(CMP_SELECTORS, 'cmp');
   if (hit) return hit;
 
   // 2) Text heuristic: a visible clickable whose exact label is an accept
@@ -2043,8 +2317,10 @@ const CONSENT_ACCEPT_FN = `function (opts) {
         if (REJECT_RE.test(label)) continue;
         if (!ACCEPT_RE.test(label)) continue;
         if (!inConsentCtx(el)) continue;
-        clickIt(el);
-        return { clicked: true, rule: 'heuristic', text: label.slice(0, 60) };
+        var point = candidateFor(el);
+        if (!point) continue;
+        return { clicked: false, candidate: true, rule: 'heuristic',
+                 text: label.slice(0, 60), x: point.x, y: point.y };
       }
     }
   }
@@ -2053,7 +2329,7 @@ const CONSENT_ACCEPT_FN = `function (opts) {
   //    accept persists consent and wins; for notice-only banners the close is
   //    the only control there is.
   if (wantDismiss) {
-    hit = clickBySelectors(CMP_CLOSE_SELECTORS, 'cmp-close');
+    hit = findBySelectors(CMP_CLOSE_SELECTORS, 'cmp-close');
     if (hit) return hit;
   }
 
@@ -2071,8 +2347,10 @@ const CONSENT_ACCEPT_FN = `function (opts) {
                             cl.textContent || '').replace(/\\s+/g, ' ').trim();
         if (!CLOSE_RE.test(clabel)) continue;
         if (!inConsentCtx(cl)) continue;
-        clickIt(cl);
-        return { clicked: true, rule: 'heuristic-close', text: clabel.slice(0, 60) };
+        var cpoint = candidateFor(cl);
+        if (!cpoint) continue;
+        return { clicked: false, candidate: true, rule: 'heuristic-close',
+                 text: clabel.slice(0, 60), x: cpoint.x, y: cpoint.y };
       }
     }
   }
@@ -2084,6 +2362,52 @@ async function runConsentAccept(opts, sessionId = undefined) {
   return sessionId ? evalOnSession(sessionId, expr) : evalInPage(expr);
 }
 
+// Consent controls are first located and hit-tested in page JS, then activated
+// through trusted CDP pointer events. This deliberately avoids element.click(),
+// which can fire through a covering layer even when a person cannot reach the
+// control. A dedicated openTab setup session has no watcher overlay yet, so it
+// uses the same physical event sequence without the paced cursor mirror.
+async function activateConsentCandidate(candidate, opts, sessionId = undefined,
+                                         scale = inputScale()) {
+  if (!candidate?.candidate) return candidate
+  const client = await cdpClient()
+  const sid = sessionId || requireSession()
+  const dedicatedSetupSession = !!sessionId && sessionId !== state.sessionId
+  let fresh = candidate
+  let ix = Math.round(candidate.x * scale)
+  let iy = Math.round(candidate.y * scale)
+
+  if (dedicatedSetupSession) {
+    await client.send('Input.dispatchMouseEvent', {
+      type: 'mouseMoved', x: ix, y: iy, pointerType: 'mouse',
+    }, sid)
+  } else {
+    await movePointer(client, sid, ix, iy)
+    // The banner may still be animating while the pointer travels. Re-probe
+    // immediately before pressing so consent cannot use a stale coordinate.
+    fresh = await runConsentAccept(opts, sessionId)
+    if (!fresh?.candidate) return fresh
+    const fx = Math.round(fresh.x * scale)
+    const fy = Math.round(fresh.y * scale)
+    if (fx !== ix || fy !== iy) {
+      ix = fx
+      iy = fy
+      await movePointer(client, sid, ix, iy)
+    }
+  }
+
+  if (dedicatedSetupSession) {
+    const base = { x: ix, y: iy, button: 'left', clickCount: 1, pointerType: 'mouse' }
+    await client.send('Input.dispatchMouseEvent', { type: 'mousePressed', ...base }, sid)
+    await wait(randomMs(45, 75) / 1000)
+    await client.send('Input.dispatchMouseEvent', { type: 'mouseReleased', ...base }, sid)
+  } else {
+    await dispatchClickAt(client, sid, ix, iy)
+  }
+  const { candidate: ignored, x: ignoredX, y: ignoredY, ...result } = fresh
+  return { ...result, clicked: true }
+}
+
 // Best-effort automatic pass wired into goto()/openTab(): CMP selectors only
 // — accept table first, then vendor close controls for notice-only banners —
 // (near-zero false positive), never throws, never blocks navigation. On a
@@ -2093,13 +2417,16 @@ async function runConsentAccept(opts, sessionId = undefined) {
 // yet, and extends to `waitMs` once a banner is detected but not yet clickable
 // (still rendering). A bannerless page costs ~graceMs and stops.
 async function autoAcceptConsent({ waitMs = 3000, graceMs = 1200, intervalMs = 350 } = {},
-                                 sessionId = undefined) {
+                                 sessionId = undefined, scale = inputScale()) {
   try {
     const start = Date.now();
     let sawPending = false;
+    const opts = { heuristic: false, frames: true };
     for (;;) {
-      const r = await runConsentAccept({ heuristic: false, frames: true }, sessionId);
-      if (r && r.clicked) return r;
+      const r = await runConsentAccept(opts, sessionId);
+      if (r && r.candidate) {
+        return await activateConsentCandidate(r, opts, sessionId, scale);
+      }
       if (r && r.pending) sawPending = true;
       if (Date.now() - start >= (sawPending ? waitMs : graceMs)) return r;
       await wait(intervalMs / 1000);
@@ -2125,7 +2452,111 @@ async function autoAcceptConsent({ waitMs = 3000, graceMs = 1200, intervalMs = 3
  */
 export async function acceptCookies({ heuristic = true, frames = true, dismiss = true } = {}) {
   await guardAgentControl();
-  return runConsentAccept({ heuristic, frames, dismiss });
+  const opts = { heuristic, frames, dismiss };
+  const candidate = await runConsentAccept(opts);
+  return activateConsentCandidate(candidate, opts);
+}
+
+const INPUT_GATE_LATE_CONSENT_WINDOW_MS = 3000
+const INPUT_GATE_MAX_GRACE_MS = 1500
+
+// Before a high-level input, establish the conditions a person would need:
+// a laid-out interactive document, no browser challenge, and no visible
+// blocking consent layer. Navigation's fast consent pass remains unchanged;
+// the first actual input waits only for the unused portion of the late-banner
+// window, while later inputs perform one immediate probe. Element actions add
+// their own exact point hit-test in locateRect below.
+async function ensurePageOperable({ force = false } = {}) {
+  if (state.openDialog) {
+    throw new Error(`page is not human-operable: a JavaScript dialog is open ` +
+                    `(${state.openDialog.type}) — call handleDialog(accept) first`)
+  }
+  const deadline = Date.now() + 4000
+  let page = null
+  while (Date.now() < deadline) {
+    page = await evalInPage(`(() => ({
+      ready: document.readyState,
+      width: innerWidth,
+      height: innerHeight,
+      age: performance.now(),
+      timeOrigin: performance.timeOrigin,
+      url: location.href
+    }))()`, 4000).catch(() => null)
+    if (page && (page.ready === 'interactive' || page.ready === 'complete') &&
+        page.width > 1 && page.height > 1) break
+    await wait(0.1)
+  }
+  if (!page || (page.ready !== 'interactive' && page.ready !== 'complete') ||
+      page.width <= 1 || page.height <= 1) {
+    throw new Error('page is not human-operable: the document has no interactive viewport')
+  }
+
+  let challenge = await detectChallenge()
+  if (challenge) {
+    const settled = await passiveChallengeRechecks(challenge)
+    challenge = settled.challenge
+    if (!challenge) {
+      // Managed clearance commonly reloads from the interstitial into the
+      // real document. Refresh the identity used by the consent/input gate;
+      // refs from the challenge page are intentionally not reused.
+      page = await evalInPage(`(() => ({
+        ready: document.readyState,
+        width: innerWidth,
+        height: innerHeight,
+        age: performance.now(),
+        timeOrigin: performance.timeOrigin,
+        url: location.href
+      }))()`, 4000).catch(() => null)
+      if (!page || (page.ready !== 'interactive' && page.ready !== 'complete') ||
+          page.width <= 1 || page.height <= 1) {
+        throw new Error('page is not human-operable after Cloudflare clearance')
+      }
+    }
+  } else {
+    clearChallengeGate()
+  }
+  if (challenge) {
+    const next = challenge.kind === 'blocked'
+      ? 'report the hard block to the user; do not retry input'
+      : `remained after ${state.challengeGate?.attempts || 0} passive rechecks — ` +
+        'hand control to the user'
+    throw new Error(`page is not human-operable: ${challenge.vendor} ` +
+                    `${challenge.kind} detected — ${next}`)
+  }
+
+  const documentKey = `${state.targetId}|${page.timeOrigin}|${page.url}`
+  const firstCheck = state.inputGate?.documentKey !== documentKey
+  const remainingLateWindow = Math.max(
+    0, INPUT_GATE_LATE_CONSENT_WINDOW_MS - Number(page.age || 0))
+  const graceMs = !force && firstCheck
+    ? Math.min(INPUT_GATE_MAX_GRACE_MS, remainingLateWindow)
+    : 0
+  let consent = null
+  if (contextKind() !== 'user') {
+    consent = await autoAcceptConsent({
+      graceMs,
+      waitMs: !force && firstCheck ? Math.max(3000, graceMs) : 0,
+      intervalMs: 150,
+    })
+    if (consent?.clicked) await wait(0.25)
+  } else {
+    // Automatic consent in the user's own Space remains their choice, but a
+    // page-side input must still not bypass the banner. One non-mutating probe
+    // is enough: the user can accept it themselves or explicitly ask us to.
+    consent = await runConsentAccept({ heuristic: false, frames: true, scroll: false })
+  }
+  const consentBlocks = !consent?.clicked &&
+    ((consent?.pending && consent?.blocking) ||
+     (contextKind() === 'user' && consent?.candidate))
+  if (consentBlocks) {
+    const detail = consent.reason === 'cross-origin-frame'
+      ? 'a cross-origin cookie-consent frame'
+      : 'a cookie-consent overlay'
+    throw new Error(`page is not human-operable: ${detail} is blocking input — ` +
+                    'call acceptCookies() or hand control to the user')
+  }
+  state.inputGate = { documentKey, checkedAt: Date.now() }
+  return { ready: true, consent }
 }
 
 // ---------------------------------------------------------------------------
@@ -3076,33 +3507,46 @@ async function retryResolve(attempt, retryMs = RESOLVE_RETRY_MS) {
 }
 
 /** Resolves a target to viewport {x, y} (center, or top-left + offset),
- *  scrolling it into view first. Throws if not found (after the short
- *  resolution grace above; {retryMs: 0} probes exactly once). Element hits
- *  carry w/h; raw-coordinate targets return {x, y} alone. */
+ *  scrolling it into view first. The point must be visible, enabled, inside
+ *  the viewport, and topmost through its same-origin frame chain—the reach a
+ *  human pointer actually has. Throws if missing or inoperable (after the
+ *  short grace above; {retryMs: 0} probes exactly once). Element hits carry
+ *  w/h; raw-coordinate targets return {x, y} alone. */
 async function locateRect(target, { retryMs = RESOLVE_RETRY_MS } = {}) {
   const spec = normalizeTarget(target)
   if (spec.coords) return { x: spec.coords.x, y: spec.coords.y }
-  const rect = await retryResolve(() => callOnTarget(spec, `function (offX, offY) {
-    try { this.scrollIntoView({ block: 'center', inline: 'center' }) } catch (e) {}
-    var r = this.getBoundingClientRect()
-    // Rects inside an iframe are relative to the FRAME's viewport; input
-    // dispatch needs TOP-page coords — add up the same-origin frame chain.
-    var fx = 0, fy = 0
-    try {
-      var win = this.ownerDocument.defaultView
-      while (win && win.frameElement) {
-        var fe = win.frameElement
-        var fr = fe.getBoundingClientRect()
-        fx += fr.left + (fe.clientLeft || 0)
-        fy += fr.top + (fe.clientTop || 0)
-        win = win.parent
+  let sawInoperable = false
+  let refreshedPageGate = false
+  const probe = () => callOnTarget(spec, `function (offX, offY) {
+      try { this.scrollIntoView({ block: 'center', inline: 'center' }) } catch (e) {}
+      ${PAGE_OPERABLE_POINT_DECL}
+      return __phiOperablePoint(this, offX, offY) || { operable: false }
+    }`, [spec.offX ?? null, spec.offY ?? null])
+  const rect = await retryResolve(async () => {
+    let hit = await probe()
+    if (hit?.operable === false) {
+      sawInoperable = true
+      // A consent layer can mount after the action's page-level check but
+      // before a late target resolves. Give the gate one non-recursive retry;
+      // the final retryMs:0 commit probe stays mutation-free and aborts on a
+      // last-millisecond layer instead of moving the pointer again.
+      if (!refreshedPageGate && retryMs > 0) {
+        refreshedPageGate = true
+        const gate = await ensurePageOperable({ force: true })
+        if (gate.consent?.clicked) hit = await probe()
+        if (hit?.operable !== false) return hit
       }
-    } catch (e) {}
-    var x = (offX != null ? r.left + offX : r.left + r.width / 2) + fx
-    var y = (offY != null ? r.top + offY : r.top + r.height / 2) + fy
-    return { x: Math.round(x), y: Math.round(y), w: Math.round(r.width), h: Math.round(r.height) }
-  }`, [spec.offX ?? null, spec.offY ?? null]), retryMs)
-  if (!rect) throw new Error('target not found: ' + describeTarget(target))
+      return null
+    }
+    return hit
+  }, retryMs)
+  if (!rect) {
+    if (sawInoperable) {
+      throw new Error('target is not human-operable (covered, disabled, or outside the viewport): ' +
+                      describeTarget(target))
+    }
+    throw new Error('target not found: ' + describeTarget(target))
+  }
   return rect
 }
 
@@ -3635,13 +4079,14 @@ export async function setViewport({ width, height } = {}) {
 // ---------------------------------------------------------------------------
 // Input (coordinates are CSS pixels, origin top-left of the viewport)
 
-// Fire-and-forget: the overlay cursor is cosmetic, so don't spend an app-bus
-// round trip of latency on every click/hover waiting for it.
+// Normally fire-and-forget: the overlay cursor is cosmetic, so callers don't
+// spend an app-bus round trip on every click/hover. movePointer awaits the
+// returned promise only when seeding a cursor's first visible position.
 function mirrorCursor(x, y) {
   const task = state.task
   if (!task) return  // no overlay in user-space mode
   if (contextKind() === 'shadow') return  // no overlay, no watcher
-  phiSend('agentSpace.cursor', { taskId: task.taskId, x, y }).catch(() => {})
+  return phiSend('agentSpace.cursor', { taskId: task.taskId, x, y }).catch(() => {})
 }
 
 // Fire-and-forget input-mirror effects: a watching user sees a click ripple,
@@ -3718,21 +4163,90 @@ async function mirrorTypingEffect(client) {
   return props
 }
 
-// Inserts text through the real editing pipeline at a watchable pace —
-// characters appear one by one like typing, not as an instant paste. Long
-// text is chunked so the whole insert stays under ~3s, and the overlay's
-// typing pulse (which self-expires) is re-fired while typing continues.
+const KEY_DWELL_MIN_MS = 18
+const KEY_DWELL_MAX_MS = 42
+
+function randomMs(min, max) {
+  return min + Math.floor(Math.random() * (max - min + 1))
+}
+
+async function dispatchKeyDefinition(client, sid, def, modifiers = 0) {
+  const effectiveModifiers = modifiers | (def.modifiers || 0)
+  const implicitShift = !!(def.modifiers & 8) && !(modifiers & 8)
+  if (implicitShift) {
+    const shift = KEY_DEFS.Shift
+    await client.send('Input.dispatchKeyEvent', {
+      type: 'rawKeyDown', key: shift.key, code: shift.code,
+      modifiers: effectiveModifiers,
+      windowsVirtualKeyCode: shift.keyCode, nativeVirtualKeyCode: shift.keyCode,
+    }, sid)
+    await new Promise(resolve => setTimeout(resolve, randomMs(12, 28)))
+  }
+  const common = {
+    key: def.key, code: def.code, modifiers: effectiveModifiers,
+    windowsVirtualKeyCode: def.keyCode, nativeVirtualKeyCode: def.keyCode,
+  }
+  const down = {
+    type: def.text ? 'keyDown' : 'rawKeyDown',
+    ...common,
+  }
+  if (def.text) {
+    down.text = def.text
+    down.unmodifiedText = def.unmodifiedText ?? def.text
+  }
+  await client.send('Input.dispatchKeyEvent', down, sid)
+  await new Promise(resolve => setTimeout(
+    resolve, randomMs(KEY_DWELL_MIN_MS, KEY_DWELL_MAX_MS)))
+  await client.send('Input.dispatchKeyEvent', { type: 'keyUp', ...common }, sid)
+  if (implicitShift) {
+    await new Promise(resolve => setTimeout(resolve, randomMs(8, 18)))
+    const shift = KEY_DEFS.Shift
+    await client.send('Input.dispatchKeyEvent', {
+      type: 'keyUp', key: shift.key, code: shift.code, modifiers,
+      windowsVirtualKeyCode: shift.keyCode, nativeVirtualKeyCode: shift.keyCode,
+    }, sid)
+  }
+}
+
+function textGraphemes(text) {
+  try {
+    const segmenter = new Intl.Segmenter(undefined, { granularity: 'grapheme' })
+    return [...segmenter.segment(String(text))].map((part) => part.segment)
+  } catch {
+    return [...String(text)]
+  }
+}
+
+function typingGapMs(unit, count) {
+  // Human cadence for normal form-sized values, compressed gradually for
+  // large inserts so a paragraph does not monopolize a round. Key events are
+  // never batched: even at the compressed pace, each keyboard character has
+  // its own down/up pair.
+  const nominal = Math.min(78, 6000 / Math.max(1, count - 1))
+  let delay = nominal * (0.6 + Math.random() * 0.65)
+  if (nominal >= 28 && /[\s,.!?;:]$/.test(unit)) {
+    delay += randomMs(25, 85)
+  }
+  return Math.max(5, Math.round(delay))
+}
+
+// Types keyboard-representable characters with real CDP keyDown/keyUp
+// events. Input.insertText is reserved for graphemes that genuinely do not
+// correspond to one physical key (IME text, emoji, composed Unicode), which
+// is the purpose CDP defines for that command. The overlay's typing pulse is
+// refreshed while a long value is in flight.
 async function insertTextPaced(text, pulse) {
   const client = await cdpClient()
   const sid = requireSession()
-  const chars = [...String(text)]
-  const perSend = chars.length > 120 ? Math.ceil(chars.length / 120) : 1
+  const units = textGraphemes(text)
   let lastPulse = Date.now()
-  for (let i = 0; i < chars.length; i += perSend) {
-    await client.send('Input.insertText',
-                      { text: chars.slice(i, i + perSend).join('') }, sid)
-    if (i + perSend < chars.length) {
-      await new Promise(resolve => setTimeout(resolve, 22))
+  for (let i = 0; i < units.length; i++) {
+    const unit = units[i]
+    const def = keyDefinitionForCharacter(unit)
+    if (def) await dispatchKeyDefinition(client, sid, def)
+    else await client.send('Input.insertText', { text: unit }, sid)
+    if (i + 1 < units.length) {
+      await new Promise(resolve => setTimeout(resolve, typingGapMs(unit, units.length)))
       if (pulse && Date.now() - lastPulse > 1200) {
         lastPulse = Date.now()
         try { mirrorEffect('type', pulse) } catch {}
@@ -3755,6 +4269,270 @@ function inputScale() {
   return state.viewportByTarget.get(state.targetId)?.scale ?? 1
 }
 
+// Browser mouse events normally arrive near the display cadence, with small
+// scheduling variation. The path below supplies that variation while the
+// minimum-jerk motion profile supplies a gradual acceleration and landing.
+const POINTER_FRAME_MS = 16
+const POINTER_SAMPLE_MIN_MS = 11
+const POINTER_SAMPLE_MAX_MS = 21
+const POINTER_MIN_GLIDE_MS = 75
+const POINTER_MAX_GLIDE_MS = 680
+
+function minimumJerk(progress) {
+  const t = Math.min(1, Math.max(0, progress))
+  return t * t * t * (10 + t * (-15 + 6 * t))
+}
+
+function cubicPoint(start, control1, control2, end, progress) {
+  const t = progress
+  const u = 1 - t
+  return {
+    x: u * u * u * start.x + 3 * u * u * t * control1.x
+      + 3 * u * t * t * control2.x + t * t * t * end.x,
+    y: u * u * u * start.y + 3 * u * u * t * control1.y
+      + 3 * u * t * t * control2.y + t * t * t * end.y,
+  }
+}
+
+function pointerMemory() {
+  const ctx = currentContext()
+  if (ctx?.windowId && state.pointer?.windowId === ctx.windowId) return state.pointer
+  state.pointer = null
+  const key = ctx?.kind === 'user' ? `space:${ctx.spaceId}` : ctx?.taskId
+  if (!key || !ctx?.windowId) return null
+  const stored = readStoredPointer(key, ctx.windowId)
+  if (stored) state.pointer = stored
+  return stored
+}
+
+function rememberPointer(point) {
+  const ctx = currentContext()
+  state.pointer = { ...point, windowId: ctx?.windowId }
+  const key = ctx?.kind === 'user' ? `space:${ctx.spaceId}` : ctx?.taskId
+  if (key && ctx?.windowId) writeStoredPointer(key, ctx.windowId, point)
+}
+
+function forgetPointer() {
+  state.pointer = null
+  const ctx = currentContext()
+  const key = ctx?.kind === 'user' ? `space:${ctx.spaceId}` : ctx?.taskId
+  if (key && ctx?.windowId) writeStoredPointer(key, ctx.windowId, null)
+}
+
+// Each sample's `at` is milliseconds from the start. Curving comes from one
+// cubic path rather than per-sample noise: real hands wander smoothly, not in
+// a high-frequency zigzag. Longer moves sometimes pass the target by a few
+// pixels and settle back. Bounds keep the cubic's entire convex hull inside
+// the widget. Tests can inject a seeded `random` without widening the public
+// helper API.
+function pointerTrajectory(from, to, { random = Math.random, bounds } = {}) {
+  const randomUnit = () => {
+    const value = Number(random())
+    return Number.isFinite(value) ? Math.min(0.999999, Math.max(0, value)) : 0.5
+  }
+  const maximum = {
+    x: Number.isFinite(bounds?.width) ? Math.max(0, Math.round(bounds.width) - 1) : Infinity,
+    y: Number.isFinite(bounds?.height) ? Math.max(0, Math.round(bounds.height) - 1) : Infinity,
+  }
+  const clampPoint = (point) => ({
+    x: Math.min(maximum.x, Math.max(0, point.x)),
+    y: Math.min(maximum.y, Math.max(0, point.y)),
+  })
+  const start = clampPoint({ x: Math.round(from.x), y: Math.round(from.y) })
+  const end = clampPoint({ x: Math.round(to.x), y: Math.round(to.y) })
+  const distance = Math.hypot(end.x - start.x, end.y - start.y)
+  if (distance < 2) return { duration: 0, points: [{ ...end, at: 0 }] }
+
+  // A logarithmic distance curve follows the broad shape of pointing time:
+  // short corrections remain quick, while crossing a viewport takes longer
+  // without becoming a constant pixels-per-second glide.
+  const duration = Math.round(Math.min(POINTER_MAX_GLIDE_MS,
+    Math.max(POINTER_MIN_GLIDE_MS,
+      (85 + 82 * Math.log2(1 + distance / 28)) * (1.08 + randomUnit() * 0.18))))
+  const ux = (end.x - start.x) / distance
+  const uy = (end.y - start.y) / distance
+  const nx = -uy
+  const ny = ux
+  const curveSign = randomUnit() < 0.5 ? -1 : 1
+  const curve = distance < 35 ? 0
+    : curveSign * Math.min(70, distance * (0.025 + randomUnit() * 0.055))
+
+  const wantsCorrection = distance > 220 && randomUnit() < 0.58
+  const overshootDistance = wantsCorrection ? Math.min(10, 2 + distance * 0.008) : 0
+  const mainEnd = clampPoint({
+    x: end.x + ux * overshootDistance + nx * (randomUnit() - 0.5) * 2,
+    y: end.y + uy * overshootDistance + ny * (randomUnit() - 0.5) * 2,
+  })
+  const correctionDistance = Math.hypot(mainEnd.x - end.x, mainEnd.y - end.y)
+  const hasCorrection = correctionDistance >= 1.5
+  const mainDuration = hasCorrection
+    ? duration * (0.8 + randomUnit() * 0.08)
+    : duration
+  const control1Ratio = 0.22 + randomUnit() * 0.16
+  const control2Ratio = 0.64 + randomUnit() * 0.18
+  const control1 = clampPoint({
+    x: start.x + (mainEnd.x - start.x) * control1Ratio + nx * curve * 0.55,
+    y: start.y + (mainEnd.y - start.y) * control1Ratio + ny * curve * 0.55,
+  })
+  const control2 = clampPoint({
+    x: start.x + (mainEnd.x - start.x) * control2Ratio + nx * curve,
+    y: start.y + (mainEnd.y - start.y) * control2Ratio + ny * curve,
+  })
+
+  const sampleTimes = []
+  let sampledAt = 0
+  while (sampledAt < duration) {
+    const interval = POINTER_SAMPLE_MIN_MS + Math.floor(
+      randomUnit() * (POINTER_SAMPLE_MAX_MS - POINTER_SAMPLE_MIN_MS + 1))
+    sampledAt = Math.min(duration, sampledAt + interval)
+    sampleTimes.push(sampledAt)
+  }
+
+  const points = []
+  let last = start
+  for (const at of sampleTimes) {
+    let raw
+    if (hasCorrection && at > mainDuration) {
+      const progress = minimumJerk((at - mainDuration) / (duration - mainDuration))
+      const correctionBend = Math.sin(Math.PI * progress) * Math.min(2, correctionDistance / 3)
+      raw = {
+        x: mainEnd.x + (end.x - mainEnd.x) * progress - nx * curveSign * correctionBend,
+        y: mainEnd.y + (end.y - mainEnd.y) * progress - ny * curveSign * correctionBend,
+      }
+    } else {
+      raw = cubicPoint(start, control1, control2, mainEnd,
+                       minimumJerk(at / mainDuration))
+    }
+    const bounded = clampPoint(raw)
+    const point = {
+      x: at === duration ? end.x : Math.round(bounded.x),
+      y: at === duration ? end.y : Math.round(bounded.y),
+      at,
+    }
+    // Slow starts/landings can quantize adjacent samples to one pixel. Keep
+    // the later due time, but do not emit stationary mousemove noise.
+    if (point.x === last.x && point.y === last.y) {
+      if (at === duration && points.length) points[points.length - 1] = point
+      continue
+    }
+    points.push(point)
+    last = point
+  }
+  return { duration, points }
+}
+export { pointerTrajectory as __pointerTrajectoryForTest }
+
+// With no remembered pointer, make its first visible point look like a cursor
+// entering the content from the nearest viewport edge. Offset that entry point
+// along the edge so a target sitting at a corner still gets a visible glide,
+// rather than an almost-zero first move. Bounds and points are widget-space.
+function initialPointerFromBounds(to, bounds) {
+  const width = Math.max(2, Math.round(bounds.width))
+  const height = Math.max(2, Math.round(bounds.height))
+  const edge = 1
+  const nudge = 48
+  const clamp = (value, max) => Math.min(max - edge, Math.max(edge, value))
+  const verticalEntry = clamp(to.y + (to.y <= height / 2 ? nudge : -nudge), height)
+  const horizontalEntry = clamp(to.x + (to.x <= width / 2 ? nudge : -nudge), width)
+  const candidates = [
+    { x: edge, y: verticalEntry },
+    { x: width - edge, y: verticalEntry },
+    { x: horizontalEntry, y: edge },
+    { x: horizontalEntry, y: height - edge },
+  ]
+  let nearest = candidates[0]
+  for (const point of candidates.slice(1)) {
+    if (Math.hypot(point.x - to.x, point.y - to.y) <
+        Math.hypot(nearest.x - to.x, nearest.y - to.y)) nearest = point
+  }
+  return nearest
+}
+export { initialPointerFromBounds as __initialPointerForTest }
+
+async function pointerWidgetBounds(client, sid, minimum = { x: 0, y: 0 }) {
+  const viewport = state.viewportByTarget.get(state.targetId)
+  if (viewport?.width > 0 && viewport?.height > 0) {
+    return {
+      width: viewport.width * viewport.scale,
+      height: viewport.height * viewport.scale,
+    }
+  }
+  try {
+    const { cssLayoutViewport } = await client.send('Page.getLayoutMetrics', {}, sid)
+    const width = Math.round((cssLayoutViewport?.clientWidth || 0) * inputScale())
+    const height = Math.round((cssLayoutViewport?.clientHeight || 0) * inputScale())
+    if (width > 0 && height > 0) return { width, height }
+  } catch {}
+  // Layout metrics should always exist for a page target. Keep the fallback
+  // in-bounds for an explicit coordinate even if a degraded renderer omits it.
+  return {
+    width: Math.max(FALLBACK_VIEWPORT.width, minimum.x + 2),
+    height: Math.max(FALLBACK_VIEWPORT.height, minimum.y + 2),
+  }
+}
+
+async function movePointer(client, sid, x, y) {
+  const bounds = await pointerWidgetBounds(client, sid, { x, y })
+  const clamp = (value, max) => Math.min(Math.max(0, Math.round(value)),
+    Math.max(0, Math.round(max) - 1))
+  const to = { x: clamp(x, bounds.width), y: clamp(y, bounds.height) }
+  let from = pointerMemory()
+
+  const send = async (point, { mirror = true } = {}) => {
+    if (mirror) {
+      // Stream the same samples to the native watcher overlay. Its rapid-update
+      // mode follows these hops directly, so the visible and page traces agree.
+      try { mirrorCursor(point.x, point.y) } catch {}
+    }
+    await client.send('Input.dispatchMouseEvent', {
+      type: 'mouseMoved', x: point.x, y: point.y, pointerType: 'mouse',
+    }, sid)
+    state.pointer = { ...point, windowId: currentContext()?.windowId }
+  }
+
+  if (!from) {
+    from = initialPointerFromBounds(to, bounds)
+    // Seed both surfaces at the same boundary point. Waiting one display
+    // frame makes the native cursor's first appearance observable before its
+    // endpoint update starts the glide; the page receives that same first
+    // trusted move event instead of learning only about the destination.
+    try { await mirrorCursor(from.x, from.y) } catch {}
+    await send(from, { mirror: false })
+    await new Promise(resolve => setTimeout(resolve, POINTER_FRAME_MS * 2))
+  } else {
+    from = { x: clamp(from.x, bounds.width), y: clamp(from.y, bounds.height) }
+  }
+
+  const trajectory = pointerTrajectory(from, to, { bounds })
+  const started = Date.now()
+  for (const point of trajectory.points) {
+    const due = started + point.at
+    const delay = due - Date.now()
+    if (delay > 0) await new Promise(resolve => setTimeout(resolve, delay))
+    await send({ x: point.x, y: point.y })
+  }
+  rememberPointer(to)
+}
+
+async function dispatchClickAt(client, sid, x, y,
+                               { button = 'left', clickCount = 1 } = {}) {
+  const count = Math.max(1, clickCount)
+  for (let c = 1; c <= count; c++) {
+    const base = { x, y, button, clickCount: c, pointerType: 'mouse' }
+    await client.send('Input.dispatchMouseEvent', { type: 'mousePressed', ...base }, sid)
+    await new Promise(resolve => setTimeout(resolve, randomMs(55, 95)))
+    await client.send('Input.dispatchMouseEvent', { type: 'mouseReleased', ...base }, sid)
+    if (c < count) {
+      await new Promise(resolve => setTimeout(resolve, randomMs(70, 120)))
+    }
+  }
+  try { mirrorEffect('click', { x, y }) } catch {}
+}
+
+function inputPointChanged(a, b) {
+  return Math.abs(a.x - b.x) > 0.5 || Math.abs(a.y - b.y) > 0.5
+}
+
 /**
  * Clicks a target. Two call forms:
  *   click(x, y[, {button, clickCount}])   — raw viewport coordinates
@@ -3764,6 +4542,7 @@ function inputScale() {
  */
 export async function click(target, arg2, arg3) {
   await guardAgentControl()
+  await ensurePageOperable()
   const client = await cdpClient()
   let x, y, opts
   let elementTarget = false
@@ -3782,38 +4561,42 @@ export async function click(target, arg2, arg3) {
   // CSS -> widget coords under a zoom scale (see inputScale).
   const s = inputScale()
   let ix = Math.round(x * s), iy = Math.round(y * s)
-  try { mirrorCursor(ix, iy) } catch {}
   const sid = requireSession()
-  // Real hover precedes the press (hover states react like they would for a
-  // person), and the pause covers the overlay cursor's eased glide (≤450ms)
-  // so a watching user sees the movement land before the click ripple.
-  await client.send('Input.dispatchMouseEvent',
-                    { type: 'mouseMoved', x: ix, y: iy, pointerType: 'mouse' }, sid)
-  await new Promise(resolve => setTimeout(resolve, 450))
-  // The page can shift under the glide pause (a streaming list, late media):
-  // re-measure an element target and press at the FRESH spot, not the stale
-  // one — a click that "succeeds" onto whatever moved into the old rect is
-  // the worst kind of silent miss. One probe, no retry; a target that
-  // vanished mid-glide keeps the measured coords (best remaining guess).
+  // Move through the same paced trajectory the native overlay renders. This
+  // gives the page real hover transitions and intermediate trusted events.
+  await movePointer(client, sid, ix, iy)
+  await ensurePageOperable({ force: true })
+  // The page can shift under the glide pause (a streaming list, late media,
+  // or a just-mounted consent layer). Re-run the whole page gate, then require
+  // the element to remain the topmost hit-test result. Never click the stale
+  // coordinate if it vanished or became covered while the pointer travelled.
   if (elementTarget) {
-    const fresh = await locateRect(target, { retryMs: 0 }).catch(() => null)
-    if (fresh && (fresh.x !== x || fresh.y !== y)) {
+    const fresh = await locateRect(target, { retryMs: 1000 })
+    if (inputPointChanged(fresh, { x, y })) {
       x = fresh.x; y = fresh.y
       ix = Math.round(x * s); iy = Math.round(y * s)
-      try { mirrorCursor(ix, iy) } catch {}
-      await client.send('Input.dispatchMouseEvent',
-                        { type: 'mouseMoved', x: ix, y: iy, pointerType: 'mouse' }, sid)
+      await movePointer(client, sid, ix, iy)
+    }
+    const pointer = pointerMemory()
+    if (!pointer || pointer.x !== ix || pointer.y !== iy) {
+      await movePointer(client, sid, ix, iy)
+    }
+    const final = await locateRect(target, { retryMs: 0 })
+    if (inputPointChanged(final, { x, y })) {
+      throw new Error('target moved while preparing the click: ' + describeTarget(target))
+    }
+  } else {
+    // The gate may have moved to and accepted a late consent control. Return
+    // to the requested raw coordinate before pressing.
+    const pointer = pointerMemory()
+    if (!pointer || pointer.x !== ix || pointer.y !== iy) {
+      await movePointer(client, sid, ix, iy)
     }
   }
-  // A multi-click must be dispatched as the FULL press/release sequence with
-  // an increasing count (1, 2, …): a single pair sent straight with
-  // clickCount=2 never synthesizes dblclick, so apps ignore it.
-  for (let c = 1; c <= Math.max(1, clickCount); c++) {
-    const base = { x: ix, y: iy, button, clickCount: c, pointerType: 'mouse' }
-    await client.send('Input.dispatchMouseEvent', { type: 'mousePressed', ...base }, sid)
-    await client.send('Input.dispatchMouseEvent', { type: 'mouseReleased', ...base }, sid)
-  }
-  try { mirrorEffect('click', { x: ix, y: iy }) } catch {}
+  // A physical click has a measurable dwell. Multi-clicks carry the full
+  // increasing press/release sequence; one pair sent with count=2 does not
+  // synthesize dblclick in apps.
+  await dispatchClickAt(client, sid, ix, iy, { button, clickCount })
   return { x, y }
 }
 
@@ -3821,26 +4604,42 @@ export async function click(target, arg2, arg3) {
  *  target forms as click, or hover(x, y) coordinates. */
 export async function hover(target, maybeY) {
   await guardAgentControl()
+  await ensurePageOperable()
   const client = await cdpClient()
   logAction(typeof target === 'number'
     ? `hover (${target}, ${maybeY})` : `hover ${describeTarget(target)}`)
-  const { x, y } = typeof target === 'number'
+  let { x, y } = typeof target === 'number'
     ? { x: target, y: maybeY }
     : await locateRect(target)
   // CSS -> widget coords under a zoom scale (see inputScale).
   const s = inputScale()
-  const ix = Math.round(x * s), iy = Math.round(y * s)
-  try { mirrorCursor(ix, iy) } catch {}
-  await client.send('Input.dispatchMouseEvent',
-                    { type: 'mouseMoved', x: ix, y: iy, pointerType: 'mouse' }, requireSession())
+  let ix = Math.round(x * s), iy = Math.round(y * s)
+  const sid = requireSession()
+  await movePointer(client, sid, ix, iy)
+  await ensurePageOperable({ force: true })
+  if (typeof target !== 'number') {
+    const fresh = await locateRect(target, { retryMs: 1000 })
+    x = fresh.x; y = fresh.y
+    ix = Math.round(x * s); iy = Math.round(y * s)
+  }
+  const pointer = pointerMemory()
+  if (!pointer || pointer.x !== ix || pointer.y !== iy) {
+    await movePointer(client, sid, ix, iy)
+  }
+  if (typeof target !== 'number') {
+    const final = await locateRect(target, { retryMs: 0 })
+    if (inputPointChanged(final, { x, y })) {
+      throw new Error('target moved while preparing the hover: ' + describeTarget(target))
+    }
+  }
   return { x, y }
 }
 
 /**
  * Fills an input/textarea/select/contenteditable target. Text fields are
- * typed into at a watchable pace (characters appear like real typing, capped
- * at ~3s total) through the real editing pipeline, then the result is
- * verified by readback. Fields that reject or reformat typed input — masks,
+ * pointed to, clicked, selected, and typed at a watchable pace (physical-key
+ * text through key events; IME/emoji through CDP's composition insertion),
+ * then verified by readback. Fields that reject or reformat typed input — masks,
  * pickers, SELECTs — fall back to the deterministic native value setter +
  * `input`/`change` events, so framework-bound fields (React/Vue) still
  * update. Pass `{instant: true}` to skip the typing pace and set the value
@@ -3857,32 +4656,41 @@ export async function fillInput(target, text, { instant = false } = {}) {
   return await fillTargetValue(spec, target, str, { instant })
 }
 
-/** Shared fill machinery behind fillInput and fillCredential: resolve, focus,
- *  type-or-set, verify. Does not log — callers write their own action line. */
+async function selectAllWithKeyboard(client, sid) {
+  const meta = KEY_DEFS.Meta
+  const letter = keyDefinitionForCharacter('a')
+  const metaDown = {
+    type: 'rawKeyDown', key: meta.key, code: meta.code, modifiers: 4,
+    windowsVirtualKeyCode: meta.keyCode, nativeVirtualKeyCode: meta.keyCode,
+  }
+  const letterCommon = {
+    key: letter.key, code: letter.code, modifiers: 4,
+    windowsVirtualKeyCode: letter.keyCode, nativeVirtualKeyCode: letter.keyCode,
+  }
+  await client.send('Input.dispatchKeyEvent', metaDown, sid)
+  await new Promise(resolve => setTimeout(resolve, randomMs(18, 32)))
+  await client.send('Input.dispatchKeyEvent', {
+    type: 'rawKeyDown', ...letterCommon, commands: ['selectAll'],
+  }, sid)
+  await new Promise(resolve => setTimeout(resolve, randomMs(18, 32)))
+  await client.send('Input.dispatchKeyEvent', { type: 'keyUp', ...letterCommon }, sid)
+  await new Promise(resolve => setTimeout(resolve, randomMs(8, 18)))
+  await client.send('Input.dispatchKeyEvent', {
+    type: 'keyUp', key: meta.key, code: meta.code, modifiers: 0,
+    windowsVirtualKeyCode: meta.keyCode, nativeVirtualKeyCode: meta.keyCode,
+  }, sid)
+}
+
+/** Shared fill machinery: resolve, point, click/focus, select, type-or-set,
+ *  and verify. Does not log — the public caller writes the action line. */
 async function fillTargetValue(spec, target, str, { instant = false, label = 'fillInput' } = {}) {
-  // One pass: scroll into view, focus, select-all (so typed text REPLACES the
-  // current value), classify, and measure for the overlay's typing pulse.
-  // Resolution rides the same short grace as click (see retryResolve); the
-  // side-effectful body only runs once the element exists.
+  await ensurePageOperable()
+  let rect = await locateRect(target)
+  // Resolve and measure without focusing or selecting. The pointer and click
+  // must precede focus in the page's event timeline; doing el.focus()/select()
+  // here made the field react before the cursor arrived.
   const prep = await retryResolve(() => callOnTarget(spec, `function () {
     var el = this
-    try { el.scrollIntoView({ block: 'center' }) } catch (e) {}
-    try { el.focus() } catch (e) {}
-    var rect = null
-    try {
-      var r = el.getBoundingClientRect()
-      var fx = 0, fy = 0
-      var win = el.ownerDocument.defaultView
-      while (win && win.frameElement) {
-        var fe = win.frameElement
-        var fr = fe.getBoundingClientRect()
-        fx += fr.left + (fe.clientLeft || 0)
-        fy += fr.top + (fe.clientTop || 0)
-        win = win.parent
-      }
-      rect = { cx: r.left + r.width / 2 + fx, cy: r.top + r.height / 2 + fy,
-               w: r.width, h: r.height }
-    } catch (e) {}
     var tag = el.tagName
     var typeable = tag === 'TEXTAREA' || el.isContentEditable
     if (tag === 'INPUT') {
@@ -3891,30 +4699,62 @@ async function fillTargetValue(spec, target, str, { instant = false, label = 'fi
       typeable = ['text', 'search', 'url', 'tel', 'email', 'password', 'number']
         .indexOf(t) >= 0
     }
-    if (typeable) {
-      try {
-        if (tag === 'INPUT' || tag === 'TEXTAREA') el.select()
-        else el.ownerDocument.defaultView.getSelection().selectAllChildren(el)
-      } catch (e) {}
+    var hasValue = false
+    if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') {
+      hasValue = el.value.length > 0
+    } else if (el.isContentEditable) {
+      hasValue = el.textContent.length > 0
     }
-    return { typeable: typeable, rect: rect,
-             focused: el.ownerDocument.activeElement === el }
+    return { typeable: typeable, hasValue: hasValue }
   }`))
   if (!prep) throw new Error(label + ': target not found: ' + describeTarget(target))
 
-  let pulse = null
-  if (prep.rect) {
-    const s = inputScale()
-    pulse = { x: Math.round(prep.rect.cx * s), y: Math.round(prep.rect.cy * s),
-              w: Math.round(prep.rect.w * s), h: Math.round(prep.rect.h * s) }
-    try { mirrorCursor(pulse.x, pulse.y) } catch {}
-    try { mirrorEffect('type', pulse) } catch {}
+  const s = inputScale()
+  let pulse = { x: Math.round(rect.x * s), y: Math.round(rect.y * s),
+                w: Math.round(rect.w * s), h: Math.round(rect.h * s) }
+  const client = await cdpClient()
+  const sid = requireSession()
+  await movePointer(client, sid, pulse.x, pulse.y)
+
+  // This applies to instant/native-setter fills too: they must not mutate a
+  // field hidden behind a layer merely because page JS can still reach it.
+  await ensurePageOperable({ force: true })
+  const fresh = await locateRect(target, { retryMs: 1000 })
+  if (inputPointChanged(fresh, rect)) {
+    rect = fresh
+    pulse = { x: Math.round(rect.x * s), y: Math.round(rect.y * s),
+              w: Math.round(rect.w * s), h: Math.round(rect.h * s) }
+    await movePointer(client, sid, pulse.x, pulse.y)
+  }
+  const pointer = pointerMemory()
+  if (!pointer || pointer.x !== pulse.x || pointer.y !== pulse.y) {
+    await movePointer(client, sid, pulse.x, pulse.y)
+  }
+  const final = await locateRect(target, { retryMs: 0 })
+  if (inputPointChanged(final, rect)) {
+    throw new Error(label + ': target moved while preparing input')
   }
 
-  if (!instant && prep.typeable && prep.focused && str.length) {
-    // Let the overlay cursor glide onto the field before typing starts.
-    await new Promise(resolve => setTimeout(resolve, 250))
-    await insertTextPaced(str, pulse)
+  if (!instant && prep.typeable && rect.w > 0 && rect.h > 0) {
+    await dispatchClickAt(client, sid, pulse.x, pulse.y)
+    try { mirrorEffect('type', pulse) } catch {}
+    const focus = await callOnTarget(spec, `function () {
+      var el = this
+      var active = el.ownerDocument.activeElement
+      var focused = active === el || (el.isContentEditable && el.contains(active))
+      var hasValue = false
+      if (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA') {
+        hasValue = el.value.length > 0
+      } else if (el.isContentEditable) {
+        hasValue = el.textContent.length > 0
+      }
+      return { focused: focused, hasValue: hasValue }
+    }`)
+    if (focus?.focused) {
+      if (focus.hasValue) await selectAllWithKeyboard(client, sid)
+      if (str.length) await insertTextPaced(str, pulse)
+      else if (focus.hasValue) await dispatchKeyDefinition(client, sid, KEY_DEFS.Backspace)
+    }
     const typed = await callOnTarget(spec, `function () {
       return this.isContentEditable ? this.textContent : this.value
     }`)
@@ -3922,6 +4762,17 @@ async function fillTargetValue(spec, target, str, { instant = false, label = 'fi
     // Typed result didn't stick (masked/reformatting field) — fall through to
     // the deterministic setter.
   }
+
+  if (pulse && (instant || !prep.typeable)) {
+    try { mirrorEffect('type', pulse) } catch {}
+  }
+
+  // A masked field can reject the paced typing after several key events and
+  // force this setter fallback. Recheck once more before the page-side write;
+  // a modal that appeared during typing must stop the fallback from reaching
+  // through it.
+  await ensurePageOperable({ force: true })
+  await locateRect(target, { retryMs: 0 })
 
   const res = await callOnTarget(spec, `function (v) {
     var el = this
@@ -3950,12 +4801,24 @@ async function fillTargetValue(spec, target, str, { instant = false, label = 'fi
   }`, [str])
   if (!res) throw new Error(label + ': target not found: ' + describeTarget(target))
   if (!res.ok) throw new Error(label + ': ' + (res.err || 'failed'))
+  // Framework handlers can synchronously or asynchronously reject/reformat a
+  // setter result. Verify after one short settling turn; never echo the actual
+  // value in the error because this path can fill password fields.
+  await new Promise(resolve => setTimeout(resolve, 50))
+  const verified = await callOnTarget(spec, `function (v) {
+    if (this.tagName === 'INPUT' || this.tagName === 'TEXTAREA' ||
+        this.tagName === 'SELECT') return this.value === v
+    if (this.isContentEditable) return this.textContent === v
+    return false
+  }`, [str])
+  if (!verified) throw new Error(label + ': value did not match requested text after fallback')
   return { done: true }
 }
 
 /** Sets files on a `<input type=file>` target. Pass absolute paths. */
 export async function uploadFile(target, ...files) {
   await guardAgentControl()
+  await ensurePageOperable()
   if (!files.length) throw new Error('uploadFile: at least one file path is required')
   logAction(`upload ${files.length} file(s) into ${describeTarget(target)}`)
   const objectId = await locateObjectId(target)
@@ -3969,6 +4832,11 @@ export async function uploadFile(target, ...files) {
 
 export async function typeText(text) {
   await guardAgentControl()
+  const gate = await ensurePageOperable()
+  if (gate.consent?.clicked) {
+    throw new Error('typeText: a late cookie-consent overlay was dismissed and changed focus — ' +
+                    'click/fill the intended field again before typing')
+  }
   const client = await cdpClient()
   logAction(`type ${String(text).length} chars`)
   // Pulse first so the watcher sees where the text is about to land, then
@@ -3983,7 +4851,8 @@ export async function typeText(text) {
  * sibling of `js()`: use it to read or tweak one control (checkbox state,
  * dataset, style) without hand-writing selector lookups in page JS. Targets
  * take every form click() accepts except coordinates. Throws "target not
- * found" after the standard resolution grace.
+ * found" after the standard resolution grace. Like js(), this is not an input
+ * synthesizer; use the acting helpers for clicks, focus, or text entry.
  */
 export async function callOnElement(target, fnDecl, args = []) {
   await guardAgentControl()
@@ -4024,20 +4893,26 @@ export async function callOnElement(target, fnDecl, args = []) {
 export async function keyPhase(key, phase, { modifiers = 0 } = {}) {
   await guardAgentControl()
   if (phase !== 'down' && phase !== 'up') throw new Error("keyPhase: phase must be 'down' or 'up'")
+  if (phase === 'down') {
+    const gate = await ensurePageOperable()
+    if (gate.consent?.clicked) {
+      throw new Error('keyPhase: a late cookie-consent overlay was dismissed and changed focus — ' +
+                      'refocus the intended control before pressing a key')
+    }
+  }
   const def = resolveKeyDef(key)
   logAction(`key ${phase} ${key}`)
   const client = await cdpClient()
+  const effectiveModifiers = modifiers | (def.modifiers || 0)
   const common = {
-    key: def.key, code: def.code, modifiers,
+    key: def.key, code: def.code, modifiers: effectiveModifiers,
     windowsVirtualKeyCode: def.keyCode, nativeVirtualKeyCode: def.keyCode,
   }
   if (phase === 'down') {
-    await client.send('Input.dispatchKeyEvent',
-                      { type: 'rawKeyDown', ...common }, requireSession())
-    if (def.text) {
-      await client.send('Input.dispatchKeyEvent',
-                        { type: 'char', text: def.text, ...common }, requireSession())
-    }
+    await client.send('Input.dispatchKeyEvent', {
+      type: def.text ? 'keyDown' : 'rawKeyDown', ...common,
+      ...(def.text ? { text: def.text, unmodifiedText: def.unmodifiedText ?? def.text } : {}),
+    }, requireSession())
   } else {
     await client.send('Input.dispatchKeyEvent',
                       { type: 'keyUp', ...common }, requireSession())
@@ -4058,6 +4933,7 @@ export async function mouseEvent(type, { x = 0, y = 0, button = 'left',
                   up: 'mouseReleased', wheel: 'mouseWheel' }
   const kind = kinds[type]
   if (!kind) throw new Error("mouseEvent: type must be 'move', 'down', 'up', or 'wheel'")
+  if (type === 'down' || type === 'wheel') await ensurePageOperable()
   logAction(`mouse ${type} (${x}, ${y})`)
   const client = await cdpClient()
   const s = inputScale()
@@ -4077,22 +4953,75 @@ export async function mouseEvent(type, { x = 0, y = 0, button = 'left',
   }
   if (type === 'wheel') { params.deltaX = dx; params.deltaY = dy }
   await client.send('Input.dispatchMouseEvent', params, requireSession())
+  if (type !== 'wheel') rememberPointer({ x: ix, y: iy })
   if (type === 'down') { try { mirrorEffect('click', { x: ix, y: iy }) } catch {} }
 }
+
+const US_PRINTABLE_KEYS = {
+  ' ': { keyCode: 32, code: 'Space' },
+  '`': { keyCode: 192, code: 'Backquote' },
+  '~': { keyCode: 192, code: 'Backquote', modifiers: 8 },
+  '-': { keyCode: 189, code: 'Minus' },
+  '_': { keyCode: 189, code: 'Minus', modifiers: 8 },
+  '=': { keyCode: 187, code: 'Equal' },
+  '+': { keyCode: 187, code: 'Equal', modifiers: 8 },
+  '[': { keyCode: 219, code: 'BracketLeft' },
+  '{': { keyCode: 219, code: 'BracketLeft', modifiers: 8 },
+  ']': { keyCode: 221, code: 'BracketRight' },
+  '}': { keyCode: 221, code: 'BracketRight', modifiers: 8 },
+  '\\': { keyCode: 220, code: 'Backslash' },
+  '|': { keyCode: 220, code: 'Backslash', modifiers: 8 },
+  ';': { keyCode: 186, code: 'Semicolon' },
+  ':': { keyCode: 186, code: 'Semicolon', modifiers: 8 },
+  "'": { keyCode: 222, code: 'Quote' },
+  '"': { keyCode: 222, code: 'Quote', modifiers: 8 },
+  ',': { keyCode: 188, code: 'Comma' },
+  '<': { keyCode: 188, code: 'Comma', modifiers: 8 },
+  '.': { keyCode: 190, code: 'Period' },
+  '>': { keyCode: 190, code: 'Period', modifiers: 8 },
+  '/': { keyCode: 191, code: 'Slash' },
+  '?': { keyCode: 191, code: 'Slash', modifiers: 8 },
+}
+
+const SHIFTED_DIGITS = {
+  '!': '1', '@': '2', '#': '3', '$': '4', '%': '5',
+  '^': '6', '&': '7', '*': '8', '(': '9', ')': '0',
+}
+
+function keyDefinitionForCharacter(char) {
+  if (typeof char !== 'string' || [...char].length !== 1) return null
+  if (/^[a-z]$/.test(char)) {
+    const upper = char.toUpperCase()
+    return { key: char, text: char, keyCode: upper.charCodeAt(0), code: `Key${upper}` }
+  }
+  if (/^[A-Z]$/.test(char)) {
+    return { key: char, text: char, keyCode: char.charCodeAt(0),
+             code: `Key${char}`, modifiers: 8 }
+  }
+  if (/^[0-9]$/.test(char)) {
+    return { key: char, text: char, keyCode: char.charCodeAt(0), code: `Digit${char}` }
+  }
+  const shiftedDigit = SHIFTED_DIGITS[char]
+  if (shiftedDigit) {
+    return { key: char, text: char, keyCode: shiftedDigit.charCodeAt(0),
+             code: `Digit${shiftedDigit}`, modifiers: 8 }
+  }
+  const printable = US_PRINTABLE_KEYS[char]
+  return printable ? { key: char, text: char, ...printable } : null
+}
+export { keyDefinitionForCharacter as __keyDefinitionForTest }
 
 /** KEY_DEFS entry for a named key, or a synthesized one for a single
  *  printable character ('a', 'Z', '/'). */
 function resolveKeyDef(key) {
   const def = KEY_DEFS[key]
   if (def) return def
+  const printable = keyDefinitionForCharacter(key)
+  if (printable) return printable
   if (typeof key === 'string' && [...key].length === 1) {
-    const upper = key.toUpperCase()
-    const isLetter = /^[a-z]$/i.test(key)
-    const isDigit = /^[0-9]$/.test(key)
     return {
       key, text: key,
-      keyCode: isLetter || isDigit ? upper.charCodeAt(0) : key.charCodeAt(0),
-      code: isLetter ? `Key${upper}` : isDigit ? `Digit${key}` : '',
+      keyCode: key.codePointAt(0), code: '',
     }
   }
   throw new Error(`unsupported key '${key}' — use typeText for character sequences`)
@@ -4123,35 +5052,135 @@ const KEY_DEFS = {
 
 export async function pressKey(key, { modifiers = 0 } = {}) {
   await guardAgentControl()
+  const gate = await ensurePageOperable()
+  if (gate.consent?.clicked) {
+    throw new Error('pressKey: a late cookie-consent overlay was dismissed and changed focus — ' +
+                    'refocus the intended control before pressing a key')
+  }
   const def = resolveKeyDef(key)
   logAction(`press ${key}`)
   const client = await cdpClient()
-  const common = {
-    key: def.key, code: def.code, modifiers,
-    windowsVirtualKeyCode: def.keyCode, nativeVirtualKeyCode: def.keyCode,
-  }
-  await client.send('Input.dispatchKeyEvent',
-                    { type: 'rawKeyDown', ...common }, requireSession())
-  if (def.text) {
-    await client.send('Input.dispatchKeyEvent',
-                      { type: 'char', text: def.text, ...common }, requireSession())
-  }
-  await client.send('Input.dispatchKeyEvent',
-                    { type: 'keyUp', ...common }, requireSession())
+  await dispatchKeyDefinition(client, requireSession(), def, modifiers)
   await mirrorTypingEffect(client)
 }
 
-export async function scroll({ dy = 600, dx = 0, x = 400, y = 300 } = {}) {
+// Cumulative smoothstep creates a small start, a faster middle, and a soft
+// finish. Each point carries the incremental wheel delta due at `at` ms; the
+// increments sum exactly to the requested distance.
+function wheelTrajectory(dx, dy) {
+  const totalX = Number(dx)
+  const totalY = Number(dy)
+  if (!Number.isFinite(totalX) || !Number.isFinite(totalY)) {
+    throw new Error('scroll: dx and dy must be finite numbers')
+  }
+  const distance = Math.max(Math.abs(totalX), Math.abs(totalY))
+  if (distance < 0.01) return { duration: 0, points: [] }
+  const duration = Math.min(650, Math.max(180, distance * 0.65))
+  const steps = Math.max(8, Math.ceil(duration / POINTER_FRAME_MS))
+  const points = []
+  let previousX = 0
+  let previousY = 0
+  for (let i = 1; i <= steps; i++) {
+    const progress = i / steps
+    const eased = progress * progress * (3 - 2 * progress)
+    const cumulativeX = i === steps ? totalX : totalX * eased
+    const cumulativeY = i === steps ? totalY : totalY * eased
+    points.push({
+      dx: cumulativeX - previousX,
+      dy: cumulativeY - previousY,
+      at: duration * i / steps,
+    })
+    previousX = cumulativeX
+    previousY = cumulativeY
+  }
+  return { duration, points }
+}
+export { wheelTrajectory as __wheelTrajectoryForTest }
+
+export async function scroll({ dy = 600, dx = 0, x, y } = {}) {
   await guardAgentControl()
+  await ensurePageOperable()
   const client = await cdpClient()
-  logAction(`scroll ${dy >= 0 ? 'down' : 'up'} ${Math.abs(dy)}px`)
-  // Anchor point is CSS -> widget scaled; deltas pass through untransformed.
+  const sid = requireSession()
+  const totalX = Number(dx)
+  const totalY = Number(dy)
+  if (!Number.isFinite(totalX) || !Number.isFinite(totalY)) {
+    throw new Error('scroll: dx and dy must be finite numbers')
+  }
+  const vertical = Math.abs(totalY) >= Math.abs(totalX)
+  const direction = vertical
+    ? (totalY >= 0 ? 'down' : 'up')
+    : (totalX >= 0 ? 'right' : 'left')
+  logAction(`scroll ${direction} ${Math.round(Math.max(Math.abs(totalX), Math.abs(totalY)))}px`)
+  const trajectory = wheelTrajectory(totalX, totalY)
+  if (!trajectory.points.length) return
+
+  // A wheel gesture occurs under the cursor. Reuse its last window position
+  // by default; an explicit CSS anchor moves there first. Clamp either form
+  // inside the current widget bounds so small responsive viewports and nested
+  // scrollers receive the event at a real hit-test point.
   const s = inputScale()
-  await client.send('Input.dispatchMouseEvent', {
-    type: 'mouseWheel', x: Math.round(x * s), y: Math.round(y * s),
-    deltaX: dx, deltaY: dy, pointerType: 'mouse',
-  }, requireSession())
-  try { mirrorEffect('scroll', { x: Math.round(x * s), y: Math.round(y * s), dy }) } catch {}
+  if ((x !== undefined && !Number.isFinite(Number(x))) ||
+      (y !== undefined && !Number.isFinite(Number(y)))) {
+    throw new Error('scroll: x and y must be finite numbers when provided')
+  }
+  const remembered = pointerMemory()
+  const requested = {
+    x: x === undefined ? remembered?.x : Math.round(Number(x) * s),
+    y: y === undefined ? remembered?.y : Math.round(Number(y) * s),
+  }
+  const bounds = await pointerWidgetBounds(client, sid, {
+    x: requested.x ?? 0, y: requested.y ?? 0,
+  })
+  const clamp = (value, max) => Math.min(Math.max(1, Math.round(value)), Math.max(1, max - 1))
+  const anchor = {
+    x: clamp(requested.x ?? bounds.width / 2, bounds.width),
+    y: clamp(requested.y ?? bounds.height / 2, bounds.height),
+  }
+  if (!remembered || remembered.x !== anchor.x || remembered.y !== anchor.y) {
+    await movePointer(client, sid, anchor.x, anchor.y)
+  }
+
+  // A late modal can mount during the pointer glide. Let the gate handle it,
+  // then restore the wheel anchor because accepting consent may move the
+  // cursor to the banner's control.
+  await ensurePageOperable({ force: true })
+  const afterGate = pointerMemory()
+  if (!afterGate || afterGate.x !== anchor.x || afterGate.y !== anchor.y) {
+    await movePointer(client, sid, anchor.x, anchor.y)
+  }
+
+  try { mirrorEffect('scroll', { x: anchor.x, y: anchor.y, dy: totalY }) } catch {}
+
+  // Chromium's synthesized mouse scroll is the closest match to one physical
+  // trackpad/wheel transaction: it emits a trusted ~60Hz wheel stream and
+  // keeps the initial hit-test target latched while content moves underneath.
+  // Older Chromium builds may not expose this experimental command, so retain
+  // the deterministic paced-wheel trajectory as a compatibility fallback.
+  const gesture = {
+    x: anchor.x / s, y: anchor.y / s,
+    speed: randomMs(1050, 1350), preventFling: true,
+    gestureSourceType: 'mouse',
+    ...(totalX ? { xDistance: -totalX } : {}),
+    ...(totalY ? { yDistance: -totalY } : {}),
+  }
+  try {
+    await client.send('Input.synthesizeScrollGesture', gesture, sid)
+    return
+  } catch (err) {
+    const message = String(err?.message || err)
+    if (!/unknown method|method not found|wasn't found/i.test(message)) throw err
+  }
+
+  const started = Date.now()
+  for (const point of trajectory.points) {
+    const delay = started + point.at - Date.now()
+    if (delay > 0) await new Promise(resolve => setTimeout(resolve, delay))
+    await client.send('Input.dispatchMouseEvent', {
+      type: 'mouseWheel', x: anchor.x, y: anchor.y,
+      deltaX: point.dx, deltaY: point.dy, pointerType: 'mouse',
+    }, sid)
+  }
 }
 
 export async function handleDialog(accept = true, promptText = undefined) {
@@ -4349,6 +5378,9 @@ export async function ownership() {
 export async function handOff(message) {
   refuseInShadow('handOff')
   const task = requireTask()
+  // The user may move the real pointer while they own the window; no later
+  // agent trajectory may assume the last synthetic position still applies.
+  forgetPointer()
   await phiSend('agentSpace.handoff', {
     taskId: task.taskId,
     ...(message ? { message: String(message) } : {}),
@@ -4374,13 +5406,19 @@ export async function takeOver() {
   refuseInShadow('takeOver')
   const task = requireTask()
   await phiSend('agentSpace.takeover', { taskId: task.taskId })
+  forgetPointer()
   task.ownership = 'agent'
   state.ownerCheckedAt = Date.now()
   // Agent is driving again — mark the Space busy.
   await reportRunState(true)
-  // Restore the agent viewport we cleared on handOff so hidden-window layout
-  // and screenshots work again — with this tab's override if one was set.
-  if (state.sessionId) {
+  // A fresh round entered passively while the user owned the Space, so it has
+  // a selected target but deliberately no CDP page session yet. Attach only
+  // after takeover; an in-round handoff already retains its session.
+  if (!state.sessionId && state.targetId) {
+    await attachTab(state.targetId)
+  } else if (state.sessionId) {
+    // Restore the agent viewport we cleared on handOff so hidden-window layout
+    // and screenshots work again — with this tab's override if one was set.
     await applyAgentViewport(await cdpClient(), state.sessionId, state.targetId,
                              state.viewportByTarget.get(state.targetId)?.request ?? null)
   }
@@ -4428,8 +5466,11 @@ export async function waitForAgentControl({ timeout = 600 } = {}) {
     task.ownership = t.ownership
     state.ownerCheckedAt = Date.now()
     if (t.ownership === 'agent') {
+      forgetPointer()
       await reportRunState(true)
-      if (state.sessionId) {
+      if (!state.sessionId && state.targetId) {
+        await attachTab(state.targetId)
+      } else if (state.sessionId) {
         await applyAgentViewport(await cdpClient(), state.sessionId, state.targetId,
                                  state.viewportByTarget.get(state.targetId)?.request ?? null)
       }
@@ -4502,6 +5543,7 @@ export async function handOffAndWait(message, { timeout = 100 } = {}) {
 export async function complete({ success = true, message = undefined,
                                  immediate = false } = {}) {
   const task = requireTask()
+  clearChallengeGate(state.targetId)
   const status = success ? 'success' : 'failure'
   let deferred = false
   // Deferral hands the completion to the mirror daemon so it can flush the
@@ -5170,6 +6212,8 @@ export async function fillCredential(target, query,
   if (!['password', 'username'].includes(field)) {
     throw new Error("fillCredential: field must be 'password' or 'username'")
   }
+  await ensurePageOperable()
+  await locateRect(target)
   const q = normalizeCredentialQuery(query)
   const scope = q.domain || q.id || q.search
 
@@ -5219,6 +6263,8 @@ export async function fillCredential(target, query,
   // only {filled}. Contrast getCredential, which returns the value to the agent.
   let res
   try {
+    await ensurePageOperable({ force: true })
+    await locateRect(target, { retryMs: 0 })
     res = await phiSend('credentials.autofill', {
       query: q, field, token, targetId: state.targetId, purpose, allowCrossOrigin,
     }, CRED_PROMPT_TIMEOUT_MS)

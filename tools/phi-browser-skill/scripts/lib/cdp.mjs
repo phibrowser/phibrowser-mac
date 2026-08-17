@@ -41,6 +41,11 @@ const CANDIDATE_DIRS = [
 // The consent prompt can hold the very first connection open while the user
 // decides, so the first HTTP request tolerates a long wait.
 const CONSENT_WAIT_MS = 180000
+// When another advertised channel is available, do not let a connected but
+// non-responsive higher-precedence socket shadow it for the full consent
+// window. The final/only candidate still gets CONSENT_WAIT_MS so a genuine
+// first-run approval prompt remains usable.
+export const FALLBACK_ENDPOINT_WAIT_MS = 5000
 
 // How long to wait for a just-launched Phi to publish its socket. Cold start
 // has to bring up Chromium and restore the session before the listener runs.
@@ -173,6 +178,12 @@ export function isDeadSocketError(err) {
   return /ECONNREFUSED|ENOENT/.test(String(err?.message || err))
 }
 
+/** True when an endpoint accepted the socket but never answered its probe. */
+export function isEndpointTimeout(err) {
+  return err?.code === 'ETIMEDOUT' || /\[timed out\]|timed out after/i.test(
+    String(err?.message || err))
+}
+
 /** Legacy sync discovery: the first candidate by precedence, unprobed. */
 export function discoverEndpoint() {
   const all = discoverEndpoints()
@@ -236,10 +247,11 @@ function httpGetJson(endpoint, path, timeoutMs, agentPid = null,
  * so it may trigger (and wait on) the consent prompt.
  */
 export async function verifyEndpoint(endpoint, { agentPid = null,
-                                                 agentCapability = null } = {}) {
+                                                 agentCapability = null,
+                                                 timeoutMs = CONSENT_WAIT_MS } = {}) {
   let version
   try {
-    version = await httpGetJson(endpoint, '/json/version', CONSENT_WAIT_MS,
+    version = await httpGetJson(endpoint, '/json/version', timeoutMs,
                                 agentPid, agentCapability)
   } catch (err) {
     if (err.message === DENIED_MESSAGE) throw err
@@ -257,10 +269,14 @@ export async function verifyEndpoint(endpoint, { agentPid = null,
         `to ~/.codex/config.toml, or re-run this command with escalated ` +
         `(unsandboxed) permissions. [${err.message}]`)
     }
-    throw new Error(
+    const wrapped = new Error(
       `Phi Browser CDP endpoint is not responding. A consent prompt may be ` +
       `waiting for the user in Phi; otherwise check that Phi Browser is ` +
       `running. [${err.message}]`)
+    if (err?.code === 'ETIMEDOUT' || err?.message === 'timed out') {
+      wrapped.code = 'ETIMEDOUT'
+    }
+    throw wrapped
   }
   // The browser advertises its target as ws://<host>/devtools/browser/<uuid>;
   // only the path matters (the transport is our socket, not that host:port).
@@ -694,14 +710,24 @@ export class DirectPhiChannel {
  * WebSocket) is a real answer from a live endpoint and propagates.
  */
 async function connectOverCandidates(candidates, opts, out) {
-  for (const endpoint of candidates) {
+  for (let index = 0; index < candidates.length; index++) {
+    const endpoint = candidates[index]
+    const hasFallback = index + 1 < candidates.length
     let browserWsPath
     try {
-      ({ browserWsPath } = await verifyEndpoint(endpoint, opts))
+      ({ browserWsPath } = await verifyEndpoint(endpoint, {
+        ...opts,
+        ...(hasFallback ? { timeoutMs: FALLBACK_ENDPOINT_WAIT_MS } : {}),
+      }))
     } catch (err) {
       // A crashed app's leftover socket refuses instantly — walk on so a
-      // dead canary pointer can never shadow a live stable Phi.
-      if (isDeadSocketError(err)) { out.lastErr = err; continue }
+      // dead canary pointer can never shadow a live stable Phi. A socket that
+      // accepts but never replies is equally non-authoritative when another
+      // candidate remains; the final candidate retains the long consent wait.
+      if (isDeadSocketError(err) || (hasFallback && isEndpointTimeout(err))) {
+        out.lastErr = err
+        continue
+      }
       throw err
     }
     const client = new CdpClient({ socketPath: endpoint.socketPath,

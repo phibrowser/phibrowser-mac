@@ -23,7 +23,14 @@ import {
 import { execFileSync, spawn } from 'node:child_process'
 import { tmpdir } from 'node:os'
 import { join, basename } from 'node:path'
-import { discoverEndpoints, isDeadSocketError, DirectPhiChannel } from './cdp.mjs'
+import {
+  discoverEndpoints,
+  isDeadSocketError,
+  isEndpointTimeout,
+  verifyEndpoint,
+  FALLBACK_ENDPOINT_WAIT_MS,
+  DirectPhiChannel,
+} from './cdp.mjs'
 
 // Same directory as helpers.mjs's task files — path derived identically on
 // both sides so writer (heredoc) and reader (daemon) always agree.
@@ -218,8 +225,18 @@ export async function openPhiChannel({ agentPid = null, agentCapability = null }
   const endpoints = discoverEndpoints()
   if (endpoints.length === 0) throw new Error('no app socket endpoint')
   let lastErr = null
-  for (const endpoint of endpoints) {
+  for (let index = 0; index < endpoints.length; index++) {
+    const endpoint = endpoints[index]
+    const hasFallback = index + 1 < endpoints.length
     try {
+      // Avoid opening a WebSocket that can wait forever on a published but
+      // wedged higher-precedence channel. The driving round already obtained
+      // consent; this is a liveness probe carrying the same identity proof.
+      await verifyEndpoint(endpoint, {
+        agentPid,
+        agentCapability,
+        ...(hasFallback ? { timeoutMs: FALLBACK_ENDPOINT_WAIT_MS } : {}),
+      })
       return await new DirectPhiChannel({
         socketPath: endpoint.socketPath,
         agentPid,
@@ -228,7 +245,10 @@ export async function openPhiChannel({ agentPid = null, agentCapability = null }
     } catch (err) {
       // Crash-orphaned socket file — walk on to the next candidate. (Never
       // probe with a naked connect: see isDeadSocketError in cdp.mjs.)
-      if (isDeadSocketError(err)) { lastErr = err; continue }
+      if (isDeadSocketError(err) || (hasFallback && isEndpointTimeout(err))) {
+        lastErr = err
+        continue
+      }
       throw err
     }
   }

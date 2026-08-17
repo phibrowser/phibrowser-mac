@@ -170,8 +170,11 @@ needed): `node scripts/selftest-mirror.mjs`.
   no endpoint. It is usually sitting at a login or session-restore prompt, or
   is still starting on a cold machine — check the Phi window and retry.
 - **Wrong install answers (canary vs stable)**: endpoint discovery prefers
-  Phi Canary over stable Phi when BOTH advertise a live endpoint (dead
-  leftovers are probed and skipped). To target a specific install, set
+  Phi Canary over stable Phi when BOTH advertise a live endpoint. Dead
+  leftovers are skipped immediately; a published socket that accepts but
+  does not answer is given a short probe only when another candidate remains,
+  so it cannot shadow a healthy fallback for the full consent window. To
+  target a specific install, set
   `PHI_USER_DATA_DIR` to its Application Support dir (e.g.
   `~/Library/Application Support/com.phibrowser.Mac` for stable) when
   invoking the runner.

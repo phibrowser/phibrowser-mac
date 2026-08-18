@@ -54,6 +54,23 @@ enum ReaderExtensionBridge {
         var highlightsLinks: Bool
     }
 
+    /// The article URL a reader page stands in for, recovered from the `src`
+    /// fragment parameter the extension appends when it navigates a tab to
+    /// `reader.html` (`readerPageUrl` in the extension's background script).
+    /// Anything else — including a reader page from an extension build
+    /// without the parameter — returns nil.
+    static func sourceURLString(fromReaderPageURL urlString: String) -> String? {
+        guard let components = URLComponents(string: urlString),
+              components.scheme == "chrome-extension",
+              components.host == extensionId,
+              components.path == "/reader.html",
+              let fragment = components.percentEncodedFragment else { return nil }
+        for pair in fragment.split(separator: "&") where pair.hasPrefix("src=") {
+            return String(pair.dropFirst("src=".count)).removingPercentEncoding
+        }
+        return nil
+    }
+
     /// `reader.offerable`: the extension's in-page probe verdict for a tab's
     /// current document.
     static func handleOfferable(_ context: ExtensionMessageContext) {

@@ -105,6 +105,8 @@ final class WebContentAddressBarViewModel: ObservableObject {
     }
 
     private func formattedDisplayText(urlString: String, alwaysShowURLPath: Bool) -> String {
+        // A reader page stands in for its article: show the article's URL.
+        let urlString = ReaderExtensionBridge.sourceURLString(fromReaderPageURL: urlString) ?? urlString
         guard !urlString.isEmpty else {
             return ""
         }
@@ -511,7 +513,8 @@ private struct CopyURLButtonView: View {
 
         Button {
             dismissTooltip()
-            guard let urlString = currentTab?.url, !urlString.isEmpty else { return }
+            guard var urlString = currentTab?.url, !urlString.isEmpty else { return }
+            urlString = ReaderExtensionBridge.sourceURLString(fromReaderPageURL: urlString) ?? urlString
             let branded = URLProcessor.phiBrandEnsuredUrlString(urlString)
             NSPasteboard.general.clearContents()
             NSPasteboard.general.setString(branded, forType: .string)

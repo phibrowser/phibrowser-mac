@@ -304,7 +304,9 @@ class SideAddressBar: NSView {
             textField.stringValue = ""
             return
         }
-        textField.stringValue = URLProcessor.displayName(for: url)
+        // A reader page stands in for its article: show the article's URL.
+        let displayURL = ReaderExtensionBridge.sourceURLString(fromReaderPageURL: url) ?? url
+        textField.stringValue = URLProcessor.displayName(for: displayURL)
     }
 
     private func shouldDisplayPinnedExtensionsWithinSidebar(
@@ -402,7 +404,8 @@ class SideAddressBar: NSView {
     }
     
     private func copyCurrentURL() {
-        guard let urlString = currentTab?.url, !urlString.isEmpty else { return }
+        guard var urlString = currentTab?.url, !urlString.isEmpty else { return }
+        urlString = ReaderExtensionBridge.sourceURLString(fromReaderPageURL: urlString) ?? urlString
         let branded = URLProcessor.phiBrandEnsuredUrlString(urlString)
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(branded, forType: .string)

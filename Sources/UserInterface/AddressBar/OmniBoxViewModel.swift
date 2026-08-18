@@ -111,7 +111,11 @@ class OmniBoxViewModel: ObservableObject {
             state.inputText = ""
             return
         }
-        let prefilledText = URLProcessor.phiBrandEnsuredUrlString(tab.url ?? "")
+        // A reader page stands in for its article: edit (and re-submit) the
+        // article's URL rather than the extension page's.
+        let rawURL = tab.url ?? ""
+        let prefilledText = URLProcessor.phiBrandEnsuredUrlString(
+            ReaderExtensionBridge.sourceURLString(fromReaderPageURL: rawURL) ?? rawURL)
         if suppressAutomaticSearch {
             searchCoordinator.prepareForPrefilledOpen(
                 text: prefilledText,

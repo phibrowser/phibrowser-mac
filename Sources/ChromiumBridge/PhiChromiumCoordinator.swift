@@ -1106,10 +1106,17 @@ extension PhiChromiumCoordinator: PhiChromiumBridgeDelegate {
         if Thread.isMainThread {
             MainActor.assumeIsolated {
                 // nil window (already torn down) → skip silently; the mask is best-effort.
-                MainBrowserWindowControllersManager.shared
-                    .controller(for: windowId.intValue)?
+                let controller = MainBrowserWindowControllersManager.shared
+                    .controller(for: windowId.intValue)
+                controller?
                     .mainSplitViewController.webContentContainerViewController
                     .maskClosingTab(tabId: tabId.intValue)
+                // If the closing tab is hosted by the Peek panel, detach its
+                // native view now, while the WebContents is still alive — the
+                // async EventBus close below runs after Chromium destroyed it.
+                controller?
+                    .peekPanelControllerIfLoaded?
+                    .detachContentIfHosting(tabId: tabId.intValue)
             }
         } else {
             assertionFailure("tabWillBeRemove off the main thread; skipping best-effort close mask")
@@ -1582,6 +1589,24 @@ extension PhiChromiumCoordinator {
             browserId: windowId.intValue,
             action: .openLinkAsSplitPartner(partnerTabId: partnerTabId.intValue,
                                             url: url)))
+    }
+
+    func openLinkAsPeek(withSourceTabId sourceTabId: Int64,
+                        url: String,
+                        windowId: Int64) {
+        AppLogDebug("👀 [Peek] openLinkAsPeek: source=\(sourceTabId) url=\(url) window=\(windowId)")
+        EventBus.shared.send(TabEvent(
+            browserId: windowId.intValue,
+            action: .openLinkAsPeek(sourceTabId: sourceTabId.intValue, url: url)))
+    }
+
+    // Synchronous query from Chromium's context-menu build: "Open Link in
+    // Peek View" is offered only while the Peek feature toggle (Settings ›
+    // General) is on and a sidebar layout is active — Peek is a
+    // sidebar-layout surface.
+    func isPeekLinkSurfaceEnabled() -> Bool {
+        PhiPreferences.GeneralSettings.peekViewEnabled.loadValue()
+            && !PhiPreferences.GeneralSettings.loadLayoutMode().isTraditional
     }
 }
 

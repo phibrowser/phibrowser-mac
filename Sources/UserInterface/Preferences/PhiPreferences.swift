@@ -81,6 +81,7 @@ extension PhiPreferences {
         case alwaysShowURLPath // In address bar menu, always show full URL path
         case spacesFeatureEnabled // Master gate for Spaces + profile management UI; defaults on, no user-facing toggle
         case suppressCloseIncognitoSpaceWarning // "Do not ask again" on the close-Incognito-Space confirmation
+        case peekViewEnabled // Master gate for Peek View: the context-menu item and the automatic cross-site diversion
 
         var defaultValue: Bool {
             switch self {
@@ -100,6 +101,8 @@ extension PhiPreferences {
                 return true
             case .suppressCloseIncognitoSpaceWarning:
                 return false
+            case .peekViewEnabled:
+                return true
             }
         }
 

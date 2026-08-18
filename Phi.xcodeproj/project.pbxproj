@@ -484,6 +484,8 @@
 		CD4F3A012E56000100FACC01 /* FloatingTrafficLightsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CD4F3A002E56000100FACC01 /* FloatingTrafficLightsView.swift */; };
 		CDA11ED500000000000000B1 /* phi-browser-skill in Resources */ = {isa = PBXBuildFile; fileRef = CDA11ED500000000000000A1 /* phi-browser-skill */; };
 		D10000000000000000000001 /* BrowserImagePreviewState.swift in Sources */ = {isa = PBXBuildFile; fileRef = D10000000000000000000011 /* BrowserImagePreviewState.swift */; };
+		EE7E00000000000000000001 /* BrowserPeekState.swift in Sources */ = {isa = PBXBuildFile; fileRef = EE7E00000000000000000011 /* BrowserPeekState.swift */; };
+		EE7E00000000000000000002 /* PeekPanelController.swift in Sources */ = {isa = PBXBuildFile; fileRef = EE7E00000000000000000012 /* PeekPanelController.swift */; };
 		D10000000000000000000002 /* ImagePreviewModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = D10000000000000000000012 /* ImagePreviewModels.swift */; };
 		D10000000000000000000003 /* ImagePreviewGeometry.swift in Sources */ = {isa = PBXBuildFile; fileRef = D10000000000000000000013 /* ImagePreviewGeometry.swift */; };
 		D10000000000000000000004 /* ImagePreviewLoader.swift in Sources */ = {isa = PBXBuildFile; fileRef = D10000000000000000000014 /* ImagePreviewLoader.swift */; };
@@ -511,6 +513,7 @@
 		EAD00000000000000000002A /* ReaderStyle.swift in Sources */ = {isa = PBXBuildFile; fileRef = EAD000000000000000000029 /* ReaderStyle.swift */; };
 		EAD000000000000000000032 /* ReaderExtensionBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = EAD000000000000000000031 /* ReaderExtensionBridge.swift */; };
 		EAD000000000000000000034 /* ReaderViewAnalytics.swift in Sources */ = {isa = PBXBuildFile; fileRef = EAD000000000000000000033 /* ReaderViewAnalytics.swift */; };
+		EAD000000000000000000036 /* PeekViewAnalytics.swift in Sources */ = {isa = PBXBuildFile; fileRef = EAD000000000000000000035 /* PeekViewAnalytics.swift */; };
 		F01D3A000000000000000001 /* bookmark-folder-open.svg in Resources */ = {isa = PBXBuildFile; fileRef = F01D3A000000000000000011 /* bookmark-folder-open.svg */; };
 		F01D3A000000000000000002 /* bookmark-folder-closed.svg in Resources */ = {isa = PBXBuildFile; fileRef = F01D3A000000000000000012 /* bookmark-folder-closed.svg */; };
 		F02B00010000000000000001 /* BookmarkFolderIcon.swift in Sources */ = {isa = PBXBuildFile; fileRef = F02B00110000000000000001 /* BookmarkFolderIcon.swift */; };
@@ -1136,6 +1139,8 @@
 		CDA11ED500000000000000A1 /* phi-browser-skill */ = {isa = PBXFileReference; lastKnownFileType = folder; name = "phi-browser-skill"; path = "tools/phi-browser-skill"; sourceTree = SOURCE_ROOT; };
 		CE7E61A49E8A472DB330779E /* TabGroupCellView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TabGroupCellView.swift; sourceTree = "<group>"; };
 		D10000000000000000000011 /* BrowserImagePreviewState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrowserImagePreviewState.swift; sourceTree = "<group>"; };
+		EE7E00000000000000000011 /* BrowserPeekState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrowserPeekState.swift; sourceTree = "<group>"; };
+		EE7E00000000000000000012 /* PeekPanelController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PeekPanelController.swift; sourceTree = "<group>"; };
 		D10000000000000000000012 /* ImagePreviewModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImagePreviewModels.swift; sourceTree = "<group>"; };
 		D10000000000000000000013 /* ImagePreviewGeometry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImagePreviewGeometry.swift; sourceTree = "<group>"; };
 		D10000000000000000000014 /* ImagePreviewLoader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImagePreviewLoader.swift; sourceTree = "<group>"; };
@@ -1166,6 +1171,7 @@
 		EAD000000000000000000029 /* ReaderStyle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReaderStyle.swift; sourceTree = "<group>"; };
 		EAD000000000000000000031 /* ReaderExtensionBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReaderExtensionBridge.swift; sourceTree = "<group>"; };
 		EAD000000000000000000033 /* ReaderViewAnalytics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReaderViewAnalytics.swift; sourceTree = "<group>"; };
+		EAD000000000000000000035 /* PeekViewAnalytics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PeekViewAnalytics.swift; sourceTree = "<group>"; };
 		F01D3A000000000000000011 /* bookmark-folder-open.svg */ = {isa = PBXFileReference; lastKnownFileType = image.svg; path = "bookmark-folder-open.svg"; sourceTree = "<group>"; };
 		F01D3A000000000000000012 /* bookmark-folder-closed.svg */ = {isa = PBXFileReference; lastKnownFileType = image.svg; path = "bookmark-folder-closed.svg"; sourceTree = "<group>"; };
 		F02B00110000000000000001 /* BookmarkFolderIcon.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BookmarkFolderIcon.swift; sourceTree = "<group>"; };
@@ -1845,6 +1851,14 @@
 			path = TabSwitch;
 			sourceTree = "<group>";
 		};
+		EE7E00000000000000000021 /* Peek */ = {
+			isa = PBXGroup;
+			children = (
+				EE7E00000000000000000012 /* PeekPanelController.swift */,
+			);
+			path = Peek;
+			sourceTree = "<group>";
+		};
 		ACDC00000000000000000C01 /* AgentCDP */ = {
 			isa = PBXGroup;
 			children = (
@@ -2015,6 +2029,7 @@
 				CC24EEF32E8662AC00CE9DD7 /* Onboarding */,
 				8E0A10042FEA000000000001 /* OverlayToast */,
 				37C1B2F32EE287CB00DD4496 /* OverlayWindowToast */,
+				EE7E00000000000000000021 /* Peek */,
 				CC6B000C2E77DEA900D4F133 /* Preferences */,
 				5EA17ABC0000000000000120 /* SearchTabs */,
 				CC288A652E4F121E004A6C1C /* Sidebar */,
@@ -2478,6 +2493,7 @@
 				8E8008D62FA1A59800EB24C5 /* TabGroup */,
 				CCBF8FA42E69915200B9A99E /* ApplicationState.swift */,
 				D10000000000000000000011 /* BrowserImagePreviewState.swift */,
+				EE7E00000000000000000011 /* BrowserPeekState.swift */,
 				CCBF8FA62E69948D00B9A99E /* BrowserState.swift */,
 				CCAA000C2F00010000000002 /* BrowserState+PinnedTabScope.swift */,
 				CCAA000E2F00010000000002 /* BrowserState+PinnedTabTransfer.swift */,
@@ -2497,6 +2513,7 @@
 				EAD000000000000000000013 /* BrowserState+Reader.swift */,
 				EAD000000000000000000031 /* ReaderExtensionBridge.swift */,
 				EAD000000000000000000033 /* ReaderViewAnalytics.swift */,
+				EAD000000000000000000035 /* PeekViewAnalytics.swift */,
 				5F1A5A11AC1D000000000002 /* BrowserState+Split.swift */,
 				B0F370CA2E43261A000B51F9 /* EventBus.swift */,
 				AA10000000000000000000F5 /* TabSwitchManager.swift */,
@@ -3229,6 +3246,7 @@
 				EAD000000000000000000014 /* BrowserState+Reader.swift in Sources */,
 				EAD000000000000000000032 /* ReaderExtensionBridge.swift in Sources */,
 				EAD000000000000000000034 /* ReaderViewAnalytics.swift in Sources */,
+				EAD000000000000000000036 /* PeekViewAnalytics.swift in Sources */,
 				EAD000000000000000000016 /* ReaderDocumentBuilder.swift in Sources */,
 				EAD00000000000000000002A /* ReaderStyle.swift in Sources */,
 				5F1A5A11AC1D000000000001 /* BrowserState+Split.swift in Sources */,
@@ -3285,6 +3303,8 @@
 				D10000000000000000000006 /* ImagePreviewViewController.swift in Sources */,
 				D10000000000000000000007 /* ImagePreviewOverlayViewController.swift in Sources */,
 				D10000000000000000000001 /* BrowserImagePreviewState.swift in Sources */,
+				EE7E00000000000000000001 /* BrowserPeekState.swift in Sources */,
+				EE7E00000000000000000002 /* PeekPanelController.swift in Sources */,
 				D10000000000000000000008 /* ExtensionDialogManager.swift in Sources */,
 				D10000000000000000000009 /* ExtensionDialogViewController.swift in Sources */,
 				CC6B001B2E793EAC00D4F133 /* PinnedTabViewController.swift in Sources */,

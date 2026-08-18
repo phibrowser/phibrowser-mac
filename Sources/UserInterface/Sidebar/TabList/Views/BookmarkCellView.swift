@@ -30,6 +30,9 @@ private final class BookmarkCellViewState {
     var primaryFaviconRevision = 0
     var secondaryFaviconRevision = 0
     var showsSecondaryFavicon = false
+    /// A Peek opened from this bookmark's bound tab is alive (visible or
+    /// hidden behind another tab) — drives the trailing peek indicator.
+    var showsPeek = false
     var primaryTabIsLive = false
     var secondaryTabIsLive = false
     var isFolder = false
@@ -91,6 +94,7 @@ class BookmarkCellView: SidebarCellView, TabPreviewInteractionCancelling {
     private let viewState = BookmarkCellViewState()
     private let primaryTabViewModel = TabViewModel()
     private let secondaryTabViewModel = TabViewModel()
+    private let peekTabViewModel = TabViewModel()
     private let hoverRegionView = SidebarTabHoverRegionView()
     private let tabPreviewRegistration = TabPreviewRegistration()
     private let splitTabPreviewRegistration = SplitTabPreviewRegistration()
@@ -138,6 +142,7 @@ class BookmarkCellView: SidebarCellView, TabPreviewInteractionCancelling {
         usesSplitTabPreview = false
         tabPreviewRegistration.invalidate()
         splitTabPreviewRegistration.invalidate()
+        peekTabViewModel.prepareForReuse()
         resetState()
     }
 
@@ -151,8 +156,14 @@ class BookmarkCellView: SidebarCellView, TabPreviewInteractionCancelling {
             state: viewState,
             primaryTabViewModel: primaryTabViewModel,
             secondaryTabViewModel: secondaryTabViewModel,
+            peekTabViewModel: peekTabViewModel,
             onClose: { [weak self] in
                 self?.closeButtonTapped()
+            },
+            onClosePeek: { [weak self] in
+                guard let self, let bookmark = self.configuredBookmark,
+                      let boundTabId = self.liveTabs(for: bookmark).primary?.guid else { return }
+                self.resolvedBrowserState?.closePeek(forOpener: boundTabId)
             },
             onNavigatePrimaryToOriginalURL: { [weak self] separateCurrentPage in
                 self?.navigatePrimaryToOriginalURL(separateCurrentPage: separateCurrentPage)
@@ -229,6 +240,7 @@ class BookmarkCellView: SidebarCellView, TabPreviewInteractionCancelling {
         viewState.primaryFaviconRevision &+= 1
         viewState.secondaryFaviconRevision &+= 1
         viewState.showsSecondaryFavicon = false
+        viewState.showsPeek = false
         viewState.primaryTabIsLive = false
         viewState.secondaryTabIsLive = false
         viewState.isFolder = false
@@ -440,7 +452,28 @@ class BookmarkCellView: SidebarCellView, TabPreviewInteractionCancelling {
                     self.viewState.isMultiSelected = selection.containsBookmark(bookmark.guid)
                 }
                 .store(in: &cancellables)
+
+            state.peekState.$peeksByOpener
+                .receive(on: DispatchQueue.main)
+                .sink { [weak self, weak bookmark] peeksByOpener in
+                    guard let self, let bookmark else { return }
+                    self.refreshPeekIndicator(for: bookmark,
+                                              peeksByOpener: peeksByOpener)
+                }
+                .store(in: &cancellables)
         }
+    }
+
+    /// Shows the trailing peek indicator when a live Peek belongs to this
+    /// bookmark's bound tab (also while the peek is hidden behind another
+    /// focused tab — the icon is what tells the user a peek is attached).
+    private func refreshPeekIndicator(for bookmark: Bookmark, peeksByOpener: [Int: Tab]) {
+        let peekTab = liveTabs(for: bookmark).primary.flatMap { peeksByOpener[$0.guid] }
+        peekTabViewModel.prepareForReuse()
+        if let peekTab {
+            configure(viewModel: peekTabViewModel, with: peekTab)
+        }
+        viewState.showsPeek = peekTab != nil
     }
 
     func setDropTargetHighlighted(_ highlighted: Bool) {
@@ -784,7 +817,9 @@ private struct SidebarBookmarkCellContentView: View {
     let state: BookmarkCellViewState
     let primaryTabViewModel: TabViewModel
     let secondaryTabViewModel: TabViewModel
+    let peekTabViewModel: TabViewModel
     let onClose: () -> Void
+    let onClosePeek: () -> Void
     let onNavigatePrimaryToOriginalURL: (Bool) -> Void
     let onNavigateSecondaryToOriginalURL: (Bool) -> Void
     let onSelectFolderIcon: (BookmarkFolderIcon) -> Void
@@ -827,7 +862,10 @@ private struct SidebarBookmarkCellContentView: View {
     }
 
     private var showCloseButton: Bool {
-        state.isOpened && state.isHovered && !state.isEditing
+        // While a peek is attached, the row's only close affordance is the
+        // peek indicator's "minus" — hide the tab close button so hover
+        // doesn't show two close controls side by side.
+        state.isOpened && state.isHovered && !state.isEditing && !state.showsPeek
     }
 
     private var faviconHoverAction: BookmarkFaviconHoverAction? {
@@ -905,6 +943,11 @@ private struct SidebarBookmarkCellContentView: View {
             .frame(height: 30)
             .animation(.easeOut(duration: 0.1), value: showBookmarkFaviconHint)
 
+            if state.showsPeek, !state.isEditing {
+                SidebarPeekIndicatorView(viewModel: peekTabViewModel,
+                                         onClose: onClosePeek)
+            }
+
             if showCloseButton {
                 UnifiedTabCloseButton(action: onClose)
             }
@@ -927,6 +970,46 @@ private struct SidebarBookmarkCellContentView: View {
         .padding(.vertical, 2)
         .scaleEffect(state.isFolder ? 1.0 : (state.isPressed ? 0.985 : 1.0))
         .animation(.easeOut(duration: 0.08), value: state.isPressed)
+    }
+}
+
+/// Trailing indicator for a Peek attached to a sidebar row's tab (bookmark
+/// or normal): shows the peeked page's favicon, and turns into a "minus"
+/// close button on hover (mirrors UnifiedTabCloseButton's styling).
+struct SidebarPeekIndicatorView: View {
+    let viewModel: TabViewModel
+    let onClose: () -> Void
+    @State private var isHovered = false
+
+    var body: some View {
+        Button(action: onClose) {
+            ZStack {
+                // On hover the favicon stays visible, dimmed, behind the
+                // minus glyph — the icon still says which page the peek is.
+                UnifiedTabFaviconView(viewModel: viewModel)
+                    .opacity(isHovered ? 0.25 : 1)
+                Image(systemName: "minus")
+                    .font(.system(size: 11, weight: .semibold))
+                    .opacity(isHovered ? 1 : 0)
+            }
+            .frame(width: 24, height: 24)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .background(
+            RoundedRectangle(cornerRadius: 4, style: .continuous)
+                .themedFill(.hover)
+                .opacity(isHovered ? 1 : 0)
+        )
+        .onHover { hovering in
+            isHovered = hovering
+        }
+        .help(NSLocalizedString(
+            "peek.bookmarkCell.closePeekTooltip",
+            value: "Close Peek",
+            comment: "Bookmark sidebar row - Tooltip of the minus button that closes the floating page preview opened from this bookmark"
+        ))
+        .ignoresSafeArea()
     }
 }
 

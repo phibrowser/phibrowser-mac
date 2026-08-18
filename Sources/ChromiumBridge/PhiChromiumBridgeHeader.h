@@ -389,6 +389,21 @@ typedef NS_ENUM(NSInteger, PhiGhostMaterializeOutcome) {
                                            url:(NSString *)url
                                       windowId:(int64_t)windowId;
 
+/// Right-click "Open Link in Peek View" — Chromium asks Mac to open `url` in
+/// the floating Peek panel bound to the tab identified by `sourceTabId`.
+- (void)openLinkAsPeekWithSourceTabId:(int64_t)sourceTabId
+                                  url:(NSString *)url
+                             windowId:(int64_t)windowId;
+
+/// Whether the Mac client currently offers the "Open Link in Peek View"
+/// context-menu surface: YES while the Peek feature toggle (Settings ›
+/// General) is on AND a sidebar layout is active — Peek is a sidebar-layout
+/// surface, so the traditional (Comfortable) layout disables it too. The
+/// renderer context menu hides the item while this returns NO. Called
+/// synchronously on the UI thread at menu-build time. Callers must guard
+/// with respondsToSelector: (skew).
+- (BOOL)isPeekLinkSurfaceEnabled;
+
 /// Right-click "Open in Reading Mode" — Chromium asks Mac to show Reader View
 /// for the tab identified by `tabId`. Reader View is the Mac client's: it
 /// extracts the article and swaps a native surface over the tab's content, so
@@ -738,6 +753,14 @@ typedef NS_ENUM(NSInteger, PhiGhostMaterializeOutcome) {
 // navigation runs on a detached WebContents the throttle can't attribute to a
 // Browser — so routing must be decided here, before the local open.
 - (BOOL)routeURLIfSpaceRuleMatches:(NSString *)urlString windowId:(int64_t)windowId;
+
+// Returns YES when `urlA` and `urlB` share a registrable domain (eTLD+1) or
+// host -- the same predicate CrossDomainNewTabNavigationThrottle uses
+// (net SameDomainOrHost with INCLUDE_PRIVATE_REGISTRIES). Returns NO when
+// either URL fails to parse. The Mac side uses this to judge whether a
+// bound tab's child navigation leaves the bound site (Peek). Callers must
+// guard with respondsToSelector: (framework/client version skew).
+- (BOOL)isSameSiteForURL:(NSString *)urlA url:(NSString *)urlB;
 
 - (void)createNewTabWithUrl:(NSString*)urlString
                    windowId:(int64_t)windowId
@@ -1724,6 +1747,11 @@ typedef NS_ENUM(NSInteger, PhiGhostMaterializeOutcome) {
 /// moveSelfToWindow:atIndex:.
 - (void)moveSplitToWindow:(int64_t)targetWindowId atIndex:(NSInteger)insertIndex;
 - (void)updateTabCustomValue:(NSString *)customValue;
+/// Marks/unmarks this tab as the Mac client's floating Peek surface.
+/// While marked, Chromium suppresses link-open surfaces that assume a
+/// normally hosted pane (split view via context menu or Option-click,
+/// nested Peek). Callers must guard with respondsToSelector: (skew).
+- (void)updateIsPeekSurface:(BOOL)isPeekSurface;
 - (void)focus;
 - (void)restoreFocus;
 - (void)updateSecurityState:(NSDictionary *)securityState;

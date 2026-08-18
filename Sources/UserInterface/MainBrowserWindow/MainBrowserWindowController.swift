@@ -33,6 +33,11 @@ class MainBrowserWindowController: NSWindowController {
     private lazy var imagePreviewOverlayViewController: ImagePreviewOverlayViewController = {
         ImagePreviewOverlayViewController(state: browserState.imagePreviewState)
     }()
+
+    /// Peek popup panel, created on first present. Exposed to the
+    /// coordinator (`tabWillBeRemove`) for the synchronous view detach.
+    private var peekPanelController: PeekPanelController?
+    var peekPanelControllerIfLoaded: PeekPanelController? { peekPanelController }
     
     lazy var omnibackgroundView: EventBlockBgView = {
        return EventBlockBgView()
@@ -348,6 +353,43 @@ class MainBrowserWindowController: NSWindowController {
         imagePreviewOverlayViewController.view.snp.makeConstraints { make in
             make.edges.equalToSuperview()
         }
+
+        // Peek popup: each peek belongs to its opener tab, so the one panel
+        // always shows the focused tab's peek — switching tabs swaps the
+        // hosted content to the newly focused opener's peek, hides the panel
+        // while the focused tab has none, and dismisses it only when no peek
+        // is left in the window.
+        $browserState
+            .flatMap { state in
+                state.peekState.$peeksByOpener
+                    .combineLatest(state.$focusingTab)
+            }
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] peeksByOpener, focusingTab in
+                guard let self else { return }
+                guard !peeksByOpener.isEmpty else {
+                    self.peekPanelController?.dismiss()
+                    return
+                }
+                if let focusingTab, let tab = peeksByOpener[focusingTab.guid] {
+                    self.presentPeekPanel(for: tab)
+                } else {
+                    self.peekPanelController?.hide()
+                }
+            }
+            .store(in: &cancellables)
+    }
+
+    private func presentPeekPanel(for tab: Tab) {
+        guard let window = self.window else { return }
+        if peekPanelController == nil {
+            peekPanelController = PeekPanelController(
+                browserState: browserState,
+                parentWindow: window,
+                anchorView: mainSplitViewController.webContentContainerViewController.view
+            )
+        }
+        peekPanelController?.present(tab: tab)
     }
 
     
@@ -387,6 +429,10 @@ class MainBrowserWindowController: NSWindowController {
         // making this a no-op; kept as a backstop in case the destruction
         // order ever shifts. See spec §9.1 / §9.4.
         browserState.exitPlaceholderMode()
+        // Drop peek bookkeeping and the panel; the peek tab itself is torn
+        // down by Chromium together with the window's tab strip.
+        browserState.teardownPeekForWindowClose()
+        peekPanelController?.dismiss()
     }
 
 

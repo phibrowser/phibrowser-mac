@@ -53,6 +53,10 @@ struct TabEvent: WindowEvent {
         /// than a state change, so nothing buffers or replays it.
         case openReaderView(tabId: Int)
 
+        /// Right-click "Open Link in Peek View" on a link. A request rather
+        /// than a state change, so nothing buffers or replays it.
+        case openLinkAsPeek(sourceTabId: Int, url: String)
+
         /// Content-fullscreen entered/exited on a tab (HTML5 requestFullscreen).
         case tabContentFullscreenChanged(tabId: Int, isFullscreen: Bool)
     }
@@ -228,6 +232,8 @@ class EventBus {
             state.applyRelationshipSnapshot(snapshot)
         case .move(let tab, let toNewIndex, let selectAfterMove):
             state.move(tab: tab, to: toNewIndex, selectAfterMove: selectAfterMove)
+        case .openLinkAsPeek(let sourceTabId, let url):
+            state.openLinkAsPeek(urlString: url, sourceTabId: sourceTabId)
         case .previousTabReadyForCleanup(let tabId):
             state.handlePreviousTabReadyForCleanup(tabId: tabId)
         case .tabReadyToDisplay(let tabId):

@@ -12,6 +12,10 @@ struct SideTabView: View {
 
     var model: TabViewModel
     var onClose: (() -> Void)? = nil
+    /// Peeked page's view model for the trailing indicator; only read while
+    /// `model.showsPeek` is set.
+    var peekModel: TabViewModel? = nil
+    var onClosePeek: (() -> Void)? = nil
 
     @Environment(\.phiTheme) private var theme
     @Environment(\.phiAppearance) private var appearance
@@ -61,7 +65,14 @@ struct SideTabView: View {
             UnifiedTabTitleView(viewModel: model)
                 .themedForeground(.textPrimary)
 
-            if model.isHovered {
+            if model.showsPeek, let peekModel {
+                SidebarPeekIndicatorView(viewModel: peekModel,
+                                         onClose: { onClosePeek?() })
+            }
+
+            // While a peek is attached, the row's only close affordance is
+            // the peek indicator's "minus" (same rule as the bookmark row).
+            if model.isHovered, !model.showsPeek {
                 UnifiedTabCloseButton { onClose?() }
             }
         }

@@ -271,6 +271,9 @@ class SidebarTabCellView: SidebarCellView, TabPreviewInteractionCancelling {
     private let hoverRegionView = SidebarTabHoverRegionView()
     private let hoverDeadZoneView = SidebarTabHoverDeadZoneView()
     private let viewModel = TabViewModel()
+    /// Feeds the trailing peek indicator's favicon while a Peek is attached
+    /// to this row's tab.
+    private let peekTabViewModel = TabViewModel()
     private let tabPreviewRegistration = TabPreviewRegistration()
     private weak var configuredTab: Tab?
     private var activeSuppressed = false
@@ -298,6 +301,10 @@ class SidebarTabCellView: SidebarCellView, TabPreviewInteractionCancelling {
         viewModel.setActiveSuppressed(false, activeValue: false)
         viewModel.setHovered(false)
         viewModel.isPressed = false
+        // Peek attachment is tab identity, not preservable visual state — a
+        // reused row must never show the previous tab's peek indicator.
+        viewModel.showsPeek = false
+        peekTabViewModel.prepareForReuse()
         tabPreviewRegistration.invalidate()
         configuredTab = nil
         activeSuppressed = false
@@ -308,6 +315,7 @@ class SidebarTabCellView: SidebarCellView, TabPreviewInteractionCancelling {
     /// the current frame on screen (avoids blank-frame flicker).
     func invalidateSubscriptions() {
         viewModel.cancelSubscriptions()
+        peekTabViewModel.cancelSubscriptions()
         cancellables.forEach { $0.cancel() }
         cancellables.removeAll()
     }
@@ -334,9 +342,16 @@ class SidebarTabCellView: SidebarCellView, TabPreviewInteractionCancelling {
     }
     
     private func setupViews() {
-        hostingView = ThemedHostingView(rootView: SideTabView(model: viewModel) { [weak self] in
-            self?.closeButtonTapped()
-        })
+        hostingView = ThemedHostingView(rootView: SideTabView(
+            model: viewModel,
+            onClose: { [weak self] in
+                self?.closeButtonTapped()
+            },
+            peekModel: peekTabViewModel,
+            onClosePeek: { [weak self] in
+                self?.closePeekTapped()
+            }
+        ))
         addSubview(hostingView)
         hostingView.snp.makeConstraints { make in
             make.edges.equalToSuperview()
@@ -395,6 +410,13 @@ class SidebarTabCellView: SidebarCellView, TabPreviewInteractionCancelling {
         delegate?.tabCellDidRequestClose(tab)
     }
 
+    private func closePeekTapped() {
+        guard let tab = item as? Tab else { return }
+        MainBrowserWindowControllersManager.shared
+            .controller(for: tab.windowId)?.browserState
+            .closePeek(forOpener: tab.guid)
+    }
+
     override func configureAppearance() {
         guard let tab = item as? Tab else { return }
         configuredTab = tab
@@ -432,6 +454,30 @@ class SidebarTabCellView: SidebarCellView, TabPreviewInteractionCancelling {
             guard let tab else { return }
             tab.setAudioMuted(!tab.isAudioMuted)
         }
+
+        if let state {
+            state.peekState.$peeksByOpener
+                .receive(on: DispatchQueue.main)
+                .sink { [weak self, weak tab, weak state] peeksByOpener in
+                    guard let self, let tab else { return }
+                    self.updatePeekIndicator(peekTab: peeksByOpener[tab.guid],
+                                             browserState: state)
+                }
+                .store(in: &cancellables)
+        } else {
+            updatePeekIndicator(peekTab: nil, browserState: nil)
+        }
+    }
+
+    /// Shows the trailing peek indicator when a live Peek belongs to this
+    /// row's tab (also while the peek is hidden behind another focused tab —
+    /// the icon is what tells the user a peek is attached).
+    private func updatePeekIndicator(peekTab: Tab?, browserState: BrowserState?) {
+        peekTabViewModel.prepareForReuse()
+        if let peekTab {
+            peekTabViewModel.configure(with: peekTab, in: browserState)
+        }
+        viewModel.showsPeek = peekTab != nil
     }
 }
 

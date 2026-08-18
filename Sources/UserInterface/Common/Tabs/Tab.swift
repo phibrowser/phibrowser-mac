@@ -223,7 +223,7 @@ class Tab: WebContentRepresentable {
     var webContentView: NSView? { webContentWrapper?.nativeView }
     
     private var cancellables = Set<AnyCancellable>()
-    private var faviconSnapshotUpdater: ((Data) -> Void)?
+    private var faviconSnapshotUpdater: ((Data, String) -> Void)?
     /// Held apart from `cancellables`, which `setupObservers` clears wholesale
     /// on every wrapper swap; this pipeline watches the tab's own published
     /// state and must outlive the wrapper bindings.
@@ -294,16 +294,23 @@ class Tab: WebContentRepresentable {
         faviconUrl = wrapper.favIconURL
         liveFaviconData = wrapper.favIconData
         liveFaviconRevision = wrapper.favIconRevision
-        updateCachedFaviconData(wrapper.favIconData)
+        updateCachedFaviconData(
+            wrapper.favIconData,
+            sourceURLString: wrapper.urlString
+        )
         
         wrapper.publisher(for: \.favIconURL)
             .assign(to: \.faviconUrl, on: self)
             .store(in: &cancellables)
 
         wrapper.publisher(for: \.favIconData)
-            .sink { [weak self] data in
-                self?.liveFaviconData = data
-                self?.updateCachedFaviconData(data)
+            .sink { [weak self, weak wrapper] data in
+                guard let self, let wrapper else { return }
+                self.liveFaviconData = data
+                self.updateCachedFaviconData(
+                    data,
+                    sourceURLString: wrapper.urlString
+                )
             }
             .store(in: &cancellables)
 
@@ -448,14 +455,23 @@ class Tab: WebContentRepresentable {
         setupObservers(for: wrapper)
     }
     
-    func setFaviconSnapshotUpdater(_ updater: @escaping (Data) -> Void) {
+    func setFaviconSnapshotUpdater(_ updater: @escaping (Data, String) -> Void) {
         faviconSnapshotUpdater = updater
     }
     
-    func updateCachedFaviconData(_ data: Data?) {
+    func updateCachedFaviconData(_ data: Data?, sourceURLString: String? = nil) {
+        let resolvedSourceURLString = sourceURLString ?? url
+        if let pinnedUrl {
+            guard let canonicalPinnedURL = canonicalFaviconURLString(pinnedUrl),
+                  canonicalFaviconURLString(resolvedSourceURLString) == canonicalPinnedURL else {
+                return
+            }
+        }
         guard let data, cachedFaviconData != data else { return }
         cachedFaviconData = data
-        faviconSnapshotUpdater?(data)
+        if let resolvedSourceURLString {
+            faviconSnapshotUpdater?(data, resolvedSourceURLString)
+        }
     }
 
     func hydrateCachedFaviconData(_ data: Data?) {
@@ -463,9 +479,9 @@ class Tab: WebContentRepresentable {
         cachedFaviconData = data
     }
 
-    func updateProfileScopedFaviconData(_ data: Data?) {
+    func updateProfileScopedFaviconData(_ data: Data?, sourceURLString: String?) {
         guard allowsProfileScopedFaviconPersistence else { return }
-        updateCachedFaviconData(data)
+        updateCachedFaviconData(data, sourceURLString: sourceURLString)
     }
 
     private func clearFaviconDataIfPageURLChanged(from oldURLString: String?, to newURLString: String?) {

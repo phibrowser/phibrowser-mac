@@ -406,7 +406,10 @@ class PinnedTabItem: NSCollectionViewItem, NSMenuDelegate {
         faviconLoadHandle = ProfileScopedFaviconRepository.shared.loadFavicon(for: request) { [weak self, weak tab] result in
             self?.iconImageView.image = result.image
             if result.source == .chromium, let data = result.data {
-                tab?.updateProfileScopedFaviconData(data)
+                tab?.updateProfileScopedFaviconData(
+                    data,
+                    sourceURLString: request.pageURLString
+                )
             }
         }
     }

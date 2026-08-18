@@ -123,8 +123,12 @@ extension BrowserState {
         migrateAIChatTab(fromIdentifier: oldGuid, toIdentifier: newGuid)
         existing.guidInLocalDB = newGuid
         existing.pinnedLineageId = localTab.pinnedLineageId
-        existing.setFaviconSnapshotUpdater { [weak self] data in
-            self?.localStore.updateTabFavicon(newGuid, favicon: data)
+        existing.setFaviconSnapshotUpdater { [weak self] data, sourceURLString in
+            self?.localStore.updatePinnedTabFavicon(
+                newGuid,
+                favicon: data,
+                sourceURLString: sourceURLString
+            )
         }
         if let liveTab = tabs.first(where: { $0.guidInLocalDB == oldGuid }) {
             liveTab.guidInLocalDB = newGuid

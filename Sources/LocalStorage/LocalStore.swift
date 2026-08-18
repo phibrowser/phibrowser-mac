@@ -468,11 +468,38 @@ extension LocalStore {
     }
 
     func updateTabFavicon(_ guid: String, favicon: Data) {
+        updateTabFavicon(
+            guid,
+            favicon: favicon,
+            pinnedSourceURLString: nil
+        )
+    }
+
+    func updatePinnedTabFavicon(_ guid: String,
+                                favicon: Data,
+                                sourceURLString: String) {
+        updateTabFavicon(
+            guid,
+            favicon: favicon,
+            pinnedSourceURLString: sourceURLString
+        )
+    }
+
+    private func updateTabFavicon(_ guid: String,
+                                  favicon: Data,
+                                  pinnedSourceURLString: String?) {
         performBackgroundWrite { context in
             do {
                 let predicate = #Predicate<TabDataModel> { $0.guid == guid }
                 let descriptor = FetchDescriptor<TabDataModel>(predicate: predicate)
                 if let tab = try context.fetch(descriptor).first {
+                    if let pinnedSourceURLString {
+                        guard tab.dataType == .pinnedTab,
+                              let persistedURLString = canonicalFaviconURLString(tab.url.absoluteString),
+                              canonicalFaviconURLString(pinnedSourceURLString) == persistedURLString else {
+                            return
+                        }
+                    }
                     if tab.favicon == favicon {
                         return
                     }

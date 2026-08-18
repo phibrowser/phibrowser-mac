@@ -585,8 +585,12 @@ class BrowserState {
         // a runtime tab still opens inside this window's Chromium profile.
         tab.profileId = profileId
         if let guid = tab.guidInLocalDB {
-            tab.setFaviconSnapshotUpdater { [weak self] data in
-                self?.localStore.updateTabFavicon(guid, favicon: data)
+            tab.setFaviconSnapshotUpdater { [weak self] data, sourceURLString in
+                self?.localStore.updatePinnedTabFavicon(
+                    guid,
+                    favicon: data,
+                    sourceURLString: sourceURLString
+                )
             }
         }
         return tab

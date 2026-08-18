@@ -232,34 +232,9 @@ class Bookmark: WebContentRepresentable {
     }
 
     private func updateCachedFaviconDataIfNeeded(_ data: Data?, forWrapperURL wrapperURLString: String?) {
-        guard let bookmarkURLString = canonicalURLString(url),
-              canonicalURLString(wrapperURLString) == bookmarkURLString else { return }
+        guard let bookmarkURLString = canonicalFaviconURLString(url),
+              canonicalFaviconURLString(wrapperURLString) == bookmarkURLString else { return }
         updateCachedFaviconData(data, persist: true)
-    }
-
-    private func canonicalURLString(_ rawURLString: String?) -> String? {
-        guard let rawURLString = rawURLString?.trimmingCharacters(in: .whitespacesAndNewlines),
-              !rawURLString.isEmpty else {
-            return nil
-        }
-
-        let processedURLString: String
-        if rawURLString.hasPrefix("phi://") || URL(string: rawURLString)?.scheme == nil {
-            processedURLString = URLProcessor.processUserInput(rawURLString)
-        } else {
-            processedURLString = rawURLString
-        }
-        guard var components = URLComponents(string: processedURLString) else {
-            return processedURLString
-        }
-
-        components.scheme = components.scheme?.lowercased()
-        components.host = components.host?.lowercased()
-        components.fragment = nil
-        if components.path == "/" {
-            components.path = ""
-        }
-        return components.url?.absoluteString ?? processedURLString
     }
 }
 

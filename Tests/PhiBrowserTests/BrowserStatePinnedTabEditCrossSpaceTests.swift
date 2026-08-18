@@ -145,8 +145,14 @@ final class BrowserStatePinnedTabEditCrossSpaceTests: XCTestCase {
         XCTAssertFalse(defaultPinned.allowsProfileScopedFaviconPersistence)
         XCTAssertFalse(workPinned.allowsProfileScopedFaviconPersistence)
 
-        defaultPinned.updateProfileScopedFaviconData(defaultProfileFavicon)
-        workPinned.updateProfileScopedFaviconData(workProfileFavicon)
+        defaultPinned.updateProfileScopedFaviconData(
+            defaultProfileFavicon,
+            sourceURLString: defaultPinned.pinnedUrl
+        )
+        workPinned.updateProfileScopedFaviconData(
+            workProfileFavicon,
+            sourceURLString: workPinned.pinnedUrl
+        )
         await store.performBackgroundWriteAndWait { _ in }
 
         XCTAssertEqual(defaultPinned.cachedFaviconData, sharedFavicon)
@@ -181,7 +187,7 @@ final class BrowserStatePinnedTabEditCrossSpaceTests: XCTestCase {
             faviconData: Data([0x10])
         )
         var writeBacks: [Data] = []
-        tab.setFaviconSnapshotUpdater { writeBacks.append($0) }
+        tab.setFaviconSnapshotUpdater { data, _ in writeBacks.append(data) }
 
         tab.hydrateCachedFaviconData(Data([0x20]))
 
@@ -205,7 +211,7 @@ final class BrowserStatePinnedTabEditCrossSpaceTests: XCTestCase {
             webContentView: wrapper
         )
         var writeBacks: [Data] = []
-        tab.setFaviconSnapshotUpdater { writeBacks.append($0) }
+        tab.setFaviconSnapshotUpdater { data, _ in writeBacks.append(data) }
         tab.hydrateCachedFaviconData(syncedFavicon)
 
         tab.setWebContentsWrapper(wrapper: wrapper)
@@ -236,6 +242,102 @@ final class BrowserStatePinnedTabEditCrossSpaceTests: XCTestCase {
         wrapper.title = "Updated Page Title"
 
         XCTAssertEqual(tab.title, "Custom Title")
+    }
+
+    func testNavigatedPinnedFaviconDoesNotReplaceCanonicalSnapshot() {
+        let canonicalURL = "https://www.163.com/news/article.html"
+        let readerURL = "chrome-extension://\(ReaderExtensionBridge.extensionId)/reader.html#tab=1"
+        let persistedFavicon = Data([0x10])
+        let readerFavicon = Data([0x20])
+        let navigatedFavicon = Data([0x30])
+        let tab = Tab(
+            guid: 1,
+            url: readerURL,
+            isActive: false,
+            index: 0,
+            faviconData: persistedFavicon
+        )
+        tab.guidInLocalDB = "pinned-guid"
+        tab.pinnedUrl = canonicalURL
+
+        var writeBacks: [(Data, String)] = []
+        tab.setFaviconSnapshotUpdater { data, sourceURLString in
+            writeBacks.append((data, sourceURLString))
+        }
+
+        tab.updateProfileScopedFaviconData(
+            readerFavicon,
+            sourceURLString: readerURL
+        )
+        tab.updateCachedFaviconData(
+            navigatedFavicon,
+            sourceURLString: "https://example.com/other-page"
+        )
+
+        XCTAssertEqual(tab.cachedFaviconData, persistedFavicon)
+        XCTAssertTrue(writeBacks.isEmpty)
+    }
+
+    func testPinnedFaviconCanonicalSourceUpdatesSnapshot() {
+        let canonicalURL = "https://example.com/article"
+        let persistedFavicon = Data([0x10])
+        let updatedFavicon = Data([0x20])
+        let tab = Tab(
+            guid: 1,
+            url: canonicalURL,
+            isActive: false,
+            index: 0,
+            faviconData: persistedFavicon
+        )
+        tab.guidInLocalDB = "pinned-guid"
+        tab.pinnedUrl = canonicalURL
+
+        var writeBacks: [(Data, String)] = []
+        tab.setFaviconSnapshotUpdater { data, sourceURLString in
+            writeBacks.append((data, sourceURLString))
+        }
+
+        tab.updateProfileScopedFaviconData(
+            updatedFavicon,
+            sourceURLString: "https://EXAMPLE.com/article#reader-position"
+        )
+
+        XCTAssertEqual(tab.cachedFaviconData, updatedFavicon)
+        XCTAssertEqual(writeBacks.count, 1)
+        XCTAssertEqual(writeBacks.first?.0, updatedFavicon)
+        XCTAssertEqual(writeBacks.first?.1, "https://EXAMPLE.com/article#reader-position")
+    }
+
+    func testPinnedFaviconDatabaseWriteRejectsNonCanonicalSourceURL() async throws {
+        let store = try makeStore()
+        let canonicalURL = "https://www.163.com/news/article.html"
+        let persistedFavicon = Data([0x10])
+        let readerFavicon = Data([0x20])
+        let updatedFavicon = Data([0x30])
+        try seedPinnedTab(
+            in: store,
+            guid: "pinned-guid",
+            url: canonicalURL,
+            favicon: persistedFavicon
+        )
+
+        store.updatePinnedTabFavicon(
+            "pinned-guid",
+            favicon: readerFavicon,
+            sourceURLString: "chrome-extension://\(ReaderExtensionBridge.extensionId)/reader.html#tab=1"
+        )
+        await store.performBackgroundWriteAndWait { _ in }
+
+        XCTAssertEqual(store.getTab(by: "pinned-guid")?.favicon, persistedFavicon)
+
+        store.updatePinnedTabFavicon(
+            "pinned-guid",
+            favicon: updatedFavicon,
+            sourceURLString: "\(canonicalURL)#section"
+        )
+        await store.performBackgroundWriteAndWait { _ in }
+
+        XCTAssertEqual(store.getTab(by: "pinned-guid")?.favicon, updatedFavicon)
     }
 
     func testPinnedTabOriginNavigationReturnsOpenTabToOriginalURL() throws {
@@ -522,7 +624,10 @@ final class BrowserStatePinnedTabEditCrossSpaceTests: XCTestCase {
         let guid = try XCTUnwrap(pinnedTab.guidInLocalDB)
         XCTAssertTrue(pinnedTab.allowsProfileScopedFaviconPersistence)
 
-        pinnedTab.updateProfileScopedFaviconData(fallbackFavicon)
+        pinnedTab.updateProfileScopedFaviconData(
+            fallbackFavicon,
+            sourceURLString: pinnedTab.pinnedUrl
+        )
         await store.performBackgroundWriteAndWait { _ in }
 
         XCTAssertEqual(pinnedTab.cachedFaviconData, fallbackFavicon)
@@ -571,8 +676,8 @@ final class BrowserStatePinnedTabEditCrossSpaceTests: XCTestCase {
 
         var firstWriteBacks: [Data] = []
         var secondWriteBacks: [Data] = []
-        firstPinned.setFaviconSnapshotUpdater { firstWriteBacks.append($0) }
-        secondPinned.setFaviconSnapshotUpdater { secondWriteBacks.append($0) }
+        firstPinned.setFaviconSnapshotUpdater { data, _ in firstWriteBacks.append(data) }
+        secondPinned.setFaviconSnapshotUpdater { data, _ in secondWriteBacks.append(data) }
 
         bindOpenPinnedTab(
             firstPinned,

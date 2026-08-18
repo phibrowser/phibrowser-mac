@@ -1080,7 +1080,10 @@ class SidebarSplitPairCellView: SidebarCellView, TabPreviewInteractionCancelling
         handle = ProfileScopedFaviconRepository.shared.loadFavicon(for: request) { [weak imageView, weak tab] result in
             imageView?.image = result.image
             if result.source == .chromium, let data = result.data {
-                tab?.updateProfileScopedFaviconData(data)
+                tab?.updateProfileScopedFaviconData(
+                    data,
+                    sourceURLString: request.pageURLString
+                )
             }
         }
     }

@@ -371,6 +371,8 @@ struct WebContentAddressBarView: View {
         if viewModel.isReaderApplicable {
             ReaderButtonView(
                 isActive: viewModel.isReaderViewActive,
+                isAddressBarHovering: isHovering,
+                isMenuShown: isMenuShown,
                 action: {
                     anchorView?.window?.customTooltipController.dismissAll()
                     guard let tab = currentTab else { return }
@@ -451,11 +453,12 @@ struct WebContentAddressBarView: View {
 
 /// Address-bar affordance for Reader View.
 ///
-/// Unlike `CopyURLButtonView` this is not hover-gated: while a page can be
-/// read, the entry point stays visible, and it reads as selected while Reader
-/// View is on.
+/// Hover-gated like `CopyURLButtonView`, except it stays visible while Reader
+/// View is on so the selected state doesn't disappear with the pointer.
 private struct ReaderButtonView: View {
     let isActive: Bool
+    let isAddressBarHovering: Bool
+    let isMenuShown: Bool
     let action: () -> Void
 
     @State private var isButtonHovering = false
@@ -482,6 +485,8 @@ private struct ReaderButtonView: View {
         .onHover { hovering in
             isButtonHovering = hovering
         }
+        .opacity((isAddressBarHovering || isMenuShown || isActive) ? 1 : 0)
+        .animation(.easeInOut(duration: 0.15), value: isAddressBarHovering || isMenuShown)
         .animation(.easeInOut(duration: 0.15), value: isButtonHovering)
         .animation(.easeInOut(duration: 0.15), value: isActive)
     }

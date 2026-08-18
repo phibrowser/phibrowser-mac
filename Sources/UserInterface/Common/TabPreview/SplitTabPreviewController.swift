@@ -282,10 +282,11 @@ struct SplitTabPreviewContentResolver {
         reusing cachedPane: SplitTabPreviewPaneContent?,
         includesImage: Bool
     ) -> SplitTabPreviewPaneContent {
-        let url = pane.liveTab?.url ?? pane.liveTab?.pinnedUrl ?? pane.fallbackURL
+        let rawURL = pane.liveTab?.url ?? pane.liveTab?.pinnedUrl ?? pane.fallbackURL
+        let displayURL = TabPreviewURLPolicy.displayURL(for: rawURL)
         let liveTitle = pane.liveTab?.title ?? ""
         let title = liveTitle.isEmpty
-            ? (pane.fallbackTitle.isEmpty ? url : pane.fallbackTitle)
+            ? (pane.fallbackTitle.isEmpty ? displayURL : pane.fallbackTitle)
             : liveTitle
         let reusablePane = cachedPane?.id == pane.id ? cachedPane : nil
         let resolvedImage = image(
@@ -297,7 +298,7 @@ struct SplitTabPreviewContentResolver {
         return SplitTabPreviewPaneContent(
             id: pane.id,
             title: title,
-            url: url,
+            url: displayURL,
             image: resolvedImage.image,
             imageSource: resolvedImage.source
         )
@@ -457,11 +458,13 @@ struct SplitTabPreviewView: View {
                     .lineLimit(2)
                     .fixedSize(horizontal: false, vertical: true)
 
-                Text(displayURL(content.url))
-                    .font(.system(size: 12))
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
+                if !content.url.isEmpty {
+                    Text(displayURL(content.url))
+                        .font(.system(size: 12))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal, 12)
@@ -478,11 +481,13 @@ struct SplitTabPreviewView: View {
                 .lineLimit(2)
                 .fixedSize(horizontal: false, vertical: true)
 
-            Text(content.url)
-                .font(.system(size: 12))
-                .foregroundStyle(.secondary)
-                .lineLimit(1)
-                .truncationMode(.middle)
+            if !content.url.isEmpty {
+                Text(content.url)
+                    .font(.system(size: 12))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+            }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, 12)

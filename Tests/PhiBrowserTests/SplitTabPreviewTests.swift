@@ -123,6 +123,26 @@ final class SplitTabPreviewTests: XCTestCase {
         )
     }
 
+    func testNewTabPageURLsAreHiddenAndTheirRowsCollapse() throws {
+        let (state, left, right) = try makeLiveSplit(layout: .vertical)
+        let target = try XCTUnwrap(
+            SplitTabPreviewTarget.make(representing: left, in: state)
+        )
+        let resolver = SplitTabPreviewContentResolver { _ in nil }
+        let visibleContent = try XCTUnwrap(resolver.resolve(target, in: state))
+
+        left.url = "chrome://newtab"
+        right.url = "phi://newtab"
+        let hiddenContent = try XCTUnwrap(resolver.resolve(target, in: state))
+
+        XCTAssertTrue(hiddenContent.leftPane.url.isEmpty)
+        XCTAssertTrue(hiddenContent.rightPane.url.isEmpty)
+        XCTAssertLessThan(
+            fittingSize(for: hiddenContent).height,
+            fittingSize(for: visibleContent).height
+        )
+    }
+
     func testMetadataRefreshReusesBothPaneImages() throws {
         let (state, left, right) = try makeLiveSplit(layout: .vertical)
         var requestedIDs: [Int64] = []

@@ -12,6 +12,12 @@ enum TabPreviewTargetID: Hashable {
     case bookmark(String)
 }
 
+enum TabPreviewURLPolicy {
+    static func displayURL(for rawURL: String) -> String {
+        rawURL.isNTP ? "" : rawURL
+    }
+}
+
 enum TabPreviewTarget {
     case tab(Tab)
     case bookmark(Bookmark)
@@ -71,10 +77,11 @@ struct TabPreviewContentResolver {
             isForeground: resolved.isForeground,
             cachedContent: cachedContent
         )
+        let displayURL = TabPreviewURLPolicy.displayURL(for: resolved.url)
         return TabPreviewContent(
             id: resolved.id,
-            title: resolved.title.isEmpty ? resolved.url : resolved.title,
-            url: resolved.url,
+            title: resolved.title.isEmpty ? displayURL : resolved.title,
+            url: displayURL,
             image: resolvedImage.image,
             imageSource: resolvedImage.source
         )
@@ -312,11 +319,13 @@ struct TabPreviewView: View {
                         .lineLimit(2)
                         .fixedSize(horizontal: false, vertical: true)
 
-                    Text(content.url)
-                        .font(.system(size: 12))
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                        .truncationMode(.middle)
+                    if !content.url.isEmpty {
+                        Text(content.url)
+                            .font(.system(size: 12))
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                    }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.horizontal, 12)

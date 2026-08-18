@@ -90,7 +90,9 @@ final class BookmarkManagerCellView: NSTableCellView, NSTextFieldDelegate {
             configuredEditableValue = (isSplit || onCommit == nil) ? nil : bookmark.title
         case .address:
             configureAddress(bookmark: bookmark, isSplit: isSplit)
-            configuredEditableValue = (onCommit != nil && !bookmark.isFolder && !isSplit) ? bookmark.url : nil
+            configuredEditableValue = (onCommit != nil && !bookmark.isFolder && !isSplit)
+                ? Self.displayURL(bookmark.url)
+                : nil
         }
 
         valueField.toolTip = valueField.stringValue
@@ -327,10 +329,10 @@ final class BookmarkManagerCellView: NSTableCellView, NSTextFieldDelegate {
         if bookmark.isFolder {
             valueField.stringValue = Self.localizedChildCount(bookmark.children.count)
         } else if isSplit {
-            valueField.stringValue = bookmark.url ?? ""
-            secondaryValueField.stringValue = bookmark.secondaryUrl ?? ""
+            valueField.stringValue = Self.displayURL(bookmark.url)
+            secondaryValueField.stringValue = Self.displayURL(bookmark.secondaryUrl)
         } else {
-            valueField.stringValue = bookmark.url ?? ""
+            valueField.stringValue = Self.displayURL(bookmark.url)
         }
         if !isSplit {
             secondaryValueField.stringValue = ""
@@ -445,6 +447,10 @@ final class BookmarkManagerCellView: NSTableCellView, NSTextFieldDelegate {
         }
         guard let fallbackURLString, !fallbackURLString.isEmpty else { return "" }
         return URL(string: fallbackURLString)?.host ?? fallbackURLString
+    }
+
+    private static func displayURL(_ rawURL: String?) -> String {
+        rawURL.map(URLProcessor.phiBrandEnsuredUrlString) ?? ""
     }
 
     private static func localizedChildCount(_ count: Int) -> String {

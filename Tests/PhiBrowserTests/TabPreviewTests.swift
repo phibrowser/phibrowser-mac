@@ -63,6 +63,19 @@ final class TabPreviewTests: XCTestCase {
         XCTAssertTrue(requestedIDs.isEmpty)
     }
 
+    func testNewTabPageURLIsHidden() throws {
+        let state = try makeBrowserState()
+        let tab = makeTab(guid: 10, title: "New Tab", url: "phi://newtab")
+        state.tabs = [tab]
+        state.normalTabs = [tab]
+        let resolver = TabPreviewContentResolver { _ in nil }
+
+        let content = try XCTUnwrap(resolver.resolve(.tab(tab), in: state))
+
+        XCTAssertEqual(content.title, "New Tab")
+        XCTAssertTrue(content.url.isEmpty)
+    }
+
     func testDetachedNormalTabIsIneligible() throws {
         let state = try makeBrowserState()
         let staleTab = makeTab(
@@ -485,6 +498,23 @@ final class TabPreviewTests: XCTestCase {
         XCTAssertEqual(snapshotSize.width, 280, accuracy: 1)
     }
 
+    func testPreviewLayoutCollapsesHiddenURLRow() {
+        let visibleURLSize = previewSize(
+            title: "New Tab",
+            url: "https://example.com",
+            image: nil,
+            imageSource: .unavailable(tabID: nil)
+        )
+        let hiddenURLSize = previewSize(
+            title: "New Tab",
+            url: "",
+            image: nil,
+            imageSource: .unavailable(tabID: nil)
+        )
+
+        XCTAssertLessThan(hiddenURLSize.height, visibleURLSize.height)
+    }
+
     func testActiveBookmarkUsesTextOnlyContentWhileFolderAndSplitBookmarksAreIneligible() throws {
         let state = try makeBrowserState()
         let folder = Bookmark(guid: "folder", title: "Folder", isFolder: true)
@@ -530,6 +560,7 @@ final class TabPreviewTests: XCTestCase {
 
     private func previewSize(
         title: String,
+        url: String = "https://example.com/a/long/path",
         image: NSImage?,
         imageSource: TabPreviewImageSource
     ) -> CGSize {
@@ -538,7 +569,7 @@ final class TabPreviewTests: XCTestCase {
             TabPreviewContent(
                 id: .tab("layout"),
                 title: title,
-                url: "https://example.com/a/long/path",
+                url: url,
                 image: image,
                 imageSource: imageSource
             )

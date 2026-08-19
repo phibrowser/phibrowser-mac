@@ -1202,6 +1202,17 @@ final class SpaceManager: ObservableObject {
         case .plainSpawn:
             claimedIndex = nil
             slot = createSlot(initialSpaceId: spaceId)
+            // The claim leg inherits the entry's geometry through
+            // `slotForRestoreIndex`. A plain spawn takes over no entry, so it
+            // seeds from the landing entry directly: the group that was last on
+            // screen is where the one window this reopen owes the user belongs,
+            // whichever Space it ends up landing on. A record with no entry to
+            // land on seeds nothing, and the spawn is placed exactly as it is
+            // today.
+            if let landingIndex {
+                slot.seedRememberedGeometry(frame: restoreEntries[landingIndex].frame,
+                                            sidebarWidth: restoreEntries[landingIndex].sidebarWidth)
+            }
         }
         slot.activate(
             spaceId: spaceId,
@@ -2203,6 +2214,16 @@ final class SpaceManager: ObservableObject {
         if restoreEntries[index].wasFullScreen {
             slot.markPendingRestoreFullScreen()
         }
+        // What the record remembers about how this group LOOKED, handed over
+        // before anything can ask the slot to spawn. A slot minted here has no
+        // window of its own to inherit from, so without this every window this
+        // side SPAWNS for the entry — the windowless reopen's claiming
+        // fallback, the cold-start repair — lands on Chromium's own
+        // `browser.window_placement` instead of where the user left the group.
+        // A window Chromium REPLAYS is unaffected: it queues no spawn frame, so
+        // it keeps its replayed bounds exactly as it does today.
+        slot.seedRememberedGeometry(frame: restoreEntries[index].frame,
+                                    sidebarWidth: restoreEntries[index].sidebarWidth)
         // Lend the slot the loading window standing in for it, and the frame it
         // sits on: the slot has to come back ON that frame, and it is the slot
         // that gets to see the restored window this loading window has to drop
@@ -7191,8 +7212,9 @@ final class SpaceWindowSlot: ObservableObject {
     /// Both the switch path and the spawn path inherit from it, so continuity
     /// no longer depends on the previous window still being alive and on-screen
     /// at the instant of the switch (e.g. an async cross-profile spawn whose
-    /// source window closed during the profile load). Nil only before the slot
-    /// has ever had a positioned window.
+    /// source window closed during the profile load). Nil before the slot has
+    /// ever had a positioned window, unless a saved entry seeded it
+    /// (`seedRememberedGeometry`).
     private var lastKnownFrame: NSRect?
 
     /// `lastKnownFrame` minus the fullscreen rects — the geometry this slot
@@ -7205,17 +7227,21 @@ final class SpaceWindowSlot: ObservableObject {
     /// Refreshed from the visible window's live frame whenever one is available
     /// — by the frame observer on every move/resize, and by `snapshotFrame` at
     /// each persist — so a slot that enters fullscreen keeps the position it
-    /// had on the way in. Nil only before the slot has ever had a positioned
-    /// window outside fullscreen.
+    /// had on the way in. Nil before the slot has ever had a positioned window
+    /// outside fullscreen, unless a saved entry seeded it
+    /// (`seedRememberedGeometry`).
     private var lastKnownWindowedFrame: NSRect?
 
     /// The other two things the cross-launch record carries about how this slot
     /// LOOKS, as opposed to where it sits: the sidebar's width and the leading
     /// traffic light's origin. Cached for the same reason as the frame above —
     /// a persist can run while the window is being torn down, and the last
-    /// value the slot actually had beats none. Nil only before the slot has had
-    /// a window to read them off. Written by `snapshotSidebarWidth` /
-    /// `snapshotTrafficLightOrigin`, read by nothing else.
+    /// value the slot actually had beats none. Nil before the slot has had a
+    /// window to read them off, and for the width also unless a saved entry
+    /// seeded it (`seedRememberedGeometry`). Written by `snapshotSidebarWidth`
+    /// / `snapshotTrafficLightOrigin`; the width is additionally what a spawn
+    /// falls back to when the slot has no window to inherit one from
+    /// (`spawnSidebarShape`), the origin is read by nothing else.
     private var lastKnownSidebarWidth: CGFloat?
     private var lastKnownTrafficLightOrigin: NSPoint?
 
@@ -7773,8 +7799,17 @@ final class SpaceWindowSlot: ObservableObject {
             // synchronously in `activate` while `previous` was still alive, so
             // it stays valid even if the source window closes during an async
             // profile load before this closure runs.
-            let inheritedSidebarWidth = previous?.browserState.sidebarWidth ?? 0
-            let inheritedSidebarCollapsed = previous?.browserState.sidebarCollapsed
+            // The sidebar's counterpart to `inheritedFrame`, and it falls back
+            // the same way and for the same two cases: a source window that
+            // went away during that profile load, and a slot minted for a saved
+            // entry, which has no previous window at all. See
+            // `spawnSidebarShape` for what a remembered width settles.
+            let sidebarShape = SpaceWindowSlot.spawnSidebarShape(
+                liveWidth: previous?.browserState.sidebarWidth,
+                liveCollapsed: previous?.browserState.sidebarCollapsed,
+                rememberedWidth: self.lastKnownSidebarWidth)
+            let inheritedSidebarWidth = sidebarShape.width
+            let inheritedSidebarCollapsed = sidebarShape.collapsed
             manager?.currentSpawn = SpaceManager.SpawnContext(
                 slot: self,
                 spaceId: spaceId,
@@ -11698,6 +11733,109 @@ final class SpaceWindowSlot: ObservableObject {
             lastKnownFrame = frame
         }
         return lastKnownFrame
+    }
+
+    /// Hands a slot minted for a saved snapshot entry the geometry the record
+    /// remembers for it: where the group sat, and how wide its sidebar was.
+    /// The spawn that follows inherits both through the pipes it already uses
+    /// — `resolveInheritedFrame` for the frame, `spawnSidebarShape` for the
+    /// sidebar — so the window arrives where the user left the group instead of
+    /// on Chromium's own `browser.window_placement`. No new route and no second
+    /// source of truth: this is the slot remembering what a window of its own
+    /// would have told it, one step before it has one.
+    ///
+    /// Handed the two values rather than the entry they came from, and that is
+    /// the layer boundary rather than an omission: `SlotRestoreEntry` is
+    /// private to `SpaceManager`, a slot reads no part of the restore record
+    /// anywhere else, and the six other fields on that entry are none of a
+    /// slot's business.
+    ///
+    /// Never overwrites what the slot already remembers, and the guards are
+    /// load-bearing rather than tidy: `slotForRestoreIndex` hands the same slot
+    /// back for every window of a group, and a slot that has been on screen
+    /// holds a live position the record cannot improve on — seeding over it
+    /// would drag the user's window back to wherever the last snapshot froze
+    /// it. The frame half asks BOTH caches because they can legitimately
+    /// diverge — `snapshotFrame` writes the windowed one alone — so a slot that
+    /// knows either of them already knows better than the record does.
+    ///
+    /// Both frames are seeded, for the reason a live window keeps both current:
+    /// `lastKnownFrame` is what the spawn inherits, `lastKnownWindowedFrame` is
+    /// what the next persist writes back. An entry claimed straight into
+    /// fullscreen (`markPendingRestoreFullScreen`) never gives the frame
+    /// observer a windowed rect to record, so seeding only the first would have
+    /// that entry spawn on its remembered rect and then lose it on the write
+    /// that follows.
+    ///
+    /// A nil half means the record carries nothing for it — an entry written
+    /// before that field existed, or one whose stored value no longer parses
+    /// (`SpaceManager.decodedSlotFrame`, `SpaceManager.decodedSidebarWidth`) —
+    /// and leaves that half exactly as it is today. The frame is trusted as
+    /// given: it arrives non-empty from the decoder and already clamped to the
+    /// screens attached now (`SpaceManager.loadRestoreSnapshot`).
+    fileprivate func seedRememberedGeometry(frame: NSRect?, sidebarWidth: CGFloat?) {
+        var seededFrame: NSRect?
+        if let frame, lastKnownFrame == nil, lastKnownWindowedFrame == nil {
+            lastKnownFrame = frame
+            lastKnownWindowedFrame = frame
+            seededFrame = frame
+        }
+        var seededSidebarWidth: CGFloat?
+        if let sidebarWidth, lastKnownSidebarWidth == nil {
+            lastKnownSidebarWidth = sidebarWidth
+            seededSidebarWidth = sidebarWidth
+        }
+        // Paired with the mint line this lands right after: together they say
+        // whether the window about to be spawned was placed by the record or
+        // left to Chromium, which is the whole of the reopen's placement from a
+        // log bundle. Silent when nothing was taken, so a slot that already
+        // knew better does not read like one that was seeded.
+        guard seededFrame != nil || seededSidebarWidth != nil else { return }
+        let frameNote = seededFrame.map(NSStringFromRect) ?? "none"
+        let widthNote = seededSidebarWidth.map(String.init(describing:)) ?? "none"
+        AppLogInfo("[SpaceWindowSlot] seeded from the saved entry: frame=\(frameNote) sidebarWidth=\(widthNote)")
+    }
+
+    /// The sidebar shape a spawn queues for the window it is about to create
+    /// (`pendingSidebarWidthByWindowId` / `pendingSidebarCollapsedByWindowId`,
+    /// applied in `registerWindow`).
+    ///
+    /// The window the slot is leaving answers whenever there is one — today's
+    /// rule, unchanged — and the answer is keyed on its collapsed flag because
+    /// that is the value `registerWindow` gates the sync on.
+    ///
+    /// What the slot remembers answers when there is not. Two ways to get
+    /// there: a source window that went away during an async profile load (the
+    /// case `lastKnownFrame` was introduced for), and a slot minted for a saved
+    /// entry, which has no previous window at all and would otherwise spawn its
+    /// first window at whatever width that window was built with
+    /// (`seedRememberedGeometry`).
+    ///
+    /// `0` is a value on the remembered leg rather than a gap: it is how a
+    /// collapsed sidebar records itself, and how `.comfortable` records itself
+    /// permanently (`ReopenLoadingWindow.sidebarBandWidth`), and
+    /// `snapshotSidebarWidth` only ever adopts a zero the window confirmed. So
+    /// one remembered number settles the width AND the collapsed state, while a
+    /// remembered nothing answers nil and leaves the new window's sidebar
+    /// alone: `registerWindow` syncs nothing without a collapsed answer. Pure
+    /// and static so the rule is pinned by table.
+    struct SpawnSidebarShape: Equatable {
+        let width: CGFloat
+        /// nil leaves the new window's sidebar exactly as it was built.
+        let collapsed: Bool?
+    }
+
+    static func spawnSidebarShape(liveWidth: CGFloat?,
+                                  liveCollapsed: Bool?,
+                                  rememberedWidth: CGFloat?) -> SpawnSidebarShape {
+        if let liveCollapsed {
+            return SpawnSidebarShape(width: liveWidth ?? 0, collapsed: liveCollapsed)
+        }
+        guard let rememberedWidth else {
+            return SpawnSidebarShape(width: 0, collapsed: nil)
+        }
+        return SpawnSidebarShape(width: rememberedWidth,
+                                 collapsed: rememberedWidth <= 0)
     }
 
     /// Tears down every NotificationCenter registration this slot owns —

@@ -14,7 +14,11 @@ import XCTest
 ///
 /// These pin the clamp's rule down by table. It is deliberately far weaker than
 /// AppKit's own constraint: a frame the user dragged half off an edge stays
-/// there, and only the states they cannot get out of are corrected.
+/// there, and only the states they cannot get out of are corrected. The last
+/// section covers what the remembered geometry is FOR on the spawn side: a slot
+/// minted for a saved entry opens its first window itself, and takes that
+/// window's sidebar from what the record kept rather than from a window it does
+/// not have.
 final class SlotRestoreFrameTests: XCTestCase {
     // A 1440x900 laptop display at the origin, menu bar removed.
     private let primary = SpaceManager.ScreenGeometry(
@@ -219,5 +223,67 @@ final class SlotRestoreFrameTests: XCTestCase {
             SpaceManager.decodedTrafficLightOrigin(
                 try throughAPropertyList(NSStringFromPoint(origin))),
             origin)
+    }
+
+    // MARK: - What a spawn inherits when the slot has no window to read
+
+    /// The remembered geometry above is not only what a loading window is
+    /// drawn from: a slot minted for a saved entry SPAWNS its first window,
+    /// and a spawn takes its frame and its sidebar from the slot rather than
+    /// from the record (`SpaceWindowSlot.seedRememberedGeometry` seeds the one
+    /// from the other). With nothing seeded the window landed on Chromium's
+    /// own `browser.window_placement` instead of where the user left it.
+    ///
+    /// The frame half is a pass-through of a value already pinned above. The
+    /// sidebar half is a rule: the record stores one number, and that number
+    /// has to settle the width AND the collapsed state, with a third answer
+    /// for a record that stores nothing.
+
+    func testALiveWindowStillAnswersForTheSpawnsSidebar() {
+        // Unchanged behaviour: while the slot has a window to leave, what it
+        // is showing wins over anything the record remembers.
+        XCTAssertEqual(
+            SpaceWindowSlot.spawnSidebarShape(liveWidth: 240,
+                                              liveCollapsed: false,
+                                              rememberedWidth: 300),
+            SpaceWindowSlot.SpawnSidebarShape(width: 240, collapsed: false))
+    }
+
+    func testALiveCollapsedSidebarIsNotReopenedByARememberedWidth() {
+        XCTAssertEqual(
+            SpaceWindowSlot.spawnSidebarShape(liveWidth: 0,
+                                              liveCollapsed: true,
+                                              rememberedWidth: 300),
+            SpaceWindowSlot.SpawnSidebarShape(width: 0, collapsed: true))
+    }
+
+    func testARememberedWidthAnswersWhenNoWindowIsLeaving() {
+        XCTAssertEqual(
+            SpaceWindowSlot.spawnSidebarShape(liveWidth: nil,
+                                              liveCollapsed: nil,
+                                              rememberedWidth: 300),
+            SpaceWindowSlot.SpawnSidebarShape(width: 300, collapsed: false))
+    }
+
+    func testARememberedZeroIsACollapsedSidebarAndNotAMissingOne() {
+        // Same distinction the decoder makes above, carried through to the
+        // window: a collapsed sidebar comes back collapsed rather than at some
+        // invented width.
+        XCTAssertEqual(
+            SpaceWindowSlot.spawnSidebarShape(liveWidth: nil,
+                                              liveCollapsed: nil,
+                                              rememberedWidth: 0),
+            SpaceWindowSlot.SpawnSidebarShape(width: 0, collapsed: true))
+    }
+
+    func testRememberingNothingLeavesTheNewWindowsSidebarAlone() {
+        // A record written before the width existed. `registerWindow` syncs
+        // nothing without a collapsed answer, so nil is what keeps such a
+        // reopen behaving exactly as it did.
+        XCTAssertEqual(
+            SpaceWindowSlot.spawnSidebarShape(liveWidth: nil,
+                                              liveCollapsed: nil,
+                                              rememberedWidth: nil),
+            SpaceWindowSlot.SpawnSidebarShape(width: 0, collapsed: nil))
     }
 }

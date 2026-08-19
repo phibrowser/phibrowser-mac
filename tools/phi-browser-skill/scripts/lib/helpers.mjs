@@ -2179,16 +2179,25 @@ export async function waitForChallengeClearance({
 // Cookie-consent auto-accept
 //
 // A static rule set that dismisses cookie/GDPR banners deterministically —
-// no model reasoning, no screenshot. Modeled on the selector lists the
-// consent-blocking extensions ship (I-don't-care-about-cookies,
-// Consent-O-Matic, EasyList Cookie): a per-CMP accept-all selector table
-// (high precision — a vendor-specific id/class hit is a real accept control),
-// a guarded accept-text heuristic, then per-CMP CLOSE controls for
-// notice-only banners that ship no accept control at all (the CCPA OneTrust
-// variant: "Cookie Settings" + ✕ only), and finally a guarded close-label
-// heuristic. Accept always outranks close. Runs against the top document and
-// every same-origin frame; cross-origin CMP iframes can't be reached from
-// page JS and are reported back so the caller can fall back.
+// no model reasoning, no screenshot. Selector facts are cross-checked against
+// the corpora the consent-handling projects maintain: DuckDuckGo autoconsent
+// (whose per-CMP optIn click rules subsume Consent-O-Matic's),
+// I-don't-care-about-cookies, and EasyList Cookie. EasyList itself never
+// clicks — it HIDES banners cosmetically and pre-seeds consent state with
+// set-cookie scriptlets, and its own docs concede hiding breaks scroll locks,
+// overlays, and embeds on the biggest sites (Google/YouTube, Facebook,
+// Instagram, Twitter, Medium, Guardian are on its "no workaround" list).
+// Clicking the real accept control — what this rule set does — is the
+// dismissal that works everywhere, persists into the profile, and never
+// leaves a scroll-locked page behind. Tiers: a per-CMP accept-all selector
+// table (high precision — a vendor-specific id/class hit is a real accept
+// control) including open-shadow-root CMPs, a guarded accept-text heuristic,
+// then per-CMP CLOSE controls for notice-only banners that ship no accept
+// control at all (the CCPA OneTrust variant: "Cookie Settings" + ✕ only),
+// and finally a guarded close-label heuristic. Accept always outranks close.
+// Runs against the top document and every same-origin frame; cross-origin
+// CMP iframes can't be reached from page JS and are reported back so the
+// caller can fall back.
 const PAGE_OPERABLE_POINT_DECL = `
   function __phiOperablePoint(el, offX, offY) {
     if (!el || !el.isConnected) return null;
@@ -2283,7 +2292,55 @@ const CONSENT_ACCEPT_FN = `function (opts) {
     '#cn-accept-cookie',
     'a[data-cookie-accept-all], ._brlbs-btn-accept-all',
     '[data-tid="banner-accept"]',
+    '.qc-cmp2-summary-buttons > button[mode="primary"]',
+    '#cmpbox .cmpboxbtnyes',
+    '#ccc-notify-accept, #ccc-recommended-settings, .ccc-accept-button',
+    '#cookiescript_accept',
+    '.ch2-allow-all-btn',
+    '#cc--main #s-all-bn, #cc-main .cm__btn[data-role="all"]',
+    '[data-cli_action="accept"]',
+    '.moove-gdpr-infobar-allow-all',
+    '#tarteaucitronRoot #tarteaucitronPersonalize',
+    '.eu-cookie-compliance-banner .agree-button, .eu-cookie-compliance-banner .accept-all',
+    '.cc_btn_accept_all',
+    'button[data-cookiefirst-action="accept"]',
+    '#ensAcceptAll',
+    '#_evidon-accept-button',
+    '#adroll_consent_accept',
+    '#adopt-accept-all-button',
+    '#fides-banner .fides-accept-all-button',
+    '#ketch-banner-button-primary',
+    '.snigel-cmp-framework #accept-choices',
+    '#ez-accept-all',
+    '#shopify-pc__banner__btn-accept',
+    '#pandectes-banner .cc-allow',
+    // Major sites the hide-based lists cannot fix (EasyList "no workaround"
+    // table) — clicking accept is the only clean dismissal there.
+    '.HTjtHe#xe7COe button#L2AGLb',
+    'form[action^="https://consent.google."][action$="/save"]:has(input[name="set_eom"][value="false"]) button, ' +
+      'form[action^="https://consent.youtube."][action$="/save"]:has(input[name="set_eom"][value="false"]) button',
+    'ytd-consent-bump-v2-lightbox .eom-buttons .eom-button-row:first-child ytd-button-renderer:last-child button',
+    '#consent-page button[value="agree"]',
+    '#sp-cc-accept',
+    '#gdpr-banner-accept',
+    '#bnp_btn_accept',
+    '#cmp-accept-btn-handler',
+    '.artdeco-global-alert[type="COOKIE_CONSENT"] button[action-type="ACCEPT"]',
+    'button[data-a-target="consent-banner-accept"]',
+    '[data-testid="cookie-policy-manage-dialog-accept-button"]',
     'button[aria-label="Accept all"], button[aria-label="Accept all cookies"]'
+  ];
+
+  // CMPs that render inside an OPEN shadow root — a plain querySelectorAll
+  // never sees them. Each entry pins the host element; its shadowRoot is then
+  // queried with the inner selector. Closed roots stay unreachable and fall
+  // through to the pending report.
+  var CMP_SHADOW_SELECTORS = [
+    { host: 'tiktok-cookie-banner', inner: '.button-wrapper button:last-child' },
+    { host: '.cf_modal_container', inner: '#cf_consent-buttons__accept-all' },
+    { host: '.dg-consent-banner', inner: 'button.dg-button.accept_all' },
+    { host: '#pg-root-shadow-host', inner: '#pg-accept-btn' },
+    { host: 'cookie-banner#cookie-banner-host', inner: '#onetrust-accept-btn-handler' }
   ];
 
   // Vendor-specific close/dismiss controls. Notice-only banners (the CCPA
@@ -2299,14 +2356,24 @@ const CONSENT_ACCEPT_FN = `function (opts) {
     '.cky-banner-btn-close',
     '#truste-consent-close',
     '.iubenda-cs-close-btn',
-    '#CybotCookiebotBannerCloseButton'
+    '#CybotCookiebotBannerCloseButton',
+    '#ensCloseBanner',
+    'span.pmc-pp-tou--notice-close-btn'
   ];
 
   // Exact-label accept phrases (several languages). Exact match on the trimmed
   // label avoids matching "accept" inside a sentence.
   var ACCEPT_RE = /^(accept all|allow all|accept all cookies|accept cookies|accept & close|accept and close|i accept|i agree|agree|agree & close|got it|allow cookies|allow all cookies|yes, i agree|accept|ok|okay|alle akzeptieren|akzeptieren|zustimmen|einverstanden|tout accepter|j.?accepte|accepter|aceptar todo|aceptar|accetta tutto|accetto|alles accepteren|accepteren|aceitar tudo|godta alle|tillat alla)$/i;
-  // Never click these — decline / manage / settings, in several languages.
-  var REJECT_RE = /(reject|decline|refuse|disagree|deny|manage|settings|preferences|customi[sz]e|options|more info|learn more|necessary|essential only|opt out|do not|withdraw|ablehnen|nur notwendige|einstellungen|refuser|personnaliser|gerer|rechazar|configurar|rifiuta|impostazioni|weiger|instellingen)/i;
+  // A label that itself names cookies alongside an accept verb ("Allow all
+  // cookies", "Alle Cookies erlauben", "Autoriser tous les cookies") is
+  // self-evidently a consent control even outside a consent-looking
+  // container — the big sites (Facebook, Instagram) hash their container
+  // classes so no context check is possible there. REJECT_RE still vetoes.
+  var ACCEPT_VERB_RE = /(accept|allow|agree|einverstanden|akzeptier|erlaub|zulassen|zustimm|autoris|aceptar|permitir|aceitar|consenti|accett|toestaan|tillad|till[aå]t|godta|godk[aä]nn|salli|zezw[oó]l|povoli|dopusti|prihva|engedélyez|izin ver|разреш|принима)/i;
+  var COOKIE_NOUN_RE = /(cookie|kolači|evästee|informasjonskapsl|çerez|бисквитк|куки)/i;
+  // Never click these — decline / manage / settings / necessary-only, in
+  // several languages.
+  var REJECT_RE = /(reject|decline|refuse|disagree|deny|manage|settings|preferences|customi[sz]e|options|more info|learn more|necessary|essential only|opt out|do not|withdraw|ablehnen|nur notwendige|einstellungen|refuser|personnaliser|gerer|rechazar|configurar|rifiuta|impostazioni|weiger|instellingen|n[oöøe]dv[aäe]ndig|noodzakelijk|necesari|necessari|necess[aá]r|n[eé]cessaire|erforderlich|wymagane|nezbytn|v[aä]lttäm[aä]tt|\\b(only|solo|alleen|endast|apenas)\\b)/i;
   var CONSENT_CTX_RE = /(cookie|consent|gdpr|ccpa|privacy|cmp|gate|banner|notice|policy)/i;
 
   function viewOf(el) { return (el.ownerDocument.defaultView || window); }
@@ -2369,7 +2436,8 @@ const CONSENT_ACCEPT_FN = `function (opts) {
     // in the table. Report enough for the caller to decide the fallback.
     var xo = document.querySelector(
       'iframe[id^="sp_message_iframe"], iframe[src*="consensu.org"], ' +
-      'iframe[src*="privacy-mgmt"], iframe[src*="cmp."], iframe[title*="consent" i]');
+      'iframe[src*="privacy-mgmt"], iframe[src*="cmp."], iframe[title*="consent" i], ' +
+      'iframe[src*="trustarc.com"], iframe[src*="consent-pref"]');
     if (xo && isVisible(xo)) {
       var xr = xo.getBoundingClientRect();
       var xs = viewOf(xo).getComputedStyle(xo);
@@ -2434,10 +2502,39 @@ const CONSENT_ACCEPT_FN = `function (opts) {
     return null;
   }
 
+  function findByShadowSelectors(entries, rule) {
+    for (var s = 0; s < entries.length; s++) {
+      for (var di = 0; di < allDocs.length; di++) {
+        var hosts;
+        try { hosts = allDocs[di].querySelectorAll(entries[s].host); } catch (e) { continue; }
+        for (var h = 0; h < hosts.length; h++) {
+          var root = hosts[h].shadowRoot;
+          if (!root) continue;
+          var nodes;
+          try { nodes = root.querySelectorAll(entries[s].inner); } catch (e) { continue; }
+          for (var n = 0; n < nodes.length; n++) {
+            if (!isVisible(nodes[n])) continue;
+            var point = candidateFor(nodes[n]);
+            if (!point) continue;
+            var t = String(nodes[n].textContent || '').trim() ||
+                    String(nodes[n].getAttribute('aria-label') || '');
+            return { clicked: false, candidate: true, rule: rule,
+                     selector: entries[s].host + ' >>> ' + entries[s].inner,
+                     text: t.slice(0, 60), blocking: containerBlocks(hosts[h]),
+                     x: point.x, y: point.y };
+          }
+        }
+      }
+    }
+    return null;
+  }
+
   var CLICKABLE = 'button, a[href], [role="button"], input[type="button"], input[type="submit"], [onclick]';
 
-  // 1) Per-CMP accept selectors (highest precision).
-  var hit = findBySelectors(CMP_SELECTORS, 'cmp');
+  // 1) Per-CMP accept selectors (highest precision), light DOM then the
+  //    open-shadow-root CMPs.
+  var hit = findBySelectors(CMP_SELECTORS, 'cmp') ||
+            findByShadowSelectors(CMP_SHADOW_SELECTORS, 'cmp');
   if (hit) return hit;
 
   // 2) Text heuristic: a visible clickable whose exact label is an accept
@@ -2453,8 +2550,11 @@ const CONSENT_ACCEPT_FN = `function (opts) {
           .replace(/\\s+/g, ' ').trim();
         if (!label || label.length > 40) continue;
         if (REJECT_RE.test(label)) continue;
-        if (!ACCEPT_RE.test(label)) continue;
-        if (!inConsentCtx(el)) continue;
+        var strongLabel = COOKIE_NOUN_RE.test(label) && ACCEPT_VERB_RE.test(label);
+        if (!strongLabel) {
+          if (!ACCEPT_RE.test(label)) continue;
+          if (!inConsentCtx(el)) continue;
+        }
         var point = candidateFor(el);
         if (!point) continue;
         return { clicked: false, candidate: true, rule: 'heuristic',

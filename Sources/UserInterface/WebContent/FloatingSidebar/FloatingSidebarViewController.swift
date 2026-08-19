@@ -42,21 +42,24 @@ class FloatingSidebarViewController: NSViewController {
     /// The slot driving this floating strip, resolved the same way as the
     /// docked sidebar's (see `SidebarViewController.spacesStripSlot`): the
     /// window controller's slot, falling back to the manager's key slot for
-    /// the early-init case where the controller isn't wired up yet.
-    private lazy var spacesStripSlot: SpaceWindowSlot = state.windowController?.slot
+    /// the early-init case where the controller isn't wired up yet — and nil,
+    /// with no strip mounted, when neither resolves. Minting a slot to bind
+    /// to is what strands the registry and breaks windowless Dock reopen for
+    /// the rest of the run; the docked sidebar's property spells it out.
+    private lazy var spacesStripSlot: SpaceWindowSlot? = state.windowController?.slot
         ?? SpaceManager.shared.keySlot
-        ?? SpaceManager.shared.createSlot(initialSpaceId: nil)
 
     /// Hosting view for the Spaces strip, mounted into the header — below the
     /// nav row, above the address bar — mirroring the docked sidebar so the
     /// floating panel offers the same Space switching.
-    private lazy var spacesStripHostingView: SpacesStripHostingView = {
+    private lazy var spacesStripHostingView: SpacesStripHostingView? = {
+        guard let slot = spacesStripSlot else { return nil }
         let wheelTracker = SpacesStripWheelTracker()
         let stripGeometry = SpacesStripGeometry()
         let hostingView = SpacesStripHostingView(
             rootView: SpacesStripView(
                 manager: SpaceManager.shared,
-                slot: spacesStripSlot,
+                slot: slot,
                 rowHeight: SpacesStripView.sidebarHeight,
                 resolveOwnerController: { [weak state] in state?.windowController },
                 wheelTracker: wheelTracker,
@@ -76,8 +79,8 @@ class FloatingSidebarViewController: NSViewController {
     /// The floating strip row's AppKit view, consulted by the slot's
     /// pointer-vs-row test while the floating panel is the strip actually
     /// presenting (see `SpaceWindowSlot.stripRowContainsPointer`). Set at
-    /// mount; stays nil for windows that don't participate in Spaces,
-    /// which never mount the strip.
+    /// mount; stays nil for windows that don't participate in Spaces and for
+    /// windows that resolve no slot, neither of which mounts the strip.
     private(set) weak var spacesStripRowView: NSView?
 
     private lazy var messageCardHostingController: ThemedHostingController<NotificationMessageCardView> = {
@@ -255,10 +258,10 @@ class FloatingSidebarViewController: NSViewController {
         // above the address bar — matching the docked sidebar (see
         // SidebarViewController.setupStackView). Standalone incognito windows
         // have no Spaces, so skip mounting entirely — same gating as the docked
-        // sidebar.
-        if state.participatesInSpaces {
-            headerView.mountSpaceSwitch(spacesStripHostingView)
-            spacesStripRowView = spacesStripHostingView
+        // sidebar, including the window that resolves no slot to bind to.
+        if state.participatesInSpaces, let stripHostingView = spacesStripHostingView {
+            headerView.mountSpaceSwitch(stripHostingView)
+            spacesStripRowView = stripHostingView
         }
 
         // 2. Header spacer
@@ -652,7 +655,7 @@ class FloatingSidebarViewController: NSViewController {
         themeBeforeCreateSpacePreview = state.themeContext.currentTheme
         // Keep the visible strip read-only while creating so a pip click cannot
         // switch the form's window away.
-        spacesStripSlot.isCreatingSpace = true
+        spacesStripSlot?.isCreatingSpace = true
         NSAnimationContext.runAnimationGroup { context in
             context.duration = 0.18
             context.allowsImplicitAnimation = true
@@ -672,7 +675,7 @@ class FloatingSidebarViewController: NSViewController {
         if restorePreviewTheme {
             restoreCreateSpacePreviewTheme()
         }
-        spacesStripSlot.isCreatingSpace = false
+        spacesStripSlot?.isCreatingSpace = false
         // Release forced visibility. Normal Space-count rules take over again.
         headerView.forcesSpaceSwitchVisible = false
         updateHeaderHeight()

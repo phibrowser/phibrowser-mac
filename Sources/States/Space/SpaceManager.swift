@@ -772,8 +772,19 @@ final class SpaceManager: ObservableObject {
     /// `MainBrowserWindowController` that will register itself. If
     /// `initialSpaceId` is nil, the slot starts on the persisted default
     /// (or the first known Space).
+    /// `callerFile`/`callerLine` default to the CALL SITE: a slot that never
+    /// goes on to host a window disables `reopenOnPersistedSpaceIfWindowless`
+    /// for the rest of the run (see `reclaimsMintedSlot`), and until this line
+    /// existed a mint left no trace at all — several call sites reach
+    /// `createSlot` through a fallback chain that logs nothing, so a log bundle
+    /// could not say which one produced the leftover. Two bare magic literals
+    /// rather than one interpolated string: interpolation is an ordinary
+    /// expression, so `"\(#fileID):\(#line)"` would freeze this declaration's
+    /// own position instead of the caller's (tried: it printed this file).
     @discardableResult
-    func createSlot(initialSpaceId: String?) -> SpaceWindowSlot {
+    func createSlot(initialSpaceId: String?,
+                    callerFile: StaticString = #fileID,
+                    callerLine: UInt = #line) -> SpaceWindowSlot {
         let fallback = persistedActiveSpaceId
             ?? (spaces.first(where: isAutomaticSwitchTarget) ?? spaces.first)?.spaceId
         let resolved = initialSpaceId ?? fallback
@@ -782,6 +793,7 @@ final class SpaceManager: ObservableObject {
         if keySlot == nil {
             keySlot = slot
         }
+        AppLogInfo("[SpaceManager] slot minted on \(resolved ?? "nil") by \(callerFile):\(callerLine) — slots=\(slots.count)")
         return slot
     }
 
@@ -794,6 +806,10 @@ final class SpaceManager: ObservableObject {
         // binding that scopes the park set to this slot's entries.
         let parkedGhosts = parkedGhostEntries(for: slot)
         slots.removeAll { $0 === slot }
+        // Paired with the mint line in `createSlot`: the two together are what
+        // let a log bundle tell "the registry drained" from "one slot stayed
+        // behind", which is the whole of the windowless-reopen predicate.
+        AppLogInfo("[SpaceManager] slot removed: \(slot.diagnosticSummary) — slots=\(slots.count)")
         if keySlot === slot {
             keySlot = slots.last
         }
@@ -980,7 +996,23 @@ final class SpaceManager: ObservableObject {
             // just fails its spawn and says so itself — reading either of them
             // into this line would put a Dock-reopen fault in the bundle every
             // time an agent Space was requested with no window open.
-            AppLogInfo("[SpaceManager] windowless reopen declined, the persisted-Space reopen did not run: hasEverHostedSlotWindow=\(hasEverHostedSlotWindow), slots=\(slots.count), liveNonShadowWindows=\(liveNonShadowWindowCount)")
+            //
+            // The slot descriptors are what turn "slots=1 with no window" from
+            // a symptom into an address: they name the Space each leftover slot
+            // sits on, the windows it still claims, whether a teardown is still
+            // draining it, and whether a spawn is still owed one.
+            //
+            // Appended for the stranded-mint shape alone — no live window, yet
+            // slots left behind. This refusal is otherwise the ORDINARY outcome
+            // (`applicationShouldHandleReopen` asks on every Dock click, the
+            // ones with windows open included), so descriptors on every refusal
+            // would dump the whole registry into the bundle on every Dock click
+            // and bury the one reading that means something.
+            let liveWindows = liveNonShadowWindowCount
+            let leftovers = liveWindows == 0 && !slots.isEmpty
+                ? "; " + slots.map(\.diagnosticSummary).joined(separator: ", ")
+                : ""
+            AppLogInfo("[SpaceManager] windowless reopen declined, the persisted-Space reopen did not run: hasEverHostedSlotWindow=\(hasEverHostedSlotWindow), slots=\(slots.count), liveNonShadowWindows=\(liveWindows)\(leftovers)")
             return false
         }
         // Switch on: replay the whole closed window group (each Space with its
@@ -6351,6 +6383,11 @@ final class SpaceManager: ObservableObject {
         for slot in slots {
             slot.invalidate()
         }
+        // The one drain that does not go through `removeSlot`, and so the one
+        // hole in the mint/removal pairing: without this line every mint since
+        // the bind reads as still standing, which is the shape a leftover slot
+        // has.
+        AppLogInfo("[SpaceManager] registry drained on unbind: \(slots.count) slot(s)")
         slots.removeAll()
         keySlot = nil
         // The same family `loadRestoreSnapshot` resets, park set included: all
@@ -6811,6 +6848,24 @@ final class SpaceWindowSlot: ObservableObject {
     /// Such a slot reads as windowless but is not one, which is why reclaiming
     /// a minted slot consults it (see `SpaceManager.reclaimsMintedSlot`).
     var isAwaitingSpawnedWindow: Bool { !pendingSpawnSpaceIdByWindowId.isEmpty }
+
+    /// One-line identity for a log bundle: the Space the slot sits on, the
+    /// windows it still claims, whether a teardown is still draining it, and
+    /// whether a spawn is still owed one — the last being the only state in
+    /// which an EMPTY slot legitimately stays in the registry (a cascade drops
+    /// its slot the moment the map empties, so `cascading` prints true only
+    /// beside windows). Read by `SpaceManager.removeSlot` and by the
+    /// windowless-reopen refusal.
+    var diagnosticSummary: String {
+        let windows = windowsBySpaceId
+            .map { "\($0.key)#\($0.value.windowId)" }
+            .sorted()
+            .joined(separator: "+")
+        return "slot(active=\(activeSpaceId ?? "nil")"
+            + ", windows=[\(windows)]"
+            + ", cascading=\(isCascadingSlotClose)"
+            + ", awaitingSpawn=\(isAwaitingSpawnedWindow))"
+    }
 
     /// windowId → spaceId we asked Chromium to spawn that window for, for
     /// THIS slot. `activate(spaceId:)` populates this synchronously right

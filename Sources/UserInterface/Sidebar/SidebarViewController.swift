@@ -283,21 +283,35 @@ class SidebarViewController: NSViewController {
     /// where the window controller isn't wired up yet (BrowserState is
     /// constructed before the controller assigns itself in
     /// `MainBrowserWindowController.init`), fall back to the manager's
-    /// `keySlot` so the strip stays functional rather than crashing.
+    /// `keySlot` as a stand-in — at cold start that IS this window's own slot.
+    /// A stand-in only: `init` wires the controller before `setupWindow()`
+    /// loads this view tree, so the first resolution is the one that answers
+    /// in practice.
     /// The slot driving this sidebar's Spaces strip, resolved once so the
     /// create-Space overlay can flip the same instance's `isCreatingSpace`
     /// flag that the strip observes (see `showCreateSpaceOverlay`).
-    private lazy var spacesStripSlot: SpaceWindowSlot = state.windowController?.slot
+    ///
+    /// Nil when neither resolves, and then no strip is mounted at all: a
+    /// window with no slot must NOT mint one just to have something to bind
+    /// to. A slot minted here registers no window, so `slots` never empties
+    /// again and every later Dock reopen bypasses
+    /// `reopenOnPersistedSpaceIfWindowless` and falls back to Chromium's own
+    /// handler, landing on the wrong Space until the app restarts (see
+    /// `SpaceManager.reclaimsMintedSlot`). `participatesInSpaces` does not
+    /// keep that out on its own: a shadow window passes it (it is not
+    /// incognito) and builds this sidebar from `viewDidLoad`, which runs even
+    /// for a window that is never shown.
+    private lazy var spacesStripSlot: SpaceWindowSlot? = state.windowController?.slot
         ?? SpaceManager.shared.keySlot
-        ?? SpaceManager.shared.createSlot(initialSpaceId: nil)
 
-    private lazy var spacesStripHostingView: SpacesStripHostingView = {
+    private lazy var spacesStripHostingView: SpacesStripHostingView? = {
+        guard let slot = spacesStripSlot else { return nil }
         let wheelTracker = SpacesStripWheelTracker()
         let stripGeometry = SpacesStripGeometry()
         let hostingView = SpacesStripHostingView(
             rootView: SpacesStripView(
                 manager: SpaceManager.shared,
-                slot: spacesStripSlot,
+                slot: slot,
                 rowHeight: SpacesStripView.sidebarHeight,
                 resolveOwnerController: { [weak state] in state?.windowController },
                 wheelTracker: wheelTracker,
@@ -317,7 +331,8 @@ class SidebarViewController: NSViewController {
     /// The Spaces strip row's AppKit view, resolved live by the slot's
     /// pointer-vs-row test (`SpaceWindowSlot.stripRowContainsPointer()`) so
     /// the geometry always comes from the window actually consulted. Set at
-    /// mount; stays nil for incognito windows, which never mount the strip.
+    /// mount; stays nil for incognito windows and for windows that resolve no
+    /// slot (see `spacesStripSlot`), neither of which mounts the strip.
     private(set) weak var spacesStripRowView: NSView?
 
     /// Hosting controller for the sidebar message card view.
@@ -599,9 +614,16 @@ class SidebarViewController: NSViewController {
         // under the nav row and avoids spinning up a SpaceWindowSlot. The
         // Incognito Space's window DOES mount the strip — it lives in a
         // slot and the strip is how the user switches back out of it.
-        if state.participatesInSpaces {
-            headerView.mountSpaceSwitch(spacesStripHostingView)
-            spacesStripRowView = spacesStripHostingView
+        //
+        // A window that resolves no slot skips the strip for the same reason
+        // said the other way round: there is nothing to bind it to, and
+        // minting a binding-only slot strands the registry (see
+        // `spacesStripSlot`). Shadow windows are the reachable case — they
+        // pass `participatesInSpaces` and build this sidebar even though they
+        // never appear on screen.
+        if state.participatesInSpaces, let stripHostingView = spacesStripHostingView {
+            headerView.mountSpaceSwitch(stripHostingView)
+            spacesStripRowView = stripHostingView
         }
 
         tabList.enableContextMenuClickRouting()
@@ -1206,7 +1228,7 @@ class SidebarViewController: NSViewController {
         themeBeforeCreateSpacePreview = state.themeContext.currentTheme
         // Keep the visible strip read-only while creating so a pip click cannot
         // switch the form's window away.
-        spacesStripSlot.isCreatingSpace = true
+        spacesStripSlot?.isCreatingSpace = true
         NSAnimationContext.runAnimationGroup { context in
             context.duration = 0.18
             context.allowsImplicitAnimation = true
@@ -1233,7 +1255,7 @@ class SidebarViewController: NSViewController {
         if restorePreviewTheme {
             restoreCreateSpacePreviewTheme()
         }
-        spacesStripSlot.isCreatingSpace = false
+        spacesStripSlot?.isCreatingSpace = false
         // Release forced visibility. Normal Space-count rules take over again.
         headerView.forcesSpaceSwitchVisible = false
         updateHeaderHeight()

@@ -320,23 +320,25 @@ final class TabStripBarController: NSViewController {
         // manager's key slot during early window bringup before the controller
         // wires up.
         //
-        // Windows that don't participate in Spaces (standalone incognito) skip
-        // the picker entirely instead of building it and hiding it, mirroring
-        // the guard the two sidebars already apply before mounting their strip:
-        // the fallback chain below ends in `createSlot`, which appends to the
-        // manager's registry, and this window never registers itself against
-        // that slot. The orphan left behind makes the manager look non-windowless
-        // for the rest of the session, so every later Dock reopen falls back to
-        // Chromium's own handler and lands on the wrong Space.
+        // Windows that don't participate in Spaces (standalone incognito), and
+        // windows that resolve no slot at all, skip the picker entirely instead
+        // of building it and hiding it, mirroring the guard the two sidebars
+        // apply before mounting their strip. Neither surface may MINT a slot to
+        // bind to: the mint appends to the manager's registry, no window ever
+        // registers itself against it, and that orphan makes the manager look
+        // non-windowless for the rest of the session — so every later Dock
+        // reopen falls back to Chromium's own handler and lands on the wrong
+        // Space (see `SpaceManager.reclaimsMintedSlot`).
         //
-        // Shadow windows do participate in Spaces and would mint here — they are
-        // spared only because nobody ever calls `Show()` on a shadow browser, so
-        // this controller never appears; `BrowserView::Show()` itself does not
-        // reject them.
-        if browserState.participatesInSpaces {
-            let slot = browserState.windowController?.slot
-                ?? SpaceManager.shared.keySlot
-                ?? SpaceManager.shared.createSlot(initialSpaceId: nil)
+        // Shadow windows do participate in Spaces, so it is the slot condition
+        // that covers them here. They reach this controller only if something
+        // shows their window: nobody calls `Show()` on a shadow browser today,
+        // but `BrowserView::Show()` does not reject one either — and the
+        // sidebars, built from `viewDidLoad` and so needing no window on
+        // screen, showed that leaving the mint to such an invariant is what
+        // strands the registry.
+        if browserState.participatesInSpaces,
+           let slot = browserState.windowController?.slot ?? SpaceManager.shared.keySlot {
             let spacesPicker = SpacesStripView(
                 manager: SpaceManager.shared,
                 slot: slot,

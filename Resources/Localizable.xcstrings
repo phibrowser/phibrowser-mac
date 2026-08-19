@@ -66124,6 +66124,30 @@
         }
       }
     },
+    "sidebar.bookmarkCell.folderIcon.changeAction" : {
+      "comment" : "Bookmark folder icon picker - Accessibility label and help text for choosing a folder icon",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Change Folder Icon"
+          }
+        }
+      }
+    },
+    "sidebar.bookmarkContextMenu.changeIconAction" : {
+      "comment" : "Bookmark folder context menu - Opens the folder icon picker",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Change Icon..."
+          }
+        }
+      }
+    },
     "sidebar.bookmarkContextMenu.cloneToSpaceSubmenu" : {
       "comment" : "Bookmark context menu - Submenu to clone this bookmark or folder to another Space",
       "extractionState" : "extracted_with_value",

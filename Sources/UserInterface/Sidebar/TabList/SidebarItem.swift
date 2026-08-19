@@ -161,6 +161,8 @@ extension Notification.Name {
     static let moveTabToBookmarks = Notification.Name("moveTabToBookmarks")
     /// Notification posted when a bookmark enters inline edit mode. `object` is the bookmark.
     static let bookmarkStartEditing = Notification.Name("bookmarkStartEditing")
+    /// Notification posted when a sidebar folder requests its icon picker. `object` is the bookmark.
+    static let bookmarkFolderIconPickerRequested = Notification.Name("bookmarkFolderIconPickerRequested")
 }
 
 // MARK: - Pasteboard Types

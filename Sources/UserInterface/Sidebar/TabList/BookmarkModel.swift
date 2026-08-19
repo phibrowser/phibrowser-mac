@@ -18,6 +18,8 @@ class Bookmark: WebContentRepresentable {
     /// even when `secondaryUrl` is set — callers fall back to the secondary
     /// URL's host when this is nil/empty.
     @Published var secondaryTitle: String?
+    /// Stable icon resource identifier persisted by `TabDataModel.icon`.
+    @Published var folderIconName: String
     @Published var faviconUrl: String?
     @Published private(set) var cachedFaviconData: Data?
     @Published private(set) var liveFaviconData: Data?
@@ -56,6 +58,7 @@ class Bookmark: WebContentRepresentable {
          secondaryTitle: String? = nil,
          profileId: String? = nil,
          faviconData: Data? = nil,
+         folderIconName: String = "default",
          lastSeen: Date? = nil,
          createdDate: Date? = nil,
          updatedDate: Date? = nil,
@@ -67,6 +70,7 @@ class Bookmark: WebContentRepresentable {
         self.secondaryUrl = secondaryUrl
         self.secondaryTitle = secondaryTitle
         self.cachedFaviconData = faviconData
+        self.folderIconName = folderIconName
         self.lastSeen = lastSeen
         self.createdDate = createdDate
         self.updatedDate = updatedDate
@@ -406,14 +410,25 @@ class BookmarkManager: ObservableObject {
 
     private func applyNonLayoutUpdates(from bookmarks: [Bookmark]) {
         func traverse(_ bookmark: Bookmark) {
-            if let existing = bookmarkIndex[bookmark.guid],
-               existing.lastSeen != bookmark.lastSeen {
-                existing.lastSeen = bookmark.lastSeen
+            if let existing = bookmarkIndex[bookmark.guid] {
+                if existing.lastSeen != bookmark.lastSeen {
+                    existing.lastSeen = bookmark.lastSeen
+                }
+                if existing.folderIconName != bookmark.folderIconName {
+                    existing.folderIconName = bookmark.folderIconName
+                }
             }
             bookmark.children.forEach(traverse)
         }
 
         bookmarks.forEach(traverse)
+    }
+
+    func updateFolderIcon(guid: String, iconName: String) {
+        guard let bookmark = bookmarkIndex[guid], bookmark.isFolder else { return }
+        guard bookmark.folderIconName != iconName else { return }
+        bookmark.folderIconName = iconName
+        browserState?.localStore.updateTabIcon(guid, icon: iconName)
     }
     
     func updateBookmark(guid: String,
@@ -706,7 +721,12 @@ class BookmarkManager: ObservableObject {
             guard bookmark.isFolder else { return nil }
             
             let folderChildren = bookmark.children.compactMap { filterFolders($0) }
-            let newFolder = Bookmark(guid: bookmark.guid, title: bookmark.title, isFolder: true)
+            let newFolder = Bookmark(
+                guid: bookmark.guid,
+                title: bookmark.title,
+                folderIconName: bookmark.folderIconName,
+                isFolder: true
+            )
             for child in folderChildren {
                 newFolder.addChild(child)
             }
@@ -811,6 +831,7 @@ extension Bookmark {
                   secondaryTitle: resolvedSecondaryTitle,
                   profileId: model.profile?.profileId ?? model.profileId,
                   faviconData: model.favicon,
+                  folderIconName: model.icon,
                   lastSeen: isFolder ? nil : model.lastSeen,
                   createdDate: model.createdDate,
                   updatedDate: model.updatedDate,
@@ -823,6 +844,7 @@ extension Bookmark {
         secondaryUrl = isFolder ? nil : model.secondaryUrl?.absoluteString
         secondaryTitle = isFolder ? nil : model.secondaryTitle
         cachedFaviconData = model.favicon
+        folderIconName = model.icon
         lastSeen = isFolder ? nil : model.lastSeen
         createdDate = model.createdDate
         updatedDate = model.updatedDate

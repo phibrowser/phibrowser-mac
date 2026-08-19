@@ -1348,6 +1348,7 @@ private extension LocalStore {
         }
         clone.overrideTitle = source.overrideTitle
         clone.source = source.source
+        clone.icon = source.icon
         return clone
     }
 
@@ -1395,6 +1396,7 @@ private extension LocalStore {
         }
         clone.overrideTitle = source.overrideTitle
         clone.source = source.source
+        clone.icon = source.icon
         return clone
     }
 

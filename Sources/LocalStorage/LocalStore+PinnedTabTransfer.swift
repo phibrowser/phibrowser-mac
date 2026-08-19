@@ -324,6 +324,7 @@ extension LocalStore {
         copied.secondaryUrl = source.secondaryUrl
         copied.secondaryTitle = source.secondaryTitle
         copied.lastSeen = source.lastSeen
+        copied.icon = source.icon
         copied.pinLineageId = source.pinLineageId ?? source.guid
         return copied
     }

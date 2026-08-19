@@ -68,6 +68,7 @@ struct GuestDataMigrationBookmarkRecord: Codable, Equatable, Sendable {
     let index: Int
     let url: URL
     let favicon: Data?
+    let icon: String?
     let createdDate: Date
     let updatedDate: Date
     let type: Int
@@ -89,6 +90,7 @@ struct GuestDataMigrationPinnedTabRecord: Codable, Equatable, Sendable {
     let index: Int
     let url: URL
     let favicon: Data?
+    let icon: String?
     let createdDate: Date
     let updatedDate: Date
     let overrideTitle: String?
@@ -1228,6 +1230,7 @@ extension LocalStore {
                     index: model.index,
                     url: model.url,
                     favicon: model.favicon,
+                    icon: model.icon == "default" ? nil : model.icon,
                     createdDate: model.createdDate,
                     updatedDate: model.updatedDate,
                     type: model.type,
@@ -1265,6 +1268,7 @@ extension LocalStore {
                     index: model.index,
                     url: model.url,
                     favicon: model.favicon,
+                    icon: model.icon == "default" ? nil : model.icon,
                     createdDate: model.createdDate,
                     updatedDate: model.updatedDate,
                     overrideTitle: model.overrideTitle,
@@ -1834,6 +1838,7 @@ extension LocalStore {
                 model.secondaryUrl = source.secondaryURL
                 model.secondaryTitle = source.secondaryTitle
                 model.lastSeen = source.lastSeen
+                model.icon = source.icon ?? "default"
                 context.insert(model)
                 importedBookmarksBySourceGUID[source.guid] = model
             }
@@ -1885,6 +1890,7 @@ extension LocalStore {
                 model.secondaryTitle = source.secondaryTitle
                 model.splitPartnerGuid = mapping.targetSplitPartnerGUID
                 model.lastSeen = source.lastSeen
+                model.icon = source.icon ?? "default"
                 model.pinLineageId =
                     mappings.pinLineageIDs[source.lineageID] ?? source.lineageID
                 model.isPinnedTabDormant = mapping.isDormant

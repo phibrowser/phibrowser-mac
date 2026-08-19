@@ -95,6 +95,21 @@ extension Bookmark: ContextMenuRepresentable {
                                         keyEquivalent: "")
                 rename.target = self
                 menu.addItem(rename)
+
+                if isFolder {
+                    let changeIcon = NSMenuItem(
+                        title: NSLocalizedString(
+                            "sidebar.bookmarkContextMenu.changeIconAction",
+                            value: "Change Icon...",
+                            comment: "Bookmark folder context menu - Opens the folder icon picker"
+                        ),
+                        action: #selector(changeFolderIcon),
+                        keyEquivalent: ""
+                    )
+                    changeIcon.target = self
+                    menu.addItem(changeIcon)
+                    menu.addItem(.separator())
+                }
             }
         case .bookmarkBar:
             if isFolder {
@@ -301,6 +316,20 @@ extension Bookmark: ContextMenuRepresentable {
         let state = MainBrowserWindowControllersManager.shared.activeWindowController?.browserState
         // Enter inline edit mode directly instead of showing a dialog.
         state?.bookmarkManager.triggerRename(for: self)
+    }
+
+    @MainActor
+    @objc private func changeFolderIcon() {
+        guard isFolder else { return }
+        // Defer until the context menu has dismissed so AppKit does not
+        // compete with the SwiftUI popover for transient-window ownership.
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            NotificationCenter.default.post(
+                name: .bookmarkFolderIconPickerRequested,
+                object: self
+            )
+        }
     }
 
     @MainActor

@@ -36,8 +36,8 @@ actor LocalStoreActor {
 class LocalStore {
     static let defaultProfileId = "Default"
     static let compatibilityConfiguration = LocalStoreCompatibilityConfiguration(
-        currentStoreFormatVersion: 9,
-        readableStoreFormatVersions: 1...9,
+        currentStoreFormatVersion: 10,
+        readableStoreFormatVersions: 1...10,
         storeFilename: "LocalStore.sqlite"
     )
 
@@ -411,6 +411,22 @@ extension LocalStore {
                 }
             } catch {
                 AppLogError("[LocalStore] Failed to update tab favicon: \(error)")
+            }
+        }
+    }
+
+    func updateTabIcon(_ guid: String, icon: String) {
+        performBackgroundWrite { context in
+            do {
+                let predicate = #Predicate<TabDataModel> { $0.guid == guid }
+                let descriptor = FetchDescriptor<TabDataModel>(predicate: predicate)
+                if let tab = try context.fetch(descriptor).first {
+                    guard tab.icon != icon else { return }
+                    tab.icon = icon
+                    tab.updatedDate = Date()
+                }
+            } catch {
+                AppLogError("[LocalStore] Failed to update tab icon: \(error)")
             }
         }
     }

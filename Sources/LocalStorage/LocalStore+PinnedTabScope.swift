@@ -644,6 +644,7 @@ extension LocalStore {
             model.secondaryUrl = source.secondaryUrl
             model.secondaryTitle = source.secondaryTitle
             model.lastSeen = candidate.lastSeen
+            model.icon = source.icon
             model.pinLineageId = candidate.lineageId
             try applyPinnedTabOwner(owner, to: model, in: context)
             context.insert(model)

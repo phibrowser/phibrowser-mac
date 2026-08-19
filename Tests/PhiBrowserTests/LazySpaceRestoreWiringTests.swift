@@ -36,7 +36,12 @@ import XCTest
 ///   * whether a slot minted for a window that never arrived is reclaimed
 ///     (`reclaimsMintedSlot`) — the drop above gave every mint-then-activate
 ///     call site a new way to end without a window, and a slot stranded that
-///     way disables the windowless reopen for the rest of the run;
+///     way is a leak that outlives the attempt that made it;
+///   * whether the app reads as windowless at all
+///     (`isWindowlessWithHostedSlots`) — the gate in front of the Dock
+///     reopen, the external-link restore and the reopen loading windows,
+///     which counted SLOTS until one empty shell latched it shut for the
+///     rest of the run;
 ///   * which snapshot windows a by-profile claim may take over
 ///     (`fallbackClaimIndex`) — restore's own stand-in window claims by
 ///     profile with no grace period, and consuming a parked window's entry
@@ -670,10 +675,12 @@ final class LazySpaceRestoreWiringTests: XCTestCase {
     // MARK: - Whether a minted slot is reclaimed when no window arrives
 
     /// A slot minted for a window that never arrives is not merely untidy: it
-    /// makes `slots.isEmpty` false forever, and that is the whole test the
-    /// windowless Dock reopen gates on. Every later reopen then falls back to
-    /// Chromium's handler and lands on the wrong Space until the app restarts.
-    /// The three inputs are what keeps the cure from being worse than that.
+    /// used to make `slots.isEmpty` false forever, and that was the whole test
+    /// the windowless Dock reopen gated on, so every later reopen fell back to
+    /// Chromium's handler and landed on the wrong Space until the app was
+    /// restarted. The gate no longer counts slots (the section that follows),
+    /// but the slot still leaks, and the three inputs are what keeps the cure
+    /// from being worse than the leak.
 
     func testAMintThatNeverGotAWindowIsReclaimed() {
         XCTAssertTrue(SpaceManager.reclaimsMintedSlot(
@@ -708,6 +715,109 @@ final class LazySpaceRestoreWiringTests: XCTestCase {
         // manager no longer knows about.
         XCTAssertFalse(SpaceManager.reclaimsMintedSlot(
             mintedForThisAttempt: true, hostsWindow: false, awaitsSpawnedWindow: true))
+    }
+
+    // MARK: - Whether the app reads as windowless at all
+
+    /// The gate in front of every windowless path — the Dock reopen's
+    /// persisted-Space spawn, the external-link restore, the reopen loading
+    /// windows. Its second input counted SLOTS until ticket 38, so one slot
+    /// minted for a window that never arrived made it false for the rest of
+    /// the run: every later Dock click fell back to Chromium's handler and
+    /// landed on the wrong Space, and only a restart cleared it. The reclaim
+    /// above is the paired half of the mints that can FAIL; the Spaces strip
+    /// of a shadow window minted with no failure to pair against, which is
+    /// what made a floor under all of them necessary.
+    ///
+    /// The defaults describe the windowless state; each test flips one input.
+    private static func windowless(
+        hasEverHostedSlotWindow: Bool = true,
+        slots: [(hostsWindow: Bool, awaitsSpawnedWindow: Bool)] = [],
+        liveNonShadowWindowCount: Int = 0
+    ) -> Bool {
+        SpaceManager.isWindowlessWithHostedSlots(
+            hasEverHostedSlotWindow: hasEverHostedSlotWindow,
+            slots: slots,
+            liveNonShadowWindowCount: liveNonShadowWindowCount)
+    }
+
+    func testNoSlotAndNoWindowIsTheWindowlessState() {
+        // Load-bearing for every refusal below: a rule that refused
+        // everywhere would satisfy all of them and never open a window at all.
+        XCTAssertTrue(Self.windowless())
+    }
+
+    func testASlotHoldingAWindowIsNotWindowless() {
+        XCTAssertFalse(Self.windowless(
+            slots: [(hostsWindow: true, awaitsSpawnedWindow: false)],
+            liveNonShadowWindowCount: 1))
+    }
+
+    func testAShellSlotNoLongerLatchesTheWindowlessPaths() {
+        // The defect. A slot with no window and no spawn owed used to be
+        // indistinguishable from a slot full of the user's windows, because
+        // the predicate asked `slots.isEmpty` — so one shell disabled the
+        // persisted-Space reopen until the app was restarted.
+        XCTAssertTrue(Self.windowless(
+            slots: [(hostsWindow: false, awaitsSpawnedWindow: false)]))
+        // A whole registry of them is still just shells.
+        XCTAssertTrue(Self.windowless(slots: [
+            (hostsWindow: false, awaitsSpawnedWindow: false),
+            (hostsWindow: false, awaitsSpawnedWindow: false)]))
+    }
+
+    func testASlotStillOwedItsSpawnedWindowIsNotWindowless() {
+        // The cure's own risk, and why "holds a window" is not `hostsWindow`
+        // alone: from the `activate` that asks Chromium for the window until
+        // that window registers, the slot hosts nothing while one is already
+        // on its way to it. Reading that as windowless lets a Dock click
+        // landing in the gap spawn a SECOND window — a louder symptom than
+        // the latch this rule removes. The input spans the WHOLE gap
+        // (`SpaceWindowSlot.hasSpawnInFlight`); the windowId-keyed
+        // `isAwaitingSpawnedWindow` covers only the half after
+        // `createBrowser` returns.
+        XCTAssertFalse(Self.windowless(
+            slots: [(hostsWindow: false, awaitsSpawnedWindow: true)]))
+        // Screened per slot rather than over the registry: a shell alongside
+        // it must not cover for the slot that is owed a window.
+        XCTAssertFalse(Self.windowless(slots: [
+            (hostsWindow: false, awaitsSpawnedWindow: false),
+            (hostsWindow: false, awaitsSpawnedWindow: true)]))
+    }
+
+    func testATeardownFlagIsNotAThirdInput() {
+        // The cascading row, and the reason it needs no input of its own: a
+        // slot draining its windows shut is never an empty one.
+        // `unregisterWindow` removes the slot from the registry in the same
+        // synchronous turn its map empties, so while `isTearingDown` is set
+        // the slot still holds windows and is refused on `hostsWindow` alone.
+        // The name is what this test pins: reading `isTearingDown` as
+        // occupancy would give the gate a second flag able to latch it shut —
+        // the shape ticket 38 exists to remove — so a slot that holds nothing
+        // and is owed nothing stays windowless however it got there.
+        XCTAssertFalse(Self.windowless(
+            slots: [(hostsWindow: true, awaitsSpawnedWindow: false)],
+            liveNonShadowWindowCount: 2))
+    }
+
+    func testASessionThatNeverHostedASlotWindowIsLeftToChromium() {
+        // The hidden-login-item first click, which chromium's session restore
+        // owns. Unchanged by ticket 38 and pinned here so the second input's
+        // widening cannot leak into it: a shell minted before any window was
+        // hosted still leaves that click where it was.
+        XCTAssertFalse(Self.windowless(hasEverHostedSlotWindow: false))
+        XCTAssertFalse(Self.windowless(
+            hasEverHostedSlotWindow: false,
+            slots: [(hostsWindow: false, awaitsSpawnedWindow: false)]))
+    }
+
+    func testAWindowOutsideEverySlotIsStillAWindow() {
+        // A standalone Incognito window lives in no slot, so the slot inputs
+        // read "windowless" while the user is looking at a browser window;
+        // chromium's own reopen focuses it. Shadow windows are excluded from
+        // this count (`liveNonShadowWindowCount`), which is what lets an agent
+        // Space's hidden host reach the windowless paths at all.
+        XCTAssertFalse(Self.windowless(liveNonShadowWindowCount: 1))
     }
 
     // MARK: - Which snapshot windows a by-profile claim may take over
@@ -896,13 +1006,13 @@ final class LazySpaceRestoreWiringTests: XCTestCase {
     func testSlotsInPlayNeverReachTheClaimingSpawn() {
         // Why the guard above is not this leg's safety, stated as a test: the
         // claim's precondition is the quadrant where no window arrived, and
-        // that quadrant means `slots` was empty (`isWindowlessWithHostedSlots`,
-        // the same predicate that routed the reopen here). With a slot in play
-        // the settle goes to the repair, or — with nothing restorable — to a
-        // spawn whose flag is false and which therefore cannot claim. So the
-        // Space-already-surfaced guard is constant-true here; what actually
-        // keeps this leg safe is the empty slot list plus the Space equality
-        // above.
+        // that quadrant means no slot held a window at all
+        // (`isWindowlessWithHostedSlots`, the same predicate that routed the
+        // reopen here). With a slot in play the settle goes to the repair, or
+        // — with nothing restorable — to a spawn whose flag is false and which
+        // therefore cannot claim. So the Space-already-surfaced guard is
+        // constant-true here; what actually keeps this leg safe is that no
+        // slot holds a window, plus the Space equality above.
         XCTAssertEqual(
             SpaceManager.reopenSettleOutcome(restoredAnyWindow: true,
                                              isStillWindowless: false),

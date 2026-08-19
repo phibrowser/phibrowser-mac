@@ -773,14 +773,14 @@ final class SpaceManager: ObservableObject {
     /// `initialSpaceId` is nil, the slot starts on the persisted default
     /// (or the first known Space).
     /// `callerFile`/`callerLine` default to the CALL SITE: a slot that never
-    /// goes on to host a window disables `reopenOnPersistedSpaceIfWindowless`
-    /// for the rest of the run (see `reclaimsMintedSlot`), and until this line
-    /// existed a mint left no trace at all — several call sites reach
-    /// `createSlot` through a fallback chain that logs nothing, so a log bundle
-    /// could not say which one produced the leftover. Two bare magic literals
-    /// rather than one interpolated string: interpolation is an ordinary
-    /// expression, so `"\(#fileID):\(#line)"` would freeze this declaration's
-    /// own position instead of the caller's (tried: it printed this file).
+    /// goes on to host a window is a leak that outlives its mint (see
+    /// `reclaimsMintedSlot`), and until this line existed a mint left no trace
+    /// at all — several call sites reach `createSlot` through a fallback chain
+    /// that logs nothing, so a log bundle could not say which one produced the
+    /// leftover. Two bare magic literals rather than one interpolated string:
+    /// interpolation is an ordinary expression, so `"\(#fileID):\(#line)"`
+    /// would freeze this declaration's own position instead of the caller's
+    /// (tried: it printed this file).
     @discardableResult
     func createSlot(initialSpaceId: String?,
                     callerFile: StaticString = #fileID,
@@ -875,11 +875,15 @@ final class SpaceManager: ObservableObject {
     /// Every one of them can end without a window: a materialization the
     /// framework refuses, an `activate` the reopen gate drops, a profile that
     /// fails to load, a `createBrowser` that returns nil. A slot left behind by
-    /// one of those never hosts a window, and `slots.isEmpty` — what
-    /// `isWindowlessWithHostedSlots` gates on — is then false for the rest of
-    /// the run: every later Dock reopen bypasses the windowless path and falls
-    /// back to Chromium's own handler, which lands on the wrong Space (the
-    /// whole reason that path exists). Only a restart clears it.
+    /// one of those never hosts a window and stays in the registry for the
+    /// rest of the run. That used to disable the windowless Dock reopen
+    /// outright — `isWindowlessWithHostedSlots` gated on `slots.isEmpty`, so
+    /// every later reopen fell back to Chromium's own handler and landed on the
+    /// wrong Space until the app was restarted. The predicate now asks whether
+    /// any slot HOLDS a window (ticket 38), so a shell no longer latches it;
+    /// reclaiming is what keeps the registry honest anyway — a leftover slot
+    /// can still be handed out as `keySlot`, and it prints in the descriptors
+    /// of every windowless-reopen refusal.
     ///
     /// All three inputs rule out a distinct way of being wrong:
     ///
@@ -983,11 +987,18 @@ final class SpaceManager: ObservableObject {
             // absent line cannot be told apart from a build that never had
             // them, or from a reopen that never reached the app at all. Stated
             // positively instead: it appears when this path was skipped, and
-            // its three numbers ARE the predicate's three inputs, so the same
-            // line says which one refused. A live non-shadow window is the
-            // ordinary case; zero of those with a non-empty `slots` is the
-            // stranded-mint chain in `reclaimsMintedSlot`'s doc, which
-            // disables this path for the rest of the run.
+            // three of its four numbers ARE the predicate's inputs — the
+            // second one is `slotsHoldingWindows`, not `slots` — so the same
+            // line says which one refused. `slots` is kept beside it as the
+            // raw registry count, the only reading that says whether anything
+            // was left over at all (which is how the shell leak was found);
+            // since ticket 38 a leftover that holds nothing refuses nothing.
+            // A live non-shadow window is the ordinary case; zero of those
+            // with a slot still HOLDING one means either that the two
+            // registries disagree — a close leaves both in the same turn
+            // (`windowWillClose` drops the slot's entry, then the manager's)
+            // — or that a spawn the slot is owed never arrived, which the
+            // descriptors below name as `awaitingSpawn`.
             //
             // Reports the predicate's outcome and nothing beyond it: what a
             // refusal costs is the caller's, not this function's. The Dock
@@ -1002,17 +1013,18 @@ final class SpaceManager: ObservableObject {
             // sits on, the windows it still claims, whether a teardown is still
             // draining it, and whether a spawn is still owed one.
             //
-            // Appended for the stranded-mint shape alone — no live window, yet
-            // slots left behind. This refusal is otherwise the ORDINARY outcome
+            // Appended for that shape alone — no live window, yet slots left
+            // behind. This refusal is otherwise the ORDINARY outcome
             // (`applicationShouldHandleReopen` asks on every Dock click, the
             // ones with windows open included), so descriptors on every refusal
             // would dump the whole registry into the bundle on every Dock click
             // and bury the one reading that means something.
             let liveWindows = liveNonShadowWindowCount
+            let heldSlots = slotOccupancy.filter(Self.slotHoldsOrAwaitsWindow).count
             let leftovers = liveWindows == 0 && !slots.isEmpty
                 ? "; " + slots.map(\.diagnosticSummary).joined(separator: ", ")
                 : ""
-            AppLogInfo("[SpaceManager] windowless reopen declined, the persisted-Space reopen did not run: hasEverHostedSlotWindow=\(hasEverHostedSlotWindow), slots=\(slots.count), liveNonShadowWindows=\(liveWindows)\(leftovers)")
+            AppLogInfo("[SpaceManager] windowless reopen declined, the persisted-Space reopen did not run: hasEverHostedSlotWindow=\(hasEverHostedSlotWindow), slotsHoldingWindows=\(heldSlots), slots=\(slots.count), liveNonShadowWindows=\(liveWindows)\(leftovers)")
             return false
         }
         // Switch on: replay the whole closed window group (each Space with its
@@ -1052,7 +1064,71 @@ final class SpaceManager: ObservableObject {
     /// window is focused by Chromium's own reopen, and shadow windows are
     /// invisible background hosts either way.
     private var isWindowlessWithHostedSlots: Bool {
-        hasEverHostedSlotWindow && slots.isEmpty && liveNonShadowWindowCount == 0
+        Self.isWindowlessWithHostedSlots(
+            hasEverHostedSlotWindow: hasEverHostedSlotWindow,
+            slots: slotOccupancy,
+            liveNonShadowWindowCount: liveNonShadowWindowCount)
+    }
+
+    /// Whether one slot is holding — or is still owed — a window: the per-slot
+    /// half of the rule below, and the test a leftover shell must fail.
+    ///
+    /// 🔴 `awaitsSpawnedWindow` is why this is not `hostsWindow` alone. A slot
+    /// Chromium has been asked for a window for hosts nothing until that
+    /// window registers, and reading that as windowless would let a Dock click
+    /// landing in the gap spawn a SECOND window for it — a louder fault than
+    /// the latch this rule exists to undo. Fed by
+    /// `SpaceWindowSlot.hasSpawnInFlight`, which spans the whole gap;
+    /// `isAwaitingSpawnedWindow` covers only its tail.
+    ///
+    /// A slot draining its windows shut (`isTearingDown`) is deliberately NOT
+    /// a third input: the cascade removes the slot from the registry in the
+    /// same synchronous turn its map empties (`unregisterWindow`), so while
+    /// that flag is set the slot still holds windows and answers true here on
+    /// `hostsWindow` alone. Reading the flag would only matter if it could
+    /// outlive them — and that is precisely the shape that would re-latch this
+    /// gate, which is what this rule exists to prevent.
+    private static func slotHoldsOrAwaitsWindow(
+        _ slot: (hostsWindow: Bool, awaitsSpawnedWindow: Bool)
+    ) -> Bool {
+        slot.hostsWindow || slot.awaitsSpawnedWindow
+    }
+
+    /// The rule behind the property above. Pure and static so it is pinned by
+    /// table.
+    ///
+    /// The second input counted SLOTS until ticket 38 (`slots.isEmpty`). Every
+    /// call site that mints a slot ahead of the window meant to host it can
+    /// end without one — `reclaimsMintedSlot` names them, and the Spaces strip
+    /// of a shadow window was a further one that minted with no failure to
+    /// pair against — and a single shell left behind by any of them made this
+    /// predicate false for the rest of the run: every later Dock reopen
+    /// bypassed the windowless path and fell back to Chromium's own handler,
+    /// which lands on the wrong Space. Only a restart cleared it. Asking
+    /// whether any slot still HOLDS — or is owed — a window costs the same and
+    /// cannot be latched that way, whoever mints the next shell.
+    ///
+    /// The other two inputs are unchanged: `hasEverHostedSlotWindow` leaves
+    /// the hidden-login-item first click to Chromium's session restore, and
+    /// `liveNonShadowWindowCount` is what "windowless" means for the windows
+    /// that live outside slots.
+    static func isWindowlessWithHostedSlots(
+        hasEverHostedSlotWindow: Bool,
+        slots: [(hostsWindow: Bool, awaitsSpawnedWindow: Bool)],
+        liveNonShadowWindowCount: Int
+    ) -> Bool {
+        hasEverHostedSlotWindow
+            && !slots.contains(where: slotHoldsOrAwaitsWindow)
+            && liveNonShadowWindowCount == 0
+    }
+
+    /// The second input of `isWindowlessWithHostedSlots`, read off the live
+    /// registry. One expression, not two, for the reason the third input gives
+    /// below: the refusal line reports this input too, and a second spelling
+    /// of it would drift from the predicate.
+    private var slotOccupancy: [(hostsWindow: Bool, awaitsSpawnedWindow: Bool)] {
+        slots.map { (hostsWindow: !$0.windowsBySpaceId.isEmpty,
+                     awaitsSpawnedWindow: $0.hasSpawnInFlight) }
     }
 
     /// The third input of `isWindowlessWithHostedSlots`, counted rather than
@@ -1193,11 +1269,12 @@ final class SpaceManager: ObservableObject {
     /// here: claiming an entry that describes a different window group would
     /// hand this window that group's ghosts (ticket 26's (entry, Space)
     /// ownership). The last one — another slot already surfacing the Space —
-    /// is constant-true on this leg, since the branch is only reached while
-    /// `slots` is empty (`isWindowlessWithHostedSlots`); it is kept because it
-    /// costs nothing and is the shape the cold-start leg screens with, and it
-    /// must NOT be read as this leg's safety: that comes from the empty slot
-    /// list plus the Space equality. Pure and static so the rule is pinned by
+    /// is constant-true on this leg, since the branch is only reached while no
+    /// slot holds a window at all (`isWindowlessWithHostedSlots`) and a slot
+    /// with no window surfaces no Space; it is kept because it costs nothing
+    /// and is the shape the cold-start leg screens with, and it must NOT be
+    /// read as this leg's safety: that comes from no slot holding a window,
+    /// plus the Space equality. Pure and static so the rule is pinned by
     /// table.
     enum ReopenFallbackWindowPlan: Equatable {
         /// Take over the saved entry at this index — its parked siblings
@@ -1257,8 +1334,9 @@ final class SpaceManager: ObservableObject {
     /// restore with no window in it.
     ///
     /// Deciding on `restoredAnyWindow` alone sent that case to
-    /// `repairSlotsWithAbsentActiveSpace`, which walks `slots` — empty, so it
-    /// did nothing, and nothing had changed by the next Dock click either:
+    /// `repairSlotsWithAbsentActiveSpace`, which walks `slots` — none of them
+    /// holding a window, so it did nothing, and nothing had changed by the next
+    /// Dock click either:
     /// same snapshot, same stale eager set, same zero windows. The user's tabs
     /// were never lost, but only a restart brought a window back.
     ///
@@ -6849,6 +6927,29 @@ final class SpaceWindowSlot: ObservableObject {
     /// a minted slot consults it (see `SpaceManager.reclaimsMintedSlot`).
     var isAwaitingSpawnedWindow: Bool { !pendingSpawnSpaceIdByWindowId.isEmpty }
 
+    /// True while ANY spawn for this slot is in flight — from the `activate`
+    /// that asked for the window through to its registration. That whole span
+    /// is one in which an empty slot is not an abandoned one.
+    ///
+    /// Wider than `isAwaitingSpawnedWindow`, and the two are not
+    /// interchangeable. That one is keyed by a windowId, which exists only
+    /// once `createBrowser` has RETURNED, so it covers the gap's tail. The
+    /// head — `activate`'s `pendingSpawnSpaceIds.insert`, then the async
+    /// `ensureProfileLoaded` (~100–300ms on the session's first cross-profile
+    /// activation), then the bridge call — leaves the slot looking like a bare
+    /// shell; `respawnWindow` empties the map inside that same head
+    /// (`evictWindow(removeSlotIfEmpty: false)`).
+    ///
+    /// Read by the windowless predicate (`SpaceManager.slotOccupancy`), which
+    /// must not take either half of that gap for "no window is coming" — the
+    /// Dock click landing in it would open a second one.
+    /// `reclaimsMintedSlot` keeps the narrower test on purpose: what it needs
+    /// to know is whether an arriving window would still be ROUTED into this
+    /// slot, and that is exactly the windowId-keyed claim.
+    var hasSpawnInFlight: Bool {
+        isAwaitingSpawnedWindow || !pendingSpawnSpaceIds.isEmpty
+    }
+
     /// One-line identity for a log bundle: the Space the slot sits on, the
     /// windows it still claims, whether a teardown is still draining it, and
     /// whether a spawn is still owed one — the last being the only state in
@@ -6864,7 +6965,7 @@ final class SpaceWindowSlot: ObservableObject {
         return "slot(active=\(activeSpaceId ?? "nil")"
             + ", windows=[\(windows)]"
             + ", cascading=\(isCascadingSlotClose)"
-            + ", awaitingSpawn=\(isAwaitingSpawnedWindow))"
+            + ", awaitingSpawn=\(hasSpawnInFlight))"
     }
 
     /// windowId → spaceId we asked Chromium to spawn that window for, for

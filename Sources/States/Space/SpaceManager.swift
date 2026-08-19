@@ -505,11 +505,15 @@ final class SpaceManager: ObservableObject {
         /// way or does nothing — never drops the entry. Every other restore
         /// path here works without a frame, and none is gated on one.
         ///
-        /// Read by the reopen loading window, which is placed here and then
-        /// forces the restored window onto the same rect
-        /// (`showReopenLoadingWindows`, `slotForRestoreIndex`). It takes the
-        /// second option on nil: no remembered position, no loading window, and
-        /// the slot reopens exactly as it does today.
+        /// Read by three: the reopen loading window, which is placed here and
+        /// then forces the restored window onto the same rect
+        /// (`showReopenLoadingWindows`, `slotForRestoreIndex`); the geometry a
+        /// slot minted for this entry starts out remembering, which is what its
+        /// spawned window inherits (`seedRememberedGeometry`); and the rect
+        /// restore's stand-in window is placed on
+        /// (`restoredWindowPlacementFrame`). All three take the second option
+        /// on nil: no remembered position, no loading window, and the slot
+        /// reopens exactly as it does today.
         let frame: NSRect?
         /// How wide the slot's sidebar was, so a reopen can draw a band where
         /// it will come back. `0` means collapsed — which is also how
@@ -1210,8 +1214,7 @@ final class SpaceManager: ObservableObject {
             // land on seeds nothing, and the spawn is placed exactly as it is
             // today.
             if let landingIndex {
-                slot.seedRememberedGeometry(frame: restoreEntries[landingIndex].frame,
-                                            sidebarWidth: restoreEntries[landingIndex].sidebarWidth)
+                slot.seedRememberedGeometry(frame: restoreEntries[landingIndex].frame)
             }
         }
         slot.activate(
@@ -2054,8 +2057,19 @@ final class SpaceManager: ObservableObject {
     /// pending spawn intent. Without this hook every restored window
     /// would fall through to `keySlot.activeSpaceId` and collapse all
     /// tabs into that one Space.
+    /// `arrivingWindowId` is the CURRENT-RUN id of the window being looked up,
+    /// and it is write-only here: it keys the placement queue below and nothing
+    /// else. Every other id in this body — `restoreIndexByWindowId`,
+    /// `entry.windowMap`, `claimIndex`, the ranking tuple — is a
+    /// PREVIOUS-session id from a numerically overlapping namespace, so letting
+    /// this one reach any of them would silently claim by the wrong window.
+    ///
+    /// It is not consumed when no controller is built for the arrival (the
+    /// coordinator's `canUseBrowser` gate): the entry then sits in the map for
+    /// the slot's lifetime, keyed by a per-run id nothing else can present.
     func claimRestoredWindow(forRestoredFromWindowId restoredFromWindowId: Int,
-                             profileId: String) -> RestoredWindowClaim? {
+                             profileId: String,
+                             arrivingWindowId: Int) -> RestoredWindowClaim? {
         // Primary: exact previous-session windowId match. Positive ids only —
         // a SessionID is always positive, so both `0` and the reserved
         // `restoreFallbackWindowId` name a window that re-created no saved
@@ -2144,11 +2158,67 @@ final class SpaceManager: ObservableObject {
         guard let pick = candidates.min(by: { $0.key < $1.key }) else { return nil }
         restoreIndexByWindowId.removeValue(forKey: pick.windowId)
         let entryActiveSpaceId = restoreEntries[pick.index].activeSpaceId
+        let slot = slotForRestoreIndex(pick.index, fallbackSpaceId: pick.spaceId)
+        // Place restore's stand-in window on the group it just claimed. Queued
+        // into the same per-window map a spawn uses, so placement stays one
+        // route with one consumer (`registerWindow`, which runs later in this
+        // same synchronous window-created callback — after the controller's own
+        // ctor has re-applied Chromium's rect, and before the
+        // post-construction `Show()`, which sets no bounds). Which arrivals
+        // qualify is `restoredWindowPlacementFrame`'s rule, not this line's.
+        //
+        // Not a promise that every window in this slot ends up here: a slot
+        // holding several Spaces enrolls them in one native tab group, and
+        // `syncSlotTabGroup`'s `addTabbedWindow` makes the joiner adopt the
+        // anchor's frame. A stand-in and a replayed sibling in one slot
+        // therefore end up sharing whichever of the two registered as anchor —
+        // which is the same single-frame-per-slot rule every other path here
+        // already lives under.
+        if let frame = Self.restoredWindowPlacementFrame(
+            restoredFromWindowId: restoredFromWindowId,
+            entryFrame: restoreEntries[pick.index].frame) {
+            slot.queueRestorePlacementFrame(frame, forArrivingWindowId: arrivingWindowId)
+        }
         return RestoredWindowClaim(
-            slot: slotForRestoreIndex(pick.index, fallbackSpaceId: pick.spaceId),
+            slot: slot,
             spaceId: pick.spaceId,
             matchedBy: .profile,
             entryActiveSpaceId: entryActiveSpaceId)
+    }
+
+    /// The rect an arriving window that claimed a saved entry must be placed
+    /// on, or nil to leave it exactly where Chromium put it.
+    ///
+    /// Only ONE arrival shape needs this, and the narrowness is the whole rule.
+    /// Session restore hands a profile whose session held nothing restorable a
+    /// **stand-in** window, announced as `restoreFallbackWindowId`. It is
+    /// neither spawned by this side (so no `SpawnContext` ever queues its
+    /// frame) nor replayed from a saved window (so it carries no session
+    /// bounds): it is built by `Browser::Create` with no bounds at all and
+    /// takes whatever the profile's `browser.window_placement` pref happens to
+    /// hold — which, after a run with several window groups on one profile, is
+    /// some other group's rect entirely. Measured: a cold start whose only
+    /// group was a zero-tab placeholder put its stand-in on a decoy placement
+    /// while the record said otherwise.
+    ///
+    /// The other two shapes that reach the claim must NOT be placed:
+    ///
+    ///   * `> 0` — a window Chromium genuinely replayed. Its bounds ARE the
+    ///     saved ones and forcing the entry rect would fight them. This is the
+    ///     control the reopen's acceptance run pins.
+    ///   * `0` within the launch grace period — Chromium's multi-profile
+    ///     startup windows share that value with every OTHER window opened in
+    ///     the first minute of a launch that misses the spawn claim (Cmd+N,
+    ///     `windows.create`, a target=_blank new window). Nothing at this seam
+    ///     tells them apart, so widening here would teleport a window the user
+    ///     just opened by hand onto a stale group rect.
+    ///
+    /// Pure and static so the rule is pinned by table: it is the kind of guard
+    /// a later reader widens for symmetry, and both directions are wrong.
+    static func restoredWindowPlacementFrame(restoredFromWindowId: Int,
+                                             entryFrame: NSRect?) -> NSRect? {
+        guard restoredFromWindowId == Self.restoreFallbackWindowId else { return nil }
+        return entryFrame
     }
 
     /// What a session-restored window matched in the saved snapshot: the slot
@@ -2220,10 +2290,12 @@ final class SpaceManager: ObservableObject {
         // side SPAWNS for the entry — the windowless reopen's claiming
         // fallback, the cold-start repair — lands on Chromium's own
         // `browser.window_placement` instead of where the user left the group.
-        // A window Chromium REPLAYS is unaffected: it queues no spawn frame, so
-        // it keeps its replayed bounds exactly as it does today.
-        slot.seedRememberedGeometry(frame: restoreEntries[index].frame,
-                                    sidebarWidth: restoreEntries[index].sidebarWidth)
+        // A window Chromium REPLAYS keeps its replayed bounds: it queues no
+        // spawn frame. The one exception is restore's own stand-in window,
+        // which is placed from this same record by `claimRestoredWindow` — see
+        // `restoredWindowPlacementFrame` for why that one arrival needs it and
+        // the other two shapes must not have it.
+        slot.seedRememberedGeometry(frame: restoreEntries[index].frame)
         // Lend the slot the loading window standing in for it, and the frame it
         // sits on: the slot has to come back ON that frame, and it is the slot
         // that gets to see the restored window this loading window has to drop
@@ -7007,9 +7079,17 @@ final class SpaceWindowSlot: ObservableObject {
     private var pendingSpawnSpaceIds: Set<String> = []
 
     /// windowId → NSRect to apply to that window before it surfaces.
-    /// Set when `activate` spawns a new window so the new Space's NSWindow
-    /// appears in the same place the previously visible one was — giving the
-    /// illusion that the user is "swapping the contents" of one window.
+    ///
+    /// Written by two producers, both keyed by one arrival and drained by the
+    /// one consumer in `registerWindow`:
+    ///
+    ///   * `activate`'s spawn, so the new Space's NSWindow appears in the same
+    ///     place the previously visible one was — the illusion that the user is
+    ///     "swapping the contents" of one window;
+    ///   * `SpaceManager.claimRestoredWindow`, for the single arrival this side
+    ///     neither spawned nor Chromium replayed — restore's stand-in window,
+    ///     which otherwise surfaces on `browser.window_placement`
+    ///     (`restoredWindowPlacementFrame`).
     private var pendingFrameByWindowId: [Int: NSRect] = [:]
 
     /// The loading window standing in for this slot while its windows are
@@ -7037,6 +7117,11 @@ final class SpaceWindowSlot: ObservableObject {
     /// override rather than the other way round (`ReopenLoadingHandoff`), and
     /// nothing needs the two to end together: by then the restored window is
     /// on the rect and the loading window is behind it.
+    ///
+    /// Loses to a per-window entry in `pendingFrameByWindowId` — see the `??`
+    /// in `registerWindow`. The two never disagree in practice on this leg:
+    /// both are `restoreEntries[index].frame` handed over by the same
+    /// `slotForRestoreIndex` call.
     private var reopenPlacementFrame: NSRect?
 
     /// Takes over the loading window standing in for this slot, and the frame
@@ -7236,12 +7321,9 @@ final class SpaceWindowSlot: ObservableObject {
     /// LOOKS, as opposed to where it sits: the sidebar's width and the leading
     /// traffic light's origin. Cached for the same reason as the frame above —
     /// a persist can run while the window is being torn down, and the last
-    /// value the slot actually had beats none. Nil before the slot has had a
-    /// window to read them off, and for the width also unless a saved entry
-    /// seeded it (`seedRememberedGeometry`). Written by `snapshotSidebarWidth`
-    /// / `snapshotTrafficLightOrigin`; the width is additionally what a spawn
-    /// falls back to when the slot has no window to inherit one from
-    /// (`spawnSidebarShape`), the origin is read by nothing else.
+    /// value the slot actually had beats none. Nil only before the slot has had
+    /// a window to read them off. Written by `snapshotSidebarWidth` /
+    /// `snapshotTrafficLightOrigin`, read by nothing else.
     private var lastKnownSidebarWidth: CGFloat?
     private var lastKnownTrafficLightOrigin: NSPoint?
 
@@ -7799,17 +7881,8 @@ final class SpaceWindowSlot: ObservableObject {
             // synchronously in `activate` while `previous` was still alive, so
             // it stays valid even if the source window closes during an async
             // profile load before this closure runs.
-            // The sidebar's counterpart to `inheritedFrame`, and it falls back
-            // the same way and for the same two cases: a source window that
-            // went away during that profile load, and a slot minted for a saved
-            // entry, which has no previous window at all. See
-            // `spawnSidebarShape` for what a remembered width settles.
-            let sidebarShape = SpaceWindowSlot.spawnSidebarShape(
-                liveWidth: previous?.browserState.sidebarWidth,
-                liveCollapsed: previous?.browserState.sidebarCollapsed,
-                rememberedWidth: self.lastKnownSidebarWidth)
-            let inheritedSidebarWidth = sidebarShape.width
-            let inheritedSidebarCollapsed = sidebarShape.collapsed
+            let inheritedSidebarWidth = previous?.browserState.sidebarWidth ?? 0
+            let inheritedSidebarCollapsed = previous?.browserState.sidebarCollapsed
             manager?.currentSpawn = SpaceManager.SpawnContext(
                 slot: self,
                 spaceId: spaceId,
@@ -10297,9 +10370,11 @@ final class SpaceWindowSlot: ObservableObject {
                 window.collectionBehavior.insert(.moveToActiveSpace)
             }
         }
-        // A spawn's own queued frame wins; `reopenPlacementFrame` is the
-        // fallback for a window this side never spawned — a restored one, which
-        // arrives carrying Chromium's replayed bounds. Applied here because
+        // The per-window queue wins; `reopenPlacementFrame` is the slot-wide
+        // fallback. Both answer "where does this window belong", and the
+        // narrower key is the better answer: the queue names ONE arrival — a
+        // spawn of this side's, or restore's stand-in — while the override
+        // speaks for every window a reopen is still owed. Applied here because
         // registration runs inside Chromium's window-created callback, after
         // the NSWindow has its bounds and before the post-construction Show()
         // that puts it on screen: the frame the user first sees is this one.
@@ -11130,6 +11205,18 @@ final class SpaceWindowSlot: ObservableObject {
         }
     }
 
+    /// The restore twin of `absorbCurrentSpawn`'s frame line: queues the rect a
+    /// window this slot did NOT spawn must surface on, for the `registerWindow`
+    /// that follows to apply. Written unconditionally because the key is a
+    /// windowId Chromium minted for this one arrival — nothing else can have
+    /// queued against it — and only from
+    /// `SpaceManager.claimRestoredWindow`, which owns the rule about which
+    /// arrivals qualify.
+    fileprivate func queueRestorePlacementFrame(_ frame: NSRect,
+                                                forArrivingWindowId windowId: Int) {
+        pendingFrameByWindowId[windowId] = frame
+    }
+
     /// Returns the controller this slot has registered for `spaceId`, or
     /// nil. Used by theme application across slots.
     func windowController(for spaceId: String) -> MainBrowserWindowController? {
@@ -11736,28 +11823,38 @@ final class SpaceWindowSlot: ObservableObject {
     }
 
     /// Hands a slot minted for a saved snapshot entry the geometry the record
-    /// remembers for it: where the group sat, and how wide its sidebar was.
-    /// The spawn that follows inherits both through the pipes it already uses
-    /// — `resolveInheritedFrame` for the frame, `spawnSidebarShape` for the
-    /// sidebar — so the window arrives where the user left the group instead of
-    /// on Chromium's own `browser.window_placement`. No new route and no second
-    /// source of truth: this is the slot remembering what a window of its own
-    /// would have told it, one step before it has one.
+    /// remembers for it: where the group sat. The spawn that follows inherits
+    /// it through the route it already uses — `resolveInheritedFrame` →
+    /// `SpawnContext.inheritedFrame` → `pendingFrameByWindowId` — so the window
+    /// arrives where the user left the group instead of on Chromium's own
+    /// `browser.window_placement`. No new route and no second source of truth:
+    /// this is the slot remembering what a window of its own would have told
+    /// it, one step before it has one.
     ///
-    /// Handed the two values rather than the entry they came from, and that is
-    /// the layer boundary rather than an omission: `SlotRestoreEntry` is
-    /// private to `SpaceManager`, a slot reads no part of the restore record
-    /// anywhere else, and the six other fields on that entry are none of a
-    /// slot's business.
+    /// Handed the rect rather than the entry it came from, and that is the
+    /// layer boundary rather than an omission: `SlotRestoreEntry` is private to
+    /// `SpaceManager`, and a slot reads no part of the restore record anywhere
+    /// else.
+    ///
+    /// The sidebar width the record also carries is deliberately NOT seeded,
+    /// and this is measured rather than an oversight. It was, for one build:
+    /// `MainSplitViewController` gives its split view an `autosaveName`, and
+    /// AppKit restores the app-wide saved divider position at the moment that
+    /// name is assigned — a deferred `viewDidLoad` tick, i.e. AFTER
+    /// `registerWindow`'s `syncSidebar`. Three real-hardware rounds seeded 260,
+    /// 0 and 340 and the reopened window came back at the autosaved 193 every
+    /// time. The width is already app-wide state, so a per-slot value cannot
+    /// win without fighting that autosave, which is a product decision and not
+    /// this function's to make. Do not re-add it without changing that first.
     ///
     /// Never overwrites what the slot already remembers, and the guards are
     /// load-bearing rather than tidy: `slotForRestoreIndex` hands the same slot
     /// back for every window of a group, and a slot that has been on screen
     /// holds a live position the record cannot improve on — seeding over it
     /// would drag the user's window back to wherever the last snapshot froze
-    /// it. The frame half asks BOTH caches because they can legitimately
-    /// diverge — `snapshotFrame` writes the windowed one alone — so a slot that
-    /// knows either of them already knows better than the record does.
+    /// it. It asks BOTH caches because they can legitimately diverge —
+    /// `snapshotFrame` writes the windowed one alone — so a slot that knows
+    /// either of them already knows better than the record does.
     ///
     /// Both frames are seeded, for the reason a live window keeps both current:
     /// `lastKnownFrame` is what the spawn inherits, `lastKnownWindowedFrame` is
@@ -11767,75 +11864,23 @@ final class SpaceWindowSlot: ObservableObject {
     /// that entry spawn on its remembered rect and then lose it on the write
     /// that follows.
     ///
-    /// A nil half means the record carries nothing for it — an entry written
-    /// before that field existed, or one whose stored value no longer parses
-    /// (`SpaceManager.decodedSlotFrame`, `SpaceManager.decodedSidebarWidth`) —
-    /// and leaves that half exactly as it is today. The frame is trusted as
-    /// given: it arrives non-empty from the decoder and already clamped to the
-    /// screens attached now (`SpaceManager.loadRestoreSnapshot`).
-    fileprivate func seedRememberedGeometry(frame: NSRect?, sidebarWidth: CGFloat?) {
-        var seededFrame: NSRect?
-        if let frame, lastKnownFrame == nil, lastKnownWindowedFrame == nil {
-            lastKnownFrame = frame
-            lastKnownWindowedFrame = frame
-            seededFrame = frame
-        }
-        var seededSidebarWidth: CGFloat?
-        if let sidebarWidth, lastKnownSidebarWidth == nil {
-            lastKnownSidebarWidth = sidebarWidth
-            seededSidebarWidth = sidebarWidth
-        }
+    /// A nil frame means the record carries none — an entry written before the
+    /// field existed, or one whose stored value no longer parses
+    /// (`SpaceManager.decodedSlotFrame`) — and leaves the spawn placed exactly
+    /// as it is today. The frame is trusted as given: it arrives non-empty from
+    /// the decoder and already clamped to the screens attached now
+    /// (`SpaceManager.loadRestoreSnapshot`).
+    fileprivate func seedRememberedGeometry(frame: NSRect?) {
+        guard let frame, lastKnownFrame == nil, lastKnownWindowedFrame == nil
+        else { return }
+        lastKnownFrame = frame
+        lastKnownWindowedFrame = frame
         // Paired with the mint line this lands right after: together they say
         // whether the window about to be spawned was placed by the record or
         // left to Chromium, which is the whole of the reopen's placement from a
         // log bundle. Silent when nothing was taken, so a slot that already
         // knew better does not read like one that was seeded.
-        guard seededFrame != nil || seededSidebarWidth != nil else { return }
-        let frameNote = seededFrame.map(NSStringFromRect) ?? "none"
-        let widthNote = seededSidebarWidth.map(String.init(describing:)) ?? "none"
-        AppLogInfo("[SpaceWindowSlot] seeded from the saved entry: frame=\(frameNote) sidebarWidth=\(widthNote)")
-    }
-
-    /// The sidebar shape a spawn queues for the window it is about to create
-    /// (`pendingSidebarWidthByWindowId` / `pendingSidebarCollapsedByWindowId`,
-    /// applied in `registerWindow`).
-    ///
-    /// The window the slot is leaving answers whenever there is one — today's
-    /// rule, unchanged — and the answer is keyed on its collapsed flag because
-    /// that is the value `registerWindow` gates the sync on.
-    ///
-    /// What the slot remembers answers when there is not. Two ways to get
-    /// there: a source window that went away during an async profile load (the
-    /// case `lastKnownFrame` was introduced for), and a slot minted for a saved
-    /// entry, which has no previous window at all and would otherwise spawn its
-    /// first window at whatever width that window was built with
-    /// (`seedRememberedGeometry`).
-    ///
-    /// `0` is a value on the remembered leg rather than a gap: it is how a
-    /// collapsed sidebar records itself, and how `.comfortable` records itself
-    /// permanently (`ReopenLoadingWindow.sidebarBandWidth`), and
-    /// `snapshotSidebarWidth` only ever adopts a zero the window confirmed. So
-    /// one remembered number settles the width AND the collapsed state, while a
-    /// remembered nothing answers nil and leaves the new window's sidebar
-    /// alone: `registerWindow` syncs nothing without a collapsed answer. Pure
-    /// and static so the rule is pinned by table.
-    struct SpawnSidebarShape: Equatable {
-        let width: CGFloat
-        /// nil leaves the new window's sidebar exactly as it was built.
-        let collapsed: Bool?
-    }
-
-    static func spawnSidebarShape(liveWidth: CGFloat?,
-                                  liveCollapsed: Bool?,
-                                  rememberedWidth: CGFloat?) -> SpawnSidebarShape {
-        if let liveCollapsed {
-            return SpawnSidebarShape(width: liveWidth ?? 0, collapsed: liveCollapsed)
-        }
-        guard let rememberedWidth else {
-            return SpawnSidebarShape(width: 0, collapsed: nil)
-        }
-        return SpawnSidebarShape(width: rememberedWidth,
-                                 collapsed: rememberedWidth <= 0)
+        AppLogInfo("[SpaceWindowSlot] seeded from the saved entry: frame=\(NSStringFromRect(frame))")
     }
 
     /// Tears down every NotificationCenter registration this slot owns —

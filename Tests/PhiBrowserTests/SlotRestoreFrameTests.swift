@@ -15,10 +15,9 @@ import XCTest
 /// These pin the clamp's rule down by table. It is deliberately far weaker than
 /// AppKit's own constraint: a frame the user dragged half off an edge stays
 /// there, and only the states they cannot get out of are corrected. The last
-/// section covers what the remembered geometry is FOR on the spawn side: a slot
-/// minted for a saved entry opens its first window itself, and takes that
-/// window's sidebar from what the record kept rather than from a window it does
-/// not have.
+/// section covers the one arriving window that is placed FROM the record rather
+/// than by Chromium — restore's stand-in — and, just as importantly, the two
+/// shapes beside it that must not be.
 final class SlotRestoreFrameTests: XCTestCase {
     // A 1440x900 laptop display at the origin, menu bar removed.
     private let primary = SpaceManager.ScreenGeometry(
@@ -225,65 +224,46 @@ final class SlotRestoreFrameTests: XCTestCase {
             origin)
     }
 
-    // MARK: - What a spawn inherits when the slot has no window to read
+    // MARK: - Which arriving window is placed from the record
 
-    /// The remembered geometry above is not only what a loading window is
-    /// drawn from: a slot minted for a saved entry SPAWNS its first window,
-    /// and a spawn takes its frame and its sidebar from the slot rather than
-    /// from the record (`SpaceWindowSlot.seedRememberedGeometry` seeds the one
-    /// from the other). With nothing seeded the window landed on Chromium's
-    /// own `browser.window_placement` instead of where the user left it.
-    ///
-    /// The frame half is a pass-through of a value already pinned above. The
-    /// sidebar half is a rule: the record stores one number, and that number
-    /// has to settle the width AND the collapsed state, with a third answer
-    /// for a record that stores nothing.
+    /// Session restore hands a profile whose session held nothing restorable a
+    /// stand-in window. It is neither spawned by this side nor replayed from a
+    /// saved window, so nothing queues a frame for it and it surfaces on the
+    /// profile's `browser.window_placement` — after a multi-group run, some
+    /// other group's rect. It is the one arrival this side places from the
+    /// record, and the guard is as interesting for what it excludes: a genuine
+    /// replay's bounds ARE the saved ones, and the zero id is shared with every
+    /// window the user opens by hand in the first minute of a launch.
 
-    func testALiveWindowStillAnswersForTheSpawnsSidebar() {
-        // Unchanged behaviour: while the slot has a window to leave, what it
-        // is showing wins over anything the record remembers.
+    func testRestoresStandInWindowIsPlacedOnItsClaimedEntrysRect() {
+        let frame = NSRect(x: 120, y: 140, width: 900, height: 600)
+
         XCTAssertEqual(
-            SpaceWindowSlot.spawnSidebarShape(liveWidth: 240,
-                                              liveCollapsed: false,
-                                              rememberedWidth: 300),
-            SpaceWindowSlot.SpawnSidebarShape(width: 240, collapsed: false))
+            SpaceManager.restoredWindowPlacementFrame(
+                restoredFromWindowId: -1, entryFrame: frame),
+            frame)
     }
 
-    func testALiveCollapsedSidebarIsNotReopenedByARememberedWidth() {
-        XCTAssertEqual(
-            SpaceWindowSlot.spawnSidebarShape(liveWidth: 0,
-                                              liveCollapsed: true,
-                                              rememberedWidth: 300),
-            SpaceWindowSlot.SpawnSidebarShape(width: 0, collapsed: true))
+    func testAReplayedWindowKeepsTheBoundsChromiumGaveIt() {
+        // Its bounds are the saved ones already; forcing the entry rect would
+        // fight the replay this whole record exists to support.
+        XCTAssertNil(SpaceManager.restoredWindowPlacementFrame(
+            restoredFromWindowId: 7, entryFrame: NSRect(x: 1, y: 2, width: 3, height: 4)))
     }
 
-    func testARememberedWidthAnswersWhenNoWindowIsLeaving() {
-        XCTAssertEqual(
-            SpaceWindowSlot.spawnSidebarShape(liveWidth: nil,
-                                              liveCollapsed: nil,
-                                              rememberedWidth: 300),
-            SpaceWindowSlot.SpawnSidebarShape(width: 300, collapsed: false))
+    func testAZeroIdWindowIsNeverPlacedFromTheRecord() {
+        // Chromium's multi-profile startup windows share the zero id with a
+        // Cmd+N the user pressed inside the launch grace period, and nothing at
+        // the claim tells the two apart.
+        XCTAssertNil(SpaceManager.restoredWindowPlacementFrame(
+            restoredFromWindowId: 0, entryFrame: NSRect(x: 1, y: 2, width: 3, height: 4)))
     }
 
-    func testARememberedZeroIsACollapsedSidebarAndNotAMissingOne() {
-        // Same distinction the decoder makes above, carried through to the
-        // window: a collapsed sidebar comes back collapsed rather than at some
-        // invented width.
-        XCTAssertEqual(
-            SpaceWindowSlot.spawnSidebarShape(liveWidth: nil,
-                                              liveCollapsed: nil,
-                                              rememberedWidth: 0),
-            SpaceWindowSlot.SpawnSidebarShape(width: 0, collapsed: true))
-    }
-
-    func testRememberingNothingLeavesTheNewWindowsSidebarAlone() {
-        // A record written before the width existed. `registerWindow` syncs
-        // nothing without a collapsed answer, so nil is what keeps such a
-        // reopen behaving exactly as it did.
-        XCTAssertEqual(
-            SpaceWindowSlot.spawnSidebarShape(liveWidth: nil,
-                                              liveCollapsed: nil,
-                                              rememberedWidth: nil),
-            SpaceWindowSlot.SpawnSidebarShape(width: 0, collapsed: nil))
+    func testAnEntryWithNoRememberedRectPlacesNothing() {
+        // A record written before the frame field existed, or one whose stored
+        // value no longer parses. The stand-in then lands exactly where it
+        // lands today.
+        XCTAssertNil(SpaceManager.restoredWindowPlacementFrame(
+            restoredFromWindowId: -1, entryFrame: nil))
     }
 }

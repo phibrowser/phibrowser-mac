@@ -483,6 +483,15 @@ final class SpaceManager: ObservableObject {
         /// Previous-session Chromium windowId → spaceId for every window
         /// the slot owned.
         let windowMap: [Int: String]
+        // The four fields below are the geometry half, and the only mutable
+        // ones: every landed snapshot write puts back on the entry exactly what
+        // it measured off the live slot speaking for it, so the record in
+        // memory describes this run's layout rather than the one the launch
+        // read off disk (`persistSlotsSnapshot`). The fields above stay frozen
+        // — `windowMap` holds the previous-session ids the claim maps are keyed
+        // by, and `isLandingEntry` describes the session a cold start replays,
+        // which is a different question from where a mid-run reopen lands
+        // (`landingRestoreIndex`).
         /// True when the slot's visible window was in native macOS fullscreen
         /// at snapshot time. Restored windows always come back as normal
         /// windows (Chromium forces kNormal so macOS doesn't spawn a separate
@@ -490,7 +499,7 @@ final class SpaceManager: ObservableObject {
         /// slot re-enters fullscreen on its active window once restore settles,
         /// so the slot reopens fullscreen as ONE Space instead of orphaning
         /// blank Spaces. See `SpaceWindowSlot.applyPendingRestoreFullScreen`.
-        let wasFullScreen: Bool
+        var wasFullScreen: Bool
         /// Where the slot's window sat on screen at snapshot time, already
         /// clamped to the screens attached NOW (`loadRestoreSnapshot`) — the
         /// display it was saved on may be gone by the time it is read back.
@@ -514,7 +523,7 @@ final class SpaceManager: ObservableObject {
         /// (`restoredWindowPlacementFrame`). All three take the second option
         /// on nil: no remembered position, no loading window, and the slot
         /// reopens exactly as it does today.
-        let frame: NSRect?
+        var frame: NSRect?
         /// How wide the slot's sidebar was, so a reopen can draw a band where
         /// it will come back. `0` means collapsed — which is also how
         /// `.comfortable` records itself, since it keeps the sidebar collapsed
@@ -524,14 +533,14 @@ final class SpaceManager: ObservableObject {
         /// draws nothing because guessing a width would put the boundary
         /// somewhere the restored window's sidebar does not end
         /// (`ReopenLoadingWindow.sidebarBandWidth`).
-        let sidebarWidth: CGFloat?
+        var sidebarWidth: CGFloat?
         /// Where the slot's window had its leading traffic light, as a distance
         /// from the top-left of its frame. Recorded so the loading window can
         /// place its own on the answer this Chromium and this macOS actually
         /// gave, instead of on a constant copied out of the fork. Nil for a
         /// snapshot written before this existed; the copy is then the fallback
         /// (`ReopenLoadingWindow.trafficLightOrigin(remembered:)`).
-        let trafficLightOrigin: NSPoint?
+        var trafficLightOrigin: NSPoint?
     }
     private var restoreEntries: [SlotRestoreEntry] = []
     /// Previous-session windowId → index into `restoreEntries`. Entries are
@@ -586,6 +595,43 @@ final class SpaceManager: ObservableObject {
     /// the entry so the group comes back on the Space it was left on, instead
     /// of wherever a promote rule would put it.
     private var liveActiveSpaceIdsByRestoreIndex: [Int: String] = [:]
+    /// Index into `restoreEntries` → the entry the last LANDED snapshot write
+    /// marked as the one a reopen comes back on. The in-memory twin of the
+    /// `isLandingEntry` key that write put on disk, and the third member of the
+    /// family above: what the record would say if it were re-read right now.
+    ///
+    /// The loaded `isLandingEntry` flags cannot answer that question mid-run.
+    /// They describe the session this launch READ, and only an armed reopen
+    /// re-reads the record — so with session restore off they stay pinned to
+    /// the previous session for the whole run, including entries later writes
+    /// stopped putting on disk at all (a group closed in an earlier run, which
+    /// nothing live and nothing parked speaks for any more). A reopen following
+    /// them spawned its window where that stale entry said, which is where the
+    /// group sat when the app started rather than where the user left it.
+    ///
+    /// Cleared with the rest of the restore family, which is also what makes
+    /// the index safe to subscript with — it and the entries it indexes never
+    /// outlive each other.
+    ///
+    /// The clear is half of why an ARMED reopen still reads its freshly loaded
+    /// markers rather than this. The other half is the persist gate: the only
+    /// write between that reload and the spawn is the one
+    /// `endSessionRestoreTransaction` makes, and a reopen that reaches the
+    /// spawn has no live slot for it, so the plan comes back empty and the
+    /// write refuses itself (`plannedSnapshotEntries`, `slotsSnapshotWriteLands`)
+    /// before it can record anything here.
+    ///
+    /// One shape escapes that argument, and is called out rather than papered
+    /// over: a settle reporting `restoredAnyWindow == false` spawns even when a
+    /// window did turn up from somewhere else (`reopenSettleOutcome`, whose own
+    /// documentation says so). That write finds a live slot, lands, and records
+    /// an index here, so the spawn is placed from the entry that write named
+    /// instead of from the loaded marker. The difference is geometry only — the
+    /// plan is `.plainSpawn` unless the lazy reopen armed AND produced no
+    /// window, so nothing about entry ownership moves — and placing the window
+    /// on the group that is actually on screen is the better of the two
+    /// answers. It has not been exercised on hardware.
+    private var landingRestoreIndex: Int?
     /// Index into `restoreEntries` → the loading window standing in for that
     /// slot. `slotForRestoreIndex` lends each one to the slot that claims its
     /// entry, so the slot can drop it behind its restored window and close it
@@ -1171,11 +1217,33 @@ final class SpaceManager: ObservableObject {
             return (spaces.first(where: isAutomaticSwitchTarget) ?? spaces.first)?.spaceId
         }()
         guard let spaceId = resolved else { return false }
-        AppLogInfo("[SpaceManager] windowless reopen — spawning persisted Space \(spaceId)")
-        // Same landing rule as the classifier (`classifyRestoreWindows`): the
-        // marked entry, else entry 0 for a record written before the marker.
-        let landingIndex = restoreEntries.firstIndex(where: \.isLandingEntry)
-            ?? (restoreEntries.isEmpty ? nil : 0)
+        // Same landing rule as the classifier (`classifyRestoreWindows`) — the
+        // marked entry, else entry 0 for a record written before the marker —
+        // with what the last landed write named ahead of both.
+        //
+        // Which of the two answers this is depends on how the reopen got here,
+        // and all three ways are live. The UNARMED reopen (session restore off)
+        // comes straight here without reloading, so its markers still describe
+        // the previous session and the recorded index is the current answer.
+        // The two ARMED ways in — nothing restorable, and the settle that owes
+        // the user a window — have just reloaded the record, which clears the
+        // recorded index, so they read the markers exactly as they always did.
+        // See `landingRestoreIndex` for why the reload cannot be undone by a
+        // write in between, and for the one shape where it can.
+        let landingIndex = Self.reopenLandingEntryIndex(
+            recordedByLastWrite: landingRestoreIndex,
+            markedEntryIndex: restoreEntries.firstIndex(where: \.isLandingEntry),
+            entryCount: restoreEntries.count)
+        // Names the entry as well as the Space, because WHICH entry this leg
+        // reads is half of where the window lands: the geometry it spawns on
+        // comes from that entry alone, and the marker loaded at launch and the
+        // one the last write recorded can name different ones
+        // (`reopenLandingEntryIndex`). Without the index a round that came back
+        // on the right rect cannot be told from one that read the wrong entry
+        // and happened to agree — which is the whole difference this line has
+        // to make legible. Pairs with `seeded from the saved entry`, which
+        // reports the rect that entry handed over.
+        AppLogInfo("[SpaceManager] windowless reopen — spawning persisted Space \(spaceId) from entry \(landingIndex.map(String.init) ?? "none")")
         let plan = Self.reopenFallbackWindowPlan(
             reopenArmedLazyRestore: lastReopenArmedLazyRestore,
             restoreProducedNoWindow: restoreProducedNoWindow,
@@ -3893,6 +3961,69 @@ final class SpaceManager: ObservableObject {
         return 0
     }
 
+    /// Which SAVED ENTRY the landing position above names, or nil when this
+    /// write recorded nothing a reopen can come back on.
+    ///
+    /// The position indexes the plan; a reopen needs the entry behind it,
+    /// because the entry is where the geometry it spawns on lives. The two are
+    /// different numbers as soon as the record holds an entry the plan does not
+    /// write (a group closed in an earlier run) — and different in the opposite
+    /// direction for a slot this write is adopting, whose entry did not exist
+    /// when the plan was made. `adoptedIndexByPosition` is that write's own
+    /// adoption plan, applied moments earlier, which is why this runs after it.
+    ///
+    /// A parked-only position maps to the entry it already names. Live slots
+    /// are planned first and the fallback is position 0, so
+    /// `landingEntryPosition` never returns one today; mapping it costs a line
+    /// and leaves no shape unhandled.
+    ///
+    /// Pure and static so the rule is pinned by table.
+    static func landingRestoreEntryIndex(
+        planned: [PlannedSnapshotEntry],
+        landingPosition: Int?,
+        liveSlotRestoreIndices: [Int?],
+        adoptedIndexByPosition: [Int: Int]
+    ) -> Int? {
+        guard let landingPosition,
+              planned.indices.contains(landingPosition) else { return nil }
+        switch planned[landingPosition].source {
+        case .liveSlot(let slotPosition):
+            guard liveSlotRestoreIndices.indices.contains(slotPosition)
+            else { return nil }
+            return liveSlotRestoreIndices[slotPosition]
+                ?? adoptedIndexByPosition[slotPosition]
+        case .parkedOnly(let index):
+            return index
+        }
+    }
+
+    /// Which saved entry a windowless reopen spawns from: what the last landed
+    /// write named, else the marker the record was loaded with, else the first
+    /// entry for a record written before the marker existed.
+    ///
+    /// The order is the whole rule. An ARMED reopen reloads the record first,
+    /// which clears the recorded index, so it reads the marker exactly as it
+    /// always has. An unarmed one — session restore off — never reloads, and
+    /// its markers still describe the previous session; following them put the
+    /// spawned window on the rect the group had at LAUNCH, and typically on an
+    /// entry this run's writes had already stopped putting on disk.
+    ///
+    /// The range check is for a recorded index that outlived the entries it
+    /// indexes. The two are cleared together, so that cannot happen; it is here
+    /// because the caller subscripts with the answer, and a stale index must
+    /// degrade to the marker rather than trap. The marker needs no such check —
+    /// it is a `firstIndex` into the very array `entryCount` counts. Pure and
+    /// static so the rule is pinned by table.
+    static func reopenLandingEntryIndex(recordedByLastWrite: Int?,
+                                        markedEntryIndex: Int?,
+                                        entryCount: Int) -> Int? {
+        guard entryCount > 0 else { return nil }
+        if let recordedByLastWrite, (0..<entryCount).contains(recordedByLastWrite) {
+            return recordedByLastWrite
+        }
+        return markedEntryIndex ?? 0
+    }
+
     /// The Space a slot must be RESTORED onto, given the Space it is showing
     /// right now.
     ///
@@ -4143,12 +4274,47 @@ final class SpaceManager: ObservableObject {
                     agentSpaceIds: agentSpaceIds) {
                     dict["activeSpaceId"] = landing
                 }
+                // Measured once and used twice — written to disk here, put
+                // back on the saved entry just below. Each of these refreshes
+                // its own cache off the live window, so two reads could
+                // legitimately disagree, and the whole point of the second use
+                // is that the two records say the same thing about this group.
+                let isFullScreen = slot.snapshotIsFullScreen()
+                let frame = slot.snapshotFrame()
+                let sidebarWidth = slot.snapshotSidebarWidth()
+                let trafficLightOrigin = slot.snapshotTrafficLightOrigin()
                 Self.encodeSnapshotGeometry(
-                    isFullScreen: slot.snapshotIsFullScreen(),
-                    frame: slot.snapshotFrame(),
-                    sidebarWidth: slot.snapshotSidebarWidth(),
-                    trafficLightOrigin: slot.snapshotTrafficLightOrigin(),
+                    isFullScreen: isFullScreen,
+                    frame: frame,
+                    sidebarWidth: sidebarWidth,
+                    trafficLightOrigin: trafficLightOrigin,
                     into: &dict)
+                // Until this, a saved entry kept the geometry the LAUNCH read
+                // off disk for the whole run: the write went to the file and
+                // the in-memory entry was only ever appended to. Nothing else
+                // refreshed it — `loadRestoreSnapshot` is the only other writer
+                // and it runs at bind and on an armed reopen alone — so a
+                // reopen reading an entry (`spawnPersistedSpaceWindow`,
+                // `slotForRestoreIndex`) placed its window where the group sat
+                // when the app started, not where the user left it.
+                //
+                // A straight assignment rather than a merge: the slot's caches
+                // never regress to nil once set (`snapshotFrame` and its two
+                // neighbours only ever write them), so the entry ends up
+                // holding exactly what this write put on disk.
+                //
+                // Only for a slot that already has an entry. A slot this write
+                // is ADOPTING has none to write back to yet, and the adoption
+                // below builds its entry from the same four accessors on the
+                // same slot in this same turn — a second read, but of caches
+                // nothing between here and there can move.
+                if let index = liveSlots[position].restoreIndex,
+                   restoreEntries.indices.contains(index) {
+                    restoreEntries[index].wasFullScreen = isFullScreen
+                    restoreEntries[index].frame = frame
+                    restoreEntries[index].sidebarWidth = sidebarWidth
+                    restoreEntries[index].trafficLightOrigin = trafficLightOrigin
+                }
             case .parkedOnly(let index):
                 // A saved entry nothing live speaks for carries the same
                 // fields, passed through from the entry these windows were
@@ -4231,6 +4397,15 @@ final class SpaceManager: ObservableObject {
             // be able to date.
             AppLogInfo("[SpaceManager] adopted a minted slot into the restore record as entry \(adoption.newIndex)")
         }
+        // The landing marker's in-memory twin, recorded after adoption so a
+        // slot this very write took into the record resolves to its new entry
+        // rather than to nothing. See `landingRestoreIndex` for why the loaded
+        // `isLandingEntry` flags cannot answer this question mid-run.
+        landingRestoreIndex = Self.landingRestoreEntryIndex(
+            planned: planned,
+            landingPosition: landingPosition,
+            liveSlotRestoreIndices: liveSlots.map(\.restoreIndex),
+            adoptedIndexByPosition: adoptedIndexByPosition)
         // What this write says about each saved entry a live slot still speaks
         // for, kept so the entry can outlive the slot (`removeSlot` finds the
         // slot already drained — see `liveWindowMapsByRestoreIndex`). Ghosts
@@ -4364,6 +4539,7 @@ final class SpaceManager: ObservableObject {
         parkedGhostSpaceIdsByWindowId.removeAll()
         liveWindowMapsByRestoreIndex.removeAll()
         liveActiveSpaceIdsByRestoreIndex.removeAll()
+        landingRestoreIndex = nil
         restoreReattachDeadline = nil
         coldStartReplayedWindowIdsByProfileId.removeAll()
         coldStartReceiptWindowIds.removeAll()
@@ -6576,6 +6752,7 @@ final class SpaceManager: ObservableObject {
         parkedGhostSpaceIdsByWindowId.removeAll()
         liveWindowMapsByRestoreIndex.removeAll()
         liveActiveSpaceIdsByRestoreIndex.removeAll()
+        landingRestoreIndex = nil
         restoreReattachDeadline = nil
         coldStartReplayedWindowIdsByProfileId.removeAll()
         coldStartReceiptWindowIds.removeAll()

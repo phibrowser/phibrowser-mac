@@ -393,6 +393,139 @@ final class SlotSnapshotEntryPlanTests: XCTestCase {
                                               keyLiveSlotPosition: 0))
     }
 
+    // MARK: - Which saved entry that landing position names
+
+    /// The position above indexes the PLAN. What a later reopen needs is the
+    /// saved entry behind it, because that is where the geometry it spawns on
+    /// is kept — and the two are different numbers as soon as one saved entry
+    /// goes unwritten (a group closed in an earlier run) or one live slot has
+    /// no saved entry yet.
+    func testTheLandingPositionResolvesToTheEntryItsSlotSpeaksFor() {
+        let planned = plan(
+            liveSlots: [(restoreIndex: 3, windowMap: [1: "space-a"]),
+                        (restoreIndex: 1, windowMap: [2: "space-b"])])
+
+        XCTAssertEqual(
+            SpaceManager.landingRestoreEntryIndex(
+                planned: planned,
+                landingPosition: 1,
+                liveSlotRestoreIndices: [3, 1],
+                adoptedIndexByPosition: [:]),
+            1)
+    }
+
+    /// A slot minted this run has no saved entry until the write adopts it,
+    /// and the adoption happens in the same write that decides the landing
+    /// marker. Reading the pre-adoption index would leave the reopen pointing
+    /// at whatever entry the launch happened to load.
+    func testASlotAdoptedByThisWriteResolvesToItsNewEntry() {
+        let planned = plan(
+            liveSlots: [(restoreIndex: nil, windowMap: [1: "space-a"])])
+
+        XCTAssertEqual(
+            SpaceManager.landingRestoreEntryIndex(
+                planned: planned,
+                landingPosition: 0,
+                liveSlotRestoreIndices: [nil],
+                adoptedIndexByPosition: [0: 4]),
+            4)
+    }
+
+    /// Live slots are planned first, so this shape does not arise from
+    /// `landingEntryPosition` today. Mapped anyway rather than special-cased:
+    /// a parked-only position already names its saved entry outright.
+    func testAParkedOnlyLandingPositionResolvesToItsSavedEntry() {
+        let planned = plan(
+            liveSlots: [(restoreIndex: 0, windowMap: [1: "space-a"])],
+            savedEntries: [[1: "space-a"], [9: "space-b"]],
+            parkedGhosts: [9: "space-b"])
+
+        XCTAssertEqual(planned.count, 2)
+        XCTAssertEqual(
+            SpaceManager.landingRestoreEntryIndex(
+                planned: planned,
+                landingPosition: 1,
+                liveSlotRestoreIndices: [0],
+                adoptedIndexByPosition: [:]),
+            1)
+    }
+
+    func testARefusedWriteRecordsNoLandingEntry() {
+        XCTAssertNil(
+            SpaceManager.landingRestoreEntryIndex(
+                planned: [],
+                landingPosition: nil,
+                liveSlotRestoreIndices: [],
+                adoptedIndexByPosition: [:]))
+    }
+
+    /// A slot that ended the write with neither a saved entry nor an adoption
+    /// leaves nothing for a reopen to read. Recording an index anyway would
+    /// point it at another group's entry.
+    func testASlotWithNeitherAnEntryNorAnAdoptionRecordsNothing() {
+        let planned = plan(
+            liveSlots: [(restoreIndex: nil, windowMap: [1: "space-a"])])
+
+        XCTAssertNil(
+            SpaceManager.landingRestoreEntryIndex(
+                planned: planned,
+                landingPosition: 0,
+                liveSlotRestoreIndices: [nil],
+                adoptedIndexByPosition: [:]))
+    }
+
+    // MARK: - Which entry a windowless reopen spawns from
+
+    /// With session restore off the reopen never reloads the record, so the
+    /// marker `loadRestoreSnapshot` read at launch still describes the
+    /// PREVIOUS session — an entry no write since has touched, and typically
+    /// one this run's writes stopped putting on disk at all. What the last
+    /// landed write named is the current answer, and it wins.
+    func testTheLastLandedWriteOutranksTheMarkerLoadedAtLaunch() {
+        XCTAssertEqual(
+            SpaceManager.reopenLandingEntryIndex(recordedByLastWrite: 1,
+                                                 markedEntryIndex: 0,
+                                                 entryCount: 2),
+            1)
+    }
+
+    /// An armed reopen reloads the record first, which clears what the last
+    /// write recorded — so that leg keeps reading the marker exactly as it did.
+    func testTheLoadedMarkerStillAnswersWhenNoWriteHasRecordedOne() {
+        XCTAssertEqual(
+            SpaceManager.reopenLandingEntryIndex(recordedByLastWrite: nil,
+                                                 markedEntryIndex: 1,
+                                                 entryCount: 2),
+            1)
+    }
+
+    /// A record written before the marker field existed.
+    func testARecordWithNoMarkerAtAllLandsOnItsFirstEntry() {
+        XCTAssertEqual(
+            SpaceManager.reopenLandingEntryIndex(recordedByLastWrite: nil,
+                                                 markedEntryIndex: nil,
+                                                 entryCount: 2),
+            0)
+    }
+
+    func testAnEmptyRecordHasNothingToLandOn() {
+        XCTAssertNil(
+            SpaceManager.reopenLandingEntryIndex(recordedByLastWrite: nil,
+                                                 markedEntryIndex: nil,
+                                                 entryCount: 0))
+    }
+
+    /// The recorded index and the entries it indexes are cleared together, so
+    /// this cannot happen. Pinned because the caller subscripts the array with
+    /// the answer: a stale index must degrade to the marker, not trap.
+    func testAnOutOfRangeRecordedIndexFallsBackToTheMarker() {
+        XCTAssertEqual(
+            SpaceManager.reopenLandingEntryIndex(recordedByLastWrite: 7,
+                                                 markedEntryIndex: 1,
+                                                 entryCount: 2),
+            1)
+    }
+
     // MARK: - Which Space an entry records as its landing point
 
     /// An ephemeral Space cannot be a landing point — restoring onto one

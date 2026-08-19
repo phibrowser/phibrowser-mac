@@ -172,7 +172,7 @@ extension Tab: ContextMenuRepresentable {
         // Split view: either dissolve the existing split this tab belongs to,
         // or open a fresh tab paired with this one as a new split. Mutually exclusive.
         if let state = MainBrowserWindowControllersManager.shared.activeWindowController?.browserState {
-            if let existingSplit = state.splitGroup(forTabId: guid) {
+            if let existingSplit = splitMembership?.liveGroup ?? state.splitGroup(forTabId: guid) {
                 // Pinned splits don't expose "Reverse Panes" / "Remove from
                 // Split" — those are normal-split affordances. Unpinning a
                 // pinned split (via the "Unpin Split" item above) re-renders
@@ -185,7 +185,19 @@ extension Tab: ContextMenuRepresentable {
                     reverseSplitItem.target = self
                     reverseSplitItem.representedObject = existingSplit.id
                     items.append(reverseSplitItem)
+                }
 
+                let convertLayoutItem = NSMenuItem(
+                    title: existingSplit.layout == .vertical
+                        ? NSLocalizedString("sidebar.tabContextMenu.convertToVerticalSplit", value: "Convert to Vertical Split", comment: "Split context menu - Switch a side-by-side split to a stacked split")
+                        : NSLocalizedString("sidebar.tabContextMenu.convertToHorizontalSplit", value: "Convert to Horizontal Split", comment: "Split context menu - Switch a stacked split to a side-by-side split"),
+                    action: #selector(convertSplitLayout(_:)),
+                    keyEquivalent: "")
+                convertLayoutItem.target = self
+                convertLayoutItem.representedObject = existingSplit.id
+                items.append(convertLayoutItem)
+
+                if !existingSplit.isPinned {
                     let removeSplitItem = NSMenuItem(
                         title: NSLocalizedString("sidebar.tabContextMenu.removeFromSplit", value: "Remove from Split", comment: "Tab context menu - Dissolve the split that contains this tab"),
                         action: #selector(removeFromSplit(_:)),
@@ -193,8 +205,20 @@ extension Tab: ContextMenuRepresentable {
                     removeSplitItem.target = self
                     removeSplitItem.representedObject = existingSplit.id
                     items.append(removeSplitItem)
-                    items.append(.separator())
                 }
+                items.append(.separator())
+            } else if let pair = splitMembership?.pinnedDBPair {
+                let layout = state.pinnedSplitLayout(leftDB: pair.left, rightDB: pair.right)
+                let convertLayoutItem = NSMenuItem(
+                    title: layout == .vertical
+                        ? NSLocalizedString("sidebar.tabContextMenu.convertToVerticalSplit", value: "Convert to Vertical Split", comment: "Split context menu - Switch a side-by-side split to a stacked split")
+                        : NSLocalizedString("sidebar.tabContextMenu.convertToHorizontalSplit", value: "Convert to Horizontal Split", comment: "Split context menu - Switch a stacked split to a side-by-side split"),
+                    action: #selector(convertClosedPinnedSplitLayout(_:)),
+                    keyEquivalent: "")
+                convertLayoutItem.target = self
+                convertLayoutItem.representedObject = [pair.left, pair.right]
+                items.append(convertLayoutItem)
+                items.append(.separator())
             } else if splitMembership == nil {
                 // Pinned tabs are allowed here; `openNewTabAsSplit` demotes a
                 // pinned partner to the normal list (leaving an unopened
@@ -902,7 +926,14 @@ extension Tab: ContextMenuRepresentable {
               let rightURL = membership.rightPane.url, !rightURL.isEmpty else {
             return
         }
-        state.openTwoURLsAsSplit(primaryURL: leftURL, secondaryURL: rightURL)
+        let layout = membership.liveGroup?.layout
+            ?? membership.pinnedDBPair.map {
+                state.pinnedSplitLayout(leftDB: $0.left, rightDB: $0.right)
+            }
+            ?? .vertical
+        state.openTwoURLsAsSplit(primaryURL: leftURL,
+                                 secondaryURL: rightURL,
+                                 layout: layout)
     }
 
     @objc private func copySplitPaneURL(_ sender: NSMenuItem) {
@@ -981,5 +1012,21 @@ extension Tab: ContextMenuRepresentable {
         guard let state = MainBrowserWindowControllersManager.shared.activeWindowController?.browserState,
               let splitId = sender.representedObject as? String else { return }
         state.reverseTabsInSplit(splitId)
+    }
+
+    @MainActor
+    @objc private func convertSplitLayout(_ sender: NSMenuItem) {
+        guard let state = MainBrowserWindowControllersManager.shared.activeWindowController?.browserState,
+              let splitId = sender.representedObject as? String,
+              let group = state.splitGroup(forId: splitId) else { return }
+        state.updateSplitLayout(splitId, layout: group.layout.toggled)
+    }
+
+    @MainActor
+    @objc private func convertClosedPinnedSplitLayout(_ sender: NSMenuItem) {
+        guard let state = MainBrowserWindowControllersManager.shared.activeWindowController?.browserState,
+              let pair = sender.representedObject as? [String], pair.count == 2 else { return }
+        let layout = state.pinnedSplitLayout(leftDB: pair[0], rightDB: pair[1])
+        state.updatePinnedSplitLayout(leftDB: pair[0], rightDB: pair[1], layout: layout.toggled)
     }
 }

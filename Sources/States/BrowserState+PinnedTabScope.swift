@@ -14,6 +14,7 @@ private struct PinnedTabScopeSyncVariant: Equatable {
     let partnerURL: String?
     let partnerTitle: String?
     let partnerFavicon: Data?
+    let layout: SplitLayout?
 }
 
 extension BrowserState {
@@ -103,7 +104,8 @@ extension BrowserState {
             partnerLineageId: partner?.pinnedLineageId,
             partnerURL: partner.flatMap { $0.pinnedUrl ?? $0.url },
             partnerTitle: partner?.storedTitle,
-            partnerFavicon: partner?.cachedFaviconData
+            partnerFavicon: partner?.cachedFaviconData,
+            layout: tab.splitLayout ?? partner?.splitLayout
         )
     }
 

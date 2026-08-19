@@ -622,6 +622,9 @@ class BrowserState {
         if existing.splitPartnerGuid != localTab.splitPartnerGuid {
             existing.splitPartnerGuid = localTab.splitPartnerGuid
         }
+        if existing.splitLayout != localTab.splitLayout {
+            existing.splitLayout = localTab.splitLayout
+        }
 
         if existing.lastSeen != localTab.lastSeen {
             existing.lastSeen = localTab.lastSeen
@@ -2130,7 +2133,8 @@ class BrowserState {
             guard let url = bookmark.url, !url.isEmpty else { continue }
             if let secondaryURL = bookmark.secondaryUrl, !secondaryURL.isEmpty {
                 openTwoURLsAsSplit(primaryURL: URLProcessor.processUserInput(url),
-                                   secondaryURL: URLProcessor.processUserInput(secondaryURL))
+                                   secondaryURL: URLProcessor.processUserInput(secondaryURL),
+                                   layout: bookmark.layout ?? .vertical)
             } else {
                 createTab(URLProcessor.processUserInput(url),
                           customGuid: nil,
@@ -2280,6 +2284,7 @@ class BrowserState {
         let secondaryUrl: String?
         let secondaryTitle: String?
         let favicon: Data?
+        let layout: SplitLayout?
     }
 
     @MainActor
@@ -2426,6 +2431,7 @@ class BrowserState {
                  guid: $0.guid,
                  secondaryUrl: $0.secondaryUrl,
                  secondaryTitle: $0.secondaryTitle,
+                 layout: $0.layout?.rawValue,
                  favicon: $0.favicon)
             }
         )
@@ -2458,7 +2464,8 @@ class BrowserState {
                                              guid: UUID().uuidString,
                                              secondaryUrl: nil,
                                              secondaryTitle: nil,
-                                             favicon: tab.liveFaviconData ?? tab.cachedFaviconData)
+                                             favicon: tab.liveFaviconData ?? tab.cachedFaviconData,
+                                             layout: nil)
             case .split(let tab, _):
                 return splitBookmarkCreationDraft(from: tab)
             }
@@ -2484,7 +2491,8 @@ class BrowserState {
                                      guid: UUID().uuidString,
                                      secondaryUrl: URLProcessor.processUserInput(secondaryURL),
                                      secondaryTitle: secondaryDisplayTitle,
-                                     favicon: primaryTab.liveFaviconData ?? primaryTab.cachedFaviconData)
+                                     favicon: primaryTab.liveFaviconData ?? primaryTab.cachedFaviconData,
+                                     layout: group.layout)
     }
 
     @MainActor
@@ -6914,6 +6922,7 @@ class BrowserState {
                  guid: $0.guid,
                  secondaryUrl: nil,
                  secondaryTitle: nil,
+                 layout: nil,
                  favicon: $0.tab.liveFaviconData ?? $0.tab.cachedFaviconData)
             }
         )
@@ -7012,6 +7021,11 @@ class BrowserState {
 
         let handleLive = tabs.first(where: { $0.guidInLocalDB == handlePinned.guidInLocalDB })
         let partnerLive = tabs.first(where: { $0.guidInLocalDB == partnerPinned.guidInLocalDB })
+        let liveGroup = handleLive.flatMap { splitGroup(forTabId: $0.guid) }
+        let splitLayout = liveGroup?.layout
+            ?? handlePinned.splitLayout
+            ?? partnerPinned.splitLayout
+            ?? .vertical
 
         // Resolve primary/secondary against the live SplitGroup so the
         // saved bookmark mirrors the on-screen orientation.
@@ -7054,6 +7068,7 @@ class BrowserState {
             spaceId: spaceId,
             secondaryUrl: URLProcessor.processUserInput(secondaryURL),
             secondaryTitle: secondaryDisplayTitle,
+            layout: splitLayout.rawValue,
             favicon: primaryPinned.liveFaviconData ?? primaryPinned.cachedFaviconData
         )
 
@@ -7088,7 +7103,7 @@ class BrowserState {
             } else {
                 resolvedSplitId = createSplit(leftTabId: handleLive.guid,
                                               rightTabId: partnerLive.guid,
-                                              layout: .vertical)
+                                              layout: splitLayout)
             }
             if let resolvedSplitId {
                 splitBookmarkBindings[newBookmarkGuid] = resolvedSplitId
@@ -7382,7 +7397,8 @@ class BrowserState {
         openTwoURLsAsSplit(primaryURL: primaryURL,
                            secondaryURL: secondaryURL,
                            groupToken: tokenHex,
-                           insertionIndex: normalTabsIndex)
+                           insertionIndex: normalTabsIndex,
+                           layout: bookmark.layout ?? .vertical)
         return true
     }
 
@@ -7436,6 +7452,7 @@ class BrowserState {
             guard let partnerURL = partnerPinned.url, !partnerURL.isEmpty else {
                 return false
             }
+            let layout = pinnedSplitLayout(leftDB: leftDB, rightDB: rightDB)
             if let handleLive { closeTab(handleLive.guid) }
             if let partnerLive { closeTab(partnerLive.guid) }
             pinnedTab.splitPartnerGuid = nil
@@ -7447,7 +7464,8 @@ class BrowserState {
             openTwoURLsAsSplit(primaryURL: url,
                                secondaryURL: partnerURL,
                                groupToken: tokenHex,
-                               insertionIndex: normalTabsIndex)
+                               insertionIndex: normalTabsIndex,
+                               layout: layout)
             return true
         }
 
@@ -7566,11 +7584,17 @@ class BrowserState {
 
         let primaryTempTab = Tab(guid: -1, url: primaryURL, isActive: false, index: 0, title: primaryTitle, customGuid: nil)
         let secondaryTempTab = Tab(guid: -1, url: secondaryURL, isActive: false, index: 0, title: secondaryTitle, customGuid: nil)
+        let layout = splitBookmarkBindings[bookmarkGuid]
+            .flatMap { splitId in splits.first(where: { $0.id == splitId })?.layout }
+            ?? bookmark.layout
+            ?? .vertical
 
         localStore.moveOrCreatePinnedTab(primaryTempTab, after: afterGuid, profileId: profileId, spaceId: spaceId, newGuid: primaryPinnedGuid)
         localStore.moveOrCreatePinnedTab(secondaryTempTab, after: primaryPinnedGuid, profileId: profileId, spaceId: spaceId, newGuid: secondaryPinnedGuid)
 
-        persistPinnedSplitPair(primaryDB: primaryPinnedGuid, secondaryDB: secondaryPinnedGuid)
+        persistPinnedSplitPair(primaryDB: primaryPinnedGuid,
+                               secondaryDB: secondaryPinnedGuid,
+                               layout: layout)
 
         // If the bookmark is open as a live split, rebind both live panes
         // to the new pinned guids so the running split carries over as a
@@ -7650,7 +7674,8 @@ class BrowserState {
         // relocates the finished pair to it.
         openTwoURLsAsSplit(primaryURL: primaryURL,
                            secondaryURL: secondaryURL,
-                           insertionIndex: index)
+                           insertionIndex: index,
+                           layout: bookmark.layout ?? .vertical)
         bookmarkManager.removeBookmark(bookmark)
     }
 

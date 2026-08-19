@@ -166,3 +166,85 @@ final class TabItemViewSplitLayoutTests: XCTestCase {
             "A 100pt single tab must keep the leading favicon (normal mode), not the centered compact layout.")
     }
 }
+
+final class SplitViewLayoutTests: XCTestCase {
+    func testLayoutTogglePreservesDividerOrientationSemantics() {
+        XCTAssertEqual(SplitLayout.vertical.toggled, .horizontal)
+        XCTAssertEqual(SplitLayout.horizontal.toggled, .vertical)
+    }
+
+    func testDirectionalDropZonesMapToExpectedLayoutAndSlot() {
+        XCTAssertEqual(SplitTabDropContainer.DropZone.left.layout, .vertical)
+        XCTAssertEqual(SplitTabDropContainer.DropZone.right.layout, .vertical)
+        XCTAssertEqual(SplitTabDropContainer.DropZone.top.layout, .horizontal)
+        XCTAssertEqual(SplitTabDropContainer.DropZone.bottom.layout, .horizontal)
+
+        XCTAssertTrue(SplitTabDropContainer.DropZone.left.isPrimarySlot)
+        XCTAssertFalse(SplitTabDropContainer.DropZone.right.isPrimarySlot)
+        XCTAssertTrue(SplitTabDropContainer.DropZone.top.isPrimarySlot)
+        XCTAssertFalse(SplitTabDropContainer.DropZone.bottom.isPrimarySlot)
+    }
+
+    func testCreateDropZoneRecognizesAllFourEdgesAndRejectsCenter() {
+        let area = CGRect(x: 0, y: 0, width: 900, height: 600)
+
+        XCTAssertEqual(
+            SplitTabDropContainer.createDropZone(for: CGPoint(x: 100, y: 300), in: area),
+            .left
+        )
+        XCTAssertEqual(
+            SplitTabDropContainer.createDropZone(for: CGPoint(x: 800, y: 300), in: area),
+            .right
+        )
+        XCTAssertEqual(
+            SplitTabDropContainer.createDropZone(for: CGPoint(x: 450, y: 550), in: area),
+            .top
+        )
+        XCTAssertEqual(
+            SplitTabDropContainer.createDropZone(for: CGPoint(x: 450, y: 50), in: area),
+            .bottom
+        )
+        XCTAssertNil(
+            SplitTabDropContainer.createDropZone(for: CGPoint(x: 450, y: 300), in: area)
+        )
+        XCTAssertNil(
+            SplitTabDropContainer.createDropZone(for: CGPoint(x: -1, y: 300), in: area)
+        )
+    }
+
+    func testCreateDropZoneKeepsExistingLeftRightPriorityAtCorners() {
+        let area = CGRect(x: 0, y: 0, width: 900, height: 600)
+
+        XCTAssertEqual(
+            SplitTabDropContainer.createDropZone(for: CGPoint(x: 50, y: 550), in: area),
+            .left
+        )
+        XCTAssertEqual(
+            SplitTabDropContainer.createDropZone(for: CGPoint(x: 850, y: 50), in: area),
+            .right
+        )
+    }
+
+    func testStackedDividerDragUsesVisualHandleDirection() {
+        let start = CGPoint(x: 100, y: 100)
+
+        XCTAssertEqual(
+            SplitPaneHostView.primaryPaneGrowthDistance(
+                layout: .horizontal,
+                from: start,
+                to: CGPoint(x: 100, y: 140)
+            ),
+            -40,
+            "Dragging upward must shrink the top pane so the divider also moves upward."
+        )
+        XCTAssertEqual(
+            SplitPaneHostView.primaryPaneGrowthDistance(
+                layout: .horizontal,
+                from: start,
+                to: CGPoint(x: 100, y: 60)
+            ),
+            40,
+            "Dragging downward must grow the top pane so the divider also moves downward."
+        )
+    }
+}

@@ -568,21 +568,35 @@ final class SplitPaneHostView: NSView {
         activeMagneticSnap = nil
     }
 
+    /// Signed drag distance that grows the primary pane when positive.
+    /// In a stacked split the primary pane sits above the divider, so dragging
+    /// downward grows it even though AppKit's y coordinate decreases.
+    static func primaryPaneGrowthDistance(layout: SplitLayout,
+                                          from start: CGPoint,
+                                          to current: CGPoint) -> CGFloat {
+        switch layout {
+        case .vertical:
+            return current.x - start.x
+        case .horizontal:
+            return start.y - current.y
+        }
+    }
+
     private func continueDrag(at event: NSEvent) {
         let location = convert(event.locationInWindow, from: nil)
         let usable: CGFloat
-        let delta: CGFloat
         switch paneLayout {
         case .vertical:
             usable = bounds.width - Self.dividerThickness
-            guard usable > 0 else { return }
-            delta = (location.x - dragStartLocation.x) / usable
         case .horizontal:
             usable = bounds.height - Self.dividerThickness
-            guard usable > 0 else { return }
-            // y grows upward; primary sits on top, so drag-up = larger primary.
-            delta = (location.y - dragStartLocation.y) / usable
         }
+        guard usable > 0 else { return }
+        let delta = Self.primaryPaneGrowthDistance(
+            layout: paneLayout,
+            from: dragStartLocation,
+            to: location
+        ) / usable
         let raw = clamp(dragStartRatio + delta)
         let snapTarget = magneticSnapTarget(for: raw, usable: usable)
         emitSnapFeedbackIfNeeded(snapTarget)

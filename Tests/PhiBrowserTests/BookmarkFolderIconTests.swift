@@ -10,6 +10,23 @@ import XCTest
 
 @MainActor
 final class BookmarkFolderIconTests: XCTestCase {
+    func testSplitBookmarkContextMenuOffersLayoutConversion() {
+        let bookmark = Bookmark(title: "Split",
+                                url: "https://left.example",
+                                secondaryUrl: "https://right.example",
+                                layout: .vertical)
+        let menu = NSMenu()
+
+        bookmark.makeContextMenu(on: menu, source: .sidebar)
+
+        let title = NSLocalizedString(
+            "sidebar.tabContextMenu.convertToVerticalSplit",
+            value: "Convert to Vertical Split",
+            comment: "Split context menu - Switch a side-by-side split to a stacked split"
+        )
+        XCTAssertTrue(menu.items.contains { $0.title == title })
+    }
+
     func testSidebarFolderContextMenuPlacesChangeIconAfterRename() {
         let folder = Bookmark(folderTitle: "Folder")
         let menu = NSMenu()

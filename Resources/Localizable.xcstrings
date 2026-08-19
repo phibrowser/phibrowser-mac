@@ -19169,6 +19169,18 @@
         }
       }
     },
+    "browser.splitDropHint.bottomThird" : {
+      "comment" : "Drop-zone hint shown when dragging a tab over the bottom third of the page",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Add Bottom Split"
+          }
+        }
+      }
+    },
     "browser.splitDropHint.leftHalf" : {
       "comment" : "Drop-zone hint shown when dragging a tab over the left/primary pane of a vertical split to replace it",
       "extractionState" : "extracted_with_value",
@@ -19465,6 +19477,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "取代上方"
+          }
+        }
+      }
+    },
+    "browser.splitDropHint.topThird" : {
+      "comment" : "Drop-zone hint shown when dragging a tab over the top third of the page",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Add Top Split"
           }
         }
       }
@@ -69768,6 +69792,30 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "關閉"
+          }
+        }
+      }
+    },
+    "sidebar.tabContextMenu.convertToHorizontalSplit" : {
+      "comment" : "Split context menu - Switch a stacked split to a side-by-side split",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Convert to Horizontal Split"
+          }
+        }
+      }
+    },
+    "sidebar.tabContextMenu.convertToVerticalSplit" : {
+      "comment" : "Split context menu - Switch a side-by-side split to a stacked split",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Convert to Vertical Split"
           }
         }
       }

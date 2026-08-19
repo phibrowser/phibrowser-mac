@@ -9,6 +9,8 @@ import SwiftData
 /// Modification record:
 /// - V10 adds a generic icon identifier to tab data. Bookmark folders use it
 ///   first, while the field remains available to other tab kinds later.
+/// - V10 stores the optional split layout for split bookmarks and pinned
+///   split rows so stacked arrangements survive closing and reopening.
 enum TabDataModelSchemaV10: VersionedSchema {
     static var versionIdentifier = Schema.Version(10, 0, 0)
 
@@ -57,6 +59,9 @@ enum TabDataModelSchemaV10: VersionedSchema {
         var secondaryUrl: URL?
         var secondaryTitle: String?
         var splitPartnerGuid: String?
+        /// Raw split layout (`vertical` side-by-side, `horizontal` stacked).
+        /// Nil keeps existing records compatible and defaults to side-by-side.
+        var layout: String?
         var lastSeen: Date?
         /// Stable resource identifier. Bookmark folders currently consume it;
         /// other tab kinds retain the default until they add icon support.

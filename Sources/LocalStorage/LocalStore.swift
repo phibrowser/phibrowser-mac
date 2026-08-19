@@ -364,14 +364,84 @@ extension LocalStore {
                 let predicate = #Predicate<TabDataModel> { $0.guid == guid }
                 let descriptor = FetchDescriptor<TabDataModel>(predicate: predicate)
                 if let tab = try context.fetch(descriptor).first {
-                    if tab.splitPartnerGuid == partnerGuid {
+                    let layoutAlreadyCleared = partnerGuid != nil || tab.layout == nil
+                    if tab.splitPartnerGuid == partnerGuid, layoutAlreadyCleared {
                         return
                     }
                     tab.splitPartnerGuid = partnerGuid
+                    if partnerGuid == nil {
+                        tab.layout = nil
+                    }
                     tab.updatedDate = Date()
                 }
             } catch {
                 AppLogError("[LocalStore] Failed to update split partner: \(error)")
+            }
+        }
+    }
+
+    /// Persists both directions of a pinned split and its layout in one store
+    /// transaction so subscribers never observe a paired row without the
+    /// orientation that belongs to it.
+    func updatePinnedSplitPair(primaryGuid: String,
+                               secondaryGuid: String,
+                               layout: String) {
+        performBackgroundWrite { context in
+            do {
+                let primaryPredicate = #Predicate<TabDataModel> { $0.guid == primaryGuid }
+                let secondaryPredicate = #Predicate<TabDataModel> { $0.guid == secondaryGuid }
+                guard let primary = try context.fetch(
+                    FetchDescriptor<TabDataModel>(predicate: primaryPredicate)
+                ).first,
+                let secondary = try context.fetch(
+                    FetchDescriptor<TabDataModel>(predicate: secondaryPredicate)
+                ).first,
+                primary.dataType == .pinnedTab,
+                secondary.dataType == .pinnedTab else {
+                    AppLogWarn("[LocalStore] Pinned split pair not found for update")
+                    return
+                }
+                let now = Date()
+                primary.splitPartnerGuid = secondaryGuid
+                primary.layout = layout
+                primary.updatedDate = now
+                secondary.splitPartnerGuid = primaryGuid
+                secondary.layout = layout
+                secondary.updatedDate = now
+            } catch {
+                AppLogError("[LocalStore] Failed to update pinned split pair: \(error)")
+            }
+        }
+    }
+
+    /// Updates the layout of an existing pinned split without changing its
+    /// persisted partner linkage.
+    func updatePinnedSplitLayout(firstGuid: String,
+                                 secondGuid: String,
+                                 layout: String) {
+        performBackgroundWrite { context in
+            do {
+                let firstPredicate = #Predicate<TabDataModel> { $0.guid == firstGuid }
+                let secondPredicate = #Predicate<TabDataModel> { $0.guid == secondGuid }
+                guard let first = try context.fetch(
+                    FetchDescriptor<TabDataModel>(predicate: firstPredicate)
+                ).first,
+                let second = try context.fetch(
+                    FetchDescriptor<TabDataModel>(predicate: secondPredicate)
+                ).first,
+                first.dataType == .pinnedTab,
+                second.dataType == .pinnedTab else {
+                    AppLogWarn("[LocalStore] Pinned split rows not found for layout update")
+                    return
+                }
+                guard first.layout != layout || second.layout != layout else { return }
+                let now = Date()
+                first.layout = layout
+                first.updatedDate = now
+                second.layout = layout
+                second.updatedDate = now
+            } catch {
+                AppLogError("[LocalStore] Failed to update pinned split layout: \(error)")
             }
         }
     }
@@ -665,6 +735,7 @@ private struct PinnedTabSnapshot: Equatable {
     let lastSeen: Date?
     let updatedDate: Date
     let splitPartnerGuid: String?
+    let layout: String?
     let lineageId: String?
     let profileId: String?
     let spaceId: String?
@@ -677,6 +748,7 @@ private struct PinnedTabSnapshot: Equatable {
         lastSeen = model.lastSeen
         updatedDate = model.updatedDate
         splitPartnerGuid = model.splitPartnerGuid
+        layout = model.layout
         lineageId = model.pinLineageId
         profileId = model.profileId
         spaceId = model.spaceId

@@ -149,6 +149,16 @@ extension Bookmark: ContextMenuRepresentable {
                                              keyEquivalent: "")
                 openInSplit.target = self
                 menu.addItem(openInSplit)
+            } else {
+                let splitLayout = layout ?? .vertical
+                let convertLayout = NSMenuItem(
+                    title: splitLayout == .vertical
+                        ? NSLocalizedString("sidebar.tabContextMenu.convertToVerticalSplit", value: "Convert to Vertical Split", comment: "Split context menu - Switch a side-by-side split to a stacked split")
+                        : NSLocalizedString("sidebar.tabContextMenu.convertToHorizontalSplit", value: "Convert to Horizontal Split", comment: "Split context menu - Switch a stacked split to a side-by-side split"),
+                    action: #selector(convertSplitLayout),
+                    keyEquivalent: "")
+                convertLayout.target = self
+                menu.addItem(convertLayout)
             }
         }
 
@@ -254,7 +264,19 @@ extension Bookmark: ContextMenuRepresentable {
         guard let url, !url.isEmpty,
               let secondaryURL = secondaryUrl, !secondaryURL.isEmpty,
               let state = MainBrowserWindowControllersManager.shared.activeWindowController?.browserState else { return }
-        state.openTwoURLsAsSplit(primaryURL: url, secondaryURL: secondaryURL)
+        state.openTwoURLsAsSplit(primaryURL: url,
+                                 secondaryURL: secondaryURL,
+                                 layout: layout ?? .vertical)
+    }
+
+    @MainActor
+    @objc private func convertSplitLayout() {
+        guard secondaryUrl?.isEmpty == false,
+              let state = MainBrowserWindowControllersManager.shared.activeWindowController?.browserState else {
+            return
+        }
+        state.updateBookmarkSplitLayout(bookmarkGuid: guid,
+                                        layout: (layout ?? .vertical).toggled)
     }
 
     /// Copies one URL of a split-view bookmark to the pasteboard. The menu

@@ -18,6 +18,9 @@ class Bookmark: WebContentRepresentable {
     /// even when `secondaryUrl` is set — callers fall back to the secondary
     /// URL's host when this is nil/empty.
     @Published var secondaryTitle: String?
+    /// Layout restored when this split-view bookmark is opened. Nil for a
+    /// regular bookmark; legacy split bookmarks default to side-by-side.
+    @Published var layout: SplitLayout?
     /// Stable icon resource identifier persisted by `TabDataModel.icon`.
     @Published var folderIconName: String
     @Published var faviconUrl: String?
@@ -56,6 +59,7 @@ class Bookmark: WebContentRepresentable {
          url: String? = nil,
          secondaryUrl: String? = nil,
          secondaryTitle: String? = nil,
+         layout: SplitLayout? = nil,
          profileId: String? = nil,
          faviconData: Data? = nil,
          folderIconName: String = "default",
@@ -69,6 +73,7 @@ class Bookmark: WebContentRepresentable {
         self.url = url
         self.secondaryUrl = secondaryUrl
         self.secondaryTitle = secondaryTitle
+        self.layout = layout
         self.cachedFaviconData = faviconData
         self.folderIconName = folderIconName
         self.lastSeen = lastSeen
@@ -430,6 +435,16 @@ class BookmarkManager: ObservableObject {
         bookmark.folderIconName = iconName
         browserState?.localStore.updateTabIcon(guid, icon: iconName)
     }
+
+    func updateSplitLayout(guid: String, layout: SplitLayout) {
+        guard let bookmark = bookmarkIndex[guid],
+              bookmark.secondaryUrl?.isEmpty == false,
+              bookmark.layout != layout else {
+            return
+        }
+        bookmark.layout = layout
+        browserState?.localStore.updateBookmarkSplitLayout(guid, layout: layout.rawValue)
+    }
     
     func updateBookmark(guid: String,
                         title: String? = nil,
@@ -581,6 +596,7 @@ class BookmarkManager: ObservableObject {
                           primaryURL: String,
                           secondaryURL: String,
                           secondaryTitle: String?,
+                          layout: SplitLayout = .vertical,
                           to parent: Bookmark? = nil,
                           targetIndex: Int? = nil,
                           primaryFaviconData: Data? = nil) {
@@ -594,6 +610,7 @@ class BookmarkManager: ObservableObject {
                                                 spaceId: spaceId,
                                                 secondaryUrl: secondaryURL,
                                                 secondaryTitle: secondaryTitle,
+                                                layout: layout.rawValue,
                                                 favicon: faviconDataForNewBookmark(url: primaryURL, explicitData: primaryFaviconData))
     }
 
@@ -824,11 +841,15 @@ extension Bookmark {
         let resolvedURL = isFolder ? nil : model.url.absoluteString
         let resolvedSecondary = isFolder ? nil : model.secondaryUrl?.absoluteString
         let resolvedSecondaryTitle = isFolder ? nil : model.secondaryTitle
+        let resolvedLayout: SplitLayout? = resolvedSecondary == nil
+            ? nil
+            : model.layout.flatMap(SplitLayout.init(rawValue:)) ?? .vertical
         self.init(guid: model.guid,
                   title: Self.sidebarTitle(from: model),
                   url: resolvedURL,
                   secondaryUrl: resolvedSecondary,
                   secondaryTitle: resolvedSecondaryTitle,
+                  layout: resolvedLayout,
                   profileId: model.profile?.profileId ?? model.profileId,
                   faviconData: model.favicon,
                   folderIconName: model.icon,
@@ -843,6 +864,9 @@ extension Bookmark {
         url = isFolder ? nil : model.url.absoluteString
         secondaryUrl = isFolder ? nil : model.secondaryUrl?.absoluteString
         secondaryTitle = isFolder ? nil : model.secondaryTitle
+        layout = secondaryUrl == nil
+            ? nil
+            : model.layout.flatMap(SplitLayout.init(rawValue:)) ?? .vertical
         cachedFaviconData = model.favicon
         folderIconName = model.icon
         lastSeen = isFolder ? nil : model.lastSeen

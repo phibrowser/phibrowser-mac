@@ -14,6 +14,12 @@ enum SplitLayout: String {
     /// Stacked, divided by a horizontal bar.
     case horizontal
 
+    /// Returns the other supported orientation. `vertical` is side-by-side
+    /// and `horizontal` is stacked because the cases name the divider axis.
+    var toggled: SplitLayout {
+        self == .vertical ? .horizontal : .vertical
+    }
+
     /// Parse a bridge-supplied layout string. Returns nil on unknown values
     /// so callers can log + decide whether to fall back rather than silently
     /// mis-orient a split (a horizontal split rendered vertical, etc.).
@@ -304,13 +310,17 @@ extension BrowserState {
               let rightURL = rightPinned.url, !rightURL.isEmpty else {
             return
         }
+        let layout = pinnedSplitLayout(leftDB: leftDB, rightDB: rightDB)
         leftPinned.splitPartnerGuid = nil
         rightPinned.splitPartnerGuid = nil
         localStore.updateTabSplitPartner(leftDB, partnerGuid: nil)
         localStore.updateTabSplitPartner(rightDB, partnerGuid: nil)
         localStore.removePinnedTab(leftPinned, profileId: profileId, spaceId: spaceId)
         localStore.removePinnedTab(rightPinned, profileId: profileId, spaceId: spaceId)
-        openTwoURLsAsSplit(primaryURL: leftURL, secondaryURL: rightURL, insertionIndex: insertionIndex)
+        openTwoURLsAsSplit(primaryURL: leftURL,
+                           secondaryURL: rightURL,
+                           insertionIndex: insertionIndex,
+                           layout: layout)
     }
 
     /// True when one of the tabs in the split is currently the focusing tab.
@@ -551,6 +561,7 @@ extension BrowserState {
         guard let index = splits.firstIndex(where: { $0.id == splitId }) else { return }
         splits[index].layout = layout
         splits[index].ratio = ratio
+        persistRepresentedSplitLayout(splitId: splitId, layout: layout)
     }
 
     @MainActor
@@ -672,6 +683,18 @@ extension BrowserState {
         ChromiumLauncher.sharedInstance().bridge?.updateSplitLayout(splitId,
                                                                     layout: layout.rawValue,
                                                                     windowId: windowId.int64Value)
+        persistRepresentedSplitLayout(splitId: splitId, layout: layout)
+    }
+
+    private func persistRepresentedSplitLayout(splitId: String, layout: SplitLayout) {
+        if let group = splits.first(where: { $0.id == splitId }), group.isPinned,
+           let primaryDB = tabs.first(where: { $0.guid == group.primaryTabId })?.guidInLocalDB,
+           let secondaryDB = tabs.first(where: { $0.guid == group.secondaryTabId })?.guidInLocalDB {
+            updatePinnedSplitLayout(leftDB: primaryDB, rightDB: secondaryDB, layout: layout)
+        }
+        for bookmarkGuid in splitBookmarkBindings.compactMap({ $0.value == splitId ? $0.key : nil }) {
+            bookmarkManager.updateSplitLayout(guid: bookmarkGuid, layout: layout)
+        }
     }
 
     /// Push the new divider position to Chromium. Call on drag-end, not on every
@@ -805,7 +828,9 @@ extension BrowserState {
         secondaryLive.isPinned = true
         updateNormalTabs()
 
-        persistPinnedSplitPair(primaryDB: primaryDB, secondaryDB: secondaryDB)
+        persistPinnedSplitPair(primaryDB: primaryDB,
+                               secondaryDB: secondaryDB,
+                               layout: splits[groupIndex].layout)
         return (primaryDB, secondaryDB)
     }
 
@@ -847,16 +872,38 @@ extension BrowserState {
     /// the persisted `splitPartnerGuid` on its next emission and the merged
     /// cell renders correctly from then on. Callers should not rely on the
     /// in-memory patch landing.
-    func persistPinnedSplitPair(primaryDB: String, secondaryDB: String) {
+    func persistPinnedSplitPair(primaryDB: String,
+                                secondaryDB: String,
+                                layout: SplitLayout) {
         guard !primaryDB.isEmpty, !secondaryDB.isEmpty else { return }
-        localStore.updateTabSplitPartner(primaryDB, partnerGuid: secondaryDB)
-        localStore.updateTabSplitPartner(secondaryDB, partnerGuid: primaryDB)
+        localStore.updatePinnedSplitPair(primaryGuid: primaryDB,
+                                         secondaryGuid: secondaryDB,
+                                         layout: layout.rawValue)
         if let primaryPinned = pinnedTabs.first(where: { $0.guidInLocalDB == primaryDB }) {
             primaryPinned.splitPartnerGuid = secondaryDB
+            primaryPinned.splitLayout = layout
         }
         if let secondaryPinned = pinnedTabs.first(where: { $0.guidInLocalDB == secondaryDB }) {
             secondaryPinned.splitPartnerGuid = primaryDB
+            secondaryPinned.splitLayout = layout
         }
+    }
+
+    func pinnedSplitLayout(leftDB: String, rightDB: String) -> SplitLayout {
+        pinnedTabs.first(where: { $0.guidInLocalDB == leftDB })?.splitLayout
+            ?? pinnedTabs.first(where: { $0.guidInLocalDB == rightDB })?.splitLayout
+            ?? .vertical
+    }
+
+    func updatePinnedSplitLayout(leftDB: String,
+                                 rightDB: String,
+                                 layout: SplitLayout) {
+        guard !leftDB.isEmpty, !rightDB.isEmpty else { return }
+        localStore.updatePinnedSplitLayout(firstGuid: leftDB,
+                                           secondGuid: rightDB,
+                                           layout: layout.rawValue)
+        pinnedTabs.first(where: { $0.guidInLocalDB == leftDB })?.splitLayout = layout
+        pinnedTabs.first(where: { $0.guidInLocalDB == rightDB })?.splitLayout = layout
     }
 
     /// Stamp the `splitPartnerGuid` linkage onto the in-memory pinned records
@@ -895,13 +942,13 @@ extension BrowserState {
                   let secondaryPinned = pinnedByDB[secondaryDB] else {
                 continue
             }
-            if primaryPinned.splitPartnerGuid != secondaryDB {
-                primaryPinned.splitPartnerGuid = secondaryDB
-                localStore.updateTabSplitPartner(primaryDB, partnerGuid: secondaryDB)
-            }
-            if secondaryPinned.splitPartnerGuid != primaryDB {
-                secondaryPinned.splitPartnerGuid = primaryDB
-                localStore.updateTabSplitPartner(secondaryDB, partnerGuid: primaryDB)
+            if primaryPinned.splitPartnerGuid != secondaryDB ||
+               secondaryPinned.splitPartnerGuid != primaryDB ||
+               primaryPinned.splitLayout != group.layout ||
+               secondaryPinned.splitLayout != group.layout {
+                persistPinnedSplitPair(primaryDB: primaryDB,
+                                       secondaryDB: secondaryDB,
+                                       layout: group.layout)
             }
         }
     }
@@ -1032,6 +1079,7 @@ extension BrowserState {
         pinnedSplitRecreateInFlight.insert(rightDBGuid)
         let leftTabId = leftLive.guid
         let rightTabId = rightLive.guid
+        let layout = pinnedSplitLayout(leftDB: leftDBGuid, rightDB: rightDBGuid)
         // Defer to the next runloop so the surrounding new-tab event finishes
         // unwinding before we reach back into Chromium. Calling `createSplit`
         // synchronously inside `handleNewTabFromChromium` can crash because
@@ -1064,7 +1112,7 @@ extension BrowserState {
             }
             self.createSplit(leftTabId: leftTabId,
                              rightTabId: rightTabId,
-                             layout: .vertical)
+                             layout: layout)
         }
     }
 
@@ -1148,7 +1196,7 @@ extension BrowserState {
         }
     }
 
-    /// Forms a vertical split between a bookmark and `partnerTabId`. If the
+    /// Forms a split between a bookmark and `partnerTabId`. If the
     /// bookmark currently has an attached live tab that is distinct from
     /// the partner and not already in a split, detaches that tab from the
     /// bookmark binding and uses it as the new pane directly — the user
@@ -1162,7 +1210,8 @@ extension BrowserState {
     @discardableResult
     func formSplitFromBookmark(bookmarkGuid: String,
                                partnerTabId: Int,
-                               newTabSlot: SplitSlot) -> Bool {
+                               newTabSlot: SplitSlot,
+                               layout: SplitLayout = .vertical) -> Bool {
         guard let bookmark = bookmarkManager.bookmark(withGuid: bookmarkGuid),
               !bookmark.isFolder,
               let url = bookmark.url, !url.isEmpty,
@@ -1190,11 +1239,11 @@ extension BrowserState {
             case .left:
                 splitId = createSplit(leftTabId: attachedLiveTab.guid,
                                       rightTabId: partnerTabId,
-                                      layout: .vertical)
+                                      layout: layout)
             case .right:
                 splitId = createSplit(leftTabId: partnerTabId,
                                       rightTabId: attachedLiveTab.guid,
-                                      layout: .vertical)
+                                      layout: layout)
             }
             return splitId != nil
         }
@@ -1206,23 +1255,28 @@ extension BrowserState {
         // opposite side.
         if attachedLiveTab?.guid == partnerTabId {
             let oppositeSlot: SplitSlot = (newTabSlot == .left) ? .right : .left
-            return openNewTabAsSplit(partnerTabId: partnerTabId, newTabSlot: oppositeSlot)
+            return openNewTabAsSplit(partnerTabId: partnerTabId,
+                                     newTabSlot: oppositeSlot,
+                                     layout: layout)
         }
         // Bookmark has no live representation: materialize a fresh unbound
         // tab on the bookmark URL as the new pane.
         return openNewTabAsSplit(partnerTabId: partnerTabId,
                                  newTabSlot: newTabSlot,
-                                 partnerNavigateURL: URLProcessor.processUserInput(url))
+                                 partnerNavigateURL: URLProcessor.processUserInput(url),
+                                 layout: layout)
     }
 
     /// Opens a fresh tab (on `partnerNavigateURL` when given, else a
     /// new-tab page) and, once Chromium echoes it back, pairs it with
-    /// `partnerTabId` into a vertical split.
+    /// `partnerTabId` into a split.
     /// - Parameters:
     ///   - newTabSlot: Where the new tab should end up. Defaults to `.right`
     ///     (right-click "Open as Split" — right-clicked tab stays on the
     ///     left, new tab opens on the right). Pass `.left` to drop the new
     ///     tab on the left and leave the partner on the right.
+    ///   - layout: Orientation of the resulting split (`.vertical` = side-by-
+    ///     side, `.horizontal` = stacked). Defaults to `.vertical`.
     ///   - partnerNavigateURL: When non-nil, the new pane is created directly
     ///     on this URL instead of landing on a new-tab page first, so the
     ///     NTP never flashes before the real page. Used by the
@@ -1237,7 +1291,8 @@ extension BrowserState {
                            partnerNavigateURL: String? = nil,
                            boundBookmarkGuid: String? = nil,
                            insertionIndex: Int? = nil,
-                           closePartnerOnTimeout: Bool = false) -> Bool {
+                           closePartnerOnTimeout: Bool = false,
+                           layout: SplitLayout = .vertical) -> Bool {
         guard splitGroup(forTabId: partnerTabId) == nil,
               ChromiumLauncher.sharedInstance().bridge != nil else {
             return false
@@ -1252,6 +1307,7 @@ extension BrowserState {
         pendingSplitPartnerByCustomGuid[pendingGuid] = PendingSplitPartner(
             partnerTabId: partnerTabId,
             newTabSlot: newTabSlot,
+            layout: layout,
             boundBookmarkGuid: boundBookmarkGuid,
             insertionIndex: insertionIndex,
             closePartnerOnTimeout: closePartnerOnTimeout
@@ -1404,11 +1460,11 @@ extension BrowserState {
         case .right:
             createdSplitId = createSplit(leftTabId: pending.partnerTabId,
                                          rightTabId: tab.guid,
-                                         layout: .vertical)
+                                         layout: pending.layout)
         case .left:
             createdSplitId = createSplit(leftTabId: tab.guid,
                                          rightTabId: pending.partnerTabId,
-                                         layout: .vertical)
+                                         layout: pending.layout)
         }
         // Closed-split drop: both panes were just materialized here, so they
         // sit at the tail of the strip. Record the requested drop index
@@ -1542,13 +1598,15 @@ extension BrowserState {
                             secondaryURL: String,
                             bookmarkGuid: String? = nil,
                             groupToken: String? = nil,
-                            insertionIndex: Int? = nil) {
+                            insertionIndex: Int? = nil,
+                            layout: SplitLayout = .vertical) {
         let pendingGuid = SplitPendingGuid.primary.mint()
         pendingPrimarySplitTargetByGuid[pendingGuid] = PendingPrimarySplit(
             secondaryURL: secondaryURL,
             boundBookmarkGuid: bookmarkGuid,
             groupToken: groupToken,
-            insertionIndex: insertionIndex
+            insertionIndex: insertionIndex,
+            layout: layout
         )
         createTab(primaryURL, customGuid: pendingGuid, focusAfterCreate: true)
         schedulePendingPrimarySplitCleanup(pendingGuid: pendingGuid)
@@ -1605,7 +1663,8 @@ extension BrowserState {
                           newTabSlot: .right,
                           partnerNavigateURL: pending.secondaryURL,
                           boundBookmarkGuid: pending.boundBookmarkGuid,
-                          insertionIndex: pending.insertionIndex)
+                          insertionIndex: pending.insertionIndex,
+                          layout: pending.layout)
     }
 
 }
@@ -1626,6 +1685,9 @@ struct PendingSplitPartner {
     let partnerTabId: Int
     /// Which slot the new tab should take in the resulting split.
     let newTabSlot: SplitSlot
+    /// Layout for the resulting split. Needed because the partner tab arrives
+    /// asynchronously after a top/bottom drag requested a stacked split.
+    let layout: SplitLayout
     /// Optional bookmark guid to rebind to the new pane after the throttle
     /// marker is cleared. Used by the split-bookmark open flow so the
     /// bookmark cell stays in sync with the open split.
@@ -1670,4 +1732,6 @@ struct PendingPrimarySplit {
     /// split. Threaded through to `PendingSplitPartner.insertionIndex` so the
     /// pair lands at the drop spot instead of the strip's end.
     var insertionIndex: Int? = nil
+    /// Layout to apply once both asynchronously-created panes are available.
+    var layout: SplitLayout = .vertical
 }

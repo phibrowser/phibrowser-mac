@@ -4,6 +4,7 @@
 // found in the LICENSE file.
 
 import AppKit
+import SwiftData
 import XCTest
 @testable import Phi
 
@@ -128,6 +129,49 @@ final class BrowserStateBookmarkLayoutTests: XCTestCase {
         XCTAssertNil(state.pendingPrimarySplitTargetByGuid.values.first?.boundBookmarkGuid)
     }
 
+    func testOpeningSplitBookmarkRestoresPersistedLayout() throws {
+        let state = try makeState()
+        let bookmark = try createBookmark(in: state,
+                                          guid: "stacked-bookmark",
+                                          url: "https://primary.example",
+                                          secondaryUrl: "https://secondary.example",
+                                          layout: .horizontal)
+
+        XCTAssertEqual(bookmark.layout, .horizontal)
+
+        state.openBookmark(bookmark)
+
+        XCTAssertEqual(state.pendingPrimarySplitTargetByGuid.values.first?.layout, .horizontal)
+    }
+
+    func testLegacySplitBookmarkDefaultsToSideBySideLayout() throws {
+        let state = try makeState()
+        let bookmark = try createBookmark(in: state,
+                                          guid: "legacy-split-bookmark",
+                                          url: "https://primary.example",
+                                          secondaryUrl: "https://secondary.example")
+
+        XCTAssertEqual(bookmark.layout, .vertical)
+    }
+
+    func testChangingSplitBookmarkLayoutUpdatesRuntimeAndStore() throws {
+        let state = try makeState()
+        let bookmark = try createBookmark(in: state,
+                                          guid: "convert-split-bookmark",
+                                          url: "https://primary.example",
+                                          secondaryUrl: "https://secondary.example")
+
+        state.updateBookmarkSplitLayout(bookmarkGuid: bookmark.guid, layout: .horizontal)
+
+        XCTAssertEqual(bookmark.layout, .horizontal)
+        XCTAssertTrue(waitUntil {
+            guard let context = state.localStore.getMainContext() else { return false }
+            return (try? context.fetch(FetchDescriptor<TabDataModel>()).first(where: {
+                $0.guid == bookmark.guid
+            })?.layout) == SplitLayout.horizontal.rawValue
+        })
+    }
+
     func testSwitchingToComfortableClearsPrimaryPendingSplitBookmarkBinding() throws {
         let state = try makeState()
         let bookmarkGuid = "split-bookmark-primary-pending"
@@ -207,14 +251,16 @@ final class BrowserStateBookmarkLayoutTests: XCTestCase {
     private func createBookmark(in state: BrowserState,
                                 guid: String,
                                 url: String,
-                                secondaryUrl: String? = nil) throws -> Bookmark {
+                                secondaryUrl: String? = nil,
+                                layout: SplitLayout? = nil) throws -> Bookmark {
         state.localStore.createBookmark(url: url,
                                         title: "Bookmark",
                                         profileId: state.profileId,
                                         parentId: nil,
                                         guid: guid,
                                         spaceId: state.spaceId,
-                                        secondaryUrl: secondaryUrl)
+                                        secondaryUrl: secondaryUrl,
+                                        layout: layout?.rawValue)
         XCTAssertTrue(waitUntil {
             state.bookmarkManager.bookmark(withGuid: guid) != nil
         })

@@ -34,19 +34,42 @@ final class SplitTabDropContainer: NSView {
     /// split" zone, measured from each side edge.
     private static let edgeDropZoneFraction: CGFloat = 1.0 / 3.0
 
-    /// Insets the visible drop hint inwards from the zone rectangle so it
-    /// reads as a card rather than a hard fill that runs into the rounded
-    /// page background. Fractional so the card scales with window size —
-    /// fixed-pt insets shrink the relative padding on a wide window, and
-    /// the Figma's cards keep a consistent ~10/9% breathing room.
-    private static let dropHintHorizontalInsetFraction: CGFloat = 0.10
-    private static let dropHintVerticalInsetFraction: CGFloat = 0.09
-    /// Floor so the padding doesn't collapse on a narrow window.
-    private static let dropHintHorizontalInsetMinimum: CGFloat = 24
-    private static let dropHintVerticalInsetMinimum: CGFloat = 24
+    /// Reference geometry from Figma node 5653:25780. Visual hint cards scale
+    /// uniformly inside the page area so wide or tall windows cannot stretch
+    /// them back into the neighboring directional cards. Hit testing remains
+    /// based on the edge thirds above and is intentionally independent.
+    private static let dropHintReferenceSize = CGSize(width: 1290, height: 689)
+    private static let sideDropHintReferenceSize = CGSize(width: 160, height: 460)
+    private static let horizontalDropHintReferenceSize = CGSize(width: 300, height: 120)
+    private static let sideDropHintReferenceInset: CGFloat = 14
+    private static let horizontalDropHintReferenceInset: CGFloat = 18
+    private static let activeDropHintScale: CGFloat = 1.1
     private static let dropHintCornerRadius: CGFloat = 32
-    private static let dropHintLineWidth: CGFloat = 2
-    private static let dropHintLineDashPattern: [NSNumber] = [8, 6]
+    private static let dropHintLineWidth: CGFloat = 1
+    private static let dropHintLineDashPattern: [NSNumber] = [8, 10]
+    private static let dropHintWhiteOverlayOpacity: CGFloat = 0.60
+    private static let dropHintLabelHorizontalInset: CGFloat = 16
+    private static let dropHintLabelVerticalInset: CGFloat = 12
+    private static let dropHintAttractAnimationDuration: CFTimeInterval = 0.16
+    private static let dropHintFollowAnimationDuration: CFTimeInterval = 0.12
+    private static let dropHintSettleAnimationDuration: CFTimeInterval = 0.20
+    // Approach closes the primary-axis gap in one animated target. Follow uses
+    // lower gains so pointer tremor becomes sub-point card movement.
+    private static let approachingPrimaryAxisGain: CGFloat = 1.0
+    private static let approachingSecondaryAxisGain: CGFloat = 0
+    private static let dropHintApproachCaptureDepth: CGFloat = 2
+    private static let followingPrimaryAxisGain: CGFloat = 0.30
+    private static let followingSecondaryAxisGain: CGFloat = 0.10
+    private static let dropHintContainmentTolerance: CGFloat = 1
+    private static let dropHintZoneExitTolerance: CGFloat = 12
+    /// Portion of the page width/height available to each directional card.
+    /// `0.5` reaches the center line; `0.45` leaves a 10% central dead band.
+    /// Values are constrained to the minimum needed to contain the expanded
+    /// card...0.5. Initial activation remains based on the edge thirds above.
+    static let dropHintMovementRangeFraction: CGFloat = 0.25
+    /// Scales only the space in which the card can translate, excluding the
+    /// card's own width or height from the configured movement range.
+    static let dropHintMovementTravelScale: CGFloat = 0.25
     /// Overall opacity of the frosted-glass card. Kept at 1.0 so the
     /// material's own translucency carries the see-through effect —
     /// `NSGlassEffectView` and `.fullScreenUI` already let page content
@@ -104,11 +127,44 @@ final class SplitTabDropContainer: NSView {
         case replace(splitId: String)
     }
 
+    private enum HintFrameTransition {
+        case attract
+        case follow
+        case settle
+
+        var duration: CFTimeInterval {
+            switch self {
+            case .attract: return dropHintAttractAnimationDuration
+            case .follow: return dropHintFollowAnimationDuration
+            case .settle: return dropHintSettleAnimationDuration
+            }
+        }
+
+        var timingFunction: CAMediaTimingFunction {
+            switch self {
+            case .attract:
+                return CAMediaTimingFunction(name: .easeOut)
+            case .follow:
+                return CAMediaTimingFunction(name: .linear)
+            case .settle:
+                return CAMediaTimingFunction(name: .easeInEaseOut)
+            }
+        }
+    }
+
     weak var browserState: BrowserState?
 
+    /// Groups every material-backed surface element under one transform. The
+    /// view is presentation-only and must never intercept Chromium input.
+    private final class HintSurfaceView: NSView {
+        override func hitTest(_ point: NSPoint) -> NSView? { nil }
+    }
+
     private struct HintCard {
+        let surface: HintSurfaceView
         let glass: NSView
         let highlight: CAGradientLayer
+        let whiteOverlay: CAShapeLayer
         let activeMask: CAShapeLayer
         let border: CAShapeLayer
         let label: NSTextField
@@ -117,6 +173,14 @@ final class SplitTabDropContainer: NSView {
     /// Left/right cards are also reused for replace mode. Top/bottom are only
     /// visible while creating a new split.
     private let cards: [DropZone: HintCard]
+
+    private static func makeSurfaceView() -> HintSurfaceView {
+        let view = HintSurfaceView()
+        view.wantsLayer = true
+        view.layer?.zPosition = 9_999
+        view.isHidden = true
+        return view
+    }
 
     /// macOS 26+ exposes `NSGlassEffectView` (Apple's Liquid Glass) which
     /// already renders with its own blur, refraction, and edge highlight
@@ -129,7 +193,7 @@ final class SplitTabDropContainer: NSView {
         let view: NSView
         if #available(macOS 26.0, *) {
             let glass = NSGlassEffectView()
-            glass.style = .regular
+            glass.style = .clear
             glass.cornerRadius = dropHintCornerRadius
             // `NSGlassEffectView` requires a contentView; an empty layer-
             // backed view is fine since the label and dashed border are
@@ -152,13 +216,10 @@ final class SplitTabDropContainer: NSView {
         view.layer?.cornerCurve = .continuous
         view.layer?.cornerRadius = dropHintCornerRadius
         view.layer?.masksToBounds = true
-        // The Chromium content view is added to the SplitTabDropContainer
-        // *after* these subviews, so without an explicit zPosition the
-        // freshly-added Chromium view's backing layer (zPosition 0, higher
-        // sublayer index) renders on top of the glass card. Sit just under
-        // the dashed border (zPosition 10_000) so the layer-tree compositor
-        // floats both the card and the stroke above Chromium content.
-        view.layer?.zPosition = 9_999
+        // The surface container owns stacking above Chromium. Keep the effect
+        // view at the bottom of that local layer tree so its tint and active
+        // scrim can render above the material.
+        view.layer?.zPosition = 0
         view.isHidden = true
         return view
     }
@@ -186,6 +247,19 @@ final class SplitTabDropContainer: NSView {
         return gradient
     }
 
+    /// Theme tint drawn above the clear glass and below the active scrim. It
+    /// keeps the page visible through the card while improving legibility.
+    private static func makeWhiteOverlayLayer() -> CAShapeLayer {
+        let layer = CAShapeLayer()
+        layer.fillColor = NSColor.white
+            .withAlphaComponent(dropHintWhiteOverlayOpacity)
+            .cgColor
+        layer.strokeColor = nil
+        layer.isHidden = true
+        layer.zPosition = 0.25
+        return layer
+    }
+
     /// Darkening scrim layered over whichever card the cursor is currently
     /// resolving to as the drop target, so the user can tell the two hint
     /// cards apart at a glance (Figma shows the active card tinted grey
@@ -194,21 +268,18 @@ final class SplitTabDropContainer: NSView {
     /// behind it, unlike a literal light-grey fill which would wash out in
     /// dark mode — same reasoning as `applyThemeColors`' stroke color.
     ///
-    /// A `CAShapeLayer` sibling of the border layer (added to the
-    /// container's own layer, not the glass view's) rather than a sublayer
-    /// of the glass: `NSGlassEffectView` composites its Liquid Glass content
-    /// over its own layer's sublayers on macOS 26+, so anything added there
-    /// (like the highlight gradient above) sits invisibly underneath it.
-    /// Reuses the border's exact rounded-rect path so the mask's shape never
-    /// drifts from the card it covers.
+    /// A `CAShapeLayer` sibling of the glass inside the shared surface rather
+    /// than a sublayer of the glass itself: `NSGlassEffectView` composites its
+    /// Liquid Glass content over its own sublayers on macOS 26+, so a scrim
+    /// placed there can sit invisibly underneath it.
     private static func makeActiveMaskLayer() -> CAShapeLayer {
         let layer = CAShapeLayer()
         layer.fillColor = NSColor.black.withAlphaComponent(0.06).cgColor
         layer.strokeColor = nil
         layer.isHidden = true
-        // Sits above the glass view (9_999) and below the dashed border
-        // (10_000) so the scrim darkens the card without dulling the stroke.
-        layer.zPosition = 9_999.5
+        // Sits above the glass and white tint inside the surface, below the
+        // dashed border.
+        layer.zPosition = 0.5
         return layer
     }
 
@@ -219,17 +290,21 @@ final class SplitTabDropContainer: NSView {
         layer.lineDashPattern = dropHintLineDashPattern
         layer.lineCap = .round
         layer.isHidden = true
-        // Sits above the glass view (zPosition 0) and below the label
-        // (zPosition 10_001) so the dashed stroke rides on top of the
-        // frosted card without painting over the text.
-        layer.zPosition = 10_000
+        // Shares the surface transform so the stroke cannot lag behind the
+        // material during attraction or settling.
+        layer.zPosition = 1
         return layer
     }
 
     private static func makeDropLabel() -> NSTextField {
         let field = NSTextField(labelWithString: "")
-        field.font = .systemFont(ofSize: 15, weight: .semibold)
+        field.textColor = .labelColor
+        field.font = .systemFont(ofSize: 14, weight: .regular)
         field.alignment = .center
+        field.lineBreakMode = .byWordWrapping
+        field.maximumNumberOfLines = 0
+        field.cell?.usesSingleLineMode = false
+        field.cell?.wraps = true
         field.translatesAutoresizingMaskIntoConstraints = true
         field.isHidden = true
         field.isEditable = false
@@ -240,9 +315,45 @@ final class SplitTabDropContainer: NSView {
         return field
     }
 
-    /// True while both drop-hint cards are visible (a valid drag is hovering
-    /// the page area). Tracked separately from the per-cursor landing zone so
-    /// the hints stay visible while the cursor is in the dead middle band.
+    /// Constrains localized copy to the card and lets AppKit measure as many
+    /// wrapped lines as the available height can display. Insets scale down on
+    /// very small cards so padding cannot consume the entire text area.
+    static func dropHintLabelFrame(for label: NSTextField,
+                                   in hintRect: CGRect) -> CGRect {
+        guard hintRect.width > 0, hintRect.height > 0 else {
+            return CGRect(origin: hintRect.origin, size: .zero)
+        }
+        let horizontalInset = min(
+            dropHintLabelHorizontalInset,
+            hintRect.width * 0.1
+        )
+        let verticalInset = min(
+            dropHintLabelVerticalInset,
+            hintRect.height * 0.1
+        )
+        let availableWidth = max(0, hintRect.width - horizontalInset * 2)
+        let availableHeight = max(0, hintRect.height - verticalInset * 2)
+        let measurementBounds = CGRect(
+            x: 0,
+            y: 0,
+            width: availableWidth,
+            height: CGFloat.greatestFiniteMagnitude
+        )
+        let measuredHeight = label.cell?.cellSize(forBounds: measurementBounds).height
+            ?? label.intrinsicContentSize.height
+        let labelHeight = min(ceil(measuredHeight), availableHeight)
+        return CGRect(
+            x: hintRect.minX + horizontalInset,
+            y: hintRect.midY - labelHeight / 2,
+            width: availableWidth,
+            height: labelHeight
+        )
+    }
+
+    /// True while the directional drop-hint cards are visible (a valid drag is
+    /// hovering the page area). Tracked separately from the per-cursor landing
+    /// zone so the hints stay visible while the cursor is in the dead middle
+    /// band.
     private var hintsVisible = false
 
     /// Mode the currently-visible hint cards were laid out for. Set before
@@ -256,14 +367,42 @@ final class SplitTabDropContainer: NSView {
     /// drop right now.
     private var activeDropZone: DropZone?
 
+    /// Latest drag location in this view's coordinate space. Create-mode cards
+    /// use it for base-size attraction and damped movement after expansion.
+    /// Cleared whenever no directional zone is active.
+    private var activeDragPoint: CGPoint?
+
+    /// The nearby card starts by moving toward the pointer at its base size.
+    /// It grows only after that moving card has reached the pointer.
+    private var isActiveDropHintExpanded = false
+
+    /// Model target for the base-sized approach phase. It is derived from the
+    /// current presentation frame rather than the immutable Figma frame, so a
+    /// pointer moving toward the card cannot make the card reverse direction.
+    private var approachingDropHintCenter: CGPoint?
+
+    /// Rechecks the presentation frame after an approach animation finishes.
+    /// Dragging callbacks stop when the pointer is still, so this completion is
+    /// what lets the card finish meeting a stationary pointer and then grow.
+    private var approachCompletionGeneration = 0
+    private var isApproachCompletionScheduled = false
+
+    /// Once a card expands, follow movement is measured from the point where
+    /// the pointer first entered it. Keeping both anchors prevents expansion
+    /// from snapping the card back toward its original Figma position.
+    private var expandedDropHintDragAnchor: CGPoint?
+    private var expandedDropHintCenterAnchor: CGPoint?
+
     private var themeObservation: AnyObject?
 
     override init(frame frameRect: NSRect) {
         var builtCards: [DropZone: HintCard] = [:]
         for zone in Self.allZones {
             builtCards[zone] = HintCard(
+                surface: Self.makeSurfaceView(),
                 glass: Self.makeGlassView(),
                 highlight: Self.makeHighlightGradient(),
+                whiteOverlay: Self.makeWhiteOverlayLayer(),
                 activeMask: Self.makeActiveMaskLayer(),
                 border: Self.makeBorderLayer(),
                 label: Self.makeDropLabel()
@@ -273,18 +412,19 @@ final class SplitTabDropContainer: NSView {
 
         super.init(frame: frameRect)
         wantsLayer = true
-        // Order: glass cards (bottom) → dashed border (middle, via
-        // zPosition) → labels (top, via zPosition). NSView subview backing
-        // layers and direct `addSublayer` calls share the same sublayer
-        // list, so zPosition sorts them all together.
+        // Order: transformed surface (glass → white tint → active scrim →
+        // dashed border) → label. Keeping the material and every shape under
+        // one parent transform prevents their animations from drifting apart.
         for zone in Self.allZones {
             guard let card = cards[zone] else { continue }
-            addSubview(card.glass)
+            addSubview(card.surface)
+            card.surface.addSubview(card.glass)
             card.glass.layer?.addSublayer(card.highlight)
-            layer?.addSublayer(card.activeMask)
-            layer?.addSublayer(card.border)
+            card.surface.layer?.addSublayer(card.whiteOverlay)
+            card.surface.layer?.addSublayer(card.activeMask)
+            card.surface.layer?.addSublayer(card.border)
             addSubview(card.label)
-            card.label.layer?.zPosition = 10_001
+            card.label.layer?.zPosition = 10_000
             card.label.stringValue = zone.labelText
         }
         registerForDraggedTypes([.normalTab, .pinnedTab, .phiBookmark])
@@ -301,7 +441,7 @@ final class SplitTabDropContainer: NSView {
     override func layout() {
         super.layout()
         if hintsVisible {
-            updateDropHintFrames()
+            updateDropHintFrames(transition: nil)
         }
     }
 
@@ -379,8 +519,13 @@ final class SplitTabDropContainer: NSView {
         activeMode = mode
         applyHintLabels(for: mode)
         showHighlights()
-        if let screenPoint {
-            setActiveDropZone(splitZoneForScreenPoint(screenPoint, draggedTabId: draggedTabId, draggedTabCount: draggedTabCount))
+        if let screenPoint,
+           let pointInSelf = pointInSelfForScreenPoint(screenPoint) {
+            let area = pageAreaProvider?() ?? bounds
+            let zone = zone(forPoint: pointInSelf, mode: mode, area: area)
+            setActiveDropZone(zone, dragPoint: zone == nil ? nil : pointInSelf)
+        } else {
+            setActiveDropZone(nil)
         }
     }
 
@@ -640,25 +785,37 @@ final class SplitTabDropContainer: NSView {
         return resolveMode(for: .normalTab(tabId: draggedTabId), state: state)
     }
 
-    /// Maps a point to a drop zone for the given mode. Create mode lands only
-    /// in the four edge thirds (nil in the center band); replace mode
-    /// mirrors the split's own panes so each zone covers the pane it replaces
-    /// and every point inside the page lands on one of them.
+    /// Maps a point to a drop zone for the given mode. Create mode initially
+    /// activates from the four edge thirds. Once active, that direction remains
+    /// selected throughout its configured movement range so the card can keep
+    /// following the pointer without dropping back to its origin.
+    /// Replace mode mirrors the split's panes so every point lands on one.
     private func zone(forPoint pointInSelf: CGPoint, mode: Mode, area: CGRect) -> DropZone? {
         guard area.contains(pointInSelf) else { return nil }
         switch mode {
         case .create:
-            return Self.createDropZone(for: pointInSelf, in: area)
+            return Self.createDropZone(
+                for: pointInSelf,
+                in: area,
+                retaining: activeDropZone
+            )
         case .replace(let splitId):
             return replaceZone(forPoint: pointInSelf, splitId: splitId, area: area)
         }
     }
 
-    /// Resolves create-mode edge zones. Left/right retain priority in the
-    /// overlapping corners so the existing drag behavior remains stable.
-    static func createDropZone(for point: CGPoint, in area: CGRect) -> DropZone? {
+    /// Resolves create-mode edge zones. Left/right retain priority for initial
+    /// activation in overlapping corners. Once active, a small exit tolerance
+    /// takes precedence so pointer tremble cannot alternate two corner cards.
+    static func createDropZone(for point: CGPoint,
+                               in area: CGRect,
+                               retaining activeZone: DropZone? = nil) -> DropZone? {
         guard area.contains(point) else { return nil }
         let rects = createDropZoneRects(in: area)
+        if let activeZone,
+           isPoint(point, inRetainedRangeFor: activeZone, of: area) {
+            return activeZone
+        }
         return allZones.first { rects[$0]?.contains(point) == true }
     }
 
@@ -677,12 +834,309 @@ final class SplitTabDropContainer: NSView {
         ]
     }
 
-    /// Zone rectangles for the given mode. Create mode uses fixed edge thirds;
-    /// replace mode mirrors the split's pane frames.
-    private func zoneRects(mode: Mode, area: CGRect) -> [DropZone: CGRect] {
+    /// Figma-proportional visual rectangles for create mode. A single contain
+    /// scale preserves every card's aspect ratio and the spacing between the
+    /// four directions, even when the page area is unusually wide or tall.
+    static func createDropHintRects(in area: CGRect) -> [DropZone: CGRect] {
+        guard area.width > 0, area.height > 0 else {
+            return Dictionary(uniqueKeysWithValues: allZones.map { ($0, .zero) })
+        }
+        let scale = min(
+            area.width / dropHintReferenceSize.width,
+            area.height / dropHintReferenceSize.height
+        )
+        let sideSize = CGSize(
+            width: sideDropHintReferenceSize.width * scale,
+            height: sideDropHintReferenceSize.height * scale
+        )
+        let horizontalSize = CGSize(
+            width: horizontalDropHintReferenceSize.width * scale,
+            height: horizontalDropHintReferenceSize.height * scale
+        )
+        let sideInset = sideDropHintReferenceInset * scale
+        let horizontalInset = horizontalDropHintReferenceInset * scale
+        return [
+            .left: CGRect(
+                x: area.minX + sideInset,
+                y: area.midY - sideSize.height / 2,
+                width: sideSize.width,
+                height: sideSize.height
+            ),
+            .right: CGRect(
+                x: area.maxX - sideInset - sideSize.width,
+                y: area.midY - sideSize.height / 2,
+                width: sideSize.width,
+                height: sideSize.height
+            ),
+            .top: CGRect(
+                x: area.midX - horizontalSize.width / 2,
+                y: area.maxY - horizontalInset - horizontalSize.height,
+                width: horizontalSize.width,
+                height: horizontalSize.height
+            ),
+            .bottom: CGRect(
+                x: area.midX - horizontalSize.width / 2,
+                y: area.minY + horizontalInset,
+                width: horizontalSize.width,
+                height: horizontalSize.height
+            ),
+        ]
+    }
+
+    /// Presented create-mode rectangle for one card. Before entry, the caller
+    /// advances `approachingCenter` from the current presentation frame. After
+    /// entry, the card grows around the captured center and follows from that
+    /// point. The configured directional movement area bounds both phases.
+    static func createDropHintRect(for zone: DropZone,
+                                   in area: CGRect,
+                                   isActive: Bool,
+                                   isExpanded: Bool = true,
+                                   dragPoint: CGPoint?,
+                                   approachingCenter: CGPoint? = nil,
+                                   followDragAnchor: CGPoint? = nil,
+                                   followCenterAnchor: CGPoint? = nil) -> CGRect {
+        guard let baseRect = createDropHintRects(in: area)[zone] else { return .zero }
+        guard isActive else { return baseRect }
+        let baseCenter = CGPoint(x: baseRect.midX, y: baseRect.midY)
+        let isSideCard = zone == .left || zone == .right
+        var center = baseCenter
+        var size = baseRect.size
+
+        if isExpanded {
+            size = CGSize(
+                width: baseRect.width * activeDropHintScale,
+                height: baseRect.height * activeDropHintScale
+            )
+            let dragAnchor = followDragAnchor ?? baseCenter
+            center = followCenterAnchor ?? baseCenter
+            if let dragPoint {
+                let horizontalGain = isSideCard
+                    ? followingPrimaryAxisGain
+                    : followingSecondaryAxisGain
+                let verticalGain = isSideCard
+                    ? followingSecondaryAxisGain
+                    : followingPrimaryAxisGain
+                center.x += (dragPoint.x - dragAnchor.x) * horizontalGain
+                center.y += (dragPoint.y - dragAnchor.y) * verticalGain
+            }
+        } else if let approachingCenter {
+            center = approachingCenter
+        }
+
+        let rect = CGRect(
+            x: center.x - size.width / 2,
+            y: center.y - size.height / 2,
+            width: size.width,
+            height: size.height
+        )
+        return clamp(
+            rect,
+            to: directionalMovementArea(for: zone, in: area)
+        )
+    }
+
+    /// Builds a base-sized target that reaches the pointer in one animation, or
+    /// reaches the configured movement boundary when the pointer is farther
+    /// away. An existing target can only advance in its established direction,
+    /// so moving the pointer toward the card cannot send the card back toward
+    /// its Figma origin.
+    static func nextApproachingDropHintCenter(for zone: DropZone,
+                                              in area: CGRect,
+                                              presentedRect: CGRect,
+                                              currentTargetCenter: CGPoint? = nil,
+                                              dragPoint: CGPoint) -> CGPoint {
+        guard let baseRect = createDropHintRects(in: area)[zone] else { return .zero }
+        let currentRect = presentedRect.isEmpty ? baseRect : presentedRect
+        let currentCenter = CGPoint(x: currentRect.midX, y: currentRect.midY)
+        let isSideCard = zone == .left || zone == .right
+        let horizontalGain = isSideCard
+            ? approachingPrimaryAxisGain
+            : approachingSecondaryAxisGain
+        let verticalGain = isSideCard
+            ? approachingSecondaryAxisGain
+            : approachingPrimaryAxisGain
+        let horizontalDelta = approachCaptureDelta(
+            point: dragPoint.x,
+            minimum: currentRect.minX,
+            maximum: currentRect.maxX
+        )
+        let verticalDelta = approachCaptureDelta(
+            point: dragPoint.y,
+            minimum: currentRect.minY,
+            maximum: currentRect.maxY
+        )
+        let candidateCenter = CGPoint(
+            x: currentCenter.x + horizontalDelta * horizontalGain,
+            y: currentCenter.y + verticalDelta * verticalGain
+        )
+
+        // Approach at the base size so the card can cover the narrow margin
+        // between its Figma origin and the page edge. Expansion is clamped
+        // separately around `safeCenter`, keeping the pointer-facing edge fixed
+        // while the larger card grows inward.
+        var nextCenter = clamp(
+            center: candidateCenter,
+            fitting: baseRect.size,
+            to: directionalMovementArea(for: zone, in: area)
+        )
+
+        let basePrimary = isSideCard ? baseRect.midX : baseRect.midY
+        var nextPrimary = isSideCard ? nextCenter.x : nextCenter.y
+
+        if let currentTargetCenter {
+            let targetPrimary = isSideCard ? currentTargetCenter.x : currentTargetCenter.y
+            let targetDirection = targetPrimary - basePrimary
+            if targetDirection > 0 {
+                nextPrimary = max(targetPrimary, nextPrimary)
+            } else if targetDirection < 0 {
+                nextPrimary = min(targetPrimary, nextPrimary)
+            }
+        }
+
+        if isSideCard {
+            nextCenter.x = nextPrimary
+        } else {
+            nextCenter.y = nextPrimary
+        }
+        return nextCenter
+    }
+
+    private static func approachCaptureDelta(point: CGFloat,
+                                             minimum: CGFloat,
+                                             maximum: CGFloat) -> CGFloat {
+        if point < minimum {
+            return point - minimum - dropHintApproachCaptureDepth
+        }
+        if point > maximum {
+            return point - maximum + dropHintApproachCaptureDepth
+        }
+        return 0
+    }
+
+    static func shouldExpandCreateDropHint(presentedRect: CGRect,
+                                           wasExpandedInCurrentZone: Bool,
+                                           dragPoint: CGPoint) -> Bool {
+        if wasExpandedInCurrentZone {
+            return true
+        }
+        return presentedRect.insetBy(
+            dx: -dropHintContainmentTolerance,
+            dy: -dropHintContainmentTolerance
+        ).contains(dragPoint)
+    }
+
+    private static func expansionSafeDropHintCenter(for zone: DropZone,
+                                                    in area: CGRect,
+                                                    desiredCenter: CGPoint) -> CGPoint {
+        guard let baseRect = createDropHintRects(in: area)[zone] else {
+            return desiredCenter
+        }
+        let expandedSize = CGSize(
+            width: baseRect.width * activeDropHintScale,
+            height: baseRect.height * activeDropHintScale
+        )
+        return clamp(
+            center: desiredCenter,
+            fitting: expandedSize,
+            to: directionalMovementArea(for: zone, in: area)
+        )
+    }
+
+    private static func directionalMovementArea(for zone: DropZone,
+                                                in area: CGRect) -> CGRect {
+        guard area.width > 0, area.height > 0,
+              let baseRect = createDropHintRects(in: area)[zone] else {
+            return area
+        }
+        let expandedSize = CGSize(
+            width: baseRect.width * activeDropHintScale,
+            height: baseRect.height * activeDropHintScale
+        )
+        let minimumFraction = zone == .left || zone == .right
+            ? expandedSize.width / area.width
+            : expandedSize.height / area.height
+        let configuredFraction = min(
+            max(dropHintMovementRangeFraction, minimumFraction),
+            0.5
+        )
+        let fraction = minimumFraction
+            + (configuredFraction - minimumFraction) * dropHintMovementTravelScale
+        let horizontalRange = area.width * fraction
+        let verticalRange = area.height * fraction
+        switch zone {
+        case .left:
+            return CGRect(
+                x: area.minX,
+                y: area.minY,
+                width: horizontalRange,
+                height: area.height
+            )
+        case .right:
+            return CGRect(
+                x: area.maxX - horizontalRange,
+                y: area.minY,
+                width: horizontalRange,
+                height: area.height
+            )
+        case .top:
+            return CGRect(
+                x: area.minX,
+                y: area.maxY - verticalRange,
+                width: area.width,
+                height: verticalRange
+            )
+        case .bottom:
+            return CGRect(
+                x: area.minX,
+                y: area.minY,
+                width: area.width,
+                height: verticalRange
+            )
+        }
+    }
+
+    private static func isPoint(_ point: CGPoint,
+                                inRetainedRangeFor zone: DropZone,
+                                of area: CGRect) -> Bool {
+        let visualFraction = min(max(dropHintMovementRangeFraction, 0), 0.5)
+        let retentionFraction = max(edgeDropZoneFraction, visualFraction)
+        let horizontalRange = area.width * retentionFraction
+        let verticalRange = area.height * retentionFraction
+        switch zone {
+        case .left:
+            return point.x <= area.minX + horizontalRange + dropHintZoneExitTolerance
+        case .right:
+            return point.x >= area.maxX - horizontalRange - dropHintZoneExitTolerance
+        case .top:
+            return point.y >= area.maxY - verticalRange - dropHintZoneExitTolerance
+        case .bottom:
+            return point.y <= area.minY + verticalRange + dropHintZoneExitTolerance
+        }
+    }
+
+    private static func clamp(center: CGPoint,
+                              fitting size: CGSize,
+                              to area: CGRect) -> CGPoint {
+        CGPoint(
+            x: min(max(center.x, area.minX + size.width / 2), area.maxX - size.width / 2),
+            y: min(max(center.y, area.minY + size.height / 2), area.maxY - size.height / 2)
+        )
+    }
+
+    private static func clamp(_ rect: CGRect, to area: CGRect) -> CGRect {
+        guard !rect.isEmpty, !area.isEmpty else { return rect }
+        var origin = rect.origin
+        origin.x = min(max(origin.x, area.minX), area.maxX - rect.width)
+        origin.y = min(max(origin.y, area.minY), area.maxY - rect.height)
+        return CGRect(origin: origin, size: rect.size)
+    }
+
+    /// Visual rectangles for the given mode. Create mode uses the independent
+    /// Figma geometry above; replace mode mirrors the split's actual panes.
+    private func hintRects(mode: Mode, area: CGRect) -> [DropZone: CGRect] {
         switch mode {
         case .create:
-            return Self.createDropZoneRects(in: area)
+            return Self.createDropHintRects(in: area)
         case .replace(let splitId):
             let rects = replacePaneRects(splitId: splitId, area: area)
             return [.left: rects.left, .right: rects.right]
@@ -754,17 +1208,17 @@ final class SplitTabDropContainer: NSView {
             return Evaluation(operation: [], zone: nil)
         }
         // Drag is contextually valid and the cursor is over the page area:
-        // show both hint cards so the user can see where they can land.
+        // show the directional hint cards so the user can see where they land.
         activeMode = mode
         applyHintLabels(for: mode)
         showHighlights()
-        guard let zone = zone(forPoint: pointInSelf, mode: mode, area: area) else {
+        let resolvedZone = zone(forPoint: pointInSelf, mode: mode, area: area)
+        setActiveDropZone(resolvedZone, dragPoint: resolvedZone == nil ? nil : pointInSelf)
+        guard let zone = resolvedZone else {
             // Create mode, cursor in the dead middle band — hints stay visible
             // but no drop will land here. (Replace mode always returns a zone.)
-            setActiveDropZone(nil)
             return Evaluation(operation: [], zone: nil)
         }
-        setActiveDropZone(zone)
         return Evaluation(operation: .move, zone: zone)
     }
 
@@ -854,16 +1308,18 @@ final class SplitTabDropContainer: NSView {
     }
 
     private func applyThemeColors() {
-        // Glass tint is owned by `NSVisualEffectView`'s material. Only the
-        // dashed stroke and label text are painted by us. `tertiaryLabelColor`
-        // adapts to light/dark and stays visible over arbitrary page content
-        // — the theme's `border` color is tuned for chrome separators and
-        // fades to invisible against a busy web page.
+        // Glass material remains transparent; the overlay supplies a white
+        // tint in light mode and a black tint in dark mode.
+        let isDark = effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
+        let overlay = isDark ? NSColor.black : NSColor.white
         let stroke = NSColor.tertiaryLabelColor
         let text = ThemedColor.textPrimary.resolve(in: self)
         CATransaction.begin()
         CATransaction.setDisableActions(true)
         for card in cards.values {
+            card.whiteOverlay.fillColor = overlay
+                .withAlphaComponent(Self.dropHintWhiteOverlayOpacity)
+                .cgColor
             card.border.strokeColor = stroke.cgColor
         }
         CATransaction.commit()
@@ -875,18 +1331,20 @@ final class SplitTabDropContainer: NSView {
     private func showHighlights() {
         if !hintsVisible {
             hintsVisible = true
-            updateDropHintFrames()
+            updateDropHintFrames(transition: nil)
         }
         // Suppress implicit fade so the cards snap on rather than fade in.
         CATransaction.begin()
         CATransaction.setDisableActions(true)
         let visible = Set(visibleZones)
         for (zone, card) in cards {
+            card.whiteOverlay.isHidden = !visible.contains(zone)
             card.border.isHidden = !visible.contains(zone)
         }
         CATransaction.commit()
         for (zone, card) in cards {
             let isVisible = visible.contains(zone)
+            card.surface.isHidden = !isVisible
             card.glass.isHidden = !isVisible
             card.label.isHidden = !isVisible
         }
@@ -898,27 +1356,185 @@ final class SplitTabDropContainer: NSView {
         CATransaction.begin()
         CATransaction.setDisableActions(true)
         for card in cards.values {
+            card.whiteOverlay.isHidden = true
             card.border.isHidden = true
         }
         CATransaction.commit()
         for card in cards.values {
+            card.surface.isHidden = true
             card.glass.isHidden = true
             card.label.isHidden = true
         }
     }
 
-    /// Updates which hint card shows the active-target mask. No-ops when the
-    /// zone hasn't changed so drag updates (which fire on every mouse move)
-    /// don't churn the layer tree.
-    private func setActiveDropZone(_ zone: DropZone?) {
-        guard zone != activeDropZone else { return }
+    /// Updates the active-target mask and pointer-driven create-card geometry.
+    /// Geometry refreshes on every drag update so the active card can follow
+    /// the pointer even while it remains inside the same directional zone.
+    private func setActiveDropZone(_ zone: DropZone?, dragPoint: CGPoint? = nil) {
+        let previousZone = activeDropZone
+        let wasExpanded = isActiveDropHintExpanded
+        let zoneChanged = zone != previousZone
+        if zoneChanged {
+            cancelApproachCompletion()
+            approachingDropHintCenter = nil
+            expandedDropHintDragAnchor = nil
+            expandedDropHintCenterAnchor = nil
+        }
         activeDropZone = zone
+        activeDragPoint = zone == nil ? nil : dragPoint
+        if activeMode == .create, let zone, let dragPoint {
+            let area = pageAreaProvider?() ?? bounds
+            let wasExpandedInThisZone = previousZone == zone && wasExpanded
+            let approachTarget = Self.createDropHintRect(
+                for: zone,
+                in: area,
+                isActive: true,
+                isExpanded: false,
+                dragPoint: nil,
+                approachingCenter: approachingDropHintCenter
+            )
+            let presentedRect = presentedDropHintRect(
+                for: zone,
+                fallback: approachTarget
+            )
+            let reachedPointer = Self.shouldExpandCreateDropHint(
+                presentedRect: presentedRect,
+                wasExpandedInCurrentZone: wasExpandedInThisZone,
+                dragPoint: dragPoint
+            )
+            let safeCenter = Self.expansionSafeDropHintCenter(
+                for: zone,
+                in: area,
+                desiredCenter: CGPoint(x: presentedRect.midX, y: presentedRect.midY)
+            )
+            isActiveDropHintExpanded = wasExpandedInThisZone || reachedPointer
+            if isActiveDropHintExpanded && !wasExpandedInThisZone {
+                cancelApproachCompletion()
+                approachingDropHintCenter = nil
+                expandedDropHintDragAnchor = dragPoint
+                // Side cards begin close enough to the page edge that a 1.3x
+                // scale needs a small center adjustment. Animate that offset
+                // together with the growth instead of moving the base card
+                // away from a pointer that has already entered it.
+                expandedDropHintCenterAnchor = safeCenter
+            } else if !isActiveDropHintExpanded {
+                approachingDropHintCenter = Self.nextApproachingDropHintCenter(
+                    for: zone,
+                    in: area,
+                    presentedRect: presentedRect,
+                    currentTargetCenter: approachingDropHintCenter,
+                    dragPoint: dragPoint
+                )
+                expandedDropHintDragAnchor = nil
+                expandedDropHintCenterAnchor = nil
+            }
+        } else {
+            isActiveDropHintExpanded = false
+            approachingDropHintCenter = nil
+            expandedDropHintDragAnchor = nil
+            expandedDropHintCenterAnchor = nil
+        }
+        let expansionChanged = wasExpanded != isActiveDropHintExpanded
+        if hintsVisible {
+            let transition: HintFrameTransition?
+            if activeMode != .create || NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
+                transition = nil
+            } else if previousZone == nil, zone != nil {
+                transition = .attract
+            } else if zoneChanged || (expansionChanged && !isActiveDropHintExpanded) {
+                transition = .settle
+            } else if expansionChanged {
+                transition = .attract
+            } else if zone != nil, !isActiveDropHintExpanded {
+                transition = .attract
+            } else {
+                transition = .follow
+            }
+            updateDropHintFrames(transition: transition)
+        }
+        if activeMode == .create,
+           let zone,
+           let dragPoint,
+           !isActiveDropHintExpanded,
+           let approachingDropHintCenter {
+            let targetRect = Self.createDropHintRect(
+                for: zone,
+                in: pageAreaProvider?() ?? bounds,
+                isActive: true,
+                isExpanded: false,
+                dragPoint: nil,
+                approachingCenter: approachingDropHintCenter
+            )
+            updateApproachCompletion(
+                for: zone,
+                targetRect: targetRect,
+                dragPoint: dragPoint
+            )
+        } else {
+            cancelApproachCompletion()
+        }
+        guard zoneChanged else { return }
         CATransaction.begin()
         CATransaction.setDisableActions(true)
         for candidate in Self.allZones {
-            cards[candidate]?.activeMask.isHidden = candidate != zone
+            guard let card = cards[candidate] else { continue }
+            let isActive = candidate == zone
+            card.activeMask.isHidden = !isActive
+            card.surface.layer?.zPosition = isActive ? 10_001 : 9_999
+            card.label.layer?.zPosition = isActive ? 10_002 : 10_000
         }
         CATransaction.commit()
+    }
+
+    /// Returns the card's actual on-screen frame while an explicit transform
+    /// animation is running. Entry must be based on this presentation frame,
+    /// not the future model target, or the card expands before the pointer has
+    /// visibly reached it.
+    private func presentedDropHintRect(for zone: DropZone,
+                                       fallback: CGRect) -> CGRect {
+        guard let presentedLayer = cards[zone]?.surface.layer?.presentation() else {
+            return fallback
+        }
+        let frame = presentedLayer.frame
+        guard frame.width > 0, frame.height > 0 else { return fallback }
+        return frame
+    }
+
+    private func updateApproachCompletion(for zone: DropZone,
+                                          targetRect: CGRect,
+                                          dragPoint: CGPoint) {
+        let targetReachesPointer = targetRect.insetBy(
+            dx: -Self.dropHintContainmentTolerance,
+            dy: -Self.dropHintContainmentTolerance
+        ).contains(dragPoint)
+        guard targetReachesPointer else {
+            cancelApproachCompletion()
+            return
+        }
+        guard !isApproachCompletionScheduled else { return }
+
+        isApproachCompletionScheduled = true
+        approachCompletionGeneration += 1
+        let generation = approachCompletionGeneration
+        DispatchQueue.main.asyncAfter(
+            deadline: .now() + Self.dropHintAttractAnimationDuration + 0.01
+        ) { [weak self] in
+            guard let self,
+                  self.approachCompletionGeneration == generation else { return }
+            self.isApproachCompletionScheduled = false
+            guard self.hintsVisible,
+                  self.activeMode == .create,
+                  self.activeDropZone == zone,
+                  !self.isActiveDropHintExpanded,
+                  let currentPoint = self.activeDragPoint else { return }
+            self.setActiveDropZone(zone, dragPoint: currentPoint)
+        }
+    }
+
+    private func cancelApproachCompletion() {
+        guard isApproachCompletionScheduled else { return }
+        approachCompletionGeneration += 1
+        isApproachCompletionScheduled = false
     }
 
     private func applyHintLabels(for mode: Mode) {
@@ -946,14 +1562,38 @@ final class SplitTabDropContainer: NSView {
         }
     }
 
-    private func updateDropHintFrames() {
+    private func updateDropHintFrames(transition: HintFrameTransition? = nil) {
         let area = pageAreaProvider?() ?? bounds
-        // Create mode shows narrow cards in all four edge thirds; replace
-        // mode sizes each card to the actual split pane it sits over.
-        let rects = zoneRects(mode: activeMode, area: area)
+        // Create mode uses independent Figma-proportional cards; replace mode
+        // sizes each card to the actual split pane it sits over.
+        let rects = hintRects(mode: activeMode, area: area)
         for zone in visibleZones {
-            guard let card = cards[zone], let zoneRect = rects[zone] else { continue }
-            updateDropHintFrame(card: card, zoneRect: zoneRect)
+            guard let card = cards[zone], let baseRect = rects[zone] else { continue }
+            var hintRect = baseRect
+            if activeMode == .create {
+                hintRect = Self.createDropHintRect(
+                    for: zone,
+                    in: area,
+                    isActive: zone == activeDropZone,
+                    isExpanded: zone == activeDropZone && isActiveDropHintExpanded,
+                    dragPoint: zone == activeDropZone ? activeDragPoint : nil,
+                    approachingCenter: zone == activeDropZone
+                        ? approachingDropHintCenter
+                        : nil,
+                    followDragAnchor: zone == activeDropZone
+                        ? expandedDropHintDragAnchor
+                        : nil,
+                    followCenterAnchor: zone == activeDropZone
+                        ? expandedDropHintCenterAnchor
+                        : nil
+                )
+            }
+            updateDropHintFrame(
+                card: card,
+                baseRect: baseRect,
+                hintRect: hintRect,
+                transition: transition
+            )
         }
     }
 
@@ -981,58 +1621,190 @@ final class SplitTabDropContainer: NSView {
         glass.layer?.cornerRadius = radius
     }
 
-    private func updateDropHintFrame(card: HintCard, zoneRect: NSRect) {
-        let horizontalInset: CGFloat
-        let verticalInset: CGFloat
-        switch activeMode {
-        case .create:
-            // Narrow edge cards float inside the directional edge thirds.
-            horizontalInset = max(Self.dropHintHorizontalInsetMinimum,
-                                  zoneRect.width * Self.dropHintHorizontalInsetFraction)
-            verticalInset = max(Self.dropHintVerticalInsetMinimum,
-                                zoneRect.height * Self.dropHintVerticalInsetFraction)
-        case .replace:
-            // The zone rect already mirrors the real pane frame
-            // (`replacePaneRects`); cover it edge-to-edge so the card reads
-            // as "this pane gets replaced", not a smaller floating card.
-            horizontalInset = 0
-            verticalInset = 0
-        }
-        let hintRect = NSRect(
-            x: zoneRect.minX + horizontalInset,
-            y: zoneRect.minY + verticalInset,
-            width: max(0, zoneRect.width - horizontalInset * 2),
-            height: max(0, zoneRect.height - verticalInset * 2)
+    private func updateDropHintFrame(card: HintCard,
+                                     baseRect: NSRect,
+                                     hintRect: NSRect,
+                                     transition: HintFrameTransition?) {
+        let baseCornerRadius = min(
+            hintCornerRadius(for: activeMode),
+            baseRect.width / 2,
+            baseRect.height / 2
         )
-        let cornerRadius = hintCornerRadius(for: activeMode)
-        card.glass.frame = hintRect
-        applyHintCornerRadius(cornerRadius, to: card.glass)
-        let path = CGPath(
-            roundedRect: hintRect,
+        updateSurfaceBaseGeometry(
+            card: card,
+            baseRect: baseRect,
+            cornerRadius: baseCornerRadius
+        )
+        updateSurfaceTransform(
+            card: card,
+            from: baseRect,
+            to: hintRect,
+            transition: transition
+        )
+
+        let labelFrame = Self.dropHintLabelFrame(for: card.label, in: hintRect)
+        updateViewFrame(card.label, to: labelFrame, transition: transition)
+    }
+
+    /// Keeps the Liquid Glass view, fills, and border on one stable base shape.
+    /// Interaction motion is applied as a shared transform below instead of
+    /// morphing each fill path independently. `NSGlassEffectView` composites
+    /// its material differently from a plain `CAShapeLayer`; mixing frame and
+    /// path animations makes the white fill visibly grow inside the glass.
+    private func updateSurfaceBaseGeometry(card: HintCard,
+                                           baseRect: CGRect,
+                                           cornerRadius: CGFloat) {
+        let localBounds = CGRect(origin: .zero, size: baseRect.size)
+        let basePath = CGPath(
+            roundedRect: localBounds,
             cornerWidth: cornerRadius,
             cornerHeight: cornerRadius,
             transform: nil
         )
+        let baseGeometryChanged = card.surface.frame != baseRect
+            || card.glass.frame != localBounds
+            || card.whiteOverlay.bounds != localBounds
+            || card.whiteOverlay.path != basePath
+            || card.border.path != basePath
+            || card.glass.layer?.cornerRadius != cornerRadius
+
+        guard baseGeometryChanged else { return }
+
+        card.surface.layer?.removeAnimation(forKey: "splitDropHint.transform")
         CATransaction.begin()
         CATransaction.setDisableActions(true)
-        // Highlight is a sublayer of the glass view's layer, so its frame
-        // lives in the glass view's local coordinate space (origin (0,0),
-        // size = hintRect.size). Disable implicit animations so it snaps
-        // with the glass frame rather than tweening.
-        card.highlight.frame = CGRect(origin: .zero, size: hintRect.size)
-        // Mask is a sibling of border on the container's own layer (see
-        // `makeActiveMaskLayer`), so it shares the border's absolute path
-        // rather than a glass-local frame.
-        card.activeMask.path = path
-        card.border.path = path
+        card.surface.layer?.transform = CATransform3DIdentity
+        card.surface.frame = baseRect
+        card.glass.frame = localBounds
+        card.highlight.frame = localBounds
+        for layer in [card.whiteOverlay, card.activeMask, card.border] {
+            layer.bounds = localBounds
+            layer.position = CGPoint(x: localBounds.midX, y: localBounds.midY)
+            layer.path = basePath
+            layer.removeAnimation(forKey: "splitDropHint.path")
+        }
         CATransaction.commit()
+        applyHintCornerRadius(cornerRadius, to: card.glass)
+    }
 
-        let labelSize = card.label.intrinsicContentSize
-        card.label.frame = NSRect(
-            x: hintRect.midX - labelSize.width / 2,
-            y: hintRect.midY - labelSize.height / 2,
-            width: labelSize.width,
-            height: labelSize.height
+    /// Moves and scales the complete surface with one compositor transform.
+    /// The label keeps its own geometry animation so its font size stays fixed.
+    private func updateSurfaceTransform(card: HintCard,
+                                        from baseRect: CGRect,
+                                        to hintRect: CGRect,
+                                        transition: HintFrameTransition?) {
+        guard baseRect.width > 0, baseRect.height > 0 else { return }
+        guard let surfaceLayer = card.surface.layer else { return }
+        let scaleX = hintRect.width / baseRect.width
+        let scaleY = hintRect.height / baseRect.height
+        let anchorPoint = surfaceLayer.anchorPoint
+        let baseAnchor = CGPoint(
+            x: baseRect.minX + baseRect.width * anchorPoint.x,
+            y: baseRect.minY + baseRect.height * anchorPoint.y
+        )
+        let hintAnchor = CGPoint(
+            x: hintRect.minX + hintRect.width * anchorPoint.x,
+            y: hintRect.minY + hintRect.height * anchorPoint.y
+        )
+        var targetTransform = CATransform3DMakeScale(scaleX, scaleY, 1)
+        targetTransform.m41 = hintAnchor.x - baseAnchor.x
+        targetTransform.m42 = hintAnchor.y - baseAnchor.y
+
+        updateLayerTransform(
+            surfaceLayer,
+            to: targetTransform,
+            transition: transition
         )
     }
+
+    private func updateLayerTransform(_ layer: CALayer,
+                                      to targetTransform: CATransform3D,
+                                      transition: HintFrameTransition?) {
+        let transformChanged = !CATransform3DEqualToTransform(
+            layer.transform,
+            targetTransform
+        )
+        let fromTransform = layer.presentation()?.transform ?? layer.transform
+
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        layer.transform = targetTransform
+        CATransaction.commit()
+
+        // Preserve an in-flight transform when a layout pass recomputes the
+        // same target without an explicit transition.
+        guard transformChanged else { return }
+        guard let transition else {
+            layer.removeAnimation(forKey: "splitDropHint.transform")
+            return
+        }
+
+        let animation = CABasicAnimation(keyPath: "transform")
+        animation.fromValue = NSValue(caTransform3D: fromTransform)
+        animation.toValue = NSValue(caTransform3D: targetTransform)
+        animation.duration = transition.duration
+        animation.timingFunction = transition.timingFunction
+        layer.add(animation, forKey: "splitDropHint.transform")
+    }
+
+    /// Retargets an in-flight animation from the layer's presentation state.
+    /// Reusing stable animation keys replaces the previous target instead of
+    /// queuing another animation for every drag event.
+    private func updateViewFrame(_ view: NSView,
+                                 to targetFrame: CGRect,
+                                 transition: HintFrameTransition?) {
+        guard let layer = view.layer else {
+            view.frame = targetFrame
+            return
+        }
+        let frameChanged = view.frame != targetFrame
+        let presentation = layer.presentation() ?? layer
+        let fromPosition = presentation.position
+        let fromBounds = presentation.bounds
+
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        view.frame = targetFrame
+        CATransaction.commit()
+
+        // Setting an NSView's frame schedules a parent layout pass. That pass
+        // recomputes the same target without a transition; keep the explicit
+        // animation alive when the model frame already matches that target.
+        guard frameChanged else { return }
+        guard let transition else {
+            removeGeometryAnimations(from: layer)
+            return
+        }
+        addGeometryAnimations(
+            to: layer,
+            fromPosition: fromPosition,
+            fromBounds: fromBounds,
+            transition: transition
+        )
+    }
+
+    private func addGeometryAnimations(to layer: CALayer,
+                                       fromPosition: CGPoint,
+                                       fromBounds: CGRect,
+                                       transition: HintFrameTransition) {
+        let position = CABasicAnimation(keyPath: "position")
+        position.fromValue = NSValue(point: fromPosition)
+        position.toValue = NSValue(point: layer.position)
+        position.duration = transition.duration
+        position.timingFunction = transition.timingFunction
+        layer.add(position, forKey: "splitDropHint.position")
+
+        let bounds = CABasicAnimation(keyPath: "bounds")
+        bounds.fromValue = NSValue(rect: fromBounds)
+        bounds.toValue = NSValue(rect: layer.bounds)
+        bounds.duration = transition.duration
+        bounds.timingFunction = transition.timingFunction
+        layer.add(bounds, forKey: "splitDropHint.bounds")
+    }
+
+    private func removeGeometryAnimations(from layer: CALayer) {
+        layer.removeAnimation(forKey: "splitDropHint.position")
+        layer.removeAnimation(forKey: "splitDropHint.bounds")
+    }
+
 }

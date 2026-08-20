@@ -48,7 +48,7 @@ final class SplitTabPreviewTests: XCTestCase {
         XCTAssertEqual(requestedIDs, [10, 11])
     }
 
-    func testHorizontalLayoutIsPreservedForFutureStackedRendering() throws {
+    func testHorizontalLayoutIsPreservedForStackedRendering() throws {
         let (state, left, _) = try makeLiveSplit(layout: .horizontal)
         let target = try XCTUnwrap(
             SplitTabPreviewTarget.make(representing: left, in: state)
@@ -58,6 +58,86 @@ final class SplitTabPreviewTests: XCTestCase {
         let content = try XCTUnwrap(resolver.resolve(target, in: state))
 
         XCTAssertEqual(content.layout, .horizontal)
+    }
+
+    func testHorizontalLayoutRendersStandardPanesTopToBottom() throws {
+        let (state, left, _) = try makeLiveSplit(layout: .vertical)
+        let target = try XCTUnwrap(
+            SplitTabPreviewTarget.make(representing: left, in: state)
+        )
+        let imageData = makeImageData()
+        let resolver = SplitTabPreviewContentResolver { _ in imageData }
+        let sideBySideContent = try XCTUnwrap(resolver.resolve(target, in: state))
+
+        state.splits[0].layout = .horizontal
+        let stackedContent = try XCTUnwrap(resolver.resolve(target, in: state))
+
+        let sideBySideSize = fittingSize(for: sideBySideContent)
+        let stackedSize = fittingSize(for: stackedContent)
+        XCTAssertEqual(stackedSize.width, sideBySideSize.width, accuracy: 1)
+        XCTAssertGreaterThan(stackedSize.height, sideBySideSize.height + 40)
+        XCTAssertLessThan(stackedSize.height, sideBySideSize.height * 1.5)
+    }
+
+    func testHorizontalLayoutRendersCompactPanesTopToBottom() throws {
+        let (state, left, _) = try makeLiveSplit(layout: .vertical)
+        state.focusingTab = left
+        let target = try XCTUnwrap(
+            SplitTabPreviewTarget.make(representing: left, in: state)
+        )
+        let resolver = SplitTabPreviewContentResolver { _ in
+            XCTFail("Compact split previews must not request thumbnails.")
+            return nil
+        }
+        let sideBySideContent = try XCTUnwrap(resolver.resolve(target, in: state))
+
+        state.splits[0].layout = .horizontal
+        let stackedContent = try XCTUnwrap(resolver.resolve(target, in: state))
+
+        let sideBySideSize = fittingSize(for: sideBySideContent)
+        let stackedSize = fittingSize(for: stackedContent)
+        XCTAssertEqual(stackedSize.width, sideBySideSize.width, accuracy: 1)
+        XCTAssertGreaterThan(stackedSize.height, sideBySideSize.height * 1.8)
+    }
+
+    func testVisiblePreviewRelayoutsWhenOrientationChanges() throws {
+        let (state, left, _) = try makeLiveSplit(layout: .vertical)
+        let target = try XCTUnwrap(
+            SplitTabPreviewTarget.make(representing: left, in: state)
+        )
+        let imageData = makeImageData()
+        let resolver = SplitTabPreviewContentResolver { _ in imageData }
+        let viewModel = SplitTabPreviewViewModel()
+        let hostingView = NSHostingView(rootView: SplitTabPreviewView(viewModel: viewModel))
+
+        let sideBySideContent = try XCTUnwrap(resolver.resolve(target, in: state))
+        viewModel.update(sideBySideContent)
+        RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.01))
+        hostingView.layoutSubtreeIfNeeded()
+        let initialSideBySideSize = hostingView.fittingSize
+
+        state.splits[0].layout = .horizontal
+        let stackedContent = try XCTUnwrap(resolver.resolve(target, in: state))
+        viewModel.update(stackedContent)
+        RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.01))
+        hostingView.layoutSubtreeIfNeeded()
+        let stackedSize = hostingView.fittingSize
+
+        state.splits[0].layout = .vertical
+        let restoredContent = try XCTUnwrap(resolver.resolve(target, in: state))
+        viewModel.update(restoredContent)
+        RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.01))
+        hostingView.layoutSubtreeIfNeeded()
+        let restoredSideBySideSize = hostingView.fittingSize
+
+        XCTAssertEqual(initialSideBySideSize.width, 280, accuracy: 1)
+        XCTAssertEqual(stackedSize.width, initialSideBySideSize.width, accuracy: 1)
+        XCTAssertGreaterThan(stackedSize.height, initialSideBySideSize.height + 40)
+        XCTAssertEqual(
+            restoredSideBySideSize.height,
+            initialSideBySideSize.height,
+            accuracy: 1
+        )
     }
 
     func testBackgroundSplitUsesBothThumbnails() throws {
@@ -202,6 +282,8 @@ final class SplitTabPreviewTests: XCTestCase {
         right.isOpenned = false
         left.splitPartnerGuid = "pinned-right"
         right.splitPartnerGuid = "pinned-left"
+        left.splitLayout = .horizontal
+        right.splitLayout = .horizontal
         state.pinnedTabs = [left, right]
         let target = try XCTUnwrap(
             SplitTabPreviewTarget.make(representing: left, in: state)
@@ -215,6 +297,7 @@ final class SplitTabPreviewTests: XCTestCase {
 
         XCTAssertEqual(target.logicalID, .persisted("pinned-left", "pinned-right"))
         XCTAssertEqual(content.mode, .compact)
+        XCTAssertEqual(content.layout, .horizontal)
         XCTAssertEqual(content.leftPane.title, "Pinned left")
         XCTAssertEqual(content.rightPane.title, "Pinned right")
         XCTAssertNil(content.leftPane.image)
@@ -229,7 +312,8 @@ final class SplitTabPreviewTests: XCTestCase {
             guid: "split-bookmark",
             title: "Stored primary",
             url: "https://primary.example/path",
-            secondaryUrl: "https://secondary.example/path"
+            secondaryUrl: "https://secondary.example/path",
+            layout: .horizontal
         )
         let target = try XCTUnwrap(SplitTabPreviewTarget.make(representing: bookmark))
         let resolver = SplitTabPreviewContentResolver { _ in
@@ -241,7 +325,7 @@ final class SplitTabPreviewTests: XCTestCase {
 
         XCTAssertEqual(target.logicalID, .bookmark("split-bookmark"))
         XCTAssertEqual(content.mode, .compact)
-        XCTAssertEqual(content.layout, .vertical)
+        XCTAssertEqual(content.layout, .horizontal)
         XCTAssertEqual(content.leftPane.title, "Stored primary")
         XCTAssertEqual(content.leftPane.url, "https://primary.example/path")
         XCTAssertEqual(content.rightPane.title, "https://secondary.example/path")
@@ -343,7 +427,7 @@ final class SplitTabPreviewTests: XCTestCase {
         XCTAssertEqual(content.rightPane.imageSource, .notRequested)
     }
 
-    func testSplitPreviewIsWiderThanRegularPreview() throws {
+    func testSplitPreviewMatchesRegularPreviewWidth() throws {
         let (state, left, _) = try makeLiveSplit(layout: .vertical)
         let target = try XCTUnwrap(
             SplitTabPreviewTarget.make(representing: left, in: state)
@@ -356,8 +440,7 @@ final class SplitTabPreviewTests: XCTestCase {
         let hostingView = NSHostingView(rootView: SplitTabPreviewView(viewModel: viewModel))
         hostingView.layoutSubtreeIfNeeded()
 
-        XCTAssertEqual(hostingView.fittingSize.width, 396, accuracy: 1)
-        XCTAssertGreaterThan(hostingView.fittingSize.width, 280)
+        XCTAssertEqual(hostingView.fittingSize.width, 280, accuracy: 1)
     }
 
     func testStandardSplitPreviewMatchesRegularPreviewHeight() throws {

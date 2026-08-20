@@ -1144,6 +1144,11 @@ class SidebarViewController: NSViewController {
     /// active Space's sidebar — same visual-effect recipe as the sidebar root
     /// (`loadView`), resolved against this window's theme context.
     private var createSpaceOverlayBackdrop: ColoredVisualEffectView?
+    /// The header band's matching floor while the form is up — same recipe as
+    /// the backdrop, mounted under the header content so the nav row and strip
+    /// keep the same composite shade as the form region (see the mount site in
+    /// `showCreateSpaceOverlay` for why the shades otherwise differ).
+    private var createSpaceOverlayHeaderBackdrop: ColoredVisualEffectView?
 
     func showCreateSpaceOverlay(initialProfileId: String?) {
         // A successful create retains the source theme until activation
@@ -1164,6 +1169,8 @@ class SidebarViewController: NSViewController {
             self?.previewCreateSpaceOverlayTheme(theme)
         } onCreatedSpaceActivationFinished: { [weak self] in
             self?.restoreCreateSpacePreviewTheme()
+        } onIconSelectionChange: { [weak self] selection in
+            self?.spacesStripSlot?.creatingSpaceIconValue = selection.storageValue
         }
         // Keep the Spaces icon row visible above the form while creating. Force
         // it on even with a single Space and reserve its header height before
@@ -1203,6 +1210,30 @@ class SidebarViewController: NSViewController {
             }
         }
 
+        // The backdrop stacks a second within-window material over the
+        // sidebar root — a composite shade the root alone doesn't reach.
+        // Fine under the form, but the header band above the strip kept the
+        // root's bare shade, so the form region read as a differently
+        // colored rectangle. Floor the header band with the same recipe,
+        // slid UNDER the header content (the nav row and strip stay
+        // visible), fading in with the swipe so the whole sidebar lands on
+        // the one stacked shade.
+        var headerBackdrop: ColoredVisualEffectView?
+        if anchorsBelowStrip, let stripRow {
+            let piece = ColoredVisualEffectView()
+            piece.themedBackgroundColor = .windowOverlayBackground
+            piece.material = .fullScreenUI
+            piece.blendingMode = .withinWindow
+            piece.translatesAutoresizingMaskIntoConstraints = false
+            piece.alphaValue = 0
+            view.addSubview(piece, positioned: .below, relativeTo: mainStackView)
+            piece.snp.makeConstraints { make in
+                make.leading.trailing.top.equalToSuperview()
+                make.bottom.equalTo(stripRow.snp.bottom)
+            }
+            headerBackdrop = piece
+        }
+
         let host = ThemedHostingController(rootView: panel, themeSource: state.themeContext)
         host.view.translatesAutoresizingMaskIntoConstraints = false
         // Fill the sidebar at its current width — never let the form's intrinsic
@@ -1221,19 +1252,26 @@ class SidebarViewController: NSViewController {
                 make.top.equalToSuperview()
             }
         }
-        backdrop.alphaValue = 0
-        host.view.alphaValue = 0
         createSpaceOverlay = host
         createSpaceOverlayBackdrop = backdrop
+        createSpaceOverlayHeaderBackdrop = headerBackdrop
         themeBeforeCreateSpacePreview = state.themeContext.currentTheme
         // Keep the visible strip read-only while creating so a pip click cannot
         // switch the form's window away.
         spacesStripSlot?.isCreatingSpace = true
-        NSAnimationContext.runAnimationGroup { context in
-            context.duration = 0.18
-            context.allowsImplicitAnimation = true
-            backdrop.animator().alphaValue = 1
-            host.view.animator().alphaValue = 1
+        // Present with the Space-switch swipe rather than a fade: the current
+        // band pushes left and the form arrives from the right — creating
+        // reads as traveling to a new Space, not a sheet over this one. The
+        // overlay's constraints resolve first so the slide starts from its
+        // settled frame. The header floor fades in over the same clock, so
+        // the header and the arriving form converge on one shade together.
+        view.layoutSubtreeIfNeeded()
+        runCreateSpaceOverlaySwipe(entering: true, overlayViews: [backdrop, host.view])
+        if let headerBackdrop {
+            NSAnimationContext.runAnimationGroup { context in
+                context.duration = PhiPreferences.GeneralSettings.loadSwitchSpaceAnimationDuration()
+                headerBackdrop.animator().alphaValue = 1
+            }
         }
     }
 
@@ -1250,24 +1288,56 @@ class SidebarViewController: NSViewController {
     func dismissCreateSpaceOverlay(restorePreviewTheme: Bool = true) {
         guard let host = createSpaceOverlay else { return }
         let backdrop = createSpaceOverlayBackdrop
+        let headerBackdrop = createSpaceOverlayHeaderBackdrop
         createSpaceOverlay = nil
         createSpaceOverlayBackdrop = nil
+        createSpaceOverlayHeaderBackdrop = nil
         if restorePreviewTheme {
             restoreCreateSpacePreviewTheme()
         }
         spacesStripSlot?.isCreatingSpace = false
+        spacesStripSlot?.creatingSpaceIconValue = nil
         // Release forced visibility. Normal Space-count rules take over again.
         headerView.forcesSpaceSwitchVisible = false
         updateHeaderHeight()
-        NSAnimationContext.runAnimationGroup({ context in
-            context.duration = 0.15
-            context.allowsImplicitAnimation = true
-            host.view.animator().alphaValue = 0
-            backdrop?.animator().alphaValue = 0
-        }) {
+        let teardown = {
             host.view.removeFromSuperview()
             host.removeFromParent()
             backdrop?.removeFromSuperview()
+            headerBackdrop?.removeFromSuperview()
+        }
+        if restorePreviewTheme {
+            // Cancel / failure: swipe back to the Space the form came from —
+            // the form leaves to the right and the band it displaced returns.
+            // `restoreCreateSpacePreviewTheme` above already snapped the band
+            // to its resting state; that happens under the still-covering
+            // overlay, so the return slide below is the first visible motion.
+            // The header floor fades out on the same clock, returning the
+            // header to the root's bare shade with the rest of the sidebar.
+            if let headerBackdrop {
+                NSAnimationContext.runAnimationGroup { context in
+                    context.duration = PhiPreferences.GeneralSettings.loadSwitchSpaceAnimationDuration()
+                    headerBackdrop.animator().alphaValue = 0
+                }
+            }
+            runCreateSpaceOverlaySwipe(entering: false,
+                                       overlayViews: [backdrop, host.view].compactMap { $0 },
+                                       completion: teardown)
+        } else {
+            // Successful create: the new Space's window presents instantly
+            // over this one (the form already played the arrival — see
+            // `CreateSpacePanel.create`'s `animated: false` activation), so
+            // this fade and the band's hidden state resolve off screen. The
+            // band restores in `restoreCreateSpacePreviewTheme` once
+            // activation settles, keeping this window intact for its next
+            // turn as the visible Space.
+            NSAnimationContext.runAnimationGroup({ context in
+                context.duration = 0.15
+                context.allowsImplicitAnimation = true
+                host.view.animator().alphaValue = 0
+                backdrop?.animator().alphaValue = 0
+                headerBackdrop?.animator().alphaValue = 0
+            }, completionHandler: teardown)
         }
     }
 
@@ -1275,9 +1345,116 @@ class SidebarViewController: NSViewController {
     /// target. Activation failures call the same path while the source remains
     /// visible, so the preview can never become its lasting theme.
     private func restoreCreateSpacePreviewTheme() {
+        // Band backstop for the create-form swipe: clears the forwards-filled
+        // slide-out and re-shows the band. Runs behind the fronted target on
+        // success, immediately on activation failure (the source sidebar must
+        // not stay blank), and under the overlay on cancel — never visibly.
+        restoreCreateSpaceSwipeBandState()
         guard let savedTheme = themeBeforeCreateSpacePreview else { return }
         themeBeforeCreateSpacePreview = nil
         state.themeContext.setTheme(savedTheme)
+    }
+
+    // MARK: - Create-Space swipe
+
+    /// CA-animation key for the create-form swipe's band slide.
+    private static let createSpaceSwipeAnimationKey = "createSpaceOverlaySwipe"
+
+    /// Slides the create-Space overlay in from the right while the per-Space
+    /// content band pushes left (`entering: true`), or the reverse on cancel —
+    /// the same distance, duration and curve as the Space-switch push-in, so
+    /// the form reads as an adjacent (new) Space. Layer animations only: the
+    /// overlay's constraints already pin its resting frame, and the band views
+    /// belong to the stack, so neither is moved in the model.
+    private func runCreateSpaceOverlaySwipe(entering: Bool,
+                                            overlayViews: [NSView],
+                                            completion: (() -> Void)? = nil) {
+        let width = view.bounds.width
+        let duration = PhiPreferences.GeneralSettings.loadSwitchSpaceAnimationDuration()
+        guard width > 0, duration > 0 else {
+            if entering {
+                setSwitchBandContentHidden(true)
+            } else {
+                restoreCreateSpaceSwipeBandState()
+            }
+            completion?()
+            return
+        }
+
+        // Clip the slide to the sidebar so the moving band reveals background
+        // instead of poking over the web content — same dance as the swipe
+        // edge bounce; restored when the slide settles.
+        let container = spaceSwitchBandContainer
+        container.wantsLayer = true
+        let priorMasksToBounds = container.layer?.masksToBounds ?? false
+        container.layer?.masksToBounds = true
+
+        let timing = CAMediaTimingFunction(name: .easeInEaseOut)
+        CATransaction.begin()
+        CATransaction.setCompletionBlock { [weak self, weak container] in
+            container?.layer?.masksToBounds = priorMasksToBounds
+            guard let self else {
+                completion?()
+                return
+            }
+            if entering, self.createSpaceOverlay != nil {
+                // Swap the forwards-filled hold for the model alpha, then drop
+                // the animation — committed together, so the band never
+                // flashes back in between. Guarded on the form still being up:
+                // a cancel within the slide has already restored the band (and
+                // holds its own return animation under the same key), which
+                // this late completion must not undo.
+                self.setSwitchBandContentHidden(true)
+                for bandView in self.spaceSwitchBandViews {
+                    bandView.layer?.removeAnimation(forKey: Self.createSpaceSwipeAnimationKey)
+                }
+            }
+            completion?()
+        }
+        for bandView in spaceSwitchBandViews {
+            bandView.wantsLayer = true
+            guard let layer = bandView.layer else { continue }
+            let slide = CABasicAnimation(keyPath: "transform.translation.x")
+            slide.fromValue = entering ? 0 : -width
+            slide.toValue = entering ? -width : 0
+            slide.duration = duration
+            slide.timingFunction = timing
+            if entering {
+                // Hold the band off screen past the animation's end; the
+                // completion above swaps the hold for the model alpha before
+                // removing it, so the band never flashes back in between.
+                slide.fillMode = .forwards
+                slide.isRemovedOnCompletion = false
+            }
+            layer.add(slide, forKey: Self.createSpaceSwipeAnimationKey)
+        }
+        for overlayView in overlayViews {
+            overlayView.wantsLayer = true
+            guard let layer = overlayView.layer else { continue }
+            let slide = CABasicAnimation(keyPath: "transform.translation.x")
+            slide.fromValue = entering ? width : 0
+            slide.toValue = entering ? 0 : width
+            slide.duration = duration
+            slide.timingFunction = timing
+            if !entering {
+                // Hold the leaving form off screen until the completion tears
+                // it down.
+                slide.fillMode = .forwards
+                slide.isRemovedOnCompletion = false
+            }
+            layer.add(slide, forKey: Self.createSpaceSwipeAnimationKey)
+        }
+        CATransaction.commit()
+    }
+
+    /// Clears the swipe's forwards-filled band slide and re-shows the band
+    /// content. Instant — every caller runs it while the band is not visible
+    /// (see `restoreCreateSpacePreviewTheme`).
+    private func restoreCreateSpaceSwipeBandState() {
+        for bandView in spaceSwitchBandViews {
+            bandView.layer?.removeAnimation(forKey: Self.createSpaceSwipeAnimationKey)
+        }
+        setSwitchBandContentHidden(false)
     }
 }
 

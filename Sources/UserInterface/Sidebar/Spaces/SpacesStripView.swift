@@ -585,10 +585,19 @@ struct SpacesStripView: View {
         // pips are hidden, a "…" affordance in its place that opens the full
         // switcher menu.
         GeometryReader { geo in
-            let visibleCount = visiblePipCount(availableWidth: geo.size.width)
+            // While the create form is up, a dashed placeholder pip follows
+            // the row — reserve its slot so the viewport math never lets the
+            // real pips collide with it.
+            let placeholderReserve: CGFloat = slot.isCreatingSpace
+                ? Self.stripItemWidth + Self.stripSpacing
+                : 0
+            let visibleCount = visiblePipCount(availableWidth: geo.size.width - placeholderReserve)
             let hasOverflow = visibleCount < stripOrderedSpaces.count
             HStack(spacing: Self.stripSpacing) {
                 pipsViewport(visibleCount: visibleCount)
+                if slot.isCreatingSpace {
+                    creatingSpacePlaceholderPip
+                }
                 Spacer(minLength: 4)
                 if hasOverflow {
                     moreButton
@@ -617,6 +626,12 @@ struct SpacesStripView: View {
                 ensureActivePipVisible(availableWidth: geo.size.width, animated: false)
             }
             .onChange(of: slot.activeSpaceId) { _ in
+                ensureActivePipVisible(availableWidth: geo.size.width, animated: true)
+            }
+            .onChange(of: slot.isCreatingSpace) { _ in
+                // Opening the create form slides an overflowing row to its
+                // end, where the dashed placeholder stands; closing it slides
+                // back to the active pip's window.
                 ensureActivePipVisible(availableWidth: geo.size.width, animated: true)
             }
             .onChange(of: geo.size.width) { newWidth in
@@ -749,8 +764,11 @@ struct SpacesStripView: View {
             // edges: the concealment flips in the same update pass as the
             // `activeSpaceId` switch, whose row-level animation would
             // otherwise fade the removal — a doubled chip beside the
-            // stand-in.
+            // stand-in. Also hidden while the create form is up: the dashed
+            // placeholder is the Space in focus then, and the source Space
+            // must not keep reading as active beside it.
             if !stripGeometry.isChipConcealed,
+               !slot.isCreatingSpace,
                let activeId = slot.activeSpaceId,
                stripOrderedSpaces.contains(where: { $0.spaceId == activeId }) {
                 RoundedRectangle(cornerRadius: 8, style: .continuous)
@@ -834,6 +852,14 @@ struct SpacesStripView: View {
     /// empty list's count of 0, bail, and leave the restored active pip
     /// stranded outside the window with no later event to fix it.
     private func ensureActivePipVisible(availableWidth: CGFloat, animated: Bool) {
+        // While the create form is up, the window anchors on the row's END —
+        // the dashed placeholder stands where the new Space will land, after
+        // the last pip, so an overflowing row must show its tail for the
+        // placeholder to read as continuing it.
+        if slot.isCreatingSpace {
+            slideViewportToEnd(availableWidth: availableWidth, animated: animated)
+            return
+        }
         let visibleCount = visiblePipCount(availableWidth: availableWidth)
         guard visibleCount > 0,
               let activeId = slot.activeSpaceId,
@@ -846,6 +872,26 @@ struct SpacesStripView: View {
             }
         } else {
             stripStartIndex = start
+        }
+    }
+
+    /// Slides the viewport window to the last pips of an overflowing row —
+    /// the create-form anchor (see `ensureActivePipVisible`). The width math
+    /// reserves the placeholder's slot, mirroring `iconStrip`, so the tail
+    /// pips and the placeholder fit the window together. Same curve/duration
+    /// as a Space-switch slide.
+    private func slideViewportToEnd(availableWidth: CGFloat, animated: Bool) {
+        let reserve = Self.stripItemWidth + Self.stripSpacing
+        let visibleCount = visiblePipCount(availableWidth: availableWidth - reserve)
+        guard visibleCount > 0 else { return }
+        let end = max(0, stripOrderedSpaces.count - visibleCount)
+        guard end != stripStartIndex else { return }
+        if animated {
+            withAnimation(.easeInOut(duration: PhiPreferences.GeneralSettings.loadSwitchSpaceAnimationDuration())) {
+                stripStartIndex = end
+            }
+        } else {
+            stripStartIndex = end
         }
     }
 
@@ -878,6 +924,28 @@ struct SpacesStripView: View {
     /// it when not every Space fits — plus, when overflowing, room for the
     /// half-pip peeks at the window's edges (see `pipsViewport`). All strip
     /// items share a uniform width, so the count is pure arithmetic.
+    /// Dashed-outline stand-in pip for the Space being created: sits after
+    /// the last pip while the create form is up, showing the form's currently
+    /// selected icon (mirrored via `slot.creatingSpaceIconValue`) — a preview
+    /// of where the new Space will land in the row. Same chip shape and icon
+    /// treatment as a real pip, with the dashed border marking it as pending.
+    private var creatingSpacePlaceholderPip: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .strokeBorder(Color.secondary.opacity(0.65),
+                              style: StrokeStyle(lineWidth: 1.5, dash: [3, 3]))
+                .frame(width: Self.stripItemWidth, height: Self.stripItemHeight)
+            stripIcon(
+                storedValue: slot.creatingSpaceIconValue,
+                symbolWeight: .semibold,
+                tint: Color.primary
+            )
+        }
+        .frame(width: Self.stripItemWidth, height: rowHeight)
+        .allowsHitTesting(false)
+        .transition(.opacity)
+    }
+
     private func visiblePipCount(availableWidth: CGFloat) -> Int {
         let total = stripOrderedSpaces.count
         guard total > 0 else { return 0 }

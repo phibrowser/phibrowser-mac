@@ -617,6 +617,8 @@ class FloatingSidebarViewController: NSViewController {
             self?.previewCreateSpaceOverlayTheme(theme)
         } onCreatedSpaceActivationFinished: { [weak self] in
             self?.restoreCreateSpacePreviewTheme()
+        } onIconSelectionChange: { [weak self] selection in
+            self?.spacesStripSlot?.creatingSpaceIconValue = selection.storageValue
         }
         // Keep the Spaces icon row visible above the form, even with a single
         // Space, and settle its header band before anchoring the overlay.
@@ -676,6 +678,7 @@ class FloatingSidebarViewController: NSViewController {
             restoreCreateSpacePreviewTheme()
         }
         spacesStripSlot?.isCreatingSpace = false
+        spacesStripSlot?.creatingSpaceIconValue = nil
         // Release forced visibility. Normal Space-count rules take over again.
         headerView.forcesSpaceSwitchVisible = false
         updateHeaderHeight()

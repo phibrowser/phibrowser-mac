@@ -4875,6 +4875,7 @@ final class SpaceManager: ObservableObject {
     /// the next window to launch.
     func activateInFocusedWindow(
         spaceId: String,
+        animated: Bool = true,
         onActivationFailed: (() -> Void)? = nil,
         onSwapSettled: (() -> Void)? = nil
     ) {
@@ -4889,6 +4890,7 @@ final class SpaceManager: ObservableObject {
         }
         slot.activate(
             spaceId: spaceId,
+            animated: animated,
             onActivationFailed: onActivationFailed,
             onSwapSettled: onSwapSettled
         )
@@ -6976,6 +6978,12 @@ final class SpaceWindowSlot: ObservableObject {
     /// form's window away — while keeping the hover info card live (see
     /// `SpacesStripView.spacePip` / `isHoverCardPresented`).
     @Published var isCreatingSpace: Bool = false
+
+    /// Storage value (`IconPickerSelection.storageValue`) of the icon the
+    /// create-Space form currently has selected, mirrored here while
+    /// `isCreatingSpace` so the strip's dashed placeholder pip can show it.
+    /// Nil outside a create session.
+    @Published var creatingSpaceIconValue: String?
 
     /// The Space the user just deliberately switched to by clicking or picking
     /// it. The interaction dismisses its hover card, and the card must stay

@@ -31,6 +31,7 @@ final class ApplicationStateTests: XCTestCase {
 
         XCTAssertEqual(state.browserAccessState, .loginRequired)
         XCTAssertFalse(state.canUseBrowser)
+        XCTAssertFalse(state.canOpenExternalLinksInKiosk)
         XCTAssertFalse(state.isGuest)
         XCTAssertFalse(state.isAuthenticated)
     }
@@ -40,6 +41,7 @@ final class ApplicationStateTests: XCTestCase {
 
         XCTAssertEqual(state.browserAccessState, .guest)
         XCTAssertTrue(state.canUseBrowser)
+        XCTAssertTrue(state.canOpenExternalLinksInKiosk)
         XCTAssertTrue(state.isGuest)
         XCTAssertFalse(state.isAuthenticated)
 
@@ -83,6 +85,7 @@ final class ApplicationStateTests: XCTestCase {
 
         XCTAssertEqual(state.browserAccessState, .signedIn)
         XCTAssertTrue(state.canUseBrowser)
+        XCTAssertTrue(state.canOpenExternalLinksInKiosk)
         XCTAssertTrue(state.isAuthenticated)
         XCTAssertEqual(makeState().browserAccessState, .loginRequired)
     }
@@ -164,6 +167,7 @@ final class ApplicationStateTests: XCTestCase {
         XCTAssertTrue(state.isGuest)
         XCTAssertTrue(state.isGuestMigrationRecoveryInProgress)
         XCTAssertFalse(state.canUseBrowser)
+        XCTAssertFalse(state.canOpenExternalLinksInKiosk)
         XCTAssertFalse(state.isAuthenticated)
         XCTAssertEqual(makeState().browserAccessState, .guest)
 
@@ -210,8 +214,36 @@ final class ApplicationStateTests: XCTestCase {
 
         XCTAssertEqual(state.browserAccessState, .guest)
         XCTAssertTrue(state.canUseBrowser)
+        XCTAssertFalse(state.canOpenExternalLinksInKiosk)
         XCTAssertFalse(state.isAuthenticated)
         XCTAssertEqual(makeState().browserAccessState, .guest)
+    }
+
+    func testKioskExternalLinksResumeAfterGuestPromotionCompletes() {
+        let state = makeState()
+        state.enterGuestMode()
+        XCTAssertTrue(state.beginGuestAccountPromotion())
+        let accessChanges = expectation(
+            description: "Kiosk external-link access changes"
+        )
+        accessChanges.assertForOverFulfill = true
+        let observer = notificationCenter.addObserver(
+            forName: .kioskExternalLinkAccessDidChange,
+            object: state,
+            queue: nil
+        ) { _ in
+            accessChanges.fulfill()
+        }
+        defer { notificationCenter.removeObserver(observer) }
+
+        XCTAssertTrue(state.canUseBrowser)
+        XCTAssertFalse(state.canOpenExternalLinksInKiosk)
+
+        state.cancelGuestAccountPromotion()
+        state.cancelGuestAccountPromotion()
+
+        XCTAssertTrue(state.canOpenExternalLinksInKiosk)
+        wait(for: [accessChanges], timeout: 0.1)
     }
 
     // `hasRecoverableLoginSession` is false in every fenced launch:

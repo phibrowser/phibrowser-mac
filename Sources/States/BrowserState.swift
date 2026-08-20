@@ -389,7 +389,13 @@ class BrowserState {
     /// Whether this window participates in the Spaces UI (strip, picker,
     /// swipe/menu switching). Standalone incognito windows are orthogonal to
     /// Spaces; the Incognito Space's window is one.
-    var participatesInSpaces: Bool { !isIncognito || isIncognitoSpace }
+    var participatesInSpaces: Bool {
+        !isKioskWindow && (!isIncognito || isIncognitoSpace)
+    }
+    /// True for the minimal, ephemeral Kiosk browser window. Kiosk windows keep
+    /// the regular tab/WebContents event path but opt out of profile-backed
+    /// window presentation such as Spaces, pinned tabs, and extensions.
+    let isKioskWindow: Bool
     let searchSuggestionChanged = PassthroughSubject<([[String: Any]], String), Never>()
     
     // MARK: - AI Chat Tab Identifier Helpers
@@ -530,13 +536,15 @@ class BrowserState {
          profileId: String = LocalStore.defaultProfileId,
          spaceId: String = LocalStore.defaultSpaceId,
          isIncognito: Bool = false,
-         isIncognitoSpace: Bool = false) {
+         isIncognitoSpace: Bool = false,
+         isKioskWindow: Bool = false) {
         self.windowId = windowId
         self.localStore = localStore
         self.profileId = profileId
         self.spaceId = spaceId
         self.isIncognito = isIncognito
         self.isIncognitoSpace = isIncognitoSpace
+        self.isKioskWindow = isKioskWindow
         self.imagePreviewState = BrowserImagePreviewState(loader: ImagePreviewLoader())
         self.themeContext = BrowserThemeContext(
             configuration: BrowserThemeConfigurationResolver.resolve(isIncognito: isIncognito)
@@ -547,7 +555,8 @@ class BrowserState {
         // the agent's window stays a clean, self-contained surface. The agent
         // task is recorded before its window is created, so isAgentSpace() is
         // already true here.
-        let isIsolated = isIncognito || AgentSpaceManager.shared.isAgentSpace(spaceId)
+        let isIsolated = isIncognito || isKioskWindow
+            || AgentSpaceManager.shared.isAgentSpace(spaceId)
         if isIsolated {
             pinnedTabs = []
             visibleBookmarkTabs = []
@@ -555,31 +564,33 @@ class BrowserState {
             addPinnedTabObserver()
             _ = bookmarkManager
         }
-        self.tabDraggingSession.isDraggingPublisher
-            .receive(on: DispatchQueue.main)
-            .sink { [weak self] isDragging in
-                self?.isDraggingTab = isDragging
-            }
-            .store(in: &cancellables)
-        _ = extensionManager
-
-        NotificationCenter.default.publisher(for: UserDefaults.didChangeNotification)
-            .receive(on: DispatchQueue.main)
-            .sink { [weak self] _ in
-                guard let self else { return }
-                let newLayoutMode = Self.buildLayoutMode()
-                if self.layoutMode != newLayoutMode {
-                    self.layoutMode = newLayoutMode
-                    self.clearMultiSelection()
-                    self.adoptPeekOnTraditionalLayoutIfNeeded()
+        if !isKioskWindow {
+            self.tabDraggingSession.isDraggingPublisher
+                .receive(on: DispatchQueue.main)
+                .sink { [weak self] isDragging in
+                    self?.isDraggingTab = isDragging
                 }
-                self.adoptPeeksOnFeatureDisabledIfNeeded()
-                self.mayUpdateNormalTabsOnLayoutChanged()
-                self.updateAISettings()
-            }
-            .store(in: &cancellables)
+                .store(in: &cancellables)
+            _ = extensionManager
 
-        syncPhiExtensionsIfAIDisabled()
+            NotificationCenter.default.publisher(for: UserDefaults.didChangeNotification)
+                .receive(on: DispatchQueue.main)
+                .sink { [weak self] _ in
+                    guard let self else { return }
+                    let newLayoutMode = Self.buildLayoutMode()
+                    if self.layoutMode != newLayoutMode {
+                        self.layoutMode = newLayoutMode
+                        self.clearMultiSelection()
+                        self.adoptPeekOnTraditionalLayoutIfNeeded()
+                    }
+                    self.adoptPeeksOnFeatureDisabledIfNeeded()
+                    self.mayUpdateNormalTabsOnLayoutChanged()
+                    self.updateAISettings()
+                }
+                .store(in: &cancellables)
+
+            syncPhiExtensionsIfAIDisabled()
+        }
     }
     
     private func makePinnedTab(from model: TabDataModel) -> Tab {

@@ -897,13 +897,21 @@ extension AppController {
     }
     
     @objc func toggleSidebar(_ sender: Any?) {
-        MainBrowserWindowControllersManager.shared.activeWindowController?.browserState.toggleSidebar()
+        guard let state = MainBrowserWindowControllersManager.shared
+            .activeWindowController?.browserState,
+              !state.isKioskWindow else {
+            return
+        }
+        state.toggleSidebar()
     }
     
     @objc func toggleChatbar(_ sendar: Any?) {
-        MainBrowserWindowControllersManager.shared.activeWindowController?.browserState.toggleAIChat(
-            trigger: .shortcut
-        )
+        guard let state = MainBrowserWindowControllersManager.shared
+            .activeWindowController?.browserState,
+              !state.isKioskWindow else {
+            return
+        }
+        state.toggleAIChat(trigger: .shortcut)
     }
 
     @MainActor
@@ -2183,7 +2191,9 @@ extension AppController {
         if item.action == #selector(toggleChatbar(_:)) {
             let phiAIEnabled = UserDefaults.standard.bool(forKey: PhiPreferences.AISettings.phiAIEnabled.rawValue)
             let state = MainBrowserWindowControllersManager.shared.getActiveWindowState()
-            if !phiAIEnabled || state?.isIncognito ?? false || state?.groupOverviewState != nil || state?.focusingTab?.aiChatEnabled == false {
+            if !phiAIEnabled || state?.isKioskWindow == true
+                || state?.isIncognito ?? false || state?.groupOverviewState != nil
+                || state?.focusingTab?.aiChatEnabled == false {
                 return false
             }
         }
@@ -2206,7 +2216,9 @@ extension AppController {
 
         // Toggle Sidebar is unavailable in the traditional layout.
         if item.action == #selector(toggleSidebar(_:)) {
-            if PhiPreferences.GeneralSettings.loadLayoutMode().isTraditional {
+            if MainBrowserWindowControllersManager.shared
+                .getActiveWindowState()?.isKioskWindow == true
+                || PhiPreferences.GeneralSettings.loadLayoutMode().isTraditional {
                 return false
             }
         }

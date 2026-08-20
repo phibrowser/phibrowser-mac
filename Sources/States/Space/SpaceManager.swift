@@ -703,6 +703,13 @@ final class SpaceManager: ObservableObject {
     /// for exactly that reason.
     private(set) var isSessionRestoreInFlight = false
 
+    /// True while a restored window may still be shown or re-ordered by the
+    /// coalesced visibility reconcile. Cold Kiosk opens wait for this to clear
+    /// so their later activation remains in front.
+    var isRestoreVisibilityReconcileInFlight: Bool {
+        slots.contains { $0.restoreVisibilityReconcileScheduled }
+    }
+
     /// When the restore above went in flight, for the absorbed-reopen line in
     /// `reopenOnPersistedSpaceIfWindowless`. The elapsed time is the one
     /// number that separates a reopen absorbed by an ordinary ~2s replay from
@@ -1188,7 +1195,11 @@ final class SpaceManager: ObservableObject {
     /// — the one thing that line exists to say.
     private var liveNonShadowWindowCount: Int {
         MainBrowserWindowControllersManager.shared.getAllWindows()
-            .filter { $0.browserType != .shadow }.count
+            .filter {
+                $0.browserType != .shadow
+                    && $0.browserType != .kiosk
+                    && $0.browserType != .kioskIncognito
+            }.count
     }
 
     /// Opens a single plain window on the persisted last-active Space — the

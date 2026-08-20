@@ -91,6 +91,9 @@ struct CommandDispatcher {
         guard let windowController = MainBrowserWindowControllersManager.shared.findControllerWith(window: window) else {
             return false
         }
+        if let kioskWindowController = windowController as? KioskBrowserWindowController {
+            return kioskWindowController.handleCommand(command)
+        }
         // Agent lock: while the agent controls this window, block every command
         // except Space navigation. The menu items are greyed and the shortcuts
         // swallowed in `handleKeyEquivalent`; this is the execution backstop for

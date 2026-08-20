@@ -411,6 +411,13 @@ extension PhiChromiumCoordinator: PhiChromiumBridgeDelegate {
         return canUseBrowser
     }
 
+    func canOpenExternalLinksInKiosk() -> Bool {
+        guard PhiBuildCapabilities.supportsAuthentication else {
+            return true
+        }
+        return ApplicationState.shared.canOpenExternalLinksInKiosk
+    }
+
     func isPhiGuestMode() -> Bool {
         !PhiBuildCapabilities.supportsAuthentication
             || ApplicationState.shared.isGuest
@@ -554,11 +561,11 @@ extension PhiChromiumCoordinator: PhiChromiumBridgeDelegate {
     func mainBrowserWindowCreated(_ window: NSWindow, type browserType: ChromiumBrowserType, profileId: String, windowId: Int64, restoredFromWindowId: Int64, restoredSpaceId: String?) {
         AppLogInfo("🌐 [Chromium] mainBrowserWindowCreated called - windowId: \(windowId), restoredFrom: \(restoredFromWindowId), restoredSpace: \(restoredSpaceId ?? "nil"), type: \(browserType.rawValue)")
 
-
         guard browserType == .normal || browserType == .incognito
                 || browserType == .incognitoSpace || browserType == .shadow
-                || browserType == .agentSpace else {
-            AppLogInfo("🌐 [Chromium] Ignoring window type: \(browserType.rawValue) (not normal/incognito/incognitoSpace/agentSpace)")
+                || browserType == .agentSpace || browserType == .kiosk
+                || browserType == .kioskIncognito else {
+            AppLogInfo("🌐 [Chromium] Ignoring unsupported window type: \(browserType.rawValue)")
             return
         }
 
@@ -708,14 +715,21 @@ extension PhiChromiumCoordinator: PhiChromiumBridgeDelegate {
                    windowSpaceId: spaceId) {
                 resolvedSlot.markRestoredSiblingForConcealment(spaceId: spaceId)
             }
-            let mainWindowController = MainBrowserWindowController(
-                window: window,
-                windowId: Int(windowId),
-                browserType: browserType,
-                profileId: profileId,
-                spaceId: spaceId,
-                slot: resolvedSlot
-            )
+            // The NSWindow callback is synchronous on Chromium's UI thread;
+            // register its state before the first tab event can be delivered.
+            let mainWindowController = MainActor.assumeIsolated {
+                MainBrowserWindowControllersManager.shared.createWindowController(
+                    window: window,
+                    windowId: Int(windowId),
+                    browserType: browserType,
+                    profileId: profileId,
+                    spaceId: spaceId,
+                    slot: resolvedSlot
+                )
+            }
+            MainActor.assumeIsolated {
+                AppController.shared?.externalLinkPresentationWindowDidOpen()
+            }
             // Do NOT force key/front for the active window here. Chromium's
             // BrowserWindow Show() / ShowInactive() runs post-ctor on this same
             // NSWindow and drives visibility + activation with the correct
@@ -1109,19 +1123,18 @@ extension PhiChromiumCoordinator: PhiChromiumBridgeDelegate {
                 // nil window (already torn down) → skip silently; the mask is best-effort.
                 let controller = MainBrowserWindowControllersManager.shared
                     .controller(for: windowId.intValue)
-                controller?
-                    .mainSplitViewController.webContentContainerViewController
-                    .maskClosingTab(tabId: tabId.intValue)
-                // If the closing tab is hosted by the Peek panel, detach its
-                // native view now, while the WebContents is still alive — the
-                // async EventBus close below runs after Chromium destroyed it.
-                controller?
-                    .peekPanelControllerIfLoaded?
-                    .detachContentIfHosting(tabId: tabId.intValue)
-                // Same rule for a closing reader-overlay surface tab.
-                controller?
-                    .readerPanelControllerIfLoaded?
-                    .detachContentIfHosting(tabId: tabId.intValue)
+                if !(controller is KioskBrowserWindowController) {
+                    controller?.mainSplitViewController.webContentContainerViewController
+                        .maskClosingTab(tabId: tabId.intValue)
+                    // If the closing tab is hosted by the Peek panel, detach its
+                    // native view now, while the WebContents is still alive — the
+                    // async EventBus close below runs after Chromium destroyed it.
+                    controller?.peekPanelControllerIfLoaded?
+                        .detachContentIfHosting(tabId: tabId.intValue)
+                    // Same rule for a closing reader-overlay surface tab.
+                    controller?.readerPanelControllerIfLoaded?
+                        .detachContentIfHosting(tabId: tabId.intValue)
+                }
             }
         } else {
             assertionFailure("tabWillBeRemove off the main thread; skipping best-effort close mask")

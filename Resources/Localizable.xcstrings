@@ -52169,6 +52169,30 @@
         }
       }
     },
+    "settings.general.externalLinksInKiosk.hint" : {
+      "comment" : "General settings - Hint for opening external links in Kiosk windows",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Links opened from other apps use a focused, single-page Kiosk window."
+          }
+        }
+      }
+    },
+    "settings.general.externalLinksInKiosk.toggle" : {
+      "comment" : "General settings - Toggle title for opening external links in Kiosk windows",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Open external links in Kiosk windows"
+          }
+        }
+      }
+    },
     "settings.general.language.displayLanguageTitle" : {
       "comment" : "General settings - Row title for choosing Phi's native interface language",
       "extractionState" : "extracted_with_value",

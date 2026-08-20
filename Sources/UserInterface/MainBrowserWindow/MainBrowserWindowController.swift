@@ -126,11 +126,15 @@ class MainBrowserWindowController: NSWindowController {
     }()
     
     private var originalContentView: NSView?
+    private var kioskContentViewController: KioskBrowserContentViewController?
     lazy var cancellables = Set<AnyCancellable>()
     private var multiSelectionEscapeMonitor: Any?
     private(set) var windowId = 0
     @Published private(set) var browserState: BrowserState
-    var tabStripView: TabStrip? { mainSplitViewController.webContentContainerViewController.tabStripView }
+    var tabStripView: TabStrip? {
+        guard !browserState.isKioskWindow else { return nil }
+        return mainSplitViewController.webContentContainerViewController.tabStripView
+    }
     
     required init?(coder: NSCoder) {
         fatalError("not support")
@@ -142,13 +146,16 @@ class MainBrowserWindowController: NSWindowController {
          profileId: String = LocalStore.defaultProfileId,
          spaceId: String = LocalStore.defaultSpaceId,
          account: Account = AccountController.shared.account ?? AccountController.defaultAccount,
-         slot: SpaceWindowSlot? = nil) {
-        let state = BrowserState(
+         slot: SpaceWindowSlot? = nil,
+         browserState suppliedBrowserState: BrowserState? = nil) {
+        let state = suppliedBrowserState ?? BrowserState(
             windowId: windowId,
             localStore: account.localStorage,
             profileId: profileId,
             spaceId: spaceId,
-            isIncognito: browserType == .incognito || browserType == .incognitoSpace,
+            isIncognito: browserType == .incognito
+                || browserType == .incognitoSpace
+                || browserType == .kioskIncognito,
             isIncognitoSpace: browserType == .incognitoSpace
         )
         self.browserState = state
@@ -358,6 +365,7 @@ class MainBrowserWindowController: NSWindowController {
     /// and deminiaturizing doesn't re-trigger it — leaving the restored window
     /// blank. Drive the content setup now that the window is visible again.
     @objc private func handleWindowDidDeminiaturize(_ note: Notification) {
+        guard !browserState.isKioskWindow else { return }
         mainSplitViewController.phiHandleRestoreFromMinimized()
     }
 
@@ -390,6 +398,16 @@ class MainBrowserWindowController: NSWindowController {
     
     private func setupContentView() {
         guard let _ = self.window else { return }
+
+        if let kioskState = browserState as? KioskBrowserState {
+            let controller = KioskBrowserContentViewController(state: kioskState)
+            kioskContentViewController = controller
+            contentViewController = controller
+            window?.standardWindowButton(.closeButton)?.isHidden = false
+            window?.standardWindowButton(.miniaturizeButton)?.isHidden = false
+            window?.standardWindowButton(.zoomButton)?.isHidden = false
+            return
+        }
         
         self.contentViewController = mainSplitViewController
         
@@ -666,6 +684,7 @@ class MainBrowserWindowController: NSWindowController {
     }
 
     func containsTabDragBoundary(at screenLocation: CGPoint) -> Bool {
+        guard !browserState.isKioskWindow else { return false }
         if tabStripView?.containsScreenLocation(screenLocation) == true {
             return true
         }
@@ -679,6 +698,10 @@ class MainBrowserWindowController: NSWindowController {
     /// Called when Chromium has hidden the previous tab and it's ready for cleanup.
     /// Forwards to WebContentContainerViewController to remove the old NSView.
     func handlePreviousTabReadyForCleanup(tabId: Int) {
+        if let kioskContentViewController {
+            kioskContentViewController.handlePreviousTabReadyForCleanup(tabId: tabId)
+            return
+        }
         mainSplitViewController.webContentContainerViewController
             .handlePreviousTabReadyForCleanup(tabId: tabId)
     }
@@ -686,6 +709,10 @@ class MainBrowserWindowController: NSWindowController {
     /// Called when a new tab has completed its first visually non-empty paint.
     /// Forwards to WebContentContainerViewController to bring the new tab's view to front.
     func handleTabReadyToDisplay(tabId: Int) {
+        if let kioskContentViewController {
+            kioskContentViewController.handleTabReadyToDisplay(tabId: tabId)
+            return
+        }
         mainSplitViewController.webContentContainerViewController
             .handleTabReadyToDisplay(tabId: tabId)
     }

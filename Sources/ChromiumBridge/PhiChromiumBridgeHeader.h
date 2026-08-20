@@ -29,6 +29,9 @@ NS_ASSUME_NONNULL_BEGIN
 // window closes. Chromium reports such windows as ChromiumBrowserTypeShadow
 // (is_shadow takes precedence in type resolution); this value exists as a
 // creation request, not a reported type.
+// ChromiumBrowserTypeKiosk is a popup-backed, single-WebContents browser
+// owned by Phi's minimal Kiosk controller. KioskIncognito reports the same
+// surface when its inherited profile is off the record.
 typedef NS_ENUM(NSUInteger, ChromiumBrowserType) {
     ChromiumBrowserTypeNormal = 0,
     ChromiumBrowserTypePopup,
@@ -40,7 +43,9 @@ typedef NS_ENUM(NSUInteger, ChromiumBrowserType) {
     ChromiumBrowserTypeShadow,
     ChromiumBrowserTypeIncognitoSpace,  // TYPE_NORMAL + Incognito Space OTR profile
     ChromiumBrowserTypeAgentSpace,
-    ChromiumBrowserTypeShadowIncognito  // is_shadow + unique per-window OTR profile
+    ChromiumBrowserTypeShadowIncognito,  // is_shadow + unique per-window OTR profile
+    ChromiumBrowserTypeKiosk,
+    ChromiumBrowserTypeKioskIncognito
 };
 
 typedef NS_ENUM(NSUInteger, BrowserType) {
@@ -263,6 +268,7 @@ typedef NS_ENUM(NSInteger, PhiGhostMaterializeOutcome) {
 
 // Login management
 - (BOOL)canShowChromiumWindow;
+- (BOOL)canOpenExternalLinksInKiosk;
 - (BOOL)isPhiGuestMode;
 - (void)showLoginUI;
 - (NSString *)getAuth0AccessTokenSyncly;
@@ -1295,6 +1301,10 @@ typedef NS_ENUM(NSInteger, PhiGhostMaterializeOutcome) {
 /// never diverge. Main thread only.
 - (BOOL)isRestorePreviousSessionEnabled;
 - (void)setRestorePreviousSessionEnabled:(BOOL)enabled;
+
+/// Updates Chromium's process-local routing cache for external links. Phi
+/// UserDefaults remains the persisted source of truth. Main thread only.
+- (void)setOpenExternalLinksInKioskEnabled:(BOOL)enabled;
 
 /// Restores the previous session mid-session for a Dock reopen or an external
 /// link that arrives with no window open, mirroring cold start: every profile

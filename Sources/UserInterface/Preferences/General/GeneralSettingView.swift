@@ -505,6 +505,9 @@ private struct BrowsingSectionView: View {
     @AppStorage(PhiPreferences.GeneralSettings.openNewTabPageOnCmdT.rawValue)
     private var openNewTabPageOnCmdT: Bool = PhiPreferences.GeneralSettings.openNewTabPageOnCmdT.defaultValue
 
+    @AppStorage(PhiPreferences.GeneralSettings.openExternalLinksInKiosk.rawValue)
+    private var openExternalLinksInKiosk: Bool = PhiPreferences.GeneralSettings.openExternalLinksInKiosk.defaultValue
+
     @AppStorage(PhiPreferences.GeneralSettings.alwaysShowURLPath.rawValue)
     private var alwaysShowURLPath: Bool = PhiPreferences.GeneralSettings.alwaysShowURLPath.defaultValue
 
@@ -604,6 +607,31 @@ private struct BrowsingSectionView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .onChange(of: peekViewEnabled) { _, newValue in
                         PeekViewAnalytics.settingChanged(enabled: newValue)
+                    }
+
+                    Divider()
+
+                    HStack(alignment: .center, spacing: 12) {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(NSLocalizedString("settings.general.externalLinksInKiosk.toggle", value: "Open external links in Kiosk windows", comment: "General settings - Toggle title for opening external links in Kiosk windows"))
+                                .font(.system(size: 13))
+                                .themedForeground(.textPrimary)
+                            Text(NSLocalizedString("settings.general.externalLinksInKiosk.hint", value: "Links opened from other apps use a focused, single-page Kiosk window.", comment: "General settings - Hint for opening external links in Kiosk windows"))
+                                .font(.system(size: 11))
+                                .themedForeground(.textTertiary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                        Spacer(minLength: 12)
+                        Toggle("", isOn: $openExternalLinksInKiosk)
+                            .labelsHidden()
+                            .toggleStyle(.switch)
+                            .controlSize(.mini)
+                            .themedTint(.themeColor)
+                    }
+                    .padding(.vertical, 12)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .onChange(of: openExternalLinksInKiosk) { _, newValue in
+                        AppController.shared?.setOpenExternalLinksInKioskEnabled(newValue)
                     }
 
                     Divider()

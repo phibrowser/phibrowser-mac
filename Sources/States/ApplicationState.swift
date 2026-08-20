@@ -66,6 +66,17 @@ final class ApplicationState {
             && !guestMigrationRecoveryInProgress
     }
 
+    /// Kiosk external links require a stable browser identity. Guest account
+    /// promotion keeps ordinary browser access alive while data is rebound,
+    /// but a new Kiosk must wait until that transaction settles.
+    var canOpenExternalLinksInKiosk: Bool {
+        stateLock.lock()
+        defer { stateLock.unlock() }
+        return storedBrowserAccessState.canUseBrowser
+            && !guestMigrationRecoveryInProgress
+            && !guestAccountPromotionInProgress
+    }
+
     var isAuthenticated: Bool {
         stateLock.lock()
         defer { stateLock.unlock() }
@@ -252,8 +263,16 @@ final class ApplicationState {
     /// publication. Guest access and its persisted marker remain unchanged.
     func cancelGuestAccountPromotion() {
         stateLock.lock()
+        let didChange = guestAccountPromotionInProgress
         guestAccountPromotionInProgress = false
         stateLock.unlock()
+
+        if didChange {
+            notificationCenter.post(
+                name: .kioskExternalLinkAccessDidChange,
+                object: self
+            )
+        }
     }
 
     /// Releases the launch recovery gate only after the target account has
@@ -374,5 +393,8 @@ final class ApplicationState {
 extension Notification.Name {
     static let browserAccessStateDidChange = Notification.Name(
         "BrowserAccessStateDidChange"
+    )
+    static let kioskExternalLinkAccessDidChange = Notification.Name(
+        "KioskExternalLinkAccessDidChange"
     )
 }

@@ -295,7 +295,7 @@ class MainBrowserWindowControllersManager: MainBrowserWindowLookup {
         } else {
             slot = nil
         }
-        let windowController = MainBrowserWindowController(
+        let windowController = createWindowController(
             window: danglingWindow.window,
             windowId: danglingWindow.windowId,
             browserType: danglingWindow.browserType,
@@ -383,6 +383,42 @@ class MainBrowserWindowControllersManager: MainBrowserWindowLookup {
                                                selector: #selector(windowDidBecomeKey(_:)),
                                                name: NSWindow.didBecomeKeyNotification,
                                                object: window)
+    }
+
+    /// Creates the native owner matching Chromium's semantic window type.
+    /// Keeping this decision in the registry preserves specialized state and
+    /// presentation when a dangling window is materialized or an account
+    /// transition rebinds an existing NSWindow.
+    @MainActor
+    @discardableResult
+    func createWindowController(
+        window: NSWindow,
+        windowId: Int,
+        browserType: ChromiumBrowserType,
+        profileId: String,
+        spaceId: String = LocalStore.defaultSpaceId,
+        account: Account = AccountController.shared.account
+            ?? AccountController.defaultAccount,
+        slot: SpaceWindowSlot? = nil
+    ) -> MainBrowserWindowController {
+        if browserType == .kiosk || browserType == .kioskIncognito {
+            return KioskBrowserWindowController(
+                window: window,
+                windowId: windowId,
+                browserType: browserType,
+                profileId: profileId,
+                account: account
+            )
+        }
+        return MainBrowserWindowController(
+            window: window,
+            windowId: windowId,
+            browserType: browserType,
+            profileId: profileId,
+            spaceId: spaceId,
+            account: account,
+            slot: slot
+        )
     }
 
     /// Freezes or restores browser-window mouse interaction during the
@@ -566,7 +602,7 @@ class MainBrowserWindowControllersManager: MainBrowserWindowLookup {
             tab.profileId = destinationProfileId
         }
 
-        let replacement = MainBrowserWindowController(
+        let replacement = createWindowController(
             window: window,
             windowId: oldController.windowId,
             browserType: oldController.browserType,
@@ -803,6 +839,11 @@ class MainBrowserWindowControllersManager: MainBrowserWindowLookup {
             }
         }
         windowControllers.remove(windowController)
+        if activeWindowController === windowController {
+            activeWindowController = windowControllers.first(where: {
+                $0.window?.isVisible == true
+            }) ?? windowControllers.first
+        }
         // Chromium keeps every window close pending until it is told the gesture
         // is over; a cascade in flight makes this a no-op (see
         // `SpaceManager.reportWindowGroupCloseSettled`).
@@ -835,6 +876,20 @@ class MainBrowserWindowControllersManager: MainBrowserWindowLookup {
     /// Returns every tracked browser window controller.
     func getAllWindows() -> [MainBrowserWindowController] {
         return Array(windowControllers)
+    }
+
+    /// True only after a user-facing regular browser window has completed its
+    /// Chromium Show() call. Kiosk cold opens wait for this so their later
+    /// activating show wins the foreground order.
+    var hasVisibleRegularBrowserWindow: Bool {
+        windowControllers.contains { controller in
+            switch controller.browserType {
+            case .normal:
+                return controller.window?.isVisible == true
+            default:
+                return false
+            }
+        }
     }
     
     /// Get the first available window ID, checking both active windows and dangling windows

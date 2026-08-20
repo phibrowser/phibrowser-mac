@@ -486,6 +486,7 @@
 		D10000000000000000000001 /* BrowserImagePreviewState.swift in Sources */ = {isa = PBXBuildFile; fileRef = D10000000000000000000011 /* BrowserImagePreviewState.swift */; };
 		EE7E00000000000000000001 /* BrowserPeekState.swift in Sources */ = {isa = PBXBuildFile; fileRef = EE7E00000000000000000011 /* BrowserPeekState.swift */; };
 		EE7E00000000000000000002 /* PeekPanelController.swift in Sources */ = {isa = PBXBuildFile; fileRef = EE7E00000000000000000012 /* PeekPanelController.swift */; };
+		EE7E00000000000000000003 /* PeekOriginTracker.swift in Sources */ = {isa = PBXBuildFile; fileRef = EE7E00000000000000000013 /* PeekOriginTracker.swift */; };
 		D10000000000000000000002 /* ImagePreviewModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = D10000000000000000000012 /* ImagePreviewModels.swift */; };
 		D10000000000000000000003 /* ImagePreviewGeometry.swift in Sources */ = {isa = PBXBuildFile; fileRef = D10000000000000000000013 /* ImagePreviewGeometry.swift */; };
 		D10000000000000000000004 /* ImagePreviewLoader.swift in Sources */ = {isa = PBXBuildFile; fileRef = D10000000000000000000014 /* ImagePreviewLoader.swift */; };
@@ -1141,6 +1142,7 @@
 		D10000000000000000000011 /* BrowserImagePreviewState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrowserImagePreviewState.swift; sourceTree = "<group>"; };
 		EE7E00000000000000000011 /* BrowserPeekState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrowserPeekState.swift; sourceTree = "<group>"; };
 		EE7E00000000000000000012 /* PeekPanelController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PeekPanelController.swift; sourceTree = "<group>"; };
+		EE7E00000000000000000013 /* PeekOriginTracker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PeekOriginTracker.swift; sourceTree = "<group>"; };
 		D10000000000000000000012 /* ImagePreviewModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImagePreviewModels.swift; sourceTree = "<group>"; };
 		D10000000000000000000013 /* ImagePreviewGeometry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImagePreviewGeometry.swift; sourceTree = "<group>"; };
 		D10000000000000000000014 /* ImagePreviewLoader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImagePreviewLoader.swift; sourceTree = "<group>"; };
@@ -1855,6 +1857,7 @@
 			isa = PBXGroup;
 			children = (
 				EE7E00000000000000000012 /* PeekPanelController.swift */,
+				EE7E00000000000000000013 /* PeekOriginTracker.swift */,
 			);
 			path = Peek;
 			sourceTree = "<group>";
@@ -3305,6 +3308,7 @@
 				D10000000000000000000001 /* BrowserImagePreviewState.swift in Sources */,
 				EE7E00000000000000000001 /* BrowserPeekState.swift in Sources */,
 				EE7E00000000000000000002 /* PeekPanelController.swift in Sources */,
+				EE7E00000000000000000003 /* PeekOriginTracker.swift in Sources */,
 				D10000000000000000000008 /* ExtensionDialogManager.swift in Sources */,
 				D10000000000000000000009 /* ExtensionDialogViewController.swift in Sources */,
 				CC6B001B2E793EAC00D4F133 /* PinnedTabViewController.swift in Sources */,

@@ -38,6 +38,18 @@ class MainBrowserWindowController: NSWindowController {
     /// coordinator (`tabWillBeRemove`) for the synchronous view detach.
     private var peekPanelController: PeekPanelController?
     var peekPanelControllerIfLoaded: PeekPanelController? { peekPanelController }
+    /// Feeds the peek panel's appear flight. Lives here rather than in the
+    /// panel controller because it has to be recording before the first peek
+    /// opens — which is when that controller is built.
+    private var peekOriginTracker: PeekOriginTracker?
+    /// Peek tab id per opener as of the previous `peeksByOpener` emission.
+    /// What makes "the user just opened this peek" decidable: mounting
+    /// content in the panel happens both for a fresh peek and for switching
+    /// to another opener's existing one, and only the first may fly.
+    private var previousPeekTabIdsByOpener: [Int: Int] = [:]
+    /// Focused tab id as of the previous emission, so a focus change can
+    /// invalidate a recorded press before it funds an unrelated peek.
+    private var lastFocusedTabIdForPeek: Int?
     
     lazy var omnibackgroundView: EventBlockBgView = {
        return EventBlockBgView()
@@ -354,6 +366,12 @@ class MainBrowserWindowController: NSWindowController {
             make.edges.equalToSuperview()
         }
 
+        // A peek's appear flight starts from the press that opened it, which
+        // is long gone by the time the panel is built — start recording now.
+        peekOriginTracker = PeekOriginTracker(
+            paneViewController: mainSplitViewController.webContentContainerViewController
+        )
+
         // Peek popup: each peek belongs to its opener tab, so the one panel
         // always shows the focused tab's peek — switching tabs swaps the
         // hosted content to the newly focused opener's peek, hides the panel
@@ -367,12 +385,31 @@ class MainBrowserWindowController: NSWindowController {
             .receive(on: DispatchQueue.main)
             .sink { [weak self] peeksByOpener, focusingTab in
                 guard let self else { return }
+                let peekTabIds = peeksByOpener.mapValues { $0.guid }
+                let previousPeekTabIds = self.previousPeekTabIdsByOpener
+                self.previousPeekTabIdsByOpener = peekTabIds
+                // A press funds only the peek it opened. The focused tab does
+                // not change while a peek is created (the opener stays
+                // focused), so a focus change means the recorded press and
+                // whatever peek shows up next are unrelated — drop it, or a
+                // peek revealed later flies out of an unrelated click.
+                if focusingTab?.guid != self.lastFocusedTabIdForPeek {
+                    self.lastFocusedTabIdForPeek = focusingTab?.guid
+                    self.peekOriginTracker?.invalidate()
+                }
                 guard !peeksByOpener.isEmpty else {
                     self.peekPanelController?.dismiss()
                     return
                 }
                 if let focusingTab, let tab = peeksByOpener[focusingTab.guid] {
-                    self.presentPeekPanel(for: tab)
+                    self.presentPeekPanel(
+                        for: tab,
+                        flyIn: Self.isFreshlyOpenedPeek(
+                            previousPeekTabIdsByOpener: previousPeekTabIds,
+                            openerTabId: focusingTab.guid,
+                            peekTabId: tab.guid
+                        )
+                    )
                 } else {
                     self.peekPanelController?.hide()
                 }
@@ -380,16 +417,26 @@ class MainBrowserWindowController: NSWindowController {
             .store(in: &cancellables)
     }
 
-    private func presentPeekPanel(for tab: Tab) {
+    /// Whether the focused opener's peek is one the user just opened, rather
+    /// than one that was already mounted under that opener — switching back
+    /// to an existing peek must not spend a press on a flight.
+    static func isFreshlyOpenedPeek(previousPeekTabIdsByOpener: [Int: Int],
+                                    openerTabId: Int,
+                                    peekTabId: Int) -> Bool {
+        previousPeekTabIdsByOpener[openerTabId] != peekTabId
+    }
+
+    private func presentPeekPanel(for tab: Tab, flyIn: Bool) {
         guard let window = self.window else { return }
         if peekPanelController == nil {
             peekPanelController = PeekPanelController(
                 browserState: browserState,
                 parentWindow: window,
-                anchorView: mainSplitViewController.webContentContainerViewController.view
+                anchorView: mainSplitViewController.webContentContainerViewController.view,
+                originTracker: peekOriginTracker
             )
         }
-        peekPanelController?.present(tab: tab)
+        peekPanelController?.present(tab: tab, flyIn: flyIn)
     }
 
     

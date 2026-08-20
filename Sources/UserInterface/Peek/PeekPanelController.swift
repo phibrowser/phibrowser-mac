@@ -127,10 +127,20 @@ final class PeekPanelController {
     private static let headerHeight: CGFloat = 38
     private static let cornerRadius: CGFloat = 12
 
+    /// Width of the card the panel grows out of — link-sized, so the flight
+    /// reads as "that link became this panel".
+    private static let flightStartWidth: CGFloat = 44
+    private static let flightDuration: TimeInterval = 0.26
+    private static let flightContentFadeDuration: TimeInterval = 0.14
+
     private weak var browserState: BrowserState?
     private weak var parentWindow: NSWindow?
     /// The page-pane view the panel is anchored over (web-content container).
     private weak var anchorView: NSView?
+    /// Supplies the press the peek was opened from; owned by the window
+    /// controller because it must record presses from before the first peek,
+    /// which is when this controller is built.
+    private weak var originTracker: PeekOriginTracker?
     private let panel: PeekPanel
     private let containerView = PeekContainerView()
     private let headerView = NSView()
@@ -141,11 +151,18 @@ final class PeekPanelController {
     private var parentResizeObserver: NSObjectProtocol?
     private var anchorFrameObserver: NSObjectProtocol?
     private var titleCancellable: AnyCancellable?
+    /// True between an appear flight's start and its landing; keeps the
+    /// landing idempotent across the completion block and the teardown paths.
+    private var isFlying = false
 
-    init(browserState: BrowserState, parentWindow: NSWindow, anchorView: NSView) {
+    init(browserState: BrowserState,
+         parentWindow: NSWindow,
+         anchorView: NSView,
+         originTracker: PeekOriginTracker?) {
         self.browserState = browserState
         self.parentWindow = parentWindow
         self.anchorView = anchorView
+        self.originTracker = originTracker
         anchorView.postsFrameChangedNotifications = true
 
         panel = PeekPanel(
@@ -179,13 +196,18 @@ final class PeekPanelController {
 
     // MARK: - Presentation
 
-    func present(tab: Tab) {
+    /// - Parameter flyIn: whether this peek is one the user just opened, and
+    ///   so may fly out of the press that opened it. Only the window
+    ///   controller can tell — mounting content here happens both for a fresh
+    ///   peek and for switching to another opener's existing one.
+    func present(tab: Tab, flyIn: Bool) {
         guard let browserState else { return }
 
         // Re-focus of the opener tab with the same peek still mounted: just
-        // reveal, no re-mount.
+        // reveal, no re-mount and no flight — nothing was opened here, the
+        // panel is coming back from a tab switch.
         if hostedTab === tab, !webHostView.subviews.isEmpty {
-            reveal(focusContent: true)
+            reveal(focusContent: true, flyIn: false)
             return
         }
 
@@ -206,13 +228,14 @@ final class PeekPanelController {
             make.edges.equalToSuperview()
         }
 
-        reveal(focusContent: true)
+        reveal(focusContent: true, flyIn: flyIn)
     }
 
     /// Temporarily hides the panel while the opener tab is not focused. The
     /// hosted content and bindings stay alive; `present(tab:)` reveals again.
     func hide() {
         guard panel.isVisible else { return }
+        landAppearFlight()
         removeEventMonitor()
         panel.parent?.removeChildWindow(panel)
         panel.orderOut(nil)
@@ -267,9 +290,15 @@ final class PeekPanelController {
 
     // MARK: - Internals
 
-    private func reveal(focusContent: Bool) {
+    private func reveal(focusContent: Bool, flyIn: Bool) {
         guard let parentWindow else { return }
         layoutOnAnchor()
+        // Before the panel is ordered in, so the first frame the window server
+        // paints is already the flight's first frame instead of the settled
+        // panel.
+        if flyIn {
+            beginAppearFlight()
+        }
         if panel.parent == nil {
             parentWindow.addChildWindow(panel, ordered: .above)
         }
@@ -285,9 +314,143 @@ final class PeekPanelController {
     }
 
     private func detachHostedContent() {
+        landAppearFlight()
         titleCancellable = nil
         webHostView.subviews.forEach { $0.removeFromSuperview() }
         hostedTab = nil
+    }
+
+    // MARK: - Appear flight
+
+    /// Grows the panel out of the press that opened the peek.
+    ///
+    /// An EXPLICIT Core Animation layer animation, like the Spaces strip's
+    /// chip flight: it is the one animation kind that keeps playing in the
+    /// render server while the main thread is blocked — and a peek presents
+    /// right on top of Chromium's tab creation and web-view re-parenting,
+    /// which block it. The model geometry stays settled throughout, so an
+    /// expired animation leaves the panel exactly where it belongs.
+    ///
+    /// No-ops without a usable origin (keyboard open, session restore, a
+    /// press already spent on an earlier flight); the panel then appears the
+    /// way it did before this existed.
+    private func beginAppearFlight() {
+        // Order matters: the origin is consumed FIRST, then Reduce Motion is
+        // honoured. The press belongs to this peek whether or not it gets an
+        // animation, and `PeekOriginTracker` promises each press funds at most
+        // one flight — leaving it unspent here would let the peek the user
+        // just opened statically hand its press to a later one. Reduce Motion
+        // is the same check `EdgeFogOverlayView` and `CustomTooltipController`
+        // make; a scale-and-travel animation this large steps aside entirely,
+        // so nothing visual happens below this line on that path.
+        guard let originScreenPoint = originTracker?.consumeOrigin(),
+              !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion,
+              let layer = containerView.layer,
+              let start = Self.appearFlightTransform(
+                  originScreenPoint: originScreenPoint,
+                  panelScreenFrame: panel.frame,
+                  startWidth: Self.flightStartWidth) else { return }
+        isFlying = true
+        // The window shadow is drawn from the panel's full frame; left on, it
+        // would hang in the air around the small card. Restored on landing.
+        panel.hasShadow = false
+        // The hosted Chromium view is a remote layer — don't scale it. It sits
+        // the flight out and fades in once the panel is at full size.
+        webHostView.isHidden = true
+
+        let timing = CAMediaTimingFunction(controlPoints: 0.2, 0, 0, 1)
+        CATransaction.begin()
+        CATransaction.setCompletionBlock { [weak self] in
+            self?.landAppearFlight()
+        }
+
+        let grow = CABasicAnimation(keyPath: "transform")
+        grow.fromValue = start
+        grow.toValue = CATransform3DIdentity
+        grow.duration = Self.flightDuration
+        grow.timingFunction = timing
+        layer.add(grow, forKey: "phiPeekAppearFlight")
+
+        let fade = CABasicAnimation(keyPath: "opacity")
+        fade.fromValue = 0
+        fade.toValue = 1
+        fade.duration = Self.flightDuration / 2
+        fade.timingFunction = timing
+        layer.add(fade, forKey: "phiPeekAppearFade")
+
+        // Corners are scaled down with everything else, so the card would
+        // start out with hairline corners. Starting at half the short side
+        // keeps the radius visually constant: a link-shaped capsule that
+        // settles into the panel's 12pt corners.
+        let corners = CABasicAnimation(keyPath: "cornerRadius")
+        // From the panel's frame, not the layer's bounds: the layer may not
+        // have picked up the frame `layoutOnAnchor` just set.
+        corners.fromValue = min(panel.frame.width, panel.frame.height) / 2
+        corners.toValue = Self.cornerRadius
+        corners.duration = Self.flightDuration
+        corners.timingFunction = timing
+        layer.add(corners, forKey: "phiPeekAppearCorners")
+
+        CATransaction.commit()
+    }
+
+    /// Settles a flight: content back, window shadow back. Idempotent, and
+    /// called from the teardown paths as well as the flight's completion, so
+    /// a peek that dies mid-flight never leaves its content hidden.
+    private func landAppearFlight() {
+        guard isFlying else { return }
+        isFlying = false
+        if let layer = containerView.layer {
+            layer.removeAnimation(forKey: "phiPeekAppearFlight")
+            layer.removeAnimation(forKey: "phiPeekAppearFade")
+            layer.removeAnimation(forKey: "phiPeekAppearCorners")
+        }
+        webHostView.isHidden = false
+        panel.hasShadow = true
+        panel.invalidateShadow()
+        // The page arrives at full size; a short fade keeps that from being a
+        // hard cut.
+        if let contentLayer = webHostView.layer {
+            let fade = CABasicAnimation(keyPath: "opacity")
+            fade.fromValue = 0
+            fade.toValue = 1
+            fade.duration = Self.flightContentFadeDuration
+            contentLayer.add(fade, forKey: "phiPeekContentFade")
+        }
+    }
+
+    /// The container layer's starting transform for a flight out of
+    /// `originScreenPoint`: the panel shrunk to `startWidth` and moved so the
+    /// card's centre sits on the press. The press is clamped to keep the card
+    /// wholly inside the panel — it can land up to the pane inset outside it,
+    /// and the window clips whatever leaves its frame.
+    ///
+    /// Nil — "don't fly" — for a degenerate panel or a start width that isn't
+    /// a real shrink, so a caller that can't produce a sane flight falls back
+    /// to the plain appearance instead of showing a broken one.
+    static func appearFlightTransform(originScreenPoint: CGPoint,
+                                      panelScreenFrame: CGRect,
+                                      startWidth: CGFloat) -> CATransform3D? {
+        guard startWidth > 0,
+              panelScreenFrame.width > startWidth,
+              panelScreenFrame.height > 0 else { return nil }
+        let scale = startWidth / panelScreenFrame.width
+        let travelBounds = panelScreenFrame.insetBy(
+            dx: startWidth / 2,
+            dy: panelScreenFrame.height * scale / 2
+        )
+        let anchor = CGPoint(
+            x: min(max(originScreenPoint.x, travelBounds.minX), travelBounds.maxX),
+            y: min(max(originScreenPoint.y, travelBounds.minY), travelBounds.maxY)
+        )
+        // Screen space and the container's layer space are both bottom-up
+        // (the panel's content view is unflipped), so the offset carries over
+        // unchanged.
+        let travel = CATransform3DMakeTranslation(anchor.x - panelScreenFrame.midX,
+                                                  anchor.y - panelScreenFrame.midY,
+                                                  0)
+        // Scale about the layer's centre anchor first, then travel.
+        return CATransform3DScale(travel, scale, scale, 1)
     }
 
     private func bindTitle(to tab: Tab) {

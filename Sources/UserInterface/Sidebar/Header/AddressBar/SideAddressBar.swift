@@ -76,7 +76,10 @@ class SideAddressBar: NSView {
     }()
 
     private lazy var extensionMenuHostingView: NSHostingView<ExtensionPopoverButton> = {
-        let hosting = NSHostingView(rootView: ExtensionPopoverButton(extensionManager: nil))
+        let hosting = NSHostingView(rootView: ExtensionPopoverButton(
+            extensionManager: nil,
+            browserState: nil
+        ))
         hosting.translatesAutoresizingMaskIntoConstraints = false
         return hosting
     }()
@@ -130,7 +133,10 @@ class SideAddressBar: NSView {
         guard let browserState = unsafeBrowserState else { return }
         cancellables.forEach { $0.cancel() }
         cancellables.removeAll()
-        extensionMenuHostingView.rootView = ExtensionPopoverButton(extensionManager: browserState.extensionManager)
+        extensionMenuHostingView.rootView = ExtensionPopoverButton(
+            extensionManager: browserState.extensionManager,
+            browserState: browserState
+        )
 
         $currentTab
             .compactMap { $0 }
@@ -581,12 +587,13 @@ class SideAddressBar: NSView {
 struct ExtensionPopoverButton: View {
     @State private var isShown = false
     let extensionManager: ExtensionManager?
+    let browserState: BrowserState?
 
     @State private var anchorView: NSView?
 
     var body: some View {
         let isPresented = Binding(
-            get: { isShown && extensionManager != nil },
+            get: { isShown && extensionManager != nil && browserState != nil },
             set: { isShown = $0 }
         )
 
@@ -600,9 +607,10 @@ struct ExtensionPopoverButton: View {
                 .allowsHitTesting(false)
             )
         .popover(isPresented: isPresented, arrowEdge: .top) {
-            if let manager = extensionManager {
+            if let manager = extensionManager, let browserState {
                 ExtensionList(
                     extensionManager: manager,
+                    browserState: browserState,
                     onRequestDismiss: { isShown = false },
                     triggerAnchorView: anchorView
                 )

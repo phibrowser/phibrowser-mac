@@ -4907,6 +4907,17 @@ final class SpaceManager: ObservableObject {
         )
     }
 
+    /// A Kiosk's `spaceId` is a placeholder, not membership in a real Space.
+    /// Keeping that distinction as a pure decision makes the default-Space
+    /// transfer regression testable without materializing Chromium windows.
+    static func sourceAlreadyBelongsToTargetSpace(
+        participatesInSpaces: Bool,
+        sourceSpaceId: String,
+        targetSpaceId: String
+    ) -> Bool {
+        participatesInSpaces && sourceSpaceId == targetSpaceId
+    }
+
     /// Moves `tab` out of its current Space and into the Space identified by
     /// `targetSpaceId`, then surfaces that Space with the tab focused.
     ///
@@ -4926,23 +4937,30 @@ final class SpaceManager: ObservableObject {
     /// target controller is registered and on screen, whether it was an existing
     /// window (swap) or freshly spawned.
     ///
-    /// Callers (the tab context menu) only offer this for plain normal tabs;
-    /// pinned / split / bookmark-backed tabs are filtered out there because
-    /// their per-Space persistence bindings would be stranded by a move.
+    /// The ordinary tab context menu only offers this for plain normal tabs;
+    /// Kiosk supplies its single ephemeral page. Pinned / split /
+    /// bookmark-backed tabs remain filtered because their per-Space persistence
+    /// bindings would be stranded by a move.
     func moveTab(_ tab: Tab, toSpaceId targetSpaceId: String) {
         guard let sourceState = MainBrowserWindowControllersManager.shared
                 .getBrowserState(for: tab.windowId) else {
             AppLogWarn("[SpaceManager] moveTab: no BrowserState for windowId \(tab.windowId)")
             return
         }
-        // Already in the target Space — nothing to do.
-        guard targetSpaceId != sourceState.spaceId else { return }
+        // A Kiosk carries the default Space id only as a BrowserState placeholder;
+        // it does not belong to that Space. Keep the ordinary same-Space no-op,
+        // but let Kiosk transfer into the real default Space.
+        guard !Self.sourceAlreadyBelongsToTargetSpace(
+            participatesInSpaces: sourceState.participatesInSpaces,
+            sourceSpaceId: sourceState.spaceId,
+            targetSpaceId: targetSpaceId
+        ) else { return }
         guard let targetSpace = spaces.first(where: { $0.spaceId == targetSpaceId }) else {
             AppLogWarn("[SpaceManager] moveTab: unknown target space \(targetSpaceId)")
             return
         }
-        guard let slot = slot(forWindowId: tab.windowId) else {
-            AppLogWarn("[SpaceManager] moveTab: no slot owns windowId \(tab.windowId)")
+        guard !sourceState.isKioskWindow || !sourceState.isIncognito else {
+            AppLogWarn("[SpaceManager] moveTab: Incognito Kiosk cannot transfer into Spaces")
             return
         }
 
@@ -4965,35 +4983,73 @@ final class SpaceManager: ObservableObject {
             return
         }
 
+        let slot: SpaceWindowSlot
+        let mintedSlot: Bool
+        if let sourceSlot = self.slot(forWindowId: tab.windowId) {
+            slot = sourceSlot
+            mintedSlot = false
+        } else if sourceState.isKioskWindow {
+            if let existing = keySlot
+                ?? slots.first(where: {
+                    $0.windowController(for: targetSpaceId) != nil
+                })
+                ?? slots.first {
+                slot = existing
+                mintedSlot = false
+            } else {
+                slot = createSlot(initialSpaceId: targetSpaceId)
+                mintedSlot = true
+            }
+        } else {
+            AppLogWarn("[SpaceManager] moveTab: no slot owns windowId \(tab.windowId)")
+            return
+        }
+
         // `slot` is weak to avoid a retain cycle (the slot owns the swap
         // machinery that holds this closure); `tab` and `sourceWrapper` are
         // captured strongly so they outlive the swap animation / async spawn.
-        slot.activate(spaceId: targetSpaceId) { [weak slot] in
-            // `onSwapSettled` always fires on the main thread (swap-animation
-            // completion or the spawn path's `DispatchQueue.main.async`), so we
-            // can synchronously assume main-actor isolation for the tab moves —
-            // `Tab.close()` and the native state updates are main-actor isolated.
-            MainActor.assumeIsolated {
-                guard let slot,
-                      let targetState = slot.windowController(for: targetSpaceId)?.browserState else {
-                    AppLogWarn("[SpaceManager] moveTab: target window unavailable after activate")
-                    return
-                }
-                if sameProfile {
-                    guard let sourceWrapper else { return }
-                    // Append to the end of the target's normal tabs; the scheduled
-                    // insertion lands the arriving tab there, mirroring the
-                    // cross-window drag path in `TabStrip.moveTabToWindow`.
-                    let normalIndex = targetState.normalTabs.count
-                    targetState.scheduleNormalTabInsertion(tabGuid: tabGuid, at: normalIndex)
-                    sourceWrapper.moveSplit(toWindow: targetState.windowId.int64Value,
-                                            at: targetState.tabs.count)
-                } else {
-                    targetState.createTab(url, focusAfterCreate: true)
-                    SpaceMoveTabUnit.tab(tab).closeSourceTabsAfterCrossProfileMove()
+        slot.activate(
+            spaceId: targetSpaceId,
+            onActivationFailed: { [weak self, weak slot] in
+                guard let self, let slot else { return }
+                self.reclaimMintedSlot(
+                    slot,
+                    mintedForThisAttempt: mintedSlot
+                )
+            },
+            onSwapSettled: { [weak self, weak slot] in
+                // `onSwapSettled` always fires on the main thread (swap-animation
+                // completion or the spawn path's `DispatchQueue.main.async`), so we
+                // can synchronously assume main-actor isolation for the tab moves —
+                // `Tab.close()` and the native state updates are main-actor isolated.
+                MainActor.assumeIsolated {
+                    guard let slot,
+                          let targetState = slot.windowController(for: targetSpaceId)?.browserState else {
+                        AppLogWarn("[SpaceManager] moveTab: target window unavailable after activate")
+                        if let slot {
+                            self?.reclaimMintedSlot(
+                                slot,
+                                mintedForThisAttempt: mintedSlot
+                            )
+                        }
+                        return
+                    }
+                    if sameProfile {
+                        guard let sourceWrapper else { return }
+                        // Append to the end of the target's normal tabs; the scheduled
+                        // insertion lands the arriving tab there, mirroring the
+                        // cross-window drag path in `TabStrip.moveTabToWindow`.
+                        let normalIndex = targetState.normalTabs.count
+                        targetState.scheduleNormalTabInsertion(tabGuid: tabGuid, at: normalIndex)
+                        sourceWrapper.moveSplit(toWindow: targetState.windowId.int64Value,
+                                                at: targetState.tabs.count)
+                    } else {
+                        targetState.createTab(url, focusAfterCreate: true)
+                        SpaceMoveTabUnit.tab(tab).closeSourceTabsAfterCrossProfileMove()
+                    }
                 }
             }
-        }
+        )
     }
 
     enum SpaceMoveTabUnit {

@@ -39,6 +39,19 @@ final class KioskBrowserStateTests: XCTestCase {
         XCTAssertTrue(state.pinnedTabs.isEmpty)
     }
 
+    func testKioskPlaceholderDoesNotCountAsDefaultSpaceMembership() {
+        XCTAssertFalse(SpaceManager.sourceAlreadyBelongsToTargetSpace(
+            participatesInSpaces: false,
+            sourceSpaceId: LocalStore.defaultSpaceId,
+            targetSpaceId: LocalStore.defaultSpaceId
+        ))
+        XCTAssertTrue(SpaceManager.sourceAlreadyBelongsToTargetSpace(
+            participatesInSpaces: true,
+            sourceSpaceId: LocalStore.defaultSpaceId,
+            targetSpaceId: LocalStore.defaultSpaceId
+        ))
+    }
+
     func testFirstChromiumTabBecomesFocusedContent() throws {
         let state = try makeState()
         let tab = Tab(
@@ -136,6 +149,33 @@ final class KioskBrowserStateTests: XCTestCase {
 
         XCTAssertTrue(handled)
         XCTAssertEqual(wrapper.navigatedURLs, ["https://example.org"])
+    }
+
+    func testExtensionSidePanelMountsAndDetachesSynchronously() throws {
+        let state = try makeState()
+        let controller = KioskBrowserContentViewController(state: state)
+        _ = controller.view
+        let nativeView = NSView()
+        let wrapper = KioskTestWebContentWrapper(urlString: nil)
+        wrapper.nativeView = nativeView
+        let panel = BrowserState.ExtensionSidePanelState(
+            extensionId: "test-extension",
+            displayName: "Test Extension",
+            iconPNG: nil,
+            wrapper: wrapper
+        )
+
+        state.updateExtensionSidePanel(panel)
+
+        let panelView = try XCTUnwrap(
+            controller.extensionSidePanelViewForTesting
+        )
+        XCTAssertTrue(nativeView.superview === panelView.contentHostView)
+
+        state.updateExtensionSidePanel(nil)
+
+        XCTAssertNil(controller.extensionSidePanelViewForTesting)
+        XCTAssertNil(nativeView.superview)
     }
 
     private func makeState(

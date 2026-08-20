@@ -772,6 +772,12 @@ typedef NS_ENUM(NSInteger, PhiGhostMaterializeOutcome) {
                    windowId:(int64_t)windowId
                  customGuid:(NSString* _Nullable)customGuid
            focusAfterCreate:(BOOL)focus;
+/// Creates a tab only when `windowId` resolves to a live browser. Unlike the
+/// legacy tab-creation calls, this never falls back to opening another window.
+/// Returns NO without side effects when the target cannot be resolved.
+- (BOOL)createNewTabStrictlyWithUrl:(NSString *)urlString
+                           windowId:(int64_t)windowId
+                   focusAfterCreate:(BOOL)focus;
 - (void)createQuickLookupTabWithWindowId:(int64_t)windowId
                                customGuid:(NSString* _Nullable)customGuid;
 - (void)createNewTabWithUrl:(NSString*)urlString

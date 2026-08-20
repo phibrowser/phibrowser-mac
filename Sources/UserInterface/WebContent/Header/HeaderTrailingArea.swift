@@ -315,6 +315,7 @@ struct HeaderTrailingArea: View {
         if pinned.isEmpty {
             HeaderExtensionMenuButton(
                 extensionManager: extensionManager,
+                browserState: browserState,
                 isPopoverShown: $isExtensionPopoverShown
             )
         } else {

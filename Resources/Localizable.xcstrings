@@ -33989,6 +33989,42 @@
         }
       }
     },
+    "kiosk.toolbar.openInSpace" : {
+      "comment" : "Kiosk toolbar - Menu that transfers the current page into a selected Space",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Open in Space"
+          }
+        }
+      }
+    },
+    "kiosk.toolbar.profileMenu.accessibilityLabel" : {
+      "comment" : "Kiosk toolbar - Accessibility label for the current-profile menu",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Switch Profile"
+          }
+        }
+      }
+    },
+    "kiosk.toolbar.reloadPage.accessibilityLabel" : {
+      "comment" : "Kiosk toolbar - Accessibility label and tooltip for the reload button",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Reload Page"
+          }
+        }
+      }
+    },
     "localData.arcImport.untitledSpaceName" : {
       "comment" : "Arc import - fallback name for an Arc Space with no title",
       "extractionState" : "extracted_with_value",

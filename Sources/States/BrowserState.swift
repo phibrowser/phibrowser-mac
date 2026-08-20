@@ -394,7 +394,8 @@ class BrowserState {
     }
     /// True for the minimal, ephemeral Kiosk browser window. Kiosk windows keep
     /// the regular tab/WebContents event path but opt out of profile-backed
-    /// window presentation such as Spaces, pinned tabs, and extensions.
+    /// window presentation such as Spaces and pinned tabs. Extensions remain
+    /// window-scoped and are available through the compact Kiosk toolbar.
     let isKioskWindow: Bool
     let searchSuggestionChanged = PassthroughSubject<([[String: Any]], String), Never>()
     

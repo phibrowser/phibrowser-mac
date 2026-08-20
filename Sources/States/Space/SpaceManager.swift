@@ -3135,8 +3135,29 @@ final class SpaceManager: ObservableObject {
             return
         }
         coldStartRepairedEntryIndices.insert(entryIndex)
-        guard let model = spaces.first(where: { $0.spaceId == activeId }),
-              isAutomaticSwitchTarget(model) else {
+        // Resolve through the store as well as the live cache, the same way
+        // `boundProfileId(forSpaceId:)` does. On a cold launch the `spaces`
+        // publisher delivers a partial list first, and the repair latch above
+        // is already spent by the time this runs — so a Space the store holds
+        // but the publisher has not delivered yet would be refused for good,
+        // with no retry. That is the shape this file already got wrong once,
+        // in the ghost materialization; this is the second site.
+        var resolvedSpace = spaces.first(where: { $0.spaceId == activeId })
+        if resolvedSpace == nil, let account = boundAccount {
+            resolvedSpace = MainActor.assumeIsolated {
+                account.localStorage.getAllSpaces()
+                    .first(where: { $0.spaceId == activeId })
+            }
+        }
+        // Two refusals, two strings. They used to share one, which made the
+        // transient one ("not delivered yet") indistinguishable from the
+        // terminal one ("this Space type never spawns") in the log — so no
+        // recorded run could ever be attributed to either.
+        guard let model = resolvedSpace else {
+            AppLogWarn("[SpaceManager] cold start repair: entry \(entryIndex)'s active Space \(activeId) is in neither the delivered Space list (\(spaces.count) delivered) nor the store — left unrepaired")
+            return
+        }
+        guard isAutomaticSwitchTarget(model) else {
             AppLogWarn("[SpaceManager] cold start repair: entry \(entryIndex)'s active Space \(activeId) is not an automatic switch target — left unrepaired")
             return
         }

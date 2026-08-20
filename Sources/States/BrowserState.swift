@@ -3656,6 +3656,19 @@ class BrowserState {
         closePeek(forOpener: openerTabId)
     }
 
+    /// Address-bar navigation targeting `openerTabId` while it carries a
+    /// peek: the typed URL replaces the opener's page, never the peek's.
+    /// The panel focuses the peek's WebContents on present, so a
+    /// `.currentTab` omnibox disposition would land the navigation in the
+    /// peek — re-assert the opener as Chromium-active first, then close the
+    /// peek while it is no longer active (same rule as presentPeek).
+    func closePeekForAddressBarNavigation(openerTabId: Int) {
+        guard peekState.peek(forOpener: openerTabId) != nil else { return }
+        AppLogInfo("👀 [Peek] address-bar navigation on opener=\(openerTabId) — closing its peek")
+        tabs.first(where: { $0.guid == openerTabId })?.webContentWrapper?.setAsActiveTab()
+        closePeek(forOpener: openerTabId)
+    }
+
     /// Converts a presented peek into a regular tab ("Open as Tab").
     func expandPeekIntoTab(peekTabId: Int) {
         guard let openerTabId = peekState.openerTabId(forPeekTabId: peekTabId),

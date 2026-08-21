@@ -66,14 +66,18 @@ class APIClient {
         return accessToken ?? ""
     }
 
-    func oauthNativeFinishedRedirect(provider: String, result: String) -> String {
+    func oauthNativeFinishedRedirect(provider: String, result: String, profileId: String? = nil) -> String {
         guard var components = URLComponents(string: "\(accountBaseURL)/oauth/native-finished") else {
             return "\(accountBaseURL)/oauth/native-finished"
         }
-        components.queryItems = [
+        var queryItems = [
             URLQueryItem(name: "provider", value: provider),
             URLQueryItem(name: "result", value: result),
         ]
+        if let profileId, !profileId.isEmpty {
+            queryItems.append(URLQueryItem(name: "profile_id", value: profileId))
+        }
+        components.queryItems = queryItems
         return components.url?.absoluteString ?? "\(accountBaseURL)/oauth/native-finished"
     }
 
@@ -506,8 +510,16 @@ class APIClient {
     
     // MARK: - Connector APIs
 
-    func getOAuthConnections() async throws -> Response<GetOAuthConnectionsResponse> {
-        let url = URL(string: "\(accountBaseURL)/api/auth/oauth/connections")!
+    func getOAuthConnections(profileId: String? = nil) async throws -> Response<GetOAuthConnectionsResponse> {
+        guard var components = URLComponents(string: "\(accountBaseURL)/api/auth/oauth/connections") else {
+            throw APIError.invalidResponse
+        }
+        if let profileId, !profileId.isEmpty {
+            components.queryItems = [URLQueryItem(name: "profile_id", value: profileId)]
+        }
+        guard let url = components.url else {
+            throw APIError.invalidResponse
+        }
         var request = URLRequest(url: url)
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Accept")
@@ -525,7 +537,7 @@ class APIClient {
         return try JSONDecoder().decode(Response<GetOAuthConnectionsResponse>.self, from: data)
     }
 
-    func getOAuthAuthorization(provider: String, successRedirect: String? = nil, failureRedirect: String? = nil) async throws -> Response<GetOAuthAuthorizationResponse> {
+    func getOAuthAuthorization(provider: String, successRedirect: String? = nil, failureRedirect: String? = nil, profileId: String? = nil) async throws -> Response<GetOAuthAuthorizationResponse> {
         guard var components = URLComponents(string: "\(accountBaseURL)/api/auth/oauth/authorize/\(provider)") else {
             throw APIError.invalidResponse
         }
@@ -535,6 +547,9 @@ class APIClient {
         }
         if let failureRedirect {
             queryItems.append(URLQueryItem(name: "failure_redirect", value: failureRedirect))
+        }
+        if let profileId, !profileId.isEmpty {
+            queryItems.append(URLQueryItem(name: "profile_id", value: profileId))
         }
         components.queryItems = queryItems.isEmpty ? nil : queryItems
 
@@ -654,8 +669,16 @@ class APIClient {
         return try JSONDecoder().decode(AirbyteResponse<String>.self, from: data)
     }
     
-    func deleteOAuthToken(provider: String) async throws -> Response<DeleteOAuthTokenResponse> {
-        let url = URL(string: "\(accountBaseURL)/api/auth/oauth/tokens/\(provider)")!
+    func deleteOAuthToken(provider: String, profileId: String? = nil) async throws -> Response<DeleteOAuthTokenResponse> {
+        guard var components = URLComponents(string: "\(accountBaseURL)/api/auth/oauth/tokens/\(provider)") else {
+            throw APIError.invalidResponse
+        }
+        if let profileId, !profileId.isEmpty {
+            components.queryItems = [URLQueryItem(name: "profile_id", value: profileId)]
+        }
+        guard let url = components.url else {
+            throw APIError.invalidResponse
+        }
         var urlRequest = URLRequest(url: url)
         urlRequest.httpMethod = "DELETE"
         urlRequest.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")

@@ -4241,6 +4241,19 @@ class BrowserState {
                 }
                 continue
             }
+            // Reader-surface tabs never survive a restore: the surface is
+            // transient — its article cache died with the extension's
+            // session storage, and the article page restores as its own tab
+            // — so close it instead of restoring a husk. Mirrors the
+            // per-tab arrival path (`resolveReaderOverlayCandidate`'s
+            // no-pending branch); in-stack discipline for the close, like
+            // the AI Chat duplicate above.
+            if let url = tab.url,
+               ReaderExtensionBridge.originTabId(fromReaderPageURL: url) != nil {
+                AppLogInfo("📖 [ReaderOverlay] restored reader page tabId=\(tab.guid) — closing instead of restoring")
+                DispatchQueue.main.async { tab.webContentWrapper?.close() }
+                continue
+            }
             // Peek restore-binding marker: divert the tab back into the Peek
             // pipeline when its opener is part of the same restored window
             // (the re-bind runs deferred, once the batch is applied). No

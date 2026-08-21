@@ -620,6 +620,19 @@ final class PeekPanelController {
                     self.closeHostedPeek()
                     return nil
                 }
+                // Back/Forward reads as "leave the preview": close the peek
+                // and swallow the key. Matched here (against the configured
+                // shortcuts) because the peek's web view holds focus — the
+                // event would otherwise walk the peek page's own history
+                // instead of reaching the menu command.
+                if let eventKeys = ShortcutsKey.eventKeys(for: event) {
+                    let backForwardKeys = [Shortcuts.key(for: .IDC_BACK),
+                                           Shortcuts.key(for: .IDC_FORWARD)].compactMap { $0 }
+                    if eventKeys.matchingKeys.contains(where: backForwardKeys.contains) {
+                        self.closeHostedPeek()
+                        return nil
+                    }
+                }
                 return event
             case .leftMouseDown, .rightMouseDown:
                 // Only clicks on the page pane around the panel close the

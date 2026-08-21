@@ -651,10 +651,12 @@ class SidebarHeaderView: NSView, TitlebarAwareHitTestable {
     }
     
     @objc private func backButtonClicked() {
+        if browserState?.closePeekForBackForwardNavigation() == true { return }
         browserState?.focusingTab?.goBack()
     }
-    
+
     @objc private func forwardButtonClicked() {
+        if browserState?.closePeekForBackForwardNavigation() == true { return }
         browserState?.focusingTab?.goForward()
     }
     

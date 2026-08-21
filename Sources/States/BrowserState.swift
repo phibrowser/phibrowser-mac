@@ -3633,8 +3633,9 @@ class BrowserState {
 
     /// Closes one opener's peek: the panel (if showing it) and the
     /// underlying tab. `reason` is the analytics attribution — `.closed` is
-    /// user intent (X button, Esc, Cmd-W, click outside, sidebar
-    /// badge/indicator); the opener-lifecycle paths pass `.openerClosed`.
+    /// user intent (X button, Esc, Cmd-W, Back/Forward, click outside,
+    /// sidebar badge/indicator); the opener-lifecycle paths pass
+    /// `.openerClosed`.
     func closePeek(forOpener openerTabId: Int,
                    reason: PeekViewAnalytics.EndReason = .closed) {
         guard let tab = peekState.peek(forOpener: openerTabId) else { return }
@@ -3667,6 +3668,19 @@ class BrowserState {
         AppLogInfo("👀 [Peek] address-bar navigation on opener=\(openerTabId) — closing its peek")
         tabs.first(where: { $0.guid == openerTabId })?.webContentWrapper?.setAsActiveTab()
         closePeek(forOpener: openerTabId)
+    }
+
+    /// Back/Forward (toolbar buttons, menu items, shortcuts) while the
+    /// focused tab carries a peek: the command reads as "leave the preview",
+    /// so the peek closes and the navigation is consumed — never applied to
+    /// the opener's history invisibly beneath the panel. Returns true when a
+    /// peek was closed and the caller must skip the navigation.
+    func closePeekForBackForwardNavigation() -> Bool {
+        guard let openerTabId = focusingTab?.guid,
+              peekState.peek(forOpener: openerTabId) != nil else { return false }
+        AppLogInfo("👀 [Peek] back/forward on opener=\(openerTabId) — closing its peek")
+        closePeek(forOpener: openerTabId)
+        return true
     }
 
     /// Converts a presented peek into a regular tab ("Open as Tab").

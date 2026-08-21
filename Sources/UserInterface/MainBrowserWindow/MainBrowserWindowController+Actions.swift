@@ -226,13 +226,15 @@ extension MainBrowserWindowController {
         guard !AgentAnimationManager.shared.isActive(for: browserState.focusingTab?.guid ?? 0) else {
             return
         }
+        if browserState.closePeekForBackForwardNavigation() { return }
         browserState.focusingTab?.goBack()
     }
-    
+
     @IBAction func goForward(_ sender: Any?) {
         guard !AgentAnimationManager.shared.isActive(for: browserState.focusingTab?.guid ?? 0) else {
             return
         }
+        if browserState.closePeekForBackForwardNavigation() { return }
         browserState.focusingTab?.goForward()
     }
 

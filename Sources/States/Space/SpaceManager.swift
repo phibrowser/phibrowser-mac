@@ -7628,17 +7628,21 @@ final class SpaceWindowSlot: ObservableObject {
     /// (`SpaceManager.requestCloseIncognitoSpace`) instead of dispatching
     /// the close.
     ///
-    /// Cancelled by `cancelTabDrivenClose` when the window enters
-    /// placeholder mode. A last-tab close in a normal non-Incognito
-    /// window always does, so the auto-close this marker predicts never
-    /// happens and no user gesture carries a live marker into
-    /// `unregisterWindow` — the tab-driven hand-off there is currently
-    /// unreachable through this path.
+    /// Cancelled by `cancelTabDrivenClose` on either signal that the
+    /// window survived the last-tab close: entering placeholder mode,
+    /// or the Space's tab list going from empty back to non-empty (any
+    /// tab newly inserted into the emptied strip). A last-tab close in
+    /// a normal non-Incognito window always lands in one of the two, so
+    /// the auto-close this marker predicts never happens and no user
+    /// gesture carries a live marker into `unregisterWindow` — the
+    /// tab-driven hand-off there is currently unreachable through this
+    /// path.
     ///
     /// Stored as spaceId → expiration deadline rather than a plain
     /// set: when the dispatched `IDC_CLOSE_TAB` is vetoed (typically
-    /// an `onbeforeunload` prompt the user cancels), the window enters
-    /// no placeholder and no `unregisterWindow` ever fires, so nothing
+    /// an `onbeforeunload` prompt the user cancels), the tab stays put —
+    /// the window enters no placeholder, no insertion re-fills an
+    /// emptied strip, and no `unregisterWindow` ever fires — so nothing
     /// cancels or drains the marker and a later window-driven close
     /// would otherwise misclassify itself as tab-driven. The TTL caps
     /// that stale window at `Self.tabDrivenCloseTTL` seconds. This
@@ -11012,12 +11016,15 @@ final class SpaceWindowSlot: ObservableObject {
     /// close — both paths intercept it and route into the confirmed
     /// Space teardown (`SpaceManager.requestCloseIncognitoSpace`).
     ///
-    /// The predicted auto-close does not actually happen any more:
-    /// the window enters placeholder mode instead, and
+    /// The predicted auto-close does not actually happen any more: the
+    /// window enters placeholder mode instead, and
     /// `cancelTabDrivenClose` drops the marker and the composite
-    /// captured below. Both are kept because the vetoed-close residual
-    /// documented on `pendingTabDrivenCloseDeadlines` still consumes
-    /// them.
+    /// captured below — on placeholder entry, or on the Space's tab
+    /// list going from empty back to non-empty (a tab inserted into
+    /// the emptied strip, which also covers a strip re-filled in place
+    /// of placeholder entry). Both are kept because the vetoed-close
+    /// residual documented on `pendingTabDrivenCloseDeadlines` still
+    /// consumes them.
     func markTabDrivenClose(for spaceId: String) {
         pendingTabDrivenCloseDeadlines[spaceId] = Date().addingTimeInterval(Self.tabDrivenCloseTTL)
         // Capture the closing window's pixels now, while the WebContents
@@ -11030,13 +11037,19 @@ final class SpaceWindowSlot: ObservableObject {
     }
 
     /// Cancels what `markTabDrivenClose` armed for `spaceId`, marker and
-    /// pre-captured composite together. Called when Chromium reports the
-    /// window entered placeholder mode: the last-tab close left the window
+    /// pre-captured composite together. Called on the two signals that
+    /// falsify the marker's prediction: Chromium reporting the window
+    /// entered placeholder mode
+    /// (`PhiChromiumCoordinator.windowDidEnterPlaceholderMode`), and the
+    /// Space's tab list going from empty back to non-empty
+    /// (`BrowserState.handleNewTabFromChromium` and its peek-adoption
+    /// twin `adoptPeekTabIntoStrip` — any insertion that re-fills an
+    /// emptied strip). Either way the last-tab close left the window
     /// standing, so the auto-close the marker predicts never happens. Left
     /// armed it would live out its TTL and misclassify the user's next
     /// genuine close of this window as a tab-driven hand-off, switching the
-    /// slot to a sibling Space instead of closing it. Idempotent — every
-    /// placeholder entry runs it, most with nothing to cancel.
+    /// slot to a sibling Space instead of closing it. Idempotent — most
+    /// runs have nothing to cancel.
     func cancelTabDrivenClose(for spaceId: String) {
         pendingTabDrivenCloseDeadlines.removeValue(forKey: spaceId)
         pendingTabDrivenCloseSnapshots.removeValue(forKey: spaceId)
@@ -11050,7 +11063,8 @@ final class SpaceWindowSlot: ObservableObject {
     ///   sibling. The user-perceived window stays alive showing the
     ///   sibling Space's content. **Currently unreachable from any user
     ///   gesture**: a last-tab close now leaves the window standing on the
-    ///   placeholder page, and that entry cancels the marker
+    ///   placeholder page (or on a fresh tab, should anything re-fill the
+    ///   strip in its place), and either survival cancels the marker
     ///   (`cancelTabDrivenClose`), so no close arrives here still tagged.
     ///   The branch survives for the one residual that can still leave a
     ///   live marker behind — an `IDC_CLOSE_TAB` vetoed by an

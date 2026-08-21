@@ -3125,6 +3125,19 @@ class BrowserState {
                                              context: context,
                                              hiddenOpenerTabIds: preseededHiddenOpenerTabIds)
 
+        // A tab entering an empty strip falsifies the tab-driven-close
+        // prediction `Tab.close()` may have armed for this Space — the
+        // window is provably staying alive — so drop the reservation and
+        // its window snapshot before they can misclassify the user's next
+        // genuine window close as a hand-off to a sibling Space. Judged
+        // here, where the Mac-side list actually mutates, and not in the
+        // bridge callback: inside Chromium's synchronous close→insert
+        // turn the queued `.closeTab` event has not been applied yet, so
+        // the coordinator would still see the closing tab and miss the
+        // empty → non-empty transition. Idempotent for untagged Spaces.
+        if tabs.isEmpty, let controller = windowController {
+            controller.slot?.cancelTabDrivenClose(for: controller.spaceId)
+        }
         tabs.append(tab)
         // Cross-window drag: a crash event may have been buffered before this
         // tab existed on the Mac side (Coordinator.showCrashPage). Apply it now
@@ -3617,6 +3630,15 @@ class BrowserState {
         preseedHiddenOpenerInsertionIfNeeded(tab: tab,
                                              context: context,
                                              hiddenOpenerTabIds: hiddenOpenerTabIds)
+        // Same empty → non-empty cancellation as `handleNewTabFromChromium`
+        // (this adoption mirrors its arrival sequence): a peek adopted into
+        // an emptied strip equally falsifies the tab-driven-close
+        // prediction — reachable when the sole opener was X-closed while
+        // the peek sat off-strip, which arms the marker with no placeholder
+        // entry to cancel it.
+        if tabs.isEmpty, let controller = windowController {
+            controller.slot?.cancelTabDrivenClose(for: controller.spaceId)
+        }
         tabs.append(tab)
         if let bufferedCrash = PhiChromiumCoordinator.shared.drainPendingCrash(tabId: tab.guid) {
             tab.crashState = bufferedCrash

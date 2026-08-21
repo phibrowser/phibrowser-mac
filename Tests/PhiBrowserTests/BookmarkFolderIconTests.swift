@@ -80,6 +80,11 @@ final class BookmarkFolderIconTests: XCTestCase {
     func testResourceMapCoversEveryIconWithUniqueAssets() {
         XCTAssertEqual(Set(BookmarkFolderIcon.resourceMap.keys), Set(BookmarkFolderIcon.allCases))
 
+        let pickerIconNames = Set(BookmarkFolderIcon.allCases.map(\.rawValue))
+        XCTAssertTrue(
+            pickerIconNames.isSuperset(of: ["discord", "x", "reddit", "facebook", "thumb-up", "chart-bar"])
+        )
+
         let pickerNames = BookmarkFolderIcon.allCases.map(\.resources.pickerAssetName)
         let animationNames = BookmarkFolderIcon.allCases.map(\.resources.animationResourceName)
         XCTAssertEqual(Set(pickerNames).count, BookmarkFolderIcon.allCases.count)
@@ -120,9 +125,21 @@ final class BookmarkFolderIconTests: XCTestCase {
             if let symbolGroupName = icon.resources.symbolGroupName {
                 XCTAssertTrue(names.contains(symbolGroupName), "Missing symbol group in \(icon.rawValue)")
             }
+        }
+
+        let animationURLs = try XCTUnwrap(
+            Bundle.main.urls(
+                forResourcesWithExtension: "json",
+                subdirectory: "LottieFiles/BookmarkFolderIcons"
+            )
+        )
+        for url in animationURLs {
+            let object = try JSONSerialization.jsonObject(with: Data(contentsOf: url))
+            let names = lottieNames(in: object)
+
             XCTAssertFalse(
                 names.contains { $0.range(of: #"\p{Han}"#, options: .regularExpression) != nil },
-                "Chinese Lottie property name remains in \(icon.rawValue)"
+                "Chinese Lottie property name remains in \(url.lastPathComponent)"
             )
         }
     }

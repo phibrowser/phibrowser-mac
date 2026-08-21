@@ -10,10 +10,16 @@ import SwiftUI
 enum BookmarkFolderIcon: String, CaseIterable, Identifiable, Sendable {
     case standard = "default"
     case github
+    case discord
+    case x
+    case reddit
+    case facebook
     case emojiHappy = "emoji-happy"
     case emojiSad = "emoji-sad"
     case key
     case download
+    case thumbUp = "thumb-up"
+    case chartBar = "chart-bar"
     case locationMarker = "location-marker"
     case currencyDollar = "currency-dollar"
     case shieldCheck = "shield-check"
@@ -34,19 +40,25 @@ enum BookmarkFolderIcon: String, CaseIterable, Identifiable, Sendable {
     }
 
     static let resourceMap: [BookmarkFolderIcon: Resources] = [
-        .standard: Resources(pickerAssetName: "default", animationResourceName: "default", symbolGroupName: nil),
+        .standard: Resources(pickerAssetName: "default", animationResourceName: "null", symbolGroupName: nil),
         .github: Resources(pickerAssetName: "github", animationResourceName: "github", symbolGroupName: "Vector"),
+        .discord: Resources(pickerAssetName: "discord", animationResourceName: "discord", symbolGroupName: "Vector"),
+        .x: Resources(pickerAssetName: "x", animationResourceName: "x", symbolGroupName: "Vector"),
+        .reddit: Resources(pickerAssetName: "reddit", animationResourceName: "reddit", symbolGroupName: "Vector"),
+        .facebook: Resources(pickerAssetName: "facebook", animationResourceName: "facebook", symbolGroupName: "Vector"),
         .emojiHappy: Resources(pickerAssetName: "emoji-happy", animationResourceName: "emoji-happy", symbolGroupName: "Icon"),
         .emojiSad: Resources(pickerAssetName: "emoji-sad", animationResourceName: "emoji-sad", symbolGroupName: "Icon"),
         .key: Resources(pickerAssetName: "key", animationResourceName: "key", symbolGroupName: "Icon"),
         .download: Resources(pickerAssetName: "download", animationResourceName: "download", symbolGroupName: "Icon"),
+        .thumbUp: Resources(pickerAssetName: "thumb-up", animationResourceName: "thumb-up", symbolGroupName: "Icon"),
+        .chartBar: Resources(pickerAssetName: "chart-bar", animationResourceName: "chart-bar", symbolGroupName: "Icon"),
         .locationMarker: Resources(pickerAssetName: "location-marker", animationResourceName: "location-marker", symbolGroupName: "Icon"),
         .currencyDollar: Resources(pickerAssetName: "currency-dollar", animationResourceName: "currency-dollar", symbolGroupName: "Icon"),
         .shieldCheck: Resources(pickerAssetName: "shield-check", animationResourceName: "shield-check", symbolGroupName: "Icon"),
         .heart: Resources(pickerAssetName: "heart", animationResourceName: "heart", symbolGroupName: "Icon"),
         .bookmark: Resources(pickerAssetName: "bookmark", animationResourceName: "bookmark", symbolGroupName: "Icon"),
         .refresh: Resources(pickerAssetName: "refresh", animationResourceName: "refresh", symbolGroupName: "Icon"),
-        .chat: Resources(pickerAssetName: "chat", animationResourceName: "chat", symbolGroupName: "Icon"),
+        .chat: Resources(pickerAssetName: "chat", animationResourceName: "chat-alt-2", symbolGroupName: "Icon"),
         .fire: Resources(pickerAssetName: "fire", animationResourceName: "fire", symbolGroupName: "Icon"),
         .puzzle: Resources(pickerAssetName: "puzzle", animationResourceName: "puzzle", symbolGroupName: "Icon"),
         .variable: Resources(pickerAssetName: "variable", animationResourceName: "variable", symbolGroupName: "Icon"),

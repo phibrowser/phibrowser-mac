@@ -508,6 +508,9 @@ private struct BrowsingSectionView: View {
     @AppStorage(PhiPreferences.GeneralSettings.openExternalLinksInKiosk.rawValue)
     private var openExternalLinksInKiosk: Bool = PhiPreferences.GeneralSettings.openExternalLinksInKiosk.defaultValue
 
+    @AppStorage(PhiPreferences.GeneralSettings.openKioskOnCommandOptionClick.rawValue)
+    private var openKioskOnCommandOptionClick: Bool = PhiPreferences.GeneralSettings.openKioskOnCommandOptionClick.defaultValue
+
     @AppStorage(PhiPreferences.GeneralSettings.alwaysShowURLPath.rawValue)
     private var alwaysShowURLPath: Bool = PhiPreferences.GeneralSettings.alwaysShowURLPath.defaultValue
 
@@ -632,6 +635,23 @@ private struct BrowsingSectionView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .onChange(of: openExternalLinksInKiosk) { _, newValue in
                         AppController.shared?.setOpenExternalLinksInKioskEnabled(newValue)
+                    }
+
+                    Divider()
+
+                    GeneralRowView(title: NSLocalizedString(
+                        "settings.general.commandOptionKiosk.toggle",
+                        value: "Open Kiosk when clicking on links with ⌘⌥ held",
+                        comment: "General settings - Toggle title for opening clicked links in Kiosk while Command and Option are held"
+                    )) {
+                        Toggle("", isOn: $openKioskOnCommandOptionClick)
+                            .labelsHidden()
+                            .toggleStyle(.switch)
+                            .controlSize(.mini)
+                            .themedTint(.themeColor)
+                    }
+                    .onChange(of: openKioskOnCommandOptionClick) { _, newValue in
+                        AppController.shared?.setOpenKioskOnCommandOptionClickEnabled(newValue)
                     }
 
                     Divider()

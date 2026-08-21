@@ -4943,19 +4943,45 @@ final class SpaceManager: ObservableObject {
         participatesInSpaces && sourceSpaceId == targetSpaceId
     }
 
+    /// Moving a Kiosk page into the already-active Space can preserve its live
+    /// WebContents. When the destination first requires a Space switch, use a
+    /// URL handoff after that window surfaces instead: the framework's
+    /// cross-window move is fire-and-forget, while an explicit URL handoff can
+    /// target the destination window after the Space switch has settled.
+    static func kioskTransferRequiresURLHandoff(
+        isKioskWindow: Bool,
+        activeSpaceId: String?,
+        targetSpaceId: String
+    ) -> Bool {
+        isKioskWindow && activeSpaceId != targetSpaceId
+    }
+
+    /// Web navigations participate in Space URL routing. A Kiosk handoff must
+    /// use the bridge's one-shot routing exemption so the explicit destination
+    /// chosen by the user is not immediately overridden by a matching rule.
+    static func kioskURLHandoffNeedsRoutingBypass(_ urlString: String) -> Bool {
+        guard let scheme = URL(string: urlString)?.scheme?.lowercased() else {
+            return false
+        }
+        return scheme == "http" || scheme == "https"
+    }
+
     /// Moves `tab` out of its current Space and into the Space identified by
     /// `targetSpaceId`, then surfaces that Space with the tab focused.
     ///
-    /// Two paths, chosen by profile:
-    ///  - **Same profile** — a true move. The target Space's window is
-    ///    spawned/surfaced in the tab's own slot, then Chromium runs an atomic
-    ///    cross-window detach + insert (`moveSelfToWindow:atIndex:`), preserving
-    ///    the live WebContents, its history and tab identity. Chromium activates
-    ///    the inserted tab in the target, satisfying the "focus the moved tab"
-    ///    contract for free — exactly as the cross-window drag path relies on.
-    ///  - **Different profile** — a live WebContents cannot cross a profile
-    ///    (BrowserContext) boundary, so the tab's URL is opened as a fresh,
-    ///    focused tab in the target Space and the origin tab is closed.
+    /// Two paths, chosen by profile and Kiosk destination state:
+    ///  - **Same profile, except a Kiosk switching Spaces** — a true move. The
+    ///    target Space's window is spawned/surfaced in the tab's own slot, then
+    ///    Chromium runs an atomic cross-window detach + insert
+    ///    (`moveSelfToWindow:atIndex:`), preserving the live WebContents, its
+    ///    history and tab identity. Chromium activates the inserted tab in the
+    ///    target, satisfying the "focus the moved tab" contract for free —
+    ///    exactly as the cross-window drag path relies on.
+    ///  - **Different profile, or Kiosk switching Spaces** — a live WebContents
+    ///    cannot cross a profile (BrowserContext) boundary, and a Kiosk handoff
+    ///    needs an explicit URL handoff after the Space switch. Web URLs use a
+    ///    one-shot routing exemption so URL rules cannot override the selected
+    ///    destination; other URLs use strict exact-window creation.
     ///
     /// Either path needs the target window to exist before the tab can land in
     /// it, so the work runs inside `activate`'s `onSwapSettled` — by then the
@@ -4996,14 +5022,21 @@ final class SpaceManager: ObservableObject {
             && targetSpace.profileId == sourceState.profileId
         let tabGuid = tab.guid
         let url = tab.url
-        let sourceWrapper = sameProfile ? tab.webContentWrapper : nil
+        let kioskRequiresURLHandoff = Self.kioskTransferRequiresURLHandoff(
+            isKioskWindow: sourceState.isKioskWindow,
+            activeSpaceId: activeSpaceId,
+            targetSpaceId: targetSpaceId
+        )
+        let recreatesURL = !sameProfile || kioskRequiresURLHandoff
+        let sourceWrapper = recreatesURL ? nil : tab.webContentWrapper
 
-        // Cross-profile recreation needs a URL to copy; bail if there is none.
-        if !sameProfile, (url ?? "").isEmpty {
-            AppLogWarn("[SpaceManager] moveTab: cross-profile move with empty URL — ignoring")
+        // URL recreation needs a concrete destination; a live move needs the
+        // source WebContents that Chromium will detach from the Kiosk/Space.
+        if recreatesURL, (url ?? "").isEmpty {
+            AppLogWarn("[SpaceManager] moveTab: URL recreation with empty URL — ignoring")
             return
         }
-        if sameProfile, sourceWrapper == nil {
+        if !recreatesURL, sourceWrapper == nil {
             AppLogWarn("[SpaceManager] moveTab: source tab lost its web contents")
             return
         }
@@ -5059,7 +5092,7 @@ final class SpaceManager: ObservableObject {
                         }
                         return
                     }
-                    if sameProfile {
+                    if !recreatesURL {
                         guard let sourceWrapper else { return }
                         // Append to the end of the target's normal tabs; the scheduled
                         // insertion lands the arriving tab there, mirroring the
@@ -5068,6 +5101,43 @@ final class SpaceManager: ObservableObject {
                         targetState.scheduleNormalTabInsertion(tabGuid: tabGuid, at: normalIndex)
                         sourceWrapper.moveSplit(toWindow: targetState.windowId.int64Value,
                                                 at: targetState.tabs.count)
+                    } else if kioskRequiresURLHandoff {
+                        guard let url,
+                              let bridge = ChromiumLauncher.sharedInstance().bridge else {
+                            AppLogWarn("[SpaceManager] moveTab: target URL handoff is unavailable")
+                            return
+                        }
+                        let targetWindowId = targetState.windowId.int64Value
+                        if Self.kioskURLHandoffNeedsRoutingBypass(url) {
+                            bridge.openTabBypassingSpaceRouting(
+                                withUrl: url,
+                                windowId: targetWindowId,
+                                activateWindow: false
+                            )
+                        } else {
+                            guard bridge.responds(
+                                to: #selector(
+                                    PhiChromiumBridgeProtocol.createNewTabStrictly(
+                                        withUrl:windowId:focusAfterCreate:
+                                    )
+                                )
+                            ), bridge.createNewTabStrictly(
+                                withUrl: url,
+                                windowId: targetWindowId,
+                                focusAfterCreate: true
+                            ) else {
+                                AppLogWarn("[SpaceManager] moveTab: strict target handoff failed")
+                                return
+                            }
+                        }
+                        SpaceMoveTabUnit.tab(tab).closeSourceTabsAfterURLRecreation()
+                        // Closing the last Kiosk tab can make Chromium activate
+                        // another window from the Kiosk's source profile. Reassert
+                        // the destination after that close cascade so the window
+                        // receiving the recreated page remains frontmost.
+                        DispatchQueue.main.async { [weak slot] in
+                            slot?.activate(spaceId: targetSpaceId, animated: false)
+                        }
                     } else {
                         targetState.createTab(url, focusAfterCreate: true)
                         SpaceMoveTabUnit.tab(tab).closeSourceTabsAfterCrossProfileMove()
@@ -5109,6 +5179,11 @@ final class SpaceManager: ObservableObject {
 
         @MainActor
         func closeSourceTabsAfterCrossProfileMove() {
+            closeSourceTabsAfterURLRecreation()
+        }
+
+        @MainActor
+        func closeSourceTabsAfterURLRecreation() {
             tabs.forEach { $0.close() }
         }
     }

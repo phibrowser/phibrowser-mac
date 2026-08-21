@@ -33990,13 +33990,25 @@
       }
     },
     "kiosk.toolbar.openInSpace" : {
-      "comment" : "Kiosk toolbar - Menu that transfers the current page into a selected Space",
+      "comment" : "Kiosk toolbar - Prefix before the active Space name in the primary open action",
       "extractionState" : "extracted_with_value",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Open in Space"
+            "value" : "Open in"
+          }
+        }
+      }
+    },
+    "kiosk.toolbar.spaceList.accessibilityLabel" : {
+      "comment" : "Kiosk toolbar - Accessibility label and tooltip for the button that shows the Space list",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Choose Space"
           }
         }
       }
@@ -34009,18 +34021,6 @@
           "stringUnit" : {
             "state" : "new",
             "value" : "Switch Profile"
-          }
-        }
-      }
-    },
-    "kiosk.toolbar.reloadPage.accessibilityLabel" : {
-      "comment" : "Kiosk toolbar - Accessibility label and tooltip for the reload button",
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "Reload Page"
           }
         }
       }
@@ -52201,6 +52201,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "開發者"
+          }
+        }
+      }
+    },
+    "settings.general.commandOptionKiosk.toggle" : {
+      "comment" : "General settings - Toggle title for opening clicked links in Kiosk while Command and Option are held",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Open Kiosk when clicking on links with ⌘⌥ held"
           }
         }
       }

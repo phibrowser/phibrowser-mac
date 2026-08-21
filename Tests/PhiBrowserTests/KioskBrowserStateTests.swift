@@ -13,6 +13,51 @@ final class KioskBrowserStateTests: XCTestCase {
         XCTAssertFalse(
             PhiPreferences.GeneralSettings.openExternalLinksInKiosk.defaultValue
         )
+        XCTAssertFalse(
+            PhiPreferences.GeneralSettings.openKioskOnCommandOptionClick.defaultValue
+        )
+    }
+
+    func testSpaceMenuPrimaryTargetPrefersActiveThenDefaultSpace() {
+        let defaultSpace = SpaceModel(
+            spaceId: LocalStore.defaultSpaceId,
+            profileId: "profile",
+            name: "Default",
+            colorHex: "#000000",
+            iconName: "rectangle.stack",
+            sortOrder: 0
+        )
+        let activeSpace = SpaceModel(
+            spaceId: "active-space",
+            profileId: "profile",
+            name: "Active",
+            colorHex: "#FFFFFF",
+            iconName: "circle",
+            sortOrder: 1
+        )
+        let spaces = [defaultSpace, activeSpace]
+
+        XCTAssertEqual(
+            KioskSpaceMenuTargetResolver.primarySpace(
+                in: spaces,
+                activeSpaceId: activeSpace.spaceId
+            )?.spaceId,
+            activeSpace.spaceId
+        )
+        XCTAssertEqual(
+            KioskSpaceMenuTargetResolver.primarySpace(
+                in: spaces,
+                activeSpaceId: "missing-space"
+            )?.spaceId,
+            defaultSpace.spaceId
+        )
+        XCTAssertEqual(
+            KioskSpaceMenuTargetResolver.primarySpace(
+                in: [activeSpace],
+                activeSpaceId: nil
+            )?.spaceId,
+            activeSpace.spaceId
+        )
     }
 
     private var temporaryDirectories: [URL] = []
@@ -50,6 +95,31 @@ final class KioskBrowserStateTests: XCTestCase {
             sourceSpaceId: LocalStore.defaultSpaceId,
             targetSpaceId: LocalStore.defaultSpaceId
         ))
+    }
+
+    func testKioskUsesURLHandoffWhenDestinationRequiresSpaceSwitch() {
+        XCTAssertFalse(SpaceManager.kioskTransferRequiresURLHandoff(
+            isKioskWindow: true,
+            activeSpaceId: "active-space",
+            targetSpaceId: "active-space"
+        ))
+        XCTAssertTrue(SpaceManager.kioskTransferRequiresURLHandoff(
+            isKioskWindow: true,
+            activeSpaceId: "active-space",
+            targetSpaceId: "other-space"
+        ))
+        XCTAssertFalse(SpaceManager.kioskTransferRequiresURLHandoff(
+            isKioskWindow: false,
+            activeSpaceId: "active-space",
+            targetSpaceId: "other-space"
+        ))
+    }
+
+    func testKioskWebURLHandoffBypassesSpaceRouting() {
+        XCTAssertTrue(SpaceManager.kioskURLHandoffNeedsRoutingBypass("https://example.com/path"))
+        XCTAssertTrue(SpaceManager.kioskURLHandoffNeedsRoutingBypass("HTTP://example.com"))
+        XCTAssertFalse(SpaceManager.kioskURLHandoffNeedsRoutingBypass("chrome://newtab"))
+        XCTAssertFalse(SpaceManager.kioskURLHandoffNeedsRoutingBypass(""))
     }
 
     func testFirstChromiumTabBecomesFocusedContent() throws {
@@ -130,6 +200,38 @@ final class KioskBrowserStateTests: XCTestCase {
         XCTAssertFalse(addressField.stringValue.isEmpty)
         XCTAssertEqual(omniBoxRequestCount, 1)
         XCTAssertTrue(wrapper.navigatedURLs.isEmpty)
+    }
+
+    func testKioskWindowRestoresAndAutosavesSharedFrame() throws {
+        let autosaveName = KioskWindowFramePersistence.autosaveName
+        NSWindow.removeFrame(usingName: autosaveName)
+        defer { NSWindow.removeFrame(usingName: autosaveName) }
+
+        let visibleFrame = try XCTUnwrap(NSScreen.main?.visibleFrame)
+        let savedFrame = NSRect(
+            x: visibleFrame.minX + 40,
+            y: visibleFrame.minY + 40,
+            width: min(780, visibleFrame.width - 80),
+            height: min(620, visibleFrame.height - 80)
+        )
+        let sourceWindow = makeWindow(frame: savedFrame)
+        let persistedFrame = sourceWindow.frame
+        sourceWindow.saveFrame(usingName: autosaveName)
+
+        let restoredWindow = makeWindow(
+            frame: NSRect(x: 0, y: 0, width: 640, height: 480)
+        )
+        XCTAssertTrue(
+            KioskWindowFramePersistence.restoreFrameAndEnableAutosave(
+                for: restoredWindow
+            )
+        )
+
+        XCTAssertEqual(restoredWindow.frame.origin.x, persistedFrame.origin.x)
+        XCTAssertEqual(restoredWindow.frame.origin.y, persistedFrame.origin.y)
+        XCTAssertEqual(restoredWindow.frame.width, persistedFrame.width)
+        XCTAssertEqual(restoredWindow.frame.height, persistedFrame.height)
+        XCTAssertEqual(restoredWindow.frameAutosaveName, autosaveName)
     }
 
     func testToolbarAndNativeTrafficLightsMoveDownTogether() throws {
@@ -266,6 +368,20 @@ final class KioskBrowserStateTests: XCTestCase {
                 accuracy: 0.5
             )
         }
+    }
+
+    private func makeWindow(frame: NSRect) -> NSWindow {
+        NSWindow(
+            contentRect: frame,
+            styleMask: [
+                .titled,
+                .closable,
+                .miniaturizable,
+                .resizable,
+            ],
+            backing: .buffered,
+            defer: false
+        )
     }
 
     func testKioskStateDrivesExistingOmniBoxController() throws {

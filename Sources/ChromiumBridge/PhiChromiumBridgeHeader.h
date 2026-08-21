@@ -1319,6 +1319,10 @@ typedef NS_ENUM(NSInteger, PhiGhostMaterializeOutcome) {
 /// UserDefaults remains the persisted source of truth. Main thread only.
 - (void)setOpenExternalLinksInKioskEnabled:(BOOL)enabled;
 
+/// Updates Chromium's process-local cache for Command-Option link clicks.
+/// Phi UserDefaults remains the persisted source of truth. Main thread only.
+- (void)setOpenKioskOnCommandOptionClickEnabled:(BOOL)enabled;
+
 /// Restores the previous session mid-session for a Dock reopen or an external
 /// link that arrives with no window open, mirroring cold start: every profile
 /// that owned a window when the app last had windows is reloaded and its last

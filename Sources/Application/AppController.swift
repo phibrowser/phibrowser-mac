@@ -212,6 +212,9 @@ import PostHog
         setOpenExternalLinksInKioskEnabled(
             PhiPreferences.GeneralSettings.openExternalLinksInKiosk.loadValue()
         )
+        setOpenKioskOnCommandOptionClickEnabled(
+            PhiPreferences.GeneralSettings.openKioskOnCommandOptionClick.loadValue()
+        )
         
         setupLogging()
         SentinelLanguagePreferenceSync.persistCurrentPreference()
@@ -677,6 +680,23 @@ import PostHog
             return
         }
         chromiumBridge.setOpenExternalLinksInKioskEnabled(enabled)
+    }
+
+    func setOpenKioskOnCommandOptionClickEnabled(_ enabled: Bool) {
+        bindChromiumBridgeIfNeeded()
+        guard let chromiumBridge,
+              chromiumBridge.responds(
+                to: #selector(
+                    PhiChromiumBridgeProtocol
+                        .setOpenKioskOnCommandOptionClickEnabled(_:)
+                )
+              ) else {
+            AppLogWarn(
+                "[Kiosk] Chromium bridge does not support Command-Option link routing"
+            )
+            return
+        }
+        chromiumBridge.setOpenKioskOnCommandOptionClickEnabled(enabled)
     }
 
     @MainActor

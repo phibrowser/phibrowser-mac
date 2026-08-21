@@ -132,6 +132,142 @@ final class KioskBrowserStateTests: XCTestCase {
         XCTAssertTrue(wrapper.navigatedURLs.isEmpty)
     }
 
+    func testToolbarAndNativeTrafficLightsMoveDownTogether() throws {
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 900, height: 640),
+            styleMask: [
+                .titled,
+                .closable,
+                .miniaturizable,
+                .resizable,
+                .fullSizeContentView,
+            ],
+            backing: .buffered,
+            defer: false
+        )
+        window.toolbar = NSToolbar(
+            identifier: NSToolbar.Identifier("KioskBrowserToolbarTest")
+        )
+        window.toolbarStyle = .unifiedCompact
+        window.titlebarAppearsTransparent = true
+        window.titleVisibility = .hidden
+
+        let contentView = try XCTUnwrap(window.contentView)
+        let trafficLightButtons = try [
+            NSWindow.ButtonType.closeButton,
+            .miniaturizeButton,
+            .zoomButton,
+        ].map { buttonType in
+            try XCTUnwrap(window.standardWindowButton(buttonType))
+        }
+        let originalTrafficLightCenterYs = try trafficLightButtons.map { button in
+            let titlebarView = try XCTUnwrap(button.superview)
+            return titlebarView.convert(
+                NSPoint(x: button.frame.midX, y: button.frame.midY),
+                to: nil
+            ).y
+        }
+        let originalButtonFrames = trafficLightButtons.map(\.frame)
+        let originalButtonSuperviews = try trafficLightButtons.map {
+            try XCTUnwrap($0.superview)
+        }
+        let titlebarContainer = try XCTUnwrap(
+            trafficLightButtons[0].superview?.superview
+        )
+        let originalTitlebarContainerFrame = titlebarContainer.frame
+        let closeFrameInContainer = originalButtonSuperviews[0].convert(
+            trafficLightButtons[0].frame,
+            to: titlebarContainer
+        )
+        let originalTopMargin = titlebarContainer.bounds.maxY
+            - closeFrameInContainer.maxY
+
+        let positioner = KioskTrafficLightPositioner(
+            window: window,
+            downwardOffset: KioskBrowserToolbar.titlebarVerticalShift
+        )
+        positioner.start()
+
+        func assertTrafficLightsAreShifted() throws {
+            for (button, originalCenterY) in zip(
+                trafficLightButtons,
+                originalTrafficLightCenterYs
+            ) {
+                let titlebarView = try XCTUnwrap(button.superview)
+                let shiftedCenterY = titlebarView.convert(
+                    NSPoint(x: button.frame.midX, y: button.frame.midY),
+                    to: nil
+                ).y
+                XCTAssertEqual(
+                    shiftedCenterY,
+                    originalCenterY - 4,
+                    accuracy: 0.5
+                )
+            }
+        }
+
+        try assertTrafficLightsAreShifted()
+        XCTAssertEqual(
+            titlebarContainer.frame.height,
+            trafficLightButtons[0].frame.height
+                + 2 * (originalTopMargin + 4),
+            accuracy: 0.5
+        )
+        XCTAssertEqual(
+            titlebarContainer.frame.maxY,
+            originalTitlebarContainerFrame.maxY,
+            accuracy: 0.5
+        )
+        for (button, originalSuperview) in zip(
+            trafficLightButtons,
+            originalButtonSuperviews
+        ) {
+            XCTAssertTrue(button.superview === originalSuperview)
+        }
+
+        for (button, frame) in zip(trafficLightButtons, originalButtonFrames) {
+            button.frame = frame
+        }
+        try assertTrafficLightsAreShifted()
+
+        titlebarContainer.frame = originalTitlebarContainerFrame
+        try assertTrafficLightsAreShifted()
+
+        for button in trafficLightButtons {
+            button.postsFrameChangedNotifications = false
+        }
+        for (button, frame) in zip(trafficLightButtons, originalButtonFrames) {
+            button.frame = frame
+        }
+        window.title = "example.com"
+        try assertTrafficLightsAreShifted()
+
+        let toolbar = KioskBrowserToolbar(state: try makeState())
+        toolbar.frame = NSRect(
+            x: 0,
+            y: contentView.bounds.maxY - KioskBrowserToolbar.preferredHeight,
+            width: contentView.bounds.width,
+            height: KioskBrowserToolbar.preferredHeight
+        )
+        contentView.addSubview(toolbar)
+
+        toolbar.layoutSubtreeIfNeeded()
+
+        let closeButton = trafficLightButtons[0]
+        let trafficLightCenterY = toolbar.convert(
+            NSPoint(x: closeButton.bounds.midX, y: closeButton.bounds.midY),
+            from: closeButton
+        ).y
+        XCTAssertEqual(toolbar.controlCenterYsForTesting.count, 2)
+        for centerY in toolbar.controlCenterYsForTesting {
+            XCTAssertEqual(
+                centerY,
+                trafficLightCenterY,
+                accuracy: 0.5
+            )
+        }
+    }
+
     func testKioskStateDrivesExistingOmniBoxController() throws {
         let state = try makeState()
         let tab = Tab(

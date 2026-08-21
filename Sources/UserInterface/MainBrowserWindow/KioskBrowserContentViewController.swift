@@ -6,32 +6,16 @@
 import AppKit
 import Combine
 import SnapKit
-import SwiftUI
-
-private final class KioskAddressField: NSTextField {
-    var onActivate: (() -> Void)?
-
-    override func mouseDown(with event: NSEvent) {
-        guard isEnabled else { return }
-        onActivate?()
-    }
-}
 
 /// Compact Kiosk presentation: profile and page controls around one Chromium view.
 final class KioskBrowserContentViewController: NSViewController {
     private enum Layout {
-        static let toolbarHeight: CGFloat = 52
-        static let trafficLightInset: CGFloat = 78
-        static let addressBarHeight: CGFloat = 32
-        static let spaceMenuWidth: CGFloat = 176
         static let panelSpacing: CGFloat = 8
         static let panelInset: CGFloat = 8
     }
 
     private let state: KioskBrowserState
-    private let toolbarView = NSVisualEffectView()
-    private let addressBarContainer = NSView()
-    private let addressField = KioskAddressField()
+    private let toolbarView: KioskBrowserToolbar
     private let webContentHost = NSView()
     private var profileReplacementSnapshotView: NSImageView?
     private var profileReplacementSnapshotRemovalWorkItem: DispatchWorkItem?
@@ -40,39 +24,9 @@ final class KioskBrowserContentViewController: NSViewController {
     private var stateCancellables = Set<AnyCancellable>()
     private var tabCancellables = Set<AnyCancellable>()
 
-    private var onProfileSelection: ((String) -> Void)?
-    private var onSpaceSelection: ((String) -> Void)?
-    private var onOmniBoxRequest: (() -> Void)?
-
-    private lazy var profileHostingView = NSHostingView(
-        rootView: KioskProfileMenu(
-            currentProfileId: state.profileId,
-            onSelect: { [weak self] profileId in
-                self?.onProfileSelection?(profileId)
-            }
-        )
-    )
-
-    private lazy var toolbarActionsHostingView = NSHostingView(
-        rootView: KioskToolbarActions(
-            state: state,
-            onReload: { [weak self] in
-                self?.state.focusingTab?.reload()
-            }
-        )
-    )
-
-    private lazy var spaceHostingView = NSHostingView(
-        rootView: KioskSpaceMenu(
-            state: state,
-            onSelect: { [weak self] spaceId in
-                self?.onSpaceSelection?(spaceId)
-            }
-        )
-    )
-
     init(state: KioskBrowserState) {
         self.state = state
+        toolbarView = KioskBrowserToolbar(state: state)
         super.init(nibName: nil, bundle: nil)
     }
 
@@ -84,94 +38,19 @@ final class KioskBrowserContentViewController: NSViewController {
         view = NSView()
         view.wantsLayer = true
 
-        toolbarView.material = .headerView
-        toolbarView.blendingMode = .withinWindow
-        toolbarView.state = .active
-
-        addressBarContainer.wantsLayer = true
-        addressBarContainer.layer?.cornerCurve = .continuous
-        addressBarContainer.layer?.cornerRadius = 9
-        addressBarContainer.layer?.backgroundColor = NSColor.controlBackgroundColor
-            .withAlphaComponent(0.55)
-            .cgColor
-        addressBarContainer.layer?.borderWidth = 0.5
-        addressBarContainer.layer?.borderColor = NSColor.separatorColor
-            .withAlphaComponent(0.28)
-            .cgColor
-
-        addressField.placeholderString = NSLocalizedString(
-            "addressBar.input.placeholder",
-            value: "Search or Enter URL",
-            comment: "Address bar - Text field placeholder prompting the user to search or enter a URL"
-        )
-        addressField.font = .systemFont(ofSize: 13)
-        addressField.focusRingType = .none
-        addressField.lineBreakMode = .byTruncatingMiddle
-        addressField.alignment = .center
-        addressField.isBezeled = false
-        addressField.drawsBackground = false
-        addressField.isEditable = false
-        addressField.isSelectable = false
-        addressField.onActivate = { [weak self] in
-            self?.onOmniBoxRequest?()
-        }
-
         webContentHost.wantsLayer = true
         webContentHost.layer?.backgroundColor = NSColor.windowBackgroundColor.cgColor
 
-        // AppKit already positions these hosts within the title bar.
-        profileHostingView.safeAreaRegions = []
-        toolbarActionsHostingView.safeAreaRegions = []
-        spaceHostingView.safeAreaRegions = []
-
         view.addSubview(toolbarView)
-        toolbarView.addSubview(addressBarContainer)
-        addressBarContainer.addSubview(profileHostingView)
-        addressBarContainer.addSubview(addressField)
-        addressBarContainer.addSubview(toolbarActionsHostingView)
-        toolbarView.addSubview(spaceHostingView)
         view.addSubview(webContentHost)
 
         toolbarView.snp.makeConstraints { make in
             make.top.leading.trailing.equalToSuperview()
-            make.height.equalTo(Layout.toolbarHeight)
-        }
-        spaceHostingView.snp.makeConstraints { make in
-            make.trailing.equalToSuperview().inset(12)
-            make.centerY.equalToSuperview()
-            make.width.equalTo(Layout.spaceMenuWidth)
-            make.height.equalTo(34)
-        }
-        addressBarContainer.snp.makeConstraints { make in
-            make.leading.equalToSuperview().offset(Layout.trafficLightInset)
-            make.trailing.equalTo(spaceHostingView.snp.leading).offset(-8)
-            make.centerY.equalToSuperview()
-            make.height.equalTo(Layout.addressBarHeight)
-        }
-        profileHostingView.setContentHuggingPriority(.required, for: .horizontal)
-        profileHostingView.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
-        profileHostingView.snp.makeConstraints { make in
-            make.leading.equalToSuperview().offset(5)
-            make.centerY.equalToSuperview()
-            make.height.equalTo(26)
-            make.width.lessThanOrEqualTo(138)
-        }
-        toolbarActionsHostingView.snp.makeConstraints { make in
-            make.trailing.equalToSuperview().inset(5)
-            make.centerY.equalToSuperview()
-            make.width.equalTo(52)
-            make.height.equalTo(26)
-        }
-        addressField.snp.makeConstraints { make in
-            make.leading.equalTo(profileHostingView.snp.trailing).offset(6)
-            make.trailing.equalTo(toolbarActionsHostingView.snp.leading).offset(-6)
-            make.centerY.equalToSuperview()
-            make.height.equalTo(24)
+            make.height.equalTo(KioskBrowserToolbar.preferredHeight)
         }
         remakeContentLayout()
 
         bindState()
-        state.extensionManager.refreshExtensions()
     }
 
     func configureActions(
@@ -179,9 +58,11 @@ final class KioskBrowserContentViewController: NSViewController {
         onSpaceSelection: @escaping (String) -> Void,
         onOmniBoxRequest: @escaping () -> Void
     ) {
-        self.onProfileSelection = onProfileSelection
-        self.onSpaceSelection = onSpaceSelection
-        self.onOmniBoxRequest = onOmniBoxRequest
+        toolbarView.configureActions(
+            onProfileSelection: onProfileSelection,
+            onSpaceSelection: onSpaceSelection,
+            onOmniBoxRequest: onOmniBoxRequest
+        )
     }
 
     func handlePreviousTabReadyForCleanup(tabId: Int) {
@@ -424,181 +305,14 @@ final class KioskBrowserContentViewController: NSViewController {
     }
 
     private func updateAddressField(with url: String?) {
-        addressField.stringValue = displayAddressText(for: url)
-    }
-
-    private func displayAddressText(for url: String?) -> String {
-        guard let url, !url.isEmpty, !url.isNTP else { return "" }
-        return URLProcessor.displayName(
-            for: URLProcessor.phiBrandEnsuredUrlString(url)
-        )
+        toolbarView.updateAddress(with: url)
     }
 
     var addressBarAnchorView: NSView {
-        addressBarContainer
+        toolbarView.addressBarAnchorView
     }
 
     var extensionSidePanelViewForTesting: ExtensionSidePanelView? {
         extensionSidePanelView
-    }
-}
-
-private struct KioskProfileMenu: View {
-    @ObservedObject private var profileManager: ProfileManager
-    let currentProfileId: String
-    let onSelect: (String) -> Void
-
-    init(
-        currentProfileId: String,
-        profileManager: ProfileManager = .shared,
-        onSelect: @escaping (String) -> Void
-    ) {
-        self.currentProfileId = currentProfileId
-        self.profileManager = profileManager
-        self.onSelect = onSelect
-    }
-
-    private var currentProfileName: String {
-        profileManager.profile(for: currentProfileId)?.displayName
-            ?? currentProfileId
-    }
-
-    var body: some View {
-        Menu {
-            ForEach(profileManager.userAssignableProfiles) { profile in
-                Button {
-                    onSelect(profile.profileId)
-                } label: {
-                    HStack {
-                        Text(verbatim: profile.displayName)
-                        if profile.profileId == currentProfileId {
-                            Image(systemName: "checkmark")
-                        }
-                    }
-                }
-                .disabled(profile.profileId == currentProfileId)
-            }
-        } label: {
-            HStack(spacing: 5) {
-                Image(systemName: "person.crop.circle.fill")
-                    .font(.system(size: 14, weight: .medium))
-                    .foregroundStyle(.secondary)
-                Text(verbatim: currentProfileName)
-                    .font(.system(size: 13, weight: .semibold))
-                    .lineLimit(1)
-                    .truncationMode(.tail)
-            }
-            .padding(.horizontal, 8)
-            .frame(height: 24)
-            .background(Capsule().fill(Color.primary.opacity(0.07)))
-            .contentShape(Capsule())
-        }
-        .menuStyle(.borderlessButton)
-        .buttonStyle(.plain)
-        .accessibilityLabel(NSLocalizedString(
-            "kiosk.toolbar.profileMenu.accessibilityLabel",
-            value: "Switch Profile",
-            comment: "Kiosk toolbar - Accessibility label for the current-profile menu"
-        ))
-        .onAppear {
-            profileManager.refresh()
-        }
-    }
-}
-
-private struct KioskToolbarActions: View {
-    let state: KioskBrowserState
-    let onReload: () -> Void
-
-    @State private var isExtensionPopoverShown = false
-
-    var body: some View {
-        HStack(spacing: 2) {
-            HeaderExtensionMenuButton(
-                extensionManager: state.extensionManager,
-                browserState: state,
-                isPopoverShown: $isExtensionPopoverShown,
-                showsManagement: false
-            )
-            CircularIconButton(
-                systemName: "arrow.clockwise",
-                accessibilityLabel: NSLocalizedString(
-                    "kiosk.toolbar.reloadPage.accessibilityLabel",
-                    value: "Reload Page",
-                    comment: "Kiosk toolbar - Accessibility label and tooltip for the reload button"
-                ),
-                action: onReload
-            )
-        }
-        .frame(height: 26)
-    }
-}
-
-private struct KioskSpaceMenu: View {
-    @ObservedObject private var spaceManager = SpaceManager.shared
-    let state: KioskBrowserState
-    let onSelect: (String) -> Void
-
-    private var availableSpaces: [SpaceModel] {
-        guard !state.isIncognito,
-              PhiPreferences.GeneralSettings.spacesFeatureEnabled.loadValue() else {
-            return []
-        }
-        return spaceManager.spaces
-    }
-
-    private var title: String {
-        NSLocalizedString(
-            "kiosk.toolbar.openInSpace",
-            value: "Open in Space",
-            comment: "Kiosk toolbar - Menu that transfers the current page into a selected Space"
-        )
-    }
-
-    var body: some View {
-        Menu {
-            ForEach(availableSpaces, id: \.spaceId) { space in
-                Button {
-                    onSelect(space.spaceId)
-                } label: {
-                    Label {
-                        Text(verbatim: space.name)
-                    } icon: {
-                        SpaceIconView(
-                            storedValue: space.iconName,
-                            size: 13,
-                            symbolWeight: .semibold,
-                            tint: .primary
-                        )
-                    }
-                }
-            }
-        } label: {
-            HStack(spacing: 7) {
-                Text(title)
-                    .font(.system(size: 13, weight: .semibold))
-                    .lineLimit(1)
-                Spacer(minLength: 4)
-                Image(systemName: "chevron.down")
-                    .font(.system(size: 10, weight: .semibold))
-                    .foregroundStyle(.secondary)
-            }
-            .padding(.horizontal, 12)
-            .frame(maxWidth: .infinity, minHeight: 32)
-            .background(
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .fill(Color(nsColor: .controlBackgroundColor))
-            )
-            .overlay {
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .stroke(Color.primary.opacity(0.12), lineWidth: 0.5)
-            }
-            .contentShape(Rectangle())
-        }
-        .menuStyle(.borderlessButton)
-        .buttonStyle(.plain)
-        .disabled(availableSpaces.isEmpty)
-        .accessibilityLabel(title)
-        .help(title)
     }
 }

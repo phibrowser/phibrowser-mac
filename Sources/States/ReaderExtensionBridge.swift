@@ -71,6 +71,23 @@ enum ReaderExtensionBridge {
         return nil
     }
 
+    /// The origin tab a reader page's article was extracted from, recovered
+    /// from the `tab` fragment parameter (`readerPageUrl` in the extension's
+    /// background script). The reading surface opens in its own tab; this is
+    /// how an arriving surface tab is bound back to the tab it covers.
+    /// Anything that is not a reader page URL returns nil.
+    static func originTabId(fromReaderPageURL urlString: String) -> Int? {
+        guard let components = URLComponents(string: urlString),
+              components.scheme == "chrome-extension",
+              components.host == extensionId,
+              components.path == "/reader.html",
+              let fragment = components.percentEncodedFragment else { return nil }
+        for pair in fragment.split(separator: "&") where pair.hasPrefix("tab=") {
+            return Int(pair.dropFirst("tab=".count))
+        }
+        return nil
+    }
+
     /// `reader.offerable`: the extension's in-page probe verdict for a tab's
     /// current document.
     static func handleOfferable(_ context: ExtensionMessageContext) {
@@ -107,6 +124,9 @@ enum ReaderExtensionBridge {
                 ReaderViewAnalytics.surfaceMounted(tabId: payload.tabId)
             }
             guard !payload.active, let error = payload.error else { return }
+            // A refused open never creates a surface tab — disarm the
+            // overlay divert armed when the request went out.
+            state.cancelPendingReaderOverlay(forOrigin: payload.tabId)
             ReaderViewAnalytics.openRefused(tabId: payload.tabId, reason: error)
             let title: String
             switch error {

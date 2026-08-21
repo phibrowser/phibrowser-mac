@@ -227,6 +227,7 @@ extension MainBrowserWindowController {
             return
         }
         if browserState.closePeekForBackForwardNavigation() { return }
+        if browserState.closeReaderOverlayForBackForwardNavigation() { return }
         browserState.focusingTab?.goBack()
     }
 
@@ -235,6 +236,7 @@ extension MainBrowserWindowController {
             return
         }
         if browserState.closePeekForBackForwardNavigation() { return }
+        if browserState.closeReaderOverlayForBackForwardNavigation() { return }
         browserState.focusingTab?.goForward()
     }
 

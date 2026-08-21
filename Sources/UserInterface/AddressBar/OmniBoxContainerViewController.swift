@@ -7,6 +7,16 @@ import Cocoa
 import Combine
 import QuartzCore
 
+extension Notification.Name {
+    /// Posted by the in-window blocking overlays (omnibox, tab search) when
+    /// they show or hide — object is the host window, userInfo carries
+    /// `visible: Bool`. The Reader overlay panel listens: it is a child
+    /// window, which draws above every in-window view, so it must step
+    /// aside while one of these overlays is up.
+    static let phiInWindowOverlayVisibilityChanged =
+        Notification.Name("PhiInWindowOverlayVisibilityChanged")
+}
+
 /// Full-screen root for the omnibox overlay. Outside the omnibox panel it dismisses the overlay
 /// and forwards the click to views below so controls (e.g. buttons) still activate.
 private final class OmniBoxContainerRootView: NSView {
@@ -190,9 +200,17 @@ final class OmniBoxContainerViewController: NSViewController {
         }
         omniBoxController?.focusTextField()
         observeFocusingTabChange()
+        NotificationCenter.default.post(name: .phiInWindowOverlayVisibilityChanged,
+                                        object: view.window,
+                                        userInfo: ["visible": true])
     }
     
     func hideOmniBox(fromAddressBar: Bool = false) {
+        // At hide START, not completion: the overlay is on its way out, and
+        // anything that stepped aside for it may come back behind the fade.
+        NotificationCenter.default.post(name: .phiInWindowOverlayVisibilityChanged,
+                                        object: view.window,
+                                        userInfo: ["visible": false])
         focusingTabObserver = nil
         guard animationOn else {
            hideOmniBoxWithoutAnimation()

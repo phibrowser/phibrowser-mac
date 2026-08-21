@@ -50,6 +50,11 @@ class MainBrowserWindowController: NSWindowController {
     /// Focused tab id as of the previous emission, so a focus change can
     /// invalidate a recorded press before it funds an unrelated peek.
     private var lastFocusedTabIdForPeek: Int?
+
+    /// Reader View overlay panel, created on first present. Exposed to the
+    /// coordinator (`tabWillBeRemove`) for the synchronous view detach.
+    private var readerPanelController: ReaderPanelController?
+    var readerPanelControllerIfLoaded: ReaderPanelController? { readerPanelController }
     
     lazy var omnibackgroundView: EventBlockBgView = {
        return EventBlockBgView()
@@ -415,6 +420,44 @@ class MainBrowserWindowController: NSWindowController {
                 }
             }
             .store(in: &cancellables)
+
+        // Reader View overlay: each reader belongs to its origin tab, so the
+        // one panel always shows the focused tab's reader — switching tabs
+        // swaps the hosted content to the newly focused origin's reader,
+        // hides the panel while the focused tab has none, and dismisses it
+        // only when no reader is left in the window.
+        $browserState
+            .flatMap { state in
+                state.readerOverlayState.$readersByOrigin
+                    .combineLatest(state.$focusingTab)
+            }
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] readersByOrigin, focusingTab in
+                guard let self else { return }
+                guard !readersByOrigin.isEmpty else {
+                    self.readerPanelController?.dismiss()
+                    return
+                }
+                if let focusingTab, let tab = readersByOrigin[focusingTab.guid] {
+                    self.presentReaderPanel(for: tab)
+                } else {
+                    self.readerPanelController?.hide()
+                }
+            }
+            .store(in: &cancellables)
+
+        // The reader panel is a child window and would draw above the
+        // in-window blocking overlays (omnibox, tab search) — step it aside
+        // while one is up in this window.
+        NotificationCenter.default.publisher(for: .phiInWindowOverlayVisibilityChanged)
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] notification in
+                guard let self,
+                      notification.object as? NSWindow === self.window,
+                      let visible = notification.userInfo?["visible"] as? Bool else { return }
+                self.readerPanelController?.setConcealedByInWindowOverlay(visible)
+            }
+            .store(in: &cancellables)
     }
 
     /// Whether the focused opener's peek is one the user just opened, rather
@@ -437,6 +480,20 @@ class MainBrowserWindowController: NSWindowController {
             )
         }
         peekPanelController?.present(tab: tab, flyIn: flyIn)
+    }
+
+    private func presentReaderPanel(for tab: Tab) {
+        guard let window = self.window else { return }
+        if readerPanelController == nil {
+            let container = mainSplitViewController.webContentContainerViewController
+            readerPanelController = ReaderPanelController(
+                browserState: browserState,
+                parentWindow: window,
+                anchorView: container.view,
+                cardViewProvider: { [weak container] in container?.currentPageCardView }
+            )
+        }
+        readerPanelController?.present(tab: tab)
     }
 
     
@@ -480,6 +537,9 @@ class MainBrowserWindowController: NSWindowController {
         // down by Chromium together with the window's tab strip.
         browserState.teardownPeekForWindowClose()
         peekPanelController?.dismiss()
+        // Same for the reader overlay and its surface tab.
+        browserState.teardownReaderOverlayForWindowClose()
+        readerPanelController?.dismiss()
     }
 
 

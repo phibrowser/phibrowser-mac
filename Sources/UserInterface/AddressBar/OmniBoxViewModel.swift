@@ -209,6 +209,7 @@ class OmniBoxViewModel: ObservableObject {
         AppLogDebug("omni: select suggestion line: \(suggestion.index), disposition: \(disposition.rawValue)")
         if disposition == .currentTab, let currentTab {
             browserState.closePeekForAddressBarNavigation(openerTabId: currentTab.guid)
+            browserState.closeReaderOverlayForAddressBarNavigation(originTabId: currentTab.guid)
         }
         chromiumBridge?.selectSuggestion(atLine: suggestion.index,
                                          windowId: browserState.windowId.int64Value,
@@ -268,6 +269,7 @@ class OmniBoxViewModel: ObservableObject {
     private func navigateCurrentTab(to url: String) {
         if let currentTab, let wrapper = currentTab.webContentWrapper {
             browserState.closePeekForAddressBarNavigation(openerTabId: currentTab.guid)
+            browserState.closeReaderOverlayForAddressBarNavigation(originTabId: currentTab.guid)
             wrapper.navigate(toURL: url)
             return
         }

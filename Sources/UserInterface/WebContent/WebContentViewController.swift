@@ -256,6 +256,11 @@ class WebContentViewController: NSViewController {
     /// the side margins so the placeholder doesn't cover the window-edge material.
     var closeSnapshotSourceView: NSView { splitViewContainer }
 
+    /// The visible rounded page card. What "cover the page pane" means for a
+    /// full-pane overlay (the Reader panel): the controller's whole view also
+    /// spans the window margins around the card, which must stay visible.
+    var pageCardView: NSView { splitViewContainer }
+
     private lazy var contentSplitViewController = NSSplitViewController()
     private var webContentSplitViewItem: NSSplitViewItem!
     private var aiChatSplitViewItem: NSSplitViewItem?

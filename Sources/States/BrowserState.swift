@@ -346,6 +346,9 @@ class BrowserState {
     /// Peek popup state (bound-tab cross-site previews); see the
     /// "Peek (bound-tab cross-site popups)" section below.
     let peekState = BrowserPeekState()
+    /// Reader View overlay state (full-pane reading surface over the origin
+    /// tab); see the "Reader View overlay" section below.
+    let readerOverlayState = BrowserReaderOverlayState()
     let themeContext: BrowserThemeContext
 
     /// Tracks in-flight tab dragging within this BrowserState (not a singleton).
@@ -3071,6 +3074,14 @@ class BrowserState {
             return
         }
 
+        // Reader View: the reader extension answers a reader-open request by
+        // creating a tab on its reading surface; host it as a full-pane
+        // overlay over the origin tab instead of a normal tab. Same
+        // before-the-defer reasoning as the peek divert above.
+        if maybeDivertReaderOverlayTab(tab, context: context) {
+            return
+        }
+
         if BookmarkManagerRoute.matches(tab.url) {
             tab.title = BookmarkManagerRoute.tabTitle
         }
@@ -3759,6 +3770,300 @@ class BrowserState {
         peekState.clear()
     }
 
+    // MARK: - Reader View overlay
+
+    /// Reader-open requests relayed to the reader extension and not yet
+    /// answered, keyed by the origin tab id. The extension answers by
+    /// creating a tab on its reading surface; the arrival is diverted into
+    /// the overlay only when its `tab=` fragment names a pending origin, so
+    /// a session-restored reader page (whose stale tab id could collide with
+    /// a live one) can never hijack an unrelated tab. Entries die with the
+    /// TTL below, a refusal report, or the origin closing.
+    private var pendingReaderOverlayOrigins: [Int: Date] = [:]
+
+    /// A reader-open answer arriving later than this belongs to a request
+    /// the user has forgotten about (extraction budgets are a few seconds).
+    private static let readerOverlayOpenTTLSeconds: TimeInterval = 30
+
+    /// Creation context of each presented reader-surface tab (keyed by the
+    /// surface tab's guid), kept so adopting it into the strip (link click
+    /// inside the reader) places the tab where a normal arrival would have.
+    private var presentedReaderOverlayContexts: [Int: NativeTabCreationContext] = [:]
+
+    /// Per-surface-tab URL watch: the reader page's links are plain links,
+    /// so a click navigates the surface tab away from `reader.html` — the
+    /// overlay then adopts it into the strip as a normal tab instead of
+    /// showing an arbitrary site inside the reader panel.
+    private var readerOverlayNavigationWatches: [Int: AnyCancellable] = [:]
+
+    /// Safety net mirroring `installPeekOpenerWatchIfNeeded`: whenever an
+    /// origin leaves `tabs` for ANY reason (close, tear-off, cross-Space
+    /// move), its reader overlay must go with it.
+    private var readerOverlayOriginWatch: AnyCancellable?
+    private func installReaderOverlayOriginWatchIfNeeded() {
+        guard readerOverlayOriginWatch == nil else { return }
+        readerOverlayOriginWatch = $tabs
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] tabs in
+                guard let self, !self.readerOverlayState.readersByOrigin.isEmpty else { return }
+                let liveTabIds = Set(tabs.map(\.guid))
+                for originTabId in self.readerOverlayState.readersByOrigin.keys
+                where !liveTabIds.contains(originTabId) {
+                    AppLogInfo("📖 [ReaderOverlay] origin \(originTabId) left the tab list — closing its reader")
+                    self.closeReaderOverlay(forOrigin: originTabId)
+                }
+            }
+    }
+
+    /// Records that a reader-open for `originTabId` is on its way to the
+    /// extension, arming the arrival divert below.
+    func noteReaderOverlayRequested(forOrigin originTabId: Int) {
+        pendingReaderOverlayOrigins[originTabId] = Date()
+    }
+
+    /// Whether a reader-open for `originTabId` is still in flight — lets the
+    /// entry points swallow a second press while extraction runs, instead of
+    /// asking the extension for a duplicate surface.
+    func hasPendingReaderOverlayRequest(forOrigin originTabId: Int) -> Bool {
+        guard let requestedAt = pendingReaderOverlayOrigins[originTabId] else { return false }
+        return Date().timeIntervalSince(requestedAt) < Self.readerOverlayOpenTTLSeconds
+    }
+
+    /// A refused open (`reader.state` inactive with an error) never creates
+    /// a surface tab — disarm the divert.
+    func cancelPendingReaderOverlay(forOrigin originTabId: Int) {
+        pendingReaderOverlayOrigins.removeValue(forKey: originTabId)
+    }
+
+    /// A tab that arrived while a reader-open was in flight but before its
+    /// first URL was known. The reading surface tab is browser-initiated
+    /// (`chrome.tabs.create`) and should carry its URL at insert, but the
+    /// divert must not silently degrade if it ever does not — the tab is
+    /// held out of `tabs` until its first URL decides overlay vs normal tab
+    /// (the peek candidate pattern).
+    private struct ReaderOverlayCandidate {
+        let tab: Tab
+        let context: NativeTabCreationContext?
+        var urlCancellable: AnyCancellable?
+        var timeoutWorkItem: DispatchWorkItem?
+    }
+    private var readerOverlayCandidate: ReaderOverlayCandidate?
+
+    /// Diverts a freshly arrived Chromium tab into the reader overlay when
+    /// it is the reading surface the extension created for a pending
+    /// reader-open. Returns true when the tab was taken over (kept out of
+    /// `tabs`). Anything else — including a restored reader page with no
+    /// pending request — continues as a normal tab.
+    private func maybeDivertReaderOverlayTab(_ tab: Tab,
+                                             context: NativeTabCreationContext?) -> Bool {
+        if let url = tab.url, Self.isUsablePeekDecisionURL(url) {
+            guard ReaderExtensionBridge.originTabId(fromReaderPageURL: url) != nil else {
+                return false
+            }
+            _ = PhiChromiumCoordinator.shared.drainPendingCrash(tabId: tab.guid)
+            // Decide on the next main turn — this path runs inside
+            // Chromium's tab-strip callback stack (peek rule).
+            readerOverlayCandidate = ReaderOverlayCandidate(tab: tab,
+                                                            context: context,
+                                                            urlCancellable: nil,
+                                                            timeoutWorkItem: nil)
+            AppLogInfo("📖 [ReaderOverlay] candidate tabId=\(tab.guid) url=\(url)")
+            DispatchQueue.main.async { [weak self] in
+                self?.resolveReaderOverlayCandidate(urlString: url)
+            }
+            return true
+        }
+
+        // No URL yet: only hold the tab when a reader-open is actually in
+        // flight — everything else keeps stock new-tab behavior.
+        guard pendingReaderOverlayOrigins.contains(where: {
+            Date().timeIntervalSince($0.value) < Self.readerOverlayOpenTTLSeconds
+        }) else { return false }
+        _ = PhiChromiumCoordinator.shared.drainPendingCrash(tabId: tab.guid)
+        if readerOverlayCandidate != nil {
+            finishReaderOverlayCandidate(adopt: true)
+        }
+        var candidate = ReaderOverlayCandidate(tab: tab,
+                                               context: context,
+                                               urlCancellable: nil,
+                                               timeoutWorkItem: nil)
+        AppLogInfo("📖 [ReaderOverlay] candidate tabId=\(tab.guid) awaiting first URL")
+        candidate.urlCancellable = tab.$url
+            .receive(on: DispatchQueue.main)
+            .compactMap { $0 }
+            .filter { Self.isUsablePeekDecisionURL($0) }
+            .first()
+            .sink { [weak self] url in
+                self?.resolveReaderOverlayCandidate(urlString: url)
+            }
+        let timeout = DispatchWorkItem { [weak self] in
+            guard let self, self.readerOverlayCandidate?.tab.guid == tab.guid else { return }
+            AppLogInfo("📖 [ReaderOverlay] candidate tabId=\(tab.guid) produced no URL — adopting as a normal tab")
+            self.finishReaderOverlayCandidate(adopt: true)
+        }
+        candidate.timeoutWorkItem = timeout
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.peekDecisionTimeoutSeconds,
+                                      execute: timeout)
+        readerOverlayCandidate = candidate
+        return true
+    }
+
+    /// Completes the pending candidate's decision: the reading surface of a
+    /// pending open → present the overlay; anything else → adopt as a
+    /// normal tab. Always entered on a clean main turn.
+    private func resolveReaderOverlayCandidate(urlString: String) {
+        guard let candidate = readerOverlayCandidate else { return }
+        candidate.urlCancellable?.cancel()
+        candidate.timeoutWorkItem?.cancel()
+        readerOverlayCandidate = nil
+
+        guard let originTabId = ReaderExtensionBridge.originTabId(fromReaderPageURL: urlString),
+              let requestedAt = pendingReaderOverlayOrigins.removeValue(forKey: originTabId),
+              Date().timeIntervalSince(requestedAt) < Self.readerOverlayOpenTTLSeconds,
+              tabs.contains(where: { $0.guid == originTabId }) else {
+            AppLogInfo("📖 [ReaderOverlay] candidate tabId=\(candidate.tab.guid) url=\(urlString) is not a pending reader surface — adopting as a normal tab")
+            adoptPeekTabIntoStrip(candidate.tab, context: candidate.context, activate: true)
+            return
+        }
+        AppLogInfo("📖 [ReaderOverlay] tabId=\(candidate.tab.guid) presenting over origin=\(originTabId)")
+        presentReaderOverlay(candidate.tab, context: candidate.context, originTabId: originTabId)
+    }
+
+    /// Ends the pending candidate: cancels observation and either adopts the
+    /// tab into the strip UI or drops all bookkeeping (tab already closing).
+    private func finishReaderOverlayCandidate(adopt: Bool) {
+        guard let candidate = readerOverlayCandidate else { return }
+        candidate.urlCancellable?.cancel()
+        candidate.timeoutWorkItem?.cancel()
+        readerOverlayCandidate = nil
+        if adopt {
+            adoptPeekTabIntoStrip(candidate.tab, context: candidate.context, activate: true)
+        }
+    }
+
+    /// Presents `tab` in the reader overlay panel (the window controller
+    /// observes `readerOverlayState`). One reader per origin tab: the same
+    /// origin's previous surface is closed; other origins' are untouched.
+    private func presentReaderOverlay(_ tab: Tab,
+                                      context: NativeTabCreationContext?,
+                                      originTabId: Int) {
+        if let previous = readerOverlayState.reader(forOrigin: originTabId),
+           previous.guid != tab.guid {
+            presentedReaderOverlayContexts[previous.guid] = nil
+            readerOverlayNavigationWatches[previous.guid] = nil
+            // Straight WebContentWrapper.close(), never Tab.close(): the
+            // surface tab is not active on the Mac side and IDC_CLOSE_TAB
+            // would close whatever Chromium considers active (peek rule).
+            DispatchQueue.main.async { previous.webContentWrapper?.close() }
+        }
+        presentedReaderOverlayContexts[tab.guid] = context
+        // Keep the surface tab's WebContents painting while strip-active
+        // goes back to the origin — same visibility exemption the peek
+        // panel uses (see presentPeek).
+        ChromiumLauncher.sharedInstance().bridge?
+            .markPendingSplitPartner(withTabId: Int64(tab.guid),
+                                     windowId: Int64(windowId))
+        // Suppress split/peek link surfaces inside the hosted page, exactly
+        // as for a peeked page.
+        if let wrapper = tab.webContentWrapper,
+           wrapper.responds(to: #selector(WebContentWrapper.updateIsPeekSurface(_:))) {
+            wrapper.updateIsPeekSurface(true)
+        }
+        installReaderOverlayOriginWatchIfNeeded()
+        installReaderOverlayNavigationWatch(for: tab)
+        readerOverlayState.present(tab, originTabId: originTabId)
+        // Chromium foregrounded the new tab on insert; hand strip-active
+        // back to the origin so tab-scoped commands keep targeting it.
+        // Deferred a turn (in-stack discipline).
+        if let origin = tabs.first(where: { $0.guid == originTabId }) {
+            DispatchQueue.main.async { origin.webContentWrapper?.setAsActiveTab() }
+        }
+    }
+
+    private func installReaderOverlayNavigationWatch(for tab: Tab) {
+        let readerTabId = tab.guid
+        readerOverlayNavigationWatches[readerTabId] = tab.$url
+            .receive(on: DispatchQueue.main)
+            .compactMap { $0 }
+            .filter { url in
+                !url.isEmpty && url != "about:blank"
+                    && ReaderExtensionBridge.originTabId(fromReaderPageURL: url) == nil
+            }
+            .first()
+            .sink { [weak self] _ in
+                AppLogInfo("📖 [ReaderOverlay] surface tabId=\(readerTabId) navigated away — adopting as a normal tab")
+                self?.expandReaderOverlayIntoTab(readerTabId: readerTabId)
+            }
+    }
+
+    /// Converts a presented reader surface into a regular tab (a link
+    /// clicked inside the reader page navigated the surface tab).
+    func expandReaderOverlayIntoTab(readerTabId: Int) {
+        guard let originTabId = readerOverlayState.originTabId(forReaderTabId: readerTabId),
+              let tab = readerOverlayState.reader(forOrigin: originTabId) else { return }
+        let context = presentedReaderOverlayContexts.removeValue(forKey: readerTabId)
+        readerOverlayNavigationWatches[readerTabId] = nil
+        readerOverlayState.removeReader(forOrigin: originTabId)
+        // Hand visibility management back to the normal active-tab path —
+        // the marker never auto-clears for a tab that stays in the strip.
+        ChromiumLauncher.sharedInstance().bridge?
+            .clearPendingSplitPartner(withTabId: Int64(tab.guid),
+                                      windowId: Int64(windowId))
+        adoptPeekTabIntoStrip(tab, context: context, activate: true)
+    }
+
+    /// Closes one origin's reader overlay: the panel (via the state sink)
+    /// and the underlying surface tab.
+    func closeReaderOverlay(forOrigin originTabId: Int) {
+        guard let tab = readerOverlayState.reader(forOrigin: originTabId) else { return }
+        presentedReaderOverlayContexts[tab.guid] = nil
+        readerOverlayNavigationWatches[tab.guid] = nil
+        readerOverlayState.removeReader(forOrigin: originTabId)
+        // Same WebContentWrapper.close() rule as presentReaderOverlay.
+        tab.webContentWrapper?.close()
+    }
+
+    /// `closeReaderOverlay(forOrigin:)` addressed by the surface tab itself
+    /// (the panel knows its hosted tab, not the origin).
+    func closeReaderOverlay(readerTabId: Int) {
+        guard let originTabId = readerOverlayState.originTabId(forReaderTabId: readerTabId) else { return }
+        closeReaderOverlay(forOrigin: originTabId)
+    }
+
+    /// Address-bar navigation targeting `originTabId` while it carries a
+    /// reader overlay: the typed URL replaces the origin's page, never the
+    /// reader's. The panel focuses the surface's WebContents on present, so
+    /// a `.currentTab` omnibox disposition would land the navigation in the
+    /// reader — re-assert the origin as Chromium-active first (peek rule).
+    func closeReaderOverlayForAddressBarNavigation(originTabId: Int) {
+        guard readerOverlayState.reader(forOrigin: originTabId) != nil else { return }
+        AppLogInfo("📖 [ReaderOverlay] address-bar navigation on origin=\(originTabId) — closing its reader")
+        tabs.first(where: { $0.guid == originTabId })?.webContentWrapper?.setAsActiveTab()
+        closeReaderOverlay(forOrigin: originTabId)
+    }
+
+    /// Back/Forward while the focused tab carries a reader overlay: the
+    /// command reads as "leave the reader" — matching the in-place reader,
+    /// where back left the reading surface. Returns true when an overlay
+    /// was closed and the caller must skip the navigation.
+    func closeReaderOverlayForBackForwardNavigation() -> Bool {
+        guard let originTabId = focusingTab?.guid,
+              readerOverlayState.reader(forOrigin: originTabId) != nil else { return false }
+        AppLogInfo("📖 [ReaderOverlay] back/forward on origin=\(originTabId) — closing its reader")
+        closeReaderOverlay(forOrigin: originTabId)
+        return true
+    }
+
+    /// Window teardown: drop all reader-overlay bookkeeping without closing
+    /// wrappers — Chromium tears the strip down with the window.
+    func teardownReaderOverlayForWindowClose() {
+        finishReaderOverlayCandidate(adopt: false)
+        pendingReaderOverlayOrigins.removeAll()
+        presentedReaderOverlayContexts.removeAll()
+        readerOverlayNavigationWatches.removeAll()
+        readerOverlayState.clear()
+    }
+
     /// Reattaches an arriving live tab to its pinned record when the local
     /// guid matches: marks the record opened, rebinds wrapper/guid, and
     /// drains persisted pinned-split intents. Shared by
@@ -4280,6 +4585,21 @@ class BrowserState {
             return
         }
 
+        // Reader-surface tab closed by Chromium (the reader page's own close
+        // control via the extension, teardown, or our closeReaderOverlay
+        // round-trip): clear the panel state. The panel controller already
+        // detached the native view in tabWillBeRemove.
+        if let originTabId = readerOverlayState.originTabId(forReaderTabId: tabId) {
+            presentedReaderOverlayContexts[tabId] = nil
+            readerOverlayNavigationWatches[tabId] = nil
+            readerOverlayState.removeReader(forOrigin: originTabId)
+            return
+        }
+        if readerOverlayCandidate?.tab.guid == tabId {
+            finishReaderOverlayCandidate(adopt: false)
+            return
+        }
+
         // Resolve the normal tab after AI Chat-tab handling has been ruled out.
         guard let closedTab = tabs.first(where: { $0.guid == tabId }) else { return }
 
@@ -4292,6 +4612,13 @@ class BrowserState {
         if peekCandidate?.openerTabId == tabId {
             finishPeekCandidate(adopt: true)
         }
+
+        // A reader overlay belongs to its origin: when the origin closes,
+        // its reading surface loses its anchor and closes with it.
+        if readerOverlayState.reader(forOrigin: tabId) != nil {
+            closeReaderOverlay(forOrigin: tabId)
+        }
+        cancelPendingReaderOverlay(forOrigin: tabId)
 
         NotificationCenter.default.post(
             name: .browserTabDidClose,
@@ -4764,6 +5091,13 @@ class BrowserState {
             if let peekTab = peekState.peekTab(withId: tabId) {
                 peekTab.title = newTitle
             } else if let candidateTab = peekCandidate?.tab, candidateTab.guid == tabId {
+                candidateTab.title = newTitle
+            } else if let readerTab = readerOverlayState.readerTab(withId: tabId) {
+                // Off-strip reader-surface tabs take titles too: the title
+                // must already be current when the tab is later adopted
+                // (link click inside the reader).
+                readerTab.title = newTitle
+            } else if let candidateTab = readerOverlayCandidate?.tab, candidateTab.guid == tabId {
                 candidateTab.title = newTitle
             } else {
                 AppLogWarn("tab not found for id: \(tabId)")

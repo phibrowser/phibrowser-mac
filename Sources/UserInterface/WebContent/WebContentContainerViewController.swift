@@ -35,6 +35,12 @@ class WebContentContainerViewController: NSViewController {
     /// `WebContentViewController.webPanelSize`.
     var currentWebPanelSize: CGSize? { currentWebContentController?.webPanelSize }
 
+    /// The visible tab's rounded page card, or nil when nothing is mounted.
+    /// The Reader overlay panel sizes itself to this — the container's own
+    /// view also spans the window margins and the tab strip, which the card
+    /// excludes. See `WebContentViewController.pageCardView`.
+    var currentPageCardView: NSView? { currentWebContentController?.pageCardView }
+
     /// Owned by this controller while in placeholder mode; released on exit.
     /// Mutually exclusive with the active tab's WCVC (only one is visible
     /// in contentContainer at a time).

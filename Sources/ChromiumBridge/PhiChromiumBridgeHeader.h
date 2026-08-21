@@ -888,6 +888,13 @@ typedef NS_ENUM(NSInteger, PhiGhostMaterializeOutcome) {
 - (void)navigateActiveTabBypassingSpaceRoutingWithUrl:(NSString *)url
                                              windowId:(int64_t)windowId;
 
+/// Opens `url` in a new Kiosk inheriting the exact profile of
+/// `sourceWindowId`, including off-the-record profiles. Returns NO when the
+/// source Browser is gone, the URL is invalid, or Kiosk creation fails; the
+/// ask-rule caller then re-opens the cancelled navigation in the source.
+- (BOOL)openURLInKiosk:(NSString *)url
+        sourceWindowId:(int64_t)sourceWindowId;
+
 /// Create a new tab group containing the given Phi-stable tab ids in
 /// `windowId`. Returns the new group's 32-char uppercase hex token, or an
 /// empty string on failure. `title` and `color` are optional (pass nil to

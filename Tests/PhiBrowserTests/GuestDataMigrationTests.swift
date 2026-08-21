@@ -205,6 +205,11 @@ final class GuestDataMigrationTests: XCTestCase {
             spaces.first(where: { $0.spaceId == "space-work" }),
             "The target's colliding Space must remain untouched"
         )
+        let importedRules = try context.fetch(FetchDescriptor<SpaceURLRule>())
+        XCTAssertNotNil(importedRules.first(where: {
+            $0.spaceId == LocalStore.kioskURLRuleTargetId
+                && $0.host == "kiosk.example"
+        }))
     }
 
     func testTargetCollisionAfterPlanningFailsBeforeImportAndLeavesGuestUntouched() async throws {
@@ -1272,6 +1277,14 @@ final class GuestDataMigrationTests: XCTestCase {
                 id: "guest-work-rule",
                 spaceId: workSpace.spaceId,
                 host: "work.example",
+                sortOrder: 0
+            )
+        )
+        context.insert(
+            SpaceURLRule(
+                id: "guest-kiosk-rule",
+                spaceId: LocalStore.kioskURLRuleTargetId,
+                host: "kiosk.example",
                 sortOrder: 0
             )
         )

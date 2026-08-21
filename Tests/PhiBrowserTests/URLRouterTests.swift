@@ -180,6 +180,20 @@ final class URLRouterTests: XCTestCase {
         XCTAssertEqual(resolve("https://h.com/p", rules), "first")
     }
 
+    func testKioskTargetSurvivesRuleResolution() {
+        let rules = [
+            rule(
+                space: LocalStore.kioskURLRuleTargetId,
+                host: "kiosk.example"
+            ),
+        ]
+
+        XCTAssertEqual(
+            resolve("https://kiosk.example/page", rules),
+            LocalStore.kioskURLRuleTargetId
+        )
+    }
+
     func testURLWithoutHostReturnsNil() {
         let rules = [rule(space: "work", host: "h.com")]
         XCTAssertNil(URLRouter.resolve(url: URL(string: "about:blank")!, rules: rules))

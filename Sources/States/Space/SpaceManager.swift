@@ -297,11 +297,18 @@ final class SpaceManager: ObservableObject {
     /// demand.
     static let incognitoRuleTargetId = incognitoSpaceIdPrefix
 
+    /// Stable target id for URL rules that open in an ephemeral Kiosk window.
+    /// Storage owns the wire value; the Space layer exposes it beside the
+    /// Incognito target because rule editors and routing payloads live here.
+    static let kioskRuleTargetId = LocalStore.kioskURLRuleTargetId
+
     /// Whether a persisted URL rule with this target should route: user-Space
-    /// targets and the generic Incognito target do; any other id under the
-    /// incognito prefix is a stale runtime Space id and stays inert.
+    /// targets, the generic Incognito target, and the Kiosk target do; any
+    /// other id under the incognito prefix is a stale runtime Space id and
+    /// stays inert.
     static func isRoutableRuleTarget(_ spaceId: String) -> Bool {
-        !isIncognitoSpaceId(spaceId) || spaceId == incognitoRuleTargetId
+        if spaceId == kioskRuleTargetId { return true }
+        return !isIncognitoSpaceId(spaceId) || spaceId == incognitoRuleTargetId
     }
 
     /// Detached stand-in for the generic Incognito rule target, shown as ONE
@@ -316,6 +323,24 @@ final class SpaceManager: ObservableObject {
             colorHex: "#5F6368",
             iconName: Self.incognitoSpaceDefaultIcon,
             sortOrder: spaces.count
+        )
+    }
+
+    /// Detached stand-in for the Kiosk URL-rule target. Like the generic
+    /// Incognito target, this exists only to reuse the rules editor's existing
+    /// Space-shaped picker model and is never inserted into SwiftData.
+    func kioskRuleTargetSpace() -> SpaceModel {
+        SpaceModel(
+            spaceId: Self.kioskRuleTargetId,
+            profileId: "",
+            name: NSLocalizedString(
+                "sidebar.urlRulesEditor.target.kioskOption",
+                value: "Kiosk",
+                comment: "URL rules editor - Destination that opens matching URLs in a Kiosk window"
+            ),
+            colorHex: "#5F6368",
+            iconName: "macwindow",
+            sortOrder: spaces.count + 1
         )
     }
 
@@ -6045,10 +6070,10 @@ final class SpaceManager: ObservableObject {
         guard let bridge = ChromiumLauncher.sharedInstance().bridge else { return }
         let mapping = currentSpaceWindowMap()
 
-        // User-Space rules and the generic Incognito target route; any other
-        // id under the incognito prefix would be a stale runtime Space id —
-        // keep such a row inert instead of routing into a Space that no
-        // longer exists.
+        // User-Space rules, the generic Incognito target, and the Kiosk action
+        // target route; any other id under the incognito prefix would be a
+        // stale runtime Space id — keep such a row inert instead of routing
+        // into a Space that no longer exists.
         let effectiveRules = cachedURLRules.filter { Self.isRoutableRuleTarget($0.spaceId) }
         var rulesPayload: [[String: Any]] = effectiveRules.map { rule in
             var entry: [String: Any] = [
@@ -6103,13 +6128,12 @@ final class SpaceManager: ObservableObject {
         pushOpenLinkSpaceMenuToChromium()
     }
 
-    /// Opens `urlString` in a Space after a URL rule routed it there: an "ask
-    /// first" match the user resolved in `PhiChromiumCoordinator`'s prompt, the
-    /// right-click "Open link as" submenu, or a silent auto-route to a Space with
-    /// no open window (`routeURL`). `spaceId == nil` means "keep it here": the
-    /// URL opens as a new foreground tab in the source window. Otherwise the
-    /// chosen Space is brought to the front in the source window's slot (spawning
-    /// its window when the Space isn't currently open) and the URL opens there.
+    /// Opens `urlString` after a URL rule routed it here: an "ask first" match
+    /// the user resolved in `PhiChromiumCoordinator`'s prompt, the right-click
+    /// "Open link as" submenu, or a silent auto-route to a Space with no open
+    /// window (`routeURL`). `spaceId == nil` means "keep it here"; the Kiosk
+    /// sentinel opens a new Kiosk inheriting the source Browser's exact profile;
+    /// any other id is brought to the front as a Space destination.
     ///
     /// The matching navigation was already cancelled on the Chromium side, so
     /// this always opens *something* — if the chosen Space's window can't be
@@ -6150,6 +6174,23 @@ final class SpaceManager: ObservableObject {
         // focusing-tab fallback covers the native incognito NTP path.
         let sourceIsStranded = sourceIsNewTab
             || (sourceController?.browserState.focusingTab.map(Self.isStrandedNewTab) ?? false)
+
+        if spaceId == Self.kioskRuleTargetId {
+            let selector = NSSelectorFromString("openURLInKiosk:sourceWindowId:")
+            let openedInKiosk = bridge.responds(to: selector)
+                && bridge.openURL(inKiosk: urlString, sourceWindowId: sourceWindowId)
+            if openedInKiosk {
+                if sourceIsStranded {
+                    refreshActiveNewTab(inWindow: sourceWindowId)
+                }
+            } else if sourceIsStranded {
+                bridge.navigateActiveTabBypassingSpaceRouting(
+                    withUrl: urlString, windowId: sourceWindowId)
+            } else {
+                open(sourceWindowId, true)
+            }
+            return
+        }
 
         // Staying in the source window's current Space: the user kept the URL
         // here (`spaceId == nil`) or chose the Space it already lives in. When

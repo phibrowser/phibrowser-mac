@@ -190,9 +190,10 @@ extension PhiChromiumCoordinator: PhiChromiumBridgeDelegate {
 
     /// A navigation matched a Space URL rule whose action is "ask every time"
     /// and Chromium cancelled it. Dims the source window and presents the
-    /// Space chooser (current Space first); opens the URL in the chosen Space,
-    /// or keeps it in the source window if the user declines. Owns the prompt
-    /// + routing so Chromium stays out of the UI and Space-window lifecycle.
+    /// destination chooser (current Space first, Kiosk in a separate final
+    /// section); opens the URL in the chosen destination, or keeps it in the
+    /// source window if the user declines. Owns the prompt + routing so
+    /// Chromium stays out of the UI and Space-window lifecycle.
     func askSpace(forURL urlString: String, defaultSpaceId: String, sourceWindowId: Int64, sourceIsNewTab: Bool) {
         Task { @MainActor in
             let manager = SpaceManager.shared
@@ -229,12 +230,25 @@ extension PhiChromiumCoordinator: PhiChromiumBridgeDelegate {
             } else {
                 ordered.append(incognitoTarget)
             }
+            // Kiosk is an action destination, not a Space. Keep it last and
+            // visually separate from all regular/Incognito Space choices.
+            ordered.append(manager.kioskRuleTargetSpace())
 
             // Resolve each Space's theme (pinned theme + custom overlay
             // opacity) for the source window's appearance, so a row's tint
             // matches what that Space actually looks like.
             let appearance = sourceWindow.effectiveAppearance.phiAppearance
             let items: [SpaceChooserItem] = ordered.map { space in
+                if space.spaceId == SpaceManager.kioskRuleTargetId {
+                    return SpaceChooserItem(
+                        id: space.spaceId,
+                        name: space.name,
+                        iconName: space.iconName,
+                        isCurrent: false,
+                        startsSection: true,
+                        themeColor: Color.primary.opacity(0.08),
+                        textColor: .primary)
+                }
                 let theme = manager.resolvedTheme(forSpaceId: space.spaceId)
                 let themeNSColor = theme.color(for: .themeColor, appearance: appearance)
                 // Contrast is computed on the opaque color, then the row is
@@ -252,6 +266,7 @@ extension PhiChromiumCoordinator: PhiChromiumBridgeDelegate {
                     name: space.name,
                     iconName: space.iconName,
                     isCurrent: isCurrent,
+                    startsSection: false,
                     themeColor: Color(nsColor: themeNSColor.withAlphaComponent(opacity)),
                     textColor: Color(nsColor: legible))
             }

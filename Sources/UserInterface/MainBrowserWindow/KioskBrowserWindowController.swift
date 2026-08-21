@@ -7,6 +7,7 @@ import AppKit
 
 /// Native owner for Chromium browsers carrying the Kiosk semantic type.
 final class KioskBrowserWindowController: MainBrowserWindowController {
+    private static let toolbarIdentifier = NSToolbar.Identifier("KioskBrowserToolbar")
     private static let profileReplacementTimeout: TimeInterval = 1.5
     private static let profileReplacementClosePollInterval: TimeInterval = 0.5
     private static let profileReplacementHandoffDelay: TimeInterval = 0.05
@@ -527,20 +528,23 @@ final class KioskBrowserWindowController: MainBrowserWindowController {
     }
 
     private func configureKioskWindow(_ window: NSWindow) {
-        window.styleMask.formUnion([
-            .titled,
-            .closable,
-            .miniaturizable,
-            .resizable,
-            .fullSizeContentView,
-        ])
-        window.titlebarAppearsTransparent = true
-        window.titleVisibility = .hidden
-        window.isRestorable = false
+        window.styleMask.insert(.fullSizeContentView)
+        let toolbar = NSToolbar(identifier: Self.toolbarIdentifier)
+        toolbar.allowsUserCustomization = false
+        toolbar.autosavesConfiguration = false
+        toolbar.showsBaselineSeparator = false
+        window.toolbar = toolbar
+        window.toolbarStyle = .unifiedCompact
         window.minSize = NSSize(width: 640, height: 420)
         if window.frame.width < 640 || window.frame.height < 480 {
             window.setContentSize(NSSize(width: 900, height: 640))
         }
+        
+        window.backgroundColor = NSColor.windowBackgroundColor
+        window.titlebarAppearsTransparent = true
+        window.titleVisibility = .hidden
+        window.isMovableByWindowBackground = true
+        window.animationBehavior = .none
     }
 
     @MainActor

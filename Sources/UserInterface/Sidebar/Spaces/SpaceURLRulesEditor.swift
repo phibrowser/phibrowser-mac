@@ -51,7 +51,7 @@ struct URLRulesEditor: View {
             Text(NSLocalizedString("sidebar.urlRulesEditor.title", value: "URL Rules",
                 comment: "Title of the universal URL rules editor"))
                 .font(.headline)
-            Text(NSLocalizedString("sidebar.urlRulesEditor.subtitle", value: "URLs matching any rule will open in the assigned Space, no matter where you click or type them.",
+            Text(NSLocalizedString("sidebar.urlRulesEditor.subtitle", value: "URLs matching any rule will open in the selected destination, no matter where you click or type them.",
                 comment: "Subtitle of the universal URL rules editor"
             ))
             .font(.callout)
@@ -62,15 +62,17 @@ struct URLRulesEditor: View {
         .padding(.vertical, 12)
     }
 
-    /// Spaces a rule may target: every user Space plus ONE generic
-    /// "Incognito" entry. Incognito Spaces are runtime-only, so a rule never
-    /// points at a specific one — it carries the stable generic id
+    /// Destinations a rule may target: every user Space, ONE generic
+    /// "Incognito" entry, and Kiosk. Incognito Spaces are runtime-only, so a
+    /// rule never points at a specific one — it carries the stable generic id
     /// (`SpaceManager.incognitoRuleTargetId`), resolved to a live Incognito
-    /// Space (created on demand) at route time. Agent Spaces are ephemeral
-    /// background workspaces and must never appear as a routing target.
+    /// Space (created on demand) at route time. Kiosk similarly uses a stable
+    /// reserved id that Chromium resolves to a new ephemeral Kiosk window.
+    /// Agent Spaces are ephemeral background workspaces and must never appear
+    /// as a routing target.
     private var ruleTargetSpaces: [SpaceModel] {
         manager.spaces.filter { !SpaceManager.isIncognitoSpaceId($0.spaceId) && !$0.isAgentSpace }
-            + [manager.incognitoRuleTargetSpace()]
+            + [manager.incognitoRuleTargetSpace(), manager.kioskRuleTargetSpace()]
     }
 
     private var ruleList: some View {
@@ -121,6 +123,7 @@ struct URLRulesEditor: View {
     private func save() {
         guard fingerprint(of: rows) != initialFingerprint else { return }
         let validSpaceIds = Set(ruleTargetSpaces.map(\.spaceId))
+        let validPromptSpaceIds = validSpaceIds.subtracting([SpaceManager.kioskRuleTargetId])
         var byTarget: [String: [LocalStore.URLRuleDraft]] = [:]
         for row in rows {
             let trimmedValue = row.value.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -130,10 +133,16 @@ struct URLRulesEditor: View {
             // prompt's default, so if that Space was deleted fall back to any
             // Space rather than dropping the rule.
             let targetSpaceId: String
-            if validSpaceIds.contains(row.targetSpaceId) {
+            if row.askBeforeRouting,
+               validPromptSpaceIds.contains(row.targetSpaceId) {
                 targetSpaceId = row.targetSpaceId
-            } else if row.askBeforeRouting, let fallback = ruleTargetSpaces.first?.spaceId {
+            } else if row.askBeforeRouting,
+                      let fallback = ruleTargetSpaces.first(where: {
+                          validPromptSpaceIds.contains($0.spaceId)
+                      })?.spaceId {
                 targetSpaceId = fallback
+            } else if validSpaceIds.contains(row.targetSpaceId) {
+                targetSpaceId = row.targetSpaceId
             } else {
                 continue
             }
@@ -587,7 +596,7 @@ private final class RuleCellView: NSTableCellView, NSTextFieldDelegate {
     private let valueField = NSTextField()
     private let deleteButton = NSButton()
     private let openInLabel = NSTextField(labelWithString:
-        NSLocalizedString("sidebar.urlRulesEditor.targetSpaceLabel", value: "Open in", comment: "Leading label for a URL rule's target Space"))
+        NSLocalizedString("sidebar.urlRulesEditor.targetSpaceLabel", value: "Open in", comment: "Leading label for a URL rule's destination picker"))
     private let targetPopup = NSPopUpButton(frame: .zero, pullsDown: false)
 
     override init(frame frameRect: NSRect) {
@@ -668,6 +677,9 @@ private final class RuleCellView: NSTableCellView, NSTextFieldDelegate {
 
         let menu = NSMenu()
         for space in spaces {
+            if space.spaceId == SpaceManager.kioskRuleTargetId {
+                menu.addItem(.separator())
+            }
             let item = NSMenuItem(title: Self.spaceMenuTitle(space), action: nil, keyEquivalent: "")
             // Render through SpaceIconView so phi-icons / emoji (which
             // `NSImage(systemSymbolName:)` can't resolve) show here too, matching
@@ -726,11 +738,16 @@ private final class RuleCellView: NSTableCellView, NSTextFieldDelegate {
         window?.makeFirstResponder(valueField)
     }
 
-    /// "Space name — Profile" so each entry shows which profile it routes into.
+    /// "Space name — Profile" so each Space entry shows which profile it
+    /// routes into. Special destinations use their plain names.
     private static func spaceMenuTitle(_ space: SpaceModel) -> String {
         // The generic Incognito target's synthetic profileId is not one of
-        // ProfileManager's — show the plain name, not a raw wire id.
-        guard !SpaceManager.isIncognitoSpaceId(space.spaceId) else { return space.name }
+        // ProfileManager's, and Kiosk has no profile until route time — show
+        // their plain names, not raw wire ids.
+        guard !SpaceManager.isIncognitoSpaceId(space.spaceId),
+              space.spaceId != SpaceManager.kioskRuleTargetId else {
+            return space.name
+        }
         let profileName = ProfileManager.shared.profile(for: space.profileId)?.displayName ?? space.profileId
         guard !profileName.isEmpty else { return space.name }
         return "\(space.name) \u{2014} \(profileName)"

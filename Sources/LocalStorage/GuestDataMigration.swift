@@ -1170,7 +1170,9 @@ extension LocalStore {
                     referencedSpaceIDs.insert(Self.defaultSpaceId)
                 }
             }
-            allRules.forEach { referencedSpaceIDs.insert($0.spaceId) }
+            allRules
+                .filter { $0.spaceId != Self.kioskURLRuleTargetId }
+                .forEach { referencedSpaceIDs.insert($0.spaceId) }
 
             let storedSpaceIDs = Set(storedSpaces.map(\.spaceId))
             let missingCustomSpaceIDs = referencedSpaceIDs.subtracting(storedSpaceIDs)
@@ -1549,7 +1551,14 @@ extension LocalStore {
             var urlRuleTargets: [GuestDataMigrationURLRuleTarget] = []
             var skippedURLRules: [GuestDataMigrationSkippedURLRule] = []
             for (index, rule) in snapshot.urlRules.enumerated() {
-                guard let targetSpaceID = spaceIDs[rule.spaceID] else {
+                let targetSpaceID: String
+                if rule.spaceID == Self.kioskURLRuleTargetId {
+                    // Kiosk is an app-level destination, not a Space owned by
+                    // either account, so its stable target survives unchanged.
+                    targetSpaceID = Self.kioskURLRuleTargetId
+                } else if let mappedSpaceID = spaceIDs[rule.spaceID] {
+                    targetSpaceID = mappedSpaceID
+                } else {
                     throw GuestDataMigrationError.targetStateConflict(
                         "URL rule \(rule.id) has no target Space mapping"
                     )

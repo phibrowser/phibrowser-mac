@@ -34013,14 +34013,14 @@
         }
       }
     },
-    "kiosk.toolbar.reloadPage.accessibilityLabel" : {
-      "comment" : "Kiosk toolbar - Accessibility label and tooltip for the reload button",
+    "kiosk.toolbar.copyLink.accessibilityLabel" : {
+      "comment" : "Kiosk toolbar - Accessibility label and tooltip for copying the current page URL",
       "extractionState" : "extracted_with_value",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Reload Page"
+            "value" : "Copy Link"
           }
         }
       }
@@ -72893,7 +72893,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "URLs matching any rule will open in the assigned Space, no matter where you click or type them."
+            "value" : "URLs matching any rule will open in the selected destination, no matter where you click or type them."
           }
         },
         "es" : {
@@ -73000,6 +73000,18 @@
         }
       }
     },
+    "sidebar.urlRulesEditor.target.kioskOption" : {
+      "comment" : "URL rules editor - Destination that opens matching URLs in a Kiosk window",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Kiosk"
+          }
+        }
+      }
+    },
     "sidebar.urlRulesEditor.target.unavailablePlaceholder" : {
       "comment" : "URL rule target whose Space no longer exists",
       "extractionState" : "extracted_with_value",
@@ -73061,7 +73073,7 @@
       }
     },
     "sidebar.urlRulesEditor.targetSpaceLabel" : {
-      "comment" : "Leading label for a URL rule's target Space",
+      "comment" : "Leading label for a URL rule's destination picker",
       "extractionState" : "extracted_with_value",
       "localizations" : {
         "de" : {

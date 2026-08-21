@@ -13,7 +13,6 @@ final class KioskBrowserContentViewController: NSViewController, NSTextFieldDele
     private enum Layout {
         static let toolbarHeight: CGFloat = 52
         static let trafficLightInset: CGFloat = 78
-        static let toolbarVerticalOffset: CGFloat = 4
         static let addressBarHeight: CGFloat = 32
         static let spaceMenuWidth: CGFloat = 176
         static let panelSpacing: CGFloat = 8
@@ -122,14 +121,14 @@ final class KioskBrowserContentViewController: NSViewController, NSTextFieldDele
         }
         spaceHostingView.snp.makeConstraints { make in
             make.trailing.equalToSuperview().inset(12)
-            make.centerY.equalToSuperview().offset(Layout.toolbarVerticalOffset)
+            make.centerY.equalToSuperview()
             make.width.equalTo(Layout.spaceMenuWidth)
             make.height.equalTo(34)
         }
         addressBarContainer.snp.makeConstraints { make in
             make.leading.equalToSuperview().offset(Layout.trafficLightInset)
             make.trailing.equalTo(spaceHostingView.snp.leading).offset(-8)
-            make.centerY.equalToSuperview().offset(Layout.toolbarVerticalOffset)
+            make.centerY.equalToSuperview()
             make.height.equalTo(Layout.addressBarHeight)
         }
         profileHostingView.setContentHuggingPriority(.required, for: .horizontal)

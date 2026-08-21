@@ -331,6 +331,8 @@ private struct AISidebarSectionView: View {
 }
 
 private struct ExternalConnectorsSectionView: View {
+    @ObservedObject private var profileManager = ProfileManager.shared
+
     @AppStorage(PhiPreferences.AISettings.enableConnectors.rawValue)
     private var enableConnectors: Bool = PhiPreferences.AISettings.enableConnectors.defaultValue
 
@@ -379,8 +381,26 @@ private struct ExternalConnectorsSectionView: View {
 
                 Divider()
 
-                ConnectorsListView(connectorViewModel: connectorViewModel, enabled: subItemsEnabled)
+                ConnectorProfileSelectorView(
+                    connectorViewModel: connectorViewModel,
+                    profiles: profileManager.userAssignableProfiles,
+                    enabled: subItemsEnabled
+                )
+
+                Divider()
+
+                ConnectorsListView(
+                    connectorViewModel: connectorViewModel,
+                    enabled: subItemsEnabled && connectorViewModel.selectedProfileId != nil
+                )
             }
+        }
+        .onAppear {
+            profileManager.refresh()
+            prepareConnectorProfileSelection()
+        }
+        .onChange(of: profileManager.userAssignableProfiles.map(\.profileId)) {
+            prepareConnectorProfileSelection()
         }
         .onChange(of: enableConnectors) {
             notifyNativeSettingsChanged()
@@ -409,9 +429,59 @@ private struct ExternalConnectorsSectionView: View {
                                    comment: "AI settings - Alert message explaining consequences of disabling connectors"))
         }
     }
+
+    private func prepareConnectorProfileSelection() {
+        connectorViewModel.prepareProfileSelection(
+            availableProfileIds: profileManager.userAssignableProfiles.map(\.profileId),
+            preferredProfileId: BrowserState.currentState()?.profileId
+        )
+    }
 }
 
 // MARK: - Connectors List
+
+private struct ConnectorProfileSelectorView: View {
+    let connectorViewModel: AISettingsConnectorViewModel
+    let profiles: [PhiBrowserProfile]
+    let enabled: Bool
+
+    private var selection: Binding<String?> {
+        Binding(
+            get: { connectorViewModel.selectedProfileId },
+            set: { profileId in
+                guard let profileId else { return }
+                connectorViewModel.selectProfile(profileId)
+            }
+        )
+    }
+
+    var body: some View {
+        HStack(alignment: .center, spacing: 12) {
+            VStack(alignment: .leading, spacing: 3) {
+                Text(NSLocalizedString("settings.ai.connectors.profileSelector.title", value: "Connectors for Profile", comment: "AI settings - Label for selecting the browser Profile whose connectors are managed"))
+                    .font(.system(size: 13))
+                    .themedForeground(.textPrimary)
+
+                Text(NSLocalizedString("settings.ai.connectors.profileSelector.description", value: "Connections are isolated to the selected Profile.", comment: "AI settings - Explanation that connector accounts belong only to the selected browser Profile"))
+                    .font(.system(size: 11))
+                    .themedForeground(.textSecondary)
+            }
+
+            Spacer(minLength: 12)
+
+            Picker("", selection: selection) {
+                ForEach(profiles) { profile in
+                    Text(profile.displayName).tag(Optional(profile.profileId))
+                }
+            }
+            .labelsHidden()
+            .frame(width: 150)
+            .disabled(!enabled || profiles.isEmpty)
+        }
+        .padding(.vertical, 12)
+        .opacity(enabled ? 1.0 : 0.4)
+    }
+}
 
 private struct ConnectorsListView: View {
     let connectorViewModel: AISettingsConnectorViewModel

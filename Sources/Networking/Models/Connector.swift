@@ -10,12 +10,14 @@ import Foundation
 struct OAuthConnection: Codable {
     let provider: String
     let connected: Bool
+    let profileId: String?
     let connectedAt: String?
     let expiresAt: String?
     let scope: String?
 
     enum CodingKeys: String, CodingKey {
         case provider, connected, scope
+        case profileId = "profile_id"
         case connectedAt = "connected_at"
         case expiresAt = "expires_at"
     }

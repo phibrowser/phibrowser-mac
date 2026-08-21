@@ -42665,6 +42665,18 @@
         }
       }
     },
+    "settings.ai.connectors.authorization.openProfileFailure" : {
+      "comment" : "AI settings - OAuth authorization requires an open window for the selected browser Profile",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Open a browser window for the selected Profile to continue."
+          }
+        }
+      }
+    },
     "settings.ai.connectors.connectButton" : {
       "comment" : "AI settings - Button to connect an external data connector",
       "extractionState" : "extracted_with_value",
@@ -43261,6 +43273,30 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "尚未連線"
+          }
+        }
+      }
+    },
+    "settings.ai.connectors.profileSelector.description" : {
+      "comment" : "AI settings - Explanation that connector accounts belong only to the selected browser Profile",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Connections are isolated to the selected Profile."
+          }
+        }
+      }
+    },
+    "settings.ai.connectors.profileSelector.title" : {
+      "comment" : "AI settings - Label for selecting the browser Profile whose connectors are managed",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Connectors for Profile"
           }
         }
       }

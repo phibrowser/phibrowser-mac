@@ -154,6 +154,8 @@ final class PeekPanelController {
     /// True between an appear flight's start and its landing; keeps the
     /// landing idempotent across the completion block and the teardown paths.
     private var isFlying = false
+    /// See `setConcealedByInWindowOverlay`.
+    private var isConcealedByInWindowOverlay = false
 
     init(browserState: BrowserState,
          parentWindow: NSWindow,
@@ -241,6 +243,35 @@ final class PeekPanelController {
         panel.orderOut(nil)
     }
 
+    /// While an in-window blocking overlay (omnibox, tab search) is up, the
+    /// panel steps aside: it is a child window, which draws above every
+    /// in-window view, so left in place it would cover the overlay. Content
+    /// stays mounted — the opener's page shows beneath, which is what the
+    /// overlay targets anyway (a committed navigation closes the peek
+    /// through `closePeekForAddressBarNavigation`).
+    func setConcealedByInWindowOverlay(_ concealed: Bool) {
+        guard isConcealedByInWindowOverlay != concealed else { return }
+        isConcealedByInWindowOverlay = concealed
+        if concealed {
+            hide()
+        } else {
+            revealIfStillCurrent()
+        }
+    }
+
+    /// Un-conceal path: the hosted peek may have closed, or the focused tab
+    /// may have changed, while the overlay was up — only come back when this
+    /// panel's content is still the focused opener's peek.
+    private func revealIfStillCurrent() {
+        guard let tab = hostedTab,
+              let browserState,
+              let focusedTabId = browserState.focusingTab?.guid,
+              browserState.peekState.peek(forOpener: focusedTabId) === tab else {
+            return
+        }
+        reveal(focusContent: true, flyIn: false)
+    }
+
     /// Idempotent teardown of the panel. Never closes the tab itself — that
     /// is `BrowserState`'s job (`closePeek`) or Chromium's (window teardown).
     func dismiss() {
@@ -291,6 +322,9 @@ final class PeekPanelController {
     // MARK: - Internals
 
     private func reveal(focusContent: Bool, flyIn: Bool) {
+        // Content mounts regardless, but the panel stays down until the
+        // in-window overlay it stepped aside for goes away.
+        guard !isConcealedByInWindowOverlay else { return }
         guard let parentWindow else { return }
         layoutOnAnchor()
         // Before the panel is ordered in, so the first frame the window server

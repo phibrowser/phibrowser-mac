@@ -446,15 +446,16 @@ class MainBrowserWindowController: NSWindowController {
             }
             .store(in: &cancellables)
 
-        // The reader panel is a child window and would draw above the
-        // in-window blocking overlays (omnibox, tab search) — step it aside
-        // while one is up in this window.
+        // The peek and reader panels are child windows and would draw above
+        // the in-window blocking overlays (omnibox, tab search) — step them
+        // aside while one is up in this window.
         NotificationCenter.default.publisher(for: .phiInWindowOverlayVisibilityChanged)
             .receive(on: DispatchQueue.main)
             .sink { [weak self] notification in
                 guard let self,
                       notification.object as? NSWindow === self.window,
                       let visible = notification.userInfo?["visible"] as? Bool else { return }
+                self.peekPanelController?.setConcealedByInWindowOverlay(visible)
                 self.readerPanelController?.setConcealedByInWindowOverlay(visible)
             }
             .store(in: &cancellables)

@@ -2715,6 +2715,11 @@ class WebContentViewController: NSViewController {
             leftContainerInsetConstraint?.update(inset: 0)
         }
 
+        // The operating mask's lit ring rounds its corners more than the panel
+        // while the page fills the frame; a separated card shows its own
+        // corners, which the ring must follow exactly.
+        agentAnimationOverlay.hugsPanelCorners = shouldSeparatePageCard
+
         // With the panel docked, splitViewContainer's right edge is an
         // interior boundary meeting the panel's frame fill mid-frame, not
         // the frame's outer corner — rounding it would carve a see-through

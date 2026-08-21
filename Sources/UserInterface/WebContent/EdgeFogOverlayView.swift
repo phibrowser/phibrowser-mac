@@ -37,7 +37,9 @@ final class EdgeFogOverlayView: NSView {
     /// not another squircle — so on the panel's own small radius the band
     /// visibly loses width at the corner diagonal. A rounder corner spreads
     /// that error over a longer arc and the ring reads at full width. Tune
-    /// here if the corner should hug the panel more tightly.
+    /// here if the corner should hug the panel more tightly. Dropped entirely
+    /// while `hugsPanelCorners` — a separated page card's own corners are
+    /// visible and the ring must match them.
     private static let ringCornerBoost: CGFloat = 6
     /// One full revolution of the conic sweep.
     private static let flowDuration: CFTimeInterval = 3.0
@@ -45,6 +47,18 @@ final class EdgeFogOverlayView: NSView {
     private static let breatheDuration: CFTimeInterval = 3.4
 
     var hitTestPassthroughHandler: ((NSPoint) -> Bool)?
+
+    /// True while the page panel renders as its own separated card (AI Chat
+    /// sidebar expanded or an extension side panel docked). The card's own,
+    /// tighter corner clip and hairline border are visible then, so the ring
+    /// gives up `ringCornerBoost` and follows the panel's corners exactly —
+    /// a boosted ring visibly pulls away from the card's corners.
+    var hugsPanelCorners = false {
+        didSet {
+            guard hugsPanelCorners != oldValue else { return }
+            needsLayout = true
+        }
+    }
 
     private let tintLayer = CALayer()
     /// The 1pt edge line, and the source of the breathing glow.
@@ -134,7 +148,7 @@ final class EdgeFogOverlayView: NSView {
     /// because all of it is bounds-derived.
     private func layoutEdgeLights() {
         let panelRadius = LiquidGlassCompatible.webContentInnerComponentsCornerRadius
-        let ringRadius = panelRadius + Self.ringCornerBoost
+        let ringRadius = panelRadius + (hugsPanelCorners ? 0 : Self.ringCornerBoost)
 
         // The wash matches the panel's own clip so it stops on the same curve;
         // the ring is rounder, so its corners sit just inside that clip and

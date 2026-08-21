@@ -4,6 +4,7 @@
 // found in the LICENSE file.
 
 import AppKit
+import PostHog
 
 enum KioskWindowFramePersistence {
     static let autosaveName = NSWindow.FrameAutosaveName(
@@ -310,6 +311,7 @@ final class KioskBrowserWindowController: MainBrowserWindowController {
     private var presentationTargetFrame: NSRect?
     private var presentationOriginalMinSize: NSSize?
     private var presentationOriginalIgnoresMouseEvents: Bool?
+    private var shouldCaptureKioskOpened = true
 
     required init?(coder: NSCoder) {
         fatalError("init(coder:) has not been implemented")
@@ -400,6 +402,7 @@ final class KioskBrowserWindowController: MainBrowserWindowController {
         super.handleTabReadyToDisplay(tabId: tabId)
         trafficLightPositioner?.apply()
         guard browserState.focusingTab?.guid == tabId else { return }
+        captureKioskOpenedIfNeeded()
         completeProfileReplacementIfNeeded()
     }
 
@@ -514,6 +517,7 @@ final class KioskBrowserWindowController: MainBrowserWindowController {
         inheritedFrame: NSRect?,
         replacementWindow: NSWindow
     ) {
+        shouldCaptureKioskOpened = false
         profileReplacementSource = source
         profileReplacementSourceWindowId = source.windowId
         profileReplacementInheritedFrame = inheritedFrame
@@ -704,6 +708,9 @@ final class KioskBrowserWindowController: MainBrowserWindowController {
             )
         (source?.contentViewController as? KioskBrowserContentViewController)?
             .clearProfileReplacementSnapshot()
+        PostHogSDK.shared.capture("kiosk_profile_changed", properties: [
+            "total_profiles": ProfileManager.shared.userAssignableProfiles.count,
+        ])
     }
 
     @MainActor
@@ -815,6 +822,13 @@ final class KioskBrowserWindowController: MainBrowserWindowController {
             Int32(CommandWrapper.IDC_CLOSE_WINDOW.rawValue),
             windowId: Int64(windowId)
         )
+    }
+
+    @MainActor
+    private func captureKioskOpenedIfNeeded() {
+        guard shouldCaptureKioskOpened else { return }
+        shouldCaptureKioskOpened = false
+        PostHogSDK.shared.capture("kiosk_opened")
     }
 
     private func configureKioskWindow(

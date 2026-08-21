@@ -5101,6 +5101,9 @@ final class SpaceManager: ObservableObject {
                         targetState.scheduleNormalTabInsertion(tabGuid: tabGuid, at: normalIndex)
                         sourceWrapper.moveSplit(toWindow: targetState.windowId.int64Value,
                                                 at: targetState.tabs.count)
+                        if sourceState.isKioskWindow {
+                            self?.captureKioskOpenedInSpace()
+                        }
                     } else if kioskRequiresURLHandoff {
                         guard let url,
                               let bridge = ChromiumLauncher.sharedInstance().bridge else {
@@ -5130,6 +5133,7 @@ final class SpaceManager: ObservableObject {
                                 return
                             }
                         }
+                        self?.captureKioskOpenedInSpace()
                         SpaceMoveTabUnit.tab(tab).closeSourceTabsAfterURLRecreation()
                         // Closing the last Kiosk tab can make Chromium activate
                         // another window from the Kiosk's source profile. Reassert
@@ -5140,11 +5144,20 @@ final class SpaceManager: ObservableObject {
                         }
                     } else {
                         targetState.createTab(url, focusAfterCreate: true)
+                        if sourceState.isKioskWindow {
+                            self?.captureKioskOpenedInSpace()
+                        }
                         SpaceMoveTabUnit.tab(tab).closeSourceTabsAfterCrossProfileMove()
                     }
                 }
             }
         )
+    }
+
+    private func captureKioskOpenedInSpace() {
+        PostHogSDK.shared.capture("kiosk_opened_in_space", properties: [
+            "total_spaces": spaces.count,
+        ])
     }
 
     enum SpaceMoveTabUnit {

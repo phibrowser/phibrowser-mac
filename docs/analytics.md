@@ -132,6 +132,9 @@ are out of scope.
 | `connector_status` | Snapshot of each AI connector's connected/disconnected state, fired on refresh | `Preferences/AISettings/AISettingsConnectorViewModel.swift` |
 | `ai_sidebar_opened` | A tab's AI sidebar changed from collapsed to expanded; `trigger` is `button`, `shortcut`, or `restore` | `WebContent/WebContentViewController.swift` |
 | `ai_sidebar_closed` | A tab's AI sidebar changed from expanded to collapsed; includes that tab's `duration_seconds` dwell time | `WebContent/WebContentViewController.swift` |
+| `kiosk_opened` | A Kiosk window's first tab becomes ready to display; profile-replacement windows do not emit it | `MainBrowserWindow/KioskBrowserWindowController.swift` |
+| `kiosk_opened_in_space` | A Kiosk page starts transferring into a Space; includes `total_spaces` without Space identifiers | `States/Space/SpaceManager.swift` |
+| `kiosk_profile_changed` | A Kiosk profile replacement is revealed; includes `total_profiles` without profile identifiers | `MainBrowserWindow/KioskBrowserWindowController.swift` |
 | `agent_task_started` | An agent task record is created or rebound; includes `origin`, `persistent`, and normalized `agent_name` | `States/AgentSpace/AgentSpaceManager.swift` |
 | `agent_task_completed` | An active task ends through the completion path; includes the start properties and `success` | `States/AgentSpace/AgentSpaceManager.swift` |
 | `agent_user_space_command` | An agent command passes the user-space browsing-data permission gate; includes `command` and normalized `agent_name` | `Notifications/MessageCard/ExtensionMessageRouter.swift`, `States/AgentSpace/AgentSpaceRouter+Management.swift` |
@@ -142,7 +145,7 @@ are out of scope.
 | `feature_entry_tapped` | A visible Chat, Memory, Download, or Organize Tabs entry accepts a tap; `button` is `chat`, `memory`, `download`, or `organize_tabs`, and `surface` is `sidebar` or `web_content_header` | `Sidebar/SidebarViewController.swift`, `Sidebar/TabList/Views/SidebarCellViews.swift`, `WebContent/FloatingSidebar/FloatingSidebarViewController.swift`, `WebContent/Header/WebContentHeader.swift`, `HorizontalBar/TabStrip/TabStripRightButtons.swift` |
 | `bookmark_manager_opened` | A native Bookmark Manager page session starts | `WebContent/BookmarkManager/BookmarkManagerViewController.swift` |
 | `bookmark_manager_edited` | A Bookmark Manager page session ends after the user performed at least one edit; the event carries no bookmark or edit details | `WebContent/BookmarkManager/BookmarkManagerViewController.swift` |
-| `user_defaults_snapshot` | Launch-time snapshot of new-tab behavior, layout mode, active process language (`app_language`), appearance, default browser, proactive suggestions, and automatic current-tab context | `Application/AppControlle+LaunchInfo.swift` |
+| `user_defaults_snapshot` | Launch-time snapshot of new-tab behavior, layout mode, active process language (`app_language`), appearance, default browser, proactive suggestions, automatic current-tab context, and Peek/Kiosk preferences | `Application/AppControlle+LaunchInfo.swift` |
 
 Import analytics never include source paths, browser profile names, Arc Space
 names, file names, or imported item counts. The current Chromium delegate

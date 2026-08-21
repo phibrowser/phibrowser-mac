@@ -91,7 +91,7 @@ extension PhiPreferences {
                 return true
             case .openExternalLinksInKiosk,
                  .openKioskOnCommandOptionClick:
-                return false
+                return true
             case .navigationAtTop:
                 return true
             case .traditionalLayout:

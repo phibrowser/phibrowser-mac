@@ -84,11 +84,6 @@ final class KioskBrowserState: BrowserState {
         windowController?.handleTabReadyToDisplay(tabId: tabId)
     }
 
-    func navigateCurrentWebContents(to userInput: String) {
-        let normalizedURL = URLProcessor.processUserInput(userInput)
-        focusingTab?.webContentWrapper?.navigate(toURL: normalizedURL)
-    }
-
     private func setFocusedTab(_ tab: Tab?) {
         for candidate in tabs {
             candidate.isActive = candidate === tab

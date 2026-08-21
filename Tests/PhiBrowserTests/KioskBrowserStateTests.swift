@@ -88,7 +88,7 @@ final class KioskBrowserStateTests: XCTestCase {
         XCTAssertNil(state.focusingTab)
     }
 
-    func testAddressFieldReturnNavigatesUsingFieldEditorText() throws {
+    func testAddressFieldIsReadOnlyAndRequestsOmniBoxOnClick() throws {
         let state = try makeState()
         let wrapper = KioskTestWebContentWrapper(urlString: "https://old.example")
         let tab = Tab(
@@ -101,54 +101,53 @@ final class KioskBrowserStateTests: XCTestCase {
         )
         state.handleNewTabFromChromium(tab)
         let controller = KioskBrowserContentViewController(state: state)
+        var omniBoxRequestCount = 0
+        controller.configureActions(
+            onProfileSelection: { _ in },
+            onSpaceSelection: { _ in },
+            onOmniBoxRequest: {
+                omniBoxRequestCount += 1
+            }
+        )
         _ = controller.view
         let addressField = try XCTUnwrap(findTextField(in: controller.view))
-        addressField.stringValue = "https://old.example"
-        let fieldEditor = NSTextView()
-        fieldEditor.string = "example.com"
-
-        XCTAssertFalse(controller.control(
-            addressField,
-            textView: fieldEditor,
-            doCommandBy: #selector(NSTextView.moveLeft(_:))
+        let event = try XCTUnwrap(NSEvent.mouseEvent(
+            with: .leftMouseDown,
+            location: .zero,
+            modifierFlags: [],
+            timestamp: 0,
+            windowNumber: 0,
+            context: nil,
+            eventNumber: 0,
+            clickCount: 1,
+            pressure: 1
         ))
-        let handled = controller.control(
-            addressField,
-            textView: fieldEditor,
-            doCommandBy: #selector(NSTextView.insertNewline(_:))
-        )
 
-        XCTAssertTrue(handled)
-        XCTAssertEqual(wrapper.navigatedURLs, ["https://example.com"])
+        addressField.mouseDown(with: event)
+
+        XCTAssertFalse(addressField.isEditable)
+        XCTAssertFalse(addressField.isSelectable)
+        XCTAssertFalse(addressField.stringValue.isEmpty)
+        XCTAssertEqual(omniBoxRequestCount, 1)
+        XCTAssertTrue(wrapper.navigatedURLs.isEmpty)
     }
 
-    func testAddressFieldKeypadEnterNavigatesUsingFieldEditorText() throws {
+    func testKioskStateDrivesExistingOmniBoxController() throws {
         let state = try makeState()
-        let wrapper = KioskTestWebContentWrapper(urlString: "https://old.example")
         let tab = Tab(
             guid: 42,
-            url: "https://old.example",
+            url: "https://example.com",
             isActive: false,
             index: 0,
-            webContentView: wrapper,
             windowId: state.windowId
         )
         state.handleNewTabFromChromium(tab)
-        let controller = KioskBrowserContentViewController(state: state)
-        _ = controller.view
-        let addressField = try XCTUnwrap(findTextField(in: controller.view))
-        addressField.stringValue = "https://old.example"
-        let fieldEditor = NSTextView()
-        fieldEditor.string = "example.org"
+        let container = OmniBoxContainerViewController(browserState: state)
+        let omniBox = try XCTUnwrap(container.omniBoxController)
 
-        let handled = controller.control(
-            addressField,
-            textView: fieldEditor,
-            doCommandBy: #selector(NSTextView.insertNewlineIgnoringFieldEditor(_:))
-        )
+        omniBox.updateStatus(with: tab, suppressAutomaticSearch: true)
 
-        XCTAssertTrue(handled)
-        XCTAssertEqual(wrapper.navigatedURLs, ["https://example.org"])
+        XCTAssertTrue(omniBox.openningFromCurrenTab)
     }
 
     func testExtensionSidePanelMountsAndDetachesSynchronously() throws {

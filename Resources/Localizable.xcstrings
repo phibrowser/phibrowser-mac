@@ -34013,14 +34013,14 @@
         }
       }
     },
-    "kiosk.toolbar.copyLink.accessibilityLabel" : {
-      "comment" : "Kiosk toolbar - Accessibility label and tooltip for copying the current page URL",
+    "kiosk.toolbar.reloadPage.accessibilityLabel" : {
+      "comment" : "Kiosk toolbar - Accessibility label and tooltip for the reload button",
       "extractionState" : "extracted_with_value",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Copy Link"
+            "value" : "Reload Page"
           }
         }
       }

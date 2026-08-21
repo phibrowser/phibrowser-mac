@@ -76,10 +76,10 @@ final class KioskBrowserWindowController: MainBrowserWindowController {
             browserState.focusingTab?.stopLoading()
             return true
         case .IDC_FOCUS_LOCATION:
-            focusAddressBar(clearContents: false)
+            presentOmniBox(fromAddressBar: true)
             return true
         case .IDC_NEW_TAB, .IDC_NEW_TAB_TO_RIGHT, .IDC_FOCUS_SEARCH:
-            focusAddressBar(clearContents: true)
+            presentOmniBox(fromAddressBar: false)
             return true
         case .IDC_CLOSE_TAB:
             ChromiumLauncher.sharedInstance().bridge?.executeCommand(
@@ -561,13 +561,22 @@ final class KioskBrowserWindowController: MainBrowserWindowController {
                         return
                     }
                     SpaceManager.shared.moveTab(tab, toSpaceId: spaceId)
+                },
+                onOmniBoxRequest: { [weak self] in
+                    self?.presentOmniBox(fromAddressBar: true)
                 }
             )
     }
 
     @MainActor
-    private func focusAddressBar(clearContents: Bool) {
-        (contentViewController as? KioskBrowserContentViewController)?
-            .focusAddressBar(clearContents: clearContents)
+    private func presentOmniBox(fromAddressBar: Bool) {
+        let contentController = contentViewController
+            as? KioskBrowserContentViewController
+        toggleOmniBox(
+            fromAddressBar: fromAddressBar,
+            addressView: fromAddressBar
+                ? contentController?.addressBarAnchorView
+                : nil
+        )
     }
 }

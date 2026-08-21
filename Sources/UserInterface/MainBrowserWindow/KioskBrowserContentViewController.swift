@@ -8,8 +8,17 @@ import Combine
 import SnapKit
 import SwiftUI
 
+private final class KioskAddressField: NSTextField {
+    var onActivate: (() -> Void)?
+
+    override func mouseDown(with event: NSEvent) {
+        guard isEnabled else { return }
+        onActivate?()
+    }
+}
+
 /// Compact Kiosk presentation: profile and page controls around one Chromium view.
-final class KioskBrowserContentViewController: NSViewController, NSTextFieldDelegate {
+final class KioskBrowserContentViewController: NSViewController {
     private enum Layout {
         static let toolbarHeight: CGFloat = 52
         static let trafficLightInset: CGFloat = 78
@@ -22,7 +31,7 @@ final class KioskBrowserContentViewController: NSViewController, NSTextFieldDele
     private let state: KioskBrowserState
     private let toolbarView = NSVisualEffectView()
     private let addressBarContainer = NSView()
-    private let addressField = NSTextField()
+    private let addressField = KioskAddressField()
     private let webContentHost = NSView()
     private var profileReplacementSnapshotView: NSImageView?
     private var profileReplacementSnapshotRemovalWorkItem: DispatchWorkItem?
@@ -33,6 +42,7 @@ final class KioskBrowserContentViewController: NSViewController, NSTextFieldDele
 
     private var onProfileSelection: ((String) -> Void)?
     private var onSpaceSelection: ((String) -> Void)?
+    private var onOmniBoxRequest: (() -> Void)?
 
     private lazy var profileHostingView = NSHostingView(
         rootView: KioskProfileMenu(
@@ -100,12 +110,19 @@ final class KioskBrowserContentViewController: NSViewController, NSTextFieldDele
         addressField.alignment = .center
         addressField.isBezeled = false
         addressField.drawsBackground = false
-        addressField.delegate = self
-        addressField.target = self
-        addressField.action = #selector(submitAddress(_:))
+        addressField.isEditable = false
+        addressField.isSelectable = false
+        addressField.onActivate = { [weak self] in
+            self?.onOmniBoxRequest?()
+        }
 
         webContentHost.wantsLayer = true
         webContentHost.layer?.backgroundColor = NSColor.windowBackgroundColor.cgColor
+
+        // AppKit already positions these hosts within the title bar.
+        profileHostingView.safeAreaRegions = []
+        toolbarActionsHostingView.safeAreaRegions = []
+        spaceHostingView.safeAreaRegions = []
 
         view.addSubview(toolbarView)
         toolbarView.addSubview(addressBarContainer)
@@ -159,23 +176,12 @@ final class KioskBrowserContentViewController: NSViewController, NSTextFieldDele
 
     func configureActions(
         onProfileSelection: @escaping (String) -> Void,
-        onSpaceSelection: @escaping (String) -> Void
+        onSpaceSelection: @escaping (String) -> Void,
+        onOmniBoxRequest: @escaping () -> Void
     ) {
         self.onProfileSelection = onProfileSelection
         self.onSpaceSelection = onSpaceSelection
-    }
-
-    func focusAddressBar(clearContents: Bool = false) {
-        guard let window = view.window else { return }
-        window.makeFirstResponder(addressField)
-        if clearContents {
-            addressField.stringValue = ""
-        } else {
-            addressField.stringValue = editableAddressText(
-                for: state.focusingTab?.url
-            )
-        }
-        addressField.selectText(nil)
+        self.onOmniBoxRequest = onOmniBoxRequest
     }
 
     func handlePreviousTabReadyForCleanup(tabId: Int) {
@@ -261,39 +267,10 @@ final class KioskBrowserContentViewController: NSViewController, NSTextFieldDele
         profileReplacementSnapshotView = nil
     }
 
-    func controlTextDidEndEditing(_ obj: Notification) {
-        addressField.alignment = .center
-        updateAddressField(with: state.focusingTab?.url)
-    }
-
-    func controlTextDidBeginEditing(_ obj: Notification) {
-        addressField.alignment = .left
-        addressField.stringValue = editableAddressText(
-            for: state.focusingTab?.url
-        )
-    }
-
-    func control(
-        _ control: NSControl,
-        textView: NSTextView,
-        doCommandBy commandSelector: Selector
-    ) -> Bool {
-        guard control === addressField else { return false }
-
-        if commandSelector == #selector(NSTextView.insertNewline(_:)) ||
-            commandSelector == #selector(NSTextView.insertNewlineIgnoringFieldEditor(_:)) {
-            // AppKit ends editing before sending NSTextField's action. Capture
-            // the field editor text before controlTextDidEndEditing restores
-            // the last committed URL.
-            submitAddress(input: textView.string)
-            return true
-        }
-
-        return false
-    }
-
     private func bindState() {
+        bind(tab: state.focusingTab)
         state.$focusingTab
+            .dropFirst()
             .receive(on: DispatchQueue.main)
             .sink { [weak self] tab in
                 self?.bind(tab: tab)
@@ -447,10 +424,6 @@ final class KioskBrowserContentViewController: NSViewController, NSTextFieldDele
     }
 
     private func updateAddressField(with url: String?) {
-        if let editor = addressField.currentEditor(),
-           view.window?.firstResponder === editor {
-            return
-        }
         addressField.stringValue = displayAddressText(for: url)
     }
 
@@ -461,26 +434,8 @@ final class KioskBrowserContentViewController: NSViewController, NSTextFieldDele
         )
     }
 
-    private func editableAddressText(for url: String?) -> String {
-        url.map(URLProcessor.phiBrandEnsuredUrlString) ?? ""
-    }
-
-    @objc private func submitAddress(_ sender: NSTextField) {
-        submitAddress(input: sender.stringValue)
-    }
-
-    private func submitAddress(input: String) {
-        guard let tab = state.focusingTab else { return }
-        state.navigateCurrentWebContents(to: input)
-        guard let webContentView = tab.webContentView,
-              view.window?.makeFirstResponder(webContentView) == true else {
-            return
-        }
-        if tab.isNTP {
-            tab.webContentWrapper?.focus()
-        } else {
-            tab.webContentWrapper?.restoreFocus()
-        }
+    var addressBarAnchorView: NSView {
+        addressBarContainer
     }
 
     var extensionSidePanelViewForTesting: ExtensionSidePanelView? {

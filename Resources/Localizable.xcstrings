@@ -34001,18 +34001,6 @@
         }
       }
     },
-    "kiosk.toolbar.spaceList.accessibilityLabel" : {
-      "comment" : "Kiosk toolbar - Accessibility label and tooltip for the button that shows the Space list",
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "Choose Space"
-          }
-        }
-      }
-    },
     "kiosk.toolbar.profileMenu.accessibilityLabel" : {
       "comment" : "Kiosk toolbar - Accessibility label for the current-profile menu",
       "extractionState" : "extracted_with_value",
@@ -34021,6 +34009,18 @@
           "stringUnit" : {
             "state" : "new",
             "value" : "Switch Profile"
+          }
+        }
+      }
+    },
+    "kiosk.toolbar.spaceList.accessibilityLabel" : {
+      "comment" : "Kiosk toolbar - Accessibility label and tooltip for the button that shows the Space list",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Choose Space"
           }
         }
       }
@@ -51965,6 +51965,18 @@
         }
       }
     },
+    "settings.general.commandOptionKiosk.toggle" : {
+      "comment" : "General settings - Toggle title for opening clicked links in Kiosk while Command and Option are held",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Open Kiosk when clicking on links with ⌘⌥ held"
+          }
+        }
+      }
+    },
     "settings.general.developerMode.disabledHint" : {
       "comment" : "General settings - Hint under the developer mode toggle explaining the kill-switch behavior, the revoked approvals, and that an agent may request it back",
       "extractionState" : "extracted_with_value",
@@ -52201,18 +52213,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "開發者"
-          }
-        }
-      }
-    },
-    "settings.general.commandOptionKiosk.toggle" : {
-      "comment" : "General settings - Toggle title for opening clicked links in Kiosk while Command and Option are held",
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "Open Kiosk when clicking on links with ⌘⌥ held"
           }
         }
       }
@@ -71873,7 +71873,7 @@
       }
     },
     "sidebar.updateReminder.updateButton" : {
-      "comment" : "Sidebar header upgrade button title",
+      "comment" : "Sidebar header upgrade button title\nTab strip update button title",
       "extractionState" : "extracted_with_value",
       "localizations" : {
         "de" : {

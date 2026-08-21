@@ -458,7 +458,11 @@ final class TabStripBarController: NSViewController {
         }
         rightButtons.snp.remakeConstraints { make in
             make.centerY.equalToSuperview().offset(-2)
-            make.width.equalTo(Self.horizontalInset)
+            // The icon-only cluster uses the existing 88pt width. A downloaded
+            // update adds the 56pt text button immediately before Search Tabs,
+            // so keep this as a lower bound and let the hosted SwiftUI content
+            // grow instead of overlapping the tab strip.
+            make.width.greaterThanOrEqualTo(Self.horizontalInset)
             make.trailing.equalToSuperview().inset(WebContentConstant.edgesSpacing)
         }
         tabStrip.snp.remakeConstraints { make in

@@ -37,6 +37,34 @@ struct AgentIdentity: Equatable {
     /// — still learns the agent pid to record for its detached daemon and
     /// watchers to claim.
     let pid: pid_t?
+    /// True only for the browser's own agent runtime, recognized by
+    /// `AgentPeerIdentity.firstPartyAgent` rather than resolved from an
+    /// arbitrary peer's ancestry. It is the one identity that connects without
+    /// the user's consent (see `AgentCDPListener.evaluate`).
+    let firstParty: Bool
+
+    /// The initializer every resolved peer goes through. `firstParty` is
+    /// deliberately not a parameter: being the browser's own runtime is
+    /// something this file establishes from the connection, never something a
+    /// caller can assert.
+    init(key: String, displayName: String, teamId: String?, verified: Bool,
+         executablePath: String, pid: pid_t?) {
+        self.init(key: key, displayName: displayName, teamId: teamId,
+                  verified: verified, executablePath: executablePath,
+                  pid: pid, firstParty: false)
+    }
+
+    fileprivate init(key: String, displayName: String, teamId: String?,
+                     verified: Bool, executablePath: String, pid: pid_t?,
+                     firstParty: Bool) {
+        self.key = key
+        self.displayName = displayName
+        self.teamId = teamId
+        self.verified = verified
+        self.executablePath = executablePath
+        self.pid = pid
+        self.firstParty = firstParty
+    }
 
     /// Secondary line for the prompt, e.g. "Team 87DQ3HMK5G · verified".
     var detail: String {
@@ -209,6 +237,158 @@ enum AgentPeerIdentity {
         guard pid > 0, processUID(pid) == getuid() else { return nil }
         return resolve(pid: pid, claimed: true)
     }
+
+    // MARK: - First-party pass
+
+    /// The browser's own agent runtime, which Sentinel starts as a component
+    /// of the product rather than as an outside agent the user invited in:
+    ///
+    ///     Phi Sentinel.app → runner → node → phi-agent.bundle.js
+    ///
+    /// It is recognized instead of prompted for, and `AgentCDPListener` admits
+    /// it without consent and without the two master switches — a built-in
+    /// feature must not ask the user to turn on Developer mode to work. That
+    /// makes this the one identity where the code signature IS the boundary
+    /// rather than an aid to naming the agent, so all three of these must hold
+    /// and the same-uid gate still applies before any of them:
+    ///
+    ///   1. the connecting process is Phi-signed — Sentinel's own bundled node,
+    ///      pinned to this socket by its peer audit token;
+    ///   2. its first argument is the agent bundle, so a signed interpreter
+    ///      cannot be pointed at some other script;
+    ///   3. its parent is Phi-signed too — Sentinel's `runner`.
+    ///
+    /// (3) is what carries the check: (1) and (2) alone are satisfied by
+    /// anyone who runs Sentinel's node — it is readable by every process of
+    /// this user — against a file they named `phi-agent.bundle.js`.
+    ///
+    /// Returns nil for every other connection, which then resolves normally
+    /// and faces the consent prompt.
+    static func firstPartyAgent(socketFD: Int32) -> AgentIdentity? {
+        guard let auditToken = peerAuditToken(socketFD: socketFD) else { return nil }
+        // The audit token's sixth word is the pid. `audit_token_to_pid` lives
+        // in libbsm, which has no module map to import from Swift.
+        let peerPID = pid_t(bitPattern: auditToken.val.5)
+        guard peerPID > 0 else { return nil }
+
+        let tokenData = withUnsafeBytes(of: auditToken) { Data($0) } as CFData
+        guard isFirstPartyCode(guestAttributes: [kSecGuestAttributeAudit: tokenData],
+                               pid: peerPID) else {
+            return nil
+        }
+        guard let interpreter = executablePath(peerPID),
+              isScriptInterpreterName((interpreter as NSString).lastPathComponent),
+              let argv = processArgv(peerPID), argv.count >= 2 else {
+            return nil
+        }
+        // argv[1] specifically, not "the first argument that names a file":
+        // node options precede the script, and one of them is `--require`.
+        // Anything else — including a first-party bundle behind an option —
+        // fails the pass rather than being reasoned about.
+        let script = argv[1]
+        guard firstPartyScriptNames.contains((script as NSString).lastPathComponent) else {
+            return nil
+        }
+        guard FileManager.default.fileExists(atPath: script) else { return nil }
+        guard let parent = parentPID(peerPID), parent > 1,
+              isFirstPartyCode(guestAttributes: [kSecGuestAttributePid: parent],
+                               pid: parent) else {
+            AppLogWarn("[AgentCDP] \((script as NSString).lastPathComponent) ran from a "
+                       + "Phi-signed interpreter but not from a Phi-signed parent; "
+                       + "treating it as an ordinary agent")
+            return nil
+        }
+
+        return AgentIdentity(
+            key: firstPartyKey,
+            displayName: firstPartyDisplayName,
+            teamId: FileSystemUtils.teamId,
+            verified: true,
+            executablePath: interpreter,
+            pid: peerPID,
+            firstParty: true)
+    }
+
+    /// Script bundles that ARE the browser's agent runtime. Matched on file
+    /// name alone: Sentinel downloads the bundle to a versioned, user-writable
+    /// path under Application Support, so neither its location nor its
+    /// contents prove anything — the ancestry checks above are what do.
+    private static let firstPartyScriptNames: Set<String> = ["phi-agent.bundle.js"]
+
+    /// Identity key for the pass. Deliberately a constant: the key a normal
+    /// resolve would produce embeds the bundle's version and the signed-in
+    /// account (".../phi-agent/2026.8.21.1619/arm64/phi-agent.bundle.js"), so
+    /// it would name a different agent after every component update.
+    static let firstPartyKey = "phi:phi-agent"
+
+    /// Shown wherever a driving agent is named — the Space switcher, the
+    /// transcript — so the browser's own agent reads as itself rather than as
+    /// the "phi-agent.bundle" script an ancestry walk would call it.
+    static let firstPartyDisplayName = "Phi Agent"
+
+    /// Peer credentials as an audit token, which names the process on the
+    /// other end of `socketFD` unambiguously. `LOCAL_PEERPID` gives only a pid,
+    /// and a pid can be recycled onto an unrelated process between reading it
+    /// and checking its signature.
+    private static func peerAuditToken(socketFD: Int32) -> audit_token_t? {
+        var token = audit_token_t()
+        var len = socklen_t(MemoryLayout<audit_token_t>.size)
+        let rc = withUnsafeMutablePointer(to: &token) {
+            getsockopt(socketFD, SOL_LOCAL, LOCAL_PEERTOKEN, $0, &len)
+        }
+        guard rc == 0, len == socklen_t(MemoryLayout<audit_token_t>.size) else { return nil }
+        return token
+    }
+
+    /// Whether a process is Phi's own code. `guestAttributes` locates the
+    /// running process (an audit token where we have one, else a pid); `pid`
+    /// is only for the fallback below.
+    private static func isFirstPartyCode(guestAttributes: [CFString: Any],
+                                         pid: pid_t) -> Bool {
+        if satisfiesFirstPartyRequirement(guestAttributes: guestAttributes) { return true }
+        // The running process can be unreadable because its executable was
+        // replaced on disk since it launched — routine during development,
+        // where a rebuild unlinks the binary that a long-lived Sentinel is
+        // still running from and the dynamic query then fails with ENOENT.
+        // Fall back to the exec path the kernel recorded, which the process
+        // itself cannot rewrite: it still takes a Phi-signed binary to have
+        // been launched from one. What lapses is only the assurance that the
+        // copy on disk is the code the process is running.
+        guard let path = recordedExecutablePath(pid) else { return false }
+        var staticCode: SecStaticCode?
+        guard let requirement = firstPartyRequirement,
+              SecStaticCodeCreateWithPath(URL(fileURLWithPath: path) as CFURL,
+                                          [], &staticCode) == errSecSuccess,
+              let staticCode else {
+            return false
+        }
+        return SecStaticCodeCheckValidity(staticCode, [], requirement) == errSecSuccess
+    }
+
+    private static func satisfiesFirstPartyRequirement(guestAttributes: [CFString: Any]) -> Bool {
+        guard let requirement = firstPartyRequirement else { return false }
+        var code: SecCode?
+        guard SecCodeCopyGuestWithAttributes(
+                nil, guestAttributes as CFDictionary, [], &code) == errSecSuccess,
+              let code else {
+            return false
+        }
+        return SecCodeCheckValidity(code, [], requirement) == errSecSuccess
+    }
+
+    /// Valid signature, Apple-issued chain, Phi's team. `anchor apple generic`
+    /// is what makes the team identifier mean anything: without it a
+    /// self-signed certificate carrying "87DQ3HMK5G" in its OU would satisfy
+    /// the check.
+    private static let firstPartyRequirement: SecRequirement? = {
+        var requirement: SecRequirement?
+        let text = "anchor apple generic and certificate leaf[subject.OU] = \"\(FileSystemUtils.teamId)\"" as CFString
+        guard SecRequirementCreateWithString(text, [], &requirement) == errSecSuccess else {
+            AppLogError("[AgentCDP] could not compile the first-party code requirement")
+            return nil
+        }
+        return requirement
+    }()
 
     /// Identity of an arbitrary same-user process — the socket peer, or a
     /// pid the peer claims to act for (`claimed`).
@@ -455,6 +635,14 @@ enum AgentPeerIdentity {
         processArgsAndEnv(pid)?.argv
     }
 
+    /// The executable path the kernel recorded for `pid` when it exec'd.
+    /// Unlike `proc_pidpath` this still answers after the binary is unlinked
+    /// or replaced on disk, which is what the first-party fallback needs.
+    private static func recordedExecutablePath(_ pid: pid_t) -> String? {
+        guard let path = processArgsAndEnv(pid)?.execPath, !path.isEmpty else { return nil }
+        return path
+    }
+
     /// True when `pid`'s exec-time environment carries pi's session marker
     /// (`PI_CODING_AGENT=true`). Pi sets it at runtime, so it is ABSENT from
     /// pi's own snapshot but inherited by every child pi spawns — read it from
@@ -484,7 +672,8 @@ enum AgentPeerIdentity {
     /// absent, but everything it inherited (and hands to its children) is
     /// present. Nil when unreadable — a process that exited, or a sandboxed
     /// peer whose seatbelt denies the sysctl.
-    private static func processArgsAndEnv(_ pid: pid_t) -> (argv: [String], env: [String])? {
+    private static func processArgsAndEnv(_ pid: pid_t)
+        -> (execPath: String, argv: [String], env: [String])? {
         var mib: [Int32] = [CTL_KERN, KERN_PROCARGS2, pid]
         var size = 0
         guard sysctl(&mib, UInt32(mib.count), nil, &size, nil, 0) == 0, size > 4 else {
@@ -507,7 +696,7 @@ enum AgentPeerIdentity {
             pos += 1  // skip the null terminator
             return s
         }
-        _ = nextString()                                  // exec_path
+        let execPath = nextString() ?? ""
         while pos < size && buffer[pos] == 0 { pos += 1 } // padding before argv[0]
         var args: [String] = []
         for _ in 0..<Int(argc) {
@@ -518,7 +707,7 @@ enum AgentPeerIdentity {
         while let s = nextString() {
             if !s.isEmpty { env.append(s) }
         }
-        return (args, env)
+        return (execPath, args, env)
     }
 
     /// True when the socket peer runs under the same uid as this process. The

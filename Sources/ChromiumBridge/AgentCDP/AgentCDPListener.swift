@@ -65,6 +65,9 @@ final class AgentCDPListener {
     // PhiPreferences.allAgentsGranted, which this mirrors once observed so the
     // rest of the session needs no defaults read.
     private var sessionAllAgentsGrant = false
+    // The agent process whose first-party pass this launch has already logged
+    // (see logFirstPartyPass).
+    private var loggedFirstPartyPassPid: pid_t?
     private let grantsLock = NSLock()
 
     private init() {}
@@ -349,7 +352,13 @@ final class AgentCDPListener {
         // or stock CDP alike — to that session's identity and grant. The
         // caller-supplied pid is a log-only identification aid: it neither
         // joins a Swift task principal nor substitutes the consent identity.
-        let peerIdentity = AgentPeerIdentity.resolve(socketFD: fd)
+        // The browser's own agent runtime is recognized before any ancestry
+        // walk: it is not one of the agents this consent system arbitrates
+        // (see AgentPeerIdentity.firstPartyAgent), and resolving it normally
+        // would only produce a version-stamped "phi-agent.bundle" identity to
+        // prompt about. Every other peer falls through to the walk.
+        let peerIdentity = AgentPeerIdentity.firstPartyAgent(socketFD: fd)
+            ?? AgentPeerIdentity.resolve(socketFD: fd)
             ?? AgentIdentity(key: "unknown", displayName: "Unknown process",
                              teamId: nil, verified: false, executablePath: "",
                              pid: nil)
@@ -519,6 +528,28 @@ final class AgentCDPListener {
     /// back on as part of allowing it. That is the only path that flips them
     /// from outside Settings, and it always costs the user an explicit Allow.
     private func evaluate(_ identity: AgentIdentity) -> Bool {
+        // The browser's own agent runtime is admitted before any of it. It is
+        // not an agent this system arbitrates but a part of the product, shipped
+        // and signed with the browser, and it reaches CDP only because that is
+        // the transport it drives Spaces over. Everything below exists to
+        // decide about OUTSIDE agents, and none of it fits: there is no one to
+        // prompt (it starts with Sentinel, before anyone is at the keyboard),
+        // no grant to remember (its identity is established per connection from
+        // the code signature, not recalled from a list), and nothing the two
+        // master switches should say about it — Developer mode gates handing
+        // the browser to third-party tooling, not the browser's own features.
+        //
+        // Standing refusals are passed over for the same reason, and one more:
+        // the blanket "all agents" refusal is recorded from a prompt about some
+        // OTHER agent, so it was never a decision about this one — and with
+        // Developer mode off the Blocked agents list that would lift it is not
+        // even reachable, which would leave a built-in feature switched off
+        // behind a setting the user can no longer see.
+        if identity.firstParty {
+            logFirstPartyPass(identity)
+            return true
+        }
+
         // A standing refusal wins over everything, including a remembered or
         // blanket grant: "Never ask again" has to mean it even if the same
         // agent — or every agent — was once allowed.
@@ -585,6 +616,23 @@ final class AgentCDPListener {
             }
             return true
         }
+    }
+
+    /// Records the first-party pass once per agent process. The runtime makes
+    /// many connections — the skill's HTTP and WebSocket rounds alone are
+    /// several per task — so logging each would bury the log while saying
+    /// nothing new. Keying on the pid rather than on the launch still collapses
+    /// all of those to one line, while leaving a fresh one each time Sentinel
+    /// restarts the agent: without that, a pass that quietly stopped applying
+    /// looked exactly like one that was still working.
+    private func logFirstPartyPass(_ identity: AgentIdentity) {
+        grantsLock.lock()
+        let alreadyLogged = loggedFirstPartyPassPid == identity.pid
+        loggedFirstPartyPassPid = identity.pid
+        grantsLock.unlock()
+        guard !alreadyLogged else { return }
+        AppLogInfo("[AgentCDP] admitted \(identity.displayName) (pid \(identity.pid.map(String.init) ?? "?")) "
+                   + "on the first-party pass — Phi-signed runtime, no consent required")
     }
 
     // MARK: - Standing refusals

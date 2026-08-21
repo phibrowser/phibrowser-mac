@@ -156,6 +156,8 @@ final class PeekPanelController {
     private var isFlying = false
     /// See `setConcealedByInWindowOverlay`.
     private var isConcealedByInWindowOverlay = false
+    /// See `setEclipsedByInWindowOverlay`.
+    private var isEclipsedByInWindowOverlay = false
 
     init(browserState: BrowserState,
          parentWindow: NSWindow,
@@ -243,8 +245,21 @@ final class PeekPanelController {
         panel.orderOut(nil)
     }
 
-    /// While an in-window blocking overlay (omnibox, tab search) is up, the
-    /// panel steps aside: it is a child window, which draws above every
+    /// While the omnibox floats over the panel (it lives in its own child
+    /// window one level up), the panel stays visible but goes input-inert:
+    /// its local monitor must not fight the omnibox for Esc/shortcuts or
+    /// close the peek on the omnibox's background clicks, and reveals must
+    /// not steal the omnibox's key. On un-eclipse the panel takes key back.
+    func setEclipsedByInWindowOverlay(_ eclipsed: Bool) {
+        guard isEclipsedByInWindowOverlay != eclipsed else { return }
+        isEclipsedByInWindowOverlay = eclipsed
+        if !eclipsed {
+            revealIfStillCurrent()
+        }
+    }
+
+    /// While an in-window blocking overlay (tab search) is up, the panel
+    /// steps aside entirely: it is a child window, which draws above every
     /// in-window view, so left in place it would cover the overlay. Content
     /// stays mounted — the opener's page shows beneath, which is what the
     /// overlay targets anyway (a committed navigation closes the peek
@@ -336,12 +351,17 @@ final class PeekPanelController {
         if panel.parent == nil {
             parentWindow.addChildWindow(panel, ordered: .above)
         }
-        panel.makeKeyAndOrderFront(nil)
-        if focusContent, let webView = webHostView.subviews.first {
-            // Re-parenting a Chromium view clears the first responder;
-            // without this, keyboard input inside the peek page is dead.
-            panel.makeFirstResponder(webView)
-            hostedTab?.webContentWrapper?.focus()
+        if isEclipsedByInWindowOverlay {
+            // Visible beneath the floating omnibox, but never its key.
+            panel.orderFront(nil)
+        } else {
+            panel.makeKeyAndOrderFront(nil)
+            if focusContent, let webView = webHostView.subviews.first {
+                // Re-parenting a Chromium view clears the first responder;
+                // without this, keyboard input inside the peek page is dead.
+                panel.makeFirstResponder(webView)
+                hostedTab?.webContentWrapper?.focus()
+            }
         }
         installEventMonitorIfNeeded()
         installGeometryObserversIfNeeded()
@@ -639,7 +659,8 @@ final class PeekPanelController {
         eventMonitor = NSEvent.addLocalMonitorForEvents(
             matching: [.leftMouseDown, .rightMouseDown, .keyDown]
         ) { [weak self] event in
-            guard let self, self.panel.isVisible else { return event }
+            guard let self, self.panel.isVisible,
+                  !self.isEclipsedByInWindowOverlay else { return event }
             switch event.type {
             case .keyDown:
                 // Esc closes the peek. Cmd-W must be swallowed here: strip-

@@ -81,6 +81,8 @@ final class ReaderPanelController {
     private weak var observedCardView: NSView?
     /// See `setConcealedByInWindowOverlay`.
     private var isConcealedByInWindowOverlay = false
+    /// See `setEclipsedByInWindowOverlay`.
+    private var isEclipsedByInWindowOverlay = false
 
     init(browserState: BrowserState,
          parentWindow: NSWindow,
@@ -154,8 +156,22 @@ final class ReaderPanelController {
         panel.orderOut(nil)
     }
 
-    /// While an in-window blocking overlay (omnibox, tab search) is up, the
-    /// panel steps aside: it is a child window, which draws above every
+    /// While the omnibox floats over the panel (it lives in its own child
+    /// window one level up), the panel stays visible but goes input-inert:
+    /// its local key monitor must not fight the omnibox for Esc and
+    /// shortcuts, and reveals must not steal the omnibox's key. On
+    /// un-eclipse the panel takes key back so the reader page keeps
+    /// receiving keystrokes.
+    func setEclipsedByInWindowOverlay(_ eclipsed: Bool) {
+        guard isEclipsedByInWindowOverlay != eclipsed else { return }
+        isEclipsedByInWindowOverlay = eclipsed
+        if !eclipsed {
+            revealIfStillCurrent()
+        }
+    }
+
+    /// While an in-window blocking overlay (tab search) is up, the panel
+    /// steps aside entirely: it is a child window, which draws above every
     /// in-window view, so left in place it would cover the overlay. Content
     /// stays mounted — the origin page shows beneath, which is what the
     /// overlay targets anyway (a committed navigation closes the reader
@@ -227,12 +243,18 @@ final class ReaderPanelController {
         if panel.parent == nil {
             parentWindow.addChildWindow(panel, ordered: .above)
         }
-        panel.makeKeyAndOrderFront(nil)
-        if let webView = containerView.subviews.first {
-            // Re-parenting a Chromium view clears the first responder;
-            // without this, keyboard input inside the reader page is dead.
-            panel.makeFirstResponder(webView)
-            hostedTab?.webContentWrapper?.focus()
+        if isEclipsedByInWindowOverlay {
+            // Visible beneath the floating omnibox, but never its key.
+            panel.orderFront(nil)
+        } else {
+            panel.makeKeyAndOrderFront(nil)
+            if let webView = containerView.subviews.first {
+                // Re-parenting a Chromium view clears the first responder;
+                // without this, keyboard input inside the reader page is
+                // dead.
+                panel.makeFirstResponder(webView)
+                hostedTab?.webContentWrapper?.focus()
+            }
         }
         installEventMonitorIfNeeded()
         installGeometryObserversIfNeeded()
@@ -329,7 +351,8 @@ final class ReaderPanelController {
         eventMonitor = NSEvent.addLocalMonitorForEvents(
             matching: [.keyDown]
         ) { [weak self] event in
-            guard let self, self.panel.isVisible else { return event }
+            guard let self, self.panel.isVisible,
+                  !self.isEclipsedByInWindowOverlay else { return event }
             // Esc closes the reader. Cmd-W must be swallowed here: strip-
             // active is the origin while the overlay is up, so letting it
             // reach Chromium's IDC_CLOSE_TAB would close the origin.

@@ -55,6 +55,67 @@ class MainBrowserWindowController: NSWindowController {
     /// coordinator (`tabWillBeRemove`) for the synchronous view detach.
     private var readerPanelController: ReaderPanelController?
     var readerPanelControllerIfLoaded: ReaderPanelController? { readerPanelController }
+
+    /// Child window hosting the omnibox overlay ABOVE the peek/reader
+    /// panels: those are child windows themselves, and a child window draws
+    /// above every in-window view — an in-window omnibox would be covered by
+    /// them. One level above `.normal` keeps the omnibox over the panels and
+    /// below `.floating` surfaces (tooltips). Created on first use; stays
+    /// attached with `ignoresMouseEvents` flipped on dismissal so the hide
+    /// animation can finish inside it.
+    private(set) var omniBoxHostPanel: NSPanel?
+    private var omniBoxHostResizeObserver: NSObjectProtocol?
+
+    private final class KeyableOverlayPanel: NSPanel {
+        override var canBecomeKey: Bool { true }
+    }
+
+    /// Returns the omnibox host panel attached to this window, sized to its
+    /// content area and accepting events, creating it on first use.
+    @discardableResult
+    func attachAndShowOmniBoxHostPanel() -> NSPanel? {
+        guard let window = self.window else { return nil }
+        if omniBoxHostPanel == nil {
+            let panel = KeyableOverlayPanel(
+                contentRect: .zero,
+                styleMask: [.borderless, .fullSizeContentView],
+                backing: .buffered,
+                defer: true
+            )
+            panel.isOpaque = false
+            panel.hasShadow = false
+            panel.backgroundColor = .clear
+            panel.isReleasedWhenClosed = false
+            panel.hidesOnDeactivate = false
+            panel.level = NSWindow.Level(rawValue: NSWindow.Level.normal.rawValue + 1)
+            panel.contentView = NSView()
+            omniBoxHostPanel = panel
+            // Child windows do not follow parent resizes on their own.
+            omniBoxHostResizeObserver = NotificationCenter.default.addObserver(
+                forName: NSWindow.didResizeNotification,
+                object: window,
+                queue: .main
+            ) { [weak self] _ in
+                self?.syncOmniBoxHostPanelFrame()
+            }
+        }
+        guard let panel = omniBoxHostPanel else { return nil }
+        if panel.parent == nil {
+            window.addChildWindow(panel, ordered: .above)
+        }
+        panel.ignoresMouseEvents = false
+        syncOmniBoxHostPanelFrame()
+        panel.makeKeyAndOrderFront(nil)
+        return panel
+    }
+
+    private func syncOmniBoxHostPanelFrame() {
+        guard let window = self.window,
+              let panel = omniBoxHostPanel,
+              let contentView = window.contentView else { return }
+        let inWindow = contentView.convert(contentView.bounds, to: nil)
+        panel.setFrame(window.convertToScreen(inWindow), display: true)
+    }
     
     lazy var omnibackgroundView: EventBlockBgView = {
        return EventBlockBgView()
@@ -446,17 +507,33 @@ class MainBrowserWindowController: NSWindowController {
             }
             .store(in: &cancellables)
 
-        // The peek and reader panels are child windows and would draw above
-        // the in-window blocking overlays (omnibox, tab search) — step them
-        // aside while one is up in this window.
+        // Blocking-overlay interplay with the peek/reader panels (child
+        // windows, which draw above every in-window view):
+        // - The omnibox floats in its own child window one level above the
+        //   panels, so they stay visible beneath it — but must go inert
+        //   (their key monitors would fight the omnibox for Esc/shortcuts)
+        //   and take key back when it dismisses.
+        // - Tab search is still an in-window view, so the panels step fully
+        //   aside while it is up.
         NotificationCenter.default.publisher(for: .phiInWindowOverlayVisibilityChanged)
             .receive(on: DispatchQueue.main)
             .sink { [weak self] notification in
                 guard let self,
                       notification.object as? NSWindow === self.window,
                       let visible = notification.userInfo?["visible"] as? Bool else { return }
-                self.peekPanelController?.setConcealedByInWindowOverlay(visible)
-                self.readerPanelController?.setConcealedByInWindowOverlay(visible)
+                if notification.userInfo?["surface"] as? String == "omnibox" {
+                    if !visible {
+                        // The empty host must neither eat clicks nor hold
+                        // key while its hide animation plays out.
+                        self.omniBoxHostPanel?.ignoresMouseEvents = true
+                        self.window?.makeKey()
+                    }
+                    self.peekPanelController?.setEclipsedByInWindowOverlay(visible)
+                    self.readerPanelController?.setEclipsedByInWindowOverlay(visible)
+                } else {
+                    self.peekPanelController?.setConcealedByInWindowOverlay(visible)
+                    self.readerPanelController?.setConcealedByInWindowOverlay(visible)
+                }
             }
             .store(in: &cancellables)
     }

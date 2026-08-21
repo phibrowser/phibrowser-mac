@@ -80,17 +80,19 @@ extension MainBrowserWindowController {
                 addressViewPresent: addressView != nil
             )
             
-            // Add background view to content view
-            if let contentView = contentViewController?.view {
-                contentView.addSubview(omnibackgroundView)
-                omnibackgroundView.snp.makeConstraints { make in
+            // Mount in the omnibox host panel: the overlay must draw ABOVE
+            // the peek/reader panels, which are child windows and cover
+            // every in-window view (see attachAndShowOmniBoxHostPanel).
+            if let hostView = attachAndShowOmniBoxHostPanel()?.contentView {
+                hostView.addSubview(omnibackgroundView)
+                omnibackgroundView.snp.remakeConstraints { make in
                     make.edges.equalToSuperview()
                 }
-                
+
                 // Add omniBox container to background view
                 if let containerView = omniBoxContainerViewController?.view {
                     omnibackgroundView.addSubview(containerView)
-                    containerView.snp.makeConstraints { make in
+                    containerView.snp.remakeConstraints { make in
                         make.edges.equalToSuperview()
                     }
                 }

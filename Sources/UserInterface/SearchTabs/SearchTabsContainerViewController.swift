@@ -112,13 +112,13 @@ final class SearchTabsContainerViewController: NSViewController {
         observeWindowDidResignKey()
         NotificationCenter.default.post(name: .phiInWindowOverlayVisibilityChanged,
                                         object: view.window,
-                                        userInfo: ["visible": true])
+                                        userInfo: ["visible": true, "surface": "tabSearch"])
     }
 
     func hideSearchTabs() {
         NotificationCenter.default.post(name: .phiInWindowOverlayVisibilityChanged,
                                         object: view.window,
-                                        userInfo: ["visible": false])
+                                        userInfo: ["visible": false, "surface": "tabSearch"])
         focusingTabObserver = nil
         frameChangeObserver = nil
         windowResizeObserver = nil

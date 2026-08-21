@@ -3852,8 +3852,9 @@ class BrowserState {
     /// Diverts a freshly arrived Chromium tab into the reader overlay when
     /// it is the reading surface the extension created for a pending
     /// reader-open. Returns true when the tab was taken over (kept out of
-    /// `tabs`). Anything else — including a restored reader page with no
-    /// pending request — continues as a normal tab.
+    /// `tabs`). A reader page with no pending request (a session-restored
+    /// surface tab) is closed by the resolve step; anything else continues
+    /// as a normal tab.
     private func maybeDivertReaderOverlayTab(_ tab: Tab,
                                              context: NativeTabCreationContext?) -> Bool {
         if let url = tab.url, Self.isUsablePeekDecisionURL(url) {
@@ -3909,20 +3910,31 @@ class BrowserState {
     }
 
     /// Completes the pending candidate's decision: the reading surface of a
-    /// pending open → present the overlay; anything else → adopt as a
-    /// normal tab. Always entered on a clean main turn.
+    /// pending open → present the overlay; a reader page with no open in
+    /// flight → close it (a restored surface tab); anything else → adopt as
+    /// a normal tab. Always entered on a clean main turn.
     private func resolveReaderOverlayCandidate(urlString: String) {
         guard let candidate = readerOverlayCandidate else { return }
         candidate.urlCancellable?.cancel()
         candidate.timeoutWorkItem?.cancel()
         readerOverlayCandidate = nil
 
-        guard let originTabId = ReaderExtensionBridge.originTabId(fromReaderPageURL: urlString),
-              let requestedAt = pendingReaderOverlayOrigins.removeValue(forKey: originTabId),
+        guard let originTabId = ReaderExtensionBridge.originTabId(fromReaderPageURL: urlString) else {
+            // The held tab turned out not to be a reader surface at all —
+            // continue as a normal arrival.
+            adoptPeekTabIntoStrip(candidate.tab, context: candidate.context, activate: true)
+            return
+        }
+        guard let requestedAt = pendingReaderOverlayOrigins.removeValue(forKey: originTabId),
               Date().timeIntervalSince(requestedAt) < Self.readerOverlayOpenTTLSeconds,
               tabs.contains(where: { $0.guid == originTabId }) else {
-            AppLogInfo("📖 [ReaderOverlay] candidate tabId=\(candidate.tab.guid) url=\(urlString) is not a pending reader surface — adopting as a normal tab")
-            adoptPeekTabIntoStrip(candidate.tab, context: candidate.context, activate: true)
+            // A reader surface with no open in flight: a session-restored or
+            // reopened surface tab. The surface is transient — its article
+            // cache died with the extension's session storage, and the
+            // article page is restored as its own tab — so close it rather
+            // than leaving a husk in the strip.
+            AppLogInfo("📖 [ReaderOverlay] reader page tabId=\(candidate.tab.guid) has no pending open — closing restored surface tab")
+            candidate.tab.webContentWrapper?.close()
             return
         }
         AppLogInfo("📖 [ReaderOverlay] tabId=\(candidate.tab.guid) presenting over origin=\(originTabId)")

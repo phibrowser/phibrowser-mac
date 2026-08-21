@@ -500,6 +500,17 @@ typedef NS_ENUM(NSInteger, PhiGhostMaterializeOutcome) {
             restoredFromWindowId:(int64_t)restoredFromWindowId
                  restoredSpaceId:(NSString * _Nullable)restoredSpaceId
           restoredClosedWindowId:(int64_t)restoredClosedWindowId;
+/// Presentation-aware variant of the above. `presentationContext` is present
+/// only for user-triggered Kiosk opens that native UI should animate. Current
+/// keys are kind (`cursorZoom`) and the screen-coordinate anchorX / anchorY.
+- (void)mainBrowserWindowCreated:(NSWindow *)window
+                            type:(ChromiumBrowserType)browserType
+                       profileId:(NSString *)profileId
+                        windowId:(int64_t)windowId
+            restoredFromWindowId:(int64_t)restoredFromWindowId
+                 restoredSpaceId:(NSString * _Nullable)restoredSpaceId
+          restoredClosedWindowId:(int64_t)restoredClosedWindowId
+             presentationContext:(NSDictionary<NSString *, id> * _Nullable)presentationContext;
 // Relationship snapshot version increases monotonically per window.
 - (void)tabRelationshipSnapshotChanged:(NSDictionary *)snapshot
                              windowId:(int64_t)windowId

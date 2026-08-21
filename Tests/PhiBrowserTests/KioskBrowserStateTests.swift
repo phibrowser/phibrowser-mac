@@ -202,6 +202,12 @@ final class KioskBrowserStateTests: XCTestCase {
         XCTAssertTrue(wrapper.navigatedURLs.isEmpty)
     }
 
+    func testCopyURLButtonUsesThemeAwareHosting() throws {
+        let toolbar = KioskBrowserToolbar(state: try makeState())
+
+        XCTAssertTrue(containsThemedHostingView(in: toolbar))
+    }
+
     func testKioskWindowRestoresAndAutosavesSharedFrame() throws {
         let autosaveName = KioskWindowFramePersistence.autosaveName
         NSWindow.removeFrame(usingName: autosaveName)
@@ -232,6 +238,62 @@ final class KioskBrowserStateTests: XCTestCase {
         XCTAssertEqual(restoredWindow.frame.width, persistedFrame.width)
         XCTAssertEqual(restoredWindow.frame.height, persistedFrame.height)
         XCTAssertEqual(restoredWindow.frameAutosaveName, autosaveName)
+    }
+
+    func testKioskCursorPresentationParsesBridgeContext() throws {
+        let request = try XCTUnwrap(
+            KioskWindowPresentationRequest(
+                bridgeContext: [
+                    "kind": "cursorZoom",
+                    "anchorX": NSNumber(value: -240.5),
+                    "anchorY": NSNumber(value: 720.25),
+                ]
+            )
+        )
+
+        XCTAssertEqual(request.anchorInScreen.x, -240.5)
+        XCTAssertEqual(request.anchorInScreen.y, 720.25)
+        XCTAssertNil(
+            KioskWindowPresentationRequest(
+                bridgeContext: [
+                    "kind": "unsupported",
+                    "anchorX": 100,
+                    "anchorY": 200,
+                ]
+            )
+        )
+    }
+
+    func testKioskCursorPresentationCentersAndConstrainsFinalFrame() {
+        let visibleFrame = NSRect(x: 0, y: 0, width: 1_600, height: 1_000)
+        let size = NSSize(width: 800, height: 600)
+
+        let centeredFrame = KioskWindowPresentationGeometry.finalFrame(
+            size: size,
+            centeredAt: NSPoint(x: 800, y: 500),
+            constrainedTo: visibleFrame
+        )
+        XCTAssertEqual(centeredFrame, NSRect(x: 400, y: 200, width: 800, height: 600))
+
+        let edgeFrame = KioskWindowPresentationGeometry.finalFrame(
+            size: size,
+            centeredAt: NSPoint(x: 50, y: 950),
+            constrainedTo: visibleFrame
+        )
+        XCTAssertEqual(edgeFrame, NSRect(x: 0, y: 400, width: 800, height: 600))
+    }
+
+    func testKioskCursorPresentationStartsAtCursor() {
+        let anchor = NSPoint(x: -300, y: 740)
+        let initialFrame = KioskWindowPresentationGeometry.initialFrame(
+            growingTo: NSRect(x: -700, y: 440, width: 800, height: 600),
+            from: anchor
+        )
+
+        XCTAssertEqual(initialFrame.midX, anchor.x)
+        XCTAssertEqual(initialFrame.midY, anchor.y)
+        XCTAssertEqual(initialFrame.width, 144)
+        XCTAssertEqual(initialFrame.height, 108)
     }
 
     func testToolbarAndNativeTrafficLightsMoveDownTogether() throws {
@@ -464,6 +526,13 @@ final class KioskBrowserStateTests: XCTestCase {
         }
         return nil
     }
+
+    private func containsThemedHostingView(in view: NSView) -> Bool {
+        if view is ThemedHostingView {
+            return true
+        }
+        return view.subviews.contains(where: containsThemedHostingView)
+    }
 }
 
 private final class KioskTestWebContentWrapper: NSObject, WebContentWrapper {
@@ -535,6 +604,7 @@ private final class KioskTestWebContentWrapper: NSObject, WebContentWrapper {
     func moveSplit(toNewWindow activateNewWindow: Bool) {}
     func moveSplit(toWindow targetWindowId: Int64, at insertIndex: Int) {}
     func updateTabCustomValue(_ customValue: String) {}
+    func updateIsPeekSurface(_ isPeekSurface: Bool) {}
     func focus() {}
     func restoreFocus() {}
     func updateSecurityState(_ securityState: [AnyHashable: Any]) {}

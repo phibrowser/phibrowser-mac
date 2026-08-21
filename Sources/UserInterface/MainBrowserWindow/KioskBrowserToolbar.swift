@@ -85,10 +85,11 @@ final class KioskBrowserToolbar: NSVisualEffectView {
         )
     )
 
-    private lazy var toolbarActionsHostingView = NSHostingView(
+    private lazy var toolbarActionsHostingView = ThemedHostingView(
         rootView: KioskToolbarActions(
             state: browserState
-        )
+        ),
+        themeSource: browserState.themeContext
     )
 
     private lazy var spaceHostingView = NSHostingView(
@@ -447,7 +448,6 @@ private struct KioskSpaceMenu: View {
     @ObservedObject private var spaceManager: SpaceManager
     @State private var isPrimaryActionHovered = false
     @State private var isSpaceListHovered = false
-    @State private var isSpaceListPresented = false
     let state: KioskBrowserState
     let onSelect: (String) -> Void
 
@@ -532,7 +532,29 @@ private struct KioskSpaceMenu: View {
             Divider()
                 .frame(height: 18)
 
-            Button(action: toggleSpaceList) {
+            Menu {
+                ForEach(availableSpaces, id: \.spaceId) { space in
+                    Button {
+                        select(space)
+                    } label: {
+                        HStack {
+                            Label {
+                                Text(verbatim: space.name)
+                            } icon: {
+                                SpaceIconView(
+                                    storedValue: space.iconName,
+                                    size: Layout.iconSize,
+                                    symbolWeight: .semibold,
+                                    tint: .primary
+                                )
+                            }
+                            if space.spaceId == primarySpace?.spaceId {
+                                Image(systemName: "checkmark")
+                            }
+                        }
+                    }
+                }
+            } label: {
                 Image(systemName: "chevron.down")
                     .font(.system(size: 10, weight: .semibold))
                     .foregroundStyle(.secondary)
@@ -542,22 +564,17 @@ private struct KioskSpaceMenu: View {
                     )
                     .contentShape(Rectangle())
             }
+            .menuStyle(.borderlessButton)
+            .menuIndicator(.hidden)
             .buttonStyle(
                 KioskSpaceMenuSegmentButtonStyle(
-                    isHovered: isSpaceListHovered || isSpaceListPresented
+                    isHovered: isSpaceListHovered
                 )
             )
             .disabled(availableSpaces.isEmpty)
             .accessibilityLabel(spaceListTitle)
             .help(spaceListTitle)
             .onHover { isSpaceListHovered = $0 }
-            .popover(isPresented: $isSpaceListPresented, arrowEdge: .top) {
-                KioskSpaceListPopover(
-                    spaces: availableSpaces,
-                    selectedSpaceId: primarySpace?.spaceId,
-                    onSelect: select
-                )
-            }
         }
         .frame(height: Layout.height)
         .background {
@@ -579,107 +596,8 @@ private struct KioskSpaceMenu: View {
         select(primarySpace)
     }
 
-    private func toggleSpaceList() {
-        isSpaceListPresented.toggle()
-    }
-
     private func select(_ space: SpaceModel) {
         onSelect(space.spaceId)
-    }
-}
-
-private struct KioskSpaceListPopover: View {
-    private enum Layout {
-        static let width: CGFloat = 208
-        static let rowHeight: CGFloat = 32
-        static let rowSpacing: CGFloat = 2
-        static let contentPadding: CGFloat = 6
-        static let maximumHeight: CGFloat = 284
-    }
-
-    @Environment(\.dismiss) private var dismiss
-    let spaces: [SpaceModel]
-    let selectedSpaceId: String?
-    let onSelect: (SpaceModel) -> Void
-
-    private var contentHeight: CGFloat {
-        let rowsHeight = CGFloat(spaces.count) * Layout.rowHeight
-        let spacingCount = max(spaces.count - 1, 0)
-        let spacingHeight = CGFloat(spacingCount) * Layout.rowSpacing
-        return min(
-            rowsHeight + spacingHeight + Layout.contentPadding * 2,
-            Layout.maximumHeight
-        )
-    }
-
-    var body: some View {
-        ScrollView {
-            LazyVStack(spacing: Layout.rowSpacing) {
-                ForEach(spaces, id: \.spaceId) { space in
-                    KioskSpaceListRow(
-                        space: space,
-                        isSelected: space.spaceId == selectedSpaceId,
-                        action: { select(space) }
-                    )
-                }
-            }
-            .padding(Layout.contentPadding)
-        }
-        .scrollIndicators(.hidden)
-        .frame(width: Layout.width, height: contentHeight)
-    }
-
-    private func select(_ space: SpaceModel) {
-        dismiss()
-        onSelect(space)
-    }
-}
-
-private struct KioskSpaceListRow: View {
-    private enum Layout {
-        static let iconSize: CGFloat = 13
-        static let cornerRadius: CGFloat = 6
-    }
-
-    @State private var isHovered = false
-    let space: SpaceModel
-    let isSelected: Bool
-    let action: () -> Void
-
-    var body: some View {
-        Button(action: action) {
-            HStack(spacing: 8) {
-                SpaceIconView(
-                    storedValue: space.iconName,
-                    size: Layout.iconSize,
-                    symbolWeight: .semibold,
-                    tint: .primary
-                )
-                .accessibilityHidden(true)
-
-                Text(verbatim: space.name)
-                    .font(.system(size: 13, weight: .medium))
-                    .lineLimit(1)
-                    .truncationMode(.tail)
-
-                Spacer(minLength: 8)
-
-                Image(systemName: "checkmark")
-                    .font(.system(size: 11, weight: .semibold))
-                    .opacity(isSelected ? 1 : 0)
-                    .accessibilityHidden(true)
-            }
-            .padding(.horizontal, 10)
-            .frame(maxWidth: .infinity, minHeight: 32)
-            .background(
-                Color.primary.opacity(isHovered ? 0.07 : 0)
-            )
-            .clipShape(.rect(cornerRadius: Layout.cornerRadius))
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .onHover { isHovered = $0 }
-        .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 }
 

@@ -12,10 +12,107 @@ enum KioskWindowFramePersistence {
 
     @MainActor
     @discardableResult
-    static func restoreFrameAndEnableAutosave(for window: NSWindow) -> Bool {
-        let restoredFrame = window.setFrameUsingName(autosaveName)
+    static func restoreFrame(for window: NSWindow) -> Bool {
+        window.setFrameUsingName(autosaveName)
+    }
+
+    @MainActor
+    static func enableAutosave(for window: NSWindow) {
         window.setFrameAutosaveName(autosaveName)
+    }
+
+    @MainActor
+    @discardableResult
+    static func restoreFrameAndEnableAutosave(for window: NSWindow) -> Bool {
+        let restoredFrame = restoreFrame(for: window)
+        enableAutosave(for: window)
         return restoredFrame
+    }
+
+    @MainActor
+    static func saveFrameAndEnableAutosave(for window: NSWindow) {
+        window.saveFrame(usingName: autosaveName)
+        enableAutosave(for: window)
+    }
+}
+
+struct KioskWindowPresentationRequest: Equatable {
+    private static let cursorZoomKind = "cursorZoom"
+
+    let anchorInScreen: NSPoint
+
+    init?(bridgeContext: [String: Any]?) {
+        guard let bridgeContext,
+              bridgeContext["kind"] as? String == Self.cursorZoomKind,
+              let anchorX = bridgeContext["anchorX"] as? NSNumber,
+              let anchorY = bridgeContext["anchorY"] as? NSNumber,
+              anchorX.doubleValue.isFinite,
+              anchorY.doubleValue.isFinite else {
+            return nil
+        }
+        anchorInScreen = NSPoint(
+            x: anchorX.doubleValue,
+            y: anchorY.doubleValue
+        )
+    }
+}
+
+enum KioskWindowPresentationGeometry {
+    static let initialScale: CGFloat = 0.18
+    static let minimumInitialSize = NSSize(width: 120, height: 84)
+
+    static func finalFrame(
+        size: NSSize,
+        centeredAt anchor: NSPoint,
+        constrainedTo visibleFrame: NSRect
+    ) -> NSRect {
+        let size = NSSize(
+            width: max(1, size.width),
+            height: max(1, size.height)
+        )
+        var origin = NSPoint(
+            x: anchor.x - size.width / 2,
+            y: anchor.y - size.height / 2
+        )
+        if size.width <= visibleFrame.width {
+            origin.x = min(
+                max(origin.x, visibleFrame.minX),
+                visibleFrame.maxX - size.width
+            )
+        } else {
+            origin.x = visibleFrame.minX
+        }
+        if size.height <= visibleFrame.height {
+            origin.y = min(
+                max(origin.y, visibleFrame.minY),
+                visibleFrame.maxY - size.height
+            )
+        } else {
+            origin.y = visibleFrame.minY
+        }
+        return NSRect(origin: origin, size: size)
+    }
+
+    static func initialFrame(
+        growingTo finalFrame: NSRect,
+        from anchor: NSPoint
+    ) -> NSRect {
+        let size = NSSize(
+            width: min(
+                finalFrame.width,
+                max(minimumInitialSize.width, finalFrame.width * initialScale)
+            ),
+            height: min(
+                finalFrame.height,
+                max(minimumInitialSize.height, finalFrame.height * initialScale)
+            )
+        )
+        return NSRect(
+            x: anchor.x - size.width / 2,
+            y: anchor.y - size.height / 2,
+            width: size.width,
+            height: size.height
+        )
     }
 }
 
@@ -210,6 +307,9 @@ final class KioskBrowserWindowController: MainBrowserWindowController {
     private var profileReplacementSourceFullscreenObserver: NSObjectProtocol?
     private var profileReplacementTargetCloseObserver: NSObjectProtocol?
     private var trafficLightPositioner: KioskTrafficLightPositioner?
+    private var presentationTargetFrame: NSRect?
+    private var presentationOriginalMinSize: NSSize?
+    private var presentationOriginalIgnoresMouseEvents: Bool?
 
     required init?(coder: NSCoder) {
         fatalError("init(coder:) has not been implemented")
@@ -220,6 +320,7 @@ final class KioskBrowserWindowController: MainBrowserWindowController {
          windowId: Int,
          browserType: ChromiumBrowserType,
          profileId: String,
+         presentationRequest: KioskWindowPresentationRequest? = nil,
          account: Account = AccountController.shared.account
             ?? AccountController.defaultAccount) {
         let state = KioskBrowserState(
@@ -238,7 +339,10 @@ final class KioskBrowserWindowController: MainBrowserWindowController {
             slot: nil,
             browserState: state
         )
-        configureKioskWindow(window)
+        configureKioskWindow(
+            window,
+            presentationRequest: presentationRequest
+        )
         configureKioskActions()
     }
 
@@ -713,7 +817,10 @@ final class KioskBrowserWindowController: MainBrowserWindowController {
         )
     }
 
-    private func configureKioskWindow(_ window: NSWindow) {
+    private func configureKioskWindow(
+        _ window: NSWindow,
+        presentationRequest: KioskWindowPresentationRequest?
+    ) {
         window.styleMask.insert(.fullSizeContentView)
         let toolbar = NSToolbar(identifier: Self.toolbarIdentifier)
         toolbar.allowsUserCustomization = false
@@ -723,7 +830,7 @@ final class KioskBrowserWindowController: MainBrowserWindowController {
         window.toolbarStyle = .unifiedCompact
         window.minSize = NSSize(width: 640, height: 420)
         let restoredFrame = KioskWindowFramePersistence
-            .restoreFrameAndEnableAutosave(for: window)
+            .restoreFrame(for: window)
         if !restoredFrame
             && (window.frame.width < 640 || window.frame.height < 480) {
             window.setContentSize(NSSize(width: 900, height: 640))
@@ -740,6 +847,99 @@ final class KioskBrowserWindowController: MainBrowserWindowController {
         )
         trafficLightPositioner = positioner
         positioner.start()
+
+        if let presentationRequest {
+            prepareCursorPresentation(
+                of: window,
+                request: presentationRequest
+            )
+        } else {
+            KioskWindowFramePersistence.enableAutosave(for: window)
+        }
+    }
+
+    private func prepareCursorPresentation(
+        of window: NSWindow,
+        request: KioskWindowPresentationRequest
+    ) {
+        let screen = NSScreen.screens.first {
+            $0.frame.contains(request.anchorInScreen)
+        } ?? window.screen ?? NSScreen.main
+        let visibleFrame = screen?.visibleFrame ?? window.frame
+        let targetFrame = KioskWindowPresentationGeometry.finalFrame(
+            size: window.frame.size,
+            centeredAt: request.anchorInScreen,
+            constrainedTo: visibleFrame
+        )
+
+        if NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
+            window.setFrame(targetFrame, display: false)
+            KioskWindowFramePersistence.saveFrameAndEnableAutosave(for: window)
+            return
+        }
+
+        presentationTargetFrame = targetFrame
+        presentationOriginalMinSize = window.minSize
+        presentationOriginalIgnoresMouseEvents = window.ignoresMouseEvents
+        window.minSize = .zero
+        window.ignoresMouseEvents = true
+        window.alphaValue = 0
+        window.setFrame(
+            KioskWindowPresentationGeometry.initialFrame(
+                growingTo: targetFrame,
+                from: request.anchorInScreen
+            ),
+            display: false
+        )
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(kioskWindowDidBecomeKey),
+            name: NSWindow.didBecomeKeyNotification,
+            object: window
+        )
+    }
+
+    @objc private func kioskWindowDidBecomeKey(_ notification: Notification) {
+        guard let window = notification.object as? NSWindow,
+              window === self.window,
+              let targetFrame = presentationTargetFrame else { return }
+        NotificationCenter.default.removeObserver(
+            self,
+            name: NSWindow.didBecomeKeyNotification,
+            object: window
+        )
+
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = 0.16
+            context.timingFunction = CAMediaTimingFunction(
+                controlPoints: 0.2,
+                0,
+                0,
+                1
+            )
+            window.animator().setFrame(targetFrame, display: true)
+            window.animator().alphaValue = 1
+        } completionHandler: { [weak self, weak window] in
+            guard let self, let window else { return }
+            self.finishCursorPresentation(of: window)
+        }
+    }
+
+    private func finishCursorPresentation(of window: NSWindow) {
+        if let presentationOriginalMinSize {
+            window.minSize = presentationOriginalMinSize
+        }
+        if let presentationOriginalIgnoresMouseEvents {
+            window.ignoresMouseEvents = presentationOriginalIgnoresMouseEvents
+        }
+        if let presentationTargetFrame {
+            window.setFrame(presentationTargetFrame, display: true)
+        }
+        window.alphaValue = 1
+        KioskWindowFramePersistence.saveFrameAndEnableAutosave(for: window)
+        presentationTargetFrame = nil
+        presentationOriginalMinSize = nil
+        presentationOriginalIgnoresMouseEvents = nil
     }
 
     @MainActor

@@ -549,6 +549,19 @@ extension PhiChromiumCoordinator: PhiChromiumBridgeDelegate {
     }
 
     func mainBrowserWindowCreated(_ window: NSWindow, type browserType: ChromiumBrowserType, profileId: String, windowId: Int64, restoredFromWindowId: Int64, restoredSpaceId: String?, restoredClosedWindowId: Int64) {
+        mainBrowserWindowCreated(
+            window,
+            type: browserType,
+            profileId: profileId,
+            windowId: windowId,
+            restoredFromWindowId: restoredFromWindowId,
+            restoredSpaceId: restoredSpaceId,
+            restoredClosedWindowId: restoredClosedWindowId,
+            presentationContext: nil
+        )
+    }
+
+    func mainBrowserWindowCreated(_ window: NSWindow, type browserType: ChromiumBrowserType, profileId: String, windowId: Int64, restoredFromWindowId: Int64, restoredSpaceId: String?, restoredClosedWindowId: Int64, presentationContext: [String: Any]?) {
         // The undo stack rebuilt the whole window saved as
         // `restoredClosedWindowId`, and Chromium dropped its parked record for
         // that id before making this call. Retire this side's half first, so
@@ -565,15 +578,30 @@ extension PhiChromiumCoordinator: PhiChromiumBridgeDelegate {
             SpaceManager.shared.retireParkedGhostReopenedFromUndoStack(
                 windowId: Int(restoredClosedWindowId))
         }
-        mainBrowserWindowCreated(window,
-                                 type: browserType,
-                                 profileId: profileId,
-                                 windowId: windowId,
-                                 restoredFromWindowId: restoredFromWindowId,
-                                 restoredSpaceId: restoredSpaceId)
+        handleMainBrowserWindowCreated(
+            window,
+            type: browserType,
+            profileId: profileId,
+            windowId: windowId,
+            restoredFromWindowId: restoredFromWindowId,
+            restoredSpaceId: restoredSpaceId,
+            presentationContext: presentationContext
+        )
     }
 
     func mainBrowserWindowCreated(_ window: NSWindow, type browserType: ChromiumBrowserType, profileId: String, windowId: Int64, restoredFromWindowId: Int64, restoredSpaceId: String?) {
+        handleMainBrowserWindowCreated(
+            window,
+            type: browserType,
+            profileId: profileId,
+            windowId: windowId,
+            restoredFromWindowId: restoredFromWindowId,
+            restoredSpaceId: restoredSpaceId,
+            presentationContext: nil
+        )
+    }
+
+    private func handleMainBrowserWindowCreated(_ window: NSWindow, type browserType: ChromiumBrowserType, profileId: String, windowId: Int64, restoredFromWindowId: Int64, restoredSpaceId: String?, presentationContext: [String: Any]?) {
         AppLogInfo("🌐 [Chromium] mainBrowserWindowCreated called - windowId: \(windowId), restoredFrom: \(restoredFromWindowId), restoredSpace: \(restoredSpaceId ?? "nil"), type: \(browserType.rawValue)")
 
         guard browserType == .normal || browserType == .incognito
@@ -739,7 +767,10 @@ extension PhiChromiumCoordinator: PhiChromiumBridgeDelegate {
                     browserType: browserType,
                     profileId: profileId,
                     spaceId: spaceId,
-                    slot: resolvedSlot
+                    slot: resolvedSlot,
+                    presentationRequest: KioskWindowPresentationRequest(
+                        bridgeContext: presentationContext
+                    )
                 )
             }
             MainActor.assumeIsolated {

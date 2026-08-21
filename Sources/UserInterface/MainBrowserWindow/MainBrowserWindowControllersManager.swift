@@ -399,7 +399,8 @@ class MainBrowserWindowControllersManager: MainBrowserWindowLookup {
         spaceId: String = LocalStore.defaultSpaceId,
         account: Account = AccountController.shared.account
             ?? AccountController.defaultAccount,
-        slot: SpaceWindowSlot? = nil
+        slot: SpaceWindowSlot? = nil,
+        presentationRequest: KioskWindowPresentationRequest? = nil
     ) -> MainBrowserWindowController {
         if browserType == .kiosk || browserType == .kioskIncognito {
             return KioskBrowserWindowController(
@@ -407,6 +408,7 @@ class MainBrowserWindowControllersManager: MainBrowserWindowLookup {
                 windowId: windowId,
                 browserType: browserType,
                 profileId: profileId,
+                presentationRequest: presentationRequest,
                 account: account
             )
         }

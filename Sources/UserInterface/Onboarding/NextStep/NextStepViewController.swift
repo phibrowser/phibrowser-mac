@@ -297,7 +297,8 @@ final class NextStepViewController: OnboardingBaseViewController {
             value: "Next steps",
             comment: "Onboarding next steps - Page title"
         )
-        titleLabel.cell?.usesSingleLineMode = true
+        // AppKit's fixed-baseline single-line mode clips the tall IvyPresto display font.
+        titleLabel.cell?.usesSingleLineMode = false
         titleLabel.cell?.wraps = false
         titleLabel.maximumNumberOfLines = 1
         titleLabel.lineBreakMode = .byClipping

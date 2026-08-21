@@ -2051,7 +2051,7 @@ final class PhiBrowserTests: XCTestCase {
     }
 
     @MainActor
-    func testNextStepTitleProvidesEnoughHeightForDisplayFont() {
+    func testNextStepTitleAvoidsFixedBaselineClipping() {
         let controller = NextStepViewController()
 
         controller.loadView()
@@ -2059,7 +2059,7 @@ final class PhiBrowserTests: XCTestCase {
 
         XCTAssertEqual(controller.titleLabel.bounds.height, 64, accuracy: 0.001)
         XCTAssertEqual(controller.titleLabel.maximumNumberOfLines, 1)
-        XCTAssertTrue(controller.titleLabel.cell?.usesSingleLineMode == true)
+        XCTAssertEqual(controller.titleLabel.cell?.usesSingleLineMode, false)
     }
 
     @MainActor

@@ -3432,6 +3432,17 @@ class BrowserState {
     /// Always entered on a clean main turn.
     private func resolvePeekCandidate(targetURLString: String) {
         guard let candidate = peekCandidate else { return }
+        // Candidate settlement falsifies the tab-driven-close prediction the
+        // ✕ on a sole opener may have armed: whatever the outcome below
+        // (present or adopt), the window provably survives that close. Must
+        // run before `peekCandidate` is cleared and independent of event
+        // order — the queued close event can apply after this resolve, where
+        // the presented-peek cleanup branch in `closeTab` returns without
+        // any other cancellation signal firing. Idempotent when nothing is
+        // armed.
+        if let controller = windowController {
+            controller.slot?.cancelTabDrivenClose(for: controller.spaceId)
+        }
         candidate.urlCancellable?.cancel()
         candidate.timeoutWorkItem?.cancel()
         peekCandidate = nil
@@ -3468,6 +3479,11 @@ class BrowserState {
     /// tab into the strip UI or drops all bookkeeping (tab already closing).
     private func finishPeekCandidate(adopt: Bool) {
         guard let candidate = peekCandidate else { return }
+        // Settlement cancels the tab-driven-close prediction regardless of
+        // outcome — same reasoning as `resolvePeekCandidate`.
+        if let controller = windowController {
+            controller.slot?.cancelTabDrivenClose(for: controller.spaceId)
+        }
         candidate.urlCancellable?.cancel()
         candidate.timeoutWorkItem?.cancel()
         peekCandidate = nil
@@ -3630,13 +3646,16 @@ class BrowserState {
         preseedHiddenOpenerInsertionIfNeeded(tab: tab,
                                              context: context,
                                              hiddenOpenerTabIds: hiddenOpenerTabIds)
-        // Same empty → non-empty cancellation as `handleNewTabFromChromium`
-        // (this adoption mirrors its arrival sequence): a peek adopted into
-        // an emptied strip equally falsifies the tab-driven-close
-        // prediction — reachable when the sole opener was X-closed while
-        // the peek sat off-strip, which arms the marker with no placeholder
-        // entry to cancel it.
-        if tabs.isEmpty, let controller = windowController {
+        // Any adoption falsifies the tab-driven-close prediction: a tab is
+        // joining the strip, so the window provably survives the close that
+        // armed it. Deliberately unconditional, unlike the emptied-strip
+        // check in `handleNewTabFromChromium`: the closing opener may still
+        // sit in `tabs` here — synchronous adoption inside `closeTab`, or an
+        // async candidate resolve (URL arrival, decision timeout) landing
+        // between the ✕ arming the marker and the close event applying — so
+        // an empty-list check would miss exactly the orderings that need
+        // cancelling. Idempotent when nothing is armed.
+        if let controller = windowController {
             controller.slot?.cancelTabDrivenClose(for: controller.spaceId)
         }
         tabs.append(tab)
@@ -4640,6 +4659,8 @@ class BrowserState {
             return
         }
         if peekCandidate?.tab.guid == tabId {
+            // Settlement inside cancels the tab-driven-close prediction
+            // (see finishPeekCandidate).
             finishPeekCandidate(adopt: false)
             return
         }
@@ -4669,6 +4690,8 @@ class BrowserState {
             closePeek(forOpener: tabId, reason: .openerClosed)
         }
         if peekCandidate?.openerTabId == tabId {
+            // Settlement inside cancels the tab-driven-close prediction
+            // (see finishPeekCandidate).
             finishPeekCandidate(adopt: true)
         }
 

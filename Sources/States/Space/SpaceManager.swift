@@ -7628,11 +7628,15 @@ final class SpaceWindowSlot: ObservableObject {
     /// (`SpaceManager.requestCloseIncognitoSpace`) instead of dispatching
     /// the close.
     ///
-    /// Cancelled by `cancelTabDrivenClose` on either signal that the
+    /// Cancelled by `cancelTabDrivenClose` on any signal that the
     /// window survived the last-tab close: entering placeholder mode,
-    /// or the Space's tab list going from empty back to non-empty (any
-    /// tab newly inserted into the emptied strip). A last-tab close in
-    /// a normal non-Incognito window always lands in one of the two, so
+    /// the Space's tab list going from empty back to non-empty (any
+    /// tab newly inserted into the emptied strip), or a pending peek
+    /// candidate settling (any outcome — presented, adopted, or
+    /// discarded: the settlement prologs of `resolvePeekCandidate` /
+    /// `finishPeekCandidate` cancel before the outcome branches, and any
+    /// strip adoption cancels again unconditionally). A last-tab close in
+    /// a normal non-Incognito window always lands in one of these, so
     /// the auto-close this marker predicts never happens and no user
     /// gesture carries a live marker into `unregisterWindow` — the
     /// tab-driven hand-off there is currently unreachable through this
@@ -11019,12 +11023,14 @@ final class SpaceWindowSlot: ObservableObject {
     /// The predicted auto-close does not actually happen any more: the
     /// window enters placeholder mode instead, and
     /// `cancelTabDrivenClose` drops the marker and the composite
-    /// captured below — on placeholder entry, or on the Space's tab
+    /// captured below — on placeholder entry, on the Space's tab
     /// list going from empty back to non-empty (a tab inserted into
     /// the emptied strip, which also covers a strip re-filled in place
-    /// of placeholder entry). Both are kept because the vetoed-close
-    /// residual documented on `pendingTabDrivenCloseDeadlines` still
-    /// consumes them.
+    /// of placeholder entry), or on a pending peek candidate settling
+    /// (the settlement prologs in `BrowserState` plus the unconditional
+    /// cancel in `adoptPeekTabIntoStrip`). Both fields are
+    /// kept because the vetoed-close residual documented on
+    /// `pendingTabDrivenCloseDeadlines` still consumes them.
     func markTabDrivenClose(for spaceId: String) {
         pendingTabDrivenCloseDeadlines[spaceId] = Date().addingTimeInterval(Self.tabDrivenCloseTTL)
         // Capture the closing window's pixels now, while the WebContents
@@ -11037,14 +11043,19 @@ final class SpaceWindowSlot: ObservableObject {
     }
 
     /// Cancels what `markTabDrivenClose` armed for `spaceId`, marker and
-    /// pre-captured composite together. Called on the two signals that
+    /// pre-captured composite together. Called on the three signals that
     /// falsify the marker's prediction: Chromium reporting the window
     /// entered placeholder mode
-    /// (`PhiChromiumCoordinator.windowDidEnterPlaceholderMode`), and the
+    /// (`PhiChromiumCoordinator.windowDidEnterPlaceholderMode`), the
     /// Space's tab list going from empty back to non-empty
     /// (`BrowserState.handleNewTabFromChromium` and its peek-adoption
     /// twin `adoptPeekTabIntoStrip` — any insertion that re-fills an
-    /// emptied strip). Either way the last-tab close left the window
+    /// emptied strip), and a pending peek candidate settling — cancelled
+    /// in the settlement prologs of `resolvePeekCandidate` and
+    /// `finishPeekCandidate` before any outcome branch (present / adopt /
+    /// discard), so the cancel is independent of whether the queued close
+    /// event or the async resolve applies first; strip adoption cancels
+    /// again unconditionally. Each way the last-tab close left the window
     /// standing, so the auto-close the marker predicts never happens. Left
     /// armed it would live out its TTL and misclassify the user's next
     /// genuine close of this window as a tab-driven hand-off, switching the

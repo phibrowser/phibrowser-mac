@@ -3,6 +3,7 @@
 // Use of this source code is governed by an Apache license that can be
 // found in the LICENSE file.
 
+import CryptoKit
 import Foundation
 import Security
 
@@ -22,6 +23,23 @@ struct SharedAuthToken: Codable {
     let expiresAt: Date?
     let updatedAt: Date
     let renewedBy: String?
+    let revisionID: UUID?
+}
+
+/// Non-secret identity for one authenticated Keychain payload.
+///
+/// The revision changes on every browser write, including same-account token
+/// rotation. It can therefore scope caches and optimistic transactions without
+/// exposing bearer credentials.
+struct SharedAuthScope: Equatable, Hashable, Sendable {
+    let accountID: String
+    let revisionID: UUID
+}
+
+/// Immutable credentials and scope decoded from one Keychain read.
+struct SharedAuthTokenSnapshot: Equatable, Sendable {
+    let scope: SharedAuthScope
+    let accessToken: String
 }
 
 /// Severity level for diagnostics emitted by `SharedAuthTokenStore`.
@@ -60,6 +78,9 @@ final class SharedAuthTokenStore {
     private let account = "auth0-access-token-v1"
     #endif
     private let accessibility = kSecAttrAccessibleAfterFirstUnlock
+    private let legacyRevisionLock = NSLock()
+    private var lastLegacyPayloadDigest: Data?
+    private var lastLegacyRevisionID: UUID?
 
     private init() {}
 
@@ -91,7 +112,8 @@ final class SharedAuthTokenStore {
             auth0Sub: auth0Sub,
             expiresAt: expiresAt,
             updatedAt: Date(),
-            renewedBy: renewedBy
+            renewedBy: renewedBy,
+            revisionID: UUID()
         )
         guard let data = try? JSONEncoder().encode(payload) else {
             log(.error, "[SharedAuthTokenStore] upsert refused: failed to JSON-encode SharedAuthToken payload")
@@ -140,6 +162,28 @@ final class SharedAuthTokenStore {
     }
 
     func read() -> SharedAuthToken? {
+        readPayload()?.token
+    }
+
+    /// Returns account identity, bearer credential, and an opaque generation
+    /// from one Keychain value. Older Sentinel/browser payloads do not contain
+    /// `revisionID`; those receive a stable process-local UUID while their exact
+    /// raw payload remains unchanged. New writes always persist a fresh UUID.
+    func authenticatedSnapshot() -> SharedAuthTokenSnapshot? {
+        guard let payload = readPayload(),
+              !payload.token.accessToken.isEmpty,
+              let accountID = payload.token.auth0Sub,
+              !accountID.isEmpty else {
+            return nil
+        }
+        let revisionID = payload.token.revisionID ?? legacyRevisionID(for: payload.data)
+        return SharedAuthTokenSnapshot(
+            scope: SharedAuthScope(accountID: accountID, revisionID: revisionID),
+            accessToken: payload.token.accessToken
+        )
+    }
+
+    private func readPayload() -> (token: SharedAuthToken, data: Data)? {
         guard let accessGroup = resolvedAccessGroup() else {
             log(.error, "[SharedAuthTokenStore] read failed: no resolvable access group")
             return nil
@@ -165,7 +209,10 @@ final class SharedAuthTokenStore {
                 log(.error, "[SharedAuthTokenStore] SecItemCopyMatching returned success but item is not Data")
                 return nil
             }
-            return try? JSONDecoder().decode(SharedAuthToken.self, from: data)
+            guard let token = try? JSONDecoder().decode(SharedAuthToken.self, from: data) else {
+                return nil
+            }
+            return (token, data)
         }
         // `errSecItemNotFound` is the legitimate "no shared token yet" state
         // (e.g., before first login on this device), so don't log it.
@@ -173,6 +220,23 @@ final class SharedAuthTokenStore {
             log(.error, "[SharedAuthTokenStore] SecItemCopyMatching failed: \(Self.describe(status))")
         }
         return nil
+    }
+
+    private func legacyRevisionID(for payload: Data) -> UUID {
+        var hasher = SHA256()
+        hasher.update(data: Data("phibrowser.shared-auth.legacy-revision.v1".utf8))
+        hasher.update(data: payload)
+        let digest = Data(hasher.finalize())
+
+        legacyRevisionLock.lock()
+        defer { legacyRevisionLock.unlock() }
+        if lastLegacyPayloadDigest == digest, let lastLegacyRevisionID {
+            return lastLegacyRevisionID
+        }
+        let revisionID = UUID()
+        lastLegacyPayloadDigest = digest
+        lastLegacyRevisionID = revisionID
+        return revisionID
     }
 
     /// Removes the shared token. Account deletion suppresses the first change

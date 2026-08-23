@@ -111,6 +111,16 @@ final class ExtensionMessageRouter {
             return nil
         }
 
+        for type in ServiceBrokerExtensionProtocol.messageTypes {
+            register(type: type) { context in
+                Task {
+                    let reply = await ServiceBrokerExtensionProtocol.shared.handle(context)
+                    await ExtensionMessaging.shared.sendResponse(reply, requestId: context.requestId)
+                }
+                return nil
+            }
+        }
+
         register(type: "toggleAgentAnimation") { context in
             return AgentAnimationManager.shared.handleRequest(context: context)
         }

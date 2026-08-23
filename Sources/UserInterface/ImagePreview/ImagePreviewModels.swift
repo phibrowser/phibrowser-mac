@@ -10,12 +10,13 @@ enum ImagePreviewSource: Equatable {
     case localFile(URL)
     case remoteURL(URL)
     case rawData(Data, mimeType: String?)
+    case phiAgentFile(path: String, senderID: String)
 
     var url: URL? {
         switch self {
         case .localFile(let url), .remoteURL(let url):
             return url
-        case .rawData:
+        case .rawData, .phiAgentFile:
             return nil
         }
     }
@@ -29,31 +30,51 @@ enum ImagePreviewSource: Equatable {
         case .rawData(let data, let mimeType):
             let hash = data.hashValue
             return "rawdata:\(hash):\(mimeType ?? "unknown")"
+        case .phiAgentFile(let path, let senderID):
+            return "phi-agent:\(senderID):\(path)"
         }
     }
 
     /// Resolves a plugin-supplied address string to a local file, remote HTTP(S) URL, or inline base64 data.
-    static func resolved(from address: String) -> ImagePreviewSource {
+    static func resolved(
+        from address: String,
+        authorizedPhiAgentSenderID senderID: String? = nil
+    ) -> ImagePreviewSource {
         let trimmed = address.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        if let senderID,
+           ServiceBrokerExtensionProtocol.isAllowedSidecarSender(senderID),
+           isPhiAgentFilePath(trimmed) {
+            return .phiAgentFile(path: trimmed, senderID: senderID)
+        }
 
         if let parsed = parseDataURI(trimmed) {
             return .rawData(parsed.data, mimeType: parsed.mimeType)
         }
 
-        let expanded = (trimmed as NSString).expandingTildeInPath
-
-        if let url = URL(string: expanded), let scheme = url.scheme?.lowercased(), !scheme.isEmpty {
+        if let url = URL(string: trimmed), let scheme = url.scheme?.lowercased(), !scheme.isEmpty {
             if url.isFileURL || scheme == "file" {
                 return .localFile(url.standardizedFileURL)
             }
             return .remoteURL(url)
         }
 
+        let expanded = (trimmed as NSString).expandingTildeInPath
+
         if expanded.hasPrefix("/") {
             return .localFile(URL(fileURLWithPath: expanded).standardizedFileURL)
         }
 
         return .localFile(URL(fileURLWithPath: expanded).standardizedFileURL)
+    }
+
+    private static func isPhiAgentFilePath(_ path: String) -> Bool {
+        let pathname = String(path.split(
+            separator: "?",
+            maxSplits: 1,
+            omittingEmptySubsequences: false
+        ).first ?? "")
+        return pathname.hasPrefix("/api/v1/files/") || pathname.hasPrefix("/v1/files/")
     }
 
     /// Parses `data:[<mediatype>][;base64],<data>` URIs and returns decoded bytes + MIME type.
@@ -84,13 +105,16 @@ struct ImagePreviewItem: Equatable, Identifiable {
     let mimeType: String?
     let suggestedFilename: String?
 
-    static func items(fromAddressStrings addresses: [String]) -> [ImagePreviewItem] {
+    static func items(
+        fromAddressStrings addresses: [String],
+        authorizedPhiAgentSenderID senderID: String? = nil
+    ) -> [ImagePreviewItem] {
         addresses.enumerated().compactMap { index, raw in
             let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !trimmed.isEmpty else { return nil }
             return ImagePreviewItem(
                 id: "image-preview-\(index)",
-                source: .resolved(from: trimmed),
+                source: .resolved(from: trimmed, authorizedPhiAgentSenderID: senderID),
                 title: nil,
                 mimeType: nil,
                 suggestedFilename: nil
@@ -223,7 +247,10 @@ enum ImagePreviewMessageHandler {
     static func handle(_ context: ExtensionMessageContext) {
         do {
             let request = try JSONDecoder().decode(ImagePreviewBridgeRequest.self, from: Data(context.payload.utf8))
-            let items = ImagePreviewItem.items(fromAddressStrings: request.itemAddresses)
+            let items = ImagePreviewItem.items(
+                fromAddressStrings: request.itemAddresses,
+                authorizedPhiAgentSenderID: context.senderId
+            )
 
             guard let controller = MainBrowserWindowControllersManager.shared.controller(for: request.windowId) ?? MainBrowserWindowControllersManager.shared.activeWindowController
             else {

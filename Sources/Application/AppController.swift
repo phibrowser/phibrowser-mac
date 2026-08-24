@@ -183,6 +183,10 @@ import PostHog
                                                name: .activeBrowserWindowDidChange,
                                                object: nil)
         NotificationCenter.default.addObserver(self,
+                                               selector: #selector(spaceListDidChange),
+                                               name: .spaceListDidChange,
+                                               object: nil)
+        NotificationCenter.default.addObserver(self,
                                                selector: #selector(refreshBookmarksMenuVisibility),
                                                name: .activeBrowserWindowDidChange,
                                                object: nil)

@@ -1354,6 +1354,52 @@ extension AppController {
                 .activeWindowController?.browserState.participatesInSpaces != false
     }
 
+    /// True while the menu-bar Spaces menu is tracking. A Space-list change
+    /// arriving mid-track defers its rebuild to `menuDidClose` rather than
+    /// swapping the items out from under the pointer.
+    fileprivate static var isSpacesMenuTracking = false
+
+    /// A Space-list change that arrived while the menu was tracking and still
+    /// has to be applied.
+    fileprivate static var spacesMenuNeedsRebuild = false
+
+    /// The Space list changed order — a Space created, deleted or reordered,
+    /// or (far more often) an agent Space appearing or ending. Rebuilds the
+    /// installed Spaces menu immediately.
+    ///
+    /// Each Space item in that menu carries BOTH the spaceId that sat at its
+    /// position when the menu was last built and that position's ⌃-number key
+    /// equivalent — and AppKit fires key equivalents whether or not the menu
+    /// has ever been opened. Rebuilding only in `menuWillOpen` therefore froze
+    /// the position → Space mapping at the last time the user pulled the menu
+    /// down: after an agent Space came or went, ⌃N activated whatever Space
+    /// used to occupy that slot, while clicking the pip — which carries its
+    /// own Space's id — still landed correctly. Several agents running at once
+    /// churn the list continuously with no reason for the user to ever open
+    /// this menu, which is why the drift showed up there first.
+    ///
+    /// Only ever refreshes a menu that is already installed: this can fire
+    /// from `SpaceManager`'s first store read, which happens before the main
+    /// menu is hooked (and touching it that early is the documented startup
+    /// crash in `bind`).
+    @objc func spaceListDidChange() {
+        // The post rides `SpaceManager`'s own thread. Every writer of `spaces`
+        // is on main today, so this hop is a guard rail rather than a hot path
+        // — but it is AppKit on the other side of it.
+        guard Thread.isMainThread else {
+            DispatchQueue.main.async { [weak self] in self?.spaceListDidChange() }
+            return
+        }
+        guard let submenu = NSApp.mainMenu?.items
+            .first(where: { $0.tag == AppController.spacesMenuItemTag })?
+            .submenu else { return }
+        guard !AppController.isSpacesMenuTracking else {
+            AppController.spacesMenuNeedsRebuild = true
+            return
+        }
+        rebuildSpacesMenu(submenu)
+    }
+
     /// Re-evaluates the menu-bar "Spaces" top-level item's visibility against
     /// the focused window. Called when the active window changes (see
     /// `.activeBrowserWindowDidChange`) so the menu drops out for incognito
@@ -1392,6 +1438,12 @@ extension AppController {
         menuItem.submenu = submenu
         menuItem.isHidden = !shouldShowSpacesMenu
 
+        // Hooking the main menu ends any tracking session this delegate was
+        // waiting on — Chromium can swap the whole menu out from under an open
+        // one, and its `menuDidClose` would never arrive to clear the flag,
+        // parking every later rebuild behind a menu that is already gone.
+        AppController.isSpacesMenuTracking = false
+        AppController.spacesMenuNeedsRebuild = false
         rebuildSpacesMenu(submenu)
 
         if isNew {
@@ -2399,11 +2451,21 @@ extension AppController {
                 return SpaceManager.shared.spaces.count > 1 && currentSpacesSlot() != nil
             }
             if action == #selector(activateSpaceFromMenu(_:)) {
-                if let menuItem = item as? NSMenuItem,
-                   let spaceId = menuItem.representedObject as? String {
-                    let activeId = currentActiveSpace()?.spaceId
-                    menuItem.state = (spaceId == activeId) ? .on : .off
+                // Validated on the LIVE list, never on the id alone: AppKit
+                // validates before firing a key equivalent, so an item left
+                // over from a Space that has since gone away (an ended agent
+                // Space is the common one) reads as disabled and its ⌃-number
+                // falls through to `CommandDispatcher` instead of activating
+                // nothing. Rebuilds keep this rare — this is the backstop for
+                // the window between the change and the rebuild.
+                guard let menuItem = item as? NSMenuItem,
+                      let spaceId = menuItem.representedObject as? String,
+                      SpaceManager.shared.spaces
+                          .contains(where: { $0.spaceId == spaceId }) else {
+                    return false
                 }
+                let activeId = currentActiveSpace()?.spaceId
+                menuItem.state = (spaceId == activeId) ? .on : .off
                 return currentSpacesSlot() != nil
             }
             return true
@@ -2532,6 +2594,8 @@ extension AppController: NSMenuDelegate {
             return
         }
         if menu.identifier == AppController.spacesMenuIdentifier {
+            AppController.isSpacesMenuTracking = true
+            AppController.spacesMenuNeedsRebuild = false
             rebuildSpacesMenu(menu)
             return
         }
@@ -2547,6 +2611,16 @@ extension AppController: NSMenuDelegate {
         if let exportLogsItem = menu.item(withTag: AppController.exportLogsItemTag) {
             exportLogsItem.isHidden = !optionKeyPressed
         }
+    }
+
+    func menuDidClose(_ menu: NSMenu) {
+        guard menu.identifier == AppController.spacesMenuIdentifier else { return }
+        AppController.isSpacesMenuTracking = false
+        // Apply a list change that arrived while the menu was down, so the
+        // ⌃-number bindings are current again before the next keystroke.
+        guard AppController.spacesMenuNeedsRebuild else { return }
+        AppController.spacesMenuNeedsRebuild = false
+        rebuildSpacesMenu(menu)
     }
 }
 

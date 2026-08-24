@@ -344,7 +344,36 @@ final class SpaceManager: ObservableObject {
         )
     }
 
-    @Published private(set) var spaces: [SpaceModel] = []
+    /// Every Space in switcher order — user Spaces first, then the live
+    /// Incognito Spaces, then the agent group (see `handleSpacesUpdate`).
+    /// This order IS the ⌃-number binding: position N carries
+    /// `PHI_SELECT_SPACE_(N-1)` in the Spaces menu, the switcher menus, and
+    /// the strip's hover cards alike.
+    ///
+    /// `spaceListDidChange` is posted whenever that order changes so the
+    /// surfaces that cache a POSITION → Space mapping (the menu-bar Spaces
+    /// menu, whose key equivalents fire while the menu is closed) can rebuild
+    /// it. Agent Spaces come and go without the user touching any of those
+    /// surfaces, so nothing else would tell them to.
+    @Published private(set) var spaces: [SpaceModel] = [] {
+        didSet {
+            guard Self.spaceOrderDidChange(from: oldValue.map(\.spaceId),
+                                           to: spaces.map(\.spaceId)) else { return }
+            NotificationCenter.default.post(name: .spaceListDidChange, object: self)
+        }
+    }
+
+    /// Whether a `spaces` write invalidates every cached POSITION → Space
+    /// mapping. Deliberately order-sensitive rather than set-sensitive: the
+    /// agent group re-partitions (`handleSpacesUpdate`) and a reorder commit
+    /// both move Spaces between positions while the set of ids is unchanged,
+    /// and those are precisely the cases that used to leave the Spaces menu's
+    /// ⌃-number items pointing at the previous occupant of each slot.
+    ///
+    /// Pure and static so the rule is pinned by table.
+    static func spaceOrderDidChange(from oldIds: [String], to newIds: [String]) -> Bool {
+        oldIds != newIds
+    }
 
     /// Persisted user Spaces — the ones the Spaces settings pane manages.
     /// Excludes runtime-only Incognito Spaces and ephemeral agent Spaces;
@@ -12429,6 +12458,13 @@ extension Notification.Name {
     /// the app is inactive, where an ordered-front window cannot become key.
     static let spaceSlotVisibleWindowDidChange =
         Notification.Name("PhiSpaceSlotVisibleWindowDidChange")
+
+    /// Posted by `SpaceManager` (as the notification object) whenever the
+    /// ORDER of `spaces` changes — a Space created, deleted, reordered, or an
+    /// agent Space appearing or ending. Not posted for in-place edits (rename,
+    /// icon, theme): only the position → Space mapping is at stake here.
+    static let spaceListDidChange =
+        Notification.Name("PhiSpaceListDidChange")
 }
 
 /// The loading window a windowless reopen puts on screen immediately, on the

@@ -17,8 +17,15 @@ import QuartzCore
 /// pill draw above both.
 final class EdgeFogOverlayView: NSView {
     /// Wash strength, from the design. Applied in both appearances — the
-    /// design specifies a single value and does not distinguish dark mode.
+    /// design's dark variant restyles the edge lights only and leaves the
+    /// wash at this single value.
     private static let tintOpacity: CGFloat = 0.2
+
+    /// Alpha of the 1pt edge line, per appearance. The line reads against the
+    /// washed page behind it, so the design runs it hotter in dark mode
+    /// (`.edge-lights` border alpha .5 light, .72 dark).
+    private static let edgeLineAlphaLight: CGFloat = 0.5
+    private static let edgeLineAlphaDark: CGFloat = 0.72
 
     /// Used until `applyTheme` runs. Matches the tint the mask carried before
     /// it was themed, so a window without a theme context still reads as
@@ -47,6 +54,11 @@ final class EdgeFogOverlayView: NSView {
     private static let breatheDuration: CFTimeInterval = 3.4
 
     var hitTestPassthroughHandler: ((NSPoint) -> Bool)?
+
+    /// The appearance the mask was last themed for; picks the edge line
+    /// strength. Named apart from NSView's own `appearance`. Seeded from the
+    /// app so the pre-theme fallback already reads right in a dark window.
+    private var themeAppearance: Appearance = appAppearance
 
     /// True while the page panel renders as its own separated card (AI Chat
     /// sidebar expanded or an extension side panel docked). The card's own,
@@ -199,7 +211,8 @@ final class EdgeFogOverlayView: NSView {
         edgeConicLayer.locations = [0, 42, 88, 142, 190, 238, 286, 330, 360]
             .map { NSNumber(value: $0 / 360.0) }
 
-        edgeGlowLayer.borderColor = base.withAlphaComponent(0.5).cgColor
+        edgeGlowLayer.borderColor = base.withAlphaComponent(
+            themeAppearance.isDark ? Self.edgeLineAlphaDark : Self.edgeLineAlphaLight).cgColor
         edgeGlowLayer.shadowColor = base.cgColor
     }
 
@@ -317,6 +330,7 @@ final class EdgeFogOverlayView: NSView {
     func applyTheme(_ theme: Theme, appearance: Appearance) {
         guard let themeColor = theme.color(for: .themeColor, appearance: appearance)
             .usingColorSpace(.sRGB) else { return }
+        themeAppearance = appearance
         CATransaction.begin()
         CATransaction.setDisableActions(true)
         tintLayer.backgroundColor = themeColor

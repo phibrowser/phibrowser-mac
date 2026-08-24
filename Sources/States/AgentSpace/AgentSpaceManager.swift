@@ -344,7 +344,21 @@ final class AgentSpaceManager: ObservableObject {
     /// an auto-dismissed prompt (hand-back, completion) must not keep bouncing.
     private var handoffPromptAttentionRequest: Int?
 
-    private init() {}
+    private init() {
+        // The operating mask's in-page recolor differs between light and dark
+        // appearance, so any theme source flipping must restyle masked pages.
+        // All three notifications funnel into the same per-window re-resolve.
+        for name: Notification.Name in
+            [.themeDidChange, .appearanceDidChange, .spaceThemeDidChange] {
+            NotificationCenter.default.addObserver(
+                forName: name, object: nil, queue: .main
+            ) { [weak self] _ in
+                MainActor.assumeIsolated {
+                    self?.refreshMaskedPageThemes()
+                }
+            }
+        }
+    }
 
     /// Refreshes `taskId`'s expiry. A plain control message never SHORTENS a
     /// window an explicit ping bought (`max` with the current deadline); an
@@ -1408,9 +1422,21 @@ final class AgentSpaceManager: ObservableObject {
         }
         guard let themeContext = MainBrowserWindowControllersManager.shared
                 .getBrowserState(for: task.windowId)?.themeContext else { return }
+        let appearance = themeContext.currentAppearance
         let color = themeContext.currentTheme.color(
-            for: .themeColor, appearance: themeContext.currentAppearance)
-        AgentPageTheme.shared.apply(windowId: task.windowId, themeColor: color)
+            for: .themeColor, appearance: appearance)
+        AgentPageTheme.shared.apply(
+            windowId: task.windowId, themeColor: color, appearance: appearance)
+    }
+
+    /// Re-issues the in-page recolor for every task currently wearing the
+    /// mask. The injected sheet carries a different palette per appearance, so
+    /// a theme or appearance flip must restyle live targets; the native wash
+    /// (layer 1) refreshes through each window's own theme pipeline.
+    private func refreshMaskedPageThemes() {
+        for task in tasksBySpaceId.values where task.maskedTabId != nil {
+            refreshOperatingPageTheme(for: task)
+        }
     }
 
     /// The Phi tab id of the agent window's currently active (operating) tab.

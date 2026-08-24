@@ -49,7 +49,7 @@ class SidebarCellView: NSTableCellView {
     override var draggingImageComponents: [NSDraggingImageComponent] {
         let targetView = backgoundView.superview != nil ? backgoundView : self
         
-        guard let snapshot = targetView.createDraggingSnapshot() else {
+        guard let snapshot = createDraggingImage() else {
             return super.draggingImageComponents
         }
         

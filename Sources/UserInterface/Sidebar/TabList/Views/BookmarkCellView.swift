@@ -161,6 +161,12 @@ class BookmarkCellView: SidebarCellView, TabPreviewInteractionCancelling {
         return try body()
     }
 
+    override func createDraggingImage() -> NSImage? {
+        withStaticFolderSnapshotIcon {
+            super.createDraggingImage()
+        }
+    }
+
     private func setUsesStaticFolderSnapshotIcon(_ usesStaticIcon: Bool) {
         guard viewState.usesStaticFolderSnapshotIcon != usesStaticIcon else { return }
         viewState.usesStaticFolderSnapshotIcon = usesStaticIcon

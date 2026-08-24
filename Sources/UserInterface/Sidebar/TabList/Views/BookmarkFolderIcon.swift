@@ -84,14 +84,16 @@ enum BookmarkFolderIcon: String, CaseIterable, Identifiable, Sendable {
 struct BookmarkFolderIconView: View {
     let icon: BookmarkFolderIcon
     let isExpanded: Bool
+    let usesStaticSnapshotIcon: Bool
 
     @Environment(\.phiTheme) private var theme
     @Environment(\.phiAppearance) private var appearance
     @State private var playbackMode: LottiePlaybackMode
 
-    init(icon: BookmarkFolderIcon, isExpanded: Bool) {
+    init(icon: BookmarkFolderIcon, isExpanded: Bool, usesStaticSnapshotIcon: Bool = false) {
         self.icon = icon
         self.isExpanded = isExpanded
+        self.usesStaticSnapshotIcon = usesStaticSnapshotIcon
         _playbackMode = State(
             initialValue: .paused(
                 at: .progress(BookmarkFolderIcon.animationProgress(isExpanded: isExpanded))
@@ -106,30 +108,27 @@ struct BookmarkFolderIconView: View {
                 bundle: .main,
                 subdirectory: "LottieFiles/BookmarkFolderIcons"
             ) {
-                LottieView(animation: animation)
-                    .playbackMode(playbackMode)
-                    .animationDidFinish { completed in
-                        guard completed else { return }
-                        pauseAtCurrentState()
-                    }
-                    .configure { animationView in
-                        let palette = BookmarkFolderIconPalette(theme: theme, appearance: appearance)
-                        var colors: [(NSColor, String)] = [
-                            (palette.frontFill, "Folder1.Rectangle 4.Fill 1.Color"),
-                            (palette.stroke, "Folder1.Rectangle 4.Stroke 1.Color"),
-                            (palette.backFill, "Folder2.Rectangle 19.Fill 1.Color"),
-                            (palette.stroke, "Folder2.Rectangle 19.Stroke 1.Color"),
-                        ]
-                        if let symbolGroupName = icon.resources.symbolGroupName {
-                            colors.append((palette.stroke, "**.\(symbolGroupName).Fill 1.Color"))
+                if usesStaticSnapshotIcon {
+                    LottieView(animation: animation)
+                        .configuration(LottieConfiguration(renderingEngine: .mainThread))
+                        .playbackMode(.paused(at: .progress(
+                            BookmarkFolderIcon.animationProgress(isExpanded: isExpanded)
+                        )))
+                        .configure { animationView in
+                            applyPalette(to: animationView)
+                            animationView.forceDisplayUpdate()
                         }
-                        for (color, keypath) in colors {
-                            animationView.setValueProvider(
-                                ColorValueProvider(color.lottieColor),
-                                keypath: AnimationKeypath(keypath: keypath)
-                            )
+                } else {
+                    LottieView(animation: animation)
+                        .playbackMode(playbackMode)
+                        .animationDidFinish { completed in
+                            guard completed else { return }
+                            pauseAtCurrentState()
                         }
-                    }
+                        .configure { animationView in
+                            applyPalette(to: animationView)
+                        }
+                }
             } else {
                 Image(isExpanded ? .folderOpen : .folderClose)
                     .resizable()
@@ -157,6 +156,25 @@ struct BookmarkFolderIconView: View {
         playbackMode = .paused(
             at: .progress(BookmarkFolderIcon.animationProgress(isExpanded: isExpanded))
         )
+    }
+
+    private func applyPalette(to animationView: Lottie.LottieAnimationView) {
+        let palette = BookmarkFolderIconPalette(theme: theme, appearance: appearance)
+        var colors: [(NSColor, String)] = [
+            (palette.frontFill, "Folder1.Rectangle 4.Fill 1.Color"),
+            (palette.stroke, "Folder1.Rectangle 4.Stroke 1.Color"),
+            (palette.backFill, "Folder2.Rectangle 19.Fill 1.Color"),
+            (palette.stroke, "Folder2.Rectangle 19.Stroke 1.Color"),
+        ]
+        if let symbolGroupName = icon.resources.symbolGroupName {
+            colors.append((palette.stroke, "**.\(symbolGroupName).Fill 1.Color"))
+        }
+        for (color, keypath) in colors {
+            animationView.setValueProvider(
+                ColorValueProvider(color.lottieColor),
+                keypath: AnimationKeypath(keypath: keypath)
+            )
+        }
     }
 }
 

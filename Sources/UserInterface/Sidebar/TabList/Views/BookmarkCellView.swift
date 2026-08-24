@@ -38,6 +38,7 @@ private final class BookmarkCellViewState {
     var isFolder = false
     var isFolderExpanded = false
     var folderIcon = BookmarkFolderIcon.standard
+    var usesStaticFolderSnapshotIcon = false
     var folderIconPickerRequestGeneration = 0
     var isActive = false
     var isOpened = false
@@ -151,6 +152,24 @@ class BookmarkCellView: SidebarCellView, TabPreviewInteractionCancelling {
         splitTabPreviewRegistration.cancelForInteraction()
     }
 
+    /// Uses a paused, cache-display-safe Lottie renderer while an AppKit snapshot is rendered.
+    func withStaticFolderSnapshotIcon<T>(_ body: () throws -> T) rethrows -> T {
+        guard viewState.isFolder else { return try body() }
+        let wasUsingStaticIcon = viewState.usesStaticFolderSnapshotIcon
+        setUsesStaticFolderSnapshotIcon(true)
+        defer { setUsesStaticFolderSnapshotIcon(wasUsingStaticIcon) }
+        return try body()
+    }
+
+    private func setUsesStaticFolderSnapshotIcon(_ usesStaticIcon: Bool) {
+        guard viewState.usesStaticFolderSnapshotIcon != usesStaticIcon else { return }
+        viewState.usesStaticFolderSnapshotIcon = usesStaticIcon
+        hostingView.needsLayout = true
+        hostingView.needsDisplay = true
+        hostingView.layoutSubtreeIfNeeded()
+        hostingView.displayIfNeeded()
+    }
+
     private func setupViews() {
         hostingView = ThemedHostingView(rootView: SidebarBookmarkCellContentView(
             state: viewState,
@@ -246,6 +265,7 @@ class BookmarkCellView: SidebarCellView, TabPreviewInteractionCancelling {
         viewState.isFolder = false
         viewState.isFolderExpanded = false
         viewState.folderIcon = .standard
+        viewState.usesStaticFolderSnapshotIcon = false
         viewState.folderIconPickerRequestGeneration = 0
         viewState.isActive = false
         viewState.isOpened = false
@@ -885,6 +905,7 @@ private struct SidebarBookmarkCellContentView: View {
                 isFolder: state.isFolder,
                 isFolderExpanded: state.isFolderExpanded,
                 folderIcon: state.folderIcon,
+                usesStaticFolderSnapshotIcon: state.usesStaticFolderSnapshotIcon,
                 folderIconPickerRequestGeneration: state.folderIconPickerRequestGeneration,
                 liveTabViewModel: state.primaryTabIsLive ? primaryTabViewModel : nil,
                 onNavigateToOriginalURL: onNavigatePrimaryToOriginalURL,
@@ -906,6 +927,7 @@ private struct SidebarBookmarkCellContentView: View {
                     isFolder: false,
                     isFolderExpanded: false,
                     folderIcon: .standard,
+                    usesStaticFolderSnapshotIcon: false,
                     folderIconPickerRequestGeneration: 0,
                     liveTabViewModel: state.secondaryTabIsLive ? secondaryTabViewModel : nil,
                     onNavigateToOriginalURL: onNavigateSecondaryToOriginalURL,
@@ -1020,6 +1042,7 @@ private struct BookmarkFaviconView: View {
     let isFolder: Bool
     let isFolderExpanded: Bool
     let folderIcon: BookmarkFolderIcon
+    let usesStaticFolderSnapshotIcon: Bool
     let folderIconPickerRequestGeneration: Int
     let liveTabViewModel: TabViewModel?
     let onNavigateToOriginalURL: (Bool) -> Void
@@ -1103,7 +1126,11 @@ private struct BookmarkFaviconView: View {
     }
 
     private var folderIconContent: some View {
-        BookmarkFolderIconView(icon: folderIcon, isExpanded: isFolderExpanded)
+        BookmarkFolderIconView(
+            icon: folderIcon,
+            isExpanded: isFolderExpanded,
+            usesStaticSnapshotIcon: usesStaticFolderSnapshotIcon
+        )
             .frame(width: Self.folderSize, height: Self.folderSize)
             .allowsHitTesting(false)
             .popover(isPresented: $showsFolderIconPicker, arrowEdge: .bottom) {

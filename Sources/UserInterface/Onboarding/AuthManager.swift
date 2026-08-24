@@ -245,6 +245,7 @@ class AuthManager {
             startHeartbeat()
             writeSharedAuth0Config()
             recordTrace("login-succeeded", details: credentialSnapshotDetails())
+            notifyAuthSessionChanged("login")
             return .success(results)
         } catch {
             recordTrace("login-failed", details: ["error": error.localizedDescription])
@@ -272,6 +273,7 @@ class AuthManager {
             await stopRenewTimer()
             stopHeartbeat()
             recordTrace("user-logout-succeeded")
+            notifyAuthSessionChanged("logout")
             // PostHog: Capture logout event and reset analytics identity
             PostHogSDK.shared.capture("user_logged_out")
             PostHogSDK.shared.reset()
@@ -748,6 +750,7 @@ class AuthManager {
                         self.reauthenticationState = .normal
                         self.clearPersistedReauthenticationState()
                         self.recordTrace("renew-succeeded", details: self.credentialSnapshotDetails())
+                        self.notifyAuthSessionChanged("renew-succeeded")
                         AppLogInfo("[TokenRenew] renew successful, expires at: \(credentials.expiresIn)")
                         self.isRenewing = false
                         continuation.resume(returning: credentials)
@@ -1082,6 +1085,7 @@ class AuthManager {
             self.currentCredentials = credentials
             self.lastSuccessfulSyncAt = sharedToken.updatedAt
             recordTrace("shared-store-recovery-imported-token", details: sharedTokenDetails(sharedToken))
+            notifyAuthSessionChanged("shared-store-recovery")
             AppLogInfo("[TokenRenew] imported shared token (renewedBy=\(sharedToken.renewedBy ?? "unknown"), expireDate=\(sharedExpiresAt), updatedAt=\(sharedToken.updatedAt))")
         }
     }
@@ -1237,6 +1241,14 @@ class AuthManager {
             line: line,
             callStackSymbols: callStackSymbols
         )
+    }
+
+    /// Tells Chromium the auth session changed. NotificationCenter (rather
+    /// than a direct bridge call) keeps AuthManager free of Chromium
+    /// dependencies; PhiChromiumCoordinator forwards it into the bridge.
+    func notifyAuthSessionChanged(_ reason: String) {
+        recordTrace("auth-session-changed-posted", details: ["reason": reason])
+        NotificationCenter.default.post(name: .phiAuthSessionDidChange, object: nil)
     }
 
     /// Returns true when a renew failure is caused by a transient network condition

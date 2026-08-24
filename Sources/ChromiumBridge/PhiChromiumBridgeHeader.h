@@ -1118,6 +1118,15 @@ typedef NS_ENUM(NSUInteger, PhiOmniboxSuggestionDisposition) {
 /// server's normal EOF path. Callable from any thread.
 - (void)closeAllDevToolsConnections;
 
+@optional
+
+/// Phi auth session state changed on the Mac side (login, logout, token
+/// renewal completion, reauthentication required). No payload by design:
+/// Chromium re-reads the session via GetAuth0AccessTokenSyncly() and
+/// reconciles, so redundant or coalesced calls are harmless. Optional so an
+/// older framework paired with a newer Mac client degrades to poll-only.
+- (void)notifyPhiAuthStateChanged;
+
 @end
 
 @protocol WebContentWrapper <NSObject>

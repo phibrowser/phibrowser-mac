@@ -760,6 +760,15 @@ extension PhiChromiumCoordinator: PhiChromiumBridgeDelegate {
         NSApp = PhiApplication.shared
         NSApp.delegate = controller
         controller.startObservingMainMenu()
+
+        NotificationCenter.default.addObserver(
+            forName: .phiAuthSessionDidChange, object: nil, queue: .main
+        ) { _ in
+            // Optional-chained twice: the bridge may not be up yet, and an
+            // older framework may not implement the selector — both degrade
+            // to Chromium's 30s poll.
+            ChromiumLauncher.sharedInstance().bridge?.notifyPhiAuthStateChanged?()
+        }
     }
     
     @MainActor

@@ -351,6 +351,7 @@
 		B0F370CB2E43261A000B51F9 /* EventBus.swift in Sources */ = {isa = PBXBuildFile; fileRef = B0F370CA2E43261A000B51F9 /* EventBus.swift */; };
 		B0F370D02E432CB8000B51F9 /* MainBrowserWindowController+Actions.swift in Sources */ = {isa = PBXBuildFile; fileRef = B0F370CF2E432CB8000B51F9 /* MainBrowserWindowController+Actions.swift */; };
 		B0F370DA2E433F0E000B51F9 /* OverlayWindowController.swift in Sources */ = {isa = PBXBuildFile; fileRef = B0F370D92E433F0E000B51F9 /* OverlayWindowController.swift */; };
+		A7E1C0020000000000000002 /* ChromiumHostingPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = A7E1C0010000000000000001 /* ChromiumHostingPanel.swift */; };
 		B17DE0000000000000000005 /* CredentialProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = B17DE0000000000000000021 /* CredentialProvider.swift */; };
 		B17DE0000000000000000006 /* BitwardenService.swift in Sources */ = {isa = PBXBuildFile; fileRef = B17DE0000000000000000022 /* BitwardenService.swift */; };
 		B17DE0000000000000000008 /* PasswordManagerSectionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B17DE0000000000000000023 /* PasswordManagerSectionView.swift */; };
@@ -1020,6 +1021,7 @@
 		B0F370CA2E43261A000B51F9 /* EventBus.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EventBus.swift; sourceTree = "<group>"; };
 		B0F370CF2E432CB8000B51F9 /* MainBrowserWindowController+Actions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MainBrowserWindowController+Actions.swift"; sourceTree = "<group>"; };
 		B0F370D92E433F0E000B51F9 /* OverlayWindowController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OverlayWindowController.swift; sourceTree = "<group>"; };
+		A7E1C0010000000000000001 /* ChromiumHostingPanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChromiumHostingPanel.swift; sourceTree = "<group>"; };
 		B17DE0000000000000000021 /* CredentialProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CredentialProvider.swift; sourceTree = "<group>"; };
 		B17DE0000000000000000022 /* BitwardenService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BitwardenService.swift; sourceTree = "<group>"; };
 		B17DE0000000000000000023 /* PasswordManagerSectionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PasswordManagerSectionView.swift; sourceTree = "<group>"; };
@@ -2486,6 +2488,7 @@
 				D1F600052FD6000000000005 /* DiffableOutlineView.swift */,
 				37B9780F2EF403AB007E0568 /* GradientBorderButton.swift */,
 				B0F370D92E433F0E000B51F9 /* OverlayWindowController.swift */,
+				A7E1C0010000000000000001 /* ChromiumHostingPanel.swift */,
 				B0F370C82E43242F000B51F9 /* PhiSplitView.swift */,
 				CCBF8F382E653A8C00B9A99E /* HoverableView.swift */,
 				CCEB64C82E98BFD40036C763 /* ColoredVisualEffectView.swift */,
@@ -3199,6 +3202,7 @@
 				375B2D8C2ED408270053FECC /* AccountUserDefaults.swift in Sources */,
 				37C1B0D82ED6DCBD00DD4496 /* Shortcuts.swift in Sources */,
 				B0F370DA2E433F0E000B51F9 /* OverlayWindowController.swift in Sources */,
+				A7E1C0020000000000000002 /* ChromiumHostingPanel.swift in Sources */,
 				CCBF8FA22E698A7400B9A99E /* MainBrowserWindowControllersManager.swift in Sources */,
 				B02586F62E42FD97001B08FC /* AppController.swift in Sources */,
 				8E6145BE2F753469001919BA /* ImportDataTypeViewController.swift in Sources */,

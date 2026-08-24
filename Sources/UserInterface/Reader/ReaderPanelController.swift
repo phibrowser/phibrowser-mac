@@ -25,9 +25,10 @@ import SnapKit
 /// reliably draws above the accelerated web-content surface and moves with
 /// the parent.
 final class ReaderPanelController {
-    private final class ReaderPanel: NSPanel {
-        override var canBecomeKey: Bool { true }
-    }
+    /// See `ChromiumHostingPanel`: hosting a re-parented Chromium view in a
+    /// key panel needs the shared key-equivalent routing, or every shortcut
+    /// this panel's event monitor does not name is swallowed.
+    private final class ReaderPanel: ChromiumHostingPanel {}
 
     /// Opaque backing matching the page pane's rounded corners, so the
     /// full-pane cover reads as the pane itself switching to the reader

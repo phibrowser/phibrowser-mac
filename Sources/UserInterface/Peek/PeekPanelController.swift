@@ -23,9 +23,10 @@ import SnapKit
 /// reliably draws above the accelerated web-content surface and moves with
 /// the parent.
 final class PeekPanelController {
-    private final class PeekPanel: NSPanel {
-        override var canBecomeKey: Bool { true }
-    }
+    /// See `ChromiumHostingPanel`: hosting a re-parented Chromium view in a
+    /// key panel needs the shared key-equivalent routing, or every shortcut
+    /// this panel's event monitor does not name is swallowed.
+    private final class PeekPanel: ChromiumHostingPanel {}
 
     /// Rounded opaque backing for the panel. A plain layer-backed view
     /// instead of NSVisualEffectView: the effect view's behind-window

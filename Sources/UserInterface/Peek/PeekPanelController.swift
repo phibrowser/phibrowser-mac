@@ -119,8 +119,8 @@ final class PeekPanelController {
         }
     }
 
-    /// Horizontal margin between the page pane's edges and the panel; the
-    /// panel spans the pane's height minus a small fixed breathing margin.
+    /// Horizontal margin between the page card's edges and the panel; the
+    /// panel spans the card's height minus a small fixed breathing margin.
     private static let paneInsetRatio: CGFloat = 0.04
     private static let minPaneInset: CGFloat = 16
     private static let paneVerticalInset: CGFloat = 14
@@ -135,8 +135,13 @@ final class PeekPanelController {
 
     private weak var browserState: BrowserState?
     private weak var parentWindow: NSWindow?
-    /// The page-pane view the panel is anchored over (web-content container).
+    /// The web-content container view: the click-to-dismiss region, and the
+    /// sizing fallback while no page card is mounted.
     private weak var anchorView: NSView?
+    /// Resolves the focused tab's rounded page card — the region the panel
+    /// insets itself inside. A closure because the card view belongs to
+    /// whichever `WebContentViewController` is currently displayed.
+    private let cardViewProvider: () -> NSView?
     /// Supplies the press the peek was opened from; owned by the window
     /// controller because it must record presses from before the first peek,
     /// which is when this controller is built.
@@ -150,6 +155,10 @@ final class PeekPanelController {
     private var eventMonitor: Any?
     private var parentResizeObserver: NSObjectProtocol?
     private var anchorFrameObserver: NSObjectProtocol?
+    /// Frame observation of the card itself: the card can move without the
+    /// container or window resizing (AI Chat dock, layout-mode insets).
+    private var cardFrameObserver: NSObjectProtocol?
+    private weak var observedCardView: NSView?
     private var titleCancellable: AnyCancellable?
     /// True between an appear flight's start and its landing; keeps the
     /// landing idempotent across the completion block and the teardown paths.
@@ -162,10 +171,12 @@ final class PeekPanelController {
     init(browserState: BrowserState,
          parentWindow: NSWindow,
          anchorView: NSView,
+         cardViewProvider: @escaping () -> NSView?,
          originTracker: PeekOriginTracker?) {
         self.browserState = browserState
         self.parentWindow = parentWindow
         self.anchorView = anchorView
+        self.cardViewProvider = cardViewProvider
         self.originTracker = originTracker
         anchorView.postsFrameChangedNotifications = true
 
@@ -577,6 +588,13 @@ final class PeekPanelController {
         titleLabel.textColor = .secondaryLabelColor
         titleLabel.lineBreakMode = .byTruncatingTail
         titleLabel.alignment = .center
+        // Below `NSLayoutPriority.windowSizeStayPut` (500), which is the
+        // priority AppKit holds a window's size at. The panel is a real
+        // window laid out by Auto Layout, so at the NSTextField default (750)
+        // a long page title outranks the frame `layoutOnAnchor` sets: the
+        // window silently grows rightward past the page pane instead of the
+        // label truncating, and stays inflated until the next relayout.
+        titleLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         headerView.addSubview(titleLabel)
         titleLabel.snp.makeConstraints { make in
             make.centerX.centerY.equalToSuperview()
@@ -598,20 +616,52 @@ final class PeekPanelController {
         return button
     }
 
-    /// Screen rect of the page pane the panel floats over.
+    /// Screen rect of the web-content container: the region whose clicks
+    /// dismiss the peek. Wider than the page card by the window margins,
+    /// which is what "click on the page around it" should cover.
     private func anchorScreenRect() -> NSRect? {
         guard let anchorView, let window = anchorView.window else { return nil }
         let inWindow = anchorView.convert(anchorView.bounds, to: nil)
         return window.convertToScreen(inWindow)
     }
 
+    /// Screen rect of the page card the panel floats over: the focused tab's
+    /// rounded card when one is mounted, else the whole container as a
+    /// degraded fallback. The card, not the container — the container also
+    /// spans the window margins around the card, and insetting from those
+    /// left the panel all but flush with the page's edges.
+    private func pageCardScreenRect() -> NSRect? {
+        guard let card = cardViewProvider() else { return anchorScreenRect() }
+        guard let window = card.window else { return anchorScreenRect() }
+        refreshCardFrameObserverIfNeeded(for: card)
+        return window.convertToScreen(card.convert(card.bounds, to: nil))
+    }
+
     private func layoutOnAnchor() {
-        guard let paneRect = anchorScreenRect() else { return }
-        // Near-full pane height; width follows the pane (and thus the
+        guard let cardRect = pageCardScreenRect() else { return }
+        // Near-full card height; width follows the card (and thus the
         // window) with a proportional side margin.
-        let insetX = max(Self.minPaneInset, paneRect.width * Self.paneInsetRatio)
-        panel.setFrame(paneRect.insetBy(dx: insetX, dy: Self.paneVerticalInset),
+        let insetX = max(Self.minPaneInset, cardRect.width * Self.paneInsetRatio)
+        panel.setFrame(cardRect.insetBy(dx: insetX, dy: Self.paneVerticalInset),
                        display: true)
+    }
+
+    /// Follows the card view currently being covered; re-registered when the
+    /// displayed tab (and so the card view) changes.
+    private func refreshCardFrameObserverIfNeeded(for view: NSView) {
+        guard observedCardView !== view else { return }
+        if let cardFrameObserver {
+            NotificationCenter.default.removeObserver(cardFrameObserver)
+        }
+        observedCardView = view
+        view.postsFrameChangedNotifications = true
+        cardFrameObserver = NotificationCenter.default.addObserver(
+            forName: NSView.frameDidChangeNotification,
+            object: view,
+            queue: .main
+        ) { [weak self] _ in
+            self?.relayoutIfVisible()
+        }
     }
 
     private func installGeometryObserversIfNeeded() {
@@ -652,6 +702,11 @@ final class PeekPanelController {
             NotificationCenter.default.removeObserver(anchorFrameObserver)
         }
         anchorFrameObserver = nil
+        if let cardFrameObserver {
+            NotificationCenter.default.removeObserver(cardFrameObserver)
+        }
+        cardFrameObserver = nil
+        observedCardView = nil
     }
 
     private func installEventMonitorIfNeeded() {

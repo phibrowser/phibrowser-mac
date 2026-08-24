@@ -568,10 +568,12 @@ class MainBrowserWindowController: NSWindowController {
     private func presentPeekPanel(for tab: Tab, flyIn: Bool) {
         guard let window = self.window else { return }
         if peekPanelController == nil {
+            let container = mainSplitViewController.webContentContainerViewController
             peekPanelController = PeekPanelController(
                 browserState: browserState,
                 parentWindow: window,
-                anchorView: mainSplitViewController.webContentContainerViewController.view,
+                anchorView: container.view,
+                cardViewProvider: { [weak container] in container?.currentPageCardView },
                 originTracker: peekOriginTracker
             )
         }

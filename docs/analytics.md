@@ -1,6 +1,6 @@
 # Analytics
 
-Last updated: 2026-08-17
+Last updated: 2026-08-24
 
 Phi Browser emits product analytics to both [Countly](https://phi-browser-eaade70cfd902.flex.countly.com) (legacy) and [PostHog](https://us.posthog.com/project/385742) (current). Both pipelines run side-by-side; PostHog is the forward-looking source of truth.
 
@@ -161,8 +161,30 @@ language actually active for that process.
 
 Naming rule: **don't reuse PostHog-reserved names** (anything starting with `$`, or that collides with SDK-auto events like "app installed"). For features that could be ambiguous with app-level concepts (e.g. downloads), prefix with the feature scope (`file_download_*`, not `download_*`).
 
+## Chromium-originated events
+
+Chromium browser-process code captures events through the `phi_analytics`
+component (Chromium repo, `chrome/browser/phinomenon/analytics/`). They cross
+the bridge delegate's `captureAnalyticsEvent:module:properties:` into
+`ChromiumBridge/ChromiumAnalyticsRelay.swift`, which stamps
+`source: "chromium"` and `module` onto every accepted event, drops reserved
+`$`-prefixed names, logs each accepted capture (the end-to-end observable on
+token-less local builds), and skips the SDK call when PostHog was never
+initialized. The relay checks no consent — the metrics-reporting switch gates
+identity association, not event flow, same as for Mac events. Delivery is
+best-effort: an event racing browser exit may be lost.
+
+Those events are not inventoried in the table above. Their registry lives
+beside the component: `chrome/browser/phinomenon/analytics/README.md` in the
+Chromium repo, with the naming rules and privacy contract they follow.
+
 ## Adding a new event
 
 1. Call `PostHogSDK.shared.capture("snake_case_name", properties: [...])` at the action site. Import `PostHog` in the file.
 2. If a matching Countly event already exists, keep both calls side-by-side during migration.
 3. Add a row to the Events table above.
+
+For a Chromium-originated event the flow lives on the Chromium side instead:
+call `phi_analytics::Capture()` at the action site and add the registry row to
+`chrome/browser/phinomenon/analytics/README.md` in the same change — nothing
+changes on the Mac side.

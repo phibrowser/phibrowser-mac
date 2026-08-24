@@ -644,6 +644,26 @@ typedef NS_ENUM(NSInteger, PhiGhostMaterializeOutcome) {
 /// the Mac client owns those transitions.
 - (void)metricsReportingEnabledChanged:(BOOL)enabled;
 
+/// One product-analytics event captured by Chromium browser-process code
+/// through the phi_analytics component — the single Chromium egress into the
+/// client's PostHog pipeline (chromium ADR 0008). Delivered synchronously on
+/// the browser main thread, once per event, in capture order, from the moment
+/// the framework installs its dispatch at launch (events captured earlier
+/// queue, bounded, and drain in order through this call). `eventName` is
+/// snake_case with a feature-scope prefix and `module` names the originating
+/// functional area — both registered in the README beside phi_analytics.h;
+/// `properties` carries JSON-shaped values only (NSString / NSNumber /
+/// NSNull / NSArray / NSDictionary), never site-level or user-content data.
+/// The client owns everything past this call: it stamps the provenance
+/// properties, enforces the PostHog reserved-name rule, applies its own
+/// not-initialized no-op, and hands the event to the PostHog SDK under the
+/// existing identity and consent stance. Delivery is best-effort — an event
+/// racing process exit may be lost, and nothing is retried.
+/// (`module:` sits mid-line deliberately: Clang's modules mode parses a
+/// line-initial `module` token as a module directive.)
+- (void)captureAnalyticsEvent:(NSString *)eventName module:(NSString *)module
+                   properties:(NSDictionary<NSString *, id> *)properties;
+
 /// The eager window id set for a COLD START replay, or nil to replay
 /// everything the session file holds (today's behaviour).
 ///

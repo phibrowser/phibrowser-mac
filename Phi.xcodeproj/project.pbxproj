@@ -7,13 +7,6 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		5B0000010000000000000001 /* ServiceBrokerTypes.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5B0000010000000000000011 /* ServiceBrokerTypes.swift */; };
-		5B0000010000000000000002 /* ServiceBrokerSocketPath.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5B0000010000000000000012 /* ServiceBrokerSocketPath.swift */; };
-		5B0000010000000000000003 /* ServiceBrokerClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5B0000010000000000000013 /* ServiceBrokerClient.swift */; };
-		5B0000010000000000000004 /* ServiceBrokerHTTPConnection.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5B0000010000000000000014 /* ServiceBrokerHTTPConnection.swift */; };
-		5B0000010000000000000005 /* ServiceBrokerChannelStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5B0000010000000000000015 /* ServiceBrokerChannelStore.swift */; };
-		5B0000010000000000000006 /* ServiceBrokerWebSocket.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5B0000010000000000000016 /* ServiceBrokerWebSocket.swift */; };
-		5B0000010000000000000007 /* ServiceBrokerExtensionProtocol.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5B0000010000000000000017 /* ServiceBrokerExtensionProtocol.swift */; };
 		04FE4637EFE3A1396687DD63 /* AISettingsConnectorViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = D8FCAEAE328C802016D87943 /* AISettingsConnectorViewModel.swift */; };
 		15B618E574463D94C98AEA5F /* AISettingHostingViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1B584F695BF7833FAA99558 /* AISettingHostingViewController.swift */; };
 		2ABF91DB68C2445BAA58C9BA /* GroupTabsTableView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 457F461C0F164136A46FF641 /* GroupTabsTableView.swift */; };
@@ -192,14 +185,21 @@
 		5ACE00000000000000000006 /* SpacesSettingHostingViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5ACE00000000000000000003 /* SpacesSettingHostingViewController.swift */; };
 		5ACE00000000000000000007 /* SpacesSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5ACE00000000000000000004 /* SpacesSettingsView.swift */; };
 		5ACE00000000000000000009 /* SettingsSectionCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5ACE00000000000000000008 /* SettingsSectionCard.swift */; };
-		5ACF00000000000000000001 /* NavigationsSettingViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5ACF00000000000000000011 /* NavigationsSettingViewController.swift */; };
-		5ACF00000000000000000002 /* NavigationsSettingHostingViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5ACF00000000000000000012 /* NavigationsSettingHostingViewController.swift */; };
-		5ACF00000000000000000003 /* NavigationsSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5ACF00000000000000000013 /* NavigationsSettingsView.swift */; };
 		5ACE0000000000000000000E /* ProfilesSettingViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5ACE0000000000000000000B /* ProfilesSettingViewController.swift */; };
 		5ACE0000000000000000000F /* ProfilesSettingHostingViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5ACE0000000000000000000C /* ProfilesSettingHostingViewController.swift */; };
 		5ACE00000000000000000010 /* ProfilesSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5ACE0000000000000000000D /* ProfilesSettingsView.swift */; };
 		5ACE00000000000000000012 /* ThemeOpacitySlider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5ACE00000000000000000011 /* ThemeOpacitySlider.swift */; };
 		5ACE00000000000000000A22 /* ProfileDetailSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5ACE00000000000000000A21 /* ProfileDetailSettingsView.swift */; };
+		5ACF00000000000000000001 /* NavigationsSettingViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5ACF00000000000000000011 /* NavigationsSettingViewController.swift */; };
+		5ACF00000000000000000002 /* NavigationsSettingHostingViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5ACF00000000000000000012 /* NavigationsSettingHostingViewController.swift */; };
+		5ACF00000000000000000003 /* NavigationsSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5ACF00000000000000000013 /* NavigationsSettingsView.swift */; };
+		5B0000010000000000000001 /* ServiceBrokerTypes.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5B0000010000000000000011 /* ServiceBrokerTypes.swift */; };
+		5B0000010000000000000002 /* ServiceBrokerSocketPath.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5B0000010000000000000012 /* ServiceBrokerSocketPath.swift */; };
+		5B0000010000000000000003 /* ServiceBrokerClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5B0000010000000000000013 /* ServiceBrokerClient.swift */; };
+		5B0000010000000000000004 /* ServiceBrokerHTTPConnection.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5B0000010000000000000014 /* ServiceBrokerHTTPConnection.swift */; };
+		5B0000010000000000000005 /* ServiceBrokerChannelStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5B0000010000000000000015 /* ServiceBrokerChannelStore.swift */; };
+		5B0000010000000000000006 /* ServiceBrokerWebSocket.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5B0000010000000000000016 /* ServiceBrokerWebSocket.swift */; };
+		5B0000010000000000000007 /* ServiceBrokerExtensionProtocol.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5B0000010000000000000017 /* ServiceBrokerExtensionProtocol.swift */; };
 		5EA17ABC0000000000000100 /* SearchTabsModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5EA17ABC0000000000000110 /* SearchTabsModels.swift */; };
 		5EA17ABC0000000000000101 /* SearchTabsQueryMatcher.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5EA17ABC0000000000000111 /* SearchTabsQueryMatcher.swift */; };
 		5EA17ABC0000000000000102 /* SearchTabsChromiumProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5EA17ABC0000000000000112 /* SearchTabsChromiumProvider.swift */; };
@@ -331,6 +331,7 @@
 		AE5ACE0000000000000000B1 /* AgentSpaceManager+Shadow.swift in Sources */ = {isa = PBXBuildFile; fileRef = AE5ACE0000000000000000A1 /* AgentSpaceManager+Shadow.swift */; };
 		AE5ACE0000000000000000B2 /* AgentSpaceRouter+Shadow.swift in Sources */ = {isa = PBXBuildFile; fileRef = AE5ACE0000000000000000A2 /* AgentSpaceRouter+Shadow.swift */; };
 		B001795A2E49CF84007B4635 /* PhiChromiumCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = B00179592E49CF84007B4635 /* PhiChromiumCoordinator.swift */; };
+		8EC5A10A2E5C10AA00B41A02 /* ChromiumAnalyticsRelay.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8EC5A10A2E5C10AA00B41A01 /* ChromiumAnalyticsRelay.swift */; };
 		B02586F52E42FD97001B08FC /* ChromiumLauncher.m in Sources */ = {isa = PBXBuildFile; fileRef = B02586EE2E42FD97001B08FC /* ChromiumLauncher.m */; };
 		B02586F62E42FD97001B08FC /* AppController.swift in Sources */ = {isa = PBXBuildFile; fileRef = B02586F02E42FD97001B08FC /* AppController.swift */; };
 		B02586F72E42FD97001B08FC /* MainBrowserWindowController.swift in Sources */ = {isa = PBXBuildFile; fileRef = B02586F12E42FD97001B08FC /* MainBrowserWindowController.swift */; };
@@ -667,13 +668,6 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
-		5B0000010000000000000011 /* ServiceBrokerTypes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ServiceBrokerTypes.swift; sourceTree = "<group>"; };
-		5B0000010000000000000012 /* ServiceBrokerSocketPath.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ServiceBrokerSocketPath.swift; sourceTree = "<group>"; };
-		5B0000010000000000000013 /* ServiceBrokerClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ServiceBrokerClient.swift; sourceTree = "<group>"; };
-		5B0000010000000000000014 /* ServiceBrokerHTTPConnection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ServiceBrokerHTTPConnection.swift; sourceTree = "<group>"; };
-		5B0000010000000000000015 /* ServiceBrokerChannelStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ServiceBrokerChannelStore.swift; sourceTree = "<group>"; };
-		5B0000010000000000000016 /* ServiceBrokerWebSocket.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ServiceBrokerWebSocket.swift; sourceTree = "<group>"; };
-		5B0000010000000000000017 /* ServiceBrokerExtensionProtocol.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ServiceBrokerExtensionProtocol.swift; sourceTree = "<group>"; };
 		11E8BEE1510290AB35D5C5AD /* SentinelBackupCoordination.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SentinelBackupCoordination.swift; sourceTree = "<group>"; };
 		19B477B37CF44BC48335A032 /* AccountDeletedEventAuthentication.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccountDeletedEventAuthentication.swift; sourceTree = "<group>"; };
 		3703C88B2F68F78500E7CF6D /* AISettingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AISettingView.swift; sourceTree = "<group>"; };
@@ -852,14 +846,21 @@
 		5ACE00000000000000000003 /* SpacesSettingHostingViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpacesSettingHostingViewController.swift; sourceTree = "<group>"; };
 		5ACE00000000000000000004 /* SpacesSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpacesSettingsView.swift; sourceTree = "<group>"; };
 		5ACE00000000000000000008 /* SettingsSectionCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsSectionCard.swift; sourceTree = "<group>"; };
-		5ACF00000000000000000011 /* NavigationsSettingViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NavigationsSettingViewController.swift; sourceTree = "<group>"; };
-		5ACF00000000000000000012 /* NavigationsSettingHostingViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NavigationsSettingHostingViewController.swift; sourceTree = "<group>"; };
-		5ACF00000000000000000013 /* NavigationsSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NavigationsSettingsView.swift; sourceTree = "<group>"; };
 		5ACE0000000000000000000B /* ProfilesSettingViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfilesSettingViewController.swift; sourceTree = "<group>"; };
 		5ACE0000000000000000000C /* ProfilesSettingHostingViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfilesSettingHostingViewController.swift; sourceTree = "<group>"; };
 		5ACE0000000000000000000D /* ProfilesSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfilesSettingsView.swift; sourceTree = "<group>"; };
 		5ACE00000000000000000011 /* ThemeOpacitySlider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ThemeOpacitySlider.swift; sourceTree = "<group>"; };
 		5ACE00000000000000000A21 /* ProfileDetailSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfileDetailSettingsView.swift; sourceTree = "<group>"; };
+		5ACF00000000000000000011 /* NavigationsSettingViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NavigationsSettingViewController.swift; sourceTree = "<group>"; };
+		5ACF00000000000000000012 /* NavigationsSettingHostingViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NavigationsSettingHostingViewController.swift; sourceTree = "<group>"; };
+		5ACF00000000000000000013 /* NavigationsSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NavigationsSettingsView.swift; sourceTree = "<group>"; };
+		5B0000010000000000000011 /* ServiceBrokerTypes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ServiceBrokerTypes.swift; sourceTree = "<group>"; };
+		5B0000010000000000000012 /* ServiceBrokerSocketPath.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ServiceBrokerSocketPath.swift; sourceTree = "<group>"; };
+		5B0000010000000000000013 /* ServiceBrokerClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ServiceBrokerClient.swift; sourceTree = "<group>"; };
+		5B0000010000000000000014 /* ServiceBrokerHTTPConnection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ServiceBrokerHTTPConnection.swift; sourceTree = "<group>"; };
+		5B0000010000000000000015 /* ServiceBrokerChannelStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ServiceBrokerChannelStore.swift; sourceTree = "<group>"; };
+		5B0000010000000000000016 /* ServiceBrokerWebSocket.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ServiceBrokerWebSocket.swift; sourceTree = "<group>"; };
+		5B0000010000000000000017 /* ServiceBrokerExtensionProtocol.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ServiceBrokerExtensionProtocol.swift; sourceTree = "<group>"; };
 		5EA17ABC0000000000000110 /* SearchTabsModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SearchTabsModels.swift; sourceTree = "<group>"; };
 		5EA17ABC0000000000000111 /* SearchTabsQueryMatcher.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SearchTabsQueryMatcher.swift; sourceTree = "<group>"; };
 		5EA17ABC0000000000000112 /* SearchTabsChromiumProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SearchTabsChromiumProvider.swift; sourceTree = "<group>"; };
@@ -990,6 +991,7 @@
 		AE5ACE0000000000000000A1 /* AgentSpaceManager+Shadow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AgentSpaceManager+Shadow.swift"; sourceTree = "<group>"; };
 		AE5ACE0000000000000000A2 /* AgentSpaceRouter+Shadow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AgentSpaceRouter+Shadow.swift"; sourceTree = "<group>"; };
 		B00179592E49CF84007B4635 /* PhiChromiumCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhiChromiumCoordinator.swift; sourceTree = "<group>"; };
+		8EC5A10A2E5C10AA00B41A01 /* ChromiumAnalyticsRelay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChromiumAnalyticsRelay.swift; sourceTree = "<group>"; };
 		B02586EC2E42FD97001B08FC /* PhiBrowser-Bridging-Header.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = "PhiBrowser-Bridging-Header.h"; sourceTree = "<group>"; };
 		B02586ED2E42FD97001B08FC /* ChromiumLauncher.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = ChromiumLauncher.h; sourceTree = "<group>"; };
 		B02586EE2E42FD97001B08FC /* ChromiumLauncher.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = ChromiumLauncher.m; sourceTree = "<group>"; };
@@ -1277,20 +1279,6 @@
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
-		5B0000010000000000000020 /* ServiceBroker */ = {
-			isa = PBXGroup;
-			children = (
-				5B0000010000000000000011 /* ServiceBrokerTypes.swift */,
-				5B0000010000000000000012 /* ServiceBrokerSocketPath.swift */,
-				5B0000010000000000000013 /* ServiceBrokerClient.swift */,
-				5B0000010000000000000014 /* ServiceBrokerHTTPConnection.swift */,
-				5B0000010000000000000015 /* ServiceBrokerChannelStore.swift */,
-				5B0000010000000000000016 /* ServiceBrokerWebSocket.swift */,
-				5B0000010000000000000017 /* ServiceBrokerExtensionProtocol.swift */,
-			);
-			path = ServiceBroker;
-			sourceTree = "<group>";
-		};
 		370D03AB2F0E463B0087A1C9 /* Theme */ = {
 			isa = PBXGroup;
 			children = (
@@ -1556,16 +1544,6 @@
 			path = General;
 			sourceTree = "<group>";
 		};
-		5ACF00000000000000000020 /* Navigations */ = {
-			isa = PBXGroup;
-			children = (
-				5ACF00000000000000000011 /* NavigationsSettingViewController.swift */,
-				5ACF00000000000000000012 /* NavigationsSettingHostingViewController.swift */,
-				5ACF00000000000000000013 /* NavigationsSettingsView.swift */,
-			);
-			path = Navigations;
-			sourceTree = "<group>";
-		};
 		37C2A6892F8E1572006E856E /* TabOrder */ = {
 			isa = PBXGroup;
 			children = (
@@ -1699,6 +1677,30 @@
 				5ACE00000000000000000A21 /* ProfileDetailSettingsView.swift */,
 			);
 			path = Profiles;
+			sourceTree = "<group>";
+		};
+		5ACF00000000000000000020 /* Navigations */ = {
+			isa = PBXGroup;
+			children = (
+				5ACF00000000000000000011 /* NavigationsSettingViewController.swift */,
+				5ACF00000000000000000012 /* NavigationsSettingHostingViewController.swift */,
+				5ACF00000000000000000013 /* NavigationsSettingsView.swift */,
+			);
+			path = Navigations;
+			sourceTree = "<group>";
+		};
+		5B0000010000000000000020 /* ServiceBroker */ = {
+			isa = PBXGroup;
+			children = (
+				5B0000010000000000000011 /* ServiceBrokerTypes.swift */,
+				5B0000010000000000000012 /* ServiceBrokerSocketPath.swift */,
+				5B0000010000000000000013 /* ServiceBrokerClient.swift */,
+				5B0000010000000000000014 /* ServiceBrokerHTTPConnection.swift */,
+				5B0000010000000000000015 /* ServiceBrokerChannelStore.swift */,
+				5B0000010000000000000016 /* ServiceBrokerWebSocket.swift */,
+				5B0000010000000000000017 /* ServiceBrokerExtensionProtocol.swift */,
+			);
+			path = ServiceBroker;
 			sourceTree = "<group>";
 		};
 		5EA17ABC0000000000000120 /* SearchTabs */ = {
@@ -1968,6 +1970,7 @@
 			children = (
 				8E571D4F30131FEF00E3FBE7 /* SessionRestorePreference.swift */,
 				ACDC00000000000000000C01 /* AgentCDP */,
+				8EC5A10A2E5C10AA00B41A01 /* ChromiumAnalyticsRelay.swift */,
 				B00179592E49CF84007B4635 /* PhiChromiumCoordinator.swift */,
 				CC288AA82E55824A004A6C1C /* PhiChromiumBridgeHeader.h */,
 				B02586ED2E42FD97001B08FC /* ChromiumLauncher.h */,
@@ -3040,6 +3043,7 @@
 				CC24EF082E89251D00CE9DD7 /* AuthManager.swift in Sources */,
 				8EC70E162F0BBF3D009FE2CD /* BookmarkItemView.swift in Sources */,
 				B001795A2E49CF84007B4635 /* PhiChromiumCoordinator.swift in Sources */,
+				8EC5A10A2E5C10AA00B41A02 /* ChromiumAnalyticsRelay.swift in Sources */,
 				ACDC00000000000000000B01 /* AgentCDPListener.swift in Sources */,
 				ACDC00000000000000000B02 /* AgentPeerIdentity.swift in Sources */,
 				ACDC00000000000000000B03 /* AgentDirectChannel.swift in Sources */,

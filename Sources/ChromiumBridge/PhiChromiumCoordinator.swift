@@ -511,6 +511,17 @@ extension PhiChromiumCoordinator: PhiChromiumBridgeDelegate {
         AccountController.shared.metricsReportingEnabledChanged(enabled)
     }
 
+    func captureAnalyticsEvent(_ eventName: String, module: String, properties: [String: Any]) {
+        // Delivered synchronously on the browser main thread by contract
+        // (PhiChromiumBridgeHeader.h); assume rather than hop so events keep
+        // their capture order.
+        MainActor.assumeIsolated {
+            ChromiumAnalyticsRelay.shared.relay(
+                eventName: eventName, module: module, properties: properties
+            )
+        }
+    }
+
     func getAuth0AccessTokenSyncly() -> String {
         guard PhiBuildCapabilities.supportsAuthentication else { return "" }
         guard ApplicationState.shared.isAuthenticated else {

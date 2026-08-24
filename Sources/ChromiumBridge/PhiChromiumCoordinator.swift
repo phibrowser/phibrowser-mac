@@ -94,6 +94,47 @@ extension PhiChromiumCoordinator: PhiChromiumBridgeDelegate {
         PhiPreferences.AgentSpaces.userSpaceOperationsEnabled
     }
 
+    /// A CDP client drove a tab in one of the user's own Spaces. The app has no
+    /// other way to see this — page automation rides a socket it handed to
+    /// Chromium — so the mask follows these reports rather than a driver's
+    /// goodwill. Delivered on the UI thread, which is the main thread.
+    func agentDidOperateUserSpaceTab(_ tabId: Int64, windowId: Int64, sessionId: Int64) {
+        guard Thread.isMainThread else {
+            assertionFailure("agentDidOperateUserSpaceTab off the main thread")
+            return
+        }
+        MainActor.assumeIsolated {
+            AgentUserSpaceDriveRegistry.shared.didOperate(
+                tabId: tabId.intValue, windowId: windowId.intValue, sessionId: sessionId)
+        }
+    }
+
+    /// The same session is working on the tab without driving it. Only keeps
+    /// an existing mask alive — a reading agent never claims a page.
+    func agentDidObserveUserSpaceTab(_ tabId: Int64, windowId: Int64, sessionId: Int64) {
+        guard Thread.isMainThread else {
+            assertionFailure("agentDidObserveUserSpaceTab off the main thread")
+            return
+        }
+        MainActor.assumeIsolated {
+            AgentUserSpaceDriveRegistry.shared.didObserve(
+                tabId: tabId.intValue, windowId: windowId.intValue, sessionId: sessionId)
+        }
+    }
+
+    /// That driving session ended — the real close event behind the mask, as
+    /// opposed to the idle timeout that would otherwise be the only signal.
+    func agentDidStopOperatingUserSpaceTab(_ tabId: Int64, sessionId: Int64) {
+        guard Thread.isMainThread else {
+            assertionFailure("agentDidStopOperatingUserSpaceTab off the main thread")
+            return
+        }
+        MainActor.assumeIsolated {
+            AgentUserSpaceDriveRegistry.shared.didStop(
+                tabId: tabId.intValue, sessionId: sessionId)
+        }
+    }
+
     func isBackupImporting() -> Bool { isBackupImportInProgress }
 
     func shouldAutoInstallICloudPasswords() -> Bool {
@@ -1000,6 +1041,14 @@ extension PhiChromiumCoordinator: PhiChromiumBridgeDelegate {
             "tabId=\(id) windowId=\(windowId) index=\(tab.index) " +
             "creationPayload=\((tabInfo["creationContext"] as? [AnyHashable: Any]) ?? tabInfo)"
         )
+        // Claims an agent's pending user-Space open, if this is one; every
+        // other tab creation falls straight through.
+        if Thread.isMainThread {
+            MainActor.assumeIsolated {
+                AgentUserSpaceDriveRegistry.shared.noteTabCreated(
+                    tabId: id, windowId: windowId.intValue)
+            }
+        }
         if MainBrowserWindowControllersManager.shared.hasDanglingWindow(for: windowId.intValue) {
             MainBrowserWindowControllersManager.shared.addPendingTabToDanglingWindow(tab, windowId: windowId.intValue)
             AppLogInfo("🪟 [Chromium] Tab added to dangling window pending tabs - windowId: \(windowId), tabGuid: \(id)")
@@ -1195,6 +1244,11 @@ extension PhiChromiumCoordinator: PhiChromiumBridgeDelegate {
             }
         } else {
             assertionFailure("tabWillBeRemove off the main thread; skipping best-effort close mask")
+        }
+        if Thread.isMainThread {
+            MainActor.assumeIsolated {
+                AgentUserSpaceDriveRegistry.shared.tabWasRemoved(tabId: tabId.intValue)
+            }
         }
         EventBus.shared
             .send(TabEvent(browserId: windowId.intValue,

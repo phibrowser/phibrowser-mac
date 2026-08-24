@@ -37,15 +37,4 @@ final class AgentAnimationManager {
             stateChanged.send(tabId)
         }
     }
-    
-    func handleRequest(context: ExtensionMessageContext) -> String? {
-        guard let data = context.payload.data(using: .utf8),
-              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let tabId = json["tabId"] as? Int,
-              let show = json["show"] as? Bool else {
-            return "{\"success\":false,\"error\":\"Invalid payload\"}"
-        }
-        setActive(show, for: tabId)
-        return "{\"success\":true}"
-    }
 }

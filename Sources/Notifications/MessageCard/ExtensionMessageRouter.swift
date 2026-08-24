@@ -121,10 +121,6 @@ final class ExtensionMessageRouter {
             }
         }
 
-        register(type: "toggleAgentAnimation") { context in
-            return AgentAnimationManager.shared.handleRequest(context: context)
-        }
-
         // Both reader types ack synchronously — the extension's reports are
         // fire-and-forget, and a nil return would leave its sendMessageToApp
         // promise pending until the bridge's 30s timeout rejects it.

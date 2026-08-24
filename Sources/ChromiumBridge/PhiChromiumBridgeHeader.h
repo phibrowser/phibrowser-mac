@@ -173,6 +173,48 @@ typedef NS_ENUM(NSInteger, PhiGhostMaterializeOutcome) {
              hideInspectedContents:(BOOL)hide;
 
 // ==========================================================================
+// Agent operating mask for the user's Spaces (Chromium → Mac notification)
+// ==========================================================================
+
+/// A remote-debugging (CDP) client just drove a tab that lives in one of the
+/// USER's Spaces — synthetic input, a navigation, or a file-input population.
+/// Page automation never passes through the Mac client (the app hands the
+/// connection's fd to the DevTools server), so this is the only way the app
+/// learns that one of its own tabs is under an agent; agent Spaces derive
+/// their mask from state the app already owns and never report here.
+///
+/// The browser coalesces per driving session: the first command on a tab,
+/// then at most once a second while that session keeps driving. Treat a
+/// report as "arm or re-arm the mask on `tabId`" — a session naming a
+/// different tab has MOVED, so its previous tab should be unmasked.
+///
+/// @param tabId The driven tab (the same id space as every other bridge tabId)
+/// @param windowId The window that owns the tab right now
+/// @param sessionId Opaque, stable per driving session; identifies the driver's
+///        hold on this tab, and is the key `agentDidStopOperatingUserSpaceTab`
+///        reports against.
+- (void)agentDidOperateUserSpaceTab:(int64_t)tabId
+                           windowId:(int64_t)windowId
+                          sessionId:(int64_t)sessionId;
+
+/// That session is still working on `tabId` without driving it — reading the
+/// DOM, evaluating script, taking a screenshot. This must NEVER raise a mask:
+/// opening a tab and reading it is not claiming it. It exists so a mask that is
+/// already up survives the gaps between an agent's rounds, which are far longer
+/// than the gaps between its individual commands. Throttled to one a second per
+/// session.
+- (void)agentDidObserveUserSpaceTab:(int64_t)tabId
+                           windowId:(int64_t)windowId
+                          sessionId:(int64_t)sessionId;
+
+/// The driving session behind `sessionId` went away — the client detached, its
+/// connection died, or the target closed. A real close event, which the app
+/// cannot observe any other way; without it "finished driving" could only ever
+/// be a timeout.
+- (void)agentDidStopOperatingUserSpaceTab:(int64_t)tabId
+                                sessionId:(int64_t)sessionId;
+
+// ==========================================================================
 // Flicker fix: Tab visibility synchronization (Chromium → Mac notification)
 // ==========================================================================
 
@@ -1703,6 +1745,15 @@ typedef NS_ENUM(NSInteger, PhiGhostMaterializeOutcome) {
 /// up the ones already attached, which then unwind through the DevTools
 /// server's normal EOF path. Callable from any thread.
 - (void)closeAllDevToolsConnections;
+
+/// The tabs whose agent operating mask the user has taken back. While a tab is
+/// in this set the browser refuses drive commands (synthetic input, navigation,
+/// file-input population) aimed at it from remote-debugging clients, answering
+/// with a protocol error — so a driver cannot decline to honor the takeover the
+/// way a cooperative signal would let it. Replaces the whole set; pass an empty
+/// array to clear. The Mac client is the source of truth and re-pushes on every
+/// change. Must be called on the main thread.
+- (void)setUserReclaimedTabs:(NSArray<NSNumber *> *)tabIds;
 
 @end
 

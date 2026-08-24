@@ -434,8 +434,16 @@ final class AgentCDPListener {
         }
 
         // Hand the raw fd to Chromium, which owns it from here (closed by the
-        // browser whether or not the injection transport is live).
+        // browser whether or not the injection transport is live). Note who
+        // opened it first: nothing downstream of the handover can say which
+        // agent a browser-reported drive belongs to, so the operating mask's
+        // pill names the driver from here — best effort, and only while one
+        // agent is connected (AgentCDPDriverRoster).
         DispatchQueue.main.async {
+            MainActor.assumeIsolated {
+                AgentCDPDriverRoster.shared.noteInjection(
+                    key: identity.key, displayName: identity.displayName)
+            }
             let attached = ChromiumLauncher.sharedInstance().bridge?
                 .attachDevToolsConnection(withFD: fd) ?? false
             if !attached {

@@ -201,6 +201,19 @@ extension AgentSpaceRouter {
             guard let target = spaceWindow(spaceId: spaceId) else {
                 return failure("space_not_open")
             }
+            // Opening a tab here IS the agent operating the user's Space, but
+            // the app performs it itself — no CDP command is sent, so the
+            // browser's drive reports never see it. Arm the operating mask
+            // from this side instead, matched to the tab Chromium is about to
+            // create. Agent Spaces keep deriving their own mask from the task.
+            let isAgentSpace = SpaceManager.shared.spaces
+                .first { $0.spaceId == spaceId }?.isAgentSpace ?? false
+            if !isAgentSpace {
+                AgentUserSpaceDriveRegistry.shared.agentWillOpenTab(
+                    inWindow: target.windowId,
+                    principalId: context.driverPrincipalId,
+                    driverName: context.agentName)
+            }
             ChromiumLauncher.sharedInstance().bridge?
                 .createNewTab(withUrl: url,
                               windowId: Int64(target.windowId),

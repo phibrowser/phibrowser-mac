@@ -546,6 +546,16 @@ final class AISettingsConnectorViewModel {
         clearFinishedLoadingStates()
     }
 
+    private func cancelAndCloseAllPendingAuthorizations() {
+        let attempts = Set(pendingAuthorizationPolls.keys)
+            .union(pendingAuthorizationTabGuids.keys)
+            .union(pendingAuthorizationTabIds.values)
+        for attempt in attempts {
+            closePendingAuthorizationTab(attempt: attempt)
+        }
+        cancelAllPendingAuthorizationPolls()
+    }
+
     private func finishPendingAuthorization(attempt: OAuthAuthorizationAttempt, closeTab: Bool) {
         pendingAuthorizationPolls[attempt]?.cancel()
         pendingAuthorizationPolls[attempt] = nil
@@ -747,28 +757,24 @@ final class AISettingsConnectorViewModel {
             suspendForUnauthenticatedAccess()
             return
         }
-        guard let profileId = selectedProfileId, !profileId.isEmpty else { return }
-        cancelAllPendingAuthorizationPolls()
-
-        let connectedProviders = connectors
-            .filter { $0.status.isConnected }
-            .map { (provider: $0.template.provider, profileId: $0.isUnassigned ? nil : profileId) }
-
-        guard !connectedProviders.isEmpty else { return }
+        cancelAndCloseAllPendingAuthorizations()
 
         setAllLoading(true)
 
         Task { @MainActor in
             defer { setAllLoading(false) }
-            for connection in connectedProviders {
-                do {
-                    _ = try await apiClient.deleteOAuthToken(provider: connection.provider, profileId: connection.profileId)
-                    AppLogInfo("[AISettings] Disconnected OAuth provider: \(connection.provider)")
-                } catch {
-                    AppLogWarn("[AISettings] Failed to disconnect provider \(connection.provider): \(error)")
-                }
+            do {
+                let response = try await apiClient.disconnectAllOAuthTokens()
+                AppLogInfo("[AISettings] Disconnected \(response.data.disconnectedCount) OAuth connections for the current user")
+            } catch {
+                AppLogWarn("[AISettings] Failed to disconnect all OAuth connections: \(error)")
             }
-            await reloadConnectionsFromNetwork(profileId: profileId)
+
+            if let profileId = selectedProfileId, !profileId.isEmpty {
+                await reloadConnectionsFromNetwork(profileId: profileId)
+            } else {
+                resetDisplayedConnections()
+            }
         }
     }
 

@@ -18,7 +18,8 @@ shown as unassigned. This lets Core keep the connection available to older
 clients without leaking it into another Profile's settings state.
 
 The Connectors enablement switch is application-wide. Turning it off calls
-Core's transactional current-user disconnect endpoint, which removes every
+Core's transactional Profile-aware current-user disconnect endpoint
+(`DELETE /api/auth/oauth/connections/all`), which removes every
 OAuth credential across all browser Profiles and the legacy unassigned
 connection, invalidates pending OAuth authorization states, and prevents an
 in-flight callback from restoring a credential after disconnect completes.

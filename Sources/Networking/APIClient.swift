@@ -725,7 +725,7 @@ class APIClient {
     }
 
     func disconnectAllOAuthTokens() async throws -> Response<DisconnectAllOAuthTokensResponse> {
-        guard let url = URL(string: "\(accountBaseURL)/api/auth/oauth/connections") else {
+        guard let url = URL(string: "\(accountBaseURL)/api/auth/oauth/connections/all") else {
             throw APIError.invalidResponse
         }
         var request = URLRequest(url: url)

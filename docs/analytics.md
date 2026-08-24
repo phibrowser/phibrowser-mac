@@ -146,6 +146,7 @@ are out of scope.
 | `bookmark_manager_opened` | A native Bookmark Manager page session starts | `WebContent/BookmarkManager/BookmarkManagerViewController.swift` |
 | `bookmark_manager_edited` | A Bookmark Manager page session ends after the user performed at least one edit; the event carries no bookmark or edit details | `WebContent/BookmarkManager/BookmarkManagerViewController.swift` |
 | `user_defaults_snapshot` | Launch-time snapshot of new-tab behavior, layout mode, active process language (`app_language`), appearance, default browser, proactive suggestions, automatic current-tab context, and Peek/Kiosk preferences | `Application/AppControlle+LaunchInfo.swift` |
+| *Chromium-originated events* | Captured in the browser core through `phi_analytics::Capture()`, not by Mac code; inventoried in the Chromium-side registry — see [Chromium-originated events](#chromium-originated-events) below | Chromium repo, `chrome/browser/phinomenon/analytics/README.md` |
 
 Import analytics never include source paths, browser profile names, Arc Space
 names, file names, or imported item counts. The current Chromium delegate

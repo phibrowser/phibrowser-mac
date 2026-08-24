@@ -42677,6 +42677,18 @@
         }
       }
     },
+    "settings.ai.connectors.assignButton" : {
+      "comment" : "AI settings - Button that assigns an existing unassigned connector to the selected browser Profile",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Assign"
+          }
+        }
+      }
+    },
     "settings.ai.connectors.connectButton" : {
       "comment" : "AI settings - Button to connect an external data connector",
       "extractionState" : "extracted_with_value",
@@ -43273,6 +43285,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "尚未連線"
+          }
+        }
+      }
+    },
+    "settings.ai.connectors.unassignedRowStatus" : {
+      "comment" : "AI settings - Connector row status for an existing connection that has not yet been assigned to a browser Profile",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Not assigned to a Profile"
           }
         }
       }

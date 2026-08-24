@@ -39,6 +39,18 @@ struct DeleteOAuthTokenResponse: Codable {
     let message: String
 }
 
+struct BindOAuthTokenResponse: Codable {
+    let message: String
+}
+
+struct BindOAuthTokenRequest: Codable {
+    let profileId: String
+
+    enum CodingKeys: String, CodingKey {
+        case profileId = "profile_id"
+    }
+}
+
 // MARK: - Request Models
 
 struct CreateUserSourceRequest: Codable {

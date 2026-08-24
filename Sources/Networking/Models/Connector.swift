@@ -39,6 +39,16 @@ struct DeleteOAuthTokenResponse: Codable {
     let message: String
 }
 
+struct DisconnectAllOAuthTokensResponse: Codable {
+    let message: String
+    let disconnectedCount: Int
+
+    enum CodingKeys: String, CodingKey {
+        case message
+        case disconnectedCount = "disconnected_count"
+    }
+}
+
 struct BindOAuthTokenResponse: Codable {
     let message: String
 }

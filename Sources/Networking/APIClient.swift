@@ -724,6 +724,25 @@ class APIClient {
         return try JSONDecoder().decode(Response<DeleteOAuthTokenResponse>.self, from: data)
     }
 
+    func disconnectAllOAuthTokens() async throws -> Response<DisconnectAllOAuthTokensResponse> {
+        guard let url = URL(string: "\(accountBaseURL)/api/auth/oauth/connections") else {
+            throw APIError.invalidResponse
+        }
+        var request = URLRequest(url: url)
+        request.httpMethod = "DELETE"
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw APIError.invalidResponse
+        }
+        guard (200...299).contains(httpResponse.statusCode) else {
+            throw APIError.httpError(statusCode: httpResponse.statusCode)
+        }
+        return try JSONDecoder().decode(Response<DisconnectAllOAuthTokensResponse>.self, from: data)
+    }
+
     // MARK: - Feedback V2
 
     func presignFeedbackV2Attachments(

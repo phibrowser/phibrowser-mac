@@ -354,6 +354,7 @@ class MainBrowserWindowController: NSWindowController {
             }
             .store(in: &cancellables)
         setupContentView()
+        observeBlockingOverlayVisibility()
         // Not a repeat of the call above: that one ran before the split view
         // existed, so this is the only one that reaches the content tree.
         applyThemeAppearance(to: window)
@@ -524,15 +525,14 @@ class MainBrowserWindowController: NSWindowController {
                 }
             }
             .store(in: &cancellables)
+    }
 
-        // Blocking-overlay interplay with the peek/reader panels (child
-        // windows, which draw above every in-window view):
-        // - The omnibox floats in its own child window one level above the
-        //   panels, so they stay visible beneath it — but must go inert
-        //   (their key monitors would fight the omnibox for Esc/shortcuts)
-        //   and take key back when it dismisses.
-        // - Tab search is still an in-window view, so the panels step fully
-        //   aside while it is up.
+    /// Handles blocking overlays for every browser window. The Omnibox host
+    /// panel must stop accepting input when it dismisses; regular windows also
+    /// use this signal to eclipse peek/reader panels or conceal them for tab
+    /// search. Kiosk returns before that regular content setup, but shares the
+    /// same full-window Omnibox host and therefore needs this observer too.
+    private func observeBlockingOverlayVisibility() {
         NotificationCenter.default.publisher(for: .phiInWindowOverlayVisibilityChanged)
             .receive(on: DispatchQueue.main)
             .sink { [weak self] notification in

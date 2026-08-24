@@ -464,6 +464,40 @@ final class KioskBrowserStateTests: XCTestCase {
         XCTAssertTrue(omniBox.openningFromCurrenTab)
     }
 
+    func testKioskOmniBoxDismissalRestoresWindowInteraction() throws {
+        let state = try makeState()
+        let window = makeWindow(
+            frame: NSRect(x: 0, y: 0, width: 640, height: 480)
+        )
+        let controller = MainBrowserWindowController(
+            window: window,
+            windowId: state.windowId,
+            browserType: .kiosk,
+            profileId: state.profileId,
+            account: state.localStore.account,
+            browserState: state
+        )
+        defer {
+            window.close()
+            withExtendedLifetime(controller) {}
+        }
+
+        window.makeKeyAndOrderFront(nil)
+        controller.toggleOmniBox(fromAddressBar: false)
+        let hostPanel = try XCTUnwrap(controller.omniBoxHostPanel)
+        XCTAssertTrue(hostPanel.parent === window)
+        XCTAssertFalse(hostPanel.ignoresMouseEvents)
+
+        controller.omniBoxContainerViewController?.hideOmniBox()
+        let observerDrained = expectation(description: "Overlay observer drained")
+        DispatchQueue.main.async {
+            observerDrained.fulfill()
+        }
+        wait(for: [observerDrained], timeout: 1)
+
+        XCTAssertTrue(hostPanel.ignoresMouseEvents)
+    }
+
     func testExtensionSidePanelMountsAndDetachesSynchronously() throws {
         let state = try makeState()
         let controller = KioskBrowserContentViewController(state: state)

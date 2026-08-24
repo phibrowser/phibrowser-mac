@@ -589,8 +589,6 @@ struct TimeMachineCompletedRestoreCleaner {
 
     func cleanup(plan: TimeMachineInstallPlan, operationURL: URL, logger: @escaping (String) -> Void) {
         cleanupConsumedBackup(plan: plan, logger: logger)
-        removeEmptyCatalogIfNeeded(logger: logger)
-        removeEmptyManagedDirectoryIfNeeded(paths.snapshotsRootURL, description: "snapshots", logger: nil)
         cleanupMatchingPendingRestoreOperations(
             completedPlan: plan,
             completedOperationURL: operationURL,
@@ -610,63 +608,33 @@ struct TimeMachineCompletedRestoreCleaner {
             logger: logger
         )
         removeEmptyManagedDirectoryIfNeeded(paths.pendingRootURL, description: "pending", logger: nil)
-        removeEmptyManagedDirectoryIfNeeded(paths.rootURL, description: "root", logger: nil)
     }
 
     private func cleanupConsumedBackup(plan: TimeMachineInstallPlan, logger: @escaping (String) -> Void) {
-        var removedRecord: TimeMachineBackupRecord?
-        if let backupID = plan.backupID {
-            do {
-                removedRecord = try catalogStore.removeBackup(id: backupID)
-                if removedRecord != nil {
-                    logger("Removed consumed backup catalog record \(backupID.uuidString).")
-                } else {
-                    logger("No consumed backup catalog record existed for \(backupID.uuidString).")
-                }
-            } catch {
-                logger("Failed to remove consumed backup catalog record \(backupID.uuidString): \(error.localizedDescription)")
+        let snapshotID = plan.backupID ?? plan.snapshotURL.flatMap(managedSnapshotID)
+        guard let snapshotID else {
+            if let snapshotURL = plan.snapshotURL {
+                logger("Skipping consumed snapshot cleanup for invalid managed path: \(snapshotURL.path).")
             }
-        }
-
-        if let snapshotURL = plan.snapshotURL ?? removedRecord.map({ paths.url(forRelativePath: $0.snapshotRelativePath) }) {
-            removeConsumedSnapshotIfManaged(snapshotURL, logger: logger)
-            removeEmptyManagedDirectoryIfNeeded(paths.snapshotsRootURL, description: "snapshots", logger: logger)
-
-            if removedRecord == nil {
-                removeCatalogRecordIfNeeded(snapshotURL: snapshotURL, logger: logger)
-            }
-        }
-    }
-
-    private func removeEmptyCatalogIfNeeded(logger: (String) -> Void) {
-        do {
-            guard try catalogStore.load().backups.isEmpty,
-                  fileManager.fileExists(atPath: paths.catalogURL.path) else {
-                return
-            }
-            try fileManager.removeItem(at: paths.catalogURL)
-            logger("Removed empty Time Machine catalog at \(paths.catalogURL.path).")
-        } catch {
-            logger("Failed to remove empty Time Machine catalog at \(paths.catalogURL.path): \(error.localizedDescription)")
-        }
-    }
-
-    private func removeCatalogRecordIfNeeded(snapshotURL: URL, logger: (String) -> Void) {
-        guard isManagedChildURL(snapshotURL, under: paths.snapshotsRootURL) else {
             return
         }
 
-        let relativePath = paths.relativePath(for: snapshotURL)
-        guard relativePath != snapshotURL.standardizedFileURL.path else {
+        if let snapshotURL = plan.snapshotURL,
+           managedSnapshotID(snapshotURL) != snapshotID {
+            logger("Skipping consumed snapshot cleanup because its path does not match backup \(snapshotID.uuidString).")
             return
         }
 
         do {
-            if let record = try catalogStore.removeBackup(snapshotRelativePath: relativePath) {
-                logger("Removed consumed backup catalog record \(record.id.uuidString) by snapshot path.")
+            if try catalogStore.deleteBackup(id: snapshotID) != nil {
+                logger("Removed consumed backup catalog record and snapshot \(snapshotID.uuidString).")
+            } else if try catalogStore.deleteUncatalogedSnapshotIfExists(id: snapshotID) {
+                logger("Removed uncataloged consumed backup snapshot \(snapshotID.uuidString).")
+            } else {
+                logger("No consumed backup record or snapshot existed for \(snapshotID.uuidString).")
             }
         } catch {
-            logger("Failed to remove consumed backup catalog record for snapshot \(relativePath): \(error.localizedDescription)")
+            logger("Failed to remove consumed backup \(snapshotID.uuidString): \(error.localizedDescription)")
         }
     }
 
@@ -715,20 +683,6 @@ struct TimeMachineCompletedRestoreCleaner {
                 description: "sibling pending operation",
                 logger: logger
             )
-        }
-    }
-
-    private func removeConsumedSnapshotIfManaged(_ snapshotURL: URL, logger: (String) -> Void) {
-        guard isManagedChildURL(snapshotURL, under: paths.snapshotsRootURL) else {
-            logger("Skipping consumed snapshot cleanup outside managed snapshots root: \(snapshotURL.path).")
-            return
-        }
-
-        do {
-            try removeItemIfExists(snapshotURL)
-            logger("Removed consumed backup snapshot at \(snapshotURL.path).")
-        } catch {
-            logger("Failed to remove consumed backup snapshot at \(snapshotURL.path): \(error.localizedDescription)")
         }
     }
 
@@ -787,10 +741,14 @@ struct TimeMachineCompletedRestoreCleaner {
         return path.hasPrefix("\(rootPath)/")
     }
 
-    private func removeItemIfExists(_ url: URL) throws {
-        if fileManager.fileExists(atPath: url.path) {
-            try fileManager.removeItem(at: url)
+    private func managedSnapshotID(_ snapshotURL: URL) -> UUID? {
+        let standardizedURL = snapshotURL.standardizedFileURL
+        guard standardizedURL.deletingLastPathComponent().path == paths.snapshotsRootURL.standardizedFileURL.path,
+              let snapshotID = UUID(uuidString: standardizedURL.lastPathComponent),
+              standardizedURL.lastPathComponent == snapshotID.uuidString else {
+            return nil
         }
+        return snapshotID
     }
 }
 

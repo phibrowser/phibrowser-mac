@@ -12156,6 +12156,186 @@
         }
       }
     },
+    "app.timeMachineBackup.deleteConfirmation.cancelButton" : {
+      "comment" : "Help menu - Button that cancels Time Machine backup deletion",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Cancel"
+          }
+        }
+      }
+    },
+    "app.timeMachineBackup.deleteConfirmation.deleteButton" : {
+      "comment" : "Help menu - Destructive button that confirms Time Machine backup deletion",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Delete"
+          }
+        }
+      }
+    },
+    "app.timeMachineBackup.deleteConfirmation.message" : {
+      "comment" : "Help menu - Time Machine backup deletion confirmation; placeholder is the selected backup title",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Deleting %@ will permanently remove this restore point. Your current Phi app and data will not be affected. This cannot be undone."
+          }
+        }
+      }
+    },
+    "app.timeMachineBackup.deleteConfirmation.title" : {
+      "comment" : "Help menu - Title of the Time Machine backup deletion confirmation",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Delete Time Machine Backup?"
+          }
+        }
+      }
+    },
+    "app.timeMachineBackup.deleteFailure.backupUnavailableMessage" : {
+      "comment" : "Help menu - Time Machine backup deletion error when the selected backup disappears",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "The selected Time Machine backup is no longer available."
+          }
+        }
+      }
+    },
+    "app.timeMachineBackup.deleteFailure.dismissButton" : {
+      "comment" : "Help menu - Button that dismisses a Time Machine backup deletion failure",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "OK"
+          }
+        }
+      }
+    },
+    "app.timeMachineBackup.deleteFailure.interruptedMessage" : {
+      "comment" : "Help menu - Time Machine backup deletion error when the deletion progress ends without a result",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "The Time Machine backup deletion was interrupted."
+          }
+        }
+      }
+    },
+    "app.timeMachineBackup.deleteFailure.message" : {
+      "comment" : "Help menu - Time Machine backup deletion failure body; placeholder is the error description",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Phi could not delete the Time Machine backup: %@"
+          }
+        }
+      }
+    },
+    "app.timeMachineBackup.deleteFailure.title" : {
+      "comment" : "Help menu - Time Machine backup deletion failure alert title",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Time Machine Backup Deletion Failed"
+          }
+        }
+      }
+    },
+    "app.timeMachineBackup.deleteProgress.title" : {
+      "comment" : "Time Machine backup deletion progress title",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Deleting Backup"
+          }
+        }
+      }
+    },
+    "app.timeMachineBackup.deleteProgress.windowTitle" : {
+      "comment" : "Time Machine backup deletion progress window title",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Time Machine Backup"
+          }
+        }
+      }
+    },
+    "app.timeMachineBackup.details.dataSize" : {
+      "comment" : "Help menu - Selected Time Machine backup logical data size; placeholder is a formatted byte count or an unavailable label",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Backup data size: %@"
+          }
+        }
+      }
+    },
+    "app.timeMachineBackup.details.dataSizeUnavailable" : {
+      "comment" : "Help menu - Fallback shown when a Time Machine backup's logical data size was not recorded",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Unavailable"
+          }
+        }
+      }
+    },
+    "app.timeMachineBackup.details.deleteButton" : {
+      "comment" : "Help menu - Button in the selected Time Machine backup details alert that starts deletion",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Delete Backup"
+          }
+        }
+      }
+    },
+    "app.timeMachineBackup.details.title" : {
+      "comment" : "Help menu - Title of the selected Time Machine backup details alert",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Time Machine Backup"
+          }
+        }
+      }
+    },
     "app.timeMachineRestore.backupUnavailableMessage" : {
       "comment" : "Help menu - Time Machine restore error when a selected backup disappears",
       "extractionState" : "extracted_with_value",
@@ -12458,7 +12638,7 @@
     },
     "app.timeMachineRestore.confirmation.title" : {
       "comment" : "Help menu - Time Machine restore confirmation title",
-      "extractionState" : "extracted_with_value",
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -42485,6 +42665,18 @@
         }
       }
     },
+    "settings.ai.connectors.assignButton" : {
+      "comment" : "AI settings - Button that assigns an existing unassigned connector to the selected browser Profile",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Assign"
+          }
+        }
+      }
+    },
     "settings.ai.connectors.authorization.failureMessage" : {
       "comment" : "AI settings - OAuth authorization failure",
       "extractionState" : "extracted_with_value",
@@ -42607,7 +42799,7 @@
     },
     "settings.ai.connectors.authorization.openFailure" : {
       "comment" : "AI settings - OAuth authorization open error",
-      "extractionState" : "extracted_with_value",
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -42673,18 +42865,6 @@
           "stringUnit" : {
             "state" : "new",
             "value" : "Open a browser window for the selected Profile to continue."
-          }
-        }
-      }
-    },
-    "settings.ai.connectors.assignButton" : {
-      "comment" : "AI settings - Button that assigns an existing unassigned connector to the selected browser Profile",
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "Assign"
           }
         }
       }
@@ -43289,18 +43469,6 @@
         }
       }
     },
-    "settings.ai.connectors.unassignedRowStatus" : {
-      "comment" : "AI settings - Connector row status for an existing connection that has not yet been assigned to a browser Profile",
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "Not assigned to a Profile"
-          }
-        }
-      }
-    },
     "settings.ai.connectors.profileSelector.description" : {
       "comment" : "AI settings - Explanation that connector accounts belong only to the selected browser Profile",
       "extractionState" : "extracted_with_value",
@@ -43441,6 +43609,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "外部資料連接器"
+          }
+        }
+      }
+    },
+    "settings.ai.connectors.unassignedRowStatus" : {
+      "comment" : "AI settings - Connector row status for an existing connection that has not yet been assigned to a browser Profile",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Not assigned to a Profile"
           }
         }
       }

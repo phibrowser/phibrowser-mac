@@ -105,7 +105,6 @@ struct TimeMachineStartupRecoveryGate {
     private func cleanupEmptyManagedDirectories() {
         removeEmptyManagedDirectoryIfNeeded(paths.pendingRootURL, description: "pending")
         removeEmptyManagedDirectoryIfNeeded(paths.emergencyRootURL, description: "emergency")
-        removeEmptyManagedDirectoryIfNeeded(paths.snapshotsRootURL, description: "snapshots")
     }
 
     private func handleUnavailableHelper(journal: TimeMachineRestoreJournal, helperURL: URL) -> Bool {

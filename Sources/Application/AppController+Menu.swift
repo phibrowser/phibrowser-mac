@@ -1141,25 +1141,38 @@ extension AppController {
         }
 
         do {
-            guard let backup = try TimeMachineMenuPresenter().backup(id: backupID) else {
+            guard let details = try TimeMachineMenuPresenter().backupDetails(id: backupID) else {
                 presentTimeMachineRestoreFailure(
                     NSLocalizedString("app.timeMachineRestore.backupUnavailableMessage", value: "The selected Time Machine backup is no longer available.", comment: "Help menu - Time Machine restore error when a selected backup disappears")
                 )
                 return
             }
 
+            let backup = details.backup
             let backupTitle = backup.menuTitle()
+            let snapshotSize = timeMachineBackupSizeDescription(details.snapshotSizeBytes)
             let alert = NSAlert()
-            alert.messageText = NSLocalizedString("app.timeMachineRestore.confirmation.title", value: "Restore Time Machine Backup?", comment: "Help menu - Time Machine restore confirmation title")
+            alert.messageText = NSLocalizedString("app.timeMachineBackup.details.title", value: "Time Machine Backup", comment: "Help menu - Title of the selected Time Machine backup details alert")
             let messageTemplate = NSLocalizedString("app.timeMachineRestore.confirmation.message", value: "Phi will quit and restore %@. The current app and selected user data will be replaced.",
                 comment: "Help menu - Time Machine restore confirmation body"
             )
-            alert.informativeText = String(format: messageTemplate, backupTitle)
+            let dataSizeTemplate = NSLocalizedString("app.timeMachineBackup.details.dataSize", value: "Backup data size: %@", comment: "Help menu - Selected Time Machine backup logical data size; placeholder is a formatted byte count or an unavailable label")
+            alert.informativeText = [
+                String(format: messageTemplate, backupTitle),
+                String(format: dataSizeTemplate, snapshotSize)
+            ].joined(separator: "\n\n")
             alert.alertStyle = .warning
             alert.addButton(withTitle: NSLocalizedString("app.timeMachineRestore.confirmation.restoreButton", value: "Restore", comment: "Help menu - Time Machine restore confirmation button"))
             alert.addButton(withTitle: NSLocalizedString("app.timeMachineRestore.confirmation.cancelButton", value: "Cancel", comment: "Time Machine restore - Cancel confirmation button"))
+            alert.addButton(withTitle: NSLocalizedString("app.timeMachineBackup.details.deleteButton", value: "Delete Backup", comment: "Help menu - Button in the selected Time Machine backup details alert that starts deletion"))
+            alert.buttons[2].hasDestructiveAction = true
 
-            guard alert.runModal() == .alertFirstButtonReturn else {
+            let response = alert.runModal()
+            if response == .alertThirdButtonReturn {
+                deleteTimeMachineBackup(backup)
+                return
+            }
+            guard response == .alertFirstButtonReturn else {
                 return
             }
 
@@ -1203,6 +1216,70 @@ extension AppController {
             )
             presentTimeMachineRestoreFailure(String(format: messageTemplate, error.localizedDescription))
         }
+    }
+
+    private func timeMachineBackupSizeDescription(_ sizeBytes: UInt64?) -> String {
+        guard let sizeBytes else {
+            return NSLocalizedString("app.timeMachineBackup.details.dataSizeUnavailable", value: "Unavailable", comment: "Help menu - Fallback shown when a Time Machine backup's logical data size was not recorded")
+        }
+        return ByteCountFormatter.string(
+            fromByteCount: Int64(clamping: sizeBytes),
+            countStyle: .file
+        )
+    }
+
+    private func deleteTimeMachineBackup(_ backup: TimeMachineBackupRecord) {
+        let backupTitle = backup.menuTitle()
+        let alert = NSAlert()
+        alert.messageText = NSLocalizedString("app.timeMachineBackup.deleteConfirmation.title", value: "Delete Time Machine Backup?", comment: "Help menu - Title of the Time Machine backup deletion confirmation")
+        let messageTemplate = NSLocalizedString("app.timeMachineBackup.deleteConfirmation.message", value: "Deleting %@ will permanently remove this restore point. Your current Phi app and data will not be affected. This cannot be undone.", comment: "Help menu - Time Machine backup deletion confirmation; placeholder is the selected backup title")
+        alert.informativeText = String(format: messageTemplate, backupTitle)
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: NSLocalizedString("app.timeMachineBackup.deleteConfirmation.deleteButton", value: "Delete", comment: "Help menu - Destructive button that confirms Time Machine backup deletion"))
+        alert.addButton(withTitle: NSLocalizedString("app.timeMachineBackup.deleteConfirmation.cancelButton", value: "Cancel", comment: "Help menu - Button that cancels Time Machine backup deletion"))
+        alert.buttons[0].hasDestructiveAction = true
+        guard alert.runModal() == .alertFirstButtonReturn else {
+            return
+        }
+
+        let progressModal = TimeMachineBackupDeletionProgressModal(backupTitle: backupTitle)
+        DispatchQueue.main.async {
+            DispatchQueue.global(qos: .userInitiated).async {
+                let outcome = Result {
+                    try TimeMachineCatalogStore().deleteBackupAtUserRequest(id: backup.id)
+                }
+                DispatchQueue.main.async {
+                    progressModal.finish(outcome: outcome)
+                }
+            }
+        }
+        _ = progressModal.run()
+
+        switch progressModal.outcome {
+        case .success(.some(_)):
+            AppLogInfo("[TimeMachine] Deleted backup \(backup.id.uuidString) at the user's request.")
+        case .success(.none):
+            presentTimeMachineBackupDeletionFailure(
+                NSLocalizedString("app.timeMachineBackup.deleteFailure.backupUnavailableMessage", value: "The selected Time Machine backup is no longer available.", comment: "Help menu - Time Machine backup deletion error when the selected backup disappears")
+            )
+        case .failure(let error):
+            let messageTemplate = NSLocalizedString("app.timeMachineBackup.deleteFailure.message", value: "Phi could not delete the Time Machine backup: %@", comment: "Help menu - Time Machine backup deletion failure body; placeholder is the error description")
+            presentTimeMachineBackupDeletionFailure(String(format: messageTemplate, error.localizedDescription))
+        case .none:
+            presentTimeMachineBackupDeletionFailure(
+                NSLocalizedString("app.timeMachineBackup.deleteFailure.interruptedMessage", value: "The Time Machine backup deletion was interrupted.", comment: "Help menu - Time Machine backup deletion error when the deletion progress ends without a result")
+            )
+        }
+    }
+
+    private func presentTimeMachineBackupDeletionFailure(_ message: String) {
+        AppLogError("Time Machine backup deletion failed: \(message)")
+        let alert = NSAlert()
+        alert.messageText = NSLocalizedString("app.timeMachineBackup.deleteFailure.title", value: "Time Machine Backup Deletion Failed", comment: "Help menu - Time Machine backup deletion failure alert title")
+        alert.informativeText = message
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: NSLocalizedString("app.timeMachineBackup.deleteFailure.dismissButton", value: "OK", comment: "Help menu - Button that dismisses a Time Machine backup deletion failure"))
+        alert.runModal()
     }
 
     private func presentTimeMachineRestoreFailure(_ message: String) {
@@ -2621,6 +2698,83 @@ extension AppController: NSMenuDelegate {
         guard AppController.spacesMenuNeedsRebuild else { return }
         AppController.spacesMenuNeedsRebuild = false
         rebuildSpacesMenu(menu)
+    }
+}
+
+private final class TimeMachineBackupDeletionProgressModal {
+    private let window: NSPanel
+    private let progressIndicator: NSProgressIndicator
+
+    private(set) var outcome: Result<TimeMachineBackupRecord?, Error>?
+
+    init(backupTitle: String) {
+        window = NSPanel(
+            contentRect: NSRect(x: 0, y: 0, width: 420, height: 132),
+            styleMask: [.titled],
+            backing: .buffered,
+            defer: false
+        )
+        window.title = NSLocalizedString("app.timeMachineBackup.deleteProgress.windowTitle", value: "Time Machine Backup", comment: "Time Machine backup deletion progress window title")
+        window.level = .modalPanel
+        window.isReleasedWhenClosed = false
+        window.standardWindowButton(.closeButton)?.isHidden = true
+        window.standardWindowButton(.miniaturizeButton)?.isHidden = true
+        window.standardWindowButton(.zoomButton)?.isHidden = true
+
+        let titleLabel = NSTextField(labelWithString: NSLocalizedString("app.timeMachineBackup.deleteProgress.title", value: "Deleting Backup", comment: "Time Machine backup deletion progress title"))
+        titleLabel.font = .systemFont(ofSize: 15, weight: .semibold)
+        titleLabel.lineBreakMode = .byTruncatingTail
+        titleLabel.translatesAutoresizingMaskIntoConstraints = false
+
+        let backupLabel = NSTextField(labelWithString: backupTitle)
+        backupLabel.font = .systemFont(ofSize: 12)
+        backupLabel.textColor = .secondaryLabelColor
+        backupLabel.lineBreakMode = .byTruncatingMiddle
+        backupLabel.translatesAutoresizingMaskIntoConstraints = false
+
+        progressIndicator = NSProgressIndicator()
+        progressIndicator.style = .bar
+        progressIndicator.controlSize = .regular
+        progressIndicator.isIndeterminate = true
+        progressIndicator.usesThreadedAnimation = true
+        progressIndicator.translatesAutoresizingMaskIntoConstraints = false
+
+        let contentView = NSView()
+        contentView.translatesAutoresizingMaskIntoConstraints = false
+        window.contentView = contentView
+        contentView.addSubview(titleLabel)
+        contentView.addSubview(backupLabel)
+        contentView.addSubview(progressIndicator)
+
+        NSLayoutConstraint.activate([
+            titleLabel.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: 24),
+            titleLabel.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -24),
+            titleLabel.topAnchor.constraint(equalTo: contentView.topAnchor, constant: 24),
+
+            backupLabel.leadingAnchor.constraint(equalTo: titleLabel.leadingAnchor),
+            backupLabel.trailingAnchor.constraint(equalTo: titleLabel.trailingAnchor),
+            backupLabel.topAnchor.constraint(equalTo: titleLabel.bottomAnchor, constant: 8),
+
+            progressIndicator.leadingAnchor.constraint(equalTo: titleLabel.leadingAnchor),
+            progressIndicator.trailingAnchor.constraint(equalTo: titleLabel.trailingAnchor),
+            progressIndicator.topAnchor.constraint(equalTo: backupLabel.bottomAnchor, constant: 18)
+        ])
+    }
+
+    func run() -> NSApplication.ModalResponse {
+        window.center()
+        NSApp.activate(ignoringOtherApps: true)
+        window.makeKeyAndOrderFront(nil)
+        progressIndicator.startAnimation(nil)
+        return NSApp.runModal(for: window)
+    }
+
+    func finish(outcome: Result<TimeMachineBackupRecord?, Error>) {
+        self.outcome = outcome
+        progressIndicator.stopAnimation(nil)
+        NSApp.stopModal(withCode: .stop)
+        window.orderOut(nil)
+        window.close()
     }
 }
 

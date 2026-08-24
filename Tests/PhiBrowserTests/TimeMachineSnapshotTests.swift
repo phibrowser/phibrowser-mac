@@ -104,6 +104,24 @@ final class TimeMachineSnapshotTests: XCTestCase {
         XCTAssertEqual(catalog.completedBackups.map(\.id), [first.id])
     }
 
+    func testReleaseSnapshotDoesNotRecreateUserDeletedTrigger() throws {
+        let fixture = try makeFixture(includePreferences: true)
+        try writePolicy(fixture: fixture, includeChromiumData: true)
+        let manager = makeManager(fixture: fixture, backupTriggerMode: .version)
+        let store = TimeMachineCatalogStore(paths: fixture.paths)
+
+        let first = try XCTUnwrap(try manager.prepareBackupIfNeeded(currentVersion: "2.0", currentBuild: 600))
+        XCTAssertEqual(try store.deleteBackupAtUserRequest(id: first.id), first)
+
+        let second = try manager.prepareBackupIfNeeded(currentVersion: "2.0", currentBuild: 601)
+
+        XCTAssertNil(second)
+        let catalog = try store.load()
+        XCTAssertTrue(catalog.completedBackups.isEmpty)
+        XCTAssertTrue(catalog.backups.isEmpty)
+        XCTAssertEqual(catalog.suppressedBackupTriggers.count, 1)
+    }
+
     func testSnapshotStoresRollbackAppBundleName() throws {
         let fixture = try makeFixture(includePreferences: true)
         try writePolicy(
@@ -145,6 +163,9 @@ final class TimeMachineSnapshotTests: XCTestCase {
         let record = try XCTUnwrap(try manager.prepareBackupIfNeeded(currentVersion: "2.0", currentBuild: 600))
 
         let snapshotURL = fixture.paths.url(forRelativePath: record.snapshotRelativePath)
+        let storedRecord = try XCTUnwrap(
+            TimeMachineCatalogStore(paths: fixture.paths).load().completedBackups.first
+        )
         let trace = try XCTUnwrap(traces.first)
         XCTAssertEqual(traces.count, 1)
         XCTAssertEqual(trace.result, .succeeded)
@@ -152,7 +173,36 @@ final class TimeMachineSnapshotTests: XCTestCase {
         XCTAssertEqual(trace.bundleIdentifier, "com.phibrowser.Mac")
         XCTAssertEqual(trace.duration, 2.5)
         XCTAssertEqual(trace.snapshotSizeBytes, TimeMachineFileMetrics.sizeBytes(at: snapshotURL))
+        XCTAssertEqual(record.snapshotSizeBytes, trace.snapshotSizeBytes)
+        XCTAssertEqual(storedRecord.snapshotSizeBytes, trace.snapshotSizeBytes)
         XCTAssertGreaterThan(trace.snapshotSizeBytes ?? 0, 0)
+    }
+
+    func testSnapshotRemainsCommittedWhenSizeMetadataUpdateFails() throws {
+        let fixture = try makeFixture(includePreferences: true)
+        try writePolicy(fixture: fixture, includeChromiumData: true)
+        var writeCount = 0
+        let store = TimeMachineCatalogStore(
+            paths: fixture.paths,
+            catalogWriter: { data, catalogURL in
+                writeCount += 1
+                if writeCount == 2 {
+                    throw TimeMachineSnapshotTestError.sizeMetadataWriteFailed
+                }
+                try data.write(to: catalogURL, options: .atomic)
+            }
+        )
+        let manager = makeManager(fixture: fixture, catalogStore: store)
+
+        let record = try XCTUnwrap(
+            try manager.prepareBackupIfNeeded(currentVersion: "2.0", currentBuild: 600)
+        )
+
+        XCTAssertNil(record.snapshotSizeBytes)
+        XCTAssertTrue(fileExists(fixture.paths.url(forRelativePath: record.snapshotRelativePath)))
+        let storedRecord = try XCTUnwrap(try store.load().completedBackups.first)
+        XCTAssertEqual(storedRecord.id, record.id)
+        XCTAssertNil(storedRecord.snapshotSizeBytes)
     }
 
     private struct Fixture {
@@ -218,6 +268,7 @@ final class TimeMachineSnapshotTests: XCTestCase {
     private func makeManager(
         fixture: Fixture,
         backupTriggerMode: TimeMachineBackupTriggerMode = .current,
+        catalogStore: TimeMachineCatalogStore? = nil,
         uptimeProvider: @escaping () -> TimeInterval = { ProcessInfo.processInfo.systemUptime },
         backupTraceReporter: @escaping TimeMachineSnapshotManager.BackupTraceReporter = { _ in }
     ) -> TimeMachineSnapshotManager {
@@ -225,7 +276,7 @@ final class TimeMachineSnapshotTests: XCTestCase {
             paths: fixture.paths,
             policyLoader: TimeMachineRollbackPolicyLoader(policyURLProvider: { fixture.policyURL }),
             backupTriggerMode: backupTriggerMode,
-            catalogStore: TimeMachineCatalogStore(paths: fixture.paths),
+            catalogStore: catalogStore ?? TimeMachineCatalogStore(paths: fixture.paths),
             applicationSupportURLProvider: { fixture.applicationSupportURL },
             phiDataURLProvider: { fixture.phiDataURL },
             preferencesURLProvider: { fixture.preferencesURL },
@@ -238,7 +289,7 @@ final class TimeMachineSnapshotTests: XCTestCase {
     }
 
     private func makeTemporaryDirectory() throws -> URL {
-        let url = FileManager.default.temporaryDirectory
+        let url = URL(fileURLWithPath: "/Users/Shared", isDirectory: true)
             .appendingPathComponent("TimeMachineSnapshotTests-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
         temporaryDirectories.append(url)
@@ -255,6 +306,10 @@ final class TimeMachineSnapshotTests: XCTestCase {
         decoder.dateDecodingStrategy = .iso8601
         return try decoder.decode(TimeMachineSnapshotManifest.self, from: data)
     }
+}
+
+private enum TimeMachineSnapshotTestError: Error {
+    case sizeMetadataWriteFailed
 }
 
 private final class UptimeSequence {

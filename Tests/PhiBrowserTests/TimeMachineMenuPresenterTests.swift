@@ -102,6 +102,49 @@ final class TimeMachineMenuPresenterTests: XCTestCase {
         XCTAssertNil(try presenter.backup(id: UUID(uuidString: "00000000-0000-0000-0000-000000001004")!))
     }
 
+    func testBackupDetailsUsesStoredSnapshotSize() throws {
+        let fixture = try makeFixture()
+        let record = try makeBackup(
+            id: UUID(uuidString: "00000000-0000-0000-0000-000000001006")!,
+            createdAt: makeDate(year: 2026, month: 6, day: 11),
+            snapshotSizeBytes: 1_234
+        )
+        try FileManager.default.createDirectory(
+            at: fixture.paths.url(forRelativePath: record.snapshotRelativePath),
+            withIntermediateDirectories: true
+        )
+        try TimeMachineCatalogStore(paths: fixture.paths).save(TimeMachineCatalog(backups: [record]))
+        let presenter = TimeMachineMenuPresenter(
+            catalogStore: TimeMachineCatalogStore(paths: fixture.paths),
+            timeZone: TimeZone(secondsFromGMT: 0)!
+        )
+
+        let details = try XCTUnwrap(try presenter.backupDetails(id: record.id))
+
+        XCTAssertEqual(details.backup, record)
+        XCTAssertEqual(details.snapshotSizeBytes, 1_234)
+    }
+
+    func testBackupDetailsDoesNotSynchronouslyScanLegacyRecord() throws {
+        let fixture = try makeFixture()
+        let record = try makeBackup(
+            id: UUID(uuidString: "00000000-0000-0000-0000-000000001007")!,
+            createdAt: makeDate(year: 2026, month: 6, day: 11)
+        )
+        let snapshotURL = fixture.paths.url(forRelativePath: record.snapshotRelativePath)
+        try FileManager.default.createDirectory(at: snapshotURL, withIntermediateDirectories: true)
+        try Data(repeating: 0x1, count: 2_048).write(to: snapshotURL.appendingPathComponent("data.bin"))
+        try TimeMachineCatalogStore(paths: fixture.paths).save(TimeMachineCatalog(backups: [record]))
+        let presenter = TimeMachineMenuPresenter(
+            catalogStore: TimeMachineCatalogStore(paths: fixture.paths),
+            timeZone: TimeZone(secondsFromGMT: 0)!
+        )
+
+        let details = try XCTUnwrap(try presenter.backupDetails(id: record.id))
+
+        XCTAssertNil(details.snapshotSizeBytes)
+    }
+
     private struct Fixture {
         let rootURL: URL
         let paths: TimeMachinePaths
@@ -121,7 +164,8 @@ final class TimeMachineMenuPresenterTests: XCTestCase {
     private func makeBackup(
         id: UUID,
         createdAt: Date,
-        rollbackVersion: String = "1.6.0"
+        rollbackVersion: String = "1.6.0",
+        snapshotSizeBytes: UInt64? = nil
     ) throws -> TimeMachineBackupRecord {
         TimeMachineBackupRecord(
             id: id,
@@ -135,6 +179,7 @@ final class TimeMachineMenuPresenterTests: XCTestCase {
             rollbackPackageSHA256: "abc123",
             includeChromiumData: true,
             snapshotRelativePath: "Snapshots/\(id.uuidString)",
+            snapshotSizeBytes: snapshotSizeBytes,
             status: .completed
         )
     }
@@ -151,7 +196,7 @@ final class TimeMachineMenuPresenterTests: XCTestCase {
     }
 
     private func makeTemporaryDirectory() throws -> URL {
-        let url = FileManager.default.temporaryDirectory
+        let url = URL(fileURLWithPath: "/Users/Shared", isDirectory: true)
             .appendingPathComponent("TimeMachineMenuPresenterTests-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
         temporaryDirectories.append(url)

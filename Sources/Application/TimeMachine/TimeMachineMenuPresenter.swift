@@ -11,6 +11,11 @@ struct TimeMachineMenuEntry: Equatable {
     let isEnabled: Bool
 }
 
+struct TimeMachineBackupDetails: Equatable {
+    let backup: TimeMachineBackupRecord
+    let snapshotSizeBytes: UInt64?
+}
+
 struct TimeMachineMenuPresenter {
     static let emptyTitle = NSLocalizedString("timeMachine.helpMenu.emptyPlaceholder", value: "No Backups Available", comment: "Help menu - Time Machine submenu placeholder when no completed backups exist")
 
@@ -48,6 +53,16 @@ struct TimeMachineMenuPresenter {
 
     func backup(id: UUID) throws -> TimeMachineBackupRecord? {
         try catalogStore.load().completedBackups.first { $0.id == id }
+    }
+
+    func backupDetails(id: UUID) throws -> TimeMachineBackupDetails? {
+        guard let backup = try backup(id: id) else {
+            return nil
+        }
+        return TimeMachineBackupDetails(
+            backup: backup,
+            snapshotSizeBytes: try catalogStore.snapshotSizeBytes(for: backup)
+        )
     }
 
     func populate(_ menu: NSMenu, target: AnyObject, action: Selector) throws {

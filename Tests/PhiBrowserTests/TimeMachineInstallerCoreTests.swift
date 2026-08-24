@@ -58,9 +58,9 @@ final class TimeMachineInstallerCoreTests: XCTestCase {
         XCTAssertFalse(fileExists(fixture.snapshotURL))
         XCTAssertFalse(fileExists(fixture.paths.pendingRootURL))
         XCTAssertFalse(fileExists(fixture.paths.emergencyRootURL))
-        XCTAssertFalse(fileExists(fixture.paths.snapshotsRootURL))
-        XCTAssertFalse(fileExists(fixture.paths.catalogURL))
-        XCTAssertFalse(fileExists(fixture.paths.rootURL))
+        XCTAssertTrue(fileExists(fixture.paths.snapshotsRootURL))
+        XCTAssertTrue(fileExists(fixture.paths.catalogURL))
+        XCTAssertTrue(fileExists(fixture.paths.rootURL))
         XCTAssertTrue(try TimeMachineCatalogStore(paths: fixture.paths).load().completedBackups.isEmpty)
     }
 
@@ -96,6 +96,57 @@ final class TimeMachineInstallerCoreTests: XCTestCase {
         XCTAssertTrue(fileExists(otherOperationURL))
         XCTAssertTrue(fileExists(otherEmergencyURL))
         XCTAssertNotNil(try TimeMachineRestoreJournalStore(paths: fixture.paths).load(operationID: otherOperationID))
+    }
+
+    func testSuccessfulRestorePreservesUserDeletedTriggerMarker() throws {
+        let fixture = try makeFixture(includeChromiumData: true)
+        let store = TimeMachineCatalogStore(paths: fixture.paths)
+        var catalog = try store.load()
+        let marker = TimeMachineSuppressedBackupTrigger(
+            backupTriggerBuild: 599,
+            creatingVersion: "1.9"
+        )
+        catalog.suppressedBackupTriggers = [marker]
+        try store.save(catalog)
+        let core = makeCore(fixture: fixture) { _ in }
+
+        try core.restore(planURL: fixture.planURL)
+
+        let remainingCatalog = try store.load()
+        XCTAssertTrue(remainingCatalog.backups.isEmpty)
+        XCTAssertEqual(remainingCatalog.suppressedBackupTriggers, [marker])
+        XCTAssertTrue(fileExists(fixture.paths.catalogURL))
+    }
+
+    func testCompletedRestoreCleanupRejectsSymlinkedSnapshotsDirectory() throws {
+        let fixture = try makeFixture(includeChromiumData: true)
+        let plan = try TimeMachineInstallerCore.loadPlan(at: fixture.planURL)
+        let snapshotID = try XCTUnwrap(plan.backupID)
+        let externalSnapshotsURL = fixture.rootURL.appendingPathComponent("ExternalSnapshots", isDirectory: true)
+        let externalSnapshotURL = externalSnapshotsURL.appendingPathComponent(snapshotID.uuidString, isDirectory: true)
+        let markerURL = externalSnapshotURL.appendingPathComponent("keep.txt", isDirectory: false)
+        try FileManager.default.createDirectory(at: externalSnapshotURL, withIntermediateDirectories: true)
+        try "keep".write(to: markerURL, atomically: true, encoding: .utf8)
+        try FileManager.default.removeItem(at: fixture.paths.snapshotsRootURL)
+        try FileManager.default.createSymbolicLink(
+            at: fixture.paths.snapshotsRootURL,
+            withDestinationURL: externalSnapshotsURL
+        )
+
+        TimeMachineCompletedRestoreCleaner(paths: fixture.paths).cleanup(
+            plan: plan,
+            operationURL: fixture.operationURL,
+            logger: { _ in }
+        )
+
+        XCTAssertTrue(fileExists(markerURL))
+        XCTAssertTrue(fileExists(fixture.paths.snapshotsRootURL))
+
+        try FileManager.default.removeItem(at: fixture.paths.snapshotsRootURL)
+        XCTAssertEqual(
+            try TimeMachineCatalogStore(paths: fixture.paths).load().backups.map(\.id),
+            [snapshotID]
+        )
     }
 
     func testFailureAfterDataSwapRestoresEmergencyBackups() throws {
@@ -571,7 +622,7 @@ final class TimeMachineInstallerCoreTests: XCTestCase {
     }
 
     private func makeTemporaryDirectory() throws -> URL {
-        let url = FileManager.default.temporaryDirectory
+        let url = URL(fileURLWithPath: "/Users/Shared", isDirectory: true)
             .appendingPathComponent("TimeMachineInstallerCoreTests-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
         temporaryDirectories.append(url)

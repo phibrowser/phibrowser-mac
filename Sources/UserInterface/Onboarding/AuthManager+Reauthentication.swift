@@ -185,6 +185,7 @@ extension AuthManager {
         }
 
         promptForReauthenticationIfNeeded(trigger: "renew_failed")
+        notifyAuthSessionChanged("reauth-required")
     }
 
     @MainActor
@@ -474,4 +475,9 @@ extension AuthManager {
 
 extension Notification.Name {
     static let authReauthenticationStateDidChange = Notification.Name("authReauthenticationStateDidChange")
+
+    /// Any Phi auth session change worth telling Chromium about: login,
+    /// logout, renewal completion, reauthentication required. Payload-free —
+    /// Chromium re-reads the session and reconciles.
+    static let phiAuthSessionDidChange = Notification.Name("phiAuthSessionDidChange")
 }

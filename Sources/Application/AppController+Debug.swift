@@ -27,6 +27,13 @@ private enum DebugWindowStore {
 }
 
 #if DEBUG
+/// State for the debug operating-mask preview toggle: which tab wears the
+/// mask, and the theme observers held while the preview is on.
+private enum OperatingMaskPreviewStore {
+    static var masked: (tabId: Int, windowId: Int)?
+    static var observers: [NSObjectProtocol] = []
+}
+
 private enum ImagePreviewDebugSamples {
     private static let repoRootURL = URL(fileURLWithPath: #filePath)
         .deletingLastPathComponent()
@@ -148,6 +155,14 @@ extension AppController {
         )
         simulateAgentItem.target = self
         debugMenu.addItem(simulateAgentItem)
+
+        let maskPreviewItem = NSMenuItem(
+            title: "Preview Agent Operating Mask",
+            action: #selector(toggleOperatingMaskPreview(_:)),
+            keyEquivalent: ""
+        )
+        maskPreviewItem.target = self
+        debugMenu.addItem(maskPreviewItem)
 
         let fakeDeletionItem = NSMenuItem(
             title: "Account Deletion Fake Responses",
@@ -611,6 +626,62 @@ extension AppController {
             AppLogInfo("[AgentSpace][debug] simulated agent Space \(spaceId); switch to its pip to watch")
             AgentSpaceManager.shared.setStatusCaption(taskId: taskId, caption: "Reading the page…")
         }
+    }
+
+    /// Test harness for the operating-mask design: wears the real mask — the
+    /// native wash with edge lights, and the injected page recolor — on the
+    /// key window's active tab without spawning an agent Space, so the style
+    /// can be inspected on any page. While on, the preview follows theme and
+    /// appearance changes the same way a real task's mask does; note the mask
+    /// is also the input barrier, so the page is uninteractable until toggled
+    /// off.
+    @MainActor
+    @objc func toggleOperatingMaskPreview(_ sender: NSMenuItem) {
+        if let masked = OperatingMaskPreviewStore.masked {
+            AgentAnimationManager.shared.setActive(false, for: masked.tabId)
+            AgentPageTheme.shared.clear(windowId: masked.windowId)
+            OperatingMaskPreviewStore.observers
+                .forEach(NotificationCenter.default.removeObserver)
+            OperatingMaskPreviewStore.observers = []
+            OperatingMaskPreviewStore.masked = nil
+            sender.state = .off
+            return
+        }
+
+        guard let browserState = activeBrowserState,
+              let tabId = browserState.focusingTab?.guid else { return }
+        let windowId = browserState.windowId
+        AgentAnimationManager.shared.setActive(true, for: tabId)
+        Self.applyOperatingMaskPreviewPageTheme(windowId: windowId)
+        for name: Notification.Name in
+            [.themeDidChange, .appearanceDidChange, .spaceThemeDidChange] {
+            let observer = NotificationCenter.default.addObserver(
+                forName: name, object: nil, queue: .main
+            ) { _ in
+                MainActor.assumeIsolated {
+                    guard let windowId = OperatingMaskPreviewStore.masked?.windowId
+                    else { return }
+                    AppController.applyOperatingMaskPreviewPageTheme(windowId: windowId)
+                }
+            }
+            OperatingMaskPreviewStore.observers.append(observer)
+        }
+        OperatingMaskPreviewStore.masked = (tabId, windowId)
+        sender.state = .on
+    }
+
+    /// Layer 2 of the debug preview, resolved the same way
+    /// `AgentSpaceManager.refreshOperatingPageTheme` resolves it for a task.
+    /// Static so the theme observers need not capture the controller.
+    @MainActor
+    private static func applyOperatingMaskPreviewPageTheme(windowId: Int) {
+        guard let themeContext = MainBrowserWindowControllersManager.shared
+                .getBrowserState(for: windowId)?.themeContext else { return }
+        let appearance = themeContext.currentAppearance
+        let color = themeContext.currentTheme.color(
+            for: .themeColor, appearance: appearance)
+        AgentPageTheme.shared.apply(
+            windowId: windowId, themeColor: color, appearance: appearance)
     }
 
     /// Test harness for the credential dialogs: runs the real coordinator flow

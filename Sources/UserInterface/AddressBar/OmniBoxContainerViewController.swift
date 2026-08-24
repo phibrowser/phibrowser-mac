@@ -157,9 +157,11 @@ final class OmniBoxContainerViewController: NSViewController {
         var locationInTarget = locationInWindow
         if let parent = window.parent {
             let screenPoint = window.convertPoint(toScreen: locationInWindow)
+            // Siblings sit at the host's own level (peek/reader) — anything
+            // higher is a `.floating` surface that must not be clicked into.
             let sibling = (parent.childWindows ?? []).first { child in
                 child !== window && child.isVisible
-                    && child.level.rawValue < window.level.rawValue
+                    && child.level.rawValue <= window.level.rawValue
                     && child.frame.contains(screenPoint)
             }
             targetWindow = sibling ?? parent

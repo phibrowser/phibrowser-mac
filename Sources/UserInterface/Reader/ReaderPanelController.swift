@@ -83,6 +83,10 @@ final class ReaderPanelController {
     private var isConcealedByInWindowOverlay = false
     /// See `setEclipsedByInWindowOverlay`.
     private var isEclipsedByInWindowOverlay = false
+    /// The omnibox host window this panel is currently eclipsed by, so
+    /// reveals can re-order themselves under it. See
+    /// `setEclipsedByInWindowOverlay`.
+    private weak var eclipsingOverlayWindow: NSWindow?
 
     init(browserState: BrowserState,
          parentWindow: NSWindow,
@@ -156,18 +160,36 @@ final class ReaderPanelController {
         panel.orderOut(nil)
     }
 
-    /// While the omnibox floats over the panel (it lives in its own child
-    /// window one level up), the panel stays visible but goes input-inert:
-    /// its local key monitor must not fight the omnibox for Esc and
-    /// shortcuts, and reveals must not steal the omnibox's key. On
+    /// While the omnibox floats over the panel (it lives in a sibling child
+    /// window of the same browser window), the panel stays visible but goes
+    /// input-inert: its local key monitor must not fight the omnibox for Esc
+    /// and shortcuts, and reveals must not steal the omnibox's key. On
     /// un-eclipse the panel takes key back so the reader page keeps
     /// receiving keystrokes.
-    func setEclipsedByInWindowOverlay(_ eclipsed: Bool) {
+    func setEclipsedByInWindowOverlay(_ eclipsed: Bool, by overlayWindow: NSWindow? = nil) {
         guard isEclipsedByInWindowOverlay != eclipsed else { return }
         isEclipsedByInWindowOverlay = eclipsed
-        if !eclipsed {
+        eclipsingOverlayWindow = eclipsed ? overlayWindow : nil
+        if eclipsed {
+            // Already on screen: drop under the host that just came up.
+            if panel.isVisible { orderUnderEclipsingOverlay() }
+        } else {
             revealIfStillCurrent()
         }
+    }
+
+    /// Places the panel directly under the omnibox host, ordering it in if it
+    /// was off screen. The host and this panel are child windows of the same
+    /// browser window sharing its level, so which one covers the other is a
+    /// question of sibling order — the omnibox cannot buy that layering with a
+    /// raised level without also floating above other applications. Returns
+    /// false when there is no host on screen to sit under.
+    @discardableResult
+    private func orderUnderEclipsingOverlay() -> Bool {
+        guard let overlayWindow = eclipsingOverlayWindow,
+              overlayWindow.isVisible else { return false }
+        panel.order(.below, relativeTo: overlayWindow.windowNumber)
+        return true
     }
 
     /// While an in-window blocking overlay (tab search) is up, the panel
@@ -244,8 +266,11 @@ final class ReaderPanelController {
             parentWindow.addChildWindow(panel, ordered: .above)
         }
         if isEclipsedByInWindowOverlay {
-            // Visible beneath the floating omnibox, but never its key.
-            panel.orderFront(nil)
+            // Visible beneath the floating omnibox, but never its key — and
+            // never over it: come in under the host rather than to the front.
+            if !orderUnderEclipsingOverlay() {
+                panel.orderFront(nil)
+            }
         } else {
             panel.makeKeyAndOrderFront(nil)
             if let webView = containerView.subviews.first {

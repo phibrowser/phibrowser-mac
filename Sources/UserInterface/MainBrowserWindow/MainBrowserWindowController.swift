@@ -59,10 +59,12 @@ class MainBrowserWindowController: NSWindowController {
     /// Child window hosting the omnibox overlay ABOVE the peek/reader
     /// panels: those are child windows themselves, and a child window draws
     /// above every in-window view — an in-window omnibox would be covered by
-    /// them. One level above `.normal` keeps the omnibox over the panels and
-    /// below `.floating` surfaces (tooltips). Created on first use; stays
-    /// attached with `ignoresMouseEvents` flipped on dismissal so the hide
-    /// animation can finish inside it.
+    /// them. It stays in the browser window's own level so it keeps the
+    /// window's place in the inter-app stacking order (any level above
+    /// `.normal` would leave it floating over other apps once ours
+    /// deactivates); the ordering above the peek/reader panels comes from
+    /// sibling order among the children instead. Created on first use, and
+    /// taken off screen again when the overlay dismisses.
     private(set) var omniBoxHostPanel: NSPanel?
     private var omniBoxHostResizeObserver: NSObjectProtocol?
 
@@ -87,7 +89,6 @@ class MainBrowserWindowController: NSWindowController {
             panel.backgroundColor = .clear
             panel.isReleasedWhenClosed = false
             panel.hidesOnDeactivate = false
-            panel.level = NSWindow.Level(rawValue: NSWindow.Level.normal.rawValue + 1)
             panel.contentView = NSView()
             omniBoxHostPanel = panel
             // Child windows do not follow parent resizes on their own.
@@ -100,13 +101,28 @@ class MainBrowserWindowController: NSWindowController {
             }
         }
         guard let panel = omniBoxHostPanel else { return nil }
+        // Share the browser window's level so the pair moves through the
+        // inter-app window order as one — the overlay must never outlive our
+        // activation on top of another app's windows.
+        panel.level = window.level
         if panel.parent == nil {
+            // Re-attaching on every show lands the host above the peek and
+            // reader panels, the siblings it has to cover.
             window.addChildWindow(panel, ordered: .above)
         }
         panel.ignoresMouseEvents = false
         syncOmniBoxHostPanelFrame()
         panel.makeKeyAndOrderFront(nil)
         return panel
+    }
+
+    /// Takes the emptied host panel off screen once the overlay has detached
+    /// its content, so a dismissed omnibox leaves no window behind.
+    private func retireOmniBoxHostPanelIfIdle() {
+        guard let panel = omniBoxHostPanel,
+              omniBoxContainerViewController?.hasShown != true else { return }
+        panel.parent?.removeChildWindow(panel)
+        panel.orderOut(nil)
     }
 
     private func syncOmniBoxHostPanelFrame() {
@@ -546,8 +562,13 @@ class MainBrowserWindowController: NSWindowController {
                         self.omniBoxHostPanel?.ignoresMouseEvents = true
                         self.window?.makeKey()
                     }
-                    self.peekPanelController?.setEclipsedByInWindowOverlay(visible)
-                    self.readerPanelController?.setEclipsedByInWindowOverlay(visible)
+                    self.peekPanelController?.setEclipsedByInWindowOverlay(
+                        visible, by: self.omniBoxHostPanel)
+                    self.readerPanelController?.setEclipsedByInWindowOverlay(
+                        visible, by: self.omniBoxHostPanel)
+                    if !visible {
+                        self.retireOmniBoxHostPanelIfIdle()
+                    }
                 } else {
                     self.peekPanelController?.setConcealedByInWindowOverlay(visible)
                     self.readerPanelController?.setConcealedByInWindowOverlay(visible)

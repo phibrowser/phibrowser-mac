@@ -129,8 +129,16 @@ struct SplitTabPreviewContentResolver {
         self.thumbnailProvider = thumbnailProvider
     }
 
-    func isEligible(_ target: SplitTabPreviewTarget, in browserState: BrowserState) -> Bool {
-        resolvedTarget(for: target, in: browserState) != nil
+    func isEligible(
+        _ target: SplitTabPreviewTarget,
+        in browserState: BrowserState,
+        previewsEnabled: Bool = true
+    ) -> Bool {
+        guard previewsEnabled,
+              let resolved = resolvedTarget(for: target, in: browserState) else {
+            return false
+        }
+        return resolved.isOpen
     }
 
     func resolve(
@@ -298,7 +306,7 @@ struct SplitTabPreviewContentResolver {
             liveTab: pane.liveTab,
             isForeground: isForeground(liveTab: pane.liveTab, in: browserState),
             cachedPane: reusablePane,
-            includesImage: includesImage
+            includesImage: includesImage && TabPreviewURLPolicy.allowsSnapshot(for: rawURL)
         )
         return SplitTabPreviewPaneContent(
             id: pane.id,
@@ -591,7 +599,11 @@ final class SplitTabPreviewController {
     ) {
         guard let window,
               anchorView.window === window,
-              resolver.isEligible(target, in: browserState) else {
+              resolver.isEligible(
+                target,
+                in: browserState,
+                previewsEnabled: PhiPreferences.GeneralSettings.showTabPreviews.loadValue()
+              ) else {
             presentationController.dismiss(ownerID: ownerID)
             return
         }
@@ -620,7 +632,11 @@ final class SplitTabPreviewController {
     ) {
         guard let window,
               anchorView.window === window,
-              resolver.isEligible(target, in: browserState) else {
+              resolver.isEligible(
+                target,
+                in: browserState,
+                previewsEnabled: PhiPreferences.GeneralSettings.showTabPreviews.loadValue()
+              ) else {
             dismiss(ownerID: ownerID)
             return
         }
@@ -685,6 +701,13 @@ final class SplitTabPreviewController {
                 return false
             }
             let reusableContent = reuseCurrentImages ? self.viewModel.content : nil
+            guard self.resolver.isEligible(
+                target,
+                in: browserState,
+                previewsEnabled: PhiPreferences.GeneralSettings.showTabPreviews.loadValue()
+            ) else {
+                return false
+            }
             guard let content = self.resolver.resolve(
                 target,
                 in: browserState,
@@ -852,7 +875,11 @@ final class SplitTabPreviewRegistration {
         let isCurrentlyDragging = isDragging
             || browserState.tabDraggingSession.snapshot.isDragging
         let isEligible = !isCurrentlyDragging
-            && resolver.isEligible(target, in: browserState)
+            && resolver.isEligible(
+                target,
+                in: browserState,
+                previewsEnabled: PhiPreferences.GeneralSettings.showTabPreviews.loadValue()
+            )
         onEligibilityChanged?(isEligible)
         return isEligible
     }

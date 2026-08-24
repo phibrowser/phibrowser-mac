@@ -41,9 +41,22 @@ final class TabPreviewTests: XCTestCase {
         XCTAssertEqual(requestedIDs, [10])
     }
 
+    func testDisabledPreviewSettingMakesOpenTabIneligible() throws {
+        let state = try makeBrowserState()
+        let tab = makeTab(guid: 10, title: "Background", url: "https://background.example")
+        state.tabs = [tab]
+        state.normalTabs = [tab]
+        let resolver = TabPreviewContentResolver { _ in nil }
+
+        XCTAssertTrue(resolver.isEligible(.tab(tab), in: state))
+        XCTAssertFalse(
+            resolver.isEligible(.tab(tab), in: state, previewsEnabled: false)
+        )
+    }
+
     func testFocusedTabUsesTextOnlyContentWithoutThumbnailRequest() throws {
         let state = try makeBrowserState()
-        let tab = makeTab(guid: 10, title: "Foreground", url: "https://foreground.example")
+        let tab = makeTab(guid: 10, title: "Foreground", url: "chrome://settings")
         state.tabs = [tab]
         state.normalTabs = [tab]
         state.focusingTab = tab
@@ -57,10 +70,45 @@ final class TabPreviewTests: XCTestCase {
 
         XCTAssertTrue(resolver.isEligible(.tab(tab), in: state))
         XCTAssertEqual(content.title, "Foreground")
-        XCTAssertEqual(content.url, "https://foreground.example")
+        XCTAssertEqual(content.url, "phi://settings")
         XCTAssertNil(content.image)
         XCTAssertEqual(content.imageSource, .foreground(tabID: 10))
         XCTAssertTrue(requestedIDs.isEmpty)
+    }
+
+    func testBookmarksPagesNeverRequestSnapshot() throws {
+        let state = try makeBrowserState()
+        let tab = makeTab(guid: 10, title: "Bookmarks", url: "chrome://bookmarks")
+        state.tabs = [tab]
+        state.normalTabs = [tab]
+        var requestedIDs: [Int64] = []
+        let resolver = TabPreviewContentResolver { tabID in
+            requestedIDs.append(tabID)
+            return self.makeImageData()
+        }
+
+        let chromeContent = try XCTUnwrap(resolver.resolve(.tab(tab), in: state))
+        tab.url = "phi://bookmarks"
+        let phiContent = try XCTUnwrap(
+            resolver.resolve(.tab(tab), in: state, reusing: chromeContent)
+        )
+
+        XCTAssertEqual(chromeContent.url, "phi://bookmarks")
+        XCTAssertNil(chromeContent.image)
+        XCTAssertEqual(chromeContent.imageSource, .notRequested)
+        XCTAssertEqual(phiContent.url, "phi://bookmarks")
+        XCTAssertNil(phiContent.image)
+        XCTAssertEqual(phiContent.imageSource, .notRequested)
+        XCTAssertTrue(requestedIDs.isEmpty)
+
+        tab.url = "https://example.com"
+        let ordinaryContent = try XCTUnwrap(
+            resolver.resolve(.tab(tab), in: state, reusing: phiContent)
+        )
+
+        XCTAssertNotNil(ordinaryContent.image)
+        XCTAssertEqual(ordinaryContent.imageSource, .thumbnail(tabID: 10))
+        XCTAssertEqual(requestedIDs, [10])
     }
 
     func testNewTabPageURLIsHidden() throws {
@@ -116,7 +164,7 @@ final class TabPreviewTests: XCTestCase {
         XCTAssertFalse(resolver.isEligible(.tab(second), in: state))
     }
 
-    func testClosedPinnedTabUsesTextOnlyContentWithoutThumbnailRequest() throws {
+    func testClosedPinnedTabIsIneligible() throws {
         let state = try makeBrowserState()
         let pinned = makeTab(
             guid: -1,
@@ -127,19 +175,9 @@ final class TabPreviewTests: XCTestCase {
         pinned.isPinned = true
         pinned.isOpenned = false
         state.pinnedTabs = [pinned]
-        var requestedIDs: [Int64] = []
-        let resolver = TabPreviewContentResolver { tabID in
-            requestedIDs.append(tabID)
-            return nil
-        }
+        let resolver = TabPreviewContentResolver { _ in nil }
 
-        let content = try XCTUnwrap(resolver.resolve(.tab(pinned), in: state))
-
-        XCTAssertEqual(content.id, .tab("pinned-1"))
-        XCTAssertEqual(content.title, "Pinned")
-        XCTAssertNil(content.image)
-        XCTAssertEqual(content.imageSource, .unavailable(tabID: nil))
-        XCTAssertTrue(requestedIDs.isEmpty)
+        XCTAssertFalse(resolver.isEligible(.tab(pinned), in: state))
     }
 
     func testOpenedPinnedRecordUsesLiveTabMetadataAndThumbnail() throws {
@@ -167,6 +205,7 @@ final class TabPreviewTests: XCTestCase {
 
         let content = try XCTUnwrap(resolver.resolve(.tab(record), in: state))
 
+        XCTAssertTrue(resolver.isEligible(.tab(record), in: state))
         XCTAssertEqual(content.title, "Current title")
         XCTAssertEqual(content.url, "https://current.example")
         XCTAssertNotNil(content.image)
@@ -190,19 +229,9 @@ final class TabPreviewTests: XCTestCase {
         )
         state.tabs = [unrelated]
         state.pinnedTabs = [record]
-        var requestedIDs: [Int64] = []
-        let resolver = TabPreviewContentResolver { tabID in
-            requestedIDs.append(tabID)
-            return self.makeImageData()
-        }
+        let resolver = TabPreviewContentResolver { _ in nil }
 
-        let content = try XCTUnwrap(resolver.resolve(.tab(record), in: state))
-
-        XCTAssertEqual(content.title, "Saved title")
-        XCTAssertEqual(content.url, "https://saved.example")
-        XCTAssertNil(content.image)
-        XCTAssertEqual(content.imageSource, .unavailable(tabID: nil))
-        XCTAssertTrue(requestedIDs.isEmpty)
+        XCTAssertFalse(resolver.isEligible(.tab(record), in: state))
     }
 
     func testPinnedImageCacheChangesAcrossOpenCloseAndRebind() throws {
@@ -285,7 +314,7 @@ final class TabPreviewTests: XCTestCase {
         XCTAssertFalse(resolver.isEligible(.tab(right), in: state))
     }
 
-    func testOpenedBookmarkUsesLiveSnapshotAndClosedBookmarkUsesTextOnlyContent() throws {
+    func testOnlyOpenedBookmarkIsEligibleAndUsesLiveSnapshot() throws {
         let state = try makeBrowserState()
         let live = makeTab(
             guid: 42,
@@ -313,15 +342,12 @@ final class TabPreviewTests: XCTestCase {
         }
 
         let openContent = try XCTUnwrap(resolver.resolve(.bookmark(open), in: state))
-        let closedContent = try XCTUnwrap(resolver.resolve(.bookmark(closed), in: state))
 
+        XCTAssertTrue(resolver.isEligible(.bookmark(open), in: state))
+        XCTAssertFalse(resolver.isEligible(.bookmark(closed), in: state))
         XCTAssertEqual(openContent.title, "Current page")
         XCTAssertEqual(openContent.url, "https://current.example")
         XCTAssertNotNil(openContent.image)
-        XCTAssertEqual(closedContent.title, "Closed bookmark")
-        XCTAssertEqual(closedContent.url, "https://closed.example")
-        XCTAssertNil(closedContent.image)
-        XCTAssertEqual(closedContent.imageSource, .unavailable(tabID: nil))
         XCTAssertEqual(requestedIDs, [42])
     }
 
@@ -341,17 +367,9 @@ final class TabPreviewTests: XCTestCase {
         )
         bookmark.isOpened = true
         bookmark.chromiumTabGuid = 42
-        var requestedIDs: [Int64] = []
-        let resolver = TabPreviewContentResolver { tabID in
-            requestedIDs.append(tabID)
-            return self.makeImageData()
-        }
+        let resolver = TabPreviewContentResolver { _ in nil }
 
-        let content = try XCTUnwrap(resolver.resolve(.bookmark(bookmark), in: state))
-
-        XCTAssertEqual(content.title, "Saved bookmark")
-        XCTAssertEqual(content.url, "https://saved.example")
-        XCTAssertTrue(requestedIDs.isEmpty)
+        XCTAssertFalse(resolver.isEligible(.bookmark(bookmark), in: state))
     }
 
     func testBookmarkImageCacheChangesAcrossOpenAndClose() throws {
@@ -368,6 +386,7 @@ final class TabPreviewTests: XCTestCase {
         }
 
         let closed = try XCTUnwrap(resolver.resolve(.bookmark(bookmark), in: state))
+        XCTAssertFalse(resolver.isEligible(.bookmark(bookmark), in: state))
         XCTAssertNil(closed.image)
         XCTAssertEqual(closed.imageSource, .unavailable(tabID: nil))
 
@@ -383,11 +402,13 @@ final class TabPreviewTests: XCTestCase {
         let opened = try XCTUnwrap(
             resolver.resolve(.bookmark(bookmark), in: state, reusing: closed)
         )
+        XCTAssertTrue(resolver.isEligible(.bookmark(bookmark), in: state))
         XCTAssertEqual(opened.imageSource, .thumbnail(tabID: 42))
 
         bookmark.isOpened = false
         bookmark.chromiumTabGuid = -1
         state.tabs = []
+        XCTAssertFalse(resolver.isEligible(.bookmark(bookmark), in: state))
         let closedAgain = try XCTUnwrap(
             resolver.resolve(.bookmark(bookmark), in: state, reusing: opened)
         )
@@ -515,7 +536,7 @@ final class TabPreviewTests: XCTestCase {
         XCTAssertLessThan(hiddenURLSize.height, visibleURLSize.height)
     }
 
-    func testActiveBookmarkUsesTextOnlyContentWhileFolderAndSplitBookmarksAreIneligible() throws {
+    func testBookmarksWithoutLiveTabsAreIneligible() throws {
         let state = try makeBrowserState()
         let folder = Bookmark(guid: "folder", title: "Folder", isFolder: true)
         let active = Bookmark(guid: "active", title: "Active", url: "https://active.example")
@@ -535,12 +556,7 @@ final class TabPreviewTests: XCTestCase {
         }
 
         XCTAssertFalse(resolver.isEligible(.bookmark(folder), in: state))
-        let activeContent = try XCTUnwrap(resolver.resolve(.bookmark(active), in: state))
-        XCTAssertTrue(resolver.isEligible(.bookmark(active), in: state))
-        XCTAssertEqual(activeContent.title, "Active")
-        XCTAssertEqual(activeContent.url, "https://active.example")
-        XCTAssertNil(activeContent.image)
-        XCTAssertEqual(activeContent.imageSource, .foreground(tabID: nil))
+        XCTAssertFalse(resolver.isEligible(.bookmark(active), in: state))
         XCTAssertTrue(requestedIDs.isEmpty)
         XCTAssertFalse(resolver.isEligible(.bookmark(split), in: state))
         XCTAssertFalse(resolver.isEligible(.bookmark(bound), in: state))

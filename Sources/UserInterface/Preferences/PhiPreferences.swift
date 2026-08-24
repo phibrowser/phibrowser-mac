@@ -81,6 +81,7 @@ extension PhiPreferences {
         case alwaysShowBookmarkBar // In traditional layout, always show bookmark bar below address bar
         case showBookmarkBarOnNewTabPage // In traditional layout, show bookmark bar on new tab page
         case alwaysShowURLPath // In address bar menu, always show full URL path
+        case showTabPreviews // Whether open tabs use custom hover preview cards
         case spacesFeatureEnabled // Master gate for Spaces + profile management UI; defaults on, no user-facing toggle
         case suppressCloseIncognitoSpaceWarning // "Do not ask again" on the close-Incognito-Space confirmation
         case peekViewEnabled // Master gate for Peek View: the context-menu item and the automatic cross-site diversion
@@ -102,6 +103,8 @@ extension PhiPreferences {
                 return true
             case .alwaysShowURLPath:
                 return false
+            case .showTabPreviews:
+                return true
             case .spacesFeatureEnabled:
                 return true
             case .suppressCloseIncognitoSpaceWarning:

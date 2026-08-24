@@ -54065,6 +54065,18 @@
         }
       }
     },
+    "settings.general.tabPreview.showToggle" : {
+      "comment" : "General settings - Toggle title for showing custom preview cards when hovering over open tabs",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Show a preview card when hovering over a tab"
+          }
+        }
+      }
+    },
     "settings.general.theme.colorTitle" : {
       "comment" : "General settings - Theme color row title",
       "extractionState" : "extracted_with_value",

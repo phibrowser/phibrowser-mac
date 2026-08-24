@@ -161,6 +161,29 @@ final class SplitTabPreviewTests: XCTestCase {
         XCTAssertEqual(requestedIDs, [10, 11])
     }
 
+    func testBookmarksPanesNeverRequestSnapshots() throws {
+        let (state, left, right) = try makeLiveSplit(layout: .vertical)
+        left.url = "chrome://bookmarks"
+        right.url = "phi://bookmarks"
+        let resolver = SplitTabPreviewContentResolver { _ in
+            XCTFail("Bookmarks panes must not request thumbnails.")
+            return self.makeImageData()
+        }
+        let target = try XCTUnwrap(
+            SplitTabPreviewTarget.make(representing: left, in: state)
+        )
+
+        let content = try XCTUnwrap(resolver.resolve(target, in: state))
+
+        XCTAssertEqual(content.mode, .standard)
+        XCTAssertEqual(content.leftPane.url, "phi://bookmarks")
+        XCTAssertNil(content.leftPane.image)
+        XCTAssertEqual(content.leftPane.imageSource, .notRequested)
+        XCTAssertEqual(content.rightPane.url, "phi://bookmarks")
+        XCTAssertNil(content.rightPane.image)
+        XCTAssertEqual(content.rightPane.imageSource, .notRequested)
+    }
+
     func testActiveSplitUsesCompactTextOnlyPreviewFromEitherPane() throws {
         let (state, left, right) = try makeLiveSplit(layout: .vertical)
         state.focusingTab = left
@@ -262,7 +285,7 @@ final class SplitTabPreviewTests: XCTestCase {
         XCTAssertNil(resolver.resolve(target, in: state))
     }
 
-    func testClosedPinnedSplitResolvesPersistedPairWithoutThumbnailRequests() throws {
+    func testClosedPinnedSplitIsIneligible() throws {
         let state = try makeBrowserState()
         let left = makeTab(
             guid: -1,
@@ -288,25 +311,13 @@ final class SplitTabPreviewTests: XCTestCase {
         let target = try XCTUnwrap(
             SplitTabPreviewTarget.make(representing: left, in: state)
         )
-        let resolver = SplitTabPreviewContentResolver { _ in
-            XCTFail("Closed pinned panes have no Chromium thumbnails.")
-            return nil
-        }
-
-        let content = try XCTUnwrap(resolver.resolve(target, in: state))
+        let resolver = SplitTabPreviewContentResolver { _ in nil }
 
         XCTAssertEqual(target.logicalID, .persisted("pinned-left", "pinned-right"))
-        XCTAssertEqual(content.mode, .compact)
-        XCTAssertEqual(content.layout, .horizontal)
-        XCTAssertEqual(content.leftPane.title, "Pinned left")
-        XCTAssertEqual(content.rightPane.title, "Pinned right")
-        XCTAssertNil(content.leftPane.image)
-        XCTAssertNil(content.rightPane.image)
-        XCTAssertEqual(content.leftPane.imageSource, .notRequested)
-        XCTAssertEqual(content.rightPane.imageSource, .notRequested)
+        XCTAssertFalse(resolver.isEligible(target, in: state))
     }
 
-    func testClosedSplitBookmarkResolvesStoredPanesWithoutThumbnails() throws {
+    func testClosedSplitBookmarkIsIneligible() throws {
         let state = try makeBrowserState()
         let bookmark = Bookmark(
             guid: "split-bookmark",
@@ -316,24 +327,10 @@ final class SplitTabPreviewTests: XCTestCase {
             layout: .horizontal
         )
         let target = try XCTUnwrap(SplitTabPreviewTarget.make(representing: bookmark))
-        let resolver = SplitTabPreviewContentResolver { _ in
-            XCTFail("Closed split bookmarks have no Chromium thumbnails.")
-            return nil
-        }
-
-        let content = try XCTUnwrap(resolver.resolve(target, in: state))
+        let resolver = SplitTabPreviewContentResolver { _ in nil }
 
         XCTAssertEqual(target.logicalID, .bookmark("split-bookmark"))
-        XCTAssertEqual(content.mode, .compact)
-        XCTAssertEqual(content.layout, .horizontal)
-        XCTAssertEqual(content.leftPane.title, "Stored primary")
-        XCTAssertEqual(content.leftPane.url, "https://primary.example/path")
-        XCTAssertEqual(content.rightPane.title, "https://secondary.example/path")
-        XCTAssertEqual(content.rightPane.url, "https://secondary.example/path")
-        XCTAssertNil(content.leftPane.image)
-        XCTAssertNil(content.rightPane.image)
-        XCTAssertEqual(content.leftPane.imageSource, .notRequested)
-        XCTAssertEqual(content.rightPane.imageSource, .notRequested)
+        XCTAssertFalse(resolver.isEligible(target, in: state))
     }
 
     func testOpenedSplitBookmarkUsesLivePaneMetadataAndThumbnails() throws {
@@ -441,6 +438,19 @@ final class SplitTabPreviewTests: XCTestCase {
         hostingView.layoutSubtreeIfNeeded()
 
         XCTAssertEqual(hostingView.fittingSize.width, 280, accuracy: 1)
+    }
+
+    func testDisabledPreviewSettingMakesLiveSplitIneligible() throws {
+        let (state, left, _) = try makeLiveSplit(layout: .vertical)
+        let target = try XCTUnwrap(
+            SplitTabPreviewTarget.make(representing: left, in: state)
+        )
+        let resolver = SplitTabPreviewContentResolver { _ in nil }
+
+        XCTAssertTrue(resolver.isEligible(target, in: state))
+        XCTAssertFalse(
+            resolver.isEligible(target, in: state, previewsEnabled: false)
+        )
     }
 
     func testStandardSplitPreviewMatchesRegularPreviewHeight() throws {

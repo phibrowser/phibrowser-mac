@@ -346,6 +346,17 @@ final class AgentPageTheme {
     /// layer 1, already drawn natively over the whole tab. Rule values whose
     /// expression differs between the design's light and dark blocks come in
     /// pre-resolved on the palette; the selector set itself never varies.
+    ///
+    /// The sheet accents; it does not repaint. The design's source is a mock
+    /// document where every `<button>` is a real call to action, but app UIs
+    /// build icon buttons, menu rows and list items out of `<button>` as well —
+    /// forcing a fill there floods the page with opaque slabs and destroys the
+    /// hierarchy the wash is meant to sit on top of. Only a submit control,
+    /// whose role is unambiguous, keeps the filled treatment; every other
+    /// control gets its edge themed and keeps its own surface. Class matches
+    /// are case-insensitive because component frameworks capitalize
+    /// (`Button-sc-…`), and a half-matched page reads worse than an untouched
+    /// one.
     private static func styleSheet(for p: Palette) -> String {
         """
         :root{--chroma-primary:\(p.primary);--chroma-deep:\(p.deep);\
@@ -358,15 +369,17 @@ final class AgentPageTheme {
         :where(h2){color:\(p.heading2)!important;\
         text-decoration-color:\(p.subheading)!important}
         :where(h3,h4,h5,h6){color:\(p.subheading)!important}
-        :where(a:not([class*="button"]):not([class*="btn"])){\
+        :where(a:not([class*="button" i]):not([class*="btn" i])){\
         color:\(p.link)!important;\
         text-decoration-color:\(p.accentLine)!important;\
         text-decoration-thickness:.09em}
-        :where(button,[role="button"],input[type="button"],input[type="submit"],\
-        a[class*="button"],a[class*="btn"]){\
+        :where(button[type="submit"],input[type="submit"],input[type="button"]){\
         background-color:var(--chroma-primary)!important;\
         border-color:var(--chroma-deep)!important;color:var(--chroma-on)!important;\
-        box-shadow:\(p.buttonShadow)}
+        box-shadow:\(p.buttonShadow)!important}
+        :where(button:not([type="submit"]),[role="button"],\
+        a[class*="button" i],a[class*="btn" i]){\
+        border-color:var(--chroma-primary)!important}
         :where(blockquote){border-color:var(--chroma-primary)!important;\
         background:var(--chroma-soft)!important}
         :where(mark){background:var(--chroma-accent)!important;color:#17151a!important}

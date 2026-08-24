@@ -132,9 +132,9 @@ are out of scope.
 | `connector_status` | Snapshot of each AI connector's connected/disconnected state, fired on refresh | `Preferences/AISettings/AISettingsConnectorViewModel.swift` |
 | `ai_sidebar_opened` | A tab's AI sidebar changed from collapsed to expanded; `trigger` is `button`, `shortcut`, or `restore` | `WebContent/WebContentViewController.swift` |
 | `ai_sidebar_closed` | A tab's AI sidebar changed from expanded to collapsed; includes that tab's `duration_seconds` dwell time | `WebContent/WebContentViewController.swift` |
-| `kiosk_opened` | A Kiosk window's first tab becomes ready to display; profile-replacement windows do not emit it | `MainBrowserWindow/KioskBrowserWindowController.swift` |
+| `kiosk_opened` | A Kiosk window's first tab becomes ready to display; profile-replacement windows do not emit it | `Kiosk/KioskBrowserWindowController.swift` |
 | `kiosk_opened_in_space` | A Kiosk page starts transferring into a Space; includes `total_spaces` without Space identifiers | `States/Space/SpaceManager.swift` |
-| `kiosk_profile_changed` | A Kiosk profile replacement is revealed; includes `total_profiles` without profile identifiers | `MainBrowserWindow/KioskBrowserWindowController.swift` |
+| `kiosk_profile_changed` | A Kiosk profile replacement is revealed; includes `total_profiles` without profile identifiers | `Kiosk/KioskBrowserWindowController.swift` |
 | `agent_task_started` | An agent task record is created or rebound; includes `origin`, `persistent`, and normalized `agent_name` | `States/AgentSpace/AgentSpaceManager.swift` |
 | `agent_task_completed` | An active task ends through the completion path; includes the start properties and `success` | `States/AgentSpace/AgentSpaceManager.swift` |
 | `agent_user_space_command` | An agent command passes the user-space browsing-data permission gate; includes `command` and normalized `agent_name` | `Notifications/MessageCard/ExtensionMessageRouter.swift`, `States/AgentSpace/AgentSpaceRouter+Management.swift` |

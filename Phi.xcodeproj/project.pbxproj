@@ -2083,6 +2083,7 @@
 				37C1B1E22EDEA02100DD4496 /* Feedback */,
 				8EC70DAD2F0A5CFD009FE2CD /* HorizontalBar */,
 				D10000000000000000000020 /* ImagePreview */,
+				5A454E000000000000000015 /* Kiosk */,
 				CCBF8F372E653A4900B9A99E /* MainBrowserWindow */,
 				376CE4082F28917C0093D937 /* Notifications */,
 				CC24EEF32E8662AC00CE9DD7 /* Onboarding */,
@@ -2505,14 +2506,21 @@
 			path = Common;
 			sourceTree = "<group>";
 		};
+		5A454E000000000000000015 /* Kiosk */ = {
+			isa = PBXGroup;
+			children = (
+				5A454E000000000000000012 /* KioskBrowserContentViewController.swift */,
+				5A454E000000000000000014 /* KioskBrowserToolbar.swift */,
+				5A454E000000000000000013 /* KioskBrowserWindowController.swift */,
+			);
+			path = Kiosk;
+			sourceTree = "<group>";
+		};
 		CCBF8F372E653A4900B9A99E /* MainBrowserWindow */ = {
 			isa = PBXGroup;
 			children = (
 				B02586F12E42FD97001B08FC /* MainBrowserWindowController.swift */,
 				B0F370CF2E432CB8000B51F9 /* MainBrowserWindowController+Actions.swift */,
-				5A454E000000000000000012 /* KioskBrowserContentViewController.swift */,
-				5A454E000000000000000014 /* KioskBrowserToolbar.swift */,
-				5A454E000000000000000013 /* KioskBrowserWindowController.swift */,
 				B025870D2E430305001B08FC /* MainSplitViewController.swift */,
 				CCBF8FA12E698A7400B9A99E /* MainBrowserWindowControllersManager.swift */,
 			);

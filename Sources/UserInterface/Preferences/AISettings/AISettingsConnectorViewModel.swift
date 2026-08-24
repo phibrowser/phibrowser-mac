@@ -55,6 +55,7 @@ final class ConnectorItemState: @MainActor Identifiable {
     var lastSyncTime: String = ""
     var isLoading: Bool = false
     var isAuthorizationPending: Bool = false
+    private(set) var isUnassigned: Bool = false
     var errorMessage: String?
     private var oauthConnection: OAuthConnection?
 
@@ -62,8 +63,9 @@ final class ConnectorItemState: @MainActor Identifiable {
         self.template = template
     }
 
-    func updateConnection(_ newConnection: OAuthConnection?) {
+    func updateConnection(_ newConnection: OAuthConnection?, isUnassigned: Bool = false) {
         oauthConnection = newConnection
+        self.isUnassigned = newConnection != nil && isUnassigned
         refreshStatus()
         refreshSyncTime()
     }
@@ -108,7 +110,10 @@ final class ConnectorItemState: @MainActor Identifiable {
     }
 
     var actionTitle: String {
-        status.isConnected
+        if isUnassigned {
+            return NSLocalizedString("settings.ai.connectors.assignButton", value: "Assign", comment: "AI settings - Button that assigns an existing unassigned connector to the selected browser Profile")
+        }
+        return status.isConnected
         ? NSLocalizedString("settings.ai.connectors.disconnectButton", value: "Disconnect", comment: "AI settings - Button to disconnect an external data connector")
         : NSLocalizedString("settings.ai.connectors.connectButton", value: "Connect", comment: "AI settings - Button to connect an external data connector")
     }
@@ -128,6 +133,7 @@ final class AISettingsConnectorViewModel {
     private(set) var selectedProfileId: String?
     private let apiClient = APIClient.shared
     private var oauthConnections: [OAuthConnection] = []
+    private var unassignedOAuthConnections: [OAuthConnection] = []
     private var isRefreshingConnections = false
     private var pendingAuthorizationPolls: [OAuthAuthorizationAttempt: Task<Void, Never>] = [:]
     private var pendingAuthorizationTabGuids: [OAuthAuthorizationAttempt: String] = [:]
@@ -248,6 +254,7 @@ final class AISettingsConnectorViewModel {
 
         if useCache, let cached = loadCachedConnections(profileId: profileId) {
             oauthConnections = cached
+            unassignedOAuthConnections = []
             updateConnectorStates()
             AppLogDebug("[AISettings] Loaded \(cached.count) cached OAuth connections")
         }
@@ -279,10 +286,15 @@ final class AISettingsConnectorViewModel {
         }
 
         do {
-            let response = try await apiClient.getOAuthConnections(profileId: profileId)
+            let response = try await apiClient.getAllOAuthConnections()
             guard ApplicationState.shared.isAuthenticated else { return }
             guard selectedProfileId == profileId else { return }
-            let connections = response.data.connections
+            let selectedConnections = Self.selectConnections(
+                response.data.connections,
+                forProfile: profileId
+            )
+            let connections = selectedConnections.scoped
+            let unassignedConnections = selectedConnections.unassigned
             let newlyConnectedProviders = Set(
                 connections.lazy.filter(\.connected).map {
                     OAuthAuthorizationAttempt(profileId: profileId, provider: $0.provider)
@@ -293,13 +305,24 @@ final class AISettingsConnectorViewModel {
                 connectionAttemptsInProgress.subtract(newlyConnectedProviders)
             }
             oauthConnections = connections
+            unassignedOAuthConnections = unassignedConnections
             cacheConnections(connections, profileId: profileId)
             updateConnectorStates()
-            recordConnections(connections)
-            AppLogDebug("[AISettings] Fetched \(connections.count) OAuth connections from network")
+            recordConnections(connections + unassignedConnections)
+            AppLogDebug("[AISettings] Fetched \(connections.count) scoped and \(unassignedConnections.count) unassigned OAuth connections from network")
         } catch {
             AppLogError("[AISettings] Error loading OAuth connections: \(error)")
         }
+    }
+
+    static func selectConnections(
+        _ connections: [OAuthConnection],
+        forProfile profileId: String
+    ) -> (scoped: [OAuthConnection], unassigned: [OAuthConnection]) {
+        (
+            scoped: connections.filter { $0.profileId == profileId },
+            unassigned: connections.filter { $0.profileId == nil }
+        )
     }
 
     func toggleConnection(for connector: ConnectorItemState) {
@@ -313,7 +336,9 @@ final class AISettingsConnectorViewModel {
         }
         connector.errorMessage = nil
 
-        if connector.status.isConnected {
+        if connector.isUnassigned {
+            assign(connector)
+        } else if connector.status.isConnected {
             disconnect(connector)
         } else {
             connect(connector)
@@ -359,6 +384,26 @@ final class AISettingsConnectorViewModel {
                 connector.errorMessage = error.localizedDescription
                 AppLogWarn("[AISettings] Failed to connect provider \(connector.template.provider): \(error)")
             }
+        }
+    }
+
+    private func assign(_ connector: ConnectorItemState) {
+        guard ApplicationState.shared.isAuthenticated,
+              let profileId = selectedProfileId,
+              !profileId.isEmpty else { return }
+        connector.isLoading = true
+
+        Task { @MainActor in
+            defer { connector.isLoading = false }
+            do {
+                let provider = connector.template.provider
+                _ = try await apiClient.bindOAuthToken(provider: provider, profileId: profileId)
+                AppLogInfo("[AISettings] Assigned OAuth provider \(provider) to profile=\(profileId)")
+            } catch {
+                connector.errorMessage = error.localizedDescription
+                AppLogWarn("[AISettings] Failed to assign OAuth provider \(connector.template.provider): \(error)")
+            }
+            await reloadConnectionsFromNetwork(profileId: profileId)
         }
     }
 
@@ -689,7 +734,11 @@ final class AISettingsConnectorViewModel {
     private func updateConnectorStates() {
         for connector in connectors {
             let connection = oauthConnections.first { $0.provider == connector.template.provider }
-            connector.updateConnection(connection)
+            let unassignedConnection = unassignedOAuthConnections.first { $0.provider == connector.template.provider }
+            connector.updateConnection(
+                connection ?? unassignedConnection,
+                isUnassigned: connection == nil && unassignedConnection != nil
+            )
         }
     }
 
@@ -703,7 +752,7 @@ final class AISettingsConnectorViewModel {
 
         let connectedProviders = connectors
             .filter { $0.status.isConnected }
-            .map { $0.template.provider }
+            .map { (provider: $0.template.provider, profileId: $0.isUnassigned ? nil : profileId) }
 
         guard !connectedProviders.isEmpty else { return }
 
@@ -711,12 +760,12 @@ final class AISettingsConnectorViewModel {
 
         Task { @MainActor in
             defer { setAllLoading(false) }
-            for provider in connectedProviders {
+            for connection in connectedProviders {
                 do {
-                    _ = try await apiClient.deleteOAuthToken(provider: provider, profileId: profileId)
-                    AppLogInfo("[AISettings] Disconnected OAuth provider: \(provider)")
+                    _ = try await apiClient.deleteOAuthToken(provider: connection.provider, profileId: connection.profileId)
+                    AppLogInfo("[AISettings] Disconnected OAuth provider: \(connection.provider)")
                 } catch {
-                    AppLogWarn("[AISettings] Failed to disconnect provider \(provider): \(error)")
+                    AppLogWarn("[AISettings] Failed to disconnect provider \(connection.provider): \(error)")
                 }
             }
             await reloadConnectionsFromNetwork(profileId: profileId)
@@ -726,6 +775,7 @@ final class AISettingsConnectorViewModel {
     func suspendForUnauthenticatedAccess() {
         cancelAllPendingAuthorizationPolls()
         oauthConnections = []
+        unassignedOAuthConnections = []
         isRefreshingConnections = false
         for connector in connectors {
             connector.updateConnection(nil)
@@ -741,6 +791,7 @@ final class AISettingsConnectorViewModel {
 
     private func resetDisplayedConnections() {
         oauthConnections = []
+        unassignedOAuthConnections = []
         for connector in connectors {
             connector.errorMessage = nil
             connector.updateConnection(nil)

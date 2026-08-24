@@ -511,12 +511,24 @@ class APIClient {
     // MARK: - Connector APIs
 
     func getOAuthConnections(profileId: String? = nil) async throws -> Response<GetOAuthConnectionsResponse> {
+        var queryItems: [URLQueryItem] = []
+        if let profileId, !profileId.isEmpty {
+            queryItems.append(URLQueryItem(name: "profile_id", value: profileId))
+        }
+        return try await getOAuthConnections(queryItems: queryItems)
+    }
+
+    func getAllOAuthConnections() async throws -> Response<GetOAuthConnectionsResponse> {
+        try await getOAuthConnections(
+            queryItems: [URLQueryItem(name: "all_profiles", value: "true")]
+        )
+    }
+
+    private func getOAuthConnections(queryItems: [URLQueryItem]) async throws -> Response<GetOAuthConnectionsResponse> {
         guard var components = URLComponents(string: "\(accountBaseURL)/api/auth/oauth/connections") else {
             throw APIError.invalidResponse
         }
-        if let profileId, !profileId.isEmpty {
-            components.queryItems = [URLQueryItem(name: "profile_id", value: profileId)]
-        }
+        components.queryItems = queryItems.isEmpty ? nil : queryItems
         guard let url = components.url else {
             throw APIError.invalidResponse
         }
@@ -525,15 +537,12 @@ class APIClient {
         request.setValue("application/json", forHTTPHeaderField: "Accept")
 
         let (data, response) = try await URLSession.shared.data(for: request)
-
         guard let httpResponse = response as? HTTPURLResponse else {
             throw APIError.invalidResponse
         }
-
         guard (200...299).contains(httpResponse.statusCode) else {
             throw APIError.httpError(statusCode: httpResponse.statusCode)
         }
-
         return try JSONDecoder().decode(Response<GetOAuthConnectionsResponse>.self, from: data)
     }
 
@@ -571,6 +580,24 @@ class APIClient {
         }
 
         return try JSONDecoder().decode(Response<GetOAuthAuthorizationResponse>.self, from: data)
+    }
+
+    func bindOAuthToken(provider: String, profileId: String) async throws -> Response<BindOAuthTokenResponse> {
+        let url = URL(string: "\(accountBaseURL)/api/auth/oauth/connections/\(provider)")!
+        var request = URLRequest(url: url)
+        request.httpMethod = "PATCH"
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try JSONEncoder().encode(BindOAuthTokenRequest(profileId: profileId))
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw APIError.invalidResponse
+        }
+        guard (200...299).contains(httpResponse.statusCode) else {
+            throw APIError.httpError(statusCode: httpResponse.statusCode)
+        }
+        return try JSONDecoder().decode(Response<BindOAuthTokenResponse>.self, from: data)
     }
     
     /// Create or update a user source

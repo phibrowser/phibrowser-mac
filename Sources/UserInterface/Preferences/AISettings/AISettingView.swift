@@ -571,8 +571,10 @@ private struct ConnectorRowView: View {
             HStack(spacing: 6) {
                 if connector.status.isConnected {
                     ConnectorStatusBadge()
-                    
-                    Text(connector.lastSyncTime)
+
+                    Text(connector.isUnassigned
+                         ? NSLocalizedString("settings.ai.connectors.unassignedRowStatus", value: "Not assigned to a Profile", comment: "AI settings - Connector row status for an existing connection that has not yet been assigned to a browser Profile")
+                         : connector.lastSyncTime)
                         .font(.system(size: 11))
                         .themedForeground(.textTertiary)
                 } else {
@@ -608,7 +610,7 @@ private struct ConnectorRowView: View {
             action()
         } label: {
             HStack(spacing: 4) {
-                Image(systemName: connector.status.isConnected ? "xmark.circle" : "link")
+                Image(systemName: connector.isUnassigned ? "arrow.right.circle" : (connector.status.isConnected ? "xmark.circle" : "link"))
                     .font(.system(size: 11))
                 Text(connector.actionTitle)
                     .font(.system(size: 13))

@@ -68,7 +68,7 @@
       <CommandLineArguments>
          <CommandLineArgument
             argument = "-uitest 1"
-            isEnabled = "YES">
+            isEnabled = "NO">
          </CommandLineArgument>
          <CommandLineArgument
             argument = "-sidebarHeaderUpdateVersion 1.2.3"
@@ -76,7 +76,7 @@
          </CommandLineArgument>
          <CommandLineArgument
             argument = "-tabStripUpdateVersion  1.2.3"
-            isEnabled = "YES">
+            isEnabled = "NO">
          </CommandLineArgument>
       </CommandLineArguments>
       <EnvironmentVariables>

@@ -6,6 +6,7 @@
 import Settings
 extension Settings.PaneIdentifier {
     static let general = Self("general")
+    static let navigations = Self("navigation")
     static let account = Self("account")
     static let aisettings = Self("aisettings")
     static let shortcuts = Self("shortcuts")

@@ -192,6 +192,9 @@
 		5ACE00000000000000000006 /* SpacesSettingHostingViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5ACE00000000000000000003 /* SpacesSettingHostingViewController.swift */; };
 		5ACE00000000000000000007 /* SpacesSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5ACE00000000000000000004 /* SpacesSettingsView.swift */; };
 		5ACE00000000000000000009 /* SettingsSectionCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5ACE00000000000000000008 /* SettingsSectionCard.swift */; };
+		5ACF00000000000000000001 /* NavigationsSettingViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5ACF00000000000000000011 /* NavigationsSettingViewController.swift */; };
+		5ACF00000000000000000002 /* NavigationsSettingHostingViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5ACF00000000000000000012 /* NavigationsSettingHostingViewController.swift */; };
+		5ACF00000000000000000003 /* NavigationsSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5ACF00000000000000000013 /* NavigationsSettingsView.swift */; };
 		5ACE0000000000000000000E /* ProfilesSettingViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5ACE0000000000000000000B /* ProfilesSettingViewController.swift */; };
 		5ACE0000000000000000000F /* ProfilesSettingHostingViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5ACE0000000000000000000C /* ProfilesSettingHostingViewController.swift */; };
 		5ACE00000000000000000010 /* ProfilesSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5ACE0000000000000000000D /* ProfilesSettingsView.swift */; };
@@ -849,6 +852,9 @@
 		5ACE00000000000000000003 /* SpacesSettingHostingViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpacesSettingHostingViewController.swift; sourceTree = "<group>"; };
 		5ACE00000000000000000004 /* SpacesSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpacesSettingsView.swift; sourceTree = "<group>"; };
 		5ACE00000000000000000008 /* SettingsSectionCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsSectionCard.swift; sourceTree = "<group>"; };
+		5ACF00000000000000000011 /* NavigationsSettingViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NavigationsSettingViewController.swift; sourceTree = "<group>"; };
+		5ACF00000000000000000012 /* NavigationsSettingHostingViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NavigationsSettingHostingViewController.swift; sourceTree = "<group>"; };
+		5ACF00000000000000000013 /* NavigationsSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NavigationsSettingsView.swift; sourceTree = "<group>"; };
 		5ACE0000000000000000000B /* ProfilesSettingViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfilesSettingViewController.swift; sourceTree = "<group>"; };
 		5ACE0000000000000000000C /* ProfilesSettingHostingViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfilesSettingHostingViewController.swift; sourceTree = "<group>"; };
 		5ACE0000000000000000000D /* ProfilesSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfilesSettingsView.swift; sourceTree = "<group>"; };
@@ -1548,6 +1554,16 @@
 				37FC8DA92F39B2DE004675B8 /* LayoutModeSettingView.swift */,
 			);
 			path = General;
+			sourceTree = "<group>";
+		};
+		5ACF00000000000000000020 /* Navigations */ = {
+			isa = PBXGroup;
+			children = (
+				5ACF00000000000000000011 /* NavigationsSettingViewController.swift */,
+				5ACF00000000000000000012 /* NavigationsSettingHostingViewController.swift */,
+				5ACF00000000000000000013 /* NavigationsSettingsView.swift */,
+			);
+			path = Navigations;
 			sourceTree = "<group>";
 		};
 		37C2A6892F8E1572006E856E /* TabOrder */ = {
@@ -2351,6 +2367,7 @@
 				37C1B0E52ED8515C00DD4496 /* AISettings */,
 				37C1B0E42ED8515400DD4496 /* Account */,
 				37C1B4F62EE6CE8A00DD4496 /* General */,
+				5ACF00000000000000000020 /* Navigations */,
 				897C09F32F6BEDA000E5CA9B /* IMChannels */,
 				37C1B0E32ED8514E00DD4496 /* Shortcuts */,
 				5ACE00000000000000000008 /* SettingsSectionCard.swift */,
@@ -3328,6 +3345,9 @@
 				37C1B4F82EE6CE8A00DD4496 /* GeneralSettingViewController.swift in Sources */,
 				8EE5BEEC2F14FF9800698D7D /* TabCloseButton.swift in Sources */,
 				37C1B4F92EE6CE8A00DD4496 /* GeneralSettingView.swift in Sources */,
+				5ACF00000000000000000001 /* NavigationsSettingViewController.swift in Sources */,
+				5ACF00000000000000000002 /* NavigationsSettingHostingViewController.swift in Sources */,
+				5ACF00000000000000000003 /* NavigationsSettingsView.swift in Sources */,
 				B17DE0000000000000000008 /* PasswordManagerSectionView.swift in Sources */,
 				B17DE0000000000000000009 /* BitwardenLoginSheet.swift in Sources */,
 				37C1B0E72ED851CE00DD4496 /* ShortcutsViewModel.swift in Sources */,

@@ -51965,18 +51965,6 @@
         }
       }
     },
-    "settings.general.commandOptionKiosk.toggle" : {
-      "comment" : "General settings - Toggle title for opening clicked links in Kiosk while Command and Option are held",
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "Open Kiosk when clicking on links with ⌘⌥ held"
-          }
-        }
-      }
-    },
     "settings.general.developerMode.disabledHint" : {
       "comment" : "General settings - Hint under the developer mode toggle explaining the kill-switch behavior, the revoked approvals, and that an agent may request it back",
       "extractionState" : "extracted_with_value",
@@ -52213,30 +52201,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "開發者"
-          }
-        }
-      }
-    },
-    "settings.general.externalLinksInKiosk.hint" : {
-      "comment" : "General settings - Hint for opening external links in Kiosk windows",
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "Links opened from other apps use a focused, single-page Kiosk window."
-          }
-        }
-      }
-    },
-    "settings.general.externalLinksInKiosk.toggle" : {
-      "comment" : "General settings - Toggle title for opening external links in Kiosk windows",
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "Open external links in Kiosk windows"
           }
         }
       }
@@ -53257,30 +53221,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "新分頁行為"
-          }
-        }
-      }
-    },
-    "settings.general.peekView.hint" : {
-      "comment" : "General settings - Hint under the Peek View feature toggle",
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "Shift-click a link, or choose “Open Link in Peek View”, to preview it in a floating panel over the page. Available in the sidebar layouts."
-          }
-        }
-      }
-    },
-    "settings.general.peekView.toggle" : {
-      "comment" : "General settings - Row title for the Peek View feature toggle",
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "Peek View"
           }
         }
       }
@@ -54605,6 +54545,18 @@
         }
       }
     },
+    "settings.navigation.navigationsTitle" : {
+      "comment" : "Settings - Tab title for link-opening behavior",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Navigation"
+          }
+        }
+      }
+    },
     "settings.navigation.phiLinkTitle" : {
       "comment" : "Settings - Tab title for Phi Link settings",
       "extractionState" : "stale",
@@ -54841,6 +54793,162 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "空間"
+          }
+        }
+      }
+    },
+    "settings.navigations.kiosk.commandOption.description" : {
+      "comment" : "Navigations settings - Explanation of the Command-Option Kiosk toggle",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Hold Command and Option while clicking a link to open it in a Kiosk window."
+          }
+        }
+      }
+    },
+    "settings.navigations.kiosk.commandOption.title" : {
+      "comment" : "Navigations settings - Toggle title for opening clicked links in Kiosk while Command and Option are held",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Open Kiosk when clicking links with ⌘⌥ held"
+          }
+        }
+      }
+    },
+    "settings.navigations.kiosk.externalLinks.description" : {
+      "comment" : "Navigations settings - Explanation of the external-links Kiosk toggle",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Links opened from other apps use a focused, single-page Kiosk window."
+          }
+        }
+      }
+    },
+    "settings.navigations.kiosk.externalLinks.title" : {
+      "comment" : "Navigations settings - Toggle title for opening links from other apps in Kiosk windows",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Open external links in Kiosk"
+          }
+        }
+      }
+    },
+    "settings.navigations.kiosk.sectionDescription" : {
+      "comment" : "Navigations settings - Description of Kiosk windows",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Open links in a lightweight window, one page at a time."
+          }
+        }
+      }
+    },
+    "settings.navigations.kiosk.sectionTitle" : {
+      "comment" : "Navigations settings - Kiosk section title",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Kiosk"
+          }
+        }
+      }
+    },
+    "settings.navigations.peek.enableToggle.description" : {
+      "comment" : "Navigations settings - Explanation of the Peek View toggle",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Shift-click a link, or choose “Open Link in Peek View”, to preview it in a floating panel over the page. Available in the sidebar layouts."
+          }
+        }
+      }
+    },
+    "settings.navigations.peek.enableToggle.title" : {
+      "comment" : "Navigations settings - Toggle title for enabling Peek View",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Enable Peek View"
+          }
+        }
+      }
+    },
+    "settings.navigations.peek.sectionDescription" : {
+      "comment" : "Navigations settings - Description of the Peek feature",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Preview a link without opening it in a new tab."
+          }
+        }
+      }
+    },
+    "settings.navigations.peek.sectionTitle" : {
+      "comment" : "Navigations settings - Peek section title",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Peek"
+          }
+        }
+      }
+    },
+    "settings.navigations.urlRules.openButton" : {
+      "comment" : "Navigations settings - Title of the row that opens the URL Rules editor",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Manage URL Rules…"
+          }
+        }
+      }
+    },
+    "settings.navigations.urlRules.sectionDescription" : {
+      "comment" : "Navigations settings - Description below the URL Rules editor row title",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Route matching domains or URLs to a Space, Incognito, or Kiosk."
+          }
+        }
+      }
+    },
+    "settings.navigations.urlRules.sectionTitle" : {
+      "comment" : "Navigations settings - URL Rules section title",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "URL Rules"
           }
         }
       }
@@ -65646,7 +65754,7 @@
     },
     "settings.spaces.urlRules.openButton" : {
       "comment" : "Spaces settings - button that opens the URL rules editor",
-      "extractionState" : "extracted_with_value",
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -65706,7 +65814,7 @@
     },
     "settings.spaces.urlRules.openButtonTooltip" : {
       "comment" : "Spaces settings - tooltip for the URL rules button",
-      "extractionState" : "extracted_with_value",
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {

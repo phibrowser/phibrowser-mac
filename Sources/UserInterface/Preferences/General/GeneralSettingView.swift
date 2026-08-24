@@ -505,17 +505,8 @@ private struct BrowsingSectionView: View {
     @AppStorage(PhiPreferences.GeneralSettings.openNewTabPageOnCmdT.rawValue)
     private var openNewTabPageOnCmdT: Bool = PhiPreferences.GeneralSettings.openNewTabPageOnCmdT.defaultValue
 
-    @AppStorage(PhiPreferences.GeneralSettings.openExternalLinksInKiosk.rawValue)
-    private var openExternalLinksInKiosk: Bool = PhiPreferences.GeneralSettings.openExternalLinksInKiosk.defaultValue
-
-    @AppStorage(PhiPreferences.GeneralSettings.openKioskOnCommandOptionClick.rawValue)
-    private var openKioskOnCommandOptionClick: Bool = PhiPreferences.GeneralSettings.openKioskOnCommandOptionClick.defaultValue
-
     @AppStorage(PhiPreferences.GeneralSettings.alwaysShowURLPath.rawValue)
     private var alwaysShowURLPath: Bool = PhiPreferences.GeneralSettings.alwaysShowURLPath.defaultValue
-
-    @AppStorage(PhiPreferences.GeneralSettings.peekViewEnabled.rawValue)
-    private var peekViewEnabled: Bool = PhiPreferences.GeneralSettings.peekViewEnabled.defaultValue
 
     @AppStorage(PhiPreferences.GeneralSettings.autoPictureInPictureModeKey)
     private var autoPictureInPictureModeRawValue: String = PhiPreferences.GeneralSettings.loadAutoPictureInPictureMode().rawValue
@@ -585,73 +576,6 @@ private struct BrowsingSectionView: View {
                             .toggleStyle(.switch)
                             .controlSize(.mini)
                             .themedTint(.themeColor)
-                    }
-
-                    Divider()
-
-                    HStack(alignment: .center, spacing: 12) {
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text(NSLocalizedString("settings.general.peekView.toggle", value: "Peek View", comment: "General settings - Row title for the Peek View feature toggle"))
-                                .font(.system(size: 13))
-                                .themedForeground(.textPrimary)
-                            Text(NSLocalizedString("settings.general.peekView.hint", value: "Shift-click a link, or choose “Open Link in Peek View”, to preview it in a floating panel over the page. Available in the sidebar layouts.", comment: "General settings - Hint under the Peek View feature toggle"))
-                                .font(.system(size: 11))
-                                .themedForeground(.textTertiary)
-                                .fixedSize(horizontal: false, vertical: true)
-                        }
-                        Spacer(minLength: 12)
-                        Toggle("", isOn: $peekViewEnabled)
-                            .labelsHidden()
-                            .toggleStyle(.switch)
-                            .controlSize(.mini)
-                            .themedTint(.themeColor)
-                    }
-                    .padding(.vertical, 12)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .onChange(of: peekViewEnabled) { _, newValue in
-                        PeekViewAnalytics.settingChanged(enabled: newValue)
-                    }
-
-                    Divider()
-
-                    HStack(alignment: .center, spacing: 12) {
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text(NSLocalizedString("settings.general.externalLinksInKiosk.toggle", value: "Open external links in Kiosk windows", comment: "General settings - Toggle title for opening external links in Kiosk windows"))
-                                .font(.system(size: 13))
-                                .themedForeground(.textPrimary)
-                            Text(NSLocalizedString("settings.general.externalLinksInKiosk.hint", value: "Links opened from other apps use a focused, single-page Kiosk window.", comment: "General settings - Hint for opening external links in Kiosk windows"))
-                                .font(.system(size: 11))
-                                .themedForeground(.textTertiary)
-                                .fixedSize(horizontal: false, vertical: true)
-                        }
-                        Spacer(minLength: 12)
-                        Toggle("", isOn: $openExternalLinksInKiosk)
-                            .labelsHidden()
-                            .toggleStyle(.switch)
-                            .controlSize(.mini)
-                            .themedTint(.themeColor)
-                    }
-                    .padding(.vertical, 12)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .onChange(of: openExternalLinksInKiosk) { _, newValue in
-                        AppController.shared?.setOpenExternalLinksInKioskEnabled(newValue)
-                    }
-
-                    Divider()
-
-                    GeneralRowView(title: NSLocalizedString(
-                        "settings.general.commandOptionKiosk.toggle",
-                        value: "Open Kiosk when clicking on links with ⌘⌥ held",
-                        comment: "General settings - Toggle title for opening clicked links in Kiosk while Command and Option are held"
-                    )) {
-                        Toggle("", isOn: $openKioskOnCommandOptionClick)
-                            .labelsHidden()
-                            .toggleStyle(.switch)
-                            .controlSize(.mini)
-                            .themedTint(.themeColor)
-                    }
-                    .onChange(of: openKioskOnCommandOptionClick) { _, newValue in
-                        AppController.shared?.setOpenKioskOnCommandOptionClickEnabled(newValue)
                     }
 
                     Divider()

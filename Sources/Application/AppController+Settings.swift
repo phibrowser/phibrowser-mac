@@ -28,6 +28,7 @@ extension AppController {
          GeneralSettingViewController(),
          ProfilesSettingViewController(),
          SpacesSettingViewController(),
+         NavigationsSettingViewController(),
          AISettingsViewController(),
          ShortcutsSettingViewController(),
         ]

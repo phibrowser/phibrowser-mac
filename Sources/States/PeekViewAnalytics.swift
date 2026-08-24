@@ -11,7 +11,7 @@ import PostHog
 /// `peek_view_opened` fires when the panel actually presents — a same-site
 /// candidate that becomes a plain tab never counts. `peek_view_ended` fires
 /// once per peek with how it ended and how long it lived; window teardown
-/// deliberately reports nothing (quit noise). The Settings › General toggle
+/// deliberately reports nothing (quit noise). The Settings › Navigations toggle
 /// reports `peek_view_setting_changed`.
 @MainActor
 enum PeekViewAnalytics {

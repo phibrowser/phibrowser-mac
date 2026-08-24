@@ -7,12 +7,22 @@ import Cocoa
 import Combine
 import SnapKit
 
-/// Small top-right badge on a pinned cell showing the favicon of the Peek
-/// attached to that tab; hovering dims the favicon behind a minus glyph and
-/// clicking closes the peek. Handles its own mouse events (without calling
-/// super on mouseDown) so the cell's HoverableView click action never fires
-/// for badge clicks.
+/// Round plate straddling a pinned cell's top-right corner, showing the
+/// favicon of the Peek attached to that tab; hovering dims the favicon
+/// behind a minus glyph and clicking closes the peek. Handles its own mouse
+/// events (without calling super on mouseDown) so the cell's HoverableView
+/// click action never fires for badge clicks.
+///
+/// It overhangs the cell rather than tucking inside it, so the peek reads as
+/// something attached to the tab instead of drawn on it — which is also why
+/// it hangs off `PinnedTabItem.view` and not the cell's HoverableView, whose
+/// `clipsToBounds` would cut the overhang off.
 private final class PinnedPeekBadgeView: NSView {
+    /// Circle diameter, and how far it hangs past the cell's top and
+    /// trailing edges.
+    static let diameter: CGFloat = 21
+    static let overhang: CGFloat = 3
+
     var onClose: (() -> Void)?
     var faviconImage: NSImage? {
         didSet { faviconView.image = faviconImage }
@@ -28,8 +38,6 @@ private final class PinnedPeekBadgeView: NSView {
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
         wantsLayer = true
-        layer?.cornerRadius = 6
-        layer?.cornerCurve = .continuous
         layer?.masksToBounds = true
         updateBackground()
 
@@ -57,6 +65,12 @@ private final class PinnedPeekBadgeView: NSView {
 
     required init?(coder: NSCoder) {
         fatalError("init(coder:) has not been implemented")
+    }
+
+    override func layout() {
+        super.layout()
+        // Circle at whatever size the constraints settle on.
+        layer?.cornerRadius = bounds.height / 2
     }
 
     override func updateTrackingAreas() {
@@ -107,11 +121,30 @@ private final class PinnedPeekBadgeView: NSView {
     }
 
     private func updateBackground() {
+        // The selected-tab surface: white in light, translucent white in
+        // dark — a plate that reads as raised above both the cell and the
+        // sidebar, which `windowBackgroundColor` (flatly darker than the
+        // sidebar in dark mode) does not.
         // Layers don't track appearance changes; resolve the dynamic color
         // under the current effective appearance before assigning.
         effectiveAppearance.performAsCurrentDrawingAppearance { [self] in
-            layer?.backgroundColor = NSColor.windowBackgroundColor.cgColor
+            layer?.backgroundColor = NSColor.sidebarTabSelected.cgColor
         }
+    }
+}
+
+/// Root view of a pinned cell. The peek badge straddles the cell's top-right
+/// corner and so hangs outside these bounds, where AppKit's hit testing
+/// stops — extend it to the overhanging subviews so the whole plate stays
+/// clickable.
+private final class PinnedItemRootView: NSView {
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        if let hit = super.hitTest(point) { return hit }
+        let local = convert(point, from: superview)
+        for subview in subviews.reversed() where !subview.isHidden {
+            if let hit = subview.hitTest(local) { return hit }
+        }
+        return nil
     }
 }
 
@@ -144,7 +177,7 @@ class PinnedTabItem: NSCollectionViewItem, NSMenuDelegate {
     }()
 
     override func loadView() {
-        view = NSView()
+        view = PinnedItemRootView()
         setupUI()
     }
 
@@ -218,17 +251,20 @@ class PinnedTabItem: NSCollectionViewItem, NSMenuDelegate {
             make.size.equalTo(CGSize(width: 18, height: 18))
         }
 
-        // Peek badge: top-right corner, above the favicon.
+        // Peek badge: straddling the top-right corner, above everything
+        // else. On `view`, not `backgroundView` — the latter clips.
         peekBadge = PinnedPeekBadgeView()
         peekBadge.isHidden = true
         peekBadge.onClose = { [weak self] in
             guard let self, let tab = self.tab else { return }
             self.browserState?.closePeek(forOpener: tab.guid)
         }
-        backgroundView.addSubview(peekBadge)
+        view.addSubview(peekBadge)
         peekBadge.snp.makeConstraints { make in
-            make.top.trailing.equalToSuperview().inset(1)
-            make.size.equalTo(CGSize(width: 25, height: 25))
+            make.top.trailing.equalTo(backgroundView)
+                .inset(-PinnedPeekBadgeView.overhang)
+            make.size.equalTo(CGSize(width: PinnedPeekBadgeView.diameter,
+                                     height: PinnedPeekBadgeView.diameter))
         }
 
         // Route right-click handling through the full item view.

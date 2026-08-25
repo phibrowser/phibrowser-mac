@@ -69004,8 +69004,20 @@
         }
       }
     },
+    "sidebar.bookmarkContextMenu.copyBottomSecondaryUrl" : {
+      "comment" : "Bookmark context menu - Copy the bottom (secondary) URL of a stacked split-view bookmark",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Copy Bottom URL"
+          }
+        }
+      }
+    },
     "sidebar.bookmarkContextMenu.copyLeftPrimaryUrl" : {
-      "comment" : "Bookmark context menu - Copy the left (primary) URL of a split-view bookmark",
+      "comment" : "Bookmark context menu - Copy the left (primary) URL of a side-by-side split-view bookmark",
       "extractionState" : "extracted_with_value",
       "localizations" : {
         "de" : {
@@ -69125,7 +69137,7 @@
       }
     },
     "sidebar.bookmarkContextMenu.copyRightSecondaryUrl" : {
-      "comment" : "Bookmark context menu - Copy the right (secondary) URL of a split-view bookmark",
+      "comment" : "Bookmark context menu - Copy the right (secondary) URL of a side-by-side split-view bookmark",
       "extractionState" : "extracted_with_value",
       "localizations" : {
         "de" : {
@@ -69180,6 +69192,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "拷貝右側網址"
+          }
+        }
+      }
+    },
+    "sidebar.bookmarkContextMenu.copyTopPrimaryUrl" : {
+      "comment" : "Bookmark context menu - Copy the top (primary) URL of a stacked split-view bookmark",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Copy Top URL"
           }
         }
       }
@@ -72604,8 +72628,20 @@
         }
       }
     },
+    "sidebar.tabContextMenu.copyBottomPaneURL" : {
+      "comment" : "Tab context menu - Copy the bottom pane's URL for a stacked split",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Copy Bottom URL"
+          }
+        }
+      }
+    },
     "sidebar.tabContextMenu.copyLeftPaneURL" : {
-      "comment" : "Tab context menu - Copy the left pane's URL for a split",
+      "comment" : "Tab context menu - Copy the left pane's URL for a side-by-side split",
       "extractionState" : "extracted_with_value",
       "localizations" : {
         "de" : {
@@ -72665,7 +72701,7 @@
       }
     },
     "sidebar.tabContextMenu.copyRightPaneURL" : {
-      "comment" : "Tab context menu - Copy the right pane's URL for a split",
+      "comment" : "Tab context menu - Copy the right pane's URL for a side-by-side split",
       "extractionState" : "extracted_with_value",
       "localizations" : {
         "de" : {
@@ -72780,6 +72816,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "拷貝連結"
+          }
+        }
+      }
+    },
+    "sidebar.tabContextMenu.copyTopPaneURL" : {
+      "comment" : "Tab context menu - Copy the top pane's URL for a stacked split",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Copy Top URL"
           }
         }
       }

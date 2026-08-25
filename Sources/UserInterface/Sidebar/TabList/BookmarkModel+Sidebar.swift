@@ -62,14 +62,22 @@ extension Bookmark: ContextMenuRepresentable {
             // case needs a dedicated handler routed via the menu item's tag.
             let hasSecondary = !(secondaryUrl ?? "").isEmpty
             if hasSecondary {
-                let copyPrimary = NSMenuItem(title: NSLocalizedString("sidebar.bookmarkContextMenu.copyLeftPrimaryUrl", value: "Copy Left URL", comment: "Bookmark context menu - Copy the left (primary) URL of a split-view bookmark"),
+                let isStacked = (layout ?? .vertical) == .horizontal
+                let copyPrimaryTitle = isStacked
+                    ? NSLocalizedString("sidebar.bookmarkContextMenu.copyTopPrimaryUrl", value: "Copy Top URL", comment: "Bookmark context menu - Copy the top (primary) URL of a stacked split-view bookmark")
+                    : NSLocalizedString("sidebar.bookmarkContextMenu.copyLeftPrimaryUrl", value: "Copy Left URL", comment: "Bookmark context menu - Copy the left (primary) URL of a side-by-side split-view bookmark")
+                let copySecondaryTitle = isStacked
+                    ? NSLocalizedString("sidebar.bookmarkContextMenu.copyBottomSecondaryUrl", value: "Copy Bottom URL", comment: "Bookmark context menu - Copy the bottom (secondary) URL of a stacked split-view bookmark")
+                    : NSLocalizedString("sidebar.bookmarkContextMenu.copyRightSecondaryUrl", value: "Copy Right URL", comment: "Bookmark context menu - Copy the right (secondary) URL of a side-by-side split-view bookmark")
+
+                let copyPrimary = NSMenuItem(title: copyPrimaryTitle,
                                              action: #selector(copySplitLink(_:)),
                                              keyEquivalent: "")
                 copyPrimary.target = self
                 copyPrimary.tag = 0
                 menu.addItem(copyPrimary)
 
-                let copySecondary = NSMenuItem(title: NSLocalizedString("sidebar.bookmarkContextMenu.copyRightSecondaryUrl", value: "Copy Right URL", comment: "Bookmark context menu - Copy the right (secondary) URL of a split-view bookmark"),
+                let copySecondary = NSMenuItem(title: copySecondaryTitle,
                                                action: #selector(copySplitLink(_:)),
                                                keyEquivalent: "")
                 copySecondary.target = self

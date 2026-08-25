@@ -133,32 +133,45 @@ extension Tab: ContextMenuRepresentable {
         // Splits expose one copy item per pane so the user can pick which
         // side to copy without having to dissolve the split. Regular tabs
         // keep the single "Copy Link".
-        let copyLeftURL: String?
-        let copyRightURL: String?
+        let copyPrimaryURL: String?
+        let copySecondaryURL: String?
         if isPinnedSplitCell, let membership = splitMembership {
-            copyLeftURL = membership.leftPane.url
-            copyRightURL = membership.rightPane.url
+            copyPrimaryURL = membership.leftPane.url
+            copySecondaryURL = membership.rightPane.url
         } else if let pair = nonPinnedSplitPair {
-            copyLeftURL = pair.leftURL
-            copyRightURL = pair.rightURL
+            copyPrimaryURL = pair.leftURL
+            copySecondaryURL = pair.rightURL
         } else {
-            copyLeftURL = nil
-            copyRightURL = nil
+            copyPrimaryURL = nil
+            copySecondaryURL = nil
         }
-        if let leftURL = copyLeftURL, let rightURL = copyRightURL {
-            let copyLeftURLItem = NSMenuItem(title: NSLocalizedString("sidebar.tabContextMenu.copyLeftPaneURL", value: "Copy Left URL", comment: "Tab context menu - Copy the left pane's URL for a split"),
-                                             action: #selector(copySplitPaneURL(_:)),
-                                             keyEquivalent: "")
-            copyLeftURLItem.target = self
-            copyLeftURLItem.representedObject = leftURL
-            items.append(copyLeftURLItem)
+        if let primaryURL = copyPrimaryURL, let secondaryURL = copySecondaryURL {
+            let splitLayout = splitMembership?.liveGroup?.layout
+                ?? splitMembership?.pinnedDBPair.flatMap { pair in
+                    browserStateForMenu?.pinnedSplitLayout(leftDB: pair.left, rightDB: pair.right)
+                }
+                ?? .vertical
+            let isStacked = splitLayout == .horizontal
+            let copyPrimaryTitle = isStacked
+                ? NSLocalizedString("sidebar.tabContextMenu.copyTopPaneURL", value: "Copy Top URL", comment: "Tab context menu - Copy the top pane's URL for a stacked split")
+                : NSLocalizedString("sidebar.tabContextMenu.copyLeftPaneURL", value: "Copy Left URL", comment: "Tab context menu - Copy the left pane's URL for a side-by-side split")
+            let copySecondaryTitle = isStacked
+                ? NSLocalizedString("sidebar.tabContextMenu.copyBottomPaneURL", value: "Copy Bottom URL", comment: "Tab context menu - Copy the bottom pane's URL for a stacked split")
+                : NSLocalizedString("sidebar.tabContextMenu.copyRightPaneURL", value: "Copy Right URL", comment: "Tab context menu - Copy the right pane's URL for a side-by-side split")
 
-            let copyRightURLItem = NSMenuItem(title: NSLocalizedString("sidebar.tabContextMenu.copyRightPaneURL", value: "Copy Right URL", comment: "Tab context menu - Copy the right pane's URL for a split"),
-                                              action: #selector(copySplitPaneURL(_:)),
-                                              keyEquivalent: "")
-            copyRightURLItem.target = self
-            copyRightURLItem.representedObject = rightURL
-            items.append(copyRightURLItem)
+            let copyPrimaryURLItem = NSMenuItem(title: copyPrimaryTitle,
+                                                action: #selector(copySplitPaneURL(_:)),
+                                                keyEquivalent: "")
+            copyPrimaryURLItem.target = self
+            copyPrimaryURLItem.representedObject = primaryURL
+            items.append(copyPrimaryURLItem)
+
+            let copySecondaryURLItem = NSMenuItem(title: copySecondaryTitle,
+                                                  action: #selector(copySplitPaneURL(_:)),
+                                                  keyEquivalent: "")
+            copySecondaryURLItem.target = self
+            copySecondaryURLItem.representedObject = secondaryURL
+            items.append(copySecondaryURLItem)
         } else {
             let copyUrlItem = NSMenuItem(title: NSLocalizedString("sidebar.tabContextMenu.copyTabURL", value: "Copy Link", comment: "Tab context menu - Menu item to copy the tab URL to clipboard"), action: #selector(MainBrowserWindowController.myCopyLink(_:)), keyEquivalent: "")
             if browserStateForMenu?.focusingTab?.guid == guid {

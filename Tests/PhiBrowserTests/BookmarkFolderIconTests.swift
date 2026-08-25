@@ -27,6 +27,31 @@ final class BookmarkFolderIconTests: XCTestCase {
         XCTAssertTrue(menu.items.contains { $0.title == title })
     }
 
+    func testStackedSplitBookmarkContextMenusUseTopAndBottomCopyTitles() {
+        let bookmark = Bookmark(title: "Split",
+                                url: "https://top.example",
+                                secondaryUrl: "https://bottom.example",
+                                layout: .horizontal)
+        let topTitle = NSLocalizedString(
+            "sidebar.bookmarkContextMenu.copyTopPrimaryUrl",
+            value: "Copy Top URL",
+            comment: "Bookmark context menu - Copy the top (primary) URL of a stacked split-view bookmark"
+        )
+        let bottomTitle = NSLocalizedString(
+            "sidebar.bookmarkContextMenu.copyBottomSecondaryUrl",
+            value: "Copy Bottom URL",
+            comment: "Bookmark context menu - Copy the bottom (secondary) URL of a stacked split-view bookmark"
+        )
+
+        for source in [BookmarkMenuSource.sidebar, .bookmarkBar] {
+            let menu = NSMenu()
+
+            bookmark.makeContextMenu(on: menu, source: source)
+
+            XCTAssertEqual(Array(menu.items.prefix(2).map(\.title)), [topTitle, bottomTitle])
+        }
+    }
+
     func testSidebarFolderContextMenuPlacesChangeIconAfterRename() {
         let folder = Bookmark(folderTitle: "Folder")
         let menu = NSMenu()
@@ -140,6 +165,40 @@ final class BookmarkFolderIconTests: XCTestCase {
             XCTAssertFalse(
                 names.contains { $0.range(of: #"\p{Han}"#, options: .regularExpression) != nil },
                 "Chinese Lottie property name remains in \(url.lastPathComponent)"
+            )
+        }
+    }
+
+    func testEveryLottieSymbolLayerContainsOnlyMappedGroup() throws {
+        for icon in BookmarkFolderIcon.allCases {
+            guard let expectedGroupName = icon.resources.symbolGroupName else { continue }
+            let url = try XCTUnwrap(
+                Bundle.main.url(
+                    forResource: icon.resources.animationResourceName,
+                    withExtension: "json",
+                    subdirectory: "LottieFiles/BookmarkFolderIcons"
+                )
+            )
+            let object = try XCTUnwrap(
+                JSONSerialization.jsonObject(with: Data(contentsOf: url)) as? [String: Any]
+            )
+            let layers = try XCTUnwrap(object["layers"] as? [[String: Any]])
+            let symbolLayers = layers.filter {
+                ($0["nm"] as? String)?.hasPrefix("Icon_") == true
+            }
+
+            XCTAssertEqual(symbolLayers.count, 1, "Unexpected symbol layers in \(icon.rawValue)")
+            let symbolLayer = try XCTUnwrap(symbolLayers.first)
+            let shapes = try XCTUnwrap(symbolLayer["shapes"] as? [[String: Any]])
+            let groupNames = shapes.compactMap { shape -> String? in
+                guard shape["ty"] as? String == "gr" else { return nil }
+                return shape["nm"] as? String
+            }
+
+            XCTAssertEqual(
+                groupNames,
+                [expectedGroupName],
+                "Unmapped symbol group in \(icon.rawValue)"
             )
         }
     }

@@ -714,22 +714,35 @@ final class BookmarkManagerViewController: NSViewController {
             ))
         } else {
             if let secondaryURL = bookmark.secondaryUrl, !secondaryURL.isEmpty {
+                let isStacked = (bookmark.layout ?? .vertical) == .horizontal
                 if let primaryURL = bookmark.url {
                     menu.addItem(copyItem(
-                        title: NSLocalizedString(
-                            "sidebar.bookmarkContextMenu.copyLeftPrimaryUrl",
-                            value: "Copy Left URL",
-                            comment: "Bookmark context menu - Copy the left (primary) URL of a split-view bookmark"
-                        ),
+                        title: isStacked
+                            ? NSLocalizedString(
+                                "sidebar.bookmarkContextMenu.copyTopPrimaryUrl",
+                                value: "Copy Top URL",
+                                comment: "Bookmark context menu - Copy the top (primary) URL of a stacked split-view bookmark"
+                            )
+                            : NSLocalizedString(
+                                "sidebar.bookmarkContextMenu.copyLeftPrimaryUrl",
+                                value: "Copy Left URL",
+                                comment: "Bookmark context menu - Copy the left (primary) URL of a side-by-side split-view bookmark"
+                            ),
                         url: primaryURL
                     ))
                 }
                 menu.addItem(copyItem(
-                    title: NSLocalizedString(
-                        "sidebar.bookmarkContextMenu.copyRightSecondaryUrl",
-                        value: "Copy Right URL",
-                        comment: "Bookmark context menu - Copy the right (secondary) URL of a split-view bookmark"
-                    ),
+                    title: isStacked
+                        ? NSLocalizedString(
+                            "sidebar.bookmarkContextMenu.copyBottomSecondaryUrl",
+                            value: "Copy Bottom URL",
+                            comment: "Bookmark context menu - Copy the bottom (secondary) URL of a stacked split-view bookmark"
+                        )
+                        : NSLocalizedString(
+                            "sidebar.bookmarkContextMenu.copyRightSecondaryUrl",
+                            value: "Copy Right URL",
+                            comment: "Bookmark context menu - Copy the right (secondary) URL of a side-by-side split-view bookmark"
+                        ),
                     url: secondaryURL
                 ))
             } else if let url = bookmark.url {

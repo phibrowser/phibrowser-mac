@@ -83,6 +83,10 @@ final class BookmarkManagerCellView: NSTableCellView, NSTextFieldDelegate {
         commitHandler = onCommit
 
         let isSplit = bookmark.secondaryUrl?.isEmpty == false
+        splitMarkerView.image = NSImage(
+            systemSymbolName: Self.splitMarkerSymbolName(for: bookmark.layout),
+            accessibilityDescription: nil
+        )
         updateLayout(column: column, isSplit: isSplit)
         switch column {
         case .website:
@@ -152,7 +156,7 @@ final class BookmarkManagerCellView: NSTableCellView, NSTextFieldDelegate {
 
         splitMarkerView.translatesAutoresizingMaskIntoConstraints = false
         splitMarkerView.image = NSImage(
-            systemSymbolName: "rectangle.split.2x1",
+            systemSymbolName: Self.splitMarkerSymbolName(for: nil),
             accessibilityDescription: nil
         )
         splitMarkerView.imageScaling = .scaleProportionallyDown
@@ -451,6 +455,12 @@ final class BookmarkManagerCellView: NSTableCellView, NSTextFieldDelegate {
 
     private static func displayURL(_ rawURL: String?) -> String {
         rawURL.map(URLProcessor.phiBrandEnsuredUrlString) ?? ""
+    }
+
+    static func splitMarkerSymbolName(for layout: SplitLayout?) -> String {
+        (layout ?? .vertical) == .horizontal
+            ? "square.split.1x2"
+            : "rectangle.split.2x1"
     }
 
     private static func localizedChildCount(_ count: Int) -> String {

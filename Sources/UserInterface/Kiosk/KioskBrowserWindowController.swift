@@ -369,6 +369,9 @@ final class KioskBrowserWindowController: MainBrowserWindowController {
         case .IDC_FOCUS_LOCATION:
             presentOmniBox(fromAddressBar: true)
             return true
+        case .IDC_OPEN_FILE:
+            openFocusedTabInCurrentSpace()
+            return true
         case .IDC_NEW_TAB, .IDC_NEW_TAB_TO_RIGHT, .IDC_FOCUS_SEARCH:
             presentOmniBox(fromAddressBar: false)
             return true
@@ -954,6 +957,19 @@ final class KioskBrowserWindowController: MainBrowserWindowController {
         presentationTargetFrame = nil
         presentationOriginalMinSize = nil
         presentationOriginalIgnoresMouseEvents = nil
+    }
+
+    @MainActor
+    private func openFocusedTabInCurrentSpace() {
+        guard !browserState.isIncognito,
+              PhiPreferences.GeneralSettings.spacesFeatureEnabled.loadValue(),
+              let tab = browserState.focusingTab else { return }
+        let spaceManager = SpaceManager.shared
+        guard let space = KioskSpaceMenuTargetResolver.primarySpace(
+            in: spaceManager.spaces,
+            activeSpaceId: spaceManager.activeSpaceId
+        ) else { return }
+        spaceManager.moveTab(tab, toSpaceId: space.spaceId)
     }
 
     @MainActor

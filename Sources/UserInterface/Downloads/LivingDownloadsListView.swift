@@ -321,6 +321,7 @@ struct CircularProgressButton: View {
 struct LivingDownloadItemView: View {
     @ObservedObject var livingItem: LivingDownloadItem
     @State private var isHovered = false
+    @State private var openAnimationTrigger = 0
     
     var onPause: (DownloadItem) -> Void
     var onResume: (DownloadItem) -> Void
@@ -366,20 +367,26 @@ struct LivingDownloadItemView: View {
             isHovered = hovering
             livingItem.setHovered(hovering)
         }
-        .onTapGesture {
-            guard canOpenCompletedFile else { return }
-            onOpen(item)
+        .onTapGesture(count: 2) {
+            openCompletedFile()
         }
     }
     
     private var fileIcon: some View {
-        let contentType = UTType(mimeType: item.mimeType)
-        let image = NSWorkspace.shared.icon(for: contentType ?? .data)
-        
-        return Image(nsImage: image)
-            .resizable()
-            .aspectRatio(contentMode: .fit)
-            .frame(width: iconSize, height: iconSize)
+        DownloadFileIconView(
+            mimeType: item.mimeType,
+            size: iconSize,
+            openAnimationTrigger: openAnimationTrigger
+        )
+    }
+
+    private func openCompletedFile() {
+        guard canOpenCompletedFile else { return }
+
+        openAnimationTrigger += 1
+        DispatchQueue.main.asyncAfter(deadline: .now() + DownloadFileIconView.openDelay) {
+            onOpen(item)
+        }
     }
     
     private var hasSafetyWarning: Bool {

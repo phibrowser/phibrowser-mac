@@ -5,6 +5,31 @@
 
 import Foundation
 
+/// Decides whether an external URL should bypass the user's Kiosk preference.
+/// A Space rule takes precedence over that preference, while the Kiosk rule
+/// target and an unmatched URL retain the existing Chromium Kiosk path.
+enum ExternalKioskURLRuleResolver {
+    enum Decision: Equatable {
+        case useKiosk
+        case ask(defaultSpaceId: String)
+        case openInSpace(String)
+    }
+
+    static func decision(
+        for url: URL,
+        rules: [SpaceURLRule]
+    ) -> Decision {
+        guard let rule = URLRouter.matchingRule(for: url, rules: rules),
+              rule.spaceId != SpaceManager.kioskRuleTargetId else {
+            return .useKiosk
+        }
+        if rule.askBeforeRouting {
+            return .ask(defaultSpaceId: rule.spaceId)
+        }
+        return .openInSpace(rule.spaceId)
+    }
+}
+
 /// Window-scoped state for the ephemeral Kiosk browser surface.
 ///
 /// It deliberately remains a BrowserState so Chromium tab events keep using

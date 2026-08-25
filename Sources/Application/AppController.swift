@@ -440,13 +440,15 @@ import PostHog
     ) {
         let opensInKiosk =
             PhiPreferences.GeneralSettings.openExternalLinksInKiosk.loadValue()
-        let requiresSpaceReadiness = !opensInKiosk
+        // Kiosk opens also need the initial rule snapshot because a matching
+        // Space rule takes precedence over the external-link Kiosk preference.
+        let requiresSpaceReadiness = true
 
         // Standard opens preserve the existing session-restore behavior so
         // the link lands in the restored active window. A Kiosk cold open
         // waits for Chromium's ordinary launch window instead; starting a
         // second restore here could create an extra regular window.
-        if requiresSpaceReadiness {
+        if !opensInKiosk {
             SpaceManager.shared.beginSessionRestoreForExternalOpenIfEligible()
         }
 
@@ -509,9 +511,13 @@ import PostHog
         requiresSpaceReadiness: Bool,
         requiresVisibleRegularWindow: Bool
     ) -> Bool {
+        let opensInKiosk =
+            PhiPreferences.GeneralSettings.openExternalLinksInKiosk.loadValue()
         let spaceReady = !requiresSpaceReadiness
-            || (MainBrowserWindowControllersManager.shared.getFirstAvailableWindowId() != nil
-                && SpaceManager.shared.hasLoadedURLRules)
+            || (SpaceManager.shared.hasLoadedURLRules
+                && (opensInKiosk
+                    || MainBrowserWindowControllersManager.shared
+                        .getFirstAvailableWindowId() != nil))
         let regularWindowReady = !requiresVisibleRegularWindow
             || MainBrowserWindowControllersManager.shared.hasVisibleRegularBrowserWindow
         let restoreVisibilityReady = !requiresVisibleRegularWindow
@@ -576,7 +582,97 @@ import PostHog
 
     private func forwardOpenURLsToChromium(application: NSApplication, urls: [URL], label: String) {
         AppLogDebug("[coldopen] urls call bridge (\(label))")
-        ChromiumLauncher.sharedInstance().bridge?.application(application, open: urls)
+        let opensInKiosk =
+            PhiPreferences.GeneralSettings.openExternalLinksInKiosk.loadValue()
+        guard opensInKiosk,
+              SpaceManager.shared.hasLoadedURLRules else {
+            forwardOpenURLsDirectlyToChromium(
+                application: application,
+                urls: urls
+            )
+            return
+        }
+
+        let urlsForChromium = MainActor.assumeIsolated {
+            let rules = SpaceManager.shared.allRules
+            var urlsForChromium: [URL] = []
+            var urlsByTargetSpaceId: [String: [String]] = [:]
+            for url in urls {
+                switch ExternalKioskURLRuleResolver.decision(
+                    for: url,
+                    rules: rules
+                ) {
+                case .useKiosk:
+                    urlsForChromium.append(url)
+                case let .ask(defaultSpaceId):
+                    askForExternalURLRuleDestination(
+                        url,
+                        defaultSpaceId: defaultSpaceId
+                    )
+                case let .openInSpace(targetSpaceId):
+                    urlsByTargetSpaceId[targetSpaceId, default: []]
+                        .append(url.absoluteString)
+                }
+            }
+            for (targetSpaceId, urlStrings) in urlsByTargetSpaceId {
+                SpaceManager.shared.openExternalURLs(
+                    urlStrings,
+                    inURLRuleTargetSpaceId: targetSpaceId
+                )
+            }
+            return urlsForChromium
+        }
+        if !urlsForChromium.isEmpty {
+            forwardOpenURLsDirectlyToChromium(
+                application: application,
+                urls: urlsForChromium
+            )
+        }
+    }
+
+    private func askForExternalURLRuleDestination(
+        _ url: URL,
+        defaultSpaceId: String
+    ) {
+        assert(Thread.isMainThread)
+        let controllers = MainBrowserWindowControllersManager.shared
+            .getAllWindows()
+        let sourceController = controllers.first(where: {
+            $0.browserType == .normal && $0.window?.isVisible == true
+        }) ?? controllers.first(where: {
+            $0.window?.isVisible == true
+        }) ?? controllers.first
+        guard let sourceController else {
+            // There is no window to host the chooser. Preserve the rule's
+            // non-Kiosk precedence by using its default Space destination.
+            AppLogWarn(
+                "[ExternalLinks] Ask rule has no source window; "
+                    + "opening in default Space \(defaultSpaceId)"
+            )
+            MainActor.assumeIsolated {
+                SpaceManager.shared.openExternalURLs(
+                    [url.absoluteString],
+                    inURLRuleTargetSpaceId: defaultSpaceId
+                )
+            }
+            return
+        }
+        PhiChromiumCoordinator.shared.askSpace(
+            forURL: url.absoluteString,
+            defaultSpaceId: defaultSpaceId,
+            sourceWindowId: Int64(sourceController.windowId),
+            sourceIsNewTab: false
+        )
+    }
+
+    private func forwardOpenURLsDirectlyToChromium(
+        application: NSApplication,
+        urls: [URL]
+    ) {
+        ChromiumLauncher.sharedInstance().bridge?.application(
+            application,
+            open: urls
+        )
     }
     
     func application(_ application: NSApplication, willContinueUserActivityWithType userActivityType: String) -> Bool {

@@ -33,11 +33,13 @@ final class URLRouterTests: XCTestCase {
     private func rule(space: String,
                       host: String,
                       path: String? = nil,
+                      askBeforeRouting: Bool = false,
                       sortOrder: Int = 0) -> SpaceURLRule {
         let r = SpaceURLRule(
             spaceId: space,
             host: host,
             pathPrefix: path,
+            askBeforeRouting: askBeforeRouting,
             sortOrder: sortOrder
         )
         context.insert(r)
@@ -191,6 +193,59 @@ final class URLRouterTests: XCTestCase {
         XCTAssertEqual(
             resolve("https://kiosk.example/page", rules),
             LocalStore.kioskURLRuleTargetId
+        )
+    }
+
+    func testExternalKioskBypassesKioskForDeterministicRuleTarget() {
+        let rules = [
+            rule(space: "personal", host: "*.example.com"),
+            rule(space: "work", host: "mail.example.com"),
+        ]
+
+        XCTAssertEqual(
+            ExternalKioskURLRuleResolver.decision(
+                for: URL(string: "https://mail.example.com/inbox")!,
+                rules: rules
+            ),
+            .openInSpace("work")
+        )
+    }
+
+    func testExternalKioskPreservesAskAndExplicitKioskRules() {
+        let askRules = [
+            rule(
+                space: "work",
+                host: "ask.example",
+                askBeforeRouting: true
+            ),
+        ]
+        let kioskRules = [
+            rule(
+                space: LocalStore.kioskURLRuleTargetId,
+                host: "kiosk.example"
+            ),
+        ]
+
+        XCTAssertEqual(
+            ExternalKioskURLRuleResolver.decision(
+                for: URL(string: "https://ask.example/")!,
+                rules: askRules
+            ),
+            .ask(defaultSpaceId: "work")
+        )
+        XCTAssertEqual(
+            ExternalKioskURLRuleResolver.decision(
+                for: URL(string: "https://kiosk.example/")!,
+                rules: kioskRules
+            ),
+            .useKiosk
+        )
+        XCTAssertEqual(
+            ExternalKioskURLRuleResolver.decision(
+                for: URL(string: "https://unmatched.example/")!,
+                rules: askRules + kioskRules
+            ),
+            .useKiosk
         )
     }
 

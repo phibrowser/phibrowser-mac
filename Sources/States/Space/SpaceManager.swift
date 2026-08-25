@@ -6394,6 +6394,85 @@ final class SpaceManager: ObservableObject {
         }
     }
 
+    /// Opens external URLs directly in the Space selected by a URL Rule.
+    /// This entry point deliberately bypasses Chromium's external-link Kiosk
+    /// preference and exempts each created tab from being routed a second time.
+    @MainActor
+    func openExternalURLs(
+        _ urlStrings: [String],
+        inURLRuleTargetSpaceId targetSpaceId: String
+    ) {
+        guard !urlStrings.isEmpty,
+              let bridge = ChromiumLauncher.sharedInstance().bridge else {
+            return
+        }
+        let concreteTargetSpaceId = Self.isIncognitoSpaceId(targetSpaceId)
+            ? resolveIncognitoRouteTarget(targetSpaceId, currentSpaceId: nil)
+            : targetSpaceId
+        guard spaces.contains(where: {
+            $0.spaceId == concreteTargetSpaceId
+        }) else {
+            AppLogWarn(
+                "[ExternalLinks] URL Rule target Space is unavailable: "
+                    + concreteTargetSpaceId
+            )
+            return
+        }
+
+        let existingSlot = slots.first(where: {
+            $0.windowController(for: concreteTargetSpaceId) != nil
+        })
+        let slot = existingSlot
+            ?? keySlot
+            ?? slots.first
+            ?? createSlot(initialSpaceId: concreteTargetSpaceId)
+        var didOpen = false
+        let openIfReady = { [weak slot] () -> Bool in
+            guard !didOpen,
+                  let controller = slot?.windowController(
+                    for: concreteTargetSpaceId
+                  ) else {
+                return false
+            }
+            didOpen = true
+            for urlString in urlStrings {
+                bridge.openTabBypassingSpaceRouting(
+                    withUrl: urlString,
+                    windowId: Int64(controller.windowId),
+                    activateWindow: false
+                )
+            }
+            return true
+        }
+
+        slot.activate(
+            spaceId: concreteTargetSpaceId,
+            animated: false,
+            onSwapSettled: {
+                _ = openIfReady()
+            }
+        )
+        if openIfReady() {
+            return
+        }
+
+        // A profile load or a concurrent activation can delay registration of
+        // the target window. Follow the established URL-routing retry window
+        // so the external URL remains owned by its matching Space and never
+        // falls through to Chromium's Kiosk branch.
+        let retryDelays: [TimeInterval] = [0.05, 0.25, 0.6, 1.2]
+        for (index, delay) in retryDelays.enumerated() {
+            let isLastAttempt = index == retryDelays.count - 1
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
+                guard !openIfReady(), isLastAttempt, !didOpen else { return }
+                AppLogWarn(
+                    "[ExternalLinks] Failed to open URL Rule match in Space "
+                        + concreteTargetSpaceId
+                )
+            }
+        }
+    }
+
     /// True when `tab` is a stranded new tab / NTP, the only source state for
     /// which Space routing reuses or refreshes the tab in place.
     static func isStrandedNewTab(_ tab: Tab) -> Bool {

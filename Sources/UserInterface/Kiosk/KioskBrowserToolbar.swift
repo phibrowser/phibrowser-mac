@@ -64,7 +64,7 @@ final class KioskBrowserToolbar: NSVisualEffectView {
     }
 
     static let preferredHeight: CGFloat = 52
-    static let titlebarVerticalShift: CGFloat = 4
+    static let titlebarVerticalShift: CGFloat = 6
 
     private let browserState: KioskBrowserState
     private let addressBarContainer = KioskToolbarHoverTrackingView()

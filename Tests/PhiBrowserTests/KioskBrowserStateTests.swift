@@ -364,7 +364,7 @@ final class KioskBrowserStateTests: XCTestCase {
                 ).y
                 XCTAssertEqual(
                     shiftedCenterY,
-                    originalCenterY - 4,
+                    originalCenterY - 6,
                     accuracy: 0.5
                 )
             }
@@ -374,7 +374,7 @@ final class KioskBrowserStateTests: XCTestCase {
         XCTAssertEqual(
             titlebarContainer.frame.height,
             trafficLightButtons[0].frame.height
-                + 2 * (originalTopMargin + 4),
+                + 2 * (originalTopMargin + 6),
             accuracy: 0.5
         )
         XCTAssertEqual(
@@ -424,6 +424,11 @@ final class KioskBrowserStateTests: XCTestCase {
         ).y
         XCTAssertEqual(toolbar.controlCenterYsForTesting.count, 2)
         for centerY in toolbar.controlCenterYsForTesting {
+            XCTAssertEqual(
+                centerY,
+                toolbar.bounds.midY,
+                accuracy: 0.5
+            )
             XCTAssertEqual(
                 centerY,
                 trafficLightCenterY,

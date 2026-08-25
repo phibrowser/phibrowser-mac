@@ -382,6 +382,7 @@ class AuthManager {
             NotificationCenter.default.post(name: .authReauthenticationStateDidChange, object: nil)
         }
     }
+    var reauthenticationAttempts = AuthReauthenticationAttemptState()
     var isPresentingReauthenticationPrompt = false
     var hasPersistedReauthenticationState = false
 

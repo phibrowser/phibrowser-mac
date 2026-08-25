@@ -234,7 +234,7 @@ class AccountSettingViewController: NSViewController, SettingsPane {
         }
         accountView.reauthenticationAction = {
             Task { @MainActor in
-                _ = await AuthManager.shared.reauthenticateExpiredSession()
+                _ = await AuthManager.shared.restartReauthenticationSession()
             }
         }
 

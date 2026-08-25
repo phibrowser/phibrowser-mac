@@ -33,7 +33,14 @@ final class AuthManagerExternalBrowserWebAuthUserAgent: WebAuthUserAgent {
     }
 
     func start() {
+        let authorizeURL = self.authorizeURL
         unregisterCallbackURLListener = registerCallbackURLListener { callbackURL in
+            guard Self.callbackMatchesAuthorizeRequest(
+                authorizeURL: authorizeURL,
+                callbackURL: callbackURL
+            ) else {
+                return
+            }
             _ = WebAuthentication.resume(with: callbackURL)
         }
 
@@ -77,6 +84,23 @@ final class AuthManagerExternalBrowserWebAuthUserAgent: WebAuthUserAgent {
             NSWorkspace.shared.open([url], withApplicationAt: safariURL, configuration: configuration)
             return true
         }
+    }
+
+    static func callbackMatchesAuthorizeRequest(
+        authorizeURL: URL,
+        callbackURL: URL
+    ) -> Bool {
+        guard let expectedState = stateQueryValue(in: authorizeURL) else {
+            return true
+        }
+        return stateQueryValue(in: callbackURL) == expectedState
+    }
+
+    private static func stateQueryValue(in url: URL) -> String? {
+        URLComponents(url: url, resolvingAgainstBaseURL: false)?
+            .queryItems?
+            .first { $0.name == "state" }?
+            .value
     }
 
     private static func defaultBrowserBundleIdentifier() -> String? {

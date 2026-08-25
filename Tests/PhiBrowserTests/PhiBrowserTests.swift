@@ -1443,6 +1443,97 @@ final class PhiBrowserTests: XCTestCase {
         XCTAssertEqual(canonicalCredential, "new-session")
     }
 
+    func testExternalBrowserWebAuthAcceptsMatchingCallbackState() throws {
+        let authorizeURL = try XCTUnwrap(
+            URL(string: "https://auth.example/authorize?state=current-session")
+        )
+        let callbackURL = try XCTUnwrap(
+            URL(string: "phi://auth.example/callback?code=code&state=current-session")
+        )
+
+        XCTAssertTrue(
+            AuthManagerExternalBrowserWebAuthUserAgent.callbackMatchesAuthorizeRequest(
+                authorizeURL: authorizeURL,
+                callbackURL: callbackURL
+            )
+        )
+    }
+
+    func testExternalBrowserWebAuthRejectsCallbackFromReplacedSession() throws {
+        let authorizeURL = try XCTUnwrap(
+            URL(string: "https://auth.example/authorize?state=new-session")
+        )
+        let callbackURL = try XCTUnwrap(
+            URL(string: "phi://auth.example/callback?code=code&state=old-session")
+        )
+
+        XCTAssertFalse(
+            AuthManagerExternalBrowserWebAuthUserAgent.callbackMatchesAuthorizeRequest(
+                authorizeURL: authorizeURL,
+                callbackURL: callbackURL
+            )
+        )
+    }
+
+    func testReauthenticationAttemptReplacementIgnoresPreviousResult() {
+        var attempts = AuthReauthenticationAttemptState()
+        let previousAttemptID = attempts.begin()
+        let replacementAttemptID = attempts.begin()
+
+        XCTAssertFalse(attempts.finishIfCurrent(previousAttemptID))
+        XCTAssertEqual(attempts.currentID, replacementAttemptID)
+        XCTAssertTrue(attempts.finishIfCurrent(replacementAttemptID))
+        XCTAssertNil(attempts.currentID)
+    }
+
+    @MainActor
+    func testReauthenticationWebAuthRunnerReplacesSessionBeforeStartingNextAttempt() async throws {
+        let session = AuthReauthenticationWebAuthTestSession()
+        let firstAttemptStarted = expectation(description: "First attempt started")
+        let replacementAttemptStarted = expectation(description: "Replacement attempt started")
+        session.onStart = { startCount in
+            if startCount == 1 {
+                firstAttemptStarted.fulfill()
+            } else if startCount == 2 {
+                replacementAttemptStarted.fulfill()
+            }
+        }
+
+        let firstAttempt = Task { @MainActor in
+            try await AuthReauthenticationWebAuthRunner.run(
+                replacingActiveSession: false,
+                cancel: { session.cancel() },
+                start: { session.start($0) }
+            )
+        }
+        await fulfillment(of: [firstAttemptStarted], timeout: 1)
+
+        let replacementAttempt = Task { @MainActor in
+            try await AuthReauthenticationWebAuthRunner.run(
+                replacingActiveSession: true,
+                cancel: { session.cancel() },
+                start: { session.start($0) }
+            )
+        }
+        await fulfillment(of: [replacementAttemptStarted], timeout: 1)
+
+        XCTAssertEqual(session.events, [.start, .cancel, .start])
+        XCTAssertEqual(session.transactionActiveFailureCount, 0)
+
+        session.succeed(with: 2)
+        let replacementValue = try await replacementAttempt.value
+        XCTAssertEqual(replacementValue, 2)
+
+        do {
+            _ = try await firstAttempt.value
+            XCTFail("Expected the replaced attempt to be cancelled.")
+        } catch let error as AuthReauthenticationWebAuthTestError {
+            XCTAssertEqual(error, .cancelled)
+        } catch {
+            XCTFail("Unexpected replaced-attempt error: \(error)")
+        }
+    }
+
     func testAuthenticatedSessionPublicationStagesUntilSignedInCommit() {
         XCTAssertTrue(
             AuthenticatedSessionPublicationPolicy.stagesCredentials(
@@ -2603,6 +2694,58 @@ private final class AuthCredentialCommitTestState: @unchecked Sendable {
     let sessions = AuthSessionGeneration()
     var canonicalCredential = "persisted"
     var currentCredential: String?
+}
+
+private enum AuthReauthenticationWebAuthTestError: Error, Equatable {
+    case cancelled
+    case transactionActive
+}
+
+@MainActor
+private final class AuthReauthenticationWebAuthTestSession {
+    enum Event: Equatable {
+        case cancel
+        case start
+    }
+
+    var onStart: ((Int) -> Void)?
+    private(set) var events: [Event] = []
+    private(set) var transactionActiveFailureCount = 0
+
+    private var startCount = 0
+    private var activeCompletion: ((Result<Int, AuthReauthenticationWebAuthTestError>) -> Void)?
+
+    func cancel() {
+        events.append(.cancel)
+        guard let completion = activeCompletion else {
+            return
+        }
+        activeCompletion = nil
+        completion(.failure(.cancelled))
+    }
+
+    func start(
+        _ completion: @escaping (Result<Int, AuthReauthenticationWebAuthTestError>) -> Void
+    ) {
+        events.append(.start)
+        guard activeCompletion == nil else {
+            transactionActiveFailureCount += 1
+            completion(.failure(.transactionActive))
+            return
+        }
+
+        activeCompletion = completion
+        startCount += 1
+        onStart?(startCount)
+    }
+
+    func succeed(with value: Int) {
+        guard let completion = activeCompletion else {
+            return
+        }
+        activeCompletion = nil
+        completion(.success(value))
+    }
 }
 
 private final class BookmarkMenuTestTarget: NSObject {

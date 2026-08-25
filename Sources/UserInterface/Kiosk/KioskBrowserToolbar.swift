@@ -541,12 +541,14 @@ private struct KioskSpaceMenu: View {
                             Label {
                                 Text(verbatim: space.name)
                             } icon: {
-                                SpaceIconView(
-                                    storedValue: space.iconName,
-                                    size: Layout.iconSize,
-                                    symbolWeight: .semibold,
-                                    tint: .primary
-                                )
+                                // The native Menu bridge can treat an emoji
+                                // SpaceIconView's Text as the item title.
+                                if let image = SpaceIconView.menuImage(
+                                    for: space.iconName,
+                                    size: Layout.iconSize
+                                ) {
+                                    Image(nsImage: image)
+                                }
                             }
                             if space.spaceId == primarySpace?.spaceId {
                                 Image(systemName: "checkmark")

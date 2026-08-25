@@ -15,6 +15,21 @@ final class BookmarkManagerCellViewTests: XCTestCase {
         spaceId: "space-1"
     )
 
+    func testSplitMarkerSymbolMatchesBookmarkLayout() {
+        XCTAssertEqual(
+            BookmarkManagerCellView.splitMarkerSymbolName(for: .horizontal),
+            "square.split.1x2"
+        )
+        XCTAssertEqual(
+            BookmarkManagerCellView.splitMarkerSymbolName(for: .vertical),
+            "rectangle.split.2x1"
+        )
+        XCTAssertEqual(
+            BookmarkManagerCellView.splitMarkerSymbolName(for: nil),
+            "rectangle.split.2x1"
+        )
+    }
+
     func testAddressColumnDisplaysPhiBrandedNewTabURL() throws {
         let bookmark = Bookmark(
             guid: "new-tab",

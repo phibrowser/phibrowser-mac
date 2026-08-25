@@ -484,6 +484,11 @@ private struct KioskSpaceMenu: View {
         )
     }
 
+    private var primaryActionTooltipTitle: String {
+        guard let primarySpace else { return title }
+        return "\(title) \(primarySpace.name)"
+    }
+
     private var spaceListTitle: String {
         NSLocalizedString(
             "kiosk.toolbar.spaceList.accessibilityLabel",
@@ -528,6 +533,12 @@ private struct KioskSpaceMenu: View {
             )
             .disabled(primarySpace == nil)
             .onHover { isPrimaryActionHovered = $0 }
+            .customTooltip {
+                CommandShortcutTooltipContent(
+                    title: primaryActionTooltipTitle,
+                    command: .IDC_OPEN_FILE
+                )
+            }
 
             Divider()
                 .frame(height: 18)

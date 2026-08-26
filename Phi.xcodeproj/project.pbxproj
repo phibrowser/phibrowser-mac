@@ -198,6 +198,7 @@
 		5F1A5A11AC1D000000000001 /* BrowserState+Split.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5F1A5A11AC1D000000000002 /* BrowserState+Split.swift */; };
 		5F1A5A11AC1D000000000003 /* SplitPaneHostView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5F1A5A11AC1D000000000004 /* SplitPaneHostView.swift */; };
 		5F1A5A11AC1D000000000005 /* SplitTabDropContainer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5F1A5A11AC1D000000000006 /* SplitTabDropContainer.swift */; };
+		6CA74AE48DC58F4968B8DD4E /* DeviceKeyStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = E2201CD37819E22BC9A5F2FC /* DeviceKeyStore.swift */; };
 		793C1DDEA1022CC850FEFFF9 /* SentinelWatchdog.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6A44C5FF60DF6F7860A061D4 /* SentinelWatchdog.swift */; };
 		7A5B00A02EF0000000000001 /* MemoryButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A5B00A02EF0000000000002 /* MemoryButton.swift */; };
 		7B00AAAA000000050000A5B5 /* PostHogEnv.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7B00AAAA000000040000A4B4 /* PostHogEnv.swift */; };
@@ -974,6 +975,7 @@
 		DEBE00000000000000000003 /* DeveloperSettingHostingViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeveloperSettingHostingViewController.swift; sourceTree = "<group>"; };
 		DEBE00000000000000000004 /* DeveloperSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeveloperSettingsView.swift; sourceTree = "<group>"; };
 		E10000000000000000000001 /* PhiBrowser-OpenSource.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = "PhiBrowser-OpenSource.entitlements"; sourceTree = "<group>"; };
+		E2201CD37819E22BC9A5F2FC /* DeviceKeyStore.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = DeviceKeyStore.swift; sourceTree = "<group>"; };
 		F01D3A000000000000000011 /* bookmark-folder-open.svg */ = {isa = PBXFileReference; lastKnownFileType = image.svg; path = "bookmark-folder-open.svg"; sourceTree = "<group>"; };
 		F01D3A000000000000000012 /* bookmark-folder-closed.svg */ = {isa = PBXFileReference; lastKnownFileType = image.svg; path = "bookmark-folder-closed.svg"; sourceTree = "<group>"; };
 		FBD200012FD0000000000002 /* FeedbackOutbox.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeedbackOutbox.swift; sourceTree = "<group>"; };
@@ -1475,6 +1477,7 @@
 			children = (
 				D6CCBCF92F493BE791DFAC3A /* PhiKeyCrypto.swift */,
 				6EE9BDB8D95B7A16A1E96582 /* RecoveryCode.swift */,
+				E2201CD37819E22BC9A5F2FC /* DeviceKeyStore.swift */,
 			);
 			name = Keys;
 			path = Keys;
@@ -2877,6 +2880,7 @@
 				CC6335F72E4B29E000A176DA /* Logging.swift in Sources */,
 				C8D702469B5164CDCB72E3C8 /* PhiKeyCrypto.swift in Sources */,
 				2F3F30219641EDD78FE06E96 /* RecoveryCode.swift in Sources */,
+				6CA74AE48DC58F4968B8DD4E /* DeviceKeyStore.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

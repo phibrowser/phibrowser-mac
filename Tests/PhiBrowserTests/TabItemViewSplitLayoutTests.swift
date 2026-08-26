@@ -168,6 +168,27 @@ final class TabItemViewSplitLayoutTests: XCTestCase {
 }
 
 final class SplitViewLayoutTests: XCTestCase {
+    func testPaneLayoutMatchesSingleWebContentAtHeaderBoundaryOnlyWithTopAddressBar() {
+        let bounds = CGRect(x: 10, y: 20, width: 900, height: 600)
+
+        for layoutMode in [LayoutMode.comfortable, .balanced] {
+            let paneLayoutRect = SplitPaneHostView.paneLayoutRect(
+                in: bounds,
+                layoutMode: layoutMode
+            )
+            XCTAssertEqual(paneLayoutRect.maxY, bounds.maxY)
+            XCTAssertEqual(paneLayoutRect.minX, bounds.minX + SplitPaneHostView.paneInset)
+            XCTAssertEqual(paneLayoutRect.maxX, bounds.maxX - SplitPaneHostView.paneInset)
+            XCTAssertEqual(paneLayoutRect.minY, bounds.minY + SplitPaneHostView.paneInset)
+        }
+
+        let performanceRect = SplitPaneHostView.paneLayoutRect(
+            in: bounds,
+            layoutMode: .performance
+        )
+        XCTAssertEqual(performanceRect.maxY, bounds.maxY - SplitPaneHostView.paneInset)
+    }
+
     func testLayoutTogglePreservesDividerOrientationSemantics() {
         XCTAssertEqual(SplitLayout.vertical.toggled, .horizontal)
         XCTAssertEqual(SplitLayout.horizontal.toggled, .vertical)

@@ -1887,9 +1887,10 @@ class WebContentViewController: NSViewController {
         }
 
         let host: SplitPaneHostView
+        let layoutMode = PhiPreferences.GeneralSettings.loadLayoutMode()
         if let existing = currentSplitHost, existing.superview === hostView {
             existing.update(primary: primaryView, secondary: secondaryView)
-            existing.update(layout: group.layout, ratio: group.ratio)
+            existing.update(layout: group.layout, ratio: group.ratio, layoutMode: layoutMode)
             host = existing
         } else {
             // Mount the host BEFORE attaching panes: SplitPaneHostView.init no
@@ -1907,7 +1908,11 @@ class WebContentViewController: NSViewController {
             // cleanly resume, blanking the new-tab pane. Mount the host on top
             // instead, then let update() atomically reparent both panes (a
             // same-window addSubview move skips viewWillMoveToWindow(nil)).
-            let newHost = SplitPaneHostView(layout: group.layout, ratio: group.ratio)
+            let newHost = SplitPaneHostView(
+                layout: group.layout,
+                ratio: group.ratio,
+                layoutMode: layoutMode
+            )
             newHost.translatesAutoresizingMaskIntoConstraints = false
             hostView.addSubview(newHost)
             newHost.snp.makeConstraints { $0.edges.equalToSuperview() }
@@ -2574,6 +2579,8 @@ class WebContentViewController: NSViewController {
         let navigationAtTop = layoutMode.showsNavigationAtTop
         let traditionalLayout = layoutMode.isTraditional
         let bookmarkCount = attachedBookmarkBar?.bookmarkCount ?? 0
+
+        currentSplitHost?.update(layoutMode: layoutMode)
         
         // Update container styling before toggling visibility.
         let isAIChatExpanded = aiChatSplitViewItem?.isCollapsed == false

@@ -1148,10 +1148,12 @@ final class SplitTabDropContainer: NSView {
     /// pane (slot 0) — left for a vertical split, top for a horizontal one.
     private func replacePaneRects(splitId: String, area: CGRect) -> (left: CGRect, right: CGRect) {
         let dividerThickness = SplitPaneHostView.dividerThickness
-        let paneInset = SplitPaneHostView.paneInset
         let group = browserState?.splitGroup(forId: splitId)
         let ratio = CGFloat(min(max(group?.ratio ?? 0.5, 0), 1))
-        let total = area.insetBy(dx: paneInset, dy: paneInset)
+        let total = SplitPaneHostView.paneLayoutRect(
+            in: area,
+            layoutMode: PhiPreferences.GeneralSettings.loadLayoutMode()
+        )
         switch group?.layout ?? .vertical {
         case .vertical:
             let primaryWidth = max(0, (total.width - dividerThickness) * ratio)

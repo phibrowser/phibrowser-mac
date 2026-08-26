@@ -1,5 +1,8 @@
 import CryptoKit
 import Foundation
+import Security
+
+enum RecoveryCodeError: Error { case randomGenerationFailed(OSStatus) }
 
 /// 恢复码 = 128-bit 随机熵,Base32-Crockford 编码 + 1 位校验字符,分组显示。
 /// 高熵随机、非用户密码,因此无需 memory-hard KDF(派生见 PhiKeyCrypto.deriveRecoveryKey)。
@@ -8,9 +11,10 @@ enum RecoveryCode {
     private static let alphabet = Array("0123456789ABCDEFGHJKMNPQRSTVWXYZ")  // Crockford,去 I L O U
     private static let dataChars = 26  // ceil(128/5)
 
-    static func generate() -> (display: String, entropy: Data) {
+    static func generate() throws -> (display: String, entropy: Data) {
         var entropy = Data(count: entropyBytes)
-        _ = entropy.withUnsafeMutableBytes { SecRandomCopyBytes(kSecRandomDefault, entropyBytes, $0.baseAddress!) }
+        let status = entropy.withUnsafeMutableBytes { SecRandomCopyBytes(kSecRandomDefault, entropyBytes, $0.baseAddress!) }
+        guard status == errSecSuccess else { throw RecoveryCodeError.randomGenerationFailed(status) }
         let body = encodeBase32(entropy, count: dataChars)
         let check = checksumChar(entropy)
         let full = body + String(check)

@@ -39,7 +39,7 @@ final class AccountKeyManager {
 
     func bootstrap() async throws -> String {
         let ark = PhiKeyCrypto.generateARK()
-        let (display, entropy) = RecoveryCode.generate()
+        let (display, entropy) = try RecoveryCode.generate()
         var salt = Data(count: 16)
         let saltStatus = salt.withUnsafeMutableBytes { SecRandomCopyBytes(kSecRandomDefault, 16, $0.baseAddress!) }
         guard saltStatus == errSecSuccess else { throw AccountKeyError.randomGenerationFailed(saltStatus) }

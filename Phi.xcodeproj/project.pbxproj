@@ -8,6 +8,7 @@
 
 /* Begin PBXBuildFile section */
 		04FE4637EFE3A1396687DD63 /* AISettingsConnectorViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = D8FCAEAE328C802016D87943 /* AISettingsConnectorViewModel.swift */; };
+		05170D58572AD0BE6C62021E /* KeyEnvelopeAPIClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 254713996DC310106F1FF7A7 /* KeyEnvelopeAPIClient.swift */; };
 		15B618E574463D94C98AEA5F /* AISettingHostingViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1B584F695BF7833FAA99558 /* AISettingHostingViewController.swift */; };
 		2ABF91DB68C2445BAA58C9BA /* GroupTabsTableView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 457F461C0F164136A46FF641 /* GroupTabsTableView.swift */; };
 		2F3F30219641EDD78FE06E96 /* RecoveryCode.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6EE9BDB8D95B7A16A1E96582 /* RecoveryCode.swift */; };
@@ -527,6 +528,7 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		254713996DC310106F1FF7A7 /* KeyEnvelopeAPIClient.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = KeyEnvelopeAPIClient.swift; sourceTree = "<group>"; };
 		3703C88B2F68F78500E7CF6D /* AISettingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AISettingView.swift; sourceTree = "<group>"; };
 		3703C9812F69558C00E7CF6D /* BrowserState+ToggleAI.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "BrowserState+ToggleAI.swift"; sourceTree = "<group>"; };
 		3703C9832F6956E600E7CF6D /* SentinelHelper.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SentinelHelper.swift; sourceTree = "<group>"; };
@@ -1478,6 +1480,7 @@
 				D6CCBCF92F493BE791DFAC3A /* PhiKeyCrypto.swift */,
 				6EE9BDB8D95B7A16A1E96582 /* RecoveryCode.swift */,
 				E2201CD37819E22BC9A5F2FC /* DeviceKeyStore.swift */,
+				254713996DC310106F1FF7A7 /* KeyEnvelopeAPIClient.swift */,
 			);
 			name = Keys;
 			path = Keys;
@@ -2881,6 +2884,7 @@
 				C8D702469B5164CDCB72E3C8 /* PhiKeyCrypto.swift in Sources */,
 				2F3F30219641EDD78FE06E96 /* RecoveryCode.swift in Sources */,
 				6CA74AE48DC58F4968B8DD4E /* DeviceKeyStore.swift in Sources */,
+				05170D58572AD0BE6C62021E /* KeyEnvelopeAPIClient.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

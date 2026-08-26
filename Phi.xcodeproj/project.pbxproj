@@ -401,6 +401,7 @@
 		B7A100013001000000000002 /* SentinelLanguagePreferenceSync.swift in Sources */ = {isa = PBXBuildFile; fileRef = B7A100013001000000000001 /* SentinelLanguagePreferenceSync.swift */; };
 		C0D1D0022FEA000000000002 /* SidebarTabListViewController+MultiSelectionDragPreview.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0D1D0012FEA000000000001 /* SidebarTabListViewController+MultiSelectionDragPreview.swift */; };
 		C0D3F1082026090800000001 /* SidebarFileDropView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0D3F1082026090800000002 /* SidebarFileDropView.swift */; };
+		C5BADF6174A250C6CE32EA57 /* DeviceApprovalService.swift in Sources */ = {isa = PBXBuildFile; fileRef = C80221E1E435653384260DC4 /* DeviceApprovalService.swift */; };
 		C5F9F384A23E1553837E302C /* AccountKeyManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9F0024EB323125F300021F9D /* AccountKeyManager.swift */; };
 		C70000000000000000000011 /* CustomTooltipController.swift in Sources */ = {isa = PBXBuildFile; fileRef = C70000000000000000000001 /* CustomTooltipController.swift */; };
 		C70000000000000000000012 /* CustomTooltip+Hosting.swift in Sources */ = {isa = PBXBuildFile; fileRef = C70000000000000000000002 /* CustomTooltip+Hosting.swift */; };
@@ -1117,6 +1118,7 @@
 		C70000000000000000000003 /* CommandShortcutTooltipContent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CommandShortcutTooltipContent.swift; sourceTree = "<group>"; };
 		C80000000000000000000001 /* TabPreviewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TabPreviewController.swift; sourceTree = "<group>"; };
 		C80000000000000000000002 /* SplitTabPreviewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SplitTabPreviewController.swift; sourceTree = "<group>"; };
+		C80221E1E435653384260DC4 /* DeviceApprovalService.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = DeviceApprovalService.swift; sourceTree = "<group>"; };
 		CC24EF052E89223500CE9DD7 /* LoginController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LoginController.swift; sourceTree = "<group>"; };
 		CC24EF072E89251D00CE9DD7 /* AuthManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthManager.swift; sourceTree = "<group>"; };
 		CC2708972E7959DF00B65AB8 /* PinnedTabLayout.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PinnedTabLayout.swift; sourceTree = "<group>"; };
@@ -1887,6 +1889,7 @@
 				254713996DC310106F1FF7A7 /* KeyEnvelopeAPIClient.swift */,
 				9F0024EB323125F300021F9D /* AccountKeyManager.swift */,
 				2A6C5B5F1BFE5B4B137F20E6 /* UI */,
+				C80221E1E435653384260DC4 /* DeviceApprovalService.swift */,
 			);
 			name = Keys;
 			path = Keys;
@@ -3656,6 +3659,7 @@
 				968126DBA688716A15DFAC27 /* KeyLayerViewModel.swift in Sources */,
 				87F30FDCDBA26553DFA619EF /* RecoveryCodeDisplayView.swift in Sources */,
 				20ADEF5F77D82925F11B2966 /* RecoveryCodeEntryView.swift in Sources */,
+				C5BADF6174A250C6CE32EA57 /* DeviceApprovalService.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

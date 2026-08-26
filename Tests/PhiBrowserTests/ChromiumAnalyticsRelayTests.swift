@@ -59,23 +59,23 @@ final class ChromiumAnalyticsRelayTests: XCTestCase {
         XCTAssertEqual(capturedEvents.count, 1)
         XCTAssertEqual(capturedEvents[0].name, "memory_saver_state")
         let properties = capturedEvents[0].properties
-        XCTAssertEqual(properties["source"] as? String, "chromium")
+        XCTAssertEqual(properties["event_source"] as? String, "chromium")
         XCTAssertEqual(properties["module"] as? String, "memory_saver")
         XCTAssertEqual(properties["enabled"] as? Bool, true)
         XCTAssertEqual(properties["aggressiveness"] as? String, "medium")
     }
 
-    func testStampsOverrideCallerSuppliedSourceAndModule() {
+    func testStampsOverrideCallerSuppliedEventSourceAndModule() {
         let relay = makeRelay()
 
         relay.relay(
             eventName: "memory_saver_state",
             module: "memory_saver",
-            properties: ["source": "forged", "module": "forged"]
+            properties: ["event_source": "forged", "module": "forged"]
         )
 
         XCTAssertEqual(capturedEvents.count, 1)
-        XCTAssertEqual(capturedEvents[0].properties["source"] as? String, "chromium")
+        XCTAssertEqual(capturedEvents[0].properties["event_source"] as? String, "chromium")
         XCTAssertEqual(capturedEvents[0].properties["module"] as? String, "memory_saver")
     }
 

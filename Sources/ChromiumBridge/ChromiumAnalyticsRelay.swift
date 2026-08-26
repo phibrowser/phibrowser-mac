@@ -14,8 +14,10 @@ import PostHog
 ///
 /// The relay owns the guard rules, so a Chromium-side mistake cannot reach
 /// the SDK: reserved `$`-prefixed event names are dropped with a log, and
-/// every accepted event is stamped with `source: "chromium"` and its
-/// `module` before capture — call sites cannot forget or forge them. It
+/// every accepted event is stamped with `event_source: "chromium"` and its
+/// `module` before capture — call sites cannot forget or forge them. The
+/// provenance key is `event_source` rather than a bare `source`, which would
+/// read ambiguously against PostHog's own predefined `source` property. It
 /// deliberately checks no consent: the metrics-reporting switch gates
 /// identity association, not event flow, and that policy stays with the
 /// identity layer.
@@ -64,7 +66,7 @@ final class ChromiumAnalyticsRelay {
             return
         }
         var stamped = properties
-        stamped["source"] = "chromium"
+        stamped["event_source"] = "chromium"
         stamped["module"] = module
         logger("accepted \(module)/\(eventName)")
         guard isPostHogInitialized() else { return }

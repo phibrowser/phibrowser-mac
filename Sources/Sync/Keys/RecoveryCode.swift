@@ -4,11 +4,13 @@ import Security
 
 enum RecoveryCodeError: Error { case randomGenerationFailed(OSStatus) }
 
-/// 恢复码 = 128-bit 随机熵,Base32-Crockford 编码 + 1 位校验字符,分组显示。
-/// 高熵随机、非用户密码,因此无需 memory-hard KDF(派生见 PhiKeyCrypto.deriveRecoveryKey)。
+/// Recovery code = 128-bit random entropy, Base32-Crockford encoded plus a 1-character
+/// checksum, displayed in groups.
+/// High-entropy random value, not a user password, so no memory-hard KDF is needed
+/// (derivation lives in PhiKeyCrypto.deriveRecoveryKey).
 enum RecoveryCode {
     static let entropyBytes = 16
-    private static let alphabet = Array("0123456789ABCDEFGHJKMNPQRSTVWXYZ")  // Crockford,去 I L O U
+    private static let alphabet = Array("0123456789ABCDEFGHJKMNPQRSTVWXYZ")  // Crockford, excludes I L O U
     private static let dataChars = 26  // ceil(128/5)
 
     static func generate() throws -> (display: String, entropy: Data) {
@@ -37,7 +39,7 @@ enum RecoveryCode {
             case "-", " ": return nil
             case "O": return "0"
             case "I", "L": return "1"
-            case "U": return nil  // 非法字符,保留会导致长度不符 → nil
+            case "U": return nil  // Invalid character; keeping it would break the length check -> nil
             default: return ch
             }
         })

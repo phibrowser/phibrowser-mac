@@ -15,12 +15,13 @@ final class RecoveryCodeTests: XCTestCase {
     }
 
     func testCrockfordAmbiguityNormalization() throws {
-        // 用户把 O/I/L 抄成字母,应被归一到 0/1/1
+        // If a user transcribes O/I/L as letters, they should be normalized back to 0/1/1.
         let (display, entropy) = try RecoveryCode.generate()
         let confused = display.replacingOccurrences(of: "0", with: "O")
                               .replacingOccurrences(of: "1", with: "I")
-        // 仅当原串含 0/1 时该替换才生效;无论如何 decode 结果要么等于 entropy 要么因校验失败为 nil,
-        // 但归一化本身不能崩:
+        // This substitution only has an effect when the original string contains 0/1;
+        // either way decode should return either entropy or nil (checksum failure),
+        // but normalization itself must never crash:
         _ = RecoveryCode.decode(confused)
         XCTAssertEqual(RecoveryCode.decode(display), entropy)
     }
@@ -28,7 +29,7 @@ final class RecoveryCodeTests: XCTestCase {
     func testChecksumRejectsSingleCharTypo() throws {
         let (display, _) = try RecoveryCode.generate()
         var chars = Array(display.replacingOccurrences(of: "-", with: ""))
-        // 翻动一个数据字符(非横杠),校验位应使 decode 失败
+        // Flip one data character (not a hyphen); the checksum should make decode fail.
         let table = Array("0123456789ABCDEFGHJKMNPQRSTVWXYZ")
         let idx = 0
         let cur = chars[idx]

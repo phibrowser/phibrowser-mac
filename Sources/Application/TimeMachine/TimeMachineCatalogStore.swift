@@ -9,6 +9,7 @@ import Foundation
 enum TimeMachineCatalogStoreError: Error, LocalizedError {
     case invalidSnapshotPath(String)
     case unsafeManagedDirectory(path: String, errnoCode: Int32)
+    case managedCatalogOperationFailed(operation: String, errnoCode: Int32)
     case managedSnapshotOperationFailed(operation: String, entry: String, errnoCode: Int32)
     case conflictingSnapshotEntries(UUID)
     case snapshotStillCataloged(UUID)
@@ -20,6 +21,8 @@ enum TimeMachineCatalogStoreError: Error, LocalizedError {
             return "Invalid Time Machine snapshot path: \(relativePath)"
         case .unsafeManagedDirectory(let path, let errnoCode):
             return "Could not safely open the managed Time Machine directory at \(path): errno \(errnoCode)"
+        case .managedCatalogOperationFailed(let operation, let errnoCode):
+            return "Time Machine catalog operation \(operation) failed: errno \(errnoCode)"
         case .managedSnapshotOperationFailed(let operation, let entry, let errnoCode):
             return "Time Machine snapshot operation \(operation) failed for \(entry): errno \(errnoCode)"
         case .conflictingSnapshotEntries(let backupID):
@@ -35,29 +38,31 @@ enum TimeMachineCatalogStoreError: Error, LocalizedError {
 
 struct TimeMachineCatalogStore {
     typealias CatalogWriter = (_ data: Data, _ catalogURL: URL) throws -> Void
+    typealias SnapshotSizeMeasurementHook = (_ backupID: UUID, _ sizeBytes: UInt64) throws -> Void
 
     private static let lock = NSRecursiveLock()
 
     private let paths: TimeMachinePaths
     private let fileManager: FileManager
-    private let catalogWriter: CatalogWriter
+    private let catalogWriter: CatalogWriter?
+    private let snapshotSizeMeasurementHook: SnapshotSizeMeasurementHook?
 
     init(
         paths: TimeMachinePaths = TimeMachinePaths(),
         fileManager: FileManager = .default,
-        catalogWriter: @escaping CatalogWriter = { data, catalogURL in
-            try data.write(to: catalogURL, options: .atomic)
-        }
+        catalogWriter: CatalogWriter? = nil,
+        snapshotSizeMeasurementHook: SnapshotSizeMeasurementHook? = nil
     ) {
         self.paths = paths
         self.fileManager = fileManager
         self.catalogWriter = catalogWriter
+        self.snapshotSizeMeasurementHook = snapshotSizeMeasurementHook
     }
 
     /// Reconciles interrupted backup deletions before returning catalog data.
     func load() throws -> TimeMachineCatalog {
         try withCatalogLock { snapshotsDirectory in
-            var catalog = try loadWithoutRecovery()
+            var catalog = try loadWithoutRecovery(from: snapshotsDirectory)
             try recoverInterruptedDeletions(
                 catalog: &catalog,
                 snapshotsDirectory: snapshotsDirectory
@@ -67,28 +72,50 @@ struct TimeMachineCatalogStore {
     }
 
     func save(_ catalog: TimeMachineCatalog) throws {
-        try withCatalogLock(createRootIfNeeded: true) { _ in
-            try saveWithoutLock(catalog)
+        try withCatalogLock(createRootIfNeeded: true) { snapshotsDirectory in
+            try saveWithoutLock(catalog, to: snapshotsDirectory)
         }
     }
 
     func appendCompletedBackup(_ record: TimeMachineBackupRecord) throws {
         try withCatalogLock(createRootIfNeeded: true) { snapshotsDirectory in
-            var catalog = try loadWithoutRecovery()
+            var catalog = try loadWithoutRecovery(from: snapshotsDirectory)
             try recoverInterruptedDeletions(
                 catalog: &catalog,
                 snapshotsDirectory: snapshotsDirectory
             )
             catalog.backups.removeAll { $0.id == record.id }
             catalog.backups.append(record)
-            try saveWithoutLock(catalog)
+            try saveWithoutLock(catalog, to: snapshotsDirectory)
         }
     }
 
     @discardableResult
     func updateSnapshotSizeBytes(id: UUID, sizeBytes: UInt64) throws -> TimeMachineBackupRecord? {
+        try updateSnapshotSizeBytes(
+            id: id,
+            sizeBytes: sizeBytes,
+            expectedRootIdentity: nil,
+            expectedSnapshotIdentity: nil
+        )
+    }
+
+    private func updateSnapshotSizeBytes(
+        id: UUID,
+        sizeBytes: UInt64,
+        expectedRootIdentity: TimeMachineDirectoryIdentity?,
+        expectedSnapshotIdentity: TimeMachineDirectoryIdentity?
+    ) throws -> TimeMachineBackupRecord? {
         try withCatalogLock { snapshotsDirectory in
-            var catalog = try loadWithoutRecovery()
+            guard let snapshotsDirectory else {
+                return nil
+            }
+            if let expectedRootIdentity,
+               snapshotsDirectory.rootIdentity != expectedRootIdentity {
+                return nil
+            }
+
+            var catalog = try loadWithoutRecovery(from: snapshotsDirectory)
             try recoverInterruptedDeletions(
                 catalog: &catalog,
                 snapshotsDirectory: snapshotsDirectory
@@ -96,9 +123,17 @@ struct TimeMachineCatalogStore {
             guard let index = catalog.backups.firstIndex(where: { $0.id == id }) else {
                 return nil
             }
+            let snapshotName = try managedSnapshotName(for: catalog.backups[index])
+            guard let snapshotIdentity = try snapshotsDirectory.directoryIdentity(snapshotName) else {
+                return nil
+            }
+            if let expectedSnapshotIdentity,
+               snapshotIdentity != expectedSnapshotIdentity {
+                return nil
+            }
             catalog.backups[index].snapshotSizeBytes = sizeBytes
             let record = catalog.backups[index]
-            try saveWithoutLock(catalog)
+            try saveWithoutLock(catalog, to: snapshotsDirectory)
             return record
         }
     }
@@ -107,11 +142,70 @@ struct TimeMachineCatalogStore {
         try withCatalogLock { snapshotsDirectory in
             let snapshotName = try managedSnapshotName(for: record)
             guard let snapshotsDirectory,
-                  try snapshotsDirectory.entryExists(snapshotName) else {
+                  try snapshotsDirectory.entryIsDirectory(snapshotName) else {
                 return nil
             }
             return record.snapshotSizeBytes
         }
+    }
+
+    @discardableResult
+    func resolveSnapshotSizeBytes(id: UUID) throws -> UInt64? {
+        let context: (
+            record: TimeMachineBackupRecord,
+            rootIdentity: TimeMachineDirectoryIdentity,
+            snapshotIdentity: TimeMachineDirectoryIdentity
+        )? = try withCatalogLock { snapshotsDirectory in
+            var catalog = try loadWithoutRecovery(from: snapshotsDirectory)
+            try recoverInterruptedDeletions(
+                catalog: &catalog,
+                snapshotsDirectory: snapshotsDirectory
+            )
+            guard let record = catalog.backups.first(where: { $0.id == id }) else {
+                return nil
+            }
+            let snapshotName = try managedSnapshotName(for: record)
+            guard let snapshotsDirectory,
+                  let snapshotIdentity = try snapshotsDirectory.directoryIdentity(snapshotName) else {
+                return nil
+            }
+            return (record, snapshotsDirectory.rootIdentity, snapshotIdentity)
+        }
+        guard let context else {
+            return nil
+        }
+        let record = context.record
+        if let snapshotSizeBytes = record.snapshotSizeBytes {
+            return snapshotSizeBytes
+        }
+
+        let snapshotName = try managedSnapshotName(for: record)
+        guard let snapshotsDirectory = try TimeMachineManagedSnapshotsDirectory.open(
+            paths: paths,
+            lockRoot: false
+        ),
+              snapshotsDirectory.rootIdentity == context.rootIdentity,
+              let snapshotSizeBytes = try snapshotsDirectory.logicalSizeBytes(
+                  ofDirectory: snapshotName,
+                  expectedIdentity: context.snapshotIdentity
+              ) else {
+            return nil
+        }
+        try snapshotSizeMeasurementHook?(id, snapshotSizeBytes)
+
+        do {
+            guard try updateSnapshotSizeBytes(
+                id: id,
+                sizeBytes: snapshotSizeBytes,
+                expectedRootIdentity: context.rootIdentity,
+                expectedSnapshotIdentity: context.snapshotIdentity
+            ) != nil else {
+                return nil
+            }
+        } catch {
+            // Size metadata is a cache. A write failure must not hide a successfully measured backup.
+        }
+        return snapshotSizeBytes
     }
 
     @discardableResult
@@ -130,7 +224,7 @@ struct TimeMachineCatalogStore {
     ) throws -> TimeMachineBackupRecord? {
         let outcome: (record: TimeMachineBackupRecord?, purgingName: POSIXFileName?) = try withCatalogLock {
             snapshotsDirectory in
-            var catalog = try loadWithoutRecovery()
+            var catalog = try loadWithoutRecovery(from: snapshotsDirectory)
             try recoverInterruptedDeletions(
                 catalog: &catalog,
                 snapshotsDirectory: snapshotsDirectory
@@ -157,7 +251,7 @@ struct TimeMachineCatalogStore {
             }
             catalog.backups.remove(at: index)
             do {
-                try saveWithoutLock(catalog)
+                try saveWithoutLock(catalog, to: snapshotsDirectory)
             } catch {
                 guard quarantined, let snapshotsDirectory else {
                     throw error
@@ -200,7 +294,7 @@ struct TimeMachineCatalogStore {
     @discardableResult
     func deleteUncatalogedSnapshotIfExists(id: UUID) throws -> Bool {
         let purgingName: POSIXFileName? = try withCatalogLock { snapshotsDirectory in
-            var catalog = try loadWithoutRecovery()
+            var catalog = try loadWithoutRecovery(from: snapshotsDirectory)
             try recoverInterruptedDeletions(
                 catalog: &catalog,
                 snapshotsDirectory: snapshotsDirectory
@@ -241,7 +335,7 @@ struct TimeMachineCatalogStore {
 
     func purgeCommittedDeletionTombstones() throws {
         let purgingNames: [POSIXFileName] = try withCatalogLock { snapshotsDirectory in
-            var catalog = try loadWithoutRecovery()
+            var catalog = try loadWithoutRecovery(from: snapshotsDirectory)
             try recoverInterruptedDeletions(
                 catalog: &catalog,
                 snapshotsDirectory: snapshotsDirectory
@@ -288,7 +382,7 @@ struct TimeMachineCatalogStore {
     @discardableResult
     func removeBackup(id: UUID) throws -> TimeMachineBackupRecord? {
         try withCatalogLock { snapshotsDirectory in
-            var catalog = try loadWithoutRecovery()
+            var catalog = try loadWithoutRecovery(from: snapshotsDirectory)
             try recoverInterruptedDeletions(
                 catalog: &catalog,
                 snapshotsDirectory: snapshotsDirectory
@@ -297,7 +391,7 @@ struct TimeMachineCatalogStore {
                 return nil
             }
             let record = catalog.backups.remove(at: index)
-            try saveWithoutLock(catalog)
+            try saveWithoutLock(catalog, to: snapshotsDirectory)
             return record
         }
     }
@@ -305,7 +399,7 @@ struct TimeMachineCatalogStore {
     @discardableResult
     func removeBackup(snapshotRelativePath: String) throws -> TimeMachineBackupRecord? {
         try withCatalogLock { snapshotsDirectory in
-            var catalog = try loadWithoutRecovery()
+            var catalog = try loadWithoutRecovery(from: snapshotsDirectory)
             try recoverInterruptedDeletions(
                 catalog: &catalog,
                 snapshotsDirectory: snapshotsDirectory
@@ -314,24 +408,33 @@ struct TimeMachineCatalogStore {
                 return nil
             }
             let record = catalog.backups.remove(at: index)
-            try saveWithoutLock(catalog)
+            try saveWithoutLock(catalog, to: snapshotsDirectory)
             return record
         }
     }
 
-    private func loadWithoutRecovery() throws -> TimeMachineCatalog {
-        guard fileManager.fileExists(atPath: paths.catalogURL.path) else {
+    private func loadWithoutRecovery(
+        from snapshotsDirectory: TimeMachineManagedSnapshotsDirectory?
+    ) throws -> TimeMachineCatalog {
+        guard let data = try snapshotsDirectory?.readCatalogData() else {
             return TimeMachineCatalog()
         }
-
-        let data = try Data(contentsOf: paths.catalogURL)
         return try Self.decoder.decode(TimeMachineCatalog.self, from: data)
     }
 
-    private func saveWithoutLock(_ catalog: TimeMachineCatalog) throws {
-        try fileManager.createDirectory(at: paths.rootURL, withIntermediateDirectories: true)
+    private func saveWithoutLock(
+        _ catalog: TimeMachineCatalog,
+        to snapshotsDirectory: TimeMachineManagedSnapshotsDirectory?
+    ) throws {
+        guard let snapshotsDirectory else {
+            throw TimeMachineCatalogStoreError.unsafeManagedDirectory(
+                path: paths.rootURL.path,
+                errnoCode: ENOENT
+            )
+        }
         let data = try Self.encoder.encode(catalog)
-        try catalogWriter(data, paths.catalogURL)
+        try catalogWriter?(data, paths.catalogURL)
+        try snapshotsDirectory.replaceCatalogData(data)
     }
 
     private func recoverInterruptedDeletions(
@@ -411,7 +514,7 @@ struct TimeMachineCatalogStore {
     ) throws -> Result {
         try Self.synchronized {
             if createRootIfNeeded {
-                try fileManager.createDirectory(at: paths.rootURL, withIntermediateDirectories: true)
+                try TimeMachineManagedSnapshotsDirectory.createRootIfNeeded(paths: paths)
             }
             let snapshotsDirectory = try TimeMachineManagedSnapshotsDirectory.open(paths: paths)
             return try operation(snapshotsDirectory)
@@ -472,22 +575,35 @@ private struct POSIXFileName: Equatable {
     }
 }
 
+private struct TimeMachineDirectoryIdentity: Equatable {
+    let deviceID: dev_t
+    let inode: ino_t
+
+    init(status: stat) {
+        deviceID = status.st_dev
+        inode = status.st_ino
+    }
+}
+
 private final class TimeMachineManagedSnapshotsDirectory {
     private let rootDescriptor: Int32
     private let descriptor: Int32?
     private let deviceID: dev_t
     private let releasesRootLock: Bool
+    let rootIdentity: TimeMachineDirectoryIdentity
 
     private init(
         rootDescriptor: Int32,
         descriptor: Int32?,
         deviceID: dev_t,
-        releasesRootLock: Bool
+        releasesRootLock: Bool,
+        rootIdentity: TimeMachineDirectoryIdentity
     ) {
         self.rootDescriptor = rootDescriptor
         self.descriptor = descriptor
         self.deviceID = deviceID
         self.releasesRootLock = releasesRootLock
+        self.rootIdentity = rootIdentity
     }
 
     deinit {
@@ -565,7 +681,8 @@ private final class TimeMachineManagedSnapshotsDirectory {
                     rootDescriptor: rootDescriptor,
                     descriptor: nil,
                     deviceID: rootStatus.st_dev,
-                    releasesRootLock: lockRoot
+                    releasesRootLock: lockRoot,
+                    rootIdentity: TimeMachineDirectoryIdentity(status: rootStatus)
                 )
             }
             if lockRoot {
@@ -606,8 +723,81 @@ private final class TimeMachineManagedSnapshotsDirectory {
             rootDescriptor: rootDescriptor,
             descriptor: snapshotsDescriptor,
             deviceID: directoryStatus.st_dev,
-            releasesRootLock: lockRoot
+            releasesRootLock: lockRoot,
+            rootIdentity: TimeMachineDirectoryIdentity(status: rootStatus)
         )
+    }
+
+    static func createRootIfNeeded(paths: TimeMachinePaths) throws {
+        let rootURL = paths.rootURL.standardizedFileURL
+        let pathComponents = rootURL.pathComponents
+        guard rootURL.isFileURL,
+              pathComponents.first == "/" else {
+            throw TimeMachineCatalogStoreError.unsafeManagedDirectory(
+                path: paths.rootURL.path,
+                errnoCode: EINVAL
+            )
+        }
+
+        var parentDescriptor = Darwin.open("/", O_RDONLY | O_DIRECTORY | O_CLOEXEC)
+        guard parentDescriptor >= 0 else {
+            throw TimeMachineCatalogStoreError.unsafeManagedDirectory(
+                path: paths.rootURL.path,
+                errnoCode: errno
+            )
+        }
+        defer { Darwin.close(parentDescriptor) }
+
+        for component in pathComponents.dropFirst() {
+            guard !component.isEmpty,
+                  component != ".",
+                  component != ".." else {
+                throw TimeMachineCatalogStoreError.unsafeManagedDirectory(
+                    path: paths.rootURL.path,
+                    errnoCode: EINVAL
+                )
+            }
+
+            let name = POSIXFileName(component)
+            var childDescriptor = name.withCString {
+                Darwin.openat(
+                    parentDescriptor,
+                    $0,
+                    O_RDONLY | O_DIRECTORY | O_CLOEXEC | O_NOFOLLOW
+                )
+            }
+            if childDescriptor < 0 && errno == ENOENT {
+                let createResult = name.withCString {
+                    Darwin.mkdirat(
+                        parentDescriptor,
+                        $0,
+                        mode_t(S_IRWXU | S_IRGRP | S_IXGRP | S_IROTH | S_IXOTH)
+                    )
+                }
+                guard createResult == 0 || errno == EEXIST else {
+                    throw TimeMachineCatalogStoreError.unsafeManagedDirectory(
+                        path: paths.rootURL.path,
+                        errnoCode: errno
+                    )
+                }
+                childDescriptor = name.withCString {
+                    Darwin.openat(
+                        parentDescriptor,
+                        $0,
+                        O_RDONLY | O_DIRECTORY | O_CLOEXEC | O_NOFOLLOW
+                    )
+                }
+            }
+            guard childDescriptor >= 0 else {
+                throw TimeMachineCatalogStoreError.unsafeManagedDirectory(
+                    path: paths.rootURL.path,
+                    errnoCode: errno
+                )
+            }
+
+            Darwin.close(parentDescriptor)
+            parentDescriptor = childDescriptor
+        }
     }
 
     func entryNames() throws -> [POSIXFileName] {
@@ -622,6 +812,138 @@ private final class TimeMachineManagedSnapshotsDirectory {
             return false
         }
         return try entryStatus(name, in: descriptor, displayPath: name.string) != nil
+    }
+
+    func entryIsDirectory(_ name: POSIXFileName) throws -> Bool {
+        try directoryIdentity(name) != nil
+    }
+
+    func directoryIdentity(_ name: POSIXFileName) throws -> TimeMachineDirectoryIdentity? {
+        guard let descriptor,
+              let status = try entryStatus(name, in: descriptor, displayPath: name.string),
+              status.st_mode & S_IFMT == S_IFDIR,
+              status.st_dev == deviceID else {
+            return nil
+        }
+        return TimeMachineDirectoryIdentity(status: status)
+    }
+
+    func readCatalogData() throws -> Data? {
+        let catalogName = POSIXFileName(TimeMachinePaths.catalogFilename)
+        let catalogDescriptor = catalogName.withCString {
+            Darwin.openat(rootDescriptor, $0, O_RDONLY | O_CLOEXEC | O_NOFOLLOW)
+        }
+        guard catalogDescriptor >= 0 else {
+            let errnoCode = errno
+            if errnoCode == ENOENT {
+                return nil
+            }
+            throw catalogOperationError(operation: "open-read", errnoCode: errnoCode)
+        }
+        defer { Darwin.close(catalogDescriptor) }
+
+        var status = stat()
+        guard Darwin.fstat(catalogDescriptor, &status) == 0 else {
+            throw catalogOperationError(operation: "inspect-read", errnoCode: errno)
+        }
+        guard status.st_mode & S_IFMT == S_IFREG,
+              status.st_dev == deviceID else {
+            throw catalogOperationError(operation: "verify-read", errnoCode: EINVAL)
+        }
+
+        var data = Data()
+        var buffer = [UInt8](repeating: 0, count: 64 * 1_024)
+        while true {
+            let bytesRead = buffer.withUnsafeMutableBytes { rawBuffer in
+                Darwin.read(catalogDescriptor, rawBuffer.baseAddress, rawBuffer.count)
+            }
+            if bytesRead > 0 {
+                data.append(contentsOf: buffer.prefix(bytesRead))
+                continue
+            }
+            if bytesRead == 0 {
+                return data
+            }
+            if errno == EINTR {
+                continue
+            }
+            throw catalogOperationError(operation: "read", errnoCode: errno)
+        }
+    }
+
+    func replaceCatalogData(_ data: Data) throws {
+        let catalogName = POSIXFileName(TimeMachinePaths.catalogFilename)
+        let temporaryName = POSIXFileName(".\(TimeMachinePaths.catalogFilename).\(UUID().uuidString).tmp")
+        var temporaryDescriptor = temporaryName.withCString {
+            Darwin.openat(
+                rootDescriptor,
+                $0,
+                O_WRONLY | O_CREAT | O_EXCL | O_CLOEXEC | O_NOFOLLOW,
+                mode_t(S_IRUSR | S_IWUSR)
+            )
+        }
+        guard temporaryDescriptor >= 0 else {
+            throw catalogOperationError(operation: "open-write", errnoCode: errno)
+        }
+
+        var shouldRemoveTemporaryFile = true
+        defer {
+            if temporaryDescriptor >= 0 {
+                Darwin.close(temporaryDescriptor)
+            }
+            if shouldRemoveTemporaryFile {
+                temporaryName.withCString {
+                    _ = Darwin.unlinkat(rootDescriptor, $0, 0)
+                }
+            }
+        }
+
+        try data.withUnsafeBytes { rawBuffer in
+            var offset = 0
+            while offset < rawBuffer.count {
+                let bytesWritten = Darwin.write(
+                    temporaryDescriptor,
+                    rawBuffer.baseAddress!.advanced(by: offset),
+                    rawBuffer.count - offset
+                )
+                if bytesWritten > 0 {
+                    offset += bytesWritten
+                    continue
+                }
+                if bytesWritten < 0 && errno == EINTR {
+                    continue
+                }
+                throw catalogOperationError(
+                    operation: "write",
+                    errnoCode: bytesWritten == 0 ? EIO : errno
+                )
+            }
+        }
+
+        var syncResult: Int32
+        repeat {
+            syncResult = Darwin.fsync(temporaryDescriptor)
+        } while syncResult != 0 && errno == EINTR
+        guard syncResult == 0 else {
+            throw catalogOperationError(operation: "sync-write", errnoCode: errno)
+        }
+
+        guard Darwin.close(temporaryDescriptor) == 0 else {
+            let errnoCode = errno
+            temporaryDescriptor = -1
+            throw catalogOperationError(operation: "close-write", errnoCode: errnoCode)
+        }
+        temporaryDescriptor = -1
+
+        let renameResult = temporaryName.withCString { temporaryPath in
+            catalogName.withCString { catalogPath in
+                Darwin.renameat(rootDescriptor, temporaryPath, rootDescriptor, catalogPath)
+            }
+        }
+        guard renameResult == 0 else {
+            throw catalogOperationError(operation: "commit-write", errnoCode: errno)
+        }
+        shouldRemoveTemporaryFile = false
     }
 
     @discardableResult
@@ -659,6 +981,24 @@ private final class TimeMachineManagedSnapshotsDirectory {
             return
         }
         try removeEntryIfExists(name, from: descriptor, displayPath: name.string)
+    }
+
+    func logicalSizeBytes(
+        ofDirectory name: POSIXFileName,
+        expectedIdentity: TimeMachineDirectoryIdentity
+    ) throws -> UInt64? {
+        guard let descriptor,
+              let initialStatus = try entryStatus(name, in: descriptor, displayPath: name.string),
+              initialStatus.st_mode & S_IFMT == S_IFDIR,
+              TimeMachineDirectoryIdentity(status: initialStatus) == expectedIdentity else {
+            return nil
+        }
+        return try logicalDirectorySizeBytes(
+            name,
+            initialStatus: initialStatus,
+            from: descriptor,
+            displayPath: name.string
+        )
     }
 
     private func removeEntryIfExists(
@@ -735,6 +1075,96 @@ private final class TimeMachineManagedSnapshotsDirectory {
         }
     }
 
+    private func logicalEntrySizeBytes(
+        _ name: POSIXFileName,
+        from parentDescriptor: Int32,
+        displayPath: String
+    ) throws -> UInt64? {
+        guard let initialStatus = try entryStatus(
+            name,
+            in: parentDescriptor,
+            displayPath: displayPath
+        ) else {
+            return nil
+        }
+
+        switch initialStatus.st_mode & S_IFMT {
+        case S_IFDIR:
+            return try logicalDirectorySizeBytes(
+                name,
+                initialStatus: initialStatus,
+                from: parentDescriptor,
+                displayPath: displayPath
+            )
+        case S_IFREG, S_IFLNK:
+            return UInt64(max(initialStatus.st_size, 0))
+        default:
+            // Special entries contribute no snapshot data.
+            return 0
+        }
+    }
+
+    private func logicalDirectorySizeBytes(
+        _ name: POSIXFileName,
+        initialStatus: stat,
+        from parentDescriptor: Int32,
+        displayPath: String
+    ) throws -> UInt64 {
+        guard initialStatus.st_dev == deviceID else {
+            throw operationError(operation: "refuse-cross-device", entry: displayPath, errnoCode: EXDEV)
+        }
+
+        let childDescriptor = name.withCString {
+            Darwin.openat(
+                parentDescriptor,
+                $0,
+                O_RDONLY | O_DIRECTORY | O_CLOEXEC | O_NOFOLLOW
+            )
+        }
+        guard childDescriptor >= 0 else {
+            throw operationError(operation: "open-directory", entry: displayPath, errnoCode: errno)
+        }
+        defer { Darwin.close(childDescriptor) }
+
+        var openedStatus = stat()
+        guard Darwin.fstat(childDescriptor, &openedStatus) == 0 else {
+            throw operationError(operation: "inspect-directory", entry: displayPath, errnoCode: errno)
+        }
+        guard openedStatus.st_mode & S_IFMT == S_IFDIR,
+              openedStatus.st_dev == initialStatus.st_dev,
+              openedStatus.st_ino == initialStatus.st_ino else {
+            throw operationError(operation: "verify-directory", entry: displayPath, errnoCode: ESTALE)
+        }
+
+        var total: UInt64 = 0
+        for childName in try entryNames(in: childDescriptor, displayPath: displayPath) {
+            guard let childSize = try logicalEntrySizeBytes(
+                childName,
+                from: childDescriptor,
+                displayPath: "\(displayPath)/\(childName.string)"
+            ) else {
+                continue
+            }
+            let (newTotal, overflow) = total.addingReportingOverflow(childSize)
+            guard !overflow else {
+                throw operationError(operation: "measure-size", entry: displayPath, errnoCode: EOVERFLOW)
+            }
+            total = newTotal
+        }
+
+        guard let currentStatus = try entryStatus(
+            name,
+            in: parentDescriptor,
+            displayPath: displayPath
+        ),
+              currentStatus.st_mode & S_IFMT == S_IFDIR,
+              currentStatus.st_dev == openedStatus.st_dev,
+              currentStatus.st_ino == openedStatus.st_ino else {
+            throw operationError(operation: "verify-directory-size", entry: displayPath, errnoCode: ESTALE)
+        }
+        return total
+    }
+
     private func entryNames(in directoryDescriptor: Int32, displayPath: String) throws -> [POSIXFileName] {
         let currentDirectoryName = POSIXFileName(".")
         let enumerationDescriptor = currentDirectoryName.withCString {
@@ -799,6 +1229,16 @@ private final class TimeMachineManagedSnapshotsDirectory {
         .managedSnapshotOperationFailed(
             operation: operation,
             entry: entry,
+            errnoCode: errnoCode
+        )
+    }
+
+    private func catalogOperationError(
+        operation: String,
+        errnoCode: Int32
+    ) -> TimeMachineCatalogStoreError {
+        .managedCatalogOperationFailed(
+            operation: operation,
             errnoCode: errnoCode
         )
     }

@@ -125,7 +125,7 @@ final class TimeMachineMenuPresenterTests: XCTestCase {
         XCTAssertEqual(details.snapshotSizeBytes, 1_234)
     }
 
-    func testBackupDetailsDoesNotSynchronouslyScanLegacyRecord() throws {
+    func testBackupDetailsReturnsLegacyRecordBeforeBackgroundSizeResolution() throws {
         let fixture = try makeFixture()
         let record = try makeBackup(
             id: UUID(uuidString: "00000000-0000-0000-0000-000000001007")!,

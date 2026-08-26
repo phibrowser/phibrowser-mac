@@ -344,6 +344,20 @@ class PinnedTabViewController: NSViewController {
         }
     }
 
+    /// Removes the pinned-grid subtree from AppKit's tracking system while the
+    /// create-Space form covers it. The controller view is hosted inside a
+    /// fixed-height container, so hiding it preserves the sidebar layout.
+    func setCreateSpaceOverlayInteractionSuppressed(_ suppressed: Bool) {
+        _ = view
+        if suppressed {
+            for item in collectionView.visibleItems() {
+                (item as? PinnedTabItem)?.cancelTabPreviewForInteraction()
+                (item as? PinnedSplitItem)?.cancelTabPreviewForInteraction()
+            }
+        }
+        view.isHidden = suppressed
+    }
+
     func setActive(_ active: Bool) {
         if active {
             activate()

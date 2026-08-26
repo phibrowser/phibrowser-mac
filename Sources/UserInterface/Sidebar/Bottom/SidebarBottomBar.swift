@@ -403,6 +403,13 @@ class SidebarBottomBarSwiftUIView: NSView {
     func setMemoryHidden(_ hidden: Bool) {
         state.isMemoryHidden = hidden
     }
+
+    /// Hides the hosted controls while the create-Space form covers the bottom
+    /// bar. The outer AppKit wrapper stays mounted so its stack height remains
+    /// unchanged, while SwiftUI hover and native help tracking are deactivated.
+    func setCreateSpaceOverlayInteractionSuppressed(_ suppressed: Bool) {
+        hostingView?.isHidden = suppressed
+    }
     
     /// Binds the downloads manager for progress display.
     func bindDownloadsManager(_ manager: DownloadsManager) {

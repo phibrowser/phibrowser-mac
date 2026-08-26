@@ -39,6 +39,11 @@ class FloatingSidebarViewController: NSViewController {
         return view
     }()
 
+    /// Latest message-card visibility requested by the manager. The create-Space
+    /// form temporarily hides the hosted controls and reapplies this state when
+    /// the floating sidebar becomes interactive again.
+    private var shouldShowMessageCard = false
+
     /// The slot driving this floating strip, resolved the same way as the
     /// docked sidebar's (see `SidebarViewController.spacesStripSlot`): the
     /// window controller's slot, falling back to the manager's key slot for
@@ -489,6 +494,11 @@ class FloatingSidebarViewController: NSViewController {
     }
 
     private func updateMessageCardVisibility(shouldShow: Bool, animated: Bool = false) {
+        shouldShowMessageCard = shouldShow
+        guard !isCreateSpaceCoveredContentSuppressed else {
+            messageCardHostingController.view.isHidden = true
+            return
+        }
         guard shouldShow else {
             hideMessageCard(animated: animated)
             return
@@ -590,6 +600,10 @@ class FloatingSidebarViewController: NSViewController {
     /// `WebContentContainerViewController.scheduleFloatingSidebarHide`).
     private var createSpaceOverlay: ThemedHostingController<CreateSpacePanel>?
 
+    /// `NSTrackingArea` callbacks ignore sibling hit testing, so the covered
+    /// sidebar subtrees must leave the tracking system while the form is up.
+    private var isCreateSpaceCoveredContentSuppressed = false
+
     /// Whether the inline create-Space form is up — consulted by the panel's
     /// hide scheduling so a pointer exit can't dismiss the form mid-typing.
     var hasCreateSpaceOverlay: Bool { createSpaceOverlay != nil }
@@ -603,6 +617,7 @@ class FloatingSidebarViewController: NSViewController {
         // finishes. Do not start another preview session during that handoff.
         guard createSpaceOverlay == nil,
               themeBeforeCreateSpacePreview == nil else { return }
+        view.window?.customTooltipController.dismissAll()
         let panel = CreateSpacePanel(
             style: .sidebar,
             manager: .shared,
@@ -663,6 +678,9 @@ class FloatingSidebarViewController: NSViewController {
             context.allowsImplicitAnimation = true
             host.view.animator().alphaValue = 1
             setContentFadedForCreateOverlay(true)
+        } completionHandler: { [weak self] in
+            guard let self, self.createSpaceOverlay != nil else { return }
+            self.setCreateSpaceCoveredContentSuppressed(true)
         }
     }
 
@@ -674,6 +692,7 @@ class FloatingSidebarViewController: NSViewController {
     func dismissCreateSpaceOverlay(restorePreviewTheme: Bool = true) {
         guard let host = createSpaceOverlay else { return }
         createSpaceOverlay = nil
+        setCreateSpaceCoveredContentSuppressed(false)
         if restorePreviewTheme {
             restoreCreateSpacePreviewTheme()
         }
@@ -694,6 +713,29 @@ class FloatingSidebarViewController: NSViewController {
         // The form no longer pins the panel open; re-run the pointer-driven
         // hide so the panel retracts if the pointer has already left.
         (parent as? WebContentContainerViewController)?.scheduleFloatingSidebarHide()
+    }
+
+    /// Keeps every covered sidebar surface out of AppKit's hover/help tracking
+    /// while retaining its outer layout container for the form transition.
+    private func setCreateSpaceCoveredContentSuppressed(_ suppressed: Bool) {
+        guard isCreateSpaceCoveredContentSuppressed != suppressed else { return }
+        isCreateSpaceCoveredContentSuppressed = suppressed
+
+        if suppressed {
+            view.window?.customTooltipController.dismissAll()
+        }
+        if pinnedTabViewController.isViewLoaded,
+           pinnedTabViewController.view.superview != nil {
+            pinnedTabViewController.setCreateSpaceOverlayInteractionSuppressed(suppressed)
+        }
+        tabList.setCreateSpaceOverlayInteractionSuppressed(suppressed)
+        bottomBarSwiftUI.setCreateSpaceOverlayInteractionSuppressed(suppressed)
+
+        if suppressed {
+            messageCardHostingController.view.isHidden = true
+        } else {
+            updateMessageCardVisibility(shouldShow: shouldShowMessageCard)
+        }
     }
 
     /// Restores the source Space after the new target fronts, or immediately

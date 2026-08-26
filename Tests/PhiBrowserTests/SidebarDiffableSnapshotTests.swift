@@ -314,6 +314,48 @@ final class SidebarDiffableSnapshotTests: XCTestCase {
 
 @MainActor
 final class SidebarTabSectionFastPathTests: XCTestCase {
+    func testCreateSpaceOverlaySuppressionHidesOutlineTrackingSubtreeWithoutHidingLayoutRoot() throws {
+        let state = try makeState()
+        let (controller, _) = try makeActiveSidebar(for: state)
+        let scrollView = try XCTUnwrap(
+            controller.view.subviews.compactMap { $0 as? NSScrollView }.first
+        )
+
+        controller.setCreateSpaceOverlayInteractionSuppressed(true)
+
+        XCTAssertTrue(scrollView.isHidden)
+        XCTAssertFalse(controller.view.isHidden)
+
+        controller.setCreateSpaceOverlayInteractionSuppressed(false)
+
+        XCTAssertFalse(scrollView.isHidden)
+    }
+
+    func testCreateSpaceOverlaySuppressionHidesPinnedTrackingRoot() throws {
+        let controller = PinnedTabViewController(state: try makeState())
+        controller.loadViewIfNeeded()
+
+        controller.setCreateSpaceOverlayInteractionSuppressed(true)
+        XCTAssertTrue(controller.view.isHidden)
+
+        controller.setCreateSpaceOverlayInteractionSuppressed(false)
+        XCTAssertFalse(controller.view.isHidden)
+    }
+
+    func testCreateSpaceOverlaySuppressionHidesBottomBarHostingContentOnly() throws {
+        let bottomBar = SidebarBottomBarSwiftUIView()
+        let hostingView = try XCTUnwrap(bottomBar.subviews.first)
+
+        bottomBar.setCreateSpaceOverlayInteractionSuppressed(true)
+
+        XCTAssertTrue(hostingView.isHidden)
+        XCTAssertFalse(bottomBar.isHidden)
+
+        bottomBar.setCreateSpaceOverlayInteractionSuppressed(false)
+
+        XCTAssertFalse(hostingView.isHidden)
+    }
+
     private var tempDirectories: [URL] = []
 
     override func tearDownWithError() throws {

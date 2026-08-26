@@ -386,6 +386,19 @@ class SidebarTabListViewController: NSViewController {
         _ = view
         outlineView.capturesContextMenuClicks = true
     }
+
+    /// Removes the outline subtree from AppKit's tracking system while the
+    /// create-Space form covers it. A sibling overlay cannot block
+    /// `NSTrackingArea` callbacks, so hit testing alone is insufficient.
+    /// Keeping the controller's root view mounted preserves the sidebar stack
+    /// geometry and the create-form swipe animation.
+    func setCreateSpaceOverlayInteractionSuppressed(_ suppressed: Bool) {
+        _ = view
+        if suppressed {
+            cancelVisibleTabPreviews()
+        }
+        scrollView.isHidden = suppressed
+    }
     
     private func setupAppearance() {
         view.wantsLayer = true

@@ -272,6 +272,11 @@ class SidebarViewController: NSViewController {
         return view
     }()
 
+    /// Latest message-card visibility requested by the manager. The create-Space
+    /// overlay temporarily hides the hosted controls without discarding this
+    /// state, then reapplies it when the sidebar content becomes interactive.
+    private var shouldShowMessageCard = false
+
     /// Hosting controller for the Spaces strip — placed just above the bottom
     /// toolbar so the row of Space pips is the last per-Space element before
     /// the global actions. Reports its intrinsic height so the strip can grow
@@ -1027,6 +1032,11 @@ class SidebarViewController: NSViewController {
     
     /// Update message-card visibility from `NotificationCardManager.shouldShowInSidebar`.
     private func updateMessageCardVisibility(shouldShow: Bool, animated: Bool = false) {
+        shouldShowMessageCard = shouldShow
+        guard !isCreateSpaceCoveredContentSuppressed else {
+            messageCardHostingController.view.isHidden = true
+            return
+        }
         guard shouldShow else {
             hideMessageCard(animated: animated)
             return
@@ -1092,6 +1102,7 @@ class SidebarViewController: NSViewController {
         notificationContainerView.subviews.forEach { $0.removeFromSuperview() }
         
         notificationContainerView.addSubview(view)
+        view.isHidden = isCreateSpaceCoveredContentSuppressed
         view.snp.makeConstraints { make in
             make.edges.equalToSuperview().inset(NSEdgeInsets(top: 0, left: 10, bottom: 2, right: 0))
         }
@@ -1149,12 +1160,16 @@ class SidebarViewController: NSViewController {
     /// keep the same composite shade as the form region (see the mount site in
     /// `showCreateSpaceOverlay` for why the shades otherwise differ).
     private var createSpaceOverlayHeaderBackdrop: ColoredVisualEffectView?
+    /// `NSTrackingArea` callbacks ignore sibling hit testing, so the covered
+    /// sidebar subtrees must leave the tracking system while the form is up.
+    private var isCreateSpaceCoveredContentSuppressed = false
 
     func showCreateSpaceOverlay(initialProfileId: String?) {
         // A successful create retains the source theme until activation
         // finishes. Do not start another preview session during that handoff.
         guard createSpaceOverlay == nil,
               themeBeforeCreateSpacePreview == nil else { return }
+        view.window?.customTooltipController.dismissAll()
         let panel = CreateSpacePanel(
             style: .sidebar,
             manager: .shared,
@@ -1266,7 +1281,13 @@ class SidebarViewController: NSViewController {
         // settled frame. The header floor fades in over the same clock, so
         // the header and the arriving form converge on one shade together.
         view.layoutSubtreeIfNeeded()
-        runCreateSpaceOverlaySwipe(entering: true, overlayViews: [backdrop, host.view])
+        runCreateSpaceOverlaySwipe(
+            entering: true,
+            overlayViews: [backdrop, host.view]
+        ) { [weak self] in
+            guard let self, self.createSpaceOverlay != nil else { return }
+            self.setCreateSpaceCoveredContentSuppressed(true)
+        }
         if let headerBackdrop {
             NSAnimationContext.runAnimationGroup { context in
                 context.duration = PhiPreferences.GeneralSettings.loadSwitchSpaceAnimationDuration()
@@ -1292,6 +1313,7 @@ class SidebarViewController: NSViewController {
         createSpaceOverlay = nil
         createSpaceOverlayBackdrop = nil
         createSpaceOverlayHeaderBackdrop = nil
+        setCreateSpaceCoveredContentSuppressed(false)
         if restorePreviewTheme {
             restoreCreateSpacePreviewTheme()
         }
@@ -1338,6 +1360,30 @@ class SidebarViewController: NSViewController {
                 backdrop?.animator().alphaValue = 0
                 headerBackdrop?.animator().alphaValue = 0
             }, completionHandler: teardown)
+        }
+    }
+
+    /// Keeps every covered sidebar surface out of AppKit's hover/help tracking
+    /// while retaining its outer layout container for the create-form swipe.
+    private func setCreateSpaceCoveredContentSuppressed(_ suppressed: Bool) {
+        guard isCreateSpaceCoveredContentSuppressed != suppressed else { return }
+        isCreateSpaceCoveredContentSuppressed = suppressed
+
+        if suppressed {
+            view.window?.customTooltipController.dismissAll()
+        }
+        if pinnedTabViewController.isViewLoaded,
+           pinnedTabViewController.view.superview != nil {
+            pinnedTabViewController.setCreateSpaceOverlayInteractionSuppressed(suppressed)
+        }
+        tabList.setCreateSpaceOverlayInteractionSuppressed(suppressed)
+        bottomBarSwiftUI.setCreateSpaceOverlayInteractionSuppressed(suppressed)
+        notificationContainerView.subviews.forEach { $0.isHidden = suppressed }
+
+        if suppressed {
+            messageCardHostingController.view.isHidden = true
+        } else {
+            updateMessageCardVisibility(shouldShow: shouldShowMessageCard)
         }
     }
 

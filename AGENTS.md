@@ -186,6 +186,16 @@ Rules:
   It must not become a general remote HTTP client or bypass the shared-auth and
   extension-authorization boundaries.
 
+Exception — dedicated per-backend clients:
+
+A feature that talks to a distinct backend (not `account`/`connector`/`phi-agent`)
+and needs an injectable `URLSession` for testability MAY own its own client
+(e.g. `IMChannelAPIClient`, `KeyEnvelopeAPIClient` for the sync `/keys/v1`
+backend). Such a client must still source its bearer token from `AuthManager`,
+must not duplicate calls already served by `APIClient`, and must not reimplement
+the shared `Response<T>` envelope handling. Authentication stays centralized in
+`AuthManager`; only the transport is local.
+
 ---
 
 # Architectural Stability Rules

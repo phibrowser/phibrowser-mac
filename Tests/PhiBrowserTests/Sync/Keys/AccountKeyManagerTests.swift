@@ -105,4 +105,39 @@ final class AccountKeyManagerTests: XCTestCase {
         let result = try await mgr.unlockAtStartup()
         XCTAssertEqual(result, .notSignedIn)
     }
+
+    func testRecoveryCodeValidFormatButWrongKeyRejected() async throws {
+        let api = FakeAPI()
+        _ = try await makeManager(api).bootstrap()
+
+        // A syntactically and checksum-valid recovery code that was never associated
+        // with this account's salt/envelope: RecoveryCode.decode() succeeds, but the
+        // derived key must fail to open the account's AES-GCM envelope.
+        let (unrelatedCode, _) = try RecoveryCode.generate()
+        let joiner = makeManager(api)
+        do {
+            try await joiner.joinWithRecoveryCode(unrelatedCode)
+            XCTFail("expected badRecoveryCode")
+        } catch AccountKeyError.badRecoveryCode {} // ok: reached via the openWithSymmetric catch, not the decode guard
+    }
+
+    func testSecondBootstrapOnSameAccountRejected() async throws {
+        let api = FakeAPI()
+        let mgr = makeManager(api)
+        _ = try await mgr.bootstrap()
+        do {
+            _ = try await mgr.bootstrap()
+            XCTFail("expected alreadyInitialized")
+        } catch AccountKeyError.alreadyInitialized {} // ok: FakeAPI.putAccount returns false on the second call
+    }
+
+    func testJoinOnNeverBootstrappedAccountRejected() async throws {
+        let api = FakeAPI() // never bootstrapped: getAccount() returns nil
+        let (code, _) = try RecoveryCode.generate()
+        let joiner = makeManager(api)
+        do {
+            try await joiner.joinWithRecoveryCode(code)
+            XCTFail("expected notInitialized")
+        } catch AccountKeyError.notInitialized {} // ok: FakeAPI.getAccount() returns nil
+    }
 }

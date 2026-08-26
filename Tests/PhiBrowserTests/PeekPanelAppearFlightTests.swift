@@ -22,7 +22,7 @@ final class PeekPanelAppearFlightTests: XCTestCase {
                            startWidth: CGFloat? = nil) -> CATransform3D? {
         PeekPanelController.appearFlightTransform(
             originScreenPoint: press,
-            panelScreenFrame: panelFrame ?? panel,
+            cardScreenFrame: panelFrame ?? panel,
             startWidth: startWidth ?? self.startWidth
         )
     }

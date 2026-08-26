@@ -29,6 +29,7 @@ extension AppController {
          SpacesSettingViewController(),
          AISettingsViewController(),
          IMChannelsSettingViewController(),
+         DevicesSettingViewController(),
          ShortcutsSettingViewController(),
         ]
         if PhiPreferences.AgentSpaces.skillFeatureEnabled {

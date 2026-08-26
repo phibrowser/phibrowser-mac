@@ -6,6 +6,10 @@ enum KeyLayerPhase: Equatable {
     case idle
     case showingRecoveryCode(String)
     case enteringRecoveryCode
+    case chooseJoinMethod
+    case waitingForApproval(code: String, deadline: Date)
+    case joinDenied
+    case joinExpired
     case working
     case done
     case error(String)
@@ -18,9 +22,89 @@ final class KeyLayerViewModel: ObservableObject {
     @Published private(set) var phase: KeyLayerPhase = .idle
 
     private let manager: AccountKeyManager
+    private var currentRequestId: String?
+    private var pollTimer: Timer?
 
     init(manager: AccountKeyManager) {
         self.manager = manager
+    }
+
+    /// Entry point when opening the key-layer window: unlock if possible, otherwise route to
+    /// first-device bootstrap or the join-method choice.
+    func beginSetup() async {
+        phase = .working
+        do {
+            switch try await manager.unlockAtStartup() {
+            case .unlocked:
+                phase = .done
+            case .notSignedIn:
+                phase = .error(NSLocalizedString("You’re not signed in.",
+                    comment: "Key layer - not signed in"))
+            case .needsJoin:
+                phase = try await manager.accountExists() ? .chooseJoinMethod : .working
+                if case .working = phase { await startBootstrap() }
+            }
+        } catch {
+            phase = .error("\(error)")
+        }
+    }
+
+    func showRecoveryEntry() { phase = .enteringRecoveryCode }
+    func chooseJoinAgain() { phase = .chooseJoinMethod }
+
+    /// Requests approval from another device, then begins polling for the outcome.
+    func startJoinRequest() async {
+        phase = .working
+        do {
+            let ticket = try await manager.requestJoinApproval()
+            currentRequestId = ticket.requestId
+            phase = .waitingForApproval(code: ticket.verificationCode, deadline: Date().addingTimeInterval(900))
+            startPollTimer()
+        } catch let e as JoinRequestError where e == .tooManyPending {
+            phase = .error(NSLocalizedString("Too many pending requests. Try again later or use a recovery code.",
+                comment: "Key layer - too many pending join requests"))
+        } catch {
+            phase = .error("\(error)")
+        }
+    }
+
+    /// One poll iteration (also called directly by tests).
+    func pollOnce() async {
+        guard let id = currentRequestId else { return }
+        do {
+            switch try await manager.pollJoin(requestId: id) {
+            case .approved: stopPolling(); phase = .done
+            case .denied:   stopPolling(); phase = .joinDenied
+            case .expired:  stopPolling(); phase = .joinExpired
+            case .pending(let deadline):
+                if Date() > deadline { stopPolling(); phase = .joinExpired }
+                else if case .waitingForApproval(let code, _) = phase {
+                    phase = .waitingForApproval(code: code, deadline: deadline)
+                }
+            }
+        } catch {
+            // Transient poll failure: keep waiting; the next tick retries.
+        }
+    }
+
+    func cancelJoin() {
+        stopPolling()
+        currentRequestId = nil
+        phase = .chooseJoinMethod
+    }
+
+    func stopPolling() {
+        pollTimer?.invalidate()
+        pollTimer = nil
+    }
+
+    private func startPollTimer() {
+        stopPolling()
+        let timer = Timer(timeInterval: 3.0, repeats: true) { [weak self] _ in
+            Task { @MainActor in await self?.pollOnce() }
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        pollTimer = timer
     }
 
     /// Starts account bootstrap, generating a new recovery code. If the account

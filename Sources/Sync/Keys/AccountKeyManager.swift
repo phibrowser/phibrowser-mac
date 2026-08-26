@@ -7,6 +7,11 @@ protocol KeyEnvelopeAPI {
     func getAccount() async throws -> AccountKeyStateDTO?
     func postDevice(deviceKeyId: String, publicKey: Data, name: String, platform: String, arkEnvelope: Data?) async throws
     func getDeviceEnvelope(deviceKeyId: String) async throws -> Data?
+    func postJoinRequest(publicKey: Data, name: String, platform: String) async throws -> String
+    func listPendingJoinRequests() async throws -> [JoinRequestSummaryDTO]
+    func getJoinRequest(id: String) async throws -> JoinRequestDTO
+    func approveJoinRequest(id: String, grantedArkEnvelope: Data, resolvedByDeviceKeyId: String) async throws
+    func denyJoinRequest(id: String) async throws
 }
 extension KeyEnvelopeAPIClient: KeyEnvelopeAPI {}
 

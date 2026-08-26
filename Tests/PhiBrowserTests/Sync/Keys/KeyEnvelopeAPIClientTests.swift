@@ -41,6 +41,56 @@ final class KeyEnvelopeAPIClientTests: XCTestCase {
         let env = try await makeClient().getDeviceEnvelope(deviceKeyId: "dev-abcd1234")
         XCTAssertNil(env)
     }
+
+    func testPostJoinRequestReturnsId() async throws {
+        StubURLProtocol.handler = { req in
+            XCTAssertEqual(req.httpMethod, "POST")
+            return (200, Data(#"{"request_id":"jr-123"}"#.utf8))
+        }
+        let id = try await makeClient().postJoinRequest(publicKey: Data([9, 9]), name: "Mac", platform: "macos")
+        XCTAssertEqual(id, "jr-123")
+    }
+
+    func testListPendingDecodes() async throws {
+        let body = #"[{"request_id":"jr-1","requesting_public_key":"AQID","name":"Air","platform":"macos","status":"pending","created_at":"2026-08-26T09:29:00.123456Z"}]"#
+        StubURLProtocol.handler = { _ in (200, Data(body.utf8)) }
+        let items = try await makeClient().listPendingJoinRequests()
+        XCTAssertEqual(items.count, 1)
+        XCTAssertEqual(items[0].requestId, "jr-1")
+        XCTAssertEqual(items[0].requestingPublicKey, Data([1, 2, 3]))
+        XCTAssertEqual(items[0].status, "pending")
+    }
+
+    func testGetJoinRequestEnvelopeEmptyThenPresent() async throws {
+        StubURLProtocol.handler = { _ in
+            (200, Data(#"{"request_id":"jr-1","requesting_public_key":"AQID","name":"Air","platform":"macos","status":"pending","granted_ark_envelope":"","created_at":"2026-08-26T09:29:00Z"}"#.utf8))
+        }
+        let pending = try await makeClient().getJoinRequest(id: "jr-1")
+        XCTAssertEqual(pending.grantedArkEnvelope, Data())
+        XCTAssertNil(pending.resolvedByDeviceKeyId)
+
+        StubURLProtocol.handler = { _ in
+            (200, Data(#"{"request_id":"jr-1","requesting_public_key":"AQID","name":"Air","platform":"macos","status":"approved","granted_ark_envelope":"BAUG","created_at":"2026-08-26T09:29:00Z","resolved_by_device_key_id":"dev-x"}"#.utf8))
+        }
+        let approved = try await makeClient().getJoinRequest(id: "jr-1")
+        XCTAssertEqual(approved.grantedArkEnvelope, Data([4, 5, 6]))
+        XCTAssertEqual(approved.resolvedByDeviceKeyId, "dev-x")
+    }
+
+    func testJoinErrorMapping() async throws {
+        let cases: [(Int, JoinRequestError)] = [
+            (429, .tooManyPending), (409, .notPending), (404, .notFound), (400, .invalidRequest)
+        ]
+        for (status, expected) in cases {
+            StubURLProtocol.handler = { _ in (status, Data(#"{"code":"x","message":"y"}"#.utf8)) }
+            do {
+                _ = try await makeClient().getJoinRequest(id: "jr-1")
+                XCTFail("expected throw for \(status)")
+            } catch let e as JoinRequestError {
+                XCTAssertEqual(e, expected)
+            }
+        }
+    }
 }
 
 final class StubURLProtocol: URLProtocol {

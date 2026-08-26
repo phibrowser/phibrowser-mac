@@ -1150,22 +1150,48 @@ extension AppController {
 
             let backup = details.backup
             let backupTitle = backup.menuTitle()
-            let snapshotSize = timeMachineBackupSizeDescription(details.snapshotSizeBytes)
+            let snapshotSize = details.snapshotSizeBytes.map {
+                timeMachineBackupSizeDescription($0)
+            } ?? "…"
             let alert = NSAlert()
             alert.messageText = NSLocalizedString("app.timeMachineBackup.details.title", value: "Time Machine Backup", comment: "Help menu - Title of the selected Time Machine backup details alert")
-            let messageTemplate = NSLocalizedString("app.timeMachineRestore.confirmation.message", value: "Phi will quit and restore %@. The current app and selected user data will be replaced.",
-                comment: "Help menu - Time Machine restore confirmation body"
+            alert.informativeText = timeMachineBackupDetailsInformativeText(
+                backupTitle: backupTitle,
+                snapshotSizeDescription: snapshotSize
             )
-            let dataSizeTemplate = NSLocalizedString("app.timeMachineBackup.details.dataSize", value: "Backup data size: %@", comment: "Help menu - Selected Time Machine backup logical data size; placeholder is a formatted byte count or an unavailable label")
-            alert.informativeText = [
-                String(format: messageTemplate, backupTitle),
-                String(format: dataSizeTemplate, snapshotSize)
-            ].joined(separator: "\n\n")
             alert.alertStyle = .warning
             alert.addButton(withTitle: NSLocalizedString("app.timeMachineRestore.confirmation.restoreButton", value: "Restore", comment: "Help menu - Time Machine restore confirmation button"))
             alert.addButton(withTitle: NSLocalizedString("app.timeMachineRestore.confirmation.cancelButton", value: "Cancel", comment: "Time Machine restore - Cancel confirmation button"))
             alert.addButton(withTitle: NSLocalizedString("app.timeMachineBackup.details.deleteButton", value: "Delete Backup", comment: "Help menu - Button in the selected Time Machine backup details alert that starts deletion"))
             alert.buttons[2].hasDestructiveAction = true
+
+            if details.snapshotSizeBytes == nil {
+                DispatchQueue.global(qos: .userInitiated).async {
+                    let outcome = Result {
+                        try TimeMachineCatalogStore().resolveSnapshotSizeBytes(id: backup.id)
+                    }
+                    DispatchQueue.main.async {
+                        let resolvedSize: UInt64?
+                        switch outcome {
+                        case .success(let size):
+                            resolvedSize = size
+                        case .failure(let error):
+                            AppLogError(
+                                "[TimeMachine] Could not resolve backup size for \(backup.id.uuidString): "
+                                    + error.localizedDescription
+                            )
+                            resolvedSize = nil
+                        }
+                        guard alert.window.isVisible else {
+                            return
+                        }
+                        alert.informativeText = self.timeMachineBackupDetailsInformativeText(
+                            backupTitle: backupTitle,
+                            snapshotSizeDescription: self.timeMachineBackupSizeDescription(resolvedSize)
+                        )
+                    }
+                }
+            }
 
             let response = alert.runModal()
             if response == .alertThirdButtonReturn {
@@ -1216,6 +1242,20 @@ extension AppController {
             )
             presentTimeMachineRestoreFailure(String(format: messageTemplate, error.localizedDescription))
         }
+    }
+
+    private func timeMachineBackupDetailsInformativeText(
+        backupTitle: String,
+        snapshotSizeDescription: String
+    ) -> String {
+        let messageTemplate = NSLocalizedString("app.timeMachineRestore.confirmation.message", value: "Phi will quit and restore %@. The current app and selected user data will be replaced.",
+            comment: "Help menu - Time Machine restore confirmation body"
+        )
+        let dataSizeTemplate = NSLocalizedString("app.timeMachineBackup.details.dataSize", value: "Backup data size: %@", comment: "Help menu - Selected Time Machine backup logical data size; placeholder is a formatted byte count or an unavailable label")
+        return [
+            String(format: messageTemplate, backupTitle),
+            String(format: dataSizeTemplate, snapshotSizeDescription)
+        ].joined(separator: "\n\n")
     }
 
     private func timeMachineBackupSizeDescription(_ sizeBytes: UInt64?) -> String {

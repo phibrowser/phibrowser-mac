@@ -10,6 +10,7 @@
 		04FE4637EFE3A1396687DD63 /* AISettingsConnectorViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = D8FCAEAE328C802016D87943 /* AISettingsConnectorViewModel.swift */; };
 		05170D58572AD0BE6C62021E /* KeyEnvelopeAPIClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 254713996DC310106F1FF7A7 /* KeyEnvelopeAPIClient.swift */; };
 		15B618E574463D94C98AEA5F /* AISettingHostingViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1B584F695BF7833FAA99558 /* AISettingHostingViewController.swift */; };
+		20ADEF5F77D82925F11B2966 /* RecoveryCodeEntryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A4A632200E83D8AF97F002EB /* RecoveryCodeEntryView.swift */; };
 		2ABF91DB68C2445BAA58C9BA /* GroupTabsTableView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 457F461C0F164136A46FF641 /* GroupTabsTableView.swift */; };
 		2F3F30219641EDD78FE06E96 /* RecoveryCode.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6EE9BDB8D95B7A16A1E96582 /* RecoveryCode.swift */; };
 		3703C88C2F68F78500E7CF6D /* AISettingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3703C88B2F68F78500E7CF6D /* AISettingView.swift */; };
@@ -204,6 +205,7 @@
 		7A5B00A02EF0000000000001 /* MemoryButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A5B00A02EF0000000000002 /* MemoryButton.swift */; };
 		7B00AAAA000000050000A5B5 /* PostHogEnv.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7B00AAAA000000040000A4B4 /* PostHogEnv.swift */; };
 		7B00AAAA000000070000A7B7 /* PostHogConfig.generated.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7B00AAAA000000060000A6B6 /* PostHogConfig.generated.swift */; };
+		87F30FDCDBA26553DFA619EF /* RecoveryCodeDisplayView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 86DE5E18D7A0314781440048 /* RecoveryCodeDisplayView.swift */; };
 		897C09F42F6BEDA000E5CA9B /* IMChannelsViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 897C09F22F6BEDA000E5CA9B /* IMChannelsViewModel.swift */; };
 		897C09F52F6BEDA000E5CA9B /* IMChannelAPIClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 897C09EE2F6BEDA000E5CA9B /* IMChannelAPIClient.swift */; };
 		897C09F62F6BEDA000E5CA9B /* IMChannelsSettingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 897C09F02F6BEDA000E5CA9B /* IMChannelsSettingView.swift */; };
@@ -257,6 +259,7 @@
 		8EF36C032F4E9E7000FCC91E /* TabViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8EF36C012F4E9E7000FCC91E /* TabViewModel.swift */; };
 		8EF36C062F4E9EC100FCC91E /* TabContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8EF36C052F4E9EC100FCC91E /* TabContentView.swift */; };
 		8EF36C082F4EA95B00FCC91E /* SideTabView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8EF36C072F4EA95B00FCC91E /* SideTabView.swift */; };
+		968126DBA688716A15DFAC27 /* KeyLayerViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1EAE9BC2177CD71475820E2A /* KeyLayerViewModel.swift */; };
 		A1B2C3D4E5F60718293A4B56 /* SharedAuthTokenStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F60718293A4B55 /* SharedAuthTokenStore.swift */; };
 		A71E00000000000000000002 /* PhiAlert.swift in Sources */ = {isa = PBXBuildFile; fileRef = A71E00000000000000000001 /* PhiAlert.swift */; };
 		A7C021022FFD000000000002 /* ContextMenuEvent.swift in Sources */ = {isa = PBXBuildFile; fileRef = A7C021012FFD000000000001 /* ContextMenuEvent.swift */; };
@@ -529,6 +532,7 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		1EAE9BC2177CD71475820E2A /* KeyLayerViewModel.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = KeyLayerViewModel.swift; path = UI/KeyLayerViewModel.swift; sourceTree = "<group>"; };
 		254713996DC310106F1FF7A7 /* KeyEnvelopeAPIClient.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = KeyEnvelopeAPIClient.swift; sourceTree = "<group>"; };
 		3703C88B2F68F78500E7CF6D /* AISettingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AISettingView.swift; sourceTree = "<group>"; };
 		3703C9812F69558C00E7CF6D /* BrowserState+ToggleAI.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "BrowserState+ToggleAI.swift"; sourceTree = "<group>"; };
@@ -725,6 +729,7 @@
 		7B00AAAA000000040000A4B4 /* PostHogEnv.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PostHogEnv.swift; sourceTree = "<group>"; };
 		7B00AAAA000000060000A6B6 /* PostHogConfig.generated.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PostHogConfig.generated.swift; sourceTree = "<group>"; };
 		8417101CC460A0D12720DE81 /* Cocoa.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Cocoa.framework; path = Platforms/MacOSX.platform/Developer/SDKs/MacOSX15.0.sdk/System/Library/Frameworks/Cocoa.framework; sourceTree = DEVELOPER_DIR; };
+		86DE5E18D7A0314781440048 /* RecoveryCodeDisplayView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = RecoveryCodeDisplayView.swift; path = UI/RecoveryCodeDisplayView.swift; sourceTree = "<group>"; };
 		897C09EE2F6BEDA000E5CA9B /* IMChannelAPIClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IMChannelAPIClient.swift; sourceTree = "<group>"; };
 		897C09EF2F6BEDA000E5CA9B /* IMChannelsSettingHostingViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IMChannelsSettingHostingViewController.swift; sourceTree = "<group>"; };
 		897C09F02F6BEDA000E5CA9B /* IMChannelsSettingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IMChannelsSettingView.swift; sourceTree = "<group>"; };
@@ -780,6 +785,7 @@
 		8EF36C072F4EA95B00FCC91E /* SideTabView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SideTabView.swift; sourceTree = "<group>"; };
 		9F0024EB323125F300021F9D /* AccountKeyManager.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = AccountKeyManager.swift; sourceTree = "<group>"; };
 		A1B2C3D4E5F60718293A4B55 /* SharedAuthTokenStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SharedAuthTokenStore.swift; sourceTree = "<group>"; };
+		A4A632200E83D8AF97F002EB /* RecoveryCodeEntryView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = RecoveryCodeEntryView.swift; path = UI/RecoveryCodeEntryView.swift; sourceTree = "<group>"; };
 		A71E00000000000000000001 /* PhiAlert.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhiAlert.swift; sourceTree = "<group>"; };
 		A7C021012FFD000000000001 /* ContextMenuEvent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContextMenuEvent.swift; sourceTree = "<group>"; };
 		AA10000000000000000000F1 /* TabSwitchMetrics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TabSwitchMetrics.swift; sourceTree = "<group>"; };
@@ -1053,6 +1059,16 @@
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
+		2A6C5B5F1BFE5B4B137F20E6 /* UI */ = {
+			isa = PBXGroup;
+			children = (
+				1EAE9BC2177CD71475820E2A /* KeyLayerViewModel.swift */,
+				86DE5E18D7A0314781440048 /* RecoveryCodeDisplayView.swift */,
+				A4A632200E83D8AF97F002EB /* RecoveryCodeEntryView.swift */,
+			);
+			name = UI;
+			sourceTree = "<group>";
+		};
 		370D03AB2F0E463B0087A1C9 /* Theme */ = {
 			isa = PBXGroup;
 			children = (
@@ -1484,6 +1500,7 @@
 				E2201CD37819E22BC9A5F2FC /* DeviceKeyStore.swift */,
 				254713996DC310106F1FF7A7 /* KeyEnvelopeAPIClient.swift */,
 				9F0024EB323125F300021F9D /* AccountKeyManager.swift */,
+				2A6C5B5F1BFE5B4B137F20E6 /* UI */,
 			);
 			name = Keys;
 			path = Keys;
@@ -2889,6 +2906,9 @@
 				6CA74AE48DC58F4968B8DD4E /* DeviceKeyStore.swift in Sources */,
 				05170D58572AD0BE6C62021E /* KeyEnvelopeAPIClient.swift in Sources */,
 				C5F9F384A23E1553837E302C /* AccountKeyManager.swift in Sources */,
+				968126DBA688716A15DFAC27 /* KeyLayerViewModel.swift in Sources */,
+				87F30FDCDBA26553DFA619EF /* RecoveryCodeDisplayView.swift in Sources */,
+				20ADEF5F77D82925F11B2966 /* RecoveryCodeEntryView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

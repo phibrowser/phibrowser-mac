@@ -296,6 +296,33 @@ final class KioskBrowserStateTests: XCTestCase {
         XCTAssertEqual(initialFrame.height, 108)
     }
 
+    func testKioskZoomButtonUsesDefaultSpaceAction() throws {
+        let state = try makeState()
+        let window = makeWindow(
+            frame: NSRect(x: 0, y: 0, width: 900, height: 640)
+        )
+        let controller = KioskBrowserWindowController(
+            window: window,
+            windowId: state.windowId,
+            browserType: .kiosk,
+            profileId: state.profileId,
+            account: state.localStore.account
+        )
+        defer {
+            window.close()
+            withExtendedLifetime(controller) {}
+        }
+
+        let zoomButton = try XCTUnwrap(
+            window.standardWindowButton(.zoomButton)
+        )
+        XCTAssertTrue(zoomButton.target === controller)
+        XCTAssertEqual(
+            zoomButton.action,
+            NSSelectorFromString("openFocusedTabInDefaultSpace:")
+        )
+    }
+
     func testToolbarAndNativeTrafficLightsMoveDownTogether() throws {
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 900, height: 640),

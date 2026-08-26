@@ -400,6 +400,7 @@
 		C70000000000000000000013 /* CommandShortcutTooltipContent.swift in Sources */ = {isa = PBXBuildFile; fileRef = C70000000000000000000003 /* CommandShortcutTooltipContent.swift */; };
 		C80000000000000000000011 /* TabPreviewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = C80000000000000000000001 /* TabPreviewController.swift */; };
 		C80000000000000000000012 /* SplitTabPreviewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = C80000000000000000000002 /* SplitTabPreviewController.swift */; };
+		C8D702469B5164CDCB72E3C8 /* PhiKeyCrypto.swift in Sources */ = {isa = PBXBuildFile; fileRef = D6CCBCF92F493BE791DFAC3A /* PhiKeyCrypto.swift */; };
 		CC24EF062E89223500CE9DD7 /* LoginController.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC24EF052E89223500CE9DD7 /* LoginController.swift */; };
 		CC24EF082E89251D00CE9DD7 /* AuthManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC24EF072E89251D00CE9DD7 /* AuthManager.swift */; };
 		CC2708982E7959DF00B65AB8 /* PinnedTabLayout.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC2708972E7959DF00B65AB8 /* PinnedTabLayout.swift */; };
@@ -527,7 +528,7 @@
 		CD1100070000000000000001 /* PhiIconCatalog.swift in Sources */ = {isa = PBXBuildFile; fileRef = CD1100020000000000000001 /* PhiIconCatalog.swift */; };
 		CD1100080000000000000001 /* EmojiCatalog.swift in Sources */ = {isa = PBXBuildFile; fileRef = CD1100030000000000000001 /* EmojiCatalog.swift */; };
 		CD1100090000000000000001 /* IconPicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = CD1100040000000000000001 /* IconPicker.swift */; };
-		CD11000B0000000000000001 /* Emoji/emoji-catalog.json in Resources */ = {isa = PBXBuildFile; fileRef = CD11000A0000000000000001 /* Emoji/emoji-catalog.json */; };
+		CD11000B0000000000000001 /* emoji-catalog.json in Resources */ = {isa = PBXBuildFile; fileRef = CD11000A0000000000000001 /* emoji-catalog.json */; };
 		CD4F3A012E56000100FACC01 /* FloatingTrafficLightsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CD4F3A002E56000100FACC01 /* FloatingTrafficLightsView.swift */; };
 		CDA11ED500000000000000B1 /* phi-browser-skill in Resources */ = {isa = PBXBuildFile; fileRef = CDA11ED500000000000000A1 /* phi-browser-skill */; };
 		D10000000000000000000001 /* BrowserImagePreviewState.swift in Sources */ = {isa = PBXBuildFile; fileRef = D10000000000000000000011 /* BrowserImagePreviewState.swift */; };
@@ -1234,7 +1235,7 @@
 		CD1100020000000000000001 /* PhiIconCatalog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhiIconCatalog.swift; sourceTree = "<group>"; };
 		CD1100030000000000000001 /* EmojiCatalog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EmojiCatalog.swift; sourceTree = "<group>"; };
 		CD1100040000000000000001 /* IconPicker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IconPicker.swift; sourceTree = "<group>"; };
-		CD11000A0000000000000001 /* Emoji/emoji-catalog.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "Emoji/emoji-catalog.json"; sourceTree = "<group>"; };
+		CD11000A0000000000000001 /* emoji-catalog.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "Emoji/emoji-catalog.json"; sourceTree = "<group>"; };
 		CD4F3A002E56000100FACC01 /* FloatingTrafficLightsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FloatingTrafficLightsView.swift; sourceTree = "<group>"; };
 		CDA11ED500000000000000A1 /* phi-browser-skill */ = {isa = PBXFileReference; lastKnownFileType = folder; name = "phi-browser-skill"; path = "tools/phi-browser-skill"; sourceTree = SOURCE_ROOT; };
 		CE7E61A49E8A472DB330779E /* TabGroupCellView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TabGroupCellView.swift; sourceTree = "<group>"; };
@@ -1253,6 +1254,7 @@
 		D1F600032FD6000000000003 /* DiffableOutlineDiffPlanner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DiffableOutlineDiffPlanner.swift; sourceTree = "<group>"; };
 		D1F600052FD6000000000005 /* DiffableOutlineView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DiffableOutlineView.swift; sourceTree = "<group>"; };
 		D1F600072FD6000000000007 /* SidebarDiffableSnapshotBuilder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SidebarDiffableSnapshotBuilder.swift; sourceTree = "<group>"; };
+		D6CCBCF92F493BE791DFAC3A /* PhiKeyCrypto.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = PhiKeyCrypto.swift; sourceTree = "<group>"; };
 		D8FCAEAE328C802016D87943 /* AISettingsConnectorViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AISettingsConnectorViewModel.swift; sourceTree = "<group>"; };
 		DEBE00000000000000000002 /* DeveloperSettingViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeveloperSettingViewController.swift; sourceTree = "<group>"; };
 		DEBE00000000000000000003 /* DeveloperSettingHostingViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeveloperSettingHostingViewController.swift; sourceTree = "<group>"; };
@@ -1289,16 +1291,22 @@
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		37686B012F1103F300DC3990 /* Configs */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+			);
 			path = Configs;
 			sourceTree = "<group>";
 		};
 		B0C4695A2E3B10E2007F0C7A /* PhiBrowserTests */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+			);
 			path = PhiBrowserTests;
 			sourceTree = "<group>";
 		};
 		B0C469642E3B10E2007F0C7A /* PhiBrowserUITests */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+			);
 			path = PhiBrowserUITests;
 			sourceTree = "<group>";
 		};
@@ -1846,6 +1854,15 @@
 			path = Advanced;
 			sourceTree = "<group>";
 		};
+		8D5BC2CC89DF69775098173D /* Keys */ = {
+			isa = PBXGroup;
+			children = (
+				D6CCBCF92F493BE791DFAC3A /* PhiKeyCrypto.swift */,
+			);
+			name = Keys;
+			path = Keys;
+			sourceTree = "<group>";
+		};
 		8E0A10042FEA000000000001 /* OverlayToast */ = {
 			isa = PBXGroup;
 			children = (
@@ -2005,6 +2022,15 @@
 			path = PhiUninstaller;
 			sourceTree = "<group>";
 		};
+		A43E412163E5F2A5D2576E47 /* Sync */ = {
+			isa = PBXGroup;
+			children = (
+				8D5BC2CC89DF69775098173D /* Keys */,
+			);
+			name = Sync;
+			path = Sync;
+			sourceTree = "<group>";
+		};
 		AA10000000000000000000G1 /* TabSwitch */ = {
 			isa = PBXGroup;
 			children = (
@@ -2066,6 +2092,7 @@
 				B0F370CC2E432646000B51F9 /* UserInterface */,
 				B0F370CD2E4326DC000B51F9 /* Utilities */,
 				37F574C32F7A83DF00879867 /* Other */,
+				A43E412163E5F2A5D2576E47 /* Sync */,
 			);
 			path = Sources;
 			sourceTree = "<group>";
@@ -3592,6 +3619,7 @@
 				5B0000010000000000000006 /* ServiceBrokerWebSocket.swift in Sources */,
 				5B0000010000000000000007 /* ServiceBrokerExtensionProtocol.swift in Sources */,
 				CC6335F72E4B29E000A176DA /* Logging.swift in Sources */,
+				C8D702469B5164CDCB72E3C8 /* PhiKeyCrypto.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

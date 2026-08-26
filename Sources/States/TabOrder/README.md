@@ -53,7 +53,7 @@ The core challenge: when the user reorders tabs via drag-and-drop in the native 
 
 ### 3.1 `NativeTabCreationContext` (via bridge)
 
-When Chromium creates a new tab, `buildCreationContextForWebContents` in `tabs_proxy` constructs a dictionary carrying:
+When Chromium creates a new tab, `buildCreationContextForWebContents` in `PhiChromiumBridge.mm` constructs a dictionary carrying:
 
 | Field | Type | Description |
 |-------|------|-------------|
@@ -82,6 +82,36 @@ Chromium periodically pushes the full opener graph via `tabRelationshipSnapshotC
 ### 3.3 `createQuickLookupTab`
 
 Cmd+T now routes through `createQuickLookupTab(windowId:)` → `chrome::NewTab(kNewTabCommand)` instead of the generic `createTab("chrome://newtab")`. This ensures Chromium applies its typed-new-tab semantics (inheriting opener, setting `reset_opener_on_active_tab_change`).
+
+### 3.4 `bridgeCreate`
+
+Tabs the Mac client asks for — every `BrowserState.createTab`, plus the
+routing-exempt opens behind it — report `creationKind = bridgeCreate`.
+
+`TabsProxy::NewTabWithUrlInternal` reaches the strip through
+`TabStripModel::AppendWebContents`, which passes `ADD_INHERIT_OPENER` for a
+foreground tab: the strip records the window's *currently active tab* as the
+new tab's opener. Read literally, the context builder would then describe
+every client-created tab as `linkForeground` with an `openerTabId` —
+indistinguishable from a link clicked in the active tab. `pendingAppBridgeCreation`
+(a flag held across the `NewTabWithUrl*` call, mirroring
+`pendingQuickLookupCreation`) marks the difference.
+
+The opener relationship is genuine — it is still reported here and in the
+relationship snapshot, and Chromium still uses it to pick the next active tab
+on close. Only the KIND is corrected, and consumers that mean "the page opened
+this" key off the kind:
+
+- `NativeTabDecisionEngine.insertionIndex` places `bridgeCreate` by
+  `insertAfterTabId`, the tab's real strip neighbour, instead of anchoring it
+  to an opener it never came from.
+- `BrowserState.maybeDivertPeekCandidate` accepts `linkForeground` only. While
+  client-created tabs claimed that kind, a cross-profile Space move — which
+  recreates the page with `createTab` — landed beside a bookmark/pinned-bound
+  active tab and opened in the Peek panel instead of as a normal tab.
+
+Explicit "Open Link in Peek View" is unaffected: it matches its own pending
+request, not `creationKind`.
 
 ## 4. Mac-Side Implementation
 

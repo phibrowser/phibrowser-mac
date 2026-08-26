@@ -155,6 +155,7 @@
 		4D454D4F5259000000000001 /* MemoryUsageModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4D454D4F5259000000000002 /* MemoryUsageModels.swift */; };
 		4D454D4F5259000000000004 /* MemoryUsageMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4D454D4F5259000000000005 /* MemoryUsageMonitor.swift */; };
 		4D454D4F5259000000000006 /* ProcessMemorySampler.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4D454D4F5259000000000007 /* ProcessMemorySampler.swift */; };
+		50BB49759C6BE6D9DC289589 /* DevicesSettingViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 356C43512D010ACB56FE22E3 /* DevicesSettingViewModel.swift */; };
 		54A100012FE0000000000001 /* TimeMachineModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 54A100112FE0000000000011 /* TimeMachineModels.swift */; };
 		54A100022FE0000000000002 /* TimeMachinePaths.swift in Sources */ = {isa = PBXBuildFile; fileRef = 54A100122FE0000000000012 /* TimeMachinePaths.swift */; };
 		54A100032FE0000000000003 /* TimeMachineRollbackPolicyLoader.swift in Sources */ = {isa = PBXBuildFile; fileRef = 54A100132FE0000000000013 /* TimeMachineRollbackPolicyLoader.swift */; };
@@ -540,6 +541,7 @@
 		23216985BAC98CA63F9CB2AC /* WaitingForApprovalView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = WaitingForApprovalView.swift; path = UI/WaitingForApprovalView.swift; sourceTree = "<group>"; };
 		254713996DC310106F1FF7A7 /* KeyEnvelopeAPIClient.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = KeyEnvelopeAPIClient.swift; sourceTree = "<group>"; };
 		26E0CB91197F4D9D6B21F51D /* KeyLayerView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = KeyLayerView.swift; path = UI/KeyLayerView.swift; sourceTree = "<group>"; };
+		356C43512D010ACB56FE22E3 /* DevicesSettingViewModel.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = DevicesSettingViewModel.swift; sourceTree = "<group>"; };
 		3703C88B2F68F78500E7CF6D /* AISettingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AISettingView.swift; sourceTree = "<group>"; };
 		3703C9812F69558C00E7CF6D /* BrowserState+ToggleAI.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "BrowserState+ToggleAI.swift"; sourceTree = "<group>"; };
 		3703C9832F6956E600E7CF6D /* SentinelHelper.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SentinelHelper.swift; sourceTree = "<group>"; };
@@ -2062,6 +2064,7 @@
 				5ACE0000000000000000000A /* Profiles */,
 				5ACE00000000000000000001 /* Spaces */,
 				DEBE00000000000000000001 /* Developer */,
+				DB8FA9361346E023D7B8B72C /* Devices */,
 			);
 			path = Preferences;
 			sourceTree = "<group>";
@@ -2305,6 +2308,14 @@
 				D10000000000000000000032 /* ExtensionDialogViewController.swift */,
 			);
 			path = ExtensionDialog;
+			sourceTree = "<group>";
+		};
+		DB8FA9361346E023D7B8B72C /* Devices */ = {
+			isa = PBXGroup;
+			children = (
+				356C43512D010ACB56FE22E3 /* DevicesSettingViewModel.swift */,
+			);
+			path = Devices;
 			sourceTree = "<group>";
 		};
 		DEBE00000000000000000001 /* Developer */ = {
@@ -2925,6 +2936,7 @@
 				B08D92D0E46467DEC29319D8 /* KeyLayerView.swift in Sources */,
 				2617E7C43A0DFE05B416E8F5 /* JoinMethodChoiceView.swift in Sources */,
 				D5E902235143FB0E14F29182 /* WaitingForApprovalView.swift in Sources */,
+				50BB49759C6BE6D9DC289589 /* DevicesSettingViewModel.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

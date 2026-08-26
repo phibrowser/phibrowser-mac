@@ -4,6 +4,859 @@
     "" : {
 
     },
+    "agentControl.connectionApproval.details.answeringFor" : {
+      "comment" : "CDP consent - value of the details row once the user has retargeted the answer onto a process that launched the agent; %@ is that process's name",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Antwort gilt „%@“"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Answering for “%@”"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Respondiendo por “%@”"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Réponse pour « %@ »"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "「%@」について回答"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "“%@”에 대해 응답"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Antwoord geldt voor ‘%@’"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "答复对象：“%@”"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "答覆對象：「%@」"
+          }
+        }
+      }
+    },
+    "agentControl.connectionApproval.details.commandHeading" : {
+      "comment" : "CDP consent - heading over the agent's command line in the details disclosure",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Befehl"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Command"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Comando"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Commande"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "コマンド"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "명령"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Opdracht"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "命令"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "指令"
+          }
+        }
+      }
+    },
+    "agentControl.connectionApproval.details.commandUnavailable" : {
+      "comment" : "CDP consent - shown in the details disclosure when a process's command line cannot be read",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "(Befehl nicht verfügbar)"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "(command unavailable)"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "(comando no disponible)"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "(commande indisponible)"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "（コマンドを取得できません）"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "(명령을 읽을 수 없음)"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "(opdracht niet beschikbaar)"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "（无法读取命令）"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "（無法讀取指令）"
+          }
+        }
+      }
+    },
+    "agentControl.connectionApproval.details.hideAccessibilityLabel" : {
+      "comment" : "CDP consent - accessibility label of the details disclosure button while the details are open",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Befehl und Prozessbaum des Agenten ausblenden"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Hide the agent's command and process tree"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ocultar el comando y el árbol de procesos del agente"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Masquer la commande et l’arborescence des processus de l’agent"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "エージェントのコマンドとプロセスツリーを非表示"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "에이전트의 명령과 프로세스 트리 숨기기"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Opdracht en procesboom van de agent verbergen"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "隐藏该智能体的命令与进程树"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "隱藏該 AI 代理的指令與行程樹"
+          }
+        }
+      }
+    },
+    "agentControl.connectionApproval.details.label" : {
+      "comment" : "CDP consent - label of the row that expands the agent's command and process tree",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Details"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Details"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Detalles"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Détails"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "詳細"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "세부 정보"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Details"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "详情"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "詳細資訊"
+          }
+        }
+      }
+    },
+    "agentControl.connectionApproval.details.showAccessibilityLabel" : {
+      "comment" : "CDP consent - accessibility label of the details disclosure button while the details are closed",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Befehl und Prozessbaum des Agenten anzeigen"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Show the agent's command and process tree"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mostrar el comando y el árbol de procesos del agente"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Afficher la commande et l’arborescence des processus de l’agent"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "エージェントのコマンドとプロセスツリーを表示"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "에이전트의 명령과 프로세스 트리 표시"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Opdracht en procesboom van de agent tonen"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "显示该智能体的命令与进程树"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "顯示該 AI 代理的指令與行程樹"
+          }
+        }
+      }
+    },
+    "agentControl.connectionApproval.details.subjectHint" : {
+      "comment" : "CDP consent - hint under the process tree explaining that a row can be picked to retarget the answer; %@ is the asking agent's name",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Deine Antwort gilt „%@“. Wähle oben eine Zeile, um stattdessen über den Prozess zu entscheiden, der ihn gestartet hat."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Your answer is about “%@”. Pick a row above to answer about the process that launched it instead."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tu respuesta es sobre “%@”. Elige una fila de arriba para responder sobre el proceso que lo inició."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Votre réponse concerne « %@ ». Choisissez une ligne ci-dessus pour répondre plutôt à propos du processus qui l’a lancé."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "この回答は「%@」についてのものです。起動元のプロセスについて回答するには、上の行を選んでください。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "이 응답은 “%@”에 대한 것이에요. 위의 행을 선택하면 이를 실행한 프로세스에 대해 응답할 수 있어요."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Je antwoord gaat over ‘%@’. Kies hierboven een regel om in plaats daarvan te antwoorden over het proces dat het heeft gestart."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "当前答复的是“%@”。想改为答复启动它的进程，请在上方选择相应的一行。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "目前答覆的是「%@」。想改為答覆啟動它的行程，請在上方選擇該列。"
+          }
+        }
+      }
+    },
+    "agentControl.connectionApproval.details.subjectWarning" : {
+      "comment" : "CDP consent - warning under the process tree once the answer has been retargeted onto a process that launched the agent; %@ is that process's name",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Deine Antwort gilt „%@“ – jeder Agent, den es startet, bekommt dieselbe Antwort, ohne erneut zu fragen."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Your answer covers “%@” — every agent it launches gets the same answer, without asking again."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tu respuesta cubre “%@”: todos los agentes que inicie recibirán la misma respuesta, sin volver a preguntar."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Votre réponse couvre « %@ » : tous les agents qu’il lance recevront la même réponse, sans nouvelle demande."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "この回答は「%@」全体に適用され、そこから起動されるエージェントは確認なしで同じ扱いになります。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "이 응답은 “%@”에 적용돼요. 여기서 실행되는 모든 에이전트가 다시 묻지 않고 같은 응답을 받아요."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Je antwoord geldt voor ‘%@’ — elke agent die het start, krijgt hetzelfde antwoord, zonder opnieuw te vragen."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "该答复将覆盖“%@”——它启动的每个智能体都会得到相同答复，不再询问。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "此答覆將涵蓋「%@」——它啟動的每個 AI 代理都會得到相同答覆，不再詢問。"
+          }
+        }
+      }
+    },
+    "agentControl.connectionApproval.details.summary" : {
+      "comment" : "CDP consent - value of the details row, naming what the disclosure reveals",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Befehl und Prozessbaum"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Command and process tree"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Comando y árbol de procesos"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Commande et arborescence des processus"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "コマンドとプロセスツリー"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "명령과 프로세스 트리"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Opdracht en procesboom"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "命令与进程树"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "指令與行程樹"
+          }
+        }
+      }
+    },
+    "agentControl.connectionApproval.details.thisAgentTag" : {
+      "comment" : "CDP consent - tag marking which row of the process tree is the agent asking for access",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "dieser Agent"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "this agent"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "este agente"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "cet agent"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "このエージェント"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "이 에이전트"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "deze agent"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "当前智能体"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "目前的 AI 代理"
+          }
+        }
+      }
+    },
+    "agentControl.connectionApproval.details.treeHeading" : {
+      "comment" : "CDP consent - heading over the process ancestry in the details disclosure",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Gestartet von"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Launched by"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Iniciado por"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lancé par"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "起動元"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "실행한 프로세스"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Gestart door"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "启动来源"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "啟動來源"
+          }
+        }
+      }
+    },
+    "agentControl.connectionApproval.identity.signingIdSummary" : {
+      "comment" : "CDP consent - signing identifier and trust, for a signature that carries no team identifier (Apple's own binaries); first %@ is the signing identifier, second is the trust word",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@ · %2$@"
+          }
+        }
+      },
+      "shouldTranslate" : false
+    },
+    "agentControl.connectionApproval.subjectLabel" : {
+      "comment" : "CDP consent - label of the top summary row once the answer has been retargeted onto a process that launched the agent, replacing the \"Agent\" label",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Antwort für"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Answer for"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Respuesta para"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Réponse pour"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "回答対象"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "응답 대상"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Antwoord voor"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "答复对象"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "答覆對象"
+          }
+        }
+      }
+    },
+    "agentControl.connectionApproval.unsigned.detail" : {
+      "comment" : "CDP consent - body of the unsigned-agent warning banner",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dieser Prozess hat keine gültige Codesignatur. Sein Name stammt aus dem Befehl, mit dem er gestartet wurde – beanspruchen könnte ihn jedes Programm. Öffne „Details“ und sieh dir diesen Befehl an, bevor du zustimmst."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "This process carries no valid code signature, so its name comes from the command it was launched with and anything could claim it. Open Details to see that command before you allow it."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Este proceso no tiene una firma de código válida, así que su nombre viene del comando con el que se inició y cualquier cosa podría atribuírselo. Abre Detalles para ver ese comando antes de permitirlo."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ce processus ne porte aucune signature de code valide : son nom provient de la commande qui l’a lancé et n’importe quoi pourrait s’en réclamer. Ouvrez Détails pour voir cette commande avant de l’autoriser."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "このプロセスには有効なコード署名がありません。名前は起動時のコマンドから取られたもので、どんなプログラムでも名乗れます。許可する前に「詳細」でそのコマンドを確認してください。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "이 프로세스에는 유효한 코드 서명이 없어요. 이름은 실행할 때 쓴 명령에서 가져온 것이라 무엇이든 그 이름을 쓸 수 있어요. 허용하기 전에 세부 정보에서 그 명령을 확인해 보세요."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dit proces heeft geen geldige codehandtekening. De naam komt uit de opdracht waarmee het is gestart, en van alles kan die naam claimen. Open Details om die opdracht te bekijken voordat je toestemming geeft."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "这个进程没有有效的代码签名，它的名称来自启动它的命令，任何程序都可以冒用。允许之前，请先打开「详情」查看该命令。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "這個行程沒有有效的程式碼簽署，名稱來自啟動它的指令，任何程式都可以冒用。允許之前，請先開啟「詳細資訊」查看該指令。"
+          }
+        }
+      }
+    },
+    "agentControl.connectionApproval.unsigned.headline" : {
+      "comment" : "CDP consent - headline of the banner shown when the asking process has no valid code signature",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nicht signiert – Phi kann diesen Agenten nicht verifizieren"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Unsigned — Phi can't verify this agent"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sin firmar: Phi no puede verificar este agente"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Non signé — Phi ne peut pas vérifier cet agent"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "未署名 — Phi はこのエージェントを検証できません"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "서명 없음 — Phi가 이 에이전트를 확인할 수 없어요"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Niet ondertekend — Phi kan deze agent niet verifiëren"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "未签名 —— Phi 无法验证这个智能体"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "未簽署 —— Phi 無法驗證這個 AI 代理"
+          }
+        }
+      }
+    },
     "・" : {
       "shouldTranslate" : false
     },

@@ -26,6 +26,12 @@ struct AgentIdentity: Equatable {
     let displayName: String
     /// Team identifier from the code signature, nil when unsigned.
     let teamId: String?
+    /// Signing identifier from the code signature ("com.apple.login"), nil
+    /// when unsigned. Apple's own platform binaries carry no team identifier,
+    /// so on a launch chain full of them this is the only thing that says what
+    /// a verified process actually IS — which is the whole reason the chain is
+    /// on screen.
+    let signingId: String?
     /// True when the responsible process carries a valid code signature.
     let verified: Bool
     /// Absolute path of the responsible process's executable.
@@ -47,26 +53,81 @@ struct AgentIdentity: Equatable {
     /// deliberately not a parameter: being the browser's own runtime is
     /// something this file establishes from the connection, never something a
     /// caller can assert.
-    init(key: String, displayName: String, teamId: String?, verified: Bool,
+    init(key: String, displayName: String, teamId: String?,
+         signingId: String? = nil, verified: Bool,
          executablePath: String, pid: pid_t?) {
         self.init(key: key, displayName: displayName, teamId: teamId,
-                  verified: verified, executablePath: executablePath,
-                  pid: pid, firstParty: false)
+                  signingId: signingId, verified: verified,
+                  executablePath: executablePath, pid: pid, firstParty: false)
     }
 
     fileprivate init(key: String, displayName: String, teamId: String?,
-                     verified: Bool, executablePath: String, pid: pid_t?,
-                     firstParty: Bool) {
+                     signingId: String?, verified: Bool,
+                     executablePath: String, pid: pid_t?, firstParty: Bool) {
         self.key = key
         self.displayName = displayName
         self.teamId = teamId
+        self.signingId = signingId
         self.verified = verified
         self.executablePath = executablePath
         self.pid = pid
         self.firstParty = firstParty
     }
 
+    /// Key of the identity below. Its own constant because the rule attached
+    /// to it — never admitted, never remembered, never interchangeable with
+    /// another peer wearing it — is enforced in more than one file, and a
+    /// literal "unknown" spread across them is a rule waiting to be missed.
+    static let unresolvedKey = "unknown"
+
+    /// The stand-in for a peer whose process could not be resolved at all:
+    /// the socket would not name a pid, so there is no ancestry to walk, no
+    /// signature to check, and nothing to tell the user.
+    ///
+    /// It is not an identity but the absence of one, and every unidentifiable
+    /// peer that ever connects wears exactly this key. That is what makes it
+    /// unanswerable: an "Always Allow" against it would not approve a program,
+    /// it would approve the *condition* of being unidentifiable, permanently
+    /// and for everyone. `AgentCDPListener.evaluate` refuses it outright
+    /// instead of asking (see there for why that is safe).
+    static let unresolved = AgentIdentity(
+        key: unresolvedKey, displayName: "Unknown process", teamId: nil,
+        verified: false, executablePath: "", pid: nil)
+
+    /// The same absence reached a second way: the ancestry walk ran, but
+    /// everything it found was the phi-browser skill's own plumbing — its
+    /// heredoc runner, its CLI, its detached mirror daemon — with no agent
+    /// above them to name.
+    ///
+    /// That is not an agent called "phi-browser", which is what this used to
+    /// resolve to and what the prompt then asked the user about. The skill's
+    /// scripts act for whoever drives them; when the walk can see nothing but
+    /// them, what it has established is that it could not find the driver.
+    /// Saying so is both truer and safer: the old name was keyed to the skill
+    /// directory, so one "Always Allow" would have been inherited by every
+    /// future process running anything out of it.
+    ///
+    /// A helper in this position has a way in that does not depend on the
+    /// walk — the capability its spawning round delegates joins the agent's
+    /// session directly, and a connection carrying one is evaluated as that
+    /// session and never arrives here. Reaching this point means none was
+    /// presented. `executablePath` is kept for the log line that says so.
+    static func unresolvedOwnPlumbing(executablePath: String) -> AgentIdentity {
+        AgentIdentity(key: unresolvedKey,
+                      displayName: "the phi-browser skill's own plumbing",
+                      teamId: nil, verified: false,
+                      executablePath: executablePath, pid: nil)
+    }
+
+    /// Whether this is that stand-in, in either of its forms.
+    var isUnresolved: Bool { key == Self.unresolvedKey }
+
     /// Secondary line for the prompt, e.g. "Team 87DQ3HMK5G · verified".
+    ///
+    /// A verified process always names what it is signed as: its team when it
+    /// has one, and otherwise its signing identifier — Apple's own binaries
+    /// have no team, and a launch chain of bare "verified" rows says nothing
+    /// the user can act on.
     var detail: String {
         let trust = verified
             ? NSLocalizedString("agentControl.connectionApproval.identity.verifiedStatus", value: "verified", comment: "CDP consent - signature verified")
@@ -76,6 +137,12 @@ struct AgentIdentity: Equatable {
                 format: NSLocalizedString("agentControl.connectionApproval.identity.teamSummary", value: "Team %@ · %@",
                                           comment: "CDP consent - team and trust"),
                 teamId, trust)
+        }
+        if let signingId, !signingId.isEmpty {
+            return String(
+                format: NSLocalizedString("agentControl.connectionApproval.identity.signingIdSummary", value: "%@ · %@",
+                                          comment: "CDP consent - signing identifier and trust, for a signature that carries no team identifier (Apple's own binaries); first %@ is the signing identifier, second is the trust word"),
+                signingId, trust)
         }
         return trust
     }
@@ -158,6 +225,52 @@ struct AgentDenial: Codable, Equatable, Identifiable {
         }
         return AgentGrant(key: key, remembered: false).displayName
     }
+}
+
+/// One process in the chain that led to an agent connecting, as shown behind
+/// the consent prompt's "Details" disclosure.
+///
+/// The prompt names an agent; this is the evidence for that name. It matters
+/// most when the agent is unsigned, where the name is derived from a script
+/// path or an `argv[0]` the process chose for itself and there is no signature
+/// standing behind it — the command and the chain above it are then the only
+/// things the user can actually check.
+struct AgentProcessNode: Equatable, Identifiable {
+    let pid: pid_t
+    /// Short name for the row, e.g. "node" or the brand in `argv[0]`.
+    let name: String
+    /// Full command line, or the executable path when argv is unreadable.
+    let command: String
+    /// True for the one process the prompt is naming as the agent.
+    let isAgent: Bool
+    /// Who this process is by its code signature — the same question the
+    /// prompt's Identity row answers about the agent, asked of the thing that
+    /// launched it. It is also what a decision retargeted onto this row would
+    /// be recorded under, so a user who does not recognise an unsigned script
+    /// can answer about the signed app above it instead. Nil when the process
+    /// has no readable executable to check.
+    let identity: AgentIdentity?
+
+    var id: pid_t { pid }
+
+    /// Whether the prompt will let the user answer about this row. The root of
+    /// every process on the machine is not a meaningful "who is asking":
+    /// allowing launchd would admit anything the user ever runs, which is what
+    /// the alert's "Apply to all agents" switch says out loud and Settings can
+    /// take back — reaching the same power through an innocuous-looking row is
+    /// the trap this closes.
+    var isSelectableSubject: Bool { identity != nil && pid > 1 }
+}
+
+/// What the consent prompt shows behind "Details": the asking agent's own
+/// command line and the ancestry that launched it.
+struct AgentProcessDetails: Equatable {
+    /// The agent's command line, or its executable path as a fallback.
+    let command: String
+    let executablePath: String
+    /// Oldest ancestor first, the agent process last, so the list reads as a
+    /// tree from the top down. Empty when the ancestry can't be read.
+    let tree: [AgentProcessNode]
 }
 
 enum AgentPeerIdentity {
@@ -303,6 +416,7 @@ enum AgentPeerIdentity {
             key: firstPartyKey,
             displayName: firstPartyDisplayName,
             teamId: FileSystemUtils.teamId,
+            signingId: FileSystemUtils.bundleId,
             verified: true,
             executablePath: interpreter,
             pid: peerPID,
@@ -495,9 +609,10 @@ enum AgentPeerIdentity {
         // Below a real responsible process, the launcher above is the better
         // identity than the skill's own plumbing.
         guard boundary == nil, let ownPlumbingExe else { return nil }
-        // The skill's own plumbing is not an agent — no pid to echo back.
-        return unsignedIdentity(name: "phi-browser", path: "phi-browser",
-                                exe: ownPlumbingExe, pid: nil)
+        // Nothing but our own scripts, all the way up: the walk did not find
+        // an agent, so it says that rather than naming the scripts as one
+        // (see AgentIdentity.unresolvedOwnPlumbing).
+        return .unresolvedOwnPlumbing(executablePath: ownPlumbingExe)
     }
 
     /// Identity of one interpreter process: prefers a custom `argv[0]` the
@@ -734,6 +849,133 @@ enum AgentPeerIdentity {
         return "\(identity.key)|\(pid)|\(info.pbi_start_tvsec)|\(info.pbi_start_tvusec)"
     }
 
+    // MARK: - Consent prompt details
+
+    /// How far up the ancestry the prompt's tree goes. Deep enough for the
+    /// shapes agents actually arrive in (agent → shell → terminal → launchd,
+    /// or an editor's helper stack) without letting a pathological chain push
+    /// the alert past the height it scrolls at.
+    private static let maxTreeDepth = 10
+
+    /// The command line and launch chain behind `identity`, for the consent
+    /// prompt's "Details" disclosure — or nil when there is nothing to show.
+    ///
+    /// Read at prompt time rather than at resolve time: the peer is blocked on
+    /// the answer, so its ancestry is still live, and the many connections an
+    /// agent makes per task would otherwise each pay for a walk nobody looks
+    /// at. Runs synchronous sysctls — call it off the main thread.
+    ///
+    /// Everything here is best effort. A process that exits mid-walk, or one
+    /// whose argv the kernel won't hand over, drops to its executable path
+    /// rather than dropping the whole disclosure: a partial chain still tells
+    /// the user more than "unsigned" alone.
+    static func processDetails(for identity: AgentIdentity) -> AgentProcessDetails? {
+        guard let agentPID = identity.pid else {
+            // No live process behind the identity (the skill's own plumbing,
+            // or a peer that has gone). The executable is all that is left,
+            // and an empty path is not worth a disclosure row.
+            guard !identity.executablePath.isEmpty else { return nil }
+            return AgentProcessDetails(command: identity.executablePath,
+                                       executablePath: identity.executablePath,
+                                       tree: [])
+        }
+
+        var chain: [AgentProcessNode] = []
+        var pid = agentPID
+        var guardCount = 0
+        while pid > 0 && guardCount < maxTreeDepth {
+            guardCount += 1
+            chain.append(processNode(pid, agentIdentity: pid == agentPID ? identity : nil))
+            guard let parent = parentPID(pid), parent != pid else { break }
+            pid = parent
+        }
+
+        let agentCommand = chain.first?.command
+            ?? (identity.executablePath.isEmpty ? nil : identity.executablePath)
+        guard let agentCommand else { return nil }
+        return AgentProcessDetails(
+            command: agentCommand,
+            executablePath: executablePath(agentPID) ?? identity.executablePath,
+            // Walked from the agent upward; shown from the top down.
+            tree: chain.reversed())
+    }
+
+    /// One row of the tree. Named by `argv[0]` when the process branded itself
+    /// with a bare name (how pi and other agents present themselves, and the
+    /// same signal the identity walk trusts), else by its executable.
+    ///
+    /// `agentIdentity` is non-nil for the one row that IS the agent, and is
+    /// the identity already resolved for it — which is better than what a
+    /// signature check on that pid alone would say, since the resolve walk
+    /// names a script-run agent by its script rather than by its interpreter's
+    /// meaningless ad-hoc id. Every other row is identified from its signature
+    /// here, and pays a `SecCode` check for it; that cost is why this runs on
+    /// the about-to-prompt path and not per connection.
+    private static func processNode(_ pid: pid_t,
+                                    agentIdentity: AgentIdentity?) -> AgentProcessNode {
+        let exe = executablePath(pid) ?? recordedExecutablePath(pid)
+        let exeName = exe.map { ($0 as NSString).lastPathComponent }
+        let argv = processArgv(pid)
+        var name = exeName ?? "pid \(pid)"
+        if let arg0 = argv?.first, !arg0.contains("/"), !arg0.isEmpty {
+            name = arg0
+        }
+        let command = argv.map(commandLine(from:)).flatMap { $0.isEmpty ? nil : $0 }
+            ?? exe
+            ?? NSLocalizedString("agentControl.connectionApproval.details.commandUnavailable", value: "(command unavailable)", comment: "CDP consent - shown in the details disclosure when a process's command line cannot be read")
+        return AgentProcessNode(
+            pid: pid,
+            name: name,
+            command: command,
+            isAgent: agentIdentity != nil,
+            identity: agentIdentity ?? exe.map { signingIdentity(pid: pid, executablePath: $0) })
+    }
+
+    /// Every identity this connection could be decided by, most specific
+    /// first: the agent that asked, then the processes that launched it,
+    /// nearest first.
+    ///
+    /// The list exists because the prompt lets the user answer about an
+    /// ancestor instead of the agent — the useful move when the agent is an
+    /// unsigned script and the signed app above it is the thing they actually
+    /// recognise. An answer recorded that way is only worth anything if the
+    /// next connection finds it, which is what `AgentCDPListener` walks this
+    /// list to do.
+    ///
+    /// Deduped by key, keeping the most specific occurrence: an agent whose
+    /// signature matches its launcher's is one decision, not two.
+    /// Non-selectable rows are left out — a grant can never be recorded under
+    /// one, so matching against it could only ever surprise.
+    static func decisionCandidates(for identity: AgentIdentity,
+                                   details: AgentProcessDetails?) -> [AgentIdentity] {
+        var seen = Set([identity.key])
+        var candidates = [identity]
+        // The tree is stored oldest-first for drawing; specificity runs the
+        // other way.
+        for node in (details?.tree ?? []).reversed() {
+            guard node.isSelectableSubject, let nodeIdentity = node.identity,
+                  seen.insert(nodeIdentity.key).inserted else {
+                continue
+            }
+            candidates.append(nodeIdentity)
+        }
+        return candidates
+    }
+
+    /// argv rendered as a copyable one-liner. Arguments carrying whitespace are
+    /// quoted, so a single path with a space in it doesn't read as two
+    /// arguments — the detail that decides whether a command looks right.
+    /// Internal for unit coverage.
+    static func commandLine(from argv: [String]) -> String {
+        argv.map { argument in
+            guard argument.rangeOfCharacter(from: .whitespacesAndNewlines) != nil else {
+                return argument
+            }
+            return "\"\(argument.replacingOccurrences(of: "\"", with: "\\\""))\""
+        }
+        .joined(separator: " ")
+    }
+
     // MARK: - Peer credentials
 
     private static func peerProcessID(socketFD: Int32) -> pid_t? {
@@ -901,6 +1143,7 @@ enum AgentPeerIdentity {
             key: key,
             displayName: bundleName ?? signingId ?? fallbackName,
             teamId: teamId,
+            signingId: signingId,
             verified: true,
             executablePath: path,
             pid: pid)

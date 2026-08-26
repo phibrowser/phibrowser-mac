@@ -626,6 +626,11 @@ final class PhiAlertPresenter {
     private var alertWindow: NSWindow?
     private var appearanceSubscription: AnyObject?
     private var parentCloseObservation: NSObjectProtocol?
+    private var frameObservations: [NSObjectProtocol] = []
+    /// Where the alert's top-left corner sits, so a content-driven resize can
+    /// put it back there (see `observeAlertWindowFrame`). Nil until the window
+    /// has been placed.
+    private var anchoredTopLeft: CGPoint?
     /// Strong self-reference held while a non-modal alert is on screen. A
     /// sheet is kept alive by AppKit's sheet completion handler and the
     /// synchronous styles by their calling frame; the non-modal style has
@@ -919,8 +924,77 @@ final class PhiAlertPresenter {
             }
         }
 
+        observeAlertWindowFrame(alertWindow)
         self.alertWindow = alertWindow
         return alertWindow
+    }
+
+    /// Keeps a freestanding alert hanging from its top-left corner while its
+    /// content changes size — a disclosure the user opens inside the alert
+    /// (the agent consent prompt's command and process tree) is the case this
+    /// exists for. The hosting controller reports the new height to the
+    /// window, and AppKit resizes a frame around its BOTTOM-left origin, so
+    /// without this the panel walks up the screen as it grows and the copy the
+    /// user was reading moves out from under them.
+    ///
+    /// Sheets are left alone: AppKit already anchors those to the top edge of
+    /// their parent window and owns their geometry.
+    private func observeAlertWindowFrame(_ window: NSWindow) {
+        let center = NotificationCenter.default
+        frameObservations = [
+            center.addObserver(
+                forName: NSWindow.didMoveNotification,
+                object: window,
+                queue: nil
+            ) { [weak self, weak window] _ in
+                MainActor.assumeIsolated {
+                    guard let window else { return }
+                    self?.anchoredTopLeft = CGPoint(x: window.frame.minX,
+                                                    y: window.frame.maxY)
+                }
+            },
+            center.addObserver(
+                forName: NSWindow.didResizeNotification,
+                object: window,
+                queue: nil
+            ) { [weak self, weak window] _ in
+                MainActor.assumeIsolated {
+                    guard let self, let window else { return }
+                    self.reanchorAfterResize(window)
+                }
+            },
+        ]
+    }
+
+    private func reanchorAfterResize(_ window: NSWindow) {
+        // The first resize is the one that sizes the window to its content,
+        // before anything has placed it. Record where it lands rather than
+        // dragging it to an anchor that doesn't exist yet.
+        guard let anchor = anchoredTopLeft else {
+            anchoredTopLeft = CGPoint(x: window.frame.minX, y: window.frame.maxY)
+            return
+        }
+        guard presentationStyle == .standalone || presentationStyle == .nonModal else {
+            return
+        }
+
+        var frame = window.frame
+        frame.origin = CGPoint(x: anchor.x, y: anchor.y - frame.height)
+        // An alert that grew taller than the room below its anchor is pushed
+        // back onto the screen: keeping the top-left corner is the point of
+        // this, but not at the cost of the buttons sliding off the bottom.
+        if let visibleFrame = window.screen?.visibleFrame ?? NSScreen.main?.visibleFrame {
+            if frame.minY < visibleFrame.minY {
+                frame.origin.y = visibleFrame.minY
+            }
+            // Taller than the screen: the top wins, since that is where the
+            // title and the reason for the prompt are.
+            if frame.maxY > visibleFrame.maxY {
+                frame.origin.y = visibleFrame.maxY - frame.height
+            }
+        }
+        guard frame.origin != window.frame.origin else { return }
+        window.setFrameOrigin(frame.origin)
     }
 
     private func completeDismissal(_ response: NSApplication.ModalResponse) {
@@ -932,6 +1006,9 @@ final class PhiAlertPresenter {
             NotificationCenter.default.removeObserver(parentCloseObservation)
             self.parentCloseObservation = nil
         }
+        frameObservations.forEach(NotificationCenter.default.removeObserver)
+        frameObservations = []
+        anchoredTopLeft = nil
         alertWindow = nil
         // Kept on the stack until this returns: for a non-modal alert this is
         // the reference the presenter lives on, and the completion below is

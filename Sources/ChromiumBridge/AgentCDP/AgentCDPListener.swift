@@ -25,10 +25,30 @@ import Foundation
 /// therefore never has to talk the user through Settings, and "off" still
 /// means no agent can drive the browser until the user says so.
 ///
+/// Two peers never reach the prompt at all, at opposite ends: the browser's own
+/// agent runtime, which is admitted as part of the product (`firstPartyAgent`),
+/// and a peer whose process cannot be identified, which is refused outright —
+/// there is nothing to put in front of the user, and every such peer would
+/// share one key, so a single "Always Allow" would approve all of them forever.
+/// The second covers the skill's own plumbing when the walk finds nothing above
+/// it: those scripts act for whoever drives them, so failing to find the driver
+/// is what happened, not "an agent named phi-browser is asking".
+///
 /// A doorbell anyone may ring needs a way to silence it, so the prompt's deny
 /// side is scoped too: this connection, 30 minutes, or never again, for the
 /// asking agent or for every agent. Those refusals (`AgentDenial`) outrank
 /// every grant and are checked before anything else.
+///
+/// A prompt can also be answered about the wrong thing, which is the other way
+/// a user gets stuck: the process that reaches the socket is often an unsigned
+/// script, and the thing they actually recognise is the signed application that
+/// launched it. The prompt's Details disclosure shows that launch chain, with
+/// each process's signing identity, and lets the answer be recorded against a
+/// process in it instead. `answerFromLaunchChain` is the other half — without
+/// it a grant given to a terminal would be found by nothing and the same
+/// prompt would come back. The rule between the two tiers: the most specific
+/// decision wins, and a launcher decides only what the agent under it has no
+/// decision of its own about.
 ///
 /// The allow side can be widened the same way — "Apply to all agents" turns
 /// Allow Once / Always Allow into a blanket grant that admits agents never seen
@@ -65,6 +85,11 @@ final class AgentCDPListener {
     // PhiPreferences.allAgentsGranted, which this mirrors once observed so the
     // rest of the session needs no defaults read.
     private var sessionAllAgentsGrant = false
+    // Agents admitted this session on a grant the user recorded against one of
+    // the processes that LAUNCHED them, rather than one of their own: agent
+    // key -> that launcher's key. A shortcut past re-walking the ancestry, not
+    // a grant (see admittedByStandingLaunchChain).
+    private var launchChainAdmissions = [String: String]()
     // The agent process whose first-party pass this launch has already logged
     // (see logFirstPartyPass).
     private var loggedFirstPartyPassPid: pid_t?
@@ -150,6 +175,7 @@ final class AgentCDPListener {
         grantsLock.lock()
         sessionGrants.removeAll()
         sessionAllAgentsGrant = false
+        launchChainAdmissions.removeAll()
         grantsLock.unlock()
     }
 
@@ -333,9 +359,9 @@ final class AgentCDPListener {
         // pid claim used for the consent identity below.
         // A connection that never sent a request — a port probe, a liveness
         // check, a peer that hung up immediately — must not reach consent
-        // evaluation: an unidentifiable zero-byte peer would pop an "Unknown
-        // process" prompt and, on this serial queue, wedge every legitimate
-        // connection behind it. Close it quietly.
+        // evaluation: on this serial queue an unidentifiable peer would wedge
+        // every legitimate connection behind whatever it costs to turn it
+        // away. Close it quietly, before any of that.
         guard let requestHead = Self.peekRequestHead(fd) else {
             close(fd)
             return
@@ -359,9 +385,7 @@ final class AgentCDPListener {
         // prompt about. Every other peer falls through to the walk.
         let peerIdentity = AgentPeerIdentity.firstPartyAgent(socketFD: fd)
             ?? AgentPeerIdentity.resolve(socketFD: fd)
-            ?? AgentIdentity(key: "unknown", displayName: "Unknown process",
-                             teamId: nil, verified: false, executablePath: "",
-                             pid: nil)
+            ?? .unresolved
 
         let delegatedSession: AgentDriverSession?
         switch Self.capabilityClaim(inRequestHead: requestHead) {
@@ -558,6 +582,39 @@ final class AgentCDPListener {
             return true
         }
 
+        // A peer we could not identify is refused here, before any grant,
+        // refusal, or prompt can apply to it — whether the socket would not
+        // name a process at all, or the walk found nothing but the skill's own
+        // plumbing with no agent above it.
+        //
+        // The prompt is the wrong instrument for either. Both arrive under the
+        // same key, so an "Always Allow" would not approve a program — it
+        // would approve being unidentifiable, for everyone, permanently,
+        // leaving a row in Settings that names no one as the only thing to
+        // revoke. And the prompt would have almost nothing to show: no launch
+        // chain and no pid, because the missing pid is the whole problem.
+        // Asking a question the user has no way to answer is worse than
+        // answering it for them.
+        //
+        // Refusing costs little. Two guards upstream already turn away what
+        // plausibly lands in the first case — a peer whose credentials cannot
+        // be read fails the same-user check, and one that sends no request is
+        // closed after the peek. And a genuine helper in the second still has
+        // a way in that does not depend on the walk: the capability a
+        // `/phi-agent` upgrade issues carries its session's identity, and a
+        // connection presenting one is evaluated as THAT identity and never
+        // reaches this line. Which is exactly what the log says, because a
+        // helper arriving here has a delegation bug worth naming rather than a
+        // permission the user should be pestered about.
+        if identity.isUnresolved {
+            AppLogWarn("[AgentCDP] refused \(identity.displayName)"
+                       + (identity.executablePath.isEmpty
+                          ? "" : " (\(identity.executablePath))")
+                       + " — nothing about this connection identifies an agent;"
+                       + " a helper acting for one must present its session capability")
+            return false
+        }
+
         // A standing refusal wins over everything, including a remembered or
         // blanket grant: "Never ask again" has to mean it even if the same
         // agent — or every agent — was once allowed.
@@ -582,12 +639,32 @@ final class AgentCDPListener {
                 grantsLock.lock(); sessionGrants.insert(identity.key); grantsLock.unlock()
                 return true
             }
+            // Last and least specific: an answer the user gave about whatever
+            // launched this agent, already matched once this session.
+            if admittedByStandingLaunchChain(identity) { return true }
         }
 
-        switch promptForConsent(identity, opensGates: !gatesOpen) {
+        // Nothing above decided, so the walk is worth paying for: it is what
+        // the prompt's Details disclosure shows, and what the launchers the
+        // user may already have answered about are found in.
+        let details = AgentPeerIdentity.processDetails(for: identity)
+        if let settled = answerFromLaunchChain(identity, details: details,
+                                               gatesOpen: gatesOpen) {
+            return settled
+        }
+
+        let decision = promptForConsent(identity, details: details,
+                                        opensGates: !gatesOpen)
+        let subject = decision.subject
+        let retargeted = decision.isRetargeted(from: identity)
+        if retargeted {
+            AppLogInfo("[AgentCDP] answering for \(subject.displayName) instead of "
+                       + "\(identity.displayName) — the user picked it out of the launch chain")
+        }
+        switch decision.choice {
         case .deny(let scope, let allAgents):
             if scope.isRemembered {
-                recordDenial(AgentDenial(key: allAgents ? nil : identity.key,
+                recordDenial(AgentDenial(key: allAgents ? nil : subject.key,
                                          expires: scope.expiry))
             }
             return false
@@ -605,7 +682,13 @@ final class AgentCDPListener {
             if allAgents {
                 sessionAllAgentsGrant = true
             } else {
-                sessionGrants.insert(identity.key)
+                sessionGrants.insert(subject.key)
+                // The grant is under the launcher's key, so this agent's next
+                // connection would find nothing of its own and re-walk its
+                // ancestry to rediscover what was just decided. Note it here
+                // instead; it is still only a shortcut, re-checked against the
+                // launcher's grant every time (admittedByStandingLaunchChain).
+                if retargeted { launchChainAdmissions[identity.key] = subject.key }
             }
             grantsLock.unlock()
 
@@ -614,7 +697,7 @@ final class AgentCDPListener {
                     PhiPreferences.AgentSpaces.allAgentsGranted = true
                 } else {
                     var grants = PhiPreferences.AgentSpaces.rememberedAgentGrants
-                    grants.insert(identity.key)
+                    grants.insert(subject.key)
                     PhiPreferences.AgentSpaces.rememberedAgentGrants = grants
                 }
             }
@@ -624,6 +707,92 @@ final class AgentCDPListener {
             }
             return true
         }
+    }
+
+    /// Whether this agent has already been matched to a launcher's answer this
+    /// session, and that answer still stands.
+    ///
+    /// The memo is a shortcut past the ancestry walk, never a grant of its
+    /// own: the launcher's grant and any refusal against it are re-read on
+    /// every connection, so revoking it in Settings stops the agent at once.
+    /// Without it, an agent admitted this way would re-walk its whole chain —
+    /// sysctls plus a signature check per ancestor — on every connection it
+    /// makes, and a working agent makes many per task.
+    private func admittedByStandingLaunchChain(_ identity: AgentIdentity) -> Bool {
+        grantsLock.lock()
+        let launcherKey = launchChainAdmissions[identity.key]
+        let sessionGranted = launcherKey.map(sessionGrants.contains) ?? false
+        grantsLock.unlock()
+
+        guard let launcherKey,
+              !Self.liveDenials().contains(where: { $0.key == launcherKey }) else {
+            return false
+        }
+        return sessionGranted
+            || PhiPreferences.AgentSpaces.rememberedAgentGrants.contains(launcherKey)
+    }
+
+    /// An answer the user already gave about one of the processes that
+    /// launched this agent, or nil when they have not answered about any of
+    /// them and the prompt has to be raised.
+    ///
+    /// This is the other half of the prompt letting the user answer about a
+    /// parent process. A grant recorded against "Terminal" is worth nothing if
+    /// the next connection resolves to the unsigned script under it and asks
+    /// again, so a connection that no decision of its own covers is checked
+    /// against the chain above it too.
+    ///
+    /// ## The rule this establishes
+    ///
+    /// **The most specific decision wins; a launcher decides only what the
+    /// agent under it has no decision of its own about.** Everything before
+    /// this point in `evaluate` is the agent's own tier — refusal first, then
+    /// grants, so "Never ask again" still outranks "Always Allow" for the same
+    /// identity. This is the tier below, and it repeats the same order among
+    /// the launchers. So an agent the user allowed by name keeps working after
+    /// they block the terminal it happens to run under, which is what
+    /// answering about it *by name* meant.
+    ///
+    /// Nothing is cached onto the agent's own key from here. Caching would be
+    /// faster, but it would turn a launcher's grant into a grant on the agent
+    /// that outlives revoking the launcher's — and this path only runs on
+    /// connections that were already about to open a modal dialog.
+    private func answerFromLaunchChain(_ identity: AgentIdentity,
+                                       details: AgentProcessDetails?,
+                                       gatesOpen: Bool) -> Bool? {
+        // The agent's own key led the list and was settled above; what is left
+        // is the launchers, nearest first.
+        let launchers = AgentPeerIdentity
+            .decisionCandidates(for: identity, details: details)
+            .dropFirst()
+        guard !launchers.isEmpty else { return nil }
+
+        let denials = Self.liveDenials()
+        for launcher in launchers {
+            // A blanket refusal is not a decision about this launcher — it was
+            // recorded from a prompt about someone else, and the agent's own
+            // tier has already had its say on it.
+            if let denial = denials.first(where: { $0.key == launcher.key }) {
+                AppLogInfo("[AgentCDP] refused \(identity.displayName) — standing denial for "
+                           + "\(launcher.displayName), which launched it"
+                           + (denial.isPermanent ? " (never ask again)" : " (until \(denial.expires!))"))
+                return false
+            }
+            guard gatesOpen else { continue }
+            grantsLock.lock()
+            let sessionGranted = sessionGrants.contains(launcher.key)
+            grantsLock.unlock()
+            if sessionGranted
+                || PhiPreferences.AgentSpaces.rememberedAgentGrants.contains(launcher.key) {
+                grantsLock.lock()
+                launchChainAdmissions[identity.key] = launcher.key
+                grantsLock.unlock()
+                AppLogInfo("[AgentCDP] admitted \(identity.displayName) on the grant for "
+                           + "\(launcher.displayName), which launched it")
+                return true
+            }
+        }
+        return nil
     }
 
     /// Records the first-party pass once per agent process. The runtime makes
@@ -711,26 +880,35 @@ final class AgentCDPListener {
     /// are the other half of that bargain: a prompt that can turn the feature
     /// on has to be answerable with "and stop asking".
     ///
-    /// Any other dismissal (the host window closing) reads as a plain deny —
-    /// the one answer that changes nothing.
+    /// `details` is the peer's command and launch chain, read on `authQueue`
+    /// by the caller — a run of synchronous sysctls and signature checks that
+    /// must not land on the main thread, and which the caller has already
+    /// consulted (see `answerFromLaunchChain`). The alert shows it behind
+    /// Details, and lets the user answer about a process in it instead of the
+    /// agent, which is why the answer comes back with a subject.
+    ///
+    /// Any other dismissal (the host window closing) reads as a plain deny of
+    /// the asking agent — the one answer that changes nothing.
     private func promptForConsent(_ identity: AgentIdentity,
-                                  opensGates: Bool) -> AgentAccessChoice {
-        var choice = AgentAccessChoice.deny(scope: .thisTime, allAgents: false)
+                                  details: AgentProcessDetails?,
+                                  opensGates: Bool) -> AgentAccessDecision {
+        var decision = AgentAccessDecision(
+            choice: .deny(scope: .thisTime, allAgents: false), subject: identity)
         DispatchQueue.main.sync {
             MainActor.assumeIsolated {
                 _ = NSApp.runPhiAlert { dismiss in
                     AgentAccessApprovalAlert(
-                        agentName: identity.displayName,
-                        identityDetail: identity.detail,
-                        opensGates: opensGates
+                        agent: identity,
+                        opensGates: opensGates,
+                        processDetails: details
                     ) { picked in
-                        choice = picked
+                        decision = picked
                         dismiss(.alertFirstButtonReturn)
                     }
                 }
             }
         }
-        return choice
+        return decision
     }
 
     // MARK: - Helpers

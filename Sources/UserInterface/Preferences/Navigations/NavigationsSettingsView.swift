@@ -48,7 +48,7 @@ struct NavigationsSettingsView: View {
                     SettingsDetailCard {
                         NavigationsSettingsToggleRow(
                             title: NSLocalizedString("settings.navigations.peek.enableToggle.title", value: "Enable Peek View", comment: "Navigations settings - Toggle title for enabling Peek View"),
-                            description: NSLocalizedString("settings.navigations.peek.enableToggle.description", value: "Shift-click a link, or choose “Open Link in Peek View”, to preview it in a floating panel over the page. Available in the sidebar layouts.", comment: "Navigations settings - Explanation of the Peek View toggle"),
+                            description: NSLocalizedString("settings.navigations.peek.enableToggle.description", value: "Shift-click a link, or choose “Open Link in Peek View”, to preview it in a floating panel over the page. Not available in the Comfortable layout.", comment: "Navigations settings - Explanation of the Peek View toggle"),
                             isOn: $peekViewEnabled,
                             onChange: { PeekViewAnalytics.settingChanged(enabled: $0) }
                         )

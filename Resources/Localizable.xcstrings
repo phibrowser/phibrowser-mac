@@ -57805,7 +57805,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Shift-click a link, or choose “Open Link in Peek View”, to preview it in a floating panel over the page. Available in the sidebar layouts."
+            "value" : "Shift-click a link, or choose “Open Link in Peek View”, to preview it in a floating panel over the page. Not available in the Comfortable layout."
           }
         },
         "zh-Hans" : {

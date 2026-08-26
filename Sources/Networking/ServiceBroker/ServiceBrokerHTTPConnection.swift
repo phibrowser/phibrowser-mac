@@ -333,12 +333,20 @@ final class ServiceBrokerHTTPConnection: @unchecked Sendable {
         timeoutMilliseconds: Int,
         _ operation: @escaping @Sendable (ServiceBrokerDeadline) throws -> T
     ) async throws -> T {
+        try await runBlocking(
+            makeDeadline: { ServiceBrokerDeadline(timeoutMilliseconds: timeoutMilliseconds) },
+            operation
+        )
+    }
+
+    fileprivate static func runBlocking<T: Sendable>(
+        makeDeadline: @escaping @Sendable () -> ServiceBrokerDeadline,
+        _ operation: @escaping @Sendable (ServiceBrokerDeadline) throws -> T
+    ) async throws -> T {
         try await withCheckedThrowingContinuation { continuation in
             DispatchQueue.global(qos: .userInitiated).async {
                 do {
-                    continuation.resume(returning: try operation(ServiceBrokerDeadline(
-                        timeoutMilliseconds: timeoutMilliseconds
-                    )))
+                    continuation.resume(returning: try operation(makeDeadline()))
                 } catch {
                     continuation.resume(throwing: error)
                 }
@@ -375,12 +383,17 @@ final class BrokerHTTPStream: @unchecked Sendable {
         cancel()
     }
 
+    /// Reads the next slice of the response body. Unlike connect, write and the
+    /// response head, a streaming body read has no per-read deadline: matching
+    /// Chromium's fetch semantics, an upstream that goes quiet mid-stream is not
+    /// an error. The read is bounded by cancellation, EOF and — for broker
+    /// channels — the channel's own idle timer.
     func read(maxBytes: Int) async throws -> Data? {
         try await withTaskCancellationHandler {
             guard !Task.isCancelled else { throw ServiceBrokerHTTPError.cancelled }
             do {
                 let data = try await ServiceBrokerHTTPConnection.runBlocking(
-                    timeoutMilliseconds: connection.ioTimeoutMilliseconds
+                    makeDeadline: { .never }
                 ) { [self] deadline in
                     try readSynchronously(maxBytes: maxBytes, deadline: deadline)
                 }

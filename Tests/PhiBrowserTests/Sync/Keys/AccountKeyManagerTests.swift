@@ -8,6 +8,7 @@ final class AccountKeyManagerTests: XCTestCase {
         var account: AccountKeyStateDTO?
         var envelopes: [String: Data] = [:]
         var initialized = false
+        var deviceEnvelopeError: Error?
 
         func putAccount(salt: Data, kdfVersion: String, kdfParams: Data, recoveryEnvelope: Data) async throws -> Bool {
             if initialized { return false }
@@ -20,13 +21,33 @@ final class AccountKeyManagerTests: XCTestCase {
         func postDevice(deviceKeyId: String, publicKey: Data, name: String, platform: String, arkEnvelope: Data?) async throws {
             if let arkEnvelope { envelopes[deviceKeyId] = arkEnvelope }
         }
-        func getDeviceEnvelope(deviceKeyId: String) async throws -> Data? { envelopes[deviceKeyId] }
+        func getDeviceEnvelope(deviceKeyId: String) async throws -> Data? {
+            if let deviceEnvelopeError { throw deviceEnvelopeError }
+            return envelopes[deviceKeyId]
+        }
+    }
+
+    // In-memory fake device key: same fingerprinting algorithm as `DeviceKeyStore`
+    // (SHA-256 of the public key, first 16 bytes, base64url), but backed by a
+    // process-local key instead of the Keychain — keeps this suite independent of
+    // the Data Protection Keychain entitlement.
+    final class FakeDeviceKeyProvider: DeviceKeyProviding {
+        private let privateKey = Curve25519.KeyAgreement.PrivateKey()
+
+        func loadOrCreatePrivateKey() throws -> Curve25519.KeyAgreement.PrivateKey { privateKey }
+
+        func deviceKeyId() throws -> String {
+            let digest = SHA256.hash(data: privateKey.publicKey.rawRepresentation)
+            let prefix = Data(digest.prefix(16))
+            return prefix.base64EncodedString()
+                .replacingOccurrences(of: "+", with: "-")
+                .replacingOccurrences(of: "/", with: "_")
+                .replacingOccurrences(of: "=", with: "")
+        }
     }
 
     private func makeManager(_ api: FakeAPI) -> AccountKeyManager {
-        let store = DeviceKeyStore(service: "test.dev", account: "t-\(UUID().uuidString)")
-        addTeardownBlock { try? store.deleteForTesting() }
-        return AccountKeyManager(api: api, deviceStore: store)
+        AccountKeyManager(api: api, deviceKeyProvider: FakeDeviceKeyProvider())
     }
 
     func testBootstrapThenStartupUnlocks() async throws {
@@ -36,9 +57,9 @@ final class AccountKeyManagerTests: XCTestCase {
         XCTAssertFalse(code.isEmpty)
         XCTAssertNotNil(mgr.currentARK)
 
-        // New process, same device (same store): startup should unwrap the same ARK
+        // New process, same device (same provider): startup should unwrap the same ARK
         // from the device envelope.
-        let fresh = AccountKeyManager(api: api, deviceStore: mgr.deviceStoreForTesting)
+        let fresh = AccountKeyManager(api: api, deviceKeyProvider: mgr.deviceKeyProviderForTesting)
         let result = try await fresh.unlockAtStartup()
         XCTAssertEqual(result, .unlocked)
         XCTAssertEqual(fresh.currentARK!.withUnsafeBytes { Data($0) },
@@ -51,7 +72,7 @@ final class AccountKeyManagerTests: XCTestCase {
         let code = try await first.bootstrap()
         let firstARK = first.currentARK!.withUnsafeBytes { Data($0) }
 
-        // Second device (different store) joins with the recovery code and gets the same ARK.
+        // Second device (different provider) joins with the recovery code and gets the same ARK.
         let second = makeManager(api)
         try await second.joinWithRecoveryCode(code)
         XCTAssertEqual(second.currentARK!.withUnsafeBytes { Data($0) }, firstARK)
@@ -75,5 +96,13 @@ final class AccountKeyManagerTests: XCTestCase {
         let fresh = makeManager(api)
         let freshStartup = try await fresh.unlockAtStartup()
         XCTAssertEqual(freshStartup, .needsJoin)
+    }
+
+    func testStartupNotSignedInOn401() async throws {
+        let api = FakeAPI()
+        api.deviceEnvelopeError = KeyAPIError.http(401, "")
+        let mgr = makeManager(api)
+        let result = try await mgr.unlockAtStartup()
+        XCTAssertEqual(result, .notSignedIn)
     }
 }

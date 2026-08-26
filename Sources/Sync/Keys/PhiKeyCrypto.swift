@@ -3,8 +3,10 @@ import Foundation
 
 enum PhiKeyCryptoError: Error { case badVersion, badFormat, decryptFailed }
 
-/// 无状态密码学原语。零知识约束:本类只做加解密,不持久化任何密钥。
-/// 信封 blob 首字节是格式版本(当前 0x01),便于演进。
+/// Stateless cryptographic primitives. Zero-knowledge constraint: this type only
+/// encrypts/decrypts and never persists any keys.
+/// The envelope blob's first byte is the format version (currently 0x01), to allow
+/// future evolution.
 enum PhiKeyCrypto {
     static let version: UInt8 = 0x01
     // macOS CryptoKit only pairs the Curve25519 KEM with ChaChaPoly (AES-GCM ciphersuites are P256/P384/P521-only).
@@ -19,7 +21,7 @@ enum PhiKeyCrypto {
         Curve25519.KeyAgreement.PrivateKey()
     }
 
-    // 设备信封:[version:1][encapsulatedKey:32][ciphertext]
+    // Device envelope: [version:1][encapsulatedKey:32][ciphertext]
     static func sealToPublicKey(_ plaintext: Data, recipient: Curve25519.KeyAgreement.PublicKey) throws -> Data {
         var sender = try HPKE.Sender(recipientKey: recipient, ciphersuite: ciphersuite, info: hpkeInfo)
         let ciphertext = try sender.seal(plaintext)
@@ -47,7 +49,7 @@ enum PhiKeyCrypto {
                                salt: salt, info: recoveryInfo, outputByteCount: 32)
     }
 
-    // 恢复码信封:[version:1][AES.GCM.combined](nonce‖ciphertext‖tag)
+    // Recovery-code envelope: [version:1][AES.GCM.combined](nonce‖ciphertext‖tag)
     static func sealWithSymmetric(_ plaintext: Data, key: SymmetricKey) throws -> Data {
         let box = try AES.GCM.seal(plaintext, using: key)
         guard let combined = box.combined else { throw PhiKeyCryptoError.badFormat }

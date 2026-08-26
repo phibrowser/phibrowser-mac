@@ -17,41 +17,78 @@ final class PeekPanelAppearFlightTests: XCTestCase {
     private lazy var scale = startWidth / panel.width
     private lazy var cardSize = CGSize(width: startWidth, height: panel.height * scale)
 
+    /// What `NSViewBackingLayer` actually reports — the layer's bottom-left,
+    /// not the UIKit-familiar centre. The default here on purpose: these
+    /// assertions have to describe the anchor the panel really flies about.
+    private static let appKitAnchor = CGPoint.zero
+
     private func transform(pressAt press: CGPoint,
                            panelFrame: CGRect? = nil,
-                           startWidth: CGFloat? = nil) -> CATransform3D? {
+                           startWidth: CGFloat? = nil,
+                           anchorPoint: CGPoint = appKitAnchor) -> CATransform3D? {
         PeekPanelController.appearFlightTransform(
             originScreenPoint: press,
             cardScreenFrame: panelFrame ?? panel,
-            startWidth: startWidth ?? self.startWidth
+            startWidth: startWidth ?? self.startWidth,
+            anchorPoint: anchorPoint
         )
     }
 
-    /// The card the flight starts from, in the panel's own coordinates: the
-    /// panel's bounds mapped through the transform about the layer's centre
-    /// anchor, the way Core Animation applies it.
-    private func startCard(_ transform: CATransform3D, panelSize: CGSize) -> CGRect {
+    /// The card the flight starts from, in the panel's own coordinates —
+    /// Core Animation's own mapping of a bounds point, `position + M·(p - a)`
+    /// with `a` the anchor in bounds coordinates, so the assertions below
+    /// measure what the render server will actually draw.
+    private func startCard(_ transform: CATransform3D,
+                           panelSize: CGSize,
+                           anchorPoint: CGPoint) -> CGRect {
         let affine = CATransform3DGetAffineTransform(transform)
-        let centre = CGPoint(x: panelSize.width / 2, y: panelSize.height / 2)
-        let lowerLeft = CGPoint(x: -centre.x, y: -centre.y).applying(affine)
-        let upperRight = centre.applying(affine)
-        return CGRect(x: lowerLeft.x + centre.x,
-                      y: lowerLeft.y + centre.y,
+        let anchor = CGPoint(x: anchorPoint.x * panelSize.width,
+                             y: anchorPoint.y * panelSize.height)
+        func map(_ point: CGPoint) -> CGPoint {
+            let mapped = CGPoint(x: point.x - anchor.x, y: point.y - anchor.y)
+                .applying(affine)
+            return CGPoint(x: mapped.x + anchor.x, y: mapped.y + anchor.y)
+        }
+        let lowerLeft = map(.zero)
+        let upperRight = map(CGPoint(x: panelSize.width, y: panelSize.height))
+        return CGRect(x: lowerLeft.x,
+                      y: lowerLeft.y,
                       width: upperRight.x - lowerLeft.x,
                       height: upperRight.y - lowerLeft.y)
     }
 
     private func assertCard(_ transform: CATransform3D?,
                             centredAt expected: CGPoint,
+                            anchorPoint: CGPoint = appKitAnchor,
                             line: UInt = #line) {
         guard let transform else {
             return XCTFail("expected a flight", line: line)
         }
-        let card = startCard(transform, panelSize: panel.size)
+        let card = startCard(transform, panelSize: panel.size, anchorPoint: anchorPoint)
         XCTAssertEqual(card.width, cardSize.width, accuracy: 0.001, line: line)
         XCTAssertEqual(card.height, cardSize.height, accuracy: 0.001, line: line)
         XCTAssertEqual(card.midX, expected.x, accuracy: 0.001, line: line)
         XCTAssertEqual(card.midY, expected.y, accuracy: 0.001, line: line)
+    }
+
+    /// The regression this rule was rewritten for: `NSViewBackingLayer`
+    /// anchors at (0, 0), so a rule written for a centred anchor left every
+    /// flight starting from the card's bottom corner instead of the press.
+    /// The card must land on the press under whichever anchor the layer
+    /// reports, so the assertions above cannot silently encode the wrong one.
+    func testLandsOnThePressWhicheverAnchorTheLayerReports() {
+        let press = CGPoint(x: 400, y: 500)
+        let centre = CGPoint(x: 0.5, y: 0.5)
+        assertCard(transform(pressAt: press),
+                   centredAt: CGPoint(x: 300, y: 300))
+        assertCard(transform(pressAt: press, anchorPoint: centre),
+                   centredAt: CGPoint(x: 300, y: 300),
+                   anchorPoint: centre)
+        // And the two are genuinely different transforms — the parameter is
+        // load-bearing, not decoration.
+        XCTAssertFalse(CATransform3DEqualToTransform(
+            transform(pressAt: press)!,
+            transform(pressAt: press, anchorPoint: centre)!))
     }
 
     func testStartsAsALinkSizedCardOnThePress() {

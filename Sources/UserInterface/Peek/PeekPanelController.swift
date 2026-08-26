@@ -242,6 +242,12 @@ final class PeekPanelController {
     /// True between an appear flight's start and its landing; keeps the
     /// landing idempotent across the completion block and the teardown paths.
     private var isFlying = false
+    /// The armed flight's start transform, held between `armAppearFlight`
+    /// (before the panel is ordered in) and `runAppearFlight` (once it is on
+    /// screen). Non-nil only inside that gap.
+    private var pendingFlightStart: CATransform3D?
+    /// The armed flight's start corner radius; see `pendingFlightStart`.
+    private var pendingFlightStartCornerRadius: CGFloat = 0
     /// See `setConcealedByInWindowOverlay`.
     private var isConcealedByInWindowOverlay = false
     /// See `setEclipsedByInWindowOverlay`.
@@ -471,13 +477,15 @@ final class PeekPanelController {
         layoutOnAnchor()
         // Before the panel is ordered in, so the first frame the window server
         // paints is already the flight's first frame instead of the settled
-        // panel.
+        // panel. Arming only sets the model geometry — the animations need a
+        // panel that is actually on screen, and go on below.
         if flyIn {
-            beginAppearFlight()
+            armAppearFlight()
         }
         if panel.parent == nil {
             parentWindow.addChildWindow(panel, ordered: .above)
         }
+        var focusesContent = false
         if isEclipsedByInWindowOverlay {
             // Visible beneath the floating omnibox, but never its key — and
             // never over it: come in under the host rather than to the front.
@@ -486,12 +494,18 @@ final class PeekPanelController {
             }
         } else {
             panel.makeKeyAndOrderFront(nil)
-            if focusContent, let webView = webHostView.subviews.first {
-                // Re-parenting a Chromium view clears the first responder;
-                // without this, keyboard input inside the peek page is dead.
-                panel.makeFirstResponder(webView)
-                hostedTab?.webContentWrapper?.focus()
-            }
+            focusesContent = focusContent
+        }
+        // On screen now, so the flight plays against a live render context.
+        // Before the Chromium focus hop below on purpose: that call blocks the
+        // main thread, and an explicit layer animation already handed to the
+        // render server keeps playing straight through it.
+        runAppearFlight()
+        if focusesContent, let webView = webHostView.subviews.first {
+            // Re-parenting a Chromium view clears the first responder;
+            // without this, keyboard input inside the peek page is dead.
+            panel.makeFirstResponder(webView)
+            hostedTab?.webContentWrapper?.focus()
         }
         installEventMonitorIfNeeded()
         installGeometryObserversIfNeeded()
@@ -513,19 +527,22 @@ final class PeekPanelController {
 
     // MARK: - Appear flight
 
-    /// Grows the panel out of the press that opened the peek.
+    /// Arms a flight out of the press that opened the peek: the card's MODEL
+    /// geometry is put ON the press, so the very first frame the window
+    /// server paints once the panel is ordered in is already the flight's
+    /// first frame. `runAppearFlight` plays it from there.
     ///
-    /// An EXPLICIT Core Animation layer animation, like the Spaces strip's
-    /// chip flight: it is the one animation kind that keeps playing in the
-    /// render server while the main thread is blocked — and a peek presents
-    /// right on top of Chromium's tab creation and web-view re-parenting,
-    /// which block it. The model geometry stays settled throughout, so an
-    /// expired animation leaves the panel exactly where it belongs.
+    /// The animations themselves cannot be added here, which is what stopped
+    /// this working. A layer in a window that has never been ordered in is
+    /// not attached to a live render context: animations committed against it
+    /// run against a clock nothing is drawing to, and the transaction's
+    /// completion block — which lands the flight, removing all three
+    /// animations — fires on that same commit. The peek then just appeared.
     ///
     /// No-ops without a usable origin (keyboard open, session restore, a
     /// press already spent on an earlier flight); the panel then appears the
     /// way it did before this existed.
-    private func beginAppearFlight() {
+    private func armAppearFlight() {
         // Order matters: the origin is consumed FIRST, then Reduce Motion is
         // honoured. The press belongs to this peek whether or not it gets an
         // animation, and `PeekOriginTracker` promises each press funds at most
@@ -534,13 +551,24 @@ final class PeekPanelController {
         // is the same check `EdgeFogOverlayView` and `CustomTooltipController`
         // make; a scale-and-travel animation this large steps aside entirely,
         // so nothing visual happens below this line on that path.
-        guard let originScreenPoint = originTracker?.consumeOrigin(),
-              !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion,
+        guard let originScreenPoint = originTracker?.consumeOrigin() else {
+            // Every non-flying open lands here; the log says which kind, so a
+            // peek that should have flown and did not is one line away from
+            // being placed.
+            AppLogInfo("👀 [Peek] appear flight skipped: no press to fly out of")
+            return
+        }
+        guard !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion,
               let layer = containerView.layer,
               let start = Self.appearFlightTransform(
                   originScreenPoint: originScreenPoint,
                   cardScreenFrame: cardScreenRect,
-                  startWidth: Self.flightStartWidth) else { return }
+                  startWidth: Self.flightStartWidth,
+                  anchorPoint: layer.anchorPoint) else {
+            AppLogInfo("👀 [Peek] appear flight skipped: reduce motion or unflyable card \(cardScreenRect)")
+            return
+        }
+        AppLogInfo("👀 [Peek] appear flight armed from \(originScreenPoint) card=\(cardScreenRect)")
         isFlying = true
         // The card's shadow is its own layer's, so it travels and shrinks
         // with the card — nothing to switch off here.
@@ -551,11 +579,57 @@ final class PeekPanelController {
         // pane next to the travelling one — they come in with the page.
         controlColumn.isHidden = true
 
+        // Corners are scaled down with everything else, so the card would
+        // start out with hairline corners. Starting at half the short side
+        // keeps the radius visually constant: a link-shaped capsule that
+        // settles into the panel's 12pt corners. From the card's frame, not
+        // the layer's bounds: the layer may not have picked up the frame
+        // `layoutOnAnchor` just set.
+        let startCornerRadius = min(cardScreenRect.width, cardScreenRect.height) / 2
+        pendingFlightStart = start
+        pendingFlightStartCornerRadius = startCornerRadius
+
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        layer.transform = start
+        layer.cornerRadius = startCornerRadius
+        CATransaction.commit()
+        // Through the view, not `layer.opacity`: AppKit drives a layer-backed
+        // view's opacity from `alphaValue` and would clobber a raw assignment
+        // on the next display pass.
+        containerView.alphaValue = 0
+    }
+
+    /// Plays the armed flight, now that the panel is on screen.
+    ///
+    /// EXPLICIT Core Animation layer animations, like the Spaces strip's chip
+    /// flight: they are the one animation kind that keeps playing in the
+    /// render server while the main thread is blocked — and a peek presents
+    /// right on top of Chromium's web-view re-parenting and focus hop, which
+    /// block it. The model geometry goes back to settled in the same
+    /// transaction, so an expired animation leaves the card exactly where it
+    /// belongs.
+    ///
+    /// No-op unless `armAppearFlight` armed one.
+    private func runAppearFlight() {
+        guard let start = pendingFlightStart,
+              let layer = containerView.layer else { return }
+        let startCornerRadius = pendingFlightStartCornerRadius
+        pendingFlightStart = nil
+
         let timing = CAMediaTimingFunction(controlPoints: 0.2, 0, 0, 1)
         CATransaction.begin()
+        CATransaction.setDisableActions(true)
         CATransaction.setCompletionBlock { [weak self] in
             self?.landAppearFlight()
         }
+
+        // Model back at rest and the animations that hide it added in the
+        // SAME transaction, so no frame ever shows the settled card before
+        // the flight takes over.
+        layer.transform = CATransform3DIdentity
+        layer.cornerRadius = Self.cornerRadius
+        containerView.alphaValue = 1
 
         let grow = CABasicAnimation(keyPath: "transform")
         grow.fromValue = start
@@ -571,14 +645,8 @@ final class PeekPanelController {
         fade.timingFunction = timing
         layer.add(fade, forKey: "phiPeekAppearFade")
 
-        // Corners are scaled down with everything else, so the card would
-        // start out with hairline corners. Starting at half the short side
-        // keeps the radius visually constant: a link-shaped capsule that
-        // settles into the panel's 12pt corners.
         let corners = CABasicAnimation(keyPath: "cornerRadius")
-        // From the card's frame, not the layer's bounds: the layer may not
-        // have picked up the frame `layoutOnAnchor` just set.
-        corners.fromValue = min(cardScreenRect.width, cardScreenRect.height) / 2
+        corners.fromValue = startCornerRadius
         corners.toValue = Self.cornerRadius
         corners.duration = Self.flightDuration
         corners.timingFunction = timing
@@ -587,17 +655,26 @@ final class PeekPanelController {
         CATransaction.commit()
     }
 
-    /// Settles a flight: content back, window shadow back. Idempotent, and
-    /// called from the teardown paths as well as the flight's completion, so
-    /// a peek that dies mid-flight never leaves its content hidden.
+    /// Settles a flight: model geometry back at rest, content back.
+    /// Idempotent, and called from the teardown paths as well as the flight's
+    /// completion, so a peek that dies mid-flight — or one armed and then torn
+    /// down before it ever ran — never leaves its card shrunk onto the press
+    /// or its content hidden.
     private func landAppearFlight() {
         guard isFlying else { return }
         isFlying = false
+        pendingFlightStart = nil
         if let layer = containerView.layer {
             layer.removeAnimation(forKey: "phiPeekAppearFlight")
             layer.removeAnimation(forKey: "phiPeekAppearFade")
             layer.removeAnimation(forKey: "phiPeekAppearCorners")
+            CATransaction.begin()
+            CATransaction.setDisableActions(true)
+            layer.transform = CATransform3DIdentity
+            layer.cornerRadius = Self.cornerRadius
+            CATransaction.commit()
         }
+        containerView.alphaValue = 1
         webHostView.isHidden = false
         controlColumn.isHidden = false
         // The page and its controls arrive at full size; a short fade keeps
@@ -616,12 +693,22 @@ final class PeekPanelController {
     /// wholly inside the card's own frame — it can land up to the pane inset
     /// outside it, and the window clips whatever leaves its frame.
     ///
+    /// - Parameter anchorPoint: the layer's own `anchorPoint`, which is what
+    ///   the scale pins. It is NOT the UIKit-familiar (0.5, 0.5) here:
+    ///   `NSViewBackingLayer` anchors at (0, 0), the layer's bottom-left, so
+    ///   a shrink leaves the card in the corner and the travel has to carry
+    ///   its centre the rest of the way. Taking it as a parameter rather than
+    ///   assuming a convention is what keeps this rule honest — the first cut
+    ///   assumed a centred anchor and every peek flew out of the bottom
+    ///   corner.
+    ///
     /// Nil — "don't fly" — for a degenerate card or a start width that isn't
     /// a real shrink, so a caller that can't produce a sane flight falls back
     /// to the plain appearance instead of showing a broken one.
     static func appearFlightTransform(originScreenPoint: CGPoint,
                                       cardScreenFrame: CGRect,
-                                      startWidth: CGFloat) -> CATransform3D? {
+                                      startWidth: CGFloat,
+                                      anchorPoint: CGPoint) -> CATransform3D? {
         guard startWidth > 0,
               cardScreenFrame.width > startWidth,
               cardScreenFrame.height > 0 else { return nil }
@@ -634,13 +721,21 @@ final class PeekPanelController {
             x: min(max(originScreenPoint.x, travelBounds.minX), travelBounds.maxX),
             y: min(max(originScreenPoint.y, travelBounds.minY), travelBounds.maxY)
         )
+        // Core Animation maps a bounds point p to `position + M·(p - a)`,
+        // where `a` is the anchor in bounds coordinates. The card's centre is
+        // therefore already at `cardScreenFrame.origin + a + scale·(size/2 -
+        // a)` once the shrink lands, and the travel makes up the remainder.
         // Screen space and the container's layer space are both bottom-up
         // (the panel's content view is unflipped), so the offset carries over
         // unchanged.
-        let travel = CATransform3DMakeTranslation(anchor.x - cardScreenFrame.midX,
-                                                  anchor.y - cardScreenFrame.midY,
-                                                  0)
-        // Scale about the layer's centre anchor first, then travel.
+        let a = CGPoint(x: anchorPoint.x * cardScreenFrame.width,
+                        y: anchorPoint.y * cardScreenFrame.height)
+        let travel = CATransform3DMakeTranslation(
+            anchor.x - cardScreenFrame.minX - a.x - scale * (cardScreenFrame.width / 2 - a.x),
+            anchor.y - cardScreenFrame.minY - a.y - scale * (cardScreenFrame.height / 2 - a.y),
+            0
+        )
+        // Scale about the layer's anchor first, then travel.
         return CATransform3DScale(travel, scale, scale, 1)
     }
 
@@ -755,6 +850,13 @@ final class PeekPanelController {
                               width: max(maxX - originX, Self.controlGutterWidth),
                               height: card.height + Self.shadowMargin * 2),
                        display: true)
+        // Auto Layout has to catch up before the appear flight transforms the
+        // card's layer: the scale is applied about the layer's OWN centre, so
+        // a layer still carrying its pre-frame bounds would shrink about the
+        // wrong point and fly out of the wrong place. `setFrame(display:)`
+        // lays out nothing on a window that has never been ordered in, which
+        // is exactly the first-peek case.
+        rootView.layoutSubtreeIfNeeded()
     }
 
     /// Screen rect of the card alone: the window frame minus the shadow

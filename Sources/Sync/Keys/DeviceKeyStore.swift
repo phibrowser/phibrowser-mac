@@ -29,8 +29,16 @@ final class DeviceKeyStore {
     func loadOrCreatePrivateKey() throws -> Curve25519.KeyAgreement.PrivateKey {
         if let existing = try load() { return existing }
         let key = PhiKeyCrypto.generateDeviceKeyPair()
-        try store(key.rawRepresentation)
-        return key
+        do {
+            try store(key.rawRepresentation)
+            return key
+        } catch DeviceKeyStoreError.keychainFailure(errSecDuplicateItem) {
+            // Lost a first-registration race: another thread/process already wrote a
+            // device key between our load() miss and this store() attempt. Return the
+            // winner's key instead of failing, matching loadOrCreatePrivateKey's contract.
+            guard let winner = try load() else { throw DeviceKeyStoreError.keychainFailure(errSecDuplicateItem) }
+            return winner
+        }
     }
 
     func deviceKeyId() throws -> String {

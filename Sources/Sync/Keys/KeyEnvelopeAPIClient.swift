@@ -18,6 +18,15 @@ struct AccountKeyStateDTO: Codable {
         case kdfParams = "kdf_params", recoveryArkEnvelope = "recovery_ark_envelope"
         case arkGeneration = "ark_generation"
     }
+    // Custom init(from:) below suppresses the synthesized memberwise initializer, so it is
+    // declared explicitly for callers (e.g. fakes in tests) that construct values directly.
+    init(recoverySalt: Data, kdfVersion: String, kdfParams: Data, recoveryArkEnvelope: Data, arkGeneration: Int) {
+        self.recoverySalt = recoverySalt
+        self.kdfVersion = kdfVersion
+        self.kdfParams = kdfParams
+        self.recoveryArkEnvelope = recoveryArkEnvelope
+        self.arkGeneration = arkGeneration
+    }
     init(from d: Decoder) throws {
         let c = try d.container(keyedBy: CodingKeys.self)
         recoverySalt = try KeyEnvelopeAPIClient.b64(c, .recoverySalt)

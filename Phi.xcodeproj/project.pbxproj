@@ -293,6 +293,7 @@
 		B0F370D02E432CB8000B51F9 /* MainBrowserWindowController+Actions.swift in Sources */ = {isa = PBXBuildFile; fileRef = B0F370CF2E432CB8000B51F9 /* MainBrowserWindowController+Actions.swift */; };
 		B0F370DA2E433F0E000B51F9 /* OverlayWindowController.swift in Sources */ = {isa = PBXBuildFile; fileRef = B0F370D92E433F0E000B51F9 /* OverlayWindowController.swift */; };
 		C0D1D0022FEA000000000002 /* SidebarTabListViewController+MultiSelectionDragPreview.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0D1D0012FEA000000000001 /* SidebarTabListViewController+MultiSelectionDragPreview.swift */; };
+		C5F9F384A23E1553837E302C /* AccountKeyManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9F0024EB323125F300021F9D /* AccountKeyManager.swift */; };
 		C70000000000000000000011 /* CustomTooltipController.swift in Sources */ = {isa = PBXBuildFile; fileRef = C70000000000000000000001 /* CustomTooltipController.swift */; };
 		C70000000000000000000012 /* CustomTooltip+Hosting.swift in Sources */ = {isa = PBXBuildFile; fileRef = C70000000000000000000002 /* CustomTooltip+Hosting.swift */; };
 		C70000000000000000000013 /* CommandShortcutTooltipContent.swift in Sources */ = {isa = PBXBuildFile; fileRef = C70000000000000000000003 /* CommandShortcutTooltipContent.swift */; };
@@ -777,6 +778,7 @@
 		8EF36C012F4E9E7000FCC91E /* TabViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TabViewModel.swift; sourceTree = "<group>"; };
 		8EF36C052F4E9EC100FCC91E /* TabContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TabContentView.swift; sourceTree = "<group>"; };
 		8EF36C072F4EA95B00FCC91E /* SideTabView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SideTabView.swift; sourceTree = "<group>"; };
+		9F0024EB323125F300021F9D /* AccountKeyManager.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = AccountKeyManager.swift; sourceTree = "<group>"; };
 		A1B2C3D4E5F60718293A4B55 /* SharedAuthTokenStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SharedAuthTokenStore.swift; sourceTree = "<group>"; };
 		A71E00000000000000000001 /* PhiAlert.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhiAlert.swift; sourceTree = "<group>"; };
 		A7C021012FFD000000000001 /* ContextMenuEvent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContextMenuEvent.swift; sourceTree = "<group>"; };
@@ -1481,6 +1483,7 @@
 				6EE9BDB8D95B7A16A1E96582 /* RecoveryCode.swift */,
 				E2201CD37819E22BC9A5F2FC /* DeviceKeyStore.swift */,
 				254713996DC310106F1FF7A7 /* KeyEnvelopeAPIClient.swift */,
+				9F0024EB323125F300021F9D /* AccountKeyManager.swift */,
 			);
 			name = Keys;
 			path = Keys;
@@ -2885,6 +2888,7 @@
 				2F3F30219641EDD78FE06E96 /* RecoveryCode.swift in Sources */,
 				6CA74AE48DC58F4968B8DD4E /* DeviceKeyStore.swift in Sources */,
 				05170D58572AD0BE6C62021E /* KeyEnvelopeAPIClient.swift in Sources */,
+				C5F9F384A23E1553837E302C /* AccountKeyManager.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

@@ -102,8 +102,8 @@ final class ExtensionMessageRouter {
         register(type: "getServiceExports") { context in
             Task {
                 do {
-                    let result = try await SentinelIPCClient.shared.getComponentExports()
-                    await ExtensionMessaging.shared.sendResponse(result, requestId: context.requestId)
+                    let exports = try await SentinelIPCClient.shared.getComponentExports()
+                    await ExtensionMessaging.shared.sendResponse(exports.exportsJSON, requestId: context.requestId)
                 } catch {
                     await ExtensionMessaging.shared.sendError(error.localizedDescription, requestId: context.requestId)
                 }

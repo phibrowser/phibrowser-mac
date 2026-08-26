@@ -38,6 +38,10 @@ actor ServiceBrokerExtensionProtocol {
     static let shared = ServiceBrokerExtensionProtocol()
 
     typealias RequestExecutor = @Sendable (BrokerHTTPRequest) async throws -> BrokerHTTPResponse
+    /// Reads Sentinel's current client transport mode. Called once per
+    /// capability handshake — never cached with the negotiated runtime, so a
+    /// `uds -> legacy` kill switch converges on the next handshake.
+    typealias TransportModeProvider = @Sendable () async throws -> SentinelTransportMode
 
     private struct Runtime: Sendable {
         let accountID: String?
@@ -117,16 +121,44 @@ actor ServiceBrokerExtensionProtocol {
     private static let supportedMethods = Set(["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"])
     private static let brokerExtensionHeader = "X-Phi-Extension-ID"
     private static let maximumEnvelopeMetadataBytes = 64 * 1024
+    /// Browser-local budget for the capability handshake's transport-mode read.
+    /// Deliberately far below `SentinelIPCClient`'s 5-second socket timeout and
+    /// below the extension's 1_500 ms per-attempt capability probe: a
+    /// hung-but-connectable Sentinel must not push the handshake past the probe
+    /// budget, because an exhausted probe ladder is cached as "unsupported" —
+    /// the exact opposite of the documented "lookup failed ⇒ protocolVersion: 1"
+    /// rule. On expiry the answer is the same as for any other failed lookup.
+    static let transportModeLookupBudgetMilliseconds = 500
+    /// How long the handshake stops asking Sentinel at all after a lookup
+    /// expires. `SentinelIPCClient.sendRequest` hands the socket work to a
+    /// `DispatchQueue.global(qos: .userInitiated)` thread and blocks it in
+    /// `Darwin.connect`, which no timeout covers — only `SO_RCVTIMEO` and
+    /// `SO_SNDTIMEO` are set, and neither applies to connect. Abandoning the
+    /// lookup at the budget frees the handshake but leaves that thread parked,
+    /// so a wedged-but-listening Sentinel would otherwise cost one thread per
+    /// handshake. Suppressing the lookup is observably identical to running it:
+    /// an expired lookup already answers `protocolVersion: 1`.
+    static let transportModeLookupCoolDownMilliseconds = 5_000
 
     private let injectedRuntime: Runtime?
     private let socketPathProvider: @Sendable (String) throws -> String
     private let authSnapshotProvider: @Sendable () -> SharedAuthTokenSnapshot?
+    private let transportModeReader: TransportModeReader
     private var productionRuntime: Runtime?
 
     private init() {
         injectedRuntime = nil
         socketPathProvider = Self.currentSocketPath
         authSnapshotProvider = { SharedAuthTokenStore.shared.authenticatedSnapshot() }
+        transportModeReader = TransportModeReader(
+            provider: { try await SentinelIPCClient.shared.getComponentExports().transportMode },
+            budgetNanoseconds: Self.nanoseconds(
+                fromMilliseconds: Self.transportModeLookupBudgetMilliseconds
+            ),
+            coolDownNanoseconds: Self.nanoseconds(
+                fromMilliseconds: Self.transportModeLookupCoolDownMilliseconds
+            )
+        )
     }
 
     init(
@@ -136,7 +168,12 @@ actor ServiceBrokerExtensionProtocol {
         requestExecutor: @escaping RequestExecutor,
         authSnapshotProvider: @escaping @Sendable () -> SharedAuthTokenSnapshot? = {
             SharedAuthTokenStore.shared.authenticatedSnapshot()
-        }
+        },
+        transportModeProvider: @escaping TransportModeProvider = { .uds },
+        transportModeBudgetMilliseconds: Int =
+            ServiceBrokerExtensionProtocol.transportModeLookupBudgetMilliseconds,
+        transportModeCoolDownMilliseconds: Int =
+            ServiceBrokerExtensionProtocol.transportModeLookupCoolDownMilliseconds
     ) {
         injectedRuntime = Runtime(
             accountID: runtimeAccountID,
@@ -150,6 +187,11 @@ actor ServiceBrokerExtensionProtocol {
             message: "The service broker socket is unavailable."
         ) }
         self.authSnapshotProvider = authSnapshotProvider
+        transportModeReader = TransportModeReader(
+            provider: transportModeProvider,
+            budgetNanoseconds: Self.nanoseconds(fromMilliseconds: transportModeBudgetMilliseconds),
+            coolDownNanoseconds: Self.nanoseconds(fromMilliseconds: transportModeCoolDownMilliseconds)
+        )
     }
 
     static func isAllowedSidecarSender(_ senderID: String) -> Bool {
@@ -177,6 +219,19 @@ actor ServiceBrokerExtensionProtocol {
                     throw ProtocolFailure(code: .requestTooLarge, message: "The broker request is too large.")
                 }
                 _ = try decode(CapabilitiesPayload.self, payload: payload, allowedKeys: [])
+                if await currentTransportMode() == .legacy {
+                    // Telling the extension the broker path is unavailable is
+                    // exactly ServiceBrokerFallbackReason.protocolUnsupported
+                    // (allowsLoopback == true): the one documented case in which
+                    // the capability handshake may select legacy discovery. Not
+                    // logged here — it would repeat the same two compile-time
+                    // constants on every handshake; TransportModeReader logs the
+                    // mode once per change instead.
+                    return failure(
+                        .unsupportedMessage,
+                        "The service broker is disabled for the current Sentinel transport mode."
+                    )
+                }
                 return try success(["protocolVersion": 1])
             } catch let error as ProtocolFailure {
                 return failure(error.code, error.message)
@@ -504,6 +559,19 @@ actor ServiceBrokerExtensionProtocol {
                 message: "The Phi Agent authentication changed."
             )
         }
+    }
+
+    /// Sentinel's current transport mode, re-read on every capability
+    /// handshake. Never cached for the account lifetime: `TransportModeReader`
+    /// coalesces genuinely concurrent handshakes onto one round trip and pauses
+    /// after an expiry, but the next handshake outside that window always pays
+    /// for a fresh lookup, so a `uds -> legacy` kill switch still converges.
+    private nonisolated func currentTransportMode() async -> SentinelTransportMode {
+        await transportModeReader.currentMode()
+    }
+
+    private static func nanoseconds(fromMilliseconds milliseconds: Int) -> UInt64 {
+        UInt64(max(1, milliseconds)) * 1_000_000
     }
 
     private func decodeHTTPRequest(
@@ -880,5 +948,190 @@ actor ServiceBrokerExtensionProtocol {
         (Character("0").asciiValue!...Character("9").asciiValue!).contains(value) ||
             (Character("a").asciiValue!...Character("f").asciiValue!).contains(value) ||
             (Character("A").asciiValue!...Character("F").asciiValue!).contains(value)
+    }
+}
+
+/// The three ways a bounded transport-mode read can end.
+private enum TransportModeLookupOutcome: Sendable {
+    case mode(SentinelTransportMode)
+    case failed(String)
+    case timedOut
+}
+
+/// Serializes, bounds and rate-limits the capability handshake's reads of
+/// Sentinel's transport mode.
+///
+/// Three protections, in order of application:
+///
+/// 1. **Cool-down.** After a lookup expires, handshakes answer from `.fallback`
+///    for `coolDownNanoseconds` without starting any IPC. Observably identical
+///    to running the lookup — an expired lookup already answers
+///    `protocolVersion: 1` — but it starts no new work.
+/// 2. **Single flight.** Genuinely concurrent handshakes share one in-flight
+///    lookup. This coalesces simultaneous reads; it is not the forbidden
+///    account-lifetime cache, because the shared task is cleared as it
+///    completes, before any waiter is resumed, so the next handshake outside
+///    the window always starts a fresh lookup.
+/// 3. **Budget.** Each lookup races a deadline and is abandoned on expiry.
+///
+/// 1 and 2 exist because the budget bounds the *answer* but not the *work*:
+/// `SentinelIPCClient.sendRequest` hands the socket work to a
+/// `DispatchQueue.global(qos: .userInitiated)` thread and blocks it in
+/// `Darwin.connect`, which neither `SO_RCVTIMEO` nor `SO_SNDTIMEO` covers.
+/// Against a wedged-but-listening Sentinel an unbounded handshake rate would
+/// otherwise park an unbounded number of threads.
+private actor TransportModeReader {
+    private let provider: ServiceBrokerExtensionProtocol.TransportModeProvider
+    private let budgetNanoseconds: UInt64
+    private let coolDownNanoseconds: UInt64
+    private var inFlight: Task<TransportModeLookupOutcome, Never>?
+    private var coolDownExpiry: UInt64?
+    private var lastReportedMode: SentinelTransportMode?
+
+    init(
+        provider: @escaping ServiceBrokerExtensionProtocol.TransportModeProvider,
+        budgetNanoseconds: UInt64,
+        coolDownNanoseconds: UInt64
+    ) {
+        self.provider = provider
+        self.budgetNanoseconds = budgetNanoseconds
+        self.coolDownNanoseconds = coolDownNanoseconds
+    }
+
+    func currentMode() async -> SentinelTransportMode {
+        guard !isCoolingDown() else { return .fallback }
+
+        let lookup = inFlight ?? startLookup()
+        guard case .mode(let mode) = await lookup.value else { return .fallback }
+        return mode
+    }
+
+    private func isCoolingDown() -> Bool {
+        guard let coolDownExpiry else { return false }
+        guard DispatchTime.now().uptimeNanoseconds < coolDownExpiry else {
+            self.coolDownExpiry = nil
+            return false
+        }
+        return true
+    }
+
+    private func startLookup() -> Task<TransportModeLookupOutcome, Never> {
+        let provider = self.provider
+        let budgetNanoseconds = self.budgetNanoseconds
+        let task = Task { [self] () -> TransportModeLookupOutcome in
+            let outcome = await Self.race(provider: provider, budgetNanoseconds: budgetNanoseconds)
+            // Runs before `value` resolves for any waiter, so a completed
+            // lookup is never handed to a later handshake.
+            await settle(outcome)
+            return outcome
+        }
+        inFlight = task
+        return task
+    }
+
+    /// Clears the in-flight slot and does this lookup's logging — once per
+    /// lookup rather than once per handshake, so the log volume is bounded by
+    /// the single-flight window and the cool-down.
+    private func settle(_ outcome: TransportModeLookupOutcome) {
+        inFlight = nil
+        switch outcome {
+        case .mode(let mode):
+            guard mode != lastReportedMode else { return }
+            lastReportedMode = mode
+            AppLogDebug("[ServiceBroker] Sentinel transport mode is now \(mode.rawValue)")
+        case .failed(let description):
+            AppLogDebug(
+                "[ServiceBroker] transport mode lookup failed (\(description)); "
+                    + "keeping the broker capability answer"
+            )
+        case .timedOut:
+            coolDownExpiry = DispatchTime.now().uptimeNanoseconds &+ coolDownNanoseconds
+            AppLogDebug(
+                "[ServiceBroker] transport mode lookup timed out after "
+                    + "\(budgetNanoseconds / 1_000_000) ms; keeping the broker capability answer "
+                    + "and pausing lookups for \(coolDownNanoseconds / 1_000_000) ms"
+            )
+        }
+    }
+
+    /// Races the provider against the budget. `static`, so the racing tasks
+    /// inherit no actor isolation and the deadline can never be queued behind
+    /// other work on this actor.
+    ///
+    /// Unstructured for the same reason `AccountDeletionLocalDataRemoval`'s
+    /// `awaitWithDeadline` is: the lookup blocks in `Darwin.read`, which does
+    /// not observe task cancellation, and a task group would await that stuck
+    /// child before returning — defeating the deadline. The loser is cancelled
+    /// and its late answer dropped by the one-shot guard.
+    private static func race(
+        provider: @escaping ServiceBrokerExtensionProtocol.TransportModeProvider,
+        budgetNanoseconds: UInt64
+    ) async -> TransportModeLookupOutcome {
+        await withCheckedContinuation { (
+            continuation: CheckedContinuation<TransportModeLookupOutcome, Never>
+        ) in
+            let race = TransportModeLookupRace(continuation)
+            let lookup = Task {
+                do {
+                    race.resume(with: .mode(try await provider()))
+                } catch {
+                    race.resume(with: .failed(error.localizedDescription))
+                }
+            }
+            let deadline = Task {
+                do {
+                    try await Task.sleep(nanoseconds: budgetNanoseconds)
+                    race.resume(with: .timedOut)
+                } catch {
+                    // Cancelled because the lookup already answered.
+                }
+            }
+            race.register([lookup, deadline])
+        }
+    }
+}
+
+/// One-shot resumption guard for the transport-mode race: whichever racer
+/// finishes first resumes the continuation and cancels the other; the loser's
+/// late call is dropped. Mirrors `OneShotResume` in
+/// `AccountDeletionLocalDataRemoval.swift`, which guards the same idiom there.
+private final class TransportModeLookupRace: @unchecked Sendable {
+    private let lock = NSLock()
+    private var continuation: CheckedContinuation<TransportModeLookupOutcome, Never>?
+    private var racers: [Task<Void, Never>] = []
+    private var isSettled = false
+
+    init(_ continuation: CheckedContinuation<TransportModeLookupOutcome, Never>) {
+        self.continuation = continuation
+    }
+
+    /// Registers both racers so the winner can cancel the loser. If the race is
+    /// already decided — a provider that answers synchronously — they are
+    /// cancelled immediately instead.
+    func register(_ tasks: [Task<Void, Never>]) {
+        lock.lock()
+        if isSettled {
+            lock.unlock()
+            for task in tasks { task.cancel() }
+            return
+        }
+        racers = tasks
+        lock.unlock()
+    }
+
+    func resume(with outcome: TransportModeLookupOutcome) {
+        lock.lock()
+        guard !isSettled else {
+            lock.unlock()
+            return
+        }
+        isSettled = true
+        let continuation = self.continuation
+        self.continuation = nil
+        let tasks = racers
+        racers = []
+        lock.unlock()
+        continuation?.resume(returning: outcome)
+        for task in tasks { task.cancel() }
     }
 }

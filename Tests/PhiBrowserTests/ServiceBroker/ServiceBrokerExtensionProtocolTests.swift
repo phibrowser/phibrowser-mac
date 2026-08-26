@@ -33,6 +33,283 @@ final class ServiceBrokerExtensionProtocolTests: XCTestCase {
         XCTAssertEqual(malformed.error?.code, "invalid_payload")
     }
 
+    func testCapabilityHandshakeIsUnsupportedInLegacyTransportMode() async throws {
+        let handler = makeHandler(transportMode: .legacy)
+
+        for sender in [allowedSender, lexingtonSender, kensingtonSender] {
+            let reply = await handler.handle(
+                type: "broker.capabilities",
+                payload: "{}",
+                senderID: sender
+            )
+
+            XCTAssertEqual(reply.error?.code, "unsupported_message", "sender: \(sender)")
+            let root = try XCTUnwrap(
+                JSONSerialization.jsonObject(with: Data(reply.json.utf8)) as? [String: Any]
+            )
+            XCTAssertEqual(root["ok"] as? Bool, false, "sender: \(sender)")
+        }
+    }
+
+    func testCapabilityHandshakeAnswerIsWiredForEveryTransportMode() async throws {
+        // `allCases` plus an exhaustive switch: a mode added to
+        // `SentinelTransportMode` later cannot compile until its handshake
+        // answer is decided here, and it is exercised automatically once it is.
+        for mode in SentinelTransportMode.allCases {
+            let handler = makeHandler(transportMode: mode)
+            let reply = await handler.handle(
+                type: "broker.capabilities",
+                payload: "{}",
+                senderID: allowedSender
+            )
+
+            switch mode {
+            case .legacy:
+                XCTAssertEqual(reply.error?.code, "unsupported_message", "mode: \(mode)")
+            case .uds, .fullUDS:
+                XCTAssertNil(reply.error, "mode: \(mode)")
+                XCTAssertEqual(try successResult(reply)["protocolVersion"] as? Int, 1, "mode: \(mode)")
+            }
+        }
+
+        // `.fallback` is what Task 1's decoder returns when Sentinel omits the
+        // field entirely or reports a value this browser does not recognise, and
+        // is what a failed or timed-out lookup returns. It must never be the one
+        // mode that withdraws the broker.
+        XCTAssertNotEqual(SentinelTransportMode.fallback, .legacy)
+    }
+
+    func testCapabilityHandshakeAnswersProtocolVersionWhenTheTransportModeLookupFails() async throws {
+        let handler = makeHandler(transportModeProvider: { throw TestUpstreamError() })
+
+        let reply = await handler.handle(
+            type: "broker.capabilities",
+            payload: "{}",
+            senderID: allowedSender
+        )
+
+        XCTAssertNil(reply.error)
+        XCTAssertEqual(try successResult(reply)["protocolVersion"] as? Int, 1)
+    }
+
+    func testCapabilityHandshakeAnswersProtocolVersionWhenTheTransportModeLookupHangs() async throws {
+        // Models a hung-but-connectable Sentinel. `SentinelIPCClient` blocks in
+        // `Darwin.read`, which does not observe task cancellation, so the lookup
+        // can neither finish nor be cancelled — the case a task-group race would
+        // deadlock on, because the group awaits its children before returning.
+        // Answering `.legacy` makes the failure mode loud: if the handshake ever
+        // waited for this provider it would answer `unsupported_message` instead
+        // of the documented `protocolVersion: 1`.
+        let handler = makeHandler(
+            transportModeProvider: {
+                await withUnsafeContinuation { (_: UnsafeContinuation<Void, Never>) in }
+                return .legacy
+            },
+            transportModeBudgetMilliseconds: 20
+        )
+
+        let start = DispatchTime.now().uptimeNanoseconds
+        let reply = await handler.handle(
+            type: "broker.capabilities",
+            payload: "{}",
+            senderID: allowedSender
+        )
+        let elapsedMilliseconds = (DispatchTime.now().uptimeNanoseconds - start) / 1_000_000
+
+        XCTAssertNil(reply.error)
+        XCTAssertEqual(try successResult(reply)["protocolVersion"] as? Int, 1)
+        // The browser-local budget bounds the handshake — not Sentinel's
+        // 5-second socket timeout, and comfortably inside the extension's
+        // 1.5 s (1,500 ms)-per-attempt capability probe budget.
+        XCTAssertLessThan(elapsedMilliseconds, 1_500)
+    }
+
+    func testCapabilityHandshakeAnswersProtocolVersionWhenTheLookupOutrunsItsBudget() async throws {
+        // Slower than the budget but far faster than Sentinel's socket timeout:
+        // the deadline wins and the late `.legacy` answer is dropped, not applied.
+        let handler = makeHandler(
+            transportModeProvider: {
+                try await Task.sleep(nanoseconds: 300_000_000)
+                return .legacy
+            },
+            transportModeBudgetMilliseconds: 20
+        )
+
+        let reply = await handler.handle(
+            type: "broker.capabilities",
+            payload: "{}",
+            senderID: allowedSender
+        )
+
+        XCTAssertNil(reply.error)
+        XCTAssertEqual(try successResult(reply)["protocolVersion"] as? Int, 1)
+    }
+
+    func testConcurrentCapabilityHandshakesShareOneTransportModeLookup() async throws {
+        // Abandoning a lookup at the budget frees the handshake but not the
+        // `DispatchQueue.global(qos: .userInitiated)` thread that
+        // `SentinelIPCClient` parks in `Darwin.connect`. Unbounded concurrent
+        // handshakes would therefore park unbounded threads; they must coalesce.
+        let calls = TransportModeCallLog()
+        let started = AsyncTestSignal()
+        let handler = makeHandler(
+            transportModeProvider: {
+                _ = await calls.record()
+                await started.signal()
+                // Holds the lookup in flight long enough for a second handshake
+                // to join it — orders of magnitude more than the actor hop needs.
+                try await Task.sleep(nanoseconds: 250_000_000)
+                return .uds
+            },
+            transportModeBudgetMilliseconds: 10_000
+        )
+
+        async let first = handler.handle(
+            type: "broker.capabilities",
+            payload: "{}",
+            senderID: allowedSender
+        )
+        // The second handshake may only be started once the first lookup is
+        // genuinely in flight, otherwise it would legitimately start its own.
+        await started.wait()
+        async let second = handler.handle(
+            type: "broker.capabilities",
+            payload: "{}",
+            senderID: lexingtonSender
+        )
+
+        let replies = await [first, second]
+        for reply in replies {
+            XCTAssertNil(reply.error)
+            XCTAssertEqual(try successResult(reply)["protocolVersion"] as? Int, 1)
+        }
+        let callCount = await calls.callCount
+        XCTAssertEqual(callCount, 1, "concurrent handshakes must share one Sentinel round trip")
+    }
+
+    func testTransportModeLookupIsSuppressedDuringTheCoolDownAfterATimeout() async throws {
+        let calls = TransportModeCallLog()
+        let handler = makeHandler(
+            transportModeProvider: {
+                _ = await calls.record()
+                await withUnsafeContinuation { (_: UnsafeContinuation<Void, Never>) in }
+                return .legacy
+            },
+            transportModeBudgetMilliseconds: 20,
+            transportModeCoolDownMilliseconds: 5_000
+        )
+
+        let first = await handler.handle(
+            type: "broker.capabilities",
+            payload: "{}",
+            senderID: allowedSender
+        )
+        XCTAssertEqual(try successResult(first)["protocolVersion"] as? Int, 1)
+        let afterFirst = await calls.callCount
+        XCTAssertEqual(afterFirst, 1)
+
+        let second = await handler.handle(
+            type: "broker.capabilities",
+            payload: "{}",
+            senderID: allowedSender
+        )
+
+        // Same answer, but no new IPC: the cool-down is observably identical to
+        // a fresh timeout, and that is the point — it costs no parked thread.
+        XCTAssertEqual(try successResult(second)["protocolVersion"] as? Int, 1)
+        let afterSecond = await calls.callCount
+        XCTAssertEqual(afterSecond, 1, "a handshake inside the cool-down must not start Sentinel IPC")
+    }
+
+    func testTransportModeLookupResumesAfterTheCoolDownExpires() async throws {
+        let calls = TransportModeCallLog()
+        let handler = makeHandler(
+            transportModeProvider: {
+                let call = await calls.record()
+                if call == 1 {
+                    await withUnsafeContinuation { (_: UnsafeContinuation<Void, Never>) in }
+                }
+                return .legacy
+            },
+            transportModeBudgetMilliseconds: 20,
+            transportModeCoolDownMilliseconds: 40
+        )
+
+        let first = await handler.handle(
+            type: "broker.capabilities",
+            payload: "{}",
+            senderID: allowedSender
+        )
+        XCTAssertEqual(try successResult(first)["protocolVersion"] as? Int, 1)
+
+        try await Task.sleep(nanoseconds: 150_000_000)
+
+        // The cool-down has lapsed, so this handshake pays for a real lookup —
+        // and the mode it reads now actually changes the answer.
+        let second = await handler.handle(
+            type: "broker.capabilities",
+            payload: "{}",
+            senderID: allowedSender
+        )
+        XCTAssertEqual(second.error?.code, "unsupported_message")
+        let callCount = await calls.callCount
+        XCTAssertEqual(callCount, 2)
+    }
+
+    func testCapabilityHandshakeRereadsTheTransportModeEveryTime() async throws {
+        let probe = TransportModeProbe([.uds, .legacy, .uds])
+        let handler = makeHandler(transportModeProvider: { await probe.next() })
+
+        let first = await handler.handle(type: "broker.capabilities", payload: "{}", senderID: allowedSender)
+        let second = await handler.handle(type: "broker.capabilities", payload: "{}", senderID: allowedSender)
+        let third = await handler.handle(type: "broker.capabilities", payload: "{}", senderID: allowedSender)
+
+        XCTAssertEqual(try successResult(first)["protocolVersion"] as? Int, 1)
+        XCTAssertEqual(second.error?.code, "unsupported_message")
+        XCTAssertEqual(try successResult(third)["protocolVersion"] as? Int, 1)
+        let callCount = await probe.callCount
+        XCTAssertEqual(callCount, 3)
+    }
+
+    func testLegacyTransportModeDoesNotChangeSenderOrPayloadRejections() async throws {
+        let probe = TransportModeProbe([.legacy])
+        let handler = makeHandler(transportModeProvider: { await probe.next() })
+
+        let denied = await handler.handle(
+            type: "broker.capabilities",
+            payload: "{}",
+            senderID: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        )
+        XCTAssertEqual(denied.error?.code, "unauthorized_sender")
+
+        let malformed = await handler.handle(
+            type: "broker.capabilities",
+            payload: #"{"unexpected":true}"#,
+            senderID: allowedSender
+        )
+        XCTAssertEqual(malformed.error?.code, "invalid_payload")
+
+        // Neither rejection may cost a Sentinel IPC round trip: the mode is read
+        // only once the sender and payload have been accepted.
+        let callCount = await probe.callCount
+        XCTAssertEqual(callCount, 0)
+    }
+
+    func testLegacyTransportModeDoesNotAffectOtherBrokerMessages() async throws {
+        let recorder = BrokerRequestRecorder()
+        let handler = makeHandler(recorder: recorder, transportMode: .legacy)
+
+        let reply = await handler.handle(
+            type: "broker.http.request",
+            payload: #"{"path":"/broker/healthz","method":"GET"}"#,
+            senderID: allowedSender
+        )
+
+        XCTAssertNil(reply.error)
+        let recordedRequest = await recorder.lastRequest()
+        XCTAssertNotNil(recordedRequest)
+    }
+
     func testAcceptsPinnedFirstPartyBrokerSendersAndPinsTheirIdentity() async throws {
         XCTAssertEqual(ServiceBrokerExtensionProtocol.allowedCanarySidecarExtensionID, allowedSender)
         XCTAssertEqual(ServiceBrokerExtensionProtocol.allowedCanaryLexingtonExtensionID, lexingtonSender)
@@ -1341,6 +1618,12 @@ final class ServiceBrokerExtensionProtocolTests: XCTestCase {
             accessToken: "test-access-token"
         ),
         authSnapshotProvider: (@Sendable () -> SharedAuthTokenSnapshot?)? = nil,
+        transportMode: SentinelTransportMode = .uds,
+        transportModeProvider: (@Sendable () async throws -> SentinelTransportMode)? = nil,
+        transportModeBudgetMilliseconds: Int =
+            ServiceBrokerExtensionProtocol.transportModeLookupBudgetMilliseconds,
+        transportModeCoolDownMilliseconds: Int =
+            ServiceBrokerExtensionProtocol.transportModeLookupCoolDownMilliseconds,
         runtimeAccountID: String? = "auth0|test-account"
     ) -> ServiceBrokerExtensionProtocol {
         let resolvedLimits = limits ?? self.limits()
@@ -1356,12 +1639,23 @@ final class ServiceBrokerExtensionProtocolTests: XCTestCase {
             }
         }
         let resolvedAuthSnapshotProvider = authSnapshotProvider ?? { authSnapshot }
+        // Spelled out rather than `??`: the provider is an `async throws`
+        // function type, which does not infer through the coalescing operator.
+        let resolvedTransportModeProvider: ServiceBrokerExtensionProtocol.TransportModeProvider
+        if let transportModeProvider {
+            resolvedTransportModeProvider = transportModeProvider
+        } else {
+            resolvedTransportModeProvider = { transportMode }
+        }
         return ServiceBrokerExtensionProtocol(
             limits: resolvedLimits,
             channelStore: resolvedStore,
             runtimeAccountID: runtimeAccountID,
             requestExecutor: resolvedExecutor,
-            authSnapshotProvider: resolvedAuthSnapshotProvider
+            authSnapshotProvider: resolvedAuthSnapshotProvider,
+            transportModeProvider: resolvedTransportModeProvider,
+            transportModeBudgetMilliseconds: transportModeBudgetMilliseconds,
+            transportModeCoolDownMilliseconds: transportModeCoolDownMilliseconds
         )
     }
 
@@ -1767,3 +2061,35 @@ private actor AsyncTestSignal {
 }
 
 private struct TestUpstreamError: Error {}
+
+/// Counts how many times the handshake actually reached the transport-mode
+/// provider, so a test can prove lookups were coalesced or suppressed.
+private actor TransportModeCallLog {
+    private(set) var callCount = 0
+
+    @discardableResult
+    func record() -> Int {
+        callCount += 1
+        return callCount
+    }
+}
+
+/// Serves a scripted sequence of transport modes and counts how many times the
+/// handshake asked, so a test can prove the mode is re-read per handshake.
+private actor TransportModeProbe {
+    private let modes: [SentinelTransportMode]
+    private(set) var callCount = 0
+
+    init(_ modes: [SentinelTransportMode]) {
+        precondition(!modes.isEmpty, "TransportModeProbe needs at least one mode")
+        self.modes = modes
+    }
+
+    /// Returns the mode for this handshake, repeating the last entry once the
+    /// scripted sequence is exhausted.
+    func next() -> SentinelTransportMode {
+        let mode = modes[min(callCount, modes.count - 1)]
+        callCount += 1
+        return mode
+    }
+}

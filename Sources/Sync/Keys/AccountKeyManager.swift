@@ -10,6 +10,14 @@ protocol KeyEnvelopeAPI {
 }
 extension KeyEnvelopeAPIClient: KeyEnvelopeAPI {}
 
+/// Narrow view of `DeviceKeyStore` (just the two operations `AccountKeyManager` needs),
+/// injected so tests can supply an in-memory device key without touching the Keychain.
+protocol DeviceKeyProviding {
+    func loadOrCreatePrivateKey() throws -> Curve25519.KeyAgreement.PrivateKey
+    func deviceKeyId() throws -> String
+}
+extension DeviceKeyStore: DeviceKeyProviding {}
+
 enum AccountKeyError: Error { case alreadyInitialized, badRecoveryCode, notInitialized, randomGenerationFailed(OSStatus) }
 enum UnlockResult { case unlocked, needsJoin, notSignedIn }
 
@@ -17,16 +25,16 @@ enum UnlockResult { case unlocked, needsJoin, notSignedIn }
 /// (process lifetime only — it is never persisted to disk).
 final class AccountKeyManager {
     private let api: KeyEnvelopeAPI
-    private let deviceStore: DeviceKeyStore
+    private let deviceKeyProvider: DeviceKeyProviding
     private let kdfVersion = "hkdf-sha256-v1"
     private let platform = "macos"
 
     private(set) var currentARK: SymmetricKey?
-    var deviceStoreForTesting: DeviceKeyStore { deviceStore }
+    var deviceKeyProviderForTesting: DeviceKeyProviding { deviceKeyProvider }
 
-    init(api: KeyEnvelopeAPI, deviceStore: DeviceKeyStore) {
+    init(api: KeyEnvelopeAPI, deviceKeyProvider: DeviceKeyProviding) {
         self.api = api
-        self.deviceStore = deviceStore
+        self.deviceKeyProvider = deviceKeyProvider
     }
 
     func bootstrap() async throws -> String {
@@ -61,21 +69,25 @@ final class AccountKeyManager {
     }
 
     func unlockAtStartup() async throws -> UnlockResult {
-        let deviceKeyId = try deviceStore.deviceKeyId()
-        guard let envelope = try await api.getDeviceEnvelope(deviceKeyId: deviceKeyId) else {
-            // No envelope for this device: whether or not the account is initialized,
-            // this device still needs to join.
-            return (try await api.getAccount()) == nil ? .needsJoin : .needsJoin
+        let deviceKeyId = try deviceKeyProvider.deviceKeyId()
+        let envelope: Data?
+        do {
+            envelope = try await api.getDeviceEnvelope(deviceKeyId: deviceKeyId)
+        } catch KeyAPIError.http(401, _) {
+            // No valid auth token: caller isn't signed in, distinct from a signed-in
+            // device that simply hasn't joined yet.
+            return .notSignedIn
         }
-        let priv = try deviceStore.loadOrCreatePrivateKey()
+        guard let envelope else { return .needsJoin }  // no envelope for this device (404) — it needs to join
+        let priv = try deviceKeyProvider.loadOrCreatePrivateKey()
         let arkBytes = try PhiKeyCrypto.openWithPrivateKey(envelope, privateKey: priv)
         currentARK = SymmetricKey(data: arkBytes)
         return .unlocked
     }
 
     private func registerThisDevice(ark: SymmetricKey) async throws {
-        let priv = try deviceStore.loadOrCreatePrivateKey()
-        let deviceKeyId = try deviceStore.deviceKeyId()
+        let priv = try deviceKeyProvider.loadOrCreatePrivateKey()
+        let deviceKeyId = try deviceKeyProvider.deviceKeyId()
         let arkBytes = ark.withUnsafeBytes { Data($0) }
         let envelope = try PhiKeyCrypto.sealToPublicKey(arkBytes, recipient: priv.publicKey)
         try await api.postDevice(deviceKeyId: deviceKeyId, publicKey: priv.publicKey.rawRepresentation,

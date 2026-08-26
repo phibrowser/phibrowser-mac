@@ -30,12 +30,35 @@ import AppKit
 /// a normal browser window uses — the hosted page keeps first crack at the
 /// event, and only what it declines reaches the command layer and NSMenu.
 ///
-/// This class supplies the one piece that has to live on the panel: declining
-/// the redispatched event so it can land in the main menu. Without it the
-/// redispatch loops straight back into the view that already passed on the
-/// event.
+/// This class supplies the two pieces that have to live on the panel, both of
+/// them the plain-`NSPanel` stand-in for what `CommandDispatcher` does on every
+/// Chromium-owned window: recognise a redispatched event by the window stamped
+/// into it, and refuse to hand it back to the hosted view that already passed
+/// on it once.
 class ChromiumHostingPanel: NSPanel {
     override var canBecomeKey: Bool { true }
+
+    /// Whether `event` is one Chromium redispatched after the renderer declined
+    /// it. `-[CommandDispatcher redispatchKeyEvent:]` rewrites the event's
+    /// window to the browser window that owns the dispatcher before sending it
+    /// back through `-[NSApp sendEvent:]`, so a key event that arrives here
+    /// carrying any window other than this panel is a second pass.
+    ///
+    /// Chromium's own windows make this same test through
+    /// `-[CommandDispatcher isEventBeingRedispatched:]`, which additionally
+    /// reads the `_isRedispatchingKeyEvent` flag off the stamped window's
+    /// dispatcher — not reachable from here, and not needed: AppKit only ever
+    /// routes a key event to the key window, so the stamp alone separates a
+    /// first pass from a redispatch.
+    private func isRedispatchedKeyEvent(_ event: NSEvent) -> Bool {
+        switch event.type {
+        case .keyDown, .keyUp, .flagsChanged:
+            guard let eventWindow = event.window else { return false }
+            return eventWindow !== self
+        default:
+            return false
+        }
+    }
 
     override func performKeyEquivalent(with event: NSEvent) -> Bool {
         // A redispatched event: the renderer declined it, so Chromium re-sent
@@ -49,9 +72,43 @@ class ChromiumHostingPanel: NSPanel {
         // Handing it to `super` here would instead feed it back to the hosted
         // web view, which would forward it to the renderer, which would decline
         // it again — an unbounded redispatch loop.
-        if let eventWindow = event.window, eventWindow !== self {
+        if isRedispatchedKeyEvent(event) {
             return false
         }
         return super.performKeyEquivalent(with: event)
+    }
+
+    override func sendEvent(_ event: NSEvent) {
+        // The other half of the redispatch guard, and the one plain typing
+        // needs. A printable keystroke is not a key equivalent, so AppKit never
+        // offers it to `performKeyEquivalent:` above — it goes straight to the
+        // key window's responder chain. That path doubled every character typed
+        // into a hosted page:
+        //
+        //   1. `keyDown:` reaches the hosted `RenderWidgetHostViewCocoa`, which
+        //      inserts the character and forwards the raw key event.
+        //   2. The renderer declines the raw key event — text insertion already
+        //      happened through the input system — so Chromium redispatches it
+        //      to the browser window, restamping the event on the way.
+        //   3. AppKit routes key events to the key window, still this panel, and
+        //      a plain `NSPanel` has nothing to stop it: the responder chain
+        //      hands the same keystroke to the same view, which inserts the
+        //      character a second time.
+        //   4. That second insertion's raw key event is declined too, but the
+        //      redispatch stops there — the event is stamped with the browser
+        //      window by now, and `redispatchKeyEvent:` refuses to redispatch to
+        //      a window that is not key. Hence exactly two characters, not a
+        //      runaway loop.
+        //
+        // Every Chromium-owned window drops the event at this point instead,
+        // through `-[CommandDispatcher preSendEvent:]`, whose whole job on a
+        // redispatch is to "stop native -sendEvent handling". By then the
+        // redispatch has already served its purpose inside `-[NSApp sendEvent:]`
+        // — the key-equivalent pass and the main menu have both had their turn —
+        // so there is nothing left to deliver.
+        if isRedispatchedKeyEvent(event) {
+            return
+        }
+        super.sendEvent(event)
     }
 }

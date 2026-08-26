@@ -11,11 +11,28 @@ import XCTest
 /// consent and no master switches — from the outside: what it refuses, and the
 /// invariant that nothing but `AgentPeerIdentity` can claim it.
 ///
-/// The accepting case needs a live Sentinel (`runner → node →
-/// phi-agent.bundle.js`) and cannot be staged in a unit test; what is testable
-/// is that a peer which is not that shape is turned away, which is the half
-/// that matters if the check ever regresses.
+/// The accepting case needs a live Sentinel (`runner → node → pi-agent.bundle`)
+/// and cannot be staged in a unit test; what is testable is that a peer which
+/// is not that shape is turned away, which is the half that matters if the
+/// check ever regresses.
 final class AgentFirstPartyPassTests: XCTestCase {
+
+    /// Phi's own signed code that did not pass the first-party check is refused
+    /// rather than prompted about: `AgentCDPListener.evaluate` turns away any
+    /// identity carrying the unresolved key, which is what keeps the browser
+    /// from asking the user to approve "Phi" to Phi Browser — and keeps an
+    /// "Always Allow" from ever being keyed to a bare interpreter's signature.
+    func testOwnCodeOutsideTheBrowserIsUnresolved() {
+        let identity = AgentIdentity.unresolvedOwnCode(
+            executablePath: "/Applications/Phi.app/Contents/Library/LoginItems/"
+                + "Phi Sentinel.app/Contents/MacOS/runtime/node/bin/node")
+        XCTAssertTrue(identity.isUnresolved)
+        XCTAssertFalse(identity.firstParty)
+        // Nothing a grant could be recorded against.
+        XCTAssertEqual(identity.key, AgentIdentity.unresolvedKey)
+        XCTAssertNil(identity.teamId)
+        XCTAssertFalse(identity.verified)
+    }
 
     /// `firstParty` is not a parameter of the initializer every resolved peer
     /// goes through, so no ancestry walk, delegated session, or future caller

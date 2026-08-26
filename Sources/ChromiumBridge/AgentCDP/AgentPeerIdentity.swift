@@ -119,7 +119,32 @@ struct AgentIdentity: Equatable {
                       executablePath: executablePath, pid: nil)
     }
 
-    /// Whether this is that stand-in, in either of its forms.
+    /// The same absence reached a third way: the peer is Phi's OWN signed code
+    /// — Sentinel's bundled runtime — that did not pass the first-party check,
+    /// because whatever launched it is not Phi-signed.
+    ///
+    /// Resolved normally it is worse than nameless. `signingIdentity` reports
+    /// the outermost bundle a binary sits in, which for anything under
+    /// `Phi.app/Contents/Library/LoginItems/…` is the browser itself, so the
+    /// prompt asks whether to let "Phi" control Phi Browser — the browser
+    /// asking the user to approve it to itself. There is no answer to that, and
+    /// the two on offer are both bad: "Deny" turns off a built-in feature, and
+    /// "Always Allow" records a grant keyed to a bare interpreter's signature
+    /// (`87DQ3HMK5G:node`), which from then on silently admits anything at all
+    /// that Sentinel's node is ever pointed at.
+    ///
+    /// So it is refused instead of asked about, exactly like the other two. A
+    /// component genuinely started by the browser passes the first-party check
+    /// and never arrives here; one that arrives here has been orphaned or
+    /// re-launched by something else, and relaunching the browser restores it.
+    static func unresolvedOwnCode(executablePath: String) -> AgentIdentity {
+        AgentIdentity(key: unresolvedKey,
+                      displayName: "Phi's own runtime, started outside the browser",
+                      teamId: nil, verified: false,
+                      executablePath: executablePath, pid: nil)
+    }
+
+    /// Whether this is that stand-in, in any of its forms.
     var isUnresolved: Bool { key == Self.unresolvedKey }
 
     /// Secondary line for the prompt, e.g. "Team 87DQ3HMK5G · verified".
@@ -353,27 +378,46 @@ enum AgentPeerIdentity {
 
     // MARK: - First-party pass
 
-    /// The browser's own agent runtime, which Sentinel starts as a component
-    /// of the product rather than as an outside agent the user invited in:
+    /// The browser's own code, which Sentinel starts as a component of the
+    /// product rather than as an outside agent the user invited in:
     ///
-    ///     Phi Sentinel.app → runner → node → phi-agent.bundle.js
+    ///     Phi Sentinel.app → runner → node → pi-agent.bundle
     ///
     /// It is recognized instead of prompted for, and `AgentCDPListener` admits
     /// it without consent and without the two master switches — a built-in
     /// feature must not ask the user to turn on Developer mode to work. That
     /// makes this the one identity where the code signature IS the boundary
-    /// rather than an aid to naming the agent, so all three of these must hold
-    /// and the same-uid gate still applies before any of them:
+    /// rather than an aid to naming the agent, so both of these must hold and
+    /// the same-uid gate still applies before either:
     ///
-    ///   1. the connecting process is Phi-signed — Sentinel's own bundled node,
-    ///      pinned to this socket by its peer audit token;
-    ///   2. its first argument is the agent bundle, so a signed interpreter
-    ///      cannot be pointed at some other script;
-    ///   3. its parent is Phi-signed too — Sentinel's `runner`.
+    ///   1. the connecting process is Phi-signed — team 87DQ3HMK5G under an
+    ///      Apple-issued chain — pinned to this socket by its peer audit token;
+    ///   2. its parent is Phi-signed too — Sentinel's `runner`.
     ///
-    /// (3) is what carries the check: (1) and (2) alone are satisfied by
-    /// anyone who runs Sentinel's node — it is readable by every process of
-    /// this user — against a file they named `phi-agent.bundle.js`.
+    /// (2) is what carries the check: (1) alone is satisfied by anyone who runs
+    /// Sentinel's bundled node, which is readable by every process of this
+    /// user. The signature on the peer says only "this binary shipped with
+    /// Phi"; it takes a Phi-signed parent to say "Phi started it".
+    ///
+    /// What is deliberately NOT checked is what the process is *running*. This
+    /// used to additionally require argv[1] to name a known agent bundle that
+    /// still existed on disk, and both halves of that misfired in the field —
+    /// each time dropping a genuine first-party connection into the consent
+    /// prompt under the outermost bundle's name, asking the user whether to let
+    /// "Phi" control Phi Browser, which is not a question anyone can answer:
+    ///
+    ///   • the runtime is not always launched as `node <bundle>` — a `-e`
+    ///     bootstrap has no script argument at all; and
+    ///   • Sentinel's updater renames the live install directory before
+    ///     swapping the new one in, so a component still running out of the old
+    ///     directory carries an argv path that no longer resolves.
+    ///
+    /// Neither check was ever load-bearing: an argument the peer chose for
+    /// itself is not evidence about the peer, and anyone able to satisfy (2)
+    /// could as easily name a file `pi-agent.bundle` and point our node at it.
+    /// Dropping them widens *which* first-party binary is recognized, never
+    /// *who* may present it — the pair above is the whole boundary, and it is
+    /// the pair that was carrying it all along.
     ///
     /// Returns nil for every other connection, which then resolves normally
     /// and faces the consent prompt.
@@ -389,26 +433,17 @@ enum AgentPeerIdentity {
                                pid: peerPID) else {
             return nil
         }
-        guard let interpreter = executablePath(peerPID),
-              isScriptInterpreterName((interpreter as NSString).lastPathComponent),
-              let argv = processArgv(peerPID), argv.count >= 2 else {
-            return nil
-        }
-        // argv[1] specifically, not "the first argument that names a file":
-        // node options precede the script, and one of them is `--require`.
-        // Anything else — including a first-party bundle behind an option —
-        // fails the pass rather than being reasoned about.
-        let script = argv[1]
-        guard firstPartyScriptNames.contains((script as NSString).lastPathComponent) else {
-            return nil
-        }
-        guard FileManager.default.fileExists(atPath: script) else { return nil }
+        // Falls back to the kernel's recorded exec path for the same reason
+        // `isFirstPartyCode` does: a rebuild or an update can unlink the binary
+        // a long-lived component is still running from.
+        let executable = executablePath(peerPID) ?? recordedExecutablePath(peerPID)
         guard let parent = parentPID(peerPID), parent > 1,
               isFirstPartyCode(guestAttributes: [kSecGuestAttributePid: parent],
                                pid: parent) else {
-            AppLogWarn("[AgentCDP] \((script as NSString).lastPathComponent) ran from a "
-                       + "Phi-signed interpreter but not from a Phi-signed parent; "
-                       + "treating it as an ordinary agent")
+            let name = executable.map { ($0 as NSString).lastPathComponent }
+                ?? "pid \(peerPID)"
+            AppLogWarn("[AgentCDP] \(name) is Phi-signed but was not launched by "
+                       + "Phi-signed code; falling back to the ancestry walk")
             return nil
         }
 
@@ -418,16 +453,10 @@ enum AgentPeerIdentity {
             teamId: FileSystemUtils.teamId,
             signingId: FileSystemUtils.bundleId,
             verified: true,
-            executablePath: interpreter,
+            executablePath: executable ?? "",
             pid: peerPID,
             firstParty: true)
     }
-
-    /// Script bundles that ARE the browser's agent runtime. Matched on file
-    /// name alone: Sentinel downloads the bundle to a versioned, user-writable
-    /// path under Application Support, so neither its location nor its
-    /// contents prove anything — the ancestry checks above are what do.
-    private static let firstPartyScriptNames: Set<String> = ["phi-agent.bundle.js"]
 
     /// Identity key for the pass. Deliberately a constant: the key a normal
     /// resolve would produce embeds the bundle's version and the signed-in
@@ -530,6 +559,16 @@ enum AgentPeerIdentity {
         // only ever yield pi — never override another agent's signed grant.
         if let pi = piIdentity(startingAt: peerPID, claimed: claimed) {
             return pi
+        }
+        // Phi's own signed code, reached here only by failing the first-party
+        // check above. Naming it from its signature would name the browser
+        // itself and key a grant to a bare interpreter, so it is refused rather
+        // than presented (see AgentIdentity.unresolvedOwnCode). Checked last,
+        // so a nameable script or a pi session running on our runtime still
+        // resolves to what it actually is.
+        if isFirstPartyCode(guestAttributes: [kSecGuestAttributePid: responsible],
+                            pid: responsible) {
+            return .unresolvedOwnCode(executablePath: path)
         }
         return signingIdentity(pid: responsible, executablePath: path)
     }
@@ -691,14 +730,52 @@ enum AgentPeerIdentity {
         "phi-mirror-tailer", "phibrowser-cli",
     ]
 
-    /// The script an interpreter runs: its first existing non-flag argument.
+    /// The script an interpreter runs: its first existing non-flag argument,
+    /// else the first one that still reads as a path to a script.
+    ///
+    /// Existing on disk is the reliable signal and stays the first choice, but
+    /// it cannot be a requirement. Sentinel's updater renames the live install
+    /// directory out from under running components before swapping the new one
+    /// in, and prunes old versions behind them, so a long-lived agent's argv
+    /// routinely names a path that is gone. Insisting the file be there made
+    /// such an agent unnameable, and an unnameable script-run agent falls all
+    /// the way through to the signature of the interpreter running it — which
+    /// is how a stale `phi-agent.bundle` came to introduce itself as "Phi".
     private static func scriptArgument(in argv: [String]) -> String? {
+        var vanished: String?
         for arg in argv.dropFirst() {
             if arg.hasPrefix("-") { continue }
             if FileManager.default.fileExists(atPath: arg) { return arg }
+            if vanished == nil, looksLikeScriptPath(arg) { vanished = arg }
         }
-        return nil
+        return vanished
     }
+
+    /// Whether an argument reads as the path of a script file. Only consulted
+    /// for arguments that are NOT on disk, where there is nothing left to check
+    /// but the shape of the string — so it has to be strict enough that a
+    /// flag's value is not mistaken for a vanished script. `node -e "…"` is the
+    /// case that matters: its inline program is a positional argument by the
+    /// time it is seen here, and naming an agent after a fragment of source
+    /// would be worse than not naming it.
+    private static func looksLikeScriptPath(_ argument: String) -> Bool {
+        guard !argument.isEmpty else { return false }
+        // A script extension is enough on its own, spaces in the path included.
+        if scriptFileExtensions.contains((argument as NSString).pathExtension.lowercased()) {
+            return true
+        }
+        // Otherwise only directory structure says "path", and inline source can
+        // contain slashes too — so anything carrying whitespace is left alone.
+        return argument.contains("/")
+            && argument.rangeOfCharacter(from: .whitespacesAndNewlines) == nil
+    }
+
+    /// Extensions that name a script file rather than a flag's value. `bundle`
+    /// covers the browser's own packaged runtimes (`pi-agent.bundle`), which
+    /// are the ones the updater strands most often.
+    private static let scriptFileExtensions: Set<String> = [
+        "js", "mjs", "cjs", "ts", "mts", "cts", "py", "rb", "pl", "php", "bundle",
+    ]
 
     private static func unsignedIdentity(name: String, path: String,
                                          exe: String, pid: pid_t?) -> AgentIdentity {

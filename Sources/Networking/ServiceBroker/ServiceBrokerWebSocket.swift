@@ -25,6 +25,7 @@ final class ServiceBrokerWebSocket: @unchecked Sendable {
     private let maximumMessageBytes: Int
     private let peerAuthenticator: ServiceBrokerPeerAuthenticator
     private let ioTimeoutMilliseconds: Int
+    private let pingIntervalMilliseconds: Int
     private let stateLock = NSLock()
     private let writeLock = NSLock()
     private let receiveLock = NSLock()
@@ -34,19 +35,33 @@ final class ServiceBrokerWebSocket: @unchecked Sendable {
     private var closed = false
     private var closeSent = false
     private var nextSequence: UInt64 = 0
+    private var nextPingSequence: UInt64 = 0
     private var fragmentedOpcode: UInt8?
     private var fragmentedPayload = Data()
 
+    /// - Parameters:
+    ///   - ioTimeoutMilliseconds: The I/O budget for connect, send and close, and
+    ///     the budget `receive()` restarts on every inbound frame of any kind.
+    ///   - pingIntervalMilliseconds: How long `receive()` waits in silence before
+    ///     probing the peer with a ping. Clamped to at least 1 ms and at most a
+    ///     third of the receive budget, so an idle-but-alive peer is probed at
+    ///     least twice before the budget expires.
     init(
         socketPath: String,
         maximumMessageBytes: Int,
         peerAuthenticator: ServiceBrokerPeerAuthenticator = .production,
-        ioTimeoutMilliseconds: Int = 30_000
+        ioTimeoutMilliseconds: Int = 30_000,
+        pingIntervalMilliseconds: Int = 10_000
     ) {
         self.socketPath = socketPath
         self.maximumMessageBytes = maximumMessageBytes
         self.peerAuthenticator = peerAuthenticator
-        self.ioTimeoutMilliseconds = max(1, ioTimeoutMilliseconds)
+        let boundedIOTimeout = max(1, ioTimeoutMilliseconds)
+        self.ioTimeoutMilliseconds = boundedIOTimeout
+        self.pingIntervalMilliseconds = min(
+            max(1, pingIntervalMilliseconds),
+            max(1, boundedIOTimeout / 3)
+        )
     }
 
     deinit {
@@ -106,11 +121,20 @@ final class ServiceBrokerWebSocket: @unchecked Sendable {
         }
     }
 
+    /// Waits for the next message. Unlike connect/send/close there is no single
+    /// budget spanning the whole call: the outer budget is `.never` and each loop
+    /// iteration starts a fresh `ioTimeoutMilliseconds` budget, so the timeout is
+    /// measured from the last inbound frame of any kind — data, continuation,
+    /// ping or pong. While that budget is running down in silence the client
+    /// probes the peer with its own pings, so an idle-but-alive channel stays
+    /// open while a dead one is still detected within the budget.
     func receive() async throws -> BrokerWebSocketEvent {
-        try await performBlocking { [self] deadline in
+        try await performBlocking(deadline: .never) { [self] _ in
             receiveLock.lock()
             defer { receiveLock.unlock() }
             while true {
+                let deadline = ServiceBrokerDeadline(timeoutMilliseconds: ioTimeoutMilliseconds)
+                try awaitFrameSendingIdlePings(deadline: deadline)
                 let frame = try readFrame(deadline: deadline)
                 if frame.isControl {
                     switch frame.opcode {
@@ -594,11 +618,17 @@ final class ServiceBrokerWebSocket: @unchecked Sendable {
         if descriptor >= 0 { Darwin.close(descriptor) }
     }
 
+    /// Waits until `descriptor` is ready, `deadline` expires (throwing
+    /// `.timedOut`) or — when supplied — `interrupt` expires first, which returns
+    /// `false` instead of throwing. `closed` is re-checked before every poll
+    /// slice so cancellation unblocks a waiting caller promptly.
+    @discardableResult
     private func waitForIO(
         descriptor: Int32,
         events: Int16,
-        deadline: ServiceBrokerDeadline
-    ) throws {
+        deadline: ServiceBrokerDeadline,
+        interrupt: ServiceBrokerDeadline? = nil
+    ) throws -> Bool {
         while true {
             stateLock.lock()
             let isClosed = closed
@@ -607,13 +637,18 @@ final class ServiceBrokerWebSocket: @unchecked Sendable {
             guard let timeout = deadline.pollTimeoutMilliseconds() else {
                 throw ServiceBrokerWebSocketError.timedOut
             }
+            var slice = timeout
+            if let interrupt {
+                guard let untilInterrupt = interrupt.pollTimeoutMilliseconds() else { return false }
+                slice = min(slice, untilInterrupt)
+            }
             var polled = pollfd(fd: descriptor, events: events, revents: 0)
-            let result = Darwin.poll(&polled, 1, timeout)
+            let result = Darwin.poll(&polled, 1, slice)
             if result > 0 {
                 guard polled.revents & Int16(POLLERR | POLLNVAL) == 0 else {
                     throw ServiceBrokerWebSocketError.connectionClosed
                 }
-                return
+                return true
             }
             if result < 0, errno != EINTR {
                 throw ServiceBrokerWebSocketError.connectionClosed
@@ -621,16 +656,71 @@ final class ServiceBrokerWebSocket: @unchecked Sendable {
         }
     }
 
+    /// Blocks until the next frame starts arriving, sending a ping every
+    /// `pingIntervalMilliseconds` of complete silence. Pings are only ever sent
+    /// between frames, never while one is mid-read, and never once the socket has
+    /// been closed or a close frame has been sent.
+    private func awaitFrameSendingIdlePings(deadline: ServiceBrokerDeadline) throws {
+        stateLock.lock()
+        let hasBufferedBytes = !buffered.isEmpty
+        let descriptor = fileDescriptor
+        let isClosed = closed
+        stateLock.unlock()
+        if hasBufferedBytes { return }
+        guard !isClosed, descriptor >= 0 else { throw ServiceBrokerWebSocketError.cancelled }
+
+        while try !waitForIO(
+            descriptor: descriptor,
+            events: Int16(POLLIN),
+            deadline: deadline,
+            interrupt: ServiceBrokerDeadline(timeoutMilliseconds: pingIntervalMilliseconds)
+        ) {
+            try sendIdlePing(deadline: deadline)
+        }
+    }
+
+    private func sendIdlePing(deadline: ServiceBrokerDeadline) throws {
+        guard isConnected, !isCloseSent else { return }
+        stateLock.lock()
+        let sequence = nextPingSequence
+        nextPingSequence &+= 1
+        stateLock.unlock()
+        var payload = Data()
+        for shift in stride(from: 56, through: 0, by: -8) {
+            payload.append(UInt8((sequence >> UInt64(shift)) & 0xFF))
+        }
+        try sendFrame(opcode: 0x9, payload: payload, deadline: deadline)
+    }
+
+    /// Runs `operation` on a background queue under a single monotonic I/O budget
+    /// of `ioTimeoutMilliseconds`, used by connect, send and close.
     private func performBlocking<T: Sendable>(
+        _ operation: @escaping @Sendable (ServiceBrokerDeadline) throws -> T
+    ) async throws -> T {
+        let timeoutMilliseconds = ioTimeoutMilliseconds
+        return try await performBlocking(
+            makeDeadline: { ServiceBrokerDeadline(timeoutMilliseconds: timeoutMilliseconds) },
+            operation
+        )
+    }
+
+    /// Runs `operation` under a caller-supplied outer budget. `receive()` passes
+    /// `.never` because it manages one budget per inbound frame itself.
+    private func performBlocking<T: Sendable>(
+        deadline: ServiceBrokerDeadline,
+        _ operation: @escaping @Sendable (ServiceBrokerDeadline) throws -> T
+    ) async throws -> T {
+        try await performBlocking(makeDeadline: { deadline }, operation)
+    }
+
+    private func performBlocking<T: Sendable>(
+        makeDeadline: @escaping @Sendable () -> ServiceBrokerDeadline,
         _ operation: @escaping @Sendable (ServiceBrokerDeadline) throws -> T
     ) async throws -> T {
         try await withTaskCancellationHandler {
             guard !Task.isCancelled else { throw ServiceBrokerWebSocketError.cancelled }
             do {
-                let result = try await Self.runBlocking(
-                    timeoutMilliseconds: ioTimeoutMilliseconds,
-                    operation
-                )
+                let result = try await Self.runBlocking(makeDeadline: makeDeadline, operation)
                 guard !Task.isCancelled else {
                     closeDescriptor()
                     throw ServiceBrokerWebSocketError.cancelled
@@ -652,16 +742,12 @@ final class ServiceBrokerWebSocket: @unchecked Sendable {
     }
 
     private static func runBlocking<T: Sendable>(
-        timeoutMilliseconds: Int,
+        makeDeadline: @escaping @Sendable () -> ServiceBrokerDeadline,
         _ operation: @escaping @Sendable (ServiceBrokerDeadline) throws -> T
     ) async throws -> T {
         try await withCheckedThrowingContinuation { continuation in
             DispatchQueue.global(qos: .userInitiated).async {
-                continuation.resume(with: Result {
-                    try operation(ServiceBrokerDeadline(
-                        timeoutMilliseconds: timeoutMilliseconds
-                    ))
-                })
+                continuation.resume(with: Result { try operation(makeDeadline()) })
             }
         }
     }

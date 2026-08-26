@@ -7,12 +7,16 @@ import XCTest
 final class ServiceBrokerWebSocketTests: XCTestCase {
     private func makeSocket(
         socketPath: String,
-        maximumMessageBytes: Int
+        maximumMessageBytes: Int,
+        ioTimeoutMilliseconds: Int = 30_000,
+        pingIntervalMilliseconds: Int = 10_000
     ) -> ServiceBrokerWebSocket {
         ServiceBrokerWebSocket(
             socketPath: socketPath,
             maximumMessageBytes: maximumMessageBytes,
-            peerAuthenticator: .allowingTests
+            peerAuthenticator: .allowingTests,
+            ioTimeoutMilliseconds: ioTimeoutMilliseconds,
+            pingIntervalMilliseconds: pingIntervalMilliseconds
         )
     }
 
@@ -168,6 +172,75 @@ final class ServiceBrokerWebSocketTests: XCTestCase {
         await socket.close(code: 1000, reason: nil)
     }
 
+    func testWebSocketReceiveSurvivesSilentPeerThatAnswersPings() async throws {
+        let server = UnixWebSocketTestServer(script: .silentAnsweringPings)
+        let socket = makeSocket(
+            socketPath: server.socketPath,
+            maximumMessageBytes: 1_024,
+            ioTimeoutMilliseconds: 200,
+            pingIntervalMilliseconds: 50
+        )
+        try await socket.connect(path: "/ws/phi-agent/execute", headers: [:])
+
+        let event = try await socket.receive()
+
+        XCTAssertEqual(event, .frame(
+            sequence: 0, BrokerWebSocketFrame(kind: .text, data: Data("late".utf8))))
+        let pings = server.receivedPings
+        XCTAssertGreaterThanOrEqual(
+            pings.count,
+            2,
+            "Expected repeated idle pings during the silent window, observed \(pings.count)."
+        )
+        XCTAssertTrue(pings.allSatisfy { $0.masked }, "Client pings must be masked.")
+        await socket.close(code: 1000, reason: nil)
+    }
+
+    func testWebSocketReceiveTimesOutWhenPeerIgnoresPings() async throws {
+        let server = UnixWebSocketTestServer(script: .silentIgnoringPings)
+        let socket = makeSocket(
+            socketPath: server.socketPath,
+            maximumMessageBytes: 1_024,
+            ioTimeoutMilliseconds: 200,
+            pingIntervalMilliseconds: 50
+        )
+        try await socket.connect(path: "/ws/phi-agent/execute", headers: [:])
+
+        do {
+            _ = try await socket.receive()
+            XCTFail("Expected a peer that ignores pings to be detected as dead.")
+        } catch let error as ServiceBrokerWebSocketError {
+            XCTAssertEqual(error, .timedOut)
+        }
+
+        for _ in 0..<40 where server.receivedPings.isEmpty {
+            try await Task.sleep(for: .milliseconds(5))
+        }
+        XCTAssertGreaterThanOrEqual(server.receivedPings.count, 1)
+    }
+
+    func testWebSocketDoesNotPingWhileFramesAreFlowing() async throws {
+        let server = UnixWebSocketTestServer(script: .rapidFrames)
+        let socket = makeSocket(
+            socketPath: server.socketPath,
+            maximumMessageBytes: 1_024,
+            ioTimeoutMilliseconds: 200,
+            pingIntervalMilliseconds: 50
+        )
+        try await socket.connect(path: "/ws/phi-agent/execute", headers: [:])
+
+        for index in 0..<UnixWebSocketTestServer.rapidFrameCount {
+            let event = try await socket.receive()
+            XCTAssertEqual(event, .frame(
+                sequence: UInt64(index),
+                BrokerWebSocketFrame(kind: .text, data: Data("tick".utf8))
+            ))
+        }
+
+        XCTAssertEqual(server.receivedPings.count, 0)
+        await socket.close(code: 1000, reason: nil)
+    }
+
     func testWebSocketRejectsMaskedServerFrameAsProtocolError() async throws {
         let server = UnixWebSocketTestServer(script: .maskedServerFrame)
         let socket = makeSocket(socketPath: server.socketPath, maximumMessageBytes: 1_024)
@@ -311,7 +384,12 @@ private final class UnixWebSocketTestServer: @unchecked Sendable {
         case fragmentedAggregateOverflow
         case waitForClientEOF
         case stallHandshake
+        case silentAnsweringPings
+        case silentIgnoringPings
+        case rapidFrames
     }
+
+    static let rapidFrameCount = 15
 
     let socketPath: String
 
@@ -320,6 +398,7 @@ private final class UnixWebSocketTestServer: @unchecked Sendable {
     private let lock = NSLock()
     private var capturedRequest = Data()
     private var frames = [BrokerWebSocketFrame]()
+    private var pings = [(masked: Bool, payload: Data)]()
     private var pong: Data?
     private var closeEcho: (opcode: UInt8, masked: Bool, payload: Data)?
     private var closeEchoWaiters = [CheckedContinuation<(opcode: UInt8, masked: Bool, payload: Data), Never>]()
@@ -383,6 +462,12 @@ private final class UnixWebSocketTestServer: @unchecked Sendable {
         lock.lock()
         defer { lock.unlock() }
         return pong
+    }
+
+    var receivedPings: [(masked: Bool, payload: Data)] {
+        lock.lock()
+        defer { lock.unlock() }
+        return pings
     }
 
     func waitForCloseEcho() async -> (opcode: UInt8, masked: Bool, payload: Data) {
@@ -494,11 +579,70 @@ private final class UnixWebSocketTestServer: @unchecked Sendable {
             writeServerFrame(opcode: 0x0, payload: Data([3, 4]), to: connection)
             _ = readRawFrame(connection)
         case .waitForClientEOF:
+            // Drain whatever the client sends first — a graceful close writes a
+            // close frame before closing the descriptor — and report the EOF.
             var byte: UInt8 = 0
-            if Darwin.read(connection, &byte, 1) == 0 { onClientEOF() }
+            while Darwin.read(connection, &byte, 1) > 0 {}
+            onClientEOF()
         case .stallHandshake:
             return
+        case .silentAnsweringPings:
+            let start = DispatchTime.now()
+            var sentText = false
+            while Self.elapsedMilliseconds(since: start) < 2_000 {
+                if !sentText, Self.elapsedMilliseconds(since: start) >= 600 {
+                    writeServerFrame(opcode: 0x1, payload: Data("late".utf8), to: connection)
+                    sentText = true
+                }
+                guard Self.waitReadable(connection, milliseconds: 10) else { continue }
+                guard pumpClientFrame(connection, answeringPings: true) else { return }
+            }
+        case .silentIgnoringPings:
+            let start = DispatchTime.now()
+            while Self.elapsedMilliseconds(since: start) < 2_000 {
+                guard Self.waitReadable(connection, milliseconds: 10) else { continue }
+                guard pumpClientFrame(connection, answeringPings: false) else { return }
+            }
+        case .rapidFrames:
+            for _ in 0..<Self.rapidFrameCount {
+                writeServerFrame(opcode: 0x1, payload: Data("tick".utf8), to: connection)
+                guard drainClientFrames(connection, forMilliseconds: 20) else { return }
+            }
+            _ = drainClientFrames(connection, forMilliseconds: 300)
         }
+    }
+
+    /// Reads one pending client frame, recording pings and optionally answering
+    /// them with a pong. Returns `false` once the client has closed the socket.
+    private func pumpClientFrame(_ descriptor: Int32, answeringPings: Bool) -> Bool {
+        guard let frame = readRawFrame(descriptor) else { return false }
+        if frame.opcode == 0x9 {
+            lock.lock()
+            pings.append((frame.masked, frame.payload))
+            lock.unlock()
+            if answeringPings {
+                writeServerFrame(opcode: 0xA, payload: frame.payload, to: descriptor)
+            }
+        }
+        return frame.opcode != 0x8
+    }
+
+    private func drainClientFrames(_ descriptor: Int32, forMilliseconds duration: Double) -> Bool {
+        let start = DispatchTime.now()
+        while Self.elapsedMilliseconds(since: start) < duration {
+            guard Self.waitReadable(descriptor, milliseconds: 2) else { continue }
+            guard pumpClientFrame(descriptor, answeringPings: true) else { return false }
+        }
+        return true
+    }
+
+    private static func elapsedMilliseconds(since start: DispatchTime) -> Double {
+        Double(DispatchTime.now().uptimeNanoseconds - start.uptimeNanoseconds) / 1_000_000
+    }
+
+    private static func waitReadable(_ descriptor: Int32, milliseconds: Int32) -> Bool {
+        var polled = pollfd(fd: descriptor, events: Int16(POLLIN), revents: 0)
+        return Darwin.poll(&polled, 1, milliseconds) > 0
     }
 
     private func recordCloseEcho(_ frame: (opcode: UInt8, masked: Bool, payload: Data)) {

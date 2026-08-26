@@ -83,6 +83,11 @@ enum ServiceBrokerHTTPError: Error, Equatable, Sendable {
 }
 
 struct ServiceBrokerDeadline: Sendable {
+    /// A budget that never expires. Poll slices stay bounded by
+    /// `pollTimeoutMilliseconds(maximumSlice:)`, so callers still observe
+    /// cancellation promptly; only the timeout itself is removed.
+    static let never = ServiceBrokerDeadline(expirationNanoseconds: .max)
+
     private let expirationNanoseconds: UInt64
 
     init(timeoutMilliseconds: Int) {
@@ -91,6 +96,10 @@ struct ServiceBrokerDeadline: Sendable {
         let now = DispatchTime.now().uptimeNanoseconds
         let (expiration, expirationOverflow) = now.addingReportingOverflow(duration)
         expirationNanoseconds = durationOverflow || expirationOverflow ? UInt64.max : expiration
+    }
+
+    private init(expirationNanoseconds: UInt64) {
+        self.expirationNanoseconds = expirationNanoseconds
     }
 
     func pollTimeoutMilliseconds(maximumSlice: Int32 = 100) -> Int32? {

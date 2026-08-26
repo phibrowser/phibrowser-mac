@@ -25,6 +25,41 @@ final class AccountKeyManagerTests: XCTestCase {
             if let deviceEnvelopeError { throw deviceEnvelopeError }
             return envelopes[deviceKeyId]
         }
+
+        // join queue
+        var joinRequests: [String: JoinRequestDTO] = [:]
+        var pendingSummaries: [JoinRequestSummaryDTO] = []
+        var postJoinError: Error?
+        var lastPostedPublicKey: Data?
+        var approveCalls: [(id: String, envelope: Data, resolvedBy: String)] = []
+        var denyCalls: [String] = []
+        private var joinIdCounter = 0
+        static let fixedCreatedAt = Date(timeIntervalSince1970: 1_700_000_000)
+
+        func postJoinRequest(publicKey: Data, name: String, platform: String) async throws -> String {
+            if let postJoinError { throw postJoinError }
+            lastPostedPublicKey = publicKey
+            joinIdCounter += 1
+            let id = "join-\(joinIdCounter)"
+            joinRequests[id] = JoinRequestDTO(requestId: id, requestingPublicKey: publicKey, name: name,
+                platform: platform, status: "pending", grantedArkEnvelope: Data(),
+                createdAt: Self.fixedCreatedAt, resolvedByDeviceKeyId: nil)
+            return id
+        }
+        func listPendingJoinRequests() async throws -> [JoinRequestSummaryDTO] { pendingSummaries }
+        func getJoinRequest(id: String) async throws -> JoinRequestDTO {
+            guard let dto = joinRequests[id] else { throw JoinRequestError.notFound }
+            return dto
+        }
+        func approveJoinRequest(id: String, grantedArkEnvelope: Data, resolvedByDeviceKeyId: String) async throws {
+            approveCalls.append((id, grantedArkEnvelope, resolvedByDeviceKeyId))
+            if let dto = joinRequests[id] {
+                joinRequests[id] = JoinRequestDTO(requestId: dto.requestId, requestingPublicKey: dto.requestingPublicKey,
+                    name: dto.name, platform: dto.platform, status: "approved", grantedArkEnvelope: grantedArkEnvelope,
+                    createdAt: dto.createdAt, resolvedByDeviceKeyId: resolvedByDeviceKeyId)
+            }
+        }
+        func denyJoinRequest(id: String) async throws { denyCalls.append(id) }
     }
 
     // In-memory fake device key: same fingerprinting algorithm as `DeviceKeyStore`

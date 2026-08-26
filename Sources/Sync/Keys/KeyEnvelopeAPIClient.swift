@@ -63,6 +63,82 @@ struct DeviceEnvelopeDTO: Codable {
     }
 }
 
+enum JoinRequestError: Error, Equatable { case tooManyPending, notPending, notFound, invalidRequest }
+
+/// Response item for `GET /keys/v1/join-requests?status=pending` (no envelope).
+struct JoinRequestSummaryDTO: Decodable {
+    let requestId: String
+    let requestingPublicKey: Data
+    let name: String
+    let platform: String
+    let status: String
+    let createdAt: Date
+
+    enum CodingKeys: String, CodingKey {
+        case requestId = "request_id", requestingPublicKey = "requesting_public_key"
+        case name, platform, status, createdAt = "created_at"
+    }
+    init(requestId: String, requestingPublicKey: Data, name: String, platform: String, status: String, createdAt: Date) {
+        self.requestId = requestId; self.requestingPublicKey = requestingPublicKey
+        self.name = name; self.platform = platform; self.status = status; self.createdAt = createdAt
+    }
+    init(from d: Decoder) throws {
+        let c = try d.container(keyedBy: CodingKeys.self)
+        requestId = try c.decode(String.self, forKey: .requestId)
+        guard let pk = Data(base64Encoded: try c.decode(String.self, forKey: .requestingPublicKey)) else { throw KeyAPIError.decode }
+        requestingPublicKey = pk
+        name = try c.decode(String.self, forKey: .name)
+        platform = try c.decode(String.self, forKey: .platform)
+        status = try c.decode(String.self, forKey: .status)
+        guard let created = KeyEnvelopeAPIClient.parseRFC3339(try c.decode(String.self, forKey: .createdAt)) else { throw KeyAPIError.decode }
+        createdAt = created
+    }
+}
+
+/// Response for `GET /keys/v1/join-requests/{id}` (envelope field always present, "" until approved).
+struct JoinRequestDTO: Decodable {
+    let requestId: String
+    let requestingPublicKey: Data
+    let name: String
+    let platform: String
+    let status: String
+    let grantedArkEnvelope: Data
+    let createdAt: Date
+    let resolvedByDeviceKeyId: String?
+
+    enum CodingKeys: String, CodingKey {
+        case requestId = "request_id", requestingPublicKey = "requesting_public_key"
+        case name, platform, status
+        case grantedArkEnvelope = "granted_ark_envelope"
+        case createdAt = "created_at", resolvedByDeviceKeyId = "resolved_by_device_key_id"
+    }
+    init(requestId: String, requestingPublicKey: Data, name: String, platform: String,
+         status: String, grantedArkEnvelope: Data, createdAt: Date, resolvedByDeviceKeyId: String?) {
+        self.requestId = requestId; self.requestingPublicKey = requestingPublicKey
+        self.name = name; self.platform = platform; self.status = status
+        self.grantedArkEnvelope = grantedArkEnvelope; self.createdAt = createdAt
+        self.resolvedByDeviceKeyId = resolvedByDeviceKeyId
+    }
+    init(from d: Decoder) throws {
+        let c = try d.container(keyedBy: CodingKeys.self)
+        requestId = try c.decode(String.self, forKey: .requestId)
+        guard let pk = Data(base64Encoded: try c.decode(String.self, forKey: .requestingPublicKey)) else { throw KeyAPIError.decode }
+        requestingPublicKey = pk
+        name = try c.decode(String.self, forKey: .name)
+        platform = try c.decode(String.self, forKey: .platform)
+        status = try c.decode(String.self, forKey: .status)
+        let rawEnv = (try c.decodeIfPresent(String.self, forKey: .grantedArkEnvelope)) ?? ""
+        if rawEnv.isEmpty { grantedArkEnvelope = Data() }
+        else {
+            guard let e = Data(base64Encoded: rawEnv) else { throw KeyAPIError.decode }
+            grantedArkEnvelope = e
+        }
+        guard let created = KeyEnvelopeAPIClient.parseRFC3339(try c.decode(String.self, forKey: .createdAt)) else { throw KeyAPIError.decode }
+        createdAt = created
+        resolvedByDeviceKeyId = try c.decodeIfPresent(String.self, forKey: .resolvedByDeviceKeyId)
+    }
+}
+
 final class KeyEnvelopeAPIClient {
     private let session: URLSession
     private let tokenProvider: () async -> String?
@@ -151,6 +227,58 @@ final class KeyEnvelopeAPIClient {
         case 404: return nil
         default: throw KeyAPIError.http(status, String(data: data, encoding: .utf8) ?? "")
         }
+    }
+
+    static func parseRFC3339(_ s: String) -> Date? {
+        let f = ISO8601DateFormatter()
+        f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        if let d = f.date(from: s) { return d }
+        f.formatOptions = [.withInternetDateTime]
+        return f.date(from: s)
+    }
+
+    private func mapJoinError(_ status: Int, _ data: Data) -> Error {
+        switch status {
+        case 429: return JoinRequestError.tooManyPending
+        case 409: return JoinRequestError.notPending
+        case 404: return JoinRequestError.notFound
+        case 400: return JoinRequestError.invalidRequest
+        default:  return KeyAPIError.http(status, String(data: data, encoding: .utf8) ?? "")
+        }
+    }
+
+    func postJoinRequest(publicKey: Data, name: String, platform: String) async throws -> String {
+        let (status, data) = try await request("POST", "/keys/v1/join-requests", body: [
+            "requesting_public_key": publicKey.base64EncodedString(), "name": name, "platform": platform])
+        guard status == 200 || status == 204 else { throw mapJoinError(status, data) }
+        guard let obj = try? JSONDecoder().decode([String: String].self, from: data), let id = obj["request_id"] else {
+            throw KeyAPIError.decode
+        }
+        return id
+    }
+
+    func listPendingJoinRequests() async throws -> [JoinRequestSummaryDTO] {
+        let (status, data) = try await request("GET", "/keys/v1/join-requests?status=pending")
+        guard status == 200 else { throw mapJoinError(status, data) }
+        return try JSONDecoder().decode([JoinRequestSummaryDTO].self, from: data)
+    }
+
+    func getJoinRequest(id: String) async throws -> JoinRequestDTO {
+        let (status, data) = try await request("GET", "/keys/v1/join-requests/\(id)")
+        guard status == 200 else { throw mapJoinError(status, data) }
+        return try JSONDecoder().decode(JoinRequestDTO.self, from: data)
+    }
+
+    func approveJoinRequest(id: String, grantedArkEnvelope: Data, resolvedByDeviceKeyId: String) async throws {
+        let (status, data) = try await request("POST", "/keys/v1/join-requests/\(id)/approve", body: [
+            "granted_ark_envelope": grantedArkEnvelope.base64EncodedString(),
+            "resolved_by_device_key_id": resolvedByDeviceKeyId])
+        guard status == 200 || status == 204 else { throw mapJoinError(status, data) }
+    }
+
+    func denyJoinRequest(id: String) async throws {
+        let (status, data) = try await request("POST", "/keys/v1/join-requests/\(id)/deny")
+        guard status == 200 || status == 204 else { throw mapJoinError(status, data) }
     }
 }
 

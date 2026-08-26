@@ -66,6 +66,14 @@ struct PreviewKeyEnvelopeAPI: KeyEnvelopeAPI {
     func getAccount() async throws -> AccountKeyStateDTO? { nil }
     func postDevice(deviceKeyId: String, publicKey: Data, name: String, platform: String, arkEnvelope: Data?) async throws {}
     func getDeviceEnvelope(deviceKeyId: String) async throws -> Data? { nil }
+    func postJoinRequest(publicKey: Data, name: String, platform: String) async throws -> String { "preview" }
+    func listPendingJoinRequests() async throws -> [JoinRequestSummaryDTO] { [] }
+    func getJoinRequest(id: String) async throws -> JoinRequestDTO {
+        JoinRequestDTO(requestId: id, requestingPublicKey: Data(), name: "", platform: "macos",
+                       status: "pending", grantedArkEnvelope: Data(), createdAt: Date(), resolvedByDeviceKeyId: nil)
+    }
+    func approveJoinRequest(id: String, grantedArkEnvelope: Data, resolvedByDeviceKeyId: String) async throws {}
+    func denyJoinRequest(id: String) async throws {}
 }
 
 /// No-op `DeviceKeyProviding` fake used only to drive SwiftUI previews for the

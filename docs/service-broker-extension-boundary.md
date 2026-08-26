@@ -32,15 +32,57 @@ Replies use the request-scoped `sendMessageToApp` return value because the exist
 - Release-Canary Swift sources must compile with the `NIGHTLY_BUILD` condition. This keeps shared authentication, locks, heartbeats, API endpoints, and Auth0 configuration on Canary-specific accounts and endpoints; a C/Objective-C preprocessor definition alone does not affect Swift `#if` branches.
 - Extensions select only an allowed relative request path and method. They cannot supply a socket path, host, port, service name, or extension identity header.
 - Phi Browser resolves the account-scoped broker socket from shared authentication state. The preferred `/tmp/phi-sentinel-<hash>/sockets` path is used only when each existing short-path component is a real directory owned by the current uid; otherwise both Sentinel and the browser select `<storage>/state/sockets`. There is no TCP host/port fallback.
+- Sentinel reports the transport mode it currently applies to clients (`legacy`, `uds`, or `full_uds`) as an additive `transport_mode` string on the response of the `getComponentExports` IPC the browser already makes; no IPC method is added for it. The browser accepts the field at the response envelope root or inside the exports object, and reads an absent, non-string, or unrecognised value as `uds` — the behaviour of every Sentinel released before the field existed. Removing that one key from the exports object is the single deliberate exception to forwarding exports verbatim: `transport_mode` is a browser-facing routing signal, not a component export, so extensions and `PhiAgentEndpointResolver` never see a bare string among the component-ID objects. Every other entry is forwarded unchanged.
 - A successful UDS connect is not proof of broker identity. Before sending a request, credential, or WebSocket handshake byte, the browser requires the peer uid to match its effective uid and validates the `LOCAL_PEERPID` process against the signed `service-broker` code requirement for Team ID `87DQ3HMK5G`. Failure is terminal and never falls back to another transport.
 - The browser enforces the broker's negotiated request, response, streaming, and WebSocket limits.
 - Chromium keeps the legacy 1 MiB native-message JSON limit for non-broker traffic. `broker.*` envelopes admit exactly `ceil(16 MiB / 3) * 4 + 64 KiB` bytes so a negotiated 16 MiB raw request plus bounded base64/JSON overhead reaches the browser protocol; the Mac layer remains the semantic and decoded-size enforcement point.
 - Each HTTP connect/write/response-head sequence, and each WebSocket handshake, send, and close, has one monotonic 30-second I/O budget. The WebSocket receive budget is 30 seconds since the last inbound frame of any kind — data, continuation, ping, or pong — and after 10 seconds of read silence the browser sends its own WebSocket ping, so an idle-but-alive channel stays open while a dead peer is still detected within 30 seconds. The Sentinel broker answers these bridge-side pings itself, so keepalive never depends on the upstream service. Streaming HTTP body reads have no per-read deadline, matching Chromium fetch semantics; they are bounded only by cancellation, EOF, and the channel idle timer. Swift task cancellation closes the UDS descriptor so a stalled peer cannot leave a detached poll/read/write running indefinitely.
 - `/broker` is reserved for broker-owned management routes. Only `broker.http.request` admits exact `GET /broker/healthz` with no body and maps it to broker service path `/healthz`. Query suffixes, encoded spellings, path variations, other methods, bodies, streaming attempts, `/broker/version`, and every other extension-supplied `/broker` path are rejected.
 - `broker.capabilities` is the explicit bridge handshake. After exact sender
-  authorization it returns `protocolVersion: 1` without requiring account auth
-  or Sentinel runtime resolution. This lets newer extensions distinguish an
-  older browser from a supported broker before selecting a business transport.
+  authorization and payload validation, the browser reads Sentinel's current
+  `transport_mode` and answers `unsupported_message` when — and only when — that
+  mode is exactly `legacy`; for `uds`, `full_uds`, an absent field, an
+  unrecognised value, a failed lookup, or a lookup that outruns its budget it
+  returns `protocolVersion: 1` without requiring account auth or Sentinel
+  runtime resolution. The mode read carries its own browser-local 500 ms
+  budget, well inside the extension's 1_500 ms per-attempt capability probe:
+  a hung-but-connectable Sentinel must never stall the handshake until the
+  extension's probe ladder gives up, because an exhausted ladder is cached as
+  "unsupported" — the opposite of what a failed lookup must mean. The budget
+  bounds the answer but not the work — the IPC blocks in `connect`, which no
+  socket timeout covers — so two further limits bound the work itself:
+  genuinely concurrent handshakes are **coalesced onto one lookup**, and after
+  a lookup expires the browser **stops asking Sentinel for 5 seconds** and
+  answers from the fallback without starting new IPC. Neither is a cache of the
+  mode: the shared lookup is released as it completes, and the first handshake
+  after the pause pays for a fresh read, so a `uds` to `legacy` switch still
+  converges. This lets newer
+  extensions distinguish an older browser from a supported broker before
+  selecting a business transport, and lets Sentinel's staged rollout withdraw
+  the broker path from every maintained extension at once. The mode is re-read
+  on every handshake and is never cached with the negotiated runtime, so a
+  `uds` to `legacy` switch converges on the next handshake. The legacy answer is
+  recorded as `ServiceBrokerFallbackReason.protocolUnsupported`, whose
+  `allowsLoopback` is true; no other transport-mode value permits fallback.
+
+### Transport-mode compatibility
+
+| Sentinel reports | Browser answer to `broker.capabilities` | Extension transport |
+| --- | --- | --- |
+| `transport_mode` absent (every Sentinel released before the staged rollout) | `protocolVersion: 1` | Native broker, unchanged |
+| `transport_mode: "uds"` | `protocolVersion: 1` | Native broker |
+| `transport_mode: "full_uds"` | `protocolVersion: 1` | Native broker |
+| `transport_mode: "legacy"` | `unsupported_message` | `getServiceExports` plus direct loopback HTTP and WebSocket |
+| an unrecognised `transport_mode` value | `protocolVersion: 1` | Native broker |
+| the `getComponentExports` lookup failed (Sentinel not running, socket missing) | `protocolVersion: 1` | Native broker, which then fails on its own terms |
+| nobody is signed in (no Auth0 subject ⇒ no account-scoped socket path ⇒ `socketNotFound`, thrown before any IPC) | `protocolVersion: 1` | Native broker; the extension's 30 s capability TTL re-probes and converges once auth lands |
+| the lookup outran its browser-local 500 ms budget (hung-but-connectable Sentinel) | `protocolVersion: 1` | Native broker, which then fails on its own terms |
+
+An older browser, which never reads `transport_mode`, keeps answering
+`protocolVersion: 1` against a `legacy` Sentinel; that stays correct because a
+`legacy` Sentinel still runs the broker and every managed service still listens
+on both its socket and loopback. Browser and Sentinel therefore ship
+independently in either order.
 
 ## Request and channel lifecycle
 

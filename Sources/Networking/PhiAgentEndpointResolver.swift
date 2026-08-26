@@ -70,8 +70,8 @@ final actor PhiAgentEndpointResolver {
 
     private static func resolve(using ipcClient: SentinelIPCClient) async -> String {
         do {
-            let json = try await ipcClient.getComponentExports()
-            if let url = parsePhiAgentApiBase(from: json) {
+            let exports = try await ipcClient.getComponentExports()
+            if let url = parsePhiAgentApiBase(from: exports.exportsJSON) {
                 AppLogDebug("[PhiAgentEndpoint] resolved via Sentinel: \(url)")
                 return url
             }
@@ -83,7 +83,7 @@ final actor PhiAgentEndpointResolver {
     }
 
     /// Extracts and normalizes `phi-agent.api_base` from the JSON string
-    /// returned by `SentinelIPCClient.getComponentExports()`.
+    /// returned by `SentinelIPCClient.getComponentExports()` as `exportsJSON`.
     /// Returns nil when the field is absent, not a string, or not a valid URL.
     static func parsePhiAgentApiBase(from json: String) -> String? {
         guard let data = json.data(using: .utf8),

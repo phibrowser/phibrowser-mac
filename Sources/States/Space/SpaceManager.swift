@@ -7482,8 +7482,9 @@ final class SpaceWindowSlot: ObservableObject {
     /// this slot. Kept in sync via `didBecomeKey` so any path that surfaces
     /// a window — our own `activate`, ⌘`, Dock click — is reflected here.
     ///
-    /// The didSet swaps frame-change observers onto the new visible window
-    /// so drags/resizes propagate to siblings (see `observeFrameChanges`).
+    /// The didSet swaps frame-change observers onto the new visible window so
+    /// drags/resizes update the geometry later switches and spawns inherit (see
+    /// `observeFrameChanges`).
     /// Weak-var auto-nil-out does NOT trigger didSet, so cleanup also runs
     /// from `deinit`.
     private(set) weak var visibleController: MainBrowserWindowController? {
@@ -7796,10 +7797,8 @@ final class SpaceWindowSlot: ObservableObject {
     /// `NSWindow.didMove` / `didResize` tokens for the currently-visible
     /// window. Swapped wholesale by `observeFrameChanges` whenever
     /// `visibleController` changes — only the visible window can be dragged
-    /// or resized (siblings are `orderOut`'d), so observing exactly one
-    /// window keeps propagation cheap and structurally prevents the
-    /// setFrame-fires-didMove feedback loop a per-sibling observer would
-    /// create.
+    /// or resized (siblings are `orderOut`'d), so it is the authoritative source
+    /// for the slot's remembered geometry.
     private var visibleFrameObservers: [NSObjectProtocol] = []
 
     /// Swapped onto the visible window alongside the two observers above, and
@@ -7808,8 +7807,8 @@ final class SpaceWindowSlot: ObservableObject {
     /// `observeSidebarWidth`.
     private var visibleSidebarWidthObserver: AnyCancellable?
 
-    /// The on-screen frame every Space window in this slot is kept aligned to
-    /// — the slot's single source of truth for window position/size. Refreshed
+    /// The on-screen frame every Space window in this slot inherits when it is
+    /// surfaced — the slot's single source of truth for position/size. Refreshed
     /// whenever the visible window moves or resizes (`observeFrameChanges`) and
     /// whenever a switch reads a live source frame (`resolveInheritedFrame`).
     /// Both the switch path and the spawn path inherit from it, so continuity
@@ -7822,10 +7821,10 @@ final class SpaceWindowSlot: ObservableObject {
 
     /// `lastKnownFrame` minus the fullscreen rects — the geometry this slot
     /// would occupy as an ordinary window. Kept apart because the two answer
-    /// different questions: `lastKnownFrame` is "align the siblings to this",
-    /// which must follow the window into fullscreen, while this is "reopen
-    /// here", which must not (a restored window always comes back windowed, so
-    /// a screen-sized rect would be a lie every time it were used).
+    /// different questions: `lastKnownFrame` is "surface the next Space here",
+    /// which must follow the window into fullscreen, while this is "reopen here",
+    /// which must not (a restored window always comes back windowed, so a
+    /// screen-sized rect would be a lie every time it were used).
     ///
     /// Refreshed from the visible window's live frame whenever one is available
     /// — by the frame observer on every move/resize, and by `snapshotFrame` at
@@ -7846,9 +7845,9 @@ final class SpaceWindowSlot: ObservableObject {
     private var lastKnownTrafficLightOrigin: NSPoint?
 
     /// True for the duration of a `performHorizontalWindowSlide`. Read by
-    /// the `observeFrameChanges` propagation closure to early-return — the
-    /// previous window's animated `didMove` would otherwise overwrite the
-    /// target window's in-flight frame and break the slide.
+    /// `observeFrameChanges` to ignore the previous window's animated `didMove`,
+    /// which would otherwise overwrite the slot's remembered frame with a
+    /// transient animation position.
     private var isAnimatingWindowSlide = false
 
     /// Cancellation handle for an in-flight window slide. Invoking it
@@ -12125,16 +12124,10 @@ final class SpaceWindowSlot: ObservableObject {
         manager?.notifySlotBecameKey(self)
     }
 
-    /// Swap the move/resize observers onto `controller`'s window so any drag
-    /// or resize of the visible window is mirrored onto every sibling in this
-    /// slot immediately — siblings stay pre-aligned to the user's current
-    /// position/size, so any subsequent swap surfaces them at the right place
-    /// regardless of which code path runs (swap or spawn).
-    ///
-    /// Observing only the visible window is essential: siblings receive the
-    /// propagated `setFrame` and fire their own didMove/didResize, but no
-    /// observer is hooked to them, so there is no echo. Hooking every window
-    /// would create an A→B→A feedback loop.
+    /// Swap the move/resize observers onto `controller`'s window so the slot's
+    /// remembered geometry follows the window currently visible to the user.
+    /// Switch and spawn paths apply that geometry when another Space surfaces;
+    /// grouped windows continue to share geometry through AppKit.
     private func observeFrameChanges(on controller: MainBrowserWindowController?) {
         for token in visibleFrameObservers {
             NotificationCenter.default.removeObserver(token)
@@ -12146,7 +12139,7 @@ final class SpaceWindowSlot: ObservableObject {
         // PREVIOUS window's subscription alive.
         observeSidebarWidth(on: controller)
         guard let window = controller?.window else { return }
-        let propagate: () -> Void = { [weak self, weak window] in
+        let recordFrameChange: () -> Void = { [weak self, weak window] in
             guard let self,
                   !self.isAnimatingWindowSlide,
                   let window,
@@ -12192,12 +12185,11 @@ final class SpaceWindowSlot: ObservableObject {
             // the window while the FIRST prompt is up, answer "Leave" to it, and
             // then "Cancel" a later sibling's prompt. That drag is refused here
             // and the dragged window is gone before the recovery runs, so the
-            // slot settles on the survivor's older position instead. Every way
-            // of keeping the drag re-opens the hole this guard closes —
-            // propagating to siblings mid-cascade carries a clobbered frame the
-            // same way, and `pressedMouseButtons` is the unreliable proxy that
-            // was removed from here for good reason. Losing one drag on that
-            // path is the cheaper failure.
+            // slot settles on the survivor's older position instead. Accepting
+            // that transient frame into the cache re-opens the hole this guard
+            // closes, and `pressedMouseButtons` is the unreliable proxy that was
+            // removed from here for good reason. Losing one drag on that path is
+            // the cheaper failure.
             if self.isCascadingSlotClose {
                 return
             }
@@ -12205,22 +12197,13 @@ final class SpaceWindowSlot: ObservableObject {
             // record it so a later spawn/switch inherits the user's drag even
             // if the source window is gone by then.
             self.lastKnownFrame = frame
-            // Never push a fullscreen rect onto the siblings. A sibling that has
-            // been ordered out is a plain windowed NSWindow, and a screen-sized
-            // rect puts its title bar above the menu bar — AppKit used to shove
-            // that back down on order-in, but Phi's
-            // `constrainFrameRect:toScreen:` override deliberately hands such a
-            // frame back untouched now, so an unreachable sibling would stay
-            // unreachable. The slot's own frame still follows fullscreen above:
-            // the in-fullscreen swap path inherits it.
-            //
-            // Keyed on the frame rather than on the window's `.fullScreen`
-            // styleMask, so that re-aligning the siblings on the way out of
-            // fullscreen does not hinge on when AppKit flips that mask — a point
-            // this code cannot observe (`windowFullScreenStateChanged` runs off
-            // the WILL hooks, which by design fire before the flip). The
-            // didResize that lands while leaving fullscreen already carries the
-            // windowed rect, so it propagates whatever the mask says.
+            // Never record a fullscreen rect as the slot's windowed geometry.
+            // `lastKnownFrame` above still follows fullscreen for switches inside
+            // that Space, while `lastKnownWindowedFrame` must retain the ordinary
+            // rect used for restore. Keyed on the frame rather than the window's
+            // `.fullScreen` styleMask because the will-enter / will-exit hooks run
+            // before AppKit flips that mask; the didResize delivered on exit
+            // already carries the settled windowed rect.
             if NSScreen.screens.contains(where: { $0.frame.equalTo(frame) }) {
                 return
             }
@@ -12249,21 +12232,18 @@ final class SpaceWindowSlot: ObservableObject {
                 self.lastKnownWindowedFrame = frame
                 self.manager?.scheduleSlotsSnapshotPersist()
             }
-            for (_, sibling) in self.windowsBySpaceId where sibling !== visible {
-                sibling.window?.setFrame(frame, display: false)
-            }
         }
         let move = NotificationCenter.default.addObserver(
             forName: NSWindow.didMoveNotification,
             object: window,
             queue: .main,
-            using: { _ in propagate() }
+            using: { _ in recordFrameChange() }
         )
         let resize = NotificationCenter.default.addObserver(
             forName: NSWindow.didResizeNotification,
             object: window,
             queue: .main,
-            using: { _ in propagate() }
+            using: { _ in recordFrameChange() }
         )
         visibleFrameObservers = [move, resize]
     }
@@ -12326,9 +12306,9 @@ final class SpaceWindowSlot: ObservableObject {
     }
 
     /// Re-checks this slot's placement after a screen-layout change and pulls
-    /// the windows back when the new layout left them unreachable. Only the
-    /// visible window is moved; the frame observer mirrors the correction onto
-    /// the siblings and records it, exactly as it does for a user drag.
+    /// the visible window back when the new layout left it unreachable. The
+    /// frame observer records the correction so later switches and spawns
+    /// inherit it, exactly as it does for a user drag.
     ///
     /// Skipped in fullscreen (the frame is legitimately the whole screen there)
     /// and mid-cascade (the slot is tearing down, and the observer refuses

@@ -44,7 +44,10 @@ private final class PinnedPeekBadgeView: NSView {
         faviconView.imageScaling = .scaleProportionallyUpOrDown
         addSubview(faviconView)
         faviconView.snp.makeConstraints { make in
-            make.edges.equalToSuperview().inset(3)
+            // Just inside the circle's inscribed square (~14.8pt at a 21pt
+            // diameter) so the favicon reads as sitting on the plate rather
+            // than pushing against its edge.
+            make.edges.equalToSuperview().inset(4)
         }
 
         minusView.image = NSImage(systemSymbolName: "minus", accessibilityDescription: nil)

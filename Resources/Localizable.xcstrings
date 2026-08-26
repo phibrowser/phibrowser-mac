@@ -11,7 +11,7 @@
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Antwort gilt „%@“"
+            "value" : "Antwort gilt für „%@“"
           }
         },
         "en" : {
@@ -23,43 +23,43 @@
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Respondiendo por “%@”"
+            "value" : "Respondiendo para “%@”"
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Réponse pour « %@ »"
+            "value" : "Réponse appliquée à « %@ »"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "「%@」について回答"
+            "value" : "「%@」を対象に回答"
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "“%@”에 대해 응답"
+            "value" : "“%@”에 대해 답변 중"
           }
         },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Antwoord geldt voor ‘%@’"
+            "value" : "Antwoord geldt voor “%@”"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "答复对象：“%@”"
+            "value" : "回答对象为「%@」"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "答覆對象：「%@」"
+            "value" : "回答對象為「%@」"
           }
         }
       }
@@ -101,13 +101,13 @@
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "명령"
+            "value" : "명령어"
           }
         },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Opdracht"
+            "value" : "Commando"
           }
         },
         "zh-Hans" : {
@@ -161,25 +161,25 @@
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "(명령을 읽을 수 없음)"
+            "value" : "(명령어를 확인할 수 없음)"
           }
         },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "(opdracht niet beschikbaar)"
+            "value" : "(commando niet beschikbaar)"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "（无法读取命令）"
+            "value" : "（无法获取命令）"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "（無法讀取指令）"
+            "value" : "（無法取得指令）"
           }
         }
       }
@@ -209,7 +209,7 @@
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Masquer la commande et l’arborescence des processus de l’agent"
+            "value" : "Masquer la commande et l'arborescence des processus de l'agent"
           }
         },
         "ja" : {
@@ -221,25 +221,25 @@
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "에이전트의 명령과 프로세스 트리 숨기기"
+            "value" : "에이전트의 명령어 및 프로세스 트리 가리기"
           }
         },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Opdracht en procesboom van de agent verbergen"
+            "value" : "Verberg het commando en de processtructuur van de agent"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "隐藏该智能体的命令与进程树"
+            "value" : "隐藏智能体的命令与进程树"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "隱藏該 AI 代理的指令與行程樹"
+            "value" : "隱藏 AI 代理的指令與程序樹"
           }
         }
       }
@@ -281,7 +281,7 @@
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "세부 정보"
+            "value" : "세부사항"
           }
         },
         "nl" : {
@@ -293,7 +293,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "详情"
+            "value" : "详细信息"
           }
         },
         "zh-Hant" : {
@@ -311,7 +311,7 @@
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Befehl und Prozessbaum des Agenten anzeigen"
+            "value" : "Befehl und Prozessbaum des Agenten einblenden"
           }
         },
         "en" : {
@@ -329,7 +329,7 @@
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Afficher la commande et l’arborescence des processus de l’agent"
+            "value" : "Afficher la commande et l'arborescence des processus de l'agent"
           }
         },
         "ja" : {
@@ -341,25 +341,25 @@
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "에이전트의 명령과 프로세스 트리 표시"
+            "value" : "에이전트의 명령어 및 프로세스 트리 보기"
           }
         },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Opdracht en procesboom van de agent tonen"
+            "value" : "Toon het commando en de processtructuur van de agent"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "显示该智能体的命令与进程树"
+            "value" : "显示智能体的命令与进程树"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "顯示該 AI 代理的指令與行程樹"
+            "value" : "顯示 AI 代理的指令與程序樹"
           }
         }
       }
@@ -371,7 +371,7 @@
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Deine Antwort gilt „%@“. Wähle oben eine Zeile, um stattdessen über den Prozess zu entscheiden, der ihn gestartet hat."
+            "value" : "Deine Antwort bezieht sich auf „%@“. Wähle oben eine Zeile aus, damit deine Antwort stattdessen für den Prozess gilt, der diesen Agenten gestartet hat."
           }
         },
         "en" : {
@@ -383,43 +383,43 @@
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Tu respuesta es sobre “%@”. Elige una fila de arriba para responder sobre el proceso que lo inició."
+            "value" : "Tu respuesta se refiere a “%@”. Elige una fila de arriba si prefieres responder sobre el proceso que lo inició."
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Votre réponse concerne « %@ ». Choisissez une ligne ci-dessus pour répondre plutôt à propos du processus qui l’a lancé."
+            "value" : "Votre réponse porte sur « %@ ». Sélectionnez une ligne ci-dessus pour qu'elle porte plutôt sur le processus qui l'a lancé."
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "この回答は「%@」についてのものです。起動元のプロセスについて回答するには、上の行を選んでください。"
+            "value" : "回答の対象は「%@」です。上のいずれかの行を選択すると、代わりにそれを起動したプロセスを対象に回答できます。"
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "이 응답은 “%@”에 대한 것이에요. 위의 행을 선택하면 이를 실행한 프로세스에 대해 응답할 수 있어요."
+            "value" : "이 답변은 “%@”에 적용돼요. 대신 이 에이전트를 실행한 프로세스에 대해 답변하려면 위에서 행을 선택하세요."
           }
         },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Je antwoord gaat over ‘%@’. Kies hierboven een regel om in plaats daarvan te antwoorden over het proces dat het heeft gestart."
+            "value" : "Je antwoord gaat over “%@”. Kies hierboven een rij om in plaats daarvan te antwoorden over het proces dat het heeft gestart."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "当前答复的是“%@”。想改为答复启动它的进程，请在上方选择相应的一行。"
+            "value" : "你的回答对象是「%@」。也可在上方选择一行，将回答对象改为启动它的进程。"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "目前答覆的是「%@」。想改為答覆啟動它的行程，請在上方選擇該列。"
+            "value" : "你的回答針對「%@」。若要改為針對啟動它的程序回答，請在上方選取一列。"
           }
         }
       }
@@ -431,7 +431,7 @@
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Deine Antwort gilt „%@“ – jeder Agent, den es startet, bekommt dieselbe Antwort, ohne erneut zu fragen."
+            "value" : "Deine Antwort gilt für „%@“: Jeder Agent, den dieser Prozess startet, erhält dieselbe Antwort, ohne dass erneut gefragt wird."
           }
         },
         "en" : {
@@ -443,43 +443,43 @@
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Tu respuesta cubre “%@”: todos los agentes que inicie recibirán la misma respuesta, sin volver a preguntar."
+            "value" : "Tu respuesta cubre “%@”: cada agente que este inicie recibirá la misma respuesta, sin volver a preguntar."
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Votre réponse couvre « %@ » : tous les agents qu’il lance recevront la même réponse, sans nouvelle demande."
+            "value" : "Votre réponse s'applique à « %@ » : chaque agent qu'il lance reçoit la même réponse, sans nouvelle demande."
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "この回答は「%@」全体に適用され、そこから起動されるエージェントは確認なしで同じ扱いになります。"
+            "value" : "回答の対象は「%@」です。このプロセスが起動するすべてのエージェントに同じ回答が適用され、再度確認されることはありません。"
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "이 응답은 “%@”에 적용돼요. 여기서 실행되는 모든 에이전트가 다시 묻지 않고 같은 응답을 받아요."
+            "value" : "이 답변은 “%@”에 적용돼요. 이 프로세스가 실행하는 모든 에이전트가 따로 묻지 않고 같은 답변을 받아요."
           }
         },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Je antwoord geldt voor ‘%@’ — elke agent die het start, krijgt hetzelfde antwoord, zonder opnieuw te vragen."
+            "value" : "Je antwoord geldt voor “%@”: elke agent die erdoor wordt gestart, krijgt hetzelfde antwoord zonder opnieuw te hoeven vragen."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "该答复将覆盖“%@”——它启动的每个智能体都会得到相同答复，不再询问。"
+            "value" : "你的回答适用于「%@」：它启动的每个智能体都会获得相同的回答，不会再次询问。"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "此答覆將涵蓋「%@」——它啟動的每個 AI 代理都會得到相同答覆，不再詢問。"
+            "value" : "你的回答涵蓋「%@」：它啟動的每個 AI 代理都會獲得相同的回答，不會再次詢問。"
           }
         }
       }
@@ -521,13 +521,13 @@
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "명령과 프로세스 트리"
+            "value" : "명령어 및 프로세스 트리"
           }
         },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Opdracht en procesboom"
+            "value" : "Commando en processtructuur"
           }
         },
         "zh-Hans" : {
@@ -539,7 +539,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "指令與行程樹"
+            "value" : "指令與程序樹"
           }
         }
       }
@@ -593,13 +593,13 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "当前智能体"
+            "value" : "此智能体"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "目前的 AI 代理"
+            "value" : "此 AI 代理"
           }
         }
       }
@@ -708,13 +708,13 @@
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "回答対象"
+            "value" : "回答の対象"
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "응답 대상"
+            "value" : "답변 대상"
           }
         },
         "nl" : {
@@ -726,13 +726,13 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "答复对象"
+            "value" : "回答对象"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "答覆對象"
+            "value" : "回答對象"
           }
         }
       }
@@ -744,7 +744,7 @@
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Dieser Prozess hat keine gültige Codesignatur. Sein Name stammt aus dem Befehl, mit dem er gestartet wurde – beanspruchen könnte ihn jedes Programm. Öffne „Details“ und sieh dir diesen Befehl an, bevor du zustimmst."
+            "value" : "Dieser Prozess hat keine gültige Codesignatur. Sein Name stammt daher aus dem Befehl, mit dem er gestartet wurde, und jedes beliebige Programm könnte ihn beanspruchen. Öffne die Details, um dir diesen Befehl anzusehen, bevor du den Zugriff erlaubst."
           }
         },
         "en" : {
@@ -756,43 +756,43 @@
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Este proceso no tiene una firma de código válida, así que su nombre viene del comando con el que se inició y cualquier cosa podría atribuírselo. Abre Detalles para ver ese comando antes de permitirlo."
+            "value" : "Este proceso no tiene una firma de código válida, por lo que su nombre proviene del comando con el que se inició y cualquier proceso podría atribuírselo. Abre Detalles para ver ese comando antes de permitirle el acceso."
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Ce processus ne porte aucune signature de code valide : son nom provient de la commande qui l’a lancé et n’importe quoi pourrait s’en réclamer. Ouvrez Détails pour voir cette commande avant de l’autoriser."
+            "value" : "Ce processus ne comporte aucune signature de code valide : son nom provient de la commande avec laquelle il a été lancé, et n'importe quel programme pourrait se l'attribuer. Ouvrez Détails pour consulter cette commande avant d'autoriser l'accès."
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "このプロセスには有効なコード署名がありません。名前は起動時のコマンドから取られたもので、どんなプログラムでも名乗れます。許可する前に「詳細」でそのコマンドを確認してください。"
+            "value" : "このプロセスには有効なコード署名がありません。そのため、名前は起動時のコマンドに由来するもので、どのプロセスでも同じ名前を名乗ることができます。許可する前に「詳細」を開いて、そのコマンドを確認してください。"
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "이 프로세스에는 유효한 코드 서명이 없어요. 이름은 실행할 때 쓴 명령에서 가져온 것이라 무엇이든 그 이름을 쓸 수 있어요. 허용하기 전에 세부 정보에서 그 명령을 확인해 보세요."
+            "value" : "이 프로세스에는 유효한 코드 서명이 없어요. 이름은 실행에 사용된 명령어에서 가져온 것이라 어떤 프로세스든 같은 이름을 내세울 수 있어요. 허용하기 전에 세부사항을 열어 해당 명령어를 확인하세요."
           }
         },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Dit proces heeft geen geldige codehandtekening. De naam komt uit de opdracht waarmee het is gestart, en van alles kan die naam claimen. Open Details om die opdracht te bekijken voordat je toestemming geeft."
+            "value" : "Dit proces heeft geen geldige codehandtekening. De naam komt daarom uit het commando waarmee het is gestart, en alles kan die naam claimen. Open Details om dat commando te bekijken voordat je toestemming geeft."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "这个进程没有有效的代码签名，它的名称来自启动它的命令，任何程序都可以冒用。允许之前，请先打开「详情」查看该命令。"
+            "value" : "此进程没有有效的代码签名，因此它的名称来自启动它的命令，任何程序都可能冒用这个名称。在允许之前，请打开「详细信息」查看该命令。"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "這個行程沒有有效的程式碼簽署，名稱來自啟動它的指令，任何程式都可以冒用。允許之前，請先開啟「詳細資訊」查看該指令。"
+            "value" : "此程序沒有有效的程式碼簽章，其名稱僅來自啟動時所用的指令，任何程式都可能冒用這個名稱。允許之前，請先開啟「詳細資訊」查看該指令。"
           }
         }
       }
@@ -804,7 +804,7 @@
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Nicht signiert – Phi kann diesen Agenten nicht verifizieren"
+            "value" : "Nicht signiert: Phi kann diesen Agenten nicht verifizieren"
           }
         },
         "en" : {
@@ -822,37 +822,37 @@
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Non signé — Phi ne peut pas vérifier cet agent"
+            "value" : "Non signé : Phi ne peut pas vérifier cet agent"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "未署名 — Phi はこのエージェントを検証できません"
+            "value" : "未署名：Phiはこのエージェントを検証できません"
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "서명 없음 — Phi가 이 에이전트를 확인할 수 없어요"
+            "value" : "서명되지 않음: Phi가 이 에이전트를 확인할 수 없어요"
           }
         },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Niet ondertekend — Phi kan deze agent niet verifiëren"
+            "value" : "Niet ondertekend: Phi kan deze agent niet verifiëren"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "未签名 —— Phi 无法验证这个智能体"
+            "value" : "未签名：Phi 无法验证此智能体"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "未簽署 —— Phi 無法驗證這個 AI 代理"
+            "value" : "未簽章：Phi 無法驗證此 AI 代理"
           }
         }
       }
@@ -57811,49 +57811,49 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "按住 Shift 点按链接，或选择「在 Peek 视图中打开链接」，即可在页面上方的浮动面板中预览。适用于侧边栏布局。"
+            "value" : "按住 Shift 点按链接，或选择「在 Peek 视图中打开链接」，即可在页面上方的浮动面板中预览。在「舒适」布局中不可用。"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "按住 Shift 並點按連結，或選擇「在 Peek 檢視中開啟連結」，即可在頁面上的浮動面板中預覽。僅適用於側邊欄版面配置。"
+            "value" : "按住 Shift 並點按連結，或選擇「在 Peek 檢視中開啟連結」，即可在頁面上的浮動面板中預覽。不適用於「舒適」版面配置。"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Shiftキーを押しながらリンクをクリックするか、「リンクをPeekビューで開く」を選択すると、ページの上に重なるフローティングパネルでプレビューできます。サイドバーレイアウトで利用できます。"
+            "value" : "Shiftキーを押しながらリンクをクリックするか、「リンクをPeekビューで開く」を選択すると、ページの上に重なるフローティングパネルでプレビューできます。ゆったりレイアウトでは利用できません。"
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Shift를 누른 채 링크를 클릭하거나 “Peek 뷰에서 링크 열기”를 선택하면 페이지 위 플로팅 패널에서 미리 볼 수 있어요. 사이드바 레이아웃에서 사용할 수 있어요."
+            "value" : "Shift를 누른 채 링크를 클릭하거나 “Peek 뷰에서 링크 열기”를 선택하면 페이지 위 플로팅 패널에서 미리 볼 수 있어요. 여유 레이아웃에서는 사용할 수 없어요."
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Cliquez sur un lien en maintenant Maj, ou choisissez « Ouvrir le lien dans la vue Peek », pour le prévisualiser dans un panneau flottant au-dessus de la page. Disponible dans les dispositions avec barre latérale."
+            "value" : "Cliquez sur un lien en maintenant Maj, ou choisissez « Ouvrir le lien dans la vue Peek », pour le prévisualiser dans un panneau flottant au-dessus de la page. Non disponible dans la disposition Confortable."
           }
         },
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Klicke bei gedrückter Umschalttaste auf einen Link oder wähle „Link in Peek-Ansicht öffnen“, um ihn in einem schwebenden Panel über der Seite als Vorschau anzuzeigen. Verfügbar in den Seitenleisten-Layouts."
+            "value" : "Klicke bei gedrückter Umschalttaste auf einen Link oder wähle „Link in Peek-Ansicht öffnen“, um ihn in einem schwebenden Panel über der Seite als Vorschau anzuzeigen. Nicht verfügbar im Layout „Komfortabel“."
           }
         },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Shift-klik op een link, of kies “Link openen in Peek-weergave”, om er een voorbeeld van te zien in een zwevend paneel boven de pagina. Beschikbaar in de indelingen met zijbalk."
+            "value" : "Shift-klik op een link, of kies “Link openen in Peek-weergave”, om er een voorbeeld van te zien in een zwevend paneel boven de pagina. Niet beschikbaar in de indeling Comfortabel."
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Haz clic en un enlace con la tecla Mayúsculas presionada, o elige “Abrir enlace en vista Peek”, para ver su vista previa en un panel flotante sobre la página. Disponible en los diseños con barra lateral."
+            "value" : "Haz clic en un enlace con la tecla Mayúsculas presionada, o elige “Abrir enlace en vista Peek”, para ver su vista previa en un panel flotante sobre la página. No disponible en el diseño Cómodo."
           }
         }
       }

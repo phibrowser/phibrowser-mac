@@ -858,6 +858,10 @@ final class KioskBrowserWindowController: MainBrowserWindowController {
         window.titleVisibility = .hidden
         window.isMovableByWindowBackground = true
         window.animationBehavior = .none
+        if let zoomButton = window.standardWindowButton(.zoomButton) {
+            zoomButton.target = self
+            zoomButton.action = #selector(openFocusedTabInDefaultSpace(_:))
+        }
         let positioner = KioskTrafficLightPositioner(
             window: window,
             downwardOffset: KioskBrowserToolbar.titlebarVerticalShift
@@ -957,6 +961,16 @@ final class KioskBrowserWindowController: MainBrowserWindowController {
         presentationTargetFrame = nil
         presentationOriginalMinSize = nil
         presentationOriginalIgnoresMouseEvents = nil
+    }
+
+    @MainActor
+    @objc private func openFocusedTabInDefaultSpace(_ sender: Any?) {
+        guard !browserState.isIncognito,
+              let tab = browserState.focusingTab else { return }
+        SpaceManager.shared.moveTab(
+            tab,
+            toSpaceId: LocalStore.defaultSpaceId
+        )
     }
 
     @MainActor

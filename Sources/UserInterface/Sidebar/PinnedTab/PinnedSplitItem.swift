@@ -299,6 +299,10 @@ class PinnedSplitItem: NSCollectionViewItem, NSMenuDelegate {
         view.toolTip = "\(leftTab.title) | \(rightTab.title)"
     }
 
+    func cancelTabPreviewForInteraction() {
+        splitTabPreviewRegistration.cancelForInteraction()
+    }
+
     func menuNeedsUpdate(_ menu: NSMenu) {
         splitTabPreviewRegistration.cancelForInteraction()
         leftTab?.makeContextMenu(on: menu)

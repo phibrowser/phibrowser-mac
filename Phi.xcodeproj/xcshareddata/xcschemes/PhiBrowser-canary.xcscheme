@@ -83,7 +83,7 @@
          <EnvironmentVariable
             key = "CHROMIUM_LLDBINIT_SOURCED"
             value = "1"
-            isEnabled = "YES">
+            isEnabled = "NO">
          </EnvironmentVariable>
       </EnvironmentVariables>
    </LaunchAction>

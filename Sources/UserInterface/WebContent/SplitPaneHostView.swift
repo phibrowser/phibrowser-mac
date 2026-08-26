@@ -322,8 +322,15 @@ final class SplitPaneHostView: NSView {
             secondaryPaneContainer.frame = NSRect(x: total.minX + primaryWidth + Self.dividerThickness, y: total.minY,
                                                   width: secondaryWidth, height: total.height)
         case .horizontal:
-            let primaryHeight = (total.height - Self.dividerThickness) * ratio
-            let secondaryHeight = total.height - Self.dividerThickness - primaryHeight
+            let availableHeight = total.height - Self.dividerThickness
+            // CALayer's width/height autoresizing rounds fractional resize
+            // deltas to whole-point changes. Repeatedly alternating a Chromium
+            // pane between integral and fractional heights accumulates that
+            // rounding in its flipped display layer, so keep the split axis
+            // integral at the AppKit boundary. The secondary pane receives the
+            // remainder to preserve the exact available height.
+            let primaryHeight = (availableHeight * ratio).rounded()
+            let secondaryHeight = availableHeight - primaryHeight
             // y=0 is bottom in AppKit; primary on top matches Chromium's
             // "position 0" semantic for visual stacking.
             secondaryPaneContainer.frame = NSRect(x: total.minX, y: total.minY,

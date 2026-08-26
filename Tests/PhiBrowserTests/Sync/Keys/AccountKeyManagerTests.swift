@@ -175,4 +175,73 @@ final class AccountKeyManagerTests: XCTestCase {
             XCTFail("expected notInitialized")
         } catch AccountKeyError.notInitialized {} // ok: FakeAPI.getAccount() returns nil
     }
+
+    func testRequestJoinApprovalPostsAndReturnsMatchingCode() async throws {
+        let api = FakeAPI()
+        let provider = FakeDeviceKeyProvider()
+        let mgr = AccountKeyManager(api: api, deviceKeyProvider: provider)
+        let ticket = try await mgr.requestJoinApproval()
+        XCTAssertFalse(ticket.requestId.isEmpty)
+        let pub = try provider.loadOrCreatePrivateKey().publicKey.rawRepresentation
+        XCTAssertEqual(ticket.verificationCode, PhiKeyCrypto.verificationCode(forPublicKey: pub))
+        XCTAssertEqual(api.lastPostedPublicKey, pub)
+    }
+
+    func testPollJoinPendingReturnsDeadline() async throws {
+        let api = FakeAPI()
+        let mgr = AccountKeyManager(api: api, deviceKeyProvider: FakeDeviceKeyProvider())
+        let ticket = try await mgr.requestJoinApproval()
+        let result = try await mgr.pollJoin(requestId: ticket.requestId)
+        XCTAssertEqual(result, .pending(deadline: FakeAPI.fixedCreatedAt.addingTimeInterval(900)))
+    }
+
+    func testPollJoinApprovedUnlocksAndRegisters() async throws {
+        // Approver bootstraps to obtain an ARK.
+        let api = FakeAPI()
+        let approver = AccountKeyManager(api: api, deviceKeyProvider: FakeDeviceKeyProvider())
+        _ = try await approver.bootstrap()
+        let arkBytes = approver.currentARK!.withUnsafeBytes { Data($0) }
+
+        // Joiner requests, then we simulate the approver sealing the ARK to the joiner's key.
+        let joinerProvider = FakeDeviceKeyProvider()
+        let joiner = AccountKeyManager(api: api, deviceKeyProvider: joinerProvider)
+        let ticket = try await joiner.requestJoinApproval()
+        let joinerPub = try joinerProvider.loadOrCreatePrivateKey().publicKey
+        let sealed = try PhiKeyCrypto.sealToPublicKey(arkBytes, recipient: joinerPub)
+        try await api.approveJoinRequest(id: ticket.requestId, grantedArkEnvelope: sealed, resolvedByDeviceKeyId: "approver")
+
+        let result = try await joiner.pollJoin(requestId: ticket.requestId)
+        XCTAssertEqual(result, .approved)
+        XCTAssertEqual(joiner.currentARK!.withUnsafeBytes { Data($0) }, arkBytes)
+        // registerThisDevice ran: this device's envelope is now stored.
+        let joinerId = try joinerProvider.deviceKeyId()
+        XCTAssertNotNil(api.envelopes[joinerId])
+    }
+
+    func testPollJoinDeniedAndExpired() async throws {
+        let api = FakeAPI()
+        let mgr = AccountKeyManager(api: api, deviceKeyProvider: FakeDeviceKeyProvider())
+        let t1 = try await mgr.requestJoinApproval()
+        api.joinRequests[t1.requestId] = JoinRequestDTO(requestId: t1.requestId, requestingPublicKey: Data(),
+            name: "", platform: "macos", status: "denied", grantedArkEnvelope: Data(),
+            createdAt: FakeAPI.fixedCreatedAt, resolvedByDeviceKeyId: nil)
+        let r1 = try await mgr.pollJoin(requestId: t1.requestId)
+        XCTAssertEqual(r1, .denied)
+
+        api.joinRequests[t1.requestId] = JoinRequestDTO(requestId: t1.requestId, requestingPublicKey: Data(),
+            name: "", platform: "macos", status: "expired", grantedArkEnvelope: Data(),
+            createdAt: FakeAPI.fixedCreatedAt, resolvedByDeviceKeyId: nil)
+        let r2 = try await mgr.pollJoin(requestId: t1.requestId)
+        XCTAssertEqual(r2, .expired)
+    }
+
+    func testAccountExists() async throws {
+        let api = FakeAPI()
+        let mgr = AccountKeyManager(api: api, deviceKeyProvider: FakeDeviceKeyProvider())
+        let before = try await mgr.accountExists()
+        XCTAssertFalse(before)
+        _ = try await mgr.bootstrap()
+        let after = try await mgr.accountExists()
+        XCTAssertTrue(after)
+    }
 }

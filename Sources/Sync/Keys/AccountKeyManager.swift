@@ -26,6 +26,9 @@ extension DeviceKeyStore: DeviceKeyProviding {}
 enum AccountKeyError: Error { case alreadyInitialized, badRecoveryCode, notInitialized, randomGenerationFailed(OSStatus) }
 enum UnlockResult { case unlocked, needsJoin, notSignedIn }
 
+struct JoinTicket: Equatable { let requestId: String; let verificationCode: String }
+enum JoinPollResult: Equatable { case pending(deadline: Date); case approved; case denied; case expired }
+
 /// Orchestrates the three key-layer flows and caches the decrypted ARK in memory
 /// (process lifetime only — it is never persisted to disk).
 final class AccountKeyManager {
@@ -88,6 +91,37 @@ final class AccountKeyManager {
         let arkBytes = try PhiKeyCrypto.openWithPrivateKey(envelope, privateKey: priv)
         currentARK = SymmetricKey(data: arkBytes)
         return .unlocked
+    }
+
+    /// True if the account has been bootstrapped by some device (recovery envelope exists).
+    func accountExists() async throws -> Bool { try await api.getAccount() != nil }
+
+    /// New device asks an already-authorized device to admit it. Returns the request id
+    /// plus the verification code the user compares against the approver's screen.
+    func requestJoinApproval() async throws -> JoinTicket {
+        let priv = try deviceKeyProvider.loadOrCreatePrivateKey()
+        let pub = priv.publicKey.rawRepresentation
+        let id = try await api.postJoinRequest(publicKey: pub,
+            name: Host.current().localizedName ?? "Mac", platform: platform)
+        return JoinTicket(requestId: id, verificationCode: PhiKeyCrypto.verificationCode(forPublicKey: pub))
+    }
+
+    /// Polls a pending join request. On approval, opens the sealed ARK with this device's
+    /// private key, caches it, and registers this device so future startups unlock directly.
+    func pollJoin(requestId: String) async throws -> JoinPollResult {
+        let dto = try await api.getJoinRequest(id: requestId)
+        switch dto.status {
+        case "approved":
+            let priv = try deviceKeyProvider.loadOrCreatePrivateKey()
+            let arkBytes = try PhiKeyCrypto.openWithPrivateKey(dto.grantedArkEnvelope, privateKey: priv)
+            let ark = SymmetricKey(data: arkBytes)
+            try await registerThisDevice(ark: ark)
+            currentARK = ark
+            return .approved
+        case "denied":  return .denied
+        case "expired": return .expired
+        default:        return .pending(deadline: dto.createdAt.addingTimeInterval(15 * 60))
+        }
     }
 
     private func registerThisDevice(ark: SymmetricKey) async throws {

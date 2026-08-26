@@ -64,4 +64,21 @@ enum PhiKeyCrypto {
             return try AES.GCM.open(box, using: key)
         } catch { throw PhiKeyCryptoError.decryptFailed }
     }
+
+    /// Short authentication string for device-join verification. Derived purely from the
+    /// joining device's public key, so both devices compute the same code independently and
+    /// the user can compare them before approval. Not a secret; never used for key derivation.
+    static func verificationCode(forPublicKey publicKey: Data) -> String {
+        let digest = Array(SHA256.hash(data: publicKey).prefix(5)) // 40 bits -> 8 base32 symbols
+        let alphabet = Array("0123456789ABCDEFGHJKMNPQRSTVWXYZ")    // Crockford base32
+        var value: UInt64 = 0
+        for b in digest { value = (value << 8) | UInt64(b) }
+        var chars = [Character](repeating: "0", count: 8)
+        for i in stride(from: 7, through: 0, by: -1) {
+            chars[i] = alphabet[Int(value & 0x1F)]
+            value >>= 5
+        }
+        let s = String(chars)
+        return "\(s.prefix(4))-\(s.suffix(4))"
+    }
 }

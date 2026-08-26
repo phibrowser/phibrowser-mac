@@ -48,4 +48,25 @@ final class PhiKeyCryptoTests: XCTestCase {
         wrong[0] = 0x02
         XCTAssertThrowsError(try PhiKeyCrypto.openWithSymmetric(wrong, key: key))
     }
+
+    func testVerificationCodeIsDeterministic() {
+        let pk = Data((0..<32).map { UInt8($0) })
+        XCTAssertEqual(PhiKeyCrypto.verificationCode(forPublicKey: pk),
+                       PhiKeyCrypto.verificationCode(forPublicKey: pk))
+    }
+
+    func testVerificationCodeFormat() {
+        let code = PhiKeyCrypto.verificationCode(forPublicKey: Data((0..<32).map { UInt8($0) }))
+        XCTAssertEqual(code.count, 9)
+        XCTAssertEqual(Array(code)[4], "-")
+        let alphabet = Set("0123456789ABCDEFGHJKMNPQRSTVWXYZ")
+        XCTAssertTrue(code.filter { $0 != "-" }.allSatisfy { alphabet.contains($0) })
+    }
+
+    func testDifferentKeysDifferentCodes() {
+        let a = Data((0..<32).map { UInt8($0) })
+        let b = Data((0..<32).map { UInt8($0 &+ 1) })
+        XCTAssertNotEqual(PhiKeyCrypto.verificationCode(forPublicKey: a),
+                          PhiKeyCrypto.verificationCode(forPublicKey: b))
+    }
 }

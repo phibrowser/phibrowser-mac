@@ -168,7 +168,7 @@ Chromium browser-process code captures events through the `phi_analytics`
 component (Chromium repo, `chrome/browser/phinomenon/analytics/`). They cross
 the bridge delegate's `captureAnalyticsEvent:module:properties:` into
 `ChromiumBridge/ChromiumAnalyticsRelay.swift`, which stamps
-`source: "chromium"` and `module` onto every accepted event, drops reserved
+`event_source: "chromium"` and `module` onto every accepted event, drops reserved
 `$`-prefixed names, logs each accepted capture (the end-to-end observable on
 token-less local builds), and skips the SDK call when PostHog was never
 initialized. The relay checks no consent — the metrics-reporting switch gates

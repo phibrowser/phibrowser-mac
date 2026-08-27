@@ -289,6 +289,8 @@ final class KioskTrafficLightPositioner: NSObject {
 
 /// Native owner for Chromium browsers carrying the Kiosk semantic type.
 final class KioskBrowserWindowController: MainBrowserWindowController {
+    override var centeredOmniBoxHorizontalInset: CGFloat { 20 }
+
     private static let toolbarIdentifier = NSToolbar.Identifier("KioskBrowserToolbar")
     private static let profileReplacementTimeout: TimeInterval = 1.5
     private static let profileReplacementClosePollInterval: TimeInterval = 0.5
@@ -367,13 +369,13 @@ final class KioskBrowserWindowController: MainBrowserWindowController {
             browserState.focusingTab?.stopLoading()
             return true
         case .IDC_FOCUS_LOCATION:
-            presentOmniBox(fromAddressBar: true)
+            presentOmniBoxCentered()
             return true
         case .IDC_OPEN_FILE:
             openFocusedTabInCurrentSpace()
             return true
         case .IDC_NEW_TAB, .IDC_NEW_TAB_TO_RIGHT, .IDC_FOCUS_SEARCH:
-            presentOmniBox(fromAddressBar: false)
+            presentOmniBoxCentered()
             return true
         case .IDC_CLOSE_TAB:
             ChromiumLauncher.sharedInstance().bridge?.executeCommand(
@@ -1002,20 +1004,13 @@ final class KioskBrowserWindowController: MainBrowserWindowController {
                     SpaceManager.shared.moveTab(tab, toSpaceId: spaceId)
                 },
                 onOmniBoxRequest: { [weak self] in
-                    self?.presentOmniBox(fromAddressBar: true)
+                    self?.presentOmniBoxCentered()
                 }
             )
     }
 
     @MainActor
-    private func presentOmniBox(fromAddressBar: Bool) {
-        let contentController = contentViewController
-            as? KioskBrowserContentViewController
-        toggleOmniBox(
-            fromAddressBar: fromAddressBar,
-            addressView: fromAddressBar
-                ? contentController?.addressBarAnchorView
-                : nil
-        )
+    func presentOmniBoxCentered() {
+        toggleOmniBox(fromAddressBar: false)
     }
 }

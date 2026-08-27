@@ -4,859 +4,6 @@
     "" : {
 
     },
-    "agentControl.connectionApproval.details.answeringFor" : {
-      "comment" : "CDP consent - value of the details row once the user has retargeted the answer onto a process that launched the agent; %@ is that process's name",
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Antwort gilt für „%@“"
-          }
-        },
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "Answering for “%@”"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Respondiendo para “%@”"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Réponse appliquée à « %@ »"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "「%@」を対象に回答"
-          }
-        },
-        "ko" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "“%@”에 대해 답변 중"
-          }
-        },
-        "nl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Antwoord geldt voor “%@”"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "回答对象为「%@」"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "回答對象為「%@」"
-          }
-        }
-      }
-    },
-    "agentControl.connectionApproval.details.commandHeading" : {
-      "comment" : "CDP consent - heading over the agent's command line in the details disclosure",
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Befehl"
-          }
-        },
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "Command"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Comando"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Commande"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "コマンド"
-          }
-        },
-        "ko" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "명령어"
-          }
-        },
-        "nl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Commando"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "命令"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "指令"
-          }
-        }
-      }
-    },
-    "agentControl.connectionApproval.details.commandUnavailable" : {
-      "comment" : "CDP consent - shown in the details disclosure when a process's command line cannot be read",
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "(Befehl nicht verfügbar)"
-          }
-        },
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "(command unavailable)"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "(comando no disponible)"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "(commande indisponible)"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "（コマンドを取得できません）"
-          }
-        },
-        "ko" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "(명령어를 확인할 수 없음)"
-          }
-        },
-        "nl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "(commando niet beschikbaar)"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "（无法获取命令）"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "（無法取得指令）"
-          }
-        }
-      }
-    },
-    "agentControl.connectionApproval.details.hideAccessibilityLabel" : {
-      "comment" : "CDP consent - accessibility label of the details disclosure button while the details are open",
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Befehl und Prozessbaum des Agenten ausblenden"
-          }
-        },
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "Hide the agent's command and process tree"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Ocultar el comando y el árbol de procesos del agente"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Masquer la commande et l'arborescence des processus de l'agent"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "エージェントのコマンドとプロセスツリーを非表示"
-          }
-        },
-        "ko" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "에이전트의 명령어 및 프로세스 트리 가리기"
-          }
-        },
-        "nl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Verberg het commando en de processtructuur van de agent"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "隐藏智能体的命令与进程树"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "隱藏 AI 代理的指令與程序樹"
-          }
-        }
-      }
-    },
-    "agentControl.connectionApproval.details.label" : {
-      "comment" : "CDP consent - label of the row that expands the agent's command and process tree",
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Details"
-          }
-        },
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "Details"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Detalles"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Détails"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "詳細"
-          }
-        },
-        "ko" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "세부사항"
-          }
-        },
-        "nl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Details"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "详细信息"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "詳細資訊"
-          }
-        }
-      }
-    },
-    "agentControl.connectionApproval.details.showAccessibilityLabel" : {
-      "comment" : "CDP consent - accessibility label of the details disclosure button while the details are closed",
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Befehl und Prozessbaum des Agenten einblenden"
-          }
-        },
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "Show the agent's command and process tree"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Mostrar el comando y el árbol de procesos del agente"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Afficher la commande et l'arborescence des processus de l'agent"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "エージェントのコマンドとプロセスツリーを表示"
-          }
-        },
-        "ko" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "에이전트의 명령어 및 프로세스 트리 보기"
-          }
-        },
-        "nl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Toon het commando en de processtructuur van de agent"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "显示智能体的命令与进程树"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "顯示 AI 代理的指令與程序樹"
-          }
-        }
-      }
-    },
-    "agentControl.connectionApproval.details.subjectHint" : {
-      "comment" : "CDP consent - hint under the process tree explaining that a row can be picked to retarget the answer; %@ is the asking agent's name",
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Deine Antwort bezieht sich auf „%@“. Wähle oben eine Zeile aus, damit deine Antwort stattdessen für den Prozess gilt, der diesen Agenten gestartet hat."
-          }
-        },
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "Your answer is about “%@”. Pick a row above to answer about the process that launched it instead."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Tu respuesta se refiere a “%@”. Elige una fila de arriba si prefieres responder sobre el proceso que lo inició."
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Votre réponse porte sur « %@ ». Sélectionnez une ligne ci-dessus pour qu'elle porte plutôt sur le processus qui l'a lancé."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "回答の対象は「%@」です。上のいずれかの行を選択すると、代わりにそれを起動したプロセスを対象に回答できます。"
-          }
-        },
-        "ko" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "이 답변은 “%@”에 적용돼요. 대신 이 에이전트를 실행한 프로세스에 대해 답변하려면 위에서 행을 선택하세요."
-          }
-        },
-        "nl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Je antwoord gaat over “%@”. Kies hierboven een rij om in plaats daarvan te antwoorden over het proces dat het heeft gestart."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "你的回答对象是「%@」。也可在上方选择一行，将回答对象改为启动它的进程。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "你的回答針對「%@」。若要改為針對啟動它的程序回答，請在上方選取一列。"
-          }
-        }
-      }
-    },
-    "agentControl.connectionApproval.details.subjectWarning" : {
-      "comment" : "CDP consent - warning under the process tree once the answer has been retargeted onto a process that launched the agent; %@ is that process's name",
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Deine Antwort gilt für „%@“: Jeder Agent, den dieser Prozess startet, erhält dieselbe Antwort, ohne dass erneut gefragt wird."
-          }
-        },
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "Your answer covers “%@” — every agent it launches gets the same answer, without asking again."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Tu respuesta cubre “%@”: cada agente que este inicie recibirá la misma respuesta, sin volver a preguntar."
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Votre réponse s'applique à « %@ » : chaque agent qu'il lance reçoit la même réponse, sans nouvelle demande."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "回答の対象は「%@」です。このプロセスが起動するすべてのエージェントに同じ回答が適用され、再度確認されることはありません。"
-          }
-        },
-        "ko" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "이 답변은 “%@”에 적용돼요. 이 프로세스가 실행하는 모든 에이전트가 따로 묻지 않고 같은 답변을 받아요."
-          }
-        },
-        "nl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Je antwoord geldt voor “%@”: elke agent die erdoor wordt gestart, krijgt hetzelfde antwoord zonder opnieuw te hoeven vragen."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "你的回答适用于「%@」：它启动的每个智能体都会获得相同的回答，不会再次询问。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "你的回答涵蓋「%@」：它啟動的每個 AI 代理都會獲得相同的回答，不會再次詢問。"
-          }
-        }
-      }
-    },
-    "agentControl.connectionApproval.details.summary" : {
-      "comment" : "CDP consent - value of the details row, naming what the disclosure reveals",
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Befehl und Prozessbaum"
-          }
-        },
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "Command and process tree"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Comando y árbol de procesos"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Commande et arborescence des processus"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "コマンドとプロセスツリー"
-          }
-        },
-        "ko" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "명령어 및 프로세스 트리"
-          }
-        },
-        "nl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Commando en processtructuur"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "命令与进程树"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "指令與程序樹"
-          }
-        }
-      }
-    },
-    "agentControl.connectionApproval.details.thisAgentTag" : {
-      "comment" : "CDP consent - tag marking which row of the process tree is the agent asking for access",
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "dieser Agent"
-          }
-        },
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "this agent"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "este agente"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "cet agent"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "このエージェント"
-          }
-        },
-        "ko" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "이 에이전트"
-          }
-        },
-        "nl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "deze agent"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "此智能体"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "此 AI 代理"
-          }
-        }
-      }
-    },
-    "agentControl.connectionApproval.details.treeHeading" : {
-      "comment" : "CDP consent - heading over the process ancestry in the details disclosure",
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Gestartet von"
-          }
-        },
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "Launched by"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Iniciado por"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Lancé par"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "起動元"
-          }
-        },
-        "ko" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "실행한 프로세스"
-          }
-        },
-        "nl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Gestart door"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "启动来源"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "啟動來源"
-          }
-        }
-      }
-    },
-    "agentControl.connectionApproval.identity.signingIdSummary" : {
-      "comment" : "CDP consent - signing identifier and trust, for a signature that carries no team identifier (Apple's own binaries); first %@ is the signing identifier, second is the trust word",
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "%1$@ · %2$@"
-          }
-        }
-      },
-      "shouldTranslate" : false
-    },
-    "agentControl.connectionApproval.subjectLabel" : {
-      "comment" : "CDP consent - label of the top summary row once the answer has been retargeted onto a process that launched the agent, replacing the \"Agent\" label",
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Antwort für"
-          }
-        },
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "Answer for"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Respuesta para"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Réponse pour"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "回答の対象"
-          }
-        },
-        "ko" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "답변 대상"
-          }
-        },
-        "nl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Antwoord voor"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "回答对象"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "回答對象"
-          }
-        }
-      }
-    },
-    "agentControl.connectionApproval.unsigned.detail" : {
-      "comment" : "CDP consent - body of the unsigned-agent warning banner",
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Dieser Prozess hat keine gültige Codesignatur. Sein Name stammt daher aus dem Befehl, mit dem er gestartet wurde, und jedes beliebige Programm könnte ihn beanspruchen. Öffne die Details, um dir diesen Befehl anzusehen, bevor du den Zugriff erlaubst."
-          }
-        },
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "This process carries no valid code signature, so its name comes from the command it was launched with and anything could claim it. Open Details to see that command before you allow it."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Este proceso no tiene una firma de código válida, por lo que su nombre proviene del comando con el que se inició y cualquier proceso podría atribuírselo. Abre Detalles para ver ese comando antes de permitirle el acceso."
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Ce processus ne comporte aucune signature de code valide : son nom provient de la commande avec laquelle il a été lancé, et n'importe quel programme pourrait se l'attribuer. Ouvrez Détails pour consulter cette commande avant d'autoriser l'accès."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "このプロセスには有効なコード署名がありません。そのため、名前は起動時のコマンドに由来するもので、どのプロセスでも同じ名前を名乗ることができます。許可する前に「詳細」を開いて、そのコマンドを確認してください。"
-          }
-        },
-        "ko" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "이 프로세스에는 유효한 코드 서명이 없어요. 이름은 실행에 사용된 명령어에서 가져온 것이라 어떤 프로세스든 같은 이름을 내세울 수 있어요. 허용하기 전에 세부사항을 열어 해당 명령어를 확인하세요."
-          }
-        },
-        "nl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Dit proces heeft geen geldige codehandtekening. De naam komt daarom uit het commando waarmee het is gestart, en alles kan die naam claimen. Open Details om dat commando te bekijken voordat je toestemming geeft."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "此进程没有有效的代码签名，因此它的名称来自启动它的命令，任何程序都可能冒用这个名称。在允许之前，请打开「详细信息」查看该命令。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "此程序沒有有效的程式碼簽章，其名稱僅來自啟動時所用的指令，任何程式都可能冒用這個名稱。允許之前，請先開啟「詳細資訊」查看該指令。"
-          }
-        }
-      }
-    },
-    "agentControl.connectionApproval.unsigned.headline" : {
-      "comment" : "CDP consent - headline of the banner shown when the asking process has no valid code signature",
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Nicht signiert: Phi kann diesen Agenten nicht verifizieren"
-          }
-        },
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "Unsigned — Phi can't verify this agent"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Sin firmar: Phi no puede verificar este agente"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Non signé : Phi ne peut pas vérifier cet agent"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "未署名：Phiはこのエージェントを検証できません"
-          }
-        },
-        "ko" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "서명되지 않음: Phi가 이 에이전트를 확인할 수 없어요"
-          }
-        },
-        "nl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Niet ondertekend: Phi kan deze agent niet verifiëren"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "未签名：Phi 无法验证此智能体"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "未簽章：Phi 無法驗證此 AI 代理"
-          }
-        }
-      }
-    },
     "・" : {
       "shouldTranslate" : false
     },
@@ -7009,6 +6156,666 @@
         }
       }
     },
+    "agentControl.connectionApproval.details.answeringFor" : {
+      "comment" : "CDP consent - value of the details row once the user has retargeted the answer onto a process that launched the agent; %@ is that process's name",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Antwort gilt für „%@“"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Answering for “%@”"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Respondiendo para “%@”"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Réponse appliquée à « %@ »"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "「%@」を対象に回答"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "“%@”에 대해 답변 중"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Antwoord geldt voor “%@”"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "回答对象为「%@」"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "回答對象為「%@」"
+          }
+        }
+      }
+    },
+    "agentControl.connectionApproval.details.commandHeading" : {
+      "comment" : "CDP consent - heading over the agent's command line in the details disclosure",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Befehl"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Command"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Comando"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Commande"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "コマンド"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "명령어"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Commando"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "命令"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "指令"
+          }
+        }
+      }
+    },
+    "agentControl.connectionApproval.details.commandUnavailable" : {
+      "comment" : "CDP consent - shown in the details disclosure when a process's command line cannot be read",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "(Befehl nicht verfügbar)"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "(command unavailable)"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "(comando no disponible)"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "(commande indisponible)"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "（コマンドを取得できません）"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "(명령어를 확인할 수 없음)"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "(commando niet beschikbaar)"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "（无法获取命令）"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "（無法取得指令）"
+          }
+        }
+      }
+    },
+    "agentControl.connectionApproval.details.hideAccessibilityLabel" : {
+      "comment" : "CDP consent - accessibility label of the details disclosure button while the details are open",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Befehl und Prozessbaum des Agenten ausblenden"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Hide the agent's command and process tree"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ocultar el comando y el árbol de procesos del agente"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Masquer la commande et l'arborescence des processus de l'agent"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "エージェントのコマンドとプロセスツリーを非表示"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "에이전트의 명령어 및 프로세스 트리 가리기"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Verberg het commando en de processtructuur van de agent"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "隐藏智能体的命令与进程树"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "隱藏 AI 代理的指令與程序樹"
+          }
+        }
+      }
+    },
+    "agentControl.connectionApproval.details.label" : {
+      "comment" : "CDP consent - label of the row that expands the agent's command and process tree",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Details"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Details"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Detalles"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Détails"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "詳細"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "세부사항"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Details"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "详细信息"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "詳細資訊"
+          }
+        }
+      }
+    },
+    "agentControl.connectionApproval.details.showAccessibilityLabel" : {
+      "comment" : "CDP consent - accessibility label of the details disclosure button while the details are closed",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Befehl und Prozessbaum des Agenten einblenden"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Show the agent's command and process tree"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mostrar el comando y el árbol de procesos del agente"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Afficher la commande et l'arborescence des processus de l'agent"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "エージェントのコマンドとプロセスツリーを表示"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "에이전트의 명령어 및 프로세스 트리 보기"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Toon het commando en de processtructuur van de agent"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "显示智能体的命令与进程树"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "顯示 AI 代理的指令與程序樹"
+          }
+        }
+      }
+    },
+    "agentControl.connectionApproval.details.subjectHint" : {
+      "comment" : "CDP consent - hint under the process tree explaining that a row can be picked to retarget the answer; %@ is the asking agent's name",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Deine Antwort bezieht sich auf „%@“. Wähle oben eine Zeile aus, damit deine Antwort stattdessen für den Prozess gilt, der diesen Agenten gestartet hat."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Your answer is about “%@”. Pick a row above to answer about the process that launched it instead."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tu respuesta se refiere a “%@”. Elige una fila de arriba si prefieres responder sobre el proceso que lo inició."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Votre réponse porte sur « %@ ». Sélectionnez une ligne ci-dessus pour qu'elle porte plutôt sur le processus qui l'a lancé."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "回答の対象は「%@」です。上のいずれかの行を選択すると、代わりにそれを起動したプロセスを対象に回答できます。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "이 답변은 “%@”에 적용돼요. 대신 이 에이전트를 실행한 프로세스에 대해 답변하려면 위에서 행을 선택하세요."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Je antwoord gaat over “%@”. Kies hierboven een rij om in plaats daarvan te antwoorden over het proces dat het heeft gestart."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "你的回答对象是「%@」。也可在上方选择一行，将回答对象改为启动它的进程。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "你的回答針對「%@」。若要改為針對啟動它的程序回答，請在上方選取一列。"
+          }
+        }
+      }
+    },
+    "agentControl.connectionApproval.details.subjectWarning" : {
+      "comment" : "CDP consent - warning under the process tree once the answer has been retargeted onto a process that launched the agent; %@ is that process's name",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Deine Antwort gilt für „%@“: Jeder Agent, den dieser Prozess startet, erhält dieselbe Antwort, ohne dass erneut gefragt wird."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Your answer covers “%@” — every agent it launches gets the same answer, without asking again."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tu respuesta cubre “%@”: cada agente que este inicie recibirá la misma respuesta, sin volver a preguntar."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Votre réponse s'applique à « %@ » : chaque agent qu'il lance reçoit la même réponse, sans nouvelle demande."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "回答の対象は「%@」です。このプロセスが起動するすべてのエージェントに同じ回答が適用され、再度確認されることはありません。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "이 답변은 “%@”에 적용돼요. 이 프로세스가 실행하는 모든 에이전트가 따로 묻지 않고 같은 답변을 받아요."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Je antwoord geldt voor “%@”: elke agent die erdoor wordt gestart, krijgt hetzelfde antwoord zonder opnieuw te hoeven vragen."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "你的回答适用于「%@」：它启动的每个智能体都会获得相同的回答，不会再次询问。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "你的回答涵蓋「%@」：它啟動的每個 AI 代理都會獲得相同的回答，不會再次詢問。"
+          }
+        }
+      }
+    },
+    "agentControl.connectionApproval.details.summary" : {
+      "comment" : "CDP consent - value of the details row, naming what the disclosure reveals",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Befehl und Prozessbaum"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Command and process tree"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Comando y árbol de procesos"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Commande et arborescence des processus"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "コマンドとプロセスツリー"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "명령어 및 프로세스 트리"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Commando en processtructuur"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "命令与进程树"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "指令與程序樹"
+          }
+        }
+      }
+    },
+    "agentControl.connectionApproval.details.thisAgentTag" : {
+      "comment" : "CDP consent - tag marking which row of the process tree is the agent asking for access",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "dieser Agent"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "this agent"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "este agente"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "cet agent"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "このエージェント"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "이 에이전트"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "deze agent"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "此智能体"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "此 AI 代理"
+          }
+        }
+      }
+    },
+    "agentControl.connectionApproval.details.treeHeading" : {
+      "comment" : "CDP consent - heading over the process ancestry in the details disclosure",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Gestartet von"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Launched by"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Iniciado por"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lancé par"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "起動元"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "실행한 프로세스"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Gestart door"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "启动来源"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "啟動來源"
+          }
+        }
+      }
+    },
     "agentControl.connectionApproval.enablesFeature.headline" : {
       "comment" : "CDP consent - headline shown when allowing will also enable the feature",
       "extractionState" : "extracted_with_value",
@@ -7128,6 +6935,19 @@
           }
         }
       }
+    },
+    "agentControl.connectionApproval.identity.signingIdSummary" : {
+      "comment" : "CDP consent - signing identifier and trust, for a signature that carries no team identifier (Apple's own binaries); first %@ is the signing identifier, second is the trust word",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@ · %2$@"
+          }
+        }
+      },
+      "shouldTranslate" : false
     },
     "agentControl.connectionApproval.identity.teamSummary" : {
       "comment" : "CDP consent - team and trust",
@@ -7429,6 +7249,66 @@
         }
       }
     },
+    "agentControl.connectionApproval.subjectLabel" : {
+      "comment" : "CDP consent - label of the top summary row once the answer has been retargeted onto a process that launched the agent, replacing the \"Agent\" label",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Antwort für"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Answer for"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Respuesta para"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Réponse pour"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "回答の対象"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "답변 대상"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Antwoord voor"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "回答对象"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "回答對象"
+          }
+        }
+      }
+    },
     "agentControl.connectionApproval.title" : {
       "comment" : "CDP consent - title",
       "extractionState" : "extracted_with_value",
@@ -7485,6 +7365,126 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "「%@」想要控制 Phi Browser"
+          }
+        }
+      }
+    },
+    "agentControl.connectionApproval.unsigned.detail" : {
+      "comment" : "CDP consent - body of the unsigned-agent warning banner",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dieser Prozess hat keine gültige Codesignatur. Sein Name stammt daher aus dem Befehl, mit dem er gestartet wurde, und jedes beliebige Programm könnte ihn beanspruchen. Öffne die Details, um dir diesen Befehl anzusehen, bevor du den Zugriff erlaubst."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "This process carries no valid code signature, so its name comes from the command it was launched with and anything could claim it. Open Details to see that command before you allow it."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Este proceso no tiene una firma de código válida, por lo que su nombre proviene del comando con el que se inició y cualquier proceso podría atribuírselo. Abre Detalles para ver ese comando antes de permitirle el acceso."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ce processus ne comporte aucune signature de code valide : son nom provient de la commande avec laquelle il a été lancé, et n'importe quel programme pourrait se l'attribuer. Ouvrez Détails pour consulter cette commande avant d'autoriser l'accès."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "このプロセスには有効なコード署名がありません。そのため、名前は起動時のコマンドに由来するもので、どのプロセスでも同じ名前を名乗ることができます。許可する前に「詳細」を開いて、そのコマンドを確認してください。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "이 프로세스에는 유효한 코드 서명이 없어요. 이름은 실행에 사용된 명령어에서 가져온 것이라 어떤 프로세스든 같은 이름을 내세울 수 있어요. 허용하기 전에 세부사항을 열어 해당 명령어를 확인하세요."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dit proces heeft geen geldige codehandtekening. De naam komt daarom uit het commando waarmee het is gestart, en alles kan die naam claimen. Open Details om dat commando te bekijken voordat je toestemming geeft."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "此进程没有有效的代码签名，因此它的名称来自启动它的命令，任何程序都可能冒用这个名称。在允许之前，请打开「详细信息」查看该命令。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "此程序沒有有效的程式碼簽章，其名稱僅來自啟動時所用的指令，任何程式都可能冒用這個名稱。允許之前，請先開啟「詳細資訊」查看該指令。"
+          }
+        }
+      }
+    },
+    "agentControl.connectionApproval.unsigned.headline" : {
+      "comment" : "CDP consent - headline of the banner shown when the asking process has no valid code signature",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nicht signiert: Phi kann diesen Agenten nicht verifizieren"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Unsigned — Phi can't verify this agent"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sin firmar: Phi no puede verificar este agente"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Non signé : Phi ne peut pas vérifier cet agent"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "未署名：Phiはこのエージェントを検証できません"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "서명되지 않음: Phi가 이 에이전트를 확인할 수 없어요"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Niet ondertekend: Phi kan deze agent niet verifiëren"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "未签名：Phi 无法验证此智能体"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "未簽章：Phi 無法驗證此 AI 代理"
           }
         }
       }
@@ -10065,6 +10065,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "新增無痕空間"
+          }
+        }
+      }
+    },
+    "app.fileMenu.createNewKioskWindow" : {
+      "comment" : "File menu - Create a Kiosk window and open its omnibox",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "New Kiosk Window"
           }
         }
       }
@@ -13013,22 +13025,28 @@
       "comment" : "Help menu - Button that cancels Time Machine backup deletion",
       "extractionState" : "extracted_with_value",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Abbrechen"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "new",
             "value" : "Cancel"
           }
         },
-        "zh-Hans" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "取消"
+            "value" : "Cancelar"
           }
         },
-        "zh-Hant" : {
+        "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "取消"
+            "value" : "Annuler"
           }
         },
         "ja" : {
@@ -13043,28 +13061,22 @@
             "value" : "취소"
           }
         },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Annuler"
-          }
-        },
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Abbrechen"
-          }
-        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Annuleer"
           }
         },
-        "es" : {
+        "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Cancelar"
+            "value" : "取消"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "取消"
           }
         }
       }
@@ -13073,22 +13085,28 @@
       "comment" : "Help menu - Destructive button that confirms Time Machine backup deletion",
       "extractionState" : "extracted_with_value",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Löschen"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "new",
             "value" : "Delete"
           }
         },
-        "zh-Hans" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "删除"
+            "value" : "Eliminar"
           }
         },
-        "zh-Hant" : {
+        "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "刪除"
+            "value" : "Supprimer"
           }
         },
         "ja" : {
@@ -13103,28 +13121,22 @@
             "value" : "삭제"
           }
         },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Supprimer"
-          }
-        },
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Löschen"
-          }
-        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Verwijder"
           }
         },
-        "es" : {
+        "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Eliminar"
+            "value" : "删除"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "刪除"
           }
         }
       }
@@ -13133,22 +13145,28 @@
       "comment" : "Help menu - Time Machine backup deletion confirmation; placeholder is the selected backup title",
       "extractionState" : "extracted_with_value",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wenn du %@ löschst, wird dieser Wiederherstellungspunkt dauerhaft entfernt. Deine aktuelle Phi-App und deine Daten sind davon nicht betroffen. Dieser Vorgang kann nicht widerrufen werden."
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "new",
             "value" : "Deleting %@ will permanently remove this restore point. Your current Phi app and data will not be affected. This cannot be undone."
           }
         },
-        "zh-Hans" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "删除「%@」将永久移除这个恢复点。你当前的 Phi 应用和数据不会受到影响。此操作无法撤销。"
+            "value" : "Si eliminas %@, este punto de restauración se eliminará de forma permanente. Tu app Phi actual y tus datos no se verán afectados. Esta acción no se puede deshacer."
           }
         },
-        "zh-Hant" : {
+        "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "刪除「%@」將永久移除這個還原點。你目前的 Phi App 和資料不會受到影響。此動作無法復原。"
+            "value" : "La suppression de « %@ » effacera définitivement ce point de restauration. Votre app Phi actuelle et vos données ne seront pas affectées. Cette action est irréversible."
           }
         },
         "ja" : {
@@ -13163,28 +13181,22 @@
             "value" : "%@을(를) 삭제하면 이 복원 지점이 영구적으로 제거돼요. 현재 사용 중인 Phi 앱과 데이터는 영향을 받지 않아요. 이 작업은 되돌릴 수 없어요."
           }
         },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "La suppression de « %@ » effacera définitivement ce point de restauration. Votre app Phi actuelle et vos données ne seront pas affectées. Cette action est irréversible."
-          }
-        },
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Wenn du %@ löschst, wird dieser Wiederherstellungspunkt dauerhaft entfernt. Deine aktuelle Phi-App und deine Daten sind davon nicht betroffen. Dieser Vorgang kann nicht widerrufen werden."
-          }
-        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Als je %@ verwijdert, wordt dit herstelpunt definitief verwijderd. Je huidige Phi-app en gegevens blijven ongewijzigd. Dit kan niet ongedaan worden gemaakt."
           }
         },
-        "es" : {
+        "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Si eliminas %@, este punto de restauración se eliminará de forma permanente. Tu app Phi actual y tus datos no se verán afectados. Esta acción no se puede deshacer."
+            "value" : "删除「%@」将永久移除这个恢复点。你当前的 Phi 应用和数据不会受到影响。此操作无法撤销。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "刪除「%@」將永久移除這個還原點。你目前的 Phi App 和資料不會受到影響。此動作無法復原。"
           }
         }
       }
@@ -13193,22 +13205,28 @@
       "comment" : "Help menu - Title of the Time Machine backup deletion confirmation",
       "extractionState" : "extracted_with_value",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Time Machine-Backup löschen?"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "new",
             "value" : "Delete Time Machine Backup?"
           }
         },
-        "zh-Hans" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "要删除时间机器备份吗？"
+            "value" : "¿Eliminar la copia de seguridad de Time Machine?"
           }
         },
-        "zh-Hant" : {
+        "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "要刪除時光機備份嗎？"
+            "value" : "Supprimer la sauvegarde Time Machine ?"
           }
         },
         "ja" : {
@@ -13223,28 +13241,22 @@
             "value" : "Time Machine 백업을 삭제할까요?"
           }
         },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Supprimer la sauvegarde Time Machine ?"
-          }
-        },
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Time Machine-Backup löschen?"
-          }
-        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Time Machine-back-up verwijderen?"
           }
         },
-        "es" : {
+        "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "¿Eliminar la copia de seguridad de Time Machine?"
+            "value" : "要删除时间机器备份吗？"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "要刪除時光機備份嗎？"
           }
         }
       }
@@ -13253,22 +13265,28 @@
       "comment" : "Help menu - Time Machine backup deletion error when the selected backup disappears",
       "extractionState" : "extracted_with_value",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Das ausgewählte Time Machine-Backup ist nicht mehr verfügbar."
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "new",
             "value" : "The selected Time Machine backup is no longer available."
           }
         },
-        "zh-Hans" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "所选的时间机器备份已不可用。"
+            "value" : "La copia de seguridad de Time Machine seleccionada ya no está disponible."
           }
         },
-        "zh-Hant" : {
+        "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "所選的時光機備份已無法使用。"
+            "value" : "La sauvegarde Time Machine sélectionnée n'est plus disponible."
           }
         },
         "ja" : {
@@ -13283,28 +13301,22 @@
             "value" : "선택한 Time Machine 백업을 더 이상 사용할 수 없어요."
           }
         },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "La sauvegarde Time Machine sélectionnée n'est plus disponible."
-          }
-        },
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Das ausgewählte Time Machine-Backup ist nicht mehr verfügbar."
-          }
-        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "De geselecteerde Time Machine-back-up is niet meer beschikbaar."
           }
         },
-        "es" : {
+        "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "La copia de seguridad de Time Machine seleccionada ya no está disponible."
+            "value" : "所选的时间机器备份已不可用。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "所選的時光機備份已無法使用。"
           }
         }
       }
@@ -13313,22 +13325,28 @@
       "comment" : "Help menu - Button that dismisses a Time Machine backup deletion failure",
       "extractionState" : "extracted_with_value",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OK"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "new",
             "value" : "OK"
           }
         },
-        "zh-Hans" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "好"
+            "value" : "Aceptar"
           }
         },
-        "zh-Hant" : {
+        "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "好"
+            "value" : "OK"
           }
         },
         "ja" : {
@@ -13343,28 +13361,22 @@
             "value" : "확인"
           }
         },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "OK"
-          }
-        },
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "OK"
-          }
-        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "OK"
           }
         },
-        "es" : {
+        "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Aceptar"
+            "value" : "好"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "好"
           }
         }
       }
@@ -13373,22 +13385,28 @@
       "comment" : "Help menu - Time Machine backup deletion error when the deletion progress ends without a result",
       "extractionState" : "extracted_with_value",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Das Löschen des Time Machine-Backups wurde unterbrochen."
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "new",
             "value" : "The Time Machine backup deletion was interrupted."
           }
         },
-        "zh-Hans" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "时间机器备份的删除过程已中断。"
+            "value" : "Se interrumpió la eliminación de la copia de seguridad de Time Machine."
           }
         },
-        "zh-Hant" : {
+        "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "時光機備份的刪除作業已中斷。"
+            "value" : "La suppression de la sauvegarde Time Machine a été interrompue."
           }
         },
         "ja" : {
@@ -13403,28 +13421,22 @@
             "value" : "Time Machine 백업 삭제가 중단됐어요."
           }
         },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "La suppression de la sauvegarde Time Machine a été interrompue."
-          }
-        },
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Das Löschen des Time Machine-Backups wurde unterbrochen."
-          }
-        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Het verwijderen van de Time Machine-back-up is onderbroken."
           }
         },
-        "es" : {
+        "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Se interrumpió la eliminación de la copia de seguridad de Time Machine."
+            "value" : "时间机器备份的删除过程已中断。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "時光機備份的刪除作業已中斷。"
           }
         }
       }
@@ -13433,22 +13445,28 @@
       "comment" : "Help menu - Time Machine backup deletion failure body; placeholder is the error description",
       "extractionState" : "extracted_with_value",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Phi konnte das Time Machine-Backup nicht löschen: %@"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "new",
             "value" : "Phi could not delete the Time Machine backup: %@"
           }
         },
-        "zh-Hans" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Phi 无法删除时间机器备份：%@"
+            "value" : "Phi no pudo eliminar la copia de seguridad de Time Machine: %@"
           }
         },
-        "zh-Hant" : {
+        "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Phi 無法刪除時光機備份：%@"
+            "value" : "Phi n'a pas pu supprimer la sauvegarde Time Machine : %@"
           }
         },
         "ja" : {
@@ -13463,28 +13481,22 @@
             "value" : "Phi가 Time Machine 백업을 삭제하지 못했어요: %@"
           }
         },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Phi n'a pas pu supprimer la sauvegarde Time Machine : %@"
-          }
-        },
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Phi konnte das Time Machine-Backup nicht löschen: %@"
-          }
-        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Phi kon de Time Machine-back-up niet verwijderen: %@"
           }
         },
-        "es" : {
+        "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Phi no pudo eliminar la copia de seguridad de Time Machine: %@"
+            "value" : "Phi 无法删除时间机器备份：%@"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Phi 無法刪除時光機備份：%@"
           }
         }
       }
@@ -13493,22 +13505,28 @@
       "comment" : "Help menu - Time Machine backup deletion failure alert title",
       "extractionState" : "extracted_with_value",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Löschen des Time Machine-Backups fehlgeschlagen"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "new",
             "value" : "Time Machine Backup Deletion Failed"
           }
         },
-        "zh-Hans" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "时间机器备份删除失败"
+            "value" : "No se pudo eliminar la copia de seguridad de Time Machine"
           }
         },
-        "zh-Hant" : {
+        "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "時光機備份刪除失敗"
+            "value" : "Échec de la suppression de la sauvegarde Time Machine"
           }
         },
         "ja" : {
@@ -13523,28 +13541,22 @@
             "value" : "Time Machine 백업 삭제 실패"
           }
         },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Échec de la suppression de la sauvegarde Time Machine"
-          }
-        },
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Löschen des Time Machine-Backups fehlgeschlagen"
-          }
-        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Verwijderen van Time Machine-back-up mislukt"
           }
         },
-        "es" : {
+        "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "No se pudo eliminar la copia de seguridad de Time Machine"
+            "value" : "时间机器备份删除失败"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "時光機備份刪除失敗"
           }
         }
       }
@@ -13553,22 +13565,28 @@
       "comment" : "Time Machine backup deletion progress title",
       "extractionState" : "extracted_with_value",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Backup wird gelöscht"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "new",
             "value" : "Deleting Backup"
           }
         },
-        "zh-Hans" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "正在删除备份"
+            "value" : "Eliminando la copia de seguridad"
           }
         },
-        "zh-Hant" : {
+        "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "正在刪除備份"
+            "value" : "Suppression de la sauvegarde"
           }
         },
         "ja" : {
@@ -13583,28 +13601,22 @@
             "value" : "백업 삭제 중"
           }
         },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Suppression de la sauvegarde"
-          }
-        },
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Backup wird gelöscht"
-          }
-        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Back-up wordt verwijderd"
           }
         },
-        "es" : {
+        "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Eliminando la copia de seguridad"
+            "value" : "正在删除备份"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在刪除備份"
           }
         }
       }
@@ -13613,22 +13625,28 @@
       "comment" : "Time Machine backup deletion progress window title",
       "extractionState" : "extracted_with_value",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Time Machine-Backup"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "new",
             "value" : "Time Machine Backup"
           }
         },
-        "zh-Hans" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "时间机器备份"
+            "value" : "Copia de seguridad de Time Machine"
           }
         },
-        "zh-Hant" : {
+        "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "時光機備份"
+            "value" : "Sauvegarde Time Machine"
           }
         },
         "ja" : {
@@ -13643,28 +13661,22 @@
             "value" : "Time Machine 백업"
           }
         },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Sauvegarde Time Machine"
-          }
-        },
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Time Machine-Backup"
-          }
-        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Time Machine-back-up"
           }
         },
-        "es" : {
+        "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Copia de seguridad de Time Machine"
+            "value" : "时间机器备份"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "時光機備份"
           }
         }
       }
@@ -13673,22 +13685,28 @@
       "comment" : "Help menu - Selected Time Machine backup logical data size; placeholder is a formatted byte count or an unavailable label",
       "extractionState" : "extracted_with_value",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Datengröße des Backups: %@"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "new",
             "value" : "Backup data size: %@"
           }
         },
-        "zh-Hans" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "备份数据大小：%@"
+            "value" : "Tamaño de los datos de la copia de seguridad: %@"
           }
         },
-        "zh-Hant" : {
+        "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "備份資料大小：%@"
+            "value" : "Taille des données de la sauvegarde : %@"
           }
         },
         "ja" : {
@@ -13703,28 +13721,22 @@
             "value" : "백업 데이터 크기: %@"
           }
         },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Taille des données de la sauvegarde : %@"
-          }
-        },
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Datengröße des Backups: %@"
-          }
-        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Grootte van de back-upgegevens: %@"
           }
         },
-        "es" : {
+        "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Tamaño de los datos de la copia de seguridad: %@"
+            "value" : "备份数据大小：%@"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "備份資料大小：%@"
           }
         }
       }
@@ -13733,22 +13745,28 @@
       "comment" : "Help menu - Fallback shown when a Time Machine backup's logical data size was not recorded",
       "extractionState" : "extracted_with_value",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nicht verfügbar"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "new",
             "value" : "Unavailable"
           }
         },
-        "zh-Hans" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "不可用"
+            "value" : "No disponible"
           }
         },
-        "zh-Hant" : {
+        "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "無法取得"
+            "value" : "Indisponible"
           }
         },
         "ja" : {
@@ -13763,28 +13781,22 @@
             "value" : "알 수 없음"
           }
         },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Indisponible"
-          }
-        },
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Nicht verfügbar"
-          }
-        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Niet beschikbaar"
           }
         },
-        "es" : {
+        "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "No disponible"
+            "value" : "不可用"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "無法取得"
           }
         }
       }
@@ -13793,22 +13805,28 @@
       "comment" : "Help menu - Button in the selected Time Machine backup details alert that starts deletion",
       "extractionState" : "extracted_with_value",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Backup löschen"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "new",
             "value" : "Delete Backup"
           }
         },
-        "zh-Hans" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "删除备份"
+            "value" : "Eliminar copia de seguridad"
           }
         },
-        "zh-Hant" : {
+        "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "刪除備份"
+            "value" : "Supprimer la sauvegarde"
           }
         },
         "ja" : {
@@ -13823,28 +13841,22 @@
             "value" : "백업 삭제"
           }
         },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Supprimer la sauvegarde"
-          }
-        },
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Backup löschen"
-          }
-        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Verwijder back-up"
           }
         },
-        "es" : {
+        "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Eliminar copia de seguridad"
+            "value" : "删除备份"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "刪除備份"
           }
         }
       }
@@ -13853,22 +13865,28 @@
       "comment" : "Help menu - Title of the selected Time Machine backup details alert",
       "extractionState" : "extracted_with_value",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Time Machine-Backup"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "new",
             "value" : "Time Machine Backup"
           }
         },
-        "zh-Hans" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "时间机器备份"
+            "value" : "Copia de seguridad de Time Machine"
           }
         },
-        "zh-Hant" : {
+        "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "時光機備份"
+            "value" : "Sauvegarde Time Machine"
           }
         },
         "ja" : {
@@ -13883,28 +13901,22 @@
             "value" : "Time Machine 백업"
           }
         },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Sauvegarde Time Machine"
-          }
-        },
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Time Machine-Backup"
-          }
-        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Time Machine-back-up"
           }
         },
-        "es" : {
+        "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Copia de seguridad de Time Machine"
+            "value" : "时间机器备份"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "時光機備份"
           }
         }
       }
@@ -20926,22 +20938,28 @@
       "comment" : "Drop-zone hint shown when dragging a tab over the bottom third of the page",
       "extractionState" : "extracted_with_value",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Split unten hinzufügen"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "new",
             "value" : "Add Bottom Split"
           }
         },
-        "zh-Hans" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "在底部添加分屏"
+            "value" : "Agregar división abajo"
           }
         },
-        "zh-Hant" : {
+        "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "加入下方分割畫面"
+            "value" : "Ajouter un Split en bas"
           }
         },
         "ja" : {
@@ -20956,28 +20974,22 @@
             "value" : "아래쪽 분할 추가"
           }
         },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Ajouter un Split en bas"
-          }
-        },
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Split unten hinzufügen"
-          }
-        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Voeg split onder toe"
           }
         },
-        "es" : {
+        "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Agregar división abajo"
+            "value" : "在底部添加分屏"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "加入下方分割畫面"
           }
         }
       }
@@ -21286,22 +21298,28 @@
       "comment" : "Drop-zone hint shown when dragging a tab over the top third of the page",
       "extractionState" : "extracted_with_value",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Split oben hinzufügen"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "new",
             "value" : "Add Top Split"
           }
         },
-        "zh-Hans" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "在顶部添加分屏"
+            "value" : "Agregar división arriba"
           }
         },
-        "zh-Hant" : {
+        "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "加入上方分割畫面"
+            "value" : "Ajouter un Split en haut"
           }
         },
         "ja" : {
@@ -21316,28 +21334,22 @@
             "value" : "위쪽 분할 추가"
           }
         },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Ajouter un Split en haut"
-          }
-        },
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Split oben hinzufügen"
-          }
-        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Voeg split boven toe"
           }
         },
-        "es" : {
+        "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Agregar división arriba"
+            "value" : "在顶部添加分屏"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "加入上方分割畫面"
           }
         }
       }
@@ -35842,22 +35854,28 @@
       "comment" : "Kiosk toolbar - Prefix before the active Space name in the primary open action",
       "extractionState" : "extracted_with_value",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Öffnen in"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "new",
             "value" : "Open in"
           }
         },
-        "zh-Hans" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "打开到"
+            "value" : "Abrir en"
           }
         },
-        "zh-Hant" : {
+        "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "開啟於"
+            "value" : "Ouvrir dans"
           }
         },
         "ja" : {
@@ -35872,28 +35890,22 @@
             "value" : "열기 위치"
           }
         },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Ouvrir dans"
-          }
-        },
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Öffnen in"
-          }
-        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Openen in"
           }
         },
-        "es" : {
+        "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Abrir en"
+            "value" : "打开到"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "開啟於"
           }
         }
       }
@@ -35902,22 +35914,28 @@
       "comment" : "Kiosk toolbar - Accessibility label for the current-profile menu",
       "extractionState" : "extracted_with_value",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Profil wechseln"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "new",
             "value" : "Switch Profile"
           }
         },
-        "zh-Hans" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "切换个人资料"
+            "value" : "Cambiar de Perfil"
           }
         },
-        "zh-Hant" : {
+        "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "切換設定檔"
+            "value" : "Changer de profil"
           }
         },
         "ja" : {
@@ -35932,28 +35950,22 @@
             "value" : "프로필 전환"
           }
         },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Changer de profil"
-          }
-        },
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Profil wechseln"
-          }
-        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Wissel van profiel"
           }
         },
-        "es" : {
+        "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Cambiar de Perfil"
+            "value" : "切换个人资料"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "切換設定檔"
           }
         }
       }
@@ -35962,22 +35974,28 @@
       "comment" : "Kiosk toolbar - Accessibility label and tooltip for the button that shows the Space list",
       "extractionState" : "extracted_with_value",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Space auswählen"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "new",
             "value" : "Choose Space"
           }
         },
-        "zh-Hans" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "选择空间"
+            "value" : "Seleccionar Espacio"
           }
         },
-        "zh-Hant" : {
+        "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "選擇空間"
+            "value" : "Choisir un Espace"
           }
         },
         "ja" : {
@@ -35992,28 +36010,22 @@
             "value" : "스페이스 선택"
           }
         },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Choisir un Espace"
-          }
-        },
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Space auswählen"
-          }
-        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Kies Space"
           }
         },
-        "es" : {
+        "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Seleccionar Espacio"
+            "value" : "选择空间"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "選擇空間"
           }
         }
       }
@@ -41722,22 +41734,28 @@
       "comment" : "Bookmark sidebar row - Tooltip of the minus button that closes the floating page preview opened from this bookmark",
       "extractionState" : "extracted_with_value",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Peek schließen"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "new",
             "value" : "Close Peek"
           }
         },
-        "zh-Hans" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "关闭 Peek"
+            "value" : "Cerrar Peek"
           }
         },
-        "zh-Hant" : {
+        "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "關閉 Peek"
+            "value" : "Fermer la vue Peek"
           }
         },
         "ja" : {
@@ -41752,28 +41770,22 @@
             "value" : "Peek 닫기"
           }
         },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Fermer la vue Peek"
-          }
-        },
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Peek schließen"
-          }
-        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Sluit Peek"
           }
         },
-        "es" : {
+        "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Cerrar Peek"
+            "value" : "关闭 Peek"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "關閉 Peek"
           }
         }
       }
@@ -41782,22 +41794,28 @@
       "comment" : "Peek popup panel - Tooltip of the button that closes the floating page preview and its page",
       "extractionState" : "extracted_with_value",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Schließen"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "new",
             "value" : "Close"
           }
         },
-        "zh-Hans" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "关闭"
+            "value" : "Cerrar"
           }
         },
-        "zh-Hant" : {
+        "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "關閉"
+            "value" : "Fermer"
           }
         },
         "ja" : {
@@ -41812,28 +41830,22 @@
             "value" : "닫기"
           }
         },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Fermer"
-          }
-        },
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Schließen"
-          }
-        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Sluit"
           }
         },
-        "es" : {
+        "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Cerrar"
+            "value" : "关闭"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "關閉"
           }
         }
       }
@@ -41842,22 +41854,28 @@
       "comment" : "Peek popup panel - Tooltip of the button that converts the floating page preview into a regular tab",
       "extractionState" : "extracted_with_value",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Als Tab öffnen"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "new",
             "value" : "Open as Tab"
           }
         },
-        "zh-Hans" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "以标签页打开"
+            "value" : "Abrir como pestaña"
           }
         },
-        "zh-Hant" : {
+        "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "以分頁開啟"
+            "value" : "Ouvrir dans un onglet"
           }
         },
         "ja" : {
@@ -41872,28 +41890,22 @@
             "value" : "탭으로 열기"
           }
         },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Ouvrir dans un onglet"
-          }
-        },
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Als Tab öffnen"
-          }
-        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Open als tabblad"
           }
         },
-        "es" : {
+        "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Abrir como pestaña"
+            "value" : "以标签页打开"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "以分頁開啟"
           }
         }
       }
@@ -41902,22 +41914,28 @@
       "comment" : "Peek popup panel - Tooltip of the button that pairs the floating page preview with its bound tab in a side-by-side split view",
       "extractionState" : "extracted_with_value",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Als Split View öffnen"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "new",
             "value" : "Open as Split View"
           }
         },
-        "zh-Hans" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "以分屏打开"
+            "value" : "Abrir en vista dividida"
           }
         },
-        "zh-Hant" : {
+        "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "以分割畫面開啟"
+            "value" : "Ouvrir en Split View"
           }
         },
         "ja" : {
@@ -41932,28 +41950,22 @@
             "value" : "분할 보기로 열기"
           }
         },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Ouvrir en Split View"
-          }
-        },
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Als Split View öffnen"
-          }
-        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Open als Split View"
           }
         },
-        "es" : {
+        "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Abrir en vista dividida"
+            "value" : "以分屏打开"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "以分割畫面開啟"
           }
         }
       }
@@ -41962,22 +41974,28 @@
       "comment" : "Pinned tab cell - Tooltip of the corner badge that closes the floating page preview opened from this pinned tab",
       "extractionState" : "extracted_with_value",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Peek schließen"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "new",
             "value" : "Close Peek"
           }
         },
-        "zh-Hans" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "关闭 Peek"
+            "value" : "Cerrar Peek"
           }
         },
-        "zh-Hant" : {
+        "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "關閉 Peek"
+            "value" : "Fermer la vue Peek"
           }
         },
         "ja" : {
@@ -41992,28 +42010,22 @@
             "value" : "Peek 닫기"
           }
         },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Fermer la vue Peek"
-          }
-        },
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Peek schließen"
-          }
-        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Sluit Peek"
           }
         },
-        "es" : {
+        "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Cerrar Peek"
+            "value" : "关闭 Peek"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "關閉 Peek"
           }
         }
       }
@@ -44722,22 +44734,28 @@
       "comment" : "AI settings - Button that assigns an existing unassigned connector to the selected browser Profile",
       "extractionState" : "extracted_with_value",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Zuweisen"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "new",
             "value" : "Assign"
           }
         },
-        "zh-Hans" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "分配"
+            "value" : "Asignar"
           }
         },
-        "zh-Hant" : {
+        "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "指派"
+            "value" : "Attribuer"
           }
         },
         "ja" : {
@@ -44752,28 +44770,22 @@
             "value" : "할당"
           }
         },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Attribuer"
-          }
-        },
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Zuweisen"
-          }
-        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Wijs toe"
           }
         },
-        "es" : {
+        "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Asignar"
+            "value" : "分配"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "指派"
           }
         }
       }
@@ -44962,22 +44974,28 @@
       "comment" : "AI settings - OAuth authorization requires an open window for the selected browser Profile",
       "extractionState" : "extracted_with_value",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Öffne ein Browserfenster für das ausgewählte Profil, um fortzufahren."
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "new",
             "value" : "Open a browser window for the selected Profile to continue."
           }
         },
-        "zh-Hans" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "请为所选个人资料打开一个浏览器窗口以继续。"
+            "value" : "Para continuar, abre una ventana del navegador con el Perfil seleccionado."
           }
         },
-        "zh-Hant" : {
+        "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "請開啟所選設定檔的瀏覽器視窗以繼續。"
+            "value" : "Ouvrez une fenêtre de navigateur pour le profil sélectionné afin de continuer."
           }
         },
         "ja" : {
@@ -44992,28 +45010,22 @@
             "value" : "계속하려면 선택한 프로필의 브라우저 윈도우를 열어 주세요."
           }
         },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Ouvrez une fenêtre de navigateur pour le profil sélectionné afin de continuer."
-          }
-        },
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Öffne ein Browserfenster für das ausgewählte Profil, um fortzufahren."
-          }
-        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Open een browservenster voor het geselecteerde profiel om door te gaan."
           }
         },
-        "es" : {
+        "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Para continuar, abre una ventana del navegador con el Perfil seleccionado."
+            "value" : "请为所选个人资料打开一个浏览器窗口以继续。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "請開啟所選設定檔的瀏覽器視窗以繼續。"
           }
         }
       }
@@ -45622,22 +45634,28 @@
       "comment" : "AI settings - Explanation that connector accounts belong only to the selected browser Profile",
       "extractionState" : "extracted_with_value",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Verbindungen sind auf das ausgewählte Profil beschränkt."
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "new",
             "value" : "Connections are isolated to the selected Profile."
           }
         },
-        "zh-Hans" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "连接仅属于所选的个人资料。"
+            "value" : "Las conexiones son exclusivas del Perfil seleccionado."
           }
         },
-        "zh-Hant" : {
+        "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "連線僅屬於所選的設定檔。"
+            "value" : "Les connexions sont propres au profil sélectionné."
           }
         },
         "ja" : {
@@ -45652,28 +45670,22 @@
             "value" : "연결은 선택한 프로필에만 속해요."
           }
         },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Les connexions sont propres au profil sélectionné."
-          }
-        },
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Verbindungen sind auf das ausgewählte Profil beschränkt."
-          }
-        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Verbindingen gelden alleen voor het geselecteerde profiel."
           }
         },
-        "es" : {
+        "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Las conexiones son exclusivas del Perfil seleccionado."
+            "value" : "连接仅属于所选的个人资料。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "連線僅屬於所選的設定檔。"
           }
         }
       }
@@ -45682,22 +45694,28 @@
       "comment" : "AI settings - Label for selecting the browser Profile whose connectors are managed",
       "extractionState" : "extracted_with_value",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Konnektoren für Profil"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "new",
             "value" : "Connectors for Profile"
           }
         },
-        "zh-Hans" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "个人资料的连接器"
+            "value" : "Conectores del Perfil"
           }
         },
-        "zh-Hant" : {
+        "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "連接器所屬設定檔"
+            "value" : "Connecteurs du profil"
           }
         },
         "ja" : {
@@ -45712,28 +45730,22 @@
             "value" : "프로필별 커넥터"
           }
         },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Connecteurs du profil"
-          }
-        },
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Konnektoren für Profil"
-          }
-        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Connectors voor profiel"
           }
         },
-        "es" : {
+        "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Conectores del Perfil"
+            "value" : "个人资料的连接器"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "連接器所屬設定檔"
           }
         }
       }
@@ -45862,22 +45874,28 @@
       "comment" : "AI settings - Connector row status for an existing connection that has not yet been assigned to a browser Profile",
       "extractionState" : "extracted_with_value",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Keinem Profil zugewiesen"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "new",
             "value" : "Not assigned to a Profile"
           }
         },
-        "zh-Hans" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "未分配给任何个人资料"
+            "value" : "No asignado a ningún Perfil"
           }
         },
-        "zh-Hant" : {
+        "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "尚未指派給任何設定檔"
+            "value" : "Non attribué à un profil"
           }
         },
         "ja" : {
@@ -45892,28 +45910,22 @@
             "value" : "프로필에 할당되지 않음"
           }
         },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Non attribué à un profil"
-          }
-        },
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Keinem Profil zugewiesen"
-          }
-        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Niet aan een profiel toegewezen"
           }
         },
-        "es" : {
+        "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "No asignado a ningún Perfil"
+            "value" : "未分配给任何个人资料"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "尚未指派給任何設定檔"
           }
         }
       }
@@ -56602,22 +56614,28 @@
       "comment" : "General settings - Toggle title for showing custom preview cards when hovering over open tabs",
       "extractionState" : "extracted_with_value",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vorschaukarte anzeigen, wenn du den Mauszeiger über einen Tab bewegst"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "new",
             "value" : "Show a preview card when hovering over a tab"
           }
         },
-        "zh-Hans" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "鼠标悬停在标签页上时显示预览卡片"
+            "value" : "Mostrar una tarjeta de vista previa al pasar el cursor sobre una pestaña"
           }
         },
-        "zh-Hant" : {
+        "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "游標停留在分頁上時顯示預覽卡片"
+            "value" : "Afficher une carte d'aperçu au survol d'un onglet"
           }
         },
         "ja" : {
@@ -56632,28 +56650,22 @@
             "value" : "탭 위에 마우스를 올리면 미리보기 카드 표시"
           }
         },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Afficher une carte d'aperçu au survol d'un onglet"
-          }
-        },
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Vorschaukarte anzeigen, wenn du den Mauszeiger über einen Tab bewegst"
-          }
-        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Toon een voorbeeldkaart wanneer je de aanwijzer op een tabblad houdt"
           }
         },
-        "es" : {
+        "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Mostrar una tarjeta de vista previa al pasar el cursor sobre una pestaña"
+            "value" : "鼠标悬停在标签页上时显示预览卡片"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "游標停留在分頁上時顯示預覽卡片"
           }
         }
       }
@@ -57142,22 +57154,28 @@
       "comment" : "Settings - Tab title for link-opening behavior",
       "extractionState" : "extracted_with_value",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Navigation"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "new",
             "value" : "Navigation"
           }
         },
-        "zh-Hans" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "导航"
+            "value" : "Navegación"
           }
         },
-        "zh-Hant" : {
+        "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "導覽"
+            "value" : "Navigation"
           }
         },
         "ja" : {
@@ -57172,28 +57190,22 @@
             "value" : "탐색"
           }
         },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Navigation"
-          }
-        },
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Navigation"
-          }
-        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Navigatie"
           }
         },
-        "es" : {
+        "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Navegación"
+            "value" : "导航"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "導覽"
           }
         }
       }
@@ -57442,22 +57454,28 @@
       "comment" : "Navigations settings - Explanation of the Command-Option Kiosk toggle",
       "extractionState" : "extracted_with_value",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Halte beim Klicken auf einen Link die Befehlstaste und die Wahltaste gedrückt, um ihn in einem Kiosk-Fenster zu öffnen."
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "new",
             "value" : "Hold Command and Option while clicking a link to open it in a Kiosk window."
           }
         },
-        "zh-Hans" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "按住 Command 和 Option 键点按链接，即可在 Kiosk 窗口中打开该链接。"
+            "value" : "Mantén presionadas las teclas Comando y Opción mientras haces clic en un enlace para abrirlo en una ventana de Kiosk."
           }
         },
-        "zh-Hant" : {
+        "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "按住 Command 和 Option 鍵並點按連結，即可在 Kiosk 視窗中開啟該連結。"
+            "value" : "Maintenez les touches Commande et Option enfoncées en cliquant sur un lien pour l'ouvrir dans une fenêtre Kiosk."
           }
         },
         "ja" : {
@@ -57472,28 +57490,22 @@
             "value" : "Command와 Option을 누른 채 링크를 클릭하면 Kiosk 윈도우에서 열려요."
           }
         },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Maintenez les touches Commande et Option enfoncées en cliquant sur un lien pour l'ouvrir dans une fenêtre Kiosk."
-          }
-        },
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Halte beim Klicken auf einen Link die Befehlstaste und die Wahltaste gedrückt, um ihn in einem Kiosk-Fenster zu öffnen."
-          }
-        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Houd Command en Option ingedrukt terwijl je op een link klikt om die in een Kiosk-venster te openen."
           }
         },
-        "es" : {
+        "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Mantén presionadas las teclas Comando y Opción mientras haces clic en un enlace para abrirlo en una ventana de Kiosk."
+            "value" : "按住 Command 和 Option 键点按链接，即可在 Kiosk 窗口中打开该链接。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "按住 Command 和 Option 鍵並點按連結，即可在 Kiosk 視窗中開啟該連結。"
           }
         }
       }
@@ -57502,22 +57514,28 @@
       "comment" : "Navigations settings - Toggle title for opening clicked links in Kiosk while Command and Option are held",
       "extractionState" : "extracted_with_value",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kiosk öffnen, wenn Links mit gedrücktem ⌘⌥ angeklickt werden"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "new",
             "value" : "Open Kiosk when clicking links with ⌘⌥ held"
           }
         },
-        "zh-Hans" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "按住 ⌘⌥ 点按链接时打开 Kiosk"
+            "value" : "Abrir Kiosk al hacer clic en enlaces con ⌘⌥ presionadas"
           }
         },
-        "zh-Hant" : {
+        "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "按住 ⌘⌥ 並點按連結時開啟 Kiosk"
+            "value" : "Ouvrir Kiosk en cliquant sur un lien avec ⌘⌥ enfoncées"
           }
         },
         "ja" : {
@@ -57532,28 +57550,22 @@
             "value" : "⌘⌥을 누른 채 클릭한 링크를 Kiosk에서 열기"
           }
         },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Ouvrir Kiosk en cliquant sur un lien avec ⌘⌥ enfoncées"
-          }
-        },
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Kiosk öffnen, wenn Links mit gedrücktem ⌘⌥ angeklickt werden"
-          }
-        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Open Kiosk wanneer je met ⌘⌥ ingedrukt op een link klikt"
           }
         },
-        "es" : {
+        "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Abrir Kiosk al hacer clic en enlaces con ⌘⌥ presionadas"
+            "value" : "按住 ⌘⌥ 点按链接时打开 Kiosk"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "按住 ⌘⌥ 並點按連結時開啟 Kiosk"
           }
         }
       }
@@ -57562,22 +57574,28 @@
       "comment" : "Navigations settings - Explanation of the external-links Kiosk toggle",
       "extractionState" : "extracted_with_value",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Links aus anderen Apps öffnen sich in einem fokussierten Kiosk-Fenster mit nur einer Seite."
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "new",
             "value" : "Links opened from other apps use a focused, single-page Kiosk window."
           }
         },
-        "zh-Hans" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "从其他应用打开的链接将使用专注的单页 Kiosk 窗口。"
+            "value" : "Los enlaces abiertos desde otras apps usan una ventana de Kiosk de una sola página y sin distracciones."
           }
         },
-        "zh-Hant" : {
+        "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "從其他 App 開啟的連結，會使用專注的單頁式 Kiosk 視窗。"
+            "value" : "Les liens ouverts depuis d'autres apps utilisent une fenêtre Kiosk épurée, limitée à une seule page."
           }
         },
         "ja" : {
@@ -57592,28 +57610,22 @@
             "value" : "다른 앱에서 연 링크는 한 페이지에 집중하는 Kiosk 윈도우에서 열려요."
           }
         },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Les liens ouverts depuis d'autres apps utilisent une fenêtre Kiosk épurée, limitée à une seule page."
-          }
-        },
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Links aus anderen Apps öffnen sich in einem fokussierten Kiosk-Fenster mit nur einer Seite."
-          }
-        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Links die je vanuit andere apps opent, gebruiken een gefocust Kiosk-venster met één pagina."
           }
         },
-        "es" : {
+        "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Los enlaces abiertos desde otras apps usan una ventana de Kiosk de una sola página y sin distracciones."
+            "value" : "从其他应用打开的链接将使用专注的单页 Kiosk 窗口。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "從其他 App 開啟的連結，會使用專注的單頁式 Kiosk 視窗。"
           }
         }
       }
@@ -57622,22 +57634,28 @@
       "comment" : "Navigations settings - Toggle title for opening links from other apps in Kiosk windows",
       "extractionState" : "extracted_with_value",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Externe Links in Kiosk öffnen"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "new",
             "value" : "Open external links in Kiosk"
           }
         },
-        "zh-Hans" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "在 Kiosk 中打开外部链接"
+            "value" : "Abrir enlaces externos en Kiosk"
           }
         },
-        "zh-Hant" : {
+        "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "在 Kiosk 中開啟外部連結"
+            "value" : "Ouvrir les liens externes dans Kiosk"
           }
         },
         "ja" : {
@@ -57652,28 +57670,34 @@
             "value" : "외부 링크를 Kiosk에서 열기"
           }
         },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Ouvrir les liens externes dans Kiosk"
-          }
-        },
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Externe Links in Kiosk öffnen"
-          }
-        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Open externe links in Kiosk"
           }
         },
-        "es" : {
+        "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Abrir enlaces externos en Kiosk"
+            "value" : "在 Kiosk 中打开外部链接"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在 Kiosk 中開啟外部連結"
+          }
+        }
+      }
+    },
+    "settings.navigations.kiosk.globalShortcut.title" : {
+      "comment" : "Navigations settings - Toggle title for enabling the system-wide Kiosk shortcut; %@ is replaced by the current New Kiosk Window shortcut",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Open Kiosk when pressing %@ in any app"
           }
         }
       }
@@ -57682,22 +57706,28 @@
       "comment" : "Navigations settings - Description of Kiosk windows",
       "extractionState" : "extracted_with_value",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Öffnet Links in einem schlanken Fenster, eine Seite nach der anderen."
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "new",
             "value" : "Open links in a lightweight window, one page at a time."
           }
         },
-        "zh-Hans" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "在轻量窗口中打开链接，一次一个页面。"
+            "value" : "Abre los enlaces en una ventana ligera, una página a la vez."
           }
         },
-        "zh-Hant" : {
+        "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "在輕量視窗中開啟連結，一次一頁。"
+            "value" : "Ouvrez les liens dans une fenêtre légère, une page à la fois."
           }
         },
         "ja" : {
@@ -57712,28 +57742,22 @@
             "value" : "링크를 가벼운 윈도우에서 한 번에 한 페이지씩 열어요."
           }
         },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Ouvrez les liens dans une fenêtre légère, une page à la fois."
-          }
-        },
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Öffnet Links in einem schlanken Fenster, eine Seite nach der anderen."
-          }
-        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Open links in een lichtgewicht venster, één pagina tegelijk."
           }
         },
-        "es" : {
+        "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Abre los enlaces en una ventana ligera, una página a la vez."
+            "value" : "在轻量窗口中打开链接，一次一个页面。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在輕量視窗中開啟連結，一次一頁。"
           }
         }
       }
@@ -57742,19 +57766,25 @@
       "comment" : "Navigations settings - Kiosk section title",
       "extractionState" : "extracted_with_value",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kiosk"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "new",
             "value" : "Kiosk"
           }
         },
-        "zh-Hans" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Kiosk"
           }
         },
-        "zh-Hant" : {
+        "fr" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Kiosk"
@@ -57772,25 +57802,19 @@
             "value" : "Kiosk"
           }
         },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Kiosk"
-          }
-        },
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Kiosk"
-          }
-        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Kiosk"
           }
         },
-        "es" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kiosk"
+          }
+        },
+        "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Kiosk"
@@ -57802,22 +57826,28 @@
       "comment" : "Navigations settings - Explanation of the Peek View toggle",
       "extractionState" : "extracted_with_value",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Klicke bei gedrückter Umschalttaste auf einen Link oder wähle „Link in Peek-Ansicht öffnen“, um ihn in einem schwebenden Panel über der Seite als Vorschau anzuzeigen. Nicht verfügbar im Layout „Komfortabel“."
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "new",
             "value" : "Shift-click a link, or choose “Open Link in Peek View”, to preview it in a floating panel over the page. Not available in the Comfortable layout."
           }
         },
-        "zh-Hans" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "按住 Shift 点按链接，或选择「在 Peek 视图中打开链接」，即可在页面上方的浮动面板中预览。在「舒适」布局中不可用。"
+            "value" : "Haz clic en un enlace con la tecla Mayúsculas presionada, o elige “Abrir enlace en vista Peek”, para ver su vista previa en un panel flotante sobre la página. No disponible en el diseño Cómodo."
           }
         },
-        "zh-Hant" : {
+        "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "按住 Shift 並點按連結，或選擇「在 Peek 檢視中開啟連結」，即可在頁面上的浮動面板中預覽。不適用於「舒適」版面配置。"
+            "value" : "Cliquez sur un lien en maintenant Maj, ou choisissez « Ouvrir le lien dans la vue Peek », pour le prévisualiser dans un panneau flottant au-dessus de la page. Non disponible dans la disposition Confortable."
           }
         },
         "ja" : {
@@ -57832,28 +57862,22 @@
             "value" : "Shift를 누른 채 링크를 클릭하거나 “Peek 뷰에서 링크 열기”를 선택하면 페이지 위 플로팅 패널에서 미리 볼 수 있어요. 여유 레이아웃에서는 사용할 수 없어요."
           }
         },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Cliquez sur un lien en maintenant Maj, ou choisissez « Ouvrir le lien dans la vue Peek », pour le prévisualiser dans un panneau flottant au-dessus de la page. Non disponible dans la disposition Confortable."
-          }
-        },
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Klicke bei gedrückter Umschalttaste auf einen Link oder wähle „Link in Peek-Ansicht öffnen“, um ihn in einem schwebenden Panel über der Seite als Vorschau anzuzeigen. Nicht verfügbar im Layout „Komfortabel“."
-          }
-        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Shift-klik op een link, of kies “Link openen in Peek-weergave”, om er een voorbeeld van te zien in een zwevend paneel boven de pagina. Niet beschikbaar in de indeling Comfortabel."
           }
         },
-        "es" : {
+        "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Haz clic en un enlace con la tecla Mayúsculas presionada, o elige “Abrir enlace en vista Peek”, para ver su vista previa en un panel flotante sobre la página. No disponible en el diseño Cómodo."
+            "value" : "按住 Shift 点按链接，或选择「在 Peek 视图中打开链接」，即可在页面上方的浮动面板中预览。在「舒适」布局中不可用。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "按住 Shift 並點按連結，或選擇「在 Peek 檢視中開啟連結」，即可在頁面上的浮動面板中預覽。不適用於「舒適」版面配置。"
           }
         }
       }
@@ -57862,22 +57886,28 @@
       "comment" : "Navigations settings - Toggle title for enabling Peek View",
       "extractionState" : "extracted_with_value",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Peek-Ansicht aktivieren"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "new",
             "value" : "Enable Peek View"
           }
         },
-        "zh-Hans" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "启用 Peek 视图"
+            "value" : "Activar vista Peek"
           }
         },
-        "zh-Hant" : {
+        "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "啟用 Peek 檢視"
+            "value" : "Activer la vue Peek"
           }
         },
         "ja" : {
@@ -57892,28 +57922,22 @@
             "value" : "Peek 뷰 사용"
           }
         },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Activer la vue Peek"
-          }
-        },
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Peek-Ansicht aktivieren"
-          }
-        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Schakel Peek-weergave in"
           }
         },
-        "es" : {
+        "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Activar vista Peek"
+            "value" : "启用 Peek 视图"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "啟用 Peek 檢視"
           }
         }
       }
@@ -57922,22 +57946,28 @@
       "comment" : "Navigations settings - Description of the Peek feature",
       "extractionState" : "extracted_with_value",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Zeigt eine Linkvorschau an, ohne den Link in einem neuen Tab zu öffnen."
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "new",
             "value" : "Preview a link without opening it in a new tab."
           }
         },
-        "zh-Hans" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "无需在新标签页中打开即可预览链接。"
+            "value" : "Muestra la vista previa de un enlace sin abrirlo en una pestaña nueva."
           }
         },
-        "zh-Hant" : {
+        "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "不必開啟新分頁即可預覽連結。"
+            "value" : "Prévisualisez un lien sans l'ouvrir dans un nouvel onglet."
           }
         },
         "ja" : {
@@ -57952,28 +57982,22 @@
             "value" : "링크를 새 탭에서 열지 않고 미리 볼 수 있어요."
           }
         },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Prévisualisez un lien sans l'ouvrir dans un nouvel onglet."
-          }
-        },
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Zeigt eine Linkvorschau an, ohne den Link in einem neuen Tab zu öffnen."
-          }
-        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Bekijk een voorbeeld van een link zonder die in een nieuw tabblad te openen."
           }
         },
-        "es" : {
+        "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Muestra la vista previa de un enlace sin abrirlo en una pestaña nueva."
+            "value" : "无需在新标签页中打开即可预览链接。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "不必開啟新分頁即可預覽連結。"
           }
         }
       }
@@ -57982,19 +58006,25 @@
       "comment" : "Navigations settings - Peek section title",
       "extractionState" : "extracted_with_value",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Peek"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "new",
             "value" : "Peek"
           }
         },
-        "zh-Hans" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Peek"
           }
         },
-        "zh-Hant" : {
+        "fr" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Peek"
@@ -58012,25 +58042,19 @@
             "value" : "Peek"
           }
         },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Peek"
-          }
-        },
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Peek"
-          }
-        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Peek"
           }
         },
-        "es" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Peek"
+          }
+        },
+        "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Peek"
@@ -58042,22 +58066,28 @@
       "comment" : "Navigations settings - Title of the row that opens the URL Rules editor",
       "extractionState" : "extracted_with_value",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "URL-Regeln verwalten…"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "new",
             "value" : "Manage URL Rules…"
           }
         },
-        "zh-Hans" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "管理网址规则…"
+            "value" : "Administrar reglas de URL…"
           }
         },
-        "zh-Hant" : {
+        "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "管理網址規則…"
+            "value" : "Gérer les règles d'URL…"
           }
         },
         "ja" : {
@@ -58072,28 +58102,22 @@
             "value" : "URL 규칙 관리…"
           }
         },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Gérer les règles d'URL…"
-          }
-        },
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "URL-Regeln verwalten…"
-          }
-        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Beheer URL-regels…"
           }
         },
-        "es" : {
+        "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Administrar reglas de URL…"
+            "value" : "管理网址规则…"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "管理網址規則…"
           }
         }
       }
@@ -58102,22 +58126,28 @@
       "comment" : "Navigations settings - Description below the URL Rules editor row title",
       "extractionState" : "extracted_with_value",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Leitet passende Domains oder URLs in einen Space, ein Inkognito-Fenster oder ein Kiosk-Fenster weiter."
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "new",
             "value" : "Route matching domains or URLs to a Space, Incognito, or Kiosk."
           }
         },
-        "zh-Hans" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "将匹配的域名或网址转到指定的空间、无痕或 Kiosk。"
+            "value" : "Dirige los dominios o las URL que coincidan hacia un Espacio, Incógnito o Kiosk."
           }
         },
-        "zh-Hant" : {
+        "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "將符合規則的網域或網址導向空間、無痕模式或 Kiosk。"
+            "value" : "Dirigez les domaines ou URL correspondants vers un Espace, la navigation privée ou Kiosk."
           }
         },
         "ja" : {
@@ -58132,28 +58162,22 @@
             "value" : "일치하는 도메인이나 URL을 스페이스, 시크릿 모드 또는 Kiosk로 보내요."
           }
         },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Dirigez les domaines ou URL correspondants vers un Espace, la navigation privée ou Kiosk."
-          }
-        },
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Leitet passende Domains oder URLs in einen Space, ein Inkognito-Fenster oder ein Kiosk-Fenster weiter."
-          }
-        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Stuur overeenkomende domeinen of URL's naar een Space, Incognito of Kiosk."
           }
         },
-        "es" : {
+        "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Dirige los dominios o las URL que coincidan hacia un Espacio, Incógnito o Kiosk."
+            "value" : "将匹配的域名或网址转到指定的空间、无痕或 Kiosk。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "將符合規則的網域或網址導向空間、無痕模式或 Kiosk。"
           }
         }
       }
@@ -58162,22 +58186,28 @@
       "comment" : "Navigations settings - URL Rules section title",
       "extractionState" : "extracted_with_value",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "URL-Regeln"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "new",
             "value" : "URL Rules"
           }
         },
-        "zh-Hans" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "网址规则"
+            "value" : "Reglas de URL"
           }
         },
-        "zh-Hant" : {
+        "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "網址規則"
+            "value" : "Règles d'URL"
           }
         },
         "ja" : {
@@ -58192,28 +58222,22 @@
             "value" : "URL 규칙"
           }
         },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Règles d'URL"
-          }
-        },
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "URL-Regeln"
-          }
-        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "URL-regels"
           }
         },
-        "es" : {
+        "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Reglas de URL"
+            "value" : "网址规则"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "網址規則"
           }
         }
       }
@@ -63977,6 +64001,18 @@
         }
       }
     },
+    "settings.shortcuts.command.newKioskWindow" : {
+      "comment" : "Shortcuts settings - Command title for opening a new Kiosk window",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "New Kiosk Window"
+          }
+        }
+      }
+    },
     "settings.shortcuts.command.newTab" : {
       "comment" : "Shortcuts settings - Command title for opening a new tab",
       "extractionState" : "extracted_with_value",
@@ -69681,22 +69717,28 @@
       "comment" : "Bookmark folder icon picker - Accessibility label and help text for choosing a folder icon",
       "extractionState" : "extracted_with_value",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ordnersymbol ändern"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "new",
             "value" : "Change Folder Icon"
           }
         },
-        "zh-Hans" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "更改文件夹图标"
+            "value" : "Cambiar el icono de la carpeta"
           }
         },
-        "zh-Hant" : {
+        "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "更改資料夾圖示"
+            "value" : "Changer l'icône du dossier"
           }
         },
         "ja" : {
@@ -69711,28 +69753,22 @@
             "value" : "폴더 아이콘 변경"
           }
         },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Changer l'icône du dossier"
-          }
-        },
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Ordnersymbol ändern"
-          }
-        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Wijzig mapsymbool"
           }
         },
-        "es" : {
+        "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Cambiar el icono de la carpeta"
+            "value" : "更改文件夹图标"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "更改資料夾圖示"
           }
         }
       }
@@ -69741,22 +69777,28 @@
       "comment" : "Bookmark folder context menu - Opens the folder icon picker",
       "extractionState" : "extracted_with_value",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Symbol ändern..."
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "new",
             "value" : "Change Icon..."
           }
         },
-        "zh-Hans" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "更改图标..."
+            "value" : "Cambiar icono..."
           }
         },
-        "zh-Hant" : {
+        "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "更改圖示..."
+            "value" : "Changer l'icône..."
           }
         },
         "ja" : {
@@ -69771,28 +69813,22 @@
             "value" : "아이콘 변경..."
           }
         },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Changer l'icône..."
-          }
-        },
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Symbol ändern..."
-          }
-        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Wijzig symbool..."
           }
         },
-        "es" : {
+        "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Cambiar icono..."
+            "value" : "更改图标..."
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "更改圖示..."
           }
         }
       }
@@ -69861,22 +69897,28 @@
       "comment" : "Bookmark context menu - Copy the bottom (secondary) URL of a stacked split-view bookmark",
       "extractionState" : "extracted_with_value",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Untere URL kopieren"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "new",
             "value" : "Copy Bottom URL"
           }
         },
-        "zh-Hans" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "拷贝底部网址"
+            "value" : "Copiar URL de abajo"
           }
         },
-        "zh-Hant" : {
+        "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "拷貝下方網址"
+            "value" : "Copier l'URL du bas"
           }
         },
         "ja" : {
@@ -69891,28 +69933,22 @@
             "value" : "아래쪽 URL 복사"
           }
         },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Copier l'URL du bas"
-          }
-        },
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Untere URL kopieren"
-          }
-        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Kopieer onder-URL"
           }
         },
-        "es" : {
+        "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Copiar URL de abajo"
+            "value" : "拷贝底部网址"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "拷貝下方網址"
           }
         }
       }
@@ -70101,22 +70137,28 @@
       "comment" : "Bookmark context menu - Copy the top (primary) URL of a stacked split-view bookmark",
       "extractionState" : "extracted_with_value",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Obere URL kopieren"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "new",
             "value" : "Copy Top URL"
           }
         },
-        "zh-Hans" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "拷贝顶部网址"
+            "value" : "Copiar URL de arriba"
           }
         },
-        "zh-Hant" : {
+        "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "拷貝上方網址"
+            "value" : "Copier l'URL du haut"
           }
         },
         "ja" : {
@@ -70131,28 +70173,22 @@
             "value" : "위쪽 URL 복사"
           }
         },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Copier l'URL du haut"
-          }
-        },
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Obere URL kopieren"
-          }
-        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Kopieer boven-URL"
           }
         },
-        "es" : {
+        "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Copiar URL de arriba"
+            "value" : "拷贝顶部网址"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "拷貝上方網址"
           }
         }
       }
@@ -73461,22 +73497,28 @@
       "comment" : "Split context menu - Switch a stacked split to a side-by-side split",
       "extractionState" : "extracted_with_value",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "In horizontalen Split umwandeln"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "new",
             "value" : "Convert to Horizontal Split"
           }
         },
-        "zh-Hans" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "转换为左右分屏"
+            "value" : "Convertir en división horizontal"
           }
         },
-        "zh-Hant" : {
+        "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "轉換為左右分割畫面"
+            "value" : "Convertir en Split horizontal"
           }
         },
         "ja" : {
@@ -73491,28 +73533,22 @@
             "value" : "좌우 분할로 전환"
           }
         },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Convertir en Split horizontal"
-          }
-        },
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "In horizontalen Split umwandeln"
-          }
-        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Zet om naar horizontale split"
           }
         },
-        "es" : {
+        "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Convertir en división horizontal"
+            "value" : "转换为左右分屏"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "轉換為左右分割畫面"
           }
         }
       }
@@ -73521,22 +73557,28 @@
       "comment" : "Split context menu - Switch a side-by-side split to a stacked split",
       "extractionState" : "extracted_with_value",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "In vertikalen Split umwandeln"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "new",
             "value" : "Convert to Vertical Split"
           }
         },
-        "zh-Hans" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "转换为上下分屏"
+            "value" : "Convertir en división vertical"
           }
         },
-        "zh-Hant" : {
+        "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "轉換為上下分割畫面"
+            "value" : "Convertir en Split vertical"
           }
         },
         "ja" : {
@@ -73551,28 +73593,22 @@
             "value" : "상하 분할로 전환"
           }
         },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Convertir en Split vertical"
-          }
-        },
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "In vertikalen Split umwandeln"
-          }
-        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Zet om naar verticale split"
           }
         },
-        "es" : {
+        "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Convertir en división vertical"
+            "value" : "转换为上下分屏"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "轉換為上下分割畫面"
           }
         }
       }
@@ -73581,22 +73617,28 @@
       "comment" : "Tab context menu - Copy the bottom pane's URL for a stacked split",
       "extractionState" : "extracted_with_value",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Untere URL kopieren"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "new",
             "value" : "Copy Bottom URL"
           }
         },
-        "zh-Hans" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "拷贝底部网址"
+            "value" : "Copiar URL de abajo"
           }
         },
-        "zh-Hant" : {
+        "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "拷貝下方網址"
+            "value" : "Copier l'URL du bas"
           }
         },
         "ja" : {
@@ -73611,28 +73653,22 @@
             "value" : "아래쪽 URL 복사"
           }
         },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Copier l'URL du bas"
-          }
-        },
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Untere URL kopieren"
-          }
-        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Kopieer onder-URL"
           }
         },
-        "es" : {
+        "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Copiar URL de abajo"
+            "value" : "拷贝底部网址"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "拷貝下方網址"
           }
         }
       }
@@ -73821,22 +73857,28 @@
       "comment" : "Tab context menu - Copy the top pane's URL for a stacked split",
       "extractionState" : "extracted_with_value",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Obere URL kopieren"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "new",
             "value" : "Copy Top URL"
           }
         },
-        "zh-Hans" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "拷贝顶部网址"
+            "value" : "Copiar URL de arriba"
           }
         },
-        "zh-Hant" : {
+        "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "拷貝上方網址"
+            "value" : "Copier l'URL du haut"
           }
         },
         "ja" : {
@@ -73851,28 +73893,22 @@
             "value" : "위쪽 URL 복사"
           }
         },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Copier l'URL du haut"
-          }
-        },
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Obere URL kopieren"
-          }
-        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Kopieer boven-URL"
           }
         },
-        "es" : {
+        "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Copiar URL de arriba"
+            "value" : "拷贝顶部网址"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "拷貝上方網址"
           }
         }
       }
@@ -76821,19 +76857,25 @@
       "comment" : "URL rules editor - Destination that opens matching URLs in a Kiosk window",
       "extractionState" : "extracted_with_value",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kiosk"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "new",
             "value" : "Kiosk"
           }
         },
-        "zh-Hans" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Kiosk"
           }
         },
-        "zh-Hant" : {
+        "fr" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Kiosk"
@@ -76851,25 +76893,19 @@
             "value" : "Kiosk"
           }
         },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Kiosk"
-          }
-        },
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Kiosk"
-          }
-        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Kiosk"
           }
         },
-        "es" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kiosk"
+          }
+        },
+        "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Kiosk"

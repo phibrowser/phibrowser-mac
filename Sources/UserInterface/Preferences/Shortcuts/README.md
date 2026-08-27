@@ -113,6 +113,9 @@ of the execution paths cannot reproduce.
   `phi_command_dispatcher_delegate.mm` -> `PhiChromiumCoordinator` ->
   `CommandDispatcher.handleKeyEquivalent` -> `ShortcutsKey.eventKeys` ->
   canonical lookup -> legacy lookup -> native dispatch.
+  New Kiosk Window uses this path so its effective shortcut takes precedence
+  over Chromium's `IDC_NEW_SPLIT_TAB` accelerator only while both are bound to
+  the same key.
 - Ordinary Chromium commands:
   `keyEquivalentOverrideForCommand:` returns the override's projected
   `menuKeyEquivalent`, after which Chromium performs its normal menu and command

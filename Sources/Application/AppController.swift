@@ -70,6 +70,10 @@ import PostHog
     private var hasFinishedLaunching = false
     /// Cached in `applicationWillFinishLaunching`; weak — owned by `ChromiumLauncher`, not AppController.
     private weak var chromiumBridge: (any PhiChromiumBridgeProtocol)?
+    private lazy var kioskGlobalShortcutRegistrar =
+        KioskGlobalShortcutRegistrar { [weak self] in
+            self?.newKioskWindowFromGlobalShortcut()
+        }
 
     override init() {
         super.init()
@@ -190,6 +194,7 @@ import PostHog
                                                selector: #selector(refreshBookmarksMenuVisibility),
                                                name: .activeBrowserWindowDidChange,
                                                object: nil)
+        kioskGlobalShortcutRegistrar.start()
         
         if permitsSentinelLaunch,
            ApplicationState.shared.isAuthenticated {
@@ -289,6 +294,7 @@ import PostHog
         coldOpenURLForwardWorkItem = nil
         pendingHotKioskPresentationWorkItem?.cancel()
         pendingHotKioskPresentationWorkItem = nil
+        kioskGlobalShortcutRegistrar.invalidate()
         AppLogInfo("-------applicationWillTerminate----")
         MainActor.assumeIsolated {
             LoginController.shared.recordOOBEAppTermination()
@@ -797,6 +803,10 @@ import PostHog
             return
         }
         chromiumBridge.setOpenKioskOnCommandOptionClickEnabled(enabled)
+    }
+
+    func setOpenKioskWithGlobalShortcutEnabled(_ enabled: Bool) {
+        kioskGlobalShortcutRegistrar.setEnabled(enabled)
     }
 
     @MainActor

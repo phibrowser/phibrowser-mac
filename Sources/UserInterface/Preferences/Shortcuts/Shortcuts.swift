@@ -25,6 +25,7 @@ enum CommandWrapper: Int, Equatable {
     case IDC_NEW_TAB                 = 34014
     case IDC_NEW_WINDOW              = 34000
     case IDC_NEW_INCOGNITO_WINDOW    = 34001
+    case IDC_NEW_SPLIT_TAB           = 34057
     case IDC_RESTORE_TAB             = 34028
     case IDC_OPEN_FILE               = 40000
     case IDC_FOCUS_LOCATION          = 39001
@@ -127,6 +128,7 @@ enum CommandWrapper: Int, Equatable {
     case PHI_FARRINGDON_TOGGLE       = 90019
     case PHI_COPY_URL                = 90020
     case PHI_TOGGLE_READER           = 90021
+    case PHI_NEW_KIOSK_WINDOW        = 90022
 
     // System Preserved
     case IDS_HIDE_OTHERS_MAC         = 110
@@ -421,6 +423,63 @@ struct ShortcutsKey: Hashable {
         return characters.lowercased()
     }
 
+    /// Resolves the Carbon virtual key used by system-wide hot-key
+    /// registration. Printable shortcuts use the same ANSI identities as the
+    /// Chromium shortcut bridge; AppKit function-key characters are mapped to
+    /// their corresponding hardware keys.
+    var carbonVirtualKeyCode: UInt32? {
+        let normalized = characters.lowercased()
+        if let keyCode = Self.qwertyLetterByANSIKeyCode.first(where: {
+            $0.value == normalized
+        })?.key {
+            return UInt32(keyCode)
+        }
+        if let keyCode = Self.qwertyNonLetterByANSIKeyCode.first(where: {
+            $0.value.unshifted == characters || $0.value.shifted == characters
+        })?.key {
+            return UInt32(keyCode)
+        }
+
+        switch characters {
+        case " ": return UInt32(kVK_Space)
+        case "\t": return UInt32(kVK_Tab)
+        case "\r": return UInt32(kVK_Return)
+        case String(format: "%c", NSBackspaceCharacter):
+            return UInt32(kVK_Delete)
+        case "\u{F700}": return UInt32(kVK_UpArrow)
+        case "\u{F701}": return UInt32(kVK_DownArrow)
+        case "\u{F702}": return UInt32(kVK_LeftArrow)
+        case "\u{F703}": return UInt32(kVK_RightArrow)
+        case "\u{F704}": return UInt32(kVK_F1)
+        case "\u{F705}": return UInt32(kVK_F2)
+        case "\u{F706}": return UInt32(kVK_F3)
+        case "\u{F707}": return UInt32(kVK_F4)
+        case "\u{F708}": return UInt32(kVK_F5)
+        case "\u{F709}": return UInt32(kVK_F6)
+        case "\u{F70A}": return UInt32(kVK_F7)
+        case "\u{F70B}": return UInt32(kVK_F8)
+        case "\u{F70C}": return UInt32(kVK_F9)
+        case "\u{F70D}": return UInt32(kVK_F10)
+        case "\u{F70E}": return UInt32(kVK_F11)
+        case "\u{F70F}": return UInt32(kVK_F12)
+        case "\u{F710}": return UInt32(kVK_F13)
+        case "\u{F711}": return UInt32(kVK_F14)
+        case "\u{F712}": return UInt32(kVK_F15)
+        case "\u{F713}": return UInt32(kVK_F16)
+        case "\u{F714}": return UInt32(kVK_F17)
+        case "\u{F715}": return UInt32(kVK_F18)
+        case "\u{F716}": return UInt32(kVK_F19)
+        case "\u{F717}": return UInt32(kVK_F20)
+        case "\u{F728}": return UInt32(kVK_ForwardDelete)
+        case "\u{F729}": return UInt32(kVK_Home)
+        case "\u{F72B}": return UInt32(kVK_End)
+        case "\u{F72C}": return UInt32(kVK_PageUp)
+        case "\u{F72D}": return UInt32(kVK_PageDown)
+        case "\u{F746}": return UInt32(kVK_Help)
+        default: return nil
+        }
+    }
+
     private var isPrintableMenuCharacter: Bool {
         guard characters.unicodeScalars.count == 1,
               let scalar = characters.unicodeScalars.first else {
@@ -537,6 +596,7 @@ extension Shortcuts {
         // binds to hard reload. Cmd-Opt-R keeps Reader View next to the
         // reload family without displacing it.
         .PHI_TOGGLE_READER: .init(characters: "r", modifiers: [.command, .option]),
+        .PHI_NEW_KIOSK_WINDOW: .init(characters: "n", modifiers: [.command, .option]),
 
         // System Preserved Shortcuts
         .IDS_HIDE_OTHERS_MAC: .init(characters: "h", modifiers: [.command, .option]),

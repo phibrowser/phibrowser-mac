@@ -202,6 +202,24 @@ final class KioskBrowserStateTests: XCTestCase {
         XCTAssertTrue(wrapper.navigatedURLs.isEmpty)
     }
 
+    func testAddressFieldHidesAboutBlank() throws {
+        let state = try makeState()
+        let tab = Tab(
+            guid: 42,
+            url: "about:blank",
+            isActive: false,
+            index: 0,
+            windowId: state.windowId
+        )
+        state.handleNewTabFromChromium(tab)
+        let controller = KioskBrowserContentViewController(state: state)
+        _ = controller.view
+
+        let addressField = try XCTUnwrap(findTextField(in: controller.view))
+
+        XCTAssertEqual(addressField.stringValue, "")
+    }
+
     func testCopyURLButtonUsesThemeAwareHosting() throws {
         let toolbar = KioskBrowserToolbar(state: try makeState())
 
@@ -361,6 +379,51 @@ final class KioskBrowserStateTests: XCTestCase {
             zoomButton.action,
             NSSelectorFromString("openFocusedTabInDefaultSpace:")
         )
+    }
+
+    func testKioskOmniBoxIsCentered() throws {
+        let state = try makeState()
+        let window = makeWindow(
+            frame: NSRect(x: 0, y: 0, width: 640, height: 640)
+        )
+        let controller = KioskBrowserWindowController(
+            window: window,
+            windowId: state.windowId,
+            browserType: .kiosk,
+            profileId: state.profileId,
+            account: state.localStore.account
+        )
+        defer {
+            window.close()
+            withExtendedLifetime(controller) {}
+        }
+
+        window.makeKeyAndOrderFront(nil)
+        controller.presentOmniBoxCentered()
+
+        let omniBoxContainer = try XCTUnwrap(
+            controller.omniBoxContainerViewController
+        )
+        XCTAssertFalse(omniBoxContainer.isAnchoredToAddressBarForTesting)
+
+        let frameUpdated = expectation(description: "Omnibox frame updated")
+        DispatchQueue.main.async {
+            let containerBounds = omniBoxContainer.view.bounds
+            let omniBoxFrame = omniBoxContainer.omniBoxController?.view.frame
+                ?? .zero
+            XCTAssertEqual(
+                omniBoxFrame.midX,
+                containerBounds.midX,
+                accuracy: 0.5
+            )
+            XCTAssertGreaterThanOrEqual(omniBoxFrame.minX, 20)
+            XCTAssertGreaterThanOrEqual(
+                containerBounds.maxX - omniBoxFrame.maxX,
+                20
+            )
+            frameUpdated.fulfill()
+        }
+        wait(for: [frameUpdated], timeout: 1)
     }
 
     func testToolbarAndNativeTrafficLightsMoveDownTogether() throws {
@@ -534,6 +597,25 @@ final class KioskBrowserStateTests: XCTestCase {
         omniBox.updateStatus(with: tab, suppressAutomaticSearch: true)
 
         XCTAssertTrue(omniBox.openningFromCurrenTab)
+    }
+
+    func testKioskOmniBoxHidesAboutBlankFromInput() throws {
+        let state = try makeState()
+        let tab = Tab(
+            guid: 42,
+            url: "about:blank",
+            isActive: false,
+            index: 0,
+            windowId: state.windowId
+        )
+        state.handleNewTabFromChromium(tab)
+        let viewModel = OmniBoxViewModel(windowState: state)
+        viewModel.updateInputText("previous value")
+
+        viewModel.updateStatus(with: tab, suppressAutomaticSearch: true)
+
+        XCTAssertEqual(viewModel.state.inputText, "")
+        XCTAssertTrue(viewModel.opennedFromCurrentTab)
     }
 
     func testKioskOmniBoxDismissalRestoresWindowInteraction() throws {

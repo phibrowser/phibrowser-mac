@@ -40,6 +40,7 @@ final class OmniBoxContainerViewController: NSViewController {
     private let omniBoxWidth: CGFloat = 520
     private let maxOmniBoxHeight: CGFloat = 284 // 57 (base) + 226 (max suggestions) + 1 (separator)
     private let collapsedOmniBoxHeight: CGFloat = 52 // base 52 + separator 1
+    private let centeredHorizontalInset: CGFloat
     private weak var parentView: EventBlockBgView?
     private var showFromAddressBar: Bool = false
     private weak var addressView: NSView?
@@ -48,8 +49,17 @@ final class OmniBoxContainerViewController: NSViewController {
     private var animationOn = false
     private weak var browserState: BrowserState?
     private var focusingTabObserver: AnyCancellable?
+
+    var isAnchoredToAddressBarForTesting: Bool {
+        showFromAddressBar && addressView != nil
+    }
     
-    init(browserState: BrowserState, superView: EventBlockBgView? = nil) {
+    init(
+        browserState: BrowserState,
+        superView: EventBlockBgView? = nil,
+        centeredHorizontalInset: CGFloat = 0
+    ) {
+        self.centeredHorizontalInset = max(centeredHorizontalInset, 0)
         super.init(nibName: nil, bundle: nil)
         self.browserState = browserState
         self.parentView = superView
@@ -596,16 +606,31 @@ final class OmniBoxContainerViewController: NSViewController {
         let contentSize = newSize ??  omniBoxController?.contentSize ?? .zero
         let anchoredHeight = min(maxOmniBoxHeight, parentBounds.height)
         let actualHeight = min(contentSize.height, anchoredHeight)
-        let actualWidth = min(contentSize.width, parentBounds.width)
+        let horizontalInset = min(
+            centeredHorizontalInset,
+            parentBounds.width / 2
+        )
+        let availableWidth = max(
+            parentBounds.width - horizontalInset * 2,
+            0
+        )
+        let actualWidth = min(contentSize.width, availableWidth)
 
         let sidebarWidth = browserState?.sidebarWidth ?? 0
         let rightAreaWidth = parentBounds.width - sidebarWidth
-        let x: CGFloat
+        let proposedX: CGFloat
         if sidebarWidth == 0 || rightAreaWidth < actualWidth {
-            x = max((parentBounds.width - actualWidth) / 2, 0)
+            proposedX = (parentBounds.width - actualWidth) / 2
         } else {
-            x = max(sidebarWidth + (rightAreaWidth - actualWidth) / 2, 0)
+            proposedX = sidebarWidth + (rightAreaWidth - actualWidth) / 2
         }
+        let x = max(
+            horizontalInset,
+            min(
+                proposedX,
+                parentBounds.width - horizontalInset - actualWidth
+            )
+        )
         
         let anchoredTop = (parentBounds.height + anchoredHeight) / 2
         let proposedY = anchoredTop - actualHeight

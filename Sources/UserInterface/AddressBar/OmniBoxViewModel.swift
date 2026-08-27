@@ -103,10 +103,10 @@ class OmniBoxViewModel: ObservableObject {
         // the current tab as the navigation target, including NTP — typing a URL should
         // replace the blank NTP rather than spawn a new tab.
         opennedFromCurrentTab = true
-        if tab.isNTP {
+        if tab.isNTP || tab.url == "about:blank" {
             logOpenTrace(
                 stage: "prefill-current-tab",
-                details: "suppressAutomaticSearch=\(suppressAutomaticSearch) urlLength=0 isNTP=true"
+                details: "suppressAutomaticSearch=\(suppressAutomaticSearch) urlLength=0 isBlank=true"
             )
             state.inputText = ""
             return
@@ -147,7 +147,7 @@ class OmniBoxViewModel: ObservableObject {
         }
         currentTab = tab
         openedFromGroupOverview = false
-        if tab?.isNTP == true {
+        if tab?.isNTP == true || tab?.url == "about:blank" {
             state.inputText = ""
             opennedFromCurrentTab = true
         } else {

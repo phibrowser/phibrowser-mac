@@ -115,9 +115,9 @@ class PasswordManagerViewController: OnboardingBaseViewController {
 
     override func loadView() {
         super.loadView()
-        titleLabel.stringValue = NSLocalizedString("oobe.passwordManager.title", value: "Passwords Manager",
+        setTitle(NSLocalizedString("oobe.passwordManager.title", value: "Passwords Manager",
             comment: "Onboarding password manager - Page title"
-        )
+        ))
         skipButton.isHidden = true
         nextButton.title = NSLocalizedString(
             "oobe.navigation.continueButton",

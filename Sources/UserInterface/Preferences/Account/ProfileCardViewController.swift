@@ -22,6 +22,7 @@ class ProfileCardViewController: ConchFrameAnimationBaseViewController {
     private let nameLabel: NSTextField = {
         let label = NSTextField(labelWithString: "")
         label.font = NSFont(name: "IvyPrestoHeadline-SemiBold", size: 16)
+        // Face is re-resolved per name in `nameLabel.stringValue` assignment.
         label.textColor = .white
         label.alignment = .center
         label.lineBreakMode = .byTruncatingTail
@@ -55,19 +56,26 @@ class ProfileCardViewController: ConchFrameAnimationBaseViewController {
       
     var userName: String? {
         didSet {
-            nameLabel.stringValue = truncateName(userName ?? "")
+            setName(truncateName(userName ?? ""))
         }
     }
 
     var profile: Profile? {
         didSet {
-            nameLabel.stringValue = truncateName(profile?.name ?? "")
+            setName(truncateName(profile?.name ?? ""))
             dateLabel.stringValue = formatToLocalDate(profile?.created_at ?? "")
             adjustDateLabelFontSize()
         }
     }
 
     /// Truncate name to max display length with ellipsis
+    /// Account names are user-supplied and the brand headline face is
+    /// Latin-only — see `NSFont.brandDisplay`.
+    private func setName(_ name: String) {
+        nameLabel.stringValue = name
+        nameLabel.font = .brandDisplay("IvyPrestoHeadline-SemiBold", size: 16, renders: name)
+    }
+
     private func truncateName(_ name: String) -> String {
         if name.count > Self.maxNameDisplayLength {
             let index = name.index(name.startIndex, offsetBy: Self.maxNameDisplayLength)

@@ -288,11 +288,11 @@ final class NextStepViewController: OnboardingBaseViewController {
     override func loadView() {
         super.loadView()
 
-        titleLabel.stringValue = NSLocalizedString(
+        setTitle(NSLocalizedString(
             "oobe.nextSteps.title",
             value: "Next steps",
             comment: "Onboarding next steps - Page title"
-        )
+        ))
 
         skipButton.isHidden = true
         let beginButtonTitle = NSLocalizedString(

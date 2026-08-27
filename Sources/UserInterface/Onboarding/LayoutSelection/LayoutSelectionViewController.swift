@@ -74,9 +74,9 @@ class LayoutSelectionViewController: OnboardingBaseViewController {
 
     override func loadView() {
         super.loadView()
-        titleLabel.stringValue = NSLocalizedString("oobe.layoutSelection.title", value: "Layout selection",
+        setTitle(NSLocalizedString("oobe.layoutSelection.title", value: "Layout selection",
             comment: "Onboarding layout selection - Page title"
-        )
+        ))
         skipButton.isHidden = true
         setupLayoutOptions()
     }

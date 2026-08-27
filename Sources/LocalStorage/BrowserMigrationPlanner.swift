@@ -3,6 +3,7 @@
 // Use of this source code is governed by an Apache license that can be
 // found in the LICENSE file.
 
+import AppKit
 import Foundation
 
 // MARK: - Migration Source model
@@ -64,9 +65,10 @@ struct BrowserMigrationSourceSpace {
     /// Already carries the source parser's placeholder when the Space is
     /// untitled; the planner adds no fallback of its own.
     let name: String
-    /// Already derived from the source Space's theme, with the default
-    /// new-Space colour standing in when it has none.
-    let colorHex: String
+    /// Derived from the source Space's theme; nil when the source gave it no
+    /// theme, which is a different thing from a colour and takes the default
+    /// theme rather than being snapped to a hue.
+    let colorHex: String?
     /// nil when the source's profile record for this Space is unreadable.
     let profileKey: String?
     /// The Space's own bookmark tree, parsed Mac-side; nil for a source whose
@@ -78,7 +80,7 @@ struct BrowserMigrationSourceSpace {
     init(
         id: String,
         name: String,
-        colorHex: String,
+        colorHex: String?,
         profileKey: String?,
         bookmarkRoot: ArcDataParserTool.Bookmark? = nil
     ) {
@@ -251,6 +253,95 @@ struct BrowserMigrationSelection: Equatable {
     }
 }
 
+// MARK: - Space theme
+
+/// Which built-in Phi theme a migrated Space lands on.
+///
+/// A Space's colour in Phi is its **theme**, not a free value: the `colorHex`
+/// the Space model stores is a cache the theme re-derives on every change
+/// (`SpaceManager.syncColorHexWithTheme`), and its one visual consumer — the
+/// sidebar tint gradient — is disabled today, so a plan carrying only a hex
+/// would show nothing and be overwritten by the first `setTheme`. The source's
+/// colour is snapped to the nearest built-in instead, and that theme is what
+/// the run pins. Only the hue survives the snap.
+enum BrowserMigrationSpaceTheme {
+    /// What a source Space's colour becomes: the theme the run pins, and the
+    /// colour that theme shows — which is what the preview draws, so it cannot
+    /// promise a colour Phi will not produce.
+    struct Resolved: Equatable {
+        let themeID: String
+        let colorHex: String
+    }
+
+    /// The theme for a source Space whose colour names no hue — too close to
+    /// neutral, or too dark — and for one the source gave no theme at all.
+    static var defaultThemeID: String { Theme.default.id }
+
+    /// A nil colour is the source saying it gave this Space no theme, which
+    /// takes the default rather than being snapped: substituting a colour
+    /// first would snap that stand-in to whatever hue it happened to have.
+    static func resolved(forSourceColorHex hex: String?) -> Resolved {
+        let themeID = hex.map(nearestThemeID(toColorHex:)) ?? defaultThemeID
+        return Resolved(themeID: themeID, colorHex: overlayHex(ofThemeID: themeID))
+    }
+
+    /// Hue carries the source's colour intent and is all the eight-theme
+    /// vocabulary can hold; a colour with too little saturation or brightness
+    /// has no hue worth matching.
+    private static let neutralSaturation: CGFloat = 0.15
+    private static let neutralBrightness: CGFloat = 0.12
+
+    private static func nearestThemeID(toColorHex hex: String) -> String {
+        guard let source = hsb(of: NSColor(hexString: hex)),
+              source.saturation >= neutralSaturation,
+              source.brightness >= neutralBrightness else {
+            return defaultThemeID
+        }
+        // Read off `Theme.builtInThemes` rather than restated here, so a theme
+        // added to Phi becomes a Migration target with no second list to keep
+        // in step. The default theme is left out of the comparison: its
+        // overlay is white, so it has no hue — it is what a neutral falls
+        // back to, not something a hue can be nearest to.
+        let nearest = Theme.builtInThemes
+            .filter { $0.id != defaultThemeID }
+            .min { hueDistance(source.hue, of: $0) < hueDistance(source.hue, of: $1) }
+        return nearest?.id ?? defaultThemeID
+    }
+
+    static func overlayHex(ofThemeID id: String) -> String {
+        overlayColor(of: Theme.builtInThemes.first { $0.id == id } ?? Theme.default)
+            .hexRGBString
+    }
+
+    /// Hue is 0...1 and wraps, so the distance is the shorter way round.
+    private static func hueDistance(_ hue: CGFloat, of theme: Theme) -> CGFloat {
+        guard let themeHue = hsb(of: overlayColor(of: theme))?.hue else {
+            return .greatestFiniteMagnitude
+        }
+        let delta = abs(hue - themeHue)
+        return min(delta, 1 - delta)
+    }
+
+    /// Light, explicitly: a plan must not depend on the appearance the user
+    /// happens to be in. `setTheme` re-derives the stored `colorHex` for the
+    /// live appearance as soon as the Space is created.
+    private static func overlayColor(of theme: Theme) -> NSColor {
+        theme.color(for: .windowOverlayBackground, appearance: .light)
+    }
+
+    private static func hsb(
+        of color: NSColor
+    ) -> (hue: CGFloat, saturation: CGFloat, brightness: CGFloat)? {
+        guard let srgb = color.usingColorSpace(.sRGB) else { return nil }
+        var hue: CGFloat = 0
+        var saturation: CGFloat = 0
+        var brightness: CGFloat = 0
+        var alpha: CGFloat = 0
+        srgb.getHue(&hue, saturation: &saturation, brightness: &brightness, alpha: &alpha)
+        return (hue, saturation, brightness)
+    }
+}
+
 // MARK: - The plan
 
 /// One pinned tab a run writes. All the copies fanned out from one source
@@ -274,7 +365,11 @@ struct BrowserMigrationPlannedSpace {
     /// created Space's identifier.
     let sourceSpaceID: String
     let name: String
+    /// The colour the pinned theme shows, not the source's own colour: eight
+    /// hues is the whole vocabulary, so the plan states what will exist.
     let colorHex: String
+    /// The built-in theme the run pins, which is what makes the colour stick.
+    let themeID: String
     let iconName: String
     /// True when the source could not read this Space's own profile record, so
     /// it was bound to the default profile's Profile.
@@ -364,10 +459,13 @@ enum BrowserMigrationPlanner {
             guard !tickedSpaces.isEmpty else { continue }
 
             let plannedSpaces = tickedSpaces.map { space in
-                BrowserMigrationPlannedSpace(
+                let theme = BrowserMigrationSpaceTheme.resolved(
+                    forSourceColorHex: space.colorHex)
+                return BrowserMigrationPlannedSpace(
                     sourceSpaceID: space.id,
                     name: space.name,
-                    colorHex: space.colorHex,
+                    colorHex: theme.colorHex,
+                    themeID: theme.themeID,
                     iconName: spaceIconName,
                     boundToDefaultProfile: source.bindsToDefaultProfile(space),
                     bookmarkRoot: space.bookmarkRoot
@@ -510,5 +608,78 @@ struct BrowserMigrationGeneration: Equatable {
     /// now.
     func accepts(_ generation: Int) -> Bool {
         generation == current
+    }
+}
+
+// MARK: - What a run produced
+
+
+/// The identifiers a run created, keyed by what the plan called them. A failed
+/// unit is recorded by its absence: nothing was created, so there is no
+/// identifier, which is exactly what the report reads.
+struct BrowserMigrationOutcomes: Equatable {
+    /// The created Phi Profile's on-disk basename, per planned source profile.
+    var profileIDs: [String: String] = [:]
+    /// The created Phi Space's identifier, per planned source Space.
+    var spaceIDs: [String: String] = [:]
+}
+
+// MARK: - The report
+
+/// What a finished run says it did. Folded from the plan and the identifiers
+/// the run produced by a pure function, so the report's structure is pinned
+/// without any I/O and the view only draws it.
+struct BrowserMigrationReport: Equatable {
+    struct SpaceRow: Equatable, Identifiable {
+        let sourceSpaceID: String
+        let name: String
+        let created: Bool
+
+        var id: String { sourceSpaceID }
+    }
+
+    struct ProfileRow: Equatable, Identifiable {
+        let sourceProfileKey: String
+        let displayName: String
+        let created: Bool
+        let spaces: [SpaceRow]
+
+        var id: String { sourceProfileKey }
+    }
+
+    /// The Space the report's button switches to.
+    struct FirstSpace: Equatable {
+        let spaceID: String
+        let name: String
+    }
+
+    /// In plan order, which is the source's own order.
+    let profiles: [ProfileRow]
+    /// The first Space the run created, or nil when it created none — in which
+    /// case the report hides its button rather than offering a dead one.
+    let firstCreatedSpace: FirstSpace?
+
+    static func folded(
+        plan: BrowserMigrationPlan,
+        outcomes: BrowserMigrationOutcomes
+    ) -> BrowserMigrationReport {
+        let profiles = plan.profiles.map { profile in
+            ProfileRow(
+                sourceProfileKey: profile.sourceProfileKey,
+                displayName: profile.displayName,
+                created: outcomes.profileIDs[profile.sourceProfileKey] != nil,
+                spaces: profile.spaces.map { space in
+                    SpaceRow(
+                        sourceSpaceID: space.sourceSpaceID,
+                        name: space.name,
+                        created: outcomes.spaceIDs[space.sourceSpaceID] != nil)
+                })
+        }
+        let firstCreatedSpace = plan.profiles.lazy.flatMap(\.spaces).compactMap { space in
+            outcomes.spaceIDs[space.sourceSpaceID]
+                .map { FirstSpace(spaceID: $0, name: space.name) }
+        }.first
+        return BrowserMigrationReport(
+            profiles: profiles, firstCreatedSpace: firstCreatedSpace)
     }
 }

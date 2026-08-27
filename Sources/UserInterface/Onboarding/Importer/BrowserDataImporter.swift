@@ -819,4 +819,16 @@ final class ImportTargetLock {
         lock.lock(); defer { lock.unlock() }
         return importingSpaceIds.contains(spaceId)
     }
+
+    /// Holds `spaceId` for the duration of `body` and releases it on every exit
+    /// path — an early return and a thrown error included. There is no timeout
+    /// behind this lock, so a caller that writes into a Space across several
+    /// steps pairs the two structurally rather than by remembering to call
+    /// `end`. Not re-entrant: the set carries no depth, so a nested hold of the
+    /// same Space would release it at the inner exit.
+    func holding(_ spaceId: String, _ body: () async throws -> Void) async rethrows {
+        begin(into: spaceId)
+        defer { end(into: spaceId) }
+        try await body()
+    }
 }

@@ -115,7 +115,9 @@ enum BrowserMigrationPreview {
                     return BrowserMigrationPreviewSpaceRow(
                         sourceSpaceID: space.id,
                         name: plannedSpace?.name ?? space.name,
-                        colorHex: plannedSpace?.colorHex ?? space.colorHex,
+                        colorHex: plannedSpace?.colorHex
+                            ?? BrowserMigrationSpaceTheme.resolved(
+                                forSourceColorHex: space.colorHex).colorHex,
                         isTicked: plannedSpace != nil,
                         boundToDefaultProfile: plannedSpace?.boundToDefaultProfile
                             ?? source.bindsToDefaultProfile(space)
@@ -135,6 +137,8 @@ final class BrowserMigrationWizardModel: ObservableObject {
     enum Step: Equatable {
         case pick
         case preview
+        /// The run itself: live progress while it works, its report after.
+        case run
     }
 
     /// Identifies this run, and with it every Space, pinned tab and pin lineage
@@ -156,6 +160,12 @@ final class BrowserMigrationWizardModel: ObservableObject {
 
     init() {
         pickedSource = installedSources.first
+        // A run outlives this window, so reopening the wizard returns to the
+        // live progress or to the report of the run that just finished rather
+        // than offering to start a second one.
+        if !BrowserMigrationRunner.shared.isIdle {
+            step = .run
+        }
     }
 
     /// A run writes into the account's local store. Guest Mode is a bound
@@ -205,14 +215,13 @@ final class BrowserMigrationWizardModel: ObservableObject {
         rebuild()
     }
 
-    /// Where the run begins. The executor lands with its own ticket; until then
-    /// the wizard is preview-only and this only records what would have run.
+    /// Hands the plan to the process-level runner and follows it. The run
+    /// belongs to the process from here on: closing this window does not
+    /// interrupt it.
     func start() {
-        guard canStart else { return }
-        AppLogInfo(
-            "Browser migration start requested from "
-                + "\(pickedSource?.displayName ?? "no source"): "
-                + "\(plannedProfileCount) Profiles, \(plannedSpaceCount) Spaces")
+        guard canStart, let plan else { return }
+        guard BrowserMigrationRunner.shared.start(plan: plan) else { return }
+        step = .run
     }
 
     private func rebuild() {
@@ -240,6 +249,9 @@ struct BrowserMigrationWizardView: View {
     static let windowSize = CGSize(width: 640, height: 720)
 
     @StateObject private var model: BrowserMigrationWizardModel
+    /// The run is the process's, not this window's, so the view observes it
+    /// where it lives rather than owning it.
+    @ObservedObject private var runner = BrowserMigrationRunner.shared
     private let onClose: () -> Void
 
     init(model: BrowserMigrationWizardModel, onClose: @escaping () -> Void) {
@@ -257,6 +269,8 @@ struct BrowserMigrationWizardView: View {
                 pickStep
             case .preview:
                 previewStep
+            case .run:
+                runStep
             }
         }
         .padding(24)
@@ -445,5 +459,128 @@ struct BrowserMigrationWizardView: View {
         // It follows its Profile's tick and has no tick of its own.
         .disabled(space.boundToDefaultProfile)
         .padding(.leading, 20)
+    }
+
+    // MARK: Run
+
+    @ViewBuilder
+    private var runStep: some View {
+        switch runner.state {
+        case .running(let progress):
+            progressStep(progress)
+        case .finished(let report):
+            reportStep(report)
+        case .idle:
+            // Only reachable if the report was dismissed elsewhere; the window
+            // closes with the dismissal, so there is nothing left to draw.
+            Spacer()
+        }
+    }
+
+    private func progressStep(_ progress: BrowserMigrationProgress) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text(String(
+                format: NSLocalizedString("app.browserMigration.run.unit",
+                    value: "%1$@ — %2$d of %3$d",
+                    comment: "Browser migration wizard - which unit of the run is being worked on; %1$@ is a Profile or Space name, %2$d the unit's number, %3$d how many there are"),
+                progress.unitName, progress.unitIndex + 1, progress.unitCount))
+                .font(.system(size: 13))
+
+            // Counts what has landed, so the unit being worked on is not
+            // drawn as finished.
+            ProgressView(
+                value: Double(progress.unitIndex),
+                total: Double(progress.unitCount))
+
+            Text(NSLocalizedString("app.browserMigration.run.keepsRunning",
+                value: "You can close this window — the migration carries on, and this menu item brings you back to it.",
+                comment: "Browser migration wizard - tells the user a run outlives the window"))
+                .font(.system(size: 12))
+                .foregroundColor(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            Spacer()
+
+            HStack {
+                Spacer()
+                Button(NSLocalizedString("app.browserMigration.run.closeButton", value: "Close",
+                    comment: "Browser migration wizard - button closing the window while the run carries on"), action: onClose)
+                    .keyboardShortcut(.cancelAction)
+            }
+        }
+    }
+
+    private func reportStep(_ report: BrowserMigrationReport) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text(NSLocalizedString("app.browserMigration.report.subtitle",
+                value: "The migration has finished. Here's what it created.",
+                comment: "Browser migration wizard - explanation above the report"))
+                .font(.system(size: 13))
+                .foregroundColor(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            ScrollView {
+                VStack(alignment: .leading, spacing: 10) {
+                    ForEach(report.profiles) { profile in
+                        VStack(alignment: .leading, spacing: 6) {
+                            reportRow(profile.displayName, created: profile.created,
+                                weight: .medium)
+                            ForEach(profile.spaces) { space in
+                                reportRow(space.name, created: space.created, weight: .regular)
+                                    .padding(.leading, 20)
+                            }
+                        }
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.vertical, 4)
+            }
+            .frame(maxHeight: .infinity)
+
+            HStack {
+                Spacer()
+                // Hidden when the run created no Space: there is nowhere to go.
+                if let firstSpace = report.firstCreatedSpace {
+                    Button(String(
+                        format: NSLocalizedString("app.browserMigration.report.goToSpaceButton",
+                            value: "Go to %@",
+                            comment: "Browser migration wizard - button switching to the first Space the run created; %@ is that Space's name"),
+                        firstSpace.name)
+                    ) {
+                        SpaceManager.shared.activateInFocusedWindow(spaceId: firstSpace.spaceID)
+                        finish()
+                    }
+                }
+                Button(NSLocalizedString("app.browserMigration.report.doneButton", value: "Done",
+                    comment: "Browser migration wizard - button dismissing the report and closing the window"), action: finish)
+                    .keyboardShortcut(.defaultAction)
+            }
+        }
+    }
+
+    private func reportRow(
+        _ name: String, created: Bool, weight: Font.Weight
+    ) -> some View {
+        HStack(spacing: 6) {
+            Image(systemName: created ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
+                .foregroundColor(created ? .green : .orange)
+            Text(name).font(.system(size: 13, weight: weight))
+            if !created {
+                Text(NSLocalizedString("app.browserMigration.report.notCreated",
+                    value: "Not created",
+                    comment: "Browser migration wizard - outcome of a Profile or Space the run failed to create"))
+                    .font(.system(size: 12))
+                    .foregroundColor(.secondary)
+            }
+        }
+    }
+
+    /// Dismisses the report and sends the wizard back to its source list, then
+    /// closes the window — which is not released, so the next open finds this
+    /// same wizard. Closing it any other way leaves the report to come back to.
+    private func finish() {
+        BrowserMigrationRunner.shared.dismissReport()
+        model.backToPick()
+        onClose()
     }
 }

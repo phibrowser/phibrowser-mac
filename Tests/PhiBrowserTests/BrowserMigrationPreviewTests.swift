@@ -58,7 +58,7 @@ final class BrowserMigrationPreviewTests: XCTestCase {
             profiles: [("Default", "Personal"), ("Profile 1", "Work")],
             spaces: [
                 space("s-work", "Work", profileKey: "Profile 1"),
-                space("s-home", "Home", profileKey: "Default", colorHex: "#AABBCC"),
+                space("s-home", "Home", profileKey: "Default", colorHex: "#ff2d2d"),
                 space("s-side", "Side Projects", profileKey: "Profile 1"),
             ])
     }
@@ -73,13 +73,32 @@ final class BrowserMigrationPreviewTests: XCTestCase {
         XCTAssertEqual(rows[1].spaces.map(\.sourceSpaceID), ["s-work", "s-side"])
     }
 
-    func testASpaceCarriesItsNameAndColour() {
+    func testASpaceCarriesItsNameAndTheColourItWillGet() {
         let row = rows(twoProfileSource())[0].spaces[0]
 
         XCTAssertEqual(row.name, "Home")
-        XCTAssertEqual(row.colorHex, "#AABBCC")
+        // The colour of the theme the run will pin, not the source's own —
+        // the preview must not promise a colour Phi cannot produce.
+        XCTAssertEqual(row.colorHex, BrowserMigrationSpaceTheme.overlayHex(ofThemeID: "coral"))
         XCTAssertTrue(row.isTicked)
         XCTAssertFalse(row.boundToDefaultProfile)
+    }
+
+    /// A row the user has unticked is not in the plan, so its colour comes
+    /// from the fallback — which has to be the same colour, or unticking a
+    /// Space would appear to change it.
+    func testUntickingASpaceDoesNotChangeItsColour() {
+        let source = twoProfileSource()
+        let ticked = rows(source)[0].spaces[0]
+        let unticked = rows(
+            source,
+            selection: BrowserMigrationSelection.all(in: source)
+                .setting(spaceID: "s-home", ticked: false, in: source)
+        )[0].spaces[0]
+
+        XCTAssertTrue(ticked.isTicked)
+        XCTAssertFalse(unticked.isTicked)
+        XCTAssertEqual(unticked.colorHex, ticked.colorHex)
     }
 
     // MARK: - Names

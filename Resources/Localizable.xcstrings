@@ -8627,6 +8627,90 @@
         }
       }
     },
+    "app.browserMigration.report.doneButton" : {
+      "comment" : "Browser migration wizard - button dismissing the report and closing the window",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Done"
+          }
+        }
+      }
+    },
+    "app.browserMigration.report.goToSpaceButton" : {
+      "comment" : "Browser migration wizard - button switching to the first Space the run created; %@ is that Space's name",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Go to %@"
+          }
+        }
+      }
+    },
+    "app.browserMigration.report.notCreated" : {
+      "comment" : "Browser migration wizard - outcome of a Profile or Space the run failed to create",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Not created"
+          }
+        }
+      }
+    },
+    "app.browserMigration.report.subtitle" : {
+      "comment" : "Browser migration wizard - explanation above the report",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "The migration has finished. Here's what it created."
+          }
+        }
+      }
+    },
+    "app.browserMigration.run.closeButton" : {
+      "comment" : "Browser migration wizard - button closing the window while the run carries on",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Close"
+          }
+        }
+      }
+    },
+    "app.browserMigration.run.keepsRunning" : {
+      "comment" : "Browser migration wizard - tells the user a run outlives the window",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "You can close this window — the migration carries on, and this menu item brings you back to it."
+          }
+        }
+      }
+    },
+    "app.browserMigration.run.unit" : {
+      "comment" : "Browser migration wizard - which unit of the run is being worked on; %1$@ is a Profile or Space name, %2$d the unit's number, %3$d how many there are",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@ — %2$d of %3$d"
+          }
+        }
+      }
+    },
     "app.browserMigration.title" : {
       "comment" : "Browser migration wizard - window heading",
       "extractionState" : "extracted_with_value",

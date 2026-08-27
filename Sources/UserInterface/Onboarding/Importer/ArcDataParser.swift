@@ -180,7 +180,7 @@ final class ArcDataParserTool {
                 id: space.id,
                 title: title,
                 profile: space.profile,
-                colorHex: space.colorHex ?? LocalStore.defaultSpaceColorHex,
+                colorHex: space.colorHex,
                 root: spaceRoot))
         }
 
@@ -331,9 +331,12 @@ struct ArcSpace {
     let id: String
     let title: String
     let profile: ArcSourceProfile
-    /// Hex colour derived from the Space's theme, or the default new-Space
-    /// colour when it has none.
-    let colorHex: String
+    /// Hex colour derived from the Space's theme; nil when the Space has none,
+    /// or one this parser does not read. Kept distinct from a colour so a
+    /// consumer can tell "the user chose no colour" from "the user chose this
+    /// one" — substituting a default here would make an untitled, unthemed
+    /// Arc Space indistinguishable from one deliberately painted that colour.
+    let colorHex: String?
     let root: ArcDataParserTool.Bookmark
 }
 

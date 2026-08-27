@@ -82,9 +82,9 @@ final class BrowserMigrationPlannerTests: XCTestCase {
         source(
             profiles: [profile("Default", "Work"), profile("Profile 1", "Personal")],
             spaces: [
-                space("s-zebra", "Zebra", profileKey: "Default", colorHex: "#aabbcc"),
+                space("s-zebra", "Zebra", profileKey: "Default", colorHex: "#ff2d2d"),
                 space("s-home", "Home", profileKey: "Profile 1"),
-                space("s-apple", "Apple", profileKey: "Default", colorHex: "#ddeeff"),
+                space("s-apple", "Apple", profileKey: "Default", colorHex: "#3cd63c"),
             ]
         )
     }
@@ -97,7 +97,10 @@ final class BrowserMigrationPlannerTests: XCTestCase {
         XCTAssertEqual(result.profiles.map(\.sourceProfileKey), ["Default", "Profile 1"])
         XCTAssertEqual(result.profiles.map(\.displayName), ["Work", "Personal"])
         XCTAssertEqual(result.profiles[0].spaces.map(\.name), ["Zebra", "Apple"])
-        XCTAssertEqual(result.profiles[0].spaces.map(\.colorHex), ["#aabbcc", "#ddeeff"])
+        XCTAssertEqual(result.profiles[0].spaces.map(\.themeID), ["coral", "mint"])
+        XCTAssertEqual(
+            result.profiles[0].spaces.map(\.colorHex),
+            ["coral", "mint"].map(BrowserMigrationSpaceTheme.overlayHex(ofThemeID:)))
         XCTAssertEqual(result.profiles[1].spaces.map(\.sourceSpaceID), ["s-home"])
         XCTAssertEqual(
             Set(result.profiles.flatMap(\.spaces).map(\.iconName)),
@@ -405,5 +408,60 @@ final class BrowserMigrationPlannerTests: XCTestCase {
             profile: profile,
             colorHex: "#123456",
             root: ArcDataParserTool.Bookmark(guid: id, title: title, url: nil, isFolder: true))
+    }
+
+    // MARK: - Space theme
+
+    /// Phi's Space colour vocabulary is eight built-in themes, so a source
+    /// colour is snapped to the nearest hue rather than stored as-is. These
+    /// pin which hue lands where.
+    func testASourceColourSnapsToTheBuiltInThemeNearestInHue() {
+        let expected: [(String, String)] = [
+            ("#ff2d2d", "coral"),
+            ("#ffcc33", "amber"),
+            ("#3cd63c", "mint"),
+            ("#33d6dd", "aqua"),
+            ("#2f9dff", "mist"),
+            ("#6f4dff", "iris"),
+            ("#d94dff", "petal"),
+        ]
+        for (sourceHex, themeID) in expected {
+            XCTAssertEqual(
+                BrowserMigrationSpaceTheme.resolved(forSourceColorHex: sourceHex).themeID,
+                themeID,
+                "\(sourceHex) should snap to \(themeID)")
+        }
+    }
+
+    /// An Arc Space with no theme is not a Space painted Phi's default blue:
+    /// the absence has to survive to the planner, or the stand-in colour gets
+    /// snapped to whatever hue it happens to have.
+    func testASpaceWithNoThemeTakesTheDefaultThemeRatherThanASnappedStandIn() {
+        let resolved = BrowserMigrationSpaceTheme.resolved(forSourceColorHex: nil)
+
+        XCTAssertEqual(resolved.themeID, BrowserMigrationSpaceTheme.defaultThemeID)
+        XCTAssertNotEqual(
+            resolved.themeID,
+            BrowserMigrationSpaceTheme.resolved(
+                forSourceColorHex: LocalStore.defaultSpaceColorHex).themeID)
+    }
+
+    func testAColourTooCloseToNeutralTakesTheDefaultTheme() {
+        for sourceHex in ["#808080", "#f2f2f0", "#0a0a0a", "#000000"] {
+            XCTAssertEqual(
+                BrowserMigrationSpaceTheme.resolved(forSourceColorHex: sourceHex).themeID,
+                BrowserMigrationSpaceTheme.defaultThemeID,
+                "\(sourceHex) names no hue and should take the default theme")
+        }
+    }
+
+    /// The plan states what will exist: the colour of the theme it pins, never
+    /// the source's own colour, which Phi has no way to show.
+    func testAPlannedSpaceCarriesTheThemesColourNotTheSources() {
+        let resolved = BrowserMigrationSpaceTheme.resolved(forSourceColorHex: "#ff2d2d")
+
+        XCTAssertEqual(resolved.colorHex,
+            BrowserMigrationSpaceTheme.overlayHex(ofThemeID: "coral"))
+        XCTAssertNotEqual(resolved.colorHex, "#ff2d2d")
     }
 }

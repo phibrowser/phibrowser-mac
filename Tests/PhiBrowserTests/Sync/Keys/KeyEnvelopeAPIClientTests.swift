@@ -101,6 +101,43 @@ final class KeyEnvelopeAPIClientTests: XCTestCase {
             }
         }
     }
+
+    func testListProfilesDecodes() async throws {
+        let body = #"[{"profile_uuid":"11111111-1111-4111-8111-111111111111","has_envelope":true,"created_at":"2026-08-27T09:00:00.123456Z"}]"#
+        StubURLProtocol.handler = { req in
+            XCTAssertEqual(req.httpMethod, "GET")
+            return (200, Data(body.utf8))
+        }
+        let items = try await makeClient().listProfiles()
+        XCTAssertEqual(items.count, 1)
+        XCTAssertEqual(items[0].profileUuid, "11111111-1111-4111-8111-111111111111")
+        XCTAssertTrue(items[0].hasEnvelope)
+    }
+
+    func testGetProfileKey404IsNilAnd200Decodes() async throws {
+        StubURLProtocol.handler = { _ in (404, Data(#"{"code":"profile_not_found","message":"x"}"#.utf8)) }
+        let none = try await makeClient().getProfileKey(uuid: "u-1")
+        XCTAssertNil(none)
+
+        StubURLProtocol.handler = { _ in
+            (200, Data(#"{"profile_uuid":"u-1","profile_key_envelope":"AQID","created_at":"2026-08-27T09:00:00Z"}"#.utf8))
+        }
+        let dto = try await makeClient().getProfileKey(uuid: "u-1")
+        XCTAssertEqual(dto?.profileKeyEnvelope, Data([1, 2, 3]))
+    }
+
+    func testPutProfileKeyCreatedAndConflict() async throws {
+        StubURLProtocol.handler = { req in
+            XCTAssertEqual(req.httpMethod, "PUT")
+            return (204, Data())
+        }
+        let created = try await makeClient().putProfileKey(uuid: "u-1", envelope: Data([9]))
+        XCTAssertTrue(created)
+
+        StubURLProtocol.handler = { _ in (409, Data(#"{"code":"already_exists","message":"x"}"#.utf8)) }
+        let again = try await makeClient().putProfileKey(uuid: "u-1", envelope: Data([9]))
+        XCTAssertFalse(again)
+    }
 }
 
 final class StubURLProtocol: URLProtocol {

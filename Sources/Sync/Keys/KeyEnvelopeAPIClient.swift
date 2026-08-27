@@ -139,6 +139,49 @@ struct JoinRequestDTO: Decodable {
     }
 }
 
+/// Response item for `GET /keys/v1/profiles`.
+struct ProfileSummaryDTO: Decodable {
+    let profileUuid: String
+    let hasEnvelope: Bool
+    let createdAt: Date
+
+    enum CodingKeys: String, CodingKey {
+        case profileUuid = "profile_uuid", hasEnvelope = "has_envelope", createdAt = "created_at"
+    }
+    init(profileUuid: String, hasEnvelope: Bool, createdAt: Date) {
+        self.profileUuid = profileUuid; self.hasEnvelope = hasEnvelope; self.createdAt = createdAt
+    }
+    init(from d: Decoder) throws {
+        let c = try d.container(keyedBy: CodingKeys.self)
+        profileUuid = try c.decode(String.self, forKey: .profileUuid)
+        hasEnvelope = try c.decode(Bool.self, forKey: .hasEnvelope)
+        guard let created = KeyEnvelopeAPIClient.parseRFC3339(try c.decode(String.self, forKey: .createdAt)) else { throw KeyAPIError.decode }
+        createdAt = created
+    }
+}
+
+/// Response for `GET /keys/v1/profiles/{uuid}`.
+struct ProfileKeyDTO: Decodable {
+    let profileUuid: String
+    let profileKeyEnvelope: Data
+    let createdAt: Date
+
+    enum CodingKeys: String, CodingKey {
+        case profileUuid = "profile_uuid", profileKeyEnvelope = "profile_key_envelope", createdAt = "created_at"
+    }
+    init(profileUuid: String, profileKeyEnvelope: Data, createdAt: Date) {
+        self.profileUuid = profileUuid; self.profileKeyEnvelope = profileKeyEnvelope; self.createdAt = createdAt
+    }
+    init(from d: Decoder) throws {
+        let c = try d.container(keyedBy: CodingKeys.self)
+        profileUuid = try c.decode(String.self, forKey: .profileUuid)
+        guard let e = Data(base64Encoded: try c.decode(String.self, forKey: .profileKeyEnvelope)) else { throw KeyAPIError.decode }
+        profileKeyEnvelope = e
+        guard let created = KeyEnvelopeAPIClient.parseRFC3339(try c.decode(String.self, forKey: .createdAt)) else { throw KeyAPIError.decode }
+        createdAt = created
+    }
+}
+
 final class KeyEnvelopeAPIClient {
     private let session: URLSession
     private let tokenProvider: () async -> String?
@@ -225,6 +268,34 @@ final class KeyEnvelopeAPIClient {
             let dto = try JSONDecoder().decode(DeviceEnvelopeDTO.self, from: data)
             return dto.arkEnvelope
         case 404: return nil
+        default: throw KeyAPIError.http(status, String(data: data, encoding: .utf8) ?? "")
+        }
+    }
+
+    func listProfiles() async throws -> [ProfileSummaryDTO] {
+        let (status, data) = try await request("GET", "/keys/v1/profiles")
+        guard status == 200 else { throw KeyAPIError.http(status, String(data: data, encoding: .utf8) ?? "") }
+        return try JSONDecoder().decode([ProfileSummaryDTO].self, from: data)
+    }
+
+    /// Returns `nil` if no profile key is registered under this uuid (404).
+    func getProfileKey(uuid: String) async throws -> ProfileKeyDTO? {
+        let (status, data) = try await request("GET", "/keys/v1/profiles/\(uuid)")
+        switch status {
+        case 200: return try JSONDecoder().decode(ProfileKeyDTO.self, from: data)
+        case 404: return nil
+        default: throw KeyAPIError.http(status, String(data: data, encoding: .utf8) ?? "")
+        }
+    }
+
+    /// Returns `true` if created, `false` if an envelope already exists (409) —
+    /// the concurrent-registration arbitration point: the loser re-GETs and adopts.
+    func putProfileKey(uuid: String, envelope: Data) async throws -> Bool {
+        let (status, data) = try await request("PUT", "/keys/v1/profiles/\(uuid)",
+            body: ["profile_key_envelope": envelope.base64EncodedString()])
+        switch status {
+        case 200, 204: return true
+        case 409: return false
         default: throw KeyAPIError.http(status, String(data: data, encoding: .utf8) ?? "")
         }
     }

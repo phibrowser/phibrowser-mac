@@ -27,6 +27,46 @@ import SwiftUI
     /// True while a backup import is creating Chromium profiles; read via the
     /// bridge by preinstalled apps to defer extension preinstall. Main-thread only.
     var isBackupImportInProgress = false
+
+    /// App-scoped sync key layer (M2-4). Built on first use once an account
+    /// exists; nil while signed out.
+    var syncKeyController: SyncKeyController?
+
+    /// Builds `syncKeyController` on first call if an account is signed in;
+    /// no-op if it already exists. Does not kick the silent unlock — callers
+    /// that also need that should go through `ensureSyncKeyControllerAndUnlock()`.
+    @MainActor
+    private func buildSyncKeyControllerIfNeeded() -> SyncKeyController? {
+        guard let account = AccountController.shared.account else { return nil }
+        let stack = SyncKeyStack.make()
+        let mappingStore = AccountProfileSyncMappingStore(defaults: account.userDefaults)
+        let profileKeys = ProfileKeyManager(api: stack.api, keyManager: stack.manager, mappingStore: mappingStore)
+        syncKeyController = SyncKeyController(
+            manager: stack.manager, approvals: stack.approvals, profileKeys: profileKeys,
+            localProfilesProvider: {
+                ProfileManager.shared.userAssignableProfiles.map { ($0.profileId, $0.displayName) }
+            },
+            notifyChromium: {
+                ChromiumLauncher.sharedInstance().bridge?.notifyPhiSyncKeysChanged?()
+            })
+        return syncKeyController
+    }
+
+    /// Build-only entry point for consumers (the Devices pane) that just need
+    /// the shared controller instance and will drive their own unlock/UI flow.
+    /// Returns nil while signed out.
+    @MainActor
+    func syncKeyControllerCreatingIfNeeded() -> SyncKeyController? {
+        syncKeyController ?? buildSyncKeyControllerIfNeeded()
+    }
+
+    /// Startup/login entry point: build the controller if needed, then
+    /// fire-and-forget its silent unlock + mapping resolution.
+    @MainActor
+    func ensureSyncKeyControllerAndUnlock() {
+        let controller = syncKeyControllerCreatingIfNeeded()
+        Task { @MainActor in await controller?.silentUnlockAndResolve() }
+    }
 }
 
 extension PhiChromiumCoordinator: PhiChromiumBridgeDelegate {
@@ -355,7 +395,22 @@ extension PhiChromiumCoordinator: PhiChromiumBridgeDelegate {
         }
         return info.isEmpty ? nil : info
     }
-    
+
+    /// Hot path: Chromium pulls per-profile sync info synchronously on the UI
+    /// thread. Mirror `showCrashPage`'s assert-and-skip convention rather than
+    /// trapping if it ever arrives off-main.
+    @objc(getPhiProfileSyncInfo:)
+    func getPhiProfileSyncInfo(_ profileId: String) -> [String: Any]? {
+        guard Thread.isMainThread else {
+            assertionFailure("getPhiProfileSyncInfo off the main thread")
+            return nil
+        }
+        return MainActor.assumeIsolated {
+            guard let info = syncKeyController?.profileSyncInfo(forProfileId: profileId) else { return nil }
+            return ["uuid": info.uuid, "passphrase": info.passphrase]
+        }
+    }
+
     func showLoginUI() {
         AppLogInfo("🌐 [Chromium] showLoginUI called by Chromium")
         Task { @MainActor in
@@ -768,6 +823,17 @@ extension PhiChromiumCoordinator: PhiChromiumBridgeDelegate {
             // older framework may not implement the selector — both degrade
             // to Chromium's 30s poll.
             ChromiumLauncher.sharedInstance().bridge?.notifyPhiAuthStateChanged?()
+        }
+
+        NotificationCenter.default.addObserver(
+            forName: .loginStatusRefreshCompleted, object: nil, queue: .main
+        ) { _ in
+            Task { @MainActor in PhiChromiumCoordinator.shared.ensureSyncKeyControllerAndUnlock() }
+        }
+        NotificationCenter.default.addObserver(
+            forName: .loginCompleted, object: nil, queue: .main
+        ) { _ in
+            Task { @MainActor in PhiChromiumCoordinator.shared.ensureSyncKeyControllerAndUnlock() }
         }
     }
     

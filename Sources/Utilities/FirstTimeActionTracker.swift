@@ -13,6 +13,7 @@ enum FirstTimeAction: String, CaseIterable {
     case memoryOpened = "memory_opened"
     case agentTask = "agent_task"
     case connectorConnected = "connector_connected"
+    case phiLinkPaired = "phi_link_paired"
 }
 
 @MainActor

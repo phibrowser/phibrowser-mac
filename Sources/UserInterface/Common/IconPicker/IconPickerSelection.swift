@@ -9,7 +9,11 @@ enum IconPickerSelection: Hashable, Identifiable {
     case phiIcon(id: String)
     case emoji(id: String, text: String)
 
-    static let defaultPhiIconId = "phi-icon-rss"
+    /// The grid artwork the implicit "Default" Space has carried since first
+    /// launch (`LocalStore.defaultSpaceIconName`), so a newly created Space
+    /// opens looking like the Space the user already has rather than like the
+    /// picker's first asset.
+    static let defaultPhiIconId = "phi-icon-view-grid-add"
     static let defaultSelection = IconPickerSelection.phiIcon(id: defaultPhiIconId)
 
     private static let phiIconPrefix = "phi:"

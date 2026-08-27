@@ -59,6 +59,9 @@ final class KioskBrowserToolbar: NSVisualEffectView {
         static let controlCenterOffset = systemAlignedControlCenterOffset
             + KioskBrowserToolbar.titlebarVerticalShift
         static let trafficLightInset: CGFloat = 78
+        static let navigationButtonSize: CGFloat = 24
+        static let navigationButtonSpacing: CGFloat = 8
+        static let navigationButtonAnimationDuration: TimeInterval = 0.18
         static let addressBarHeight: CGFloat = 32
         static let spaceMenuMaximumWidth: CGFloat = 220
     }
@@ -70,7 +73,9 @@ final class KioskBrowserToolbar: NSVisualEffectView {
     private let addressBarContainer = KioskToolbarHoverTrackingView()
     private let addressBarHoverLayer = CALayer()
     private let addressField = KioskAddressField()
+    private var addressBarLeadingConstraint: Constraint?
     private var isAddressBarHovered = false
+    private var canGoBack = false
 
     private var onProfileSelection: ((String) -> Void)?
     private var onSpaceSelection: ((String) -> Void)?
@@ -88,6 +93,21 @@ final class KioskBrowserToolbar: NSVisualEffectView {
     private lazy var toolbarActionsHostingView = ThemedHostingView(
         rootView: KioskToolbarActions(
             state: browserState
+        ),
+        themeSource: browserState.themeContext
+    )
+
+    private lazy var backButtonHostingView = ThemedHostingView(
+        rootView: NavigationButton(
+            systemName: "chevron.left",
+            accessibilityLabel: NSLocalizedString(
+                "browser.webContentHeader.backButton.accessibilityLabel",
+                value: "Back",
+                comment: "Web content header - Accessibility description for back navigation button"
+            ),
+            action: { [weak self] in
+                self?.browserState.focusingTab?.goBack()
+            }
         ),
         themeSource: browserState.themeContext
     )
@@ -130,12 +150,54 @@ final class KioskBrowserToolbar: NSVisualEffectView {
         addressField.stringValue = displayAddressText(for: url)
     }
 
+    func updateCanGoBack(_ canGoBack: Bool) {
+        guard self.canGoBack != canGoBack else { return }
+        self.canGoBack = canGoBack
+
+        if canGoBack, backButtonHostingView.isHidden {
+            backButtonHostingView.alphaValue = 0
+            backButtonHostingView.isHidden = false
+        }
+        addressBarLeadingConstraint?.update(
+            offset: Layout.trafficLightInset + (canGoBack
+                ? Layout.navigationButtonSize + Layout.navigationButtonSpacing
+                : 0)
+        )
+
+        guard window != nil,
+              !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion else {
+            backButtonHostingView.alphaValue = canGoBack ? 1 : 0
+            backButtonHostingView.isHidden = !canGoBack
+            layoutSubtreeIfNeeded()
+            return
+        }
+
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = Layout.navigationButtonAnimationDuration
+            context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+            context.allowsImplicitAnimation = true
+            backButtonHostingView.animator().alphaValue = canGoBack ? 1 : 0
+            layoutSubtreeIfNeeded()
+        } completionHandler: { [weak self] in
+            guard let self, self.canGoBack == canGoBack else { return }
+            self.backButtonHostingView.isHidden = !canGoBack
+        }
+    }
+
     var addressBarAnchorView: NSView {
         addressBarContainer
     }
 
     var controlCenterYsForTesting: [CGFloat] {
-        [addressBarContainer.frame.midY, spaceHostingView.frame.midY]
+        [
+            backButtonHostingView.frame.midY,
+            addressBarContainer.frame.midY,
+            spaceHostingView.frame.midY,
+        ]
+    }
+
+    var isBackButtonVisibleForTesting: Bool {
+        !backButtonHostingView.isHidden
     }
 
     private func configureView() {
@@ -179,9 +241,12 @@ final class KioskBrowserToolbar: NSVisualEffectView {
 
         // The toolbar owns titlebar placement, so SwiftUI must not add safe-area offsets.
         profileHostingView.safeAreaRegions = []
+        backButtonHostingView.safeAreaRegions = []
         toolbarActionsHostingView.safeAreaRegions = []
         spaceHostingView.safeAreaRegions = []
 
+        backButtonHostingView.isHidden = true
+        addSubview(backButtonHostingView)
         addSubview(addressBarContainer)
         addressBarContainer.addSubview(profileHostingView)
         addressBarContainer.addSubview(addressField)
@@ -199,8 +264,15 @@ final class KioskBrowserToolbar: NSVisualEffectView {
             make.width.lessThanOrEqualTo(Layout.spaceMenuMaximumWidth)
             make.height.equalTo(34)
         }
-        addressBarContainer.snp.makeConstraints { make in
+        backButtonHostingView.snp.makeConstraints { make in
             make.leading.equalToSuperview().offset(Layout.trafficLightInset)
+            make.centerY.equalToSuperview().offset(Layout.controlCenterOffset)
+            make.size.equalTo(Layout.navigationButtonSize)
+        }
+        addressBarContainer.snp.makeConstraints { make in
+            addressBarLeadingConstraint = make.leading.equalToSuperview()
+                .offset(Layout.trafficLightInset)
+                .constraint
             make.trailing.equalTo(spaceHostingView.snp.leading).offset(-8)
             make.centerY.equalToSuperview().offset(Layout.controlCenterOffset)
             make.height.equalTo(Layout.addressBarHeight)

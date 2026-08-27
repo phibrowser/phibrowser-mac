@@ -176,6 +176,7 @@ final class KioskBrowserContentViewController: NSViewController {
         tabCancellables.removeAll()
         mountFocusedTab()
         updateAddressField(with: tab?.url)
+        toolbarView.updateCanGoBack(tab?.canGoBack ?? false)
         view.window?.title = tab?.title ?? ""
 
         guard let tab else { return }
@@ -189,6 +190,12 @@ final class KioskBrowserContentViewController: NSViewController {
             .receive(on: DispatchQueue.main)
             .sink { [weak self] title in
                 self?.view.window?.title = title
+            }
+            .store(in: &tabCancellables)
+        tab.$canGoBack
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] canGoBack in
+                self?.toolbarView.updateCanGoBack(canGoBack)
             }
             .store(in: &tabCancellables)
     }
@@ -314,5 +321,9 @@ final class KioskBrowserContentViewController: NSViewController {
 
     var extensionSidePanelViewForTesting: ExtensionSidePanelView? {
         extensionSidePanelView
+    }
+
+    var isBackButtonVisibleForTesting: Bool {
+        toolbarView.isBackButtonVisibleForTesting
     }
 }

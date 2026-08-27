@@ -334,7 +334,7 @@ class ImportFromOtherBrowserViewController: OnboardingBaseViewController {
     
     override func viewDidLoad() {
         super.viewDidLoad()
-        titleLabel.stringValue = NSLocalizedString("oobe.importBrowserData.initialTitle", value: "Browser data", comment: "Import browser data page - Initial page title")
+        setTitle(NSLocalizedString("oobe.importBrowserData.initialTitle", value: "Browser data", comment: "Import browser data page - Initial page title"))
         applyDisplayModeLayout()
         setupBrowserOptions()
         updateNextButtonState()
@@ -733,7 +733,7 @@ class ImportFromOtherBrowserViewController: OnboardingBaseViewController {
             make.height.equalTo(viewHeight)
         }
         
-        titleLabel.font = NSFont(name: "IvyPrestoDisplay-SemiBoldItalic", size: titleFontSize)
+        setTitle(titleLabel.stringValue, size: titleFontSize)
         titleLabel.snp.remakeConstraints { make in
             make.centerX.equalToSuperview()
             make.top.equalToSuperview().offset(titleTopOffset)
@@ -867,7 +867,7 @@ class ImportFromOtherBrowserViewController: OnboardingBaseViewController {
         }
         permisionImageView.isHidden = false
         browserOptionsStackView.isHidden = true
-        titleLabel.stringValue = NSLocalizedString("oobe.importBrowserData.permission.title", value: "Permissions", comment: "Import browser data page - Page title when showing permission request")
+        setTitle(NSLocalizedString("oobe.importBrowserData.permission.title", value: "Permissions", comment: "Import browser data page - Page title when showing permission request"))
         desLabel.isHidden = false
         nextButton.title = NSLocalizedString("oobe.importBrowserData.permission.openSettingsButton", value: "Open Settings", comment: "Import browser data page - Button to open system settings for granting permissions")
         phase = .permision
@@ -893,7 +893,7 @@ class ImportFromOtherBrowserViewController: OnboardingBaseViewController {
         permisionImageView.isHidden = true
         desLabel.isHidden = true
         importStatusLabel.isHidden = true
-        titleLabel.stringValue = NSLocalizedString("oobe.importBrowserData.resetTitle", value: "Browser data", comment: "Import browser data page - Page title restored after resetting the import state")
+        setTitle(NSLocalizedString("oobe.importBrowserData.resetTitle", value: "Browser data", comment: "Import browser data page - Page title restored after resetting the import state"))
         nextButton.title = NSLocalizedString("oobe.importBrowserData.nextButton", value: "Next", comment: "Import browser data page - Next button after resetting the import state")
         nextButton.snp.remakeConstraints { make in
             make.bottom.equalToSuperview().offset(buttonBottomOffset)
@@ -1287,13 +1287,30 @@ class OnboardingBaseViewController: NSViewController {
         return imageView
     }()
             
+    /// The onboarding title's brand face and its default size. The face is
+    /// Latin-only, so titles go through `setTitle` rather than assigning
+    /// `titleLabel.stringValue` directly — see `NSFont.brandDisplay`.
+    static let titleFontName = "IvyPrestoDisplay-SemiBoldItalic"
+    static let defaultTitleFontSize: CGFloat = 46
+
     var titleLabel: NSTextField = {
         let label = NSTextField(labelWithString: "")
-        label.font = NSFont(name: "IvyPrestoDisplay-SemiBoldItalic", size: 46)
+        label.font = NSFont(name: OnboardingBaseViewController.titleFontName,
+                            size: OnboardingBaseViewController.defaultTitleFontSize)
         label.textColor = .white
         label.alignment = .center
         return label
     }()
+
+    /// Sets the page title along with a face that can actually draw it. The
+    /// brand face carries no CJK glyphs, and on macOS 15 the system fallback
+    /// draws those runs clipped — every localized title lost the top of its
+    /// characters. Keep the two assignments together: setting `stringValue`
+    /// alone reintroduces the bug for any script the brand face lacks.
+    func setTitle(_ title: String, size: CGFloat = OnboardingBaseViewController.defaultTitleFontSize) {
+        titleLabel.stringValue = title
+        titleLabel.font = .brandDisplay(Self.titleFontName, size: size, renders: title)
+    }
     
     lazy var nextButton: GradientBorderButton = {
         let button = GradientBorderButton()

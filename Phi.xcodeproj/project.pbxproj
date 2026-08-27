@@ -418,6 +418,7 @@
 		CC4F00040000000000000001 /* CreateSpacePanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC4F00040000000000000002 /* CreateSpacePanel.swift */; };
 		CC4F00050000000000000001 /* SpaceChooserView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC4F00050000000000000002 /* SpaceChooserView.swift */; };
 		CC5025FC2E702603004223DC /* NSImage+Extension.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC5025FB2E702603004223DC /* NSImage+Extension.swift */; };
+		CC5025FE2E702603004223DC /* NSFont+Extension.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC5025FD2E702603004223DC /* NSFont+Extension.swift */; };
 		CC59CE000001000000000001 /* SpaceManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC59CE000001000000000002 /* SpaceManager.swift */; };
 		CC59CE000002000000000001 /* SpacesStripView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC59CE000002000000000002 /* SpacesStripView.swift */; };
 		CC59CE0000020000000000A1 /* SpaceSwitchBandSurface.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC59CE0000020000000000A2 /* SpaceSwitchBandSurface.swift */; };
@@ -1088,6 +1089,7 @@
 		CC4F00040000000000000002 /* CreateSpacePanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CreateSpacePanel.swift; sourceTree = "<group>"; };
 		CC4F00050000000000000002 /* SpaceChooserView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpaceChooserView.swift; sourceTree = "<group>"; };
 		CC5025FB2E702603004223DC /* NSImage+Extension.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "NSImage+Extension.swift"; sourceTree = "<group>"; };
+		CC5025FD2E702603004223DC /* NSFont+Extension.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "NSFont+Extension.swift"; sourceTree = "<group>"; };
 		CC50262C2E716982004223DC /* OmniBoxViewController+Suggestion.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "OmniBoxViewController+Suggestion.swift"; sourceTree = "<group>"; };
 		CC59CE000001000000000002 /* SpaceManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpaceManager.swift; sourceTree = "<group>"; };
 		CC59CE000002000000000002 /* SpacesStripView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpacesStripView.swift; sourceTree = "<group>"; };
@@ -2127,6 +2129,7 @@
 				37C76E152F8FAD510042FE45 /* SharedTokenLock.swift */,
 				37C76E172F8FAD570042FE45 /* SharedHeartbeatStore.swift */,
 				CC5025FB2E702603004223DC /* NSImage+Extension.swift */,
+				CC5025FD2E702603004223DC /* NSFont+Extension.swift */,
 				CC35D7932E7271CE00E1A970 /* LiquidGlassCompatible.swift */,
 				CC6BFFDC2E72C04000D4F133 /* FaviconDataProvider.swift */,
 				CCCD5E352EB1C36300E78FC1 /* DefaultExtensionManifestWriter.swift */,
@@ -3135,6 +3138,7 @@
 				5ACE00000000000000000A22 /* ProfileDetailSettingsView.swift in Sources */,
 				8EC70DB52F0A5E04009FE2CD /* BookmarkBar.swift in Sources */,
 				CC5025FC2E702603004223DC /* NSImage+Extension.swift in Sources */,
+				CC5025FE2E702603004223DC /* NSFont+Extension.swift in Sources */,
 				37C9E68C2F3F322D00353A03 /* Shimmer.swift in Sources */,
 				CCBF8F4E2E6543E800B9A99E /* SidebarCellViews.swift in Sources */,
 				CD4F3A012E56000100FACC01 /* FloatingTrafficLightsView.swift in Sources */,

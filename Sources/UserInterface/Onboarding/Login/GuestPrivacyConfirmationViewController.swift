@@ -227,19 +227,23 @@ final class GuestPrivacyConfirmationViewController: OnboardingBaseViewController
     override func loadView() {
         super.loadView()
 
-        titleLabel.stringValue = NSLocalizedString(
+        setTitle(NSLocalizedString(
             "oobe.guestPrivacy.title",
             value: "Before we begin",
             comment: "Guest privacy confirmation - Page title shown before entering Guest Mode"
-        )
-        titleLabel.cell?.usesSingleLineMode = true
+        ))
+        // AppKit's fixed-baseline single-line mode clips the tall display font
+        // (NextStepViewController records the same). The height is a floor, not
+        // a fixed size: at 46pt this line wants 68pt, and pinning it to 64 left
+        // the glyphs nothing to overflow into.
+        titleLabel.cell?.usesSingleLineMode = false
         titleLabel.cell?.wraps = false
         titleLabel.maximumNumberOfLines = 1
         titleLabel.lineBreakMode = .byClipping
         titleLabel.snp.makeConstraints { make in
             make.leading.greaterThanOrEqualToSuperview().offset(30)
             make.trailing.lessThanOrEqualToSuperview().offset(-30)
-            make.height.equalTo(64)
+            make.height.greaterThanOrEqualTo(64)
         }
 
         skipButton.isHidden = true

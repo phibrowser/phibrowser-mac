@@ -89,7 +89,7 @@ class SetNameViewController: OnboardingBaseViewController {
     override func viewDidLoad() {
         super.viewDidLoad()
         skipButton.isHidden = true
-        titleLabel.stringValue = NSLocalizedString("oobe.setName.title", value: "What should I call you?", comment: "Set name page - Title asking user for their preferred name")
+        setTitle(NSLocalizedString("oobe.setName.title", value: "What should I call you?", comment: "Set name page - Title asking user for their preferred name"))
         view.addSubview(titleView)
         titleView.snp.makeConstraints { make in
             make.centerX.equalToSuperview()

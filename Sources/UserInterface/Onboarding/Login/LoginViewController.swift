@@ -157,8 +157,9 @@ class LoginViewController: NSViewController {
     }()
     
     private lazy var waitingTitleLabel: NSTextField = {
-        let label = NSTextField(labelWithString: NSLocalizedString("oobe.login.progressTitle", value: "Finish signing in in your browser", comment: "Waiting view title shown during sign-in process in onboarding"))
-        label.font = NSFont(name: "IvyPresto Display", size: 40)
+        let title = NSLocalizedString("oobe.login.progressTitle", value: "Finish signing in in your browser", comment: "Waiting view title shown during sign-in process in onboarding")
+        let label = NSTextField(labelWithString: title)
+        label.font = .brandDisplay("IvyPresto Display", size: 40, renders: title)
         label.textColor = .white
         label.alignment = .center
         label.lineBreakMode = .byWordWrapping

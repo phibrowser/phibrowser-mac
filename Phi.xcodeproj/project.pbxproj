@@ -451,6 +451,7 @@
 		D1F600082FD6000000000008 /* SidebarDiffableSnapshotBuilder.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1F600072FD6000000000007 /* SidebarDiffableSnapshotBuilder.swift */; };
 		D5E902235143FB0E14F29182 /* WaitingForApprovalView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 23216985BAC98CA63F9CB2AC /* WaitingForApprovalView.swift */; };
 		DAE6C75EA01EF14F3B7A68E2 /* DevicesSettingHostingViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 500D8A44ACCDE44A010C744F /* DevicesSettingHostingViewController.swift */; };
+		DDB903D2F1942C30466411C6 /* ProfileKeyManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1BEC0EBA18BE1C83C17B3D73 /* ProfileKeyManager.swift */; };
 		DEBE00000000000000000005 /* DeveloperSettingViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = DEBE00000000000000000002 /* DeveloperSettingViewController.swift */; };
 		DEBE00000000000000000006 /* DeveloperSettingHostingViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = DEBE00000000000000000003 /* DeveloperSettingHostingViewController.swift */; };
 		DEBE00000000000000000007 /* DeveloperSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DEBE00000000000000000004 /* DeveloperSettingsView.swift */; };
@@ -541,6 +542,7 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		1BEC0EBA18BE1C83C17B3D73 /* ProfileKeyManager.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ProfileKeyManager.swift; sourceTree = "<group>"; };
 		1EAE9BC2177CD71475820E2A /* KeyLayerViewModel.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = KeyLayerViewModel.swift; path = UI/KeyLayerViewModel.swift; sourceTree = "<group>"; };
 		23216985BAC98CA63F9CB2AC /* WaitingForApprovalView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = WaitingForApprovalView.swift; path = UI/WaitingForApprovalView.swift; sourceTree = "<group>"; };
 		254713996DC310106F1FF7A7 /* KeyEnvelopeAPIClient.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = KeyEnvelopeAPIClient.swift; sourceTree = "<group>"; };
@@ -1524,6 +1526,7 @@
 				2A6C5B5F1BFE5B4B137F20E6 /* UI */,
 				C80221E1E435653384260DC4 /* DeviceApprovalService.swift */,
 				A55D7E5143F932DF1031B744 /* SyncKeyStack.swift */,
+				1BEC0EBA18BE1C83C17B3D73 /* ProfileKeyManager.swift */,
 			);
 			name = Keys;
 			path = Keys;
@@ -2953,6 +2956,7 @@
 				C605E8D49C0B02E0FD2D4613 /* DevicesSettingView.swift in Sources */,
 				DAE6C75EA01EF14F3B7A68E2 /* DevicesSettingHostingViewController.swift in Sources */,
 				5A423BD20CC3D90DAA1ACC1F /* DevicesSettingViewController.swift in Sources */,
+				DDB903D2F1942C30466411C6 /* ProfileKeyManager.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

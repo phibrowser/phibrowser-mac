@@ -34,6 +34,7 @@ struct KeyLayerView: View {
             }
         }
         .frame(minWidth: 420, minHeight: 320)
+        .onDisappear { viewModel.stopPolling() }
     }
 
     @ViewBuilder

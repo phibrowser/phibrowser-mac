@@ -230,11 +230,21 @@ final class KeyEnvelopeAPIClient {
     }
 
     static func parseRFC3339(_ s: String) -> Date? {
-        let f = ISO8601DateFormatter()
-        f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        if let d = f.date(from: s) { return d }
-        f.formatOptions = [.withInternetDateTime]
-        return f.date(from: s)
+        let iso = ISO8601DateFormatter()
+        iso.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        if let d = iso.date(from: s) { return d }
+        iso.formatOptions = [.withInternetDateTime]
+        if let d = iso.date(from: s) { return d }
+        // RFC3339Nano emits 1-9 fractional digits; ISO8601DateFormatter's fractional parsing is
+        // unreliable across digit counts. Strip the fractional component and retry at second precision.
+        if let dot = s.firstIndex(of: ".") {
+            var end = s.index(after: dot)
+            while end < s.endIndex, s[end].isNumber { end = s.index(after: end) }
+            let stripped = s.replacingCharacters(in: dot..<end, with: "")
+            iso.formatOptions = [.withInternetDateTime]
+            return iso.date(from: stripped)
+        }
+        return nil
     }
 
     private func mapJoinError(_ status: Int, _ data: Data) -> Error {

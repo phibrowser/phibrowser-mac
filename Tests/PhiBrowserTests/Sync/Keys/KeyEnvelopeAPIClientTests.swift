@@ -77,6 +77,16 @@ final class KeyEnvelopeAPIClientTests: XCTestCase {
         XCTAssertEqual(approved.resolvedByDeviceKeyId, "dev-x")
     }
 
+    func testParseRFC3339VariableFractionalDigits() {
+        let base = KeyEnvelopeAPIClient.parseRFC3339("2026-08-26T09:29:00Z")
+        XCTAssertNotNil(base)
+        for s in ["2026-08-26T09:29:00.1Z", "2026-08-26T09:29:00.123456789Z", "2026-08-26T09:29:00.123Z"] {
+            let d = KeyEnvelopeAPIClient.parseRFC3339(s)
+            XCTAssertNotNil(d, "failed to parse \(s)")
+            XCTAssertEqual(d!.timeIntervalSince1970, base!.timeIntervalSince1970, accuracy: 1.0, "second mismatch for \(s)")
+        }
+    }
+
     func testJoinErrorMapping() async throws {
         let cases: [(Int, JoinRequestError)] = [
             (429, .tooManyPending), (409, .notPending), (404, .notFound), (400, .invalidRequest)

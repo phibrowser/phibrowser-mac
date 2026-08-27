@@ -1,7 +1,7 @@
 import Cocoa
 import SwiftUI
 
-final class DevicesSettingHostingViewController: NSViewController {
+final class DevicesSettingHostingViewController: NSViewController, NSWindowDelegate {
     private let stack = SyncKeyStack.make()
     private lazy var viewModel = DevicesSettingViewModel(manager: stack.manager, approvals: stack.approvals)
     private var hostingController: ThemedHostingController<DevicesSettingView>?
@@ -30,6 +30,7 @@ final class DevicesSettingHostingViewController: NSViewController {
     }
 
     private func presentKeyLayer() {
+        if let existing = keyLayerWindow { existing.makeKeyAndOrderFront(nil); return }
         let vm = KeyLayerViewModel(manager: stack.manager)
         let root = KeyLayerView(viewModel: vm, onFinish: { [weak self] in
             self?.keyLayerWindow?.close()
@@ -40,10 +41,13 @@ final class DevicesSettingHostingViewController: NSViewController {
         window.styleMask = [.titled, .closable]
         window.title = NSLocalizedString("Set up sync", comment: "Key layer window title")
         window.isReleasedWhenClosed = false
+        window.delegate = self
         window.center()
         keyLayerWindow = window
         window.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
         Task { @MainActor in await vm.beginSetup() }
     }
+
+    func windowWillClose(_ notification: Notification) { keyLayerWindow = nil }
 }

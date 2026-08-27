@@ -1,6 +1,14 @@
 import CryptoKit
 import Foundation
 
+/// A local (on-disk) Chromium profile as offered to the pairing UI: the local
+/// identity half of a local-profile <-> remote-profile pairing decision.
+struct PairingLocal: Equatable, Identifiable {
+    let profileId: String
+    let displayName: String
+    var id: String { profileId }
+}
+
 /// State machine for the account key bootstrap / recovery-code join flow.
 enum KeyLayerPhase: Equatable {
     case idle
@@ -13,6 +21,10 @@ enum KeyLayerPhase: Equatable {
     case working
     case done
     case error(String)
+    /// Semi-automatic pairing (M2-4 Task 5): more than one unmapped local
+    /// profile and more than one unclaimed remote profile — `resolveMappings()`
+    /// can't disambiguate on its own, so the user picks.
+    case pairingProfiles(locals: [PairingLocal], remotes: [RemoteProfile])
 }
 
 /// Drives the recovery-code UI: owns all state transitions and error mapping
@@ -20,6 +32,10 @@ enum KeyLayerPhase: Equatable {
 @MainActor
 final class KeyLayerViewModel: ObservableObject {
     @Published private(set) var phase: KeyLayerPhase = .idle
+    /// Set when a pairing decision fails to apply (surfaced by `ProfilePairingView`
+    /// while `phase` stays `.pairingProfiles`); cleared at the start of the next
+    /// `submitPairing` call.
+    @Published private(set) var pairingError: String?
 
     private let manager: AccountKeyManager
     private var currentRequestId: String?
@@ -137,6 +153,71 @@ final class KeyLayerViewModel: ObservableObject {
                 "Invalid recovery code. Please check it and try again.",
                 comment: "Key layer recovery code entry - error shown when the entered code is rejected"))
         }
+    }
+
+    // MARK: - Semi-automatic profile pairing (M2-4 Task 5)
+
+    /// Loads every local profile and every remote (account-registered) profile
+    /// and moves to `.pairingProfiles` so the user can resolve the ambiguous
+    /// mapping by hand.
+    func startPairing(controller: SyncKeyController) async {
+        phase = .working
+        do {
+            let locals = controller.localProfiles().map {
+                PairingLocal(profileId: $0.profileId, displayName: $0.displayName)
+            }
+            let remotes = try await controller.profileKeys.accountProfiles()
+            phase = .pairingProfiles(locals: locals, remotes: remotes)
+        } catch {
+            phase = .error("\(error)")
+        }
+    }
+
+    /// Applies the user's pairing decisions, then re-runs `resolveMappings()`
+    /// so the controller's resolved cache (and `needsPairing`) reflect the new
+    /// mappings. `.createLocal` creates the on-disk profile first (via the
+    /// bridge) and adopts the remote onto the resulting profileId; if that
+    /// creation fails, the decision is skipped and its error is surfaced
+    /// while staying on `.pairingProfiles` rather than moving to `.done`.
+    func submitPairing(_ decisions: [PairingDecision], controller: SyncKeyController) async {
+        phase = .working
+        pairingError = nil
+        for decision in decisions {
+            do {
+                switch decision {
+                case .adopt(let localProfileId, let remoteUuid):
+                    _ = try await controller.profileKeys.adoptRemoteProfile(
+                        uuid: remoteUuid, forLocalProfile: localProfileId)
+                case .registerNew(let localProfileId, let displayName):
+                    _ = try await controller.profileKeys.registerLocalProfile(
+                        profileId: localProfileId, displayName: displayName)
+                case .createLocal(let remoteUuid, let displayName):
+                    let newProfileId = await withCheckedContinuation { (continuation: CheckedContinuation<String?, Never>) in
+                        ProfileManager.shared.createProfile(displayName: displayName) { profileId in
+                            continuation.resume(returning: profileId)
+                        }
+                    }
+                    guard let newProfileId else {
+                        pairingError = String(format: NSLocalizedString(
+                            "Couldn’t create a profile named “%@” on this Mac.",
+                            comment: "Pairing - local profile creation failed"), displayName)
+                        continue
+                    }
+                    _ = try await controller.profileKeys.adoptRemoteProfile(
+                        uuid: remoteUuid, forLocalProfile: newProfileId)
+                }
+            } catch {
+                pairingError = "\(error)"
+            }
+        }
+        guard pairingError == nil else {
+            // Reload so the view reflects whatever succeeded before the
+            // failure, and stay in .pairingProfiles for another attempt.
+            await startPairing(controller: controller)
+            return
+        }
+        await controller.resolveMappings()
+        phase = .done
     }
 }
 

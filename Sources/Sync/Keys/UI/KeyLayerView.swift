@@ -4,6 +4,11 @@ import SwiftUI
 /// phase. Calls `onFinish` once the flow completes so a hosting window can close.
 struct KeyLayerView: View {
     @ObservedObject var viewModel: KeyLayerViewModel
+    /// The shared sync key controller, needed only for the `.pairingProfiles`
+    /// phase (to apply decisions and re-resolve mappings). nil when the
+    /// caller has no controller to hand over — the pairing phase then falls
+    /// back to an error message rather than crashing.
+    var controller: SyncKeyController? = nil
     var onFinish: () -> Void = {}
 
     var body: some View {
@@ -29,6 +34,17 @@ struct KeyLayerView: View {
                         retry: true)
             case .error(let m):
                 message(NSLocalizedString("Something went wrong", comment: "Key layer error - title"), m, retry: false)
+            case .pairingProfiles(let locals, let remotes):
+                if let controller {
+                    ProfilePairingView(viewModel: viewModel, locals: locals, remotes: remotes, onSubmit: { decisions in
+                        Task { await viewModel.submitPairing(decisions, controller: controller) }
+                    })
+                } else {
+                    message(NSLocalizedString("Something went wrong", comment: "Key layer error - title"),
+                            NSLocalizedString("Pairing isn’t available right now.",
+                                comment: "Key layer - pairing phase reached with no controller to apply it"),
+                            retry: false)
+                }
             case .done:
                 Color.clear.onAppear { onFinish() }
             }

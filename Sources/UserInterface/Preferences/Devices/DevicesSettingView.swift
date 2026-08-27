@@ -5,6 +5,14 @@ import SwiftUI
 struct DevicesSettingView: View {
     @ObservedObject var viewModel: DevicesSettingViewModel
     var onJoinThisDevice: () -> Void = {}
+    var onResolvePairing: () -> Void = {}
+    /// Polled from the shared `SyncKeyController` rather than threaded through
+    /// `DevicesSettingViewModel` (which the pane's tests construct directly):
+    /// checked once when the pane appears and refreshed alongside the pending
+    /// join-request poll, so the banner clears once pairing resolves.
+    var needsPairingCheck: () -> Bool = { false }
+
+    @State private var needsPairing = false
 
     var body: some View {
         ScrollView(.vertical) {
@@ -12,6 +20,10 @@ struct DevicesSettingView: View {
                 Text(NSLocalizedString("Devices", comment: "Devices settings - header"))
                     .font(.title2.bold())
                     .themedForeground(.textPrimaryStrong)
+
+                if needsPairing {
+                    pairingBanner
+                }
 
                 switch viewModel.unlockState {
                 case .loading:
@@ -43,8 +55,36 @@ struct DevicesSettingView: View {
         }
         .themedBackground(PhiPreferences.fixedWindowBackground)
         .frame(width: 680, height: 561)
-        .task { await viewModel.loadAll() }
+        .task {
+            await viewModel.loadAll()
+            needsPairing = needsPairingCheck()
+            // Mirrors the ViewModel's own 3s pending-approval poll cadence so the
+            // banner clears promptly once another entry point resolves pairing
+            // (e.g. the key-layer window). Tied to the view's task lifecycle, so
+            // it stops automatically alongside `stopPolling()` below.
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: 3_000_000_000)
+                needsPairing = needsPairingCheck()
+            }
+        }
         .onDisappear { Task { await viewModel.stopPolling() } }
+    }
+
+    @ViewBuilder
+    private var pairingBanner: some View {
+        HStack(spacing: 16) {
+            Text(NSLocalizedString("Profiles need pairing", comment: "Devices - pairing banner title"))
+                .font(.body.bold())
+                .themedForeground(.textPrimaryStrong)
+            Spacer()
+            Button(NSLocalizedString("Resolve", comment: "Devices - pairing banner button")) {
+                onResolvePairing()
+            }
+            .buttonStyle(.borderedProminent)
+        }
+        .padding(12)
+        .background(Color(nsColor: .textBackgroundColor))
+        .cornerRadius(8)
     }
 
     @ViewBuilder

@@ -86,4 +86,46 @@ final class KeyLayerViewModelTests: XCTestCase {
         await vm.pollOnce()
         XCTAssertEqual(vm.phase, .joinDenied)
     }
+
+    func testStartPairingLoadsLocalsAndRemotes() async throws {
+        let api = AccountKeyManagerTests.FakeAPI()
+        let provider = AccountKeyManagerTests.FakeDeviceKeyProvider()
+        let mgr = AccountKeyManager(api: api, deviceKeyProvider: provider)
+        _ = try await mgr.bootstrap()
+        let pkm = ProfileKeyManager(api: api, keyManager: mgr, mappingStore: ProfileKeyManagerTests.MemoryMappingStore())
+        _ = try await pkm.registerLocalProfile(profileId: "Other", displayName: "Work")
+        let controller = SyncKeyController(manager: mgr, approvals: DeviceApprovalService(api: api, keyManager: mgr, deviceKeyProvider: provider),
+                                           profileKeys: pkm,
+                                           localProfilesProvider: { [("Default", "Default"), ("Profile 1", "Home")] },
+                                           notifyChromium: {})
+        let vm = KeyLayerViewModel(manager: mgr)
+        await vm.startPairing(controller: controller)
+        guard case .pairingProfiles(let locals, let remotes) = vm.phase else { return XCTFail("expected pairing") }
+        XCTAssertEqual(locals.map(\.profileId), ["Default", "Profile 1"])
+        XCTAssertEqual(remotes.count, 1)
+        XCTAssertEqual(remotes[0].name, "Work")
+    }
+
+    func testSubmitPairingAdoptAndRegisterResolves() async throws {
+        let api = AccountKeyManagerTests.FakeAPI()
+        let provider = AccountKeyManagerTests.FakeDeviceKeyProvider()
+        let mgr = AccountKeyManager(api: api, deviceKeyProvider: provider)
+        _ = try await mgr.bootstrap()
+        let pkm = ProfileKeyManager(api: api, keyManager: mgr, mappingStore: ProfileKeyManagerTests.MemoryMappingStore())
+        let remote = try await pkm.registerLocalProfile(profileId: "elsewhere", displayName: "Work")
+        let store2 = ProfileKeyManagerTests.MemoryMappingStore() // fresh mapping = unmapped device state
+        let pkm2 = ProfileKeyManager(api: api, keyManager: mgr, mappingStore: store2)
+        let controller = SyncKeyController(manager: mgr, approvals: DeviceApprovalService(api: api, keyManager: mgr, deviceKeyProvider: provider),
+                                           profileKeys: pkm2,
+                                           localProfilesProvider: { [("Default", "Default"), ("Profile 1", "Home")] },
+                                           notifyChromium: {})
+        let vm = KeyLayerViewModel(manager: mgr)
+        await vm.submitPairing([.adopt(localProfileId: "Default", remoteUuid: remote.uuid),
+                                .registerNew(localProfileId: "Profile 1", displayName: "Home")],
+                               controller: controller)
+        XCTAssertEqual(vm.phase, .done)
+        XCTAssertEqual(controller.profileSyncInfo(forProfileId: "Default")?.uuid, remote.uuid)
+        XCTAssertNotNil(controller.profileSyncInfo(forProfileId: "Profile 1"))
+        XCTAssertFalse(controller.needsPairing)
+    }
 }

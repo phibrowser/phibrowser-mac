@@ -2,13 +2,17 @@ import Cocoa
 import SwiftUI
 
 final class DevicesSettingHostingViewController: NSViewController, NSWindowDelegate {
-    /// Shares the app-scoped controller's manager/approvals once an account
-    /// exists (built via `PhiChromiumCoordinator`, same instance the bridge
-    /// pulls sync info from); falls back to a pane-local stack only for the
-    /// signed-out empty state, since there is no account for the coordinator
-    /// to build a shared controller against.
+    /// The app-scoped shared controller (built via `PhiChromiumCoordinator`, same
+    /// instance the bridge pulls sync info from); nil only in the signed-out empty
+    /// state, since there is no account for the coordinator to build one against.
+    /// Kept around (not just its manager/approvals) so pairing entry points
+    /// (`needsPairing`, `startPairing(controller:)`) have something to call.
+    private lazy var syncKeyController: SyncKeyController? =
+        PhiChromiumCoordinator.shared.syncKeyControllerCreatingIfNeeded()
+    /// Manager/approvals for the pane's own unlock + approval flow — from the
+    /// shared controller when one exists, otherwise a pane-local fallback stack.
     private lazy var syncStack: (manager: AccountKeyManager, approvals: DeviceApprovalService) = {
-        if let shared = PhiChromiumCoordinator.shared.syncKeyControllerCreatingIfNeeded() {
+        if let shared = syncKeyController {
             return (shared.manager, shared.approvals)
         }
         let stack = SyncKeyStack.make()
@@ -27,7 +31,9 @@ final class DevicesSettingHostingViewController: NSViewController, NSWindowDeleg
     override func viewDidLoad() {
         super.viewDidLoad()
         let host = ThemedHostingController(rootView: DevicesSettingView(viewModel: viewModel,
-            onJoinThisDevice: { [weak self] in self?.presentKeyLayer() }))
+            onJoinThisDevice: { [weak self] in self?.presentKeyLayer() },
+            onResolvePairing: { [weak self] in self?.presentKeyLayer(startPairing: true) },
+            needsPairingCheck: { [weak self] in self?.syncKeyController?.needsPairing ?? false }))
         host.view.translatesAutoresizingMaskIntoConstraints = false
         addChild(host)
         view.addSubview(host.view)
@@ -40,10 +46,16 @@ final class DevicesSettingHostingViewController: NSViewController, NSWindowDeleg
         self.hostingController = host
     }
 
-    private func presentKeyLayer() {
+    /// Opens the key-layer window. `startPairing` routes the entry reason: normal
+    /// (false) drives `beginSetup()` as before; pairing (true, from the Devices
+    /// pane's "needs pairing" banner) drives `startPairing(controller:)` instead,
+    /// landing directly on `.pairingProfiles`. The shared controller is always
+    /// handed to `KeyLayerView` (when one exists) so that phase can apply
+    /// decisions regardless of which entry point reached it.
+    private func presentKeyLayer(startPairing: Bool = false) {
         if let existing = keyLayerWindow { existing.makeKeyAndOrderFront(nil); return }
         let vm = KeyLayerViewModel(manager: syncStack.manager)
-        let root = KeyLayerView(viewModel: vm, onFinish: { [weak self] in
+        let root = KeyLayerView(viewModel: vm, controller: syncKeyController, onFinish: { [weak self] in
             self?.keyLayerWindow?.close()
             self?.keyLayerWindow = nil
             Task { @MainActor in await self?.viewModel.loadAll() }
@@ -57,7 +69,13 @@ final class DevicesSettingHostingViewController: NSViewController, NSWindowDeleg
         keyLayerWindow = window
         window.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
-        Task { @MainActor in await vm.beginSetup() }
+        Task { @MainActor in
+            if startPairing, let controller = syncKeyController {
+                await vm.startPairing(controller: controller)
+            } else {
+                await vm.beginSetup()
+            }
+        }
     }
 
     func windowWillClose(_ notification: Notification) { keyLayerWindow = nil }

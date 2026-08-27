@@ -144,6 +144,13 @@ final class ExtensionMessageRouter {
             return "{}"
         }
 
+        register(type: "sidecar.aiOutputState") { context in
+            MainActor.assumeIsolated {
+                SidecarAIOutputStateStore.shared.handle(context)
+            }
+            return "{}"
+        }
+
         register(type: "agentSpace.create") { context in
             AgentSpaceRouter.handleCreate(context: context)
             return nil  // async reply via ExtensionMessaging

@@ -15,11 +15,12 @@ enum TabCornerBadgeStatus: Int, CaseIterable {
     static func resolve(
         isAgentActive: Bool,
         isChatGenerating: Bool,
-        hasPairedChat: Bool
+        hasPairedChat: Bool,
+        isChatCollapsed: Bool
     ) -> TabCornerBadgeStatus? {
         if isAgentActive { return .agent }
         if isChatGenerating { return .inputting }
-        if hasPairedChat { return .chat }
+        if hasPairedChat && !isChatCollapsed { return .chat }
         return nil
     }
 
@@ -34,12 +35,14 @@ final class TabStatusModel: ObservableObject {
     @Published private(set) var isAgentActive = false
     @Published private(set) var hasPairedChat = false
     @Published private(set) var isChatGenerating = false
+    @Published private(set) var isChatCollapsed = true
 
     var cornerBadgeStatus: TabCornerBadgeStatus? {
         TabCornerBadgeStatus.resolve(
             isAgentActive: isAgentActive,
             isChatGenerating: isChatGenerating,
-            hasPairedChat: hasPairedChat
+            hasPairedChat: hasPairedChat,
+            isChatCollapsed: isChatCollapsed
         )
     }
 
@@ -47,16 +50,18 @@ final class TabStatusModel: ObservableObject {
     private var configurationGeneration: UInt64 = 0
     private var cancellables = Set<AnyCancellable>()
 
-    func configure(with tab: Tab) {
+    func configure(with tab: Tab, in browserState: BrowserState? = nil) {
         cancelSubscriptions()
 
         let expectedGuid = tab.guid
         let expectedGeneration = configurationGeneration
+        let chatStateTab = browserState?.resolveTab(expectedGuid) ?? tab
         configuredTabGuid = expectedGuid
         isDiscarded = tab.isDiscarded
         isAgentActive = AgentAnimationManager.shared.isActive(for: expectedGuid)
-        hasPairedChat = tab.hasPairedChat
-        isChatGenerating = tab.isPairedChatGenerating
+        hasPairedChat = chatStateTab.hasPairedChat
+        isChatGenerating = chatStateTab.isPairedChatGenerating
+        isChatCollapsed = chatStateTab.aiChatCollapsed
 
         tab.$isDiscarded
             .removeDuplicates()
@@ -71,7 +76,7 @@ final class TabStatusModel: ObservableObject {
             }
             .store(in: &cancellables)
 
-        tab.$hasPairedChat
+        chatStateTab.$hasPairedChat
             .removeDuplicates()
             .receive(on: DispatchQueue.main)
             .sink { [weak self] hasPairedChat in
@@ -84,7 +89,7 @@ final class TabStatusModel: ObservableObject {
             }
             .store(in: &cancellables)
 
-        tab.$isPairedChatGenerating
+        chatStateTab.$isPairedChatGenerating
             .removeDuplicates()
             .receive(on: DispatchQueue.main)
             .sink { [weak self] isGenerating in
@@ -94,6 +99,19 @@ final class TabStatusModel: ObservableObject {
                         expectedGeneration: expectedGeneration
                       ) else { return }
                 self.isChatGenerating = isGenerating
+            }
+            .store(in: &cancellables)
+
+        chatStateTab.$aiChatCollapsed
+            .removeDuplicates()
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] isCollapsed in
+                guard let self,
+                      self.isCurrentConfiguration(
+                        expectedGuid: expectedGuid,
+                        expectedGeneration: expectedGeneration
+                      ) else { return }
+                self.isChatCollapsed = isCollapsed
             }
             .store(in: &cancellables)
 
@@ -123,6 +141,7 @@ final class TabStatusModel: ObservableObject {
         isAgentActive = false
         hasPairedChat = false
         isChatGenerating = false
+        isChatCollapsed = true
     }
 
     private func isCurrentConfiguration(expectedGuid: Int, expectedGeneration: UInt64) -> Bool {
@@ -268,7 +287,7 @@ final class TabViewModel {
         let expectedGuid = tab.guid
         let expectedGeneration = configurationGeneration
         configuredTabGuid = expectedGuid
-        status.configure(with: tab)
+        status.configure(with: tab, in: browserState)
 
         self.title = tab.title
         self.url = tab.url

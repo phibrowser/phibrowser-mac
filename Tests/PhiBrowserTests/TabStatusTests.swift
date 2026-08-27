@@ -11,7 +11,8 @@ final class TabStatusTests: XCTestCase {
         XCTAssertNil(TabCornerBadgeStatus.resolve(
             isAgentActive: false,
             isChatGenerating: false,
-            hasPairedChat: false
+            hasPairedChat: false,
+            isChatCollapsed: false
         ))
     }
 
@@ -19,7 +20,8 @@ final class TabStatusTests: XCTestCase {
         XCTAssertEqual(TabCornerBadgeStatus.resolve(
             isAgentActive: false,
             isChatGenerating: false,
-            hasPairedChat: true
+            hasPairedChat: true,
+            isChatCollapsed: false
         ), .chat)
     }
 
@@ -27,7 +29,8 @@ final class TabStatusTests: XCTestCase {
         XCTAssertEqual(TabCornerBadgeStatus.resolve(
             isAgentActive: false,
             isChatGenerating: true,
-            hasPairedChat: true
+            hasPairedChat: true,
+            isChatCollapsed: true
         ), .inputting)
     }
 
@@ -35,8 +38,18 @@ final class TabStatusTests: XCTestCase {
         XCTAssertEqual(TabCornerBadgeStatus.resolve(
             isAgentActive: true,
             isChatGenerating: true,
-            hasPairedChat: true
+            hasPairedChat: true,
+            isChatCollapsed: true
         ), .agent)
+    }
+
+    func testChatBadgeIsHiddenWhileChatIsCollapsed() {
+        XCTAssertNil(TabCornerBadgeStatus.resolve(
+            isAgentActive: false,
+            isChatGenerating: false,
+            hasPairedChat: true,
+            isChatCollapsed: true
+        ))
     }
 
     func testHighestPriorityCombinesMultipleLiveBookmarkPanes() {
@@ -68,5 +81,121 @@ final class TabStatusTests: XCTestCase {
             ),
             24
         )
+    }
+
+    func testAIOutputBecomesChatAfterGeneratingCompletes() {
+        var tracker = SidecarAIOutputStateTracker()
+
+        let generating = tracker.apply(SidecarAIOutputPayload(
+            tabId: 42,
+            windowId: 7,
+            active: true,
+            phase: .submitted,
+            seq: 1
+        ))
+        XCTAssertEqual(generating?.active, true)
+        XCTAssertEqual(generating?.hasCompletedOutput, false)
+
+        let completed = tracker.apply(SidecarAIOutputPayload(
+            tabId: 42,
+            windowId: 7,
+            active: false,
+            phase: .idle,
+            seq: 2
+        ))
+        XCTAssertEqual(completed?.active, false)
+        XCTAssertEqual(completed?.hasCompletedOutput, true)
+    }
+
+    func testAIOutputPreservesChatWhileASecondResponseGenerates() {
+        var tracker = SidecarAIOutputStateTracker()
+        _ = tracker.apply(SidecarAIOutputPayload(
+            tabId: 42,
+            windowId: 7,
+            active: true,
+            phase: .streaming,
+            seq: 1
+        ))
+        _ = tracker.apply(SidecarAIOutputPayload(
+            tabId: 42,
+            windowId: 7,
+            active: false,
+            phase: .idle,
+            seq: 2
+        ))
+
+        let generatingAgain = tracker.apply(SidecarAIOutputPayload(
+            tabId: 42,
+            windowId: 8,
+            active: true,
+            phase: .submitted,
+            seq: 3
+        ))
+        XCTAssertEqual(generatingAgain?.active, true)
+        XCTAssertEqual(generatingAgain?.hasCompletedOutput, true)
+        XCTAssertEqual(generatingAgain?.windowId, 8)
+    }
+
+    func testAIOutputDropsStaleAndInconsistentMessages() {
+        var tracker = SidecarAIOutputStateTracker()
+        _ = tracker.apply(SidecarAIOutputPayload(
+            tabId: 42,
+            windowId: 7,
+            active: true,
+            phase: .submitted,
+            seq: 3
+        ))
+
+        XCTAssertNil(tracker.apply(SidecarAIOutputPayload(
+            tabId: 42,
+            windowId: 7,
+            active: false,
+            phase: .idle,
+            seq: 2
+        )))
+        XCTAssertNil(tracker.apply(SidecarAIOutputPayload(
+            tabId: 42,
+            windowId: 7,
+            active: false,
+            phase: .streaming,
+            seq: 4
+        )))
+        XCTAssertEqual(tracker.statesByTabId[42]?.seq, 3)
+    }
+
+    func testIdleWithoutPriorOutputDoesNotCreateChat() {
+        var tracker = SidecarAIOutputStateTracker()
+
+        let idle = tracker.apply(SidecarAIOutputPayload(
+            tabId: 42,
+            windowId: 7,
+            active: false,
+            phase: .idle,
+            seq: 1
+        ))
+
+        XCTAssertEqual(idle?.hasCompletedOutput, false)
+    }
+
+    func testRemovingAIOutputStateAllowsARecreatedSidecarSequence() {
+        var tracker = SidecarAIOutputStateTracker()
+        _ = tracker.apply(SidecarAIOutputPayload(
+            tabId: 42,
+            windowId: 7,
+            active: true,
+            phase: .streaming,
+            seq: 100
+        ))
+
+        tracker.remove(tabId: 42)
+
+        let recreated = tracker.apply(SidecarAIOutputPayload(
+            tabId: 42,
+            windowId: 7,
+            active: true,
+            phase: .submitted,
+            seq: 1
+        ))
+        XCTAssertEqual(recreated?.seq, 1)
     }
 }

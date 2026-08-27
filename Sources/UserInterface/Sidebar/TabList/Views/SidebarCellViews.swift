@@ -944,10 +944,9 @@ class SidebarSplitPairCellView: SidebarCellView, TabPreviewInteractionCancelling
         configuredLeftTab = pair.leftTab
         configuredRightTab = pair.rightTab
         configuredSplitId = pair.groupId
-        leftStatusModel.configure(with: pair.leftTab)
-        rightStatusModel.configure(with: pair.rightTab)
-
         let state = browserState ?? pair.browserState
+        leftStatusModel.configure(with: pair.leftTab, in: state)
+        rightStatusModel.configure(with: pair.rightTab, in: state)
         if let state,
            let target = SplitTabPreviewTarget.make(representing: pair.leftTab, in: state) {
             splitTabPreviewRegistration.configure(
@@ -1225,8 +1224,8 @@ class SidebarSplitPairCellView: SidebarCellView, TabPreviewInteractionCancelling
             pair.rightTab = oldLeft
             configuredLeftTab = pair.leftTab
             configuredRightTab = pair.rightTab
-            leftStatusModel.configure(with: pair.leftTab)
-            rightStatusModel.configure(with: pair.rightTab)
+            leftStatusModel.configure(with: pair.leftTab, in: pair.browserState)
+            rightStatusModel.configure(with: pair.rightTab, in: pair.browserState)
             updatePaneTitles(leftTitle: pair.leftTab.title, rightTitle: pair.rightTab.title)
             refreshFavicon(into: leftIconView, for: pair.leftTab, handle: &leftFaviconHandle)
             refreshFavicon(into: rightIconView, for: pair.rightTab, handle: &rightFaviconHandle)

@@ -335,7 +335,7 @@ class PinnedTabItem: NSCollectionViewItem, NSMenuDelegate {
         themeSubscription = nil
         faviconLoadHandle?.cancel()
         faviconLoadHandle = nil
-        statusModel.configure(with: tab)
+        statusModel.configure(with: tab, in: browserState)
         updateStatusBadge(isSuppressed: false)
 
         setupFavicon()

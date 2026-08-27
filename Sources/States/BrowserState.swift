@@ -722,6 +722,8 @@ class BrowserState {
                 pinnedTab.isOpenned = true
                 pinnedTab.setWebContentsWrapper(wrapper: activeTab.webContentWrapper)
                 pinnedTab.guid = activeTab.guid
+                pinnedTab.hasPairedChat = activeTab.hasPairedChat
+                pinnedTab.isPairedChatGenerating = activeTab.isPairedChatGenerating
             }
         }
         updateNormalTabs()
@@ -763,10 +765,14 @@ class BrowserState {
                 pinnedTab.isOpenned = true
                 pinnedTab.setWebContentsWrapper(wrapper: activeTab.webContentWrapper)
                 pinnedTab.guid = activeTab.guid
+                pinnedTab.hasPairedChat = activeTab.hasPairedChat
+                pinnedTab.isPairedChatGenerating = activeTab.isPairedChatGenerating
             } else {
                 pinnedTab.isOpenned = false
                 pinnedTab.guid = -1
                 pinnedTab.setWebContentsWrapper(wrapper: nil)
+                pinnedTab.hasPairedChat = false
+                pinnedTab.isPairedChatGenerating = false
             }
             
             if pinnedTab.guidInLocalDB == focusingTab?.guidInLocalDB {
@@ -2923,7 +2929,7 @@ class BrowserState {
         // AI Chat tabs redirect focus back to the associated content tab.
         for (identifier, aiTab) in aiChatTabs {
             if aiTab.guid == tabId {
-                if let associatedTab = findTabByIdentifier(identifier) {
+                if let associatedTab = tab(forChatIdentifier: identifier) {
                     focuseTab(associatedTab)
                 }
                 return
@@ -2993,7 +2999,7 @@ class BrowserState {
     }
     
     /// Find a tab by its identifier (either guidInLocalDB or chromium guid as string)
-    private func findTabByIdentifier(_ identifier: String) -> Tab? {
+    func tab(forChatIdentifier identifier: String) -> Tab? {
         if let tab = tabs.first(where: { $0.guidInLocalDB == identifier }) {
             return tab
         }
@@ -3038,6 +3044,12 @@ class BrowserState {
     /// Chromium's selection logic).
     func closeAIChatTab(for identifier: String) {
         guard let aiTab = aiChatTabs.removeValue(forKey: identifier) else { return }
+        MainActor.assumeIsolated {
+            SidecarAIOutputStateStore.shared.removeConversation(
+                boundTo: identifier,
+                in: self
+            )
+        }
         // Restore transaction: this can be reached from split replay
         // (`handleSplitCreated` → `reconcileSplitChatBinding`) while the
         // transaction is executing inside Chromium's replay stack — defer
@@ -3053,7 +3065,7 @@ class BrowserState {
     /// Close the normal tab associated with the specified identifier (called when AI Chat tab is closed)
     /// - Parameter identifier: The tab identifier of the normal tab to close
     private func closeAssociatedTab(for identifier: String) {
-        guard let tab = findTabByIdentifier(identifier) else { return }
+        guard let tab = tab(forChatIdentifier: identifier) else { return }
         tab.close()
     }
     
@@ -4247,6 +4259,8 @@ class BrowserState {
         pinnedTab.isOpenned = true
         pinnedTab.setWebContentsWrapper(wrapper: tab.webContentWrapper)
         pinnedTab.guid = tab.guid
+        pinnedTab.hasPairedChat = tab.hasPairedChat
+        pinnedTab.isPairedChatGenerating = tab.isPairedChatGenerating
         // If this pinned tab was part of a pinned-split before the last
         // shutdown and its partner is also live now, re-create the split
         // so the pair shows as one again. Skipped when a `SplitGroup`
@@ -4745,6 +4759,10 @@ class BrowserState {
         for (identifier, aiTab) in aiChatTabs {
             if aiTab.guid == tabId {
                 aiChatTabs.removeValue(forKey: identifier)
+                SidecarAIOutputStateStore.shared.removeConversation(
+                    boundTo: identifier,
+                    in: self
+                )
                 closeAssociatedTab(for: identifier)
                 return
             }
@@ -4830,6 +4848,7 @@ class BrowserState {
         } else {
             closeAIChatTab(for: identifier)
         }
+        SidecarAIOutputStateStore.shared.contentTabDidClose(tabId)
         
         // Remove the tab from pinned state if it was mirrored there.
         if let localGuid = closedTab.guidInLocalDB,

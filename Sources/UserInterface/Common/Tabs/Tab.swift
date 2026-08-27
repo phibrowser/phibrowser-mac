@@ -97,9 +97,9 @@ class Tab: WebContentRepresentable {
     @Published var aiChatCollapsed: Bool = true
     @Published var aiChatEnabled: Bool = false
 
-    /// Placeholder state until chat pairing is wired to the tab lifecycle.
+    /// Whether Sidecar has completed at least one response for this tab.
     @Published var hasPairedChat: Bool = false
-    /// Placeholder state until chat generation is wired to the tab lifecycle.
+    /// Whether Sidecar is submitting or streaming a response for this tab.
     @Published var isPairedChatGenerating: Bool = false
 
     /// Native renderer crash-page state, set by `PhiChromiumCoordinator` from
@@ -235,6 +235,7 @@ class Tab: WebContentRepresentable {
     /// on every wrapper swap; this pipeline watches the tab's own published
     /// state and must outlive the wrapper bindings.
     private var readerOfferabilityTrigger: AnyCancellable?
+    private var aiOutputNavigationTrigger: AnyCancellable?
     
     init(guid: Int = UUID().hashValue,
          url: String?,
@@ -258,6 +259,7 @@ class Tab: WebContentRepresentable {
         self.cachedFaviconData = faviconData
         setupObservers(for: webContentView)
         setupReaderOfferabilityTrigger()
+        setupAIOutputNavigationTrigger()
     }
 
     /// Re-judges the reader button whenever the page plausibly changed: a
@@ -272,6 +274,27 @@ class Tab: WebContentRepresentable {
         .sink { [weak self] in
             self?.refreshReaderOfferability()
         }
+    }
+
+    /// NTP hosts Sidecar in the content tab itself. Navigating away destroys
+    /// that Sidecar without closing a hidden AI Chat tab, so clear its badge
+    /// state when the tab leaves the NTP document.
+    private func setupAIOutputNavigationTrigger() {
+        aiOutputNavigationTrigger = $url
+            .removeDuplicates()
+            .scan((previous: String?.none, current: String?.none)) { transition, current in
+                (previous: transition.current, current: current)
+            }
+            .dropFirst()
+            .sink { [weak self] transition in
+                guard let self,
+                      transition.previous?.isNTP == true,
+                      transition.current?.isNTP != true else { return }
+                let tabId = self.guid
+                Task { @MainActor in
+                    SidecarAIOutputStateStore.shared.removeConversation(boundTo: tabId)
+                }
+            }
     }
 
     /// Re-judges the button from the signals in hand: the URL gate and

@@ -321,7 +321,7 @@ class BrowserDataImporter {
             // .unknown Arc profile (nil dir) → bookmarks only; never import Default's data.
             let arcDataImportable = option != .arc || sourceProfileDirectory != nil
             if (option != .arc || !(bridgeDataTypes?.isEmpty ?? true)), arcDataImportable {
-                let result = await importData(option, windowId: windowId,
+                let result = await importData(option, target: .window(windowId),
                     sourceProfileDirectory: sourceProfileDirectory, dataTypes: bridgeDataTypes,
                     importFilePath: importFilePath)
                 switch result {
@@ -451,10 +451,73 @@ class BrowserDataImporter {
         case bridgeUnavailable
     }
 
+    /// Which Chromium-side importer a request is routed to: the one behind an
+    /// open window (the import window's path) or the one belonging to a Profile
+    /// named by its on-disk basename (Migration's path, which has no window on
+    /// the Profiles it has just created).
+    private enum ImportTarget {
+        case window(Int)
+        case profile(String)
+    }
+
+    /// Starts one source → Profile import against a Profile named by its on-disk
+    /// basename, without needing a window on it, and waits for the Chromium-side
+    /// completion. Returns false when the import failed or was refused — an
+    /// unknown Profile included, which fails through the same completion signal.
+    ///
+    /// This is the Migration entry point and deliberately carries none of the
+    /// import window's run state: it does not take the reentrancy gate, the
+    /// import target lock or the bookmark staging, because Migration owns those
+    /// around its own units. Bookmarks are not part of it either — Migration
+    /// writes each Space's bookmark tree itself.
+    ///
+    /// The destination is the parameter, never this importer's own
+    /// `targetProfileId`: that property belongs to the import window's
+    /// window/Profile/Space binding, which Migration does not use.
+    ///
+    /// Chromium reports completion keyed by browser type alone, so callers must
+    /// not have two imports from the same source in flight — a second one
+    /// overwrites the first continuation and strands it. Within one importer
+    /// Migration's serial run is what prevents that; across two importers the
+    /// completion is a NotificationCenter broadcast that both would consume, and
+    /// only making Migration and the import window mutually exclusive fixes it.
+    @MainActor
+    func importDataIntoProfile(
+        _ option: BrowserType,
+        destinationProfileId: String,
+        sourceProfileDirectory: String?,
+        dataTypes: [String]?
+    ) async -> Bool {
+        // The profile-addressed selector arrives with the matching Phi Framework;
+        // an older one would answer it with an unrecognised selector, so refuse
+        // here the way the other new bridge calls do.
+        guard let bridge = ChromiumLauncher.sharedInstance().bridge,
+              bridge.responds(to: #selector(PhiChromiumBridgeProtocol
+                  .importBrowserData(from:profile:dataTypes:targetProfileId:)))
+        else {
+            AppLogError(
+                "Import into profile \(destinationProfileId) was not dispatched: "
+                    + "the Chromium bridge does not support profile-addressed imports"
+            )
+            return false
+        }
+
+        let result = await importData(
+            option,
+            target: .profile(destinationProfileId),
+            sourceProfileDirectory: sourceProfileDirectory,
+            dataTypes: dataTypes
+        )
+        switch result {
+        case .completed(let success): return success
+        case .bridgeUnavailable: return false
+        }
+    }
+
     @MainActor
     private func importData(
         _ option: BrowserType,
-        windowId: Int,
+        target: ImportTarget,
         sourceProfileDirectory: String?,
         dataTypes: [String]?,
         importFilePath: String? = nil
@@ -477,21 +540,33 @@ class BrowserDataImporter {
                 self.importContinuations[option] = continuation
 
                 DispatchQueue.main.async {
-                    if option == .file {
-                        // File import: Chromium sniffs the file type + parses it, staging
-                        // the result into its BookmarkModel to be pulled back like the
-                        // browser sources. Completion arrives via importCompleted(.file).
-                        bridge.importData(
-                            fromFilePath: importFilePath ?? "",
-                            windowId: Int64(windowId)
-                        )
-                    } else {
-                        let profile = sourceProfileDirectory ?? ""
+                    let profile = sourceProfileDirectory ?? ""
+                    switch target {
+                    case .window(let windowId):
+                        if option == .file {
+                            // File import: Chromium sniffs the file type + parses it, staging
+                            // the result into its BookmarkModel to be pulled back like the
+                            // browser sources. Completion arrives via importCompleted(.file).
+                            bridge.importData(
+                                fromFilePath: importFilePath ?? "",
+                                windowId: Int64(windowId)
+                            )
+                        } else {
+                            bridge.importBrowserData(
+                                from: option,
+                                profile: profile,
+                                dataTypes: dataTypes,
+                                windowId: Int64(windowId)
+                            )
+                        }
+                    case .profile(let destinationProfileId):
+                        // `.file` has no profile-addressed form; Chromium answers it
+                        // with a failed completion, which resolves the continuation.
                         bridge.importBrowserData(
                             from: option,
                             profile: profile,
                             dataTypes: dataTypes,
-                            windowId: Int64(windowId)
+                            targetProfileId: destinationProfileId
                         )
                     }
                 }

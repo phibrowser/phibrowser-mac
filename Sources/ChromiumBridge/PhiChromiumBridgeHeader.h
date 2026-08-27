@@ -1296,6 +1296,15 @@ typedef NS_ENUM(NSInteger, PhiGhostMaterializeOutcome) {
 // Import management
 - (void)importBrowserDataFromBrowserType:(BrowserType)browserType profile:(NSString *)profile dataTypes:(nullable NSArray<NSString *> *)dataTypes windowId:(int64_t)windowId;
 
+/// Profile-addressed twin of the call above: resolves the Chromium-side importer
+/// through the target Profile's on-disk basename instead of an open window, so a
+/// caller can import into a Profile that has no window (Migration fills the
+/// Profiles it has just created). `targetProfileId` must name a loaded Profile;
+/// an empty or unknown basename fails through importCompleted:success: with
+/// success = NO rather than falling back to the current Profile. Completion stays
+/// keyed by browser type, exactly as the window-addressed path.
+- (void)importBrowserDataFromBrowserType:(BrowserType)browserType profile:(NSString *)profile dataTypes:(nullable NSArray<NSString *> *)dataTypes targetProfileId:(NSString *)targetProfileId;
+
 /// Import data from a user-picked file (e.g. a bookmarks HTML file). The Mac side
 /// does no parsing: Chromium sniffs the file type, parses it, and stages the result
 /// into its BookmarkModel; completion is reported through the existing

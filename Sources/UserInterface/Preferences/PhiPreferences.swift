@@ -90,8 +90,9 @@ extension PhiPreferences {
             switch self {
             case .openNewTabPageOnCmdT:
                 return true
-            case .openExternalLinksInKiosk,
-                 .openKioskOnCommandOptionClick:
+            case .openExternalLinksInKiosk:
+                return false
+            case .openKioskOnCommandOptionClick:
                 return true
             case .navigationAtTop:
                 return true

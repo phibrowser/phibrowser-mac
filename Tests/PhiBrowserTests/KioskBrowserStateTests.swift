@@ -208,6 +208,46 @@ final class KioskBrowserStateTests: XCTestCase {
         XCTAssertTrue(containsThemedHostingView(in: toolbar))
     }
 
+    func testBackButtonTracksFocusedTabNavigationState() throws {
+        let state = try makeState()
+        let wrapper = KioskTestWebContentWrapper(urlString: "https://example.com")
+        let tab = Tab(
+            guid: 42,
+            url: "https://example.com",
+            isActive: false,
+            index: 0,
+            webContentView: wrapper,
+            windowId: state.windowId
+        )
+        state.handleNewTabFromChromium(tab)
+        let controller = KioskBrowserContentViewController(state: state)
+        _ = controller.view
+
+        XCTAssertFalse(controller.isBackButtonVisibleForTesting)
+
+        wrapper.canGoBack = true
+        let navigationStateUpdated = expectation(
+            description: "Back navigation state updated"
+        )
+        DispatchQueue.main.async {
+            navigationStateUpdated.fulfill()
+        }
+        wait(for: [navigationStateUpdated], timeout: 1)
+
+        XCTAssertTrue(controller.isBackButtonVisibleForTesting)
+
+        wrapper.canGoBack = false
+        let navigationStateReset = expectation(
+            description: "Back navigation state reset"
+        )
+        DispatchQueue.main.async {
+            navigationStateReset.fulfill()
+        }
+        wait(for: [navigationStateReset], timeout: 1)
+
+        XCTAssertFalse(controller.isBackButtonVisibleForTesting)
+    }
+
     func testKioskWindowRestoresAndAutosavesSharedFrame() throws {
         let autosaveName = KioskWindowFramePersistence.autosaveName
         NSWindow.removeFrame(usingName: autosaveName)
@@ -449,7 +489,7 @@ final class KioskBrowserStateTests: XCTestCase {
             NSPoint(x: closeButton.bounds.midX, y: closeButton.bounds.midY),
             from: closeButton
         ).y
-        XCTAssertEqual(toolbar.controlCenterYsForTesting.count, 2)
+        XCTAssertEqual(toolbar.controlCenterYsForTesting.count, 3)
         for centerY in toolbar.controlCenterYsForTesting {
             XCTAssertEqual(
                 centerY,

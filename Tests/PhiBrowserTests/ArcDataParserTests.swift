@@ -126,6 +126,23 @@ final class ArcDataParserTests: XCTestCase {
         XCTAssertEqual(root.children.map(\.title), ["GitHub", "Linear"])
     }
 
+    /// `containerIDs` marks a Space's pinned section and its open-tab section
+    /// in one list. Only the pinned one is the Space's bookmark tree — ordinary
+    /// open tabs are not persistent data and do not migrate.
+    func testSpaceBookmarksLeaveOutOpenTabs() throws {
+        let data = sidebar(
+            spaces: [space("S1", title: "Work",
+                           containerIDs: ["pinned", "C1", "unpinned", "C2"])],
+            items: [
+                container("C1", spaceID: "S1", children: ["T1"]),
+                container("C2", spaceID: "S1", children: ["T2"]),
+                tab("T1", title: "Linear", url: "https://linear.app"),
+                tab("T2", title: "Just Browsing", url: "https://example.com"),
+            ])
+        let root = try XCTUnwrap(try parse(data).spaces.first?.root)
+        XCTAssertEqual(root.children.map(\.title), ["Linear"])
+    }
+
     // MARK: - Color
 
     func testSingleColorThemeYieldsItsColor() throws {

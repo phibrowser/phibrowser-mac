@@ -82,8 +82,8 @@ final class BrowserMigrationRunner: ObservableObject {
 
     /// One step of a run: a Profile, or one Space bound to it. Later tickets
     /// give each kind more to do — the Profile's history, cookies and
-    /// extensions, the Space's Bookmarks and pinned tabs — without changing
-    /// the counter the user sees.
+    /// extensions, the Space's pinned tabs — without changing the counter the
+    /// user sees.
     private struct Unit {
         let name: String
         let profile: BrowserMigrationPlannedProfile
@@ -163,10 +163,39 @@ final class BrowserMigrationRunner: ObservableObject {
         // stick — and what the sidebar and window actually render.
         SpaceManager.shared.setTheme(forSpaceId: spaceID, themeId: planned.themeID)
         await ImportTargetLock.shared.holding(spaceID) {
-            // The Space's own content lands here: its Bookmarks (ticket 06)
-            // and its pinned tabs (ticket 07). Both write into a Space that
-            // must not be deleted or re-profiled underneath them, which is
-            // what the lock refuses for as long as it is held.
+            // The Space's own content lands here: its Bookmarks, and its
+            // pinned tabs in ticket 07. Both write into a Space that must not
+            // be deleted or re-profiled underneath them, which is what the
+            // lock refuses for as long as it is held.
+            await persistBookmarks(of: planned, profileID: profileID, spaceID: spaceID)
         }
+    }
+
+    /// Writes the source Space's own tree into the Space just created for it,
+    /// with no landing folder — the Space holds nothing else to keep it apart
+    /// from.
+    ///
+    /// The outcome comes from the write itself rather than from any import
+    /// completion signal, and a Space whose Bookmarks are dropped is recorded
+    /// and left behind — the run carries on to the next unit either way.
+    private func persistBookmarks(
+        of planned: BrowserMigrationPlannedSpace,
+        profileID: String,
+        spaceID: String
+    ) async {
+        // No Mac-side tree to write: the source's bookmarks arrive through the
+        // Chromium importer instead.
+        guard let bookmarkRoot = planned.bookmarkRoot else { return }
+        guard let store = AccountController.shared.localDataAccount?.localStorage else {
+            AppLogWarn("[BrowserMigration] no local store for \(planned.name)'s Bookmarks")
+            return
+        }
+        guard let count = await store.saveArcBookmarksToLocalStore(
+            bookmarkRoot, profileId: profileID, spaceId: spaceID, landingFolder: false
+        ) else {
+            AppLogWarn("[BrowserMigration] couldn't save \(planned.name)'s Bookmarks")
+            return
+        }
+        outcomes.spaceBookmarkCounts[planned.sourceSpaceID] = count
     }
 }

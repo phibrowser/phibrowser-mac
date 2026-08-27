@@ -15,9 +15,22 @@ final class BrowserMigrationRunTests: XCTestCase {
 
     // MARK: - Fixture builders
 
-    private func space(_ id: String, _ name: String, profileKey: String) -> BrowserMigrationSourceSpace {
+    /// A one-link tree. The fold reads only whether the plan carries a tree at
+    /// all — what is in it is the store's business — so one link is enough.
+    private func tree() -> ArcDataParserTool.Bookmark {
+        let root = ArcDataParserTool.Bookmark(
+            guid: "root", title: "Space", url: nil, isFolder: true)
+        root.children = [ArcDataParserTool.Bookmark(
+            guid: "leaf", title: "Example", url: "https://example.com", isFolder: false)]
+        return root
+    }
+
+    private func space(
+        _ id: String, _ name: String, profileKey: String, bookmarks: Bool = true
+    ) -> BrowserMigrationSourceSpace {
         BrowserMigrationSourceSpace(
-            id: id, name: name, colorHex: "#112233", profileKey: profileKey)
+            id: id, name: name, colorHex: "#112233", profileKey: profileKey,
+            bookmarkRoot: bookmarks ? tree() : nil)
     }
 
     /// Two profiles, the first with two Spaces, so the report's order and its
@@ -34,6 +47,21 @@ final class BrowserMigrationRunTests: XCTestCase {
                 space("s-side", "Side Projects", profileKey: "Default"),
                 space("s-work", "Work", profileKey: "Profile 1"),
             ])
+        return BrowserMigrationPlanner.plan(
+            source: source,
+            existingProfileDisplayNames: [],
+            pinnedTabScope: .profile,
+            selection: .all(in: source),
+            operationID: operationID)
+    }
+
+    /// A source whose bookmarks arrive Chromium-side carries no Mac-side tree,
+    /// so its Spaces have no Bookmarks step of their own.
+    private func planWithoutTrees() -> BrowserMigrationPlan {
+        let source = BrowserMigrationSource(
+            profiles: [BrowserMigrationSourceProfile(key: "Default", displayName: "Personal")],
+            defaultProfileKey: "Default",
+            spaces: [space("s-home", "Home", profileKey: "Default", bookmarks: false)])
         return BrowserMigrationPlanner.plan(
             source: source,
             existingProfileDisplayNames: [],
@@ -95,6 +123,53 @@ final class BrowserMigrationRunTests: XCTestCase {
         XCTAssertFalse(report.profiles[0].created)
         XCTAssertEqual(report.profiles[0].spaces.map(\.created), [false, false])
         XCTAssertTrue(report.profiles[1].created)
+    }
+
+    // MARK: - Bookmarks
+
+    func testASpaceReportsTheBookmarksThatPersisted() {
+        var outcomes = fullOutcomes()
+        outcomes.spaceBookmarkCounts = ["s-home": 4, "s-side": 0, "s-work": 2]
+
+        let report = BrowserMigrationReport.folded(plan: plan(), outcomes: outcomes)
+
+        XCTAssertEqual(report.profiles[0].spaces.map(\.bookmarks), [.written(4), .written(0)])
+        XCTAssertEqual(report.profiles[1].spaces[0].bookmarks, .written(2))
+    }
+
+    /// The outcome comes from the write, not from the import completion signal
+    /// that reports success unconditionally — so a Space that landed but whose
+    /// tree did not is reported as what it is.
+    func testASpaceWhoseBookmarksDidNotPersistSaysSo() {
+        var outcomes = fullOutcomes()
+        outcomes.spaceBookmarkCounts = ["s-home": 3, "s-work": 1]
+
+        let report = BrowserMigrationReport.folded(plan: plan(), outcomes: outcomes)
+
+        XCTAssertEqual(report.profiles[0].spaces.map(\.bookmarks), [.written(3), .failed])
+        XCTAssertTrue(report.profiles[0].spaces.allSatisfy(\.created))
+        // The Space that lost its Bookmarks leaves the rest of the run alone.
+        XCTAssertEqual(report.profiles[1].spaces[0].bookmarks, .written(1))
+    }
+
+    func testASpaceThatWasNeverCreatedAttemptsNoBookmarks() {
+        let report = BrowserMigrationReport.folded(
+            plan: plan(), outcomes: outcomes(profiles: ["Default": "Profile 2"]))
+
+        XCTAssertEqual(
+            report.profiles[0].spaces.map(\.bookmarks), [.notAttempted, .notAttempted])
+    }
+
+    /// Distinct from a failed write: nothing was to be written in the first
+    /// place, so the report must not imply anything was lost.
+    func testASpaceWithNoSourceTreeAttemptsNoBookmarks() {
+        let report = BrowserMigrationReport.folded(
+            plan: planWithoutTrees(),
+            outcomes: outcomes(
+                profiles: ["Default": "Profile 2"], spaces: ["s-home": "id-home"]))
+
+        XCTAssertTrue(report.profiles[0].spaces[0].created)
+        XCTAssertEqual(report.profiles[0].spaces[0].bookmarks, .notAttempted)
     }
 
     // MARK: - The Space the report jumps to

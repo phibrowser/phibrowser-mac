@@ -8627,6 +8627,41 @@
         }
       }
     },
+    "app.browserMigration.report.bookmarkCount" : {
+      "comment" : "Browser migration wizard - how many bookmarks a migrated Space received; %d is the number of bookmarks",
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "new",
+                  "value" : "%d bookmark"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "new",
+                  "value" : "%d bookmarks"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "app.browserMigration.report.bookmarksFailed" : {
+      "comment" : "Browser migration wizard - shown on a Space whose Bookmarks did not persist",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Bookmarks couldn't be saved"
+          }
+        }
+      }
+    },
     "app.browserMigration.report.doneButton" : {
       "comment" : "Browser migration wizard - button dismissing the report and closing the window",
       "extractionState" : "extracted_with_value",

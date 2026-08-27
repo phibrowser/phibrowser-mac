@@ -453,12 +453,13 @@ final class LocalStoreProfileTests: XCTestCase {
         )
         let root = ArcDataParserTool.Bookmark(guid: "s1", title: "Work", url: nil, isFolder: true)
         root.children = [leaf]
-        await store.saveArcBookmarksToLocalStore(
+        let written = await store.saveArcBookmarksToLocalStore(
             root,
             profileId: LocalStore.defaultProfileId,
             spaceId: targetSpaceId
         )
 
+        XCTAssertNil(written, "A dropped write must report itself, not a count.")
         XCTAssertTrue(
             store.fetchBookmarks(parentId: nil, profileId: LocalStore.defaultProfileId, spaceId: targetSpaceId).isEmpty,
             "Nothing should be written into a Space that no longer exists."
@@ -505,12 +506,53 @@ final class LocalStoreProfileTests: XCTestCase {
 
         let emptyRoot = ArcDataParserTool.Bookmark(guid: "s1", title: "Empty",
                                                    url: nil, isFolder: true)
-        await store.saveArcBookmarksToLocalStore(emptyRoot,
+        let written = await store.saveArcBookmarksToLocalStore(emptyRoot,
             profileId: LocalStore.defaultProfileId, spaceId: "space-a")
 
+        XCTAssertEqual(written, 0, "A Space with nothing to import is not a failed write.")
         let top = store.fetchBookmarks(parentId: nil,
             profileId: LocalStore.defaultProfileId, spaceId: "space-a")
         XCTAssertNil(top.first { $0.title == "Empty" })
+    }
+
+    /// A Migration creates each Space for exactly one source tree, so the tree
+    /// goes to that Space's bookmark root: the Space-named folder is there to
+    /// keep an import apart from bookmarks the target Space already had, and a
+    /// freshly created Space has none.
+    func testSaveArcBookmarksWithoutLandingFolderLandsAtTheSpaceRoot() async throws {
+        let store = try makeStore()
+        let context = try XCTUnwrap(store.getMainContext())
+        let space = SpaceModel(spaceId: "space-a", profileId: LocalStore.defaultProfileId,
+                               name: "A", colorHex: "#000000", iconName: "star", sortOrder: 0)
+        context.insert(space)
+        try context.save()
+
+        let nested = ArcDataParserTool.Bookmark(guid: "t2", title: "Figma",
+                                                url: "https://figma.com", isFolder: false)
+        let folder = ArcDataParserTool.Bookmark(guid: "f1", title: "Design",
+                                                url: nil, isFolder: true)
+        folder.children = [nested]
+        let leaf = ArcDataParserTool.Bookmark(guid: "t1", title: "Linear",
+                                              url: "https://linear.app", isFolder: false)
+        let root = ArcDataParserTool.Bookmark(guid: "s1", title: "Work",
+                                              url: nil, isFolder: true)
+        root.children = [leaf, folder]
+
+        let written = await store.saveArcBookmarksToLocalStore(root,
+            profileId: LocalStore.defaultProfileId, spaceId: "space-a",
+            landingFolder: false)
+
+        XCTAssertEqual(written, 2, "The count is bookmarks; the folder is not one.")
+        let top = store.fetchBookmarks(parentId: nil,
+            profileId: LocalStore.defaultProfileId, spaceId: "space-a")
+        XCTAssertEqual(top.map { $0.title }, ["Linear", "Design"],
+                       "No folder named after the Space wraps the tree, and source order holds.")
+        let design = try XCTUnwrap(top.last)
+        XCTAssertEqual(design.dataType, .bookmarkFolder)
+        XCTAssertNil(design.favicon, "Favicons are not carried over; icons arrive on first load.")
+        let children = store.fetchBookmarks(parentId: design.guid,
+            profileId: LocalStore.defaultProfileId, spaceId: "space-a")
+        XCTAssertEqual(children.map { $0.title }, ["Figma"], "Folder nesting is preserved.")
     }
 
     /// Chromium titles its permanent bookmark bar node in the UI language, so

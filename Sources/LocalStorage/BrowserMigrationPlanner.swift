@@ -622,6 +622,13 @@ struct BrowserMigrationOutcomes: Equatable {
     var profileIDs: [String: String] = [:]
     /// The created Phi Space's identifier, per planned source Space.
     var spaceIDs: [String: String] = [:]
+    /// How many bookmark nodes a Space's tree wrote, per planned source Space,
+    /// recorded from the write itself — the import completion signal reports
+    /// success unconditionally and before the write runs, so reading the
+    /// outcome off it would call a dropped tree a success. A write that did
+    /// not land leaves no entry, the same way a Space that was never created
+    /// leaves none.
+    var spaceBookmarkCounts: [String: Int] = [:]
 }
 
 // MARK: - The report
@@ -631,9 +638,23 @@ struct BrowserMigrationOutcomes: Equatable {
 /// without any I/O and the view only draws it.
 struct BrowserMigrationReport: Equatable {
     struct SpaceRow: Equatable, Identifiable {
+        /// What became of a Space's Bookmarks.
+        enum Bookmarks: Equatable {
+            /// Nothing was to be written: the Space was never created, or the
+            /// source carries no Mac-side tree for it because its bookmarks
+            /// arrive Chromium-side.
+            case notAttempted
+            /// Written, node count included; zero when the source Space had no
+            /// pinned items of its own.
+            case written(Int)
+            /// Attempted and did not land.
+            case failed
+        }
+
         let sourceSpaceID: String
         let name: String
         let created: Bool
+        let bookmarks: Bookmarks
 
         var id: String { sourceSpaceID }
     }
@@ -669,10 +690,12 @@ struct BrowserMigrationReport: Equatable {
                 displayName: profile.displayName,
                 created: outcomes.profileIDs[profile.sourceProfileKey] != nil,
                 spaces: profile.spaces.map { space in
-                    SpaceRow(
+                    let created = outcomes.spaceIDs[space.sourceSpaceID] != nil
+                    return SpaceRow(
                         sourceSpaceID: space.sourceSpaceID,
                         name: space.name,
-                        created: outcomes.spaceIDs[space.sourceSpaceID] != nil)
+                        created: created,
+                        bookmarks: bookmarks(of: space, created: created, outcomes: outcomes))
                 })
         }
         let firstCreatedSpace = plan.profiles.lazy.flatMap(\.spaces).compactMap { space in
@@ -681,5 +704,17 @@ struct BrowserMigrationReport: Equatable {
         }.first
         return BrowserMigrationReport(
             profiles: profiles, firstCreatedSpace: firstCreatedSpace)
+    }
+
+    private static func bookmarks(
+        of space: BrowserMigrationPlannedSpace,
+        created: Bool,
+        outcomes: BrowserMigrationOutcomes
+    ) -> SpaceRow.Bookmarks {
+        guard created, space.bookmarkRoot != nil else { return .notAttempted }
+        guard let count = outcomes.spaceBookmarkCounts[space.sourceSpaceID] else {
+            return .failed
+        }
+        return .written(count)
     }
 }

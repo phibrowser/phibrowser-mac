@@ -523,10 +523,14 @@ struct BrowserMigrationWizardView: View {
                 VStack(alignment: .leading, spacing: 10) {
                     ForEach(report.profiles) { profile in
                         VStack(alignment: .leading, spacing: 6) {
-                            reportRow(profile.displayName, created: profile.created,
+                            reportRow(profile.displayName, ok: profile.created,
+                                note: profile.created ? nil : Self.notCreatedLabel,
                                 weight: .medium)
                             ForEach(profile.spaces) { space in
-                                reportRow(space.name, created: space.created, weight: .regular)
+                                reportRow(space.name,
+                                    ok: space.created && space.bookmarks != .failed,
+                                    note: Self.spaceNote(space),
+                                    weight: .regular)
                                     .padding(.leading, 20)
                             }
                         }
@@ -559,19 +563,44 @@ struct BrowserMigrationWizardView: View {
     }
 
     private func reportRow(
-        _ name: String, created: Bool, weight: Font.Weight
+        _ name: String, ok: Bool, note: String?, weight: Font.Weight
     ) -> some View {
         HStack(spacing: 6) {
-            Image(systemName: created ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
-                .foregroundColor(created ? .green : .orange)
+            Image(systemName: ok ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
+                .foregroundColor(ok ? .green : .orange)
             Text(name).font(.system(size: 13, weight: weight))
-            if !created {
-                Text(NSLocalizedString("app.browserMigration.report.notCreated",
-                    value: "Not created",
-                    comment: "Browser migration wizard - outcome of a Profile or Space the run failed to create"))
+            if let note {
+                Text(note)
                     .font(.system(size: 12))
                     .foregroundColor(.secondary)
             }
+        }
+    }
+
+    private static let notCreatedLabel = NSLocalizedString(
+        "app.browserMigration.report.notCreated",
+        value: "Not created",
+        comment: "Browser migration wizard - outcome of a Profile or Space the run failed to create")
+
+    /// A Space says what became of its Bookmarks once it exists; before that,
+    /// there is only the Space's own failure to report.
+    private static func spaceNote(_ space: BrowserMigrationReport.SpaceRow) -> String? {
+        guard space.created else { return notCreatedLabel }
+        switch space.bookmarks {
+        case .notAttempted:
+            return nil
+        case .written(let count):
+            // Shown even at zero: a Space that received nothing has to say so
+            // rather than read as a plain success.
+            return String.localizedStringWithFormat(
+                NSLocalizedString("app.browserMigration.report.bookmarkCount",
+                    value: "%d bookmarks",
+                    comment: "Browser migration wizard - how many bookmarks a migrated Space received; %d is the number of bookmarks"),
+                count)
+        case .failed:
+            return NSLocalizedString("app.browserMigration.report.bookmarksFailed",
+                value: "Bookmarks couldn't be saved",
+                comment: "Browser migration wizard - shown on a Space whose Bookmarks did not persist")
         }
     }
 

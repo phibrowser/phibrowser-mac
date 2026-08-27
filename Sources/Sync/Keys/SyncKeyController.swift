@@ -50,6 +50,14 @@ final class SyncKeyController {
         resolved[profileId]
     }
 
+    /// Local profiles as reported by `localProfilesProvider` — the same
+    /// enumeration `resolveMappings()` uses internally. Exposed read-only for
+    /// the pairing UI (M2-4 Task 5), which needs to list every local profile
+    /// alongside the account's remote profiles when `needsPairing` is true.
+    func localProfiles() -> [(profileId: String, displayName: String)] {
+        localProfilesProvider()
+    }
+
     /// Startup/login entry: unlock without UI, then resolve mappings and ping.
     /// `.needsJoin` / `.notSignedIn` leave the cache empty — the Devices pane
     /// remains the place where joining/bootstrap UI happens.

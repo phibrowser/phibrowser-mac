@@ -973,6 +973,15 @@ final class PeekPanelController {
                 // the user can switch tabs — the peek then hides with its
                 // opener instead of closing.
                 let location = NSEvent.mouseLocation
+                // A press in the resize corridor is grabbing the window's
+                // resize handle, not clicking the page: it still flows
+                // through `sendEvent`, and the pane runs flush against the
+                // frame's edges, so an edge-grab landing a point inside the
+                // frame would otherwise read as a dismiss click.
+                if event.type == .leftMouseDown,
+                   self.isResizeCorridorGrab(screenPoint: location) {
+                    return event
+                }
                 if self.panel.frame.contains(location) {
                     // The window is wider than the card: a click in the
                     // control gutter that misses a button is a click on the
@@ -992,6 +1001,24 @@ final class PeekPanelController {
                 return event
             }
         }
+    }
+
+    /// Reach of the window's resize corridor on the frame's inside: AppKit's
+    /// edge hot zone is about 4pt on each side of the frame line, held
+    /// slightly wider here so a resize grab is never mistaken for a dismiss
+    /// click. The cost is a hairline strip of page pane along the window
+    /// edges that no longer dismisses the peek.
+    private static let resizeCorridorWidth: CGFloat = 6
+
+    /// Whether a press at `screenPoint` is grabbing the parent window's
+    /// resize corridor — within `resizeCorridorWidth` of a resizable frame's
+    /// edge — rather than clicking the page pane.
+    private func isResizeCorridorGrab(screenPoint: NSPoint) -> Bool {
+        guard let parentWindow,
+              parentWindow.styleMask.contains(.resizable) else { return false }
+        let inner = parentWindow.frame.insetBy(dx: Self.resizeCorridorWidth,
+                                               dy: Self.resizeCorridorWidth)
+        return !inner.contains(screenPoint)
     }
 
     /// Whether a screen point lands on the card (page included) or on one of

@@ -431,6 +431,33 @@ class BrowserDataImporter {
     struct ArcMigrationSource {
         let profiles: [ChromiumProfileInfo]
         let sidebar: ArcSidebar
+
+        /// The source-agnostic model the Migration planner consumes: a
+        /// straight translation, so that every mapping decision — an
+        /// unreadable profile record, a profile the cache never listed —
+        /// stays in the planner.
+        var migrationSource: BrowserMigrationSource {
+            BrowserMigrationSource(
+                profiles: profiles.map {
+                    BrowserMigrationSourceProfile(key: $0.directory, displayName: $0.name)
+                },
+                defaultProfileKey: ArcSourceProfile.default.directoryName ?? "Default",
+                spaces: sidebar.spaces.map {
+                    BrowserMigrationSourceSpace(
+                        id: $0.id,
+                        name: $0.title,
+                        colorHex: $0.colorHex,
+                        profileKey: $0.profile.directoryName,
+                        bookmarkRoot: $0.root)
+                },
+                pinnedGroups: sidebar.favorites.map { favorites in
+                    BrowserMigrationSourcePinnedGroup(
+                        profileKey: favorites.profile.directoryName,
+                        entries: favorites.entries.map {
+                            BrowserMigrationPinnedEntry(title: $0.title, url: $0.url)
+                        })
+                })
+        }
     }
 
     /// Reads the Arc install as a Migration Source; nil when the sidebar file

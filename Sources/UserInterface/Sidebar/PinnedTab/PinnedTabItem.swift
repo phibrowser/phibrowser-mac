@@ -6,6 +6,7 @@
 import Cocoa
 import Combine
 import SnapKit
+import SwiftUI
 
 /// Round plate straddling a pinned cell's top-right corner, showing the
 /// favicon of the Peek attached to that tab; hovering dims the favicon
@@ -156,9 +157,14 @@ class PinnedTabItem: NSCollectionViewItem, NSMenuDelegate {
     /// Identifier stamped on every visible sidebar pinned-grid item (solo
     /// tab or pinned split — see also `PinnedSplitItem`).
     static let accessibilityIdentifier = "sidebarPinnedTab"
+    private static let faviconSize: CGFloat = 18
+    private static let faviconCornerRadius: CGFloat = 4
     private var iconImageView: NSImageView!
     private var backgroundView: HoverableView!
     private var peekBadge: PinnedPeekBadgeView!
+    private var discardedOutlineHost: TabDecorativeHostingView!
+    private var statusBadgeHost: TabDecorativeHostingView!
+    private let statusModel = TabStatusModel()
     private var tab: Tab?
     private weak var browserState: BrowserState?
     private var cancellables = Set<AnyCancellable>()
@@ -200,12 +206,15 @@ class PinnedTabItem: NSCollectionViewItem, NSMenuDelegate {
         tabPreviewRegistration.invalidate()
         peekBadge.isHidden = true
         peekBadge.faviconImage = nil
+        statusModel.prepareForReuse()
+        updateStatusBadge(isSuppressed: false)
         tab = nil
         browserState = nil
     }
 
     private func setupUI() {
         view.wantsLayer = true
+        view.layer?.masksToBounds = false
 
         // Interactive background view.
         backgroundView = HoverableView()
@@ -237,12 +246,21 @@ class PinnedTabItem: NSCollectionViewItem, NSMenuDelegate {
         iconImageView.imageScaling = .scaleProportionallyUpOrDown
         iconImageView.wantsLayer = true
         iconImageView.layer?.cornerCurve = .continuous
-        iconImageView.layer?.cornerRadius = 4
+        iconImageView.layer?.cornerRadius = Self.faviconCornerRadius
         iconImageView.layer?.cornerCurve = .continuous
         iconImageView.layer?.masksToBounds = true
 
         view.addSubview(backgroundView)
         backgroundView.addSubview(iconImageView)
+
+        discardedOutlineHost = TabDecorativeHostingView(
+            rootView: TabDiscardedFaviconOutline(
+                model: statusModel,
+                faviconSize: Self.faviconSize,
+                faviconCornerRadius: Self.faviconCornerRadius
+            )
+        )
+        backgroundView.addSubview(discardedOutlineHost)
 
         // Layout.
         backgroundView.snp.makeConstraints { make in
@@ -251,7 +269,37 @@ class PinnedTabItem: NSCollectionViewItem, NSMenuDelegate {
 
         iconImageView.snp.makeConstraints { make in
             make.center.equalToSuperview()
-            make.size.equalTo(CGSize(width: 18, height: 18))
+            make.size.equalTo(CGSize(
+                width: Self.faviconSize,
+                height: Self.faviconSize
+            ))
+        }
+
+        discardedOutlineHost.snp.makeConstraints { make in
+            make.center.equalTo(iconImageView)
+            make.size.equalTo(CGSize(
+                width: TabCornerBadgeMetrics.discardedOutlineSize(
+                    for: Self.faviconSize,
+                    cornerRadius: Self.faviconCornerRadius
+                ),
+                height: TabCornerBadgeMetrics.discardedOutlineSize(
+                    for: Self.faviconSize,
+                    cornerRadius: Self.faviconCornerRadius
+                )
+            ))
+        }
+
+        statusBadgeHost = TabDecorativeHostingView(
+            rootView: TabCornerBadgeView(model: statusModel)
+        )
+        view.addSubview(statusBadgeHost)
+        statusBadgeHost.snp.makeConstraints { make in
+            make.top.trailing.equalTo(backgroundView)
+                .inset(-TabCornerBadgeMetrics.overhang)
+            make.size.equalTo(CGSize(
+                width: TabCornerBadgeMetrics.visualSize,
+                height: TabCornerBadgeMetrics.visualSize
+            ))
         }
 
         // Peek badge: straddling the top-right corner, above everything
@@ -287,6 +335,8 @@ class PinnedTabItem: NSCollectionViewItem, NSMenuDelegate {
         themeSubscription = nil
         faviconLoadHandle?.cancel()
         faviconLoadHandle = nil
+        statusModel.configure(with: tab)
+        updateStatusBadge(isSuppressed: false)
 
         setupFavicon()
         if let browserState {
@@ -353,6 +403,14 @@ class PinnedTabItem: NSCollectionViewItem, NSMenuDelegate {
             }
             .store(in: &cancellables)
 
+        tab.$hasWebContent
+            .removeDuplicates()
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in
+                self?.updateSelectedState()
+            }
+            .store(in: &cancellables)
+
         if let browserState {
             browserState.peekState.$peeksByOpener
                 .receive(on: DispatchQueue.main)
@@ -376,9 +434,11 @@ class PinnedTabItem: NSCollectionViewItem, NSMenuDelegate {
               let peekTab = peeksByOpener[tab.guid] else {
             peekBadge.isHidden = true
             peekBadge.faviconImage = nil
+            updateStatusBadge(isSuppressed: false)
             return
         }
         peekBadge.isHidden = false
+        updateStatusBadge(isSuppressed: true)
         peekTab.$liveFaviconData
             .combineLatest(peekTab.$cachedFaviconData)
             .receive(on: DispatchQueue.main)
@@ -411,9 +471,13 @@ class PinnedTabItem: NSCollectionViewItem, NSMenuDelegate {
     private func updateSelectedState() {
         if isSelected {
             backgroundView.isSelected = true
-            backgroundView.layer?.borderWidth = 2
+            backgroundView.layer?.borderWidth = 0
+            backgroundView.layer?.borderColor = NSColor.clear.cgColor
+        } else if tab?.hasWebContent == true {
+            backgroundView.isSelected = false
+            backgroundView.layer?.borderWidth = 1
             let provider = themeProvider ?? ThemeManager.shared
-            backgroundView.layer?.borderColor = ThemedColor.themeColor
+            backgroundView.layer?.borderColor = ThemedColor.border
                 .resolve(theme: provider.currentTheme, appearance: provider.currentAppearance)
                 .cgColor
         } else {
@@ -421,6 +485,12 @@ class PinnedTabItem: NSCollectionViewItem, NSMenuDelegate {
             backgroundView.layer?.borderWidth = 0
             backgroundView.layer?.borderColor = NSColor.clear.cgColor
         }
+    }
+
+    private func updateStatusBadge(isSuppressed: Bool) {
+        statusBadgeHost?.setThemedContent(
+            TabCornerBadgeView(model: statusModel, isSuppressed: isSuppressed)
+        )
     }
 
     private func setupFavicon() {

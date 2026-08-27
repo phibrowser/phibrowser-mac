@@ -289,7 +289,7 @@ typedef NS_ENUM(NSInteger, PhiGhostMaterializeOutcome) {
 - (void)bookmarksChanged:(NSArray <id<BookmarkWrapper>> *)newNodes windowId:(int64_t)windowId;
 - (void)bookmarkInfoChangedWithWindowId:(int64_t)windowId bookmarkId:(int64_t)id title:(NSString * _Nullable)title url:(NSString * _Nullable)url facicon:(NSString * _Nullable)favicon_url;
 
-// extension service 
+// extension service
 - (void)extensionsLoaded:(NSArray<NSDictionary *> *)extensions;
 - (void)extensionTriggered:(NSString *)extensionId;
 - (void)extensionPinned:(NSString *)extensionId;
@@ -313,6 +313,8 @@ typedef NS_ENUM(NSInteger, PhiGhostMaterializeOutcome) {
 
 // Login management
 - (BOOL)canShowChromiumWindow;
+/// Returns whether an external link may create a Kiosk window now. Unlike the
+/// general Chromium-window gate, this must reject transient Guest promotion.
 - (BOOL)canOpenExternalLinksInKiosk;
 - (BOOL)isPhiGuestMode;
 - (void)showLoginUI;
@@ -590,9 +592,7 @@ typedef NS_ENUM(NSInteger, PhiGhostMaterializeOutcome) {
 /// @param type Message type from the extension
 /// @param payload Message payload (JSON string)
 /// @param requestId The unique request ID for response correlation
-/// @param senderId The Chromium-attributed extension ID that sent the message.
-/// Security-sensitive handlers must authorize this value exactly; payload data
-/// must never be used as sender identity.
+/// @param senderId The extension ID that sent the message
 /// @return Response string if handled synchronously, nil for async handling
 - (NSString * _Nullable)handleExtensionMessage:(NSString *)type
                                       payload:(NSString *)payload
@@ -810,6 +810,14 @@ typedef NS_ENUM(NSInteger, PhiGhostMaterializeOutcome) {
 @protocol PhiChromiumBridgeProtocol <NSObject>
 @property (nonatomic, weak) id<PhiChromiumBridgeDelegate> delegate;
 
+/// Updates Chromium's process-local cache for the Phi-owned external-link
+/// Kiosk preference. Push once during launch and after every setting change.
+- (void)setOpenExternalLinksInKioskEnabled:(BOOL)enabled;
+
+/// Updates Chromium's process-local cache for Command-Option link clicks.
+/// Phi UserDefaults remains the persisted source of truth. Main thread only.
+- (void)setOpenKioskOnCommandOptionClickEnabled:(BOOL)enabled;
+
 /// Creates a detached WebContents loading `urlString` on the profile of the
 /// Browser identified by `windowId`, and returns a wrapper around it. Used by
 /// the native-NTP omnibox path, whose tab has no live WebContents for the
@@ -970,8 +978,7 @@ typedef NS_ENUM(NSInteger, PhiGhostMaterializeOutcome) {
 /// `sourceWindowId`, including off-the-record profiles. Returns NO when the
 /// source Browser is gone, the URL is invalid, or Kiosk creation fails; the
 /// ask-rule caller then re-opens the cancelled navigation in the source.
-- (BOOL)openURLInKiosk:(NSString *)url
-        sourceWindowId:(int64_t)sourceWindowId;
+- (BOOL)openURLInKiosk:(NSString*)url sourceWindowId:(int64_t)sourceWindowId;
 
 /// Create a new tab group containing the given Phi-stable tab ids in
 /// `windowId`. Returns the new group's 32-char uppercase hex token, or an
@@ -1140,10 +1147,10 @@ typedef NS_ENUM(NSInteger, PhiGhostMaterializeOutcome) {
 - (void)commandDispatchFromMenu:(id)sender;
 - (BOOL)validateUserInterfaceItemFromMenu:(id<NSValidatedUserInterfaceItem>)item;
 - (NSMenu*)applicationDockMenu:(NSApplication*)sender;
-- (BOOL)application:(NSApplication*)application 
+- (BOOL)application:(NSApplication*)application
     willContinueUserActivityWithType:(NSString*)userActivityType;
-- (BOOL)application:(NSApplication*)application 
-    continueUserActivity:(NSUserActivity*)userActivity 
+- (BOOL)application:(NSApplication*)application
+    continueUserActivity:(NSUserActivity*)userActivity
       restorationHandler:(void (^)(NSArray<id<NSUserActivityRestoring>>*))restorationHandler;
 
 /// Each dictionary includes id, name, icon, version, isPinned, pinnedIndex,
@@ -1417,14 +1424,6 @@ typedef NS_ENUM(NSInteger, PhiGhostMaterializeOutcome) {
 - (BOOL)isRestorePreviousSessionEnabled;
 - (void)setRestorePreviousSessionEnabled:(BOOL)enabled;
 
-/// Updates Chromium's process-local routing cache for external links. Phi
-/// UserDefaults remains the persisted source of truth. Main thread only.
-- (void)setOpenExternalLinksInKioskEnabled:(BOOL)enabled;
-
-/// Updates Chromium's process-local cache for Command-Option link clicks.
-/// Phi UserDefaults remains the persisted source of truth. Main thread only.
-- (void)setOpenKioskOnCommandOptionClickEnabled:(BOOL)enabled;
-
 /// Restores the previous session mid-session for a Dock reopen or an external
 /// link that arrives with no window open, mirroring cold start: every profile
 /// that owned a window when the app last had windows is reloaded and its last
@@ -1585,9 +1584,7 @@ typedef NS_ENUM(NSInteger, PhiGhostMaterializeOutcome) {
 /// @param type Message type from the extension
 /// @param payload Message payload (JSON string)
 /// @param requestId The unique request ID for response correlation
-/// @param senderId The Chromium-attributed extension ID that sent the message.
-/// Async request-scoped responses must use sendResponseForExtensionRequest;
-/// broadcastMessageToExtensions must not carry private response data.
+/// @param senderId The extension ID that sent the message
 - (void)onExtensionMessage:(NSString *)type
                    payload:(NSString *)payload
                  requestId:(NSString *)requestId
@@ -1917,7 +1914,7 @@ typedef NS_ENUM(NSInteger, PhiGhostMaterializeOutcome) {
 - (void)unmuteAudio;
 @end
 
-@protocol BookmarkWrapper <NSObject> 
+@protocol BookmarkWrapper <NSObject>
 @property(nonatomic, copy, readonly, nullable) NSString *title;
 @property(nonatomic, copy, readonly, nullable) NSString *urlString;
 @property(nonatomic, copy, readonly, nullable) NSString *favIconURL;

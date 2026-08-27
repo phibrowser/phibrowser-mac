@@ -6,6 +6,7 @@
 import Cocoa
 import Combine
 import SnapKit
+import SwiftUI
 
 /// A single pinned-grid cell that represents a pinned split — both panes
 /// rendered as two favicons side-by-side inside one rounded background, so
@@ -14,10 +15,17 @@ import SnapKit
 /// left/top tab), which carries the split-aware context menu.
 class PinnedSplitItem: NSCollectionViewItem, NSMenuDelegate {
     static var reuseIdentifier: NSUserInterfaceItemIdentifier { .init(rawValue: "\(Self.self)") }
+    private static let faviconSize: CGFloat = 16
+    private static let faviconCornerRadius: CGFloat = 3
 
     private var leftIconView: NSImageView!
     private var rightIconView: NSImageView!
     private var backgroundView: HoverableView!
+    private var leftDiscardedOutlineHost: TabDecorativeHostingView!
+    private var rightDiscardedOutlineHost: TabDecorativeHostingView!
+    private var statusBadgeHost: TabDecorativeHostingView!
+    private let leftStatusModel = TabStatusModel()
+    private let rightStatusModel = TabStatusModel()
     private var leftTab: Tab?
     private var rightTab: Tab?
     private var cancellables = Set<AnyCancellable>()
@@ -55,6 +63,8 @@ class PinnedSplitItem: NSCollectionViewItem, NSMenuDelegate {
         rightFaviconHandle = nil
         leftIconView.image = nil
         rightIconView.image = nil
+        leftStatusModel.prepareForReuse()
+        rightStatusModel.prepareForReuse()
         splitTabPreviewRegistration.invalidate()
         leftTab = nil
         rightTab = nil
@@ -62,6 +72,7 @@ class PinnedSplitItem: NSCollectionViewItem, NSMenuDelegate {
 
     private func setupUI() {
         view.wantsLayer = true
+        view.layer?.masksToBounds = false
 
         backgroundView = HoverableView()
         backgroundView.wantsLayer = true
@@ -96,6 +107,23 @@ class PinnedSplitItem: NSCollectionViewItem, NSMenuDelegate {
         backgroundView.addSubview(leftIconView)
         backgroundView.addSubview(rightIconView)
 
+        leftDiscardedOutlineHost = TabDecorativeHostingView(
+            rootView: TabDiscardedFaviconOutline(
+                model: leftStatusModel,
+                faviconSize: Self.faviconSize,
+                faviconCornerRadius: Self.faviconCornerRadius
+            )
+        )
+        rightDiscardedOutlineHost = TabDecorativeHostingView(
+            rootView: TabDiscardedFaviconOutline(
+                model: rightStatusModel,
+                faviconSize: Self.faviconSize,
+                faviconCornerRadius: Self.faviconCornerRadius
+            )
+        )
+        backgroundView.addSubview(leftDiscardedOutlineHost)
+        backgroundView.addSubview(rightDiscardedOutlineHost)
+
         backgroundView.snp.makeConstraints { make in
             make.edges.equalToSuperview()
         }
@@ -106,12 +134,61 @@ class PinnedSplitItem: NSCollectionViewItem, NSMenuDelegate {
         leftIconView.snp.makeConstraints { make in
             make.centerY.equalToSuperview()
             make.centerX.equalToSuperview().offset(-10)
-            make.size.equalTo(CGSize(width: 16, height: 16))
+            make.size.equalTo(CGSize(
+                width: Self.faviconSize,
+                height: Self.faviconSize
+            ))
         }
         rightIconView.snp.makeConstraints { make in
             make.centerY.equalToSuperview()
             make.centerX.equalToSuperview().offset(10)
-            make.size.equalTo(CGSize(width: 16, height: 16))
+            make.size.equalTo(CGSize(
+                width: Self.faviconSize,
+                height: Self.faviconSize
+            ))
+        }
+
+        leftDiscardedOutlineHost.snp.makeConstraints { make in
+            make.center.equalTo(leftIconView)
+            make.size.equalTo(CGSize(
+                width: TabCornerBadgeMetrics.discardedOutlineSize(
+                    for: Self.faviconSize,
+                    cornerRadius: Self.faviconCornerRadius
+                ),
+                height: TabCornerBadgeMetrics.discardedOutlineSize(
+                    for: Self.faviconSize,
+                    cornerRadius: Self.faviconCornerRadius
+                )
+            ))
+        }
+        rightDiscardedOutlineHost.snp.makeConstraints { make in
+            make.center.equalTo(rightIconView)
+            make.size.equalTo(CGSize(
+                width: TabCornerBadgeMetrics.discardedOutlineSize(
+                    for: Self.faviconSize,
+                    cornerRadius: Self.faviconCornerRadius
+                ),
+                height: TabCornerBadgeMetrics.discardedOutlineSize(
+                    for: Self.faviconSize,
+                    cornerRadius: Self.faviconCornerRadius
+                )
+            ))
+        }
+
+        statusBadgeHost = TabDecorativeHostingView(
+            rootView: MergedTabCornerBadgeView(
+                primaryModel: leftStatusModel,
+                secondaryModel: rightStatusModel
+            )
+        )
+        view.addSubview(statusBadgeHost)
+        statusBadgeHost.snp.makeConstraints { make in
+            make.top.trailing.equalTo(backgroundView)
+                .inset(-TabCornerBadgeMetrics.overhang)
+            make.size.equalTo(CGSize(
+                width: TabCornerBadgeMetrics.visualSize,
+                height: TabCornerBadgeMetrics.visualSize
+            ))
         }
 
         view.menu = contextMenu
@@ -122,7 +199,7 @@ class PinnedSplitItem: NSCollectionViewItem, NSMenuDelegate {
         iv.imageScaling = .scaleProportionallyUpOrDown
         iv.wantsLayer = true
         iv.layer?.cornerCurve = .continuous
-        iv.layer?.cornerRadius = 3
+        iv.layer?.cornerRadius = Self.faviconCornerRadius
         iv.layer?.masksToBounds = true
         return iv
     }
@@ -142,6 +219,8 @@ class PinnedSplitItem: NSCollectionViewItem, NSMenuDelegate {
         leftFaviconHandle = nil
         rightFaviconHandle?.cancel()
         rightFaviconHandle = nil
+        leftStatusModel.configure(with: leftTab)
+        rightStatusModel.configure(with: rightTab)
 
         refreshFavicon(for: leftTab)
         refreshFavicon(for: rightTab)
@@ -184,6 +263,14 @@ class PinnedSplitItem: NSCollectionViewItem, NSMenuDelegate {
             }
             .store(in: &cancellables)
 
+        Publishers.CombineLatest(leftTab.$hasWebContent, rightTab.$hasWebContent)
+            .removeDuplicates { $0 == $1 }
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _, _ in
+                self?.updateSelectedState()
+            }
+            .store(in: &cancellables)
+
         rebindThemeSubscription()
     }
 
@@ -202,9 +289,13 @@ class PinnedSplitItem: NSCollectionViewItem, NSMenuDelegate {
     private func updateSelectedState() {
         if isSelected {
             backgroundView.isSelected = true
-            backgroundView.layer?.borderWidth = 2
+            backgroundView.layer?.borderWidth = 0
+            backgroundView.layer?.borderColor = NSColor.clear.cgColor
+        } else if leftTab?.hasWebContent == true || rightTab?.hasWebContent == true {
+            backgroundView.isSelected = false
+            backgroundView.layer?.borderWidth = 1
             let provider = themeProvider ?? ThemeManager.shared
-            backgroundView.layer?.borderColor = ThemedColor.themeColor
+            backgroundView.layer?.borderColor = ThemedColor.border
                 .resolve(theme: provider.currentTheme, appearance: provider.currentAppearance)
                 .cgColor
         } else {

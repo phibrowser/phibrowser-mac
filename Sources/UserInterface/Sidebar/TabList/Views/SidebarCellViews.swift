@@ -342,6 +342,8 @@ class SidebarTabCellView: SidebarCellView, TabPreviewInteractionCancelling {
     }
     
     private func setupViews() {
+        wantsLayer = true
+        layer?.masksToBounds = false
         hostingView = ThemedHostingView(rootView: SideTabView(
             model: viewModel,
             onClose: { [weak self] in
@@ -352,6 +354,8 @@ class SidebarTabCellView: SidebarCellView, TabPreviewInteractionCancelling {
                 self?.closePeekTapped()
             }
         ))
+        hostingView.wantsLayer = true
+        hostingView.layer?.masksToBounds = false
         addSubview(hostingView)
         hostingView.snp.makeConstraints { make in
             make.edges.equalToSuperview()
@@ -488,6 +492,8 @@ class SidebarTabCellView: SidebarCellView, TabPreviewInteractionCancelling {
 /// cell hover. The pane whose tab is focused gets a solid white pill,
 /// the other half stays at the cell-level hover tint.
 class SidebarSplitPairCellView: SidebarCellView, TabPreviewInteractionCancelling {
+    private static let faviconSize: CGFloat = 16
+    private static let faviconCornerRadius: CGFloat = 3
     private static let closeButtonSize: CGFloat = 24
     private static let titleTrailingSpacing: CGFloat = 5
     /// The left pane is already inset 2 points from the row background, so
@@ -500,6 +506,10 @@ class SidebarSplitPairCellView: SidebarCellView, TabPreviewInteractionCancelling
     private let rightPane = HoverableView()
     private let leftIconView = NSImageView()
     private let rightIconView = NSImageView()
+    private var leftDiscardedOutlineHost: TabDecorativeHostingView!
+    private var rightDiscardedOutlineHost: TabDecorativeHostingView!
+    private let leftStatusModel = TabStatusModel()
+    private let rightStatusModel = TabStatusModel()
     private let leftTitleLabel = TrailingFadeTextField()
     private let rightTitleLabel = TrailingFadeTextField()
     private var leftCloseHost: ZeroSafeAreaHostingView<AnyView>!
@@ -563,6 +573,8 @@ class SidebarSplitPairCellView: SidebarCellView, TabPreviewInteractionCancelling
         rightFaviconHandle = nil
         leftIconView.image = nil
         rightIconView.image = nil
+        leftStatusModel.prepareForReuse()
+        rightStatusModel.prepareForReuse()
         leftTitleLabel.stringValue = ""
         rightTitleLabel.stringValue = ""
         leftTitleLabel.toolTip = nil
@@ -638,8 +650,24 @@ class SidebarSplitPairCellView: SidebarCellView, TabPreviewInteractionCancelling
         leftRecordingHost.isHidden = true
         rightRecordingHost.isHidden = true
 
+        leftDiscardedOutlineHost = TabDecorativeHostingView(
+            rootView: TabDiscardedFaviconOutline(
+                model: leftStatusModel,
+                faviconSize: Self.faviconSize,
+                faviconCornerRadius: Self.faviconCornerRadius
+            )
+        )
+        rightDiscardedOutlineHost = TabDecorativeHostingView(
+            rootView: TabDiscardedFaviconOutline(
+                model: rightStatusModel,
+                faviconSize: Self.faviconSize,
+                faviconCornerRadius: Self.faviconCornerRadius
+            )
+        )
+
         leftMuteWidth = configurePane(leftPane,
                                       icon: leftIconView,
+                                      discardedOutline: leftDiscardedOutlineHost,
                                       iconLeadingSpacing: Self.leftIconLeadingSpacing,
                                       title: leftTitleLabel,
                                       mute: leftMuteHost,
@@ -649,6 +677,7 @@ class SidebarSplitPairCellView: SidebarCellView, TabPreviewInteractionCancelling
                                       closeTrailing: &leftTitleCloseTrailing)
         rightMuteWidth = configurePane(rightPane,
                                        icon: rightIconView,
+                                       discardedOutline: rightDiscardedOutlineHost,
                                        iconLeadingSpacing: Self.rightIconLeadingSpacing,
                                        title: rightTitleLabel,
                                        mute: rightMuteHost,
@@ -729,6 +758,7 @@ class SidebarSplitPairCellView: SidebarCellView, TabPreviewInteractionCancelling
     @discardableResult
     private func configurePane(_ pane: HoverableView,
                                icon: NSImageView,
+                               discardedOutline: NSView,
                                iconLeadingSpacing: CGFloat,
                                title: NSTextField,
                                mute: NSView,
@@ -747,16 +777,35 @@ class SidebarSplitPairCellView: SidebarCellView, TabPreviewInteractionCancelling
         pane.responseToClickAction = true
         pane.layer?.cornerRadius = 6
         pane.layer?.cornerCurve = .continuous
+        pane.layer?.masksToBounds = false
 
         icon.imageScaling = .scaleProportionallyUpOrDown
         icon.wantsLayer = true
-        icon.layer?.cornerRadius = 3
+        icon.layer?.cornerRadius = Self.faviconCornerRadius
         icon.layer?.masksToBounds = true
         pane.addSubview(icon)
         icon.snp.makeConstraints { make in
             make.centerY.equalToSuperview()
             make.leading.equalToSuperview().offset(iconLeadingSpacing)
-            make.size.equalTo(CGSize(width: 16, height: 16))
+            make.size.equalTo(CGSize(
+                width: Self.faviconSize,
+                height: Self.faviconSize
+            ))
+        }
+
+        pane.addSubview(discardedOutline)
+        discardedOutline.snp.makeConstraints { make in
+            make.center.equalTo(icon)
+            make.size.equalTo(CGSize(
+                width: TabCornerBadgeMetrics.discardedOutlineSize(
+                    for: Self.faviconSize,
+                    cornerRadius: Self.faviconCornerRadius
+                ),
+                height: TabCornerBadgeMetrics.discardedOutlineSize(
+                    for: Self.faviconSize,
+                    cornerRadius: Self.faviconCornerRadius
+                )
+            ))
         }
 
         // Recording badge sits at the favicon's top-trailing corner, matching
@@ -895,6 +944,8 @@ class SidebarSplitPairCellView: SidebarCellView, TabPreviewInteractionCancelling
         configuredLeftTab = pair.leftTab
         configuredRightTab = pair.rightTab
         configuredSplitId = pair.groupId
+        leftStatusModel.configure(with: pair.leftTab)
+        rightStatusModel.configure(with: pair.rightTab)
 
         let state = browserState ?? pair.browserState
         if let state,
@@ -1174,6 +1225,8 @@ class SidebarSplitPairCellView: SidebarCellView, TabPreviewInteractionCancelling
             pair.rightTab = oldLeft
             configuredLeftTab = pair.leftTab
             configuredRightTab = pair.rightTab
+            leftStatusModel.configure(with: pair.leftTab)
+            rightStatusModel.configure(with: pair.rightTab)
             updatePaneTitles(leftTitle: pair.leftTab.title, rightTitle: pair.rightTab.title)
             refreshFavicon(into: leftIconView, for: pair.leftTab, handle: &leftFaviconHandle)
             refreshFavicon(into: rightIconView, for: pair.rightTab, handle: &rightFaviconHandle)

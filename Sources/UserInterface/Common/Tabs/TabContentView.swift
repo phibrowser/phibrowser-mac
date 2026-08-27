@@ -4,8 +4,168 @@
 // found in the LICENSE file.
 
 import SwiftUI
+import Lottie
 
 // MARK: - Atomic Components
+
+enum TabCornerBadgeMetrics {
+    static let visualSize: CGFloat = 12
+    static let overhang: CGFloat = 2
+    static let discardedOutlineGap: CGFloat = 1
+    static let discardedOutlineLineWidth: CGFloat = 1
+
+    /// Returns the smallest whole-point circle that clears every point of a
+    /// rounded-square favicon by the configured gap, including half the stroke.
+    static func discardedOutlineSize(
+        for faviconSize: CGFloat,
+        cornerRadius: CGFloat
+    ) -> CGFloat {
+        let normalizedCornerRadius = min(max(cornerRadius, 0), faviconSize / 2)
+        let cornerCenterOffset = faviconSize / 2 - normalizedCornerRadius
+        let faviconCircumradius = hypot(cornerCenterOffset, cornerCenterOffset)
+            + normalizedCornerRadius
+        let outlineRadius = faviconCircumradius
+            + discardedOutlineGap
+            + discardedOutlineLineWidth / 2
+
+        return ceil(outlineRadius * 2)
+    }
+}
+
+final class TabDecorativeHostingView: ThemedHostingView {
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
+}
+
+struct TabCornerBadgeView: View {
+    @ObservedObject var model: TabStatusModel
+    var isSuppressed = false
+
+    var body: some View {
+        TabCornerBadgeVisual(
+            status: isSuppressed ? nil : model.cornerBadgeStatus
+        )
+    }
+}
+
+struct MergedTabCornerBadgeView: View {
+    @ObservedObject var primaryModel: TabStatusModel
+    @ObservedObject var secondaryModel: TabStatusModel
+    var isSuppressed = false
+
+    var body: some View {
+        TabCornerBadgeVisual(
+            status: isSuppressed ? nil : TabCornerBadgeStatus.highestPriority([
+                primaryModel.cornerBadgeStatus,
+                secondaryModel.cornerBadgeStatus
+            ])
+        )
+    }
+}
+
+private struct TabCornerBadgeVisual: View {
+    let status: TabCornerBadgeStatus?
+
+    @Environment(\.phiTheme) private var theme
+    @Environment(\.phiAppearance) private var appearance
+
+    var body: some View {
+        Group {
+            if let status {
+                badge(for: status)
+            }
+        }
+        .frame(width: TabCornerBadgeMetrics.visualSize,
+               height: TabCornerBadgeMetrics.visualSize)
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
+    }
+
+    @ViewBuilder
+    private func badge(for status: TabCornerBadgeStatus) -> some View {
+        switch status {
+        case .agent:
+            lottieBadge(named: "agent", fallbackSystemName: "sparkle")
+        case .inputting:
+            lottieBadge(named: "inputting", fallbackSystemName: "ellipsis")
+        case .chat:
+            Image("chat-mini")
+                .renderingMode(.template)
+                .resizable()
+                .scaledToFit()
+                .frame(width: 10, height: 10)
+                .foregroundStyle(Color(nsColor: badgeColor))
+        }
+    }
+
+    @ViewBuilder
+    private func lottieBadge(named name: String, fallbackSystemName: String) -> some View {
+        if let animation = LottieAnimation.named(
+            name,
+            bundle: .main,
+            subdirectory: "LottieFiles"
+        ) {
+            LottieView(animation: animation)
+                .configuration(LottieConfiguration(renderingEngine: .mainThread))
+                .playbackMode(.playing(
+                    .fromProgress(0, toProgress: 1, loopMode: .loop)
+                ))
+                .configure { animationView in
+                    animationView.setValueProvider(
+                        ColorValueProvider(badgeColor.lottieColor),
+                        keypath: AnimationKeypath(keypath: "**.Color")
+                    )
+                }
+                .id("\(name)-\(theme.id)-\(appearance.description)")
+        } else {
+            Image(systemName: fallbackSystemName)
+                .resizable()
+                .scaledToFit()
+                .foregroundStyle(Color(nsColor: badgeColor))
+        }
+    }
+
+    private var badgeColor: NSColor {
+        BookmarkFolderIcon.strokeColor(theme: theme, appearance: appearance)
+    }
+}
+
+struct TabDiscardedFaviconOutline: View {
+    @ObservedObject var model: TabStatusModel
+    let faviconSize: CGFloat
+    let faviconCornerRadius: CGFloat
+
+    @Environment(\.phiTheme) private var theme
+    @Environment(\.phiAppearance) private var appearance
+
+    var body: some View {
+        if model.isDiscarded {
+            Circle()
+                .stroke(
+                    ThemedColor.textPrimary.swiftUIColor(
+                        theme: theme,
+                        appearance: appearance
+                    ).opacity(0.72),
+                    style: StrokeStyle(
+                        lineWidth: TabCornerBadgeMetrics.discardedOutlineLineWidth,
+                        lineCap: .round,
+                        dash: [3, 3]
+                    )
+                )
+                .frame(
+                    width: TabCornerBadgeMetrics.discardedOutlineSize(
+                        for: faviconSize,
+                        cornerRadius: faviconCornerRadius
+                    ),
+                    height: TabCornerBadgeMetrics.discardedOutlineSize(
+                        for: faviconSize,
+                        cornerRadius: faviconCornerRadius
+                    )
+                )
+                .allowsHitTesting(false)
+                .accessibilityHidden(true)
+        }
+    }
+}
 
 struct UnifiedTabTitleView: View {
     let viewModel: TabViewModel
@@ -189,6 +349,13 @@ struct UnifiedTabFaviconView: View {
         }
         .frame(width: Self.faviconSize, height: Self.faviconSize)
         .clipShape(RoundedRectangle(cornerRadius: Self.faviconCornerRadius, style: .continuous))
+        .overlay {
+            TabDiscardedFaviconOutline(
+                model: viewModel.status,
+                faviconSize: Self.faviconSize,
+                faviconCornerRadius: Self.faviconCornerRadius
+            )
+        }
         .overlay(alignment: .topTrailing) {
             if viewModel.isCapturingMedia {
                 UnifiedTabRecordingIcon()

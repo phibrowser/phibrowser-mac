@@ -177,6 +177,8 @@ class BookmarkCellView: SidebarCellView, TabPreviewInteractionCancelling {
     }
 
     private func setupViews() {
+        wantsLayer = true
+        layer?.masksToBounds = false
         hostingView = ThemedHostingView(rootView: SidebarBookmarkCellContentView(
             state: viewState,
             primaryTabViewModel: primaryTabViewModel,
@@ -200,6 +202,8 @@ class BookmarkCellView: SidebarCellView, TabPreviewInteractionCancelling {
                 self?.selectFolderIcon(icon)
             }
         ))
+        hostingView.wantsLayer = true
+        hostingView.layer?.masksToBounds = false
         addSubview(hostingView)
         hostingView.snp.makeConstraints { make in
             make.edges.equalToSuperview()
@@ -593,7 +597,9 @@ class BookmarkCellView: SidebarCellView, TabPreviewInteractionCancelling {
         configure(viewModel: secondaryTabViewModel, with: panes.secondary)
         viewState.primaryTabIsLive = panes.primary != nil
         viewState.secondaryTabIsLive = panes.secondary != nil
-        viewState.isOpened = panes.primary != nil || panes.secondary != nil || bookmark.isOpened
+        viewState.isOpened = panes.primary?.hasWebContent == true
+            || panes.secondary?.hasWebContent == true
+            || bookmark.webContentWrapper != nil
     }
 
     private func configure(viewModel: TabViewModel, with tab: Tab?) {
@@ -906,10 +912,25 @@ private struct SidebarBookmarkCellContentView: View {
     }
 
     private var borderColor: Color {
-        if isHighlighted && appearance == .dark {
+        if showsOpenBorder {
+            return ThemedColor.border.swiftUIColor(theme: theme, appearance: appearance)
+        }
+        if showsSelectionBorder && appearance == .dark {
             return .white.opacity(0.2)
         }
         return .clear
+    }
+
+    private var showsOpenBorder: Bool {
+        !state.isFolder && state.isOpened && !state.isActive
+    }
+
+    private var showsSelectionBorder: Bool {
+        !state.isActive && (state.isDropTargetHighlighted || state.isMultiSelected)
+    }
+
+    private var borderWidth: CGFloat {
+        showsOpenBorder || showsSelectionBorder ? 1 : 0
     }
 
     private var textColor: ThemedColor {
@@ -1019,9 +1040,22 @@ private struct SidebarBookmarkCellContentView: View {
         )
         .overlay(
             RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .stroke(borderColor, lineWidth: isHighlighted ? 1 : 0)
+                .stroke(borderColor, lineWidth: borderWidth)
         )
         .shadow(color: .black.opacity(isHighlighted ? 0.15 : 0), radius: 1, x: 0, y: 1)
+        .overlay(alignment: .topTrailing) {
+            if !state.isFolder {
+                MergedTabCornerBadgeView(
+                    primaryModel: primaryTabViewModel.status,
+                    secondaryModel: secondaryTabViewModel.status,
+                    isSuppressed: state.showsPeek
+                )
+                .offset(
+                    x: TabCornerBadgeMetrics.overhang,
+                    y: -TabCornerBadgeMetrics.overhang
+                )
+            }
+        }
         .padding(.leading, WebContentConstant.edgesSpacing)
         .padding(.trailing, WebContentConstant.edgesSpacing)
         .padding(.vertical, 2)

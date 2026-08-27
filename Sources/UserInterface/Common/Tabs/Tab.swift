@@ -64,6 +64,8 @@ class Tab: WebContentRepresentable {
     @Published private(set) var cachedFaviconData: Data?
     @Published private(set) var liveFaviconData: Data?
     @Published private(set) var liveFaviconRevision: Int = 0
+    @Published private(set) var hasWebContent = false
+    @Published private(set) var isDiscarded = false
     @Published private(set) var isLoading = false
     @Published private(set) var loadingProgress: CGFloat = 1
     @Published private(set) var canGoBack: Bool = false
@@ -94,6 +96,11 @@ class Tab: WebContentRepresentable {
     /// Per-tab AI Chat sidebar collapsed state.
     @Published var aiChatCollapsed: Bool = true
     @Published var aiChatEnabled: Bool = false
+
+    /// Placeholder state until chat pairing is wired to the tab lifecycle.
+    @Published var hasPairedChat: Bool = false
+    /// Placeholder state until chat generation is wired to the tab lifecycle.
+    @Published var isPairedChatGenerating: Bool = false
 
     /// Native renderer crash-page state, set by `PhiChromiumCoordinator` from
     /// the `showCrashPage` bridge event and cleared on teardown. Non-nil drives
@@ -286,6 +293,8 @@ class Tab: WebContentRepresentable {
         cancellables.removeAll()
         liveFaviconData = nil
         liveFaviconRevision = 0
+        hasWebContent = wrapper != nil
+        isDiscarded = wrapper?.isDiscarded ?? false
 
         guard let wrapper else {
             return
@@ -320,6 +329,11 @@ class Tab: WebContentRepresentable {
         
         wrapper.publisher(for: \.isLoading)
             .assign(to: \.isLoading, on: self)
+            .store(in: &cancellables)
+
+        wrapper.publisher(for: \.isDiscarded)
+            .removeDuplicates()
+            .assign(to: \.isDiscarded, on: self)
             .store(in: &cancellables)
         
         wrapper.publisher(for: \.loadProgress)

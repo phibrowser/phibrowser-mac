@@ -301,6 +301,8 @@
 		A11E00000000000000000002 /* PhiScriptCommands.swift in Sources */ = {isa = PBXBuildFile; fileRef = A11E00000000000000000012 /* PhiScriptCommands.swift */; };
 		A11E00000000000000000003 /* Phi.sdef in Resources */ = {isa = PBXBuildFile; fileRef = A11E00000000000000000013 /* Phi.sdef */; };
 		A1B2C3D4E5F60718293A4B56 /* SharedAuthTokenStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F60718293A4B55 /* SharedAuthTokenStore.swift */; };
+		A57A00000000000000000002 /* agent.json in Copy LottieFiles */ = {isa = PBXBuildFile; fileRef = A57A00000000000000000001 /* agent.json */; };
+		A57A00000000000000000004 /* inputting.json in Copy LottieFiles */ = {isa = PBXBuildFile; fileRef = A57A00000000000000000003 /* inputting.json */; };
 		A71E00000000000000000002 /* PhiAlert.swift in Sources */ = {isa = PBXBuildFile; fileRef = A71E00000000000000000001 /* PhiAlert.swift */; };
 		A71E00000000000000000004 /* CredentialApprovalAlert.swift in Sources */ = {isa = PBXBuildFile; fileRef = A71E00000000000000000003 /* CredentialApprovalAlert.swift */; };
 		A71E00000000000000000006 /* AgentAccessApprovalAlert.swift in Sources */ = {isa = PBXBuildFile; fileRef = A71E00000000000000000005 /* AgentAccessApprovalAlert.swift */; };
@@ -605,6 +607,8 @@
 			dstSubfolderSpec = 7;
 			files = (
 				F02B00040000000000000004 /* BookmarkFolderIcons in Copy LottieFiles */,
+				A57A00000000000000000002 /* agent.json in Copy LottieFiles */,
+				A57A00000000000000000004 /* inputting.json in Copy LottieFiles */,
 				376581A32EE970B000D3E031 /* new-tab-reverse.json in Copy LottieFiles */,
 				37A4750630060D6100F7DC2E /* broom.json in Copy LottieFiles */,
 				37D011013010000100000001 /* refresh.json in Copy LottieFiles */,
@@ -975,6 +979,8 @@
 		A11E00000000000000000012 /* PhiScriptCommands.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhiScriptCommands.swift; sourceTree = "<group>"; };
 		A11E00000000000000000013 /* Phi.sdef */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = Phi.sdef; sourceTree = "<group>"; };
 		A1B2C3D4E5F60718293A4B55 /* SharedAuthTokenStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SharedAuthTokenStore.swift; sourceTree = "<group>"; };
+		A57A00000000000000000001 /* agent.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = agent.json; sourceTree = "<group>"; };
+		A57A00000000000000000003 /* inputting.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = inputting.json; sourceTree = "<group>"; };
 		A71E00000000000000000001 /* PhiAlert.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhiAlert.swift; sourceTree = "<group>"; };
 		A71E00000000000000000003 /* CredentialApprovalAlert.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CredentialApprovalAlert.swift; sourceTree = "<group>"; };
 		A71E00000000000000000005 /* AgentAccessApprovalAlert.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentAccessApprovalAlert.swift; sourceTree = "<group>"; };
@@ -1547,6 +1553,8 @@
 			isa = PBXGroup;
 			children = (
 				F02B00140000000000000004 /* BookmarkFolderIcons */,
+				A57A00000000000000000001 /* agent.json */,
+				A57A00000000000000000003 /* inputting.json */,
 				37A4750530060D5A00F7DC2E /* broom.json */,
 				37D011053010000100000005 /* memory.json */,
 				376581A22EE96FA200D3E031 /* new-tab-reverse.json */,

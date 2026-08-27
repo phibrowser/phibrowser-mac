@@ -79,6 +79,10 @@ enum BookmarkFolderIcon: String, CaseIterable, Identifiable, Sendable {
     static func animationProgress(isExpanded: Bool) -> Double {
         isExpanded ? 1 : 0
     }
+
+    static func strokeColor(theme: Theme, appearance: Appearance) -> NSColor {
+        BookmarkFolderIconPalette(theme: theme, appearance: appearance).stroke
+    }
 }
 
 struct BookmarkFolderIconView: View {

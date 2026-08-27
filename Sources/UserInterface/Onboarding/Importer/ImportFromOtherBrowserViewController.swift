@@ -805,10 +805,10 @@ class ImportFromOtherBrowserViewController: OnboardingBaseViewController {
     }
 
     private func arcProfileDisplayNames() -> [String: String] {
-        let url = FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent("Library/Application Support/Arc/User Data/Local State")
         var map: [String: String] = [:]
-        for p in importer.loadChromiumProfiles(localStateURL: url) { map[p.directory] = p.name }
+        for p in importer.loadChromiumProfiles(localStateURL: BrowserDataImporter.arcLocalStateURL) {
+            map[p.directory] = p.name
+        }
         return map
     }
 
@@ -817,7 +817,10 @@ class ImportFromOtherBrowserViewController: OnboardingBaseViewController {
             arcOptionView.setProfileSelectorVisible(false)
             return
         }
-        arcSpaces = importer.loadArcSpaces()
+        // The picker lists Spaces alphabetically; the parser keeps Arc's order.
+        arcSpaces = importer.loadArcSpaces().sorted {
+            $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending
+        }
         let profileNames = arcProfileDisplayNames()
         if arcSpaces.count > 1 {
             arcOptionView.setEnabled(true)

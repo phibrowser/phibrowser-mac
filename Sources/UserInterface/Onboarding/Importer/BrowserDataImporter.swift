@@ -410,16 +410,39 @@ class BrowserDataImporter {
     
     
     private func getArcSidebarData() -> Data? {
-         let localStateURL = FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent("Library/Application Support/Arc/StorableSidebar.json")
-        return try? Data(contentsOf: localStateURL)
+        return try? Data(contentsOf: Self.arcSidebarURL)
     }
 
-    /// Returns all Arc Spaces from StorableSidebar.json, sorted by title.
+    static let arcSidebarURL = FileManager.default.homeDirectoryForCurrentUser
+        .appendingPathComponent("Library/Application Support/Arc/StorableSidebar.json")
+    /// Arc's `Local State`; its profile cache reads through `loadChromiumProfiles`.
+    static let arcLocalStateURL = FileManager.default.homeDirectoryForCurrentUser
+        .appendingPathComponent("Library/Application Support/Arc/User Data/Local State")
+
+    /// Returns all Arc Spaces from StorableSidebar.json, in Arc's sidebar order.
     /// Used by the import picker to let the user choose which Space to import.
     func loadArcSpaces() -> [ArcSpace] {
         guard let data = getArcSidebarData() else { return [] }
-        return (try? ArcDataParserTool.parse(data: data)) ?? []
+        return (try? ArcDataParserTool.parse(data: data))?.spaces ?? []
+    }
+
+    /// The Arc install as a Migration Source: its profiles from Arc's profile
+    /// cache, plus everything the sidebar file yields.
+    struct ArcMigrationSource {
+        let profiles: [ChromiumProfileInfo]
+        let sidebar: ArcSidebar
+    }
+
+    /// Reads the Arc install as a Migration Source; nil when the sidebar file
+    /// is missing or unreadable.
+    func loadArcMigrationSource(
+        sidebarURL: URL = arcSidebarURL,
+        localStateURL: URL = arcLocalStateURL
+    ) -> ArcMigrationSource? {
+        guard let data = try? Data(contentsOf: sidebarURL),
+              let sidebar = try? ArcDataParserTool.parse(data: data) else { return nil }
+        return ArcMigrationSource(
+            profiles: loadChromiumProfiles(localStateURL: localStateURL), sidebar: sidebar)
     }
     
     /// Imports data for one browser using a continuation-backed async flow.
@@ -650,7 +673,8 @@ class BrowserDataImporter {
             guard let info = infoCache[directory] as? [String: Any] else {
                 continue
             }
-            let name = (info["name"] as? String) ?? directory
+            // An empty display name falls back to the directory basename.
+            let name = (info["name"] as? String).flatMap { $0.isEmpty ? nil : $0 } ?? directory
             let email = info["user_name"] as? String
             results.append(ChromiumProfileInfo(directory: directory, name: name, email: email))
         }

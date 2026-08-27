@@ -14,7 +14,7 @@ extension LocalStore {
     static let defaultSpaceId = "default-space"
 
     private static let defaultSpaceName = "Default"
-    private static let defaultSpaceColorHex = "#3A6FF8"
+    static let defaultSpaceColorHex = "#3A6FF8"
     // Keep the existing view-grid-add artwork while using the semantic asset
     // name written by the current icon chooser.
     private static let defaultSpaceIconName = "phi:phi-icon-view-grid-add"

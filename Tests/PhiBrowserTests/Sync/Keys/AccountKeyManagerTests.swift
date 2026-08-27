@@ -60,6 +60,25 @@ final class AccountKeyManagerTests: XCTestCase {
             }
         }
         func denyJoinRequest(id: String) async throws { denyCalls.append(id) }
+
+        // profile keys
+        var profileEnvelopes: [String: Data] = [:]
+        static let profileCreatedAt = Date(timeIntervalSince1970: 1_700_000_000)
+
+        func listProfiles() async throws -> [ProfileSummaryDTO] {
+            profileEnvelopes.keys.sorted().map {
+                ProfileSummaryDTO(profileUuid: $0, hasEnvelope: true, createdAt: Self.profileCreatedAt)
+            }
+        }
+        func getProfileKey(uuid: String) async throws -> ProfileKeyDTO? {
+            guard let e = profileEnvelopes[uuid] else { return nil }
+            return ProfileKeyDTO(profileUuid: uuid, profileKeyEnvelope: e, createdAt: Self.profileCreatedAt)
+        }
+        func putProfileKey(uuid: String, envelope: Data) async throws -> Bool {
+            if profileEnvelopes[uuid] != nil { return false }
+            profileEnvelopes[uuid] = envelope
+            return true
+        }
     }
 
     // In-memory fake device key: same fingerprinting algorithm as `DeviceKeyStore`

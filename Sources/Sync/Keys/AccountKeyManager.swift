@@ -12,6 +12,9 @@ protocol KeyEnvelopeAPI {
     func getJoinRequest(id: String) async throws -> JoinRequestDTO
     func approveJoinRequest(id: String, grantedArkEnvelope: Data, resolvedByDeviceKeyId: String) async throws
     func denyJoinRequest(id: String) async throws
+    func listProfiles() async throws -> [ProfileSummaryDTO]
+    func getProfileKey(uuid: String) async throws -> ProfileKeyDTO?
+    func putProfileKey(uuid: String, envelope: Data) async throws -> Bool
 }
 extension KeyEnvelopeAPIClient: KeyEnvelopeAPI {}
 

@@ -318,7 +318,10 @@ final class KioskBrowserToolbar: NSVisualEffectView {
     }
 
     private func displayAddressText(for url: String?) -> String {
-        guard let url, !url.isEmpty, !url.isNTP else { return "" }
+        guard let url,
+              !url.isEmpty,
+              url != "about:blank",
+              !url.isNTP else { return "" }
         return URLProcessor.displayName(
             for: URLProcessor.phiBrandEnsuredUrlString(url)
         )

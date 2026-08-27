@@ -485,29 +485,7 @@ extension AppController {
             } else
 
             if menuRole == .file, let subMenu = menuItem.submenu {
-                subMenu.items.forEach { item in
-                    if item.tag == CommandWrapper.IDC_SAVE_PAGE.rawValue {
-                        item.keyEquivalent = ""
-                        item.keyEquivalentModifierMask = .init(rawValue: 0)
-                    }
-                }
-                // Remove-then-insert keeps this idempotent across menu
-                // rebuilds (Chromium can swap the main menu wholesale).
-                subMenu.items.removeAll { $0.tag == AppController.fileNewIncognitoSpaceItemTag }
-                let newIncognitoSpaceItem = NSMenuItem(
-                    title: NSLocalizedString("app.fileMenu.createNewIncognitoSpace", value: "New Incognito Space", comment: "File menu - Create a new Incognito Space and bring it to the front"),
-                    action: #selector(newIncognitoSpaceFromMenu(_:)),
-                    keyEquivalent: ""
-                )
-                newIncognitoSpaceItem.tag = AppController.fileNewIncognitoSpaceItemTag
-                newIncognitoSpaceItem.target = self
-                if let incognitoWindowIndex = subMenu.items.firstIndex(where: {
-                    $0.tag == CommandWrapper.IDC_NEW_INCOGNITO_WINDOW.rawValue
-                }) {
-                    subMenu.insertItem(newIncognitoSpaceItem, at: incognitoWindowIndex + 1)
-                } else {
-                    subMenu.addItem(newIncognitoSpaceItem)
-                }
+                Self.installOrUpdateFileMenuItems(in: subMenu, target: self)
             } else
             
             if menuRole == .profiles {
@@ -667,6 +645,58 @@ extension AppController {
             }
             #endif // DEBUG || NIGHTLY_BUILD
         }
+    }
+
+    static func installOrUpdateFileMenuItems(
+        in subMenu: NSMenu,
+        target: AppController?
+    ) {
+        subMenu.items.forEach { item in
+            if item.tag == CommandWrapper.IDC_SAVE_PAGE.rawValue {
+                item.keyEquivalent = ""
+                item.keyEquivalentModifierMask = .init(rawValue: 0)
+            }
+        }
+
+        // Chromium can replace the main menu wholesale. Remove and reinsert
+        // Phi's rows so rebuilding remains idempotent and keeps Kiosk directly
+        // below New Incognito Window.
+        subMenu.items.removeAll { item in
+            item.tag == CommandWrapper.PHI_NEW_KIOSK_WINDOW.rawValue
+                || item.tag == AppController.fileNewIncognitoSpaceItemTag
+        }
+
+        let newKioskWindowItem = NSMenuItem(
+            title: NSLocalizedString(
+                "app.fileMenu.createNewKioskWindow",
+                value: "New Kiosk Window",
+                comment: "File menu - Create a Kiosk window and open its omnibox"
+            ),
+            action: #selector(AppController.newKioskWindowFromMenu(_:)),
+            keyEquivalent: "n"
+        )
+        newKioskWindowItem.keyEquivalentModifierMask = [.command, .option]
+        newKioskWindowItem.tag = CommandWrapper.PHI_NEW_KIOSK_WINDOW.rawValue
+        Shortcuts.updateShortcut(for: newKioskWindowItem)
+        newKioskWindowItem.target = target
+
+        let newIncognitoSpaceItem = NSMenuItem(
+            title: NSLocalizedString(
+                "app.fileMenu.createNewIncognitoSpace",
+                value: "New Incognito Space",
+                comment: "File menu - Create a new Incognito Space and bring it to the front"
+            ),
+            action: #selector(AppController.newIncognitoSpaceFromMenu(_:)),
+            keyEquivalent: ""
+        )
+        newIncognitoSpaceItem.tag = AppController.fileNewIncognitoSpaceItemTag
+        newIncognitoSpaceItem.target = target
+
+        let insertionIndex = subMenu.items.firstIndex(where: {
+            $0.tag == CommandWrapper.IDC_NEW_INCOGNITO_WINDOW.rawValue
+        }).map { $0 + 1 } ?? subMenu.items.count
+        subMenu.insertItem(newKioskWindowItem, at: insertionIndex)
+        subMenu.insertItem(newIncognitoSpaceItem, at: insertionIndex + 1)
     }
 
     fileprivate func rebuildDeleteProfileSubmenu(_ menu: NSMenu) {
@@ -2223,6 +2253,122 @@ extension AppController {
         }
     }
 
+    /// Opens about:blank in a Kiosk that inherits the focused window's exact
+    /// profile, then presents the native omnibox once AppKit leaves menu
+    /// tracking. With no browser window open, Chromium's last-used profile is
+    /// used instead, matching the windowless New Window commands.
+    @objc func newKioskWindowFromMenu(_ sender: Any?) {
+        MainActor.assumeIsolated {
+            openNewKioskWindow(bringToFront: false)
+        }
+    }
+
+    func newKioskWindowFromGlobalShortcut() {
+        MainActor.assumeIsolated {
+            openNewKioskWindow(bringToFront: true)
+        }
+    }
+
+    @MainActor
+    private func openNewKioskWindow(bringToFront: Bool) {
+        let manager = MainBrowserWindowControllersManager.shared
+        guard ApplicationState.shared.canOpenExternalLinksInKiosk,
+              !manager.isGuestTransitionInteractionBlocked,
+              let bridge = ChromiumLauncher.sharedInstance().bridge else {
+            return
+        }
+        if manager.activeWindowController == nil,
+           SpaceManager.shared.isSessionRestoreInFlight {
+            return
+        }
+
+        let kioskController: KioskBrowserWindowController?
+        if let source = manager.activeWindowController {
+            kioskController = openKioskWindow(
+                from: source,
+                bridge: bridge,
+                manager: manager
+            )
+        } else {
+            kioskController = openWindowlessKiosk(
+                bridge: bridge,
+                manager: manager
+            )
+        }
+        guard let kioskController else { return }
+
+        let windowId = kioskController.windowId
+        DispatchQueue.main.async { [weak kioskController] in
+            guard let kioskController,
+                  manager.controller(for: windowId) === kioskController else {
+                return
+            }
+            if bringToFront, let window = kioskController.window {
+                Self.bringKioskWindowToFront(window)
+            }
+            kioskController.presentOmniBoxCentered()
+        }
+    }
+
+    @MainActor
+    static func bringKioskWindowToFront(
+        _ window: NSWindow
+    ) {
+        window.orderFrontRegardless()
+        window.makeKey()
+    }
+
+    @MainActor
+    private func openKioskWindow(
+        from source: MainBrowserWindowController,
+        bridge: PhiChromiumBridgeProtocol,
+        manager: MainBrowserWindowControllersManager
+    ) -> KioskBrowserWindowController? {
+        let selector = NSSelectorFromString("openURLInKiosk:sourceWindowId:")
+        guard bridge.responds(to: selector) else { return nil }
+
+        let existingWindowIds = Set(manager.getAllWindows().map(\.windowId))
+        guard bridge.openURL(
+            inKiosk: "about:blank",
+            sourceWindowId: Int64(source.windowId)
+        ) else {
+            return nil
+        }
+        return manager.getAllWindows()
+            .compactMap { $0 as? KioskBrowserWindowController }
+            .first { !existingWindowIds.contains($0.windowId) }
+    }
+
+    @MainActor
+    private func openWindowlessKiosk(
+        bridge: PhiChromiumBridgeProtocol,
+        manager: MainBrowserWindowControllersManager
+    ) -> KioskBrowserWindowController? {
+        guard let result = bridge.createBrowser(
+            withWindowType: .kiosk,
+            profileId: nil,
+            hidden: false
+        ), let windowIdNumber = result["windowId"] as? NSNumber else {
+            return nil
+        }
+
+        let windowId = windowIdNumber.intValue
+        guard let controller = manager.controller(for: windowId)
+                as? KioskBrowserWindowController,
+              bridge.createNewTabStrictly(
+                withUrl: "about:blank",
+                windowId: Int64(windowId),
+                focusAfterCreate: true
+              ) else {
+            bridge.executeCommand(
+                Int32(CommandWrapper.IDC_CLOSE_WINDOW.rawValue),
+                windowId: Int64(windowId)
+            )
+            return nil
+        }
+        return controller
+    }
+
     @objc func activateNextSpace(_ sender: Any?) {
         cycleActiveSpace(by: 1)
     }
@@ -2501,6 +2647,15 @@ extension AppController {
                 menuItem.isHidden = !spacesFeatureEnabled
             }
             return spacesFeatureEnabled && ApplicationState.shared.canUseBrowser
+        }
+        if item.action == #selector(newKioskWindowFromMenu(_:)) {
+            guard ApplicationState.shared.canOpenExternalLinksInKiosk,
+                  ChromiumLauncher.sharedInstance().bridge != nil else {
+                return false
+            }
+            return MainBrowserWindowControllersManager.shared
+                .activeWindowController != nil
+                || !SpaceManager.shared.isSessionRestoreInFlight
         }
         if item.action == #selector(deleteSelectedProfile(_:)) {
             guard spacesFeatureEnabled,

@@ -73,7 +73,11 @@ extension MainBrowserWindowController {
 
         if omniBoxContainerViewController?.hasShown ?? false == false {
             if omniBoxContainerViewController == nil {
-                omniBoxContainerViewController = OmniBoxContainerViewController(browserState: self.browserState, superView: omnibackgroundView)
+                omniBoxContainerViewController = OmniBoxContainerViewController(
+                    browserState: browserState,
+                    superView: omnibackgroundView,
+                    centeredHorizontalInset: centeredOmniBoxHorizontalInset
+                )
             }
             omniBoxContainerViewController?.omniBoxController?.beginOpenTrace(
                 trigger: fromAddressBar ? "address-bar" : "omnibox",

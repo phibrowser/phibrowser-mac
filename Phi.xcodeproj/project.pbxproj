@@ -96,6 +96,7 @@
 		37C1B0E22ED80CFB00DD4496 /* ShortcutsSettingViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 37C1B0E12ED80CFB00DD4496 /* ShortcutsSettingViewController.swift */; };
 		37C1B0E72ED851CE00DD4496 /* ShortcutsViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 37C1B0E62ED851CE00DD4496 /* ShortcutsViewModel.swift */; };
 		37C1B0E92ED8531700DD4496 /* Shortcuts+Custom.swift in Sources */ = {isa = PBXBuildFile; fileRef = 37C1B0E82ED8531700DD4496 /* Shortcuts+Custom.swift */; };
+		4B4B00000000000000000001 /* KioskGlobalShortcutRegistrar.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4B4B00000000000000000002 /* KioskGlobalShortcutRegistrar.swift */; };
 		37C1B1E42EDEA03400DD4496 /* FeedbackView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 37C1B1E32EDEA03400DD4496 /* FeedbackView.swift */; };
 		37C1B1E62EDEA1E200DD4496 /* FeedbackViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 37C1B1E52EDEA1E200DD4496 /* FeedbackViewController.swift */; };
 		37C1B2822EE0396900DD4496 /* DownloadsManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 37C1B2812EE0396900DD4496 /* DownloadsManager.swift */; };
@@ -765,6 +766,7 @@
 		37C1B0E12ED80CFB00DD4496 /* ShortcutsSettingViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShortcutsSettingViewController.swift; sourceTree = "<group>"; };
 		37C1B0E62ED851CE00DD4496 /* ShortcutsViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShortcutsViewModel.swift; sourceTree = "<group>"; };
 		37C1B0E82ED8531700DD4496 /* Shortcuts+Custom.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Shortcuts+Custom.swift"; sourceTree = "<group>"; };
+		4B4B00000000000000000002 /* KioskGlobalShortcutRegistrar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KioskGlobalShortcutRegistrar.swift; sourceTree = "<group>"; };
 		37C1B1142ED98B6000DD4496 /* README.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = README.md; sourceTree = "<group>"; };
 		37C1B1E32EDEA03400DD4496 /* FeedbackView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeedbackView.swift; sourceTree = "<group>"; };
 		37C1B1E52EDEA1E200DD4496 /* FeedbackViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeedbackViewController.swift; sourceTree = "<group>"; };
@@ -2150,6 +2152,7 @@
 			isa = PBXGroup;
 			children = (
 				37A4A06F30174C5800F7DC2E /* Apple Scripts */,
+				4B4B00000000000000000002 /* KioskGlobalShortcutRegistrar.swift */,
 				B02586F22E42FD97001B08FC /* PhiApplication.h */,
 				B02586F32E42FD97001B08FC /* PhiApplication.m */,
 				B02586F02E42FD97001B08FC /* AppController.swift */,
@@ -3220,6 +3223,7 @@
 				A7E1C0020000000000000002 /* ChromiumHostingPanel.swift in Sources */,
 				CCBF8FA22E698A7400B9A99E /* MainBrowserWindowControllersManager.swift in Sources */,
 				B02586F62E42FD97001B08FC /* AppController.swift in Sources */,
+				4B4B00000000000000000001 /* KioskGlobalShortcutRegistrar.swift in Sources */,
 				8E6145BE2F753469001919BA /* ImportDataTypeViewController.swift in Sources */,
 				37C1B2882EE0418700DD4496 /* DownloadsManager+Test.swift in Sources */,
 				37C1B3322EE691E700DD4496 /* LottieAnimationView.swift in Sources */,

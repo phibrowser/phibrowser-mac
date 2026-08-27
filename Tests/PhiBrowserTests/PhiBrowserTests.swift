@@ -50,6 +50,220 @@ final class PhiBrowserTests: XCTestCase {
         XCTAssertEqual(CommandWrapper.PHI_COPY_URL.displayName, "Copy URL")
     }
 
+    func testNewKioskWindowShortcutIsCustomizableFromFileShortcuts() {
+        XCTAssertEqual(
+            Shortcuts.DefaultShortcuts[.PHI_NEW_KIOSK_WINDOW],
+            ShortcutsKey(characters: "n", modifiers: [.command, .option])
+        )
+        XCTAssertTrue(
+            Shortcuts.Group.file.commands.contains(.PHI_NEW_KIOSK_WINDOW)
+        )
+        XCTAssertEqual(
+            CommandWrapper.PHI_NEW_KIOSK_WINDOW.displayName,
+            "New Kiosk Window"
+        )
+    }
+
+    func testKioskGlobalShortcutDefaultsOffAndFormatsCurrentShortcut() {
+        XCTAssertFalse(
+            PhiPreferences.GeneralSettings
+                .openKioskWithGlobalShortcut.defaultValue
+        )
+        XCTAssertEqual(
+            NavigationsSettingsView.globalShortcutTitle(
+                shortcutDescription: "⌘⌥N"
+            ),
+            "Open Kiosk when press ⌘⌥N in any app"
+        )
+    }
+
+    func testKioskGlobalShortcutRegistrationRequiresEnabledPreference() throws {
+        let shortcut = try XCTUnwrap(
+            Shortcuts.DefaultShortcuts[.PHI_NEW_KIOSK_WINDOW]
+        )
+
+        XCTAssertNil(
+            KioskGlobalShortcutRegistrar.configuration(
+                for: shortcut,
+                isEnabled: false
+            )
+        )
+
+        let configuration = try XCTUnwrap(
+            KioskGlobalShortcutRegistrar.configuration(
+                for: shortcut,
+                isEnabled: true
+            )
+        )
+        XCTAssertEqual(configuration.keyCode, UInt32(kVK_ANSI_N))
+        XCTAssertEqual(
+            configuration.modifiers,
+            UInt32(cmdKey | optionKey)
+        )
+    }
+
+    @MainActor
+    func testGlobalKioskWaitsForApplicationActivationBeforeOpening() {
+        let events = KioskFrontingEventRecorder()
+        let notificationCenter = NotificationCenter()
+        let activationObject = NSObject()
+        let registrar = KioskGlobalShortcutRegistrar(
+            action: {
+                events.values.append("open")
+            },
+            isApplicationActive: { false },
+            activateApplication: {
+                events.values.append("activate")
+            },
+            notificationCenter: notificationCenter,
+            activationNotificationObject: activationObject,
+            scheduleAfterActivation: { action in
+                events.values.append("schedule")
+                action()
+            }
+        )
+
+        registrar.performActionAfterApplicationActivation()
+        XCTAssertEqual(events.values, ["activate"])
+
+        notificationCenter.post(
+            name: NSApplication.didBecomeActiveNotification,
+            object: activationObject
+        )
+        XCTAssertEqual(events.values, ["activate", "schedule", "open"])
+    }
+
+    @MainActor
+    func testGlobalKioskFrontingOrdersAndKeysWindow() {
+        let events = KioskFrontingEventRecorder()
+        let window = KioskFrontingTestWindow(events: events)
+
+        AppController.bringKioskWindowToFront(window)
+
+        XCTAssertEqual(
+            events.values,
+            ["orderFrontRegardless", "makeKey"]
+        )
+    }
+
+    func testNewKioskWindowShortcutInterceptsChromiumNewSplitTabShortcut() throws {
+        let previousOverrides = Shortcuts.overridedShortcuts
+        defer {
+            Shortcuts.overridedShortcuts = previousOverrides
+            CommandDispatcher.reloadPhiShortcutMap()
+        }
+        Shortcuts.overridedShortcuts.removeValue(forKey: .PHI_NEW_KIOSK_WINDOW)
+        CommandDispatcher.reloadPhiShortcutMap()
+
+        let event = try makeShortcutKeyEvent(
+            characters: "n",
+            charactersIgnoringModifiers: "n",
+            modifiers: [.command, .option],
+            keyCode: UInt16(kVK_ANSI_N)
+        )
+
+        XCTAssertEqual(CommandWrapper.IDC_NEW_SPLIT_TAB.rawValue, 34057)
+        XCTAssertEqual(
+            CommandDispatcher.interceptedPhiCommand(
+                for: event,
+                inputSourceIdentifier: InputSource.us
+            ),
+            .PHI_NEW_KIOSK_WINDOW
+        )
+    }
+
+    func testChromiumNewSplitTabShortcutFallsThroughAfterKioskShortcutChanges() throws {
+        let previousOverrides = Shortcuts.overridedShortcuts
+        defer {
+            Shortcuts.overridedShortcuts = previousOverrides
+            CommandDispatcher.reloadPhiShortcutMap()
+        }
+        Shortcuts.overridedShortcuts[.PHI_NEW_KIOSK_WINDOW] = ShortcutsKey(
+            characters: "k",
+            modifiers: [.command, .control]
+        )
+        CommandDispatcher.reloadPhiShortcutMap()
+
+        let splitTabEvent = try makeShortcutKeyEvent(
+            characters: "n",
+            charactersIgnoringModifiers: "n",
+            modifiers: [.command, .option],
+            keyCode: UInt16(kVK_ANSI_N)
+        )
+        let kioskEvent = try makeShortcutKeyEvent(
+            characters: "k",
+            charactersIgnoringModifiers: "k",
+            modifiers: [.command, .control],
+            keyCode: UInt16(kVK_ANSI_K)
+        )
+
+        XCTAssertNil(
+            CommandDispatcher.interceptedPhiCommand(
+                for: splitTabEvent,
+                inputSourceIdentifier: InputSource.us
+            )
+        )
+        XCTAssertEqual(
+            CommandDispatcher.interceptedPhiCommand(
+                for: kioskEvent,
+                inputSourceIdentifier: InputSource.us
+            ),
+            .PHI_NEW_KIOSK_WINDOW
+        )
+    }
+
+    func testFileMenuInstallsKioskWindowBelowIncognitoWindow() throws {
+        let previousOverrides = Shortcuts.overridedShortcuts
+        defer { Shortcuts.overridedShortcuts = previousOverrides }
+        Shortcuts.overridedShortcuts.removeValue(forKey: .PHI_NEW_KIOSK_WINDOW)
+
+        let menu = NSMenu(title: "File")
+        let incognitoItem = NSMenuItem(
+            title: "New Incognito Window",
+            action: nil,
+            keyEquivalent: ""
+        )
+        incognitoItem.tag = CommandWrapper.IDC_NEW_INCOGNITO_WINDOW.rawValue
+        menu.addItem(incognitoItem)
+
+        AppController.installOrUpdateFileMenuItems(in: menu, target: nil)
+        AppController.installOrUpdateFileMenuItems(in: menu, target: nil)
+
+        let kioskItems = menu.items.filter {
+            $0.tag == CommandWrapper.PHI_NEW_KIOSK_WINDOW.rawValue
+        }
+        let kioskItem = try XCTUnwrap(kioskItems.first)
+        let incognitoIndex = try XCTUnwrap(menu.items.firstIndex(of: incognitoItem))
+        let kioskIndex = try XCTUnwrap(menu.items.firstIndex(of: kioskItem))
+
+        XCTAssertEqual(kioskItems.count, 1)
+        XCTAssertEqual(kioskIndex, incognitoIndex + 1)
+        XCTAssertEqual(kioskItem.title, "New Kiosk Window")
+        XCTAssertEqual(
+            kioskItem.action,
+            NSSelectorFromString("newKioskWindowFromMenu:")
+        )
+        XCTAssertEqual(kioskItem.keyEquivalent, "n")
+        XCTAssertEqual(
+            kioskItem.keyEquivalentModifierMask,
+            [.command, .option]
+        )
+
+        Shortcuts.overridedShortcuts[.PHI_NEW_KIOSK_WINDOW] = ShortcutsKey(
+            characters: "k",
+            modifiers: [.command, .control]
+        )
+        AppController.installOrUpdateFileMenuItems(in: menu, target: nil)
+        let customizedItem = try XCTUnwrap(menu.items.first {
+            $0.tag == CommandWrapper.PHI_NEW_KIOSK_WINDOW.rawValue
+        })
+        XCTAssertEqual(customizedItem.keyEquivalent, "k")
+        XCTAssertEqual(
+            customizedItem.keyEquivalentModifierMask,
+            [.command, .control]
+        )
+    }
+
     func testInputSourceIdentifierSelectionPrefersTextContextAndUsesSystemFallback() {
         var systemLookupCount = 0
         XCTAssertEqual(
@@ -2695,6 +2909,32 @@ final class PhiBrowserTests: XCTestCase {
         XCTAssertEqual(actualColor.greenComponent, expectedColor.greenComponent, accuracy: 0.001, file: file, line: line)
         XCTAssertEqual(actualColor.blueComponent, expectedColor.blueComponent, accuracy: 0.001, file: file, line: line)
         XCTAssertEqual(actualColor.alphaComponent, expectedColor.alphaComponent, accuracy: 0.001, file: file, line: line)
+    }
+}
+
+private final class KioskFrontingEventRecorder {
+    var values: [String] = []
+}
+
+private final class KioskFrontingTestWindow: NSWindow {
+    private let events: KioskFrontingEventRecorder
+
+    init(events: KioskFrontingEventRecorder) {
+        self.events = events
+        super.init(
+            contentRect: .zero,
+            styleMask: [.titled],
+            backing: .buffered,
+            defer: false
+        )
+    }
+
+    override func orderFrontRegardless() {
+        events.values.append("orderFrontRegardless")
+    }
+
+    override func makeKey() {
+        events.values.append("makeKey")
     }
 }
 

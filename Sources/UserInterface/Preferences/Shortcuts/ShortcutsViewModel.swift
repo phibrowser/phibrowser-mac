@@ -169,6 +169,8 @@ private extension CommandWrapper {
             return NSLocalizedString("settings.shortcuts.command.newWindow", value: "New Window", comment: "Shortcuts settings - Command title for opening a new window")
         case .IDC_NEW_INCOGNITO_WINDOW:
             return NSLocalizedString("settings.shortcuts.command.newIncognitoWindow", value: "New Incognito Window", comment: "Shortcuts settings - Command title for opening a new Incognito window")
+        case .PHI_NEW_KIOSK_WINDOW:
+            return NSLocalizedString("settings.shortcuts.command.newKioskWindow", value: "New Kiosk Window", comment: "Shortcuts settings - Command title for opening a new Kiosk window")
         case .IDC_RESTORE_TAB:
             return NSLocalizedString("settings.shortcuts.command.reopenClosedTab", value: "Reopen Closed Tab", comment: "Shortcuts settings - Command title for reopening the most recently closed tab")
         case .IDC_FOCUS_LOCATION:

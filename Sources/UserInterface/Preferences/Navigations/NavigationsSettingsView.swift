@@ -3,6 +3,7 @@
 // Use of this source code is governed by an Apache license that can be
 // found in the LICENSE file.
 
+import Combine
 import SwiftUI
 
 struct NavigationsSettingsView: View {
@@ -12,8 +13,14 @@ struct NavigationsSettingsView: View {
     @AppStorage(PhiPreferences.GeneralSettings.openKioskOnCommandOptionClick.rawValue)
     private var openKioskOnCommandOptionClick: Bool = PhiPreferences.GeneralSettings.openKioskOnCommandOptionClick.defaultValue
 
+    @AppStorage(PhiPreferences.GeneralSettings.openKioskWithGlobalShortcut.rawValue)
+    private var openKioskWithGlobalShortcut: Bool = PhiPreferences.GeneralSettings.openKioskWithGlobalShortcut.defaultValue
+
     @AppStorage(PhiPreferences.GeneralSettings.peekViewEnabled.rawValue)
     private var peekViewEnabled: Bool = PhiPreferences.GeneralSettings.peekViewEnabled.defaultValue
+
+    @State private var kioskShortcutDescription =
+        NavigationsSettingsView.currentKioskShortcutDescription
 
     var body: some View {
         ScrollView(.vertical) {
@@ -28,6 +35,19 @@ struct NavigationsSettingsView: View {
                             description: NSLocalizedString("settings.navigations.kiosk.externalLinks.description", value: "Links opened from other apps use a focused, single-page Kiosk window.", comment: "Navigations settings - Explanation of the external-links Kiosk toggle"),
                             isOn: $openExternalLinksInKiosk,
                             onChange: { AppController.shared?.setOpenExternalLinksInKioskEnabled($0) }
+                        )
+
+                        SettingsRowDivider()
+
+                        NavigationsSettingsToggleRow(
+                            title: Self.globalShortcutTitle(
+                                shortcutDescription: kioskShortcutDescription
+                            ),
+                            isOn: $openKioskWithGlobalShortcut,
+                            onChange: {
+                                AppController.shared?
+                                    .setOpenKioskWithGlobalShortcutEnabled($0)
+                            }
                         )
 
                         SettingsRowDivider()
@@ -91,6 +111,26 @@ struct NavigationsSettingsView: View {
         }
         .themedBackground(PhiPreferences.fixedWindowBackground)
         .frame(width: 680, height: 561)
+        .onReceive(
+            NotificationCenter.default.publisher(for: .shortcutsDidChange)
+        ) { _ in
+            kioskShortcutDescription = Self.currentKioskShortcutDescription
+        }
+    }
+
+    static func globalShortcutTitle(shortcutDescription: String) -> String {
+        String(
+            format: NSLocalizedString(
+                "settings.navigations.kiosk.globalShortcut.title",
+                value: "Open Kiosk when pressing %@ in any app",
+                comment: "Navigations settings - Toggle title for enabling the system-wide Kiosk shortcut; %@ is replaced by the current New Kiosk Window shortcut"
+            ),
+            shortcutDescription
+        )
+    }
+
+    private static var currentKioskShortcutDescription: String {
+        Shortcuts.key(for: .PHI_NEW_KIOSK_WINDOW)?.displayString ?? "—"
     }
 }
 
@@ -121,13 +161,13 @@ private struct NavigationsSettingsSection<Content: View>: View {
 
 private struct NavigationsSettingsToggleRow: View {
     let title: String
-    let description: String
+    let description: String?
     @Binding var isOn: Bool
     let onChange: (Bool) -> Void
 
     init(
         title: String,
-        description: String,
+        description: String? = nil,
         isOn: Binding<Bool>,
         onChange: @escaping (Bool) -> Void
     ) {
@@ -143,10 +183,12 @@ private struct NavigationsSettingsToggleRow: View {
                 Text(title)
                     .font(.system(size: 13))
                     .themedForeground(.textPrimary)
-                Text(description)
-                    .font(.system(size: 11))
-                    .themedForeground(.textTertiary)
-                    .fixedSize(horizontal: false, vertical: true)
+                if let description {
+                    Text(description)
+                        .font(.system(size: 11))
+                        .themedForeground(.textTertiary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
             }
             Spacer(minLength: 12)
             Toggle("", isOn: $isOn)

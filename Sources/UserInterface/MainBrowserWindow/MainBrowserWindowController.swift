@@ -68,6 +68,8 @@ class MainBrowserWindowController: NSWindowController {
     private(set) var omniBoxHostPanel: NSPanel?
     private var omniBoxHostResizeObserver: NSObjectProtocol?
 
+    var centeredOmniBoxHorizontalInset: CGFloat { 0 }
+
     private final class KeyableOverlayPanel: NSPanel {
         override var canBecomeKey: Bool { true }
     }

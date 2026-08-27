@@ -186,23 +186,11 @@ class APIClient {
     // MARK: - Agent Persona
 
     func getAgentAvatar() async throws -> AgentAvatarResponse {
-        let (data, response) = try await executePhiAgentRequest { baseURL in
-            let url = URL(string: "\(baseURL)/api/v1/agent-persona/avatar")!
-            var request = URLRequest(url: url)
-            request.setValue("Bearer \(self.token)", forHTTPHeaderField: "Authorization")
-            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-            return request
+        let response = try await sendPhiAgentRequest(path: "/api/v1/agent-persona/avatar")
+        guard (200...299).contains(response.statusCode) else {
+            throw APIError.httpError(statusCode: response.statusCode)
         }
-
-        guard let httpResponse = response as? HTTPURLResponse else {
-            throw APIError.invalidResponse
-        }
-
-        guard (200...299).contains(httpResponse.statusCode) else {
-            throw APIError.httpError(statusCode: httpResponse.statusCode)
-        }
-
-        return try JSONDecoder().decode(AgentAvatarResponse.self, from: data)
+        return try JSONDecoder().decode(AgentAvatarResponse.self, from: response.body)
     }
 
     // MARK: - Agent Spaces
@@ -216,7 +204,7 @@ class APIClient {
         userPresent: Bool,
         handback: Bool = false
     ) async throws {
-        _ = try await postAgentSpaceAction(
+        try await postAgentSpaceAction(
             taskId: taskId,
             action: "presence",
             body: [
@@ -229,7 +217,7 @@ class APIClient {
     /// Hands control of an agent Space to the user (interrupt). `reason` is
     /// typically "user_interrupt".
     func handoffAgentSpace(taskId: String, reason: String) async throws {
-        _ = try await postAgentSpaceAction(
+        try await postAgentSpaceAction(
             taskId: taskId,
             action: "handoff",
             body: ["reason": reason]
@@ -240,59 +228,39 @@ class APIClient {
         taskId: String,
         action: String,
         body: [String: Any]
-    ) async throws -> (Data, URLResponse) {
+    ) async throws {
         let payload = try JSONSerialization.data(withJSONObject: body)
-        let (data, response) = try await executePhiAgentRequest { baseURL in
-            let encoded =
-                taskId.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed)
-                ?? taskId
-            let url = URL(string: "\(baseURL)/api/agent-spaces/\(encoded)/\(action)")!
-            var request = URLRequest(url: url)
-            request.httpMethod = "POST"
-            request.setValue("Bearer \(self.token)", forHTTPHeaderField: "Authorization")
-            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-            request.httpBody = payload
-            return request
-        }
-        guard let httpResponse = response as? HTTPURLResponse,
-              (200...299).contains(httpResponse.statusCode) else {
+        let encoded =
+            taskId.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed)
+            ?? taskId
+        let response = try await sendPhiAgentRequest(
+            path: "/api/agent-spaces/\(encoded)/\(action)",
+            method: "POST",
+            body: payload
+        )
+        guard (200...299).contains(response.statusCode) else {
             throw APIError.invalidResponse
         }
-        return (data, response)
     }
 
-    /// Sends a request to the local phi-agent, resolving its base URL through
-    /// `PhiAgentEndpointResolver` so dynamic port assignment by Sentinel is
-    /// honored. On a transport-level error (no listener, refused connection,
-    /// timeout) the resolver cache is dropped and the request is rebuilt and
-    /// retried exactly once with a freshly resolved endpoint.
-    private func executePhiAgentRequest(
-        build: (_ baseURL: String) -> URLRequest
-    ) async throws -> (Data, URLResponse) {
-        let firstBase = await PhiAgentEndpointResolver.shared.currentBaseURL()
-        do {
-            return try await URLSession.shared.data(for: build(firstBase))
-        } catch let error as URLError where Self.isPhiAgentTransportError(error) {
-            await PhiAgentEndpointResolver.shared.invalidate()
-            let retryBase = await PhiAgentEndpointResolver.shared.currentBaseURL()
-            if retryBase == firstBase {
-                throw error
-            }
-            return try await URLSession.shared.data(for: build(retryBase))
-        }
-    }
-
-    private static func isPhiAgentTransportError(_ error: URLError) -> Bool {
-        switch error.code {
-        case .cannotConnectToHost,
-             .cannotFindHost,
-             .networkConnectionLost,
-             .notConnectedToInternet,
-             .timedOut:
-            return true
-        default:
-            return false
-        }
+    /// Sends one authorized request to the local phi-agent over the route
+    /// Sentinel currently prescribes (loopback or the Service Broker UDS).
+    /// `PhiAgentTransport` owns route resolution and the single retry after a
+    /// re-resolve.
+    private func sendPhiAgentRequest(
+        path: String,
+        method: String = "GET",
+        body: Data? = nil
+    ) async throws -> PhiAgentHTTPResponse {
+        try await PhiAgentTransport.shared.send(PhiAgentHTTPRequest(
+            path: path,
+            method: method,
+            headers: [
+                "Authorization": "Bearer \(token)",
+                "Content-Type": "application/json",
+            ],
+            body: body
+        ))
     }
 
     func getAgentAvatarImageData() async throws -> AgentAvatarImagePayload {

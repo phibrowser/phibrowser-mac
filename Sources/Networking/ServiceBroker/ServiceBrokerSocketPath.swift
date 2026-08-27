@@ -40,6 +40,26 @@ enum ServiceBrokerSocketPath {
         )
     }
 
+    /// Data-socket path of the broker owned by the Sentinel that serves
+    /// `auth0Subject` for this browser bundle. `nil` when the subject is empty
+    /// or Application Support cannot be located.
+    static func currentDataSocketPath(auth0Subject: String) -> String? {
+        guard !auth0Subject.isEmpty,
+              let applicationSupportPath = NSSearchPathForDirectoriesInDomains(
+                  .applicationSupportDirectory,
+                  .userDomainMask,
+                  true
+              ).first else {
+            return nil
+        }
+        let storagePath = sentinelStoragePath(
+            applicationSupportPath: applicationSupportPath,
+            browserBundleIdentifier: Bundle.main.bundleIdentifier ?? "",
+            auth0Subject: auth0Subject
+        )
+        return dataSocketPath(storagePath: storagePath)
+    }
+
     static func dataSocketPath(storagePath: String) -> String {
         let digest = SHA256.hash(data: Data(storagePath.utf8))
         let shortHash = digest.prefix(8).map { String(format: "%02x", $0) }.joined()

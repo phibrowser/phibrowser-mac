@@ -457,14 +457,21 @@ final class IMChannelsViewModel {
             }
         }
 
+        if let transportError = error as? PhiAgentTransportError {
+            switch transportError {
+            case .accountUnavailable:
+                return sessionExpiredMessage
+            case .unreachable, .invalidResponse:
+                return fallback
+            }
+        }
+
         if let apiError = error as? IMChannelAPIError {
             switch apiError {
             case .invalidResponse:
                 return fallback
             case .unauthorized:
-                return NSLocalizedString("settings.phiLink.sessionExpiredMessage", value: "Your Phi session has expired. Please sign in again, then retry Phi Link.",
-                    comment: "Phi Link - Message shown when phi-agent returns 401 unauthorized"
-                )
+                return sessionExpiredMessage
             case .httpError(let statusCode):
                 if statusCode >= 500 {
                     return fallback
@@ -473,5 +480,11 @@ final class IMChannelsViewModel {
         }
 
         return error.localizedDescription
+    }
+
+    private var sessionExpiredMessage: String {
+        NSLocalizedString("settings.phiLink.sessionExpiredMessage", value: "Your Phi session has expired. Please sign in again, then retry Phi Link.",
+            comment: "Phi Link - Message shown when phi-agent returns 401 unauthorized"
+        )
     }
 }

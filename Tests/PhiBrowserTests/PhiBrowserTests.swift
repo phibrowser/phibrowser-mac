@@ -2142,15 +2142,23 @@ final class PhiBrowserTests: XCTestCase {
     }
 
     @MainActor
-    func testNextStepTitleAvoidsFixedBaselineClipping() {
+    func testNextStepTitleUsesBaseOnboardingLayout() {
         let controller = NextStepViewController()
 
         controller.loadView()
         controller.view.layoutSubtreeIfNeeded()
 
-        XCTAssertEqual(controller.titleLabel.bounds.height, 64, accuracy: 0.001)
-        XCTAssertEqual(controller.titleLabel.maximumNumberOfLines, 1)
+        XCTAssertEqual(
+            controller.titleLabel.bounds.height,
+            controller.titleLabel.intrinsicContentSize.height,
+            accuracy: 0.001
+        )
         XCTAssertEqual(controller.titleLabel.cell?.usesSingleLineMode, false)
+        XCTAssertEqual(
+            controller.view.bounds.maxY - controller.titleLabel.frame.maxY,
+            96,
+            accuracy: 0.001
+        )
     }
 
     @MainActor

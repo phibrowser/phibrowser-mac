@@ -71,6 +71,10 @@
             isEnabled = "NO">
          </CommandLineArgument>
          <CommandLineArgument
+            argument = "-NSDoubleLocalizedStrings YES"
+            isEnabled = "NO">
+         </CommandLineArgument>
+         <CommandLineArgument
             argument = "-sidebarHeaderUpdateVersion 1.2.3"
             isEnabled = "NO">
          </CommandLineArgument>

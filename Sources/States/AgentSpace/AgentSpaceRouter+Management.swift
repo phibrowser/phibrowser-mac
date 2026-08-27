@@ -171,10 +171,14 @@ extension AgentSpaceRouter {
         }
     }
 
-    /// `agentSpace.spaces.listTabs` — a user Space's open tabs (the tab strip
-    /// of its window), as {tabId, url, title, active}. Fails when the Space
-    /// has no open window: only live windows have a tab strip to read. An
-    /// optional `windowId` reads one specific window's strip instead of the
+    /// `agentSpace.spaces.listTabs` — a user Space's open tabs (its window's
+    /// full listable inventory: normal, open pinned, and bookmark-opened
+    /// tabs alike), as {tabId, url, title, active, kind} with `kind` one of
+    /// normal|pinned|bookmark. Fails when the Space has no open window
+    /// (only live windows have a tab strip to read) and `window_not_ready`
+    /// when the window exists but its state has not attached yet — a
+    /// transient worth retrying, never a silent empty list. An optional
+    /// `windowId` reads one specific window's strip instead of the
     /// key-window default, failing `window_not_open` when that window does
     /// not show the Space; with `windowId` alone the Space is derived from
     /// the window. The reply echoes the resolved `spaceId` either way.
@@ -194,12 +198,16 @@ extension AgentSpaceRouter {
             guard let target else {
                 return failure(windowId == nil ? "space_not_open" : "window_not_open")
             }
-            let tabs = (target.state?.normalTabs ?? []).map { tab -> [String: Any] in
+            guard let state = target.state else {
+                return failure("window_not_ready")
+            }
+            let tabs = state.agentTabInventory().map { entry -> [String: Any] in
                 [
-                    "tabId": tab.guid,
-                    "url": tab.url ?? "",
-                    "title": tab.title,
-                    "active": tab.isActive,
+                    "tabId": entry.tab.guid,
+                    "url": entry.tab.url ?? "",
+                    "title": entry.tab.title,
+                    "active": entry.tab.isActive,
+                    "kind": entry.kind,
                 ]
             }
             return encode(["ok": true, "windowId": target.windowId,

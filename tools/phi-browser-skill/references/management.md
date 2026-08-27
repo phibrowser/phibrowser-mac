@@ -159,9 +159,14 @@ Every helper also takes a `{space}` option (Space name or id) to target a
 USER Space's open window instead — app-level like the rest of browser
 management: no agent Space and no control ownership involved. Enumerate that
 Space's tabs first with `listSpaceTabs(space)` → `[{tabId, targetId, url,
-title, active}]`; the integer `tabId`s work directly as tab references (a
-user tab may have no CDP target — `targetId: null` — its `tabId` still
-works). Needs the Space to have an open window (`space_not_open` otherwise).
+title, active, kind}]` — the window's FULL inventory: `kind` is `normal`,
+`pinned` (an open pinned tab), or `bookmark` (a tab opened from a bookmark
+or a bookmark-bound split), so pinned/bookmark tabs the sidebar projects
+outside the normal list are still listed. The integer `tabId`s work
+directly as tab references (a user tab may have no CDP target —
+`targetId: null` — its `tabId` still works). Needs the Space to have an
+open window (`space_not_open` otherwise; `window_not_ready` means the
+window exists but its state is still attaching — transient, retry).
 Arranging the user's visible window is an on-screen change they'll see
 immediately — do it only when asked.
 

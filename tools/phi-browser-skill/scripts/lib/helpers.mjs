@@ -7079,11 +7079,14 @@ async function layoutScope(space, { mutating = true } = {}) {
   return { taskId: requireTask().taskId }
 }
 
-/** A user Space's open tabs (its window's tab strip), as [{tabId, targetId,
- *  url, title, active}]. tabId works directly as a tab reference in the
- *  layout helpers below; targetId is null when the tab has no live CDP
- *  target. Needs the Space to have an open window; `{window}` (a windowId)
- *  reads one specific window's strip when several show the Space. */
+/** A user Space's open tabs — the window's full listable inventory, open
+ *  pinned and bookmark-opened tabs included — as [{tabId, targetId, url,
+ *  title, active, kind}], `kind` one of normal|pinned|bookmark. tabId works
+ *  directly as a tab reference in the layout helpers below; targetId is
+ *  null when the tab has no live CDP target. Needs the Space to have an
+ *  open window (`window_not_ready` marks one whose state is still
+ *  attaching — transient, retry); `{window}` (a windowId) reads one
+ *  specific window's strip when several show the Space. */
 export async function listSpaceTabs(space, { window: windowId = null } = {}) {
   const spaceId = await resolveSpaceId(space)
   const { tabs } = await phiSend('agentSpace.spaces.listTabs',
@@ -7220,15 +7223,27 @@ async function enterUserContext(space, { profile = '', create = true,
   // A window must exist to drive: activation is the only way to open one.
   let reply = null
   if (!created && !activate) {
-    try {
-      reply = await phiSend('agentSpace.spaces.listTabs', {
-        ...(spaceId != null ? { spaceId } : {}),
-        ...(windowId != null ? { windowId } : {}),
-      })
-    } catch (err) {
+    // window_not_ready is a window mid-attach (it exists, its state does
+    // not yet) — retry it briefly; every other error is an answer.
+    let lastErr = null
+    await settle(async () => {
+      try {
+        reply = await phiSend('agentSpace.spaces.listTabs', {
+          ...(spaceId != null ? { spaceId } : {}),
+          ...(windowId != null ? { windowId } : {}),
+        })
+        lastErr = null
+        return true
+      } catch (err) {
+        lastErr = err
+        return !/window_not_ready/.test(String(err?.message))
+      }
+    }, { timeout: 5 })
+    if (lastErr) {
       // With a pinned window there is no fallback — window_not_open (and
       // even space_not_open) is the answer, not a cue to activate.
-      if (windowId != null || !/space_not_open/.test(String(err?.message))) throw err
+      if (windowId != null ||
+          !/space_not_open|window_not_ready/.test(String(lastErr.message))) throw lastErr
     }
   }
   // A window-only bind learns its Space from the reply.
@@ -7242,10 +7257,17 @@ async function enterUserContext(space, { profile = '', create = true,
   }
   if (!reply) {
     await phiSend('agentSpace.spaces.activate', { spaceId })
+    // A freshly opened window fills progressively (restore delivers tabs in
+    // batches from Chromium), so "has a tab" is not "has its tabs" — settle
+    // on the count holding still for a beat, not on the first arrival.
+    let lastCount = 0
+    let stableSince = 0
     await settle(async () => {
       reply = await phiSend('agentSpace.spaces.listTabs', { spaceId })
         .catch(() => null)
-      return !!(reply && reply.tabs.length > 0)
+      const count = reply ? reply.tabs.length : 0
+      if (count !== lastCount) { lastCount = count; stableSince = Date.now() }
+      return count > 0 && Date.now() - stableSince >= 600
     }, { timeout: 10 })
     // `reply` is assigned on every poll — a timeout can leave it non-null
     // but tabless, so the usable-window test is the tab count, not `reply`.

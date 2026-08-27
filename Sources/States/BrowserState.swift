@@ -911,6 +911,45 @@ class BrowserState {
         }
     }
 
+    /// The window's full agent-listable tab inventory: the normal strip plus
+    /// the live tabs the sidebar projects elsewhere — open pinned tabs,
+    /// bookmark-opened tabs, and split-bookmark tabs — in `tabs` (Chromium
+    /// strip) order, each tagged with the projection that owns it. Unlike
+    /// `normalTabs` the classification ignores layout mode, so the agent
+    /// surface lists the same tabs whichever layout the user runs. Tabs the
+    /// mirror deliberately hides (AI chat tabs never enter `tabs`; a tab not
+    /// yet placed in the normal order stays unlisted) are not included.
+    /// Recomputes the exclusion sets the same way `updateNormalTabs` and
+    /// `hiddenPinnedOrBookmarkTabIds` do.
+    func agentTabInventory() -> [(tab: Tab, kind: String)] {
+        let openedPinnedGuids = isIncognito
+            ? Set<String>()
+            : Set(pinnedTabs.filter { $0.isOpenned }.compactMap { $0.guidInLocalDB })
+        let openedBookmarkGuids = isIncognito
+            ? Set<String>()
+            : Set(bookmarkManager.getAllBookmarks().filter { $0.isOpened }.map { $0.guid })
+        let splitBookmarkBoundTabIds: Set<Int> = {
+            var ids: Set<Int> = []
+            for splitId in splitBookmarkBindings.values {
+                guard let group = splits.first(where: { $0.id == splitId }) else { continue }
+                ids.insert(group.primaryTabId)
+                ids.insert(group.secondaryTabId)
+            }
+            return ids
+        }()
+        let normalGuids = Set(normalTabs.map(\.guid))
+        return tabs.compactMap { tab in
+            if tab.isPinned { return (tab, "pinned") }
+            if let localGuid = tab.guidInLocalDB, !localGuid.isEmpty {
+                if openedPinnedGuids.contains(localGuid) { return (tab, "pinned") }
+                if openedBookmarkGuids.contains(localGuid) { return (tab, "bookmark") }
+            }
+            if splitBookmarkBoundTabIds.contains(tab.guid) { return (tab, "bookmark") }
+            if normalGuids.contains(tab.guid) { return (tab, "normal") }
+            return nil
+        }
+    }
+
     func updateNormalTabs() {
         let openedPinnedGuids = isIncognito
             ? []

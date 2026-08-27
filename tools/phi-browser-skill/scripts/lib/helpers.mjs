@@ -409,10 +409,15 @@ export async function listProfiles() {
  *       cookies or logins from the profile) that dies with the window.
  *       See references/lifecycle.md ▸ "Shadow windows".
  *
- *   enterContext({ kind: 'user', space, profile?, create?, activate? })
+ *   enterContext({ kind: 'user', space?, window?, profile?, create?, activate? })
  *     — the user's REAL, visible Space window. No ownership guard, keep-alive,
  *       or complete(); actions land in the user's live view. An unknown name
- *       is created when create (default true). See references/management.md.
+ *       is created when create (default true). `window` (a windowId from
+ *       listSpaces' windowIds, userFocus, or an earlier binding) pins the
+ *       binding to that exact window when the Space is open in several, and
+ *       may stand alone — with `window` given, `space` is optional and
+ *       derived from the window. At least one of the two is required.
+ *       See references/management.md.
  *
  * Returns the context descriptor (same shape as currentContext(), plus
  * per-kind extras: agent → pendingUserMessages, tabs; user → created, tabs).
@@ -433,7 +438,7 @@ export async function enterContext(spec = {}) {
   if (spec.kind === 'user') {
     return enterUserContext(spec.space,
       { profile: spec.profile ?? '', create: spec.create ?? true,
-        activate: spec.activate ?? false })
+        activate: spec.activate ?? false, window: spec.window ?? null })
   }
   throw new Error(`enterContext: unknown kind ${JSON.stringify(spec.kind)} — ` +
                   "use 'agent', 'shadow', or 'user'")
@@ -1549,7 +1554,9 @@ export async function openTab(url, { acceptCookies = true, reuseBlank = true } =
   // stays the user's own choice, and there is no agent seed tab to reuse.
   const uctx = currentContext()
   if (uctx?.kind === 'user') {
-    const tab = await openSpaceTab(uctx.spaceId, url)
+    // Route into the bound window, not the key-window default — with the
+    // Space open in several windows they can differ.
+    const tab = await openSpaceTab(uctx.spaceId, url, { window: uctx.windowId })
     // Wait for the document on a DEDICATED session (concurrent opens must
     // not contend for the shared current-tab session — same reason
     // prepareTab exists), then do the cheap final attach. The spaces.openTab
@@ -6331,8 +6338,11 @@ async function resolveSpaceId(ref) {
 }
 
 /** The user's normal Spaces, as [{spaceId, name, colorHex, iconName,
- *  profileId, sortOrder, isDefault, isActive}]. Agent and Incognito Spaces
- *  are not included. */
+ *  profileId, sortOrder, isDefault, isActive, windowIds}]. `windowIds`
+ *  lists the Space's open windows (empty when none) — the ids that
+ *  enterContext({kind:'user', window}), openSpaceTab({window}), and
+ *  listSpaceTabs({window}) accept. Agent and Incognito Spaces are not
+ *  included. */
 export async function listSpaces() {
   const { spaces } = await phiSend('agentSpace.spaces.list', {})
   return spaces
@@ -7059,10 +7069,11 @@ async function targetIdsByTabId() {
 async function layoutScope(space, { mutating = true } = {}) {
   if (space) return { spaceId: await resolveSpaceId(space) }
   // User-space mode: the bound Space is the implicit target, same as the
-  // task window is in agent mode.
+  // task window is in agent mode — window included, so a Space open in
+  // several windows keeps layout ops on the bound one.
   const ctx = currentContext()
   if (ctx?.kind === 'user') {
-    return { spaceId: ctx.spaceId }
+    return { spaceId: ctx.spaceId, windowId: ctx.windowId }
   }
   if (mutating) await guardAgentControl()
   return { taskId: requireTask().taskId }
@@ -7071,10 +7082,12 @@ async function layoutScope(space, { mutating = true } = {}) {
 /** A user Space's open tabs (its window's tab strip), as [{tabId, targetId,
  *  url, title, active}]. tabId works directly as a tab reference in the
  *  layout helpers below; targetId is null when the tab has no live CDP
- *  target. Needs the Space to have an open window. */
-export async function listSpaceTabs(space) {
+ *  target. Needs the Space to have an open window; `{window}` (a windowId)
+ *  reads one specific window's strip when several show the Space. */
+export async function listSpaceTabs(space, { window: windowId = null } = {}) {
   const spaceId = await resolveSpaceId(space)
-  const { tabs } = await phiSend('agentSpace.spaces.listTabs', { spaceId })
+  const { tabs } = await phiSend('agentSpace.spaces.listTabs',
+    { spaceId, ...(windowId != null ? { windowId } : {}) })
   const byTabId = await targetIdsByTabId()
   return tabs.map((t) => ({ ...t, targetId: byTabId.get(t.tabId) ?? null }))
 }
@@ -7082,36 +7095,43 @@ export async function listSpaceTabs(space) {
 /** Opens `url` as a new tab in a USER Space's open window — the user-Space
  *  counterpart of the agent-window openTab. App-level like the rest of
  *  browser management: no agent Space, no control ownership. `activate`
- *  (default true) selects the new tab in the user's window. Returns the new
- *  tab as {tabId, targetId, url, title, active, windowId}, settled by
- *  diffing the Space's tab strip. Fails with `space_not_open` when the
- *  Space has no open window. */
+ *  (default true) selects the new tab in the user's window; `{window}` (a
+ *  windowId) targets one specific window when several show the Space
+ *  (failing `window_not_open` on a mismatch). Returns the new tab as
+ *  {tabId, targetId, url, title, active, windowId}, settled by diffing the
+ *  Space's tab strip. Fails with `space_not_open` when the Space has no
+ *  open window. */
 // Tabs already claimed by an openSpaceTab call this round. Concurrent opens
 // (Promise.all over URLs) each diff the same tab strip, so every call must
 // claim its tab synchronously inside the settle check — mirroring openTab's
 // claimedTabs — or two calls could return the same new tab.
 const claimedSpaceTabs = new Set()
 
-export async function openSpaceTab(space, url, { activate = true } = {}) {
+export async function openSpaceTab(space, url, { activate = true,
+                                                 window: windowId = null } = {}) {
   if (!url || typeof url !== 'string') {
     throw new Error('openSpaceTab(space, url): url is required')
   }
   const spaceId = await resolveSpaceId(space)
-  const before = new Set((await listSpaceTabs(spaceId)).map((t) => t.tabId))
-  const { windowId } = await phiSend('agentSpace.spaces.openTab',
-                                     { spaceId, url, activate })
+  const before = new Set(
+    (await listSpaceTabs(spaceId, { window: windowId })).map((t) => t.tabId))
+  const opened = await phiSend('agentSpace.spaces.openTab',
+    { spaceId, url, activate, ...(windowId != null ? { windowId } : {}) })
   let tab = null
   await settle(async () => {
     // Require a live targetId: the tab row can appear in the strip a poll
     // before its CDP target materializes, and callers need the target. The
     // find-then-add is synchronous — that's what makes the claim race-free.
-    const fresh = (await listSpaceTabs(spaceId)).find((t) =>
-      !before.has(t.tabId) && !claimedSpaceTabs.has(t.tabId) && t.targetId)
+    // Diff the strip of the window the open actually landed in — the
+    // key-window default could resolve differently across the two listings.
+    const fresh = (await listSpaceTabs(spaceId, { window: opened.windowId }))
+      .find((t) =>
+        !before.has(t.tabId) && !claimedSpaceTabs.has(t.tabId) && t.targetId)
     if (fresh) { claimedSpaceTabs.add(fresh.tabId); tab = fresh }
     return !!tab
   }, { timeout: 10 })
   if (!tab) throw new Error(`openSpaceTab: no new tab appeared for ${url}`)
-  return { ...tab, windowId }
+  return { ...tab, windowId: opened.windowId }
 }
 
 /** Where the user currently is: {spaceId, spaceName, isAgentSpace,
@@ -7157,35 +7177,69 @@ export async function activateSpace(space) {
  * Resolution: an unknown name is created as a new Space when `create` is
  * true (then activated — a window must exist to drive); an existing Space
  * with no open window is opened via activation; `{activate: true}` also
- * surfaces an already-open Space in the user's focused window. Attaches to
- * the Space's selected tab (falling back to the tab last driven here, then
- * any live tab) and returns {spaceId, name, windowId, created, tabs}.
+ * surfaces an already-open Space in the user's focused window. `{window}`
+ * (a windowId) pins the binding to that exact window when the Space is open
+ * in several — and stands alone: with `window` given, `space` may be
+ * omitted entirely and is derived from the window. The pinned window must
+ * already be open (no creation/activation fallback: neither could produce
+ * the requested window), so a stale id fails with `window_not_open`
+ * instead of silently landing elsewhere. Attaches to the Space's selected
+ * tab (falling back to the tab last driven here, then any live tab) and
+ * returns {spaceId, name, windowId, created, tabs}.
  */
 async function enterUserContext(space, { profile = '', create = true,
-                                         activate = false } = {}) {
-  if (!space || typeof space !== 'string') {
-    throw new Error("enterContext({kind:'user', space}): space (name or spaceId) is required")
+                                         activate = false,
+                                         window: windowId = null } = {}) {
+  if (windowId != null && !Number.isInteger(windowId)) {
+    throw new Error("enterContext({kind:'user'}): window must be a windowId " +
+                    "integer (see listSpaces' windowIds)")
   }
-  let spaceId
+  if (space == null && windowId == null) {
+    throw new Error("enterContext({kind:'user'}): space (name or spaceId) " +
+                    "or window (windowId) is required")
+  }
+  if (space != null && typeof space !== 'string') {
+    throw new Error("enterContext({kind:'user', space}): space must be a Space name or spaceId")
+  }
+  if (windowId != null && activate) {
+    throw new Error("enterContext({kind:'user'}): window and activate are " +
+                    "mutually exclusive — activation targets the user's focused window")
+  }
+  let spaceId = null
   let created = false
-  try {
-    spaceId = await resolveSpaceId(space)
-  } catch (err) {
-    if (!create || !/unknown space/.test(String(err?.message))) throw err
-    ;({ spaceId } = await createSpace(space, profile ? { profile } : {}))
-    created = true
+  if (space != null) {
+    try {
+      spaceId = await resolveSpaceId(space)
+    } catch (err) {
+      if (windowId != null || !create ||
+          !/unknown space/.test(String(err?.message))) throw err
+      ;({ spaceId } = await createSpace(space, profile ? { profile } : {}))
+      created = true
+    }
   }
   // A window must exist to drive: activation is the only way to open one.
   let reply = null
   if (!created && !activate) {
-    try { reply = await phiSend('agentSpace.spaces.listTabs', { spaceId }) }
-    catch (err) {
-      if (!/space_not_open/.test(String(err?.message))) throw err
+    try {
+      reply = await phiSend('agentSpace.spaces.listTabs', {
+        ...(spaceId != null ? { spaceId } : {}),
+        ...(windowId != null ? { windowId } : {}),
+      })
+    } catch (err) {
+      // With a pinned window there is no fallback — window_not_open (and
+      // even space_not_open) is the answer, not a cue to activate.
+      if (windowId != null || !/space_not_open/.test(String(err?.message))) throw err
     }
   }
+  // A window-only bind learns its Space from the reply.
+  if (reply?.spaceId) spaceId = reply.spaceId
   // An open window with an empty tab strip is broken, not usable — send it
   // through activation too (surfacing a Space seeds a tab).
   if (reply && reply.tabs.length === 0) reply = null
+  if (!reply && windowId != null) {
+    throw new Error(`enterContext(user): window ${windowId}` +
+      (space != null ? ` of space '${space}'` : '') + ' has no usable tabs')
+  }
   if (!reply) {
     await phiSend('agentSpace.spaces.activate', { spaceId })
     await settle(async () => {
@@ -7212,7 +7266,7 @@ async function enterUserContext(space, { profile = '', create = true,
     }).catch(() => {})
   }
   state.task = null  // user-space binding supersedes any task binding
-  state.userSpace = { spaceId, name: entry?.name ?? space,
+  state.userSpace = { spaceId, name: entry?.name ?? space ?? '',
                       windowId: reply.windowId }
   state.sessionId = null
   state.targetId = null

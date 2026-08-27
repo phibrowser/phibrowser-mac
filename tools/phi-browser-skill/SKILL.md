@@ -99,9 +99,11 @@ human step turns up mid-run, stop, close the window, and say what's needed.
 Core surface — full semantics in this file:
 
 - Context: `enterContext({kind, name?/space?, profile?, persistent?,
-  incognito?, create?, activate?})` (the one entry — agent returns the
-  Space's `tabs` and `pendingUserMessages`, shadow returns `tabs`, user
-  returns `tabs`/`created`; `incognito` is shadow-only),
+  incognito?, create?, activate?, window?})` (the one entry — agent returns
+  the Space's `tabs` and `pendingUserMessages`, shadow returns `tabs`, user
+  returns `tabs`/`created`; `incognito` is shadow-only; `window` is
+  user-only — a windowId pinning the binding to one specific window when
+  the Space is open in several, usable alone with `space` omitted),
   `listShadowWindows()`, `closeShadowWindow(name)`, `currentContext()`,
   `contextKind()`, `listAgentSpaces()`, `listProfiles()`,
   `spaceStatus({shots})` (one-call digest of the current agent Space),

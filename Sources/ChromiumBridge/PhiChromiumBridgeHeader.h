@@ -855,6 +855,11 @@ typedef NS_ENUM(NSInteger, PhiGhostMaterializeOutcome) {
 /// closed since. Sent before the request resolves; never on failure. Callers
 /// must guard with respondsToSelector: (skew).
 - (void)collapseAIChatForTabId:(int64_t)tabId windowId:(int64_t)windowId;
+
+// Sync key layer (M2-4). Returns nil while the key layer is locked or this
+// profile has no resolved sync key. Keys: @"uuid" (NSString, account-global
+// profile UUID), @"passphrase" (NSString, 64-char lowercase hex).
+- (nullable NSDictionary<NSString *, id> *)getPhiProfileSyncInfo:(NSString *)profileId;
 @end
 
 @protocol PhiChromiumBridgeProtocol <NSObject>
@@ -1843,6 +1848,10 @@ typedef NS_ENUM(NSInteger, PhiGhostMaterializeOutcome) {
 /// reconciles, so redundant or coalesced calls are harmless. Optional so an
 /// older framework paired with a newer Mac client degrades to poll-only.
 - (void)notifyPhiAuthStateChanged;
+
+// Payload-free ping: profile sync keys became available or changed on the
+// Mac side. Chromium re-pulls via getPhiProfileSyncInfo:.
+- (void)notifyPhiSyncKeysChanged;
 
 @end
 

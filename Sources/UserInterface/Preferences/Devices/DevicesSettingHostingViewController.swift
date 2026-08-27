@@ -2,8 +2,19 @@ import Cocoa
 import SwiftUI
 
 final class DevicesSettingHostingViewController: NSViewController, NSWindowDelegate {
-    private let stack = SyncKeyStack.make()
-    private lazy var viewModel = DevicesSettingViewModel(manager: stack.manager, approvals: stack.approvals)
+    /// Shares the app-scoped controller's manager/approvals once an account
+    /// exists (built via `PhiChromiumCoordinator`, same instance the bridge
+    /// pulls sync info from); falls back to a pane-local stack only for the
+    /// signed-out empty state, since there is no account for the coordinator
+    /// to build a shared controller against.
+    private lazy var syncStack: (manager: AccountKeyManager, approvals: DeviceApprovalService) = {
+        if let shared = PhiChromiumCoordinator.shared.syncKeyControllerCreatingIfNeeded() {
+            return (shared.manager, shared.approvals)
+        }
+        let stack = SyncKeyStack.make()
+        return (stack.manager, stack.approvals)
+    }()
+    private lazy var viewModel = DevicesSettingViewModel(manager: syncStack.manager, approvals: syncStack.approvals)
     private var hostingController: ThemedHostingController<DevicesSettingView>?
     private var keyLayerWindow: NSWindow?
 
@@ -31,7 +42,7 @@ final class DevicesSettingHostingViewController: NSViewController, NSWindowDeleg
 
     private func presentKeyLayer() {
         if let existing = keyLayerWindow { existing.makeKeyAndOrderFront(nil); return }
-        let vm = KeyLayerViewModel(manager: stack.manager)
+        let vm = KeyLayerViewModel(manager: syncStack.manager)
         let root = KeyLayerView(viewModel: vm, onFinish: { [weak self] in
             self?.keyLayerWindow?.close()
             self?.keyLayerWindow = nil

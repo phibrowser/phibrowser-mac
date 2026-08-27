@@ -138,9 +138,13 @@ final class ArcDataParserTests: XCTestCase {
         XCTAssertEqual(try parse(data).spaces.first?.colorHex, "#00f0d0")
     }
 
-    func testNoThemeYieldsDefaultSpaceColor() throws {
+    /// No theme is an absence, not a colour: substituting the default colour
+    /// here would make a Space the user never painted indistinguishable from
+    /// one deliberately painted that blue, and a Migration would then snap the
+    /// stand-in to whatever hue it happened to have.
+    func testNoThemeYieldsNoColor() throws {
         let data = sidebar(spaces: [space("S1", title: "Work", customInfo: #"{ "iconType": { "emoji": "🧪" } }"#)])
-        XCTAssertEqual(try parse(data).spaces.first?.colorHex, LocalStore.defaultSpaceColorHex)
+        XCTAssertNil(try parse(data).spaces.first?.colorHex)
     }
 
     func testOutOfRangeColorComponentsAreClamped() throws {

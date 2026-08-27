@@ -27,30 +27,23 @@ final class SpacesStripHostingView: ThemedHostingView {
     /// time: a new begin sweeps the previous one first.
     private var chipFlightLayer: CALayer?
 
-    /// Keep AppKit's window-background drag off the Space pips. The main
-    /// window sets `isMovableByWindowBackground = true`
-    /// (`MainBrowserWindowController.swift`), which makes every mouse-drag a
-    /// window move unless the view under the cursor vetoes it — and nothing
-    /// in this strip's chain does: `NSHostingView`, the sidebar's
-    /// `ColoredVisualEffectView`, `_NSSplitViewItemViewWrapper`, `NSSplitView`
-    /// and `NSThemeFrame` all return true (measured). The AppKit reorder
-    /// surfaces beside it (`NSOutlineView`, `NSTableView`, `NSButton`) return
-    /// false, which is why only the Spaces row was affected: on macOS 15 the
-    /// heuristic beat SwiftUI's `.onDrag` (SpacesStripView's pip strip), so a
-    /// reorder drag moved the window and the pip never lifted. macOS 26's
-    /// SwiftUI happens to claim the drag first, hiding it there.
+    /// Keep AppKit's window-background drag off the strip row. The main window
+    /// sets `isMovableByWindowBackground = true`
+    /// (`MainBrowserWindowController.swift`), which makes a mouse-drag over the
+    /// row a window move unless the view AppKit hit-tests vetoes it.
     ///
-    /// `acceptsFirstResponder` rides along because `TabGroupChipView` records
-    /// that AppKit ignores the `false` return without a view it considers
-    /// responsive to mouse events. NOTE: that was established on plain
-    /// `NSView`s (`TabItemView`, `TabGroupChipView`, `HeaderExtensionReorderView`),
-    /// NOT on an `NSHostingView` — which answers `false` on its own and owns
-    /// SwiftUI's focus routing, so forcing `true` here overrides the framework.
-    /// It may also be unnecessary: `NSHostingView` does implement `mouseDown`.
-    /// If this strip ever starts stealing key focus from the web view, or the
-    /// pips react to Space/arrow keys, drop `acceptsFirstResponder` first.
+    /// This veto works and is what AppKit consults — measured on macOS 15.6
+    /// with a hit-test probe over the pips: `hitTest` lands on this view, it
+    /// answers false, the window stays put and the drag events go on to be
+    /// delivered to the application. It is NOT, however, what made pip
+    /// reordering fail there. In the same run 375 left-drag events across the
+    /// pips produced zero SwiftUI `.onDrag` calls: the gesture reached SwiftUI
+    /// and SwiftUI declined it. `SpacesStripReorderSurface` owns the reorder
+    /// drag for that reason, and carries its own veto for the pip slots it
+    /// claims. The hit view's answer is the one that decides: every ancestor
+    /// here — `ColoredVisualEffectView`, `_NSSplitViewItemViewWrapper`,
+    /// `NSThemeFrame` — returns true, and the window still stayed put.
     override var mouseDownCanMoveWindow: Bool { false }
-    override var acceptsFirstResponder: Bool { true }
 
     override func scrollWheel(with event: NSEvent) {
         if wheelTracker?.handle(event) == true { return }

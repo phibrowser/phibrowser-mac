@@ -258,6 +258,7 @@ final class IMChannelsViewModel {
 
             if session.status == "paired" {
                 await stopPolling()
+                await FirstTimeActionTracker.capture(.phiLinkPaired)
                 await loadPairings()
                 await MainActor.run {
                     activeSession = nil

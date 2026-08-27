@@ -122,7 +122,7 @@ are out of scope.
 | `import_types_selected` | The user commits an import; emitted once per selected source with normalized `types`. File imports use an empty array because Chromium detects their contents | `Onboarding/Importer/BrowserDataImporter.swift` |
 | `import_started` | The importer accepts a non-reentrant run and locks its target; includes sorted `source_browsers` | `Onboarding/Importer/BrowserDataImporter.swift` |
 | `import_finished` | All selected Chromium sources and deferred bookmark persistence finish; includes aggregate success, stable failed sources, duration, and an optional low-cardinality `error_code` | `Onboarding/Importer/BrowserDataImporter.swift` |
-| `first_time_action` | An eligible product action first succeeds on this installation; `action` is one of `space_created`, `ai_sidebar_opened`, `import_finished`, `memory_opened`, `agent_task`, or `connector_connected`, with `seconds_since_install` | `Utilities/FirstTimeActionTracker.swift` |
+| `first_time_action` | An eligible product action first succeeds on this installation; `action` is one of `space_created`, `ai_sidebar_opened`, `import_finished`, `memory_opened`, `agent_task`, `connector_connected`, or `phi_link_paired`, with `seconds_since_install` | `Utilities/FirstTimeActionTracker.swift` |
 | `space_created` | A user-created Space succeeds; includes `total_spaces` and whether it uses a non-default profile | `Sidebar/Spaces/CreateSpacePanel.swift` |
 | `profile_created` | A non-fallback profile is successfully created; includes `total_profiles` | `States/ProfileManager.swift` |
 | `space_profile_changed` | A validated Space profile change begins; includes `total_profiles` | `States/Space/SpaceManager.swift` |

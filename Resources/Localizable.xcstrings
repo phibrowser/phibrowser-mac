@@ -8698,6 +8698,52 @@
         }
       }
     },
+    "app.browserMigration.report.pinnedTabCount" : {
+      "comment" : "Browser migration wizard - how many pinned tabs a migrated Profile received; %d is the number of pinned tabs",
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "new",
+                  "value" : "%d pinned tab"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "new",
+                  "value" : "%d pinned tabs"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "app.browserMigration.report.pinnedTabsDropped" : {
+      "comment" : "Browser migration wizard - how many of a Profile's pinned entries the run could not turn into pinned tabs; %d is the number that were dropped",
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "new",
+                  "value" : "%d pinned tab couldn't be created"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "new",
+                  "value" : "%d pinned tabs couldn't be created"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "app.browserMigration.report.subtitle" : {
       "comment" : "Browser migration wizard - explanation above the report",
       "extractionState" : "extracted_with_value",

@@ -82,8 +82,7 @@ final class BrowserMigrationRunner: ObservableObject {
 
     /// One step of a run: a Profile, or one Space bound to it. Later tickets
     /// give each kind more to do — the Profile's history, cookies and
-    /// extensions, the Space's pinned tabs — without changing the counter the
-    /// user sees.
+    /// extensions — without changing the counter the user sees.
     private struct Unit {
         let name: String
         let profile: BrowserMigrationPlannedProfile
@@ -163,11 +162,16 @@ final class BrowserMigrationRunner: ObservableObject {
         // stick — and what the sidebar and window actually render.
         SpaceManager.shared.setTheme(forSpaceId: spaceID, themeId: planned.themeID)
         await ImportTargetLock.shared.holding(spaceID) {
-            // The Space's own content lands here: its Bookmarks, and its
-            // pinned tabs in ticket 07. Both write into a Space that must not
+            // The Space's own content lands here: its Bookmarks and the pinned
+            // entries the plan gave it. Both write into a Space that must not
             // be deleted or re-profiled underneath them, which is what the
             // lock refuses for as long as it is held.
             await persistBookmarks(of: planned, profileID: profileID, spaceID: spaceID)
+            await persistPinnedTabs(
+                of: profile,
+                ownerSpaceID: planned.sourceSpaceID,
+                profileID: profileID,
+                spaceID: spaceID)
         }
     }
 
@@ -197,5 +201,50 @@ final class BrowserMigrationRunner: ObservableObject {
             return
         }
         outcomes.spaceBookmarkCounts[planned.sourceSpaceID] = count
+    }
+
+    /// Writes the pinned entries the plan gave this Space's owner — every one
+    /// of the Profile's entries at `space` scope, and the whole set through
+    /// its first Space at the other two, where the row belongs to the Profile
+    /// or the app rather than to a Space.
+    ///
+    /// The copies of one source entry carry one lineage, so widening the
+    /// Pinned Tab Scope later collapses them back into one entry as far as
+    /// Phi's own fan-out copies collapse. An entry the store refuses is left
+    /// out of the outcomes and reported as such; the rest still land.
+    private func persistPinnedTabs(
+        of profile: BrowserMigrationPlannedProfile,
+        ownerSpaceID: String,
+        profileID: String,
+        spaceID: String
+    ) async {
+        let planned = profile.pinnedTabs.filter { $0.ownerSpaceID == ownerSpaceID }
+        guard !planned.isEmpty else { return }
+        guard let store = AccountController.shared.localDataAccount?.localStorage else {
+            AppLogWarn("[BrowserMigration] no local store for \(profile.displayName)'s "
+                + "pinned tabs")
+            return
+        }
+        for pin in planned {
+            // In source order, and appended at the end of the collection, so
+            // the order the user built survives the move.
+            if store.createPinnedTab(
+                guid: pin.guid,
+                url: pin.url,
+                title: pin.title,
+                profileId: profileID,
+                spaceId: spaceID,
+                lineageId: pin.lineageID
+            ) {
+                outcomes.pinnedTabGuids.insert(pin.guid)
+            } else {
+                AppLogWarn("[BrowserMigration] couldn't pin \(pin.url) in "
+                    + "\(profile.displayName)")
+            }
+        }
+        // The creation call enqueues its write rather than awaiting it, so
+        // drain the store's queue before the lock goes: the Space has to still
+        // be undeletable when these land.
+        await store.performBackgroundWriteAndWait { _ in }
     }
 }

@@ -141,9 +141,16 @@ final class BrowserMigrationWizardModel: ObservableObject {
         case run
     }
 
-    /// Identifies this run, and with it every Space, pinned tab and pin lineage
-    /// the plan names, so the same input plans the same way twice.
-    let operationID = UUID()
+    /// Identifies the run being planned, and with it every pinned tab and pin
+    /// lineage the plan names, so the same input plans the same way twice while
+    /// the user is ticking rows.
+    ///
+    /// Re-rolled for each new preview: this model outlives a finished run —
+    /// the window is a singleton that is closed, not released — and a second
+    /// run that kept the first one's identifiers would write pinned rows
+    /// carrying guids already on disk, which the store's scope migration traps
+    /// on, under lineages that would merge the two runs into one.
+    private(set) var operationID = UUID()
     let installedSources = BrowserMigrationSourceKind.installed
 
     @Published private(set) var step: Step = .pick
@@ -190,6 +197,8 @@ final class BrowserMigrationWizardModel: ObservableObject {
             return
         }
         sourceUnreadable = false
+        // A new prospective run, so a new identity for what it would create.
+        operationID = UUID()
         self.source = source
         selection = .all(in: source)
         rebuild()
@@ -219,9 +228,24 @@ final class BrowserMigrationWizardModel: ObservableObject {
     /// belongs to the process from here on: closing this window does not
     /// interrupt it.
     func start() {
+        // The plan's pinned owners were fanned out from the scope that was
+        // active when the preview was built, while the store stamps each row
+        // with the one active when the write runs — so a scope changed in
+        // between would write a Profile's entries once per Space, or only into
+        // its first Space. Replan so the two agree. A scope changed *during* a
+        // run is ticket 09's: it gates that setting on a migration being in
+        // flight, which is a restriction rather than a repair.
+        if let plan, plan.pinnedTabScope != currentPinnedTabScope { rebuild() }
         guard canStart, let plan else { return }
         guard BrowserMigrationRunner.shared.start(plan: plan) else { return }
         step = .run
+    }
+
+    /// The scope a plan's pinned owners are fanned out from. Read again at
+    /// start, because it belongs to the store rather than to this window and
+    /// can move while the preview is open.
+    private var currentPinnedTabScope: PinnedTabScope {
+        AccountController.shared.localDataAccount?.localStorage.pinnedTabScope() ?? .profile
     }
 
     private func rebuild() {
@@ -229,8 +253,7 @@ final class BrowserMigrationWizardModel: ObservableObject {
         let plan = BrowserMigrationPlanner.plan(
             source: source,
             existingProfileDisplayNames: ProfileManager.shared.profiles.map(\.displayName),
-            pinnedTabScope: AccountController.shared.localDataAccount?
-                .localStorage.pinnedTabScope() ?? .profile,
+            pinnedTabScope: currentPinnedTabScope,
             selection: selection,
             operationID: operationID
         )
@@ -523,8 +546,9 @@ struct BrowserMigrationWizardView: View {
                 VStack(alignment: .leading, spacing: 10) {
                     ForEach(report.profiles) { profile in
                         VStack(alignment: .leading, spacing: 6) {
-                            reportRow(profile.displayName, ok: profile.created,
-                                note: profile.created ? nil : Self.notCreatedLabel,
+                            reportRow(profile.displayName,
+                                ok: profile.created && profile.pinnedTabsComplete,
+                                note: Self.profileNote(profile),
                                 weight: .medium)
                             ForEach(profile.spaces) { space in
                                 reportRow(space.name,
@@ -581,6 +605,25 @@ struct BrowserMigrationWizardView: View {
         "app.browserMigration.report.notCreated",
         value: "Not created",
         comment: "Browser migration wizard - outcome of a Profile or Space the run failed to create")
+
+    /// A Profile says how many of the source's pinned entries became pinned
+    /// tabs once it exists; a Profile whose source had none says nothing.
+    private static func profileNote(_ profile: BrowserMigrationReport.ProfileRow) -> String? {
+        guard profile.created else { return notCreatedLabel }
+        guard profile.pinnedTabsPlanned > 0 else { return nil }
+        if profile.pinnedTabsComplete {
+            return String.localizedStringWithFormat(
+                NSLocalizedString("app.browserMigration.report.pinnedTabCount",
+                    value: "%d pinned tabs",
+                    comment: "Browser migration wizard - how many pinned tabs a migrated Profile received; %d is the number of pinned tabs"),
+                profile.pinnedTabsWritten)
+        }
+        return String.localizedStringWithFormat(
+            NSLocalizedString("app.browserMigration.report.pinnedTabsDropped",
+                value: "%d pinned tabs couldn't be created",
+                comment: "Browser migration wizard - how many of a Profile's pinned entries the run could not turn into pinned tabs; %d is the number that were dropped"),
+            profile.pinnedTabsPlanned - profile.pinnedTabsWritten)
+    }
 
     /// A Space says what became of its Bookmarks once it exists; before that,
     /// there is only the Space's own failure to report.

@@ -70,6 +70,37 @@ final class BrowserMigrationRunTests: XCTestCase {
             operationID: operationID)
     }
 
+    /// One profile with two Spaces and two pinned entries, so both the fan-out
+    /// and a dropped entry have something to get wrong.
+    private func planWithPinnedEntries(scope: PinnedTabScope) -> BrowserMigrationPlan {
+        let source = BrowserMigrationSource(
+            profiles: [BrowserMigrationSourceProfile(key: "Default", displayName: "Personal")],
+            defaultProfileKey: "Default",
+            spaces: [
+                space("s-home", "Home", profileKey: "Default"),
+                space("s-side", "Side Projects", profileKey: "Default"),
+            ],
+            pinnedGroups: [BrowserMigrationSourcePinnedGroup(
+                profileKey: "Default",
+                entries: [
+                    BrowserMigrationPinnedEntry(title: "Mail", url: "https://mail.example"),
+                    BrowserMigrationPinnedEntry(title: "Docs", url: "https://docs.example"),
+                ])])
+        return BrowserMigrationPlanner.plan(
+            source: source,
+            existingProfileDisplayNames: [],
+            pinnedTabScope: scope,
+            selection: .all(in: source),
+            operationID: operationID)
+    }
+
+    /// Both Spaces of the pinned-entry plan landed.
+    private func pinnedEntryOutcomes() -> BrowserMigrationOutcomes {
+        outcomes(
+            profiles: ["Default": "Profile 2"],
+            spaces: ["s-home": "id-home", "s-side": "id-side"])
+    }
+
     private func outcomes(
         profiles: [String: String] = [:],
         spaces: [String: String] = [:]
@@ -170,6 +201,57 @@ final class BrowserMigrationRunTests: XCTestCase {
 
         XCTAssertTrue(report.profiles[0].spaces[0].created)
         XCTAssertEqual(report.profiles[0].spaces[0].bookmarks, .notAttempted)
+    }
+
+    // MARK: - Pinned tabs
+
+    func testAProfileReportsThePinnedTabsThatLanded() {
+        let plan = planWithPinnedEntries(scope: .profile)
+        var landed = pinnedEntryOutcomes()
+        landed.pinnedTabGuids = Set(plan.profiles[0].pinnedTabs.map(\.guid))
+
+        let report = BrowserMigrationReport.folded(plan: plan, outcomes: landed)
+
+        XCTAssertEqual(report.profiles[0].pinnedTabsWritten, 2)
+        XCTAssertEqual(report.profiles[0].pinnedTabsPlanned, 2)
+    }
+
+    /// One entry written once per Space is still one entry: the report states
+    /// what the user sees in any one Space, not how many rows the run wrote.
+    func testFanOutCopiesCountAsTheOneEntryTheyCameFrom() {
+        let plan = planWithPinnedEntries(scope: .space)
+        var landed = pinnedEntryOutcomes()
+        landed.pinnedTabGuids = Set(plan.profiles[0].pinnedTabs.map(\.guid))
+
+        XCTAssertEqual(plan.profiles[0].pinnedTabs.count, 4)
+        let report = BrowserMigrationReport.folded(plan: plan, outcomes: landed)
+
+        XCTAssertEqual(report.profiles[0].pinnedTabsWritten, 2)
+        XCTAssertEqual(report.profiles[0].pinnedTabsPlanned, 2)
+    }
+
+    /// An entry the store refused — one whose URL it could not parse — is
+    /// reported as missing rather than counted as though it had landed.
+    func testAnEntryTheStoreRefusedIsReportedAsAShortfall() {
+        let plan = planWithPinnedEntries(scope: .profile)
+        var landed = pinnedEntryOutcomes()
+        landed.pinnedTabGuids = [plan.profiles[0].pinnedTabs[0].guid]
+
+        let report = BrowserMigrationReport.folded(plan: plan, outcomes: landed)
+
+        XCTAssertEqual(report.profiles[0].pinnedTabsWritten, 1)
+        XCTAssertEqual(report.profiles[0].pinnedTabsPlanned, 2)
+        // The rest of the run is untouched by it.
+        XCTAssertTrue(report.profiles[0].spaces.allSatisfy(\.created))
+    }
+
+    /// Distinct from a shortfall: the source had nothing to pin, so the report
+    /// must not imply anything was lost.
+    func testAProfileWhoseSourceHadNoPinnedEntriesReportsNone() {
+        let report = BrowserMigrationReport.folded(plan: plan(), outcomes: fullOutcomes())
+
+        XCTAssertTrue(report.profiles.allSatisfy { $0.pinnedTabsPlanned == 0 })
+        XCTAssertTrue(report.profiles.allSatisfy { $0.pinnedTabsWritten == 0 })
     }
 
     // MARK: - The Space the report jumps to

@@ -858,15 +858,25 @@ extension LocalStore {
     /// The record lands at `index` (clamped; appended when nil) in the active
     /// pinned-tab scope and reaches every covered window through
     /// `pinnedTabsPublisher`, where it shows as a closed pinned tab.
+    ///
+    /// A caller that writes one source entry once per owner passes the same
+    /// `lineageId` for every copy, so widening the scope later collapses them
+    /// back into one entry; the row's own guid is its lineage when it is nil.
+    ///
+    /// Returns false when the URL cannot be parsed, in which case no row was
+    /// created. True means the write was accepted onto the store's queue; it
+    /// runs asynchronously from there and logs its own failures.
+    @discardableResult
     func createPinnedTab(guid: String,
                          url: String,
                          title: String,
                          profileId: String,
                          spaceId: String = LocalStore.defaultSpaceId,
-                         index: Int? = nil) {
+                         index: Int? = nil,
+                         lineageId: String? = nil) -> Bool {
         guard let parsedURL = URL(string: url.trimmingCharacters(in: .whitespacesAndNewlines)) else {
             AppLogWarn("[LocalStore] createPinnedTab: invalid URL \(url)")
-            return
+            return false
         }
         performBackgroundWrite { context in
             do {
@@ -889,7 +899,7 @@ extension LocalStore {
                 )
                 model.dataType = .pinnedTab
                 model.isCreatedByChromium = false
-                model.pinLineageId = guid
+                model.pinLineageId = lineageId ?? guid
                 try self.applyCurrentPinnedTabOwner(
                     profileId: profileId,
                     spaceId: spaceId,
@@ -907,6 +917,7 @@ extension LocalStore {
                 AppLogError("[LocalStore] Failed to create pinned tab: \(error)")
             }
         }
+        return true
     }
 
     func moveOrCreatePinnedTab(_ tab: Tab,

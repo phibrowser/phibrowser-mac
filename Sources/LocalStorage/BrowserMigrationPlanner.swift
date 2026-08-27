@@ -629,6 +629,13 @@ struct BrowserMigrationOutcomes: Equatable {
     /// not land leaves no entry, the same way a Space that was never created
     /// leaves none.
     var spaceBookmarkCounts: [String: Int] = [:]
+    /// The guids of the pinned tabs the store accepted. A planned copy it
+    /// refused — an entry whose URL it could not parse — leaves none, so the
+    /// report can tell a source entry that landed from one that was dropped.
+    /// That is as far as the creation call can report: the insert itself runs
+    /// on the store's write queue, which logs a failure of its own rather than
+    /// returning it.
+    var pinnedTabGuids: Set<String> = []
 }
 
 // MARK: - The report
@@ -663,7 +670,17 @@ struct BrowserMigrationReport: Equatable {
         let sourceProfileKey: String
         let displayName: String
         let created: Bool
+        /// How many of the source profile's pinned entries the store accepted,
+        /// and how many the plan carried. Counted in source entries rather
+        /// than in rows: at `space` scope one entry is written once per Space,
+        /// and what the user sees in any one Space is the entry.
+        let pinnedTabsWritten: Int
+        let pinnedTabsPlanned: Int
         let spaces: [SpaceRow]
+
+        /// True while nothing the plan carried was dropped, which is what the
+        /// report ticks on.
+        var pinnedTabsComplete: Bool { pinnedTabsWritten == pinnedTabsPlanned }
 
         var id: String { sourceProfileKey }
     }
@@ -689,6 +706,11 @@ struct BrowserMigrationReport: Equatable {
                 sourceProfileKey: profile.sourceProfileKey,
                 displayName: profile.displayName,
                 created: outcomes.profileIDs[profile.sourceProfileKey] != nil,
+                pinnedTabsWritten: lineageCount(
+                    of: profile.pinnedTabs.filter {
+                        outcomes.pinnedTabGuids.contains($0.guid)
+                    }),
+                pinnedTabsPlanned: lineageCount(of: profile.pinnedTabs),
                 spaces: profile.spaces.map { space in
                     let created = outcomes.spaceIDs[space.sourceSpaceID] != nil
                     return SpaceRow(
@@ -704,6 +726,11 @@ struct BrowserMigrationReport: Equatable {
         }.first
         return BrowserMigrationReport(
             profiles: profiles, firstCreatedSpace: firstCreatedSpace)
+    }
+
+    /// One source entry per lineage, however many owners it was written to.
+    private static func lineageCount(of pinnedTabs: [BrowserMigrationPlannedPinnedTab]) -> Int {
+        Set(pinnedTabs.map(\.lineageID)).count
     }
 
     private static func bookmarks(

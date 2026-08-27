@@ -110,27 +110,22 @@ struct AgentPersonaResponse: Codable {
 final class IMChannelAPIClient {
     static let shared = IMChannelAPIClient()
 
-    private var token: String {
-        AuthManager.shared.getAccessTokenSyncly() ?? ""
+    private let transport: PhiAgentTransport
+
+    init(transport: PhiAgentTransport = .shared) {
+        self.transport = transport
     }
 
-    private func authorizedRequest(_ url: URL, method: String = "GET") -> URLRequest {
-        var request = URLRequest(url: url)
-        request.httpMethod = method
-        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        return request
+    private var token: String {
+        AuthManager.shared.getAccessTokenSyncly() ?? ""
     }
 
     // MARK: Agent Persona
 
     func fetchAgentPersona() async throws -> AgentPersonaResponse {
-        let (data, response) = try await executePhiAgentRequest { baseURL in
-            let url = URL(string: "\(baseURL)/api/v1/agent-persona")!
-            return self.authorizedRequest(url)
-        }
+        let response = try await send("/api/v1/agent-persona")
         try validateResponse(response)
-        return try JSONDecoder().decode(AgentPersonaResponse.self, from: data)
+        return try JSONDecoder().decode(AgentPersonaResponse.self, from: response.body)
     }
 
     // MARK: Official Bot
@@ -138,48 +133,31 @@ final class IMChannelAPIClient {
     func prepareTelegram() async throws -> TelegramPrepareResponse {
         AppLogDebug("[IMChannelAPI] POST /api/telegram/prepare — token length: \(token.count)")
         let body = try JSONEncoder().encode([String: String]())
-        let (data, response) = try await executePhiAgentRequest { baseURL in
-            let url = URL(string: "\(baseURL)/api/telegram/prepare")!
-            var request = self.authorizedRequest(url, method: "POST")
-            request.httpBody = body
-            return request
-        }
-        let statusCode = (response as? HTTPURLResponse)?.statusCode ?? -1
-        AppLogDebug("[IMChannelAPI] prepareTelegram response: \(statusCode), body: \(String(data: data.prefix(500), encoding: .utf8) ?? "?")")
+        let response = try await send("/api/telegram/prepare", method: "POST", body: body)
+        AppLogDebug("[IMChannelAPI] prepareTelegram response: \(response.statusCode), body: \(String(data: response.body.prefix(500), encoding: .utf8) ?? "?")")
         try validateResponse(response)
-        return try JSONDecoder().decode(TelegramPrepareResponse.self, from: data)
+        return try JSONDecoder().decode(TelegramPrepareResponse.self, from: response.body)
     }
 
     func getPairingStatus(sessionId: String) async throws -> PairingSession {
-        let (data, response) = try await executePhiAgentRequest { baseURL in
-            let url = URL(string: "\(baseURL)/api/telegram/pairings/\(sessionId)")!
-            return self.authorizedRequest(url)
-        }
-        let statusCode = (response as? HTTPURLResponse)?.statusCode ?? -1
-        let bodyPreview = String(data: data.prefix(200), encoding: .utf8) ?? "?"
-        AppLogDebug("[IMChannelAPI] GET /api/telegram/pairings/\(sessionId) → \(statusCode): \(bodyPreview)")
+        let response = try await send("/api/telegram/pairings/\(sessionId)")
+        let bodyPreview = String(data: response.body.prefix(200), encoding: .utf8) ?? "?"
+        AppLogDebug("[IMChannelAPI] GET /api/telegram/pairings/\(sessionId) → \(response.statusCode): \(bodyPreview)")
         try validateResponse(response)
-        return try JSONDecoder().decode(PairingSession.self, from: data)
+        return try JSONDecoder().decode(PairingSession.self, from: response.body)
     }
 
     func listPairings() async throws -> [ChannelPairing] {
         AppLogDebug("[IMChannelAPI] GET /api/pairings")
-        let (data, response) = try await executePhiAgentRequest { baseURL in
-            let url = URL(string: "\(baseURL)/api/pairings")!
-            return self.authorizedRequest(url)
-        }
-        let statusCode = (response as? HTTPURLResponse)?.statusCode ?? -1
-        AppLogDebug("[IMChannelAPI] listPairings response: \(statusCode)")
+        let response = try await send("/api/pairings")
+        AppLogDebug("[IMChannelAPI] listPairings response: \(response.statusCode)")
         try validateResponse(response)
-        let result = try JSONDecoder().decode(PairingsListResponse.self, from: data)
+        let result = try JSONDecoder().decode(PairingsListResponse.self, from: response.body)
         return result.pairings ?? []
     }
 
     func disconnectPairing(id: String) async throws {
-        let (_, response) = try await executePhiAgentRequest { baseURL in
-            let url = URL(string: "\(baseURL)/api/pairings/\(id)")!
-            return self.authorizedRequest(url, method: "DELETE")
-        }
+        let response = try await send("/api/pairings/\(id)", method: "DELETE")
         try validateResponse(response)
     }
 
@@ -187,26 +165,17 @@ final class IMChannelAPIClient {
 
     func listCustomBotChannels() async throws -> CustomBotListResponse {
         AppLogDebug("[IMChannelAPI] GET /api/custom-bot/channels")
-        let (data, response) = try await executePhiAgentRequest { baseURL in
-            let url = URL(string: "\(baseURL)/api/custom-bot/channels")!
-            return self.authorizedRequest(url)
-        }
-        let statusCode = (response as? HTTPURLResponse)?.statusCode ?? -1
-        AppLogDebug("[IMChannelAPI] listCustomBotChannels response: \(statusCode), body: \(String(data: data.prefix(300), encoding: .utf8) ?? "?")")
+        let response = try await send("/api/custom-bot/channels")
+        AppLogDebug("[IMChannelAPI] listCustomBotChannels response: \(response.statusCode), body: \(String(data: response.body.prefix(300), encoding: .utf8) ?? "?")")
         try validateResponse(response)
-        return try JSONDecoder().decode(CustomBotListResponse.self, from: data)
+        return try JSONDecoder().decode(CustomBotListResponse.self, from: response.body)
     }
 
     func createCustomBotChannel(botToken: String, enabled: Bool) async throws -> CustomBotChannel {
         let body = try JSONSerialization.data(withJSONObject: ["botToken": botToken, "enabled": enabled] as [String: Any])
-        let (data, response) = try await executePhiAgentRequest { baseURL in
-            let url = URL(string: "\(baseURL)/api/custom-bot/channels")!
-            var request = self.authorizedRequest(url, method: "POST")
-            request.httpBody = body
-            return request
-        }
+        let response = try await send("/api/custom-bot/channels", method: "POST", body: body)
         try validateResponse(response)
-        return try JSONDecoder().decode(CustomBotChannel.self, from: data)
+        return try JSONDecoder().decode(CustomBotChannel.self, from: response.body)
     }
 
     func updateCustomBotChannel(id: String, enabled: Bool? = nil, botToken: String? = nil) async throws -> CustomBotChannel {
@@ -215,14 +184,9 @@ final class IMChannelAPIClient {
         if let enabled { bodyDict["enabled"] = enabled }
         if let botToken { bodyDict["botToken"] = botToken }
         let body = try JSONSerialization.data(withJSONObject: bodyDict)
-        let (data, response) = try await executePhiAgentRequest { baseURL in
-            let url = URL(string: "\(baseURL)/api/custom-bot/channels/\(encoded)")!
-            var request = self.authorizedRequest(url, method: "PUT")
-            request.httpBody = body
-            return request
-        }
+        let response = try await send("/api/custom-bot/channels/\(encoded)", method: "PUT", body: body)
         try validateResponse(response)
-        return try JSONDecoder().decode(CustomBotChannel.self, from: data)
+        return try JSONDecoder().decode(CustomBotChannel.self, from: response.body)
     }
 
     func verifyBotToken(botToken: String? = nil, channelId: String? = nil) async throws -> (success: Bool, error: String?) {
@@ -231,74 +195,47 @@ final class IMChannelAPIClient {
         if let channelId { bodyDict["channelId"] = channelId }
         let body = try JSONSerialization.data(withJSONObject: bodyDict)
         AppLogDebug("[IMChannelAPI] POST /api/custom-bot/verify")
-        let (data, response) = try await executePhiAgentRequest { baseURL in
-            let url = URL(string: "\(baseURL)/api/custom-bot/verify")!
-            var request = self.authorizedRequest(url, method: "POST")
-            request.httpBody = body
-            return request
-        }
-        let statusCode = (response as? HTTPURLResponse)?.statusCode ?? -1
-        AppLogDebug("[IMChannelAPI] verify response: \(statusCode)")
+        let response = try await send("/api/custom-bot/verify", method: "POST", body: body)
+        AppLogDebug("[IMChannelAPI] verify response: \(response.statusCode)")
         try validateResponse(response)
         struct VerifyResult: Codable { let success: Bool; let error: String? }
-        let result = try JSONDecoder().decode(VerifyResult.self, from: data)
+        let result = try JSONDecoder().decode(VerifyResult.self, from: response.body)
         return (result.success, result.error)
     }
 
     func deleteCustomBotChannel(id: String) async throws {
         let encoded = id.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? id
-        let (_, response) = try await executePhiAgentRequest { baseURL in
-            let url = URL(string: "\(baseURL)/api/custom-bot/channels/\(encoded)")!
-            return self.authorizedRequest(url, method: "DELETE")
-        }
+        let response = try await send("/api/custom-bot/channels/\(encoded)", method: "DELETE")
         try validateResponse(response)
     }
 
     // MARK: Helpers
 
-    private func validateResponse(_ response: URLResponse) throws {
-        guard let http = response as? HTTPURLResponse else {
-            throw IMChannelAPIError.invalidResponse
-        }
-        if http.statusCode == 401 {
+    /// Sends one authorized phi-agent request over the route Sentinel currently
+    /// prescribes. `PhiAgentTransport` owns route resolution, the loopback and
+    /// broker transports, and the single retry after a re-resolve.
+    private func send(
+        _ path: String,
+        method: String = "GET",
+        body: Data? = nil
+    ) async throws -> PhiAgentHTTPResponse {
+        try await transport.send(PhiAgentHTTPRequest(
+            path: path,
+            method: method,
+            headers: [
+                "Authorization": "Bearer \(token)",
+                "Content-Type": "application/json",
+            ],
+            body: body
+        ))
+    }
+
+    private func validateResponse(_ response: PhiAgentHTTPResponse) throws {
+        if response.statusCode == 401 {
             throw IMChannelAPIError.unauthorized
         }
-        guard (200...299).contains(http.statusCode) else {
-            throw IMChannelAPIError.httpError(statusCode: http.statusCode)
-        }
-    }
-
-    /// Sends a request to the local phi-agent, resolving the base URL
-    /// dynamically through `PhiAgentEndpointResolver` (Sentinel may remap
-    /// phi-agent's port). On a transport-level failure the resolver cache is
-    /// invalidated and the request is rebuilt against a freshly resolved
-    /// endpoint and retried exactly once.
-    private func executePhiAgentRequest(
-        build: (_ baseURL: String) -> URLRequest
-    ) async throws -> (Data, URLResponse) {
-        let firstBase = await PhiAgentEndpointResolver.shared.currentBaseURL()
-        do {
-            return try await URLSession.shared.data(for: build(firstBase))
-        } catch let error as URLError where Self.isPhiAgentTransportError(error) {
-            await PhiAgentEndpointResolver.shared.invalidate()
-            let retryBase = await PhiAgentEndpointResolver.shared.currentBaseURL()
-            if retryBase == firstBase {
-                throw error
-            }
-            return try await URLSession.shared.data(for: build(retryBase))
-        }
-    }
-
-    private static func isPhiAgentTransportError(_ error: URLError) -> Bool {
-        switch error.code {
-        case .cannotConnectToHost,
-             .cannotFindHost,
-             .networkConnectionLost,
-             .notConnectedToInternet,
-             .timedOut:
-            return true
-        default:
-            return false
+        guard (200...299).contains(response.statusCode) else {
+            throw IMChannelAPIError.httpError(statusCode: response.statusCode)
         }
     }
 }

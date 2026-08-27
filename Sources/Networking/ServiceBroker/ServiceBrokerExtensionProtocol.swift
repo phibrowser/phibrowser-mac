@@ -883,23 +883,15 @@ actor ServiceBrokerExtensionProtocol {
     }
 
     private static func currentSocketPath(auth0Subject: String) throws -> String {
-        guard !auth0Subject.isEmpty,
-              let applicationSupportPath = NSSearchPathForDirectoriesInDomains(
-                  .applicationSupportDirectory,
-                  .userDomainMask,
-                  true
-              ).first else {
+        guard let socketPath = ServiceBrokerSocketPath.currentDataSocketPath(
+            auth0Subject: auth0Subject
+        ) else {
             throw ProtocolFailure(
                 code: .upstreamError,
                 message: "The service broker account context is unavailable."
             )
         }
-        let storagePath = ServiceBrokerSocketPath.sentinelStoragePath(
-            applicationSupportPath: applicationSupportPath,
-            browserBundleIdentifier: Bundle.main.bundleIdentifier ?? "",
-            auth0Subject: auth0Subject
-        )
-        return ServiceBrokerSocketPath.dataSocketPath(storagePath: storagePath)
+        return socketPath
     }
 
     private static func channelSafeLimits(_ limits: ServiceBrokerLimits) -> ServiceBrokerLimits {

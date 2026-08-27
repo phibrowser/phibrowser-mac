@@ -84,6 +84,38 @@ An older browser, which never reads `transport_mode`, keeps answering
 on both its socket and loopback. Browser and Sentinel therefore ship
 independently in either order.
 
+## Native in-app broker clients
+
+Extensions are not the only broker clients. Every in-app Swift caller of
+phi-agent — the Phi Link settings page (`IMChannelAPIClient`) and `APIClient`'s
+agent-persona avatar and agent-space presence/handoff calls — goes through
+`PhiAgentTransport`, which sends over the same account-scoped broker socket the
+extension bridge uses. No in-app code resolves a phi-agent loopback URL
+directly.
+
+- `PhiAgentEndpointResolver` maps Sentinel's `transport_mode` to a route with
+  the same table semantics as the capability handshake above: `legacy` selects
+  direct loopback HTTP against `phi-agent.api_base`; `uds`, `full_uds`, an
+  absent field, an unrecognised value, and a failed lookup all select the
+  account-scoped broker socket. With no signed-in account there is no socket to
+  scope, and the request fails as "session expired" rather than falling back to
+  loopback.
+- Peer authentication, the negotiated broker limits, and the 30-second I/O
+  budget documented above apply unchanged; in-app callers use the
+  `ServiceBrokerClient` defaults (16 MiB non-streaming cap, 30-second budget,
+  production peer authenticator).
+- There is no `/broker/version` negotiation for in-app callers. These are small
+  JSON exchanges well inside the default cap, the broker enforces its own limits
+  regardless, and broker-level failures such as `E_BROKER_SERVICE_UNAVAILABLE`
+  arrive as HTTP 5xx JSON bodies that the settings page already reports as a
+  service issue. A handshake round trip would buy nothing and add a failure mode.
+- A transport-level failure (connection closed, timeout, peer authentication,
+  malformed response; the loopback equivalents for the `legacy` route)
+  invalidates the resolver cache and re-resolves the route exactly once. The
+  request is retried only if the route actually changed, so a request is never
+  attempted more than twice. Every other error — a broker size or validation
+  failure, a decoding failure — reaches the caller unchanged.
+
 ## Request and channel lifecycle
 
 Ordinary readiness and bounded HTTP calls use `broker.http.request`. Streaming HTTP and WebSocket calls use sender-owned opaque channels with one outstanding long-pull at a time. A pull waits for data, a terminal event, an error, or a bounded timeout; timeout keeps the channel alive and permits the next pull.

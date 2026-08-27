@@ -450,8 +450,10 @@ enum BrowserMigrationPlanner {
     // MARK: - Names and identifiers
 
     /// An empty display name — or a profile the source's cache never listed at
-    /// all — falls back to the directory basename.
-    private static func resolvedDisplayName(of displayName: String?, key: String) -> String {
+    /// all — falls back to the directory basename. Not private: the wizard
+    /// labels the rows a plan leaves out (an unticked Profile creates nothing,
+    /// so it is not in the plan) with the same rule rather than a second one.
+    static func resolvedDisplayName(of displayName: String?, key: String) -> String {
         let trimmed = (displayName ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
         return trimmed.isEmpty ? key : trimmed
     }

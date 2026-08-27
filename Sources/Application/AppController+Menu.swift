@@ -276,6 +276,7 @@ extension AppController {
     // (harmless across submenus, but tags must stay unique to grep sanely).
     static let agentTranscriptItemTag = 500025
     static let uninstallPhiItemTag = 500026
+    static let browserMigrationItemTag = 500038
     static let debugMenuItemTag = 500027
     static let spacesProfileSeparatorTag = 500020
     static let deleteProfileSubmenuIdentifier = NSUserInterfaceItemIdentifier("phi.spaces.deleteProfile")
@@ -478,6 +479,27 @@ extension AppController {
                     }
                 }
                 #endif
+
+                // Sits beside "Import Bookmarks and Settings...", which is the
+                // Chromium-built item this one is the structural counterpart
+                // to. Remove-then-insert keeps it idempotent across menu
+                // rebuilds (Chromium can swap the main menu wholesale).
+                subMenu.items.removeAll { $0.tag == AppController.browserMigrationItemTag }
+                let migrationItem = NSMenuItem(
+                    title: NSLocalizedString("app.phiMenu.migrateFromAnotherBrowser", value: "Migrate from Another Browser…",
+                        comment: "Phi menu - Menu item opening the wizard that recreates another browser's profiles and spaces in Phi"),
+                    action: #selector(showBrowserMigrationWizard(_:)),
+                    keyEquivalent: ""
+                )
+                migrationItem.tag = AppController.browserMigrationItemTag
+                migrationItem.target = self
+                if let importIndex = subMenu.items.firstIndex(where: {
+                    $0.tag == CommandWrapper.IDC_IMPORT_SETTINGS.rawValue
+                }) {
+                    subMenu.insertItem(migrationItem, at: importIndex + 1)
+                } else {
+                    subMenu.addItem(migrationItem)
+                }
             } else
             
             if menuRole == .edit, let subMenu = menuItem.submenu {
@@ -2413,6 +2435,43 @@ extension AppController {
         window.makeKeyAndOrderFront(nil)
     }
 
+    static let browserMigrationWindowIdentifier =
+        NSUserInterfaceItemIdentifier("Phi Browser Migration Window")
+
+    /// Opens the Migration wizard. Like the import window it is a singleton, so
+    /// a second invocation returns to the one that is already open rather than
+    /// starting a second run against the same source.
+    @MainActor
+    @objc func showBrowserMigrationWizard(_ sender: Any?) {
+        if let existing = NSApp.windows.first(where: {
+            $0.identifier == Self.browserMigrationWindowIdentifier
+        }) {
+            if existing.isMiniaturized { existing.deminiaturize(nil) }
+            existing.makeKeyAndOrderFront(nil)
+            return
+        }
+
+        let window = NSWindow(
+            contentRect: .zero,
+            styleMask: [.titled, .closable],
+            backing: .buffered,
+            defer: false
+        )
+        window.identifier = Self.browserMigrationWindowIdentifier
+        window.title = NSLocalizedString("app.browserMigration.windowTitle", value: "Migrate to Phi",
+            comment: "Browser migration wizard - window title")
+        window.isReleasedWhenClosed = false
+        let wizard = BrowserMigrationWizardView(
+            model: BrowserMigrationWizardModel()
+        ) { [weak window] in
+            window?.close()
+        }
+        window.contentViewController = ThemedHostingController(rootView: wizard)
+        window.setContentSize(BrowserMigrationWizardView.windowSize)
+        window.center()
+        window.makeKeyAndOrderFront(nil)
+    }
+
     // MARK: - Chromium Menu Actions
 
     @objc func orderFrontStandardAboutPanel(_ sender: Any?) {
@@ -2540,6 +2599,11 @@ extension AppController {
         
         if item.action == #selector(showPreferences(_:)) {
             return ApplicationState.shared.canUseBrowser
+        }
+
+        // Nothing to migrate from: no Migration Source is installed here.
+        if item.action == #selector(showBrowserMigrationWizard(_:)) {
+            return !BrowserMigrationSourceKind.installed.isEmpty
         }
 
         if item.action == #selector(openBookmarkManager(_:)) {

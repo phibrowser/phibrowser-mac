@@ -415,9 +415,12 @@ class BrowserDataImporter {
 
     static let arcSidebarURL = FileManager.default.homeDirectoryForCurrentUser
         .appendingPathComponent("Library/Application Support/Arc/StorableSidebar.json")
+    /// Arc's Chromium data folder; its presence is what "Arc is installed"
+    /// means to the Migration wizard.
+    static let arcUserDataURL = FileManager.default.homeDirectoryForCurrentUser
+        .appendingPathComponent("Library/Application Support/Arc/User Data")
     /// Arc's `Local State`; its profile cache reads through `loadChromiumProfiles`.
-    static let arcLocalStateURL = FileManager.default.homeDirectoryForCurrentUser
-        .appendingPathComponent("Library/Application Support/Arc/User Data/Local State")
+    static let arcLocalStateURL = arcUserDataURL.appendingPathComponent("Local State")
 
     /// Returns all Arc Spaces from StorableSidebar.json, in Arc's sidebar order.
     /// Used by the import picker to let the user choose which Space to import.

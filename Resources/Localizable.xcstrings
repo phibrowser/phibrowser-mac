@@ -8449,6 +8449,208 @@
         }
       }
     },
+    "app.browserMigration.pick.continueButton" : {
+      "comment" : "Browser migration wizard - button that opens the preview for the picked source",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Continue"
+          }
+        }
+      }
+    },
+    "app.browserMigration.pick.subtitle" : {
+      "comment" : "Browser migration wizard - explanation above the source list",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Choose the browser to migrate from. Phi recreates its Profiles and Spaces — it never changes what you already have."
+          }
+        }
+      }
+    },
+    "app.browserMigration.pick.unreadable" : {
+      "comment" : "Browser migration wizard - shown when the picked source is installed but its data can't be parsed",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Phi couldn't read this browser's data."
+          }
+        }
+      }
+    },
+    "app.browserMigration.preview.accountRequired" : {
+      "comment" : "Browser migration wizard - shown instead of starting when no account is bound",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Sign in to Phi — or continue as a guest — before migrating."
+          }
+        }
+      }
+    },
+    "app.browserMigration.preview.backButton" : {
+      "comment" : "Browser migration wizard - button returning from the preview to the source list",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Back"
+          }
+        }
+      }
+    },
+    "app.browserMigration.preview.cancelButton" : {
+      "comment" : "Browser migration wizard - button closing the wizard without migrating",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Cancel"
+          }
+        }
+      }
+    },
+    "app.browserMigration.preview.defaultProfileBound" : {
+      "comment" : "Browser migration wizard - note on a Space whose source profile record is unreadable",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Phi couldn't tell which profile this belongs to — it will use the default one"
+          }
+        }
+      }
+    },
+    "app.browserMigration.preview.noSpaces" : {
+      "comment" : "Browser migration wizard - reason a source profile is skipped and creates nothing",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "No Spaces"
+          }
+        }
+      }
+    },
+    "app.browserMigration.preview.profileCount" : {
+      "comment" : "Browser migration wizard - Profile count in the preview summary; %d is the number of Profiles",
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "new",
+                  "value" : "%d Profile"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "new",
+                  "value" : "%d Profiles"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "app.browserMigration.preview.spaceCount" : {
+      "comment" : "Browser migration wizard - Space count in the preview summary; %d is the number of Spaces",
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "new",
+                  "value" : "%d Space"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "new",
+                  "value" : "%d Spaces"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "app.browserMigration.preview.startButton" : {
+      "comment" : "Browser migration wizard - button starting the migration run",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Start Migration"
+          }
+        }
+      }
+    },
+    "app.browserMigration.preview.subtitle" : {
+      "comment" : "Browser migration wizard - explanation above the preview tree",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "These Profiles and Spaces will be created. Untick anything you don't want."
+          }
+        }
+      }
+    },
+    "app.browserMigration.preview.summary" : {
+      "comment" : "Browser migration wizard - what the previewed run creates; %1$@ is a Profile count such as \"2 Profiles\", %2$@ a Space count such as \"4 Spaces\"",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Will create %1$@ and %2$@."
+          }
+        }
+      }
+    },
+    "app.browserMigration.title" : {
+      "comment" : "Browser migration wizard - window heading",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Migrate to Phi"
+          }
+        }
+      }
+    },
+    "app.browserMigration.windowTitle" : {
+      "comment" : "Browser migration wizard - window title",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Migrate to Phi"
+          }
+        }
+      }
+    },
     "app.changeSpaceProfileConfirmation.appScopedMessage" : {
       "comment" : "Body of the change-Space-profile confirmation with App-scoped pinned tabs",
       "extractionState" : "extracted_with_value",
@@ -11685,6 +11887,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "檢查更新…"
+          }
+        }
+      }
+    },
+    "app.phiMenu.migrateFromAnotherBrowser" : {
+      "comment" : "Phi menu - Menu item opening the wizard that recreates another browser's profiles and spaces in Phi",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Migrate from Another Browser…"
           }
         }
       }

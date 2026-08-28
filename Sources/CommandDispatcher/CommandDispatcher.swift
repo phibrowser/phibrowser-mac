@@ -225,6 +225,13 @@ struct CommandDispatcher {
             windowController.showFeedbackWindow()
             return true
         case .IDC_IMPORT_SETTINGS:
+            // Migration and browser-data import must not write into the user's
+            // data at the same time. The menu item is greyed out while a
+            // Migration is in flight, but the command also arrives from
+            // Chromium, so the refusal lives at the chokepoint every route
+            // passes through. Swallowed rather than explained: the greyed item
+            // is where the user is told.
+            guard !BrowserDataActivity.migrationBlocksImport else { return true }
             // Import targets the active Space's profile; off-the-record
             // windows (standalone incognito and the Incognito Space) have
             // no importable profile — tell the user instead of opening the

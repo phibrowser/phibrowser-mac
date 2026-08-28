@@ -160,6 +160,35 @@ final class PinnedTabScopeTests: XCTestCase {
         XCTAssertTrue(restored.allSatisfy { !$0.isPinnedTabDormant })
     }
 
+    func testScopeChangeIsRefusedWhileAMigrationRunIsInFlight() async throws {
+        let store = try makeStore()
+        let fixture = try seedProfilesAndSpaces(in: store)
+        try insertPinnedTab(
+            in: store,
+            guid: "work-pin",
+            lineageId: "work-lineage",
+            profile: fixture.workProfile,
+            title: "Work",
+            url: "https://work.example"
+        )
+
+        BrowserDataActivity.migrationRunOverrideForTesting = true
+        defer { BrowserDataActivity.migrationRunOverrideForTesting = nil }
+
+        do {
+            try await store.changePinnedTabScope(to: .space)
+            XCTFail("changing the scope during a Migration run should throw")
+        } catch {
+            XCTAssertEqual(error as? LocalStoreWriteError, .migrationInFlight)
+        }
+
+        XCTAssertEqual(store.pinnedTabScope(), .profile)
+        XCTAssertEqual(
+            store.getAllPinnedTabs(for: "Work", spaceId: "space-c").map(\.guid),
+            ["work-pin"]
+        )
+    }
+
     func testSpaceToProfileRebuildDoesNotReviveStaleProfileBackup() async throws {
         let store = try makeStore()
         let fixture = try seedProfilesAndSpaces(in: store)

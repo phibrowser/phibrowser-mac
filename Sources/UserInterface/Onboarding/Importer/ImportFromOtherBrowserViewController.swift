@@ -83,6 +83,11 @@ class ImportFromOtherBrowserViewController: OnboardingBaseViewController {
         targetWindowId: targetWindowId
     )
 
+    /// Whether this window's import is still going. Read by
+    /// `BrowserDataActivity`, which greys the Migration menu item out for as
+    /// long as it is true — including after the window has been closed.
+    var isImporting: Bool { importer.isImporting }
+
     /// Retargets this single import window when it is re-invoked from another
     /// Space. No-op while an import is in flight, so the running import keeps the
     /// destination it was started for and only the window is brought forward.

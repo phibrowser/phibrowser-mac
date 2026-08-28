@@ -480,10 +480,38 @@ extension AppController {
                 }
                 #endif
 
-                // Sits beside "Import Bookmarks and Settings...", which is the
-                // Chromium-built item this one is the structural counterpart
-                // to. Remove-then-insert keeps it idempotent across menu
-                // rebuilds (Chromium can swap the main menu wholesale).
+                // "Import from Another Browser..." is built here rather than
+                // by Chromium, which drops it under the Phi build flag: an item
+                // Chromium builds is validated by its own command controller,
+                // which the client cannot drive, and this one has to grey out
+                // while a Migration is in flight. It keeps the command
+                // identifier as its tag, so the shortcut the user assigns to
+                // that command still reaches it.
+                // Remove-then-insert keeps this idempotent across menu rebuilds
+                // (Chromium can swap the main menu wholesale).
+                subMenu.items.removeAll {
+                    $0.tag == CommandWrapper.IDC_IMPORT_SETTINGS.rawValue
+                }
+                let importItem = NSMenuItem(
+                    title: NSLocalizedString("app.phiMenu.importFromAnotherBrowser", value: "Import from Another Browser...",
+                        comment: "Phi menu - Menu item opening the window that imports bookmarks and settings from another browser"),
+                    action: #selector(showImportDataWindowFromMenu(_:)),
+                    keyEquivalent: ""
+                )
+                importItem.tag = CommandWrapper.IDC_IMPORT_SETTINGS.rawValue
+                importItem.target = self
+                Shortcuts.updateShortcut(for: importItem)
+                if let clearBrowsingDataIndex = subMenu.items.firstIndex(where: {
+                    $0.tag == CommandWrapper.IDC_CLEAR_BROWSING_DATA.rawValue
+                }) {
+                    subMenu.insertItem(importItem, at: clearBrowsingDataIndex + 1)
+                } else {
+                    subMenu.addItem(importItem)
+                }
+
+                // Sits beside "Import from Another Browser...", the item this
+                // one is the structural counterpart to. Remove-then-insert
+                // keeps it idempotent across menu rebuilds too.
                 subMenu.items.removeAll { $0.tag == AppController.browserMigrationItemTag }
                 let migrationItem = NSMenuItem(
                     title: NSLocalizedString("app.phiMenu.migrateFromAnotherBrowser", value: "Migrate from Another Browser…",
@@ -2438,6 +2466,17 @@ extension AppController {
     static let browserMigrationWindowIdentifier =
         NSUserInterfaceItemIdentifier("Phi Browser Migration Window")
 
+    /// The Migration wizard is on screen. Like the import window it is not
+    /// released when it closes, and a miniaturised window reports itself
+    /// invisible, so neither test answers this on its own.
+    @MainActor
+    static var browserMigrationWizardIsOnScreen: Bool {
+        guard let window = NSApp.windows.first(where: {
+            $0.identifier == browserMigrationWindowIdentifier
+        }) else { return false }
+        return window.isVisible || window.isMiniaturized
+    }
+
     /// Opens the Migration wizard. Like the import window it is a singleton, so
     /// a second invocation returns to the one that is already open rather than
     /// starting a second run against the same source.
@@ -2470,6 +2509,19 @@ extension AppController {
         window.setContentSize(BrowserMigrationWizardView.windowSize)
         window.center()
         window.makeKeyAndOrderFront(nil)
+    }
+
+    /// Runs the import command the Chromium-built menu item used to carry.
+    /// The item keeps that command as its tag, so handing the item itself to
+    /// the dispatcher takes exactly the route it took before — including the
+    /// Incognito answer, which belongs to the command rather than to this
+    /// menu item.
+    @MainActor
+    @objc func showImportDataWindowFromMenu(_ sender: Any?) {
+        guard let sender,
+              let window = MainBrowserWindowControllersManager.shared
+                .activeWindowController?.window else { return }
+        _ = CommandDispatcher.dispatchCommand(sender, window: window)
     }
 
     // MARK: - Chromium Menu Actions
@@ -2601,9 +2653,24 @@ extension AppController {
             return ApplicationState.shared.canUseBrowser
         }
 
+        // Migration and browser-data import must never write into the user's
+        // data at the same time, so each greys the other out for as long as it
+        // is in flight — window closed included. The import item additionally
+        // needs a window, because that is where it reads its target Space from.
+        if item.action == #selector(showImportDataWindowFromMenu(_:)) {
+            guard MainBrowserWindowControllersManager.shared
+                .activeWindowController != nil else { return false }
+            // `validateUserInterfaceItem` is a nonisolated @objc entry point
+            // but always arrives on the main thread, so assume isolation here
+            // rather than annotating it (same pattern as
+            // closeIncognitoSpaceFromMenu).
+            return MainActor.assumeIsolated { !BrowserDataActivity.migrationBlocksImport }
+        }
+
         // Nothing to migrate from: no Migration Source is installed here.
         if item.action == #selector(showBrowserMigrationWizard(_:)) {
-            return !BrowserMigrationSourceKind.installed.isEmpty
+            guard !BrowserMigrationSourceKind.installed.isEmpty else { return false }
+            return MainActor.assumeIsolated { !BrowserDataActivity.importBlocksMigration }
         }
 
         if item.action == #selector(openBookmarkManager(_:)) {

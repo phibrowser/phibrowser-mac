@@ -17,6 +17,10 @@ import UniformTypeIdentifiers
 struct SpacesSettingsView: View {
     @ObservedObject private var spaceManager = SpaceManager.shared
     @ObservedObject private var profileManager = ProfileManager.shared
+    /// Observed so the Pinned Tab Scope row re-renders when a run starts or
+    /// finishes; the predicate it reads is `BrowserDataActivity`'s, the same
+    /// one the store refuses the change on.
+    @ObservedObject private var migrationRunner = BrowserMigrationRunner.shared
 
     @State private var selectedSpaceId: String?
     @State private var pinnedTabScope: PinnedTabScope = .profile
@@ -388,6 +392,15 @@ struct SpacesSettingsView: View {
                     .font(.system(size: 11))
                     .themedForeground(.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
+
+                if migrationRunIsInFlight {
+                    Text(NSLocalizedString("settings.spaces.pinnedTabScope.migrationInFlight", value: "Can\u{2019}t be changed while a migration from another browser is running.",
+                        comment: "Spaces settings - why the pinned-tab scope picker is disabled during a browser migration"
+                    ))
+                    .font(.system(size: 11))
+                    .themedForeground(.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                }
             }
 
             Spacer(minLength: 12)
@@ -405,10 +418,16 @@ struct SpacesSettingsView: View {
             }
             .labelsHidden()
             .frame(width: 120)
-            .disabled(isChangingPinnedTabScope)
+            .disabled(isChangingPinnedTabScope || migrationRunIsInFlight)
         }
         .padding(.vertical, 12)
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    /// A Migration in flight owns the pinned tabs it is writing; the scope
+    /// they land at is fixed for the length of the run.
+    private var migrationRunIsInFlight: Bool {
+        BrowserDataActivity.migrationRunIsInFlight
     }
 
     private var pinnedTabScopeDescription: String {

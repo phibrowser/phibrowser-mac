@@ -12115,6 +12115,18 @@
         }
       }
     },
+    "app.phiMenu.importFromAnotherBrowser" : {
+      "comment" : "Phi menu - Menu item opening the window that imports bookmarks and settings from another browser",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Import from Another Browser..."
+          }
+        }
+      }
+    },
     "app.phiMenu.migrateFromAnotherBrowser" : {
       "comment" : "Phi menu - Menu item opening the wizard that recreates another browser's profiles and spaces in Phi",
       "extractionState" : "extracted_with_value",
@@ -36932,6 +36944,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "請更新 Phi 以開啟本機資料"
+          }
+        }
+      }
+    },
+    "localData.pinnedTabScope.migrationInFlightError" : {
+      "comment" : "Pinned-tab scope migration error when a browser migration is in flight",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "The pinned tab scope can’t be changed while a migration from another browser is running. Try again when it has finished."
           }
         }
       }
@@ -68491,6 +68515,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "App"
+          }
+        }
+      }
+    },
+    "settings.spaces.pinnedTabScope.migrationInFlight" : {
+      "comment" : "Spaces settings - why the pinned-tab scope picker is disabled during a browser migration",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Can’t be changed while a migration from another browser is running."
           }
         }
       }

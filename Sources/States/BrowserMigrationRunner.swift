@@ -305,3 +305,38 @@ final class BrowserMigrationRunner: ObservableObject {
         await store.performBackgroundWriteAndWait { _ in }
     }
 }
+
+// MARK: - Mutual exclusion
+
+/// Whether a Migration or a browser-data import is in flight. One object, so
+/// the places that gate on it cannot drift apart: the Migration menu item is
+/// greyed out while an import is in flight, the import menu item while a
+/// Migration is, and the Pinned Tab Scope reads the Migration run alone — a
+/// browser-data import writes no pinned tabs. Each window's own owner answers
+/// for it, since both outlive their close and "in flight" is not "a window
+/// exists".
+@MainActor
+enum BrowserDataActivity {
+    /// Stands a run up in tests, which have no Chromium bridge to start a real
+    /// one with. Always nil in production.
+    static var migrationRunOverrideForTesting: Bool?
+
+    /// A Migration run is under way — what the Pinned Tab Scope refuses on: a
+    /// run writes its pinned entries to the owners its plan was built for, so
+    /// the scope must not move under it.
+    static var migrationRunIsInFlight: Bool {
+        migrationRunOverrideForTesting ?? BrowserMigrationRunner.shared.isRunning
+    }
+
+    /// A Migration run is under way, or its wizard is on screen: the import
+    /// menu item is greyed out.
+    static var migrationBlocksImport: Bool {
+        migrationRunIsInFlight || AppController.browserMigrationWizardIsOnScreen
+    }
+
+    /// An import is under way, or its window is on screen: the Migration menu
+    /// item is greyed out.
+    static var importBlocksMigration: Bool {
+        MainBrowserWindowController.importIsInFlight
+    }
+}

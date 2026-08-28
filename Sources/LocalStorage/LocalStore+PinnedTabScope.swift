@@ -22,14 +22,19 @@ enum PinnedTabScope: String, CaseIterable, Identifiable {
     }
 }
 
-enum LocalStoreWriteError: LocalizedError {
+enum LocalStoreWriteError: LocalizedError, Equatable {
     case storeUnavailable
+    case migrationInFlight
 
     var errorDescription: String? {
         switch self {
         case .storeUnavailable:
             return NSLocalizedString("localData.pinnedTabScope.unavailableError", value: "Local browser data is unavailable.",
                 comment: "Pinned-tab scope migration error when the local store cannot be opened"
+            )
+        case .migrationInFlight:
+            return NSLocalizedString("localData.pinnedTabScope.migrationInFlightError", value: "The pinned tab scope can\u{2019}t be changed while a migration from another browser is running. Try again when it has finished.",
+                comment: "Pinned-tab scope migration error when a browser migration is in flight"
             )
         }
     }
@@ -90,6 +95,15 @@ extension LocalStore {
         preferredProfileId: String? = nil,
         preferredSpaceId: String? = nil
     ) async throws {
+        // A Migration writes its pinned entries to the owners its plan was
+        // built for, at the scope that was active when the run started, so
+        // moving the scope under a running one strands them at the wrong
+        // level. Refused here as well as disabled in Settings: the settings
+        // view asks for confirmation before it calls this, and no future
+        // caller has to remember the rule.
+        if await BrowserDataActivity.migrationRunIsInFlight {
+            throw LocalStoreWriteError.migrationInFlight
+        }
         try await performBackgroundWriteAndWaitThrowing { context in
             let currentScope = try self.pinnedTabScope(in: context)
             guard currentScope != newScope else { return }

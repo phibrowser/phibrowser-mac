@@ -450,6 +450,7 @@ class BrowserDataImporter {
                         id: $0.id,
                         name: $0.title,
                         colorHex: $0.colorHex,
+                        icon: $0.icon.map(Self.sourceIcon),
                         profileKey: $0.profile.directoryName,
                         bookmarkRoot: $0.root)
                 },
@@ -460,6 +461,15 @@ class BrowserDataImporter {
                             BrowserMigrationPinnedEntry(title: $0.title, url: $0.url)
                         })
                 })
+        }
+
+        /// The parser's icon in the source model's vocabulary — a straight
+        /// translation, like the rest of this adapter.
+        private static func sourceIcon(_ icon: ArcSpaceIcon) -> BrowserMigrationSourceIcon {
+            switch icon {
+            case .emoji(let text): return .emoji(text)
+            case .named(let name): return .arcNamed(name)
+            }
         }
     }
 

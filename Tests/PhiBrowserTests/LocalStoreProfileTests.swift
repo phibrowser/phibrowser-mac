@@ -740,7 +740,7 @@ final class LocalStoreProfileTests: XCTestCase {
 
     func testArcBookmarkRootGatedByArcOption() {
         let root = ArcDataParserTool.Bookmark(guid: "s", title: "Work", url: nil, isFolder: true)
-        let space = ArcSpace(id: "s", title: "Work", profile: .default, colorHex: "#3A6FF8", root: root)
+        let space = ArcSpace(id: "s", title: "Work", profile: .default, colorHex: "#3A6FF8", icon: nil, root: root)
 
         // Arc NOT among the selected browsers -> no Arc bookmarks even with a cached space.
         XCTAssertNil(BrowserDataImporter.arcBookmarkRoot(options: [.chrome], arcSpace: space, wantsBookmarks: true))

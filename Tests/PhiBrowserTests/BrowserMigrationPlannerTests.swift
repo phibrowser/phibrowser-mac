@@ -37,6 +37,7 @@ final class BrowserMigrationPlannerTests: XCTestCase {
         _ name: String,
         profileKey: String?,
         colorHex: String = "#112233",
+        icon: BrowserMigrationSourceIcon? = nil,
         bookmarks: [String] = []
     ) -> BrowserMigrationSourceSpace {
         let root = ArcDataParserTool.Bookmark(
@@ -46,7 +47,8 @@ final class BrowserMigrationPlannerTests: XCTestCase {
                 guid: "\(id)-\($0)", title: $0, url: "https://\($0)", isFolder: false)
         }
         return BrowserMigrationSourceSpace(
-            id: id, name: name, colorHex: colorHex, profileKey: profileKey, bookmarkRoot: root)
+            id: id, name: name, colorHex: colorHex, icon: icon, profileKey: profileKey,
+            bookmarkRoot: root)
     }
 
     private func source(
@@ -104,7 +106,7 @@ final class BrowserMigrationPlannerTests: XCTestCase {
         XCTAssertEqual(result.profiles[1].spaces.map(\.sourceSpaceID), ["s-home"])
         XCTAssertEqual(
             Set(result.profiles.flatMap(\.spaces).map(\.iconName)),
-            [BrowserMigrationPlanner.spaceIconName])
+            [BrowserMigrationPlanner.defaultSpaceIconName])
         XCTAssertTrue(result.profiles.flatMap(\.spaces).allSatisfy { !$0.boundToDefaultProfile })
         XCTAssertTrue(result.skippedProfiles.isEmpty)
     }
@@ -362,8 +364,9 @@ final class BrowserMigrationPlannerTests: XCTestCase {
             ],
             sidebar: ArcSidebar(
                 spaces: [
-                    arcSpace("s1", "One", profile: .default),
-                    arcSpace("s2", "Two", profile: .custom(directoryBasename: "Profile 1")),
+                    arcSpace("s1", "One", profile: .default, icon: .emoji("🏢")),
+                    arcSpace("s2", "Two", profile: .custom(directoryBasename: "Profile 1"),
+                             icon: .named("medical")),
                     arcSpace("s3", "Three", profile: .unknown),
                 ],
                 favorites: [
@@ -380,6 +383,7 @@ final class BrowserMigrationPlannerTests: XCTestCase {
         // planner bind it to the default profile and flag it.
         XCTAssertEqual(model.spaces.map(\.profileKey), ["Default", "Profile 1", nil])
         XCTAssertEqual(model.spaces.map(\.colorHex), ["#123456", "#123456", "#123456"])
+        XCTAssertEqual(model.spaces.map(\.icon), [.emoji("🏢"), .arcNamed("medical"), nil])
         XCTAssertEqual(model.pinnedGroups.map(\.profileKey), ["Default", nil])
         XCTAssertEqual(model.pinnedGroups[0].entries,
                        [BrowserMigrationPinnedEntry(title: "Mail", url: "https://mail.example")])
@@ -387,14 +391,69 @@ final class BrowserMigrationPlannerTests: XCTestCase {
     }
 
     private func arcSpace(
-        _ id: String, _ title: String, profile: ArcSourceProfile
+        _ id: String, _ title: String, profile: ArcSourceProfile, icon: ArcSpaceIcon? = nil
     ) -> ArcSpace {
         ArcSpace(
             id: id,
             title: title,
             profile: profile,
             colorHex: "#123456",
+            icon: icon,
             root: ArcDataParserTool.Bookmark(guid: id, title: title, url: nil, isFolder: true))
+    }
+
+    // MARK: - Space icon
+
+    /// The resolver decides what an icon becomes; the planner owns the
+    /// fallback. 🏢 has been drawable on every macOS Phi runs on since
+    /// Unicode 6.0, so the shared catalog is safe here; the resolver's own
+    /// tests inject one.
+    func testASpaceWithAnEmojiIconCarriesTheResolvedStorageValue() {
+        let result = plan(source(
+            profiles: [profile("Default", "Work")],
+            spaces: [space("s1", "One", profileKey: "Default", icon: .emoji("🏢"))]))
+
+        XCTAssertEqual(result.profiles[0].spaces.map(\.iconName), ["emoji:1F3E2"])
+    }
+
+    /// A name whose table row is a Phi icon needs no emoji catalog, so this
+    /// pins the storage value's form outright.
+    func testASpaceWithAnArcNamedIconCarriesTheResolvedStorageValue() {
+        let result = plan(source(
+            profiles: [profile("Default", "Work")],
+            spaces: [space("s1", "One", profileKey: "Default", icon: .arcNamed("notifications"))]))
+
+        XCTAssertEqual(result.profiles[0].spaces.map(\.iconName), ["phi:phi-icon-bell"])
+    }
+
+    /// An icon Arc added after Phi was built costs the icon, never the Space.
+    func testASpaceWithAnArcNamePhiDoesNotKnowCarriesTheDefaultIcon() {
+        let result = plan(source(
+            profiles: [profile("Default", "Work")],
+            spaces: [space("s1", "One", profileKey: "Default", icon: .arcNamed("unicorn"))]))
+
+        XCTAssertEqual(
+            result.profiles[0].spaces.map(\.iconName),
+            [BrowserMigrationPlanner.defaultSpaceIconName])
+    }
+
+    /// A private-use character is in no emoji catalog on any system.
+    func testASpaceWithAnIconPhiCannotPlaceCarriesTheDefaultIcon() {
+        let result = plan(source(
+            profiles: [profile("Default", "Work")],
+            spaces: [space("s1", "One", profileKey: "Default", icon: .emoji("\u{E000}"))]))
+
+        XCTAssertEqual(
+            result.profiles[0].spaces.map(\.iconName),
+            [BrowserMigrationPlanner.defaultSpaceIconName])
+    }
+
+    /// The preview labels an unticked Space through the same function, so
+    /// "no icon" has one answer.
+    func testNoIconTakesTheDefaultIcon() {
+        XCTAssertEqual(
+            BrowserMigrationPlanner.spaceIconName(for: nil),
+            BrowserMigrationPlanner.defaultSpaceIconName)
     }
 
     // MARK: - Space theme

@@ -57,10 +57,10 @@ final class BrowserMigrationRunTests: XCTestCase {
 
     private func space(
         _ id: String, _ name: String, profileKey: String,
-        root: ArcDataParserTool.Bookmark?
+        root: ArcDataParserTool.Bookmark?, icon: BrowserMigrationSourceIcon? = nil
     ) -> BrowserMigrationSourceSpace {
         BrowserMigrationSourceSpace(
-            id: id, name: name, colorHex: "#112233", profileKey: profileKey,
+            id: id, name: name, colorHex: "#112233", icon: icon, profileKey: profileKey,
             bookmarkRoot: root)
     }
 
@@ -78,6 +78,23 @@ final class BrowserMigrationRunTests: XCTestCase {
                 space("s-side", "Side Projects", profileKey: "Default"),
                 space("s-work", "Work", profileKey: "Profile 1"),
             ])
+        return BrowserMigrationPlanner.plan(
+            source: source,
+            existingProfileDisplayNames: [],
+            pinnedTabScope: .profile,
+            selection: .all(in: source),
+            operationID: operationID)
+    }
+
+    /// One Space with an Arc icon that lands on a Phi icon — a name whose
+    /// table row is a Phi icon needs no emoji catalog — so the fold has an
+    /// icon other than the default to carry.
+    private func planWithIcon() -> BrowserMigrationPlan {
+        let source = BrowserMigrationSource(
+            profiles: [BrowserMigrationSourceProfile(key: "Default", displayName: "Personal")],
+            defaultProfileKey: "Default",
+            spaces: [space("s-home", "Home", profileKey: "Default", root: tree(),
+                           icon: .arcNamed("notifications"))])
         return BrowserMigrationPlanner.plan(
             source: source,
             existingProfileDisplayNames: [],
@@ -161,6 +178,22 @@ final class BrowserMigrationRunTests: XCTestCase {
 
         XCTAssertTrue(report.profiles.allSatisfy(\.created))
         XCTAssertTrue(report.profiles.flatMap(\.spaces).allSatisfy(\.created))
+    }
+
+    // MARK: - Space icon
+
+    /// The plan's icon, carried through the fold the way the theme is, so the
+    /// report row can be checked against the preview row — and against the
+    /// strip — for the icon as well as the swatch.
+    func testASpaceRowCarriesThePlansIcon() {
+        let plan = planWithIcon()
+
+        let report = BrowserMigrationReport.folded(
+            plan: plan,
+            outcomes: outcomes(profiles: ["Default": "Profile 2"], spaces: ["s-home": "id-home"]))
+
+        XCTAssertEqual(report.profiles[0].spaces[0].iconName, plan.profiles[0].spaces[0].iconName)
+        XCTAssertEqual(report.profiles[0].spaces[0].iconName, "phi:phi-icon-bell")
     }
 
     // MARK: - Failures

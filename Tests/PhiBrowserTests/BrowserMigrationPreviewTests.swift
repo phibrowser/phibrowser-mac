@@ -19,10 +19,11 @@ final class BrowserMigrationPreviewTests: XCTestCase {
         _ id: String,
         _ name: String,
         profileKey: String?,
-        colorHex: String = "#112233"
+        colorHex: String = "#112233",
+        icon: BrowserMigrationSourceIcon? = nil
     ) -> BrowserMigrationSourceSpace {
         BrowserMigrationSourceSpace(
-            id: id, name: name, colorHex: colorHex, profileKey: profileKey)
+            id: id, name: name, colorHex: colorHex, icon: icon, profileKey: profileKey)
     }
 
     private func source(
@@ -49,6 +50,16 @@ final class BrowserMigrationPreviewTests: XCTestCase {
             selection: selection ?? .all(in: source),
             operationID: operationID)
         return BrowserMigrationPreview.rows(source: source, plan: plan)
+    }
+
+    /// One Space with an Arc icon that lands on a Phi icon: a name whose table
+    /// row is a Phi icon needs no emoji catalog, so what it resolves to is
+    /// fixed whatever the host can draw.
+    private func bellIconSource() -> BrowserMigrationSource {
+        source(
+            profiles: [("Default", "Personal")],
+            spaces: [space("s-home", "Home", profileKey: "Default",
+                           icon: .arcNamed("notifications"))])
     }
 
     /// Two profiles whose Spaces interleave in the source order, so a preview
@@ -113,6 +124,49 @@ final class BrowserMigrationPreviewTests: XCTestCase {
         XCTAssertTrue(ticked.isTicked)
         XCTAssertFalse(unticked.isTicked)
         XCTAssertEqual(unticked.themeID, ticked.themeID)
+    }
+
+    // MARK: - Space icon
+
+    /// The icon the run will give the Space — the plan's resolution of the
+    /// source icon — so the row promises the glyph the strip will show.
+    func testASpaceCarriesTheIconThePlanResolved() {
+        let source = bellIconSource()
+        let plan = BrowserMigrationPlanner.plan(
+            source: source,
+            existingProfileDisplayNames: [],
+            pinnedTabScope: .profile,
+            selection: .all(in: source),
+            operationID: operationID)
+
+        let row = BrowserMigrationPreview.rows(source: source, plan: plan)[0].spaces[0]
+
+        XCTAssertEqual(row.iconName, plan.profiles[0].spaces[0].iconName)
+        XCTAssertEqual(row.iconName, "phi:phi-icon-bell")
+    }
+
+    /// A Space the source gave no icon shows the default new-Space icon rather
+    /// than nothing, so the row promises exactly what will exist.
+    func testASpaceWithNoSourceIconCarriesTheDefaultIcon() {
+        let row = rows(twoProfileSource())[0].spaces[0]
+
+        XCTAssertEqual(row.iconName, BrowserMigrationPlanner.defaultSpaceIconName)
+    }
+
+    /// An unticked Space is not in the plan, so its icon comes from the
+    /// planner's own resolution — unticking must not appear to restyle it.
+    func testUntickingASpaceDoesNotChangeItsIcon() {
+        let source = bellIconSource()
+        let ticked = rows(source)[0].spaces[0]
+        let unticked = rows(
+            source,
+            selection: BrowserMigrationSelection.all(in: source)
+                .setting(spaceID: "s-home", ticked: false, in: source)
+        )[0].spaces[0]
+
+        XCTAssertTrue(ticked.isTicked)
+        XCTAssertFalse(unticked.isTicked)
+        XCTAssertEqual(unticked.iconName, ticked.iconName)
     }
 
     // MARK: - Names

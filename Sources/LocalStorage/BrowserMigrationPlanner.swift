@@ -58,6 +58,26 @@ struct BrowserMigrationSourceProfile {
     }
 }
 
+/// A source Space's icon as the source recorded it. What it becomes in Phi is
+/// the resolver's decision; the model carries only what was read.
+enum BrowserMigrationSourceIcon: Equatable {
+    /// The emoji text as the source stored it.
+    case emoji(String)
+    /// One of Arc's built-in icons, by Arc's own name for it; the resolver's
+    /// Arc table says what it becomes.
+    case arcNamed(String)
+    /// One of Zen's built-in icons, by Zen's own name for it; the resolver's
+    /// Zen table says what it becomes. The rule for the Zen adapter, when it
+    /// comes: Zen keeps a Space's icon in the session file's `spaces[].icon`
+    /// as the emoji text as typed, or as a
+    /// `chrome://…/zen-icons/selectable/<name>.svg` URL for one of its
+    /// built-in icons; map the URL's basename without its extension here,
+    /// any other non-empty string to `.emoji`, and absent or empty to nil.
+    /// (Zen's private windows auto-create a Space with `eye.svg`; those
+    /// Spaces do not migrate.)
+    case zenNamed(String)
+}
+
 /// One Space of a Migration Source. A space-less source (Dia) synthesises one
 /// per profile before it gets here, so the planner has no source-specific arm.
 struct BrowserMigrationSourceSpace {
@@ -69,6 +89,10 @@ struct BrowserMigrationSourceSpace {
     /// theme, which is a different thing from a colour and takes the default
     /// theme rather than being snapped to a hue.
     let colorHex: String?
+    /// nil when the source Space had no icon. One it had keeps the Phi icon
+    /// that stands for it, and takes the default new-Space icon when Phi has
+    /// nothing for it.
+    let icon: BrowserMigrationSourceIcon?
     /// nil when the source's profile record for this Space is unreadable.
     let profileKey: String?
     /// The Space's own bookmark tree, parsed Mac-side; nil for a source whose
@@ -81,12 +105,14 @@ struct BrowserMigrationSourceSpace {
         id: String,
         name: String,
         colorHex: String?,
+        icon: BrowserMigrationSourceIcon? = nil,
         profileKey: String?,
         bookmarkRoot: ArcDataParserTool.Bookmark? = nil
     ) {
         self.id = id
         self.name = name
         self.colorHex = colorHex
+        self.icon = icon
         self.profileKey = profileKey
         self.bookmarkRoot = bookmarkRoot
     }
@@ -422,12 +448,24 @@ struct BrowserMigrationPlan {
 /// Turns a Migration Source into a plan. Every mapping decision of the
 /// Migration design lives here, so the wizard and the executor hold none of
 /// their own and the design can be tested from fixtures without a running
-/// browser. Modelled on the guest→account data migration's plan-then-mappings
-/// shape, under the distinct Browser Migration naming.
+/// browser. The one thing read from elsewhere is the Space icon matching —
+/// the tables and emoji normalisation in `BrowserMigrationSpaceIconResolver`,
+/// which the planner alone calls and whose fallback it owns. Modelled on the
+/// guest→account data migration's plan-then-mappings shape, under the
+/// distinct Browser Migration naming.
 enum BrowserMigrationPlanner {
-    /// The icon every migrated Space gets: the two icon vocabularies do not
-    /// correspond, so Space icons are not migrated.
-    static let spaceIconName = IconPickerSelection.defaultSelection.storageValue
+    /// The icon a migrated Space gets when its source had none, or one Phi
+    /// has nothing for: the default new-Space icon.
+    static let defaultSpaceIconName = IconPickerSelection.defaultSelection.storageValue
+
+    /// The icon storage value a source Space's icon becomes: the resolver's
+    /// answer, or the default. Not private: the wizard's preview labels an
+    /// unticked Space (which is not in the plan) with the same rule rather
+    /// than a second one, as it already does for the theme.
+    static func spaceIconName(for icon: BrowserMigrationSourceIcon?) -> String {
+        icon.flatMap { BrowserMigrationSpaceIconResolver.storageValue(for: $0) }
+            ?? defaultSpaceIconName
+    }
 
     static func plan(
         source: BrowserMigrationSource,
@@ -466,7 +504,7 @@ enum BrowserMigrationPlanner {
                     name: space.name,
                     colorHex: theme.colorHex,
                     themeID: theme.themeID,
-                    iconName: spaceIconName,
+                    iconName: spaceIconName(for: space.icon),
                     boundToDefaultProfile: source.bindsToDefaultProfile(space),
                     bookmarkRoot: space.bookmarkRoot
                 )
@@ -655,6 +693,9 @@ struct BrowserMigrationReport: Equatable {
         /// The built-in theme the plan pinned, so the report draws the swatch
         /// the preview promised and the two can be checked against each other.
         let themeID: String
+        /// The icon storage value the plan gave the Space, carried the same
+        /// way for the same reason.
+        let iconName: String
         let created: Bool
         let bookmarks: Bookmarks
 
@@ -732,6 +773,7 @@ struct BrowserMigrationReport: Equatable {
                         sourceSpaceID: space.sourceSpaceID,
                         name: space.name,
                         themeID: space.themeID,
+                        iconName: space.iconName,
                         created: created,
                         bookmarks: bookmarks(of: space, created: created, outcomes: outcomes))
                 })

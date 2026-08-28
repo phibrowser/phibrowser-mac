@@ -221,6 +221,7 @@
 		6A4750013B12345600000002 /* LoginRequiredPresentation.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6A4750013B12345600000001 /* LoginRequiredPresentation.swift */; };
 		6A4750023B12345600000002 /* GuestDataMigration.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6A4750023B12345600000001 /* GuestDataMigration.swift */; };
 		6A4750023B12345600000102 /* BrowserMigrationPlanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6A4750023B12345600000101 /* BrowserMigrationPlanner.swift */; };
+		6A4750023B12345600000402 /* BrowserMigrationSpaceIconResolver.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6A4750023B12345600000401 /* BrowserMigrationSpaceIconResolver.swift */; };
 		6A4750023B12345600000202 /* BrowserMigrationWizard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6A4750023B12345600000201 /* BrowserMigrationWizard.swift */; };
 		6A4750023B12345600000302 /* BrowserMigrationRunner.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6A4750023B12345600000301 /* BrowserMigrationRunner.swift */; };
 		793C1DDEA1022CC850FEFFF9 /* SentinelWatchdog.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6A44C5FF60DF6F7860A061D4 /* SentinelWatchdog.swift */; };
@@ -892,6 +893,7 @@
 		6A4750013B12345600000001 /* LoginRequiredPresentation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LoginRequiredPresentation.swift; sourceTree = "<group>"; };
 		6A4750023B12345600000001 /* GuestDataMigration.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GuestDataMigration.swift; sourceTree = "<group>"; };
 		6A4750023B12345600000101 /* BrowserMigrationPlanner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrowserMigrationPlanner.swift; sourceTree = "<group>"; };
+		6A4750023B12345600000401 /* BrowserMigrationSpaceIconResolver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrowserMigrationSpaceIconResolver.swift; sourceTree = "<group>"; };
 		6A4750023B12345600000201 /* BrowserMigrationWizard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrowserMigrationWizard.swift; sourceTree = "<group>"; };
 		6A4750023B12345600000301 /* BrowserMigrationRunner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrowserMigrationRunner.swift; sourceTree = "<group>"; };
 		7A5B00A02EF0000000000002 /* MemoryButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MemoryButton.swift; sourceTree = "<group>"; };
@@ -2263,6 +2265,7 @@
 				CC2708A22E7A65E500B65AB8 /* LocalStore.swift */,
 				6A4750023B12345600000001 /* GuestDataMigration.swift */,
 				6A4750023B12345600000101 /* BrowserMigrationPlanner.swift */,
+				6A4750023B12345600000401 /* BrowserMigrationSpaceIconResolver.swift */,
 				CCAA000B2F00010000000002 /* LocalStore+PinnedTabScope.swift */,
 				CCAA000D2F00010000000002 /* LocalStore+PinnedTabTransfer.swift */,
 				CCD87CC32EC2E7E000148E3F /* LocalStore+Bookmark.swift */,
@@ -3252,6 +3255,7 @@
 				CC2708A52E7A65E500B65AB8 /* LocalStore.swift in Sources */,
 				6A4750023B12345600000002 /* GuestDataMigration.swift in Sources */,
 				6A4750023B12345600000102 /* BrowserMigrationPlanner.swift in Sources */,
+				6A4750023B12345600000402 /* BrowserMigrationSpaceIconResolver.swift in Sources */,
 				6A4750023B12345600000302 /* BrowserMigrationRunner.swift in Sources */,
 				CCAA000B2F00010000000001 /* LocalStore+PinnedTabScope.swift in Sources */,
 				CCAA000D2F00010000000001 /* LocalStore+PinnedTabTransfer.swift in Sources */,

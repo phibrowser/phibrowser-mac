@@ -181,6 +181,7 @@ final class ArcDataParserTool {
                 title: title,
                 profile: space.profile,
                 colorHex: space.colorHex,
+                icon: space.icon,
                 root: spaceRoot))
         }
 
@@ -337,7 +338,20 @@ struct ArcSpace {
     /// one" — substituting a default here would make an untitled, unthemed
     /// Arc Space indistinguishable from one deliberately painted that colour.
     let colorHex: String?
+    /// The Space's icon as Arc recorded it; nil when it has none, or a record
+    /// this parser does not read.
+    let icon: ArcSpaceIcon?
     let root: ArcDataParserTool.Bookmark
+}
+
+/// An Arc Space's icon as Arc recorded it.
+enum ArcSpaceIcon: Equatable {
+    /// The emoji text. Older Arc data records only the leading code point;
+    /// that arrives as the scalar it names.
+    case emoji(String)
+    /// One of Arc's built-in icons, by Arc's own name for it (`medical`,
+    /// `notifications`).
+    case named(String)
 }
 
 /// One profile's Arc Favorites (Arc's top-app row), in source order.
@@ -561,6 +575,9 @@ extension ArcDataParserTool {
         /// Colour derived from the Space's window theme; nil when it has none
         /// or one this parser does not read.
         let colorHex: String?
+        /// The Space's icon; nil when it has none or one this parser does not
+        /// read.
+        let icon: ArcSpaceIcon?
 
         private enum CodingKeys: String, CodingKey { case id, title, containerIDs, profile, customInfo }
 
@@ -574,17 +591,31 @@ extension ArcDataParserTool {
             } else {
                 profile = .default
             }
-            colorHex = (try? c.decode(SpaceCustomInfo.self, forKey: .customInfo))?.themeColor?.hexRGBString
+            let customInfo = try? c.decode(SpaceCustomInfo.self, forKey: .customInfo)
+            colorHex = customInfo?.themeColor?.hexRGBString
+            icon = customInfo?.iconType?.spaceIcon
         }
     }
 
-    /// The slice of a Space's `customInfo.windowTheme` that carries a colour.
-    /// Arc encodes its theme enums as `{ "<case>": { "_0": payload } }`:
-    /// `background.single._0.style.color._0` is either `blendedSingleColor`
-    /// (one colour) or `blendedGradient` (`baseColors`, the first one stands
-    /// for the Space).
+    /// The slice of a Space's `customInfo` this parser reads: the window
+    /// theme's colour and the icon record. Arc encodes its theme enums as
+    /// `{ "<case>": { "_0": payload } }`:
+    /// `windowTheme.background.single._0.style.color._0` is either
+    /// `blendedSingleColor` (one colour) or `blendedGradient` (`baseColors`,
+    /// the first one stands for the Space). The two are decoded apart, so a
+    /// shape this parser does not recognise costs that one thing — never the
+    /// other, and never the Space.
     struct SpaceCustomInfo: Decodable {
         let windowTheme: WindowTheme?
+        let iconType: IconType?
+
+        private enum CodingKeys: String, CodingKey { case windowTheme, iconType }
+
+        init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            windowTheme = try? c.decode(WindowTheme.self, forKey: .windowTheme)
+            iconType = try? c.decode(IconType.self, forKey: .iconType)
+        }
 
         struct WindowTheme: Decodable { let background: Background? }
         struct Background: Decodable { let single: Payload<Single>? }
@@ -602,6 +633,33 @@ extension ArcDataParserTool {
             let colorType = windowTheme?.background?.single?._0.style?.color?._0
             return colorType?.blendedSingleColor?._0.color
                 ?? colorType?.blendedGradient?._0.baseColors.first
+        }
+
+        /// `iconType` on disk is an emoji record — `emoji_v2` is the text and
+        /// `emoji`, the older field, its leading code point as an integer — or
+        /// a named-icon record (`icon`). The text is preferred; the integer
+        /// alone is older Arc data, and the emoji is what it names.
+        struct IconType: Decodable {
+            let emojiText: String?
+            let emojiCodePoint: Int?
+            let iconName: String?
+
+            private enum CodingKeys: String, CodingKey {
+                case emojiText = "emoji_v2"
+                case emojiCodePoint = "emoji"
+                case iconName = "icon"
+            }
+
+            var spaceIcon: ArcSpaceIcon? {
+                if let text = emojiText { return .emoji(text) }
+                if let codePoint = emojiCodePoint,
+                   let value = UInt32(exactly: codePoint),
+                   let scalar = Unicode.Scalar(value) {
+                    return .emoji(String(Character(scalar)))
+                }
+                if let iconName { return .named(iconName) }
+                return nil
+            }
         }
     }
 

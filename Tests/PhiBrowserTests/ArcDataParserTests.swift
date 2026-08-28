@@ -91,9 +91,12 @@ final class ArcDataParserTests: XCTestCase {
     } } } } }
     """
 
-    private func singleColorTheme(red: Double, green: Double, blue: Double) -> String {
-        """
-        { "windowTheme": { "background": { "single": { "_0": { "style": { "color": { "_0": {
+    private func singleColorTheme(
+        red: Double, green: Double, blue: Double, iconType: String? = nil
+    ) -> String {
+        let iconTypeField = iconType.map { "\"iconType\": \($0), " } ?? ""
+        return """
+        { \(iconTypeField)"windowTheme": { "background": { "single": { "_0": { "style": { "color": { "_0": {
           "blendedSingleColor": { "_0": { "color": { "red": \(red), "green": \(green), "blue": \(blue), "alpha": 1, "colorSpace": "extendedSRGB" } } }
         } } } } } } } }
         """
@@ -168,6 +171,74 @@ final class ArcDataParserTests: XCTestCase {
         let theme = singleColorTheme(red: 1.2, green: -0.1, blue: 0.5)
         let data = sidebar(spaces: [space("S1", title: "Work", customInfo: theme)])
         XCTAssertEqual(try parse(data).spaces.first?.colorHex, "#ff0080")
+    }
+
+    // MARK: - Icon
+
+    /// Captured verbatim from a real Arc Space: the text, and the leading code
+    /// point as an integer — the older field, which Arc still writes.
+    private let capturedEmojiIcon = #"{ "iconType": { "emoji_v2": "🏢", "emoji": 127970 } }"#
+
+    func testEmojiIconRecordYieldsItsText() throws {
+        let data = sidebar(spaces: [space("S1", title: "Work", customInfo: capturedEmojiIcon)])
+        XCTAssertEqual(try parse(data).spaces.first?.icon, .emoji("🏢"))
+    }
+
+    /// The two fields disagree once the emoji is more than one scalar — a skin
+    /// tone lives only in the text — so this pins that the text wins.
+    func testEmojiIconRecordPrefersTheTextToTheCodePoint() throws {
+        let record = #"{ "iconType": { "emoji_v2": "\#u{1F44D}\#u{1F3FB}", "emoji": 128077 } }"#
+        let data = sidebar(spaces: [space("S1", title: "Work", customInfo: record)])
+        XCTAssertEqual(try parse(data).spaces.first?.icon, .emoji("\u{1F44D}\u{1F3FB}"))
+    }
+
+    /// Older Arc data records only the code point; the age of an install must
+    /// not cost the icon.
+    func testEmojiIconRecordWithOnlyTheCodePointYieldsItsScalar() throws {
+        let data = sidebar(spaces: [space("S1", title: "Work", customInfo: #"{ "iconType": { "emoji": 127970 } }"#)])
+        XCTAssertEqual(try parse(data).spaces.first?.icon, .emoji("🏢"))
+    }
+
+    /// Captured verbatim from a real Arc Space with one of Arc's built-in
+    /// icons.
+    private let capturedNamedIcon = #"{ "iconType": { "icon": "medical" } }"#
+
+    func testNamedIconRecordYieldsItsName() throws {
+        let data = sidebar(spaces: [space("S1", title: "Health", customInfo: capturedNamedIcon)])
+        XCTAssertEqual(try parse(data).spaces.first?.icon, .named("medical"))
+    }
+
+    func testNoIconRecordYieldsNoIcon() throws {
+        let data = sidebar(spaces: [space("S1", title: "Work", customInfo: capturedSingleColorTheme)])
+        XCTAssertNil(try parse(data).spaces.first?.icon)
+    }
+
+    /// An unreadable icon record costs the icon and nothing else: not the
+    /// Space, and not the colour that shares its `customInfo`.
+    private func malformedIconRecordSidebar() -> Data {
+        sidebar(spaces: [space(
+            "S1", title: "Work", profile: customProfile,
+            customInfo: singleColorTheme(red: 1, green: 0, blue: 0.5, iconType: #""🧪""#))])
+    }
+
+    func testMalformedIconRecordYieldsNoIcon() throws {
+        XCTAssertNil(try parse(malformedIconRecordSidebar()).spaces.first?.icon)
+    }
+
+    func testMalformedIconRecordKeepsTheSpaceTitleProfileAndColour() throws {
+        let space = try XCTUnwrap(try parse(malformedIconRecordSidebar()).spaces.first)
+        XCTAssertEqual(space.title, "Work")
+        XCTAssertEqual(space.profile, .custom(directoryBasename: "Profile 1"))
+        XCTAssertEqual(space.colorHex, "#ff0080")
+    }
+
+    /// The other direction of the same rule: the icon and the colour are
+    /// decoded apart, so a theme this parser cannot read keeps the icon.
+    func testMalformedThemeKeepsTheIcon() throws {
+        let customInfo = #"{ "iconType": { "emoji_v2": "🏢", "emoji": 127970 }, "windowTheme": "🧪" }"#
+        let space = try XCTUnwrap(try parse(sidebar(spaces: [space("S1", title: "Work", customInfo: customInfo)])).spaces.first)
+        XCTAssertEqual(space.icon, .emoji("🏢"))
+        XCTAssertNil(space.colorHex)
     }
 
     // MARK: - Arc Favorites

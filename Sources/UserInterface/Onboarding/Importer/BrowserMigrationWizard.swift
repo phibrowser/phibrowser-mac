@@ -116,6 +116,9 @@ struct BrowserMigrationPreviewSpaceRow: Equatable, Identifiable {
     /// from the one Space settings shows for the same theme, so the row carries
     /// the theme rather than a colour.
     let themeID: String
+    /// The Phi icon storage value the run will give the Space — what the row's
+    /// icon is drawn from, so the preview shows the glyph the strip will show.
+    let iconName: String
     let isTicked: Bool
     /// True when the source could not read this Space's own profile record, so
     /// it follows the default profile's Profile and has no tick of its own.
@@ -178,6 +181,8 @@ enum BrowserMigrationPreview {
                     themeID: plannedSpace?.themeID
                         ?? BrowserMigrationSpaceTheme.resolved(
                             forSourceColorHex: space.colorHex).themeID,
+                    iconName: plannedSpace?.iconName
+                        ?? BrowserMigrationPlanner.spaceIconName(for: space.icon),
                     isTicked: plannedSpace != nil,
                     boundToDefaultProfile: plannedSpace?.boundToDefaultProfile
                         ?? source.bindsToDefaultProfile(space)
@@ -1184,16 +1189,22 @@ struct BrowserMigrationWizardView: View {
             set: { model.setSpace(space.sourceSpaceID, ticked: $0) }
         )) {
             HStack(spacing: 8) {
-                Self.themeSwatch(forID: space.themeID)
+                Self.spaceIcon(space.iconName)
 
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(space.name)
-                        .font(.system(size: 15))
-                        // The row has no tick of its own, so its name carries
-                        // the import window's dimmed-row alpha. The note under
-                        // it does not: it is the reason, and has to be read.
-                        .foregroundColor(
-                            space.boundToDefaultProfile ? Ink.disabled : Ink.primary)
+                    // The swatch follows the name on the name's own line, so
+                    // the note beneath does not pull it down.
+                    HStack(spacing: 8) {
+                        Text(space.name)
+                            .font(.system(size: 15))
+                            // The row has no tick of its own, so its name
+                            // carries the import window's dimmed-row alpha.
+                            // The note under it does not: it is the reason,
+                            // and has to be read.
+                            .foregroundColor(
+                                space.boundToDefaultProfile ? Ink.disabled : Ink.primary)
+                        Self.themeSwatch(forID: space.themeID)
+                    }
                     if space.boundToDefaultProfile {
                         Text(String(
                             format: NSLocalizedString("app.browserMigration.preview.defaultProfileBound",
@@ -1245,6 +1256,17 @@ struct BrowserMigrationWizardView: View {
         .allowsHitTesting(false)
         .accessibilityHidden(true)
         .help(theme.name)
+    }
+
+    /// The Space's icon as the strip will draw it: the shared Space icon view
+    /// at the size the import window's Space picker row uses. Never tinted —
+    /// a Phi icon is its own artwork and an emoji is an emoji — so the tint
+    /// only reaches the view's legacy SF Symbol fallback, which no plan
+    /// produces.
+    private static func spaceIcon(_ storedValue: String) -> some View {
+        SpaceIconView(storedValue: storedValue, size: 16, symbolWeight: .regular, tint: Ink.primary)
+            // As with the swatch, the name beside it is what VoiceOver reads.
+            .accessibilityHidden(true)
     }
 
     // MARK: Run
@@ -1579,7 +1601,7 @@ struct BrowserMigrationWizardView: View {
                             ok: space.failure == nil,
                             outcome: spaceOutcome(space),
                             weight: .regular,
-                            themeID: space.themeID)
+                            space: space)
                             .padding(.leading, 20)
                     }
                 }
@@ -1590,20 +1612,24 @@ struct BrowserMigrationWizardView: View {
 
     private func reportObjectRow(
         name: String, ok: Bool, outcome: String?, weight: Font.Weight,
-        themeID: String? = nil
+        space: BrowserMigrationReport.SpaceRow? = nil
     ) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: 6) {
             reportGlyph(ok: ok)
-            // The swatch centres on the name, and the pair sits on the row's
-            // baseline through the name.
+            // The icon and the swatch centre on the name, and the group sits
+            // on the row's baseline through the name.
             HStack(spacing: 6) {
-                // A Space repeats the swatch the preview promised for it.
-                if let themeID {
-                    Self.themeSwatch(forID: themeID)
+                // A Space repeats the icon and the swatch the preview promised
+                // for it, in the preview's order: icon, name, swatch.
+                if let space {
+                    Self.spaceIcon(space.iconName)
                 }
                 Text(name)
                     .font(.system(size: 15, weight: weight))
                     .foregroundColor(Ink.primary)
+                if let space {
+                    Self.themeSwatch(forID: space.themeID)
+                }
             }
             Spacer(minLength: 12)
             if let outcome {

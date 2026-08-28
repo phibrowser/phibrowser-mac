@@ -609,10 +609,9 @@ class BookmarkCellView: SidebarCellView, TabPreviewInteractionCancelling {
             return
         }
 
-        guard bookmark.isOpened else {
-            viewState.primaryFaviconImage = storedPrimaryFaviconImage(bookmark: bookmark, pageUrl: pageUrl)
-            return
-        }
+        // Seed the row, then ask Chromium either way: an imported or migrated
+        // bookmark arrives without bytes and has no snapshot to fall back on.
+        viewState.primaryFaviconImage = storedPrimaryFaviconImage(bookmark: bookmark, pageUrl: pageUrl)
 
         if let liveFaviconData = bookmark.liveFaviconData,
            let image = NSImage(data: liveFaviconData) {

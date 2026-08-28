@@ -10143,6 +10143,26 @@ final class SpaceWindowSlot: ObservableObject {
     private func makeKeyAndOrderFrontHidingSlotTabBar(_ window: NSWindow?) {
         guard let window else { return }
 
+        // Staged BEFORE the un-conceal below, and it has to be. On the
+        // materialize path Chromium has already ordered this window in, so
+        // `revealConcealedWindow`'s alphaValue 0 -> 1 — not
+        // `makeKeyAndOrderFront` — is the moment the window becomes visible;
+        // a cover installed after it is installed a frame late and the user
+        // sees the uncovered frame.
+        //
+        // ONLY the cover moves up here. The titlebar work below deliberately
+        // stays after the un-conceal: run against a concealed window, AppKit
+        // lays the titlebar out for a window it is not yet showing and then
+        // corrects it once it is, which makes the traffic lights jump and
+        // settle.
+        MainActor.assumeIsolated {
+            windowsBySpaceId.values
+                .first { $0.window === window }?
+                .mainSplitViewController
+                .webContentContainerViewController
+                .maskPageAreaForColdReveal()
+        }
+
         // Every explicit fronting un-conceals: covers a mid-restore
         // pip-switch to a Space whose window is still alpha-concealed.
         revealConcealedWindow(window)

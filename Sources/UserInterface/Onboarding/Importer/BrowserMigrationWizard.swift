@@ -269,14 +269,32 @@ final class BrowserMigrationWizardModel: ObservableObject {
         rebuild()
     }
 
-    /// Starts the previewed run, asking first when this account has already
-    /// migrated from the picked source.
+    /// Starts the previewed run, asking first when a second Migration would
+    /// leave the account with two copies of the same thing.
     func start() {
-        if let pickedSource, BrowserMigrationRunner.hasMigrated(from: pickedSource) {
+        if let pickedSource, Self.warnsBeforeRerun(
+            hasMigrated: BrowserMigrationRunner.hasMigrated(from: pickedSource),
+            spaceCount: currentSpaceCount
+        ) {
             isConfirmingRerun = true
             return
         }
         beginRun()
+    }
+
+    /// The warning is about ending up with two copies, so the mark alone is not
+    /// enough: an account down to a single Space no longer holds what the first
+    /// Migration created, and warning it about a duplicate would be a warning
+    /// about nothing.
+    static func warnsBeforeRerun(hasMigrated: Bool, spaceCount: Int) -> Bool {
+        hasMigrated && spaceCount > 1
+    }
+
+    /// Read from the store rather than from `SpaceManager`'s published list,
+    /// which delivers partially at launch — a first delivery carrying only the
+    /// default Space would read as an emptied account and drop the warning.
+    private var currentSpaceCount: Int {
+        AccountController.shared.localDataAccount?.localStorage.getAllSpaces().count ?? 0
     }
 
     /// Hands the plan to the process-level runner and follows it. The run

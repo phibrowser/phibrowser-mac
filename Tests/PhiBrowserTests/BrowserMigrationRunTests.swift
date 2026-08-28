@@ -429,19 +429,33 @@ final class BrowserMigrationRunTests: XCTestCase {
     // MARK: - Warning before a second run
 
     @MainActor
-    func testStartingAgainFromAMarkedSourceAsksFirst() {
-        BrowserMigrationRunner.migratedSourcesOverrideForTesting = ["arc"]
-        defer { BrowserMigrationRunner.migratedSourcesOverrideForTesting = nil }
-        let model = BrowserMigrationWizardModel()
-        model.pickedSource = .arc
+    func testAMarkedSourceWarnsWhileTheFirstMigrationsSpacesAreStillThere() {
+        XCTAssertTrue(BrowserMigrationWizardModel.warnsBeforeRerun(
+            hasMigrated: true, spaceCount: 4))
+    }
 
-        model.start()
-
-        XCTAssertTrue(model.isConfirmingRerun)
+    /// The account has been taken back down to its one default Space, so
+    /// whatever the first Migration created is gone and there is nothing left
+    /// for a second one to duplicate.
+    @MainActor
+    func testAMarkedSourceStaysQuietWhenOnlyOneSpaceIsLeft() {
+        XCTAssertFalse(BrowserMigrationWizardModel.warnsBeforeRerun(
+            hasMigrated: true, spaceCount: 1))
     }
 
     @MainActor
-    func testAnUnmarkedSourceStartsWithoutAsking() {
+    func testAnUnmarkedSourceNeverWarnsHoweverManySpacesThereAre() {
+        XCTAssertFalse(BrowserMigrationWizardModel.warnsBeforeRerun(
+            hasMigrated: false, spaceCount: 4))
+    }
+
+    /// That the wizard consults the mark at all. Asserted from the unmarked
+    /// side because it is the half that does not depend on the machine: the
+    /// test host runs against whatever Spaces the developer's account holds,
+    /// so the marked side belongs to `warnsBeforeRerun` above, where the count
+    /// is a parameter. Nothing starts either way — the model has no plan.
+    @MainActor
+    func testStartConsultsTheMark() {
         BrowserMigrationRunner.migratedSourcesOverrideForTesting = []
         defer { BrowserMigrationRunner.migratedSourcesOverrideForTesting = nil }
         let model = BrowserMigrationWizardModel()

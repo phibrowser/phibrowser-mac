@@ -1,6 +1,4 @@
-<p align="center">
-  <img src="docs/assets/phi-icon.png" width="128" alt="Phi Browser" />
-</p>
+![Phi Browser](docs/assets/phibrowser_github_2000.png)
 
 # Phi Browser
 

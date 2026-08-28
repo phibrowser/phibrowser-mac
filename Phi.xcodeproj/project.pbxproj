@@ -339,6 +339,7 @@
 		B02586F52E42FD97001B08FC /* ChromiumLauncher.m in Sources */ = {isa = PBXBuildFile; fileRef = B02586EE2E42FD97001B08FC /* ChromiumLauncher.m */; };
 		B02586F62E42FD97001B08FC /* AppController.swift in Sources */ = {isa = PBXBuildFile; fileRef = B02586F02E42FD97001B08FC /* AppController.swift */; };
 		B02586F72E42FD97001B08FC /* MainBrowserWindowController.swift in Sources */ = {isa = PBXBuildFile; fileRef = B02586F12E42FD97001B08FC /* MainBrowserWindowController.swift */; };
+		B0FEED022E42FD97001B08FC /* TrafficLightPositioner.swift in Sources */ = {isa = PBXBuildFile; fileRef = B0FEED012E42FD97001B08FC /* TrafficLightPositioner.swift */; };
 		B02586F82E42FD97001B08FC /* PhiApplication.m in Sources */ = {isa = PBXBuildFile; fileRef = B02586F32E42FD97001B08FC /* PhiApplication.m */; };
 		B025870E2E430305001B08FC /* MainSplitViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = B025870D2E430305001B08FC /* MainSplitViewController.swift */; };
 		B02587122E43038B001B08FC /* Tab.swift in Sources */ = {isa = PBXBuildFile; fileRef = B02587112E43038B001B08FC /* Tab.swift */; };
@@ -1006,6 +1007,7 @@
 		B02586EE2E42FD97001B08FC /* ChromiumLauncher.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = ChromiumLauncher.m; sourceTree = "<group>"; };
 		B02586F02E42FD97001B08FC /* AppController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppController.swift; sourceTree = "<group>"; };
 		B02586F12E42FD97001B08FC /* MainBrowserWindowController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainBrowserWindowController.swift; sourceTree = "<group>"; };
+		B0FEED012E42FD97001B08FC /* TrafficLightPositioner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrafficLightPositioner.swift; sourceTree = "<group>"; };
 		B02586F22E42FD97001B08FC /* PhiApplication.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = PhiApplication.h; sourceTree = "<group>"; };
 		B02586F32E42FD97001B08FC /* PhiApplication.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = PhiApplication.m; sourceTree = "<group>"; };
 		B025870D2E430305001B08FC /* MainSplitViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainSplitViewController.swift; sourceTree = "<group>"; };
@@ -2532,6 +2534,7 @@
 				B0F370CF2E432CB8000B51F9 /* MainBrowserWindowController+Actions.swift */,
 				B025870D2E430305001B08FC /* MainSplitViewController.swift */,
 				CCBF8FA12E698A7400B9A99E /* MainBrowserWindowControllersManager.swift */,
+				B0FEED012E42FD97001B08FC /* TrafficLightPositioner.swift */,
 			);
 			path = MainBrowserWindow;
 			sourceTree = "<group>";
@@ -3232,6 +3235,7 @@
 				376195C02F518DDE0094A78E /* FloatingSidebarViewController.swift in Sources */,
 				CC376CFA2EC6D3F900270B93 /* SettingItemBackgroundView.swift in Sources */,
 				B02586F72E42FD97001B08FC /* MainBrowserWindowController.swift in Sources */,
+				B0FEED022E42FD97001B08FC /* TrafficLightPositioner.swift in Sources */,
 				8E486A772F3EEF8A00078DEC /* StatusURLViewModel.swift in Sources */,
 				8E762CC62F16531A00631087 /* TabStripAnimation.swift in Sources */,
 				37C1B0DE2ED8081400DD4496 /* ShortcutsSettingsView.swift in Sources */,

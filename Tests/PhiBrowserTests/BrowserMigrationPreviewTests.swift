@@ -207,4 +207,16 @@ final class BrowserMigrationPreviewTests: XCTestCase {
         XCTAssertEqual(Set(names).count, names.count)
         XCTAssertEqual(names.count, BrowserMigrationSourceKind.allCases.count)
     }
+
+    /// Migration has no per-data-type toggles, so a source is always asked for
+    /// everything it supports — except Arc's bookmarks, which Phi parses out of
+    /// the sidebar itself and writes per Space.
+    func testArcIsAskedForEveryDataTypeItSupportsButItsBookmarks() {
+        let requested = Set(BrowserMigrationSourceKind.arc.migrationDataTypes)
+        let supported = Set(ImportDataType.availableTypes(for: .arc).map(\.rawValue))
+
+        XCTAssertEqual(
+            requested, Set([ImportDataType.history, .cookies, .extensions].map(\.rawValue)))
+        XCTAssertEqual(requested, supported.subtracting([ImportDataType.bookmarks.rawValue]))
+    }
 }

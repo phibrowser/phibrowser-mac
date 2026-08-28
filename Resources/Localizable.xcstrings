@@ -8485,6 +8485,18 @@
         }
       }
     },
+    "app.browserMigration.preflight.keychain" : {
+      "comment" : "Browser migration wizard - warns that the OS Keychain prompt is coming before a run starts; %@ is the source browser's name",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "macOS will ask to use %@'s encryption key so your cookies can come across. Choose “Always Allow”, or it asks again for every Profile."
+          }
+        }
+      }
+    },
     "app.browserMigration.preview.accountRequired" : {
       "comment" : "Browser migration wizard - shown instead of starting when no account is bound",
       "extractionState" : "extracted_with_value",
@@ -8662,6 +8674,30 @@
         }
       }
     },
+    "app.browserMigration.report.browserDataFailed" : {
+      "comment" : "Browser migration wizard - shown on a Profile whose history/cookies/extensions import failed",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "History, cookies and extensions couldn't be imported"
+          }
+        }
+      }
+    },
+    "app.browserMigration.report.browserDataRequested" : {
+      "comment" : "Browser migration wizard - what a migrated Profile's data import asked for; deliberately not a claim that it landed",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Recent history and cookies requested"
+          }
+        }
+      }
+    },
     "app.browserMigration.report.doneButton" : {
       "comment" : "Browser migration wizard - button dismissing the report and closing the window",
       "extractionState" : "extracted_with_value",
@@ -8670,6 +8706,29 @@
           "stringUnit" : {
             "state" : "new",
             "value" : "Done"
+          }
+        }
+      }
+    },
+    "app.browserMigration.report.extensionsTriggered" : {
+      "comment" : "Browser migration wizard - how many extensions a migrated Profile had installation started for; %d is the number of extensions",
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "new",
+                  "value" : "install triggered for %d extension"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "new",
+                  "value" : "install triggered for %d extensions"
+                }
+              }
+            }
           }
         }
       }

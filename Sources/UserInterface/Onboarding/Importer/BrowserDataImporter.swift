@@ -786,6 +786,39 @@ class BrowserDataImporter {
 
         return results
     }
+
+    /// Chrome Web Store `location` value in `Secure Preferences`.
+    private static let webStoreExtensionLocation = 1
+
+    /// How many Web Store extensions a source profile carries, read from the
+    /// same file and by the same rule the Chromium-side extension importer
+    /// applies: `from_webstore` set and `location` 1, in
+    /// `<user data>/<profile>/Secure Preferences`. Zero when the file is
+    /// missing or unreadable, which is what that importer finds there too.
+    ///
+    /// Counted on this side because extension installation is fire-and-forget
+    /// over there: it tallies its own successes and failures and never sends
+    /// them back. This is the number installation was *triggered* for, and the
+    /// only one a report can honestly name.
+    static func webStoreExtensionCount(
+        userDataURL: URL, sourceProfileDirectory: String
+    ) -> Int {
+        let url = userDataURL
+            .appendingPathComponent(sourceProfileDirectory)
+            .appendingPathComponent("Secure Preferences")
+        guard let data = try? Data(contentsOf: url),
+              let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let settings = (root["extensions"] as? [String: Any])?["settings"]
+                  as? [String: Any]
+        else {
+            return 0
+        }
+        return settings.values.filter { entry in
+            guard let entry = entry as? [String: Any] else { return false }
+            return entry["from_webstore"] as? Bool == true
+                && entry["location"] as? Int == webStoreExtensionLocation
+        }.count
+    }
 }
 
 // MARK: - Notification Name

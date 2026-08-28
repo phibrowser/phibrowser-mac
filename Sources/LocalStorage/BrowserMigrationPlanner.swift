@@ -589,28 +589,6 @@ enum BrowserMigrationPlanner {
     }
 }
 
-// MARK: - Late-completion guard
-
-/// Stamps each step of a run so a completion notification that arrives after
-/// its step has moved on cannot be consumed by the next one. The Chromium-side
-/// completion channel is keyed by browser type alone and carries no request
-/// identity, so this comparison is what tells a late signal from a current one.
-struct BrowserMigrationGeneration: Equatable {
-    private(set) var current = 0
-
-    /// Starts the next step and returns the generation to stamp it with.
-    mutating func advance() -> Int {
-        current += 1
-        return current
-    }
-
-    /// Whether a completion carrying `generation` belongs to the step running
-    /// now.
-    func accepts(_ generation: Int) -> Bool {
-        generation == current
-    }
-}
-
 // MARK: - What a run produced
 
 
@@ -629,6 +607,12 @@ struct BrowserMigrationOutcomes: Equatable {
     /// not land leaves no entry, the same way a Space that was never created
     /// leaves none.
     var spaceBookmarkCounts: [String: Int] = [:]
+    /// How many Web Store extensions install was triggered for, per planned
+    /// source profile, recorded only when that Profile's history / cookies /
+    /// extensions import came back successful. A Profile that failed — or was
+    /// never created — leaves no entry, the same way a Space whose Bookmarks
+    /// did not land leaves none.
+    var profileExtensionCounts: [String: Int] = [:]
     /// The guids of the pinned tabs the store accepted. A planned copy it
     /// refused — an entry whose URL it could not parse — leaves none, so the
     /// report can tell a source entry that landed from one that was dropped.
@@ -667,9 +651,26 @@ struct BrowserMigrationReport: Equatable {
     }
 
     struct ProfileRow: Equatable, Identifiable {
+        /// What became of a Profile's history, cookies and extensions — one
+        /// outcome for the three, because the Chromium side answers the whole
+        /// request with a single flag.
+        enum BrowserData: Equatable {
+            /// Nothing was asked for: the Profile was never created.
+            case notAttempted
+            /// The import ran to completion, and installation was triggered
+            /// for `extensions` Web Store extensions. A request, not a result:
+            /// each install's outcome stays on the Chromium side, and cookies
+            /// are skipped in silence when the source's Keychain prompt is
+            /// denied while the completion still says success.
+            case requested(extensions: Int)
+            /// The import was refused or came back failed.
+            case failed
+        }
+
         let sourceProfileKey: String
         let displayName: String
         let created: Bool
+        let browserData: BrowserData
         /// How many of the source profile's pinned entries the store accepted,
         /// and how many the plan carried. Counted in source entries rather
         /// than in rows: at `space` scope one entry is written once per Space,
@@ -702,10 +703,13 @@ struct BrowserMigrationReport: Equatable {
         outcomes: BrowserMigrationOutcomes
     ) -> BrowserMigrationReport {
         let profiles = plan.profiles.map { profile in
-            ProfileRow(
+            let profileCreated = outcomes.profileIDs[profile.sourceProfileKey] != nil
+            return ProfileRow(
                 sourceProfileKey: profile.sourceProfileKey,
                 displayName: profile.displayName,
-                created: outcomes.profileIDs[profile.sourceProfileKey] != nil,
+                created: profileCreated,
+                browserData: browserData(
+                    of: profile, created: profileCreated, outcomes: outcomes),
                 pinnedTabsWritten: lineageCount(
                     of: profile.pinnedTabs.filter {
                         outcomes.pinnedTabGuids.contains($0.guid)
@@ -731,6 +735,18 @@ struct BrowserMigrationReport: Equatable {
     /// One source entry per lineage, however many owners it was written to.
     private static func lineageCount(of pinnedTabs: [BrowserMigrationPlannedPinnedTab]) -> Int {
         Set(pinnedTabs.map(\.lineageID)).count
+    }
+
+    private static func browserData(
+        of profile: BrowserMigrationPlannedProfile,
+        created: Bool,
+        outcomes: BrowserMigrationOutcomes
+    ) -> ProfileRow.BrowserData {
+        guard created else { return .notAttempted }
+        guard let extensions = outcomes.profileExtensionCounts[profile.sourceProfileKey] else {
+            return .failed
+        }
+        return .requested(extensions: extensions)
     }
 
     private static func bookmarks(

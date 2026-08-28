@@ -203,6 +203,42 @@ final class BrowserMigrationRunTests: XCTestCase {
         XCTAssertEqual(report.profiles[0].spaces[0].bookmarks, .notAttempted)
     }
 
+    // MARK: - History, cookies and extensions
+
+    /// A request, not a result: the count is what installation was triggered
+    /// for, and the row claims nothing about the cookies beyond having asked
+    /// for them.
+    func testAProfileReportsWhatItsDataImportWasAskedFor() {
+        var outcomes = fullOutcomes()
+        outcomes.profileExtensionCounts = ["Default": 7, "Profile 1": 0]
+
+        let report = BrowserMigrationReport.folded(plan: plan(), outcomes: outcomes)
+
+        XCTAssertEqual(report.profiles[0].browserData, .requested(extensions: 7))
+        XCTAssertEqual(report.profiles[1].browserData, .requested(extensions: 0))
+    }
+
+    func testAProfileWhoseDataImportFailedSaysSoAndTheNextOneStillLands() {
+        var outcomes = fullOutcomes()
+        outcomes.profileExtensionCounts = ["Profile 1": 2]
+
+        let report = BrowserMigrationReport.folded(plan: plan(), outcomes: outcomes)
+
+        XCTAssertEqual(report.profiles[0].browserData, .failed)
+        XCTAssertTrue(report.profiles[0].created)
+        XCTAssertEqual(report.profiles[1].browserData, .requested(extensions: 2))
+    }
+
+    /// Distinct from a failed import: there was no Profile to import into, so
+    /// the report must not imply anything was lost.
+    func testAProfileThatWasNeverCreatedAttemptsNoDataImport() {
+        let report = BrowserMigrationReport.folded(
+            plan: plan(), outcomes: outcomes(profiles: ["Profile 1": "Profile 3"]))
+
+        XCTAssertEqual(report.profiles[0].browserData, .notAttempted)
+        XCTAssertEqual(report.profiles[1].browserData, .failed)
+    }
+
     // MARK: - Pinned tabs
 
     func testAProfileReportsThePinnedTabsThatLanded() {

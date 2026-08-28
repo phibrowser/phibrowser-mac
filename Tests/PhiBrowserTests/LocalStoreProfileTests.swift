@@ -995,6 +995,57 @@ final class LocalStoreProfileTests: XCTestCase {
         XCTAssertEqual(source.sidebar.spaces.map { $0.title }, ["Work"])
     }
 
+    /// Writes `json` as one source profile's `Secure Preferences` under a fresh
+    /// temporary user-data directory, and returns that directory.
+    private func writeSecurePreferences(
+        _ json: String, profile: String = "Profile 1"
+    ) throws -> URL {
+        let userDataURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let profileURL = userDataURL.appendingPathComponent(profile, isDirectory: true)
+        try FileManager.default.createDirectory(
+            at: profileURL, withIntermediateDirectories: true)
+        try Data(json.utf8).write(to: profileURL.appendingPathComponent("Secure Preferences"))
+        return userDataURL
+    }
+
+    /// The count the migration report names has to be the set the Chromium-side
+    /// extension importer will act on, since its own per-extension result never
+    /// comes back: Web Store origin and a Web Store install location, both.
+    func testWebStoreExtensionCountCountsOnlyWebStoreExtensions() throws {
+        let url = try writeSecurePreferences("""
+        {"extensions":{"settings":{
+          "aaaa":{"from_webstore":true,"location":1,"manifest":{"name":"Kept"}},
+          "bbbb":{"from_webstore":true,"location":1},
+          "cccc":{"from_webstore":false,"location":1},
+          "dddd":{"from_webstore":true,"location":10},
+          "eeee":{},
+          "ffff":"not a dictionary"}}}
+        """)
+
+        XCTAssertEqual(
+            BrowserDataImporter.webStoreExtensionCount(
+                userDataURL: url, sourceProfileDirectory: "Profile 1"),
+            2)
+    }
+
+    /// A source profile Phi cannot read names no extensions — which is what the
+    /// Chromium-side importer finds there too.
+    func testWebStoreExtensionCountIsZeroWithoutAReadableFile() throws {
+        let missing = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        XCTAssertEqual(
+            BrowserDataImporter.webStoreExtensionCount(
+                userDataURL: missing, sourceProfileDirectory: "Profile 1"),
+            0)
+
+        let malformed = try writeSecurePreferences("not json")
+        XCTAssertEqual(
+            BrowserDataImporter.webStoreExtensionCount(
+                userDataURL: malformed, sourceProfileDirectory: "Profile 1"),
+            0)
+    }
+
     func testLoadArcMigrationSourceIsNilWithoutSidebarFile() throws {
         let localStateURL = try writeLocalState(#"{"profile":{"profiles_order":[],"info_cache":{}}}"#)
         let missingSidebarURL = localStateURL.deletingLastPathComponent()

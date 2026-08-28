@@ -57,8 +57,13 @@ final class BrowserMigrationRunner: ObservableObject {
     /// Starts `plan` and reports whether it started. A run already in flight
     /// is left alone: the wizard returns to its progress rather than putting a
     /// second run against the same source in the air.
+    ///
+    /// `source` is what the plan was built from: the plan names source profiles
+    /// and Spaces, and this says which browser they came out of — the importer
+    /// type each Profile's data is pulled through and the directory its
+    /// extensions are counted in.
     @discardableResult
-    func start(plan: BrowserMigrationPlan) -> Bool {
+    func start(plan: BrowserMigrationPlan, source: BrowserMigrationSourceKind) -> Bool {
         guard !isRunning else { return false }
         let units = Self.units(of: plan)
         guard !units.isEmpty else { return false }
@@ -68,7 +73,7 @@ final class BrowserMigrationRunner: ObservableObject {
         // Set here rather than in the task so the wizard has progress to draw
         // the moment it switches step.
         state = .running(Self.progress(at: 0, in: units))
-        Task { await run(plan: plan, units: units) }
+        Task { await run(plan: plan, source: source, units: units) }
         return true
     }
 
@@ -80,9 +85,8 @@ final class BrowserMigrationRunner: ObservableObject {
 
     // MARK: - Units
 
-    /// One step of a run: a Profile, or one Space bound to it. Later tickets
-    /// give each kind more to do — the Profile's history, cookies and
-    /// extensions — without changing the counter the user sees.
+    /// One step of a run: a Profile, with its history, cookies and extensions,
+    /// or one Space bound to it, with its Bookmarks and pinned entries.
     private struct Unit {
         let name: String
         let profile: BrowserMigrationPlannedProfile
@@ -106,13 +110,22 @@ final class BrowserMigrationRunner: ObservableObject {
             unitIndex: index, unitCount: units.count, unitName: units[index].name)
     }
 
-    private func run(plan: BrowserMigrationPlan, units: [Unit]) async {
+    private func run(
+        plan: BrowserMigrationPlan,
+        source: BrowserMigrationSourceKind,
+        units: [Unit]
+    ) async {
+        // One importer for the whole run. It holds the continuations the
+        // Chromium-side completion resumes, so it has to outlive each unit —
+        // and no longer than the run, since it observes that completion for as
+        // long as it exists.
+        let importer = BrowserDataImporter()
         for (index, unit) in units.enumerated() {
             state = .running(Self.progress(at: index, in: units))
             if let space = unit.space {
                 await create(space, of: unit.profile)
             } else {
-                await create(unit.profile)
+                await create(unit.profile, from: source, through: importer)
             }
         }
         AppLogInfo("[BrowserMigration] run finished: created "
@@ -120,7 +133,11 @@ final class BrowserMigrationRunner: ObservableObject {
         state = .finished(.folded(plan: plan, outcomes: outcomes))
     }
 
-    private func create(_ planned: BrowserMigrationPlannedProfile) async {
+    private func create(
+        _ planned: BrowserMigrationPlannedProfile,
+        from source: BrowserMigrationSourceKind,
+        through importer: BrowserDataImporter
+    ) async {
         let profileID = await withCheckedContinuation { continuation in
             ProfileManager.shared.createProfile(displayName: planned.displayName) {
                 continuation.resume(returning: $0)
@@ -131,6 +148,46 @@ final class BrowserMigrationRunner: ObservableObject {
             return
         }
         outcomes.profileIDs[planned.sourceProfileKey] = profileID
+        await importBrowserData(
+            of: planned, from: source, into: profileID, through: importer)
+    }
+
+    /// Moves the source profile's history, cookies and extensions into the
+    /// Profile just created for it. The Profile is named by its on-disk
+    /// basename, so no window is opened on it — a Profile Migration creates has
+    /// none, and the user's own window must not be moved to make one.
+    ///
+    /// One Profile at a time, which the serial run gives for free: the
+    /// Chromium-side completion is keyed by browser type alone, so a second
+    /// import from the same source in flight would be indistinguishable from
+    /// this one's.
+    ///
+    /// What comes back is a single flag for the whole request, and it is worth
+    /// no more than the report claims of it: the extension installs it starts
+    /// run on in the background with no way back here, and a denied Keychain
+    /// prompt makes the importer skip the cookies while still reporting
+    /// success. A Profile whose import fails is recorded and the run moves on
+    /// to the next unit.
+    private func importBrowserData(
+        of planned: BrowserMigrationPlannedProfile,
+        from source: BrowserMigrationSourceKind,
+        into profileID: String,
+        through importer: BrowserDataImporter
+    ) async {
+        let imported = await importer.importDataIntoProfile(
+            source.browserType,
+            destinationProfileId: profileID,
+            sourceProfileDirectory: planned.sourceProfileKey,
+            dataTypes: source.migrationDataTypes)
+        guard imported else {
+            AppLogWarn("[BrowserMigration] couldn't import \(source.displayName) data "
+                + "into Profile \(planned.displayName)")
+            return
+        }
+        outcomes.profileExtensionCounts[planned.sourceProfileKey] =
+            BrowserDataImporter.webStoreExtensionCount(
+                userDataURL: source.userDataURL,
+                sourceProfileDirectory: planned.sourceProfileKey)
     }
 
     private func create(

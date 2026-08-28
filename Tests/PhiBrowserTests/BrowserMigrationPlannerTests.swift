@@ -352,19 +352,6 @@ final class BrowserMigrationPlannerTests: XCTestCase {
         XCTAssertEqual(result.profiles[1].pinnedTabs.map(\.title), ["News"])
     }
 
-    // MARK: - Late-completion guard
-
-    func testGenerationAcceptsOnlyTheStepRunningNow() {
-        var generation = BrowserMigrationGeneration()
-        let first = generation.advance()
-        XCTAssertTrue(generation.accepts(first))
-
-        let second = generation.advance()
-        XCTAssertFalse(generation.accepts(first))
-        XCTAssertTrue(generation.accepts(second))
-        XCTAssertNotEqual(first, second)
-    }
-
     // MARK: - Arc source adaptation
 
     func testArcMigrationSourceTranslatesProfilesSpacesAndFavorites() {

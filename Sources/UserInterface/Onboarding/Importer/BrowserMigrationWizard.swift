@@ -23,15 +23,55 @@ enum BrowserMigrationSourceKind: String, CaseIterable, Identifiable {
         }
     }
 
+    /// The Chromium-side importer this source's data comes through.
+    var browserType: BrowserType {
+        switch self {
+        case .arc: return .arc
+        }
+    }
+
+    /// The source's Chromium user-data directory: its presence is what
+    /// "installed" means, and its per-profile directories are where the Web
+    /// Store extension list is read from.
+    var userDataURL: URL {
+        switch self {
+        case .arc: return BrowserDataImporter.arcUserDataURL
+        }
+    }
+
+    /// Every data type this source supports — Migration has no per-type
+    /// toggles, so it always asks for all of them. What a browser supports is
+    /// `ImportDataType`'s to say, not this enum's. Arc's bookmarks are the one
+    /// subtraction: Phi parses its sidebar itself and writes each Space's tree
+    /// Mac-side, the same strip the import window makes.
+    var migrationDataTypes: [String] {
+        let supported = ImportDataType.availableTypes(for: browserType)
+        switch self {
+        case .arc:
+            return supported.filter { $0 != .bookmarks }.map(\.rawValue)
+        }
+    }
+
+    /// A non-blocking notice shown before a run starts. Arc and Dia share one:
+    /// the Chromium importer decrypts their cookies with a key it reads from
+    /// their Keychain item, and builds a fresh decryptor — so asks again — for
+    /// every Profile it imports into.
+    var preflightHint: String {
+        switch self {
+        case .arc:
+            return String(
+                format: NSLocalizedString("app.browserMigration.preflight.keychain",
+                    value: "macOS will ask to use %@'s encryption key so your cookies can come across. Choose “Always Allow”, or it asks again for every Profile.",
+                    comment: "Browser migration wizard - warns that the OS Keychain prompt is coming before a run starts; %@ is the source browser's name"),
+                displayName)
+        }
+    }
+
     /// A cheap presence check: the menu item validates this on every menu open,
     /// so it must not parse the source's data. That happens once, when the
     /// wizard opens.
     var isInstalled: Bool {
-        switch self {
-        case .arc:
-            return FileManager.default.fileExists(
-                atPath: BrowserDataImporter.arcUserDataURL.path)
-        }
+        FileManager.default.fileExists(atPath: userDataURL.path)
     }
 
     /// Every source alphabetically — which is also the order the phases ship
@@ -236,8 +276,10 @@ final class BrowserMigrationWizardModel: ObservableObject {
         // run is ticket 09's: it gates that setting on a migration being in
         // flight, which is a restriction rather than a repair.
         if let plan, plan.pinnedTabScope != currentPinnedTabScope { rebuild() }
-        guard canStart, let plan else { return }
-        guard BrowserMigrationRunner.shared.start(plan: plan) else { return }
+        guard canStart, let plan, let pickedSource else { return }
+        guard BrowserMigrationRunner.shared.start(plan: plan, source: pickedSource) else {
+            return
+        }
         step = .run
     }
 
@@ -370,6 +412,16 @@ struct BrowserMigrationWizardView: View {
             Text(summary)
                 .font(.system(size: 12))
                 .foregroundColor(.secondary)
+
+            // Said before anything starts rather than when the prompt appears:
+            // the run is serial, so a user who dismisses it once is asked again
+            // for every Profile.
+            if let source = model.pickedSource {
+                Text(source.preflightHint)
+                    .font(.system(size: 12))
+                    .foregroundColor(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
 
             if !model.isAccountBound {
                 Text(NSLocalizedString("app.browserMigration.preview.accountRequired",
@@ -547,7 +599,8 @@ struct BrowserMigrationWizardView: View {
                     ForEach(report.profiles) { profile in
                         VStack(alignment: .leading, spacing: 6) {
                             reportRow(profile.displayName,
-                                ok: profile.created && profile.pinnedTabsComplete,
+                                ok: profile.created && profile.pinnedTabsComplete
+                                    && profile.browserData != .failed,
                                 note: Self.profileNote(profile),
                                 weight: .medium)
                             ForEach(profile.spaces) { space in
@@ -589,14 +642,21 @@ struct BrowserMigrationWizardView: View {
     private func reportRow(
         _ name: String, ok: Bool, note: String?, weight: Font.Weight
     ) -> some View {
-        HStack(spacing: 6) {
-            Image(systemName: ok ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
-                .foregroundColor(ok ? .green : .orange)
-            Text(name).font(.system(size: 13, weight: weight))
+        VStack(alignment: .leading, spacing: 2) {
+            HStack(spacing: 6) {
+                Image(systemName: ok ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
+                    .foregroundColor(ok ? .green : .orange)
+                Text(name).font(.system(size: 13, weight: weight))
+            }
+            // Under the name rather than beside it: a Profile's note carries its
+            // data import, its extensions and its pinned tabs, which no single
+            // line of this window holds.
             if let note {
                 Text(note)
                     .font(.system(size: 12))
                     .foregroundColor(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.leading, 22)
             }
         }
     }
@@ -606,10 +666,56 @@ struct BrowserMigrationWizardView: View {
         value: "Not created",
         comment: "Browser migration wizard - outcome of a Profile or Space the run failed to create")
 
-    /// A Profile says how many of the source's pinned entries became pinned
-    /// tabs once it exists; a Profile whose source had none says nothing.
+    /// A Profile says what its data import claimed and how many of the source's
+    /// pinned entries became pinned tabs, once it exists.
     private static func profileNote(_ profile: BrowserMigrationReport.ProfileRow) -> String? {
         guard profile.created else { return notCreatedLabel }
+        let notes = [browserDataNote(profile), extensionsNote(profile), pinnedTabsNote(profile)]
+            .compactMap { $0 }
+        return notes.isEmpty ? nil : notes.joined(separator: " · ")
+    }
+
+    /// Deliberately weaker than "imported": the Chromium side answers the whole
+    /// request with one success flag, and reports success even when a denied
+    /// Keychain prompt made it skip the cookies. History is capped at the
+    /// importer's own limit, so it is "recent", never "all".
+    private static func browserDataNote(
+        _ profile: BrowserMigrationReport.ProfileRow
+    ) -> String? {
+        switch profile.browserData {
+        case .notAttempted:
+            return nil
+        case .requested:
+            return NSLocalizedString("app.browserMigration.report.browserDataRequested",
+                value: "Recent history and cookies requested",
+                comment: "Browser migration wizard - what a migrated Profile's data import asked for; deliberately not a claim that it landed")
+        case .failed:
+            return NSLocalizedString("app.browserMigration.report.browserDataFailed",
+                value: "History, cookies and extensions couldn't be imported",
+                comment: "Browser migration wizard - shown on a Profile whose history/cookies/extensions import failed")
+        }
+    }
+
+    /// Triggered, never succeeded: the Chromium side installs extensions in the
+    /// background and its per-extension result has no way back here.
+    private static func extensionsNote(
+        _ profile: BrowserMigrationReport.ProfileRow
+    ) -> String? {
+        // Named even at zero: a Profile that carried no extensions has to say
+        // so rather than leave the reader unable to tell it from one Phi never
+        // looked at.
+        guard case .requested(let extensions) = profile.browserData else { return nil }
+        return String.localizedStringWithFormat(
+            NSLocalizedString("app.browserMigration.report.extensionsTriggered",
+                value: "install triggered for %d extensions",
+                comment: "Browser migration wizard - how many extensions a migrated Profile had installation started for; %d is the number of extensions"),
+            extensions)
+    }
+
+    /// A Profile whose source had no pinned entries says nothing.
+    private static func pinnedTabsNote(
+        _ profile: BrowserMigrationReport.ProfileRow
+    ) -> String? {
         guard profile.pinnedTabsPlanned > 0 else { return nil }
         if profile.pinnedTabsComplete {
             return String.localizedStringWithFormat(

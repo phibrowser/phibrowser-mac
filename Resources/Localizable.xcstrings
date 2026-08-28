@@ -8461,6 +8461,18 @@
         }
       }
     },
+    "app.browserMigration.pick.noSourcesFound" : {
+      "comment" : "Browser migration wizard - shown in place of the source list when none of the browsers Phi can migrate from is installed",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Phi didn't find Arc, Dia or Zen on this Mac."
+          }
+        }
+      }
+    },
     "app.browserMigration.pick.subtitle" : {
       "comment" : "Browser migration wizard - explanation above the source list",
       "extractionState" : "extracted_with_value",
@@ -8468,19 +8480,19 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Choose the browser to migrate from. Phi recreates its Profiles and Spaces — it never changes what you already have."
+            "value" : "Phi recreates your Profiles and Spaces from another browser. It only ever creates — nothing you already have is changed."
           }
         }
       }
     },
     "app.browserMigration.pick.unreadable" : {
-      "comment" : "Browser migration wizard - shown when the picked source is installed but its data can't be parsed",
+      "comment" : "Browser migration wizard - shown when the picked source is installed but its data can't be parsed; %1$@ is the source browser's name, appearing twice",
       "extractionState" : "extracted_with_value",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Phi couldn't read this browser's data."
+            "value" : "Phi couldn't read %1$@'s data. Open %1$@ once so it writes its sidebar, then try again."
           }
         }
       }
@@ -8505,6 +8517,18 @@
           "stringUnit" : {
             "state" : "new",
             "value" : "Sign in to Phi — or continue as a guest — before migrating."
+          }
+        }
+      }
+    },
+    "app.browserMigration.preview.alreadyMigratedBanner" : {
+      "comment" : "Browser migration wizard - stated before Start that a run would be a second migration; %@ is the source browser's name",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "You already migrated from %@ for this account. Migrating again creates a second set of Profiles and Spaces — it doesn't update the first."
           }
         }
       }
@@ -8534,13 +8558,25 @@
       }
     },
     "app.browserMigration.preview.defaultProfileBound" : {
-      "comment" : "Browser migration wizard - note on a Space whose source profile record is unreadable",
+      "comment" : "Browser migration wizard - note on a Space whose source profile record is unreadable; %@ is the Profile it will be created under",
       "extractionState" : "extracted_with_value",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Phi couldn't tell which profile this belongs to — it will use the default one"
+            "value" : "Phi couldn't tell which profile this belongs to, so it will go to %@."
+          }
+        }
+      }
+    },
+    "app.browserMigration.preview.heading" : {
+      "comment" : "Browser migration wizard - heading of the review step",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Review what will be created"
           }
         }
       }
@@ -8553,6 +8589,30 @@
           "stringUnit" : {
             "state" : "new",
             "value" : "No Spaces"
+          }
+        }
+      }
+    },
+    "app.browserMigration.preview.nothingTicked" : {
+      "comment" : "Browser migration wizard - why Start is disabled when the user has unticked everything",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Choose at least one Space to migrate."
+          }
+        }
+      }
+    },
+    "app.browserMigration.preview.nothingToMigrate" : {
+      "comment" : "Browser migration wizard - shown under the tree when the source read fine and offers nothing; %1$@ and %2$@ are both the source browser's name",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Phi found %1$@, but there's nothing here to migrate — no %2$@ profile has data Phi can move."
           }
         }
       }
@@ -8615,18 +8675,6 @@
         }
       }
     },
-    "app.browserMigration.preview.subtitle" : {
-      "comment" : "Browser migration wizard - explanation above the preview tree",
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "These Profiles and Spaces will be created. Untick anything you don't want."
-          }
-        }
-      }
-    },
     "app.browserMigration.preview.summary" : {
       "comment" : "Browser migration wizard - what the previewed run creates; %1$@ is a Profile count such as \"2 Profiles\", %2$@ a Space count such as \"4 Spaces\"",
       "extractionState" : "extracted_with_value",
@@ -8674,26 +8722,50 @@
         }
       }
     },
-    "app.browserMigration.report.browserDataFailed" : {
-      "comment" : "Browser migration wizard - shown on a Profile whose history/cookies/extensions import failed",
+    "app.browserMigration.report.bookmarksNoneInSource" : {
+      "comment" : "Browser migration wizard - shown on a Space whose source tree carried no bookmarks; %@ is the source browser's name",
       "extractionState" : "extracted_with_value",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "History, cookies and extensions couldn't be imported"
+            "value" : "No bookmarks — this Space had none in %@"
+          }
+        }
+      }
+    },
+    "app.browserMigration.report.bookmarksNoneSaved" : {
+      "comment" : "Browser migration wizard - shown on a Space whose source tree carried bookmarks of which none landed",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "No bookmarks were saved"
+          }
+        }
+      }
+    },
+    "app.browserMigration.report.browserDataFailed" : {
+      "comment" : "Browser migration wizard - shown when a migrated Profile's browser-data import came back failed: against its history, cookies and extensions rows in the detail grid, and as the outcome of the promoted failure",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Couldn't be imported"
           }
         }
       }
     },
     "app.browserMigration.report.browserDataRequested" : {
-      "comment" : "Browser migration wizard - what a migrated Profile's data import asked for; deliberately not a claim that it landed",
+      "comment" : "Browser migration wizard - shown when a migrated Profile's history and cookies import ran to completion; deliberately not a claim about what landed",
       "extractionState" : "extracted_with_value",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Recent history and cookies requested"
+            "value" : "Import finished"
           }
         }
       }
@@ -8710,25 +8782,26 @@
         }
       }
     },
-    "app.browserMigration.report.extensionsTriggered" : {
-      "comment" : "Browser migration wizard - how many extensions a migrated Profile had installation started for; %d is the number of extensions",
+    "app.browserMigration.report.extensionsNoneFound" : {
+      "comment" : "Browser migration wizard - shown against a migrated Profile's extensions when the source profile carried none",
+      "extractionState" : "extracted_with_value",
       "localizations" : {
         "en" : {
-          "variations" : {
-            "plural" : {
-              "one" : {
-                "stringUnit" : {
-                  "state" : "new",
-                  "value" : "install triggered for %d extension"
-                }
-              },
-              "other" : {
-                "stringUnit" : {
-                  "state" : "new",
-                  "value" : "install triggered for %d extensions"
-                }
-              }
-            }
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "None found"
+          }
+        }
+      }
+    },
+    "app.browserMigration.report.extensionsTriggered" : {
+      "comment" : "Browser migration wizard - how many extensions a migrated Profile had installation started for; %d is the number of extensions",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Install started for %d"
           }
         }
       }
@@ -8741,6 +8814,66 @@
           "stringUnit" : {
             "state" : "new",
             "value" : "Go to %@"
+          }
+        }
+      }
+    },
+    "app.browserMigration.report.heading" : {
+      "comment" : "Browser migration wizard - heading of the report shown once a run has ended",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Migration finished"
+          }
+        }
+      }
+    },
+    "app.browserMigration.report.labelBrowserData" : {
+      "comment" : "Browser migration wizard - label of a migrated Profile's history and cookies outcome in the report's detail grid",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "History & cookies"
+          }
+        }
+      }
+    },
+    "app.browserMigration.report.labelBrowserDataAndExtensions" : {
+      "comment" : "Browser migration wizard - subject of the promoted failure of a migrated Profile's browser-data import, which covers all three at once",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "History, cookies & extensions"
+          }
+        }
+      }
+    },
+    "app.browserMigration.report.labelExtensions" : {
+      "comment" : "Browser migration wizard - label of a migrated Profile's extensions outcome",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Extensions"
+          }
+        }
+      }
+    },
+    "app.browserMigration.report.labelPinnedTabs" : {
+      "comment" : "Browser migration wizard - label of a migrated Profile's pinned tabs outcome",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Pinned tabs"
           }
         }
       }
@@ -8759,58 +8892,153 @@
     },
     "app.browserMigration.report.pinnedTabCount" : {
       "comment" : "Browser migration wizard - how many pinned tabs a migrated Profile received; %d is the number of pinned tabs",
-      "localizations" : {
-        "en" : {
-          "variations" : {
-            "plural" : {
-              "one" : {
-                "stringUnit" : {
-                  "state" : "new",
-                  "value" : "%d pinned tab"
-                }
-              },
-              "other" : {
-                "stringUnit" : {
-                  "state" : "new",
-                  "value" : "%d pinned tabs"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "app.browserMigration.report.pinnedTabsDropped" : {
-      "comment" : "Browser migration wizard - how many of a Profile's pinned entries the run could not turn into pinned tabs; %d is the number that were dropped",
-      "localizations" : {
-        "en" : {
-          "variations" : {
-            "plural" : {
-              "one" : {
-                "stringUnit" : {
-                  "state" : "new",
-                  "value" : "%d pinned tab couldn't be created"
-                }
-              },
-              "other" : {
-                "stringUnit" : {
-                  "state" : "new",
-                  "value" : "%d pinned tabs couldn't be created"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "app.browserMigration.report.subtitle" : {
-      "comment" : "Browser migration wizard - explanation above the report",
       "extractionState" : "extracted_with_value",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "The migration has finished. Here's what it created."
+            "value" : "%d added"
+          }
+        }
+      }
+    },
+    "app.browserMigration.report.pinnedTabsDropped" : {
+      "comment" : "Browser migration wizard - how many of a Profile's pinned entries the run could not turn into pinned tabs; %1$d is the number that were dropped, %2$d how many the plan carried",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$d of %2$d couldn't be added"
+          }
+        }
+      }
+    },
+    "app.browserMigration.report.pinnedTabsNoneInSource" : {
+      "comment" : "Browser migration wizard - shown against a migrated Profile's pinned tabs when the source profile had none; %@ is the source browser's name",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "None in %@"
+          }
+        }
+      }
+    },
+    "app.browserMigration.report.profileCount" : {
+      "comment" : "Browser migration wizard - Profile count in the report summary; %d is the number of Profiles the run created",
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "new",
+                  "value" : "%d Profile"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "new",
+                  "value" : "%d Profiles"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "app.browserMigration.report.profileNotCreated" : {
+      "comment" : "Browser migration wizard - promoted failure of a Profile the run could not create",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Profile not created"
+          }
+        }
+      }
+    },
+    "app.browserMigration.report.spaceCount" : {
+      "comment" : "Browser migration wizard - Space count in the report summary; %d is the number of Spaces the run created",
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "new",
+                  "value" : "%d Space"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "new",
+                  "value" : "%d Spaces"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "app.browserMigration.report.spaceNotCreated" : {
+      "comment" : "Browser migration wizard - promoted failure of a Space the run could not create",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Space not created"
+          }
+        }
+      }
+    },
+    "app.browserMigration.report.summaryCreated" : {
+      "comment" : "Browser migration wizard - summary of what a run created; %1$@ is a Profile count such as \"2 Profiles\", %2$@ a Space count such as \"5 Spaces\"",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Created %1$@ and %2$@."
+          }
+        }
+      }
+    },
+    "app.browserMigration.report.summaryNothingCreated" : {
+      "comment" : "Browser migration wizard - summary of a run that created no Profile and no Space",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Nothing was created."
+          }
+        }
+      }
+    },
+    "app.browserMigration.report.summaryProblems" : {
+      "comment" : "Browser migration wizard - how many promoted failures the report lists; %d is the number of them",
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "new",
+                  "value" : "%d thing needs your attention."
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "new",
+                  "value" : "%d things need your attention."
+                }
+              }
+            }
           }
         }
       }
@@ -8875,32 +9103,68 @@
         }
       }
     },
-    "app.browserMigration.run.keepsRunning" : {
-      "comment" : "Browser migration wizard - tells the user a run outlives the window",
+    "app.browserMigration.run.creatingUnit" : {
+      "comment" : "Browser migration wizard - the unit of the run being worked on; %@ is a Profile or Space name",
       "extractionState" : "extracted_with_value",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "You can close this window — the migration carries on, and this menu item brings you back to it."
+            "value" : "Creating %@"
           }
         }
       }
     },
-    "app.browserMigration.run.unit" : {
-      "comment" : "Browser migration wizard - which unit of the run is being worked on; %1$@ is a Profile or Space name, %2$d the unit's number, %3$d how many there are",
+    "app.browserMigration.run.heading" : {
+      "comment" : "Browser migration wizard - heading while a run is working",
       "extractionState" : "extracted_with_value",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "%1$@ — %2$d of %3$d"
+            "value" : "Migrating…"
+          }
+        }
+      }
+    },
+    "app.browserMigration.run.subtitle" : {
+      "comment" : "Browser migration wizard - subtitle shown while a run is working",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "This can take a few minutes."
+          }
+        }
+      }
+    },
+    "app.browserMigration.run.unitPositionProfile" : {
+      "comment" : "Browser migration wizard - where the Profile being created sits in the run; %1$d is its number, %2$d how many units the run has",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Profile %1$d of %2$d"
+          }
+        }
+      }
+    },
+    "app.browserMigration.run.unitPositionSpace" : {
+      "comment" : "Browser migration wizard - where the Space being created sits in the run; %1$d is its number, %2$d how many units the run has",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Space %1$d of %2$d"
           }
         }
       }
     },
     "app.browserMigration.title" : {
-      "comment" : "Browser migration wizard - window heading",
+      "comment" : "Browser migration wizard - heading of the source step, which also names the window",
       "extractionState" : "extracted_with_value",
       "localizations" : {
         "en" : {
@@ -10547,22 +10811,28 @@
       "comment" : "File menu - Create a Kiosk window and open its omnibox",
       "extractionState" : "extracted_with_value",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Neues Kiosk-Fenster"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "new",
             "value" : "New Kiosk Window"
           }
         },
-        "zh-Hans" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "新建 Kiosk 窗口"
+            "value" : "Nueva ventana de Kiosk"
           }
         },
-        "zh-Hant" : {
+        "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "新增 Kiosk 視窗"
+            "value" : "Nouvelle fenêtre Kiosk"
           }
         },
         "ja" : {
@@ -10577,28 +10847,22 @@
             "value" : "새 Kiosk 윈도우"
           }
         },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Nouvelle fenêtre Kiosk"
-          }
-        },
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Neues Kiosk-Fenster"
-          }
-        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Nieuw Kiosk-venster"
           }
         },
-        "es" : {
+        "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Nueva ventana de Kiosk"
+            "value" : "新建 Kiosk 窗口"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "新增 Kiosk 視窗"
           }
         }
       }
@@ -58252,22 +58516,28 @@
       "comment" : "Navigations settings - Toggle title for enabling the system-wide Kiosk shortcut; %@ is replaced by the current New Kiosk Window shortcut",
       "extractionState" : "extracted_with_value",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kiosk öffnen, wenn %@ in einer beliebigen App gedrückt wird"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "new",
             "value" : "Open Kiosk when pressing %@ in any app"
           }
         },
-        "zh-Hans" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "在任何应用中按下 %@ 时打开 Kiosk"
+            "value" : "Abrir Kiosk al presionar %@ en cualquier aplicación"
           }
         },
-        "zh-Hant" : {
+        "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "在任何 App 中按下 %@ 時開啟 Kiosk"
+            "value" : "Ouvrir Kiosk en appuyant sur %@ depuis n'importe quelle app"
           }
         },
         "ja" : {
@@ -58282,28 +58552,22 @@
             "value" : "어느 앱에서나 %@를 누르면 Kiosk 열기"
           }
         },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Ouvrir Kiosk en appuyant sur %@ depuis n'importe quelle app"
-          }
-        },
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Kiosk öffnen, wenn %@ in einer beliebigen App gedrückt wird"
-          }
-        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Open Kiosk wanneer je in welke app dan ook %@ indrukt"
           }
         },
-        "es" : {
+        "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Abrir Kiosk al presionar %@ en cualquier aplicación"
+            "value" : "在任何应用中按下 %@ 时打开 Kiosk"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在任何 App 中按下 %@ 時開啟 Kiosk"
           }
         }
       }
@@ -64611,22 +64875,28 @@
       "comment" : "Shortcuts settings - Command title for opening a new Kiosk window",
       "extractionState" : "extracted_with_value",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Neues Kiosk-Fenster"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "new",
             "value" : "New Kiosk Window"
           }
         },
-        "zh-Hans" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "新建 Kiosk 窗口"
+            "value" : "Nueva ventana de Kiosk"
           }
         },
-        "zh-Hant" : {
+        "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "新增 Kiosk 視窗"
+            "value" : "Nouvelle fenêtre Kiosk"
           }
         },
         "ja" : {
@@ -64641,28 +64911,22 @@
             "value" : "새 Kiosk 윈도우"
           }
         },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Nouvelle fenêtre Kiosk"
-          }
-        },
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Neues Kiosk-Fenster"
-          }
-        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Nieuw Kiosk-venster"
           }
         },
-        "es" : {
+        "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Nueva ventana de Kiosk"
+            "value" : "新建 Kiosk 窗口"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "新增 Kiosk 視窗"
           }
         }
       }

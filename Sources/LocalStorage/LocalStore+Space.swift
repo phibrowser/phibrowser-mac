@@ -272,6 +272,20 @@ extension LocalStore {
         }
     }
 
+    /// How many Spaces the account holds. Separate from `getAllSpaces` because
+    /// callers that only need the size pay for neither the rows nor the three
+    /// sort descriptors that make the strip's order deterministic.
+    @MainActor
+    func spaceCount() -> Int {
+        guard let context = mainContext else { return 0 }
+        do {
+            return try context.fetchCount(FetchDescriptor<SpaceModel>())
+        } catch {
+            AppLogError("[LocalStore] spaceCount failed: \(error)")
+            return 0
+        }
+    }
+
     /// Returns Spaces. With `profileId == nil` (the default for the
     /// multi-profile sidebar) every Space is returned regardless of which
     /// profile it's bound to; passing an explicit profileId restricts the

@@ -73,21 +73,35 @@ final class BrowserMigrationPreviewTests: XCTestCase {
         XCTAssertEqual(rows[1].spaces.map(\.sourceSpaceID), ["s-work", "s-side"])
     }
 
-    func testASpaceCarriesItsNameAndTheColourItWillGet() {
+    func testASpaceCarriesItsNameAndTickState() {
         let row = rows(twoProfileSource())[0].spaces[0]
 
         XCTAssertEqual(row.name, "Home")
-        // The colour of the theme the run will pin, not the source's own —
-        // the preview must not promise a colour Phi cannot produce.
-        XCTAssertEqual(row.colorHex, BrowserMigrationSpaceTheme.overlayHex(ofThemeID: "coral"))
         XCTAssertTrue(row.isTicked)
         XCTAssertFalse(row.boundToDefaultProfile)
     }
 
-    /// A row the user has unticked is not in the plan, so its colour comes
-    /// from the fallback — which has to be the same colour, or unticking a
-    /// Space would appear to change it.
-    func testUntickingASpaceDoesNotChangeItsColour() {
+    /// The theme the run will pin, not the source's own colour: the row's
+    /// swatch is drawn from it, and it is the only colour the preview can
+    /// promise, because the run pins a theme rather than a hex.
+    func testASpaceCarriesTheThemeThePlanResolved() {
+        let source = twoProfileSource()
+        let plan = BrowserMigrationPlanner.plan(
+            source: source,
+            existingProfileDisplayNames: [],
+            pinnedTabScope: .profile,
+            selection: .all(in: source),
+            operationID: operationID)
+
+        let row = BrowserMigrationPreview.rows(source: source, plan: plan)[0].spaces[0]
+
+        XCTAssertEqual(row.themeID, plan.profiles[0].spaces[0].themeID)
+        XCTAssertEqual(row.themeID, "coral")
+    }
+
+    /// An unticked Space is not in the plan, so its theme comes from the
+    /// planner's own fallback — unticking must not appear to restyle it.
+    func testUntickingASpaceDoesNotChangeItsTheme() {
         let source = twoProfileSource()
         let ticked = rows(source)[0].spaces[0]
         let unticked = rows(
@@ -98,7 +112,7 @@ final class BrowserMigrationPreviewTests: XCTestCase {
 
         XCTAssertTrue(ticked.isTicked)
         XCTAssertFalse(unticked.isTicked)
-        XCTAssertEqual(unticked.colorHex, ticked.colorHex)
+        XCTAssertEqual(unticked.themeID, ticked.themeID)
     }
 
     // MARK: - Names
@@ -129,7 +143,7 @@ final class BrowserMigrationPreviewTests: XCTestCase {
         // The Profile creates nothing, so it is not in the plan — but its row
         // and its Spaces stay on screen, unticked, or it could never come back.
         XCTAssertEqual(rows.map(\.sourceProfileKey), ["Default", "Profile 1"])
-        XCTAssertEqual(rows[1].isTicked, false)
+        XCTAssertEqual(rows[1].tick, .off)
         XCTAssertEqual(rows[1].spaces.map(\.isTicked), [false, false])
         // Not in the plan means no collision to resolve, so no suffix.
         XCTAssertEqual(rows[1].displayName, "Work")
@@ -142,8 +156,16 @@ final class BrowserMigrationPreviewTests: XCTestCase {
 
         let rows = rows(source, selection: selection)
 
-        XCTAssertTrue(rows[1].isTicked)
+        // Some of its Spaces, not all: the box says so rather than reading as
+        // a Profile that comes across whole.
+        XCTAssertEqual(rows[1].tick, .mixed)
         XCTAssertEqual(rows[1].spaces.map(\.isTicked), [false, true])
+    }
+
+    func testAProfileWithEveryOneOfItsSpacesTickedIsFullyTicked() {
+        let rows = rows(twoProfileSource())
+
+        XCTAssertEqual(rows.map(\.tick), [.on, .on])
     }
 
     // MARK: - The rows a plan leaves out
@@ -158,7 +180,7 @@ final class BrowserMigrationPreviewTests: XCTestCase {
         XCTAssertEqual(rows[1].sourceProfileKey, "Profile 1")
         XCTAssertEqual(rows[1].displayName, "Empty")
         XCTAssertEqual(rows[1].skipReason, .noSpaces)
-        XCTAssertFalse(rows[1].isTicked)
+        XCTAssertEqual(rows[1].tick, .off)
         XCTAssertTrue(rows[1].spaces.isEmpty)
     }
 
@@ -192,8 +214,39 @@ final class BrowserMigrationPreviewTests: XCTestCase {
 
         let rows = rows(source, selection: selection)
 
-        XCTAssertFalse(rows[0].isTicked)
+        XCTAssertEqual(rows[0].tick, .off)
         XCTAssertEqual(rows[0].spaces.map(\.isTicked), [false, false])
+    }
+
+    // MARK: - Nothing to migrate
+
+    /// A source Phi read fine that still offers nothing. It is not the same
+    /// state as a source that could not be read — that one produces no rows and
+    /// never reaches the preview — and the wizard says a different thing about
+    /// each.
+    func testASourceWhoseProfilesAllCreateNothingHasNothingToMigrate() {
+        let source = source(
+            profiles: [("Default", "Personal"), ("Profile 1", "Work")],
+            spaces: [])
+
+        let rows = rows(source)
+
+        XCTAssertEqual(rows.map(\.displayName), ["Personal", "Work"])
+        XCTAssertTrue(BrowserMigrationPreview.hasNothingToMigrate(rows: rows))
+    }
+
+    /// Unticking everything empties the plan too, but there is still something
+    /// to tick back — so it must not read as a source with nothing in it.
+    func testUntickingEverythingIsNotTheSameAsHavingNothingToMigrate() {
+        let source = twoProfileSource()
+        let selection = BrowserMigrationSelection.all(in: source)
+            .setting(profileKey: "Default", ticked: false, in: source)
+            .setting(profileKey: "Profile 1", ticked: false, in: source)
+
+        let rows = rows(source, selection: selection)
+
+        XCTAssertEqual(rows.map(\.tick), [.off, .off])
+        XCTAssertFalse(BrowserMigrationPreview.hasNothingToMigrate(rows: rows))
     }
 
     // MARK: - Sources

@@ -2492,21 +2492,46 @@ extension AppController {
 
         let window = NSWindow(
             contentRect: .zero,
-            styleMask: [.titled, .closable],
+            styleMask: [.titled, .closable, .fullSizeContentView],
             backing: .buffered,
             defer: false
         )
         window.identifier = Self.browserMigrationWindowIdentifier
+        // Kept although nothing draws it: the window still reports the title to
+        // accessibility and to the Window menu, while the wizard's own per-step
+        // heading does the naming on screen.
         window.title = NSLocalizedString("app.browserMigration.windowTitle", value: "Migrate to Phi",
             comment: "Browser migration wizard - window title")
+        window.titlebarAppearsTransparent = true
+        window.titleVisibility = .hidden
+        window.isMovableByWindowBackground = true
         window.isReleasedWhenClosed = false
+        // The wizard wears the import window's dress and is hard-coded dark
+        // with it. That window can leave the system appearance alone because it
+        // hand-paints every label and carries almost no system controls; this
+        // one has a bridged mixed checkbox, a disclosure and two progress
+        // views, each of which would draw for a light system on a dark ground.
+        // One line here is cheaper and more complete than painting all four.
+        window.appearance = NSAppearance(named: .darkAqua)
         let wizard = BrowserMigrationWizardView(
             model: BrowserMigrationWizardModel()
         ) { [weak window] in
             window?.close()
         }
-        window.contentViewController = ThemedHostingController(rootView: wizard)
-        window.setContentSize(BrowserMigrationWizardView.windowSize)
+        let hosting = ThemedHostingController(rootView: wizard)
+        // The view still declares the size — a root view that asked to fill
+        // would report a runaway fitting size and grow the window visibly, the
+        // way migration ticket 04's 640 x 1713 did. What changes is where that
+        // size lands: the wizard draws under the transparent titlebar, so it is
+        // the whole window's frame rather than the content rect the hosting
+        // controller would push out as its preferred size, which adds the
+        // titlebar's height on top of it.
+        let declaredSize = hosting.view.fittingSize
+        hosting.sizingOptions = []
+        window.contentViewController = hosting
+        window.setFrame(
+            NSRect(origin: window.frame.origin, size: declaredSize),
+            display: false)
         window.center()
         window.makeKeyAndOrderFront(nil)
     }

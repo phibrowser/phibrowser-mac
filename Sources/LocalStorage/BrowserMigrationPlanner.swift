@@ -635,15 +635,26 @@ struct BrowserMigrationReport: Equatable {
             /// source carries no Mac-side tree for it because its bookmarks
             /// arrive Chromium-side.
             case notAttempted
-            /// Written, node count included; zero when the source Space had no
-            /// pinned items of its own.
+            /// Written, bookmark count included. Always positive: the two ways
+            /// a write lands nothing are cases of their own, because a report
+            /// that cannot tell them apart has to hedge on both.
             case written(Int)
+            /// The write ran and the source Space held no bookmarks to write,
+            /// so nothing was lost.
+            case noneInSource
+            /// The source Space held bookmarks and none of them landed — the
+            /// visible symptom of the inherited staged-root defect, and the
+            /// only one of the two zeroes the report promotes.
+            case noneSaved
             /// Attempted and did not land.
             case failed
         }
 
         let sourceSpaceID: String
         let name: String
+        /// The built-in theme the plan pinned, so the report draws the swatch
+        /// the preview promised and the two can be checked against each other.
+        let themeID: String
         let created: Bool
         let bookmarks: Bookmarks
 
@@ -720,6 +731,7 @@ struct BrowserMigrationReport: Equatable {
                     return SpaceRow(
                         sourceSpaceID: space.sourceSpaceID,
                         name: space.name,
+                        themeID: space.themeID,
                         created: created,
                         bookmarks: bookmarks(of: space, created: created, outcomes: outcomes))
                 })
@@ -754,10 +766,137 @@ struct BrowserMigrationReport: Equatable {
         created: Bool,
         outcomes: BrowserMigrationOutcomes
     ) -> SpaceRow.Bookmarks {
-        guard created, space.bookmarkRoot != nil else { return .notAttempted }
+        guard created, let root = space.bookmarkRoot else { return .notAttempted }
         guard let count = outcomes.spaceBookmarkCounts[space.sourceSpaceID] else {
             return .failed
         }
-        return .written(count)
+        guard count == 0 else { return .written(count) }
+        // A written zero is either of two things the report words — and
+        // classifies — apart, and only the source tree it was written from
+        // says which.
+        return sourceBookmarkCount(of: root) > 0 ? .noneSaved : .noneInSource
+    }
+
+    /// How many bookmarks the source tree held, counted the way the store
+    /// counts what it wrote: a folder is not a bookmark, so a Space carrying
+    /// nothing but empty folders had none to lose.
+    private static func sourceBookmarkCount(of node: ArcDataParserTool.Bookmark) -> Int {
+        node.children.reduce(0) { total, child in
+            total + (child.isFolder ? 0 : 1) + sourceBookmarkCount(of: child)
+        }
+    }
+}
+
+// MARK: - The problems the report promotes
+
+extension BrowserMigrationReport {
+    /// One hard failure, named by what failed and where. The report promotes
+    /// these above its disclosure and leaves everything else inside it: an
+    /// outcome Phi asked for but cannot confirm — cookies requested,
+    /// extensions triggered — is not a failure, and marking it as one would
+    /// teach the reader to ignore the mark that matters.
+    /// A hard failure the report promotes: something the run set out to do and
+    /// is known not to have done. Not the three hedges — a request Chromium
+    /// answers with one unconditional success flag is unconfirmable, not
+    /// failed, and promoting every unconfirmable outcome would teach the reader
+    /// to ignore the colour that matters.
+    enum Problem: Equatable {
+        case profileNotCreated(profile: String)
+        /// The Profile exists but its history, cookies and extensions import
+        /// came back failed. A confirmed failure, not one of the three hedges:
+        /// `requested` is what cannot be confirmed, `failed` is what is known.
+        /// Only ever reported for a Profile that exists — with no Profile there
+        /// was nothing to import into, which its own row already says.
+        case browserDataFailed(profile: String)
+        case spaceNotCreated(profile: String, space: String)
+        case bookmarksFailed(profile: String, space: String)
+        /// The source Space held bookmarks and none of them landed. Distinct
+        /// from a Space that had none, which is not a problem at all.
+        case bookmarksNoneSaved(profile: String, space: String)
+        /// Some of the Profile's pinned entries were refused. Only ever
+        /// reported for a Profile that exists: with no Profile there was
+        /// nothing to write them to, which its own row already says.
+        case pinnedTabsIncomplete(profile: String, written: Int, planned: Int)
+    }
+
+    /// Every promoted failure, in plan order, each Profile's own ahead of its
+    /// Spaces'. A pure projection: the report holds the facts, this decides
+    /// which of them the reader is made to look at, and the view only draws
+    /// the result.
+    var problems: [Problem] {
+        profiles.flatMap { profile -> [Problem] in
+            var found: [Problem] = []
+            if !profile.created {
+                found.append(.profileNotCreated(profile: profile.displayName))
+            } else {
+                // Independent failures of the same existing Profile, so both
+                // are reported: an import that was refused says nothing about
+                // whether the pinned entries landed. Ordered as the expanded
+                // rows are, browser data before pinned tabs.
+                if profile.browserData == .failed {
+                    found.append(.browserDataFailed(profile: profile.displayName))
+                }
+                if !profile.pinnedTabsComplete {
+                    found.append(.pinnedTabsIncomplete(
+                        profile: profile.displayName,
+                        written: profile.pinnedTabsWritten,
+                        planned: profile.pinnedTabsPlanned))
+                }
+            }
+            return found + profile.spaces.compactMap { space in
+                switch space.failure {
+                case nil:
+                    return nil
+                case .notCreated:
+                    return .spaceNotCreated(
+                        profile: profile.displayName, space: space.name)
+                case .bookmarksFailed:
+                    return .bookmarksFailed(
+                        profile: profile.displayName, space: space.name)
+                case .bookmarksNoneSaved:
+                    return .bookmarksNoneSaved(
+                        profile: profile.displayName, space: space.name)
+                }
+            }
+        }
+    }
+
+    /// How many Profiles and Spaces the run actually created — the summary's
+    /// two numbers, and the difference between "Created 2 Profiles and 5
+    /// Spaces." and "Nothing was created."
+    var createdProfileCount: Int { profiles.filter(\.created).count }
+
+    var createdSpaceCount: Int {
+        profiles.flatMap(\.spaces).filter(\.created).count
+    }
+}
+
+extension BrowserMigrationReport.SpaceRow {
+    /// Which promoted failure a Space carries, if any. The rule lives here
+    /// alone: the promoted list and the row's own mark both read it, so a
+    /// sixth kind cannot land in one and be missed by the other.
+    enum Failure: Equatable {
+        case notCreated
+        case bookmarksFailed
+        case bookmarksNoneSaved
+    }
+
+    var failure: Failure? {
+        guard created else { return .notCreated }
+        switch bookmarks {
+        case .failed: return .bookmarksFailed
+        case .noneSaved: return .bookmarksNoneSaved
+        case .notAttempted, .written, .noneInSource: return nil
+        }
+    }
+}
+
+extension BrowserMigrationReport.ProfileRow {
+    /// Whether everything about the Profile itself that could be confirmed
+    /// was — what its row's tick claims. Every way this can be false is also a
+    /// promoted problem, so a row without a tick is always accounted for in the
+    /// block the reader is made to look at. Its Spaces answer for themselves.
+    var landedCleanly: Bool {
+        created && pinnedTabsComplete && browserData != .failed
     }
 }

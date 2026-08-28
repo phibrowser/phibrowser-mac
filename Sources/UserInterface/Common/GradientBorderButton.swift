@@ -61,6 +61,11 @@ class GradientBorderButtonState: ObservableObject {
 
 // MARK: - SwiftUI Gradient Border Button
 struct GradientBorderButtonView: View {
+    /// The face the title is laid out in. Exposed because the title is drawn
+    /// with no horizontal padding of its own, so a caller that sizes the button
+    /// around its own title has to measure with this one.
+    static let titleFont = NSFont.systemFont(ofSize: 16, weight: .medium)
+
     @ObservedObject var state: GradientBorderButtonState
     
     /// Primary initializer with state object for dynamic updates
@@ -140,7 +145,7 @@ struct GradientBorderButtonView: View {
     var body: some View {
         Button(action: { state.clickAction?() }) {
             Text(state.title)
-                .font(.system(size: 16, weight: .medium))
+                .font(Font(Self.titleFont))
                 .foregroundColor(state.titleColor)
                 .frame(
                     minWidth: state.width,

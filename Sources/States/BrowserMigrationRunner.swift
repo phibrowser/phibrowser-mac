@@ -8,14 +8,27 @@ import Foundation
 
 // MARK: - Progress
 
-/// Which unit of a run is being worked on. Coarse on purpose: the per-item
-/// signals the Chromium side sends up carry no item identity and no total, so
-/// a finer bar would be fiction.
+/// One unit of a run as the window draws it: what it is called, and whether it
+/// is a Profile or one of the Spaces bound to the Profile above it.
+struct BrowserMigrationRunUnit: Equatable {
+    let name: String
+    let isSpace: Bool
+}
+
+/// Which unit of a run is being worked on, and the whole list it is worked
+/// through. Coarse on purpose: the per-item signals the Chromium side sends up
+/// carry no item identity and no total, so a finer bar would be fiction — but
+/// the units themselves are known from the plan, so the window lists them.
 struct BrowserMigrationProgress: Equatable {
-    /// Zero-based; the view counts from one.
+    /// Zero-based; the view counts from one. Always a valid index into
+    /// `units`: every value is built by the run, which never leaves the list.
     let unitIndex: Int
-    let unitCount: Int
-    let unitName: String
+    /// In the order the run works through them, so the window renders the list
+    /// rather than rebuilding it from the plan.
+    let units: [BrowserMigrationRunUnit]
+
+    var unitCount: Int { units.count }
+    var currentUnit: BrowserMigrationRunUnit { units[unitIndex] }
 }
 
 // MARK: - The run
@@ -39,6 +52,13 @@ final class BrowserMigrationRunner: ObservableObject {
     }
 
     @Published private(set) var state: State = .idle
+
+    /// The source the run in flight — or the finished one whose report is
+    /// still up — was started from. The report interpolates its name, and must
+    /// read it from here rather than from the wizard's pick: a run outlives
+    /// its window, and the window reopened over the report may have moved the
+    /// pick on since.
+    @Published private(set) var runSource: BrowserMigrationSourceKind?
 
     private var outcomes = BrowserMigrationOutcomes()
 
@@ -70,6 +90,7 @@ final class BrowserMigrationRunner: ObservableObject {
         AppLogInfo("[BrowserMigration] run started: \(plan.profiles.count) Profiles, "
             + "\(units.count - plan.profiles.count) Spaces")
         outcomes = BrowserMigrationOutcomes()
+        runSource = source
         // Set here rather than in the task so the wizard has progress to draw
         // the moment it switches step.
         state = .running(Self.progress(at: 0, in: units))
@@ -114,6 +135,12 @@ final class BrowserMigrationRunner: ObservableObject {
         let profile: BrowserMigrationPlannedProfile
         /// Nil for the Profile's own unit.
         let space: BrowserMigrationPlannedSpace?
+
+        /// What the progress publishes for this unit — the name and the kind,
+        /// without the planned records the run itself works from.
+        var published: BrowserMigrationRunUnit {
+            BrowserMigrationRunUnit(name: name, isSpace: space != nil)
+        }
     }
 
     /// A Profile ahead of the Spaces bound to it, so a Space always has one to
@@ -128,8 +155,15 @@ final class BrowserMigrationRunner: ObservableObject {
     private static func progress(
         at index: Int, in units: [Unit]
     ) -> BrowserMigrationProgress {
-        BrowserMigrationProgress(
-            unitIndex: index, unitCount: units.count, unitName: units[index].name)
+        BrowserMigrationProgress(unitIndex: index, units: units.map(\.published))
+    }
+
+    /// The progress a run of `plan` publishes while it is on unit `index` —
+    /// the value the window renders, off the same walk the run itself makes.
+    /// Exposed for the suite that pins the unit list against the plan.
+    static func progress(at index: Int, of plan: BrowserMigrationPlan)
+        -> BrowserMigrationProgress {
+        progress(at: index, in: units(of: plan))
     }
 
     private func run(

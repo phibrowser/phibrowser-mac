@@ -26,12 +26,42 @@ final class BrowserMigrationRunTests: XCTestCase {
         return root
     }
 
+    /// A root the user left empty, and one holding nothing but a folder. The
+    /// store counts bookmarks rather than nodes, so neither had anything to
+    /// lose — which is what tells an empty Space from a dropped write.
+    private func emptyTree() -> ArcDataParserTool.Bookmark {
+        ArcDataParserTool.Bookmark(guid: "root", title: "Space", url: nil, isFolder: true)
+    }
+
+    private func folderOnlyTree() -> ArcDataParserTool.Bookmark {
+        let root = emptyTree()
+        root.children = [ArcDataParserTool.Bookmark(
+            guid: "folder", title: "Reading", url: nil, isFolder: true)]
+        return root
+    }
+
+    /// A bookmark one level down, so the source count is a walk of the tree
+    /// rather than a look at its top level.
+    private func nestedTree() -> ArcDataParserTool.Bookmark {
+        let root = folderOnlyTree()
+        root.children[0].children = [ArcDataParserTool.Bookmark(
+            guid: "leaf", title: "Example", url: "https://example.com", isFolder: false)]
+        return root
+    }
+
     private func space(
         _ id: String, _ name: String, profileKey: String, bookmarks: Bool = true
     ) -> BrowserMigrationSourceSpace {
+        space(id, name, profileKey: profileKey, root: bookmarks ? tree() : nil)
+    }
+
+    private func space(
+        _ id: String, _ name: String, profileKey: String,
+        root: ArcDataParserTool.Bookmark?
+    ) -> BrowserMigrationSourceSpace {
         BrowserMigrationSourceSpace(
             id: id, name: name, colorHex: "#112233", profileKey: profileKey,
-            bookmarkRoot: bookmarks ? tree() : nil)
+            bookmarkRoot: root)
     }
 
     /// Two profiles, the first with two Spaces, so the report's order and its
@@ -161,12 +191,69 @@ final class BrowserMigrationRunTests: XCTestCase {
 
     func testASpaceReportsTheBookmarksThatPersisted() {
         var outcomes = fullOutcomes()
-        outcomes.spaceBookmarkCounts = ["s-home": 4, "s-side": 0, "s-work": 2]
+        outcomes.spaceBookmarkCounts = ["s-home": 4, "s-side": 3, "s-work": 2]
 
         let report = BrowserMigrationReport.folded(plan: plan(), outcomes: outcomes)
 
-        XCTAssertEqual(report.profiles[0].spaces.map(\.bookmarks), [.written(4), .written(0)])
+        XCTAssertEqual(report.profiles[0].spaces.map(\.bookmarks), [.written(4), .written(3)])
         XCTAssertEqual(report.profiles[1].spaces[0].bookmarks, .written(2))
+    }
+
+    // MARK: - The two ways a Space ends up with no bookmarks
+
+    /// One profile and one Space, whose source tree is whatever the case is
+    /// about. Everything asked for lands except the bookmark count, which each
+    /// case supplies.
+    private func planWithTree(_ root: ArcDataParserTool.Bookmark?) -> BrowserMigrationPlan {
+        let source = BrowserMigrationSource(
+            profiles: [BrowserMigrationSourceProfile(key: "Default", displayName: "Personal")],
+            defaultProfileKey: "Default",
+            spaces: [space("s-home", "Home", profileKey: "Default", root: root)])
+        return BrowserMigrationPlanner.plan(
+            source: source,
+            existingProfileDisplayNames: [],
+            pinnedTabScope: .profile,
+            selection: .all(in: source),
+            operationID: operationID)
+    }
+
+    private func oneSpaceOutcomes(bookmarks: Int) -> BrowserMigrationOutcomes {
+        var landed = outcomes(
+            profiles: ["Default": "Profile 2"], spaces: ["s-home": "id-home"])
+        landed.spaceBookmarkCounts = ["s-home": bookmarks]
+        landed.profileExtensionCounts = ["Default": 0]
+        return landed
+    }
+
+    /// The source Space genuinely had none, so nothing was lost and the report
+    /// promotes nothing.
+    func testASpaceWhoseSourceHadNoBookmarksSaysSoAndIsNotPromoted() {
+        let report = BrowserMigrationReport.folded(
+            plan: planWithTree(emptyTree()), outcomes: oneSpaceOutcomes(bookmarks: 0))
+
+        XCTAssertEqual(report.profiles[0].spaces[0].bookmarks, .noneInSource)
+        XCTAssertEqual(report.problems, [])
+    }
+
+    /// A folder is not a bookmark — the count the store returns leaves folders
+    /// out — so a Space holding nothing else had none to lose either.
+    func testASourceTreeOfFoldersAloneCountsAsHavingHadNoBookmarks() {
+        let report = BrowserMigrationReport.folded(
+            plan: planWithTree(folderOnlyTree()), outcomes: oneSpaceOutcomes(bookmarks: 0))
+
+        XCTAssertEqual(report.profiles[0].spaces[0].bookmarks, .noneInSource)
+    }
+
+    /// The other zero: the source carried bookmarks and none of them landed.
+    /// This is the visible symptom of the inherited staged-root defect, and it
+    /// is promoted where the empty Space above is not.
+    func testASpaceWhoseBookmarksAllVanishedIsWordedApartAndPromoted() {
+        let report = BrowserMigrationReport.folded(
+            plan: planWithTree(nestedTree()), outcomes: oneSpaceOutcomes(bookmarks: 0))
+
+        XCTAssertEqual(report.profiles[0].spaces[0].bookmarks, .noneSaved)
+        XCTAssertEqual(
+            report.problems, [.bookmarksNoneSaved(profile: "Personal", space: "Home")])
     }
 
     /// The outcome comes from the write, not from the import completion signal
@@ -317,6 +404,171 @@ final class BrowserMigrationRunTests: XCTestCase {
         XCTAssertNil(report.firstCreatedSpace)
     }
 
+    // MARK: - What the report promotes
+
+    /// Two profiles between them producing every promoted kind at once: the
+    /// second was never created, and the first kept a Space that lost its
+    /// bookmarks, one that never had any, one whose write failed, one that was
+    /// never created, and a pinned set only half of which landed.
+    private func planWithEveryFailure() -> BrowserMigrationPlan {
+        let source = BrowserMigrationSource(
+            profiles: [
+                BrowserMigrationSourceProfile(key: "Default", displayName: "Personal"),
+                BrowserMigrationSourceProfile(key: "Profile 1", displayName: "Work"),
+            ],
+            defaultProfileKey: "Default",
+            spaces: [
+                space("s-good", "Good", profileKey: "Default", root: tree()),
+                space("s-lost", "Lost", profileKey: "Default", root: tree()),
+                space("s-empty", "Empty", profileKey: "Default", root: emptyTree()),
+                space("s-broken", "Broken", profileKey: "Default", root: tree()),
+                space("s-dead", "Dead", profileKey: "Default", root: tree()),
+                space("s-work", "Work Space", profileKey: "Profile 1", root: tree()),
+            ],
+            pinnedGroups: [BrowserMigrationSourcePinnedGroup(
+                profileKey: "Default",
+                entries: [
+                    BrowserMigrationPinnedEntry(title: "Mail", url: "https://mail.example"),
+                    BrowserMigrationPinnedEntry(title: "Docs", url: "https://docs.example"),
+                ])])
+        return BrowserMigrationPlanner.plan(
+            source: source,
+            existingProfileDisplayNames: [],
+            pinnedTabScope: .profile,
+            selection: .all(in: source),
+            operationID: operationID)
+    }
+
+    func testEveryPromotedKindAppearsAndNothingElseDoes() {
+        let plan = planWithEveryFailure()
+        var landed = outcomes(
+            profiles: ["Default": "Profile 2"],
+            spaces: [
+                "s-good": "id-good", "s-lost": "id-lost",
+                "s-empty": "id-empty", "s-broken": "id-broken",
+            ])
+        // "s-broken" leaves no count at all, which is how a failed write is
+        // recorded; "s-lost" wrote nothing out of a tree that carried one.
+        landed.spaceBookmarkCounts = ["s-good": 5, "s-lost": 0, "s-empty": 0]
+        landed.profileExtensionCounts = ["Default": 3]
+        landed.pinnedTabGuids = [plan.profiles[0].pinnedTabs[0].guid]
+
+        let report = BrowserMigrationReport.folded(plan: plan, outcomes: landed)
+
+        XCTAssertEqual(report.problems, [
+            .pinnedTabsIncomplete(profile: "Personal", written: 1, planned: 2),
+            .bookmarksNoneSaved(profile: "Personal", space: "Lost"),
+            .bookmarksFailed(profile: "Personal", space: "Broken"),
+            .spaceNotCreated(profile: "Personal", space: "Dead"),
+            .profileNotCreated(profile: "Work"),
+            .spaceNotCreated(profile: "Work", space: "Work Space"),
+        ])
+    }
+
+    func testARunWhereEverythingLandedPromotesNothing() {
+        var landed = fullOutcomes()
+        landed.spaceBookmarkCounts = ["s-home": 4, "s-side": 3, "s-work": 2]
+        landed.profileExtensionCounts = ["Default": 7, "Profile 1": 0]
+
+        let report = BrowserMigrationReport.folded(plan: plan(), outcomes: landed)
+
+        XCTAssertEqual(report.problems, [])
+    }
+
+    /// The one failure the reader can otherwise finish without seeing. Both
+    /// Profiles and every Space were created, so the summary counts them and
+    /// says nothing is wrong; with the detail rows collapsed by default, an
+    /// unpromoted import failure would leave the run looking clean while none
+    /// of the Profile's history, cookies or extensions came across. `requested`
+    /// is the hedge that stays unpromoted; `failed` is a confirmed failure.
+    func testAFailedDataImportIsPromotedEvenWhenItIsTheOnlyFailure() {
+        var landed = fullOutcomes()
+        landed.spaceBookmarkCounts = ["s-home": 4, "s-side": 3, "s-work": 2]
+        landed.profileExtensionCounts = ["Default": 7]
+
+        let report = BrowserMigrationReport.folded(plan: plan(), outcomes: landed)
+
+        XCTAssertEqual(report.profiles[1].browserData, .failed)
+        XCTAssertEqual(report.problems, [.browserDataFailed(profile: "Work")])
+        // The tick and the promotion now answer together: every way a Profile
+        // row loses its tick is a problem the count reaches.
+        XCTAssertFalse(report.profiles[1].landedCleanly)
+        XCTAssertTrue(report.profiles[0].landedCleanly)
+    }
+
+    /// Two independent failures of one existing Profile, both reported: a
+    /// refused import says nothing about whether the pinned entries landed.
+    func testAFailedDataImportAndAPinnedShortfallAreBothPromoted() {
+        let plan = planWithPinnedEntries(scope: .profile)
+        var landed = pinnedEntryOutcomes()
+        landed.spaceBookmarkCounts = ["s-home": 1, "s-side": 1]
+        // No extension count for this Profile, which is how the fold hears
+        // that its import failed. Spelled out because the absence is the
+        // fixture: every sibling test sets a count here to say it succeeded,
+        // and one that quietly gained one would gut this case rather than
+        // fail it.
+        landed.profileExtensionCounts = [:]
+        landed.pinnedTabGuids = [plan.profiles[0].pinnedTabs[0].guid]
+
+        let report = BrowserMigrationReport.folded(plan: plan, outcomes: landed)
+
+        XCTAssertEqual(report.profiles[0].browserData, .failed)
+        XCTAssertEqual(report.problems, [
+            .browserDataFailed(profile: "Personal"),
+            .pinnedTabsIncomplete(profile: "Personal", written: 1, planned: 2),
+        ])
+    }
+
+    /// Both counts, because "some of them" is the whole point of the row: a
+    /// bare "3 couldn't be added" says nothing about how much was asked for.
+    func testAPartlyLandedPinnedSetIsPromotedWithBothCounts() {
+        let plan = planWithPinnedEntries(scope: .profile)
+        var landed = pinnedEntryOutcomes()
+        landed.spaceBookmarkCounts = ["s-home": 1, "s-side": 1]
+        landed.profileExtensionCounts = ["Default": 0]
+        landed.pinnedTabGuids = [plan.profiles[0].pinnedTabs[0].guid]
+
+        let report = BrowserMigrationReport.folded(plan: plan, outcomes: landed)
+
+        XCTAssertEqual(
+            report.problems,
+            [.pinnedTabsIncomplete(profile: "Personal", written: 1, planned: 2)])
+    }
+
+    /// A Profile that was never created is one problem, not two: nothing was
+    /// written to it because there was nothing to write to, which its own row
+    /// already says.
+    func testAProfileThatWasNeverCreatedDoesNotAlsoPromoteItsPinnedShortfall() {
+        let report = BrowserMigrationReport.folded(
+            plan: planWithPinnedEntries(scope: .profile), outcomes: outcomes())
+
+        XCTAssertEqual(report.problems, [
+            .profileNotCreated(profile: "Personal"),
+            .spaceNotCreated(profile: "Personal", space: "Home"),
+            .spaceNotCreated(profile: "Personal", space: "Side Projects"),
+        ])
+    }
+
+    // MARK: - What the summary counts
+
+    func testTheSummaryCountsOnlyWhatWasCreated() {
+        let report = BrowserMigrationReport.folded(
+            plan: plan(),
+            outcomes: outcomes(
+                profiles: ["Default": "Profile 2"],
+                spaces: ["s-home": "id-home", "s-side": "id-side"]))
+
+        XCTAssertEqual(report.createdProfileCount, 1)
+        XCTAssertEqual(report.createdSpaceCount, 2)
+    }
+
+    func testARunThatCreatedNothingCountsNothing() {
+        let report = BrowserMigrationReport.folded(plan: plan(), outcomes: outcomes())
+
+        XCTAssertEqual(report.createdProfileCount, 0)
+        XCTAssertEqual(report.createdSpaceCount, 0)
+    }
+
     // MARK: - Holding a Space under the import target lock
 
     func testAHeldSpaceIsLockedForTheDurationAndReleasedAfter() async {
@@ -357,6 +609,23 @@ final class BrowserMigrationRunTests: XCTestCase {
 
         XCTAssertFalse(ranToTheEnd)
         XCTAssertFalse(ImportTargetLock.shared.isImporting(into: spaceID))
+    }
+
+    // MARK: - The unit list the progress publishes
+
+    /// The window draws its checklist off this list rather than rebuilding it
+    /// from the plan, so the order and the kinds are the run's own. A Profile
+    /// leads the Spaces bound to it, and the fixture's Profile and Space that
+    /// share the name "Work" are told apart by the kind alone.
+    @MainActor
+    func testTheProgressPublishesEveryUnitInRunOrder() {
+        let progress = BrowserMigrationRunner.progress(at: 0, of: plan())
+
+        XCTAssertEqual(
+            progress.units.map(\.name),
+            ["Personal", "Home", "Side Projects", "Work", "Work"])
+        XCTAssertEqual(progress.units.map(\.isSpace), [false, true, true, false, true])
+        XCTAssertEqual(progress.currentUnit.name, "Personal")
     }
 
     // MARK: - The already-migrated mark

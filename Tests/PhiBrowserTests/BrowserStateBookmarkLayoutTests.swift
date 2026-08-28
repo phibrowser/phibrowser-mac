@@ -308,6 +308,8 @@ private final class BookmarkLayoutTestWebContentWrapper: NSObject, WebContentWra
     @objc dynamic var isBeingMirrored = false
     @objc dynamic var isSharingScreen = false
     @objc dynamic var isInContentFullscreen = false
+    @objc dynamic var isDiscarded = false
+    @objc dynamic var isUnloaded = false
     @objc dynamic var isDistillable = false
     @objc dynamic var devToolsTargetId: String? = nil
 

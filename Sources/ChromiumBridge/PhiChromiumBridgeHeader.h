@@ -960,7 +960,7 @@ typedef NS_ENUM(NSInteger, PhiGhostMaterializeOutcome) {
 /// Like `openTabBypassingSpaceRoutingWithUrl:`, the bypass is a one-shot
 /// exemption matched on (url, windowId) so the same rule doesn't re-prompt in a
 /// loop. Falls back to opening a new tab if the window has no active tab.
-- (void)navigateActiveTabBypassingSpaceRoutingWithUrl:(NSString *)url
+- (void)navigateActiveTabBypassingSpaceRoutingWithUrl:(NSString*)url
                                              windowId:(int64_t)windowId;
 
 /// Opens `url` in a new Kiosk inheriting the exact profile of
@@ -1783,6 +1783,23 @@ typedef NS_ENUM(NSInteger, PhiGhostMaterializeOutcome) {
 @property(nonatomic, assign, readonly) BOOL isBeingMirrored;
 @property(nonatomic, assign, readonly) BOOL isSharingScreen;
 @property(nonatomic, assign, readonly) BOOL isInContentFullscreen;
+
+/// YES after Chromium has discarded this tab's renderer-backed page to
+/// reclaim memory. KVO-observable; returns to NO when the tab starts loading
+/// again.
+@property(nonatomic, assign, readonly) BOOL isDiscarded;
+
+/// YES while this tab holds navigation history it has not loaded yet — a tab
+/// restored from the previous session or duplicated from another tab, plus any
+/// tab Chromium has discarded. Phi never loads a restored background tab on
+/// its own, so for most restored tabs this is a steady state rather than a
+/// transient one. The Chromium side calls this a *dormant* tab; see
+/// `docs/adr/0009-dormant-restored-tabs.md` in the Chromium repo.
+/// KVO-observable, cleared when the tab starts loading. `isDiscarded` is the
+/// narrower flag, and the two only differ before that first load: unloaded
+/// without discarded is a tab that has never been loaded in this session.
+/// Afterwards they track each other.
+@property(nonatomic, assign, readonly) BOOL isUnloaded;
 
 /// Chromium's native verdict on whether this tab's page is a distillable
 /// article — upstream DOM Distiller's AdaBoost model over features Blink

@@ -83,6 +83,28 @@ final class BrowserMigrationRunner: ObservableObject {
         if case .finished = state { state = .idle }
     }
 
+    // MARK: - The already-migrated mark
+
+    /// Stands a mark up in tests, which have no bound account to read one
+    /// from. Always nil in production.
+    static var migratedSourcesOverrideForTesting: Set<String>?
+
+    /// Whether this account has already completed a Migration from `source` —
+    /// what the wizard warns on before starting a second one. The mark is per
+    /// account: signing into another lifts it, since that account's data is
+    /// empty anyway, and a guest session carries its own, which the
+    /// guest→account data migration deliberately does not bring across.
+    static func hasMigrated(from source: BrowserMigrationSourceKind) -> Bool {
+        if let migratedSourcesOverrideForTesting {
+            return migratedSourcesOverrideForTesting.contains(source.rawValue)
+        }
+        return accountDefaults?.migratedBrowserSources().contains(source.rawValue) ?? false
+    }
+
+    private static var accountDefaults: AccountUserDefaults? {
+        AccountController.shared.localDataAccount?.userDefaults
+    }
+
     // MARK: - Units
 
     /// One step of a run: a Profile, with its history, cookies and extensions,
@@ -130,6 +152,12 @@ final class BrowserMigrationRunner: ObservableObject {
         }
         AppLogInfo("[BrowserMigration] run finished: created "
             + "\(outcomes.profileIDs.count) Profiles, \(outcomes.spaceIDs.count) Spaces")
+        // Marked only by a run that reached the end and created something:
+        // one cut short by a quit, or one whose every Profile failed, left no
+        // first copy for a second run to duplicate.
+        if !outcomes.profileIDs.isEmpty {
+            Self.accountDefaults?.addMigratedBrowserSource(source.rawValue)
+        }
         state = .finished(.folded(plan: plan, outcomes: outcomes))
     }
 

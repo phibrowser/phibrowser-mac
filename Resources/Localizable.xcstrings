@@ -8815,6 +8815,54 @@
         }
       }
     },
+    "app.browserMigration.rerun.cancelButton" : {
+      "comment" : "Browser migration wizard - button dismissing the second-migration confirmation without starting anything",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Cancel"
+          }
+        }
+      }
+    },
+    "app.browserMigration.rerun.confirmButton" : {
+      "comment" : "Browser migration wizard - button starting a second migration from a source this account has already migrated from",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Migrate Again"
+          }
+        }
+      }
+    },
+    "app.browserMigration.rerun.message" : {
+      "comment" : "Browser migration wizard - explains that a second migration creates a fresh set of Profiles and Spaces rather than updating the first one's",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "You've migrated from this browser into this account before. Phi will create a new set of Profiles and Spaces — the ones you already have stay exactly as they are."
+          }
+        }
+      }
+    },
+    "app.browserMigration.rerun.title" : {
+      "comment" : "Browser migration wizard - title of the confirmation shown when this account has already migrated from the picked source; %@ is the source browser's name",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Migrate from %@ again?"
+          }
+        }
+      }
+    },
     "app.browserMigration.run.closeButton" : {
       "comment" : "Browser migration wizard - button closing the window while the run carries on",
       "extractionState" : "extracted_with_value",

@@ -272,6 +272,10 @@ extension AccountUserDefaults {
         /// Space they had when the snapshot was saved, instead of all
         /// piling into the persisted-active Space.
         case slotsRestoreSnapshot
+        /// The Migration Sources this account has already completed a
+        /// Migration from, held as their source identifiers. A source listed
+        /// here makes a second Migration from it warn before it starts.
+        case migratedBrowserSources
     }
     
     /// Notification popup behavior mode.
@@ -356,6 +360,22 @@ extension AccountUserDefaults {
     /// Persists the per-Space Pure-theme slider-value map verbatim.
     func setSpacePureThemeSliderValues(_ map: [String: Double]) {
         set(map, forKey: DefaultsKey.spacePureThemeSliderValues.rawValue)
+    }
+
+    /// The Migration Sources this account has completed a Migration from.
+    /// Empty until the first Migration finishes.
+    func migratedBrowserSources() -> [String] {
+        (object(forKey: DefaultsKey.migratedBrowserSources.rawValue) as? [String]) ?? []
+    }
+
+    /// Records that a Migration from `source` completed, leaving every other
+    /// source's record alone. Idempotent: a third Migration from the same
+    /// source leaves the list as the second one left it.
+    func addMigratedBrowserSource(_ source: String) {
+        var sources = migratedBrowserSources()
+        guard !sources.contains(source) else { return }
+        sources.append(source)
+        set(sources, forKey: DefaultsKey.migratedBrowserSources.rawValue)
     }
 }
 

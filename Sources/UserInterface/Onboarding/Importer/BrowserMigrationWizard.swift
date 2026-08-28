@@ -201,6 +201,11 @@ final class BrowserMigrationWizardModel: ObservableObject {
     @Published private(set) var rows: [BrowserMigrationPreviewProfileRow] = []
     /// Set when the picked source is installed but its data could not be read.
     @Published private(set) var sourceUnreadable = false
+    /// Set when Start was pressed against a source this account has already
+    /// migrated from. Nothing runs until the user answers: Migration only ever
+    /// creates, so a second run leaves the first one's Profiles and Spaces
+    /// where they are and makes a fresh set beside them.
+    @Published var isConfirmingRerun = false
 
     private var source: BrowserMigrationSource?
     private var selection = BrowserMigrationSelection()
@@ -264,10 +269,24 @@ final class BrowserMigrationWizardModel: ObservableObject {
         rebuild()
     }
 
+    /// Starts the previewed run, asking first when this account has already
+    /// migrated from the picked source.
+    func start() {
+        if let pickedSource, BrowserMigrationRunner.hasMigrated(from: pickedSource) {
+            isConfirmingRerun = true
+            return
+        }
+        beginRun()
+    }
+
     /// Hands the plan to the process-level runner and follows it. The run
     /// belongs to the process from here on: closing this window does not
     /// interrupt it.
-    func start() {
+    ///
+    /// Called by the re-run confirmation as well as by `start`, so it does not
+    /// ask again.
+    func beginRun() {
+        isConfirmingRerun = false
         // The plan's pinned owners were fanned out from the scope that was
         // active when the preview was built, while the store stamps each row
         // with the one active when the write runs — so a scope changed in
@@ -447,6 +466,30 @@ struct BrowserMigrationWizardView: View {
                 .keyboardShortcut(.defaultAction)
                 .disabled(!model.canStart)
             }
+        }
+        .alert(
+            String(
+                format: NSLocalizedString("app.browserMigration.rerun.title",
+                    value: "Migrate from %@ again?",
+                    comment: "Browser migration wizard - title of the confirmation shown when this account has already migrated from the picked source; %@ is the source browser's name"),
+                model.pickedSource?.displayName ?? ""),
+            isPresented: $model.isConfirmingRerun
+        ) {
+            Button(NSLocalizedString("app.browserMigration.rerun.confirmButton",
+                value: "Migrate Again",
+                comment: "Browser migration wizard - button starting a second migration from a source this account has already migrated from")) {
+                model.beginRun()
+            }
+            // Return dismisses rather than confirms: a warning a held key can
+            // walk through is no warning at all.
+            Button(NSLocalizedString("app.browserMigration.rerun.cancelButton", value: "Cancel",
+                comment: "Browser migration wizard - button dismissing the second-migration confirmation without starting anything"),
+                role: .cancel) {}
+                .keyboardShortcut(.defaultAction)
+        } message: {
+            Text(NSLocalizedString("app.browserMigration.rerun.message",
+                value: "You've migrated from this browser into this account before. Phi will create a new set of Profiles and Spaces — the ones you already have stay exactly as they are.",
+                comment: "Browser migration wizard - explains that a second migration creates a fresh set of Profiles and Spaces rather than updating the first one's"))
         }
     }
 

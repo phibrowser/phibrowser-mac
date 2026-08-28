@@ -6,9 +6,10 @@
 import XCTest
 @testable import Phi
 
-/// The two parts of a run that can be pinned without a running browser: the
-/// pure fold from a plan plus what the run produced into the report, and the
-/// scoped construct that holds a Space under the import target lock.
+/// The parts of a run that can be pinned without a running browser: the pure
+/// fold from a plan plus what the run produced into the report, the scoped
+/// construct that holds a Space under the import target lock, and the mark a
+/// finished run leaves so a second one from the same source warns first.
 final class BrowserMigrationRunTests: XCTestCase {
 
     private let operationID = UUID(uuidString: "00000000-0000-0000-0000-0000000000CC")!
@@ -356,5 +357,98 @@ final class BrowserMigrationRunTests: XCTestCase {
 
         XCTAssertFalse(ranToTheEnd)
         XCTAssertFalse(ImportTargetLock.shared.isImporting(into: spaceID))
+    }
+
+    // MARK: - The already-migrated mark
+
+    /// One account's preferences on a file of their own, so what one case
+    /// records cannot reach another — which is also what a second account
+    /// looks like to the first one's mark.
+    private func makeStoreURL() throws -> URL {
+        let directory = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(
+            at: directory, withIntermediateDirectories: true)
+        addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
+        return directory.appendingPathComponent("account_defaults.plist")
+    }
+
+    private func makeDefaults(at url: URL, userID: String = "migration-mark")
+        -> AccountUserDefaults {
+        AccountUserDefaults(account: Account(userID: userID), storeURL: url)
+    }
+
+    func testAnAccountThatHasNotMigratedCarriesNoMark() throws {
+        XCTAssertEqual(makeDefaults(at: try makeStoreURL()).migratedBrowserSources(), [])
+    }
+
+    func testACompletedMigrationMarksItsSource() throws {
+        let defaults = makeDefaults(at: try makeStoreURL())
+
+        defaults.addMigratedBrowserSource(BrowserMigrationSourceKind.arc.rawValue)
+
+        XCTAssertEqual(defaults.migratedBrowserSources(), ["arc"])
+    }
+
+    func testAnotherSourceIsUnaffectedByOnesMark() throws {
+        let defaults = makeDefaults(at: try makeStoreURL())
+
+        defaults.addMigratedBrowserSource(BrowserMigrationSourceKind.arc.rawValue)
+
+        XCTAssertFalse(defaults.migratedBrowserSources().contains("some-other-source"))
+    }
+
+    func testMigratingFromTheSameSourceAgainLeavesOneMark() throws {
+        let defaults = makeDefaults(at: try makeStoreURL())
+
+        defaults.addMigratedBrowserSource(BrowserMigrationSourceKind.arc.rawValue)
+        defaults.addMigratedBrowserSource(BrowserMigrationSourceKind.arc.rawValue)
+
+        XCTAssertEqual(defaults.migratedBrowserSources(), ["arc"])
+    }
+
+    func testTheMarkOutlivesTheAppThatWroteIt() throws {
+        let url = try makeStoreURL()
+        makeDefaults(at: url).addMigratedBrowserSource(BrowserMigrationSourceKind.arc.rawValue)
+
+        XCTAssertEqual(makeDefaults(at: url).migratedBrowserSources(), ["arc"])
+    }
+
+    /// A mark lives in the preferences of the account that made it, which are
+    /// a file of that account's own — so the account signed into next reads
+    /// none of it.
+    func testAnotherAccountDoesNotSeeThisOnesMark() throws {
+        makeDefaults(at: try makeStoreURL(), userID: "first")
+            .addMigratedBrowserSource(BrowserMigrationSourceKind.arc.rawValue)
+
+        let other = makeDefaults(at: try makeStoreURL(), userID: "second")
+
+        XCTAssertEqual(other.migratedBrowserSources(), [])
+    }
+
+    // MARK: - Warning before a second run
+
+    @MainActor
+    func testStartingAgainFromAMarkedSourceAsksFirst() {
+        BrowserMigrationRunner.migratedSourcesOverrideForTesting = ["arc"]
+        defer { BrowserMigrationRunner.migratedSourcesOverrideForTesting = nil }
+        let model = BrowserMigrationWizardModel()
+        model.pickedSource = .arc
+
+        model.start()
+
+        XCTAssertTrue(model.isConfirmingRerun)
+    }
+
+    @MainActor
+    func testAnUnmarkedSourceStartsWithoutAsking() {
+        BrowserMigrationRunner.migratedSourcesOverrideForTesting = []
+        defer { BrowserMigrationRunner.migratedSourcesOverrideForTesting = nil }
+        let model = BrowserMigrationWizardModel()
+        model.pickedSource = .arc
+
+        model.start()
+
+        XCTAssertFalse(model.isConfirmingRerun)
     }
 }

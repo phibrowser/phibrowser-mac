@@ -164,6 +164,13 @@ class WebContentContainerViewController: NSViewController {
     /// Fallback that lifts `coldRevealMask` if no promotion ever arrives.
     private var coldRevealMaskTimeout: DispatchWorkItem?
 
+    /// One-shot hook a cold Space reveal arms to be told when this window's
+    /// content has actually painted (`SpaceWindowSlot`'s reveal waits on it
+    /// before fronting the window). Fired and cleared at first-paint
+    /// promotion; the reveal side pairs it with its own deadline, so a page
+    /// that never paints still presents.
+    var onColdContentReady: (() -> Void)?
+
     /// Deliberately longer than `coldFirstPaintTimeoutSeconds` so the
     /// first-paint promotion always wins the race — the mask should lift on
     /// real content, and fall back to a deadline only when there will never be
@@ -2219,6 +2226,15 @@ class WebContentContainerViewController: NSViewController {
     /// If there's a pending new tab waiting to be shown, bring it to the front now.
     func handleTabReadyToDisplay(tabId: Int) {
         // AppLogDebug("[FlickerFix][Mac] ⬅️ tabReadyToDisplay received, tabId=\(tabId)")
+
+        // A cold reveal waiting on this window's first paint is answered by
+        // ANY paint arriving — with or without a pending switch (the mounted
+        // view painting in place has no pending entry, but the content is
+        // just as real).
+        if let ready = onColdContentReady {
+            onColdContentReady = nil
+            ready()
+        }
 
         // Check if we have a pending new tab switch waiting for this tab
         guard let pending = pendingNewTabSwitch else {

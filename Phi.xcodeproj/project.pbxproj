@@ -80,6 +80,7 @@
 		3777EEF42FC4442700C85E41 /* FloatingNewTabView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3777EEF32FC4442700C85E41 /* FloatingNewTabView.swift */; };
 		377D210F2F51986900A68BE5 /* WebContentContainerViewController+FloatingSidebar.swift in Sources */ = {isa = PBXBuildFile; fileRef = 377D210E2F51986900A68BE5 /* WebContentContainerViewController+FloatingSidebar.swift */; };
 		377D21EC2F52C67300A68BE5 /* WebContentAddressBarMenu.swift in Sources */ = {isa = PBXBuildFile; fileRef = 377D21EB2F52C67300A68BE5 /* WebContentAddressBarMenu.swift */; };
+		3AC0FFEE00000000000000A1 /* PageSharingPresenter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3AC0FFEE00000000000000A2 /* PageSharingPresenter.swift */; };
 		3787811F2FE942E40028969F /* TimeMachineRollbackPolicy.json in Resources */ = {isa = PBXBuildFile; fileRef = 3787811E2FE942E40028969F /* TimeMachineRollbackPolicy.json */; };
 		378AFF262F78D6780016B334 /* ivy-presto-display-semi-bold.otf in Copy Fonts */ = {isa = PBXBuildFile; fileRef = 378AFF242F78D6530016B334 /* ivy-presto-display-semi-bold.otf */; };
 		378AFF622F78E5EA0016B334 /* BrowserThemeContext.swift in Sources */ = {isa = PBXBuildFile; fileRef = 378AFF612F78E5EA0016B334 /* BrowserThemeContext.swift */; };
@@ -761,6 +762,7 @@
 		3777EEF32FC4442700C85E41 /* FloatingNewTabView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FloatingNewTabView.swift; sourceTree = "<group>"; };
 		377D210E2F51986900A68BE5 /* WebContentContainerViewController+FloatingSidebar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "WebContentContainerViewController+FloatingSidebar.swift"; sourceTree = "<group>"; };
 		377D21EB2F52C67300A68BE5 /* WebContentAddressBarMenu.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WebContentAddressBarMenu.swift; sourceTree = "<group>"; };
+		3AC0FFEE00000000000000A2 /* PageSharingPresenter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PageSharingPresenter.swift; sourceTree = "<group>"; };
 		3787811E2FE942E40028969F /* TimeMachineRollbackPolicy.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = TimeMachineRollbackPolicy.json; sourceTree = "<group>"; };
 		378AFF242F78D6530016B334 /* ivy-presto-display-semi-bold.otf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "ivy-presto-display-semi-bold.otf"; sourceTree = "<group>"; };
 		378AFF612F78E5EA0016B334 /* BrowserThemeContext.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrowserThemeContext.swift; sourceTree = "<group>"; };
@@ -1366,6 +1368,7 @@
 				376195442F5149ED0094A78E /* WebContentHeaderView.swift */,
 				37FC8C912F335942004675B8 /* WebContentProgressBarView.swift */,
 				377D21EB2F52C67300A68BE5 /* WebContentAddressBarMenu.swift */,
+				3AC0FFEE00000000000000A2 /* PageSharingPresenter.swift */,
 			);
 			path = Header;
 			sourceTree = "<group>";
@@ -3407,6 +3410,7 @@
 				37EECF222F0F623A0022A176 /* EmbeddedChatViewController.swift in Sources */,
 				CCEF2CF42E57079000FDDEB2 /* WebContentHeader.swift in Sources */,
 				377D21EC2F52C67300A68BE5 /* WebContentAddressBarMenu.swift in Sources */,
+				3AC0FFEE00000000000000A1 /* PageSharingPresenter.swift in Sources */,
 				CC98F89C2E8BC71800DAD237 /* Settings.swift in Sources */,
 				376CE4092F28917C0093D937 /* NotificationMessageCardView.swift in Sources */,
 				CC2708A92E7A675C00B65AB8 /* Account.swift in Sources */,

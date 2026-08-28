@@ -53,6 +53,29 @@ extension MainBrowserWindowController {
         return false
     }
     
+    @IBAction func sharePage(_ sender: Any?) {
+        guard let url = PageSharingPresenter.shareableURL(for: browserState.focusingTab),
+              let contentView = window?.contentView else {
+            return
+        }
+        // The header's address bar anchor only exists in layouts that show
+        // navigation at the top. The performance layout has no header, and
+        // an anchor left over from a previous layout is off-window — the
+        // picker would silently not appear — so drop down from the top of
+        // the content view there instead.
+        let headerAnchor = mainSplitViewController.webContentContainerViewController.addressBarAnchorView
+        let headerAnchorUsable = PhiPreferences.GeneralSettings.loadLayoutMode().showsNavigationAtTop
+            && headerAnchor?.window === window
+        if headerAnchorUsable, let headerAnchor {
+            PageSharingPresenter.share(url: url, anchorView: headerAnchor)
+        } else {
+            // A 1×1 rect just inside the top edge: a rect outside the view's
+            // bounds is not a valid popover anchor.
+            let topCenter = NSRect(x: contentView.bounds.midX - 0.5, y: contentView.bounds.maxY - 1, width: 1, height: 1)
+            PageSharingPresenter.share(url: url, anchorView: contentView, relativeTo: topCenter)
+        }
+    }
+
     @IBAction func openLocationBar(_ sender: Any?) {
         var addressView = sender as? NSView
         if addressView == nil,

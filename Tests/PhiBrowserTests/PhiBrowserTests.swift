@@ -78,6 +78,20 @@ final class PhiBrowserTests: XCTestCase {
         )
     }
 
+    func testSharePageShortcutIsCustomizableFromFileShortcuts() {
+        XCTAssertEqual(
+            Shortcuts.DefaultShortcuts[.PHI_SHARE_PAGE],
+            ShortcutsKey(characters: "s", modifiers: [.control, .option])
+        )
+        XCTAssertTrue(
+            Shortcuts.Group.file.commands.contains(.PHI_SHARE_PAGE)
+        )
+        XCTAssertEqual(
+            CommandWrapper.PHI_SHARE_PAGE.displayName,
+            "Share Page"
+        )
+    }
+
     func testKioskGlobalShortcutDefaultsOffAndFormatsCurrentShortcut() {
         XCTAssertFalse(
             PhiPreferences.GeneralSettings
@@ -347,6 +361,63 @@ final class PhiBrowserTests: XCTestCase {
         XCTAssertEqual(customizedIncognitoSpaceItem.keyEquivalent, "i")
         XCTAssertEqual(
             customizedIncognitoSpaceItem.keyEquivalentModifierMask,
+            [.command, .control]
+        )
+    }
+
+    func testFileMenuInstallsSharePageAbovePrintAndRemovesChromiumShareSubmenu() throws {
+        let previousOverrides = Shortcuts.overridedShortcuts
+        defer { Shortcuts.overridedShortcuts = previousOverrides }
+        Shortcuts.overridedShortcuts.removeValue(forKey: .PHI_SHARE_PAGE)
+
+        let menu = NSMenu(title: "File")
+        menu.addItem(.separator())
+        let chromiumShareItem = NSMenuItem(title: "Share", action: nil, keyEquivalent: "")
+        chromiumShareItem.submenu = NSMenu(title: "Share")
+        menu.addItem(chromiumShareItem)
+        menu.addItem(.separator())
+        let printItem = NSMenuItem(title: "Print…", action: nil, keyEquivalent: "")
+        printItem.tag = CommandWrapper.IDC_PRINT.rawValue
+        menu.addItem(printItem)
+
+        AppController.installOrUpdateFileMenuItems(in: menu, target: nil)
+        AppController.installOrUpdateFileMenuItems(in: menu, target: nil)
+
+        let shareItems = menu.items.filter {
+            $0.tag == CommandWrapper.PHI_SHARE_PAGE.rawValue
+        }
+        let shareItem = try XCTUnwrap(shareItems.first)
+        let shareIndex = try XCTUnwrap(menu.items.firstIndex(of: shareItem))
+        let printIndex = try XCTUnwrap(menu.items.firstIndex(of: printItem))
+
+        XCTAssertEqual(shareItems.count, 1)
+        XCTAssertEqual(shareIndex, printIndex - 1)
+        XCTAssertEqual(
+            shareItem.action,
+            NSSelectorFromString("sharePageFromMenu:")
+        )
+        XCTAssertEqual(shareItem.keyEquivalent, "s")
+        XCTAssertEqual(shareItem.keyEquivalentModifierMask, [.control, .option])
+        XCTAssertFalse(shareItem.isHidden)
+        XCTAssertFalse(menu.items.contains(chromiumShareItem))
+        for index in 1..<menu.items.count {
+            XCTAssertFalse(
+                menu.items[index].isSeparatorItem && menu.items[index - 1].isSeparatorItem,
+                "adjacent separators left behind at index \(index)"
+            )
+        }
+
+        Shortcuts.overridedShortcuts[.PHI_SHARE_PAGE] = ShortcutsKey(
+            characters: "u",
+            modifiers: [.command, .control]
+        )
+        AppController.installOrUpdateFileMenuItems(in: menu, target: nil)
+        let customizedItem = try XCTUnwrap(menu.items.first {
+            $0.tag == CommandWrapper.PHI_SHARE_PAGE.rawValue
+        })
+        XCTAssertEqual(customizedItem.keyEquivalent, "u")
+        XCTAssertEqual(
+            customizedItem.keyEquivalentModifierMask,
             [.command, .control]
         )
     }

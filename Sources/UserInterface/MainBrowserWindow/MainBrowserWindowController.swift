@@ -144,6 +144,12 @@ class MainBrowserWindowController: NSWindowController {
     }()
     
     private var originalContentView: NSView?
+    /// Holds the native traffic lights on the chrome row beside them;
+    /// see `updateTrafficLightPlacement(fullScreen:)`.
+    private var trafficLightPositioner: TrafficLightPositioner?
+    /// The layout the live positioner was built for, so the titlebar is
+    /// only handed back and re-shifted when the layout actually changes.
+    private var trafficLightLayoutMode: LayoutMode?
     private var kioskContentViewController: KioskBrowserContentViewController?
     lazy var cancellables = Set<AnyCancellable>()
     private var multiSelectionEscapeMonitor: Any?
@@ -450,7 +456,7 @@ class MainBrowserWindowController: NSWindowController {
                 window.standardWindowButton(.zoomButton)?.isHidden = hideTrafficLights
                 
                 window.titlebarAppearsTransparent = !fullScreen
-                
+                self.updateTrafficLightPlacement(fullScreen: fullScreen)
             }
             .store(in: &cancellables)
         self.contentViewController = mainSplitViewController
@@ -617,7 +623,66 @@ class MainBrowserWindowController: NSWindowController {
         readerPanelController?.present(tab: tab)
     }
 
-    
+    // MARK: - Traffic light placement
+
+    /// Centre line of the chrome row that runs beside the traffic lights, as a
+    /// distance from the top of the window.
+    ///
+    /// `.performance` and `.balanced` are both `SidebarHeaderView`'s 24pt
+    /// control row, at its default 8pt and legacy 15.5pt top insets;
+    /// `.comfortable` is the horizontal tab strip, whose 32pt tab row starts
+    /// `WebContentConstant.edgesSpacing - 2` below the top of the window.
+    private static func chromeRowCenter(for layoutMode: LayoutMode) -> CGFloat {
+        switch layoutMode {
+        case .performance:
+            return 20
+        case .balanced:
+            return 27.5
+        case .comfortable:
+            return 22
+        }
+    }
+
+    /// Shifts the native traffic lights onto the chrome row beside them.
+    ///
+    /// AppKit centres the discs in the titlebar height Chromium reports, which
+    /// is the same place in all three layouts while Phi's own row sits
+    /// somewhere different in each — so left alone the lights line up with at
+    /// most one layout. The lights are what moves, rather than the rows: a row
+    /// carries the header's vertical rhythm and the strip's hit targets with
+    /// it, and the lights carry nothing.
+    /// `KioskBrowserWindowController` moves its own lights the same way, by
+    /// `KioskBrowserToolbar.titlebarVerticalShift`.
+    ///
+    /// The row centre is handed over as an absolute distance from the top of
+    /// the window rather than as a shift off AppKit's placement, so a titlebar
+    /// AppKit re-tiles or re-heights later — which is what a system overlay
+    /// over the window does — cannot leave the lights describing the place the
+    /// row used to be.
+    private func updateTrafficLightPlacement(fullScreen: Bool) {
+        guard let window else { return }
+        guard !fullScreen else {
+            // AppKit rebuilds the titlebar across the transition and restores
+            // the default placement on its own.
+            trafficLightPositioner?.stop(restoringPlacement: false)
+            trafficLightPositioner = nil
+            trafficLightLayoutMode = nil
+            return
+        }
+        let layoutMode = PhiPreferences.GeneralSettings.loadLayoutMode()
+        guard trafficLightLayoutMode != layoutMode
+                || trafficLightPositioner == nil else { return }
+
+        trafficLightPositioner?.stop(restoringPlacement: true)
+        let positioner = TrafficLightPositioner(
+            window: window,
+            centerFromWindowTop: Self.chromeRowCenter(for: layoutMode)
+        )
+        trafficLightPositioner = positioner
+        trafficLightLayoutMode = layoutMode
+        positioner.start()
+    }
+
     @objc private func myWindowWillEnterFullScreen(_ noti: Notification) {
         if noti.object as? NSWindow === self.window {
             browserState.toggleFullScreenMode(true)

@@ -18,9 +18,10 @@ extension LocalStore {
     
     /// Creates a bookmark node, attaching it to the root when `parentId` is nil.
     /// `secondaryUrl` is set only for split-view bookmarks; clicking such a
-    /// bookmark opens both URLs as a side-by-side split. `secondaryTitle`
+    /// bookmark opens both URLs as a split. `secondaryTitle`
     /// is the secondary pane's display name and is shown alongside the
-    /// primary title in the bookmark bar/sidebar.
+    /// primary title in the bookmark bar/sidebar. `layout` stores the raw
+    /// divider orientation and defaults to side-by-side when absent.
     func createBookmark(url: String?,
                         title: String?,
                         profileId: String,
@@ -30,6 +31,7 @@ extension LocalStore {
                         spaceId: String = LocalStore.defaultSpaceId,
                         secondaryUrl: String? = nil,
                         secondaryTitle: String? = nil,
+                        layout: String? = nil,
                         favicon: Data? = nil) {
         guard let normalizedURL = normalizedURL(from: url),
         let bookmarkURL = URL(string: URLProcessor.processUserInput( normalizedURL.absoluteString)) else {
@@ -68,6 +70,7 @@ extension LocalStore {
                                                 spaceId: spaceId,
                                                 secondaryUrl: normalizedSecondary,
                                                 secondaryTitle: secondaryTitle,
+                                                layout: layout,
                                                 favicon: favicon,
                                                 now: now,
                                                 in: context)
@@ -169,17 +172,20 @@ extension LocalStore {
                                                    guid: String,
                                                    secondaryUrl: String?,
                                                    secondaryTitle: String?,
+                                                   layout: String?,
                                                    favicon: Data?)]) {
         let normalizedBookmarks: [(title: String?,
                                    url: URL,
                                    guid: String,
                                    secondaryUrl: URL?,
                                    secondaryTitle: String?,
+                                   layout: String?,
                                    favicon: Data?)] = bookmarks.compactMap { bookmark -> (title: String?,
                                                                                             url: URL,
                                                                                             guid: String,
                                                                                             secondaryUrl: URL?,
                                                                                             secondaryTitle: String?,
+                                                                                            layout: String?,
                                                                                             favicon: Data?)? in
             guard let primaryURL = normalizedURL(from: bookmark.url) else {
                 AppLogError("Invalid bookmark url: \(bookmark.url)")
@@ -200,6 +206,7 @@ extension LocalStore {
                     guid: bookmark.guid,
                     secondaryUrl: normalizedSecondaryURL,
                     secondaryTitle: bookmark.secondaryTitle,
+                    layout: bookmark.layout,
                     favicon: bookmark.favicon)
         }
         guard normalizedBookmarks.count == bookmarks.count else { return }
@@ -230,6 +237,7 @@ extension LocalStore {
                                                     spaceId: folder.spaceId,
                                                     secondaryUrl: bookmark.secondaryUrl,
                                                     secondaryTitle: bookmark.secondaryTitle,
+                                                    layout: bookmark.layout,
                                                     favicon: bookmark.favicon,
                                                     now: now,
                                                     in: context)
@@ -827,6 +835,7 @@ extension LocalStore {
                 }
                 if secondaryUrlClearedInThisUpdate {
                     node.secondaryTitle = nil
+                    node.layout = nil
                 } else if let secondaryTitleOpt = secondaryTitle {
                     if let raw = secondaryTitleOpt, !raw.isEmpty {
                         node.secondaryTitle = raw
@@ -837,6 +846,25 @@ extension LocalStore {
                 node.updatedDate = Date()
             } catch {
                 AppLogError("Failed to update bookmark: \(error)")
+            }
+        }
+    }
+
+    /// Updates the persisted orientation of a split-view bookmark. Ordinary
+    /// bookmarks are ignored so layout metadata cannot outlive the second URL.
+    func updateBookmarkSplitLayout(_ guid: String, layout: String) {
+        performBackgroundWrite { [weak self] context in
+            guard let self else { return }
+            do {
+                guard let node = try self.bookmarkNode(with: guid, in: context),
+                      node.secondaryUrl != nil,
+                      node.layout != layout else {
+                    return
+                }
+                node.layout = layout
+                node.updatedDate = Date()
+            } catch {
+                AppLogError("Failed to update bookmark split layout: \(error)")
             }
         }
     }
@@ -1341,6 +1369,7 @@ private extension LocalStore {
                                            spaceId: spaceId,
                                            secondaryUrl: source.secondaryUrl,
                                            secondaryTitle: source.secondaryTitle,
+                                           layout: source.layout,
                                            favicon: source.favicon,
                                            now: createdDate,
                                            in: context)
@@ -1348,6 +1377,7 @@ private extension LocalStore {
         }
         clone.overrideTitle = source.overrideTitle
         clone.source = source.source
+        clone.icon = source.icon
         return clone
     }
 
@@ -1395,6 +1425,7 @@ private extension LocalStore {
         }
         clone.overrideTitle = source.overrideTitle
         clone.source = source.source
+        clone.icon = source.icon
         return clone
     }
 
@@ -1432,6 +1463,7 @@ private extension LocalStore {
                             spaceId: String?,
                             secondaryUrl: URL? = nil,
                             secondaryTitle: String? = nil,
+                            layout: String? = nil,
                             favicon: Data? = nil,
                             now: Date,
                             in context: ModelContext) throws -> TabDataModel {
@@ -1449,6 +1481,7 @@ private extension LocalStore {
         bookmark.isCreatedByChromium = false
         bookmark.secondaryUrl = secondaryUrl
         bookmark.secondaryTitle = (secondaryTitle?.isEmpty == false) ? secondaryTitle : nil
+        bookmark.layout = secondaryUrl == nil ? nil : layout
         context.insert(bookmark)
         try insert(node: bookmark, to: parent, at: index, in: context)
         return bookmark

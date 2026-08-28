@@ -14,7 +14,18 @@ enum TabPreviewTargetID: Hashable {
 
 enum TabPreviewURLPolicy {
     static func displayURL(for rawURL: String) -> String {
-        rawURL.isNTP ? "" : rawURL
+        guard !rawURL.isNTP else { return "" }
+        return URLProcessor.phiBrandEnsuredUrlString(rawURL)
+    }
+
+    static func allowsSnapshot(for rawURL: String) -> Bool {
+        guard let components = URLComponents(string: rawURL),
+              let scheme = components.scheme?.lowercased(),
+              let host = components.host?.lowercased() else {
+            return true
+        }
+        guard scheme == "chrome" || scheme == "phi" else { return true }
+        return host != "bookmarks"
     }
 }
 
@@ -48,6 +59,7 @@ enum TabPreviewImageSource: Equatable {
     case thumbnail(tabID: Int64)
     case foreground(tabID: Int64?)
     case unavailable(tabID: Int64?)
+    case notRequested
 }
 
 @MainActor
@@ -62,8 +74,16 @@ struct TabPreviewContentResolver {
         self.thumbnailProvider = thumbnailProvider
     }
 
-    func isEligible(_ target: TabPreviewTarget, in browserState: BrowserState) -> Bool {
-        resolvedTarget(for: target, in: browserState) != nil
+    func isEligible(
+        _ target: TabPreviewTarget,
+        in browserState: BrowserState,
+        previewsEnabled: Bool = true
+    ) -> Bool {
+        guard previewsEnabled,
+              let resolved = resolvedTarget(for: target, in: browserState) else {
+            return false
+        }
+        return resolved.liveTab != nil
     }
 
     func resolve(
@@ -75,7 +95,8 @@ struct TabPreviewContentResolver {
         let resolvedImage = image(
             liveTab: resolved.liveTab,
             isForeground: resolved.isForeground,
-            cachedContent: cachedContent
+            cachedContent: cachedContent,
+            includesImage: TabPreviewURLPolicy.allowsSnapshot(for: resolved.url)
         )
         let displayURL = TabPreviewURLPolicy.displayURL(for: resolved.url)
         return TabPreviewContent(
@@ -254,8 +275,12 @@ struct TabPreviewContentResolver {
     private func image(
         liveTab: Tab?,
         isForeground: Bool,
-        cachedContent: TabPreviewContent?
+        cachedContent: TabPreviewContent?,
+        includesImage: Bool
     ) -> (image: NSImage?, source: TabPreviewImageSource) {
+        guard includesImage else {
+            return (nil, .notRequested)
+        }
         if isForeground {
             let tabID = liveTab.flatMap { $0.guid >= 0 ? Int64($0.guid) : nil }
             return (nil, .foreground(tabID: tabID))
@@ -375,7 +400,11 @@ final class TabPreviewController {
     ) {
         guard let window,
               anchorView.window === window,
-              resolver.isEligible(target, in: browserState) else {
+              resolver.isEligible(
+                target,
+                in: browserState,
+                previewsEnabled: PhiPreferences.GeneralSettings.showTabPreviews.loadValue()
+              ) else {
             presentationController.dismiss(ownerID: ownerID)
             return
         }
@@ -404,7 +433,11 @@ final class TabPreviewController {
     ) {
         guard let window,
               anchorView.window === window,
-              resolver.isEligible(target, in: browserState) else {
+              resolver.isEligible(
+                target,
+                in: browserState,
+                previewsEnabled: PhiPreferences.GeneralSettings.showTabPreviews.loadValue()
+              ) else {
             dismiss(ownerID: ownerID)
             return
         }
@@ -474,6 +507,13 @@ final class TabPreviewController {
                 return false
             }
             let reusableContent = reuseCurrentImage ? self.viewModel.content : nil
+            guard self.resolver.isEligible(
+                target,
+                in: browserState,
+                previewsEnabled: PhiPreferences.GeneralSettings.showTabPreviews.loadValue()
+            ) else {
+                return false
+            }
             guard let content = self.resolver.resolve(
                 target,
                 in: browserState,
@@ -648,7 +688,11 @@ final class TabPreviewRegistration {
         let isCurrentlyDragging = isDragging
             || browserState.tabDraggingSession.snapshot.isDragging
         let isEligible = !isCurrentlyDragging
-            && resolver.isEligible(target, in: browserState)
+            && resolver.isEligible(
+                target,
+                in: browserState,
+                previewsEnabled: PhiPreferences.GeneralSettings.showTabPreviews.loadValue()
+            )
         onEligibilityChanged?(isEligible)
         return isEligible
     }

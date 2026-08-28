@@ -50,10 +50,13 @@ extension AgentSpaceRouter {
     /// `agentSpace.spaces.list` — the user's normal Spaces. Agent Spaces and
     /// Incognito Spaces are excluded: the former have their own lifecycle
     /// surface, the latter are runtime-only and not managed via this API.
+    /// `windowIds` lists the Space's open windows (empty when none) so a
+    /// caller can address one specific window when several show the Space.
     static func handleSpacesList(context: ExtensionMessageContext) -> String? {
         let spaces = MainActor.assumeIsolated { () -> [[String: Any]] in
             let manager = SpaceManager.shared
             let activeId = manager.activeSpaceId
+            let controllers = MainBrowserWindowControllersManager.shared.getAllWindows()
             return manager.spaces
                 .filter { !$0.isAgentSpace && !SpaceManager.isIncognitoSpaceId($0.spaceId) }
                 .map { space in
@@ -66,6 +69,9 @@ extension AgentSpaceRouter {
                         "sortOrder": space.sortOrder,
                         "isDefault": space.spaceId == LocalStore.defaultSpaceId,
                         "isActive": space.spaceId == activeId,
+                        "windowIds": controllers
+                            .filter { $0.spaceId == space.spaceId }
+                            .map(\.windowId),
                     ]
                 }
         }
@@ -165,25 +171,47 @@ extension AgentSpaceRouter {
         }
     }
 
-    /// `agentSpace.spaces.listTabs` — a user Space's open tabs (the tab strip
-    /// of its window), as {tabId, url, title, active}. Fails when the Space
-    /// has no open window: only live windows have a tab strip to read.
+    /// `agentSpace.spaces.listTabs` — a user Space's open tabs (its window's
+    /// full listable inventory: normal, open pinned, and bookmark-opened
+    /// tabs alike), as {tabId, url, title, active, kind} with `kind` one of
+    /// normal|pinned|bookmark. Fails when the Space has no open window
+    /// (only live windows have a tab strip to read) and `window_not_ready`
+    /// when the window exists but its state has not attached yet — a
+    /// transient worth retrying, never a silent empty list. An optional
+    /// `windowId` reads one specific window's strip instead of the
+    /// key-window default, failing `window_not_open` when that window does
+    /// not show the Space; with `windowId` alone the Space is derived from
+    /// the window. The reply echoes the resolved `spaceId` either way.
     static func handleSpacesListTabs(context: ExtensionMessageContext) -> String? {
-        guard let obj = json(context.payload),
-              let spaceId = obj["spaceId"] as? String else { return invalid() }
+        guard let obj = json(context.payload) else { return invalid() }
+        let spaceId = obj["spaceId"] as? String
+        let windowId = obj["windowId"] as? Int
+        guard spaceId != nil || windowId != nil else { return invalid() }
         return MainActor.assumeIsolated {
-            guard let target = spaceWindow(spaceId: spaceId) else {
-                return failure("space_not_open")
+            let target: (windowId: Int, state: BrowserState?, spaceId: String)?
+            if let spaceId {
+                target = spaceWindow(spaceId: spaceId, windowId: windowId)
+                    .map { ($0.windowId, $0.state, spaceId) }
+            } else {
+                target = windowSpace(windowId: windowId!)
             }
-            let tabs = (target.state?.normalTabs ?? []).map { tab -> [String: Any] in
+            guard let target else {
+                return failure(windowId == nil ? "space_not_open" : "window_not_open")
+            }
+            guard let state = target.state else {
+                return failure("window_not_ready")
+            }
+            let tabs = state.agentTabInventory().map { entry -> [String: Any] in
                 [
-                    "tabId": tab.guid,
-                    "url": tab.url ?? "",
-                    "title": tab.title,
-                    "active": tab.isActive,
+                    "tabId": entry.tab.guid,
+                    "url": entry.tab.url ?? "",
+                    "title": entry.tab.title,
+                    "active": entry.tab.isActive,
+                    "kind": entry.kind,
                 ]
             }
-            return encode(["ok": true, "windowId": target.windowId, "tabs": tabs])
+            return encode(["ok": true, "windowId": target.windowId,
+                           "spaceId": target.spaceId, "tabs": tabs])
         }
     }
 
@@ -191,15 +219,31 @@ extension AgentSpaceRouter {
     /// Space's open window: the direct user-Space counterpart of the
     /// task-scoped `agentSpace.openTab`. `activate` (default true) selects
     /// the new tab — the common caller is opening a page *for* the user to
-    /// see. Fails when the Space has no open window, like `spaces.listTabs`.
+    /// see. Fails when the Space has no open window, like `spaces.listTabs`;
+    /// an optional `windowId` targets one specific window instead of the
+    /// key-window default.
     static func handleSpacesOpenTab(context: ExtensionMessageContext) -> String? {
         guard let obj = json(context.payload),
               let spaceId = obj["spaceId"] as? String,
               let url = obj["url"] as? String, !url.isEmpty else { return invalid() }
         let activate = obj["activate"] as? Bool ?? true
+        let windowId = obj["windowId"] as? Int
         return MainActor.assumeIsolated {
-            guard let target = spaceWindow(spaceId: spaceId) else {
-                return failure("space_not_open")
+            guard let target = spaceWindow(spaceId: spaceId, windowId: windowId) else {
+                return failure(windowId == nil ? "space_not_open" : "window_not_open")
+            }
+            // Opening a tab here IS the agent operating the user's Space, but
+            // the app performs it itself — no CDP command is sent, so the
+            // browser's drive reports never see it. Arm the operating mask
+            // from this side instead, matched to the tab Chromium is about to
+            // create. Agent Spaces keep deriving their own mask from the task.
+            let isAgentSpace = SpaceManager.shared.spaces
+                .first { $0.spaceId == spaceId }?.isAgentSpace ?? false
+            if !isAgentSpace {
+                AgentUserSpaceDriveRegistry.shared.agentWillOpenTab(
+                    inWindow: target.windowId,
+                    principalId: context.driverPrincipalId,
+                    driverName: context.agentName)
             }
             ChromiumLauncher.sharedInstance().bridge?
                 .createNewTab(withUrl: url,
@@ -478,24 +522,44 @@ extension AgentSpaceRouter {
     }
 
     /// Resolves a user Space's open window (its slot's registered controller,
-    /// visible or not; the key window wins when several show the Space).
-    /// Agent Spaces are refused here: their windows are ownership-guarded and
-    /// must be addressed through the taskId path.
+    /// visible or not). A caller-supplied `windowId` narrows to that exact
+    /// window (nil when it does not show the Space); otherwise the key window
+    /// wins when several show the Space. Agent Spaces are refused here: their
+    /// windows are ownership-guarded and must be addressed through the taskId
+    /// path.
     @MainActor
-    private static func spaceWindow(spaceId: String)
+    private static func spaceWindow(spaceId: String, windowId: Int? = nil)
         -> (windowId: Int, state: BrowserState?)? {
         guard !AgentSpaceManager.shared.isAgentSpace(spaceId) else { return nil }
         let controllers = MainBrowserWindowControllersManager.shared.getAllWindows()
             .filter { $0.spaceId == spaceId }
+        if let windowId {
+            guard let chosen = controllers.first(where: { $0.windowId == windowId })
+            else { return nil }
+            return (chosen.windowId, chosen.browserState)
+        }
         guard let chosen = controllers.first(where: { $0.window?.isKeyWindow == true })
             ?? controllers.first else { return nil }
         return (chosen.windowId, chosen.browserState)
     }
 
+    /// The reverse of `spaceWindow`: resolves an open window to it plus the
+    /// user Space it shows. Nil for unknown ids and for agent-Space windows
+    /// (ownership-guarded — taskId path only, same as `spaceWindow`).
+    @MainActor
+    private static func windowSpace(windowId: Int)
+        -> (windowId: Int, state: BrowserState?, spaceId: String)? {
+        guard let chosen = MainBrowserWindowControllersManager.shared.getAllWindows()
+            .first(where: { $0.windowId == windowId }),
+            !AgentSpaceManager.shared.isAgentSpace(chosen.spaceId) else { return nil }
+        return (chosen.windowId, chosen.browserState, chosen.spaceId)
+    }
+
     /// Routes a tab-layout message to its target window: `spaceId` addresses
     /// a user Space's open window (app-level, like the rest of the management
-    /// surface), `taskId` keeps the origin-guarded agent-window path. The
-    /// same operation body runs against either.
+    /// surface; an optional `windowId` narrows to one specific window),
+    /// `taskId` keeps the origin-guarded agent-window path. The same
+    /// operation body runs against either.
     private static func withLayoutWindow(
         _ obj: [String: Any],
         context: ExtensionMessageContext,
@@ -503,6 +567,7 @@ extension AgentSpaceRouter {
     ) -> String? {
         if let spaceId = obj["spaceId"] as? String {
             if let denied = userSpaceOperationsRefusal() { return denied }
+            let windowId = obj["windowId"] as? Int
             // The spaceId path targets a USER Space's window (the taskId path
             // below is the agent's own window) — count it as user-space usage.
             PostHogSDK.shared.capture("agent_user_space_command", properties: [
@@ -510,8 +575,8 @@ extension AgentSpaceRouter {
                 "agent_name": AgentDriverBadge.telemetryName(context.agentName),
             ])
             return MainActor.assumeIsolated {
-                guard let target = spaceWindow(spaceId: spaceId) else {
-                    return failure("space_not_open")
+                guard let target = spaceWindow(spaceId: spaceId, windowId: windowId) else {
+                    return failure(windowId == nil ? "space_not_open" : "window_not_open")
                 }
                 return body(target)
             }

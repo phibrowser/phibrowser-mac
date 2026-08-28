@@ -17,10 +17,14 @@ final class SpaceChooserOverlayWindow: NSWindow {
 /// One row in the Space chooser. Colors are resolved by the presenter from the
 /// Space's theme, so this view stays free of ThemeManager / appearance lookups.
 struct SpaceChooserItem: Identifiable {
-    let id: String          // spaceId
+    let id: String          // Space id or action-destination wire id
     let name: String
     let iconName: String
     let isCurrent: Bool
+    /// Draw a divider before this destination. Kiosk uses this to remain a
+    /// distinct action below the Space choices while staying in the same
+    /// keyboard-navigation order.
+    let startsSection: Bool
     /// The Space theme's signature color (ColorRole.themeColor).
     let themeColor: Color
     /// A legible icon/text color on top of `themeColor`.
@@ -29,11 +33,11 @@ struct SpaceChooserItem: Identifiable {
 
 /// Modal "Open in which Space?" prompt shown when a navigation matches an
 /// "ask every time" URL rule. Dims the source window behind a centered list of
-/// Spaces (the current one first), each tinted with its own theme color, and
-/// lets the user pick a destination. Replaces the old NSAlert + popup button.
+/// destinations: Spaces first (the current one first), then Kiosk in its own
+/// section. Replaces the old NSAlert + popup button.
 ///
-/// `onChoose` is invoked exactly once: with the chosen `spaceId`, or with nil
-/// when the user keeps the page where it is (Esc, or a tap on the dimmed
+/// `onChoose` is invoked exactly once: with the chosen destination id, or with
+/// nil when the user keeps the page where it is (Esc, or a tap on the dimmed
 /// backdrop). The presenter owns dismissal.
 struct SpaceChooserView: View {
     /// Every Space, ordered with the current one first.
@@ -91,6 +95,11 @@ struct SpaceChooserView: View {
             ScrollView {
                 VStack(spacing: 6) {
                     ForEach(items) { item in
+                        if item.startsSection {
+                            Divider()
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 2)
+                        }
                         row(for: item).id(item.id)
                     }
                 }
@@ -104,9 +113,10 @@ struct SpaceChooserView: View {
         }
     }
 
-    /// Each row shows the Space's icon and name on its own theme color, and
-    /// opens that Space on click. Keyboard navigation moves the highlighted
-    /// `selection` (also followed by hover); Return opens it.
+    /// Each row shows the destination's icon and name and opens it on click.
+    /// Space rows use their theme color; action destinations use a neutral
+    /// tint. Keyboard navigation moves the highlighted `selection` (also
+    /// followed by hover); Return opens it.
     private func row(for item: SpaceChooserItem) -> some View {
         let isSelected = selection == item.id
         // The keyboard/hover selection gets a distinct accent highlight so it
@@ -144,12 +154,15 @@ struct SpaceChooserView: View {
         .onTapGesture { onChoose(item.id) }
     }
 
-    /// Hugs the rows (38pt each + 6pt gaps) up to a cap, so a few Spaces don't
-    /// leave a tall empty area but many still scroll.
+    /// Hugs the rows (38pt each + 6pt gaps) and section dividers up to a cap,
+    /// so a few destinations don't leave a tall empty area but many still
+    /// scroll.
     private var listHeight: CGFloat {
         let count = CGFloat(items.count)
         let content = count * 38 + max(0, count - 1) * 6
-        return min(content, 360)
+        // One extra VStack gap plus the divider's line and vertical padding.
+        let sectionHeight = CGFloat(items.filter(\.startsSection).count) * 11
+        return min(content + sectionHeight, 360)
     }
 
     private func moveSelection(by delta: Int) {

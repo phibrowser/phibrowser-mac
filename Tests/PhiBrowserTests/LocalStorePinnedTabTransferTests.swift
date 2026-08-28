@@ -89,7 +89,10 @@ final class LocalStorePinnedTabTransferTests: XCTestCase {
             title: "Left",
             url: "https://left.example",
             index: 0,
-            configure: { $0.splitPartnerGuid = "right" }
+            configure: {
+                $0.splitPartnerGuid = "right"
+                $0.layout = SplitLayout.horizontal.rawValue
+            }
         )
         try insertPinned(
             in: store,
@@ -98,7 +101,8 @@ final class LocalStorePinnedTabTransferTests: XCTestCase {
             spaceId: "space-a",
             title: "Right",
             url: "https://right.example",
-            index: 1
+            index: 1,
+            configure: { $0.layout = SplitLayout.horizontal.rawValue }
         )
 
         let result = try await store.transferPinnedTab(
@@ -119,6 +123,8 @@ final class LocalStorePinnedTabTransferTests: XCTestCase {
         XCTAssertEqual(target[1].guid, result.guidMapping["right"])
         XCTAssertEqual(target[0].splitPartnerGuid, target[1].guid)
         XCTAssertEqual(target[1].splitPartnerGuid, target[0].guid)
+        XCTAssertEqual(target[0].layout, SplitLayout.horizontal.rawValue)
+        XCTAssertEqual(target[1].layout, SplitLayout.horizontal.rawValue)
     }
 
     func testLivePartnerHintTransfersPairBeforePersistedLinksAreWritten() async throws {
@@ -220,13 +226,15 @@ final class LocalStorePinnedTabTransferTests: XCTestCase {
                     tabId: 10,
                     title: "Left",
                     url: "https://left.example",
-                    partnerTabId: 11
+                    partnerTabId: 11,
+                    layout: SplitLayout.horizontal.rawValue
                 ),
                 PinnedTabCreationInput(
                     tabId: 11,
                     title: "Right",
                     url: "https://right.example",
-                    partnerTabId: 10
+                    partnerTabId: 10,
+                    layout: SplitLayout.horizontal.rawValue
                 ),
             ],
             targetProfileId: "Default",
@@ -244,6 +252,8 @@ final class LocalStorePinnedTabTransferTests: XCTestCase {
         )
         XCTAssertEqual(target[0].splitPartnerGuid, target[1].guid)
         XCTAssertEqual(target[1].splitPartnerGuid, target[0].guid)
+        XCTAssertEqual(target[0].layout, SplitLayout.horizontal.rawValue)
+        XCTAssertEqual(target[1].layout, SplitLayout.horizontal.rawValue)
     }
 
     private func makeStoreWithSpaces() throws -> LocalStore {

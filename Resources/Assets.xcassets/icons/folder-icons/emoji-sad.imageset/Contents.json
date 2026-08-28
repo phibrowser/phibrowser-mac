@@ -1,0 +1,26 @@
+{
+  "images" : [
+    {
+      "filename" : "emoji-sad.svg",
+      "idiom" : "universal"
+    },
+    {
+      "appearances" : [
+        {
+          "appearance" : "luminosity",
+          "value" : "dark"
+        }
+      ],
+      "filename" : "emoji-sad 1.svg",
+      "idiom" : "universal"
+    }
+  ],
+  "info" : {
+    "author" : "xcode",
+    "version" : 1
+  },
+  "properties" : {
+    "preserves-vector-representation" : true,
+    "template-rendering-intent" : "template"
+  }
+}

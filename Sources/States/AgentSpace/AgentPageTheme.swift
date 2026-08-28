@@ -8,7 +8,9 @@ import Foundation
 
 /// Layer 2 of the agent operating mask: recolors the page's own elements —
 /// headings, links, buttons, selection — from the Space theme, so an operated
-/// page reads as the agent's rather than merely being filmed over.
+/// page reads as the agent's rather than merely being filmed over. The design
+/// specifies separate light and dark palettes, so the sheet is generated for
+/// the window's current appearance and re-issued when that flips.
 ///
 /// Layer 1 (`EdgeFogOverlayView`) is a native AppKit wash and cannot reach the
 /// DOM, so this half is injected as a stylesheet over CDP through the app-owned
@@ -38,6 +40,10 @@ final class AgentPageTheme {
         let session: AppDevToolsPageSession
         /// `Page.addScriptToEvaluateOnNewDocument` handle, for clean removal.
         let scriptIdentifier: String?
+        /// The sheet this target currently carries. The palette differs
+        /// between light and dark appearance, so an already-styled target is
+        /// only up to date while its sheet matches the one being applied.
+        let css: String
     }
 
     /// Live sessions keyed by window, then by CDP target id.
@@ -49,12 +55,15 @@ final class AgentPageTheme {
 
     // MARK: - Lifecycle
 
-    /// Styles every page in `windowId`. Safe to call repeatedly; targets already
-    /// styled are skipped, so tab switches and new tabs converge without
-    /// tearing down what is already applied.
-    func apply(windowId: Int, themeColor: NSColor) {
+    /// Styles every page in `windowId`. Safe to call repeatedly; targets
+    /// already carrying the requested sheet are skipped, so tab switches and
+    /// new tabs converge without tearing down what is already applied — while
+    /// a palette change (theme color, or the light/dark appearance the design
+    /// styles differently) restyles live targets in place.
+    func apply(windowId: Int, themeColor: NSColor, appearance: Appearance) {
         guard windowId != 0, !inFlightWindows.contains(windowId) else { return }
-        let css = Self.styleSheet(for: Palette(themeColor: themeColor))
+        let css = Self.styleSheet(
+            for: Palette(themeColor: themeColor, appearance: appearance))
         inFlightWindows.insert(windowId)
         Task { @MainActor in
             defer { inFlightWindows.remove(windowId) }
@@ -110,7 +119,36 @@ final class AgentPageTheme {
         for info in infos {
             guard info["type"] as? String == "page",
                   let targetId = info["targetId"] as? String,
-                  styled[windowId]?[targetId] == nil else { continue }
+                  styled[windowId]?[targetId]?.css != css else { continue }
+
+            // A target styled with an outdated sheet (appearance flip, theme
+            // change) restyles through its held session — its window
+            // membership was proven when it was first styled, and the
+            // injection replaces the style element's content in place.
+            if let target = styled[windowId]?[targetId] {
+                matched += 1
+                if let identifier = target.scriptIdentifier {
+                    _ = try? await target.session.command(
+                        "Page.removeScriptToEvaluateOnNewDocument",
+                        params: ["identifier": identifier])
+                }
+                let added = try? await target.session.command(
+                    "Page.addScriptToEvaluateOnNewDocument",
+                    params: ["source": injection])
+                do {
+                    _ = try await target.session.command(
+                        "Runtime.evaluate",
+                        params: ["expression": injection, "returnByValue": true])
+                } catch {
+                    AppLogError("[AgentPageTheme] restyle failed for \(targetId): \(error)")
+                }
+                styled[windowId, default: [:]][targetId] = StyledTarget(
+                    session: target.session,
+                    scriptIdentifier: added?["identifier"] as? String,
+                    css: css)
+                continue
+            }
+
             // Window membership is the ownership test; the same id space the
             // skill matches `AgentTask.windowId` against.
             guard let owner = try? await browser.command(
@@ -137,7 +175,9 @@ final class AgentPageTheme {
             }
 
             styled[windowId, default: [:]][targetId] = StyledTarget(
-                session: session, scriptIdentifier: added?["identifier"] as? String)
+                session: session,
+                scriptIdentifier: added?["identifier"] as? String,
+                css: css)
         }
         let ms = Int(Date().timeIntervalSince(started) * 1000)
         AppLogInfo("[AgentPageTheme] windowId=\(windowId) pages=\(infos.count) " +
@@ -186,6 +226,12 @@ final class AgentPageTheme {
     /// The design's derivation: one theme color fans out into the shades the
     /// stylesheet needs. Authored in HSL (not AppKit's HSB) to stay faithful to
     /// the source, whose lightness clamps have no HSB equivalent.
+    ///
+    /// The design's dark variant keeps the chosen color as the theme source
+    /// but rebuilds every ink for low-luminance surfaces: text roles are
+    /// `color-mix` lifts toward white, and the soft fills become translucent
+    /// primary washes instead of near-white solids. Those per-appearance rule
+    /// values live here so the stylesheet template stays single.
     private struct Palette {
         let primary: String
         let deep: String
@@ -193,14 +239,24 @@ final class AgentPageTheme {
         let accent: String
         let soft: String
         let onPrimary: String
-        let rgb: (r: Int, g: Int, b: Int)
 
-        init(themeColor: NSColor) {
+        // Appearance-resolved rule values. Light references the palette
+        // variables directly; dark carries the design's dark-block
+        // expressions.
+        let heading1: String
+        let heading2: String
+        let subheading: String
+        let link: String
+        let accentLine: String
+        let tableHeadText: String
+        let scrollbar: String
+        let buttonShadow: String
+
+        init(themeColor: NSColor, appearance: Appearance) {
             let color = themeColor.usingColorSpace(.sRGB) ?? themeColor
             let r = Int((color.redComponent * 255).rounded())
             let g = Int((color.greenComponent * 255).rounded())
             let b = Int((color.blueComponent * 255).rounded())
-            rgb = (r, g, b)
             primary = String(format: "#%02X%02X%02X", r, g, b)
 
             let hsl = Palette.rgbToHSL(r: r, g: g, b: b)
@@ -211,8 +267,36 @@ final class AgentPageTheme {
                                          s: max(36, saturation - 10), l: 48)
             accent = Palette.hslToHex(h: (hsl.h + 330).truncatingRemainder(dividingBy: 360),
                                       s: min(86, saturation + 10), l: 61)
-            soft = Palette.hslToHex(h: hsl.h, s: max(24, saturation * 0.45), l: 94)
             onPrimary = hsl.l > 66 ? "#17151A" : "#FFFFFF"
+
+            switch appearance {
+            case .light:
+                soft = Palette.hslToHex(h: hsl.h, s: max(24, saturation * 0.45), l: 94)
+                heading1 = "var(--chroma-deep)"
+                heading2 = "var(--chroma-primary)"
+                subheading = "var(--chroma-secondary)"
+                link = "var(--chroma-primary)"
+                accentLine = "var(--chroma-accent)"
+                tableHeadText = "var(--chroma-deep)"
+                scrollbar = "var(--chroma-primary) var(--chroma-soft)"
+                buttonShadow = "0 7px 20px rgba(\(r), \(g), \(b), .18)"
+            case .dark:
+                // The design's dark block, generalized: heading and link inks
+                // are lifted toward white (48/46% for the two display
+                // headings, 70% for secondary text and links, 64% for the
+                // active-surface ink), soft fills become a 14% primary wash,
+                // the scrollbar thumb a 45% one, and the button glow runs
+                // slightly larger and hotter.
+                soft = "rgba(\(r), \(g), \(b), .14)"
+                heading1 = "color-mix(in srgb, var(--chroma-primary) 48%, white)"
+                heading2 = "color-mix(in srgb, var(--chroma-primary) 46%, white)"
+                subheading = "color-mix(in srgb, var(--chroma-secondary) 70%, white)"
+                link = "color-mix(in srgb, var(--chroma-primary) 70%, white)"
+                accentLine = "color-mix(in srgb, var(--chroma-accent) 70%, white)"
+                tableHeadText = "color-mix(in srgb, var(--chroma-primary) 64%, white)"
+                scrollbar = "rgba(\(r), \(g), \(b), .45) transparent"
+                buttonShadow = "0 8px 24px rgba(\(r), \(g), \(b), .24)"
+            }
         }
 
         private static func rgbToHSL(r: Int, g: Int, b: Int)
@@ -259,29 +343,43 @@ final class AgentPageTheme {
     /// The design's selector set. `:where()` keeps specificity at zero so a page
     /// author's own rules still win on structure; only the colors are forced.
     /// The design's own 20% overlay rule is deliberately absent — that is
-    /// layer 1, already drawn natively over the whole tab.
+    /// layer 1, already drawn natively over the whole tab. Rule values whose
+    /// expression differs between the design's light and dark blocks come in
+    /// pre-resolved on the palette; the selector set itself never varies.
+    ///
+    /// The sheet accents; it does not repaint. The design's source is a mock
+    /// document where every `<button>` is a real call to action, but app UIs
+    /// build icon buttons, menu rows and list items out of `<button>` as well —
+    /// forcing a fill there floods the page with opaque slabs and destroys the
+    /// hierarchy the wash is meant to sit on top of. Only a submit control,
+    /// whose role is unambiguous, keeps the filled treatment; every other
+    /// control gets its edge themed and keeps its own surface. Class matches
+    /// are case-insensitive because component frameworks capitalize
+    /// (`Button-sc-…`), and a half-matched page reads worse than an untouched
+    /// one.
     private static func styleSheet(for p: Palette) -> String {
-        let shadow = "rgba(\(p.rgb.r), \(p.rgb.g), \(p.rgb.b), .18)"
-        return """
+        """
         :root{--chroma-primary:\(p.primary);--chroma-deep:\(p.deep);\
         --chroma-secondary:\(p.secondary);--chroma-accent:\(p.accent);\
         --chroma-soft:\(p.soft);--chroma-on:\(p.onPrimary);\
         accent-color:var(--chroma-primary)!important}
-        html{scrollbar-color:var(--chroma-primary) var(--chroma-soft)}
-        :where(h1){color:var(--chroma-deep)!important;\
-        text-decoration-color:var(--chroma-accent)!important}
-        :where(h2){color:var(--chroma-primary)!important;\
-        text-decoration-color:var(--chroma-secondary)!important}
-        :where(h3,h4,h5,h6){color:var(--chroma-secondary)!important}
-        :where(a:not([class*="button"]):not([class*="btn"])){\
-        color:var(--chroma-primary)!important;\
-        text-decoration-color:var(--chroma-accent)!important;\
+        html{scrollbar-color:\(p.scrollbar)}
+        :where(h1){color:\(p.heading1)!important;\
+        text-decoration-color:\(p.accentLine)!important}
+        :where(h2){color:\(p.heading2)!important;\
+        text-decoration-color:\(p.subheading)!important}
+        :where(h3,h4,h5,h6){color:\(p.subheading)!important}
+        :where(a:not([class*="button" i]):not([class*="btn" i])){\
+        color:\(p.link)!important;\
+        text-decoration-color:\(p.accentLine)!important;\
         text-decoration-thickness:.09em}
-        :where(button,[role="button"],input[type="button"],input[type="submit"],\
-        a[class*="button"],a[class*="btn"]){\
+        :where(button[type="submit"],input[type="submit"],input[type="button"]){\
         background-color:var(--chroma-primary)!important;\
         border-color:var(--chroma-deep)!important;color:var(--chroma-on)!important;\
-        box-shadow:0 7px 20px \(shadow)}
+        box-shadow:\(p.buttonShadow)!important}
+        :where(button:not([type="submit"]),[role="button"],\
+        a[class*="button" i],a[class*="btn" i]){\
+        border-color:var(--chroma-primary)!important}
         :where(blockquote){border-color:var(--chroma-primary)!important;\
         background:var(--chroma-soft)!important}
         :where(mark){background:var(--chroma-accent)!important;color:#17151a!important}
@@ -290,7 +388,7 @@ final class AgentPageTheme {
         outline-color:var(--chroma-primary)!important;\
         border-color:var(--chroma-primary)!important}
         :where(th){background-color:var(--chroma-soft)!important;\
-        color:var(--chroma-deep)!important}
+        color:\(p.tableHeadText)!important}
         ::selection{background:var(--chroma-primary);color:var(--chroma-on)}
         """
     }

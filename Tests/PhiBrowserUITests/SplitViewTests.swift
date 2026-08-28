@@ -136,6 +136,26 @@ final class SplitViewTests: XCTestCase {
     }
 
     @MainActor
+    func test_convertSplitLayout_updatesContextMenuTarget() throws {
+        let baseline = try enterSplit()
+        XCTAssertTrue(waitForSplitGroupCount(atLeast: baseline + 1, timeout: 15),
+                      "Open-as-Split should add an inner SplitGroup")
+
+        try runStep("Convert to Vertical Split") {
+            try self.rightClickFocusedSidebarTab()
+            try self.clickMenuItem(matching: ["Convert to Vertical Split"])
+        }
+
+        try runStep("Verify stacked split conversion") {
+            try self.rightClickFocusedSidebarTab()
+            let convertBack = self.app.menuItems["Convert to Horizontal Split"]
+            XCTAssertTrue(convertBack.waitForExistence(timeout: 5),
+                          "A stacked split should offer conversion back to horizontal")
+            self.app.typeKey(.escape, modifierFlags: [])
+        }
+    }
+
+    @MainActor
     func test_dragToFormSplit_addsSplit() throws {
         // Drag-to-split needs two tabs: a focused one (becomes a pane) and a
         // non-focused one to drag onto the page's right third.
@@ -161,6 +181,38 @@ final class SplitViewTests: XCTestCase {
         XCTAssertTrue(waitForSidebarCellCount(equalTo: rowsBeforeDrag - 1, timeout: 15),
                       "Dragging a tab onto the page should merge two tab rows into one split-pair row")
         attachDiagnostics(label: "after-drag-to-split")
+    }
+
+    @MainActor
+    func test_dragToTopAndBottomFormsStackedSplit() throws {
+        for zone in [PageDropZone.top, .bottom] {
+            try runStep("Reset to two tabs for \(zone.name) drop") {
+                try self.resetToSingleTab(url: "https://example.com")
+                self.app.typeKey("t", modifierFlags: .command)
+                XCTAssertTrue(self.waitForSidebarCellCount(equalTo: 3, timeout: 10),
+                              "Expected New Tab button + two tab rows")
+            }
+            let rowsBeforeDrag = sidebarCellCount()
+
+            try runStep("Drag a sidebar tab onto the page \(zone.name) third") {
+                let outline = self.app.windows.firstMatch.outlines["sidebarTabList"]
+                try self.dragSidebarTabOntoPage(
+                    sourceCell: outline.cells.element(boundBy: 1),
+                    zone: zone
+                )
+            }
+
+            XCTAssertTrue(waitForSidebarCellCount(equalTo: rowsBeforeDrag - 1, timeout: 15),
+                          "A \(zone.name) drop should merge two tabs into one split row")
+
+            try runStep("Verify \(zone.name) drop created a stacked split") {
+                try self.rightClickFocusedSidebarTab()
+                let convertBack = self.app.menuItems["Convert to Horizontal Split"]
+                XCTAssertTrue(convertBack.waitForExistence(timeout: 5),
+                              "A \(zone.name) drop should create a stacked split")
+                self.app.typeKey(.escape, modifierFlags: [])
+            }
+        }
     }
 
     @MainActor
@@ -307,9 +359,32 @@ final class SplitViewTests: XCTestCase {
         attachDiagnostics(label: "after-duplicate-split")
     }
 
-    private enum PageDropZone { case left, right }
+    private enum PageDropZone {
+        case left
+        case right
+        case top
+        case bottom
 
-    /// Drag a sidebar tab cell onto the left/right third of the active page
+        var name: String {
+            switch self {
+            case .left: return "left"
+            case .right: return "right"
+            case .top: return "top"
+            case .bottom: return "bottom"
+            }
+        }
+
+        var offset: CGVector {
+            switch self {
+            case .left: return CGVector(dx: 0.17, dy: 0.5)
+            case .right: return CGVector(dx: 0.83, dy: 0.5)
+            case .top: return CGVector(dx: 0.5, dy: 0.83)
+            case .bottom: return CGVector(dx: 0.5, dy: 0.17)
+            }
+        }
+    }
+
+    /// Drag a sidebar tab cell onto a directional third of the active page
     /// area. With a non-split focused tab this forms a new split; with a
     /// split focused tab it replaces the corresponding pane. The drop
     /// target is the inner web-content `SplitGroup` (index 1); the outer
@@ -329,8 +404,7 @@ final class SplitViewTests: XCTestCase {
             XCTFail("Inner web-content SplitGroup not found")
             return
         }
-        let dx: CGFloat = (zone == .right) ? 0.83 : 0.17
-        let dest = webArea.coordinate(withNormalizedOffset: CGVector(dx: dx, dy: 0.5))
+        let dest = webArea.coordinate(withNormalizedOffset: zone.offset)
 
         source.press(forDuration: 0.6, thenDragTo: dest)
     }

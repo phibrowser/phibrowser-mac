@@ -65,11 +65,29 @@
             ReferencedContainer = "container:Phi.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
+      <CommandLineArguments>
+         <CommandLineArgument
+            argument = "-uitest 1"
+            isEnabled = "NO">
+         </CommandLineArgument>
+         <CommandLineArgument
+            argument = "-NSDoubleLocalizedStrings YES"
+            isEnabled = "NO">
+         </CommandLineArgument>
+         <CommandLineArgument
+            argument = "-sidebarHeaderUpdateVersion 1.2.3"
+            isEnabled = "NO">
+         </CommandLineArgument>
+         <CommandLineArgument
+            argument = "-tabStripUpdateVersion  1.2.3"
+            isEnabled = "NO">
+         </CommandLineArgument>
+      </CommandLineArguments>
       <EnvironmentVariables>
          <EnvironmentVariable
             key = "CHROMIUM_LLDBINIT_SOURCED"
             value = "1"
-            isEnabled = "YES">
+            isEnabled = "NO">
          </EnvironmentVariable>
       </EnvironmentVariables>
    </LaunchAction>

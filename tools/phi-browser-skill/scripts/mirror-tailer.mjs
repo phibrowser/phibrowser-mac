@@ -41,7 +41,8 @@
 import { openSync, readSync, closeSync, statSync, readFileSync } from 'node:fs'
 import {
   readDaemonControl, writeDaemonControl, clearDaemonControl, readCursor,
-  writeCursor, forwardEntries, openPhiChannel, pidAlive, BACKFILL_GRACE_MS,
+  writeCursor, forwardEntries, openPhiChannel, pidAlive, isPhiDenied,
+  BACKFILL_GRACE_MS,
 } from './lib/mirror-core.mjs'
 import { toEntry as claudeToEntry } from './lib/mirror-claude.mjs'
 import { toEntry as codexToEntry } from './lib/mirror-codex.mjs'
@@ -153,6 +154,14 @@ async function main() {
   // First heartbeat after one interval — the round that spawned us is live
   // and already refreshing the clock itself.
   let lastHeartbeat = Date.now()
+  // Set when the app answers 403 — the user denied this agent, the delegated
+  // capability is one the app no longer knows (it restarted), or nothing
+  // about this connection identifies an agent at all. None of those pass with
+  // time, and every send below treats a channel failure as transient, so
+  // without this the daemon reconnects once per POLL_MS for as long as the
+  // driving agent lives. Exiting costs nothing: the next round respawns it,
+  // by which time the user may have answered differently.
+  let refused = false
   // Deferred-completion state: when the last transcript line arrived (the
   // quiet-window clock) and whether a turn-end record has been seen since
   // the completion intent was written.
@@ -166,10 +175,17 @@ async function main() {
     // stdin-delegated capability is what joins the agent's session — and its
     // consent identity — on this connection. The claimed pid merely names
     // the agent in the app's logs.
-    channel = await openPhiChannel({
-      agentPid: Number(ctl.agentPid) || null,
-      agentCapability: delegatedAgentCapability,
-    })
+    try {
+      channel = await openPhiChannel({
+        agentPid: Number(ctl.agentPid) || null,
+        agentCapability: delegatedAgentCapability,
+      })
+    } catch (err) {
+      // A refusal ends this daemon (see `refused`); everything else is a
+      // state that passes, and the caller retries on the next tick.
+      if (isPhiDenied(err)) refused = true
+      throw err
+    }
     channel.onEvent('agentSpace.userMessage', ({ taskId }) => {
       const cur = readDaemonControl(sessionKey)
       if (cur && cur.taskId === taskId) bridgeWake = true
@@ -195,6 +211,7 @@ async function main() {
   }
 
   for (;;) {
+    if (refused) return                               // the app said no
     ctl = readDaemonControl(sessionKey)
     if (!ctl || ctl.pid !== process.pid) return       // dismissed or superseded
     if (Date.now() - (ctl.ts || 0) > CONTROL_TTL_MS) return

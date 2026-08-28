@@ -398,10 +398,14 @@ class WebContentHeader: NSView {
     }
 
     @objc private func backButtonClicked() {
+        if unsafeBrowserState?.closePeekForBackForwardNavigation() == true { return }
+        if unsafeBrowserState?.closeReaderOverlayForBackForwardNavigation() == true { return }
         unsafeBrowserState?.focusingTab?.goBack()
     }
 
     @objc private func forwardButtonClicked() {
+        if unsafeBrowserState?.closePeekForBackForwardNavigation() == true { return }
+        if unsafeBrowserState?.closeReaderOverlayForBackForwardNavigation() == true { return }
         unsafeBrowserState?.focusingTab?.goForward()
     }
 

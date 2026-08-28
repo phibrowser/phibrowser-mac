@@ -6,11 +6,11 @@
 import SwiftData
 import Foundation
 
-typealias TabDataModel = TabDataModelSchemaV9.TabDataModel
-typealias ProfileModel = TabDataModelSchemaV9.ProfileModel
-typealias SpaceModel = TabDataModelSchemaV9.SpaceModel
-typealias SpaceURLRule = TabDataModelSchemaV9.SpaceURLRule
-typealias BrowserDataSettingsModel = TabDataModelSchemaV9.BrowserDataSettingsModel
+typealias TabDataModel = TabDataModelSchemaV10.TabDataModel
+typealias ProfileModel = TabDataModelSchemaV10.ProfileModel
+typealias SpaceModel = TabDataModelSchemaV10.SpaceModel
+typealias SpaceURLRule = TabDataModelSchemaV10.SpaceURLRule
+typealias BrowserDataSettingsModel = TabDataModelSchemaV10.BrowserDataSettingsModel
 
 extension TabDataModel: CustomStringConvertible {
     var description: String {
@@ -30,11 +30,12 @@ enum TabDataModelMigrationPlan: SchemaMigrationPlan {
             TabDataModelSchemaV7.self,
             TabDataModelSchemaV8.self,
             TabDataModelSchemaV9.self,
+            TabDataModelSchemaV10.self,
         ]
     }
 
     static var stages: [MigrationStage] {
-        [migrateV1toV2, migrateV2toV3, migrateV3toV4, migrateV4toV5, migrateV5toV6, migrateV6toV7, migrateV7toV8, migrateV8toV9]
+        [migrateV1toV2, migrateV2toV3, migrateV3toV4, migrateV4toV5, migrateV5toV6, migrateV6toV7, migrateV7toV8, migrateV8toV9, migrateV9toV10]
     }
 
     nonisolated(unsafe) static var v1TypeMapping: [String: Int] = [:]
@@ -159,6 +160,13 @@ enum TabDataModelMigrationPlan: SchemaMigrationPlan {
             }
             try context.save()
         }
+    )
+
+    /// Additive: introduces the generic `icon` identifier. Existing rows use
+    /// the model's `default` value and require no data movement.
+    static let migrateV9toV10 = MigrationStage.lightweight(
+        fromVersion: TabDataModelSchemaV9.self,
+        toVersion: TabDataModelSchemaV10.self
     )
 
     static let migrateV2toV3 = MigrationStage.custom(

@@ -112,6 +112,28 @@ setTimeout(() => {
 }, 2000)
 </` + `script>`
 
+// A CMP living in an OPEN shadow root (TikTok pattern): the accept control is
+// invisible to plain querySelectorAll, so only the shadow-selector tier can
+// find it — and the click must still arrive as a trusted pointer event.
+const SHADOW_CONSENT = `<!doctype html><title>shadow consent</title>
+<style>body{margin:0;min-height:100vh}</style>
+<div id="page-body">Page content</div><script>
+window.shadowTrace = []
+const host = document.createElement('tiktok-cookie-banner')
+const root = host.attachShadow({mode: 'open'})
+root.innerHTML = '<div style="position:fixed;left:0;right:0;bottom:0;'
+  + 'background:#fff;border-top:1px solid #ccc;padding:24px" class="banner">'
+  + 'We use cookies. <div class="button-wrapper">'
+  + '<button>Decline</button> <button>Allow all</button></div></div>'
+const [decline, accept] = root.querySelectorAll('button')
+decline.addEventListener('click', () => window.shadowTrace.push({kind: 'decline'}))
+accept.addEventListener('click', (event) => {
+  window.shadowTrace.push({kind: 'accept', trusted: event.isTrusted})
+  host.remove()
+})
+document.body.appendChild(host)
+</` + `script>`
+
 const OCCLUDED = `<!doctype html><title>occluded</title>
 <style>
 body{margin:0;min-height:100vh;display:grid;place-items:center}
@@ -169,6 +191,8 @@ function startServer() {
         res.end(INPUT)
       } else if (req.url.startsWith('/late-consent')) {
         res.end(LATE_CONSENT)
+      } else if (req.url.startsWith('/shadow-consent')) {
+        res.end(SHADOW_CONSENT)
       } else if (req.url.startsWith('/occluded')) {
         res.end(OCCLUDED)
       } else if (req.url.startsWith('/cf-auto')) {
@@ -494,6 +518,16 @@ async function main() {
         gateTrace.map((event) => event.kind).join(','))
   check('late consent and requested click both use trusted pointer events',
         gateTrace.length === 2 && gateTrace.every((event) => event.trusted))
+
+  // Navigation's automatic pass must find the accept control inside an open
+  // shadow root (the TikTok pattern), click it trusted, and never touch the
+  // sibling decline button.
+  await H.goto(`${BASE}/shadow-consent`)
+  const shadowTrace = await H.js('window.shadowTrace')
+  check('auto pass accepts a shadow-root CMP with a trusted click',
+        shadowTrace.length === 1 && shadowTrace[0].kind === 'accept'
+          && shadowTrace[0].trusted,
+        JSON.stringify(shadowTrace))
 
   await H.goto(`${BASE}/occluded`, { acceptCookies: false })
   let coveredError = null

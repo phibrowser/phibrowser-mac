@@ -1,6 +1,6 @@
 # Analytics
 
-Last updated: 2026-08-17
+Last updated: 2026-08-24
 
 Phi Browser emits product analytics to both [Countly](https://phi-browser-eaade70cfd902.flex.countly.com) (legacy) and [PostHog](https://us.posthog.com/project/385742) (current). Both pipelines run side-by-side; PostHog is the forward-looking source of truth.
 
@@ -122,7 +122,7 @@ are out of scope.
 | `import_types_selected` | The user commits an import; emitted once per selected source with normalized `types`. File imports use an empty array because Chromium detects their contents | `Onboarding/Importer/BrowserDataImporter.swift` |
 | `import_started` | The importer accepts a non-reentrant run and locks its target; includes sorted `source_browsers` | `Onboarding/Importer/BrowserDataImporter.swift` |
 | `import_finished` | All selected Chromium sources and deferred bookmark persistence finish; includes aggregate success, stable failed sources, duration, and an optional low-cardinality `error_code` | `Onboarding/Importer/BrowserDataImporter.swift` |
-| `first_time_action` | An eligible product action first succeeds on this installation; `action` is one of `space_created`, `ai_sidebar_opened`, `import_finished`, `memory_opened`, `agent_task`, or `connector_connected`, with `seconds_since_install` | `Utilities/FirstTimeActionTracker.swift` |
+| `first_time_action` | An eligible product action first succeeds on this installation; `action` is one of `space_created`, `ai_sidebar_opened`, `import_finished`, `memory_opened`, `agent_task`, `connector_connected`, or `phi_link_paired`, with `seconds_since_install` | `Utilities/FirstTimeActionTracker.swift` |
 | `space_created` | A user-created Space succeeds; includes `total_spaces` and whether it uses a non-default profile | `Sidebar/Spaces/CreateSpacePanel.swift` |
 | `profile_created` | A non-fallback profile is successfully created; includes `total_profiles` | `States/ProfileManager.swift` |
 | `space_profile_changed` | A validated Space profile change begins; includes `total_profiles` | `States/Space/SpaceManager.swift` |
@@ -132,6 +132,9 @@ are out of scope.
 | `connector_status` | Snapshot of each AI connector's connected/disconnected state, fired on refresh | `Preferences/AISettings/AISettingsConnectorViewModel.swift` |
 | `ai_sidebar_opened` | A tab's AI sidebar changed from collapsed to expanded; `trigger` is `button`, `shortcut`, or `restore` | `WebContent/WebContentViewController.swift` |
 | `ai_sidebar_closed` | A tab's AI sidebar changed from expanded to collapsed; includes that tab's `duration_seconds` dwell time | `WebContent/WebContentViewController.swift` |
+| `kiosk_opened` | A Kiosk window's first tab becomes ready to display; profile-replacement windows do not emit it | `Kiosk/KioskBrowserWindowController.swift` |
+| `kiosk_opened_in_space` | A Kiosk page starts transferring into a Space; includes `total_spaces` without Space identifiers | `States/Space/SpaceManager.swift` |
+| `kiosk_profile_changed` | A Kiosk profile replacement is revealed; includes `total_profiles` without profile identifiers | `Kiosk/KioskBrowserWindowController.swift` |
 | `agent_task_started` | An agent task record is created or rebound; includes `origin`, `persistent`, and normalized `agent_name` | `States/AgentSpace/AgentSpaceManager.swift` |
 | `agent_task_completed` | An active task ends through the completion path; includes the start properties and `success` | `States/AgentSpace/AgentSpaceManager.swift` |
 | `agent_user_space_command` | An agent command passes the user-space browsing-data permission gate; includes `command` and normalized `agent_name` | `Notifications/MessageCard/ExtensionMessageRouter.swift`, `States/AgentSpace/AgentSpaceRouter+Management.swift` |
@@ -142,7 +145,8 @@ are out of scope.
 | `feature_entry_tapped` | A visible Chat, Memory, Download, or Organize Tabs entry accepts a tap; `button` is `chat`, `memory`, `download`, or `organize_tabs`, and `surface` is `sidebar` or `web_content_header` | `Sidebar/SidebarViewController.swift`, `Sidebar/TabList/Views/SidebarCellViews.swift`, `WebContent/FloatingSidebar/FloatingSidebarViewController.swift`, `WebContent/Header/WebContentHeader.swift`, `HorizontalBar/TabStrip/TabStripRightButtons.swift` |
 | `bookmark_manager_opened` | A native Bookmark Manager page session starts | `WebContent/BookmarkManager/BookmarkManagerViewController.swift` |
 | `bookmark_manager_edited` | A Bookmark Manager page session ends after the user performed at least one edit; the event carries no bookmark or edit details | `WebContent/BookmarkManager/BookmarkManagerViewController.swift` |
-| `user_defaults_snapshot` | Launch-time snapshot of new-tab behavior, layout mode, active process language (`app_language`), appearance, default browser, proactive suggestions, and automatic current-tab context | `Application/AppControlle+LaunchInfo.swift` |
+| `user_defaults_snapshot` | Launch-time snapshot of new-tab behavior, layout mode, active process language (`app_language`), appearance, default browser, proactive suggestions, automatic current-tab context, and Peek/Kiosk preferences | `Application/AppControlle+LaunchInfo.swift` |
+| *Chromium-originated events* | Captured in the browser core through `phi_analytics::Capture()`, not by Mac code; inventoried in the Chromium-side registry — see [Chromium-originated events](#chromium-originated-events) below | Chromium repo, `chrome/browser/phinomenon/analytics/README.md` |
 
 Import analytics never include source paths, browser profile names, Arc Space
 names, file names, or imported item counts. The current Chromium delegate
@@ -158,8 +162,30 @@ language actually active for that process.
 
 Naming rule: **don't reuse PostHog-reserved names** (anything starting with `$`, or that collides with SDK-auto events like "app installed"). For features that could be ambiguous with app-level concepts (e.g. downloads), prefix with the feature scope (`file_download_*`, not `download_*`).
 
+## Chromium-originated events
+
+Chromium browser-process code captures events through the `phi_analytics`
+component (Chromium repo, `chrome/browser/phinomenon/analytics/`). They cross
+the bridge delegate's `captureAnalyticsEvent:module:properties:` into
+`ChromiumBridge/ChromiumAnalyticsRelay.swift`, which stamps
+`event_source: "chromium"` and `module` onto every accepted event, drops reserved
+`$`-prefixed names, logs each accepted capture (the end-to-end observable on
+token-less local builds), and skips the SDK call when PostHog was never
+initialized. The relay checks no consent — the metrics-reporting switch gates
+identity association, not event flow, same as for Mac events. Delivery is
+best-effort: an event racing browser exit may be lost.
+
+Those events are not inventoried in the table above. Their registry lives
+beside the component: `chrome/browser/phinomenon/analytics/README.md` in the
+Chromium repo, with the naming rules and privacy contract they follow.
+
 ## Adding a new event
 
 1. Call `PostHogSDK.shared.capture("snake_case_name", properties: [...])` at the action site. Import `PostHog` in the file.
 2. If a matching Countly event already exists, keep both calls side-by-side during migration.
 3. Add a row to the Events table above.
+
+For a Chromium-originated event the flow lives on the Chromium side instead:
+call `phi_analytics::Capture()` at the action site and add the registry row to
+`chrome/browser/phinomenon/analytics/README.md` in the same change — nothing
+changes on the Mac side.

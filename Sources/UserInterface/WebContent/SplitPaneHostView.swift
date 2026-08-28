@@ -27,9 +27,9 @@ final class SplitPaneHostView: NSView {
     /// replace-mode drop hint cards line up with the real panes — keep that
     /// in mind when changing the value.
     static let dividerThickness: CGFloat = 4
-    /// Inset between the split host's bounds and the rounded pane cards on all
-    /// four sides. Lets each pane read as a standalone card floating inside
-    /// `leftContainerView`'s clip instead of pinning to its edges.
+    /// Default inset between the split host's bounds and the rounded pane
+    /// cards. Comfortable and Balanced omit it at the top so split content
+    /// matches the normal WebContent distance below the address bar.
     static let paneInset: CGFloat = 4
     private let minPaneFraction: CGFloat = 0.1
 
@@ -42,6 +42,7 @@ final class SplitPaneHostView: NSView {
 
     private(set) var paneLayout: SplitLayout
     private(set) var ratio: CGFloat
+    private(set) var layoutMode: LayoutMode
 
     private let dividerView: DividerHandle
     private let focusRingView: FocusRingView
@@ -102,13 +103,15 @@ final class SplitPaneHostView: NSView {
     /// `RenderWidgetHostViewCocoa` tears down its compositor / IOSurface layer
     /// in that interval — it does not always cleanly resume on the subsequent
     /// non-nil transition, which manifests as both split panes going blank.
-    init(layout: SplitLayout, ratio: Double) {
+    init(layout: SplitLayout, ratio: Double, layoutMode: LayoutMode) {
         self.paneLayout = layout
         self.ratio = CGFloat(ratio)
+        self.layoutMode = layoutMode
         self.dividerView = DividerHandle()
         self.focusRingView = FocusRingView()
         super.init(frame: .zero)
         wantsLayer = true
+        phiLayer?.setBackgroundColor(.windowBackground)
         configurePaneContainer(primaryPaneContainer)
         configurePaneContainer(secondaryPaneContainer)
         addSubview(primaryPaneContainer)
@@ -200,7 +203,7 @@ final class SplitPaneHostView: NSView {
     /// Apply incoming server-side layout/ratio. Ignored while the user is
     /// actively dragging — local drag wins until release, then Chromium's
     /// echoed value reconciles.
-    func update(layout: SplitLayout, ratio: Double) {
+    func update(layout: SplitLayout, ratio: Double, layoutMode: LayoutMode) {
         guard !isUserDragging else { return }
         var changed = false
         if self.paneLayout != layout {
@@ -213,7 +216,17 @@ final class SplitPaneHostView: NSView {
             self.ratio = clamped
             changed = true
         }
+        if self.layoutMode != layoutMode {
+            self.layoutMode = layoutMode
+            changed = true
+        }
         if changed { needsLayout = true }
+    }
+
+    func update(layoutMode: LayoutMode) {
+        guard self.layoutMode != layoutMode else { return }
+        self.layoutMode = layoutMode
+        needsLayout = true
     }
 
     // MARK: - Attachment
@@ -310,7 +323,7 @@ final class SplitPaneHostView: NSView {
 
     override func layout() {
         super.layout()
-        let total = bounds.insetBy(dx: Self.paneInset, dy: Self.paneInset)
+        let total = Self.paneLayoutRect(in: bounds, layoutMode: layoutMode)
         switch paneLayout {
         case .vertical:
             let primaryWidth = (total.width - Self.dividerThickness) * ratio
@@ -322,8 +335,15 @@ final class SplitPaneHostView: NSView {
             secondaryPaneContainer.frame = NSRect(x: total.minX + primaryWidth + Self.dividerThickness, y: total.minY,
                                                   width: secondaryWidth, height: total.height)
         case .horizontal:
-            let primaryHeight = (total.height - Self.dividerThickness) * ratio
-            let secondaryHeight = total.height - Self.dividerThickness - primaryHeight
+            let availableHeight = total.height - Self.dividerThickness
+            // CALayer's width/height autoresizing rounds fractional resize
+            // deltas to whole-point changes. Repeatedly alternating a Chromium
+            // pane between integral and fractional heights accumulates that
+            // rounding in its flipped display layer, so keep the split axis
+            // integral at the AppKit boundary. The secondary pane receives the
+            // remainder to preserve the exact available height.
+            let primaryHeight = (availableHeight * ratio).rounded()
+            let secondaryHeight = availableHeight - primaryHeight
             // y=0 is bottom in AppKit; primary on top matches Chromium's
             // "position 0" semantic for visual stacking.
             secondaryPaneContainer.frame = NSRect(x: total.minX, y: total.minY,
@@ -337,11 +357,31 @@ final class SplitPaneHostView: NSView {
                           secondaryFrame: secondaryPaneContainer.frame)
     }
 
+    /// Shared pane-card area used by both the real split host and its replace
+    /// drop hints. Modes with a top address bar align split and single content
+    /// at the same header boundary; Performance preserves the legacy inset.
+    static func paneLayoutRect(in bounds: CGRect, layoutMode: LayoutMode) -> CGRect {
+        let topInset: CGFloat
+        switch layoutMode {
+        case .comfortable, .balanced:
+            topInset = 0
+        case .performance:
+            topInset = paneInset
+        }
+        return CGRect(
+            x: bounds.minX + paneInset,
+            y: bounds.minY + paneInset,
+            width: max(0, bounds.width - paneInset * 2),
+            height: max(0, bounds.height - paneInset - topInset)
+        )
+    }
+
     /// Per-pane rounded card. `masksToBounds` clips DevTools and the Chromium
     /// native view to the corner radius so each pane reads as a standalone
     /// card rather than as halves of one outer clip.
     private func configurePaneContainer(_ container: NSView) {
         container.wantsLayer = true
+        container.phiLayer?.backgroundColor = NSColor.white <> NSColor.black
         container.layer?.cornerCurve = .continuous
         container.layer?.cornerRadius = outerCornerRadius
         container.layer?.masksToBounds = true
@@ -568,21 +608,35 @@ final class SplitPaneHostView: NSView {
         activeMagneticSnap = nil
     }
 
+    /// Signed drag distance that grows the primary pane when positive.
+    /// In a stacked split the primary pane sits above the divider, so dragging
+    /// downward grows it even though AppKit's y coordinate decreases.
+    static func primaryPaneGrowthDistance(layout: SplitLayout,
+                                          from start: CGPoint,
+                                          to current: CGPoint) -> CGFloat {
+        switch layout {
+        case .vertical:
+            return current.x - start.x
+        case .horizontal:
+            return start.y - current.y
+        }
+    }
+
     private func continueDrag(at event: NSEvent) {
         let location = convert(event.locationInWindow, from: nil)
         let usable: CGFloat
-        let delta: CGFloat
         switch paneLayout {
         case .vertical:
             usable = bounds.width - Self.dividerThickness
-            guard usable > 0 else { return }
-            delta = (location.x - dragStartLocation.x) / usable
         case .horizontal:
             usable = bounds.height - Self.dividerThickness
-            guard usable > 0 else { return }
-            // y grows upward; primary sits on top, so drag-up = larger primary.
-            delta = (location.y - dragStartLocation.y) / usable
         }
+        guard usable > 0 else { return }
+        let delta = Self.primaryPaneGrowthDistance(
+            layout: paneLayout,
+            from: dragStartLocation,
+            to: location
+        ) / usable
         let raw = clamp(dragStartRatio + delta)
         let snapTarget = magneticSnapTarget(for: raw, usable: usable)
         emitSnapFeedbackIfNeeded(snapTarget)

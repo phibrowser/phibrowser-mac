@@ -94,7 +94,7 @@ struct TimeMachineSnapshotManager {
         }
 
         let catalog = try catalogStore.load()
-        guard !hasCompletedBackup(in: catalog, for: policy) else {
+        guard !hasHandledBackup(in: catalog, for: policy) else {
             AppLogInfo(
                 "[TimeMachine] Backup already exists for trigger \(backupTriggerDescription(for: policy)); " +
                 "skipping duplicate snapshot."
@@ -140,7 +140,7 @@ struct TimeMachineSnapshotManager {
             try fileManager.moveItem(at: stagingURL, to: snapshotURL)
             AppLogInfo("[TimeMachine] Backup staging committed to \(snapshotURL.path).")
 
-            let record = TimeMachineBackupRecord(
+            let recordWithoutSize = TimeMachineBackupRecord(
                 id: id,
                 createdAt: createdAt,
                 creatingVersion: currentVersion,
@@ -155,10 +155,27 @@ struct TimeMachineSnapshotManager {
                 status: .completed,
                 rollbackAppBundleName: policy.rollbackAppBundleName
             )
-            try catalogStore.appendCompletedBackup(record)
+            try catalogStore.appendCompletedBackup(recordWithoutSize)
             AppLogInfo("[TimeMachine] Backup catalog updated for snapshot \(id.uuidString).")
-            let duration = elapsedDuration(since: startedAt)
             let snapshotSizeBytes = TimeMachineFileMetrics.sizeBytes(at: snapshotURL, fileManager: fileManager)
+            let record: TimeMachineBackupRecord
+            if let snapshotSizeBytes {
+                do {
+                    record = try catalogStore.updateSnapshotSizeBytes(
+                        id: id,
+                        sizeBytes: snapshotSizeBytes
+                    ) ?? recordWithoutSize
+                } catch {
+                    AppLogError(
+                        "[TimeMachine] Backup \(id.uuidString) completed, but its data size could not be stored: "
+                            + error.localizedDescription
+                    )
+                    record = recordWithoutSize
+                }
+            } else {
+                record = recordWithoutSize
+            }
+            let duration = elapsedDuration(since: startedAt)
             backupTraceReporter(
                 TimeMachineBackupTrace(
                     result: .succeeded,
@@ -316,12 +333,12 @@ struct TimeMachineSnapshotManager {
         includeChromiumData ? "full" : "phi-only"
     }
 
-    private func hasCompletedBackup(in catalog: TimeMachineCatalog, for policy: TimeMachineRollbackPolicy) -> Bool {
+    private func hasHandledBackup(in catalog: TimeMachineCatalog, for policy: TimeMachineRollbackPolicy) -> Bool {
         switch backupTriggerMode {
         case .build:
-            return catalog.hasCompletedBackup(triggerBuild: policy.backupTriggerBuild)
+            return catalog.hasHandledBackup(triggerBuild: policy.backupTriggerBuild)
         case .version:
-            return catalog.hasCompletedBackup(creatingVersion: policy.backupTriggerVersion)
+            return catalog.hasHandledBackup(creatingVersion: policy.backupTriggerVersion)
         }
     }
 

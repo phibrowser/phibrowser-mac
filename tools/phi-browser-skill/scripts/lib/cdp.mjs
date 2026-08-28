@@ -75,6 +75,28 @@ const DENIED_MESSAGE =
   'them to allow it, or to unblock it under Settings ▸ Developer ▸ Remote ' +
   'debugging ▸ Blocked agents.'
 
+/** A refusal from the app (HTTP 403), tagged so callers can tell it apart
+ * from the connection failures that surround it.
+ *
+ * The distinction is the difference between waiting and giving up. A socket
+ * that isn't there yet, a wedged endpoint, a browser mid-restart — those are
+ * states that pass, and a long-lived helper is right to keep trying. A 403 is
+ * not a state, it is an answer: the user denied this agent, or the app
+ * refused the connection outright. Retrying an answer just asks the same
+ * question forever, which is how a detached daemon ends up reconnecting once
+ * a second for the life of the session. */
+function deniedError() {
+  const err = new Error(DENIED_MESSAGE)
+  err.phiDenied = true
+  return err
+}
+
+/** Whether an error is the app's refusal rather than a transient failure.
+ * Callers that retry must stop when this is true. */
+export function isPhiDenied(err) {
+  return Boolean(err && err.phiDenied)
+}
+
 /**
  * All plausible socket endpoints in precedence order — the PHI_USER_DATA_DIR
  * override, then canary, then stable. A pointer or socket FILE can outlive a
@@ -228,7 +250,7 @@ function httpGetJson(endpoint, path, timeoutMs, agentPid = null,
       res.setEncoding('utf8')
       res.on('data', (d) => { body += d })
       res.on('end', () => {
-        if (res.statusCode === 403) { reject(new Error(DENIED_MESSAGE)); return }
+        if (res.statusCode === 403) { reject(deniedError()); return }
         if (res.statusCode !== 200) {
           reject(new Error(`status ${res.statusCode}`)); return
         }
@@ -254,7 +276,7 @@ export async function verifyEndpoint(endpoint, { agentPid = null,
     version = await httpGetJson(endpoint, '/json/version', timeoutMs,
                                 agentPid, agentCapability)
   } catch (err) {
-    if (err.message === DENIED_MESSAGE) throw err
+    if (isPhiDenied(err)) throw err  // an answer, not a state — never retried
     // Codex runs shell commands in a seatbelt sandbox that by default denies
     // ALL network syscalls — including connect() on Phi's unix socket, which
     // then fails in 0 ms. Phi itself is usually fine and toggling it cannot
@@ -374,8 +396,8 @@ export class UnixWebSocket {
       if (!/ 101 /.test(statusLine)) {
         const denied = / 403 /.test(statusLine)
         this._emit('error', {
-          error: new Error(denied ? DENIED_MESSAGE
-                                  : `WebSocket upgrade failed: ${statusLine}`),
+          error: denied ? deniedError()
+                        : new Error(`WebSocket upgrade failed: ${statusLine}`),
         })
         this.close()
         return

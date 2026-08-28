@@ -963,7 +963,12 @@ class LoginController {
         loginWindowController?.completeAuthenticatedOOBE()
         closeLoginWindow()
 
-        if MainBrowserWindowControllersManager.shared.getFirstAvailableWindowId() == nil {
+        let pendingKioskOwnsPostLoginPresentation =
+            AppController.shared?
+                .shouldSuppressPostLoginRegularWindowForPendingKioskOpen
+                ?? false
+        if !pendingKioskOwnsPostLoginPresentation,
+           MainBrowserWindowControllersManager.shared.getFirstAvailableWindowId() == nil {
             ChromiumLauncher.sharedInstance().bridge?
                 .applicationShouldHandleReopen(NSApp, hasVisibleWindows: false)
         } else {

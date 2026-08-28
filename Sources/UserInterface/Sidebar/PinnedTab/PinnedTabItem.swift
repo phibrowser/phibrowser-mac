@@ -7,6 +7,150 @@ import Cocoa
 import Combine
 import SnapKit
 
+/// Round plate straddling a pinned cell's top-right corner, showing the
+/// favicon of the Peek attached to that tab; hovering dims the favicon
+/// behind a minus glyph and clicking closes the peek. Handles its own mouse
+/// events (without calling super on mouseDown) so the cell's HoverableView
+/// click action never fires for badge clicks.
+///
+/// It overhangs the cell rather than tucking inside it, so the peek reads as
+/// something attached to the tab instead of drawn on it — which is also why
+/// it hangs off `PinnedTabItem.view` and not the cell's HoverableView, whose
+/// `clipsToBounds` would cut the overhang off.
+private final class PinnedPeekBadgeView: NSView {
+    /// Circle diameter, and how far it hangs past the cell's top and
+    /// trailing edges.
+    static let diameter: CGFloat = 21
+    static let overhang: CGFloat = 3
+
+    var onClose: (() -> Void)?
+    var faviconImage: NSImage? {
+        didSet { faviconView.image = faviconImage }
+    }
+
+    private let faviconView = NSImageView()
+    private let minusView = NSImageView()
+    private var hoverTrackingArea: NSTrackingArea?
+    private var isHovered = false {
+        didSet { updateHoverState() }
+    }
+
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        wantsLayer = true
+        layer?.masksToBounds = true
+        updateBackground()
+
+        faviconView.imageScaling = .scaleProportionallyUpOrDown
+        addSubview(faviconView)
+        faviconView.snp.makeConstraints { make in
+            // Just inside the circle's inscribed square (~14.8pt at a 21pt
+            // diameter) so the favicon reads as sitting on the plate rather
+            // than pushing against its edge.
+            make.edges.equalToSuperview().inset(4)
+        }
+
+        minusView.image = NSImage(systemSymbolName: "minus", accessibilityDescription: nil)
+        minusView.symbolConfiguration = .init(pointSize: 12, weight: .bold)
+        minusView.contentTintColor = .labelColor
+        minusView.isHidden = true
+        addSubview(minusView)
+        minusView.snp.makeConstraints { make in
+            make.center.equalToSuperview()
+        }
+
+        toolTip = NSLocalizedString(
+            "peek.pinnedTab.closePeekTooltip",
+            value: "Close Peek",
+            comment: "Pinned tab cell - Tooltip of the corner badge that closes the floating page preview opened from this pinned tab"
+        )
+    }
+
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    override func layout() {
+        super.layout()
+        // Circle at whatever size the constraints settle on.
+        layer?.cornerRadius = bounds.height / 2
+    }
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        if let hoverTrackingArea {
+            removeTrackingArea(hoverTrackingArea)
+        }
+        let area = NSTrackingArea(
+            rect: .zero,
+            options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect],
+            owner: self,
+            userInfo: nil
+        )
+        addTrackingArea(area)
+        hoverTrackingArea = area
+    }
+
+    override func mouseEntered(with event: NSEvent) {
+        super.mouseEntered(with: event)
+        isHovered = true
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        super.mouseExited(with: event)
+        isHovered = false
+    }
+
+    override func mouseDown(with event: NSEvent) {
+        // Swallow deliberately: forwarding to super would walk the responder
+        // chain into the cell's HoverableView and activate the pinned tab.
+    }
+
+    override func mouseUp(with event: NSEvent) {
+        let point = convert(event.locationInWindow, from: nil)
+        if bounds.contains(point) {
+            onClose?()
+        }
+    }
+
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        updateBackground()
+    }
+
+    private func updateHoverState() {
+        faviconView.alphaValue = isHovered ? 0.25 : 1
+        minusView.isHidden = !isHovered
+    }
+
+    private func updateBackground() {
+        // The selected-tab surface: white in light, translucent white in
+        // dark — a plate that reads as raised above both the cell and the
+        // sidebar, which `windowBackgroundColor` (flatly darker than the
+        // sidebar in dark mode) does not.
+        // Layers don't track appearance changes; resolve the dynamic color
+        // under the current effective appearance before assigning.
+        effectiveAppearance.performAsCurrentDrawingAppearance { [self] in
+            layer?.backgroundColor = NSColor.sidebarTabSelected.cgColor
+        }
+    }
+}
+
+/// Root view of a pinned cell. The peek badge straddles the cell's top-right
+/// corner and so hangs outside these bounds, where AppKit's hit testing
+/// stops — extend it to the overhanging subviews so the whole plate stays
+/// clickable.
+private final class PinnedItemRootView: NSView {
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        if let hit = super.hitTest(point) { return hit }
+        let local = convert(point, from: superview)
+        for subview in subviews.reversed() where !subview.isHidden {
+            if let hit = subview.hitTest(local) { return hit }
+        }
+        return nil
+    }
+}
+
 class PinnedTabItem: NSCollectionViewItem, NSMenuDelegate {
     static var reuseIdentifier: NSUserInterfaceItemIdentifier { .init(rawValue: "\(Self.self)") }
     /// Identifier stamped on every visible sidebar pinned-grid item (solo
@@ -14,8 +158,12 @@ class PinnedTabItem: NSCollectionViewItem, NSMenuDelegate {
     static let accessibilityIdentifier = "sidebarPinnedTab"
     private var iconImageView: NSImageView!
     private var backgroundView: HoverableView!
+    private var peekBadge: PinnedPeekBadgeView!
     private var tab: Tab?
+    private weak var browserState: BrowserState?
     private var cancellables = Set<AnyCancellable>()
+    /// Reset whenever the attached peek changes; feeds the badge favicon.
+    private var peekFaviconCancellables = Set<AnyCancellable>()
     private var faviconLoadHandle: ProfileScopedFaviconLoadHandle?
     private weak var themeProvider: ThemeStateProvider?
     private var themeSubscription: AnyObject?
@@ -32,7 +180,7 @@ class PinnedTabItem: NSCollectionViewItem, NSMenuDelegate {
     }()
 
     override func loadView() {
-        view = NSView()
+        view = PinnedItemRootView()
         setupUI()
     }
 
@@ -43,13 +191,17 @@ class PinnedTabItem: NSCollectionViewItem, NSMenuDelegate {
     override func prepareForReuse() {
         super.prepareForReuse()
         cancellables.removeAll()
+        peekFaviconCancellables.removeAll()
         themeSubscription = nil
         themeProvider = nil
         faviconLoadHandle?.cancel()
         faviconLoadHandle = nil
         iconImageView.image = nil
         tabPreviewRegistration.invalidate()
+        peekBadge.isHidden = true
+        peekBadge.faviconImage = nil
         tab = nil
+        browserState = nil
     }
 
     private func setupUI() {
@@ -101,7 +253,23 @@ class PinnedTabItem: NSCollectionViewItem, NSMenuDelegate {
             make.center.equalToSuperview()
             make.size.equalTo(CGSize(width: 18, height: 18))
         }
-        
+
+        // Peek badge: straddling the top-right corner, above everything
+        // else. On `view`, not `backgroundView` — the latter clips.
+        peekBadge = PinnedPeekBadgeView()
+        peekBadge.isHidden = true
+        peekBadge.onClose = { [weak self] in
+            guard let self, let tab = self.tab else { return }
+            self.browserState?.closePeek(forOpener: tab.guid)
+        }
+        view.addSubview(peekBadge)
+        peekBadge.snp.makeConstraints { make in
+            make.top.trailing.equalTo(backgroundView)
+                .inset(-PinnedPeekBadgeView.overhang)
+            make.size.equalTo(CGSize(width: PinnedPeekBadgeView.diameter,
+                                     height: PinnedPeekBadgeView.diameter))
+        }
+
         // Route right-click handling through the full item view.
         view.menu = contextMenu
     }
@@ -113,7 +281,9 @@ class PinnedTabItem: NSCollectionViewItem, NSMenuDelegate {
     ) {
         self.tab = tab
         self.themeProvider = themeProvider
+        self.browserState = browserState
         cancellables.removeAll()
+        peekFaviconCancellables.removeAll()
         themeSubscription = nil
         faviconLoadHandle?.cancel()
         faviconLoadHandle = nil
@@ -183,7 +353,44 @@ class PinnedTabItem: NSCollectionViewItem, NSMenuDelegate {
             }
             .store(in: &cancellables)
 
+        if let browserState {
+            browserState.peekState.$peeksByOpener
+                .receive(on: DispatchQueue.main)
+                .sink { [weak self] peeksByOpener in
+                    self?.updatePeekBadge(peeksByOpener: peeksByOpener)
+                }
+                .store(in: &cancellables)
+        } else {
+            updatePeekBadge(peeksByOpener: [:])
+        }
+
         rebindThemeSubscription()
+    }
+
+    /// Shows the corner badge when a live Peek belongs to this pinned
+    /// tab's bound live tab (also while the peek is hidden behind another
+    /// focused tab — the badge is what tells the user a peek is attached).
+    private func updatePeekBadge(peeksByOpener: [Int: Tab]) {
+        peekFaviconCancellables.removeAll()
+        guard let tab, tab.isOpenned,
+              let peekTab = peeksByOpener[tab.guid] else {
+            peekBadge.isHidden = true
+            peekBadge.faviconImage = nil
+            return
+        }
+        peekBadge.isHidden = false
+        peekTab.$liveFaviconData
+            .combineLatest(peekTab.$cachedFaviconData)
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] liveData, cachedData in
+                if let data = liveData ?? cachedData, let image = NSImage(data: data) {
+                    self?.peekBadge.faviconImage = image
+                } else {
+                    self?.peekBadge.faviconImage = NSImage(systemSymbolName: "globe",
+                                                           accessibilityDescription: nil)
+                }
+            }
+            .store(in: &peekFaviconCancellables)
     }
 
     

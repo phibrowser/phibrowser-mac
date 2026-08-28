@@ -31,7 +31,9 @@ extension ExtensionManager: ExtensionManagerProtocol {}
 
 struct ExtensionList<Manager: ExtensionManagerProtocol>: View {
     @ObservedObject private var extensionManager: Manager
+    private let browserState: BrowserState
     private let needSettings: Bool
+    private let showsManagement: Bool
     private let onRequestDismiss: (() -> Void)?
     private let triggerAnchorView: NSView?
     @State private var contentSize: CGSize = .zero
@@ -53,14 +55,18 @@ struct ExtensionList<Manager: ExtensionManagerProtocol>: View {
     
     init(
         extensionManager: Manager,
+        browserState: BrowserState,
         onFrameChanged: ((CGSize) -> Void)? = nil,
         needSettings: Bool = true,
+        showsManagement: Bool = true,
         onRequestDismiss: (() -> Void)? = nil,
         triggerAnchorView: NSView? = nil
     ) {
         self.extensionManager = extensionManager
+        self.browserState = browserState
         self.onFrameChanged = onFrameChanged
         self.needSettings = needSettings
+        self.showsManagement = showsManagement
         self.onRequestDismiss = onRequestDismiss
         self.triggerAnchorView = triggerAnchorView
     }
@@ -76,11 +82,7 @@ struct ExtensionList<Manager: ExtensionManagerProtocol>: View {
     }
     
     var body: some View {
-        let rawURLString = MainBrowserWindowControllersManager.shared
-            .activeWindowController?
-            .browserState
-            .focusingTab?
-            .url ?? ""
+        let rawURLString = browserState.focusingTab?.url ?? ""
         let shouldShowWebsiteSection = needSettings && shouldShowSecuritySection(for: rawURLString)
 
         VStack(alignment: .leading, spacing: 8) {
@@ -110,20 +112,22 @@ struct ExtensionList<Manager: ExtensionManagerProtocol>: View {
                 }
             }
             
-            VStack(alignment: .leading, spacing: 4) {
-                Text(NSLocalizedString("extensions.popover.settingsSectionTitle", value: "Setting", comment: "Extension list - Section title for extension settings"))
-                    .font(.system(size: 15, weight: .medium))
-                    .foregroundColor(.primary)
-                    .padding(.horizontal, 12)
+            if showsManagement {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(NSLocalizedString("extensions.popover.settingsSectionTitle", value: "Setting", comment: "Extension list - Section title for extension settings"))
+                        .font(.system(size: 15, weight: .medium))
+                        .foregroundColor(.primary)
+                        .padding(.horizontal, 12)
 
-                ManageExtensionsButton {
-                    let url = URLProcessor.processUserInput("phi://extensions")
-                    MainBrowserWindowControllersManager.shared.activeWindowController?.browserState.createTab(url)
-                    onRequestDismiss?()
+                    ManageExtensionsButton {
+                        let url = URLProcessor.processUserInput("phi://extensions")
+                        browserState.createTab(url)
+                        onRequestDismiss?()
+                    }
+                    .padding(.horizontal, 8)
                 }
-                .padding(.horizontal, 8)
+                .padding(.bottom, shouldShowWebsiteSection ? 0 : 12)
             }
-            .padding(.bottom, shouldShowWebsiteSection ? 0 : 12)
     
             if shouldShowWebsiteSection {
                 VStack(alignment: .leading, spacing: 4) {
@@ -132,11 +136,7 @@ struct ExtensionList<Manager: ExtensionManagerProtocol>: View {
                         .foregroundColor(.primary)
                         .padding(.horizontal, 12)
 
-                    let tabSecurityInfo = MainBrowserWindowControllersManager.shared
-                        .activeWindowController?
-                        .browserState
-                        .focusingTab?
-                        .securityInfo
+                    let tabSecurityInfo = browserState.focusingTab?.securityInfo
 
                     Group {
                         WebsiteSecurityStatusRow(
@@ -148,11 +148,15 @@ struct ExtensionList<Manager: ExtensionManagerProtocol>: View {
                             WebsiteCertificateButton(
                                 certificateStatusText: certificateStatusText(from: tabSecurityInfo),
                                 isCertificateValid: certificateIsValid(from: tabSecurityInfo),
-                                certificates: tabSecurityInfo?.certificates ?? []
+                                certificates: tabSecurityInfo?.certificates ?? [],
+                                parentWindow: browserState.windowController?.window
                             )
                         }
 
-                        WebsiteSettingsButton(onMenuActionSelected: onRequestDismiss)
+                        WebsiteSettingsButton(
+                            browserState: browserState,
+                            onMenuActionSelected: onRequestDismiss
+                        )
                     }
                     .padding(.horizontal, 8)
                 }
@@ -160,6 +164,7 @@ struct ExtensionList<Manager: ExtensionManagerProtocol>: View {
             }
         }
         .frame(width: fixedWidth)
+        .padding(.bottom, !showsManagement && !shouldShowWebsiteSection ? 12 : 0)
         .onAppear {
             extensionManager.refreshExtensions()
         }
@@ -217,8 +222,8 @@ struct ExtensionList<Manager: ExtensionManagerProtocol>: View {
                     onTogglePin: { model in
                         extensionManager.togglePin(model)
                     },
-                    onTap: triggerAnchorView.map { anchor in
-                        { ext in triggerExtension(ext, anchor: anchor) }
+                    onTap: { ext in
+                        triggerExtension(ext)
                     },
                     onSecondaryTap: { ext in
                         triggerExtensionContextMenu(ext)
@@ -229,11 +234,12 @@ struct ExtensionList<Manager: ExtensionManagerProtocol>: View {
         }
     }
 
-    /// `anchor` is the button that opened this list, not the tapped row: the
-    /// row dies with the popover dismissed just below, and Chrome anchors an
-    /// overflowed action to the overflow button too (see
-    /// ToolbarActionView::GetReferenceButtonForPopupInternal).
-    private func triggerExtension(_ ext: Extension, anchor: NSView) {
+    /// `triggerAnchorView` is the button that opened this list, not the tapped
+    /// row: the row dies with the popover dismissed just below, and Chrome
+    /// anchors an overflowed action to the overflow button too (see
+    /// ToolbarActionView::GetReferenceButtonForPopupInternal). The mouse point
+    /// is a bounded fallback while SwiftUI is still resolving that button.
+    private func triggerExtension(_ ext: Extension) {
         // A disabled action doesn't run; fall back to the context menu like
         // Chrome (ExecuteUserAction).
         if extensionManager.badges[ext.id]?.enabled == false {
@@ -244,23 +250,27 @@ struct ExtensionList<Manager: ExtensionManagerProtocol>: View {
         // the popover's fade-out animation runs in parallel with the popup's
         // appearance instead of overlapping it visually.
         onRequestDismiss?()
-        let windowId = MainBrowserWindowControllersManager.shared
-            .activeWindowController?.browserState.windowId
-        ChromiumLauncher.sharedInstance().bridge?.triggerExtension(
-            withId: ext.id,
-            anchorRect: ExtensionPopupAnchor.rectOfView(anchor),
-            windowId: windowId?.int64Value ?? 0
-        )
+        if let triggerAnchorView {
+            ChromiumLauncher.sharedInstance().bridge?.triggerExtension(
+                withId: ext.id,
+                anchorRect: ExtensionPopupAnchor.rectOfView(triggerAnchorView),
+                windowId: browserState.windowId.int64Value
+            )
+        } else {
+            ChromiumLauncher.sharedInstance().bridge?.triggerExtension(
+                withId: ext.id,
+                pointInScreen: ExtensionPopupAnchor.mouseFallback(),
+                windowId: browserState.windowId.int64Value
+            )
+        }
     }
 
     private func triggerExtensionContextMenu(_ ext: Extension) {
         let point = ExtensionPopupAnchor.mouseFallback()
-        let windowId = MainBrowserWindowControllersManager.shared
-            .activeWindowController?.browserState.windowId
         ChromiumLauncher.sharedInstance().bridge?.triggerExtensionContextMenu(
             withId: ext.id,
             pointInScreen: point,
-            windowId: windowId?.int64Value ?? 0
+            windowId: browserState.windowId.int64Value
         )
     }
     
@@ -331,9 +341,9 @@ struct ExtensionGridItem: View {
     var badge: ExtensionManager.BadgeState?
     var dynamicIcon: NSImage?
     @State private var isHovered = false
-    var onTogglePin: ((Extension) -> Void)?
-    var onTap: ((Extension) -> Void)?
-    var onSecondaryTap: ((Extension) -> Void)?
+    let onTogglePin: (Extension) -> Void
+    let onTap: (Extension) -> Void
+    let onSecondaryTap: (Extension) -> Void
 
     private let itemWidth: CGFloat = 50
     private let itemHeight: CGFloat = 32
@@ -373,11 +383,7 @@ struct ExtensionGridItem: View {
             // Pin indicator (positioned at item's bottom-trailing corner)
             if ext.isPinned || isHovered {
                 Button(action: {
-                    if let onTogglePin = onTogglePin {
-                        onTogglePin(ext)
-                    } else {
-                        MainBrowserWindowControllersManager.shared.activeWindowController?.browserState.extensionManager.togglePin(ext)
-                    }
+                    onTogglePin(ext)
                 }) {
                     ZStack {
                         Circle()
@@ -400,20 +406,14 @@ struct ExtensionGridItem: View {
         .contentShape(Rectangle())
         .overlay(
             SecondaryClickPassthrough {
-                onSecondaryTap?(ext)
+                onSecondaryTap(ext)
             }
         )
         .onHover { hovering in
             isHovered = hovering
         }
         .onTapGesture {
-            if let onTap = onTap {
-                onTap(ext)
-            } else {
-                let convertedLocation = ExtensionPopupAnchor.mouseFallback()
-                let windowId = MainBrowserWindowControllersManager.shared.activeWindowController?.browserState.windowId
-                ChromiumLauncher.sharedInstance().bridge?.triggerExtension(withId: ext.id, pointInScreen: convertedLocation, windowId: windowId?.int64Value ?? 0)
-            }
+            onTap(ext)
         }
     }
 }
@@ -453,6 +453,7 @@ struct WebsiteCertificateButton: View {
     let certificateStatusText: String
     let isCertificateValid: Bool
     let certificates: [SecCertificate]
+    let parentWindow: NSWindow?
     @State private var isHovered = false
 
     var body: some View {
@@ -497,15 +498,13 @@ struct WebsiteCertificateButton: View {
         guard !certificates.isEmpty else {
             return
         }
-        guard let docWindow =
-                MainBrowserWindowControllersManager.shared.activeWindowController?.window
-                ?? NSApp.keyWindow else {
+        guard let parentWindow else {
             return
         }
 
         let panel = SFCertificatePanel()
         panel.beginSheet(
-            for: docWindow,
+            for: parentWindow,
             modalDelegate: CertificatePanelSheetDelegate.shared,
             didEnd: #selector(CertificatePanelSheetDelegate.certificateSheetDidEnd(_:returnCode:contextInfo:)),
             contextInfo: nil,
@@ -538,6 +537,7 @@ struct WebsiteSecurityStatusRow: View {
 }
 
 struct WebsiteSettingsButton: View {
+    let browserState: BrowserState
     let onMenuActionSelected: (() -> Void)?
 
     private final class MenuActionTarget: NSObject {
@@ -600,9 +600,8 @@ struct WebsiteSettingsButton: View {
         isPresentingMenu = true
         defer { isPresentingMenu = false }
 
-        let browserState = MainBrowserWindowControllersManager.shared.activeWindowController?.browserState
-        let rawURLString = browserState?.focusingTab?.url ?? ""
-        let windowId = browserState?.windowId.int64Value ?? 0
+        let rawURLString = browserState.focusingTab?.url ?? ""
+        let windowId = browserState.windowId.int64Value
 
         var actionTargets: [MenuActionTarget] = []
         let menu = NSMenu()
@@ -639,7 +638,7 @@ struct WebsiteSettingsButton: View {
 
         addMenuItem(title: NSLocalizedString("extensions.popover.siteSettings.openAction", value: "More Settings", comment: "Extension list - Website settings item to open more settings")) {
             let url = URLProcessor.processUserInput("chrome://settings/content/siteDetails?site=\(rawURLString)")
-            browserState?.createTab(url)
+            browserState.createTab(url)
         }
 
         let anchorRect = anchorView.convert(anchorView.bounds, to: nil)

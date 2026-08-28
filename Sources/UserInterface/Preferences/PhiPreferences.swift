@@ -74,18 +74,29 @@ enum PhiPreferences: String {
 extension PhiPreferences {
     enum GeneralSettings: String, CaseIterable {
         case openNewTabPageOnCmdT
+        case openExternalLinksInKiosk
+        case openKioskOnCommandOptionClick
+        case openKioskWithGlobalShortcut
         case navigationAtTop  // Whether to show navigation and address bar in content header (Layout 2)
         case traditionalLayout  // Traditional layout, show tabs and (maybe) bookmark bar at  top (Layout 3)
         case alwaysShowBookmarkBar // In traditional layout, always show bookmark bar below address bar
         case showBookmarkBarOnNewTabPage // In traditional layout, show bookmark bar on new tab page
         case alwaysShowURLPath // In address bar menu, always show full URL path
+        case showTabPreviews // Whether open tabs use custom hover preview cards
         case spacesFeatureEnabled // Master gate for Spaces + profile management UI; defaults on, no user-facing toggle
         case suppressCloseIncognitoSpaceWarning // "Do not ask again" on the close-Incognito-Space confirmation
+        case peekViewEnabled // Master gate for Peek View: the context-menu item and the automatic cross-site diversion
 
         var defaultValue: Bool {
             switch self {
             case .openNewTabPageOnCmdT:
                 return true
+            case .openExternalLinksInKiosk:
+                return false
+            case .openKioskOnCommandOptionClick:
+                return true
+            case .openKioskWithGlobalShortcut:
+                return false
             case .navigationAtTop:
                 return true
             case .traditionalLayout:
@@ -96,10 +107,14 @@ extension PhiPreferences {
                 return true
             case .alwaysShowURLPath:
                 return false
+            case .showTabPreviews:
+                return true
             case .spacesFeatureEnabled:
                 return true
             case .suppressCloseIncognitoSpaceWarning:
                 return false
+            case .peekViewEnabled:
+                return true
             }
         }
 

@@ -217,6 +217,9 @@ class Tab: WebContentRepresentable {
     /// live `SplitGroup`. nil for non-split pinned tabs and for live Chromium
     /// tabs that aren't bound to a pinned record.
     var splitPartnerGuid: String?
+    /// Persisted layout for a pinned split. Nil for ordinary pinned tabs;
+    /// legacy paired rows without a value are interpreted as side-by-side.
+    var splitLayout: SplitLayout?
     var webContentView: NSView? { webContentWrapper?.nativeView }
     
     private var cancellables = Set<AnyCancellable>()
@@ -795,6 +798,9 @@ extension Tab {
             self.pinnedUrl = dbModel.url.absoluteString
             self.pinnedCreatedDate = dbModel.createdDate
             self.splitPartnerGuid = dbModel.splitPartnerGuid
+            if dbModel.splitPartnerGuid?.isEmpty == false {
+                self.splitLayout = dbModel.layout.flatMap(SplitLayout.init(rawValue:)) ?? .vertical
+            }
             self.lastSeen = dbModel.lastSeen
         }
     }

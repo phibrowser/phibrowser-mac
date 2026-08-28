@@ -508,6 +508,9 @@ private struct BrowsingSectionView: View {
     @AppStorage(PhiPreferences.GeneralSettings.alwaysShowURLPath.rawValue)
     private var alwaysShowURLPath: Bool = PhiPreferences.GeneralSettings.alwaysShowURLPath.defaultValue
 
+    @AppStorage(PhiPreferences.GeneralSettings.showTabPreviews.rawValue)
+    private var showTabPreviews: Bool = PhiPreferences.GeneralSettings.showTabPreviews.defaultValue
+
     @AppStorage(PhiPreferences.GeneralSettings.autoPictureInPictureModeKey)
     private var autoPictureInPictureModeRawValue: String = PhiPreferences.GeneralSettings.loadAutoPictureInPictureMode().rawValue
 
@@ -572,6 +575,16 @@ private struct BrowsingSectionView: View {
 
                     GeneralRowView(title: NSLocalizedString("settings.general.addressBar.showFullURLToggle", value: "Always show full URL", comment: "General settings - Toggle title for always showing full URL in address bar")) {
                         Toggle("", isOn: $alwaysShowURLPath)
+                            .labelsHidden()
+                            .toggleStyle(.switch)
+                            .controlSize(.mini)
+                            .themedTint(.themeColor)
+                    }
+
+                    Divider()
+
+                    GeneralRowView(title: NSLocalizedString("settings.general.tabPreview.showToggle", value: "Show a preview card when hovering over a tab", comment: "General settings - Toggle title for showing custom preview cards when hovering over open tabs")) {
+                        Toggle("", isOn: $showTabPreviews)
                             .labelsHidden()
                             .toggleStyle(.switch)
                             .controlSize(.mini)

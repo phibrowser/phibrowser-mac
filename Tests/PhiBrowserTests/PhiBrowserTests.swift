@@ -50,6 +50,220 @@ final class PhiBrowserTests: XCTestCase {
         XCTAssertEqual(CommandWrapper.PHI_COPY_URL.displayName, "Copy URL")
     }
 
+    func testNewKioskWindowShortcutIsCustomizableFromFileShortcuts() {
+        XCTAssertEqual(
+            Shortcuts.DefaultShortcuts[.PHI_NEW_KIOSK_WINDOW],
+            ShortcutsKey(characters: "n", modifiers: [.command, .option])
+        )
+        XCTAssertTrue(
+            Shortcuts.Group.file.commands.contains(.PHI_NEW_KIOSK_WINDOW)
+        )
+        XCTAssertEqual(
+            CommandWrapper.PHI_NEW_KIOSK_WINDOW.displayName,
+            "New Kiosk Window"
+        )
+    }
+
+    func testKioskGlobalShortcutDefaultsOffAndFormatsCurrentShortcut() {
+        XCTAssertFalse(
+            PhiPreferences.GeneralSettings
+                .openKioskWithGlobalShortcut.defaultValue
+        )
+        XCTAssertEqual(
+            NavigationsSettingsView.globalShortcutTitle(
+                shortcutDescription: "⌘⌥N"
+            ),
+            "Open Kiosk when press ⌘⌥N in any app"
+        )
+    }
+
+    func testKioskGlobalShortcutRegistrationRequiresEnabledPreference() throws {
+        let shortcut = try XCTUnwrap(
+            Shortcuts.DefaultShortcuts[.PHI_NEW_KIOSK_WINDOW]
+        )
+
+        XCTAssertNil(
+            KioskGlobalShortcutRegistrar.configuration(
+                for: shortcut,
+                isEnabled: false
+            )
+        )
+
+        let configuration = try XCTUnwrap(
+            KioskGlobalShortcutRegistrar.configuration(
+                for: shortcut,
+                isEnabled: true
+            )
+        )
+        XCTAssertEqual(configuration.keyCode, UInt32(kVK_ANSI_N))
+        XCTAssertEqual(
+            configuration.modifiers,
+            UInt32(cmdKey | optionKey)
+        )
+    }
+
+    @MainActor
+    func testGlobalKioskWaitsForApplicationActivationBeforeOpening() {
+        let events = KioskFrontingEventRecorder()
+        let notificationCenter = NotificationCenter()
+        let activationObject = NSObject()
+        let registrar = KioskGlobalShortcutRegistrar(
+            action: {
+                events.values.append("open")
+            },
+            isApplicationActive: { false },
+            activateApplication: {
+                events.values.append("activate")
+            },
+            notificationCenter: notificationCenter,
+            activationNotificationObject: activationObject,
+            scheduleAfterActivation: { action in
+                events.values.append("schedule")
+                action()
+            }
+        )
+
+        registrar.performActionAfterApplicationActivation()
+        XCTAssertEqual(events.values, ["activate"])
+
+        notificationCenter.post(
+            name: NSApplication.didBecomeActiveNotification,
+            object: activationObject
+        )
+        XCTAssertEqual(events.values, ["activate", "schedule", "open"])
+    }
+
+    @MainActor
+    func testGlobalKioskFrontingOrdersAndKeysWindow() {
+        let events = KioskFrontingEventRecorder()
+        let window = KioskFrontingTestWindow(events: events)
+
+        AppController.bringKioskWindowToFront(window)
+
+        XCTAssertEqual(
+            events.values,
+            ["orderFrontRegardless", "makeKey"]
+        )
+    }
+
+    func testNewKioskWindowShortcutInterceptsChromiumNewSplitTabShortcut() throws {
+        let previousOverrides = Shortcuts.overridedShortcuts
+        defer {
+            Shortcuts.overridedShortcuts = previousOverrides
+            CommandDispatcher.reloadPhiShortcutMap()
+        }
+        Shortcuts.overridedShortcuts.removeValue(forKey: .PHI_NEW_KIOSK_WINDOW)
+        CommandDispatcher.reloadPhiShortcutMap()
+
+        let event = try makeShortcutKeyEvent(
+            characters: "n",
+            charactersIgnoringModifiers: "n",
+            modifiers: [.command, .option],
+            keyCode: UInt16(kVK_ANSI_N)
+        )
+
+        XCTAssertEqual(CommandWrapper.IDC_NEW_SPLIT_TAB.rawValue, 34057)
+        XCTAssertEqual(
+            CommandDispatcher.interceptedPhiCommand(
+                for: event,
+                inputSourceIdentifier: InputSource.us
+            ),
+            .PHI_NEW_KIOSK_WINDOW
+        )
+    }
+
+    func testChromiumNewSplitTabShortcutFallsThroughAfterKioskShortcutChanges() throws {
+        let previousOverrides = Shortcuts.overridedShortcuts
+        defer {
+            Shortcuts.overridedShortcuts = previousOverrides
+            CommandDispatcher.reloadPhiShortcutMap()
+        }
+        Shortcuts.overridedShortcuts[.PHI_NEW_KIOSK_WINDOW] = ShortcutsKey(
+            characters: "k",
+            modifiers: [.command, .control]
+        )
+        CommandDispatcher.reloadPhiShortcutMap()
+
+        let splitTabEvent = try makeShortcutKeyEvent(
+            characters: "n",
+            charactersIgnoringModifiers: "n",
+            modifiers: [.command, .option],
+            keyCode: UInt16(kVK_ANSI_N)
+        )
+        let kioskEvent = try makeShortcutKeyEvent(
+            characters: "k",
+            charactersIgnoringModifiers: "k",
+            modifiers: [.command, .control],
+            keyCode: UInt16(kVK_ANSI_K)
+        )
+
+        XCTAssertNil(
+            CommandDispatcher.interceptedPhiCommand(
+                for: splitTabEvent,
+                inputSourceIdentifier: InputSource.us
+            )
+        )
+        XCTAssertEqual(
+            CommandDispatcher.interceptedPhiCommand(
+                for: kioskEvent,
+                inputSourceIdentifier: InputSource.us
+            ),
+            .PHI_NEW_KIOSK_WINDOW
+        )
+    }
+
+    func testFileMenuInstallsKioskWindowBelowIncognitoWindow() throws {
+        let previousOverrides = Shortcuts.overridedShortcuts
+        defer { Shortcuts.overridedShortcuts = previousOverrides }
+        Shortcuts.overridedShortcuts.removeValue(forKey: .PHI_NEW_KIOSK_WINDOW)
+
+        let menu = NSMenu(title: "File")
+        let incognitoItem = NSMenuItem(
+            title: "New Incognito Window",
+            action: nil,
+            keyEquivalent: ""
+        )
+        incognitoItem.tag = CommandWrapper.IDC_NEW_INCOGNITO_WINDOW.rawValue
+        menu.addItem(incognitoItem)
+
+        AppController.installOrUpdateFileMenuItems(in: menu, target: nil)
+        AppController.installOrUpdateFileMenuItems(in: menu, target: nil)
+
+        let kioskItems = menu.items.filter {
+            $0.tag == CommandWrapper.PHI_NEW_KIOSK_WINDOW.rawValue
+        }
+        let kioskItem = try XCTUnwrap(kioskItems.first)
+        let incognitoIndex = try XCTUnwrap(menu.items.firstIndex(of: incognitoItem))
+        let kioskIndex = try XCTUnwrap(menu.items.firstIndex(of: kioskItem))
+
+        XCTAssertEqual(kioskItems.count, 1)
+        XCTAssertEqual(kioskIndex, incognitoIndex + 1)
+        XCTAssertEqual(kioskItem.title, "New Kiosk Window")
+        XCTAssertEqual(
+            kioskItem.action,
+            NSSelectorFromString("newKioskWindowFromMenu:")
+        )
+        XCTAssertEqual(kioskItem.keyEquivalent, "n")
+        XCTAssertEqual(
+            kioskItem.keyEquivalentModifierMask,
+            [.command, .option]
+        )
+
+        Shortcuts.overridedShortcuts[.PHI_NEW_KIOSK_WINDOW] = ShortcutsKey(
+            characters: "k",
+            modifiers: [.command, .control]
+        )
+        AppController.installOrUpdateFileMenuItems(in: menu, target: nil)
+        let customizedItem = try XCTUnwrap(menu.items.first {
+            $0.tag == CommandWrapper.PHI_NEW_KIOSK_WINDOW.rawValue
+        })
+        XCTAssertEqual(customizedItem.keyEquivalent, "k")
+        XCTAssertEqual(
+            customizedItem.keyEquivalentModifierMask,
+            [.command, .control]
+        )
+    }
+
     func testInputSourceIdentifierSelectionPrefersTextContextAndUsesSystemFallback() {
         var systemLookupCount = 0
         XCTAssertEqual(
@@ -1443,6 +1657,97 @@ final class PhiBrowserTests: XCTestCase {
         XCTAssertEqual(canonicalCredential, "new-session")
     }
 
+    func testExternalBrowserWebAuthAcceptsMatchingCallbackState() throws {
+        let authorizeURL = try XCTUnwrap(
+            URL(string: "https://auth.example/authorize?state=current-session")
+        )
+        let callbackURL = try XCTUnwrap(
+            URL(string: "phi://auth.example/callback?code=code&state=current-session")
+        )
+
+        XCTAssertTrue(
+            AuthManagerExternalBrowserWebAuthUserAgent.callbackMatchesAuthorizeRequest(
+                authorizeURL: authorizeURL,
+                callbackURL: callbackURL
+            )
+        )
+    }
+
+    func testExternalBrowserWebAuthRejectsCallbackFromReplacedSession() throws {
+        let authorizeURL = try XCTUnwrap(
+            URL(string: "https://auth.example/authorize?state=new-session")
+        )
+        let callbackURL = try XCTUnwrap(
+            URL(string: "phi://auth.example/callback?code=code&state=old-session")
+        )
+
+        XCTAssertFalse(
+            AuthManagerExternalBrowserWebAuthUserAgent.callbackMatchesAuthorizeRequest(
+                authorizeURL: authorizeURL,
+                callbackURL: callbackURL
+            )
+        )
+    }
+
+    func testReauthenticationAttemptReplacementIgnoresPreviousResult() {
+        var attempts = AuthReauthenticationAttemptState()
+        let previousAttemptID = attempts.begin()
+        let replacementAttemptID = attempts.begin()
+
+        XCTAssertFalse(attempts.finishIfCurrent(previousAttemptID))
+        XCTAssertEqual(attempts.currentID, replacementAttemptID)
+        XCTAssertTrue(attempts.finishIfCurrent(replacementAttemptID))
+        XCTAssertNil(attempts.currentID)
+    }
+
+    @MainActor
+    func testReauthenticationWebAuthRunnerReplacesSessionBeforeStartingNextAttempt() async throws {
+        let session = AuthReauthenticationWebAuthTestSession()
+        let firstAttemptStarted = expectation(description: "First attempt started")
+        let replacementAttemptStarted = expectation(description: "Replacement attempt started")
+        session.onStart = { startCount in
+            if startCount == 1 {
+                firstAttemptStarted.fulfill()
+            } else if startCount == 2 {
+                replacementAttemptStarted.fulfill()
+            }
+        }
+
+        let firstAttempt = Task { @MainActor in
+            try await AuthReauthenticationWebAuthRunner.run(
+                replacingActiveSession: false,
+                cancel: { session.cancel() },
+                start: { session.start($0) }
+            )
+        }
+        await fulfillment(of: [firstAttemptStarted], timeout: 1)
+
+        let replacementAttempt = Task { @MainActor in
+            try await AuthReauthenticationWebAuthRunner.run(
+                replacingActiveSession: true,
+                cancel: { session.cancel() },
+                start: { session.start($0) }
+            )
+        }
+        await fulfillment(of: [replacementAttemptStarted], timeout: 1)
+
+        XCTAssertEqual(session.events, [.start, .cancel, .start])
+        XCTAssertEqual(session.transactionActiveFailureCount, 0)
+
+        session.succeed(with: 2)
+        let replacementValue = try await replacementAttempt.value
+        XCTAssertEqual(replacementValue, 2)
+
+        do {
+            _ = try await firstAttempt.value
+            XCTFail("Expected the replaced attempt to be cancelled.")
+        } catch let error as AuthReauthenticationWebAuthTestError {
+            XCTAssertEqual(error, .cancelled)
+        } catch {
+            XCTFail("Unexpected replaced-attempt error: \(error)")
+        }
+    }
+
     func testAuthenticatedSessionPublicationStagesUntilSignedInCommit() {
         XCTAssertTrue(
             AuthenticatedSessionPublicationPolicy.stagesCredentials(
@@ -2051,15 +2356,23 @@ final class PhiBrowserTests: XCTestCase {
     }
 
     @MainActor
-    func testNextStepTitleProvidesEnoughHeightForDisplayFont() {
+    func testNextStepTitleUsesBaseOnboardingLayout() {
         let controller = NextStepViewController()
 
         controller.loadView()
         controller.view.layoutSubtreeIfNeeded()
 
-        XCTAssertEqual(controller.titleLabel.bounds.height, 64, accuracy: 0.001)
-        XCTAssertEqual(controller.titleLabel.maximumNumberOfLines, 1)
-        XCTAssertTrue(controller.titleLabel.cell?.usesSingleLineMode == true)
+        XCTAssertEqual(
+            controller.titleLabel.bounds.height,
+            controller.titleLabel.intrinsicContentSize.height,
+            accuracy: 0.001
+        )
+        XCTAssertEqual(controller.titleLabel.cell?.usesSingleLineMode, false)
+        XCTAssertEqual(
+            controller.view.bounds.maxY - controller.titleLabel.frame.maxY,
+            96,
+            accuracy: 0.001
+        )
     }
 
     @MainActor
@@ -2599,10 +2912,88 @@ final class PhiBrowserTests: XCTestCase {
     }
 }
 
+private final class KioskFrontingEventRecorder {
+    var values: [String] = []
+}
+
+private final class KioskFrontingTestWindow: NSWindow {
+    private let events: KioskFrontingEventRecorder
+
+    init(events: KioskFrontingEventRecorder) {
+        self.events = events
+        super.init(
+            contentRect: .zero,
+            styleMask: [.titled],
+            backing: .buffered,
+            defer: false
+        )
+    }
+
+    override func orderFrontRegardless() {
+        events.values.append("orderFrontRegardless")
+    }
+
+    override func makeKey() {
+        events.values.append("makeKey")
+    }
+}
+
 private final class AuthCredentialCommitTestState: @unchecked Sendable {
     let sessions = AuthSessionGeneration()
     var canonicalCredential = "persisted"
     var currentCredential: String?
+}
+
+private enum AuthReauthenticationWebAuthTestError: Error, Equatable {
+    case cancelled
+    case transactionActive
+}
+
+@MainActor
+private final class AuthReauthenticationWebAuthTestSession {
+    enum Event: Equatable {
+        case cancel
+        case start
+    }
+
+    var onStart: ((Int) -> Void)?
+    private(set) var events: [Event] = []
+    private(set) var transactionActiveFailureCount = 0
+
+    private var startCount = 0
+    private var activeCompletion: ((Result<Int, AuthReauthenticationWebAuthTestError>) -> Void)?
+
+    func cancel() {
+        events.append(.cancel)
+        guard let completion = activeCompletion else {
+            return
+        }
+        activeCompletion = nil
+        completion(.failure(.cancelled))
+    }
+
+    func start(
+        _ completion: @escaping (Result<Int, AuthReauthenticationWebAuthTestError>) -> Void
+    ) {
+        events.append(.start)
+        guard activeCompletion == nil else {
+            transactionActiveFailureCount += 1
+            completion(.failure(.transactionActive))
+            return
+        }
+
+        activeCompletion = completion
+        startCount += 1
+        onStart?(startCount)
+    }
+
+    func succeed(with value: Int) {
+        guard let completion = activeCompletion else {
+            return
+        }
+        activeCompletion = nil
+        completion(.success(value))
+    }
 }
 
 private final class BookmarkMenuTestTarget: NSObject {

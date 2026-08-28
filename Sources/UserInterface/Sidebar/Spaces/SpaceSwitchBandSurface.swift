@@ -73,7 +73,7 @@ extension SpaceSwitchBandSurface {
               let rep = container.bitmapImageRepForCachingDisplay(in: bandInContainer) else {
             return nil
         }
-        withStaticNewTabSnapshotIcons {
+        withStaticSpaceSwitchSnapshotIcons {
             container.cacheDisplay(in: bandInContainer, to: rep)
         }
         let image = NSImage(size: bandInContainer.size)
@@ -187,9 +187,14 @@ extension SpaceSwitchBandSurface {
 
     // MARK: - Snapshot helpers
 
-    /// The "+ New Tab" cell renders its icon via SF Symbol effects that don't
-    /// survive `cacheDisplay`; swap in static icons for the duration of the
-    /// snapshot render.
+    /// Animated icons don't survive `cacheDisplay` reliably; use snapshot-safe
+    /// representations for the duration of the render.
+    private func withStaticSpaceSwitchSnapshotIcons(_ body: () -> Void) {
+        withStaticNewTabSnapshotIcons {
+            withStaticBookmarkFolderSnapshotIcons(body)
+        }
+    }
+
     private func withStaticNewTabSnapshotIcons(_ body: () -> Void) {
         let cells = newTabButtonCells(in: spaceSwitchBandContainer)
         guard !cells.isEmpty else {
@@ -210,6 +215,26 @@ extension SpaceSwitchBandSurface {
         apply(at: 0)
     }
 
+    private func withStaticBookmarkFolderSnapshotIcons(_ body: () -> Void) {
+        let cells = bookmarkCells(in: spaceSwitchBandContainer)
+        guard !cells.isEmpty else {
+            body()
+            return
+        }
+
+        func apply(at index: Int) {
+            guard index < cells.count else {
+                body()
+                return
+            }
+            cells[index].withStaticFolderSnapshotIcon {
+                apply(at: index + 1)
+            }
+        }
+
+        apply(at: 0)
+    }
+
     private func newTabButtonCells(in view: NSView) -> [NewTabButtonCellView] {
         var cells: [NewTabButtonCellView] = []
         if let cell = view as? NewTabButtonCellView {
@@ -217,6 +242,17 @@ extension SpaceSwitchBandSurface {
         }
         for subview in view.subviews {
             cells.append(contentsOf: newTabButtonCells(in: subview))
+        }
+        return cells
+    }
+
+    private func bookmarkCells(in view: NSView) -> [BookmarkCellView] {
+        var cells: [BookmarkCellView] = []
+        if let cell = view as? BookmarkCellView {
+            cells.append(cell)
+        }
+        for subview in view.subviews {
+            cells.append(contentsOf: bookmarkCells(in: subview))
         }
         return cells
     }

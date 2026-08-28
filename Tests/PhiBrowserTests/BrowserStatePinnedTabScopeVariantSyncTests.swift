@@ -517,6 +517,7 @@ private final class PinnedScopeVariantWebContentWrapperSpy: NSObject, WebContent
     func focus() {}
     func restoreFocus() {}
     func updateSecurityState(_ securityState: [AnyHashable: Any]) {}
+    func updateIsPeekSurface(_ isPeekSurface: Bool) {}
     func setAudioMuted(_ muted: Bool) {}
     func muteAudio() {}
     func unmuteAudio() {}

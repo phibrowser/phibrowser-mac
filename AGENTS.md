@@ -171,7 +171,7 @@ Rules:
 
 # Networking Constraint
 
-All API communication must go through:
+Ordinary remote API communication must go through:
 
 Sources/Networking/APIClient.swift
 
@@ -180,6 +180,11 @@ Rules:
 - No direct URLSession usage outside networking layer
 - No parallel networking abstractions
 - Authentication logic must remain centralized
+- The sole local-transport exception is
+  `Sources/Networking/ServiceBroker/`: it implements the documented
+  request-scoped extension bridge and authenticated Unix-domain-socket client.
+  It must not become a general remote HTTP client or bypass the shared-auth and
+  extension-authorization boundaries.
 
 ---
 

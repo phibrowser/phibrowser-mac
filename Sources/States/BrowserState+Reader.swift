@@ -78,23 +78,39 @@ extension BrowserState {
             AppLogDebug("[Reader] context menu named an unknown tab: \(tabId)")
             return
         }
-        guard !tab.extensionReaderActive else { return }
+        guard !tab.extensionReaderActive,
+              readerOverlayState.reader(forOrigin: tab.guid) == nil,
+              !hasPendingReaderOverlayRequest(forOrigin: tab.guid) else { return }
         ReaderViewAnalytics.noteOpenRequested(for: tab, from: .contextMenu)
+        noteReaderOverlayRequested(forOrigin: tab.guid)
         ReaderExtensionBridge.open(tab)
     }
 
     /// Toggles Reader View for a tab, by relaying the intent to the Phi
-    /// Reader extension. A refused open comes back as a `reader.state`
-    /// report, which shows the failure toast — the tab is never left in a
-    /// half-entered state because nothing here changes until the extension's
-    /// surface actually mounts.
+    /// Reader extension. The extension answers an open by creating a tab on
+    /// its reading surface, which the app hosts as a full-pane overlay over
+    /// this tab (see the "Reader View overlay" section in `BrowserState`).
+    /// A refused open comes back as a `reader.state` report, which shows
+    /// the failure toast — the tab is never left in a half-entered state
+    /// because nothing here changes until the extension's surface actually
+    /// mounts.
     @MainActor
     func toggleReaderView(for tab: Tab,
                           from entryPoint: ReaderViewAnalytics.EntryPoint) {
-        if tab.extensionReaderActive {
+        if readerOverlayState.reader(forOrigin: tab.guid) != nil {
+            // The overlay is app-hosted: closing its tab directly is the
+            // whole close (the extension cleans its cache on tab removal).
+            closeReaderOverlay(forOrigin: tab.guid)
+        } else if tab.extensionReaderActive {
+            // Legacy in-place surface (a reader tab restored from an older
+            // session): the extension navigates it back.
             ReaderExtensionBridge.close(tab)
         } else {
+            // Swallow a repeat press while an open is still extracting — a
+            // second request would spawn a duplicate surface tab.
+            guard !hasPendingReaderOverlayRequest(forOrigin: tab.guid) else { return }
             ReaderViewAnalytics.noteOpenRequested(for: tab, from: entryPoint)
+            noteReaderOverlayRequested(forOrigin: tab.guid)
             ReaderExtensionBridge.open(tab)
         }
     }

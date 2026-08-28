@@ -8,6 +8,7 @@ import UniformTypeIdentifiers
 struct DownloadItemRow: View {
     @ObservedObject var item: DownloadItem
     @State private var isHovered = false
+    @State private var openAnimationTrigger = 0
     var isLast: Bool
     var onCopyLink: (DownloadItem) -> Void
     var onOpen: (DownloadItem) -> Void
@@ -26,8 +27,11 @@ struct DownloadItemRow: View {
         VStack(spacing: 0) {
             HStack(alignment: .center, spacing: 12) {
                 HStack(alignment: .center, spacing: 12) {
-                    // File icon
-                    fileIcon
+                    DownloadFileIconView(
+                        mimeType: item.mimeType,
+                        size: iconSize,
+                        openAnimationTrigger: openAnimationTrigger
+                    )
 
                     // File info
                     fileInfo
@@ -37,7 +41,7 @@ struct DownloadItemRow: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .contentShape(Rectangle())
                 .onTapGesture(count: 2) {
-                    onOpen(item)
+                    openCompletedFile()
                 }
                 
                 // Action buttons
@@ -58,16 +62,15 @@ struct DownloadItemRow: View {
         }
     }
     
-    private var fileIcon: some View {
-        // File type icon based on mime type or extension
-        fileTypeIcon
-    }
-    
-    @ViewBuilder
-    private var fileTypeIcon: some View {
-        let contentType = UTType(mimeType: item.mimeType)
-        let image = NSWorkspace.shared.icon(for: contentType ?? .data)
-        Image(nsImage: image)
+    private func openCompletedFile() {
+        guard item.state == .complete,
+              item.safetyState == .normal,
+              item.canOpenDownload else { return }
+
+        openAnimationTrigger += 1
+        DispatchQueue.main.asyncAfter(deadline: .now() + DownloadFileIconView.openDelay) {
+            onOpen(item)
+        }
     }
     
     /// Whether this item should show strikethrough style
@@ -384,6 +387,61 @@ struct DownloadItemRow: View {
         }
         .menuStyle(BorderlessButtonMenuStyle())
         .frame(width: 24, height: 24)
+    }
+}
+
+struct DownloadFileIconView: View {
+    static let openDelay: TimeInterval = 0.12
+
+    let mimeType: String
+    let size: CGFloat
+    let openAnimationTrigger: Int
+
+    @Environment(\.accessibilityReduceMotion) private var accessibilityReduceMotion
+    @State private var animationProgress: CGFloat = 1
+
+    private var icon: NSImage {
+        let contentType = UTType(mimeType: mimeType)
+        return NSWorkspace.shared.icon(for: contentType ?? .data)
+    }
+
+    var body: some View {
+        Image(nsImage: icon)
+            .resizable()
+            .aspectRatio(contentMode: .fit)
+            .frame(width: size, height: size)
+            .scaleEffect(1 + sin(animationProgress * .pi) * 0.06)
+            .overlay {
+                if !accessibilityReduceMotion {
+                    Image(nsImage: icon)
+                        .resizable()
+                        .aspectRatio(contentMode: .fit)
+                        .frame(width: size, height: size)
+                        .scaleEffect(1.1 + animationProgress * 2.2)
+                        .opacity(0.48 * (1 - animationProgress))
+                        .blur(radius: animationProgress * 3)
+                        .allowsHitTesting(false)
+                }
+            }
+            .onChange(of: openAnimationTrigger) { _, _ in
+                playOpenAnimation()
+            }
+    }
+
+    private func playOpenAnimation() {
+        guard !accessibilityReduceMotion else { return }
+
+        var transaction = Transaction()
+        transaction.disablesAnimations = true
+        withTransaction(transaction) {
+            animationProgress = 0
+        }
+
+        DispatchQueue.main.async {
+            withAnimation(.easeOut(duration: 0.42)) {
+                animationProgress = 1
+            }
+        }
     }
 }
 

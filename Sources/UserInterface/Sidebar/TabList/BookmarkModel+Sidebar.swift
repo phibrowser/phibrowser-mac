@@ -62,14 +62,22 @@ extension Bookmark: ContextMenuRepresentable {
             // case needs a dedicated handler routed via the menu item's tag.
             let hasSecondary = !(secondaryUrl ?? "").isEmpty
             if hasSecondary {
-                let copyPrimary = NSMenuItem(title: NSLocalizedString("sidebar.bookmarkContextMenu.copyLeftPrimaryUrl", value: "Copy Left URL", comment: "Bookmark context menu - Copy the left (primary) URL of a split-view bookmark"),
+                let isStacked = (layout ?? .vertical) == .horizontal
+                let copyPrimaryTitle = isStacked
+                    ? NSLocalizedString("sidebar.bookmarkContextMenu.copyTopPrimaryUrl", value: "Copy Top URL", comment: "Bookmark context menu - Copy the top (primary) URL of a stacked split-view bookmark")
+                    : NSLocalizedString("sidebar.bookmarkContextMenu.copyLeftPrimaryUrl", value: "Copy Left URL", comment: "Bookmark context menu - Copy the left (primary) URL of a side-by-side split-view bookmark")
+                let copySecondaryTitle = isStacked
+                    ? NSLocalizedString("sidebar.bookmarkContextMenu.copyBottomSecondaryUrl", value: "Copy Bottom URL", comment: "Bookmark context menu - Copy the bottom (secondary) URL of a stacked split-view bookmark")
+                    : NSLocalizedString("sidebar.bookmarkContextMenu.copyRightSecondaryUrl", value: "Copy Right URL", comment: "Bookmark context menu - Copy the right (secondary) URL of a side-by-side split-view bookmark")
+
+                let copyPrimary = NSMenuItem(title: copyPrimaryTitle,
                                              action: #selector(copySplitLink(_:)),
                                              keyEquivalent: "")
                 copyPrimary.target = self
                 copyPrimary.tag = 0
                 menu.addItem(copyPrimary)
 
-                let copySecondary = NSMenuItem(title: NSLocalizedString("sidebar.bookmarkContextMenu.copyRightSecondaryUrl", value: "Copy Right URL", comment: "Bookmark context menu - Copy the right (secondary) URL of a split-view bookmark"),
+                let copySecondary = NSMenuItem(title: copySecondaryTitle,
                                                action: #selector(copySplitLink(_:)),
                                                keyEquivalent: "")
                 copySecondary.target = self
@@ -95,6 +103,21 @@ extension Bookmark: ContextMenuRepresentable {
                                         keyEquivalent: "")
                 rename.target = self
                 menu.addItem(rename)
+
+                if isFolder {
+                    let changeIcon = NSMenuItem(
+                        title: NSLocalizedString(
+                            "sidebar.bookmarkContextMenu.changeIconAction",
+                            value: "Change Icon...",
+                            comment: "Bookmark folder context menu - Opens the folder icon picker"
+                        ),
+                        action: #selector(changeFolderIcon),
+                        keyEquivalent: ""
+                    )
+                    changeIcon.target = self
+                    menu.addItem(changeIcon)
+                    menu.addItem(.separator())
+                }
             }
         case .bookmarkBar:
             if isFolder {
@@ -134,6 +157,16 @@ extension Bookmark: ContextMenuRepresentable {
                                              keyEquivalent: "")
                 openInSplit.target = self
                 menu.addItem(openInSplit)
+            } else {
+                let splitLayout = layout ?? .vertical
+                let convertLayout = NSMenuItem(
+                    title: splitLayout == .vertical
+                        ? NSLocalizedString("sidebar.tabContextMenu.convertToVerticalSplit", value: "Convert to Vertical Split", comment: "Split context menu - Switch a side-by-side split to a stacked split")
+                        : NSLocalizedString("sidebar.tabContextMenu.convertToHorizontalSplit", value: "Convert to Horizontal Split", comment: "Split context menu - Switch a stacked split to a side-by-side split"),
+                    action: #selector(convertSplitLayout),
+                    keyEquivalent: "")
+                convertLayout.target = self
+                menu.addItem(convertLayout)
             }
         }
 
@@ -239,7 +272,19 @@ extension Bookmark: ContextMenuRepresentable {
         guard let url, !url.isEmpty,
               let secondaryURL = secondaryUrl, !secondaryURL.isEmpty,
               let state = MainBrowserWindowControllersManager.shared.activeWindowController?.browserState else { return }
-        state.openTwoURLsAsSplit(primaryURL: url, secondaryURL: secondaryURL)
+        state.openTwoURLsAsSplit(primaryURL: url,
+                                 secondaryURL: secondaryURL,
+                                 layout: layout ?? .vertical)
+    }
+
+    @MainActor
+    @objc private func convertSplitLayout() {
+        guard secondaryUrl?.isEmpty == false,
+              let state = MainBrowserWindowControllersManager.shared.activeWindowController?.browserState else {
+            return
+        }
+        state.updateBookmarkSplitLayout(bookmarkGuid: guid,
+                                        layout: (layout ?? .vertical).toggled)
     }
 
     /// Copies one URL of a split-view bookmark to the pasteboard. The menu
@@ -301,6 +346,20 @@ extension Bookmark: ContextMenuRepresentable {
         let state = MainBrowserWindowControllersManager.shared.activeWindowController?.browserState
         // Enter inline edit mode directly instead of showing a dialog.
         state?.bookmarkManager.triggerRename(for: self)
+    }
+
+    @MainActor
+    @objc private func changeFolderIcon() {
+        guard isFolder else { return }
+        // Defer until the context menu has dismissed so AppKit does not
+        // compete with the SwiftUI popover for transient-window ownership.
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            NotificationCenter.default.post(
+                name: .bookmarkFolderIconPickerRequested,
+                object: self
+            )
+        }
     }
 
     @MainActor

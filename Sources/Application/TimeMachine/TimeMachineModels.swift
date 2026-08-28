@@ -76,9 +76,14 @@ enum TimeMachineBackupTriggerMode: Equatable {
 
 struct TimeMachineCatalog: Codable, Equatable {
     var backups: [TimeMachineBackupRecord]
+    var suppressedBackupTriggers: [TimeMachineSuppressedBackupTrigger]
 
-    init(backups: [TimeMachineBackupRecord] = []) {
+    init(
+        backups: [TimeMachineBackupRecord] = [],
+        suppressedBackupTriggers: [TimeMachineSuppressedBackupTrigger] = []
+    ) {
         self.backups = backups
+        self.suppressedBackupTriggers = suppressedBackupTriggers
     }
 
     var completedBackups: [TimeMachineBackupRecord] {
@@ -94,6 +99,43 @@ struct TimeMachineCatalog: Codable, Equatable {
     func hasCompletedBackup(creatingVersion: String) -> Bool {
         completedBackups.contains { $0.creatingVersion == creatingVersion }
     }
+
+    func hasHandledBackup(triggerBuild: Int) -> Bool {
+        hasCompletedBackup(triggerBuild: triggerBuild)
+            || suppressedBackupTriggers.contains { $0.backupTriggerBuild == triggerBuild }
+    }
+
+    func hasHandledBackup(creatingVersion: String) -> Bool {
+        hasCompletedBackup(creatingVersion: creatingVersion)
+            || suppressedBackupTriggers.contains { $0.creatingVersion == creatingVersion }
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case backups
+        case suppressedBackupTriggers
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        backups = try container.decodeIfPresent([TimeMachineBackupRecord].self, forKey: .backups) ?? []
+        suppressedBackupTriggers = try container.decodeIfPresent(
+            [TimeMachineSuppressedBackupTrigger].self,
+            forKey: .suppressedBackupTriggers
+        ) ?? []
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(backups, forKey: .backups)
+        if !suppressedBackupTriggers.isEmpty {
+            try container.encode(suppressedBackupTriggers, forKey: .suppressedBackupTriggers)
+        }
+    }
+}
+
+struct TimeMachineSuppressedBackupTrigger: Codable, Equatable {
+    let backupTriggerBuild: Int
+    let creatingVersion: String
 }
 
 struct TimeMachineBackupRecord: Codable, Equatable, Identifiable {
@@ -108,6 +150,7 @@ struct TimeMachineBackupRecord: Codable, Equatable, Identifiable {
     let rollbackPackageSHA256: String
     let includeChromiumData: Bool
     let snapshotRelativePath: String
+    var snapshotSizeBytes: UInt64?
     let status: Status
     let rollbackAppBundleName: String?
 
@@ -127,6 +170,7 @@ struct TimeMachineBackupRecord: Codable, Equatable, Identifiable {
         rollbackPackageSHA256: String,
         includeChromiumData: Bool,
         snapshotRelativePath: String,
+        snapshotSizeBytes: UInt64? = nil,
         status: Status,
         rollbackAppBundleName: String? = nil
     ) {
@@ -141,6 +185,7 @@ struct TimeMachineBackupRecord: Codable, Equatable, Identifiable {
         self.rollbackPackageSHA256 = rollbackPackageSHA256
         self.includeChromiumData = includeChromiumData
         self.snapshotRelativePath = snapshotRelativePath
+        self.snapshotSizeBytes = snapshotSizeBytes
         self.status = status
         self.rollbackAppBundleName = rollbackAppBundleName
     }

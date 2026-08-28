@@ -57,6 +57,7 @@ private struct PinnedTabVariantSignature: Hashable {
     let content: PinnedTabContentSignature
     let splitPartnerLineageId: String?
     let splitPartnerContent: PinnedTabContentSignature?
+    let layout: String?
 }
 
 private struct PinnedTabMergeCandidate {
@@ -342,7 +343,8 @@ extension LocalStore {
         return PinnedTabVariantSignature(
             content: contentSignature(for: tab),
             splitPartnerLineageId: partner.map { $0.pinLineageId ?? $0.guid },
-            splitPartnerContent: partner.map { contentSignature(for: $0) }
+            splitPartnerContent: partner.map { contentSignature(for: $0) },
+            layout: tab.layout
         )
     }
 
@@ -580,7 +582,8 @@ extension LocalStore {
                         .flatMap { partnerGuid in
                             collections.lazy.flatMap { $0 }.first(where: { $0.guid == partnerGuid })
                         }
-                        .map { contentSignature(for: $0) }
+                        .map { contentSignature(for: $0) },
+                    layout: source.layout
                 )
                 let matchingIndex = candidateIndicesByLineage[lineageId]?.first {
                     candidates[$0].signature == signature
@@ -643,7 +646,9 @@ extension LocalStore {
             model.source = source.source
             model.secondaryUrl = source.secondaryUrl
             model.secondaryTitle = source.secondaryTitle
+            model.layout = source.layout
             model.lastSeen = candidate.lastSeen
+            model.icon = source.icon
             model.pinLineageId = candidate.lineageId
             try applyPinnedTabOwner(owner, to: model, in: context)
             context.insert(model)

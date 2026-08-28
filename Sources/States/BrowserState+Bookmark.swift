@@ -152,6 +152,7 @@ extension BrowserState {
                 spaceId: spaceId,
                 secondaryUrl: URLProcessor.processUserInput(secondaryURL),
                 secondaryTitle: secondaryDisplayTitle,
+                layout: group.layout.rawValue,
                 favicon: primaryTab.liveFaviconData ?? primaryTab.cachedFaviconData
             )
             // Drag binds the live split so it becomes the bookmark's opened
@@ -195,6 +196,7 @@ extension BrowserState {
                 spaceId: spaceId,
                 secondaryUrl: URLProcessor.processUserInput(secondaryURL),
                 secondaryTitle: secondaryDisplayTitle,
+                layout: pinnedSplitLayout(leftDB: leftDB, rightDB: rightDB).rawValue,
                 favicon: leftPinned.liveFaviconData ?? leftPinned.cachedFaviconData
             )
             return true
@@ -219,7 +221,8 @@ extension BrowserState {
             if layoutMode.isTraditional {
                 detachBookmarkTabsForComfortableLayout(bookmarkGuids: [bookmark.guid])
                 openTwoURLsAsSplit(primaryURL: url,
-                                   secondaryURL: secondaryURL)
+                                   secondaryURL: secondaryURL,
+                                   layout: bookmark.layout ?? .vertical)
                 return
             }
             if let splitId = splitBookmarkBindings[bookmark.guid],
@@ -233,7 +236,8 @@ extension BrowserState {
             } else {
                 openTwoURLsAsSplit(primaryURL: url,
                                    secondaryURL: secondaryURL,
-                                   bookmarkGuid: bookmark.guid)
+                                   bookmarkGuid: bookmark.guid,
+                                   layout: bookmark.layout ?? .vertical)
             }
             return
         }
@@ -269,6 +273,15 @@ extension BrowserState {
         } else {
             createTab(URLProcessor.processUserInput(url), customGuid: realBookmark.guid, focusAfterCreate: true)
         }
+    }
+
+    func updateBookmarkSplitLayout(bookmarkGuid: String, layout: SplitLayout) {
+        bookmarkManager.updateSplitLayout(guid: bookmarkGuid, layout: layout)
+        guard let splitId = splitBookmarkBindings[bookmarkGuid],
+              splits.contains(where: { $0.id == splitId }) else {
+            return
+        }
+        updateSplitLayout(splitId, layout: layout)
     }
 
     /// Returns one live bookmark pane to the URL stored by its bookmark.

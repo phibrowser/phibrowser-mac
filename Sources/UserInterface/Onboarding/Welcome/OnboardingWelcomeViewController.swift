@@ -21,8 +21,9 @@ class OnboardingWelcomeViewController: ConchFrameAnimationBaseViewController {
     }()
     
     private let titleLabel: NSTextField = {
-        let label = NSTextField(labelWithString: NSLocalizedString("oobe.welcome.title", value: "Welcome", comment: "Onboarding welcome page - Main title greeting the user"))
-        label.font = NSFont(name: "IvyPrestoDisplay-SemiBoldItalic", size: 46)
+        let title = NSLocalizedString("oobe.welcome.title", value: "Welcome", comment: "Onboarding welcome page - Main title greeting the user")
+        let label = NSTextField(labelWithString: title)
+        label.font = .brandDisplay("IvyPrestoDisplay-SemiBoldItalic", size: 46, renders: title)
         label.textColor = NSColor(red: 0.18, green: 0.42, blue: 0.49, alpha: 1.0) // #2D6F7D
         label.alignment = .center
         label.lineBreakMode = .byTruncatingMiddle
@@ -88,7 +89,11 @@ class OnboardingWelcomeViewController: ConchFrameAnimationBaseViewController {
     
     var userName: String? {
         didSet {
-            titleLabel.stringValue = String(format: NSLocalizedString("oobe.welcome.personalizedTitle", value: "Welcome %@", comment: "Onboarding welcome page - Personalized welcome title with user name"), userName ?? "")
+            let title = String(format: NSLocalizedString("oobe.welcome.personalizedTitle", value: "Welcome %@", comment: "Onboarding welcome page - Personalized welcome title with user name"), userName ?? "")
+            titleLabel.stringValue = title
+            // The name is user-supplied and the greeting is localized, so
+            // neither is guaranteed to be Latin — see NSFont.brandDisplay.
+            titleLabel.font = .brandDisplay("IvyPrestoDisplay-SemiBoldItalic", size: 46, renders: title)
         }
     }
     

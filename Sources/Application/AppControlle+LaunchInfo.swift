@@ -198,7 +198,10 @@ extension AppController {
             "default_browser_bundle_id": defaultBrowser.bundleIdentifier ?? "unknown",
             "is_phi_default_browser": defaultBrowser.isPhiDefault,
             "proactive_suggestions_enabled": PhiPreferences.AISettings.enableProactiveSuggestionsOnNTP.loadValue(),
-            "automatically_add_context_enabled": PhiPreferences.AISettings.enableChatWithTabs.loadValue()
+            "automatically_add_context_enabled": PhiPreferences.AISettings.enableChatWithTabs.loadValue(),
+            "peek_view_enabled": PhiPreferences.GeneralSettings.peekViewEnabled.loadValue(),
+            "open_external_links_in_kiosk": PhiPreferences.GeneralSettings.openExternalLinksInKiosk.loadValue(),
+            "open_kiosk_on_command_option_click": PhiPreferences.GeneralSettings.openKioskOnCommandOptionClick.loadValue()
         ])
     }
 

@@ -26,6 +26,17 @@ enum URLRouter {
     /// host beats `*.host` suffix wildcard beats `*needle*` contains —
     /// then lower `sortOrder` wins.
     static func resolve(url: URL, rules: [SpaceURLRule]) -> String? {
+        matchingRule(for: url, rules: rules)?.spaceId
+    }
+
+    /// Returns the winning rule itself. Callers that need routing policy in
+    /// addition to the destination (for example, whether the rule asks before
+    /// routing) must use the same specificity decision as `resolve` rather
+    /// than looking up a second rule by target Space.
+    static func matchingRule(
+        for url: URL,
+        rules: [SpaceURLRule]
+    ) -> SpaceURLRule? {
         // Mirror `PhiURLRouter::Resolve`: Space routing applies to websites
         // only, so non-http(s) URLs (chrome:, file:, data:, view-source:, …)
         // never match — a broad rule must not re-home or prompt on them.
@@ -46,6 +57,6 @@ enum URLRouter {
                 best = (rule, score)
             }
         }
-        return best?.rule.spaceId
+        return best?.rule
     }
 }

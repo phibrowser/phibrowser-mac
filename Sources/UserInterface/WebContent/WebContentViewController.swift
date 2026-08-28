@@ -232,14 +232,35 @@ class WebContentViewController: NSViewController {
     private lazy var agentSpaceOverlay: AgentSpaceOverlayView = {
         let overlay = AgentSpaceOverlayView()
         overlay.onTakeControl = { [weak self] in
+            // A tab in the user's own Space is masked per TAB, from browser
+            // reports, and has no task behind it — taking it back is the
+            // registry's business, not the Space's.
+            if let tabId = self?.associatedTab?.guid,
+               AgentUserSpaceDriveRegistry.shared.isDriven(tabId: tabId) {
+                AgentUserSpaceDriveRegistry.shared.takeControl(tabId: tabId)
+                return
+            }
             guard let spaceId = self?.browserState?.spaceId else { return }
             AgentSpaceManager.shared.takeControl(spaceId: spaceId)
         }
         overlay.onHandBack = { [weak self] in
+            if let tabId = self?.associatedTab?.guid,
+               AgentUserSpaceDriveRegistry.shared.isReclaimedWithDriver(tabId: tabId) {
+                AgentUserSpaceDriveRegistry.shared.handBack(tabId: tabId)
+                return
+            }
             guard let spaceId = self?.browserState?.spaceId else { return }
             AgentSpaceManager.shared.handBack(spaceId: spaceId)
         }
         overlay.onFinish = { [weak self] in
+            // "Finish" on a tab of the user's own dismisses the driver's pill;
+            // the tab stays theirs (the takeover stands) and there is no task
+            // to complete.
+            if let tabId = self?.associatedTab?.guid,
+               AgentUserSpaceDriveRegistry.shared.isReclaimedWithDriver(tabId: tabId) {
+                AgentUserSpaceDriveRegistry.shared.finish(tabId: tabId)
+                return
+            }
             guard let spaceId = self?.browserState?.spaceId,
                   let task = AgentSpaceManager.shared.task(forSpaceId: spaceId) else { return }
             AgentSpaceManager.shared.taskDidComplete(
@@ -255,6 +276,11 @@ class WebContentViewController: NSViewController {
     /// Inset, rounded web-content region used as the close-snapshot source; excludes
     /// the side margins so the placeholder doesn't cover the window-edge material.
     var closeSnapshotSourceView: NSView { splitViewContainer }
+
+    /// The visible rounded page card. What "cover the page pane" means for a
+    /// full-pane overlay (the Reader panel): the controller's whole view also
+    /// spans the window margins around the card, which must stay visible.
+    var pageCardView: NSView { splitViewContainer }
 
     private lazy var contentSplitViewController = NSSplitViewController()
     private var webContentSplitViewItem: NSSplitViewItem!
@@ -329,6 +355,9 @@ class WebContentViewController: NSViewController {
         rebindContentFullscreenObserver(for: tab)
         updateContentForTab(tab)
         updateAgentAnimationOverlay()
+        // The pill follows the driven tab in a user Space, so it has to be
+        // re-evaluated on every tab change too, not just on task updates.
+        updateAgentSpaceOverlay()
 
         // Restore focus whenever the associated tab changes.
         restoreFocusForCurrentTab()
@@ -520,6 +549,16 @@ class WebContentViewController: NSViewController {
             }
             .store(in: &cancellables)
         updateAgentAnimationOverlay()
+
+        // The task publisher never fires for a user Space (there is no task),
+        // so the pill over a browser-reported drive follows this instead.
+        AgentUserSpaceDriveRegistry.shared.driveStateChanged
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] tabId in
+                guard let self, self.associatedTab?.guid == tabId else { return }
+                self.updateAgentSpaceOverlay()
+            }
+            .store(in: &cancellables)
 
         AgentSpaceManager.shared.$tasksBySpaceId
             .receive(on: DispatchQueue.main)
@@ -1848,9 +1887,10 @@ class WebContentViewController: NSViewController {
         }
 
         let host: SplitPaneHostView
+        let layoutMode = PhiPreferences.GeneralSettings.loadLayoutMode()
         if let existing = currentSplitHost, existing.superview === hostView {
             existing.update(primary: primaryView, secondary: secondaryView)
-            existing.update(layout: group.layout, ratio: group.ratio)
+            existing.update(layout: group.layout, ratio: group.ratio, layoutMode: layoutMode)
             host = existing
         } else {
             // Mount the host BEFORE attaching panes: SplitPaneHostView.init no
@@ -1868,7 +1908,11 @@ class WebContentViewController: NSViewController {
             // cleanly resume, blanking the new-tab pane. Mount the host on top
             // instead, then let update() atomically reparent both panes (a
             // same-window addSubview move skips viewWillMoveToWindow(nil)).
-            let newHost = SplitPaneHostView(layout: group.layout, ratio: group.ratio)
+            let newHost = SplitPaneHostView(
+                layout: group.layout,
+                ratio: group.ratio,
+                layoutMode: layoutMode
+            )
             newHost.translatesAutoresizingMaskIntoConstraints = false
             hostView.addSubview(newHost)
             newHost.snp.makeConstraints { $0.edges.equalToSuperview() }
@@ -2535,6 +2579,8 @@ class WebContentViewController: NSViewController {
         let navigationAtTop = layoutMode.showsNavigationAtTop
         let traditionalLayout = layoutMode.isTraditional
         let bookmarkCount = attachedBookmarkBar?.bookmarkCount ?? 0
+
+        currentSplitHost?.update(layoutMode: layoutMode)
         
         // Update container styling before toggling visibility.
         let isAIChatExpanded = aiChatSplitViewItem?.isCollapsed == false
@@ -2714,6 +2760,11 @@ class WebContentViewController: NSViewController {
             leftContainerView.layer?.borderWidth = 0
             leftContainerInsetConstraint?.update(inset: 0)
         }
+
+        // The operating mask's lit ring rounds its corners more than the panel
+        // while the page fills the frame; a separated card shows its own
+        // corners, which the ring must follow exactly.
+        agentAnimationOverlay.hugsPanelCorners = shouldSeparatePageCard
 
         // With the panel docked, splitViewContainer's right edge is an
         // interior boundary meeting the panel's frame fill mid-frame, not
@@ -2973,7 +3024,10 @@ class WebContentViewController: NSViewController {
     private func updateAgentSpaceOverlay(tasks: [String: AgentTask]? = nil) {
         guard let spaceId = browserState?.spaceId else { return }
         guard let task = (tasks ?? AgentSpaceManager.shared.tasksBySpaceId)[spaceId] else {
-            hideAgentSpaceOverlay()
+            // No task, so this is one of the user's own Spaces: the pill mounts
+            // per TAB there, only on the controller whose tab a CDP client is
+            // actually driving.
+            updateUserSpaceDriveOverlay()
             return
         }
         showAgentSpaceOverlay()
@@ -2992,6 +3046,52 @@ class WebContentViewController: NSViewController {
         guard let spaceId = browserState?.spaceId, spaceId == cursor.spaceId,
               agentSpaceOverlay.superview != nil else { return }
         agentSpaceOverlay.moveCursor(to: convertAgentCursorPoint(cursor.point))
+    }
+
+    /// Mounts the control pill over a tab of the user's own that a CDP client
+    /// is driving. Unlike the agent-Space path this is keyed on the tab, not
+    /// the Space: the user keeps working in their other tabs, and only the
+    /// driven one is claimed.
+    private func updateUserSpaceDriveOverlay() {
+        guard let tabId = associatedTab?.guid,
+              AgentUserSpaceDriveRegistry.shared.record(forTabId: tabId) != nil else {
+            hideAgentSpaceOverlay()
+            return
+        }
+        showAgentSpaceOverlay()
+        agentSpaceOverlay.update(with: userSpaceDriveDisplayTask(tabId: tabId))
+    }
+
+    /// The pill renders from an `AgentTask`, and a driven user-Space tab has
+    /// none — nothing here is registered with `AgentSpaceManager` or reachable
+    /// by taskId. Display only: `ownership: .agent` is what puts "Take control"
+    /// on the pill, and that button routes to the drive registry.
+    private func userSpaceDriveDisplayTask(tabId: Int) -> AgentTask {
+        // Ownership is the whole point of this record: `.agent` puts "Take
+        // control" on the pill, `.user` puts "Hand back" and "Finish" there —
+        // the way back in after the user reclaimed the tab mid-run.
+        let driving = AgentUserSpaceDriveRegistry.shared.isDriven(tabId: tabId)
+        // The app knows exactly who asked when it opened the tab itself; a
+        // browser-reported drive carries no identity, so that falls back to the
+        // roster's best guess.
+        let named = AgentUserSpaceDriveRegistry.shared.record(forTabId: tabId)?.driverName
+        return AgentTask(
+            taskId: "user-space-drive-\(tabId)",
+            spaceId: browserState?.spaceId ?? "",
+            profileId: "",
+            origin: .cdp,
+            driverPrincipalId: nil,
+            number: 0,
+            windowId: browserState?.windowId ?? 0,
+            ownership: driving ? .agent : .user,
+            status: .running,
+            statusCaption: driving
+                ? "An agent is using this tab…"
+                : "You have this tab — the agent is waiting",
+            cursor: nil,
+            hasUnseenError: false,
+            agentName: (named?.isEmpty == false ? named : nil)
+                ?? AgentCDPDriverRoster.shared.soleRecentDriverName ?? "")
     }
 
     private func showAgentSpaceOverlay() {

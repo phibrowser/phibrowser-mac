@@ -196,6 +196,29 @@ final class BrowserStatePinnedSplitCloseTests: XCTestCase {
         XCTAssertEqual(fromLinked?.1, "db-linked")
     }
 
+    func testClosedPinnedSplitLayoutDefaultsAndConvertsInMemory() throws {
+        let state = try makeState()
+        let left = Tab(guid: 350, url: "https://left.example",
+                       isActive: false, index: 0, customGuid: "db-left")
+        let right = Tab(guid: 351, url: "https://right.example",
+                        isActive: false, index: 1, customGuid: "db-right")
+        left.splitPartnerGuid = "db-right"
+        right.splitPartnerGuid = "db-left"
+        state.pinnedTabs = [left, right]
+
+        XCTAssertEqual(state.pinnedSplitLayout(leftDB: "db-left", rightDB: "db-right"),
+                       .vertical)
+
+        state.updatePinnedSplitLayout(leftDB: "db-left",
+                                      rightDB: "db-right",
+                                      layout: .horizontal)
+
+        XCTAssertEqual(left.splitLayout, .horizontal)
+        XCTAssertEqual(right.splitLayout, .horizontal)
+        XCTAssertEqual(state.pinnedSplitLayout(leftDB: "db-left", rightDB: "db-right"),
+                       .horizontal)
+    }
+
     /// During restore, one pinned-split pane can be live and focused before
     /// Chromium reports the recreated `SplitGroup`. Option-clicking another
     /// tab in that window must not treat the focused pane as a plain tab and

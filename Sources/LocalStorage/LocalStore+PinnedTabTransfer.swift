@@ -37,6 +37,19 @@ struct PinnedTabCreationInput: Sendable, Equatable {
     let title: String
     let url: String
     let partnerTabId: Int?
+    let layout: String?
+
+    init(tabId: Int,
+         title: String,
+         url: String,
+         partnerTabId: Int?,
+         layout: String? = nil) {
+        self.tabId = tabId
+        self.title = title
+        self.url = url
+        self.partnerTabId = partnerTabId
+        self.layout = layout
+    }
 }
 
 struct PinnedTabCreationResult: Sendable, Equatable {
@@ -236,6 +249,7 @@ extension LocalStore {
                         throw PinnedTabTransferError.splitPartnerNotFound(String(partnerTabId))
                     }
                     model.splitPartnerGuid = partnerGuid
+                    model.layout = input.layout
                 }
             }
 
@@ -323,7 +337,9 @@ extension LocalStore {
         copied.source = source.source
         copied.secondaryUrl = source.secondaryUrl
         copied.secondaryTitle = source.secondaryTitle
+        copied.layout = source.layout
         copied.lastSeen = source.lastSeen
+        copied.icon = source.icon
         copied.pinLineageId = source.pinLineageId ?? source.guid
         return copied
     }

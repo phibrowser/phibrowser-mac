@@ -68,6 +68,7 @@ struct GuestDataMigrationBookmarkRecord: Codable, Equatable, Sendable {
     let index: Int
     let url: URL
     let favicon: Data?
+    let icon: String?
     let createdDate: Date
     let updatedDate: Date
     let type: Int
@@ -78,6 +79,7 @@ struct GuestDataMigrationBookmarkRecord: Codable, Equatable, Sendable {
     let source: Int
     let secondaryURL: URL?
     let secondaryTitle: String?
+    let layout: String?
     let lastSeen: Date?
 }
 
@@ -89,6 +91,7 @@ struct GuestDataMigrationPinnedTabRecord: Codable, Equatable, Sendable {
     let index: Int
     let url: URL
     let favicon: Data?
+    let icon: String?
     let createdDate: Date
     let updatedDate: Date
     let overrideTitle: String?
@@ -99,6 +102,7 @@ struct GuestDataMigrationPinnedTabRecord: Codable, Equatable, Sendable {
     let secondaryURL: URL?
     let secondaryTitle: String?
     let splitPartnerGUID: String?
+    let layout: String?
     let lastSeen: Date?
     let lineageID: String
     let isDormant: Bool
@@ -1166,7 +1170,9 @@ extension LocalStore {
                     referencedSpaceIDs.insert(Self.defaultSpaceId)
                 }
             }
-            allRules.forEach { referencedSpaceIDs.insert($0.spaceId) }
+            allRules
+                .filter { $0.spaceId != Self.kioskURLRuleTargetId }
+                .forEach { referencedSpaceIDs.insert($0.spaceId) }
 
             let storedSpaceIDs = Set(storedSpaces.map(\.spaceId))
             let missingCustomSpaceIDs = referencedSpaceIDs.subtracting(storedSpaceIDs)
@@ -1228,6 +1234,7 @@ extension LocalStore {
                     index: model.index,
                     url: model.url,
                     favicon: model.favicon,
+                    icon: model.icon == "default" ? nil : model.icon,
                     createdDate: model.createdDate,
                     updatedDate: model.updatedDate,
                     type: model.type,
@@ -1238,6 +1245,7 @@ extension LocalStore {
                     source: model.source,
                     secondaryURL: model.secondaryUrl,
                     secondaryTitle: model.secondaryTitle,
+                    layout: model.layout,
                     lastSeen: model.lastSeen
                 )
             }.sorted {
@@ -1265,6 +1273,7 @@ extension LocalStore {
                     index: model.index,
                     url: model.url,
                     favicon: model.favicon,
+                    icon: model.icon == "default" ? nil : model.icon,
                     createdDate: model.createdDate,
                     updatedDate: model.updatedDate,
                     overrideTitle: model.overrideTitle,
@@ -1275,6 +1284,7 @@ extension LocalStore {
                     secondaryURL: model.secondaryUrl,
                     secondaryTitle: model.secondaryTitle,
                     splitPartnerGUID: model.splitPartnerGuid,
+                    layout: model.layout,
                     lastSeen: model.lastSeen,
                     lineageID: model.pinLineageId ?? model.guid,
                     isDormant: model.isPinnedTabDormant
@@ -1541,7 +1551,14 @@ extension LocalStore {
             var urlRuleTargets: [GuestDataMigrationURLRuleTarget] = []
             var skippedURLRules: [GuestDataMigrationSkippedURLRule] = []
             for (index, rule) in snapshot.urlRules.enumerated() {
-                guard let targetSpaceID = spaceIDs[rule.spaceID] else {
+                let targetSpaceID: String
+                if rule.spaceID == Self.kioskURLRuleTargetId {
+                    // Kiosk is an app-level destination, not a Space owned by
+                    // either account, so its stable target survives unchanged.
+                    targetSpaceID = Self.kioskURLRuleTargetId
+                } else if let mappedSpaceID = spaceIDs[rule.spaceID] {
+                    targetSpaceID = mappedSpaceID
+                } else {
                     throw GuestDataMigrationError.targetStateConflict(
                         "URL rule \(rule.id) has no target Space mapping"
                     )
@@ -1833,7 +1850,9 @@ extension LocalStore {
                 model.source = source.source
                 model.secondaryUrl = source.secondaryURL
                 model.secondaryTitle = source.secondaryTitle
+                model.layout = source.layout
                 model.lastSeen = source.lastSeen
+                model.icon = source.icon ?? "default"
                 context.insert(model)
                 importedBookmarksBySourceGUID[source.guid] = model
             }
@@ -1884,7 +1903,9 @@ extension LocalStore {
                 model.secondaryUrl = source.secondaryURL
                 model.secondaryTitle = source.secondaryTitle
                 model.splitPartnerGuid = mapping.targetSplitPartnerGUID
+                model.layout = source.layout
                 model.lastSeen = source.lastSeen
+                model.icon = source.icon ?? "default"
                 model.pinLineageId =
                     mappings.pinLineageIDs[source.lineageID] ?? source.lineageID
                 model.isPinnedTabDormant = mapping.isDormant
@@ -2062,6 +2083,7 @@ extension LocalStore {
                           target.overrideTitle == source.overrideTitle,
                           target.secondaryUrl == source.secondaryURL,
                           target.secondaryTitle == source.secondaryTitle,
+                          target.layout == source.layout,
                           target.isPinnedTabDormant == mapping.isDormant else {
                         throw GuestDataMigrationError.verificationFailed(
                             "pinned tab \(mapping.targetGUID) lost persisted fields"

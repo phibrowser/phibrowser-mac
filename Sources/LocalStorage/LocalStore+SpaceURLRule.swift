@@ -9,6 +9,12 @@ import SwiftData
 
 extension LocalStore {
 
+    /// Stable persisted target for URL rules that open matches in an
+    /// ephemeral Kiosk window instead of a Space. This is a wire value shared
+    /// with Chromium's `phi::kKioskRuleTargetId`; it must never change after
+    /// rules using it have been stored.
+    static let kioskURLRuleTargetId = "__phi_kiosk__"
+
     /// Value-typed view of a `SpaceURLRule` used at the LocalStore boundary.
     /// `replaceURLRules(forSpaceId:with:)` accepts these so the caller never
     /// has to hold a SwiftData `@Model` instance across context boundaries

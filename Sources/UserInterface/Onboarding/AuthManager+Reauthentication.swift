@@ -37,6 +37,63 @@ enum AuthReauthenticationState: Equatable {
     }
 }
 
+/// Ensures only the latest Web Auth attempt can commit a reauthentication result.
+struct AuthReauthenticationAttemptState {
+    private(set) var currentID: UUID?
+
+    mutating func begin() -> UUID {
+        let attemptID = UUID()
+        currentID = attemptID
+        return attemptID
+    }
+
+    mutating func finishIfCurrent(_ attemptID: UUID) -> Bool {
+        guard currentID == attemptID else {
+            return false
+        }
+        currentID = nil
+        return true
+    }
+}
+
+enum AuthReauthenticationWebAuthRunner {
+    /// Cancels and registers the replacement transaction without yielding the main actor.
+    @MainActor
+    static func run<Output, Failure: Error>(
+        replacingActiveSession: Bool,
+        cancel: () -> Void,
+        start: (@escaping (Result<Output, Failure>) -> Void) -> Void
+    ) async throws -> Output {
+        try await withCheckedThrowingContinuation {
+            (continuation: CheckedContinuation<Output, Error>) in
+            let completionLock = NSLock()
+            var completed = false
+
+            let finish: (Result<Output, Failure>) -> Void = { result in
+                completionLock.lock()
+                guard !completed else {
+                    completionLock.unlock()
+                    return
+                }
+                completed = true
+                completionLock.unlock()
+
+                switch result {
+                case .success(let output):
+                    continuation.resume(returning: output)
+                case .failure(let error):
+                    continuation.resume(throwing: error)
+                }
+            }
+
+            if replacingActiveSession {
+                cancel()
+            }
+            start(finish)
+        }
+    }
+}
+
 private struct PersistedAuthReauthenticationState {
     let reason: AuthReauthenticationReason
     let firstDetectedAt: Date
@@ -159,6 +216,55 @@ extension AuthManager {
             return true
         }
 
+        let attemptID = reauthenticationAttempts.begin()
+        return await performReauthentication(
+            details: details,
+            attemptID: attemptID,
+            replacingActiveSession: false
+        )
+    }
+
+    /// Replaces an in-flight attempt so an explicit user action can take priority.
+    @MainActor
+    func restartReauthenticationSession() async -> Bool {
+        guard let details = reauthenticationState.requiredDetails else {
+            return true
+        }
+
+        let replacesActiveSession: Bool
+        if case .reauthenticating = reauthenticationState {
+            replacesActiveSession = true
+        } else {
+            replacesActiveSession = false
+        }
+
+        let attemptID = reauthenticationAttempts.begin()
+
+        if replacesActiveSession {
+            recordTrace(
+                "reauthentication-restarted",
+                details: [
+                    "reason": details.reason.rawValue
+                ]
+            )
+        }
+
+        return await performReauthentication(
+            details: details,
+            attemptID: attemptID,
+            replacingActiveSession: replacesActiveSession
+        )
+    }
+
+    @MainActor
+    private func performReauthentication(
+        details: (
+            reason: AuthReauthenticationReason,
+            firstDetectedAt: Date
+        ),
+        attemptID: UUID,
+        replacingActiveSession: Bool
+    ) async -> Bool {
         reauthenticationState = .reauthenticating(
             reason: details.reason,
             firstDetectedAt: details.firstDetectedAt
@@ -171,12 +277,26 @@ extension AuthManager {
         )
 
         do {
-            let results = try await Auth0.webAuth(clientId: clicentId, domain: domain)
+            let webAuth = Auth0.webAuth(clientId: clicentId, domain: domain)
                 .audience(audience)
                 .scope("openid profile email offline_access")
                 .provider(makeExternalBrowserAuthProvider())
-                .start()
+            let results = try await AuthReauthenticationWebAuthRunner.run(
+                replacingActiveSession: replacingActiveSession,
+                cancel: { cancelOngoingWebAuthentication() },
+                start: { webAuth.start($0) }
+            )
 
+            guard reauthenticationAttempts.finishIfCurrent(attemptID) else {
+                recordTrace(
+                    "reauthentication-result-ignored",
+                    details: [
+                        "outcome": "success",
+                        "reason": details.reason.rawValue
+                    ]
+                )
+                return false
+            }
             guard storeReauthenticatedCredentials(results) else {
                 handleReauthenticationFailure(
                     details: details,
@@ -195,6 +315,16 @@ extension AuthManager {
             )
             return true
         } catch {
+            guard reauthenticationAttempts.finishIfCurrent(attemptID) else {
+                recordTrace(
+                    "reauthentication-result-ignored",
+                    details: [
+                        "outcome": "failure",
+                        "reason": details.reason.rawValue
+                    ]
+                )
+                return false
+            }
             handleReauthenticationFailure(
                 details: details,
                 failure: "webauth_error",

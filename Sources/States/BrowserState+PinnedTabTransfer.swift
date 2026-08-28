@@ -145,7 +145,8 @@ extension BrowserState {
                 tabId: tab.guid,
                 title: tab.title,
                 url: url,
-                partnerTabId: partnerTabId
+                partnerTabId: partnerTabId,
+                layout: splitGroup?.layout.rawValue
             )
         }
         let result = try await targetState.localStore.createPinnedTabsForCrossWindowDrop(

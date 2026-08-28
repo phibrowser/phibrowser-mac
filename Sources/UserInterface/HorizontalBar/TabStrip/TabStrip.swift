@@ -3857,7 +3857,7 @@ final class TabStrip: NSView, TitlebarAwareHitTestable {
 
     /// Returns the same-window SplitTabDropContainer (and its current split
     /// zone) for the given screen point, if any. Returns `nil` when the point
-    /// isn't inside this window's content area's left/right third, or when
+    /// isn't inside this window's content area's edge drop zones, or when
     /// the focused tab isn't a valid split partner for the dragged tab.
     private func resolveSplitDropTarget(for screenPoint: CGPoint, context: TabDragContext)
         -> (container: SplitTabDropContainer, zone: SplitTabDropContainer.DropZone)? {

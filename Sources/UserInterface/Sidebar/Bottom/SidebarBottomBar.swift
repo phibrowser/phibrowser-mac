@@ -126,12 +126,12 @@ struct SidebarBottomBarSwiftUI: View {
                 state.isDownloadPopoverShown.toggle()
             }
         )
-        .popover(isPresented: $state.isDownloadPopoverShown, arrowEdge: .top) {
-            if let manager = downloadViewModel.downloadsManager {
-                DownloadsListView(downloadsManager: manager)
-                    .frame(width: 340, height: 317)
-            }
-        }
+        .background(
+            SidebarDownloadsPopoverPresenter(
+                isPresented: $state.isDownloadPopoverShown,
+                downloadsManager: downloadViewModel.downloadsManager
+            )
+        )
     }
     
     // MARK: - Legacy Compact Layout
@@ -177,6 +177,122 @@ struct SidebarBottomBarSwiftUI: View {
                         removal: .identity
                     )
                 )
+        }
+    }
+}
+
+// MARK: - Downloads Popover
+
+private struct SidebarDownloadsPopoverPresenter: NSViewRepresentable {
+    @Binding var isPresented: Bool
+    let downloadsManager: DownloadsManager?
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator()
+    }
+
+    func makeNSView(context: Context) -> NSView {
+        PassthroughAnchorView(frame: .zero)
+    }
+
+    func updateNSView(_ nsView: NSView, context: Context) {
+        context.coordinator.update(
+            isPresented: isPresented,
+            downloadsManager: downloadsManager,
+            anchorView: nsView,
+            onDismiss: {
+                isPresented = false
+            }
+        )
+    }
+
+    static func dismantleNSView(_ nsView: NSView, coordinator: Coordinator) {
+        coordinator.dismiss()
+    }
+
+    private final class PassthroughAnchorView: NSView {
+        override func hitTest(_ point: NSPoint) -> NSView? {
+            nil
+        }
+    }
+
+    @MainActor
+    final class Coordinator: NSObject, NSPopoverDelegate {
+        private static let contentSize = NSSize(width: 340, height: 317)
+        private static let screenEdgeMargin: CGFloat = 8
+
+        private var popover: NSPopover?
+        private var onDismiss: (() -> Void)?
+
+        func update(
+            isPresented: Bool,
+            downloadsManager: DownloadsManager?,
+            anchorView: NSView,
+            onDismiss: @escaping () -> Void
+        ) {
+            self.onDismiss = onDismiss
+
+            guard isPresented else {
+                dismiss()
+                return
+            }
+            guard popover == nil,
+                  let downloadsManager,
+                  anchorView.window != nil else { return }
+
+            present(downloadsManager: downloadsManager, anchorView: anchorView)
+        }
+
+        func dismiss() {
+            guard let popover else { return }
+            self.popover = nil
+            popover.delegate = nil
+            popover.performClose(nil)
+        }
+
+        private func present(downloadsManager: DownloadsManager, anchorView: NSView) {
+            let popover = NSPopover()
+            popover.behavior = .transient
+            popover.animates = true
+            popover.contentSize = Self.contentSize
+            popover.appearance = anchorView.themeStateProvider.currentAppearance.nsAppearance
+            popover.contentViewController = ThemedHostingController(
+                rootView: DownloadsListView(downloadsManager: downloadsManager)
+                    .frame(width: Self.contentSize.width, height: Self.contentSize.height),
+                themeSource: anchorView.themeStateProvider
+            )
+            popover.delegate = self
+            popover.setValue(shouldHideAnchor(for: anchorView), forKeyPath: "shouldHideAnchor")
+
+            self.popover = popover
+            popover.show(
+                relativeTo: anchorView.bounds,
+                of: anchorView,
+                preferredEdge: .maxY
+            )
+        }
+
+        private func shouldHideAnchor(for anchorView: NSView) -> Bool {
+            guard let window = anchorView.window else { return false }
+
+            let anchorWindowRect = anchorView.convert(anchorView.bounds, to: nil)
+            let anchorScreenRect = window.convertToScreen(anchorWindowRect)
+            let anchorCenter = NSPoint(x: anchorScreenRect.midX, y: anchorScreenRect.midY)
+            let screen = NSScreen.screens.first { $0.frame.contains(anchorCenter) } ?? window.screen
+            guard let visibleFrame = screen?.visibleFrame else { return false }
+
+            let centeredMinX = anchorScreenRect.midX - Self.contentSize.width / 2
+            let centeredMaxX = anchorScreenRect.midX + Self.contentSize.width / 2
+            return centeredMinX < visibleFrame.minX + Self.screenEdgeMargin
+                || centeredMaxX > visibleFrame.maxX - Self.screenEdgeMargin
+        }
+
+        func popoverDidClose(_ notification: Notification) {
+            guard let closedPopover = notification.object as? NSPopover,
+                  closedPopover === popover else { return }
+            popover = nil
+            closedPopover.delegate = nil
+            onDismiss?()
         }
     }
 }
@@ -402,6 +518,13 @@ class SidebarBottomBarSwiftUIView: NSView {
     /// Hides or shows the AI memory button. Should be hidden when Phi AI is disabled.
     func setMemoryHidden(_ hidden: Bool) {
         state.isMemoryHidden = hidden
+    }
+
+    /// Hides the hosted controls while the create-Space form covers the bottom
+    /// bar. The outer AppKit wrapper stays mounted so its stack height remains
+    /// unchanged, while SwiftUI hover and native help tracking are deactivated.
+    func setCreateSpaceOverlayInteractionSuppressed(_ suppressed: Bool) {
+        hostingView?.isHidden = suppressed
     }
     
     /// Binds the downloads manager for progress display.

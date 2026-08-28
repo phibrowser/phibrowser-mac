@@ -321,7 +321,7 @@ struct SpacesStripView: View {
     /// them. Drives the fit arithmetic in `visiblePipCount` and the wheel
     /// tracker's per-pip scroll distance (hence fileprivate).
     fileprivate static let stripItemWidth: CGFloat = 24
-    private static let stripItemHeight: CGFloat = 24
+    fileprivate static let stripItemHeight: CGFloat = 24
     fileprivate static let stripSpacing: CGFloat = 4
     /// How long a pip must stay hovered before its card appears, so brushing
     /// the cursor across the strip doesn't flash cards.
@@ -585,10 +585,19 @@ struct SpacesStripView: View {
         // pips are hidden, a "…" affordance in its place that opens the full
         // switcher menu.
         GeometryReader { geo in
-            let visibleCount = visiblePipCount(availableWidth: geo.size.width)
+            // While the create form is up, a dashed placeholder pip follows
+            // the row — reserve its slot so the viewport math never lets the
+            // real pips collide with it.
+            let placeholderReserve: CGFloat = slot.isCreatingSpace
+                ? Self.stripItemWidth + Self.stripSpacing
+                : 0
+            let visibleCount = visiblePipCount(availableWidth: geo.size.width - placeholderReserve)
             let hasOverflow = visibleCount < stripOrderedSpaces.count
             HStack(spacing: Self.stripSpacing) {
                 pipsViewport(visibleCount: visibleCount)
+                if slot.isCreatingSpace {
+                    creatingSpacePlaceholderPip
+                }
                 Spacer(minLength: 4)
                 if hasOverflow {
                     moreButton
@@ -617,6 +626,12 @@ struct SpacesStripView: View {
                 ensureActivePipVisible(availableWidth: geo.size.width, animated: false)
             }
             .onChange(of: slot.activeSpaceId) { _ in
+                ensureActivePipVisible(availableWidth: geo.size.width, animated: true)
+            }
+            .onChange(of: slot.isCreatingSpace) { _ in
+                // Opening the create form slides an overflowing row to its
+                // end, where the dashed placeholder stands; closing it slides
+                // back to the active pip's window.
                 ensureActivePipVisible(availableWidth: geo.size.width, animated: true)
             }
             .onChange(of: geo.size.width) { newWidth in
@@ -716,16 +731,6 @@ struct SpacesStripView: View {
                     // window would still swallow clicks/hovers aimed at the
                     // Spacer and the trailing button without this.
                     .allowsHitTesting(index >= start && index < start + visibleCount)
-                    .onDrag {
-                        // Keep hover available while the create form is open,
-                        // but do not vend a reorder payload from its read-only
-                        // Space strip.
-                        guard !slot.isCreatingSpace else {
-                            return NSItemProvider()
-                        }
-                        stripDraggingId = space.spaceId
-                        return NSItemProvider(object: space.spaceId as NSString)
-                    }
                     .onDrop(of: [.text], delegate: SpaceRowDropDelegate(
                         targetSpaceId: space.spaceId,
                         draggingSpaceId: $stripDraggingId,
@@ -736,6 +741,33 @@ struct SpacesStripView: View {
                         }
                     ))
             }
+        }
+        // Reorder drags start here, not from a SwiftUI `.onDrag` on the pip —
+        // see SpacesStripReorderSurface. Overlaid on the pip row (inside the
+        // viewport's offset) so its slot grid is simply `index * step`, and
+        // the surface only claims slots the sliding window actually shows.
+        .overlay {
+            SpacesStripReorderSurface(
+                orderedSpaceIds: stripOrderedSpaces.map(\.spaceId),
+                visibleRange: start..<min(start + visibleCount, stripOrderedSpaces.count),
+                // The create form's strip is read-only: it must not vend a
+                // reorder payload, and leaving the slots unclaimed keeps the
+                // pips' hover cards and their click guard exactly as they are.
+                allowsReordering: !slot.isCreatingSpace && stripOrderedSpaces.count > 1,
+                onActivate: { id in
+                    guard let space = stripOrderedSpaces.first(where: { $0.spaceId == id }) else { return }
+                    activatePip(space)
+                },
+                onDragBegan: { id in stripDraggingId = id },
+                onDragEnded: { id, didDrop in endStripReorderDrag(spaceId: id, didDrop: didDrop) },
+                dragPreview: { id in
+                    guard let space = stripOrderedSpaces.first(where: { $0.spaceId == id }) else {
+                        return AnyView(EmptyView())
+                    }
+                    return AnyView(pipIcon(for: space)
+                        .frame(width: Self.stripItemWidth, height: Self.stripItemHeight))
+                }
+            )
         }
         // The active pip's liquid-glass chip — the selected-tab-row treatment
         // (translucent white fill + soft drop shadow). One persistent view
@@ -749,8 +781,11 @@ struct SpacesStripView: View {
             // edges: the concealment flips in the same update pass as the
             // `activeSpaceId` switch, whose row-level animation would
             // otherwise fade the removal — a doubled chip beside the
-            // stand-in.
+            // stand-in. Also hidden while the create form is up: the dashed
+            // placeholder is the Space in focus then, and the source Space
+            // must not keep reading as active beside it.
             if !stripGeometry.isChipConcealed,
+               !slot.isCreatingSpace,
                let activeId = slot.activeSpaceId,
                stripOrderedSpaces.contains(where: { $0.spaceId == activeId }) {
                 RoundedRectangle(cornerRadius: 8, style: .continuous)
@@ -834,6 +869,14 @@ struct SpacesStripView: View {
     /// empty list's count of 0, bail, and leave the restored active pip
     /// stranded outside the window with no later event to fix it.
     private func ensureActivePipVisible(availableWidth: CGFloat, animated: Bool) {
+        // While the create form is up, the window anchors on the row's END —
+        // the dashed placeholder stands where the new Space will land, after
+        // the last pip, so an overflowing row must show its tail for the
+        // placeholder to read as continuing it.
+        if slot.isCreatingSpace {
+            slideViewportToEnd(availableWidth: availableWidth, animated: animated)
+            return
+        }
         let visibleCount = visiblePipCount(availableWidth: availableWidth)
         guard visibleCount > 0,
               let activeId = slot.activeSpaceId,
@@ -846,6 +889,26 @@ struct SpacesStripView: View {
             }
         } else {
             stripStartIndex = start
+        }
+    }
+
+    /// Slides the viewport window to the last pips of an overflowing row —
+    /// the create-form anchor (see `ensureActivePipVisible`). The width math
+    /// reserves the placeholder's slot, mirroring `iconStrip`, so the tail
+    /// pips and the placeholder fit the window together. Same curve/duration
+    /// as a Space-switch slide.
+    private func slideViewportToEnd(availableWidth: CGFloat, animated: Bool) {
+        let reserve = Self.stripItemWidth + Self.stripSpacing
+        let visibleCount = visiblePipCount(availableWidth: availableWidth - reserve)
+        guard visibleCount > 0 else { return }
+        let end = max(0, stripOrderedSpaces.count - visibleCount)
+        guard end != stripStartIndex else { return }
+        if animated {
+            withAnimation(.easeInOut(duration: PhiPreferences.GeneralSettings.loadSwitchSpaceAnimationDuration())) {
+                stripStartIndex = end
+            }
+        } else {
+            stripStartIndex = end
         }
     }
 
@@ -878,6 +941,28 @@ struct SpacesStripView: View {
     /// it when not every Space fits — plus, when overflowing, room for the
     /// half-pip peeks at the window's edges (see `pipsViewport`). All strip
     /// items share a uniform width, so the count is pure arithmetic.
+    /// Dashed-outline stand-in pip for the Space being created: sits after
+    /// the last pip while the create form is up, showing the form's currently
+    /// selected icon (mirrored via `slot.creatingSpaceIconValue`) — a preview
+    /// of where the new Space will land in the row. Same chip shape and icon
+    /// treatment as a real pip, with the dashed border marking it as pending.
+    private var creatingSpacePlaceholderPip: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .strokeBorder(Color.secondary.opacity(0.65),
+                              style: StrokeStyle(lineWidth: 1.5, dash: [3, 3]))
+                .frame(width: Self.stripItemWidth, height: Self.stripItemHeight)
+            stripIcon(
+                storedValue: slot.creatingSpaceIconValue,
+                symbolWeight: .semibold,
+                tint: Color.primary
+            )
+        }
+        .frame(width: Self.stripItemWidth, height: rowHeight)
+        .allowsHitTesting(false)
+        .transition(.opacity)
+    }
+
     private func visiblePipCount(availableWidth: CGFloat) -> Int {
         let total = stripOrderedSpaces.count
         guard total > 0 else { return 0 }
@@ -1076,6 +1161,29 @@ struct SpacesStripView: View {
         // after the swap (a disappear-then-reappear blink).
         slot.suppressHoverCard(spaceId: space.spaceId)
         slot.activate(spaceId: space.spaceId, userInitiated: true)
+    }
+
+    /// Clears the strip's reorder state when the AppKit dragging session ends
+    /// — the signal SwiftUI's `.onDrag` never gave us. A completed drop has
+    /// already scheduled the same clear in `SpaceRowDropDelegate.performDrop`,
+    /// so this is a no-op there (the id guard fails). A drag that ends without
+    /// a drop — Esc, a release outside every row — is cleared only here, and
+    /// its uncommitted preview arrangement is put back: the model never moved,
+    /// so the committed order is the truth. Both paths wait out
+    /// `dragImageSettle` for the reason that constant documents, so the lifted
+    /// pip doesn't flash back beside the drag image still fading onto it.
+    private func endStripReorderDrag(spaceId: String, didDrop: Bool) {
+        if !didDrop {
+            withAnimation(.easeInOut(duration: 0.15)) {
+                stripOrderedIds = manager.spaces.map(\.spaceId)
+            }
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + SpaceRowDropDelegate.dragImageSettle) {
+            guard stripDraggingId == spaceId else { return }
+            withAnimation(.easeInOut(duration: 0.15)) {
+                stripDraggingId = nil
+            }
+        }
     }
 
     /// Transparent hit target laid over a peeked half-pip's visible sliver, so
@@ -1686,6 +1794,204 @@ struct SpaceListResetDropDelegate: DropDelegate {
             }
         }
         return true
+    }
+}
+
+/// AppKit click-vs-drag surface over the sidebar strip's Space pips.
+///
+/// SwiftUI's `.onDrag` does not start a drag for these pips on macOS 15.
+/// Measured on 15.6 with a hit-test probe: 375 left-drag events across the two
+/// pips produced zero `.onDrag` calls, while the window-background drag
+/// heuristic was already out of the way — `SpacesStripHostingView` is the view
+/// AppKit hit-tests and it answers `mouseDownCanMoveWindow = false`, so the
+/// window stayed put and the drag was delivered to the application. SwiftUI
+/// simply declined it; the pip's `Button` is the likeliest claimant, but the
+/// remedy does not depend on which. `HeaderExtensionReorderView` reached the
+/// same dead end on the pinned-extension row and took the same way out: own
+/// the mouse in AppKit and open the dragging session explicitly.
+///
+/// Drag INITIATION only. The drop side stays with `SpaceRowDropDelegate`,
+/// shared with the picker popover and the Spaces settings list, so there is
+/// still one reorder-and-preview implementation — the session opened here is
+/// an ordinary pasteboard drag those delegates already accept. Claiming the
+/// mouse does mean owning the plain click, which is what `onActivate` is for:
+/// the SwiftUI `Button` beneath never sees a left-mouseDown on a claimed pip.
+private struct SpacesStripReorderSurface: NSViewRepresentable {
+    let orderedSpaceIds: [String]
+    let visibleRange: Range<Int>
+    let allowsReordering: Bool
+    let onActivate: (String) -> Void
+    let onDragBegan: (String) -> Void
+    let onDragEnded: (String, Bool) -> Void
+    let dragPreview: (String) -> AnyView
+
+    func makeNSView(context: Context) -> SpacesStripReorderView { SpacesStripReorderView() }
+
+    func updateNSView(_ nsView: SpacesStripReorderView, context: Context) {
+        nsView.orderedSpaceIds = orderedSpaceIds
+        nsView.visibleRange = visibleRange
+        nsView.allowsReordering = allowsReordering
+        nsView.onActivate = onActivate
+        nsView.onDragBegan = onDragBegan
+        nsView.onDragEnded = onDragEnded
+        nsView.dragPreview = dragPreview
+    }
+}
+
+private final class SpacesStripReorderView: NSView {
+    var orderedSpaceIds: [String] = []
+    var visibleRange: Range<Int> = 0..<0
+    var allowsReordering = false
+    var onActivate: (String) -> Void = { _ in }
+    var onDragBegan: (String) -> Void = { _ in }
+    var onDragEnded: (String, Bool) -> Void = { _, _ in }
+    var dragPreview: (String) -> AnyView = { _ in AnyView(EmptyView()) }
+
+    private var mouseDownPoint: CGPoint?
+    private var pressedIndex: Int?
+    private var hasCrossedHysteresis = false
+    private var draggedSpaceId: String?
+    private let dragThreshold: CGFloat = 4
+
+    // MARK: - Slot geometry
+
+    /// This surface overlays the pip row itself — inside the viewport's offset,
+    /// outside its clip — so a slot is just its index on the row's uniform
+    /// grid, with no scroll position to fold in. `visibleRange` is what keeps
+    /// the clipped-away slots out of reach.
+    private static let slotStride = SpacesStripView.stripItemWidth + SpacesStripView.stripSpacing
+
+    private func slotIndex(atX x: CGFloat) -> Int? {
+        guard x >= 0 else { return nil }
+        let index = Int(x / Self.slotStride)
+        guard index < orderedSpaceIds.count,
+              x - CGFloat(index) * Self.slotStride <= SpacesStripView.stripItemWidth else {
+            return nil
+        }
+        return index
+    }
+
+    private func slotRect(at index: Int) -> NSRect {
+        NSRect(x: CGFloat(index) * Self.slotStride, y: 0,
+               width: SpacesStripView.stripItemWidth, height: bounds.height)
+    }
+
+    private func claimableIndex(atX x: CGFloat) -> Int? {
+        guard allowsReordering, let index = slotIndex(atX: x), visibleRange.contains(index) else {
+            return nil
+        }
+        return index
+    }
+
+    // MARK: - Click-vs-drag ownership
+
+    /// The main window sets `isMovableByWindowBackground`, and AppKit asks the
+    /// view it hit-tests whether a drag there moves the window. Over a claimed
+    /// pip that view is this one (TabItemView precedent for the pairing).
+    override var mouseDownCanMoveWindow: Bool { false }
+    override var acceptsFirstResponder: Bool { true }
+
+    /// Claim left-mouse over reorderable pips only. Hover, right-clicks (the
+    /// agent pip's context menu), the peeked half-pips' stand-ins, the "+" and
+    /// "…" affordances and the read-only create-form strip all fall through to
+    /// the SwiftUI row underneath. Drop-destination discovery does not consult
+    /// `hitTest`, so returning nil never blocks an in-flight reorder drop.
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        guard super.hitTest(point) != nil else { return nil }
+        switch NSApp.currentEvent?.type {
+        case .leftMouseDown, .leftMouseUp, .leftMouseDragged:
+            return claimableIndex(atX: convert(point, from: superview).x) == nil ? nil : self
+        default:
+            return nil
+        }
+    }
+
+    override func mouseDown(with event: NSEvent) {
+        let local = convert(event.locationInWindow, from: nil)
+        mouseDownPoint = local
+        pressedIndex = claimableIndex(atX: local.x)
+        hasCrossedHysteresis = false
+    }
+
+    override func mouseDragged(with event: NSEvent) {
+        guard let start = mouseDownPoint, !hasCrossedHysteresis else { return }
+        let current = convert(event.locationInWindow, from: nil)
+        guard abs(current.x - start.x) > dragThreshold
+                || abs(current.y - start.y) > dragThreshold else { return }
+        // Crossing hysteresis consumes the gesture whether or not a session
+        // starts (DraggableExtensionButton rule): an abandoned reorder attempt
+        // must not fall back to a click and switch Spaces.
+        hasCrossedHysteresis = true
+        guard let index = pressedIndex, orderedSpaceIds.indices.contains(index) else { return }
+        beginReorderDrag(spaceId: orderedSpaceIds[index], at: index, with: event)
+    }
+
+    override func mouseUp(with event: NSEvent) {
+        if !hasCrossedHysteresis,
+           let index = pressedIndex,
+           orderedSpaceIds.indices.contains(index),
+           slotRect(at: index).contains(convert(event.locationInWindow, from: nil)) {
+            onActivate(orderedSpaceIds[index])
+        }
+        mouseDownPoint = nil
+        pressedIndex = nil
+        hasCrossedHysteresis = false
+    }
+
+    // MARK: - Dragging session
+
+    private func beginReorderDrag(spaceId: String, at index: Int, with event: NSEvent) {
+        let item = NSPasteboardItem()
+        // `SpaceRowDropDelegate` accepts `.text`; a string item is what
+        // SwiftUI's own `NSItemProvider(object:)` vended before.
+        item.setString(spaceId, forType: .string)
+        let draggingItem = NSDraggingItem(pasteboardWriter: item)
+        draggingItem.setDraggingFrame(slotRect(at: index), contents: dragImage(for: spaceId))
+        draggedSpaceId = spaceId
+        // Publish the dragged id before the session opens: the first
+        // `dropEntered` can land immediately, and it reads that id to decide
+        // which gap to open.
+        onDragBegan(spaceId)
+        beginDraggingSession(with: [draggingItem], event: event, source: self)
+    }
+
+    /// Renders the pip offscreen rather than snapshotting the live row, so the
+    /// drag image carries neither the hover wash nor the active pip's glass
+    /// chip — both of which sit behind the icon in the strip.
+    private func dragImage(for spaceId: String) -> NSImage {
+        let hosting = NSHostingView(rootView: dragPreview(spaceId))
+        hosting.appearance = effectiveAppearance
+        hosting.frame = NSRect(x: 0, y: 0,
+                               width: SpacesStripView.stripItemWidth,
+                               height: SpacesStripView.stripItemHeight)
+        hosting.layoutSubtreeIfNeeded()
+        guard let bitmap = hosting.bitmapImageRepForCachingDisplay(in: hosting.bounds) else {
+            return NSImage(size: hosting.bounds.size)
+        }
+        hosting.cacheDisplay(in: hosting.bounds, to: bitmap)
+        let image = NSImage(size: hosting.bounds.size)
+        image.addRepresentation(bitmap)
+        return image
+    }
+}
+
+extension SpacesStripReorderView: NSDraggingSource {
+    func draggingSession(
+        _ session: NSDraggingSession,
+        sourceOperationMaskFor context: NSDraggingContext
+    ) -> NSDragOperation {
+        // The payload is a Space id understood only by this app's own strips.
+        context == .withinApplication ? .move : []
+    }
+
+    func draggingSession(
+        _ session: NSDraggingSession,
+        endedAt screenPoint: NSPoint,
+        operation: NSDragOperation
+    ) {
+        guard let spaceId = draggedSpaceId else { return }
+        draggedSpaceId = nil
+        onDragEnded(spaceId, operation.contains(.move))
     }
 }
 

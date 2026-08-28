@@ -66,14 +66,18 @@ class APIClient {
         return accessToken ?? ""
     }
 
-    func oauthNativeFinishedRedirect(provider: String, result: String) -> String {
+    func oauthNativeFinishedRedirect(provider: String, result: String, profileId: String? = nil) -> String {
         guard var components = URLComponents(string: "\(accountBaseURL)/oauth/native-finished") else {
             return "\(accountBaseURL)/oauth/native-finished"
         }
-        components.queryItems = [
+        var queryItems = [
             URLQueryItem(name: "provider", value: provider),
             URLQueryItem(name: "result", value: result),
         ]
+        if let profileId, !profileId.isEmpty {
+            queryItems.append(URLQueryItem(name: "profile_id", value: profileId))
+        }
+        components.queryItems = queryItems
         return components.url?.absoluteString ?? "\(accountBaseURL)/oauth/native-finished"
     }
 
@@ -182,23 +186,11 @@ class APIClient {
     // MARK: - Agent Persona
 
     func getAgentAvatar() async throws -> AgentAvatarResponse {
-        let (data, response) = try await executePhiAgentRequest { baseURL in
-            let url = URL(string: "\(baseURL)/api/v1/agent-persona/avatar")!
-            var request = URLRequest(url: url)
-            request.setValue("Bearer \(self.token)", forHTTPHeaderField: "Authorization")
-            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-            return request
+        let response = try await sendPhiAgentRequest(path: "/api/v1/agent-persona/avatar")
+        guard (200...299).contains(response.statusCode) else {
+            throw APIError.httpError(statusCode: response.statusCode)
         }
-
-        guard let httpResponse = response as? HTTPURLResponse else {
-            throw APIError.invalidResponse
-        }
-
-        guard (200...299).contains(httpResponse.statusCode) else {
-            throw APIError.httpError(statusCode: httpResponse.statusCode)
-        }
-
-        return try JSONDecoder().decode(AgentAvatarResponse.self, from: data)
+        return try JSONDecoder().decode(AgentAvatarResponse.self, from: response.body)
     }
 
     // MARK: - Agent Spaces
@@ -212,7 +204,7 @@ class APIClient {
         userPresent: Bool,
         handback: Bool = false
     ) async throws {
-        _ = try await postAgentSpaceAction(
+        try await postAgentSpaceAction(
             taskId: taskId,
             action: "presence",
             body: [
@@ -225,7 +217,7 @@ class APIClient {
     /// Hands control of an agent Space to the user (interrupt). `reason` is
     /// typically "user_interrupt".
     func handoffAgentSpace(taskId: String, reason: String) async throws {
-        _ = try await postAgentSpaceAction(
+        try await postAgentSpaceAction(
             taskId: taskId,
             action: "handoff",
             body: ["reason": reason]
@@ -236,59 +228,39 @@ class APIClient {
         taskId: String,
         action: String,
         body: [String: Any]
-    ) async throws -> (Data, URLResponse) {
+    ) async throws {
         let payload = try JSONSerialization.data(withJSONObject: body)
-        let (data, response) = try await executePhiAgentRequest { baseURL in
-            let encoded =
-                taskId.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed)
-                ?? taskId
-            let url = URL(string: "\(baseURL)/api/agent-spaces/\(encoded)/\(action)")!
-            var request = URLRequest(url: url)
-            request.httpMethod = "POST"
-            request.setValue("Bearer \(self.token)", forHTTPHeaderField: "Authorization")
-            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-            request.httpBody = payload
-            return request
-        }
-        guard let httpResponse = response as? HTTPURLResponse,
-              (200...299).contains(httpResponse.statusCode) else {
+        let encoded =
+            taskId.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed)
+            ?? taskId
+        let response = try await sendPhiAgentRequest(
+            path: "/api/agent-spaces/\(encoded)/\(action)",
+            method: "POST",
+            body: payload
+        )
+        guard (200...299).contains(response.statusCode) else {
             throw APIError.invalidResponse
         }
-        return (data, response)
     }
 
-    /// Sends a request to the local phi-agent, resolving its base URL through
-    /// `PhiAgentEndpointResolver` so dynamic port assignment by Sentinel is
-    /// honored. On a transport-level error (no listener, refused connection,
-    /// timeout) the resolver cache is dropped and the request is rebuilt and
-    /// retried exactly once with a freshly resolved endpoint.
-    private func executePhiAgentRequest(
-        build: (_ baseURL: String) -> URLRequest
-    ) async throws -> (Data, URLResponse) {
-        let firstBase = await PhiAgentEndpointResolver.shared.currentBaseURL()
-        do {
-            return try await URLSession.shared.data(for: build(firstBase))
-        } catch let error as URLError where Self.isPhiAgentTransportError(error) {
-            await PhiAgentEndpointResolver.shared.invalidate()
-            let retryBase = await PhiAgentEndpointResolver.shared.currentBaseURL()
-            if retryBase == firstBase {
-                throw error
-            }
-            return try await URLSession.shared.data(for: build(retryBase))
-        }
-    }
-
-    private static func isPhiAgentTransportError(_ error: URLError) -> Bool {
-        switch error.code {
-        case .cannotConnectToHost,
-             .cannotFindHost,
-             .networkConnectionLost,
-             .notConnectedToInternet,
-             .timedOut:
-            return true
-        default:
-            return false
-        }
+    /// Sends one authorized request to the local phi-agent over the route
+    /// Sentinel currently prescribes (loopback or the Service Broker UDS).
+    /// `PhiAgentTransport` owns route resolution and the single retry after a
+    /// re-resolve.
+    private func sendPhiAgentRequest(
+        path: String,
+        method: String = "GET",
+        body: Data? = nil
+    ) async throws -> PhiAgentHTTPResponse {
+        try await PhiAgentTransport.shared.send(PhiAgentHTTPRequest(
+            path: path,
+            method: method,
+            headers: [
+                "Authorization": "Bearer \(token)",
+                "Content-Type": "application/json",
+            ],
+            body: body
+        ))
     }
 
     func getAgentAvatarImageData() async throws -> AgentAvatarImagePayload {
@@ -506,26 +478,43 @@ class APIClient {
     
     // MARK: - Connector APIs
 
-    func getOAuthConnections() async throws -> Response<GetOAuthConnectionsResponse> {
-        let url = URL(string: "\(accountBaseURL)/api/auth/oauth/connections")!
+    func getOAuthConnections(profileId: String? = nil) async throws -> Response<GetOAuthConnectionsResponse> {
+        var queryItems: [URLQueryItem] = []
+        if let profileId, !profileId.isEmpty {
+            queryItems.append(URLQueryItem(name: "profile_id", value: profileId))
+        }
+        return try await getOAuthConnections(queryItems: queryItems)
+    }
+
+    func getAllOAuthConnections() async throws -> Response<GetOAuthConnectionsResponse> {
+        try await getOAuthConnections(
+            queryItems: [URLQueryItem(name: "all_profiles", value: "true")]
+        )
+    }
+
+    private func getOAuthConnections(queryItems: [URLQueryItem]) async throws -> Response<GetOAuthConnectionsResponse> {
+        guard var components = URLComponents(string: "\(accountBaseURL)/api/auth/oauth/connections") else {
+            throw APIError.invalidResponse
+        }
+        components.queryItems = queryItems.isEmpty ? nil : queryItems
+        guard let url = components.url else {
+            throw APIError.invalidResponse
+        }
         var request = URLRequest(url: url)
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Accept")
 
         let (data, response) = try await URLSession.shared.data(for: request)
-
         guard let httpResponse = response as? HTTPURLResponse else {
             throw APIError.invalidResponse
         }
-
         guard (200...299).contains(httpResponse.statusCode) else {
             throw APIError.httpError(statusCode: httpResponse.statusCode)
         }
-
         return try JSONDecoder().decode(Response<GetOAuthConnectionsResponse>.self, from: data)
     }
 
-    func getOAuthAuthorization(provider: String, successRedirect: String? = nil, failureRedirect: String? = nil) async throws -> Response<GetOAuthAuthorizationResponse> {
+    func getOAuthAuthorization(provider: String, successRedirect: String? = nil, failureRedirect: String? = nil, profileId: String? = nil) async throws -> Response<GetOAuthAuthorizationResponse> {
         guard var components = URLComponents(string: "\(accountBaseURL)/api/auth/oauth/authorize/\(provider)") else {
             throw APIError.invalidResponse
         }
@@ -535,6 +524,9 @@ class APIClient {
         }
         if let failureRedirect {
             queryItems.append(URLQueryItem(name: "failure_redirect", value: failureRedirect))
+        }
+        if let profileId, !profileId.isEmpty {
+            queryItems.append(URLQueryItem(name: "profile_id", value: profileId))
         }
         components.queryItems = queryItems.isEmpty ? nil : queryItems
 
@@ -556,6 +548,24 @@ class APIClient {
         }
 
         return try JSONDecoder().decode(Response<GetOAuthAuthorizationResponse>.self, from: data)
+    }
+
+    func bindOAuthToken(provider: String, profileId: String) async throws -> Response<BindOAuthTokenResponse> {
+        let url = URL(string: "\(accountBaseURL)/api/auth/oauth/connections/\(provider)")!
+        var request = URLRequest(url: url)
+        request.httpMethod = "PATCH"
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try JSONEncoder().encode(BindOAuthTokenRequest(profileId: profileId))
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw APIError.invalidResponse
+        }
+        guard (200...299).contains(httpResponse.statusCode) else {
+            throw APIError.httpError(statusCode: httpResponse.statusCode)
+        }
+        return try JSONDecoder().decode(Response<BindOAuthTokenResponse>.self, from: data)
     }
     
     /// Create or update a user source
@@ -654,8 +664,16 @@ class APIClient {
         return try JSONDecoder().decode(AirbyteResponse<String>.self, from: data)
     }
     
-    func deleteOAuthToken(provider: String) async throws -> Response<DeleteOAuthTokenResponse> {
-        let url = URL(string: "\(accountBaseURL)/api/auth/oauth/tokens/\(provider)")!
+    func deleteOAuthToken(provider: String, profileId: String? = nil) async throws -> Response<DeleteOAuthTokenResponse> {
+        guard var components = URLComponents(string: "\(accountBaseURL)/api/auth/oauth/tokens/\(provider)") else {
+            throw APIError.invalidResponse
+        }
+        if let profileId, !profileId.isEmpty {
+            components.queryItems = [URLQueryItem(name: "profile_id", value: profileId)]
+        }
+        guard let url = components.url else {
+            throw APIError.invalidResponse
+        }
         var urlRequest = URLRequest(url: url)
         urlRequest.httpMethod = "DELETE"
         urlRequest.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
@@ -672,6 +690,25 @@ class APIClient {
         }
 
         return try JSONDecoder().decode(Response<DeleteOAuthTokenResponse>.self, from: data)
+    }
+
+    func disconnectAllOAuthTokens() async throws -> Response<DisconnectAllOAuthTokensResponse> {
+        guard let url = URL(string: "\(accountBaseURL)/api/auth/oauth/connections/all") else {
+            throw APIError.invalidResponse
+        }
+        var request = URLRequest(url: url)
+        request.httpMethod = "DELETE"
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw APIError.invalidResponse
+        }
+        guard (200...299).contains(httpResponse.statusCode) else {
+            throw APIError.httpError(statusCode: httpResponse.statusCode)
+        }
+        return try JSONDecoder().decode(Response<DisconnectAllOAuthTokensResponse>.self, from: data)
     }
 
     // MARK: - Feedback V2

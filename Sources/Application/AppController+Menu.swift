@@ -485,29 +485,7 @@ extension AppController {
             } else
 
             if menuRole == .file, let subMenu = menuItem.submenu {
-                subMenu.items.forEach { item in
-                    if item.tag == CommandWrapper.IDC_SAVE_PAGE.rawValue {
-                        item.keyEquivalent = ""
-                        item.keyEquivalentModifierMask = .init(rawValue: 0)
-                    }
-                }
-                // Remove-then-insert keeps this idempotent across menu
-                // rebuilds (Chromium can swap the main menu wholesale).
-                subMenu.items.removeAll { $0.tag == AppController.fileNewIncognitoSpaceItemTag }
-                let newIncognitoSpaceItem = NSMenuItem(
-                    title: NSLocalizedString("app.fileMenu.createNewIncognitoSpace", value: "New Incognito Space", comment: "File menu - Create a new Incognito Space and bring it to the front"),
-                    action: #selector(newIncognitoSpaceFromMenu(_:)),
-                    keyEquivalent: ""
-                )
-                newIncognitoSpaceItem.tag = AppController.fileNewIncognitoSpaceItemTag
-                newIncognitoSpaceItem.target = self
-                if let incognitoWindowIndex = subMenu.items.firstIndex(where: {
-                    $0.tag == CommandWrapper.IDC_NEW_INCOGNITO_WINDOW.rawValue
-                }) {
-                    subMenu.insertItem(newIncognitoSpaceItem, at: incognitoWindowIndex + 1)
-                } else {
-                    subMenu.addItem(newIncognitoSpaceItem)
-                }
+                Self.installOrUpdateFileMenuItems(in: subMenu, target: self)
             } else
             
             if menuRole == .profiles {
@@ -667,6 +645,58 @@ extension AppController {
             }
             #endif // DEBUG || NIGHTLY_BUILD
         }
+    }
+
+    static func installOrUpdateFileMenuItems(
+        in subMenu: NSMenu,
+        target: AppController?
+    ) {
+        subMenu.items.forEach { item in
+            if item.tag == CommandWrapper.IDC_SAVE_PAGE.rawValue {
+                item.keyEquivalent = ""
+                item.keyEquivalentModifierMask = .init(rawValue: 0)
+            }
+        }
+
+        // Chromium can replace the main menu wholesale. Remove and reinsert
+        // Phi's rows so rebuilding remains idempotent and keeps Kiosk directly
+        // below New Incognito Window.
+        subMenu.items.removeAll { item in
+            item.tag == CommandWrapper.PHI_NEW_KIOSK_WINDOW.rawValue
+                || item.tag == AppController.fileNewIncognitoSpaceItemTag
+        }
+
+        let newKioskWindowItem = NSMenuItem(
+            title: NSLocalizedString(
+                "app.fileMenu.createNewKioskWindow",
+                value: "New Kiosk Window",
+                comment: "File menu - Create a Kiosk window and open its omnibox"
+            ),
+            action: #selector(AppController.newKioskWindowFromMenu(_:)),
+            keyEquivalent: "n"
+        )
+        newKioskWindowItem.keyEquivalentModifierMask = [.command, .option]
+        newKioskWindowItem.tag = CommandWrapper.PHI_NEW_KIOSK_WINDOW.rawValue
+        Shortcuts.updateShortcut(for: newKioskWindowItem)
+        newKioskWindowItem.target = target
+
+        let newIncognitoSpaceItem = NSMenuItem(
+            title: NSLocalizedString(
+                "app.fileMenu.createNewIncognitoSpace",
+                value: "New Incognito Space",
+                comment: "File menu - Create a new Incognito Space and bring it to the front"
+            ),
+            action: #selector(AppController.newIncognitoSpaceFromMenu(_:)),
+            keyEquivalent: ""
+        )
+        newIncognitoSpaceItem.tag = AppController.fileNewIncognitoSpaceItemTag
+        newIncognitoSpaceItem.target = target
+
+        let insertionIndex = subMenu.items.firstIndex(where: {
+            $0.tag == CommandWrapper.IDC_NEW_INCOGNITO_WINDOW.rawValue
+        }).map { $0 + 1 } ?? subMenu.items.count
+        subMenu.insertItem(newKioskWindowItem, at: insertionIndex)
+        subMenu.insertItem(newIncognitoSpaceItem, at: insertionIndex + 1)
     }
 
     fileprivate func rebuildDeleteProfileSubmenu(_ menu: NSMenu) {
@@ -897,13 +927,21 @@ extension AppController {
     }
     
     @objc func toggleSidebar(_ sender: Any?) {
-        MainBrowserWindowControllersManager.shared.activeWindowController?.browserState.toggleSidebar()
+        guard let state = MainBrowserWindowControllersManager.shared
+            .activeWindowController?.browserState,
+              !state.isKioskWindow else {
+            return
+        }
+        state.toggleSidebar()
     }
     
     @objc func toggleChatbar(_ sendar: Any?) {
-        MainBrowserWindowControllersManager.shared.activeWindowController?.browserState.toggleAIChat(
-            trigger: .shortcut
-        )
+        guard let state = MainBrowserWindowControllersManager.shared
+            .activeWindowController?.browserState,
+              !state.isKioskWindow else {
+            return
+        }
+        state.toggleAIChat(trigger: .shortcut)
     }
 
     @MainActor
@@ -1133,25 +1171,64 @@ extension AppController {
         }
 
         do {
-            guard let backup = try TimeMachineMenuPresenter().backup(id: backupID) else {
+            guard let details = try TimeMachineMenuPresenter().backupDetails(id: backupID) else {
                 presentTimeMachineRestoreFailure(
                     NSLocalizedString("app.timeMachineRestore.backupUnavailableMessage", value: "The selected Time Machine backup is no longer available.", comment: "Help menu - Time Machine restore error when a selected backup disappears")
                 )
                 return
             }
 
+            let backup = details.backup
             let backupTitle = backup.menuTitle()
+            let snapshotSize = details.snapshotSizeBytes.map {
+                timeMachineBackupSizeDescription($0)
+            } ?? "…"
             let alert = NSAlert()
-            alert.messageText = NSLocalizedString("app.timeMachineRestore.confirmation.title", value: "Restore Time Machine Backup?", comment: "Help menu - Time Machine restore confirmation title")
-            let messageTemplate = NSLocalizedString("app.timeMachineRestore.confirmation.message", value: "Phi will quit and restore %@. The current app and selected user data will be replaced.",
-                comment: "Help menu - Time Machine restore confirmation body"
+            alert.messageText = NSLocalizedString("app.timeMachineBackup.details.title", value: "Time Machine Backup", comment: "Help menu - Title of the selected Time Machine backup details alert")
+            alert.informativeText = timeMachineBackupDetailsInformativeText(
+                backupTitle: backupTitle,
+                snapshotSizeDescription: snapshotSize
             )
-            alert.informativeText = String(format: messageTemplate, backupTitle)
             alert.alertStyle = .warning
             alert.addButton(withTitle: NSLocalizedString("app.timeMachineRestore.confirmation.restoreButton", value: "Restore", comment: "Help menu - Time Machine restore confirmation button"))
             alert.addButton(withTitle: NSLocalizedString("app.timeMachineRestore.confirmation.cancelButton", value: "Cancel", comment: "Time Machine restore - Cancel confirmation button"))
+            alert.addButton(withTitle: NSLocalizedString("app.timeMachineBackup.details.deleteButton", value: "Delete Backup", comment: "Help menu - Button in the selected Time Machine backup details alert that starts deletion"))
+            alert.buttons[2].hasDestructiveAction = true
 
-            guard alert.runModal() == .alertFirstButtonReturn else {
+            if details.snapshotSizeBytes == nil {
+                DispatchQueue.global(qos: .userInitiated).async {
+                    let outcome = Result {
+                        try TimeMachineCatalogStore().resolveSnapshotSizeBytes(id: backup.id)
+                    }
+                    DispatchQueue.main.async {
+                        let resolvedSize: UInt64?
+                        switch outcome {
+                        case .success(let size):
+                            resolvedSize = size
+                        case .failure(let error):
+                            AppLogError(
+                                "[TimeMachine] Could not resolve backup size for \(backup.id.uuidString): "
+                                    + error.localizedDescription
+                            )
+                            resolvedSize = nil
+                        }
+                        guard alert.window.isVisible else {
+                            return
+                        }
+                        alert.informativeText = self.timeMachineBackupDetailsInformativeText(
+                            backupTitle: backupTitle,
+                            snapshotSizeDescription: self.timeMachineBackupSizeDescription(resolvedSize)
+                        )
+                    }
+                }
+            }
+
+            let response = alert.runModal()
+            if response == .alertThirdButtonReturn {
+                deleteTimeMachineBackup(backup)
+                return
+            }
+            guard response == .alertFirstButtonReturn else {
                 return
             }
 
@@ -1195,6 +1272,84 @@ extension AppController {
             )
             presentTimeMachineRestoreFailure(String(format: messageTemplate, error.localizedDescription))
         }
+    }
+
+    private func timeMachineBackupDetailsInformativeText(
+        backupTitle: String,
+        snapshotSizeDescription: String
+    ) -> String {
+        let messageTemplate = NSLocalizedString("app.timeMachineRestore.confirmation.message", value: "Phi will quit and restore %@. The current app and selected user data will be replaced.",
+            comment: "Help menu - Time Machine restore confirmation body"
+        )
+        let dataSizeTemplate = NSLocalizedString("app.timeMachineBackup.details.dataSize", value: "Backup data size: %@", comment: "Help menu - Selected Time Machine backup logical data size; placeholder is a formatted byte count or an unavailable label")
+        return [
+            String(format: messageTemplate, backupTitle),
+            String(format: dataSizeTemplate, snapshotSizeDescription)
+        ].joined(separator: "\n\n")
+    }
+
+    private func timeMachineBackupSizeDescription(_ sizeBytes: UInt64?) -> String {
+        guard let sizeBytes else {
+            return NSLocalizedString("app.timeMachineBackup.details.dataSizeUnavailable", value: "Unavailable", comment: "Help menu - Fallback shown when a Time Machine backup's logical data size was not recorded")
+        }
+        return ByteCountFormatter.string(
+            fromByteCount: Int64(clamping: sizeBytes),
+            countStyle: .file
+        )
+    }
+
+    private func deleteTimeMachineBackup(_ backup: TimeMachineBackupRecord) {
+        let backupTitle = backup.menuTitle()
+        let alert = NSAlert()
+        alert.messageText = NSLocalizedString("app.timeMachineBackup.deleteConfirmation.title", value: "Delete Time Machine Backup?", comment: "Help menu - Title of the Time Machine backup deletion confirmation")
+        let messageTemplate = NSLocalizedString("app.timeMachineBackup.deleteConfirmation.message", value: "Deleting %@ will permanently remove this restore point. Your current Phi app and data will not be affected. This cannot be undone.", comment: "Help menu - Time Machine backup deletion confirmation; placeholder is the selected backup title")
+        alert.informativeText = String(format: messageTemplate, backupTitle)
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: NSLocalizedString("app.timeMachineBackup.deleteConfirmation.deleteButton", value: "Delete", comment: "Help menu - Destructive button that confirms Time Machine backup deletion"))
+        alert.addButton(withTitle: NSLocalizedString("app.timeMachineBackup.deleteConfirmation.cancelButton", value: "Cancel", comment: "Help menu - Button that cancels Time Machine backup deletion"))
+        alert.buttons[0].hasDestructiveAction = true
+        guard alert.runModal() == .alertFirstButtonReturn else {
+            return
+        }
+
+        let progressModal = TimeMachineBackupDeletionProgressModal(backupTitle: backupTitle)
+        DispatchQueue.main.async {
+            DispatchQueue.global(qos: .userInitiated).async {
+                let outcome = Result {
+                    try TimeMachineCatalogStore().deleteBackupAtUserRequest(id: backup.id)
+                }
+                DispatchQueue.main.async {
+                    progressModal.finish(outcome: outcome)
+                }
+            }
+        }
+        _ = progressModal.run()
+
+        switch progressModal.outcome {
+        case .success(.some(_)):
+            AppLogInfo("[TimeMachine] Deleted backup \(backup.id.uuidString) at the user's request.")
+        case .success(.none):
+            presentTimeMachineBackupDeletionFailure(
+                NSLocalizedString("app.timeMachineBackup.deleteFailure.backupUnavailableMessage", value: "The selected Time Machine backup is no longer available.", comment: "Help menu - Time Machine backup deletion error when the selected backup disappears")
+            )
+        case .failure(let error):
+            let messageTemplate = NSLocalizedString("app.timeMachineBackup.deleteFailure.message", value: "Phi could not delete the Time Machine backup: %@", comment: "Help menu - Time Machine backup deletion failure body; placeholder is the error description")
+            presentTimeMachineBackupDeletionFailure(String(format: messageTemplate, error.localizedDescription))
+        case .none:
+            presentTimeMachineBackupDeletionFailure(
+                NSLocalizedString("app.timeMachineBackup.deleteFailure.interruptedMessage", value: "The Time Machine backup deletion was interrupted.", comment: "Help menu - Time Machine backup deletion error when the deletion progress ends without a result")
+            )
+        }
+    }
+
+    private func presentTimeMachineBackupDeletionFailure(_ message: String) {
+        AppLogError("Time Machine backup deletion failed: \(message)")
+        let alert = NSAlert()
+        alert.messageText = NSLocalizedString("app.timeMachineBackup.deleteFailure.title", value: "Time Machine Backup Deletion Failed", comment: "Help menu - Time Machine backup deletion failure alert title")
+        alert.informativeText = message
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: NSLocalizedString("app.timeMachineBackup.deleteFailure.dismissButton", value: "OK", comment: "Help menu - Button that dismisses a Time Machine backup deletion failure"))
+        alert.runModal()
     }
 
     private func presentTimeMachineRestoreFailure(_ message: String) {
@@ -1346,6 +1501,52 @@ extension AppController {
                 .activeWindowController?.browserState.participatesInSpaces != false
     }
 
+    /// True while the menu-bar Spaces menu is tracking. A Space-list change
+    /// arriving mid-track defers its rebuild to `menuDidClose` rather than
+    /// swapping the items out from under the pointer.
+    fileprivate static var isSpacesMenuTracking = false
+
+    /// A Space-list change that arrived while the menu was tracking and still
+    /// has to be applied.
+    fileprivate static var spacesMenuNeedsRebuild = false
+
+    /// The Space list changed order — a Space created, deleted or reordered,
+    /// or (far more often) an agent Space appearing or ending. Rebuilds the
+    /// installed Spaces menu immediately.
+    ///
+    /// Each Space item in that menu carries BOTH the spaceId that sat at its
+    /// position when the menu was last built and that position's ⌃-number key
+    /// equivalent — and AppKit fires key equivalents whether or not the menu
+    /// has ever been opened. Rebuilding only in `menuWillOpen` therefore froze
+    /// the position → Space mapping at the last time the user pulled the menu
+    /// down: after an agent Space came or went, ⌃N activated whatever Space
+    /// used to occupy that slot, while clicking the pip — which carries its
+    /// own Space's id — still landed correctly. Several agents running at once
+    /// churn the list continuously with no reason for the user to ever open
+    /// this menu, which is why the drift showed up there first.
+    ///
+    /// Only ever refreshes a menu that is already installed: this can fire
+    /// from `SpaceManager`'s first store read, which happens before the main
+    /// menu is hooked (and touching it that early is the documented startup
+    /// crash in `bind`).
+    @objc func spaceListDidChange() {
+        // The post rides `SpaceManager`'s own thread. Every writer of `spaces`
+        // is on main today, so this hop is a guard rail rather than a hot path
+        // — but it is AppKit on the other side of it.
+        guard Thread.isMainThread else {
+            DispatchQueue.main.async { [weak self] in self?.spaceListDidChange() }
+            return
+        }
+        guard let submenu = NSApp.mainMenu?.items
+            .first(where: { $0.tag == AppController.spacesMenuItemTag })?
+            .submenu else { return }
+        guard !AppController.isSpacesMenuTracking else {
+            AppController.spacesMenuNeedsRebuild = true
+            return
+        }
+        rebuildSpacesMenu(submenu)
+    }
+
     /// Re-evaluates the menu-bar "Spaces" top-level item's visibility against
     /// the focused window. Called when the active window changes (see
     /// `.activeBrowserWindowDidChange`) so the menu drops out for incognito
@@ -1384,6 +1585,12 @@ extension AppController {
         menuItem.submenu = submenu
         menuItem.isHidden = !shouldShowSpacesMenu
 
+        // Hooking the main menu ends any tracking session this delegate was
+        // waiting on — Chromium can swap the whole menu out from under an open
+        // one, and its `menuDidClose` would never arrive to clear the flag,
+        // parking every later rebuild behind a menu that is already gone.
+        AppController.isSpacesMenuTracking = false
+        AppController.spacesMenuNeedsRebuild = false
         rebuildSpacesMenu(submenu)
 
         if isNew {
@@ -2046,6 +2253,122 @@ extension AppController {
         }
     }
 
+    /// Opens about:blank in a Kiosk that inherits the focused window's exact
+    /// profile, then presents the native omnibox once AppKit leaves menu
+    /// tracking. With no browser window open, Chromium's last-used profile is
+    /// used instead, matching the windowless New Window commands.
+    @objc func newKioskWindowFromMenu(_ sender: Any?) {
+        MainActor.assumeIsolated {
+            openNewKioskWindow(bringToFront: false)
+        }
+    }
+
+    func newKioskWindowFromGlobalShortcut() {
+        MainActor.assumeIsolated {
+            openNewKioskWindow(bringToFront: true)
+        }
+    }
+
+    @MainActor
+    private func openNewKioskWindow(bringToFront: Bool) {
+        let manager = MainBrowserWindowControllersManager.shared
+        guard ApplicationState.shared.canOpenExternalLinksInKiosk,
+              !manager.isGuestTransitionInteractionBlocked,
+              let bridge = ChromiumLauncher.sharedInstance().bridge else {
+            return
+        }
+        if manager.activeWindowController == nil,
+           SpaceManager.shared.isSessionRestoreInFlight {
+            return
+        }
+
+        let kioskController: KioskBrowserWindowController?
+        if let source = manager.activeWindowController {
+            kioskController = openKioskWindow(
+                from: source,
+                bridge: bridge,
+                manager: manager
+            )
+        } else {
+            kioskController = openWindowlessKiosk(
+                bridge: bridge,
+                manager: manager
+            )
+        }
+        guard let kioskController else { return }
+
+        let windowId = kioskController.windowId
+        DispatchQueue.main.async { [weak kioskController] in
+            guard let kioskController,
+                  manager.controller(for: windowId) === kioskController else {
+                return
+            }
+            if bringToFront, let window = kioskController.window {
+                Self.bringKioskWindowToFront(window)
+            }
+            kioskController.presentOmniBoxCentered()
+        }
+    }
+
+    @MainActor
+    static func bringKioskWindowToFront(
+        _ window: NSWindow
+    ) {
+        window.orderFrontRegardless()
+        window.makeKey()
+    }
+
+    @MainActor
+    private func openKioskWindow(
+        from source: MainBrowserWindowController,
+        bridge: PhiChromiumBridgeProtocol,
+        manager: MainBrowserWindowControllersManager
+    ) -> KioskBrowserWindowController? {
+        let selector = NSSelectorFromString("openURLInKiosk:sourceWindowId:")
+        guard bridge.responds(to: selector) else { return nil }
+
+        let existingWindowIds = Set(manager.getAllWindows().map(\.windowId))
+        guard bridge.openURL(
+            inKiosk: "about:blank",
+            sourceWindowId: Int64(source.windowId)
+        ) else {
+            return nil
+        }
+        return manager.getAllWindows()
+            .compactMap { $0 as? KioskBrowserWindowController }
+            .first { !existingWindowIds.contains($0.windowId) }
+    }
+
+    @MainActor
+    private func openWindowlessKiosk(
+        bridge: PhiChromiumBridgeProtocol,
+        manager: MainBrowserWindowControllersManager
+    ) -> KioskBrowserWindowController? {
+        guard let result = bridge.createBrowser(
+            withWindowType: .kiosk,
+            profileId: nil,
+            hidden: false
+        ), let windowIdNumber = result["windowId"] as? NSNumber else {
+            return nil
+        }
+
+        let windowId = windowIdNumber.intValue
+        guard let controller = manager.controller(for: windowId)
+                as? KioskBrowserWindowController,
+              bridge.createNewTabStrictly(
+                withUrl: "about:blank",
+                windowId: Int64(windowId),
+                focusAfterCreate: true
+              ) else {
+            bridge.executeCommand(
+                Int32(CommandWrapper.IDC_CLOSE_WINDOW.rawValue),
+                windowId: Int64(windowId)
+            )
+            return nil
+        }
+        return controller
+    }
+
     @objc func activateNextSpace(_ sender: Any?) {
         cycleActiveSpace(by: 1)
     }
@@ -2183,7 +2506,9 @@ extension AppController {
         if item.action == #selector(toggleChatbar(_:)) {
             let phiAIEnabled = UserDefaults.standard.bool(forKey: PhiPreferences.AISettings.phiAIEnabled.rawValue)
             let state = MainBrowserWindowControllersManager.shared.getActiveWindowState()
-            if !phiAIEnabled || state?.isIncognito ?? false || state?.groupOverviewState != nil || state?.focusingTab?.aiChatEnabled == false {
+            if !phiAIEnabled || state?.isKioskWindow == true
+                || state?.isIncognito ?? false || state?.groupOverviewState != nil
+                || state?.focusingTab?.aiChatEnabled == false {
                 return false
             }
         }
@@ -2206,7 +2531,9 @@ extension AppController {
 
         // Toggle Sidebar is unavailable in the traditional layout.
         if item.action == #selector(toggleSidebar(_:)) {
-            if PhiPreferences.GeneralSettings.loadLayoutMode().isTraditional {
+            if MainBrowserWindowControllersManager.shared
+                .getActiveWindowState()?.isKioskWindow == true
+                || PhiPreferences.GeneralSettings.loadLayoutMode().isTraditional {
                 return false
             }
         }
@@ -2321,6 +2648,15 @@ extension AppController {
             }
             return spacesFeatureEnabled && ApplicationState.shared.canUseBrowser
         }
+        if item.action == #selector(newKioskWindowFromMenu(_:)) {
+            guard ApplicationState.shared.canOpenExternalLinksInKiosk,
+                  ChromiumLauncher.sharedInstance().bridge != nil else {
+                return false
+            }
+            return MainBrowserWindowControllersManager.shared
+                .activeWindowController != nil
+                || !SpaceManager.shared.isSessionRestoreInFlight
+        }
         if item.action == #selector(deleteSelectedProfile(_:)) {
             guard spacesFeatureEnabled,
                   ApplicationState.shared.canUseBrowser,
@@ -2387,11 +2723,21 @@ extension AppController {
                 return SpaceManager.shared.spaces.count > 1 && currentSpacesSlot() != nil
             }
             if action == #selector(activateSpaceFromMenu(_:)) {
-                if let menuItem = item as? NSMenuItem,
-                   let spaceId = menuItem.representedObject as? String {
-                    let activeId = currentActiveSpace()?.spaceId
-                    menuItem.state = (spaceId == activeId) ? .on : .off
+                // Validated on the LIVE list, never on the id alone: AppKit
+                // validates before firing a key equivalent, so an item left
+                // over from a Space that has since gone away (an ended agent
+                // Space is the common one) reads as disabled and its ⌃-number
+                // falls through to `CommandDispatcher` instead of activating
+                // nothing. Rebuilds keep this rare — this is the backstop for
+                // the window between the change and the rebuild.
+                guard let menuItem = item as? NSMenuItem,
+                      let spaceId = menuItem.representedObject as? String,
+                      SpaceManager.shared.spaces
+                          .contains(where: { $0.spaceId == spaceId }) else {
+                    return false
                 }
+                let activeId = currentActiveSpace()?.spaceId
+                menuItem.state = (spaceId == activeId) ? .on : .off
                 return currentSpacesSlot() != nil
             }
             return true
@@ -2520,6 +2866,8 @@ extension AppController: NSMenuDelegate {
             return
         }
         if menu.identifier == AppController.spacesMenuIdentifier {
+            AppController.isSpacesMenuTracking = true
+            AppController.spacesMenuNeedsRebuild = false
             rebuildSpacesMenu(menu)
             return
         }
@@ -2535,6 +2883,93 @@ extension AppController: NSMenuDelegate {
         if let exportLogsItem = menu.item(withTag: AppController.exportLogsItemTag) {
             exportLogsItem.isHidden = !optionKeyPressed
         }
+    }
+
+    func menuDidClose(_ menu: NSMenu) {
+        guard menu.identifier == AppController.spacesMenuIdentifier else { return }
+        AppController.isSpacesMenuTracking = false
+        // Apply a list change that arrived while the menu was down, so the
+        // ⌃-number bindings are current again before the next keystroke.
+        guard AppController.spacesMenuNeedsRebuild else { return }
+        AppController.spacesMenuNeedsRebuild = false
+        rebuildSpacesMenu(menu)
+    }
+}
+
+private final class TimeMachineBackupDeletionProgressModal {
+    private let window: NSPanel
+    private let progressIndicator: NSProgressIndicator
+
+    private(set) var outcome: Result<TimeMachineBackupRecord?, Error>?
+
+    init(backupTitle: String) {
+        window = NSPanel(
+            contentRect: NSRect(x: 0, y: 0, width: 420, height: 132),
+            styleMask: [.titled],
+            backing: .buffered,
+            defer: false
+        )
+        window.title = NSLocalizedString("app.timeMachineBackup.deleteProgress.windowTitle", value: "Time Machine Backup", comment: "Time Machine backup deletion progress window title")
+        window.level = .modalPanel
+        window.isReleasedWhenClosed = false
+        window.standardWindowButton(.closeButton)?.isHidden = true
+        window.standardWindowButton(.miniaturizeButton)?.isHidden = true
+        window.standardWindowButton(.zoomButton)?.isHidden = true
+
+        let titleLabel = NSTextField(labelWithString: NSLocalizedString("app.timeMachineBackup.deleteProgress.title", value: "Deleting Backup", comment: "Time Machine backup deletion progress title"))
+        titleLabel.font = .systemFont(ofSize: 15, weight: .semibold)
+        titleLabel.lineBreakMode = .byTruncatingTail
+        titleLabel.translatesAutoresizingMaskIntoConstraints = false
+
+        let backupLabel = NSTextField(labelWithString: backupTitle)
+        backupLabel.font = .systemFont(ofSize: 12)
+        backupLabel.textColor = .secondaryLabelColor
+        backupLabel.lineBreakMode = .byTruncatingMiddle
+        backupLabel.translatesAutoresizingMaskIntoConstraints = false
+
+        progressIndicator = NSProgressIndicator()
+        progressIndicator.style = .bar
+        progressIndicator.controlSize = .regular
+        progressIndicator.isIndeterminate = true
+        progressIndicator.usesThreadedAnimation = true
+        progressIndicator.translatesAutoresizingMaskIntoConstraints = false
+
+        let contentView = NSView()
+        contentView.translatesAutoresizingMaskIntoConstraints = false
+        window.contentView = contentView
+        contentView.addSubview(titleLabel)
+        contentView.addSubview(backupLabel)
+        contentView.addSubview(progressIndicator)
+
+        NSLayoutConstraint.activate([
+            titleLabel.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: 24),
+            titleLabel.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -24),
+            titleLabel.topAnchor.constraint(equalTo: contentView.topAnchor, constant: 24),
+
+            backupLabel.leadingAnchor.constraint(equalTo: titleLabel.leadingAnchor),
+            backupLabel.trailingAnchor.constraint(equalTo: titleLabel.trailingAnchor),
+            backupLabel.topAnchor.constraint(equalTo: titleLabel.bottomAnchor, constant: 8),
+
+            progressIndicator.leadingAnchor.constraint(equalTo: titleLabel.leadingAnchor),
+            progressIndicator.trailingAnchor.constraint(equalTo: titleLabel.trailingAnchor),
+            progressIndicator.topAnchor.constraint(equalTo: backupLabel.bottomAnchor, constant: 18)
+        ])
+    }
+
+    func run() -> NSApplication.ModalResponse {
+        window.center()
+        NSApp.activate(ignoringOtherApps: true)
+        window.makeKeyAndOrderFront(nil)
+        progressIndicator.startAnimation(nil)
+        return NSApp.runModal(for: window)
+    }
+
+    func finish(outcome: Result<TimeMachineBackupRecord?, Error>) {
+        self.outcome = outcome
+        progressIndicator.stopAnimation(nil)
+        NSApp.stopModal(withCode: .stop)
+        window.orderOut(nil)
+        window.close()
     }
 }
 

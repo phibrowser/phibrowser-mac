@@ -96,6 +96,7 @@
 		37C1B0E22ED80CFB00DD4496 /* ShortcutsSettingViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 37C1B0E12ED80CFB00DD4496 /* ShortcutsSettingViewController.swift */; };
 		37C1B0E72ED851CE00DD4496 /* ShortcutsViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 37C1B0E62ED851CE00DD4496 /* ShortcutsViewModel.swift */; };
 		37C1B0E92ED8531700DD4496 /* Shortcuts+Custom.swift in Sources */ = {isa = PBXBuildFile; fileRef = 37C1B0E82ED8531700DD4496 /* Shortcuts+Custom.swift */; };
+		4B4B00000000000000000001 /* KioskGlobalShortcutRegistrar.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4B4B00000000000000000002 /* KioskGlobalShortcutRegistrar.swift */; };
 		37C1B1E42EDEA03400DD4496 /* FeedbackView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 37C1B1E32EDEA03400DD4496 /* FeedbackView.swift */; };
 		37C1B1E62EDEA1E200DD4496 /* FeedbackViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 37C1B1E52EDEA1E200DD4496 /* FeedbackViewController.swift */; };
 		37C1B2822EE0396900DD4496 /* DownloadsManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 37C1B2812EE0396900DD4496 /* DownloadsManager.swift */; };
@@ -177,6 +178,10 @@
 		54A200062FE1000000000006 /* TimeMachineInstallerCore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 54A1001C2FE000000000001C /* TimeMachineInstallerCore.swift */; };
 		54A200072FE1000000000007 /* PhiTimeMachineInstaller in Copy Time Machine Helpers */ = {isa = PBXBuildFile; fileRef = 54A200122FE1000000000012 /* PhiTimeMachineInstaller */; settings = {ATTRIBUTES = (CodeSignOnCopy, ); }; };
 		54A200082FE1000000000008 /* TimeMachineCatalogStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 54A100142FE0000000000014 /* TimeMachineCatalogStore.swift */; };
+		5A454E000000000000000001 /* KioskBrowserState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5A454E000000000000000011 /* KioskBrowserState.swift */; };
+		5A454E000000000000000002 /* KioskBrowserContentViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5A454E000000000000000012 /* KioskBrowserContentViewController.swift */; };
+		5A454E000000000000000003 /* KioskBrowserWindowController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5A454E000000000000000013 /* KioskBrowserWindowController.swift */; };
+		5A454E000000000000000004 /* KioskBrowserToolbar.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5A454E000000000000000014 /* KioskBrowserToolbar.swift */; };
 		5ACE00000000000000000005 /* SpacesSettingViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5ACE00000000000000000002 /* SpacesSettingViewController.swift */; };
 		5ACE00000000000000000006 /* SpacesSettingHostingViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5ACE00000000000000000003 /* SpacesSettingHostingViewController.swift */; };
 		5ACE00000000000000000007 /* SpacesSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5ACE00000000000000000004 /* SpacesSettingsView.swift */; };
@@ -186,6 +191,16 @@
 		5ACE00000000000000000010 /* ProfilesSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5ACE0000000000000000000D /* ProfilesSettingsView.swift */; };
 		5ACE00000000000000000012 /* ThemeOpacitySlider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5ACE00000000000000000011 /* ThemeOpacitySlider.swift */; };
 		5ACE00000000000000000A22 /* ProfileDetailSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5ACE00000000000000000A21 /* ProfileDetailSettingsView.swift */; };
+		5ACF00000000000000000001 /* NavigationsSettingViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5ACF00000000000000000011 /* NavigationsSettingViewController.swift */; };
+		5ACF00000000000000000002 /* NavigationsSettingHostingViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5ACF00000000000000000012 /* NavigationsSettingHostingViewController.swift */; };
+		5ACF00000000000000000003 /* NavigationsSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5ACF00000000000000000013 /* NavigationsSettingsView.swift */; };
+		5B0000010000000000000001 /* ServiceBrokerTypes.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5B0000010000000000000011 /* ServiceBrokerTypes.swift */; };
+		5B0000010000000000000002 /* ServiceBrokerSocketPath.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5B0000010000000000000012 /* ServiceBrokerSocketPath.swift */; };
+		5B0000010000000000000003 /* ServiceBrokerClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5B0000010000000000000013 /* ServiceBrokerClient.swift */; };
+		5B0000010000000000000004 /* ServiceBrokerHTTPConnection.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5B0000010000000000000014 /* ServiceBrokerHTTPConnection.swift */; };
+		5B0000010000000000000005 /* ServiceBrokerChannelStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5B0000010000000000000015 /* ServiceBrokerChannelStore.swift */; };
+		5B0000010000000000000006 /* ServiceBrokerWebSocket.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5B0000010000000000000016 /* ServiceBrokerWebSocket.swift */; };
+		5B0000010000000000000007 /* ServiceBrokerExtensionProtocol.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5B0000010000000000000017 /* ServiceBrokerExtensionProtocol.swift */; };
 		5EA17ABC0000000000000100 /* SearchTabsModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5EA17ABC0000000000000110 /* SearchTabsModels.swift */; };
 		5EA17ABC0000000000000101 /* SearchTabsQueryMatcher.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5EA17ABC0000000000000111 /* SearchTabsQueryMatcher.swift */; };
 		5EA17ABC0000000000000102 /* SearchTabsChromiumProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5EA17ABC0000000000000112 /* SearchTabsChromiumProvider.swift */; };
@@ -262,6 +277,7 @@
 		8EB020043020000000000004 /* OblivionDataExportAPI.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8EB020143020000000000014 /* OblivionDataExportAPI.swift */; };
 		8EB020263020000000000026 /* AccountVerificationCodeEntry.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8EB020253020000000000025 /* AccountVerificationCodeEntry.swift */; };
 		8EC502132F67AE2300CE7338 /* DownloadSafetyTypes.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8EC502122F67AE2300CE7338 /* DownloadSafetyTypes.swift */; };
+		8EC5A10A2E5C10AA00B41A02 /* ChromiumAnalyticsRelay.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8EC5A10A2E5C10AA00B41A01 /* ChromiumAnalyticsRelay.swift */; };
 		8EC70DB52F0A5E04009FE2CD /* BookmarkBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8EC70DB42F0A5DFD009FE2CD /* BookmarkBar.swift */; };
 		8EC70E162F0BBF3D009FE2CD /* BookmarkItemView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8EC70E152F0BBF3D009FE2CD /* BookmarkItemView.swift */; };
 		8EC70E182F0BC77E009FE2CD /* NSImageView+Favicon.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8EC70E172F0BC77E009FE2CD /* NSImageView+Favicon.swift */; };
@@ -283,6 +299,7 @@
 		A71E00000000000000000004 /* CredentialApprovalAlert.swift in Sources */ = {isa = PBXBuildFile; fileRef = A71E00000000000000000003 /* CredentialApprovalAlert.swift */; };
 		A71E00000000000000000006 /* AgentAccessApprovalAlert.swift in Sources */ = {isa = PBXBuildFile; fileRef = A71E00000000000000000005 /* AgentAccessApprovalAlert.swift */; };
 		A7C021022FFD000000000002 /* ContextMenuEvent.swift in Sources */ = {isa = PBXBuildFile; fileRef = A7C021012FFD000000000001 /* ContextMenuEvent.swift */; };
+		A7E1C0020000000000000002 /* ChromiumHostingPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = A7E1C0010000000000000001 /* ChromiumHostingPanel.swift */; };
 		A81113410000000000000002 /* OOBEAnalyticsSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = A81113410000000000000001 /* OOBEAnalyticsSession.swift */; };
 		A81113410000000000000004 /* FirstTimeActionTracker.swift in Sources */ = {isa = PBXBuildFile; fileRef = A81113410000000000000003 /* FirstTimeActionTracker.swift */; };
 		A8F100012FF0000000000001 /* PhiUninstallCore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A8F100112FF0000000000011 /* PhiUninstallCore.swift */; };
@@ -306,6 +323,7 @@
 		ACDC00000000000000000B03 /* AgentDirectChannel.swift in Sources */ = {isa = PBXBuildFile; fileRef = ACDC00000000000000000A03 /* AgentDirectChannel.swift */; };
 		ACDC00000000000000000B04 /* AppDevToolsPageSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = ACDC00000000000000000A04 /* AppDevToolsPageSession.swift */; };
 		AE00FFFE0000000000000002 /* PhiAgentEndpointResolver.swift in Sources */ = {isa = PBXBuildFile; fileRef = AE00FFFE0000000000000001 /* PhiAgentEndpointResolver.swift */; };
+		AE00FFFE0000000000000004 /* PhiAgentTransport.swift in Sources */ = {isa = PBXBuildFile; fileRef = AE00FFFE0000000000000003 /* PhiAgentTransport.swift */; };
 		AE5ACE000000000000000011 /* AgentSpaceManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = AE5ACE000000000000000001 /* AgentSpaceManager.swift */; };
 		AE5ACE000000000000000012 /* AgentSpaceRouter.swift in Sources */ = {isa = PBXBuildFile; fileRef = AE5ACE000000000000000002 /* AgentSpaceRouter.swift */; };
 		AE5ACE000000000000000013 /* AgentSpaceOverlayView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AE5ACE000000000000000003 /* AgentSpaceOverlayView.swift */; };
@@ -314,12 +332,14 @@
 		AE5ACE000000000000000016 /* AgentTranscriptStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = AE5ACE000000000000000006 /* AgentTranscriptStore.swift */; };
 		AE5ACE000000000000000017 /* AgentTranscriptPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = AE5ACE000000000000000007 /* AgentTranscriptPanel.swift */; };
 		AE5ACE000000000000000018 /* AgentPageTheme.swift in Sources */ = {isa = PBXBuildFile; fileRef = AE5ACE000000000000000008 /* AgentPageTheme.swift */; };
+		AE5ACE000000000000000019 /* AgentUserSpaceDriveRegistry.swift in Sources */ = {isa = PBXBuildFile; fileRef = AE5ACE000000000000000009 /* AgentUserSpaceDriveRegistry.swift */; };
 		AE5ACE0000000000000000B1 /* AgentSpaceManager+Shadow.swift in Sources */ = {isa = PBXBuildFile; fileRef = AE5ACE0000000000000000A1 /* AgentSpaceManager+Shadow.swift */; };
 		AE5ACE0000000000000000B2 /* AgentSpaceRouter+Shadow.swift in Sources */ = {isa = PBXBuildFile; fileRef = AE5ACE0000000000000000A2 /* AgentSpaceRouter+Shadow.swift */; };
 		B001795A2E49CF84007B4635 /* PhiChromiumCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = B00179592E49CF84007B4635 /* PhiChromiumCoordinator.swift */; };
 		B02586F52E42FD97001B08FC /* ChromiumLauncher.m in Sources */ = {isa = PBXBuildFile; fileRef = B02586EE2E42FD97001B08FC /* ChromiumLauncher.m */; };
 		B02586F62E42FD97001B08FC /* AppController.swift in Sources */ = {isa = PBXBuildFile; fileRef = B02586F02E42FD97001B08FC /* AppController.swift */; };
 		B02586F72E42FD97001B08FC /* MainBrowserWindowController.swift in Sources */ = {isa = PBXBuildFile; fileRef = B02586F12E42FD97001B08FC /* MainBrowserWindowController.swift */; };
+		B0FEED022E42FD97001B08FC /* TrafficLightPositioner.swift in Sources */ = {isa = PBXBuildFile; fileRef = B0FEED012E42FD97001B08FC /* TrafficLightPositioner.swift */; };
 		B02586F82E42FD97001B08FC /* PhiApplication.m in Sources */ = {isa = PBXBuildFile; fileRef = B02586F32E42FD97001B08FC /* PhiApplication.m */; };
 		B025870E2E430305001B08FC /* MainSplitViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = B025870D2E430305001B08FC /* MainSplitViewController.swift */; };
 		B02587122E43038B001B08FC /* Tab.swift in Sources */ = {isa = PBXBuildFile; fileRef = B02587112E43038B001B08FC /* Tab.swift */; };
@@ -401,6 +421,7 @@
 		CC4F00040000000000000001 /* CreateSpacePanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC4F00040000000000000002 /* CreateSpacePanel.swift */; };
 		CC4F00050000000000000001 /* SpaceChooserView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC4F00050000000000000002 /* SpaceChooserView.swift */; };
 		CC5025FC2E702603004223DC /* NSImage+Extension.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC5025FB2E702603004223DC /* NSImage+Extension.swift */; };
+		CC5025FE2E702603004223DC /* NSFont+Extension.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC5025FD2E702603004223DC /* NSFont+Extension.swift */; };
 		CC59CE000001000000000001 /* SpaceManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC59CE000001000000000002 /* SpaceManager.swift */; };
 		CC59CE000002000000000001 /* SpacesStripView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC59CE000002000000000002 /* SpacesStripView.swift */; };
 		CC59CE0000020000000000A1 /* SpaceSwitchBandSurface.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC59CE0000020000000000A2 /* SpaceSwitchBandSurface.swift */; };
@@ -511,8 +532,17 @@
 		EAD00000000000000000002A /* ReaderStyle.swift in Sources */ = {isa = PBXBuildFile; fileRef = EAD000000000000000000029 /* ReaderStyle.swift */; };
 		EAD000000000000000000032 /* ReaderExtensionBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = EAD000000000000000000031 /* ReaderExtensionBridge.swift */; };
 		EAD000000000000000000034 /* ReaderViewAnalytics.swift in Sources */ = {isa = PBXBuildFile; fileRef = EAD000000000000000000033 /* ReaderViewAnalytics.swift */; };
+		EAD000000000000000000036 /* PeekViewAnalytics.swift in Sources */ = {isa = PBXBuildFile; fileRef = EAD000000000000000000035 /* PeekViewAnalytics.swift */; };
+		EE7E00000000000000000001 /* BrowserPeekState.swift in Sources */ = {isa = PBXBuildFile; fileRef = EE7E00000000000000000011 /* BrowserPeekState.swift */; };
+		EE7E00000000000000000002 /* PeekPanelController.swift in Sources */ = {isa = PBXBuildFile; fileRef = EE7E00000000000000000012 /* PeekPanelController.swift */; };
+		EE7E00000000000000000003 /* PeekOriginTracker.swift in Sources */ = {isa = PBXBuildFile; fileRef = EE7E00000000000000000013 /* PeekOriginTracker.swift */; };
+		EE7E00000000000000000004 /* BrowserReaderOverlayState.swift in Sources */ = {isa = PBXBuildFile; fileRef = EE7E00000000000000000014 /* BrowserReaderOverlayState.swift */; };
+		EE7E00000000000000000005 /* ReaderPanelController.swift in Sources */ = {isa = PBXBuildFile; fileRef = EE7E00000000000000000015 /* ReaderPanelController.swift */; };
 		F01D3A000000000000000001 /* bookmark-folder-open.svg in Resources */ = {isa = PBXBuildFile; fileRef = F01D3A000000000000000011 /* bookmark-folder-open.svg */; };
 		F01D3A000000000000000002 /* bookmark-folder-closed.svg in Resources */ = {isa = PBXBuildFile; fileRef = F01D3A000000000000000012 /* bookmark-folder-closed.svg */; };
+		F02B00010000000000000001 /* BookmarkFolderIcon.swift in Sources */ = {isa = PBXBuildFile; fileRef = F02B00110000000000000001 /* BookmarkFolderIcon.swift */; };
+		F02B00020000000000000002 /* TabDataModelSchemaV10.swift in Sources */ = {isa = PBXBuildFile; fileRef = F02B00120000000000000002 /* TabDataModelSchemaV10.swift */; };
+		F02B00040000000000000004 /* BookmarkFolderIcons in Copy LottieFiles */ = {isa = PBXBuildFile; fileRef = F02B00140000000000000004 /* BookmarkFolderIcons */; };
 		F7FD00000000000000000002 /* FullTitleDisplay.swift in Sources */ = {isa = PBXBuildFile; fileRef = F7FD00000000000000000001 /* FullTitleDisplay.swift */; };
 		F9E478A224C44EA7BC0D85CC /* AccountDeletedEventAuthentication.swift in Sources */ = {isa = PBXBuildFile; fileRef = 19B477B37CF44BC48335A032 /* AccountDeletedEventAuthentication.swift */; };
 		FBD200012FD0000000000001 /* FeedbackOutbox.swift in Sources */ = {isa = PBXBuildFile; fileRef = FBD200012FD0000000000002 /* FeedbackOutbox.swift */; };
@@ -568,6 +598,7 @@
 			dstPath = LottieFiles;
 			dstSubfolderSpec = 7;
 			files = (
+				F02B00040000000000000004 /* BookmarkFolderIcons in Copy LottieFiles */,
 				376581A32EE970B000D3E031 /* new-tab-reverse.json in Copy LottieFiles */,
 				37A4750630060D6100F7DC2E /* broom.json in Copy LottieFiles */,
 				37D011013010000100000001 /* refresh.json in Copy LottieFiles */,
@@ -736,6 +767,7 @@
 		37C1B0E12ED80CFB00DD4496 /* ShortcutsSettingViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShortcutsSettingViewController.swift; sourceTree = "<group>"; };
 		37C1B0E62ED851CE00DD4496 /* ShortcutsViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShortcutsViewModel.swift; sourceTree = "<group>"; };
 		37C1B0E82ED8531700DD4496 /* Shortcuts+Custom.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Shortcuts+Custom.swift"; sourceTree = "<group>"; };
+		4B4B00000000000000000002 /* KioskGlobalShortcutRegistrar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KioskGlobalShortcutRegistrar.swift; sourceTree = "<group>"; };
 		37C1B1142ED98B6000DD4496 /* README.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = README.md; sourceTree = "<group>"; };
 		37C1B1E32EDEA03400DD4496 /* FeedbackView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeedbackView.swift; sourceTree = "<group>"; };
 		37C1B1E52EDEA1E200DD4496 /* FeedbackViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeedbackViewController.swift; sourceTree = "<group>"; };
@@ -813,6 +845,10 @@
 		54A1001D2FE000000000001D /* TimeMachineMenuPresenter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TimeMachineMenuPresenter.swift; sourceTree = "<group>"; };
 		54A200112FE1000000000011 /* main.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = main.swift; sourceTree = "<group>"; };
 		54A200122FE1000000000012 /* PhiTimeMachineInstaller */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; path = PhiTimeMachineInstaller; sourceTree = BUILT_PRODUCTS_DIR; };
+		5A454E000000000000000011 /* KioskBrowserState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KioskBrowserState.swift; sourceTree = "<group>"; };
+		5A454E000000000000000012 /* KioskBrowserContentViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KioskBrowserContentViewController.swift; sourceTree = "<group>"; };
+		5A454E000000000000000013 /* KioskBrowserWindowController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KioskBrowserWindowController.swift; sourceTree = "<group>"; };
+		5A454E000000000000000014 /* KioskBrowserToolbar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KioskBrowserToolbar.swift; sourceTree = "<group>"; };
 		5ACE00000000000000000002 /* SpacesSettingViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpacesSettingViewController.swift; sourceTree = "<group>"; };
 		5ACE00000000000000000003 /* SpacesSettingHostingViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpacesSettingHostingViewController.swift; sourceTree = "<group>"; };
 		5ACE00000000000000000004 /* SpacesSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpacesSettingsView.swift; sourceTree = "<group>"; };
@@ -822,6 +858,16 @@
 		5ACE0000000000000000000D /* ProfilesSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfilesSettingsView.swift; sourceTree = "<group>"; };
 		5ACE00000000000000000011 /* ThemeOpacitySlider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ThemeOpacitySlider.swift; sourceTree = "<group>"; };
 		5ACE00000000000000000A21 /* ProfileDetailSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfileDetailSettingsView.swift; sourceTree = "<group>"; };
+		5ACF00000000000000000011 /* NavigationsSettingViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NavigationsSettingViewController.swift; sourceTree = "<group>"; };
+		5ACF00000000000000000012 /* NavigationsSettingHostingViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NavigationsSettingHostingViewController.swift; sourceTree = "<group>"; };
+		5ACF00000000000000000013 /* NavigationsSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NavigationsSettingsView.swift; sourceTree = "<group>"; };
+		5B0000010000000000000011 /* ServiceBrokerTypes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ServiceBrokerTypes.swift; sourceTree = "<group>"; };
+		5B0000010000000000000012 /* ServiceBrokerSocketPath.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ServiceBrokerSocketPath.swift; sourceTree = "<group>"; };
+		5B0000010000000000000013 /* ServiceBrokerClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ServiceBrokerClient.swift; sourceTree = "<group>"; };
+		5B0000010000000000000014 /* ServiceBrokerHTTPConnection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ServiceBrokerHTTPConnection.swift; sourceTree = "<group>"; };
+		5B0000010000000000000015 /* ServiceBrokerChannelStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ServiceBrokerChannelStore.swift; sourceTree = "<group>"; };
+		5B0000010000000000000016 /* ServiceBrokerWebSocket.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ServiceBrokerWebSocket.swift; sourceTree = "<group>"; };
+		5B0000010000000000000017 /* ServiceBrokerExtensionProtocol.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ServiceBrokerExtensionProtocol.swift; sourceTree = "<group>"; };
 		5EA17ABC0000000000000110 /* SearchTabsModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SearchTabsModels.swift; sourceTree = "<group>"; };
 		5EA17ABC0000000000000111 /* SearchTabsQueryMatcher.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SearchTabsQueryMatcher.swift; sourceTree = "<group>"; };
 		5EA17ABC0000000000000112 /* SearchTabsChromiumProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SearchTabsChromiumProvider.swift; sourceTree = "<group>"; };
@@ -899,6 +945,7 @@
 		8EB020143020000000000014 /* OblivionDataExportAPI.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OblivionDataExportAPI.swift; sourceTree = "<group>"; };
 		8EB020253020000000000025 /* AccountVerificationCodeEntry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccountVerificationCodeEntry.swift; sourceTree = "<group>"; };
 		8EC502122F67AE2300CE7338 /* DownloadSafetyTypes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DownloadSafetyTypes.swift; sourceTree = "<group>"; };
+		8EC5A10A2E5C10AA00B41A01 /* ChromiumAnalyticsRelay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChromiumAnalyticsRelay.swift; sourceTree = "<group>"; };
 		8EC70DB42F0A5DFD009FE2CD /* BookmarkBar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BookmarkBar.swift; sourceTree = "<group>"; };
 		8EC70E152F0BBF3D009FE2CD /* BookmarkItemView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BookmarkItemView.swift; sourceTree = "<group>"; };
 		8EC70E172F0BC77E009FE2CD /* NSImageView+Favicon.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "NSImageView+Favicon.swift"; sourceTree = "<group>"; };
@@ -920,6 +967,7 @@
 		A71E00000000000000000003 /* CredentialApprovalAlert.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CredentialApprovalAlert.swift; sourceTree = "<group>"; };
 		A71E00000000000000000005 /* AgentAccessApprovalAlert.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentAccessApprovalAlert.swift; sourceTree = "<group>"; };
 		A7C021012FFD000000000001 /* ContextMenuEvent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContextMenuEvent.swift; sourceTree = "<group>"; };
+		A7E1C0010000000000000001 /* ChromiumHostingPanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChromiumHostingPanel.swift; sourceTree = "<group>"; };
 		A81113410000000000000001 /* OOBEAnalyticsSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OOBEAnalyticsSession.swift; sourceTree = "<group>"; };
 		A81113410000000000000003 /* FirstTimeActionTracker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FirstTimeActionTracker.swift; sourceTree = "<group>"; };
 		A8F100112FF0000000000011 /* PhiUninstallCore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhiUninstallCore.swift; sourceTree = "<group>"; };
@@ -941,6 +989,7 @@
 		ACDC00000000000000000A03 /* AgentDirectChannel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentDirectChannel.swift; sourceTree = "<group>"; };
 		ACDC00000000000000000A04 /* AppDevToolsPageSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDevToolsPageSession.swift; sourceTree = "<group>"; };
 		AE00FFFE0000000000000001 /* PhiAgentEndpointResolver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhiAgentEndpointResolver.swift; sourceTree = "<group>"; };
+		AE00FFFE0000000000000003 /* PhiAgentTransport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhiAgentTransport.swift; sourceTree = "<group>"; };
 		AE5ACE000000000000000001 /* AgentSpaceManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentSpaceManager.swift; sourceTree = "<group>"; };
 		AE5ACE000000000000000002 /* AgentSpaceRouter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentSpaceRouter.swift; sourceTree = "<group>"; };
 		AE5ACE000000000000000003 /* AgentSpaceOverlayView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentSpaceOverlayView.swift; sourceTree = "<group>"; };
@@ -949,6 +998,7 @@
 		AE5ACE000000000000000006 /* AgentTranscriptStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentTranscriptStore.swift; sourceTree = "<group>"; };
 		AE5ACE000000000000000007 /* AgentTranscriptPanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentTranscriptPanel.swift; sourceTree = "<group>"; };
 		AE5ACE000000000000000008 /* AgentPageTheme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentPageTheme.swift; sourceTree = "<group>"; };
+		AE5ACE000000000000000009 /* AgentUserSpaceDriveRegistry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentUserSpaceDriveRegistry.swift; sourceTree = "<group>"; };
 		AE5ACE0000000000000000A1 /* AgentSpaceManager+Shadow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AgentSpaceManager+Shadow.swift"; sourceTree = "<group>"; };
 		AE5ACE0000000000000000A2 /* AgentSpaceRouter+Shadow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AgentSpaceRouter+Shadow.swift"; sourceTree = "<group>"; };
 		B00179592E49CF84007B4635 /* PhiChromiumCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhiChromiumCoordinator.swift; sourceTree = "<group>"; };
@@ -957,6 +1007,7 @@
 		B02586EE2E42FD97001B08FC /* ChromiumLauncher.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = ChromiumLauncher.m; sourceTree = "<group>"; };
 		B02586F02E42FD97001B08FC /* AppController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppController.swift; sourceTree = "<group>"; };
 		B02586F12E42FD97001B08FC /* MainBrowserWindowController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainBrowserWindowController.swift; sourceTree = "<group>"; };
+		B0FEED012E42FD97001B08FC /* TrafficLightPositioner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrafficLightPositioner.swift; sourceTree = "<group>"; };
 		B02586F22E42FD97001B08FC /* PhiApplication.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = PhiApplication.h; sourceTree = "<group>"; };
 		B02586F32E42FD97001B08FC /* PhiApplication.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = PhiApplication.m; sourceTree = "<group>"; };
 		B025870D2E430305001B08FC /* MainSplitViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainSplitViewController.swift; sourceTree = "<group>"; };
@@ -1044,6 +1095,7 @@
 		CC4F00040000000000000002 /* CreateSpacePanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CreateSpacePanel.swift; sourceTree = "<group>"; };
 		CC4F00050000000000000002 /* SpaceChooserView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpaceChooserView.swift; sourceTree = "<group>"; };
 		CC5025FB2E702603004223DC /* NSImage+Extension.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "NSImage+Extension.swift"; sourceTree = "<group>"; };
+		CC5025FD2E702603004223DC /* NSFont+Extension.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "NSFont+Extension.swift"; sourceTree = "<group>"; };
 		CC50262C2E716982004223DC /* OmniBoxViewController+Suggestion.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "OmniBoxViewController+Suggestion.swift"; sourceTree = "<group>"; };
 		CC59CE000001000000000002 /* SpaceManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpaceManager.swift; sourceTree = "<group>"; };
 		CC59CE000002000000000002 /* SpacesStripView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpacesStripView.swift; sourceTree = "<group>"; };
@@ -1162,8 +1214,17 @@
 		EAD000000000000000000029 /* ReaderStyle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReaderStyle.swift; sourceTree = "<group>"; };
 		EAD000000000000000000031 /* ReaderExtensionBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReaderExtensionBridge.swift; sourceTree = "<group>"; };
 		EAD000000000000000000033 /* ReaderViewAnalytics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReaderViewAnalytics.swift; sourceTree = "<group>"; };
+		EAD000000000000000000035 /* PeekViewAnalytics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PeekViewAnalytics.swift; sourceTree = "<group>"; };
+		EE7E00000000000000000011 /* BrowserPeekState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrowserPeekState.swift; sourceTree = "<group>"; };
+		EE7E00000000000000000012 /* PeekPanelController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PeekPanelController.swift; sourceTree = "<group>"; };
+		EE7E00000000000000000013 /* PeekOriginTracker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PeekOriginTracker.swift; sourceTree = "<group>"; };
+		EE7E00000000000000000014 /* BrowserReaderOverlayState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrowserReaderOverlayState.swift; sourceTree = "<group>"; };
+		EE7E00000000000000000015 /* ReaderPanelController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReaderPanelController.swift; sourceTree = "<group>"; };
 		F01D3A000000000000000011 /* bookmark-folder-open.svg */ = {isa = PBXFileReference; lastKnownFileType = image.svg; path = "bookmark-folder-open.svg"; sourceTree = "<group>"; };
 		F01D3A000000000000000012 /* bookmark-folder-closed.svg */ = {isa = PBXFileReference; lastKnownFileType = image.svg; path = "bookmark-folder-closed.svg"; sourceTree = "<group>"; };
+		F02B00110000000000000001 /* BookmarkFolderIcon.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BookmarkFolderIcon.swift; sourceTree = "<group>"; };
+		F02B00120000000000000002 /* TabDataModelSchemaV10.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TabDataModelSchemaV10.swift; sourceTree = "<group>"; };
+		F02B00140000000000000004 /* BookmarkFolderIcons */ = {isa = PBXFileReference; lastKnownFileType = folder; path = BookmarkFolderIcons; sourceTree = "<group>"; };
 		F7FD00000000000000000001 /* FullTitleDisplay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FullTitleDisplay.swift; sourceTree = "<group>"; };
 		FBD200012FD0000000000002 /* FeedbackOutbox.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeedbackOutbox.swift; sourceTree = "<group>"; };
 		FBD200012FD0000000000004 /* FeedbackV2.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeedbackV2.swift; sourceTree = "<group>"; };
@@ -1351,12 +1412,14 @@
 			isa = PBXGroup;
 			children = (
 				376CE40F2F2897D30093D937 /* Models */,
+				5B0000010000000000000020 /* ServiceBroker */,
 				376CE4102F2897D30093D937 /* APIClient.swift */,
 				8EB020143020000000000014 /* OblivionDataExportAPI.swift */,
 				8EB01BE23010BCED0043E59D /* OblivionDeletionAPI.swift */,
 				54A1001B2FE000000000001B /* TimeMachinePackageDownloader.swift */,
 				EAD000000000000000000027 /* ReaderImageInliner.swift */,
 				AE00FFFE0000000000000001 /* PhiAgentEndpointResolver.swift */,
+				AE00FFFE0000000000000003 /* PhiAgentTransport.swift */,
 			);
 			path = Networking;
 			sourceTree = "<group>";
@@ -1471,6 +1534,7 @@
 		37C1B2FF2EE672D500DD4496 /* LottieFiles */ = {
 			isa = PBXGroup;
 			children = (
+				F02B00140000000000000004 /* BookmarkFolderIcons */,
 				37A4750530060D5A00F7DC2E /* broom.json */,
 				37D011053010000100000005 /* memory.json */,
 				376581A22EE96FA200D3E031 /* new-tab-reverse.json */,
@@ -1544,6 +1608,7 @@
 				CCAA00062F00010000000002 /* TabDataModelSchemaV7.swift */,
 				CCAA00082F00010000000002 /* TabDataModelSchemaV8.swift */,
 				CCAA000A2F00010000000002 /* TabDataModelSchemaV9.swift */,
+				F02B00120000000000000002 /* TabDataModelSchemaV10.swift */,
 			);
 			path = TabDataModel;
 			sourceTree = "<group>";
@@ -1606,6 +1671,16 @@
 			path = TimeMachineInstaller;
 			sourceTree = "<group>";
 		};
+		5A454E000000000000000015 /* Kiosk */ = {
+			isa = PBXGroup;
+			children = (
+				5A454E000000000000000012 /* KioskBrowserContentViewController.swift */,
+				5A454E000000000000000014 /* KioskBrowserToolbar.swift */,
+				5A454E000000000000000013 /* KioskBrowserWindowController.swift */,
+			);
+			path = Kiosk;
+			sourceTree = "<group>";
+		};
 		5ACE00000000000000000001 /* Spaces */ = {
 			isa = PBXGroup;
 			children = (
@@ -1625,6 +1700,30 @@
 				5ACE00000000000000000A21 /* ProfileDetailSettingsView.swift */,
 			);
 			path = Profiles;
+			sourceTree = "<group>";
+		};
+		5ACF00000000000000000020 /* Navigations */ = {
+			isa = PBXGroup;
+			children = (
+				5ACF00000000000000000011 /* NavigationsSettingViewController.swift */,
+				5ACF00000000000000000012 /* NavigationsSettingHostingViewController.swift */,
+				5ACF00000000000000000013 /* NavigationsSettingsView.swift */,
+			);
+			path = Navigations;
+			sourceTree = "<group>";
+		};
+		5B0000010000000000000020 /* ServiceBroker */ = {
+			isa = PBXGroup;
+			children = (
+				5B0000010000000000000011 /* ServiceBrokerTypes.swift */,
+				5B0000010000000000000012 /* ServiceBrokerSocketPath.swift */,
+				5B0000010000000000000013 /* ServiceBrokerClient.swift */,
+				5B0000010000000000000014 /* ServiceBrokerHTTPConnection.swift */,
+				5B0000010000000000000015 /* ServiceBrokerChannelStore.swift */,
+				5B0000010000000000000016 /* ServiceBrokerWebSocket.swift */,
+				5B0000010000000000000017 /* ServiceBrokerExtensionProtocol.swift */,
+			);
+			path = ServiceBroker;
 			sourceTree = "<group>";
 		};
 		5EA17ABC0000000000000120 /* SearchTabs */ = {
@@ -1859,6 +1958,7 @@
 				AE5ACE0000000000000000A2 /* AgentSpaceRouter+Shadow.swift */,
 				EAD000000000000000000023 /* AgentSpaceRouter+Reader.swift */,
 				AE5ACE000000000000000008 /* AgentPageTheme.swift */,
+				AE5ACE000000000000000009 /* AgentUserSpaceDriveRegistry.swift */,
 				AE5ACE000000000000000006 /* AgentTranscriptStore.swift */,
 				AE5ACE000000000000000007 /* AgentTranscriptPanel.swift */,
 			);
@@ -1894,6 +1994,7 @@
 			children = (
 				8E571D4F30131FEF00E3FBE7 /* SessionRestorePreference.swift */,
 				ACDC00000000000000000C01 /* AgentCDP */,
+				8EC5A10A2E5C10AA00B41A01 /* ChromiumAnalyticsRelay.swift */,
 				B00179592E49CF84007B4635 /* PhiChromiumCoordinator.swift */,
 				CC288AA82E55824A004A6C1C /* PhiChromiumBridgeHeader.h */,
 				B02586ED2E42FD97001B08FC /* ChromiumLauncher.h */,
@@ -2001,11 +2102,14 @@
 				37C1B1E22EDEA02100DD4496 /* Feedback */,
 				8EC70DAD2F0A5CFD009FE2CD /* HorizontalBar */,
 				D10000000000000000000020 /* ImagePreview */,
+				5A454E000000000000000015 /* Kiosk */,
 				CCBF8F372E653A4900B9A99E /* MainBrowserWindow */,
 				376CE4082F28917C0093D937 /* Notifications */,
 				CC24EEF32E8662AC00CE9DD7 /* Onboarding */,
 				8E0A10042FEA000000000001 /* OverlayToast */,
 				37C1B2F32EE287CB00DD4496 /* OverlayWindowToast */,
+				EE7E00000000000000000021 /* Peek */,
+				EE7E00000000000000000022 /* Reader */,
 				CC6B000C2E77DEA900D4F133 /* Preferences */,
 				5EA17ABC0000000000000120 /* SearchTabs */,
 				CC288A652E4F121E004A6C1C /* Sidebar */,
@@ -2032,6 +2136,7 @@
 				37C76E152F8FAD510042FE45 /* SharedTokenLock.swift */,
 				37C76E172F8FAD570042FE45 /* SharedHeartbeatStore.swift */,
 				CC5025FB2E702603004223DC /* NSImage+Extension.swift */,
+				CC5025FD2E702603004223DC /* NSFont+Extension.swift */,
 				CC35D7932E7271CE00E1A970 /* LiquidGlassCompatible.swift */,
 				CC6BFFDC2E72C04000D4F133 /* FaviconDataProvider.swift */,
 				CCCD5E352EB1C36300E78FC1 /* DefaultExtensionManifestWriter.swift */,
@@ -2049,6 +2154,7 @@
 			isa = PBXGroup;
 			children = (
 				37A4A06F30174C5800F7DC2E /* Apple Scripts */,
+				4B4B00000000000000000002 /* KioskGlobalShortcutRegistrar.swift */,
 				B02586F22E42FD97001B08FC /* PhiApplication.h */,
 				B02586F32E42FD97001B08FC /* PhiApplication.m */,
 				B02586F02E42FD97001B08FC /* AppController.swift */,
@@ -2291,6 +2397,7 @@
 				37C1B0E52ED8515C00DD4496 /* AISettings */,
 				37C1B0E42ED8515400DD4496 /* Account */,
 				37C1B4F62EE6CE8A00DD4496 /* General */,
+				5ACF00000000000000000020 /* Navigations */,
 				897C09F32F6BEDA000E5CA9B /* IMChannels */,
 				37C1B0E32ED8514E00DD4496 /* Shortcuts */,
 				5ACE00000000000000000008 /* SettingsSectionCard.swift */,
@@ -2403,6 +2510,7 @@
 				D1F600052FD6000000000005 /* DiffableOutlineView.swift */,
 				37B9780F2EF403AB007E0568 /* GradientBorderButton.swift */,
 				B0F370D92E433F0E000B51F9 /* OverlayWindowController.swift */,
+				A7E1C0010000000000000001 /* ChromiumHostingPanel.swift */,
 				B0F370C82E43242F000B51F9 /* PhiSplitView.swift */,
 				CCBF8F382E653A8C00B9A99E /* HoverableView.swift */,
 				CCEB64C82E98BFD40036C763 /* ColoredVisualEffectView.swift */,
@@ -2426,6 +2534,7 @@
 				B0F370CF2E432CB8000B51F9 /* MainBrowserWindowController+Actions.swift */,
 				B025870D2E430305001B08FC /* MainSplitViewController.swift */,
 				CCBF8FA12E698A7400B9A99E /* MainBrowserWindowControllersManager.swift */,
+				B0FEED012E42FD97001B08FC /* TrafficLightPositioner.swift */,
 			);
 			path = MainBrowserWindow;
 			sourceTree = "<group>";
@@ -2451,6 +2560,7 @@
 				8EF36C072F4EA95B00FCC91E /* SideTabView.swift */,
 				CCEB64CA2E98DD520036C763 /* InsetTableRowView.swift */,
 				CCBF8F4A2E6543E800B9A99E /* SidebarCellViews.swift */,
+				F02B00110000000000000001 /* BookmarkFolderIcon.swift */,
 				376581F82EEA9BB200D3E031 /* BookmarkCellView.swift */,
 				376581FA2EEA9D6200D3E031 /* BookmarkRowView.swift */,
 				CCBF8F612E65719600B9A99E /* SideBarOutlineView.swift */,
@@ -2468,7 +2578,10 @@
 				8E8008D62FA1A59800EB24C5 /* TabGroup */,
 				CCBF8FA42E69915200B9A99E /* ApplicationState.swift */,
 				D10000000000000000000011 /* BrowserImagePreviewState.swift */,
+				EE7E00000000000000000011 /* BrowserPeekState.swift */,
+				EE7E00000000000000000014 /* BrowserReaderOverlayState.swift */,
 				CCBF8FA62E69948D00B9A99E /* BrowserState.swift */,
+				5A454E000000000000000011 /* KioskBrowserState.swift */,
 				CCAA000C2F00010000000002 /* BrowserState+PinnedTabScope.swift */,
 				CCAA000E2F00010000000002 /* BrowserState+PinnedTabTransfer.swift */,
 				AB1000000000000000000FA2 /* TabMultiSelection.swift */,
@@ -2487,6 +2600,7 @@
 				EAD000000000000000000013 /* BrowserState+Reader.swift */,
 				EAD000000000000000000031 /* ReaderExtensionBridge.swift */,
 				EAD000000000000000000033 /* ReaderViewAnalytics.swift */,
+				EAD000000000000000000035 /* PeekViewAnalytics.swift */,
 				5F1A5A11AC1D000000000002 /* BrowserState+Split.swift */,
 				B0F370CA2E43261A000B51F9 /* EventBus.swift */,
 				AA10000000000000000000F5 /* TabSwitchManager.swift */,
@@ -2577,6 +2691,23 @@
 				B17DE0000000000000000024 /* BitwardenLoginSheet.swift */,
 			);
 			path = Developer;
+			sourceTree = "<group>";
+		};
+		EE7E00000000000000000021 /* Peek */ = {
+			isa = PBXGroup;
+			children = (
+				EE7E00000000000000000012 /* PeekPanelController.swift */,
+				EE7E00000000000000000013 /* PeekOriginTracker.swift */,
+			);
+			path = Peek;
+			sourceTree = "<group>";
+		};
+		EE7E00000000000000000022 /* Reader */ = {
+			isa = PBXGroup;
+			children = (
+				EE7E00000000000000000015 /* ReaderPanelController.swift */,
+			);
+			path = Reader;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -2847,6 +2978,10 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				5A454E000000000000000001 /* KioskBrowserState.swift in Sources */,
+				5A454E000000000000000002 /* KioskBrowserContentViewController.swift in Sources */,
+				5A454E000000000000000004 /* KioskBrowserToolbar.swift in Sources */,
+				5A454E000000000000000003 /* KioskBrowserWindowController.swift in Sources */,
 				A10500022FF1000000000002 /* NextStepViewController.swift in Sources */,
 				A10600022FF2000000000002 /* GuestPrivacyConfirmationViewController.swift in Sources */,
 				F7FD00000000000000000002 /* FullTitleDisplay.swift in Sources */,
@@ -2905,6 +3040,7 @@
 				37C1B2FE2EE2E26F00DD4496 /* DownloadButton.swift in Sources */,
 				7A5B00A02EF0000000000001 /* MemoryButton.swift in Sources */,
 				376581F92EEA9BB200D3E031 /* BookmarkCellView.swift in Sources */,
+				F02B00010000000000000001 /* BookmarkFolderIcon.swift in Sources */,
 				8EF36C082F4EA95B00FCC91E /* SideTabView.swift in Sources */,
 				CCB53DCE2E6EC437004BF233 /* OmniBoxModels.swift in Sources */,
 				37C1B28F2EE1364D00DD4496 /* EnvironmentChecker.swift in Sources */,
@@ -2933,6 +3069,7 @@
 				CC24EF082E89251D00CE9DD7 /* AuthManager.swift in Sources */,
 				8EC70E162F0BBF3D009FE2CD /* BookmarkItemView.swift in Sources */,
 				B001795A2E49CF84007B4635 /* PhiChromiumCoordinator.swift in Sources */,
+				8EC5A10A2E5C10AA00B41A02 /* ChromiumAnalyticsRelay.swift in Sources */,
 				ACDC00000000000000000B01 /* AgentCDPListener.swift in Sources */,
 				ACDC00000000000000000B02 /* AgentPeerIdentity.swift in Sources */,
 				ACDC00000000000000000B03 /* AgentDirectChannel.swift in Sources */,
@@ -3010,6 +3147,7 @@
 				5ACE00000000000000000A22 /* ProfileDetailSettingsView.swift in Sources */,
 				8EC70DB52F0A5E04009FE2CD /* BookmarkBar.swift in Sources */,
 				CC5025FC2E702603004223DC /* NSImage+Extension.swift in Sources */,
+				CC5025FE2E702603004223DC /* NSFont+Extension.swift in Sources */,
 				37C9E68C2F3F322D00353A03 /* Shimmer.swift in Sources */,
 				CCBF8F4E2E6543E800B9A99E /* SidebarCellViews.swift in Sources */,
 				CD4F3A012E56000100FACC01 /* FloatingTrafficLightsView.swift in Sources */,
@@ -3061,6 +3199,7 @@
 				CCAA00062F00010000000001 /* TabDataModelSchemaV7.swift in Sources */,
 				CCAA00082F00010000000001 /* TabDataModelSchemaV8.swift in Sources */,
 				CCAA000A2F00010000000001 /* TabDataModelSchemaV9.swift in Sources */,
+				F02B00020000000000000002 /* TabDataModelSchemaV10.swift in Sources */,
 				CC4F00010000000000000001 /* LocalStore+SpaceURLRule.swift in Sources */,
 				CC4F00020000000000000001 /* URLRouter.swift in Sources */,
 				EAD00000000000000000001C /* URLPatternMatcher.swift in Sources */,
@@ -3084,8 +3223,10 @@
 				375B2D8C2ED408270053FECC /* AccountUserDefaults.swift in Sources */,
 				37C1B0D82ED6DCBD00DD4496 /* Shortcuts.swift in Sources */,
 				B0F370DA2E433F0E000B51F9 /* OverlayWindowController.swift in Sources */,
+				A7E1C0020000000000000002 /* ChromiumHostingPanel.swift in Sources */,
 				CCBF8FA22E698A7400B9A99E /* MainBrowserWindowControllersManager.swift in Sources */,
 				B02586F62E42FD97001B08FC /* AppController.swift in Sources */,
+				4B4B00000000000000000001 /* KioskGlobalShortcutRegistrar.swift in Sources */,
 				8E6145BE2F753469001919BA /* ImportDataTypeViewController.swift in Sources */,
 				37C1B2882EE0418700DD4496 /* DownloadsManager+Test.swift in Sources */,
 				37C1B3322EE691E700DD4496 /* LottieAnimationView.swift in Sources */,
@@ -3094,6 +3235,7 @@
 				376195C02F518DDE0094A78E /* FloatingSidebarViewController.swift in Sources */,
 				CC376CFA2EC6D3F900270B93 /* SettingItemBackgroundView.swift in Sources */,
 				B02586F72E42FD97001B08FC /* MainBrowserWindowController.swift in Sources */,
+				B0FEED022E42FD97001B08FC /* TrafficLightPositioner.swift in Sources */,
 				8E486A772F3EEF8A00078DEC /* StatusURLViewModel.swift in Sources */,
 				8E762CC62F16531A00631087 /* TabStripAnimation.swift in Sources */,
 				37C1B0DE2ED8081400DD4496 /* ShortcutsSettingsView.swift in Sources */,
@@ -3217,6 +3359,7 @@
 				EAD000000000000000000014 /* BrowserState+Reader.swift in Sources */,
 				EAD000000000000000000032 /* ReaderExtensionBridge.swift in Sources */,
 				EAD000000000000000000034 /* ReaderViewAnalytics.swift in Sources */,
+				EAD000000000000000000036 /* PeekViewAnalytics.swift in Sources */,
 				EAD000000000000000000016 /* ReaderDocumentBuilder.swift in Sources */,
 				EAD00000000000000000002A /* ReaderStyle.swift in Sources */,
 				5F1A5A11AC1D000000000001 /* BrowserState+Split.swift in Sources */,
@@ -3236,6 +3379,9 @@
 				37C1B4F82EE6CE8A00DD4496 /* GeneralSettingViewController.swift in Sources */,
 				8EE5BEEC2F14FF9800698D7D /* TabCloseButton.swift in Sources */,
 				37C1B4F92EE6CE8A00DD4496 /* GeneralSettingView.swift in Sources */,
+				5ACF00000000000000000001 /* NavigationsSettingViewController.swift in Sources */,
+				5ACF00000000000000000002 /* NavigationsSettingHostingViewController.swift in Sources */,
+				5ACF00000000000000000003 /* NavigationsSettingsView.swift in Sources */,
 				B17DE0000000000000000008 /* PasswordManagerSectionView.swift in Sources */,
 				B17DE0000000000000000009 /* BitwardenLoginSheet.swift in Sources */,
 				37C1B0E72ED851CE00DD4496 /* ShortcutsViewModel.swift in Sources */,
@@ -3253,6 +3399,7 @@
 				AE5ACE0000000000000000B2 /* AgentSpaceRouter+Shadow.swift in Sources */,
 				EAD000000000000000000024 /* AgentSpaceRouter+Reader.swift in Sources */,
 				AE5ACE000000000000000018 /* AgentPageTheme.swift in Sources */,
+				AE5ACE000000000000000019 /* AgentUserSpaceDriveRegistry.swift in Sources */,
 				AE5ACE000000000000000016 /* AgentTranscriptStore.swift in Sources */,
 				AE5ACE000000000000000017 /* AgentTranscriptPanel.swift in Sources */,
 				AE5ACE000000000000000013 /* AgentSpaceOverlayView.swift in Sources */,
@@ -3273,6 +3420,11 @@
 				D10000000000000000000006 /* ImagePreviewViewController.swift in Sources */,
 				D10000000000000000000007 /* ImagePreviewOverlayViewController.swift in Sources */,
 				D10000000000000000000001 /* BrowserImagePreviewState.swift in Sources */,
+				EE7E00000000000000000001 /* BrowserPeekState.swift in Sources */,
+				EE7E00000000000000000002 /* PeekPanelController.swift in Sources */,
+				EE7E00000000000000000003 /* PeekOriginTracker.swift in Sources */,
+				EE7E00000000000000000004 /* BrowserReaderOverlayState.swift in Sources */,
+				EE7E00000000000000000005 /* ReaderPanelController.swift in Sources */,
 				D10000000000000000000008 /* ExtensionDialogManager.swift in Sources */,
 				D10000000000000000000009 /* ExtensionDialogViewController.swift in Sources */,
 				CC6B001B2E793EAC00D4F133 /* PinnedTabViewController.swift in Sources */,
@@ -3309,6 +3461,14 @@
 				EAD000000000000000000028 /* ReaderImageInliner.swift in Sources */,
 				FBD200012FD0000000000003 /* FeedbackV2.swift in Sources */,
 				AE00FFFE0000000000000002 /* PhiAgentEndpointResolver.swift in Sources */,
+				AE00FFFE0000000000000004 /* PhiAgentTransport.swift in Sources */,
+				5B0000010000000000000001 /* ServiceBrokerTypes.swift in Sources */,
+				5B0000010000000000000002 /* ServiceBrokerSocketPath.swift in Sources */,
+				5B0000010000000000000003 /* ServiceBrokerClient.swift in Sources */,
+				5B0000010000000000000004 /* ServiceBrokerHTTPConnection.swift in Sources */,
+				5B0000010000000000000005 /* ServiceBrokerChannelStore.swift in Sources */,
+				5B0000010000000000000006 /* ServiceBrokerWebSocket.swift in Sources */,
+				5B0000010000000000000007 /* ServiceBrokerExtensionProtocol.swift in Sources */,
 				CC6335F72E4B29E000A176DA /* Logging.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;

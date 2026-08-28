@@ -30,8 +30,10 @@ struct CreateSpacePanel: View {
     /// Profile the picker opens on — the active Space's profile when reached
     /// from the sidebar, or the menu's active-window profile.
     let initialProfileId: String?
-    /// Theme selected when the panel opens. Sidebar hosts pass their active
-    /// Space's theme id so the swatch selection matches the inherited surface.
+    /// The source Space's theme when the panel opens. The random theme the
+    /// form seeds on appear excludes it — a new Space must arrive looking
+    /// different from the Space it was created from — and it remains the
+    /// fallback while no selection is resolved.
     let initialThemeId: String
     /// Whether the host should restore the theme that preceded its live
     /// preview. Successful creation keeps the selected preview in place until
@@ -44,6 +46,11 @@ struct CreateSpacePanel: View {
     /// Lets sidebar hosts restore the source Space's real theme only after the
     /// target Space has surfaced, or immediately when activation fails.
     var onCreatedSpaceActivationFinished: (() -> Void)? = nil
+    /// Live icon mirror for sidebar hosts: fired with the seeded random icon
+    /// on appear and on every later pick, so the Spaces strip's dashed
+    /// placeholder pip previews the new Space's icon. Nil for the standalone
+    /// window, which shows no strip.
+    var onIconSelectionChange: ((IconPickerSelection) -> Void)? = nil
 
     @State private var name: String = ""
     /// Icon/emoji pinned to the new Space, chosen from the same picker the
@@ -51,8 +58,9 @@ struct CreateSpacePanel: View {
     @State private var selectedIcon: IconPickerSelection = .defaultSelection
     @State private var selectedProfileId: String = ""
     /// Theme pinned to the new Space. Every Space owns a theme — there is no
-    /// "follow global" anymore. Nil means the user has not changed the
-    /// initial active-Space selection yet.
+    /// "follow global" anymore. Seeded with a random theme distinct from the
+    /// source Space's on appear; nil only before that (falls back to the
+    /// inherited `initialThemeId`).
     @State private var selectedThemeId: String?
     /// Theme-component slider position. Follows the selected theme's
     /// saturation (or Pure brightness) until the user drags it; from then on
@@ -69,11 +77,28 @@ struct CreateSpacePanel: View {
             .onAppear {
                 selectedProfileId = resolvedInitialProfileId
                 // Give every new Space a fresh random look out of the box — a
-                // random Phi icon so Spaces remain visually distinct. The theme
-                // starts from the active Space to match the inherited panel.
+                // random Phi icon and a random theme, always distinct from the
+                // source Space's, so Spaces remain visually distinct and the
+                // sidebar form arrives reading as a NEW Space instead of a
+                // re-dress of the current one.
                 selectedIcon = .phiIcon(id: PhiIconCatalog.allIds.randomElement() ?? PhiIconCatalog.allIds[0])
+                if let freshTheme = Theme.builtInThemes
+                    .filter({ $0.id != resolvedInitialThemeId })
+                    .randomElement() {
+                    selectedThemeId = freshTheme.id
+                }
                 syncThemeSliderToSelectedTheme()
+                // Preview immediately so the swipe-in surface already carries
+                // the new Space's color (sidebar hosts only; the standalone
+                // window has no live preview and just shows the selection).
+                if selectedThemeId != nil {
+                    onThemeSelectionChange?(effectiveTheme())
+                }
+                onIconSelectionChange?(selectedIcon)
                 DispatchQueue.main.async { nameFocused = true }
+            }
+            .onChange(of: selectedIcon.storageValue) { _ in
+                onIconSelectionChange?(selectedIcon)
             }
     }
 
@@ -507,6 +532,13 @@ struct CreateSpacePanel: View {
         if let newSpaceId {
             manager.activateInFocusedWindow(
                 spaceId: newSpaceId,
+                // The sidebar flow already presented the form as the new
+                // Space — swipe-in arrival, previewed theme, placeholder pip
+                // — so a second swipe into the spawned window would replay a
+                // transition the user has already seen: present instantly.
+                // The standalone-window flow had no such presentation and
+                // keeps its slide.
+                animated: style == .window,
                 onActivationFailed: onCreatedSpaceActivationFinished,
                 onSwapSettled: onCreatedSpaceActivationFinished
             )

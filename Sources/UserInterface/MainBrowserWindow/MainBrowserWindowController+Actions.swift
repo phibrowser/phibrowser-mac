@@ -73,24 +73,30 @@ extension MainBrowserWindowController {
 
         if omniBoxContainerViewController?.hasShown ?? false == false {
             if omniBoxContainerViewController == nil {
-                omniBoxContainerViewController = OmniBoxContainerViewController(browserState: self.browserState, superView: omnibackgroundView)
+                omniBoxContainerViewController = OmniBoxContainerViewController(
+                    browserState: browserState,
+                    superView: omnibackgroundView,
+                    centeredHorizontalInset: centeredOmniBoxHorizontalInset
+                )
             }
             omniBoxContainerViewController?.omniBoxController?.beginOpenTrace(
                 trigger: fromAddressBar ? "address-bar" : "omnibox",
                 addressViewPresent: addressView != nil
             )
             
-            // Add background view to content view
-            if let contentView = contentViewController?.view {
-                contentView.addSubview(omnibackgroundView)
-                omnibackgroundView.snp.makeConstraints { make in
+            // Mount in the omnibox host panel: the overlay must draw ABOVE
+            // the peek/reader panels, which are child windows and cover
+            // every in-window view (see attachAndShowOmniBoxHostPanel).
+            if let hostView = attachAndShowOmniBoxHostPanel()?.contentView {
+                hostView.addSubview(omnibackgroundView)
+                omnibackgroundView.snp.remakeConstraints { make in
                     make.edges.equalToSuperview()
                 }
-                
+
                 // Add omniBox container to background view
                 if let containerView = omniBoxContainerViewController?.view {
                     omnibackgroundView.addSubview(containerView)
-                    containerView.snp.makeConstraints { make in
+                    containerView.snp.remakeConstraints { make in
                         make.edges.equalToSuperview()
                     }
                 }
@@ -226,13 +232,17 @@ extension MainBrowserWindowController {
         guard !AgentAnimationManager.shared.isActive(for: browserState.focusingTab?.guid ?? 0) else {
             return
         }
+        if browserState.closePeekForBackForwardNavigation() { return }
+        if browserState.closeReaderOverlayForBackForwardNavigation() { return }
         browserState.focusingTab?.goBack()
     }
-    
+
     @IBAction func goForward(_ sender: Any?) {
         guard !AgentAnimationManager.shared.isActive(for: browserState.focusingTab?.guid ?? 0) else {
             return
         }
+        if browserState.closePeekForBackForwardNavigation() { return }
+        if browserState.closeReaderOverlayForBackForwardNavigation() { return }
         browserState.focusingTab?.goForward()
     }
 

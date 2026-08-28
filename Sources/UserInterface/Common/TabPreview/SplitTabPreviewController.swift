@@ -129,8 +129,16 @@ struct SplitTabPreviewContentResolver {
         self.thumbnailProvider = thumbnailProvider
     }
 
-    func isEligible(_ target: SplitTabPreviewTarget, in browserState: BrowserState) -> Bool {
-        resolvedTarget(for: target, in: browserState) != nil
+    func isEligible(
+        _ target: SplitTabPreviewTarget,
+        in browserState: BrowserState,
+        previewsEnabled: Bool = true
+    ) -> Bool {
+        guard previewsEnabled,
+              let resolved = resolvedTarget(for: target, in: browserState) else {
+            return false
+        }
+        return resolved.isOpen
     }
 
     func resolve(
@@ -207,8 +215,13 @@ struct SplitTabPreviewContentResolver {
             SplitTabPreviewTarget.paneID(for: membership.rightPane),
         ])
         guard currentPaneIDs == target.paneIDs else { return nil }
+        let layout = membership.liveGroup?.layout
+            ?? membership.pinnedDBPair.map {
+                browserState.pinnedSplitLayout(leftDB: $0.left, rightDB: $0.right)
+            }
+            ?? .vertical
         return ResolvedTarget(
-            layout: membership.liveGroup?.layout ?? .vertical,
+            layout: layout,
             leftPane: resolvedPane(for: membership.leftPane, in: browserState),
             rightPane: resolvedPane(for: membership.rightPane, in: browserState),
             isOpen: membership.liveGroup != nil
@@ -237,7 +250,7 @@ struct SplitTabPreviewContentResolver {
         let livePanes: (primary: Tab?, secondary: Tab?, layout: SplitLayout) = {
             guard let splitID = browserState.splitBookmarkBindings[bookmark.guid],
                   let group = browserState.splits.first(where: { $0.id == splitID }) else {
-                return (nil, nil, .vertical)
+                return (nil, nil, bookmark.layout ?? .vertical)
             }
             return (
                 browserState.tabs.first(where: { $0.guid == group.primaryTabId }),
@@ -293,7 +306,7 @@ struct SplitTabPreviewContentResolver {
             liveTab: pane.liveTab,
             isForeground: isForeground(liveTab: pane.liveTab, in: browserState),
             cachedPane: reusablePane,
-            includesImage: includesImage
+            includesImage: includesImage && TabPreviewURLPolicy.allowsSnapshot(for: rawURL)
         )
         return SplitTabPreviewPaneContent(
             id: pane.id,
@@ -378,18 +391,22 @@ struct SplitTabPreviewView: View {
     @ObservedObject var viewModel: SplitTabPreviewViewModel
 
     private enum Metrics {
-        static let width: CGFloat = 396
-        static let imageHeight: CGFloat = 280 * 10 / 16
+        static let width: CGFloat = 280
+        static let imageHeight: CGFloat = width * 10 / 16
+        static let stackedPaneImageHeight: CGFloat = imageHeight / 2
+        static let dividerThickness: CGFloat = 1
+        static let sideBySidePaneWidth: CGFloat = (width - dividerThickness) / 2
         static let cornerRadius: CGFloat = 14
     }
 
     var body: some View {
         if let content = viewModel.content {
             previewLayout(for: content)
+                .id(content.layout.rawValue)
                 .frame(width: Metrics.width)
                 .themedBackground(.windowBackground)
                 .clipShape(RoundedRectangle(cornerRadius: Metrics.cornerRadius, style: .continuous))
-                .fixedSize()
+                .fixedSize(horizontal: false, vertical: true)
         }
     }
 
@@ -409,29 +426,73 @@ struct SplitTabPreviewView: View {
         case .vertical:
             sideBySidePanes(content)
         case .horizontal:
-            // Keep the current fallback stable while preserving the layout in
-            // the content model for the planned stacked split preview.
-            sideBySidePanes(content)
+            stackedPanes(content)
         }
     }
 
     private func sideBySidePanes(_ content: SplitTabPreviewContent) -> some View {
         HStack(alignment: .top, spacing: 0) {
-            pane(content.leftPane)
-            Divider()
-            pane(content.rightPane)
+            pane(
+                content.leftPane,
+                width: Metrics.sideBySidePaneWidth,
+                imageHeight: Metrics.imageHeight
+            )
+            Divider().frame(width: Metrics.dividerThickness)
+            pane(
+                content.rightPane,
+                width: Metrics.sideBySidePaneWidth,
+                imageHeight: Metrics.imageHeight
+            )
         }
     }
 
+    private func stackedPanes(_ content: SplitTabPreviewContent) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            pane(
+                content.leftPane,
+                width: Metrics.width,
+                imageHeight: Metrics.stackedPaneImageHeight
+            )
+            Divider().frame(height: Metrics.dividerThickness)
+            pane(
+                content.rightPane,
+                width: Metrics.width,
+                imageHeight: Metrics.stackedPaneImageHeight
+            )
+        }
+    }
+
+    @ViewBuilder
     private func compactPaneLayout(_ content: SplitTabPreviewContent) -> some View {
-        HStack(alignment: .top, spacing: 0) {
-            compactPane(content.leftPane)
-            Divider()
-            compactPane(content.rightPane)
+        switch content.layout {
+        case .vertical:
+            sideBySideCompactPanes(content)
+        case .horizontal:
+            stackedCompactPanes(content)
         }
     }
 
-    private func pane(_ content: SplitTabPreviewPaneContent) -> some View {
+    private func sideBySideCompactPanes(_ content: SplitTabPreviewContent) -> some View {
+        HStack(alignment: .top, spacing: 0) {
+            compactPane(content.leftPane, width: Metrics.sideBySidePaneWidth)
+            Divider().frame(width: Metrics.dividerThickness)
+            compactPane(content.rightPane, width: Metrics.sideBySidePaneWidth)
+        }
+    }
+
+    private func stackedCompactPanes(_ content: SplitTabPreviewContent) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            compactPane(content.leftPane, width: Metrics.width)
+            Divider().frame(height: Metrics.dividerThickness)
+            compactPane(content.rightPane, width: Metrics.width)
+        }
+    }
+
+    private func pane(
+        _ content: SplitTabPreviewPaneContent,
+        width: CGFloat,
+        imageHeight: CGFloat
+    ) -> some View {
         VStack(spacing: 0) {
             ZStack {
                 Rectangle().fill(.primary.opacity(0.04))
@@ -439,7 +500,7 @@ struct SplitTabPreviewView: View {
                     Image(nsImage: image)
                         .resizable()
                         .aspectRatio(contentMode: .fill)
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .frame(width: width, height: imageHeight)
                         .clipped()
                 } else {
                     Image(systemName: "rectangle.split.2x1")
@@ -447,8 +508,7 @@ struct SplitTabPreviewView: View {
                         .foregroundStyle(.tertiary)
                 }
             }
-            .frame(maxWidth: .infinity)
-            .frame(height: Metrics.imageHeight)
+            .frame(width: width, height: imageHeight)
             .clipped()
 
             VStack(alignment: .leading, spacing: 4) {
@@ -466,14 +526,17 @@ struct SplitTabPreviewView: View {
                         .truncationMode(.middle)
                 }
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal, 12)
             .padding(.vertical, 10)
+            .frame(width: width, alignment: .leading)
         }
-        .frame(maxWidth: .infinity, alignment: .top)
+        .frame(width: width, alignment: .top)
     }
 
-    private func compactPane(_ content: SplitTabPreviewPaneContent) -> some View {
+    private func compactPane(
+        _ content: SplitTabPreviewPaneContent,
+        width: CGFloat
+    ) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             Text(content.title)
                 .font(.system(size: 14, weight: .semibold))
@@ -489,9 +552,9 @@ struct SplitTabPreviewView: View {
                     .truncationMode(.middle)
             }
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, 12)
         .padding(.vertical, 10)
+        .frame(width: width, alignment: .leading)
     }
 
     private func displayURL(_ rawValue: String) -> String {
@@ -536,7 +599,11 @@ final class SplitTabPreviewController {
     ) {
         guard let window,
               anchorView.window === window,
-              resolver.isEligible(target, in: browserState) else {
+              resolver.isEligible(
+                target,
+                in: browserState,
+                previewsEnabled: PhiPreferences.GeneralSettings.showTabPreviews.loadValue()
+              ) else {
             presentationController.dismiss(ownerID: ownerID)
             return
         }
@@ -565,7 +632,11 @@ final class SplitTabPreviewController {
     ) {
         guard let window,
               anchorView.window === window,
-              resolver.isEligible(target, in: browserState) else {
+              resolver.isEligible(
+                target,
+                in: browserState,
+                previewsEnabled: PhiPreferences.GeneralSettings.showTabPreviews.loadValue()
+              ) else {
             dismiss(ownerID: ownerID)
             return
         }
@@ -630,6 +701,13 @@ final class SplitTabPreviewController {
                 return false
             }
             let reusableContent = reuseCurrentImages ? self.viewModel.content : nil
+            guard self.resolver.isEligible(
+                target,
+                in: browserState,
+                previewsEnabled: PhiPreferences.GeneralSettings.showTabPreviews.loadValue()
+            ) else {
+                return false
+            }
             guard let content = self.resolver.resolve(
                 target,
                 in: browserState,
@@ -797,7 +875,11 @@ final class SplitTabPreviewRegistration {
         let isCurrentlyDragging = isDragging
             || browserState.tabDraggingSession.snapshot.isDragging
         let isEligible = !isCurrentlyDragging
-            && resolver.isEligible(target, in: browserState)
+            && resolver.isEligible(
+                target,
+                in: browserState,
+                previewsEnabled: PhiPreferences.GeneralSettings.showTabPreviews.loadValue()
+            )
         onEligibilityChanged?(isEligible)
         return isEligible
     }

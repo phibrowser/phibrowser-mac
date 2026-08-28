@@ -7,7 +7,6 @@ import AppKit
 import Combine
 import SnapKit
 import SwiftUI
-import SVGView
 
 /// A lightweight protocol to allow the sidebar to show "virtual" bookmark items
 /// while still rendering and operating on the underlying real `Bookmark`.
@@ -31,10 +30,16 @@ private final class BookmarkCellViewState {
     var primaryFaviconRevision = 0
     var secondaryFaviconRevision = 0
     var showsSecondaryFavicon = false
+    /// A Peek opened from this bookmark's bound tab is alive (visible or
+    /// hidden behind another tab) — drives the trailing peek indicator.
+    var showsPeek = false
     var primaryTabIsLive = false
     var secondaryTabIsLive = false
     var isFolder = false
     var isFolderExpanded = false
+    var folderIcon = BookmarkFolderIcon.standard
+    var usesStaticFolderSnapshotIcon = false
+    var folderIconPickerRequestGeneration = 0
     var isActive = false
     var isOpened = false
     var isHovered = false
@@ -90,6 +95,7 @@ class BookmarkCellView: SidebarCellView, TabPreviewInteractionCancelling {
     private let viewState = BookmarkCellViewState()
     private let primaryTabViewModel = TabViewModel()
     private let secondaryTabViewModel = TabViewModel()
+    private let peekTabViewModel = TabViewModel()
     private let hoverRegionView = SidebarTabHoverRegionView()
     private let tabPreviewRegistration = TabPreviewRegistration()
     private let splitTabPreviewRegistration = SplitTabPreviewRegistration()
@@ -137,6 +143,7 @@ class BookmarkCellView: SidebarCellView, TabPreviewInteractionCancelling {
         usesSplitTabPreview = false
         tabPreviewRegistration.invalidate()
         splitTabPreviewRegistration.invalidate()
+        peekTabViewModel.prepareForReuse()
         resetState()
     }
 
@@ -145,19 +152,52 @@ class BookmarkCellView: SidebarCellView, TabPreviewInteractionCancelling {
         splitTabPreviewRegistration.cancelForInteraction()
     }
 
+    /// Uses a paused, cache-display-safe Lottie renderer while an AppKit snapshot is rendered.
+    func withStaticFolderSnapshotIcon<T>(_ body: () throws -> T) rethrows -> T {
+        guard viewState.isFolder else { return try body() }
+        let wasUsingStaticIcon = viewState.usesStaticFolderSnapshotIcon
+        setUsesStaticFolderSnapshotIcon(true)
+        defer { setUsesStaticFolderSnapshotIcon(wasUsingStaticIcon) }
+        return try body()
+    }
+
+    override func createDraggingImage() -> NSImage? {
+        withStaticFolderSnapshotIcon {
+            super.createDraggingImage()
+        }
+    }
+
+    private func setUsesStaticFolderSnapshotIcon(_ usesStaticIcon: Bool) {
+        guard viewState.usesStaticFolderSnapshotIcon != usesStaticIcon else { return }
+        viewState.usesStaticFolderSnapshotIcon = usesStaticIcon
+        hostingView.needsLayout = true
+        hostingView.needsDisplay = true
+        hostingView.layoutSubtreeIfNeeded()
+        hostingView.displayIfNeeded()
+    }
+
     private func setupViews() {
         hostingView = ThemedHostingView(rootView: SidebarBookmarkCellContentView(
             state: viewState,
             primaryTabViewModel: primaryTabViewModel,
             secondaryTabViewModel: secondaryTabViewModel,
+            peekTabViewModel: peekTabViewModel,
             onClose: { [weak self] in
                 self?.closeButtonTapped()
+            },
+            onClosePeek: { [weak self] in
+                guard let self, let bookmark = self.configuredBookmark,
+                      let boundTabId = self.liveTabs(for: bookmark).primary?.guid else { return }
+                self.resolvedBrowserState?.closePeek(forOpener: boundTabId)
             },
             onNavigatePrimaryToOriginalURL: { [weak self] separateCurrentPage in
                 self?.navigatePrimaryToOriginalURL(separateCurrentPage: separateCurrentPage)
             },
             onNavigateSecondaryToOriginalURL: { [weak self] separateCurrentPage in
                 self?.navigateSecondaryToOriginalURL(separateCurrentPage: separateCurrentPage)
+            },
+            onSelectFolderIcon: { [weak self] icon in
+                self?.selectFolderIcon(icon)
             }
         ))
         addSubview(hostingView)
@@ -225,10 +265,14 @@ class BookmarkCellView: SidebarCellView, TabPreviewInteractionCancelling {
         viewState.primaryFaviconRevision &+= 1
         viewState.secondaryFaviconRevision &+= 1
         viewState.showsSecondaryFavicon = false
+        viewState.showsPeek = false
         viewState.primaryTabIsLive = false
         viewState.secondaryTabIsLive = false
         viewState.isFolder = false
         viewState.isFolderExpanded = false
+        viewState.folderIcon = .standard
+        viewState.usesStaticFolderSnapshotIcon = false
+        viewState.folderIconPickerRequestGeneration = 0
         viewState.isActive = false
         viewState.isOpened = false
         viewState.isHovered = false
@@ -395,6 +439,28 @@ class BookmarkCellView: SidebarCellView, TabPreviewInteractionCancelling {
             }
             .store(in: &cancellables)
 
+        bookmark.$folderIconName
+            .removeDuplicates()
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] iconName in
+                self?.viewState.folderIcon = BookmarkFolderIcon.resolve(iconName)
+            }
+            .store(in: &cancellables)
+
+        NotificationCenter.default.publisher(
+            for: .bookmarkFolderIconPickerRequested,
+            object: bookmark
+        )
+        .receive(on: DispatchQueue.main)
+        .sink { [weak self, weak bookmark] _ in
+            guard let self,
+                  let bookmark,
+                  bookmark.isFolder,
+                  self.configuredBookmark === bookmark else { return }
+            self.viewState.folderIconPickerRequestGeneration &+= 1
+        }
+        .store(in: &cancellables)
+
         bookmark.$isEditing
             .removeDuplicates()
             .receive(on: DispatchQueue.main)
@@ -412,7 +478,28 @@ class BookmarkCellView: SidebarCellView, TabPreviewInteractionCancelling {
                     self.viewState.isMultiSelected = selection.containsBookmark(bookmark.guid)
                 }
                 .store(in: &cancellables)
+
+            state.peekState.$peeksByOpener
+                .receive(on: DispatchQueue.main)
+                .sink { [weak self, weak bookmark] peeksByOpener in
+                    guard let self, let bookmark else { return }
+                    self.refreshPeekIndicator(for: bookmark,
+                                              peeksByOpener: peeksByOpener)
+                }
+                .store(in: &cancellables)
         }
+    }
+
+    /// Shows the trailing peek indicator when a live Peek belongs to this
+    /// bookmark's bound tab (also while the peek is hidden behind another
+    /// focused tab — the icon is what tells the user a peek is attached).
+    private func refreshPeekIndicator(for bookmark: Bookmark, peeksByOpener: [Int: Tab]) {
+        let peekTab = liveTabs(for: bookmark).primary.flatMap { peeksByOpener[$0.guid] }
+        peekTabViewModel.prepareForReuse()
+        if let peekTab {
+            configure(viewModel: peekTabViewModel, with: peekTab)
+        }
+        viewState.showsPeek = peekTab != nil
     }
 
     func setDropTargetHighlighted(_ highlighted: Bool) {
@@ -567,6 +654,12 @@ class BookmarkCellView: SidebarCellView, TabPreviewInteractionCancelling {
     private func updateFolderIcon(bookmark: Bookmark) {
         guard bookmark.isFolder else { return }
         viewState.isFolderExpanded = bookmark.isExpanded
+        viewState.folderIcon = BookmarkFolderIcon.resolve(bookmark.folderIconName)
+    }
+
+    private func selectFolderIcon(_ icon: BookmarkFolderIcon) {
+        guard let bookmark = resolvedBookmark, bookmark.isFolder else { return }
+        resolvedBrowserState?.bookmarkManager.updateFolderIcon(guid: bookmark.guid, iconName: icon.rawValue)
     }
 
     private func applyTitleAndSplitState(bookmark: Bookmark,
@@ -750,9 +843,12 @@ private struct SidebarBookmarkCellContentView: View {
     let state: BookmarkCellViewState
     let primaryTabViewModel: TabViewModel
     let secondaryTabViewModel: TabViewModel
+    let peekTabViewModel: TabViewModel
     let onClose: () -> Void
+    let onClosePeek: () -> Void
     let onNavigatePrimaryToOriginalURL: (Bool) -> Void
     let onNavigateSecondaryToOriginalURL: (Bool) -> Void
+    let onSelectFolderIcon: (BookmarkFolderIcon) -> Void
 
     @State private var primaryFaviconHoverAction: BookmarkFaviconHoverAction?
     @State private var secondaryFaviconHoverAction: BookmarkFaviconHoverAction?
@@ -792,7 +888,10 @@ private struct SidebarBookmarkCellContentView: View {
     }
 
     private var showCloseButton: Bool {
-        state.isOpened && state.isHovered && !state.isEditing
+        // While a peek is attached, the row's only close affordance is the
+        // peek indicator's "minus" — hide the tab close button so hover
+        // doesn't show two close controls side by side.
+        state.isOpened && state.isHovered && !state.isEditing && !state.showsPeek
     }
 
     private var faviconHoverAction: BookmarkFaviconHoverAction? {
@@ -811,9 +910,13 @@ private struct SidebarBookmarkCellContentView: View {
                 revision: state.primaryFaviconRevision,
                 isFolder: state.isFolder,
                 isFolderExpanded: state.isFolderExpanded,
+                folderIcon: state.folderIcon,
+                usesStaticFolderSnapshotIcon: state.usesStaticFolderSnapshotIcon,
+                folderIconPickerRequestGeneration: state.folderIconPickerRequestGeneration,
                 liveTabViewModel: state.primaryTabIsLive ? primaryTabViewModel : nil,
                 onNavigateToOriginalURL: onNavigatePrimaryToOriginalURL,
-                onReturnHoverChanged: { primaryFaviconHoverAction = $0 }
+                onReturnHoverChanged: { primaryFaviconHoverAction = $0 },
+                onSelectFolderIcon: onSelectFolderIcon
             )
 
             if !state.isEditing,
@@ -829,9 +932,13 @@ private struct SidebarBookmarkCellContentView: View {
                     revision: state.secondaryFaviconRevision,
                     isFolder: false,
                     isFolderExpanded: false,
+                    folderIcon: .standard,
+                    usesStaticFolderSnapshotIcon: false,
+                    folderIconPickerRequestGeneration: 0,
                     liveTabViewModel: state.secondaryTabIsLive ? secondaryTabViewModel : nil,
                     onNavigateToOriginalURL: onNavigateSecondaryToOriginalURL,
-                    onReturnHoverChanged: { secondaryFaviconHoverAction = $0 }
+                    onReturnHoverChanged: { secondaryFaviconHoverAction = $0 },
+                    onSelectFolderIcon: { _ in }
                 )
 
                 if !state.isEditing,
@@ -864,6 +971,11 @@ private struct SidebarBookmarkCellContentView: View {
             .frame(height: 30)
             .animation(.easeOut(duration: 0.1), value: showBookmarkFaviconHint)
 
+            if state.showsPeek, !state.isEditing {
+                SidebarPeekIndicatorView(viewModel: peekTabViewModel,
+                                         onClose: onClosePeek)
+            }
+
             if showCloseButton {
                 UnifiedTabCloseButton(action: onClose)
             }
@@ -889,19 +1001,64 @@ private struct SidebarBookmarkCellContentView: View {
     }
 }
 
+/// Trailing indicator for a Peek attached to a sidebar row's tab (bookmark
+/// or normal): shows the peeked page's favicon, and turns into a "minus"
+/// close button on hover (mirrors UnifiedTabCloseButton's styling).
+struct SidebarPeekIndicatorView: View {
+    let viewModel: TabViewModel
+    let onClose: () -> Void
+    @State private var isHovered = false
+
+    var body: some View {
+        Button(action: onClose) {
+            ZStack {
+                // On hover the favicon stays visible, dimmed, behind the
+                // minus glyph — the icon still says which page the peek is.
+                UnifiedTabFaviconView(viewModel: viewModel)
+                    .opacity(isHovered ? 0.25 : 1)
+                Image(systemName: "minus")
+                    .font(.system(size: 11, weight: .semibold))
+                    .opacity(isHovered ? 1 : 0)
+            }
+            .frame(width: 24, height: 24)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .background(
+            RoundedRectangle(cornerRadius: 4, style: .continuous)
+                .themedFill(.hover)
+                .opacity(isHovered ? 1 : 0)
+        )
+        .onHover { hovering in
+            isHovered = hovering
+        }
+        .help(NSLocalizedString(
+            "peek.bookmarkCell.closePeekTooltip",
+            value: "Close Peek",
+            comment: "Bookmark sidebar row - Tooltip of the minus button that closes the floating page preview opened from this bookmark"
+        ))
+        .ignoresSafeArea()
+    }
+}
+
 private struct BookmarkFaviconView: View {
     let image: NSImage?
     let pageURL: String?
     let revision: Int
     let isFolder: Bool
     let isFolderExpanded: Bool
+    let folderIcon: BookmarkFolderIcon
+    let usesStaticFolderSnapshotIcon: Bool
+    let folderIconPickerRequestGeneration: Int
     let liveTabViewModel: TabViewModel?
     let onNavigateToOriginalURL: (Bool) -> Void
     let onReturnHoverChanged: (BookmarkFaviconHoverAction?) -> Void
+    let onSelectFolderIcon: (BookmarkFolderIcon) -> Void
 
     @State private var isReturnButtonHovered = false
     @State private var isCommandKeyPressed = false
     @State private var modifierFlagsMonitor: Any?
+    @State private var showsFolderIconPicker = false
 
     private static let faviconSlotSize: CGFloat = 16
     private static let faviconSize: CGFloat = 14
@@ -929,6 +1086,17 @@ private struct BookmarkFaviconView: View {
     }
 
     var body: some View {
+        Group {
+            if isFolder {
+                folderIconContent
+            } else {
+                bookmarkFaviconButton
+            }
+        }
+        .frame(width: slotSize, height: slotSize)
+    }
+
+    private var bookmarkFaviconButton: some View {
         Button(action: handleReturnButtonClick) {
             faviconContent
                 .frame(width: Self.returnButtonSize, height: Self.returnButtonSize)
@@ -961,7 +1129,33 @@ private struct BookmarkFaviconView: View {
                     )
             )
         )
-        .frame(width: slotSize, height: slotSize)
+    }
+
+    private var folderIconContent: some View {
+        BookmarkFolderIconView(
+            icon: folderIcon,
+            isExpanded: isFolderExpanded,
+            usesStaticSnapshotIcon: usesStaticFolderSnapshotIcon
+        )
+            .frame(width: Self.folderSize, height: Self.folderSize)
+            .allowsHitTesting(false)
+            .popover(isPresented: $showsFolderIconPicker, arrowEdge: .bottom) {
+                BookmarkFolderIconPicker(selected: folderIcon) { selection in
+                    onSelectFolderIcon(selection)
+                }
+            }
+            .onChange(of: folderIconPickerRequestGeneration) { oldValue, newValue in
+                guard newValue > oldValue else {
+                    showsFolderIconPicker = false
+                    return
+                }
+                showFolderIconPicker()
+            }
+    }
+
+    private func showFolderIconPicker() {
+        guard isFolder else { return }
+        showsFolderIconPicker = true
     }
 
     private func updateReturnButtonHover(_ hovering: Bool) {
@@ -1006,10 +1200,7 @@ private struct BookmarkFaviconView: View {
 
     @ViewBuilder
     private var faviconContent: some View {
-        if isFolder {
-            BookmarkFolderIconView(isExpanded: isFolderExpanded)
-                .frame(width: Self.folderSize, height: Self.folderSize)
-        } else if let liveTabViewModel {
+        if let liveTabViewModel {
             UnifiedTabFaviconView(viewModel: liveTabViewModel)
         } else if let image {
             faviconImage(image)
@@ -1027,123 +1218,6 @@ private struct BookmarkFaviconView: View {
             .scaledToFit()
             .frame(width: Self.faviconSize, height: Self.faviconSize)
             .clipShape(RoundedRectangle(cornerRadius: Self.faviconCornerRadius, style: .continuous))
-    }
-}
-
-private struct BookmarkFolderIconView: View {
-    let isExpanded: Bool
-
-    @Environment(\.phiTheme) private var theme
-    @Environment(\.phiAppearance) private var appearance
-
-    private var resourceName: String {
-        isExpanded ? "bookmark-folder-open" : "bookmark-folder-closed"
-    }
-
-    var body: some View {
-        if let url = Bundle.main.url(forResource: resourceName, withExtension: "svg") {
-            let svgView = tintedSVGView(from: url)
-
-            svgView
-                .aspectRatio(1, contentMode: .fit)
-        } else {
-            Image(isExpanded ? .folderOpen : .folderClose)
-                .resizable()
-                .scaledToFit()
-        }
-    }
-
-    private func tintedSVGView(from url: URL) -> SVGView {
-        let svgView = SVGView(contentsOf: url)
-        applyPalette(to: svgView)
-        return svgView
-    }
-
-    private func applyPalette(to svgView: SVGView) {
-        let palette = BookmarkFolderIconPalette(theme: theme, appearance: appearance)
-        setShape(
-            id: "folder-back-silhouette",
-            in: svgView,
-            fill: palette.backFill,
-            stroke: nil
-        )
-        setShape(
-            id: "folder-back-body",
-            in: svgView,
-            fill: palette.backFill,
-            stroke: palette.stroke
-        )
-        setShape(
-            id: "folder-front-panel",
-            in: svgView,
-            fill: palette.frontFill,
-            stroke: palette.stroke
-        )
-    }
-
-    private func setShape(id: String, in svgView: SVGView, fill: NSColor, stroke: NSColor?) {
-        guard let shape = svgView.getNode(byId: id) as? SVGShape else { return }
-
-        shape.fill = fill.svgViewColor
-        if let stroke {
-            shape.stroke = SVGStroke(fill: stroke.svgViewColor, width: 1)
-        } else {
-            shape.stroke = nil
-        }
-    }
-}
-
-private struct BookmarkFolderIconPalette {
-    let backFill: NSColor
-    let frontFill: NSColor
-    let stroke: NSColor
-
-    init(theme: Theme, appearance: Appearance) {
-        let accent = theme.color(for: .themeColor, appearance: appearance)
-        let hsb = accent.toHSBComponents()
-
-        if appearance.isDark {
-            backFill = theme.color(for: .windowBackground, appearance: appearance)
-            frontFill = Self.makeColor(
-                hue: hsb.h,
-                saturation: hsb.s + 0.07,
-                brightness: hsb.b - 0.24
-            )
-            stroke = .white
-        } else {
-            backFill = Self.makeColor(
-                hue: hsb.h,
-                saturation: 0.65,
-                brightness: hsb.b - 0.15
-            )
-            frontFill = Self.makeColor(hue: hsb.h, saturation: 0.20, brightness: 1.00)
-            stroke = Self.makeColor(hue: hsb.h, saturation: 0.65, brightness: 0.30)
-        }
-    }
-
-    private static func makeColor(
-        hue: CGFloat,
-        saturation: CGFloat,
-        brightness: CGFloat
-    ) -> NSColor {
-        NSColor(
-            calibratedHue: hue,
-            saturation: min(max(saturation, 0), 1),
-            brightness: min(max(brightness, 0), 1),
-            alpha: 1
-        )
-    }
-}
-
-private extension NSColor {
-    var svgViewColor: SVGColor {
-        let color = usingColorSpace(.sRGB) ?? self
-        return SVGColor(
-            r: Int(round(color.redComponent * 255)),
-            g: Int(round(color.greenComponent * 255)),
-            b: Int(round(color.blueComponent * 255)),
-            opacity: Double(color.alphaComponent)
-        )
     }
 }
 

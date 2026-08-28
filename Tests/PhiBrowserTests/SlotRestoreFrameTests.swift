@@ -14,7 +14,10 @@ import XCTest
 ///
 /// These pin the clamp's rule down by table. It is deliberately far weaker than
 /// AppKit's own constraint: a frame the user dragged half off an edge stays
-/// there, and only the states they cannot get out of are corrected.
+/// there, and only the states they cannot get out of are corrected. The last
+/// section covers the one arriving window that is placed FROM the record rather
+/// than by Chromium — restore's stand-in — and, just as importantly, the two
+/// shapes beside it that must not be.
 final class SlotRestoreFrameTests: XCTestCase {
     // A 1440x900 laptop display at the origin, menu bar removed.
     private let primary = SpaceManager.ScreenGeometry(
@@ -219,5 +222,48 @@ final class SlotRestoreFrameTests: XCTestCase {
             SpaceManager.decodedTrafficLightOrigin(
                 try throughAPropertyList(NSStringFromPoint(origin))),
             origin)
+    }
+
+    // MARK: - Which arriving window is placed from the record
+
+    /// Session restore hands a profile whose session held nothing restorable a
+    /// stand-in window. It is neither spawned by this side nor replayed from a
+    /// saved window, so nothing queues a frame for it and it surfaces on the
+    /// profile's `browser.window_placement` — after a multi-group run, some
+    /// other group's rect. It is the one arrival this side places from the
+    /// record, and the guard is as interesting for what it excludes: a genuine
+    /// replay's bounds ARE the saved ones, and the zero id is shared with every
+    /// window the user opens by hand in the first minute of a launch.
+
+    func testRestoresStandInWindowIsPlacedOnItsClaimedEntrysRect() {
+        let frame = NSRect(x: 120, y: 140, width: 900, height: 600)
+
+        XCTAssertEqual(
+            SpaceManager.restoredWindowPlacementFrame(
+                restoredFromWindowId: -1, entryFrame: frame),
+            frame)
+    }
+
+    func testAReplayedWindowKeepsTheBoundsChromiumGaveIt() {
+        // Its bounds are the saved ones already; forcing the entry rect would
+        // fight the replay this whole record exists to support.
+        XCTAssertNil(SpaceManager.restoredWindowPlacementFrame(
+            restoredFromWindowId: 7, entryFrame: NSRect(x: 1, y: 2, width: 3, height: 4)))
+    }
+
+    func testAZeroIdWindowIsNeverPlacedFromTheRecord() {
+        // Chromium's multi-profile startup windows share the zero id with a
+        // Cmd+N the user pressed inside the launch grace period, and nothing at
+        // the claim tells the two apart.
+        XCTAssertNil(SpaceManager.restoredWindowPlacementFrame(
+            restoredFromWindowId: 0, entryFrame: NSRect(x: 1, y: 2, width: 3, height: 4)))
+    }
+
+    func testAnEntryWithNoRememberedRectPlacesNothing() {
+        // A record written before the frame field existed, or one whose stored
+        // value no longer parses. The stand-in then lands exactly where it
+        // lands today.
+        XCTAssertNil(SpaceManager.restoredWindowPlacementFrame(
+            restoredFromWindowId: -1, entryFrame: nil))
     }
 }

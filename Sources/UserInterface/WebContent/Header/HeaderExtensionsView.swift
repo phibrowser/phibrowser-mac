@@ -245,9 +245,23 @@ private struct OverflowBadgeDot: View {
 
 struct HeaderExtensionMenuButton: View {
     let extensionManager: ExtensionManager?
+    let browserState: BrowserState?
     @Binding var isPopoverShown: Bool
+    let showsManagement: Bool
 
     @State private var anchorView: NSView?
+
+    init(
+        extensionManager: ExtensionManager?,
+        browserState: BrowserState?,
+        isPopoverShown: Binding<Bool>,
+        showsManagement: Bool = true
+    ) {
+        self.extensionManager = extensionManager
+        self.browserState = browserState
+        _isPopoverShown = isPopoverShown
+        self.showsManagement = showsManagement
+    }
 
     var body: some View {
         CircularIconButton(
@@ -268,10 +282,12 @@ struct HeaderExtensionMenuButton: View {
             .allowsHitTesting(false)
         )
         .popover(isPresented: $isPopoverShown, arrowEdge: .bottom) {
-            if let manager = extensionManager {
+            if let manager = extensionManager, let browserState {
                 ExtensionList(
                     extensionManager: manager,
+                    browserState: browserState,
                     needSettings: false,
+                    showsManagement: showsManagement,
                     onRequestDismiss: { isPopoverShown = false },
                     triggerAnchorView: anchorView
                 )
@@ -320,6 +336,7 @@ struct HeaderExtensionContainer: View {
             )
             HeaderExtensionMenuButton(
                 extensionManager: extensionManager,
+                browserState: browserState,
                 isPopoverShown: $isPopoverShown
             )
         }

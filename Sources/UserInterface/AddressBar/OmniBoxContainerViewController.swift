@@ -7,6 +7,18 @@ import Cocoa
 import Combine
 import QuartzCore
 
+extension Notification.Name {
+    /// Posted by the blocking overlays (omnibox, tab search) when they show
+    /// or hide — object is the browser window, userInfo carries
+    /// `visible: Bool` and `surface: "omnibox" | "tabSearch"`. The peek and
+    /// reader panels (child windows) listen: the omnibox floats above them
+    /// in its own higher-level child window, so they only go input-inert
+    /// beneath it; tab search is an in-window view they must fully step
+    /// aside for.
+    static let phiInWindowOverlayVisibilityChanged =
+        Notification.Name("PhiInWindowOverlayVisibilityChanged")
+}
+
 /// Full-screen root for the omnibox overlay. Outside the omnibox panel it dismisses the overlay
 /// and forwards the click to views below so controls (e.g. buttons) still activate.
 private final class OmniBoxContainerRootView: NSView {
@@ -28,6 +40,7 @@ final class OmniBoxContainerViewController: NSViewController {
     private let omniBoxWidth: CGFloat = 520
     private let maxOmniBoxHeight: CGFloat = 284 // 57 (base) + 226 (max suggestions) + 1 (separator)
     private let collapsedOmniBoxHeight: CGFloat = 52 // base 52 + separator 1
+    private let centeredHorizontalInset: CGFloat
     private weak var parentView: EventBlockBgView?
     private var showFromAddressBar: Bool = false
     private weak var addressView: NSView?
@@ -36,8 +49,17 @@ final class OmniBoxContainerViewController: NSViewController {
     private var animationOn = false
     private weak var browserState: BrowserState?
     private var focusingTabObserver: AnyCancellable?
+
+    var isAnchoredToAddressBarForTesting: Bool {
+        showFromAddressBar && addressView != nil
+    }
     
-    init(browserState: BrowserState, superView: EventBlockBgView? = nil) {
+    init(
+        browserState: BrowserState,
+        superView: EventBlockBgView? = nil,
+        centeredHorizontalInset: CGFloat = 0
+    ) {
+        self.centeredHorizontalInset = max(centeredHorizontalInset, 0)
         super.init(nibName: nil, bundle: nil)
         self.browserState = browserState
         self.parentView = superView
@@ -138,8 +160,25 @@ final class OmniBoxContainerViewController: NSViewController {
         in window: NSWindow,
         originalEvent: NSEvent
     ) {
+        // The overlay lives in a child panel above the browser window and
+        // its peek/reader panels — replay the click into whichever of those
+        // windows is under the point, with coordinates converted into it.
+        var targetWindow = window
+        var locationInTarget = locationInWindow
+        if let parent = window.parent {
+            let screenPoint = window.convertPoint(toScreen: locationInWindow)
+            // Siblings sit at the host's own level (peek/reader) — anything
+            // higher is a `.floating` surface that must not be clicked into.
+            let sibling = (parent.childWindows ?? []).first { child in
+                child !== window && child.isVisible
+                    && child.level.rawValue <= window.level.rawValue
+                    && child.frame.contains(screenPoint)
+            }
+            targetWindow = sibling ?? parent
+            locationInTarget = targetWindow.convertPoint(fromScreen: screenPoint)
+        }
         let timestamp = ProcessInfo.processInfo.systemUptime
-        let windowNumber = window.windowNumber
+        let windowNumber = targetWindow.windowNumber
         let flags = originalEvent.modifierFlags
         let clickCount = originalEvent.clickCount
         let eventNumber = originalEvent.eventNumber
@@ -147,7 +186,7 @@ final class OmniBoxContainerViewController: NSViewController {
 
         guard let mouseDown = NSEvent.mouseEvent(
             with: .leftMouseDown,
-            location: locationInWindow,
+            location: locationInTarget,
             modifierFlags: flags,
             timestamp: timestamp,
             windowNumber: windowNumber,
@@ -159,7 +198,7 @@ final class OmniBoxContainerViewController: NSViewController {
 
         guard let mouseUp = NSEvent.mouseEvent(
             with: .leftMouseUp,
-            location: locationInWindow,
+            location: locationInTarget,
             modifierFlags: flags,
             timestamp: timestamp + 0.02,
             windowNumber: windowNumber,
@@ -169,8 +208,8 @@ final class OmniBoxContainerViewController: NSViewController {
             pressure: 0.0
         ) else { return }
 
-        window.sendEvent(mouseDown)
-        window.sendEvent(mouseUp)
+        targetWindow.sendEvent(mouseDown)
+        targetWindow.sendEvent(mouseUp)
     }
     
     
@@ -190,9 +229,17 @@ final class OmniBoxContainerViewController: NSViewController {
         }
         omniBoxController?.focusTextField()
         observeFocusingTabChange()
+        NotificationCenter.default.post(name: .phiInWindowOverlayVisibilityChanged,
+                                        object: view.window?.parent ?? view.window,
+                                        userInfo: ["visible": true, "surface": "omnibox"])
     }
     
     func hideOmniBox(fromAddressBar: Bool = false) {
+        // At hide START, not completion: the overlay is on its way out, and
+        // anything that deferred to it may take key back behind the fade.
+        NotificationCenter.default.post(name: .phiInWindowOverlayVisibilityChanged,
+                                        object: view.window?.parent ?? view.window,
+                                        userInfo: ["visible": false, "surface": "omnibox"])
         focusingTabObserver = nil
         guard animationOn else {
            hideOmniBoxWithoutAnimation()
@@ -307,7 +354,20 @@ final class OmniBoxContainerViewController: NSViewController {
         let parentBounds = view.bounds
         guard parentBounds.width > 0, parentBounds.height > 0 else { return nil }
 
-        let addressFrameInParent = view.convert(addressView.bounds, from: addressView)
+        // The overlay lives in a child panel while the address bar lives in
+        // the browser window — `NSView.convert` is only defined within one
+        // window, so cross-window anchoring must go through screen space.
+        let addressFrameInParent: NSRect
+        if addressView.window === view.window {
+            addressFrameInParent = view.convert(addressView.bounds, from: addressView)
+        } else if let addressWindow = addressView.window, let panelWindow = view.window {
+            let inScreen = addressWindow.convertToScreen(
+                addressView.convert(addressView.bounds, to: nil))
+            addressFrameInParent = view.convert(
+                panelWindow.convertFromScreen(inScreen), from: nil)
+        } else {
+            return nil
+        }
 
         let anchoredHeight = min(maxOmniBoxHeight, parentBounds.height)
         let actualHeight = min(size.height, anchoredHeight)
@@ -546,16 +606,31 @@ final class OmniBoxContainerViewController: NSViewController {
         let contentSize = newSize ??  omniBoxController?.contentSize ?? .zero
         let anchoredHeight = min(maxOmniBoxHeight, parentBounds.height)
         let actualHeight = min(contentSize.height, anchoredHeight)
-        let actualWidth = min(contentSize.width, parentBounds.width)
+        let horizontalInset = min(
+            centeredHorizontalInset,
+            parentBounds.width / 2
+        )
+        let availableWidth = max(
+            parentBounds.width - horizontalInset * 2,
+            0
+        )
+        let actualWidth = min(contentSize.width, availableWidth)
 
         let sidebarWidth = browserState?.sidebarWidth ?? 0
         let rightAreaWidth = parentBounds.width - sidebarWidth
-        let x: CGFloat
+        let proposedX: CGFloat
         if sidebarWidth == 0 || rightAreaWidth < actualWidth {
-            x = max((parentBounds.width - actualWidth) / 2, 0)
+            proposedX = (parentBounds.width - actualWidth) / 2
         } else {
-            x = max(sidebarWidth + (rightAreaWidth - actualWidth) / 2, 0)
+            proposedX = sidebarWidth + (rightAreaWidth - actualWidth) / 2
         }
+        let x = max(
+            horizontalInset,
+            min(
+                proposedX,
+                parentBounds.width - horizontalInset - actualWidth
+            )
+        )
         
         let anchoredTop = (parentBounds.height + anchoredHeight) / 2
         let proposedY = anchoredTop - actualHeight

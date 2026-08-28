@@ -29,6 +29,9 @@ NS_ASSUME_NONNULL_BEGIN
 // window closes. Chromium reports such windows as ChromiumBrowserTypeShadow
 // (is_shadow takes precedence in type resolution); this value exists as a
 // creation request, not a reported type.
+// ChromiumBrowserTypeKiosk is a popup-backed, single-WebContents browser
+// owned by Phi's minimal Kiosk controller. KioskIncognito reports the same
+// surface when its inherited profile is off the record.
 typedef NS_ENUM(NSUInteger, ChromiumBrowserType) {
     ChromiumBrowserTypeNormal = 0,
     ChromiumBrowserTypePopup,
@@ -40,7 +43,9 @@ typedef NS_ENUM(NSUInteger, ChromiumBrowserType) {
     ChromiumBrowserTypeShadow,
     ChromiumBrowserTypeIncognitoSpace,  // TYPE_NORMAL + Incognito Space OTR profile
     ChromiumBrowserTypeAgentSpace,
-    ChromiumBrowserTypeShadowIncognito  // is_shadow + unique per-window OTR profile
+    ChromiumBrowserTypeShadowIncognito,  // is_shadow + unique per-window OTR profile
+    ChromiumBrowserTypeKiosk,
+    ChromiumBrowserTypeKioskIncognito
 };
 
 typedef NS_ENUM(NSUInteger, BrowserType) {
@@ -168,6 +173,48 @@ typedef NS_ENUM(NSInteger, PhiGhostMaterializeOutcome) {
              hideInspectedContents:(BOOL)hide;
 
 // ==========================================================================
+// Agent operating mask for the user's Spaces (Chromium → Mac notification)
+// ==========================================================================
+
+/// A remote-debugging (CDP) client just drove a tab that lives in one of the
+/// USER's Spaces — synthetic input, a navigation, or a file-input population.
+/// Page automation never passes through the Mac client (the app hands the
+/// connection's fd to the DevTools server), so this is the only way the app
+/// learns that one of its own tabs is under an agent; agent Spaces derive
+/// their mask from state the app already owns and never report here.
+///
+/// The browser coalesces per driving session: the first command on a tab,
+/// then at most once a second while that session keeps driving. Treat a
+/// report as "arm or re-arm the mask on `tabId`" — a session naming a
+/// different tab has MOVED, so its previous tab should be unmasked.
+///
+/// @param tabId The driven tab (the same id space as every other bridge tabId)
+/// @param windowId The window that owns the tab right now
+/// @param sessionId Opaque, stable per driving session; identifies the driver's
+///        hold on this tab, and is the key `agentDidStopOperatingUserSpaceTab`
+///        reports against.
+- (void)agentDidOperateUserSpaceTab:(int64_t)tabId
+                           windowId:(int64_t)windowId
+                          sessionId:(int64_t)sessionId;
+
+/// That session is still working on `tabId` without driving it — reading the
+/// DOM, evaluating script, taking a screenshot. This must NEVER raise a mask:
+/// opening a tab and reading it is not claiming it. It exists so a mask that is
+/// already up survives the gaps between an agent's rounds, which are far longer
+/// than the gaps between its individual commands. Throttled to one a second per
+/// session.
+- (void)agentDidObserveUserSpaceTab:(int64_t)tabId
+                           windowId:(int64_t)windowId
+                          sessionId:(int64_t)sessionId;
+
+/// The driving session behind `sessionId` went away — the client detached, its
+/// connection died, or the target closed. A real close event, which the app
+/// cannot observe any other way; without it "finished driving" could only ever
+/// be a timeout.
+- (void)agentDidStopOperatingUserSpaceTab:(int64_t)tabId
+                                sessionId:(int64_t)sessionId;
+
+// ==========================================================================
 // Flicker fix: Tab visibility synchronization (Chromium → Mac notification)
 // ==========================================================================
 
@@ -263,6 +310,7 @@ typedef NS_ENUM(NSInteger, PhiGhostMaterializeOutcome) {
 
 // Login management
 - (BOOL)canShowChromiumWindow;
+- (BOOL)canOpenExternalLinksInKiosk;
 - (BOOL)isPhiGuestMode;
 - (void)showLoginUI;
 - (NSString *)getAuth0AccessTokenSyncly;
@@ -389,6 +437,21 @@ typedef NS_ENUM(NSInteger, PhiGhostMaterializeOutcome) {
                                            url:(NSString *)url
                                       windowId:(int64_t)windowId;
 
+/// Right-click "Open Link in Peek View" — Chromium asks Mac to open `url` in
+/// the floating Peek panel bound to the tab identified by `sourceTabId`.
+- (void)openLinkAsPeekWithSourceTabId:(int64_t)sourceTabId
+                                  url:(NSString *)url
+                             windowId:(int64_t)windowId;
+
+/// Whether the Mac client currently offers the "Open Link in Peek View"
+/// context-menu surface: YES while the Peek feature toggle (Settings ›
+/// General) is on AND a sidebar layout is active — Peek is a sidebar-layout
+/// surface, so the traditional (Comfortable) layout disables it too. The
+/// renderer context menu hides the item while this returns NO. Called
+/// synchronously on the UI thread at menu-build time. Callers must guard
+/// with respondsToSelector: (skew).
+- (BOOL)isPeekLinkSurfaceEnabled;
+
 /// Right-click "Open in Reading Mode" — Chromium asks Mac to show Reader View
 /// for the tab identified by `tabId`. Reader View is the Mac client's: it
 /// extracts the article and swaps a native surface over the tab's content, so
@@ -479,6 +542,17 @@ typedef NS_ENUM(NSInteger, PhiGhostMaterializeOutcome) {
             restoredFromWindowId:(int64_t)restoredFromWindowId
                  restoredSpaceId:(NSString * _Nullable)restoredSpaceId
           restoredClosedWindowId:(int64_t)restoredClosedWindowId;
+/// Presentation-aware variant of the above. `presentationContext` is present
+/// only for user-triggered Kiosk opens that native UI should animate. Current
+/// keys are kind (`cursorZoom`) and the screen-coordinate anchorX / anchorY.
+- (void)mainBrowserWindowCreated:(NSWindow *)window
+                            type:(ChromiumBrowserType)browserType
+                       profileId:(NSString *)profileId
+                        windowId:(int64_t)windowId
+            restoredFromWindowId:(int64_t)restoredFromWindowId
+                 restoredSpaceId:(NSString * _Nullable)restoredSpaceId
+          restoredClosedWindowId:(int64_t)restoredClosedWindowId
+             presentationContext:(NSDictionary<NSString *, id> * _Nullable)presentationContext;
 // Relationship snapshot version increases monotonically per window.
 - (void)tabRelationshipSnapshotChanged:(NSDictionary *)snapshot
                              windowId:(int64_t)windowId
@@ -513,7 +587,9 @@ typedef NS_ENUM(NSInteger, PhiGhostMaterializeOutcome) {
 /// @param type Message type from the extension
 /// @param payload Message payload (JSON string)
 /// @param requestId The unique request ID for response correlation
-/// @param senderId The extension ID that sent the message
+/// @param senderId The Chromium-attributed extension ID that sent the message.
+/// Security-sensitive handlers must authorize this value exactly; payload data
+/// must never be used as sender identity.
 /// @return Response string if handled synchronously, nil for async handling
 - (NSString * _Nullable)handleExtensionMessage:(NSString *)type
                                       payload:(NSString *)payload
@@ -609,6 +685,26 @@ typedef NS_ENUM(NSInteger, PhiGhostMaterializeOutcome) {
 /// entry/exit alone does not fire this — no preference write happens, and
 /// the Mac client owns those transitions.
 - (void)metricsReportingEnabledChanged:(BOOL)enabled;
+
+/// One product-analytics event captured by Chromium browser-process code
+/// through the phi_analytics component — the single Chromium egress into the
+/// client's PostHog pipeline (chromium ADR 0008). Delivered synchronously on
+/// the browser main thread, once per event, in capture order, from the moment
+/// the framework installs its dispatch at launch (events captured earlier
+/// queue, bounded, and drain in order through this call). `eventName` is
+/// snake_case with a feature-scope prefix and `module` names the originating
+/// functional area — both registered in the README beside phi_analytics.h;
+/// `properties` carries JSON-shaped values only (NSString / NSNumber /
+/// NSNull / NSArray / NSDictionary), never site-level or user-content data.
+/// The client owns everything past this call: it stamps the provenance
+/// properties, enforces the PostHog reserved-name rule, applies its own
+/// not-initialized no-op, and hands the event to the PostHog SDK under the
+/// existing identity and consent stance. Delivery is best-effort — an event
+/// racing process exit may be lost, and nothing is retried.
+/// (`module:` sits mid-line deliberately: Clang's modules mode parses a
+/// line-initial `module` token as a module directive.)
+- (void)captureAnalyticsEvent:(NSString *)eventName module:(NSString *)module
+                   properties:(NSDictionary<NSString *, id> *)properties;
 
 /// The eager window id set for a COLD START replay, or nil to replay
 /// everything the session file holds (today's behaviour).
@@ -739,10 +835,24 @@ typedef NS_ENUM(NSInteger, PhiGhostMaterializeOutcome) {
 // Browser — so routing must be decided here, before the local open.
 - (BOOL)routeURLIfSpaceRuleMatches:(NSString *)urlString windowId:(int64_t)windowId;
 
+// Returns YES when `urlA` and `urlB` share a registrable domain (eTLD+1) or
+// host -- the same predicate CrossDomainNewTabNavigationThrottle uses
+// (net SameDomainOrHost with INCLUDE_PRIVATE_REGISTRIES). Returns NO when
+// either URL fails to parse. The Mac side uses this to judge whether a
+// bound tab's child navigation leaves the bound site (Peek). Callers must
+// guard with respondsToSelector: (framework/client version skew).
+- (BOOL)isSameSiteForURL:(NSString *)urlA url:(NSString *)urlB;
+
 - (void)createNewTabWithUrl:(NSString*)urlString
                    windowId:(int64_t)windowId
                  customGuid:(NSString* _Nullable)customGuid
            focusAfterCreate:(BOOL)focus;
+/// Creates a tab only when `windowId` resolves to a live browser. Unlike the
+/// legacy tab-creation calls, this never falls back to opening another window.
+/// Returns NO without side effects when the target cannot be resolved.
+- (BOOL)createNewTabStrictlyWithUrl:(NSString *)urlString
+                           windowId:(int64_t)windowId
+                   focusAfterCreate:(BOOL)focus;
 - (void)createQuickLookupTabWithWindowId:(int64_t)windowId
                                customGuid:(NSString* _Nullable)customGuid;
 - (void)createNewTabWithUrl:(NSString*)urlString
@@ -852,6 +962,13 @@ typedef NS_ENUM(NSInteger, PhiGhostMaterializeOutcome) {
 /// loop. Falls back to opening a new tab if the window has no active tab.
 - (void)navigateActiveTabBypassingSpaceRoutingWithUrl:(NSString *)url
                                              windowId:(int64_t)windowId;
+
+/// Opens `url` in a new Kiosk inheriting the exact profile of
+/// `sourceWindowId`, including off-the-record profiles. Returns NO when the
+/// source Browser is gone, the URL is invalid, or Kiosk creation fails; the
+/// ask-rule caller then re-opens the cancelled navigation in the source.
+- (BOOL)openURLInKiosk:(NSString *)url
+        sourceWindowId:(int64_t)sourceWindowId;
 
 /// Create a new tab group containing the given Phi-stable tab ids in
 /// `windowId`. Returns the new group's 32-char uppercase hex token, or an
@@ -1273,6 +1390,14 @@ typedef NS_ENUM(NSInteger, PhiGhostMaterializeOutcome) {
 - (BOOL)isRestorePreviousSessionEnabled;
 - (void)setRestorePreviousSessionEnabled:(BOOL)enabled;
 
+/// Updates Chromium's process-local routing cache for external links. Phi
+/// UserDefaults remains the persisted source of truth. Main thread only.
+- (void)setOpenExternalLinksInKioskEnabled:(BOOL)enabled;
+
+/// Updates Chromium's process-local cache for Command-Option link clicks.
+/// Phi UserDefaults remains the persisted source of truth. Main thread only.
+- (void)setOpenKioskOnCommandOptionClickEnabled:(BOOL)enabled;
+
 /// Restores the previous session mid-session for a Dock reopen or an external
 /// link that arrives with no window open, mirroring cold start: every profile
 /// that owned a window when the app last had windows is reloaded and its last
@@ -1433,7 +1558,9 @@ typedef NS_ENUM(NSInteger, PhiGhostMaterializeOutcome) {
 /// @param type Message type from the extension
 /// @param payload Message payload (JSON string)
 /// @param requestId The unique request ID for response correlation
-/// @param senderId The extension ID that sent the message
+/// @param senderId The Chromium-attributed extension ID that sent the message.
+/// Async request-scoped responses must use sendResponseForExtensionRequest;
+/// broadcastMessageToExtensions must not carry private response data.
 - (void)onExtensionMessage:(NSString *)type
                    payload:(NSString *)payload
                  requestId:(NSString *)requestId
@@ -1619,6 +1746,15 @@ typedef NS_ENUM(NSInteger, PhiGhostMaterializeOutcome) {
 /// server's normal EOF path. Callable from any thread.
 - (void)closeAllDevToolsConnections;
 
+/// The tabs whose agent operating mask the user has taken back. While a tab is
+/// in this set the browser refuses drive commands (synthetic input, navigation,
+/// file-input population) aimed at it from remote-debugging clients, answering
+/// with a protocol error — so a driver cannot decline to honor the takeover the
+/// way a cooperative signal would let it. Replaces the whole set; pass an empty
+/// array to clear. The Mac client is the source of truth and re-pushes on every
+/// change. Must be called on the main thread.
+- (void)setUserReclaimedTabs:(NSArray<NSNumber *> *)tabIds;
+
 @end
 
 @protocol WebContentWrapper <NSObject>
@@ -1724,6 +1860,11 @@ typedef NS_ENUM(NSInteger, PhiGhostMaterializeOutcome) {
 /// moveSelfToWindow:atIndex:.
 - (void)moveSplitToWindow:(int64_t)targetWindowId atIndex:(NSInteger)insertIndex;
 - (void)updateTabCustomValue:(NSString *)customValue;
+/// Marks/unmarks this tab as the Mac client's floating Peek surface.
+/// While marked, Chromium suppresses link-open surfaces that assume a
+/// normally hosted pane (split view via context menu or Option-click,
+/// nested Peek). Callers must guard with respondsToSelector: (skew).
+- (void)updateIsPeekSurface:(BOOL)isPeekSurface;
 - (void)focus;
 - (void)restoreFocus;
 - (void)updateSecurityState:(NSDictionary *)securityState;

@@ -35,6 +35,12 @@ class WebContentContainerViewController: NSViewController {
     /// `WebContentViewController.webPanelSize`.
     var currentWebPanelSize: CGSize? { currentWebContentController?.webPanelSize }
 
+    /// The visible tab's rounded page card, or nil when nothing is mounted.
+    /// The Reader overlay panel sizes itself to this — the container's own
+    /// view also spans the window margins and the tab strip, which the card
+    /// excludes. See `WebContentViewController.pageCardView`.
+    var currentPageCardView: NSView? { currentWebContentController?.pageCardView }
+
     /// Owned by this controller while in placeholder mode; released on exit.
     /// Mutually exclusive with the active tab's WCVC (only one is visible
     /// in contentContainer at a time).
@@ -1816,6 +1822,34 @@ class WebContentContainerViewController: NSViewController {
 
         // Settled successor is now painted on top — drop the close snapshot (if any).
         clearClosePlaceholder()
+
+        cleanUpPendingSplitPartnerViewIfNeeded(incoming: controller)
+    }
+
+    /// A focus trade between the two panes of one split never gets the
+    /// "previous tab hidden" confirmation from Chromium — the outgoing tab
+    /// stays visible as the other pane — so the flicker-fix deferral above
+    /// would leave the outgoing controller's view mounted behind the incoming
+    /// one for the life of the split. NSTrackingAreas ignore sibling
+    /// occlusion, so that buried view's header keeps reacting to hover (e.g.
+    /// a ghost Reader View shortcut tooltip at the buried reader button's
+    /// spot). Both panes' web content was already reparented into the
+    /// incoming controller's split host by refreshContentForCurrentTab, so
+    /// removing the buried view immediately is visually a no-op.
+    private func cleanUpPendingSplitPartnerViewIfNeeded(incoming controller: WebContentViewController) {
+        guard let pending = pendingViewCleanup,
+              let state = browserState,
+              let outgoingTabId = pending.controller.associatedTab?.guid,
+              let incomingTabId = controller.associatedTab?.guid,
+              let group = state.splitGroup(forTabId: incomingTabId),
+              group.partnerTabId(of: incomingTabId) == outgoingTabId else { return }
+
+        detachSharedBookmarkBar(from: pending.controller)
+        pending.view.removeFromSuperview()
+        pending.controller.removeFromParent()
+        pendingViewCleanup = nil
+
+        AppLogDebug("[WebContent] Cleaned up split-partner view immediately (no Chromium hide expected for a visible pane)")
     }
 
     /// Scenario 2: Switch to a new unpainted tab (add view below, wait for first paint)
@@ -2114,6 +2148,11 @@ class WebContentContainerViewController: NSViewController {
         // New view is on top now — real first paint, or forced by the first-paint
         // timeout (successor may still be blank, accepted). Drop the close snapshot.
         clearClosePlaceholder()
+
+        // "Open as Split" promotes the freshly-painted pane over its still-
+        // visible partner — same no-Chromium-hide situation as a same-split
+        // focus trade, so the deferred cleanup must not wait either.
+        cleanUpPendingSplitPartnerViewIfNeeded(incoming: pending.controller)
 
         // AppLogDebug("[FlickerFix][Mac] ➡️ Sent confirmViewSwitchCompleted after new tab first paint")
     }

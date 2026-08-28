@@ -94,6 +94,47 @@ extension PhiChromiumCoordinator: PhiChromiumBridgeDelegate {
         PhiPreferences.AgentSpaces.userSpaceOperationsEnabled
     }
 
+    /// A CDP client drove a tab in one of the user's own Spaces. The app has no
+    /// other way to see this — page automation rides a socket it handed to
+    /// Chromium — so the mask follows these reports rather than a driver's
+    /// goodwill. Delivered on the UI thread, which is the main thread.
+    func agentDidOperateUserSpaceTab(_ tabId: Int64, windowId: Int64, sessionId: Int64) {
+        guard Thread.isMainThread else {
+            assertionFailure("agentDidOperateUserSpaceTab off the main thread")
+            return
+        }
+        MainActor.assumeIsolated {
+            AgentUserSpaceDriveRegistry.shared.didOperate(
+                tabId: tabId.intValue, windowId: windowId.intValue, sessionId: sessionId)
+        }
+    }
+
+    /// The same session is working on the tab without driving it. Only keeps
+    /// an existing mask alive — a reading agent never claims a page.
+    func agentDidObserveUserSpaceTab(_ tabId: Int64, windowId: Int64, sessionId: Int64) {
+        guard Thread.isMainThread else {
+            assertionFailure("agentDidObserveUserSpaceTab off the main thread")
+            return
+        }
+        MainActor.assumeIsolated {
+            AgentUserSpaceDriveRegistry.shared.didObserve(
+                tabId: tabId.intValue, windowId: windowId.intValue, sessionId: sessionId)
+        }
+    }
+
+    /// That driving session ended — the real close event behind the mask, as
+    /// opposed to the idle timeout that would otherwise be the only signal.
+    func agentDidStopOperatingUserSpaceTab(_ tabId: Int64, sessionId: Int64) {
+        guard Thread.isMainThread else {
+            assertionFailure("agentDidStopOperatingUserSpaceTab off the main thread")
+            return
+        }
+        MainActor.assumeIsolated {
+            AgentUserSpaceDriveRegistry.shared.didStop(
+                tabId: tabId.intValue, sessionId: sessionId)
+        }
+    }
+
     func isBackupImporting() -> Bool { isBackupImportInProgress }
 
     func shouldAutoInstallICloudPasswords() -> Bool {
@@ -190,9 +231,10 @@ extension PhiChromiumCoordinator: PhiChromiumBridgeDelegate {
 
     /// A navigation matched a Space URL rule whose action is "ask every time"
     /// and Chromium cancelled it. Dims the source window and presents the
-    /// Space chooser (current Space first); opens the URL in the chosen Space,
-    /// or keeps it in the source window if the user declines. Owns the prompt
-    /// + routing so Chromium stays out of the UI and Space-window lifecycle.
+    /// destination chooser (current Space first, Kiosk in a separate final
+    /// section); opens the URL in the chosen destination, or keeps it in the
+    /// source window if the user declines. Owns the prompt + routing so
+    /// Chromium stays out of the UI and Space-window lifecycle.
     func askSpace(forURL urlString: String, defaultSpaceId: String, sourceWindowId: Int64, sourceIsNewTab: Bool) {
         Task { @MainActor in
             let manager = SpaceManager.shared
@@ -229,12 +271,25 @@ extension PhiChromiumCoordinator: PhiChromiumBridgeDelegate {
             } else {
                 ordered.append(incognitoTarget)
             }
+            // Kiosk is an action destination, not a Space. Keep it last and
+            // visually separate from all regular/Incognito Space choices.
+            ordered.append(manager.kioskRuleTargetSpace())
 
             // Resolve each Space's theme (pinned theme + custom overlay
             // opacity) for the source window's appearance, so a row's tint
             // matches what that Space actually looks like.
             let appearance = sourceWindow.effectiveAppearance.phiAppearance
             let items: [SpaceChooserItem] = ordered.map { space in
+                if space.spaceId == SpaceManager.kioskRuleTargetId {
+                    return SpaceChooserItem(
+                        id: space.spaceId,
+                        name: space.name,
+                        iconName: space.iconName,
+                        isCurrent: false,
+                        startsSection: true,
+                        themeColor: Color.primary.opacity(0.08),
+                        textColor: .primary)
+                }
                 let theme = manager.resolvedTheme(forSpaceId: space.spaceId)
                 let themeNSColor = theme.color(for: .themeColor, appearance: appearance)
                 // Contrast is computed on the opaque color, then the row is
@@ -252,6 +307,7 @@ extension PhiChromiumCoordinator: PhiChromiumBridgeDelegate {
                     name: space.name,
                     iconName: space.iconName,
                     isCurrent: isCurrent,
+                    startsSection: false,
                     themeColor: Color(nsColor: themeNSColor.withAlphaComponent(opacity)),
                     textColor: Color(nsColor: legible))
             }
@@ -411,6 +467,13 @@ extension PhiChromiumCoordinator: PhiChromiumBridgeDelegate {
         return canUseBrowser
     }
 
+    func canOpenExternalLinksInKiosk() -> Bool {
+        guard PhiBuildCapabilities.supportsAuthentication else {
+            return true
+        }
+        return ApplicationState.shared.canOpenExternalLinksInKiosk
+    }
+
     func isPhiGuestMode() -> Bool {
         !PhiBuildCapabilities.supportsAuthentication
             || ApplicationState.shared.isGuest
@@ -489,6 +552,17 @@ extension PhiChromiumCoordinator: PhiChromiumBridgeDelegate {
         AccountController.shared.metricsReportingEnabledChanged(enabled)
     }
 
+    func captureAnalyticsEvent(_ eventName: String, module: String, properties: [String: Any]) {
+        // Delivered synchronously on the browser main thread by contract
+        // (PhiChromiumBridgeHeader.h); assume rather than hop so events keep
+        // their capture order.
+        MainActor.assumeIsolated {
+            ChromiumAnalyticsRelay.shared.relay(
+                eventName: eventName, module: module, properties: properties
+            )
+        }
+    }
+
     func getAuth0AccessTokenSyncly() -> String {
         guard PhiBuildCapabilities.supportsAuthentication else { return "" }
         guard ApplicationState.shared.isAuthenticated else {
@@ -527,6 +601,19 @@ extension PhiChromiumCoordinator: PhiChromiumBridgeDelegate {
     }
 
     func mainBrowserWindowCreated(_ window: NSWindow, type browserType: ChromiumBrowserType, profileId: String, windowId: Int64, restoredFromWindowId: Int64, restoredSpaceId: String?, restoredClosedWindowId: Int64) {
+        mainBrowserWindowCreated(
+            window,
+            type: browserType,
+            profileId: profileId,
+            windowId: windowId,
+            restoredFromWindowId: restoredFromWindowId,
+            restoredSpaceId: restoredSpaceId,
+            restoredClosedWindowId: restoredClosedWindowId,
+            presentationContext: nil
+        )
+    }
+
+    func mainBrowserWindowCreated(_ window: NSWindow, type browserType: ChromiumBrowserType, profileId: String, windowId: Int64, restoredFromWindowId: Int64, restoredSpaceId: String?, restoredClosedWindowId: Int64, presentationContext: [String: Any]?) {
         // The undo stack rebuilt the whole window saved as
         // `restoredClosedWindowId`, and Chromium dropped its parked record for
         // that id before making this call. Retire this side's half first, so
@@ -543,22 +630,37 @@ extension PhiChromiumCoordinator: PhiChromiumBridgeDelegate {
             SpaceManager.shared.retireParkedGhostReopenedFromUndoStack(
                 windowId: Int(restoredClosedWindowId))
         }
-        mainBrowserWindowCreated(window,
-                                 type: browserType,
-                                 profileId: profileId,
-                                 windowId: windowId,
-                                 restoredFromWindowId: restoredFromWindowId,
-                                 restoredSpaceId: restoredSpaceId)
+        handleMainBrowserWindowCreated(
+            window,
+            type: browserType,
+            profileId: profileId,
+            windowId: windowId,
+            restoredFromWindowId: restoredFromWindowId,
+            restoredSpaceId: restoredSpaceId,
+            presentationContext: presentationContext
+        )
     }
 
     func mainBrowserWindowCreated(_ window: NSWindow, type browserType: ChromiumBrowserType, profileId: String, windowId: Int64, restoredFromWindowId: Int64, restoredSpaceId: String?) {
-        AppLogInfo("🌐 [Chromium] mainBrowserWindowCreated called - windowId: \(windowId), restoredFrom: \(restoredFromWindowId), restoredSpace: \(restoredSpaceId ?? "nil"), type: \(browserType.rawValue)")
+        handleMainBrowserWindowCreated(
+            window,
+            type: browserType,
+            profileId: profileId,
+            windowId: windowId,
+            restoredFromWindowId: restoredFromWindowId,
+            restoredSpaceId: restoredSpaceId,
+            presentationContext: nil
+        )
+    }
 
+    private func handleMainBrowserWindowCreated(_ window: NSWindow, type browserType: ChromiumBrowserType, profileId: String, windowId: Int64, restoredFromWindowId: Int64, restoredSpaceId: String?, presentationContext: [String: Any]?) {
+        AppLogInfo("🌐 [Chromium] mainBrowserWindowCreated called - windowId: \(windowId), restoredFrom: \(restoredFromWindowId), restoredSpace: \(restoredSpaceId ?? "nil"), type: \(browserType.rawValue)")
 
         guard browserType == .normal || browserType == .incognito
                 || browserType == .incognitoSpace || browserType == .shadow
-                || browserType == .agentSpace else {
-            AppLogInfo("🌐 [Chromium] Ignoring window type: \(browserType.rawValue) (not normal/incognito/incognitoSpace/agentSpace)")
+                || browserType == .agentSpace || browserType == .kiosk
+                || browserType == .kioskIncognito else {
+            AppLogInfo("🌐 [Chromium] Ignoring unsupported window type: \(browserType.rawValue)")
             return
         }
 
@@ -635,7 +737,8 @@ extension PhiChromiumCoordinator: PhiChromiumBridgeDelegate {
                 resolvedSlot = SpaceManager.shared.createSlot(initialSpaceId: spaceId)
             } else if let restored = SpaceManager.shared.claimRestoredWindow(
                 forRestoredFromWindowId: Int(restoredFromWindowId),
-                profileId: profileId) {
+                profileId: profileId,
+                arrivingWindowId: Int(windowId)) {
                 // Session-restore path: Chromium replays each saved window
                 // as a separate `mainBrowserWindowCreated` callback with no
                 // pending spawn, reporting the PREVIOUS session's windowId
@@ -707,14 +810,24 @@ extension PhiChromiumCoordinator: PhiChromiumBridgeDelegate {
                    windowSpaceId: spaceId) {
                 resolvedSlot.markRestoredSiblingForConcealment(spaceId: spaceId)
             }
-            let mainWindowController = MainBrowserWindowController(
-                window: window,
-                windowId: Int(windowId),
-                browserType: browserType,
-                profileId: profileId,
-                spaceId: spaceId,
-                slot: resolvedSlot
-            )
+            // The NSWindow callback is synchronous on Chromium's UI thread;
+            // register its state before the first tab event can be delivered.
+            let mainWindowController = MainActor.assumeIsolated {
+                MainBrowserWindowControllersManager.shared.createWindowController(
+                    window: window,
+                    windowId: Int(windowId),
+                    browserType: browserType,
+                    profileId: profileId,
+                    spaceId: spaceId,
+                    slot: resolvedSlot,
+                    presentationRequest: KioskWindowPresentationRequest(
+                        bridgeContext: presentationContext
+                    )
+                )
+            }
+            MainActor.assumeIsolated {
+                AppController.shared?.externalLinkPresentationWindowDidOpen()
+            }
             // Do NOT force key/front for the active window here. Chromium's
             // BrowserWindow Show() / ShowInactive() runs post-ctor on this same
             // NSWindow and drives visibility + activation with the correct
@@ -928,6 +1041,14 @@ extension PhiChromiumCoordinator: PhiChromiumBridgeDelegate {
             "tabId=\(id) windowId=\(windowId) index=\(tab.index) " +
             "creationPayload=\((tabInfo["creationContext"] as? [AnyHashable: Any]) ?? tabInfo)"
         )
+        // Claims an agent's pending user-Space open, if this is one; every
+        // other tab creation falls straight through.
+        if Thread.isMainThread {
+            MainActor.assumeIsolated {
+                AgentUserSpaceDriveRegistry.shared.noteTabCreated(
+                    tabId: id, windowId: windowId.intValue)
+            }
+        }
         if MainBrowserWindowControllersManager.shared.hasDanglingWindow(for: windowId.intValue) {
             MainBrowserWindowControllersManager.shared.addPendingTabToDanglingWindow(tab, windowId: windowId.intValue)
             AppLogInfo("🪟 [Chromium] Tab added to dangling window pending tabs - windowId: \(windowId), tabGuid: \(id)")
@@ -1106,13 +1227,28 @@ extension PhiChromiumCoordinator: PhiChromiumBridgeDelegate {
         if Thread.isMainThread {
             MainActor.assumeIsolated {
                 // nil window (already torn down) → skip silently; the mask is best-effort.
-                MainBrowserWindowControllersManager.shared
-                    .controller(for: windowId.intValue)?
-                    .mainSplitViewController.webContentContainerViewController
-                    .maskClosingTab(tabId: tabId.intValue)
+                let controller = MainBrowserWindowControllersManager.shared
+                    .controller(for: windowId.intValue)
+                if !(controller is KioskBrowserWindowController) {
+                    controller?.mainSplitViewController.webContentContainerViewController
+                        .maskClosingTab(tabId: tabId.intValue)
+                    // If the closing tab is hosted by the Peek panel, detach its
+                    // native view now, while the WebContents is still alive — the
+                    // async EventBus close below runs after Chromium destroyed it.
+                    controller?.peekPanelControllerIfLoaded?
+                        .detachContentIfHosting(tabId: tabId.intValue)
+                    // Same rule for a closing reader-overlay surface tab.
+                    controller?.readerPanelControllerIfLoaded?
+                        .detachContentIfHosting(tabId: tabId.intValue)
+                }
             }
         } else {
             assertionFailure("tabWillBeRemove off the main thread; skipping best-effort close mask")
+        }
+        if Thread.isMainThread {
+            MainActor.assumeIsolated {
+                AgentUserSpaceDriveRegistry.shared.tabWasRemoved(tabId: tabId.intValue)
+            }
         }
         EventBus.shared
             .send(TabEvent(browserId: windowId.intValue,
@@ -1582,6 +1718,24 @@ extension PhiChromiumCoordinator {
             browserId: windowId.intValue,
             action: .openLinkAsSplitPartner(partnerTabId: partnerTabId.intValue,
                                             url: url)))
+    }
+
+    func openLinkAsPeek(withSourceTabId sourceTabId: Int64,
+                        url: String,
+                        windowId: Int64) {
+        AppLogDebug("👀 [Peek] openLinkAsPeek: source=\(sourceTabId) url=\(url) window=\(windowId)")
+        EventBus.shared.send(TabEvent(
+            browserId: windowId.intValue,
+            action: .openLinkAsPeek(sourceTabId: sourceTabId.intValue, url: url)))
+    }
+
+    // Synchronous query from Chromium's context-menu build: "Open Link in
+    // Peek View" is offered only while the Peek feature toggle (Settings ›
+    // General) is on and a sidebar layout is active — Peek is a
+    // sidebar-layout surface.
+    func isPeekLinkSurfaceEnabled() -> Bool {
+        PhiPreferences.GeneralSettings.peekViewEnabled.loadValue()
+            && !PhiPreferences.GeneralSettings.loadLayoutMode().isTraditional
     }
 }
 

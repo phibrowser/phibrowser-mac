@@ -33,6 +33,107 @@ class MainBrowserWindowController: NSWindowController {
     private lazy var imagePreviewOverlayViewController: ImagePreviewOverlayViewController = {
         ImagePreviewOverlayViewController(state: browserState.imagePreviewState)
     }()
+
+    /// Peek popup panel, created on first present. Exposed to the
+    /// coordinator (`tabWillBeRemove`) for the synchronous view detach.
+    private var peekPanelController: PeekPanelController?
+    var peekPanelControllerIfLoaded: PeekPanelController? { peekPanelController }
+    /// Feeds the peek panel's appear flight. Lives here rather than in the
+    /// panel controller because it has to be recording before the first peek
+    /// opens — which is when that controller is built.
+    private var peekOriginTracker: PeekOriginTracker?
+    /// Peek tab id per opener as of the previous `peeksByOpener` emission.
+    /// What makes "the user just opened this peek" decidable: mounting
+    /// content in the panel happens both for a fresh peek and for switching
+    /// to another opener's existing one, and only the first may fly.
+    private var previousPeekTabIdsByOpener: [Int: Int] = [:]
+    /// Focused tab id as of the previous emission, so a focus change can
+    /// invalidate a recorded press before it funds an unrelated peek.
+    private var lastFocusedTabIdForPeek: Int?
+
+    /// Reader View overlay panel, created on first present. Exposed to the
+    /// coordinator (`tabWillBeRemove`) for the synchronous view detach.
+    private var readerPanelController: ReaderPanelController?
+    var readerPanelControllerIfLoaded: ReaderPanelController? { readerPanelController }
+
+    /// Child window hosting the omnibox overlay ABOVE the peek/reader
+    /// panels: those are child windows themselves, and a child window draws
+    /// above every in-window view — an in-window omnibox would be covered by
+    /// them. It stays in the browser window's own level so it keeps the
+    /// window's place in the inter-app stacking order (any level above
+    /// `.normal` would leave it floating over other apps once ours
+    /// deactivates); the ordering above the peek/reader panels comes from
+    /// sibling order among the children instead. Created on first use, and
+    /// taken off screen again when the overlay dismisses.
+    private(set) var omniBoxHostPanel: NSPanel?
+    private var omniBoxHostResizeObserver: NSObjectProtocol?
+
+    var centeredOmniBoxHorizontalInset: CGFloat { 0 }
+
+    private final class KeyableOverlayPanel: NSPanel {
+        override var canBecomeKey: Bool { true }
+    }
+
+    /// Returns the omnibox host panel attached to this window, sized to its
+    /// content area and accepting events, creating it on first use.
+    @discardableResult
+    func attachAndShowOmniBoxHostPanel() -> NSPanel? {
+        guard let window = self.window else { return nil }
+        if omniBoxHostPanel == nil {
+            let panel = KeyableOverlayPanel(
+                contentRect: .zero,
+                styleMask: [.borderless, .fullSizeContentView],
+                backing: .buffered,
+                defer: true
+            )
+            panel.isOpaque = false
+            panel.hasShadow = false
+            panel.backgroundColor = .clear
+            panel.isReleasedWhenClosed = false
+            panel.hidesOnDeactivate = false
+            panel.contentView = NSView()
+            omniBoxHostPanel = panel
+            // Child windows do not follow parent resizes on their own.
+            omniBoxHostResizeObserver = NotificationCenter.default.addObserver(
+                forName: NSWindow.didResizeNotification,
+                object: window,
+                queue: .main
+            ) { [weak self] _ in
+                self?.syncOmniBoxHostPanelFrame()
+            }
+        }
+        guard let panel = omniBoxHostPanel else { return nil }
+        // Share the browser window's level so the pair moves through the
+        // inter-app window order as one — the overlay must never outlive our
+        // activation on top of another app's windows.
+        panel.level = window.level
+        if panel.parent == nil {
+            // Re-attaching on every show lands the host above the peek and
+            // reader panels, the siblings it has to cover.
+            window.addChildWindow(panel, ordered: .above)
+        }
+        panel.ignoresMouseEvents = false
+        syncOmniBoxHostPanelFrame()
+        panel.makeKeyAndOrderFront(nil)
+        return panel
+    }
+
+    /// Takes the emptied host panel off screen once the overlay has detached
+    /// its content, so a dismissed omnibox leaves no window behind.
+    private func retireOmniBoxHostPanelIfIdle() {
+        guard let panel = omniBoxHostPanel,
+              omniBoxContainerViewController?.hasShown != true else { return }
+        panel.parent?.removeChildWindow(panel)
+        panel.orderOut(nil)
+    }
+
+    private func syncOmniBoxHostPanelFrame() {
+        guard let window = self.window,
+              let panel = omniBoxHostPanel,
+              let contentView = window.contentView else { return }
+        let inWindow = contentView.convert(contentView.bounds, to: nil)
+        panel.setFrame(window.convertToScreen(inWindow), display: true)
+    }
     
     lazy var omnibackgroundView: EventBlockBgView = {
        return EventBlockBgView()
@@ -43,11 +144,21 @@ class MainBrowserWindowController: NSWindowController {
     }()
     
     private var originalContentView: NSView?
+    /// Holds the native traffic lights on the chrome row beside them;
+    /// see `updateTrafficLightPlacement(fullScreen:)`.
+    private var trafficLightPositioner: TrafficLightPositioner?
+    /// The layout the live positioner was built for, so the titlebar is
+    /// only handed back and re-shifted when the layout actually changes.
+    private var trafficLightLayoutMode: LayoutMode?
+    private var kioskContentViewController: KioskBrowserContentViewController?
     lazy var cancellables = Set<AnyCancellable>()
     private var multiSelectionEscapeMonitor: Any?
     private(set) var windowId = 0
     @Published private(set) var browserState: BrowserState
-    var tabStripView: TabStrip? { mainSplitViewController.webContentContainerViewController.tabStripView }
+    var tabStripView: TabStrip? {
+        guard !browserState.isKioskWindow else { return nil }
+        return mainSplitViewController.webContentContainerViewController.tabStripView
+    }
     
     required init?(coder: NSCoder) {
         fatalError("not support")
@@ -59,13 +170,16 @@ class MainBrowserWindowController: NSWindowController {
          profileId: String = LocalStore.defaultProfileId,
          spaceId: String = LocalStore.defaultSpaceId,
          account: Account = AccountController.shared.account ?? AccountController.defaultAccount,
-         slot: SpaceWindowSlot? = nil) {
-        let state = BrowserState(
+         slot: SpaceWindowSlot? = nil,
+         browserState suppliedBrowserState: BrowserState? = nil) {
+        let state = suppliedBrowserState ?? BrowserState(
             windowId: windowId,
             localStore: account.localStorage,
             profileId: profileId,
             spaceId: spaceId,
-            isIncognito: browserType == .incognito || browserType == .incognitoSpace,
+            isIncognito: browserType == .incognito
+                || browserType == .incognitoSpace
+                || browserType == .kioskIncognito,
             isIncognitoSpace: browserType == .incognitoSpace
         )
         self.browserState = state
@@ -264,6 +378,7 @@ class MainBrowserWindowController: NSWindowController {
             }
             .store(in: &cancellables)
         setupContentView()
+        observeBlockingOverlayVisibility()
         // Not a repeat of the call above: that one ran before the split view
         // existed, so this is the only one that reaches the content tree.
         applyThemeAppearance(to: window)
@@ -275,6 +390,7 @@ class MainBrowserWindowController: NSWindowController {
     /// and deminiaturizing doesn't re-trigger it — leaving the restored window
     /// blank. Drive the content setup now that the window is visible again.
     @objc private func handleWindowDidDeminiaturize(_ note: Notification) {
+        guard !browserState.isKioskWindow else { return }
         mainSplitViewController.phiHandleRestoreFromMinimized()
     }
 
@@ -307,6 +423,16 @@ class MainBrowserWindowController: NSWindowController {
     
     private func setupContentView() {
         guard let _ = self.window else { return }
+
+        if let kioskState = browserState as? KioskBrowserState {
+            let controller = KioskBrowserContentViewController(state: kioskState)
+            kioskContentViewController = controller
+            contentViewController = controller
+            window?.standardWindowButton(.closeButton)?.isHidden = false
+            window?.standardWindowButton(.miniaturizeButton)?.isHidden = false
+            window?.standardWindowButton(.zoomButton)?.isHidden = false
+            return
+        }
         
         self.contentViewController = mainSplitViewController
         
@@ -330,7 +456,7 @@ class MainBrowserWindowController: NSWindowController {
                 window.standardWindowButton(.zoomButton)?.isHidden = hideTrafficLights
                 
                 window.titlebarAppearsTransparent = !fullScreen
-                
+                self.updateTrafficLightPlacement(fullScreen: fullScreen)
             }
             .store(in: &cancellables)
         self.contentViewController = mainSplitViewController
@@ -348,9 +474,215 @@ class MainBrowserWindowController: NSWindowController {
         imagePreviewOverlayViewController.view.snp.makeConstraints { make in
             make.edges.equalToSuperview()
         }
+
+        // A peek's appear flight starts from the press that opened it, which
+        // is long gone by the time the panel is built — start recording now.
+        peekOriginTracker = PeekOriginTracker(
+            paneViewController: mainSplitViewController.webContentContainerViewController
+        )
+
+        // Peek popup: each peek belongs to its opener tab, so the one panel
+        // always shows the focused tab's peek — switching tabs swaps the
+        // hosted content to the newly focused opener's peek, hides the panel
+        // while the focused tab has none, and dismisses it only when no peek
+        // is left in the window.
+        $browserState
+            .flatMap { state in
+                state.peekState.$peeksByOpener
+                    .combineLatest(state.$focusingTab)
+            }
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] peeksByOpener, focusingTab in
+                guard let self else { return }
+                let peekTabIds = peeksByOpener.mapValues { $0.guid }
+                let previousPeekTabIds = self.previousPeekTabIdsByOpener
+                self.previousPeekTabIdsByOpener = peekTabIds
+                // A press funds only the peek it opened. The focused tab does
+                // not change while a peek is created (the opener stays
+                // focused), so a focus change means the recorded press and
+                // whatever peek shows up next are unrelated — drop it, or a
+                // peek revealed later flies out of an unrelated click.
+                if focusingTab?.guid != self.lastFocusedTabIdForPeek {
+                    self.lastFocusedTabIdForPeek = focusingTab?.guid
+                    self.peekOriginTracker?.invalidate()
+                }
+                guard !peeksByOpener.isEmpty else {
+                    self.peekPanelController?.dismiss()
+                    return
+                }
+                if let focusingTab, let tab = peeksByOpener[focusingTab.guid] {
+                    self.presentPeekPanel(
+                        for: tab,
+                        flyIn: Self.isFreshlyOpenedPeek(
+                            previousPeekTabIdsByOpener: previousPeekTabIds,
+                            openerTabId: focusingTab.guid,
+                            peekTabId: tab.guid
+                        )
+                    )
+                } else {
+                    self.peekPanelController?.hide()
+                }
+            }
+            .store(in: &cancellables)
+
+        // Reader View overlay: each reader belongs to its origin tab, so the
+        // one panel always shows the focused tab's reader — switching tabs
+        // swaps the hosted content to the newly focused origin's reader,
+        // hides the panel while the focused tab has none, and dismisses it
+        // only when no reader is left in the window.
+        $browserState
+            .flatMap { state in
+                state.readerOverlayState.$readersByOrigin
+                    .combineLatest(state.$focusingTab)
+            }
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] readersByOrigin, focusingTab in
+                guard let self else { return }
+                guard !readersByOrigin.isEmpty else {
+                    self.readerPanelController?.dismiss()
+                    return
+                }
+                if let focusingTab, let tab = readersByOrigin[focusingTab.guid] {
+                    self.presentReaderPanel(for: tab)
+                } else {
+                    self.readerPanelController?.hide()
+                }
+            }
+            .store(in: &cancellables)
     }
 
-    
+    /// Handles blocking overlays for every browser window. The Omnibox host
+    /// panel must stop accepting input when it dismisses; regular windows also
+    /// use this signal to eclipse peek/reader panels or conceal them for tab
+    /// search. Kiosk returns before that regular content setup, but shares the
+    /// same full-window Omnibox host and therefore needs this observer too.
+    private func observeBlockingOverlayVisibility() {
+        NotificationCenter.default.publisher(for: .phiInWindowOverlayVisibilityChanged)
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] notification in
+                guard let self,
+                      notification.object as? NSWindow === self.window,
+                      let visible = notification.userInfo?["visible"] as? Bool else { return }
+                if notification.userInfo?["surface"] as? String == "omnibox" {
+                    if !visible {
+                        // The empty host must neither eat clicks nor hold
+                        // key while its hide animation plays out.
+                        self.omniBoxHostPanel?.ignoresMouseEvents = true
+                        self.window?.makeKey()
+                    }
+                    self.peekPanelController?.setEclipsedByInWindowOverlay(
+                        visible, by: self.omniBoxHostPanel)
+                    self.readerPanelController?.setEclipsedByInWindowOverlay(
+                        visible, by: self.omniBoxHostPanel)
+                    if !visible {
+                        self.retireOmniBoxHostPanelIfIdle()
+                    }
+                } else {
+                    self.peekPanelController?.setConcealedByInWindowOverlay(visible)
+                    self.readerPanelController?.setConcealedByInWindowOverlay(visible)
+                }
+            }
+            .store(in: &cancellables)
+    }
+
+    /// Whether the focused opener's peek is one the user just opened, rather
+    /// than one that was already mounted under that opener — switching back
+    /// to an existing peek must not spend a press on a flight.
+    static func isFreshlyOpenedPeek(previousPeekTabIdsByOpener: [Int: Int],
+                                    openerTabId: Int,
+                                    peekTabId: Int) -> Bool {
+        previousPeekTabIdsByOpener[openerTabId] != peekTabId
+    }
+
+    private func presentPeekPanel(for tab: Tab, flyIn: Bool) {
+        guard let window = self.window else { return }
+        if peekPanelController == nil {
+            let container = mainSplitViewController.webContentContainerViewController
+            peekPanelController = PeekPanelController(
+                browserState: browserState,
+                parentWindow: window,
+                anchorView: container.view,
+                cardViewProvider: { [weak container] in container?.currentPageCardView },
+                originTracker: peekOriginTracker
+            )
+        }
+        peekPanelController?.present(tab: tab, flyIn: flyIn)
+    }
+
+    private func presentReaderPanel(for tab: Tab) {
+        guard let window = self.window else { return }
+        if readerPanelController == nil {
+            let container = mainSplitViewController.webContentContainerViewController
+            readerPanelController = ReaderPanelController(
+                browserState: browserState,
+                parentWindow: window,
+                anchorView: container.view,
+                cardViewProvider: { [weak container] in container?.currentPageCardView }
+            )
+        }
+        readerPanelController?.present(tab: tab)
+    }
+
+    // MARK: - Traffic light placement
+
+    /// Centre line of the chrome row that runs beside the traffic lights, as a
+    /// distance from the top of the window.
+    ///
+    /// `.performance` and `.balanced` are both `SidebarHeaderView`'s 24pt
+    /// control row, at its default 8pt and legacy 15.5pt top insets;
+    /// `.comfortable` is the horizontal tab strip, whose 32pt tab row starts
+    /// `WebContentConstant.edgesSpacing - 2` below the top of the window.
+    private static func chromeRowCenter(for layoutMode: LayoutMode) -> CGFloat {
+        switch layoutMode {
+        case .performance:
+            return 20
+        case .balanced:
+            return 27.5
+        case .comfortable:
+            return 22
+        }
+    }
+
+    /// Shifts the native traffic lights onto the chrome row beside them.
+    ///
+    /// AppKit centres the discs in the titlebar height Chromium reports, which
+    /// is the same place in all three layouts while Phi's own row sits
+    /// somewhere different in each — so left alone the lights line up with at
+    /// most one layout. The lights are what moves, rather than the rows: a row
+    /// carries the header's vertical rhythm and the strip's hit targets with
+    /// it, and the lights carry nothing.
+    /// `KioskBrowserWindowController` moves its own lights the same way, by
+    /// `KioskBrowserToolbar.titlebarVerticalShift`.
+    ///
+    /// The row centre is handed over as an absolute distance from the top of
+    /// the window rather than as a shift off AppKit's placement, so a titlebar
+    /// AppKit re-tiles or re-heights later — which is what a system overlay
+    /// over the window does — cannot leave the lights describing the place the
+    /// row used to be.
+    private func updateTrafficLightPlacement(fullScreen: Bool) {
+        guard let window else { return }
+        guard !fullScreen else {
+            // AppKit rebuilds the titlebar across the transition and restores
+            // the default placement on its own.
+            trafficLightPositioner?.stop(restoringPlacement: false)
+            trafficLightPositioner = nil
+            trafficLightLayoutMode = nil
+            return
+        }
+        let layoutMode = PhiPreferences.GeneralSettings.loadLayoutMode()
+        guard trafficLightLayoutMode != layoutMode
+                || trafficLightPositioner == nil else { return }
+
+        trafficLightPositioner?.stop(restoringPlacement: true)
+        let positioner = TrafficLightPositioner(
+            window: window,
+            centerFromWindowTop: Self.chromeRowCenter(for: layoutMode)
+        )
+        trafficLightPositioner = positioner
+        trafficLightLayoutMode = layoutMode
+        positioner.start()
+    }
+
     @objc private func myWindowWillEnterFullScreen(_ noti: Notification) {
         if noti.object as? NSWindow === self.window {
             browserState.toggleFullScreenMode(true)
@@ -387,6 +719,13 @@ class MainBrowserWindowController: NSWindowController {
         // making this a no-op; kept as a backstop in case the destruction
         // order ever shifts. See spec §9.1 / §9.4.
         browserState.exitPlaceholderMode()
+        // Drop peek bookkeeping and the panel; the peek tab itself is torn
+        // down by Chromium together with the window's tab strip.
+        browserState.teardownPeekForWindowClose()
+        peekPanelController?.dismiss()
+        // Same for the reader overlay and its surface tab.
+        browserState.teardownReaderOverlayForWindowClose()
+        readerPanelController?.dismiss()
     }
 
 
@@ -435,6 +774,7 @@ class MainBrowserWindowController: NSWindowController {
     }
 
     func containsTabDragBoundary(at screenLocation: CGPoint) -> Bool {
+        guard !browserState.isKioskWindow else { return false }
         if tabStripView?.containsScreenLocation(screenLocation) == true {
             return true
         }
@@ -448,6 +788,10 @@ class MainBrowserWindowController: NSWindowController {
     /// Called when Chromium has hidden the previous tab and it's ready for cleanup.
     /// Forwards to WebContentContainerViewController to remove the old NSView.
     func handlePreviousTabReadyForCleanup(tabId: Int) {
+        if let kioskContentViewController {
+            kioskContentViewController.handlePreviousTabReadyForCleanup(tabId: tabId)
+            return
+        }
         mainSplitViewController.webContentContainerViewController
             .handlePreviousTabReadyForCleanup(tabId: tabId)
     }
@@ -455,6 +799,10 @@ class MainBrowserWindowController: NSWindowController {
     /// Called when a new tab has completed its first visually non-empty paint.
     /// Forwards to WebContentContainerViewController to bring the new tab's view to front.
     func handleTabReadyToDisplay(tabId: Int) {
+        if let kioskContentViewController {
+            kioskContentViewController.handleTabReadyToDisplay(tabId: tabId)
+            return
+        }
         mainSplitViewController.webContentContainerViewController
             .handleTabReadyToDisplay(tabId: tabId)
     }

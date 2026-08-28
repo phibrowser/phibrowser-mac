@@ -55,6 +55,7 @@ final class ConnectorItemState: @MainActor Identifiable {
     var lastSyncTime: String = ""
     var isLoading: Bool = false
     var isAuthorizationPending: Bool = false
+    private(set) var isUnassigned: Bool = false
     var errorMessage: String?
     private var oauthConnection: OAuthConnection?
 
@@ -62,8 +63,9 @@ final class ConnectorItemState: @MainActor Identifiable {
         self.template = template
     }
 
-    func updateConnection(_ newConnection: OAuthConnection?) {
+    func updateConnection(_ newConnection: OAuthConnection?, isUnassigned: Bool = false) {
         oauthConnection = newConnection
+        self.isUnassigned = newConnection != nil && isUnassigned
         refreshStatus()
         refreshSyncTime()
     }
@@ -108,7 +110,10 @@ final class ConnectorItemState: @MainActor Identifiable {
     }
 
     var actionTitle: String {
-        status.isConnected
+        if isUnassigned {
+            return NSLocalizedString("settings.ai.connectors.assignButton", value: "Assign", comment: "AI settings - Button that assigns an existing unassigned connector to the selected browser Profile")
+        }
+        return status.isConnected
         ? NSLocalizedString("settings.ai.connectors.disconnectButton", value: "Disconnect", comment: "AI settings - Button to disconnect an external data connector")
         : NSLocalizedString("settings.ai.connectors.connectButton", value: "Connect", comment: "AI settings - Button to connect an external data connector")
     }
@@ -119,14 +124,21 @@ final class ConnectorItemState: @MainActor Identifiable {
 @Observable
 @MainActor
 final class AISettingsConnectorViewModel {
+    private struct OAuthAuthorizationAttempt: Hashable {
+        let profileId: String
+        let provider: String
+    }
+
     var connectors: [ConnectorItemState]
+    private(set) var selectedProfileId: String?
     private let apiClient = APIClient.shared
     private var oauthConnections: [OAuthConnection] = []
+    private var unassignedOAuthConnections: [OAuthConnection] = []
     private var isRefreshingConnections = false
-    private var pendingAuthorizationPolls: [String: Task<Void, Never>] = [:]
-    private var pendingAuthorizationTabGuids: [String: String] = [:]
-    private var pendingAuthorizationTabIds: [Int: String] = [:]
-    private var connectionAttemptsInProgress: Set<String> = []
+    private var pendingAuthorizationPolls: [OAuthAuthorizationAttempt: Task<Void, Never>] = [:]
+    private var pendingAuthorizationTabGuids: [OAuthAuthorizationAttempt: String] = [:]
+    private var pendingAuthorizationTabIds: [Int: OAuthAuthorizationAttempt] = [:]
+    private var connectionAttemptsInProgress: Set<OAuthAuthorizationAttempt> = []
     private var tabCloseObserver: NotificationObserver?
 
     init() {
@@ -153,9 +165,38 @@ final class AISettingsConnectorViewModel {
         loadConnections()
     }
 
+    /// Chooses the profile whose connector state this settings pane manages.
+    /// The selection is independent from the currently focused browser window
+    /// so a user can manage connectors for every browser profile in one place.
+    func prepareProfileSelection(availableProfileIds: [String], preferredProfileId: String?) {
+        let selectedProfileIsAvailable = selectedProfileId.map { availableProfileIds.contains($0) } ?? false
+        let preferredProfileIsAvailable = preferredProfileId.map { availableProfileIds.contains($0) } ?? false
+        let targetProfileId = selectedProfileIsAvailable
+            ? selectedProfileId
+            : (preferredProfileIsAvailable ? preferredProfileId : availableProfileIds.first)
+
+        guard selectedProfileId != targetProfileId else { return }
+        cancelAllPendingAuthorizationPolls()
+        selectedProfileId = targetProfileId
+        resetDisplayedConnections()
+        refreshConnections()
+    }
+
+    func selectProfile(_ profileId: String) {
+        guard selectedProfileId != profileId else { return }
+        selectedProfileId = profileId
+        cancelAllPendingAuthorizationPolls()
+        resetDisplayedConnections()
+        refreshConnections()
+    }
+
     func refreshConnections() {
         guard ApplicationState.shared.isAuthenticated else {
             suspendForUnauthenticatedAccess()
+            return
+        }
+        guard selectedProfileId != nil else {
+            resetDisplayedConnections()
             return
         }
         loadConnections()
@@ -166,30 +207,36 @@ final class AISettingsConnectorViewModel {
             suspendForUnauthenticatedAccess()
             return
         }
+        guard let profileId = selectedProfileId else { return }
+        let attempt = OAuthAuthorizationAttempt(profileId: profileId, provider: connector.template.provider)
         connector.errorMessage = nil
         connector.isLoading = true
         Task { @MainActor in
-            await reloadConnectionsFromNetwork()
+            await reloadConnectionsFromNetwork(profileId: profileId)
             if connector.status.isConnected {
-                finishPendingAuthorization(provider: connector.template.provider, closeTab: true)
+                finishPendingAuthorization(attempt: attempt, closeTab: true)
             } else {
                 connector.isLoading = false
             }
         }
     }
 
-    func handleOAuthReturn(provider: String, result: String, error: String?) {
+    func handleOAuthReturn(provider: String, result: String, error: String?, profileId: String? = nil) {
         guard ApplicationState.shared.isAuthenticated else {
             suspendForUnauthenticatedAccess()
             return
         }
-        cancelPendingAuthorizationPoll(provider: provider)
-        pendingAuthorizationTabGuids[provider] = nil
-        removePendingAuthorizationTabIds(provider: provider)
+        guard let selectedProfileId,
+              profileId == nil || profileId == selectedProfileId else { return }
+        let attempt = OAuthAuthorizationAttempt(profileId: selectedProfileId, provider: provider)
+        guard pendingAuthorizationPolls[attempt] != nil || pendingAuthorizationTabGuids[attempt] != nil else { return }
+        cancelPendingAuthorizationPoll(attempt: attempt)
+        pendingAuthorizationTabGuids[attempt] = nil
+        removePendingAuthorizationTabIds(attempt: attempt)
 
         if result.lowercased() != "success",
            let connector = connectors.first(where: { $0.template.provider == provider }) {
-            connectionAttemptsInProgress.remove(provider)
+            connectionAttemptsInProgress.remove(attempt)
             connector.errorMessage = error ?? NSLocalizedString("settings.ai.connectors.authorization.failureMessage", value: "Connector authorization failed.", comment: "AI settings - OAuth authorization failure")
         }
 
@@ -197,15 +244,17 @@ final class AISettingsConnectorViewModel {
         setConnectorAuthorizationPending(provider: provider, isPending: false)
 
         Task { @MainActor in
-            await reloadConnectionsFromNetwork()
+            await reloadConnectionsFromNetwork(profileId: selectedProfileId)
         }
     }
 
     private func loadConnections(useCache: Bool = true) {
         guard ApplicationState.shared.isAuthenticated else { return }
+        guard let profileId = selectedProfileId, !profileId.isEmpty else { return }
 
-        if useCache, let cached = loadCachedConnections() {
+        if useCache, let cached = loadCachedConnections(profileId: profileId) {
             oauthConnections = cached
+            unassignedOAuthConnections = []
             updateConnectorStates()
             AppLogDebug("[AISettings] Loaded \(cached.count) cached OAuth connections")
         }
@@ -213,38 +262,67 @@ final class AISettingsConnectorViewModel {
         setAllLoading(true)
 
         Task { @MainActor in
-            await reloadConnectionsFromNetwork()
+            await reloadConnectionsFromNetwork(profileId: profileId)
         }
     }
 
-    private func reloadConnectionsFromNetwork() async {
+    private func reloadConnectionsFromNetwork(profileId: String) async {
         guard ApplicationState.shared.isAuthenticated else { return }
-        guard !isRefreshingConnections else { return }
+        guard !isRefreshingConnections else {
+            reloadAfterCurrentRequest = true
+            return
+        }
         isRefreshingConnections = true
         defer {
             isRefreshingConnections = false
             clearFinishedLoadingStates()
+            if reloadAfterCurrentRequest {
+                reloadAfterCurrentRequest = false
+                Task { @MainActor in
+                    guard let selectedProfileId = selectedProfileId else { return }
+                    await reloadConnectionsFromNetwork(profileId: selectedProfileId)
+                }
+            }
         }
 
         do {
-            let response = try await apiClient.getOAuthConnections()
+            let response = try await apiClient.getAllOAuthConnections()
             guard ApplicationState.shared.isAuthenticated else { return }
-            let connections = response.data.connections
+            guard selectedProfileId == profileId else { return }
+            let selectedConnections = Self.selectConnections(
+                response.data.connections,
+                forProfile: profileId
+            )
+            let connections = selectedConnections.scoped
+            let unassignedConnections = selectedConnections.unassigned
             let newlyConnectedProviders = Set(
-                connections.lazy.filter(\.connected).map(\.provider)
+                connections.lazy.filter(\.connected).map {
+                    OAuthAuthorizationAttempt(profileId: profileId, provider: $0.provider)
+                }
             ).intersection(connectionAttemptsInProgress)
             if !newlyConnectedProviders.isEmpty {
                 FirstTimeActionTracker.capture(.connectorConnected)
                 connectionAttemptsInProgress.subtract(newlyConnectedProviders)
             }
             oauthConnections = connections
-            cacheConnections(connections)
+            unassignedOAuthConnections = unassignedConnections
+            cacheConnections(connections, profileId: profileId)
             updateConnectorStates()
-            recordConnections(connections)
-            AppLogDebug("[AISettings] Fetched \(connections.count) OAuth connections from network")
+            recordConnections(connections + unassignedConnections)
+            AppLogDebug("[AISettings] Fetched \(connections.count) scoped and \(unassignedConnections.count) unassigned OAuth connections from network")
         } catch {
             AppLogError("[AISettings] Error loading OAuth connections: \(error)")
         }
+    }
+
+    static func selectConnections(
+        _ connections: [OAuthConnection],
+        forProfile profileId: String
+    ) -> (scoped: [OAuthConnection], unassigned: [OAuthConnection]) {
+        (
+            scoped: connections.filter { $0.profileId == profileId },
+            unassigned: connections.filter { $0.profileId == nil }
+        )
     }
 
     func toggleConnection(for connector: ConnectorItemState) {
@@ -252,12 +330,15 @@ final class AISettingsConnectorViewModel {
             suspendForUnauthenticatedAccess()
             return
         }
+        guard selectedProfileId != nil else { return }
         if connector.isLoading && !connector.isAuthorizationPending {
             return
         }
         connector.errorMessage = nil
 
-        if connector.status.isConnected {
+        if connector.isUnassigned {
+            assign(connector)
+        } else if connector.status.isConnected {
             disconnect(connector)
         } else {
             connect(connector)
@@ -265,11 +346,14 @@ final class AISettingsConnectorViewModel {
     }
 
     private func connect(_ connector: ConnectorItemState) {
-        guard ApplicationState.shared.isAuthenticated else { return }
+        guard ApplicationState.shared.isAuthenticated,
+              let profileId = selectedProfileId,
+              !profileId.isEmpty else { return }
         let provider = connector.template.provider
-        closePendingAuthorizationTab(provider: provider)
-        cancelPendingAuthorizationPoll(provider: provider)
-        connectionAttemptsInProgress.insert(provider)
+        let attempt = OAuthAuthorizationAttempt(profileId: profileId, provider: provider)
+        closePendingAuthorizationTab(attempt: attempt)
+        cancelPendingAuthorizationPoll(attempt: attempt)
+        connectionAttemptsInProgress.insert(attempt)
         connector.isLoading = true
         connector.isAuthorizationPending = true
 
@@ -277,21 +361,24 @@ final class AISettingsConnectorViewModel {
             do {
                 let response = try await apiClient.getOAuthAuthorization(
                     provider: provider,
-                    successRedirect: apiClient.oauthNativeFinishedRedirect(provider: provider, result: "success"),
-                    failureRedirect: apiClient.oauthNativeFinishedRedirect(provider: provider, result: "failure")
+                    successRedirect: apiClient.oauthNativeFinishedRedirect(provider: provider, result: "success", profileId: profileId),
+                    failureRedirect: apiClient.oauthNativeFinishedRedirect(provider: provider, result: "failure", profileId: profileId),
+                    profileId: profileId
                 )
-                let tabGuid = Self.oauthTabGuid(provider: provider)
-                guard openAuthorizationURL(response.data.authURL, provider: provider, tabGuid: tabGuid) else {
-                    connectionAttemptsInProgress.remove(provider)
+                guard selectedProfileId == profileId else { return }
+                let tabGuid = Self.oauthTabGuid()
+                guard openAuthorizationURL(response.data.authURL, attempt: attempt, tabGuid: tabGuid) else {
+                    connectionAttemptsInProgress.remove(attempt)
                     connector.isAuthorizationPending = false
                     return
                 }
-                pendingAuthorizationTabGuids[provider] = tabGuid
-                capturePendingAuthorizationTabId(provider: provider, tabGuid: tabGuid)
-                startPendingAuthorizationPoll(provider: provider)
-                AppLogInfo("[AISettings] Started OAuth authorization flow for provider: \(provider)")
+                pendingAuthorizationTabGuids[attempt] = tabGuid
+                capturePendingAuthorizationTabId(attempt: attempt, tabGuid: tabGuid)
+                startPendingAuthorizationPoll(attempt: attempt)
+                AppLogInfo("[AISettings] Started OAuth authorization flow for profile=\(profileId) provider=\(provider)")
             } catch {
-                connectionAttemptsInProgress.remove(provider)
+                guard selectedProfileId == profileId else { return }
+                connectionAttemptsInProgress.remove(attempt)
                 connector.isLoading = false
                 connector.isAuthorizationPending = false
                 connector.errorMessage = error.localizedDescription
@@ -300,10 +387,33 @@ final class AISettingsConnectorViewModel {
         }
     }
 
+    private func assign(_ connector: ConnectorItemState) {
+        guard ApplicationState.shared.isAuthenticated,
+              let profileId = selectedProfileId,
+              !profileId.isEmpty else { return }
+        connector.isLoading = true
+
+        Task { @MainActor in
+            defer { connector.isLoading = false }
+            do {
+                let provider = connector.template.provider
+                _ = try await apiClient.bindOAuthToken(provider: provider, profileId: profileId)
+                AppLogInfo("[AISettings] Assigned OAuth provider \(provider) to profile=\(profileId)")
+            } catch {
+                connector.errorMessage = error.localizedDescription
+                AppLogWarn("[AISettings] Failed to assign OAuth provider \(connector.template.provider): \(error)")
+            }
+            await reloadConnectionsFromNetwork(profileId: profileId)
+        }
+    }
+
     private func disconnect(_ connector: ConnectorItemState) {
-        guard ApplicationState.shared.isAuthenticated else { return }
-        connectionAttemptsInProgress.remove(connector.template.provider)
-        cancelPendingAuthorizationPoll(provider: connector.template.provider)
+        guard ApplicationState.shared.isAuthenticated,
+              let profileId = selectedProfileId,
+              !profileId.isEmpty else { return }
+        let attempt = OAuthAuthorizationAttempt(profileId: profileId, provider: connector.template.provider)
+        connectionAttemptsInProgress.remove(attempt)
+        cancelPendingAuthorizationPoll(attempt: attempt)
         connector.isLoading = true
 
         Task { @MainActor in
@@ -313,14 +423,14 @@ final class AISettingsConnectorViewModel {
             }
             do {
                 let provider = connector.template.provider
-                _ = try await apiClient.deleteOAuthToken(provider: provider)
+                _ = try await apiClient.deleteOAuthToken(provider: provider, profileId: profileId)
                 AppLogInfo("[AISettings] Disconnected OAuth provider: \(provider)")
             } catch {
                 connector.errorMessage = error.localizedDescription
                 AppLogWarn("[AISettings] Failed to disconnect provider \(connector.template.provider): \(error)")
             }
 
-            await reloadConnectionsFromNetwork()
+            await reloadConnectionsFromNetwork(profileId: profileId)
         }
     }
 
@@ -331,7 +441,13 @@ final class AISettingsConnectorViewModel {
     }
 
     private func clearFinishedLoadingStates() {
-        for connector in connectors where pendingAuthorizationPolls[connector.template.provider] == nil {
+        guard let profileId = selectedProfileId else {
+            setAllLoading(false)
+            return
+        }
+        for connector in connectors where pendingAuthorizationPolls[
+            OAuthAuthorizationAttempt(profileId: profileId, provider: connector.template.provider)
+        ] == nil {
             connector.isLoading = false
         }
     }
@@ -344,22 +460,23 @@ final class AISettingsConnectorViewModel {
         connectors.first { $0.template.provider == provider }?.isAuthorizationPending = isPending
     }
 
-    private func openAuthorizationURL(_ authURLString: String, provider: String, tabGuid: String) -> Bool {
+    private func openAuthorizationURL(_ authURLString: String, attempt: OAuthAuthorizationAttempt, tabGuid: String) -> Bool {
         guard ApplicationState.shared.isAuthenticated else { return false }
         guard let authURL = URL(string: authURLString),
               let scheme = authURL.scheme?.lowercased(),
               scheme == "https" || scheme == "http" else {
-            connectors.first { $0.template.provider == provider }?.errorMessage =
+            connectors.first { $0.template.provider == attempt.provider }?.errorMessage =
                 NSLocalizedString("settings.ai.connectors.authorization.invalidURLError", value: "The connector authorization URL is invalid.", comment: "AI settings - OAuth authorization URL error")
-            setConnectorLoading(provider: provider, isLoading: false)
+            setConnectorLoading(provider: attempt.provider, isLoading: false)
             return false
         }
 
-        guard let browserState = BrowserState.currentState()
-                ?? MainBrowserWindowControllersManager.shared.activeWindowController?.browserState else {
-            connectors.first { $0.template.provider == provider }?.errorMessage =
-                NSLocalizedString("settings.ai.connectors.authorization.openFailure", value: "Unable to open connector authorization.", comment: "AI settings - OAuth authorization open error")
-            setConnectorLoading(provider: provider, isLoading: false)
+        guard let browserState = MainBrowserWindowControllersManager.shared.getAllWindows()
+            .map(\.browserState)
+            .first(where: { $0.profileId == attempt.profileId }) else {
+            connectors.first { $0.template.provider == attempt.provider }?.errorMessage =
+                NSLocalizedString("settings.ai.connectors.authorization.openProfileFailure", value: "Open a browser window for the selected Profile to continue.", comment: "AI settings - OAuth authorization requires an open window for the selected browser Profile")
+            setConnectorLoading(provider: attempt.provider, isLoading: false)
             return false
         }
 
@@ -367,53 +484,55 @@ final class AISettingsConnectorViewModel {
         return true
     }
 
-    private static func oauthTabGuid(provider: String) -> String {
-        "oauth-connector-\(provider)"
+    private static func oauthTabGuid() -> String {
+        "oauth-connector-\(UUID().uuidString)"
     }
 
-    private func startPendingAuthorizationPoll(provider: String) {
+    private func startPendingAuthorizationPoll(attempt: OAuthAuthorizationAttempt) {
         guard ApplicationState.shared.isAuthenticated else { return }
-        pendingAuthorizationPolls[provider]?.cancel()
-        pendingAuthorizationPolls[provider] = nil
+        pendingAuthorizationPolls[attempt]?.cancel()
+        pendingAuthorizationPolls[attempt] = nil
 
-        pendingAuthorizationPolls[provider] = Task { @MainActor in
+        pendingAuthorizationPolls[attempt] = Task { @MainActor in
             let maxAttempts = 60
-            for attempt in 1...maxAttempts {
+            for pollAttempt in 1...maxAttempts {
                 guard !Task.isCancelled,
-                      ApplicationState.shared.isAuthenticated else { return }
+                      ApplicationState.shared.isAuthenticated,
+                      selectedProfileId == attempt.profileId else { return }
                 try? await Task.sleep(nanoseconds: 5 * 1_000_000_000)
                 guard !Task.isCancelled,
-                      ApplicationState.shared.isAuthenticated else { return }
+                      ApplicationState.shared.isAuthenticated,
+                      selectedProfileId == attempt.profileId else { return }
 
-                if let tabGuid = pendingAuthorizationTabGuids[provider] {
-                    capturePendingAuthorizationTabId(provider: provider, tabGuid: tabGuid)
+                if let tabGuid = pendingAuthorizationTabGuids[attempt] {
+                    capturePendingAuthorizationTabId(attempt: attempt, tabGuid: tabGuid)
                 }
-                await reloadConnectionsFromNetwork()
-                if connectors.first(where: { $0.template.provider == provider })?.status.isConnected == true {
-                    finishPendingAuthorization(provider: provider, closeTab: true)
-                    AppLogInfo("[AISettings] OAuth authorization connected for provider: \(provider)")
+                await reloadConnectionsFromNetwork(profileId: attempt.profileId)
+                if connectors.first(where: { $0.template.provider == attempt.provider })?.status.isConnected == true {
+                    finishPendingAuthorization(attempt: attempt, closeTab: true)
+                    AppLogInfo("[AISettings] OAuth authorization connected for profile=\(attempt.profileId) provider=\(attempt.provider)")
                     return
                 }
 
-                AppLogDebug("[AISettings] OAuth authorization polling attempt \(attempt) for provider: \(provider)")
+                AppLogDebug("[AISettings] OAuth authorization polling attempt \(pollAttempt) for profile=\(attempt.profileId) provider=\(attempt.provider)")
             }
 
-            AppLogWarn("[AISettings] OAuth authorization polling timed out for provider: \(provider)")
-            connectionAttemptsInProgress.remove(provider)
-            pendingAuthorizationPolls[provider] = nil
-            pendingAuthorizationTabGuids[provider] = nil
-            removePendingAuthorizationTabIds(provider: provider)
-            setConnectorLoading(provider: provider, isLoading: false)
-            setConnectorAuthorizationPending(provider: provider, isPending: false)
+            AppLogWarn("[AISettings] OAuth authorization polling timed out for profile=\(attempt.profileId) provider=\(attempt.provider)")
+            connectionAttemptsInProgress.remove(attempt)
+            pendingAuthorizationPolls[attempt] = nil
+            pendingAuthorizationTabGuids[attempt] = nil
+            removePendingAuthorizationTabIds(attempt: attempt)
+            setConnectorLoading(provider: attempt.provider, isLoading: false)
+            setConnectorAuthorizationPending(provider: attempt.provider, isPending: false)
         }
     }
 
-    private func cancelPendingAuthorizationPoll(provider: String) {
-        pendingAuthorizationPolls[provider]?.cancel()
-        pendingAuthorizationPolls[provider] = nil
-        pendingAuthorizationTabGuids[provider] = nil
-        removePendingAuthorizationTabIds(provider: provider)
-        setConnectorAuthorizationPending(provider: provider, isPending: false)
+    private func cancelPendingAuthorizationPoll(attempt: OAuthAuthorizationAttempt) {
+        pendingAuthorizationPolls[attempt]?.cancel()
+        pendingAuthorizationPolls[attempt] = nil
+        pendingAuthorizationTabGuids[attempt] = nil
+        removePendingAuthorizationTabIds(attempt: attempt)
+        setConnectorAuthorizationPending(provider: attempt.provider, isPending: false)
     }
 
     private func cancelAllPendingAuthorizationPolls() {
@@ -427,99 +546,112 @@ final class AISettingsConnectorViewModel {
         clearFinishedLoadingStates()
     }
 
-    private func finishPendingAuthorization(provider: String, closeTab: Bool) {
-        pendingAuthorizationPolls[provider]?.cancel()
-        pendingAuthorizationPolls[provider] = nil
-        setConnectorLoading(provider: provider, isLoading: false)
-        setConnectorAuthorizationPending(provider: provider, isPending: false)
+    private func cancelAndCloseAllPendingAuthorizations() {
+        let attempts = Set(pendingAuthorizationPolls.keys)
+            .union(pendingAuthorizationTabGuids.keys)
+            .union(pendingAuthorizationTabIds.values)
+        for attempt in attempts {
+            closePendingAuthorizationTab(attempt: attempt)
+        }
+        cancelAllPendingAuthorizationPolls()
+    }
+
+    private func finishPendingAuthorization(attempt: OAuthAuthorizationAttempt, closeTab: Bool) {
+        pendingAuthorizationPolls[attempt]?.cancel()
+        pendingAuthorizationPolls[attempt] = nil
+        setConnectorLoading(provider: attempt.provider, isLoading: false)
+        setConnectorAuthorizationPending(provider: attempt.provider, isPending: false)
         if closeTab {
-            closePendingAuthorizationTab(provider: provider)
+            closePendingAuthorizationTab(attempt: attempt)
         } else {
-            pendingAuthorizationTabGuids[provider] = nil
-            removePendingAuthorizationTabIds(provider: provider)
+            pendingAuthorizationTabGuids[attempt] = nil
+            removePendingAuthorizationTabIds(attempt: attempt)
         }
     }
 
     private func handleBrowserTabClosed(tabId: Int, localGuid: String?, url: String?) {
         guard ApplicationState.shared.isAuthenticated else { return }
-        guard let provider = pendingAuthorizationProvider(tabId: tabId, localGuid: localGuid, url: url) else { return }
+        guard let attempt = pendingAuthorizationAttempt(tabId: tabId, localGuid: localGuid, url: url) else { return }
         AppLogInfo(
             "[AISettings] OAuth authorization tab closed " +
-            "provider=\(provider) tabId=\(tabId) localGuid=\(localGuid ?? "nil") url=\(url ?? "nil")"
+            "profile=\(attempt.profileId) provider=\(attempt.provider) tabId=\(tabId) localGuid=\(localGuid ?? "nil") url=\(url ?? "nil")"
         )
         Task { @MainActor in
-            await reloadConnectionsFromNetwork()
-            if connectors.first(where: { $0.template.provider == provider })?.status.isConnected == true {
-                finishPendingAuthorization(provider: provider, closeTab: false)
+            guard selectedProfileId == attempt.profileId else { return }
+            await reloadConnectionsFromNetwork(profileId: attempt.profileId)
+            if connectors.first(where: { $0.template.provider == attempt.provider })?.status.isConnected == true {
+                finishPendingAuthorization(attempt: attempt, closeTab: false)
             } else {
-                connectionAttemptsInProgress.remove(provider)
-                cancelPendingAuthorizationPoll(provider: provider)
-                setConnectorLoading(provider: provider, isLoading: false)
+                connectionAttemptsInProgress.remove(attempt)
+                cancelPendingAuthorizationPoll(attempt: attempt)
+                setConnectorLoading(provider: attempt.provider, isLoading: false)
             }
         }
     }
 
-    private func pendingAuthorizationProvider(tabId: Int, localGuid: String?, url: String?) -> String? {
-        if let provider = pendingAuthorizationTabIds[tabId] {
-            return provider
+    private func pendingAuthorizationAttempt(tabId: Int, localGuid: String?, url: String?) -> OAuthAuthorizationAttempt? {
+        if let attempt = pendingAuthorizationTabIds[tabId] {
+            return attempt
         }
 
-        for (provider, expectedGuid) in pendingAuthorizationTabGuids {
+        for (attempt, expectedGuid) in pendingAuthorizationTabGuids {
             if localGuid == expectedGuid {
-                return provider
+                return attempt
             }
-            if Self.isOAuthCallbackURL(url, provider: provider)
-                || Self.isNativeFinishedURL(url, provider: provider) {
-                return provider
+            if Self.isOAuthCallbackURL(url, provider: attempt.provider)
+                || Self.isNativeFinishedURL(url, provider: attempt.provider) {
+                return attempt
             }
         }
 
         return nil
     }
 
-    private func capturePendingAuthorizationTabId(provider: String, tabGuid: String) {
+    private func capturePendingAuthorizationTabId(attempt: OAuthAuthorizationAttempt, tabGuid: String) {
         for controller in MainBrowserWindowControllersManager.shared.getAllWindows() {
+            guard controller.browserState.profileId == attempt.profileId else { continue }
             if let tab = controller.browserState.tabs.first(where: {
-                $0.guidInLocalDB == tabGuid || Self.isAuthorizationTab($0, provider: provider)
+                $0.guidInLocalDB == tabGuid || Self.isAuthorizationTab($0, provider: attempt.provider)
             }) {
-                pendingAuthorizationTabIds[tab.guid] = provider
-                AppLogInfo("[AISettings] Captured OAuth authorization tab provider=\(provider) tabId=\(tab.guid)")
+                pendingAuthorizationTabIds[tab.guid] = attempt
+                AppLogInfo("[AISettings] Captured OAuth authorization tab profile=\(attempt.profileId) provider=\(attempt.provider) tabId=\(tab.guid)")
                 return
             }
         }
 
-        AppLogDebug("[AISettings] OAuth authorization tab id not available yet provider=\(provider) tabGuid=\(tabGuid)")
+        AppLogDebug("[AISettings] OAuth authorization tab id not available yet profile=\(attempt.profileId) provider=\(attempt.provider) tabGuid=\(tabGuid)")
     }
 
-    private func removePendingAuthorizationTabIds(provider: String) {
-        pendingAuthorizationTabIds = pendingAuthorizationTabIds.filter { $0.value != provider }
+    private func removePendingAuthorizationTabIds(attempt: OAuthAuthorizationAttempt) {
+        pendingAuthorizationTabIds = pendingAuthorizationTabIds.filter { $0.value != attempt }
     }
 
-    private func closePendingAuthorizationTab(provider: String) {
-        guard let tabGuid = pendingAuthorizationTabGuids[provider] else {
-            AppLogWarn("[AISettings] Unable to close OAuth authorization tab because expected guid is missing provider=\(provider)")
-            removePendingAuthorizationTabIds(provider: provider)
+    private func closePendingAuthorizationTab(attempt: OAuthAuthorizationAttempt) {
+        guard let tabGuid = pendingAuthorizationTabGuids[attempt] else {
+            AppLogWarn("[AISettings] Unable to close OAuth authorization tab because expected guid is missing profile=\(attempt.profileId) provider=\(attempt.provider)")
+            removePendingAuthorizationTabIds(attempt: attempt)
             return
         }
-        pendingAuthorizationTabGuids[provider] = nil
+        pendingAuthorizationTabGuids[attempt] = nil
 
         var tabsToClose: [(tab: Tab, reason: String)] = []
         var collectedTabIds = Set<Int>()
         for controller in MainBrowserWindowControllersManager.shared.getAllWindows() {
+            guard controller.browserState.profileId == attempt.profileId else { continue }
             let tabSnapshots = controller.browserState.tabs.map {
                 "id=\($0.guid) localGuid=\($0.guidInLocalDB ?? "nil") url=\($0.url ?? "nil")"
             }.joined(separator: " | ")
             AppLogInfo(
                 "[AISettings] Searching OAuth authorization tab " +
-                "provider=\(provider) expectedGuid=\(tabGuid) " +
+                "profile=\(attempt.profileId) provider=\(attempt.provider) expectedGuid=\(tabGuid) " +
                 "windowId=\(controller.windowId) tabs=[\(tabSnapshots)]"
             )
 
             for tab in controller.browserState.tabs {
                 guard collectedTabIds.insert(tab.guid).inserted else { continue }
-                if Self.isNativeFinishedTab(tab, provider: provider) {
+                if Self.isNativeFinishedTab(tab, provider: attempt.provider) {
                     tabsToClose.append((tab, "native-finished"))
-                } else if Self.isOAuthCallbackTab(tab, provider: provider) {
+                } else if Self.isOAuthCallbackTab(tab, provider: attempt.provider) {
                     tabsToClose.append((tab, "callback"))
                 } else if tab.guidInLocalDB == tabGuid {
                     tabsToClose.append((tab, "guid"))
@@ -528,28 +660,28 @@ final class AISettingsConnectorViewModel {
         }
 
         guard !tabsToClose.isEmpty else {
-            removePendingAuthorizationTabIds(provider: provider)
-            AppLogWarn("[AISettings] Unable to find OAuth authorization tab to close provider=\(provider) expectedGuid=\(tabGuid)")
+            removePendingAuthorizationTabIds(attempt: attempt)
+            AppLogWarn("[AISettings] Unable to find OAuth authorization tab to close profile=\(attempt.profileId) provider=\(attempt.provider) expectedGuid=\(tabGuid)")
             return
         }
 
         let inactiveTabs = tabsToClose.filter { !$0.tab.isActive }
         let activeTabs = tabsToClose.filter { $0.tab.isActive }
         for item in inactiveTabs + activeTabs {
-            closeAuthorizationTab(item.tab, provider: provider, reason: item.reason)
+            closeAuthorizationTab(item.tab, attempt: attempt, reason: item.reason)
         }
     }
 
-    private func closeAuthorizationTab(_ tab: Tab, provider: String, reason: String) {
+    private func closeAuthorizationTab(_ tab: Tab, attempt: OAuthAuthorizationAttempt, reason: String) {
         AppLogInfo(
             "[AISettings] Closing OAuth authorization tab " +
-            "provider=\(provider) reason=\(reason) " +
+            "profile=\(attempt.profileId) provider=\(attempt.provider) reason=\(reason) " +
             "tabId=\(tab.guid) windowId=\(tab.windowId) " +
             "isActive=\(tab.isActive) localGuid=\(tab.guidInLocalDB ?? "nil") " +
             "url=\(tab.url ?? "nil")"
         )
 
-        removePendingAuthorizationTabIds(provider: provider)
+        removePendingAuthorizationTabIds(attempt: attempt)
         tab.close()
     }
 
@@ -612,7 +744,11 @@ final class AISettingsConnectorViewModel {
     private func updateConnectorStates() {
         for connector in connectors {
             let connection = oauthConnections.first { $0.provider == connector.template.provider }
-            connector.updateConnection(connection)
+            let unassignedConnection = unassignedOAuthConnections.first { $0.provider == connector.template.provider }
+            connector.updateConnection(
+                connection ?? unassignedConnection,
+                isUnassigned: connection == nil && unassignedConnection != nil
+            )
         }
     }
 
@@ -621,33 +757,31 @@ final class AISettingsConnectorViewModel {
             suspendForUnauthenticatedAccess()
             return
         }
-        cancelAllPendingAuthorizationPolls()
-
-        let connectedProviders = connectors
-            .filter { $0.status.isConnected }
-            .map { $0.template.provider }
-
-        guard !connectedProviders.isEmpty else { return }
+        cancelAndCloseAllPendingAuthorizations()
 
         setAllLoading(true)
 
         Task { @MainActor in
             defer { setAllLoading(false) }
-            for provider in connectedProviders {
-                do {
-                    _ = try await apiClient.deleteOAuthToken(provider: provider)
-                    AppLogInfo("[AISettings] Disconnected OAuth provider: \(provider)")
-                } catch {
-                    AppLogWarn("[AISettings] Failed to disconnect provider \(provider): \(error)")
-                }
+            do {
+                let response = try await apiClient.disconnectAllOAuthTokens()
+                AppLogInfo("[AISettings] Disconnected \(response.data.disconnectedCount) OAuth connections for the current user")
+            } catch {
+                AppLogWarn("[AISettings] Failed to disconnect all OAuth connections: \(error)")
             }
-            await reloadConnectionsFromNetwork()
+
+            if let profileId = selectedProfileId, !profileId.isEmpty {
+                await reloadConnectionsFromNetwork(profileId: profileId)
+            } else {
+                resetDisplayedConnections()
+            }
         }
     }
 
     func suspendForUnauthenticatedAccess() {
         cancelAllPendingAuthorizationPolls()
         oauthConnections = []
+        unassignedOAuthConnections = []
         isRefreshingConnections = false
         for connector in connectors {
             connector.updateConnection(nil)
@@ -659,16 +793,34 @@ final class AISettingsConnectorViewModel {
 
     // MARK: - Cache
 
-    private func loadCachedConnections() -> [OAuthConnection]? {
-        guard ApplicationState.shared.isAuthenticated else { return nil }
-        guard let userDefaults = AccountController.shared.account?.userDefaults else { return nil }
-        return userDefaults.codableValue(forKey: AccountUserDefaults.DefaultsKey.cachedUserConnectors.rawValue)
+    private var reloadAfterCurrentRequest = false
+
+    private func resetDisplayedConnections() {
+        oauthConnections = []
+        unassignedOAuthConnections = []
+        for connector in connectors {
+            connector.errorMessage = nil
+            connector.updateConnection(nil)
+        }
     }
 
-    private func cacheConnections(_ connections: [OAuthConnection]) {
+    private func loadCachedConnections(profileId: String?) -> [OAuthConnection]? {
+        guard ApplicationState.shared.isAuthenticated else { return nil }
+        guard let userDefaults = AccountController.shared.account?.userDefaults else { return nil }
+        return userDefaults.codableValue(forKey: cacheKey(profileId: profileId))
+    }
+
+    private func cacheConnections(_ connections: [OAuthConnection], profileId: String?) {
         guard ApplicationState.shared.isAuthenticated else { return }
         guard let userDefaults = AccountController.shared.account?.userDefaults else { return }
-        userDefaults.set(connections, forCodableKey: AccountUserDefaults.DefaultsKey.cachedUserConnectors.rawValue)
+        userDefaults.set(connections, forCodableKey: cacheKey(profileId: profileId))
+    }
+
+    private func cacheKey(profileId: String?) -> String {
+        guard let profileId, !profileId.isEmpty else {
+            return AccountUserDefaults.DefaultsKey.cachedUserConnectors.rawValue
+        }
+        return "\(AccountUserDefaults.DefaultsKey.cachedUserConnectors.rawValue).\(profileId)"
     }
 
     private func recordConnections(_ connections: [OAuthConnection]) {

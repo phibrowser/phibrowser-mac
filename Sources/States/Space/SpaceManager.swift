@@ -297,11 +297,18 @@ final class SpaceManager: ObservableObject {
     /// demand.
     static let incognitoRuleTargetId = incognitoSpaceIdPrefix
 
+    /// Stable target id for URL rules that open in an ephemeral Kiosk window.
+    /// Storage owns the wire value; the Space layer exposes it beside the
+    /// Incognito target because rule editors and routing payloads live here.
+    static let kioskRuleTargetId = LocalStore.kioskURLRuleTargetId
+
     /// Whether a persisted URL rule with this target should route: user-Space
-    /// targets and the generic Incognito target do; any other id under the
-    /// incognito prefix is a stale runtime Space id and stays inert.
+    /// targets, the generic Incognito target, and the Kiosk target do; any
+    /// other id under the incognito prefix is a stale runtime Space id and
+    /// stays inert.
     static func isRoutableRuleTarget(_ spaceId: String) -> Bool {
-        !isIncognitoSpaceId(spaceId) || spaceId == incognitoRuleTargetId
+        if spaceId == kioskRuleTargetId { return true }
+        return !isIncognitoSpaceId(spaceId) || spaceId == incognitoRuleTargetId
     }
 
     /// Detached stand-in for the generic Incognito rule target, shown as ONE
@@ -319,7 +326,54 @@ final class SpaceManager: ObservableObject {
         )
     }
 
-    @Published private(set) var spaces: [SpaceModel] = []
+    /// Detached stand-in for the Kiosk URL-rule target. Like the generic
+    /// Incognito target, this exists only to reuse the rules editor's existing
+    /// Space-shaped picker model and is never inserted into SwiftData.
+    func kioskRuleTargetSpace() -> SpaceModel {
+        SpaceModel(
+            spaceId: Self.kioskRuleTargetId,
+            profileId: "",
+            name: NSLocalizedString(
+                "sidebar.urlRulesEditor.target.kioskOption",
+                value: "Kiosk",
+                comment: "URL rules editor - Destination that opens matching URLs in a Kiosk window"
+            ),
+            colorHex: "#5F6368",
+            iconName: "macwindow",
+            sortOrder: spaces.count + 1
+        )
+    }
+
+    /// Every Space in switcher order — user Spaces first, then the live
+    /// Incognito Spaces, then the agent group (see `handleSpacesUpdate`).
+    /// This order IS the ⌃-number binding: position N carries
+    /// `PHI_SELECT_SPACE_(N-1)` in the Spaces menu, the switcher menus, and
+    /// the strip's hover cards alike.
+    ///
+    /// `spaceListDidChange` is posted whenever that order changes so the
+    /// surfaces that cache a POSITION → Space mapping (the menu-bar Spaces
+    /// menu, whose key equivalents fire while the menu is closed) can rebuild
+    /// it. Agent Spaces come and go without the user touching any of those
+    /// surfaces, so nothing else would tell them to.
+    @Published private(set) var spaces: [SpaceModel] = [] {
+        didSet {
+            guard Self.spaceOrderDidChange(from: oldValue.map(\.spaceId),
+                                           to: spaces.map(\.spaceId)) else { return }
+            NotificationCenter.default.post(name: .spaceListDidChange, object: self)
+        }
+    }
+
+    /// Whether a `spaces` write invalidates every cached POSITION → Space
+    /// mapping. Deliberately order-sensitive rather than set-sensitive: the
+    /// agent group re-partitions (`handleSpacesUpdate`) and a reorder commit
+    /// both move Spaces between positions while the set of ids is unchanged,
+    /// and those are precisely the cases that used to leave the Spaces menu's
+    /// ⌃-number items pointing at the previous occupant of each slot.
+    ///
+    /// Pure and static so the rule is pinned by table.
+    static func spaceOrderDidChange(from oldIds: [String], to newIds: [String]) -> Bool {
+        oldIds != newIds
+    }
 
     /// Persisted user Spaces — the ones the Spaces settings pane manages.
     /// Excludes runtime-only Incognito Spaces and ephemeral agent Spaces;
@@ -483,6 +537,15 @@ final class SpaceManager: ObservableObject {
         /// Previous-session Chromium windowId → spaceId for every window
         /// the slot owned.
         let windowMap: [Int: String]
+        // The four fields below are the geometry half, and the only mutable
+        // ones: every landed snapshot write puts back on the entry exactly what
+        // it measured off the live slot speaking for it, so the record in
+        // memory describes this run's layout rather than the one the launch
+        // read off disk (`persistSlotsSnapshot`). The fields above stay frozen
+        // — `windowMap` holds the previous-session ids the claim maps are keyed
+        // by, and `isLandingEntry` describes the session a cold start replays,
+        // which is a different question from where a mid-run reopen lands
+        // (`landingRestoreIndex`).
         /// True when the slot's visible window was in native macOS fullscreen
         /// at snapshot time. Restored windows always come back as normal
         /// windows (Chromium forces kNormal so macOS doesn't spawn a separate
@@ -490,7 +553,7 @@ final class SpaceManager: ObservableObject {
         /// slot re-enters fullscreen on its active window once restore settles,
         /// so the slot reopens fullscreen as ONE Space instead of orphaning
         /// blank Spaces. See `SpaceWindowSlot.applyPendingRestoreFullScreen`.
-        let wasFullScreen: Bool
+        var wasFullScreen: Bool
         /// Where the slot's window sat on screen at snapshot time, already
         /// clamped to the screens attached NOW (`loadRestoreSnapshot`) — the
         /// display it was saved on may be gone by the time it is read back.
@@ -505,12 +568,16 @@ final class SpaceManager: ObservableObject {
         /// way or does nothing — never drops the entry. Every other restore
         /// path here works without a frame, and none is gated on one.
         ///
-        /// Read by the reopen loading window, which is placed here and then
-        /// forces the restored window onto the same rect
-        /// (`showReopenLoadingWindows`, `slotForRestoreIndex`). It takes the
-        /// second option on nil: no remembered position, no loading window, and
-        /// the slot reopens exactly as it does today.
-        let frame: NSRect?
+        /// Read by three: the reopen loading window, which is placed here and
+        /// then forces the restored window onto the same rect
+        /// (`showReopenLoadingWindows`, `slotForRestoreIndex`); the geometry a
+        /// slot minted for this entry starts out remembering, which is what its
+        /// spawned window inherits (`seedRememberedGeometry`); and the rect
+        /// restore's stand-in window is placed on
+        /// (`restoredWindowPlacementFrame`). All three take the second option
+        /// on nil: no remembered position, no loading window, and the slot
+        /// reopens exactly as it does today.
+        var frame: NSRect?
         /// How wide the slot's sidebar was, so a reopen can draw a band where
         /// it will come back. `0` means collapsed — which is also how
         /// `.comfortable` records itself, since it keeps the sidebar collapsed
@@ -520,14 +587,14 @@ final class SpaceManager: ObservableObject {
         /// draws nothing because guessing a width would put the boundary
         /// somewhere the restored window's sidebar does not end
         /// (`ReopenLoadingWindow.sidebarBandWidth`).
-        let sidebarWidth: CGFloat?
+        var sidebarWidth: CGFloat?
         /// Where the slot's window had its leading traffic light, as a distance
         /// from the top-left of its frame. Recorded so the loading window can
         /// place its own on the answer this Chromium and this macOS actually
         /// gave, instead of on a constant copied out of the fork. Nil for a
         /// snapshot written before this existed; the copy is then the fallback
         /// (`ReopenLoadingWindow.trafficLightOrigin(remembered:)`).
-        let trafficLightOrigin: NSPoint?
+        var trafficLightOrigin: NSPoint?
     }
     private var restoreEntries: [SlotRestoreEntry] = []
     /// Previous-session windowId → index into `restoreEntries`. Entries are
@@ -582,6 +649,43 @@ final class SpaceManager: ObservableObject {
     /// the entry so the group comes back on the Space it was left on, instead
     /// of wherever a promote rule would put it.
     private var liveActiveSpaceIdsByRestoreIndex: [Int: String] = [:]
+    /// Index into `restoreEntries` → the entry the last LANDED snapshot write
+    /// marked as the one a reopen comes back on. The in-memory twin of the
+    /// `isLandingEntry` key that write put on disk, and the third member of the
+    /// family above: what the record would say if it were re-read right now.
+    ///
+    /// The loaded `isLandingEntry` flags cannot answer that question mid-run.
+    /// They describe the session this launch READ, and only an armed reopen
+    /// re-reads the record — so with session restore off they stay pinned to
+    /// the previous session for the whole run, including entries later writes
+    /// stopped putting on disk at all (a group closed in an earlier run, which
+    /// nothing live and nothing parked speaks for any more). A reopen following
+    /// them spawned its window where that stale entry said, which is where the
+    /// group sat when the app started rather than where the user left it.
+    ///
+    /// Cleared with the rest of the restore family, which is also what makes
+    /// the index safe to subscript with — it and the entries it indexes never
+    /// outlive each other.
+    ///
+    /// The clear is half of why an ARMED reopen still reads its freshly loaded
+    /// markers rather than this. The other half is the persist gate: the only
+    /// write between that reload and the spawn is the one
+    /// `endSessionRestoreTransaction` makes, and a reopen that reaches the
+    /// spawn has no live slot for it, so the plan comes back empty and the
+    /// write refuses itself (`plannedSnapshotEntries`, `slotsSnapshotWriteLands`)
+    /// before it can record anything here.
+    ///
+    /// One shape escapes that argument, and is called out rather than papered
+    /// over: a settle reporting `restoredAnyWindow == false` spawns even when a
+    /// window did turn up from somewhere else (`reopenSettleOutcome`, whose own
+    /// documentation says so). That write finds a live slot, lands, and records
+    /// an index here, so the spawn is placed from the entry that write named
+    /// instead of from the loaded marker. The difference is geometry only — the
+    /// plan is `.plainSpawn` unless the lazy reopen armed AND produced no
+    /// window, so nothing about entry ownership moves — and placing the window
+    /// on the group that is actually on screen is the better of the two
+    /// answers. It has not been exercised on hardware.
+    private var landingRestoreIndex: Int?
     /// Index into `restoreEntries` → the loading window standing in for that
     /// slot. `slotForRestoreIndex` lends each one to the slot that claims its
     /// entry, so the slot can drop it behind its restored window and close it
@@ -652,6 +756,13 @@ final class SpaceManager: ObservableObject {
     /// this session persisting its layout at all. The transitions are logged
     /// for exactly that reason.
     private(set) var isSessionRestoreInFlight = false
+
+    /// True while a restored window may still be shown or re-ordered by the
+    /// coalesced visibility reconcile. Cold Kiosk opens wait for this to clear
+    /// so their later activation remains in front.
+    var isRestoreVisibilityReconcileInFlight: Bool {
+        slots.contains { $0.restoreVisibilityReconcileScheduled }
+    }
 
     /// When the restore above went in flight, for the absorbed-reopen line in
     /// `reopenOnPersistedSpaceIfWindowless`. The elapsed time is the one
@@ -772,8 +883,19 @@ final class SpaceManager: ObservableObject {
     /// `MainBrowserWindowController` that will register itself. If
     /// `initialSpaceId` is nil, the slot starts on the persisted default
     /// (or the first known Space).
+    /// `callerFile`/`callerLine` default to the CALL SITE: a slot that never
+    /// goes on to host a window is a leak that outlives its mint (see
+    /// `reclaimsMintedSlot`), and until this line existed a mint left no trace
+    /// at all — several call sites reach `createSlot` through a fallback chain
+    /// that logs nothing, so a log bundle could not say which one produced the
+    /// leftover. Two bare magic literals rather than one interpolated string:
+    /// interpolation is an ordinary expression, so `"\(#fileID):\(#line)"`
+    /// would freeze this declaration's own position instead of the caller's
+    /// (tried: it printed this file).
     @discardableResult
-    func createSlot(initialSpaceId: String?) -> SpaceWindowSlot {
+    func createSlot(initialSpaceId: String?,
+                    callerFile: StaticString = #fileID,
+                    callerLine: UInt = #line) -> SpaceWindowSlot {
         let fallback = persistedActiveSpaceId
             ?? (spaces.first(where: isAutomaticSwitchTarget) ?? spaces.first)?.spaceId
         let resolved = initialSpaceId ?? fallback
@@ -782,6 +904,7 @@ final class SpaceManager: ObservableObject {
         if keySlot == nil {
             keySlot = slot
         }
+        AppLogInfo("[SpaceManager] slot minted on \(resolved ?? "nil") by \(callerFile):\(callerLine) — slots=\(slots.count)")
         return slot
     }
 
@@ -794,6 +917,10 @@ final class SpaceManager: ObservableObject {
         // binding that scopes the park set to this slot's entries.
         let parkedGhosts = parkedGhostEntries(for: slot)
         slots.removeAll { $0 === slot }
+        // Paired with the mint line in `createSlot`: the two together are what
+        // let a log bundle tell "the registry drained" from "one slot stayed
+        // behind", which is the whole of the windowless-reopen predicate.
+        AppLogInfo("[SpaceManager] slot removed: \(slot.diagnosticSummary) — slots=\(slots.count)")
         if keySlot === slot {
             keySlot = slots.last
         }
@@ -859,11 +986,15 @@ final class SpaceManager: ObservableObject {
     /// Every one of them can end without a window: a materialization the
     /// framework refuses, an `activate` the reopen gate drops, a profile that
     /// fails to load, a `createBrowser` that returns nil. A slot left behind by
-    /// one of those never hosts a window, and `slots.isEmpty` — what
-    /// `isWindowlessWithHostedSlots` gates on — is then false for the rest of
-    /// the run: every later Dock reopen bypasses the windowless path and falls
-    /// back to Chromium's own handler, which lands on the wrong Space (the
-    /// whole reason that path exists). Only a restart clears it.
+    /// one of those never hosts a window and stays in the registry for the
+    /// rest of the run. That used to disable the windowless Dock reopen
+    /// outright — `isWindowlessWithHostedSlots` gated on `slots.isEmpty`, so
+    /// every later reopen fell back to Chromium's own handler and landed on the
+    /// wrong Space until the app was restarted. The predicate now asks whether
+    /// any slot HOLDS a window (ticket 38), so a shell no longer latches it;
+    /// reclaiming is what keeps the registry honest anyway — a leftover slot
+    /// can still be handed out as `keySlot`, and it prints in the descriptors
+    /// of every windowless-reopen refusal.
     ///
     /// All three inputs rule out a distinct way of being wrong:
     ///
@@ -967,11 +1098,18 @@ final class SpaceManager: ObservableObject {
             // absent line cannot be told apart from a build that never had
             // them, or from a reopen that never reached the app at all. Stated
             // positively instead: it appears when this path was skipped, and
-            // its three numbers ARE the predicate's three inputs, so the same
-            // line says which one refused. A live non-shadow window is the
-            // ordinary case; zero of those with a non-empty `slots` is the
-            // stranded-mint chain in `reclaimsMintedSlot`'s doc, which
-            // disables this path for the rest of the run.
+            // three of its four numbers ARE the predicate's inputs — the
+            // second one is `slotsHoldingWindows`, not `slots` — so the same
+            // line says which one refused. `slots` is kept beside it as the
+            // raw registry count, the only reading that says whether anything
+            // was left over at all (which is how the shell leak was found);
+            // since ticket 38 a leftover that holds nothing refuses nothing.
+            // A live non-shadow window is the ordinary case; zero of those
+            // with a slot still HOLDING one means either that the two
+            // registries disagree — a close leaves both in the same turn
+            // (`windowWillClose` drops the slot's entry, then the manager's)
+            // — or that a spawn the slot is owed never arrived, which the
+            // descriptors below name as `awaitingSpawn`.
             //
             // Reports the predicate's outcome and nothing beyond it: what a
             // refusal costs is the caller's, not this function's. The Dock
@@ -980,7 +1118,24 @@ final class SpaceManager: ObservableObject {
             // just fails its spawn and says so itself — reading either of them
             // into this line would put a Dock-reopen fault in the bundle every
             // time an agent Space was requested with no window open.
-            AppLogInfo("[SpaceManager] windowless reopen declined, the persisted-Space reopen did not run: hasEverHostedSlotWindow=\(hasEverHostedSlotWindow), slots=\(slots.count), liveNonShadowWindows=\(liveNonShadowWindowCount)")
+            //
+            // The slot descriptors are what turn "slots=1 with no window" from
+            // a symptom into an address: they name the Space each leftover slot
+            // sits on, the windows it still claims, whether a teardown is still
+            // draining it, and whether a spawn is still owed one.
+            //
+            // Appended for that shape alone — no live window, yet slots left
+            // behind. This refusal is otherwise the ORDINARY outcome
+            // (`applicationShouldHandleReopen` asks on every Dock click, the
+            // ones with windows open included), so descriptors on every refusal
+            // would dump the whole registry into the bundle on every Dock click
+            // and bury the one reading that means something.
+            let liveWindows = liveNonShadowWindowCount
+            let heldSlots = slotOccupancy.filter(Self.slotHoldsOrAwaitsWindow).count
+            let leftovers = liveWindows == 0 && !slots.isEmpty
+                ? "; " + slots.map(\.diagnosticSummary).joined(separator: ", ")
+                : ""
+            AppLogInfo("[SpaceManager] windowless reopen declined, the persisted-Space reopen did not run: hasEverHostedSlotWindow=\(hasEverHostedSlotWindow), slotsHoldingWindows=\(heldSlots), slots=\(slots.count), liveNonShadowWindows=\(liveWindows)\(leftovers)")
             return false
         }
         // Switch on: replay the whole closed window group (each Space with its
@@ -1020,7 +1175,71 @@ final class SpaceManager: ObservableObject {
     /// window is focused by Chromium's own reopen, and shadow windows are
     /// invisible background hosts either way.
     private var isWindowlessWithHostedSlots: Bool {
-        hasEverHostedSlotWindow && slots.isEmpty && liveNonShadowWindowCount == 0
+        Self.isWindowlessWithHostedSlots(
+            hasEverHostedSlotWindow: hasEverHostedSlotWindow,
+            slots: slotOccupancy,
+            liveNonShadowWindowCount: liveNonShadowWindowCount)
+    }
+
+    /// Whether one slot is holding — or is still owed — a window: the per-slot
+    /// half of the rule below, and the test a leftover shell must fail.
+    ///
+    /// 🔴 `awaitsSpawnedWindow` is why this is not `hostsWindow` alone. A slot
+    /// Chromium has been asked for a window for hosts nothing until that
+    /// window registers, and reading that as windowless would let a Dock click
+    /// landing in the gap spawn a SECOND window for it — a louder fault than
+    /// the latch this rule exists to undo. Fed by
+    /// `SpaceWindowSlot.hasSpawnInFlight`, which spans the whole gap;
+    /// `isAwaitingSpawnedWindow` covers only its tail.
+    ///
+    /// A slot draining its windows shut (`isTearingDown`) is deliberately NOT
+    /// a third input: the cascade removes the slot from the registry in the
+    /// same synchronous turn its map empties (`unregisterWindow`), so while
+    /// that flag is set the slot still holds windows and answers true here on
+    /// `hostsWindow` alone. Reading the flag would only matter if it could
+    /// outlive them — and that is precisely the shape that would re-latch this
+    /// gate, which is what this rule exists to prevent.
+    private static func slotHoldsOrAwaitsWindow(
+        _ slot: (hostsWindow: Bool, awaitsSpawnedWindow: Bool)
+    ) -> Bool {
+        slot.hostsWindow || slot.awaitsSpawnedWindow
+    }
+
+    /// The rule behind the property above. Pure and static so it is pinned by
+    /// table.
+    ///
+    /// The second input counted SLOTS until ticket 38 (`slots.isEmpty`). Every
+    /// call site that mints a slot ahead of the window meant to host it can
+    /// end without one — `reclaimsMintedSlot` names them, and the Spaces strip
+    /// of a shadow window was a further one that minted with no failure to
+    /// pair against — and a single shell left behind by any of them made this
+    /// predicate false for the rest of the run: every later Dock reopen
+    /// bypassed the windowless path and fell back to Chromium's own handler,
+    /// which lands on the wrong Space. Only a restart cleared it. Asking
+    /// whether any slot still HOLDS — or is owed — a window costs the same and
+    /// cannot be latched that way, whoever mints the next shell.
+    ///
+    /// The other two inputs are unchanged: `hasEverHostedSlotWindow` leaves
+    /// the hidden-login-item first click to Chromium's session restore, and
+    /// `liveNonShadowWindowCount` is what "windowless" means for the windows
+    /// that live outside slots.
+    static func isWindowlessWithHostedSlots(
+        hasEverHostedSlotWindow: Bool,
+        slots: [(hostsWindow: Bool, awaitsSpawnedWindow: Bool)],
+        liveNonShadowWindowCount: Int
+    ) -> Bool {
+        hasEverHostedSlotWindow
+            && !slots.contains(where: slotHoldsOrAwaitsWindow)
+            && liveNonShadowWindowCount == 0
+    }
+
+    /// The second input of `isWindowlessWithHostedSlots`, read off the live
+    /// registry. One expression, not two, for the reason the third input gives
+    /// below: the refusal line reports this input too, and a second spelling
+    /// of it would drift from the predicate.
+    private var slotOccupancy: [(hostsWindow: Bool, awaitsSpawnedWindow: Bool)] {
+        slots.map { (hostsWindow: !$0.windowsBySpaceId.isEmpty,
+                     awaitsSpawnedWindow: $0.hasSpawnInFlight) }
     }
 
     /// The third input of `isWindowlessWithHostedSlots`, counted rather than
@@ -1030,7 +1249,11 @@ final class SpaceManager: ObservableObject {
     /// — the one thing that line exists to say.
     private var liveNonShadowWindowCount: Int {
         MainBrowserWindowControllersManager.shared.getAllWindows()
-            .filter { $0.browserType != .shadow }.count
+            .filter {
+                $0.browserType != .shadow
+                    && $0.browserType != .kiosk
+                    && $0.browserType != .kioskIncognito
+            }.count
     }
 
     /// Opens a single plain window on the persisted last-active Space — the
@@ -1059,11 +1282,33 @@ final class SpaceManager: ObservableObject {
             return (spaces.first(where: isAutomaticSwitchTarget) ?? spaces.first)?.spaceId
         }()
         guard let spaceId = resolved else { return false }
-        AppLogInfo("[SpaceManager] windowless reopen — spawning persisted Space \(spaceId)")
-        // Same landing rule as the classifier (`classifyRestoreWindows`): the
-        // marked entry, else entry 0 for a record written before the marker.
-        let landingIndex = restoreEntries.firstIndex(where: \.isLandingEntry)
-            ?? (restoreEntries.isEmpty ? nil : 0)
+        // Same landing rule as the classifier (`classifyRestoreWindows`) — the
+        // marked entry, else entry 0 for a record written before the marker —
+        // with what the last landed write named ahead of both.
+        //
+        // Which of the two answers this is depends on how the reopen got here,
+        // and all three ways are live. The UNARMED reopen (session restore off)
+        // comes straight here without reloading, so its markers still describe
+        // the previous session and the recorded index is the current answer.
+        // The two ARMED ways in — nothing restorable, and the settle that owes
+        // the user a window — have just reloaded the record, which clears the
+        // recorded index, so they read the markers exactly as they always did.
+        // See `landingRestoreIndex` for why the reload cannot be undone by a
+        // write in between, and for the one shape where it can.
+        let landingIndex = Self.reopenLandingEntryIndex(
+            recordedByLastWrite: landingRestoreIndex,
+            markedEntryIndex: restoreEntries.firstIndex(where: \.isLandingEntry),
+            entryCount: restoreEntries.count)
+        // Names the entry as well as the Space, because WHICH entry this leg
+        // reads is half of where the window lands: the geometry it spawns on
+        // comes from that entry alone, and the marker loaded at launch and the
+        // one the last write recorded can name different ones
+        // (`reopenLandingEntryIndex`). Without the index a round that came back
+        // on the right rect cannot be told from one that read the wrong entry
+        // and happened to agree — which is the whole difference this line has
+        // to make legible. Pairs with `seeded from the saved entry`, which
+        // reports the rect that entry handed over.
+        AppLogInfo("[SpaceManager] windowless reopen — spawning persisted Space \(spaceId) from entry \(landingIndex.map(String.init) ?? "none")")
         let plan = Self.reopenFallbackWindowPlan(
             reopenArmedLazyRestore: lastReopenArmedLazyRestore,
             restoreProducedNoWindow: restoreProducedNoWindow,
@@ -1094,6 +1339,16 @@ final class SpaceManager: ObservableObject {
         case .plainSpawn:
             claimedIndex = nil
             slot = createSlot(initialSpaceId: spaceId)
+            // The claim leg inherits the entry's geometry through
+            // `slotForRestoreIndex`. A plain spawn takes over no entry, so it
+            // seeds from the landing entry directly: the group that was last on
+            // screen is where the one window this reopen owes the user belongs,
+            // whichever Space it ends up landing on. A record with no entry to
+            // land on seeds nothing, and the spawn is placed exactly as it is
+            // today.
+            if let landingIndex {
+                slot.seedRememberedGeometry(frame: restoreEntries[landingIndex].frame)
+            }
         }
         slot.activate(
             spaceId: spaceId,
@@ -1161,11 +1416,12 @@ final class SpaceManager: ObservableObject {
     /// here: claiming an entry that describes a different window group would
     /// hand this window that group's ghosts (ticket 26's (entry, Space)
     /// ownership). The last one — another slot already surfacing the Space —
-    /// is constant-true on this leg, since the branch is only reached while
-    /// `slots` is empty (`isWindowlessWithHostedSlots`); it is kept because it
-    /// costs nothing and is the shape the cold-start leg screens with, and it
-    /// must NOT be read as this leg's safety: that comes from the empty slot
-    /// list plus the Space equality. Pure and static so the rule is pinned by
+    /// is constant-true on this leg, since the branch is only reached while no
+    /// slot holds a window at all (`isWindowlessWithHostedSlots`) and a slot
+    /// with no window surfaces no Space; it is kept because it costs nothing
+    /// and is the shape the cold-start leg screens with, and it must NOT be
+    /// read as this leg's safety: that comes from no slot holding a window,
+    /// plus the Space equality. Pure and static so the rule is pinned by
     /// table.
     enum ReopenFallbackWindowPlan: Equatable {
         /// Take over the saved entry at this index — its parked siblings
@@ -1225,8 +1481,9 @@ final class SpaceManager: ObservableObject {
     /// restore with no window in it.
     ///
     /// Deciding on `restoredAnyWindow` alone sent that case to
-    /// `repairSlotsWithAbsentActiveSpace`, which walks `slots` — empty, so it
-    /// did nothing, and nothing had changed by the next Dock click either:
+    /// `repairSlotsWithAbsentActiveSpace`, which walks `slots` — none of them
+    /// holding a window, so it did nothing, and nothing had changed by the next
+    /// Dock click either:
     /// same snapshot, same stale eager set, same zero windows. The user's tabs
     /// were never lost, but only a restart brought a window back.
     ///
@@ -1933,8 +2190,19 @@ final class SpaceManager: ObservableObject {
     /// pending spawn intent. Without this hook every restored window
     /// would fall through to `keySlot.activeSpaceId` and collapse all
     /// tabs into that one Space.
+    /// `arrivingWindowId` is the CURRENT-RUN id of the window being looked up,
+    /// and it is write-only here: it keys the placement queue below and nothing
+    /// else. Every other id in this body — `restoreIndexByWindowId`,
+    /// `entry.windowMap`, `claimIndex`, the ranking tuple — is a
+    /// PREVIOUS-session id from a numerically overlapping namespace, so letting
+    /// this one reach any of them would silently claim by the wrong window.
+    ///
+    /// It is not consumed when no controller is built for the arrival (the
+    /// coordinator's `canUseBrowser` gate): the entry then sits in the map for
+    /// the slot's lifetime, keyed by a per-run id nothing else can present.
     func claimRestoredWindow(forRestoredFromWindowId restoredFromWindowId: Int,
-                             profileId: String) -> RestoredWindowClaim? {
+                             profileId: String,
+                             arrivingWindowId: Int) -> RestoredWindowClaim? {
         // Primary: exact previous-session windowId match. Positive ids only —
         // a SessionID is always positive, so both `0` and the reserved
         // `restoreFallbackWindowId` name a window that re-created no saved
@@ -2023,11 +2291,67 @@ final class SpaceManager: ObservableObject {
         guard let pick = candidates.min(by: { $0.key < $1.key }) else { return nil }
         restoreIndexByWindowId.removeValue(forKey: pick.windowId)
         let entryActiveSpaceId = restoreEntries[pick.index].activeSpaceId
+        let slot = slotForRestoreIndex(pick.index, fallbackSpaceId: pick.spaceId)
+        // Place restore's stand-in window on the group it just claimed. Queued
+        // into the same per-window map a spawn uses, so placement stays one
+        // route with one consumer (`registerWindow`, which runs later in this
+        // same synchronous window-created callback — after the controller's own
+        // ctor has re-applied Chromium's rect, and before the
+        // post-construction `Show()`, which sets no bounds). Which arrivals
+        // qualify is `restoredWindowPlacementFrame`'s rule, not this line's.
+        //
+        // Not a promise that every window in this slot ends up here: a slot
+        // holding several Spaces enrolls them in one native tab group, and
+        // `syncSlotTabGroup`'s `addTabbedWindow` makes the joiner adopt the
+        // anchor's frame. A stand-in and a replayed sibling in one slot
+        // therefore end up sharing whichever of the two registered as anchor —
+        // which is the same single-frame-per-slot rule every other path here
+        // already lives under.
+        if let frame = Self.restoredWindowPlacementFrame(
+            restoredFromWindowId: restoredFromWindowId,
+            entryFrame: restoreEntries[pick.index].frame) {
+            slot.queueRestorePlacementFrame(frame, forArrivingWindowId: arrivingWindowId)
+        }
         return RestoredWindowClaim(
-            slot: slotForRestoreIndex(pick.index, fallbackSpaceId: pick.spaceId),
+            slot: slot,
             spaceId: pick.spaceId,
             matchedBy: .profile,
             entryActiveSpaceId: entryActiveSpaceId)
+    }
+
+    /// The rect an arriving window that claimed a saved entry must be placed
+    /// on, or nil to leave it exactly where Chromium put it.
+    ///
+    /// Only ONE arrival shape needs this, and the narrowness is the whole rule.
+    /// Session restore hands a profile whose session held nothing restorable a
+    /// **stand-in** window, announced as `restoreFallbackWindowId`. It is
+    /// neither spawned by this side (so no `SpawnContext` ever queues its
+    /// frame) nor replayed from a saved window (so it carries no session
+    /// bounds): it is built by `Browser::Create` with no bounds at all and
+    /// takes whatever the profile's `browser.window_placement` pref happens to
+    /// hold — which, after a run with several window groups on one profile, is
+    /// some other group's rect entirely. Measured: a cold start whose only
+    /// group was a zero-tab placeholder put its stand-in on a decoy placement
+    /// while the record said otherwise.
+    ///
+    /// The other two shapes that reach the claim must NOT be placed:
+    ///
+    ///   * `> 0` — a window Chromium genuinely replayed. Its bounds ARE the
+    ///     saved ones and forcing the entry rect would fight them. This is the
+    ///     control the reopen's acceptance run pins.
+    ///   * `0` within the launch grace period — Chromium's multi-profile
+    ///     startup windows share that value with every OTHER window opened in
+    ///     the first minute of a launch that misses the spawn claim (Cmd+N,
+    ///     `windows.create`, a target=_blank new window). Nothing at this seam
+    ///     tells them apart, so widening here would teleport a window the user
+    ///     just opened by hand onto a stale group rect.
+    ///
+    /// Pure and static so the rule is pinned by table: it is the kind of guard
+    /// a later reader widens for symmetry, and both directions are wrong.
+    static func restoredWindowPlacementFrame(restoredFromWindowId: Int,
+                                             entryFrame: NSRect?) -> NSRect? {
+        guard restoredFromWindowId == Self.restoreFallbackWindowId else { return nil }
+        return entryFrame
     }
 
     /// What a session-restored window matched in the saved snapshot: the slot
@@ -2093,6 +2417,18 @@ final class SpaceManager: ObservableObject {
         if restoreEntries[index].wasFullScreen {
             slot.markPendingRestoreFullScreen()
         }
+        // What the record remembers about how this group LOOKED, handed over
+        // before anything can ask the slot to spawn. A slot minted here has no
+        // window of its own to inherit from, so without this every window this
+        // side SPAWNS for the entry — the windowless reopen's claiming
+        // fallback, the cold-start repair — lands on Chromium's own
+        // `browser.window_placement` instead of where the user left the group.
+        // A window Chromium REPLAYS keeps its replayed bounds: it queues no
+        // spawn frame. The one exception is restore's own stand-in window,
+        // which is placed from this same record by `claimRestoredWindow` — see
+        // `restoredWindowPlacementFrame` for why that one arrival needs it and
+        // the other two shapes must not have it.
+        slot.seedRememberedGeometry(frame: restoreEntries[index].frame)
         // Lend the slot the loading window standing in for it, and the frame it
         // sits on: the slot has to come back ON that frame, and it is the slot
         // that gets to see the restored window this loading window has to drop
@@ -2864,8 +3200,29 @@ final class SpaceManager: ObservableObject {
             return
         }
         coldStartRepairedEntryIndices.insert(entryIndex)
-        guard let model = spaces.first(where: { $0.spaceId == activeId }),
-              isAutomaticSwitchTarget(model) else {
+        // Resolve through the store as well as the live cache, the same way
+        // `boundProfileId(forSpaceId:)` does. On a cold launch the `spaces`
+        // publisher delivers a partial list first, and the repair latch above
+        // is already spent by the time this runs — so a Space the store holds
+        // but the publisher has not delivered yet would be refused for good,
+        // with no retry. That is the shape this file already got wrong once,
+        // in the ghost materialization; this is the second site.
+        var resolvedSpace = spaces.first(where: { $0.spaceId == activeId })
+        if resolvedSpace == nil, let account = boundAccount {
+            resolvedSpace = MainActor.assumeIsolated {
+                account.localStorage.getAllSpaces()
+                    .first(where: { $0.spaceId == activeId })
+            }
+        }
+        // Two refusals, two strings. They used to share one, which made the
+        // transient one ("not delivered yet") indistinguishable from the
+        // terminal one ("this Space type never spawns") in the log — so no
+        // recorded run could ever be attributed to either.
+        guard let model = resolvedSpace else {
+            AppLogWarn("[SpaceManager] cold start repair: entry \(entryIndex)'s active Space \(activeId) is in neither the delivered Space list (\(spaces.count) delivered) nor the store — left unrepaired")
+            return
+        }
+        guard isAutomaticSwitchTarget(model) else {
             AppLogWarn("[SpaceManager] cold start repair: entry \(entryIndex)'s active Space \(activeId) is not an automatic switch target — left unrepaired")
             return
         }
@@ -3690,6 +4047,69 @@ final class SpaceManager: ObservableObject {
         return 0
     }
 
+    /// Which SAVED ENTRY the landing position above names, or nil when this
+    /// write recorded nothing a reopen can come back on.
+    ///
+    /// The position indexes the plan; a reopen needs the entry behind it,
+    /// because the entry is where the geometry it spawns on lives. The two are
+    /// different numbers as soon as the record holds an entry the plan does not
+    /// write (a group closed in an earlier run) — and different in the opposite
+    /// direction for a slot this write is adopting, whose entry did not exist
+    /// when the plan was made. `adoptedIndexByPosition` is that write's own
+    /// adoption plan, applied moments earlier, which is why this runs after it.
+    ///
+    /// A parked-only position maps to the entry it already names. Live slots
+    /// are planned first and the fallback is position 0, so
+    /// `landingEntryPosition` never returns one today; mapping it costs a line
+    /// and leaves no shape unhandled.
+    ///
+    /// Pure and static so the rule is pinned by table.
+    static func landingRestoreEntryIndex(
+        planned: [PlannedSnapshotEntry],
+        landingPosition: Int?,
+        liveSlotRestoreIndices: [Int?],
+        adoptedIndexByPosition: [Int: Int]
+    ) -> Int? {
+        guard let landingPosition,
+              planned.indices.contains(landingPosition) else { return nil }
+        switch planned[landingPosition].source {
+        case .liveSlot(let slotPosition):
+            guard liveSlotRestoreIndices.indices.contains(slotPosition)
+            else { return nil }
+            return liveSlotRestoreIndices[slotPosition]
+                ?? adoptedIndexByPosition[slotPosition]
+        case .parkedOnly(let index):
+            return index
+        }
+    }
+
+    /// Which saved entry a windowless reopen spawns from: what the last landed
+    /// write named, else the marker the record was loaded with, else the first
+    /// entry for a record written before the marker existed.
+    ///
+    /// The order is the whole rule. An ARMED reopen reloads the record first,
+    /// which clears the recorded index, so it reads the marker exactly as it
+    /// always has. An unarmed one — session restore off — never reloads, and
+    /// its markers still describe the previous session; following them put the
+    /// spawned window on the rect the group had at LAUNCH, and typically on an
+    /// entry this run's writes had already stopped putting on disk.
+    ///
+    /// The range check is for a recorded index that outlived the entries it
+    /// indexes. The two are cleared together, so that cannot happen; it is here
+    /// because the caller subscripts with the answer, and a stale index must
+    /// degrade to the marker rather than trap. The marker needs no such check —
+    /// it is a `firstIndex` into the very array `entryCount` counts. Pure and
+    /// static so the rule is pinned by table.
+    static func reopenLandingEntryIndex(recordedByLastWrite: Int?,
+                                        markedEntryIndex: Int?,
+                                        entryCount: Int) -> Int? {
+        guard entryCount > 0 else { return nil }
+        if let recordedByLastWrite, (0..<entryCount).contains(recordedByLastWrite) {
+            return recordedByLastWrite
+        }
+        return markedEntryIndex ?? 0
+    }
+
     /// The Space a slot must be RESTORED onto, given the Space it is showing
     /// right now.
     ///
@@ -3940,12 +4360,47 @@ final class SpaceManager: ObservableObject {
                     agentSpaceIds: agentSpaceIds) {
                     dict["activeSpaceId"] = landing
                 }
+                // Measured once and used twice — written to disk here, put
+                // back on the saved entry just below. Each of these refreshes
+                // its own cache off the live window, so two reads could
+                // legitimately disagree, and the whole point of the second use
+                // is that the two records say the same thing about this group.
+                let isFullScreen = slot.snapshotIsFullScreen()
+                let frame = slot.snapshotFrame()
+                let sidebarWidth = slot.snapshotSidebarWidth()
+                let trafficLightOrigin = slot.snapshotTrafficLightOrigin()
                 Self.encodeSnapshotGeometry(
-                    isFullScreen: slot.snapshotIsFullScreen(),
-                    frame: slot.snapshotFrame(),
-                    sidebarWidth: slot.snapshotSidebarWidth(),
-                    trafficLightOrigin: slot.snapshotTrafficLightOrigin(),
+                    isFullScreen: isFullScreen,
+                    frame: frame,
+                    sidebarWidth: sidebarWidth,
+                    trafficLightOrigin: trafficLightOrigin,
                     into: &dict)
+                // Until this, a saved entry kept the geometry the LAUNCH read
+                // off disk for the whole run: the write went to the file and
+                // the in-memory entry was only ever appended to. Nothing else
+                // refreshed it — `loadRestoreSnapshot` is the only other writer
+                // and it runs at bind and on an armed reopen alone — so a
+                // reopen reading an entry (`spawnPersistedSpaceWindow`,
+                // `slotForRestoreIndex`) placed its window where the group sat
+                // when the app started, not where the user left it.
+                //
+                // A straight assignment rather than a merge: the slot's caches
+                // never regress to nil once set (`snapshotFrame` and its two
+                // neighbours only ever write them), so the entry ends up
+                // holding exactly what this write put on disk.
+                //
+                // Only for a slot that already has an entry. A slot this write
+                // is ADOPTING has none to write back to yet, and the adoption
+                // below builds its entry from the same four accessors on the
+                // same slot in this same turn — a second read, but of caches
+                // nothing between here and there can move.
+                if let index = liveSlots[position].restoreIndex,
+                   restoreEntries.indices.contains(index) {
+                    restoreEntries[index].wasFullScreen = isFullScreen
+                    restoreEntries[index].frame = frame
+                    restoreEntries[index].sidebarWidth = sidebarWidth
+                    restoreEntries[index].trafficLightOrigin = trafficLightOrigin
+                }
             case .parkedOnly(let index):
                 // A saved entry nothing live speaks for carries the same
                 // fields, passed through from the entry these windows were
@@ -4028,6 +4483,15 @@ final class SpaceManager: ObservableObject {
             // be able to date.
             AppLogInfo("[SpaceManager] adopted a minted slot into the restore record as entry \(adoption.newIndex)")
         }
+        // The landing marker's in-memory twin, recorded after adoption so a
+        // slot this very write took into the record resolves to its new entry
+        // rather than to nothing. See `landingRestoreIndex` for why the loaded
+        // `isLandingEntry` flags cannot answer this question mid-run.
+        landingRestoreIndex = Self.landingRestoreEntryIndex(
+            planned: planned,
+            landingPosition: landingPosition,
+            liveSlotRestoreIndices: liveSlots.map(\.restoreIndex),
+            adoptedIndexByPosition: adoptedIndexByPosition)
         // What this write says about each saved entry a live slot still speaks
         // for, kept so the entry can outlive the slot (`removeSlot` finds the
         // slot already drained — see `liveWindowMapsByRestoreIndex`). Ghosts
@@ -4161,6 +4625,7 @@ final class SpaceManager: ObservableObject {
         parkedGhostSpaceIdsByWindowId.removeAll()
         liveWindowMapsByRestoreIndex.removeAll()
         liveActiveSpaceIdsByRestoreIndex.removeAll()
+        landingRestoreIndex = nil
         restoreReattachDeadline = nil
         coldStartReplayedWindowIdsByProfileId.removeAll()
         coldStartReceiptWindowIds.removeAll()
@@ -4475,6 +4940,7 @@ final class SpaceManager: ObservableObject {
     /// the next window to launch.
     func activateInFocusedWindow(
         spaceId: String,
+        animated: Bool = true,
         onActivationFailed: (() -> Void)? = nil,
         onSwapSettled: (() -> Void)? = nil
     ) {
@@ -4489,47 +4955,92 @@ final class SpaceManager: ObservableObject {
         }
         slot.activate(
             spaceId: spaceId,
+            animated: animated,
             onActivationFailed: onActivationFailed,
             onSwapSettled: onSwapSettled
         )
     }
 
+    /// A Kiosk's `spaceId` is a placeholder, not membership in a real Space.
+    /// Keeping that distinction as a pure decision makes the default-Space
+    /// transfer regression testable without materializing Chromium windows.
+    static func sourceAlreadyBelongsToTargetSpace(
+        participatesInSpaces: Bool,
+        sourceSpaceId: String,
+        targetSpaceId: String
+    ) -> Bool {
+        participatesInSpaces && sourceSpaceId == targetSpaceId
+    }
+
+    /// Moving a Kiosk page into the already-active Space can preserve its live
+    /// WebContents. When the destination first requires a Space switch, use a
+    /// URL handoff after that window surfaces instead: the framework's
+    /// cross-window move is fire-and-forget, while an explicit URL handoff can
+    /// target the destination window after the Space switch has settled.
+    static func kioskTransferRequiresURLHandoff(
+        isKioskWindow: Bool,
+        activeSpaceId: String?,
+        targetSpaceId: String
+    ) -> Bool {
+        isKioskWindow && activeSpaceId != targetSpaceId
+    }
+
+    /// Web navigations participate in Space URL routing. A Kiosk handoff must
+    /// use the bridge's one-shot routing exemption so the explicit destination
+    /// chosen by the user is not immediately overridden by a matching rule.
+    static func kioskURLHandoffNeedsRoutingBypass(_ urlString: String) -> Bool {
+        guard let scheme = URL(string: urlString)?.scheme?.lowercased() else {
+            return false
+        }
+        return scheme == "http" || scheme == "https"
+    }
+
     /// Moves `tab` out of its current Space and into the Space identified by
     /// `targetSpaceId`, then surfaces that Space with the tab focused.
     ///
-    /// Two paths, chosen by profile:
-    ///  - **Same profile** — a true move. The target Space's window is
-    ///    spawned/surfaced in the tab's own slot, then Chromium runs an atomic
-    ///    cross-window detach + insert (`moveSelfToWindow:atIndex:`), preserving
-    ///    the live WebContents, its history and tab identity. Chromium activates
-    ///    the inserted tab in the target, satisfying the "focus the moved tab"
-    ///    contract for free — exactly as the cross-window drag path relies on.
-    ///  - **Different profile** — a live WebContents cannot cross a profile
-    ///    (BrowserContext) boundary, so the tab's URL is opened as a fresh,
-    ///    focused tab in the target Space and the origin tab is closed.
+    /// Two paths, chosen by profile and Kiosk destination state:
+    ///  - **Same profile, except a Kiosk switching Spaces** — a true move. The
+    ///    target Space's window is spawned/surfaced in the tab's own slot, then
+    ///    Chromium runs an atomic cross-window detach + insert
+    ///    (`moveSelfToWindow:atIndex:`), preserving the live WebContents, its
+    ///    history and tab identity. Chromium activates the inserted tab in the
+    ///    target, satisfying the "focus the moved tab" contract for free —
+    ///    exactly as the cross-window drag path relies on.
+    ///  - **Different profile, or Kiosk switching Spaces** — a live WebContents
+    ///    cannot cross a profile (BrowserContext) boundary, and a Kiosk handoff
+    ///    needs an explicit URL handoff after the Space switch. Web URLs use a
+    ///    one-shot routing exemption so URL rules cannot override the selected
+    ///    destination; other URLs use strict exact-window creation.
     ///
     /// Either path needs the target window to exist before the tab can land in
     /// it, so the work runs inside `activate`'s `onSwapSettled` — by then the
     /// target controller is registered and on screen, whether it was an existing
     /// window (swap) or freshly spawned.
     ///
-    /// Callers (the tab context menu) only offer this for plain normal tabs;
-    /// pinned / split / bookmark-backed tabs are filtered out there because
-    /// their per-Space persistence bindings would be stranded by a move.
+    /// The ordinary tab context menu only offers this for plain normal tabs;
+    /// Kiosk supplies its single ephemeral page. Pinned / split /
+    /// bookmark-backed tabs remain filtered because their per-Space persistence
+    /// bindings would be stranded by a move.
     func moveTab(_ tab: Tab, toSpaceId targetSpaceId: String) {
         guard let sourceState = MainBrowserWindowControllersManager.shared
                 .getBrowserState(for: tab.windowId) else {
             AppLogWarn("[SpaceManager] moveTab: no BrowserState for windowId \(tab.windowId)")
             return
         }
-        // Already in the target Space — nothing to do.
-        guard targetSpaceId != sourceState.spaceId else { return }
+        // A Kiosk carries the default Space id only as a BrowserState placeholder;
+        // it does not belong to that Space. Keep the ordinary same-Space no-op,
+        // but let Kiosk transfer into the real default Space.
+        guard !Self.sourceAlreadyBelongsToTargetSpace(
+            participatesInSpaces: sourceState.participatesInSpaces,
+            sourceSpaceId: sourceState.spaceId,
+            targetSpaceId: targetSpaceId
+        ) else { return }
         guard let targetSpace = spaces.first(where: { $0.spaceId == targetSpaceId }) else {
             AppLogWarn("[SpaceManager] moveTab: unknown target space \(targetSpaceId)")
             return
         }
-        guard let slot = slot(forWindowId: tab.windowId) else {
-            AppLogWarn("[SpaceManager] moveTab: no slot owns windowId \(tab.windowId)")
+        guard !sourceState.isKioskWindow || !sourceState.isIncognito else {
+            AppLogWarn("[SpaceManager] moveTab: Incognito Kiosk cannot transfer into Spaces")
             return
         }
 
@@ -4540,47 +5051,142 @@ final class SpaceManager: ObservableObject {
             && targetSpace.profileId == sourceState.profileId
         let tabGuid = tab.guid
         let url = tab.url
-        let sourceWrapper = sameProfile ? tab.webContentWrapper : nil
+        let kioskRequiresURLHandoff = Self.kioskTransferRequiresURLHandoff(
+            isKioskWindow: sourceState.isKioskWindow,
+            activeSpaceId: activeSpaceId,
+            targetSpaceId: targetSpaceId
+        )
+        let recreatesURL = !sameProfile || kioskRequiresURLHandoff
+        let sourceWrapper = recreatesURL ? nil : tab.webContentWrapper
 
-        // Cross-profile recreation needs a URL to copy; bail if there is none.
-        if !sameProfile, (url ?? "").isEmpty {
-            AppLogWarn("[SpaceManager] moveTab: cross-profile move with empty URL — ignoring")
+        // URL recreation needs a concrete destination; a live move needs the
+        // source WebContents that Chromium will detach from the Kiosk/Space.
+        if recreatesURL, (url ?? "").isEmpty {
+            AppLogWarn("[SpaceManager] moveTab: URL recreation with empty URL — ignoring")
             return
         }
-        if sameProfile, sourceWrapper == nil {
+        if !recreatesURL, sourceWrapper == nil {
             AppLogWarn("[SpaceManager] moveTab: source tab lost its web contents")
+            return
+        }
+
+        let slot: SpaceWindowSlot
+        let mintedSlot: Bool
+        if let sourceSlot = self.slot(forWindowId: tab.windowId) {
+            slot = sourceSlot
+            mintedSlot = false
+        } else if sourceState.isKioskWindow {
+            if let existing = keySlot
+                ?? slots.first(where: {
+                    $0.windowController(for: targetSpaceId) != nil
+                })
+                ?? slots.first {
+                slot = existing
+                mintedSlot = false
+            } else {
+                slot = createSlot(initialSpaceId: targetSpaceId)
+                mintedSlot = true
+            }
+        } else {
+            AppLogWarn("[SpaceManager] moveTab: no slot owns windowId \(tab.windowId)")
             return
         }
 
         // `slot` is weak to avoid a retain cycle (the slot owns the swap
         // machinery that holds this closure); `tab` and `sourceWrapper` are
         // captured strongly so they outlive the swap animation / async spawn.
-        slot.activate(spaceId: targetSpaceId) { [weak slot] in
-            // `onSwapSettled` always fires on the main thread (swap-animation
-            // completion or the spawn path's `DispatchQueue.main.async`), so we
-            // can synchronously assume main-actor isolation for the tab moves —
-            // `Tab.close()` and the native state updates are main-actor isolated.
-            MainActor.assumeIsolated {
-                guard let slot,
-                      let targetState = slot.windowController(for: targetSpaceId)?.browserState else {
-                    AppLogWarn("[SpaceManager] moveTab: target window unavailable after activate")
-                    return
-                }
-                if sameProfile {
-                    guard let sourceWrapper else { return }
-                    // Append to the end of the target's normal tabs; the scheduled
-                    // insertion lands the arriving tab there, mirroring the
-                    // cross-window drag path in `TabStrip.moveTabToWindow`.
-                    let normalIndex = targetState.normalTabs.count
-                    targetState.scheduleNormalTabInsertion(tabGuid: tabGuid, at: normalIndex)
-                    sourceWrapper.moveSplit(toWindow: targetState.windowId.int64Value,
-                                            at: targetState.tabs.count)
-                } else {
-                    targetState.createTab(url, focusAfterCreate: true)
-                    SpaceMoveTabUnit.tab(tab).closeSourceTabsAfterCrossProfileMove()
+        slot.activate(
+            spaceId: targetSpaceId,
+            onActivationFailed: { [weak self, weak slot] in
+                guard let self, let slot else { return }
+                self.reclaimMintedSlot(
+                    slot,
+                    mintedForThisAttempt: mintedSlot
+                )
+            },
+            onSwapSettled: { [weak self, weak slot] in
+                // `onSwapSettled` always fires on the main thread (swap-animation
+                // completion or the spawn path's `DispatchQueue.main.async`), so we
+                // can synchronously assume main-actor isolation for the tab moves —
+                // `Tab.close()` and the native state updates are main-actor isolated.
+                MainActor.assumeIsolated {
+                    guard let slot,
+                          let targetState = slot.windowController(for: targetSpaceId)?.browserState else {
+                        AppLogWarn("[SpaceManager] moveTab: target window unavailable after activate")
+                        if let slot {
+                            self?.reclaimMintedSlot(
+                                slot,
+                                mintedForThisAttempt: mintedSlot
+                            )
+                        }
+                        return
+                    }
+                    if !recreatesURL {
+                        guard let sourceWrapper else { return }
+                        // Append to the end of the target's normal tabs; the scheduled
+                        // insertion lands the arriving tab there, mirroring the
+                        // cross-window drag path in `TabStrip.moveTabToWindow`.
+                        let normalIndex = targetState.normalTabs.count
+                        targetState.scheduleNormalTabInsertion(tabGuid: tabGuid, at: normalIndex)
+                        sourceWrapper.moveSplit(toWindow: targetState.windowId.int64Value,
+                                                at: targetState.tabs.count)
+                        if sourceState.isKioskWindow {
+                            self?.captureKioskOpenedInSpace()
+                        }
+                    } else if kioskRequiresURLHandoff {
+                        guard let url,
+                              let bridge = ChromiumLauncher.sharedInstance().bridge else {
+                            AppLogWarn("[SpaceManager] moveTab: target URL handoff is unavailable")
+                            return
+                        }
+                        let targetWindowId = targetState.windowId.int64Value
+                        if Self.kioskURLHandoffNeedsRoutingBypass(url) {
+                            bridge.openTabBypassingSpaceRouting(
+                                withUrl: url,
+                                windowId: targetWindowId,
+                                activateWindow: false
+                            )
+                        } else {
+                            guard bridge.responds(
+                                to: #selector(
+                                    PhiChromiumBridgeProtocol.createNewTabStrictly(
+                                        withUrl:windowId:focusAfterCreate:
+                                    )
+                                )
+                            ), bridge.createNewTabStrictly(
+                                withUrl: url,
+                                windowId: targetWindowId,
+                                focusAfterCreate: true
+                            ) else {
+                                AppLogWarn("[SpaceManager] moveTab: strict target handoff failed")
+                                return
+                            }
+                        }
+                        self?.captureKioskOpenedInSpace()
+                        SpaceMoveTabUnit.tab(tab).closeSourceTabsAfterURLRecreation()
+                        // Closing the last Kiosk tab can make Chromium activate
+                        // another window from the Kiosk's source profile. Reassert
+                        // the destination after that close cascade so the window
+                        // receiving the recreated page remains frontmost.
+                        DispatchQueue.main.async { [weak slot] in
+                            slot?.activate(spaceId: targetSpaceId, animated: false)
+                        }
+                    } else {
+                        targetState.createTab(url, focusAfterCreate: true)
+                        if sourceState.isKioskWindow {
+                            self?.captureKioskOpenedInSpace()
+                        }
+                        SpaceMoveTabUnit.tab(tab).closeSourceTabsAfterCrossProfileMove()
+                    }
                 }
             }
-        }
+        )
+    }
+
+    private func captureKioskOpenedInSpace() {
+        PostHogSDK.shared.capture("kiosk_opened_in_space", properties: [
+            "total_spaces": spaces.count,
+        ])
     }
 
     enum SpaceMoveTabUnit {
@@ -4615,6 +5221,11 @@ final class SpaceManager: ObservableObject {
 
         @MainActor
         func closeSourceTabsAfterCrossProfileMove() {
+            closeSourceTabsAfterURLRecreation()
+        }
+
+        @MainActor
+        func closeSourceTabsAfterURLRecreation() {
             tabs.forEach { $0.close() }
         }
     }
@@ -5576,10 +6187,10 @@ final class SpaceManager: ObservableObject {
         guard let bridge = ChromiumLauncher.sharedInstance().bridge else { return }
         let mapping = currentSpaceWindowMap()
 
-        // User-Space rules and the generic Incognito target route; any other
-        // id under the incognito prefix would be a stale runtime Space id —
-        // keep such a row inert instead of routing into a Space that no
-        // longer exists.
+        // User-Space rules, the generic Incognito target, and the Kiosk action
+        // target route; any other id under the incognito prefix would be a
+        // stale runtime Space id — keep such a row inert instead of routing
+        // into a Space that no longer exists.
         let effectiveRules = cachedURLRules.filter { Self.isRoutableRuleTarget($0.spaceId) }
         var rulesPayload: [[String: Any]] = effectiveRules.map { rule in
             var entry: [String: Any] = [
@@ -5634,13 +6245,12 @@ final class SpaceManager: ObservableObject {
         pushOpenLinkSpaceMenuToChromium()
     }
 
-    /// Opens `urlString` in a Space after a URL rule routed it there: an "ask
-    /// first" match the user resolved in `PhiChromiumCoordinator`'s prompt, the
-    /// right-click "Open link as" submenu, or a silent auto-route to a Space with
-    /// no open window (`routeURL`). `spaceId == nil` means "keep it here": the
-    /// URL opens as a new foreground tab in the source window. Otherwise the
-    /// chosen Space is brought to the front in the source window's slot (spawning
-    /// its window when the Space isn't currently open) and the URL opens there.
+    /// Opens `urlString` after a URL rule routed it here: an "ask first" match
+    /// the user resolved in `PhiChromiumCoordinator`'s prompt, the right-click
+    /// "Open link as" submenu, or a silent auto-route to a Space with no open
+    /// window (`routeURL`). `spaceId == nil` means "keep it here"; the Kiosk
+    /// sentinel opens a new Kiosk inheriting the source Browser's exact profile;
+    /// any other id is brought to the front as a Space destination.
     ///
     /// The matching navigation was already cancelled on the Chromium side, so
     /// this always opens *something* — if the chosen Space's window can't be
@@ -5681,6 +6291,23 @@ final class SpaceManager: ObservableObject {
         // focusing-tab fallback covers the native incognito NTP path.
         let sourceIsStranded = sourceIsNewTab
             || (sourceController?.browserState.focusingTab.map(Self.isStrandedNewTab) ?? false)
+
+        if spaceId == Self.kioskRuleTargetId {
+            let selector = NSSelectorFromString("openURLInKiosk:sourceWindowId:")
+            let openedInKiosk = bridge.responds(to: selector)
+                && bridge.openURL(inKiosk: urlString, sourceWindowId: sourceWindowId)
+            if openedInKiosk {
+                if sourceIsStranded {
+                    refreshActiveNewTab(inWindow: sourceWindowId)
+                }
+            } else if sourceIsStranded {
+                bridge.navigateActiveTabBypassingSpaceRouting(
+                    withUrl: urlString, windowId: sourceWindowId)
+            } else {
+                open(sourceWindowId, true)
+            }
+            return
+        }
 
         // Staying in the source window's current Space: the user kept the URL
         // here (`spaceId == nil`) or chose the Space it already lives in. When
@@ -5763,6 +6390,85 @@ final class SpaceManager: ObservableObject {
                     // dropped".
                     open(sourceWindowId, true)
                 }
+            }
+        }
+    }
+
+    /// Opens external URLs directly in the Space selected by a URL Rule.
+    /// This entry point deliberately bypasses Chromium's external-link Kiosk
+    /// preference and exempts each created tab from being routed a second time.
+    @MainActor
+    func openExternalURLs(
+        _ urlStrings: [String],
+        inURLRuleTargetSpaceId targetSpaceId: String
+    ) {
+        guard !urlStrings.isEmpty,
+              let bridge = ChromiumLauncher.sharedInstance().bridge else {
+            return
+        }
+        let concreteTargetSpaceId = Self.isIncognitoSpaceId(targetSpaceId)
+            ? resolveIncognitoRouteTarget(targetSpaceId, currentSpaceId: nil)
+            : targetSpaceId
+        guard spaces.contains(where: {
+            $0.spaceId == concreteTargetSpaceId
+        }) else {
+            AppLogWarn(
+                "[ExternalLinks] URL Rule target Space is unavailable: "
+                    + concreteTargetSpaceId
+            )
+            return
+        }
+
+        let existingSlot = slots.first(where: {
+            $0.windowController(for: concreteTargetSpaceId) != nil
+        })
+        let slot = existingSlot
+            ?? keySlot
+            ?? slots.first
+            ?? createSlot(initialSpaceId: concreteTargetSpaceId)
+        var didOpen = false
+        let openIfReady = { [weak slot] () -> Bool in
+            guard !didOpen,
+                  let controller = slot?.windowController(
+                    for: concreteTargetSpaceId
+                  ) else {
+                return false
+            }
+            didOpen = true
+            for urlString in urlStrings {
+                bridge.openTabBypassingSpaceRouting(
+                    withUrl: urlString,
+                    windowId: Int64(controller.windowId),
+                    activateWindow: false
+                )
+            }
+            return true
+        }
+
+        slot.activate(
+            spaceId: concreteTargetSpaceId,
+            animated: false,
+            onSwapSettled: {
+                _ = openIfReady()
+            }
+        )
+        if openIfReady() {
+            return
+        }
+
+        // A profile load or a concurrent activation can delay registration of
+        // the target window. Follow the established URL-routing retry window
+        // so the external URL remains owned by its matching Space and never
+        // falls through to Chromium's Kiosk branch.
+        let retryDelays: [TimeInterval] = [0.05, 0.25, 0.6, 1.2]
+        for (index, delay) in retryDelays.enumerated() {
+            let isLastAttempt = index == retryDelays.count - 1
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
+                guard !openIfReady(), isLastAttempt, !didOpen else { return }
+                AppLogWarn(
+                    "[ExternalLinks] Failed to open URL Rule match in Space "
+                        + concreteTargetSpaceId
+                )
             }
         }
     }
@@ -6351,6 +7057,11 @@ final class SpaceManager: ObservableObject {
         for slot in slots {
             slot.invalidate()
         }
+        // The one drain that does not go through `removeSlot`, and so the one
+        // hole in the mint/removal pairing: without this line every mint since
+        // the bind reads as still standing, which is the shape a leftover slot
+        // has.
+        AppLogInfo("[SpaceManager] registry drained on unbind: \(slots.count) slot(s)")
         slots.removeAll()
         keySlot = nil
         // The same family `loadRestoreSnapshot` resets, park set included: all
@@ -6368,6 +7079,7 @@ final class SpaceManager: ObservableObject {
         parkedGhostSpaceIdsByWindowId.removeAll()
         liveWindowMapsByRestoreIndex.removeAll()
         liveActiveSpaceIdsByRestoreIndex.removeAll()
+        landingRestoreIndex = nil
         restoreReattachDeadline = nil
         coldStartReplayedWindowIdsByProfileId.removeAll()
         coldStartReceiptWindowIds.removeAll()
@@ -6571,6 +7283,12 @@ final class SpaceWindowSlot: ObservableObject {
     /// `SpacesStripView.spacePip` / `isHoverCardPresented`).
     @Published var isCreatingSpace: Bool = false
 
+    /// Storage value (`IconPickerSelection.storageValue`) of the icon the
+    /// create-Space form currently has selected, mirrored here while
+    /// `isCreatingSpace` so the strip's dashed placeholder pip can show it.
+    /// Nil outside a create session.
+    @Published var creatingSpaceIconValue: String?
+
     /// The Space the user just deliberately switched to by clicking or picking
     /// it. The interaction dismisses its hover card, and the card must stay
     /// down while the pointer rests on that pip — including in the TARGET
@@ -6764,8 +7482,9 @@ final class SpaceWindowSlot: ObservableObject {
     /// this slot. Kept in sync via `didBecomeKey` so any path that surfaces
     /// a window — our own `activate`, ⌘`, Dock click — is reflected here.
     ///
-    /// The didSet swaps frame-change observers onto the new visible window
-    /// so drags/resizes propagate to siblings (see `observeFrameChanges`).
+    /// The didSet swaps frame-change observers onto the new visible window so
+    /// drags/resizes update the geometry later switches and spawns inherit (see
+    /// `observeFrameChanges`).
     /// Weak-var auto-nil-out does NOT trigger didSet, so cleanup also runs
     /// from `deinit`.
     private(set) weak var visibleController: MainBrowserWindowController? {
@@ -6812,6 +7531,47 @@ final class SpaceWindowSlot: ObservableObject {
     /// a minted slot consults it (see `SpaceManager.reclaimsMintedSlot`).
     var isAwaitingSpawnedWindow: Bool { !pendingSpawnSpaceIdByWindowId.isEmpty }
 
+    /// True while ANY spawn for this slot is in flight — from the `activate`
+    /// that asked for the window through to its registration. That whole span
+    /// is one in which an empty slot is not an abandoned one.
+    ///
+    /// Wider than `isAwaitingSpawnedWindow`, and the two are not
+    /// interchangeable. That one is keyed by a windowId, which exists only
+    /// once `createBrowser` has RETURNED, so it covers the gap's tail. The
+    /// head — `activate`'s `pendingSpawnSpaceIds.insert`, then the async
+    /// `ensureProfileLoaded` (~100–300ms on the session's first cross-profile
+    /// activation), then the bridge call — leaves the slot looking like a bare
+    /// shell; `respawnWindow` empties the map inside that same head
+    /// (`evictWindow(removeSlotIfEmpty: false)`).
+    ///
+    /// Read by the windowless predicate (`SpaceManager.slotOccupancy`), which
+    /// must not take either half of that gap for "no window is coming" — the
+    /// Dock click landing in it would open a second one.
+    /// `reclaimsMintedSlot` keeps the narrower test on purpose: what it needs
+    /// to know is whether an arriving window would still be ROUTED into this
+    /// slot, and that is exactly the windowId-keyed claim.
+    var hasSpawnInFlight: Bool {
+        isAwaitingSpawnedWindow || !pendingSpawnSpaceIds.isEmpty
+    }
+
+    /// One-line identity for a log bundle: the Space the slot sits on, the
+    /// windows it still claims, whether a teardown is still draining it, and
+    /// whether a spawn is still owed one — the last being the only state in
+    /// which an EMPTY slot legitimately stays in the registry (a cascade drops
+    /// its slot the moment the map empties, so `cascading` prints true only
+    /// beside windows). Read by `SpaceManager.removeSlot` and by the
+    /// windowless-reopen refusal.
+    var diagnosticSummary: String {
+        let windows = windowsBySpaceId
+            .map { "\($0.key)#\($0.value.windowId)" }
+            .sorted()
+            .joined(separator: "+")
+        return "slot(active=\(activeSpaceId ?? "nil")"
+            + ", windows=[\(windows)]"
+            + ", cascading=\(isCascadingSlotClose)"
+            + ", awaitingSpawn=\(hasSpawnInFlight))"
+    }
+
     /// windowId → spaceId we asked Chromium to spawn that window for, for
     /// THIS slot. `activate(spaceId:)` populates this synchronously right
     /// after calling `bridge.createBrowserWithWindowType` so the asynchronous
@@ -6830,9 +7590,17 @@ final class SpaceWindowSlot: ObservableObject {
     private var pendingSpawnSpaceIds: Set<String> = []
 
     /// windowId → NSRect to apply to that window before it surfaces.
-    /// Set when `activate` spawns a new window so the new Space's NSWindow
-    /// appears in the same place the previously visible one was — giving the
-    /// illusion that the user is "swapping the contents" of one window.
+    ///
+    /// Written by two producers, both keyed by one arrival and drained by the
+    /// one consumer in `registerWindow`:
+    ///
+    ///   * `activate`'s spawn, so the new Space's NSWindow appears in the same
+    ///     place the previously visible one was — the illusion that the user is
+    ///     "swapping the contents" of one window;
+    ///   * `SpaceManager.claimRestoredWindow`, for the single arrival this side
+    ///     neither spawned nor Chromium replayed — restore's stand-in window,
+    ///     which otherwise surfaces on `browser.window_placement`
+    ///     (`restoredWindowPlacementFrame`).
     private var pendingFrameByWindowId: [Int: NSRect] = [:]
 
     /// The loading window standing in for this slot while its windows are
@@ -6860,6 +7628,11 @@ final class SpaceWindowSlot: ObservableObject {
     /// override rather than the other way round (`ReopenLoadingHandoff`), and
     /// nothing needs the two to end together: by then the restored window is
     /// on the rect and the loading window is behind it.
+    ///
+    /// Loses to a per-window entry in `pendingFrameByWindowId` — see the `??`
+    /// in `registerWindow`. The two never disagree in practice on this leg:
+    /// both are `restoreEntries[index].frame` handed over by the same
+    /// `slotForRestoreIndex` call.
     private var reopenPlacementFrame: NSRect?
 
     /// Takes over the loading window standing in for this slot, and the frame
@@ -6964,17 +7737,25 @@ final class SpaceWindowSlot: ObservableObject {
     /// (`SpaceManager.requestCloseIncognitoSpace`) instead of dispatching
     /// the close.
     ///
-    /// Cancelled by `cancelTabDrivenClose` when the window enters
-    /// placeholder mode. A last-tab close in a normal non-Incognito
-    /// window always does, so the auto-close this marker predicts never
-    /// happens and no user gesture carries a live marker into
-    /// `unregisterWindow` — the tab-driven hand-off there is currently
-    /// unreachable through this path.
+    /// Cancelled by `cancelTabDrivenClose` on any signal that the
+    /// window survived the last-tab close: entering placeholder mode,
+    /// the Space's tab list going from empty back to non-empty (any
+    /// tab newly inserted into the emptied strip), or a pending peek
+    /// candidate settling (any outcome — presented, adopted, or
+    /// discarded: the settlement prologs of `resolvePeekCandidate` /
+    /// `finishPeekCandidate` cancel before the outcome branches, and any
+    /// strip adoption cancels again unconditionally). A last-tab close in
+    /// a normal non-Incognito window always lands in one of these, so
+    /// the auto-close this marker predicts never happens and no user
+    /// gesture carries a live marker into `unregisterWindow` — the
+    /// tab-driven hand-off there is currently unreachable through this
+    /// path.
     ///
     /// Stored as spaceId → expiration deadline rather than a plain
     /// set: when the dispatched `IDC_CLOSE_TAB` is vetoed (typically
-    /// an `onbeforeunload` prompt the user cancels), the window enters
-    /// no placeholder and no `unregisterWindow` ever fires, so nothing
+    /// an `onbeforeunload` prompt the user cancels), the tab stays put —
+    /// the window enters no placeholder, no insertion re-fills an
+    /// emptied strip, and no `unregisterWindow` ever fires — so nothing
     /// cancels or drains the marker and a later window-driven close
     /// would otherwise misclassify itself as tab-driven. The TTL caps
     /// that stale window at `Self.tabDrivenCloseTTL` seconds. This
@@ -7016,10 +7797,8 @@ final class SpaceWindowSlot: ObservableObject {
     /// `NSWindow.didMove` / `didResize` tokens for the currently-visible
     /// window. Swapped wholesale by `observeFrameChanges` whenever
     /// `visibleController` changes — only the visible window can be dragged
-    /// or resized (siblings are `orderOut`'d), so observing exactly one
-    /// window keeps propagation cheap and structurally prevents the
-    /// setFrame-fires-didMove feedback loop a per-sibling observer would
-    /// create.
+    /// or resized (siblings are `orderOut`'d), so it is the authoritative source
+    /// for the slot's remembered geometry.
     private var visibleFrameObservers: [NSObjectProtocol] = []
 
     /// Swapped onto the visible window alongside the two observers above, and
@@ -7028,29 +7807,31 @@ final class SpaceWindowSlot: ObservableObject {
     /// `observeSidebarWidth`.
     private var visibleSidebarWidthObserver: AnyCancellable?
 
-    /// The on-screen frame every Space window in this slot is kept aligned to
-    /// — the slot's single source of truth for window position/size. Refreshed
+    /// The on-screen frame every Space window in this slot inherits when it is
+    /// surfaced — the slot's single source of truth for position/size. Refreshed
     /// whenever the visible window moves or resizes (`observeFrameChanges`) and
     /// whenever a switch reads a live source frame (`resolveInheritedFrame`).
     /// Both the switch path and the spawn path inherit from it, so continuity
     /// no longer depends on the previous window still being alive and on-screen
     /// at the instant of the switch (e.g. an async cross-profile spawn whose
-    /// source window closed during the profile load). Nil only before the slot
-    /// has ever had a positioned window.
+    /// source window closed during the profile load). Nil before the slot has
+    /// ever had a positioned window, unless a saved entry seeded it
+    /// (`seedRememberedGeometry`).
     private var lastKnownFrame: NSRect?
 
     /// `lastKnownFrame` minus the fullscreen rects — the geometry this slot
     /// would occupy as an ordinary window. Kept apart because the two answer
-    /// different questions: `lastKnownFrame` is "align the siblings to this",
-    /// which must follow the window into fullscreen, while this is "reopen
-    /// here", which must not (a restored window always comes back windowed, so
-    /// a screen-sized rect would be a lie every time it were used).
+    /// different questions: `lastKnownFrame` is "surface the next Space here",
+    /// which must follow the window into fullscreen, while this is "reopen here",
+    /// which must not (a restored window always comes back windowed, so a
+    /// screen-sized rect would be a lie every time it were used).
     ///
     /// Refreshed from the visible window's live frame whenever one is available
     /// — by the frame observer on every move/resize, and by `snapshotFrame` at
     /// each persist — so a slot that enters fullscreen keeps the position it
-    /// had on the way in. Nil only before the slot has ever had a positioned
-    /// window outside fullscreen.
+    /// had on the way in. Nil before the slot has ever had a positioned window
+    /// outside fullscreen, unless a saved entry seeded it
+    /// (`seedRememberedGeometry`).
     private var lastKnownWindowedFrame: NSRect?
 
     /// The other two things the cross-launch record carries about how this slot
@@ -7064,9 +7845,9 @@ final class SpaceWindowSlot: ObservableObject {
     private var lastKnownTrafficLightOrigin: NSPoint?
 
     /// True for the duration of a `performHorizontalWindowSlide`. Read by
-    /// the `observeFrameChanges` propagation closure to early-return — the
-    /// previous window's animated `didMove` would otherwise overwrite the
-    /// target window's in-flight frame and break the slide.
+    /// `observeFrameChanges` to ignore the previous window's animated `didMove`,
+    /// which would otherwise overwrite the slot's remembered frame with a
+    /// transient animation position.
     private var isAnimatingWindowSlide = false
 
     /// Cancellation handle for an in-flight window slide. Invoking it
@@ -10106,9 +10887,11 @@ final class SpaceWindowSlot: ObservableObject {
                 window.collectionBehavior.insert(.moveToActiveSpace)
             }
         }
-        // A spawn's own queued frame wins; `reopenPlacementFrame` is the
-        // fallback for a window this side never spawned — a restored one, which
-        // arrives carrying Chromium's replayed bounds. Applied here because
+        // The per-window queue wins; `reopenPlacementFrame` is the slot-wide
+        // fallback. Both answer "where does this window belong", and the
+        // narrower key is the better answer: the queue names ONE arrival — a
+        // spawn of this side's, or restore's stand-in — while the override
+        // speaks for every window a reopen is still owed. Applied here because
         // registration runs inside Chromium's window-created callback, after
         // the NSWindow has its bounds and before the post-construction Show()
         // that puts it on screen: the frame the user first sees is this one.
@@ -10344,12 +11127,17 @@ final class SpaceWindowSlot: ObservableObject {
     /// close — both paths intercept it and route into the confirmed
     /// Space teardown (`SpaceManager.requestCloseIncognitoSpace`).
     ///
-    /// The predicted auto-close does not actually happen any more:
-    /// the window enters placeholder mode instead, and
+    /// The predicted auto-close does not actually happen any more: the
+    /// window enters placeholder mode instead, and
     /// `cancelTabDrivenClose` drops the marker and the composite
-    /// captured below. Both are kept because the vetoed-close residual
-    /// documented on `pendingTabDrivenCloseDeadlines` still consumes
-    /// them.
+    /// captured below — on placeholder entry, on the Space's tab
+    /// list going from empty back to non-empty (a tab inserted into
+    /// the emptied strip, which also covers a strip re-filled in place
+    /// of placeholder entry), or on a pending peek candidate settling
+    /// (the settlement prologs in `BrowserState` plus the unconditional
+    /// cancel in `adoptPeekTabIntoStrip`). Both fields are
+    /// kept because the vetoed-close residual documented on
+    /// `pendingTabDrivenCloseDeadlines` still consumes them.
     func markTabDrivenClose(for spaceId: String) {
         pendingTabDrivenCloseDeadlines[spaceId] = Date().addingTimeInterval(Self.tabDrivenCloseTTL)
         // Capture the closing window's pixels now, while the WebContents
@@ -10362,13 +11150,24 @@ final class SpaceWindowSlot: ObservableObject {
     }
 
     /// Cancels what `markTabDrivenClose` armed for `spaceId`, marker and
-    /// pre-captured composite together. Called when Chromium reports the
-    /// window entered placeholder mode: the last-tab close left the window
+    /// pre-captured composite together. Called on the three signals that
+    /// falsify the marker's prediction: Chromium reporting the window
+    /// entered placeholder mode
+    /// (`PhiChromiumCoordinator.windowDidEnterPlaceholderMode`), the
+    /// Space's tab list going from empty back to non-empty
+    /// (`BrowserState.handleNewTabFromChromium` and its peek-adoption
+    /// twin `adoptPeekTabIntoStrip` — any insertion that re-fills an
+    /// emptied strip), and a pending peek candidate settling — cancelled
+    /// in the settlement prologs of `resolvePeekCandidate` and
+    /// `finishPeekCandidate` before any outcome branch (present / adopt /
+    /// discard), so the cancel is independent of whether the queued close
+    /// event or the async resolve applies first; strip adoption cancels
+    /// again unconditionally. Each way the last-tab close left the window
     /// standing, so the auto-close the marker predicts never happens. Left
     /// armed it would live out its TTL and misclassify the user's next
     /// genuine close of this window as a tab-driven hand-off, switching the
-    /// slot to a sibling Space instead of closing it. Idempotent — every
-    /// placeholder entry runs it, most with nothing to cancel.
+    /// slot to a sibling Space instead of closing it. Idempotent — most
+    /// runs have nothing to cancel.
     func cancelTabDrivenClose(for spaceId: String) {
         pendingTabDrivenCloseDeadlines.removeValue(forKey: spaceId)
         pendingTabDrivenCloseSnapshots.removeValue(forKey: spaceId)
@@ -10382,7 +11181,8 @@ final class SpaceWindowSlot: ObservableObject {
     ///   sibling. The user-perceived window stays alive showing the
     ///   sibling Space's content. **Currently unreachable from any user
     ///   gesture**: a last-tab close now leaves the window standing on the
-    ///   placeholder page, and that entry cancels the marker
+    ///   placeholder page (or on a fresh tab, should anything re-fill the
+    ///   strip in its place), and either survival cancels the marker
     ///   (`cancelTabDrivenClose`), so no close arrives here still tagged.
     ///   The branch survives for the one residual that can still leave a
     ///   live marker behind — an `IDC_CLOSE_TAB` vetoed by an
@@ -10939,6 +11739,18 @@ final class SpaceWindowSlot: ObservableObject {
         }
     }
 
+    /// The restore twin of `absorbCurrentSpawn`'s frame line: queues the rect a
+    /// window this slot did NOT spawn must surface on, for the `registerWindow`
+    /// that follows to apply. Written unconditionally because the key is a
+    /// windowId Chromium minted for this one arrival — nothing else can have
+    /// queued against it — and only from
+    /// `SpaceManager.claimRestoredWindow`, which owns the rule about which
+    /// arrivals qualify.
+    fileprivate func queueRestorePlacementFrame(_ frame: NSRect,
+                                                forArrivingWindowId windowId: Int) {
+        pendingFrameByWindowId[windowId] = frame
+    }
+
     /// Returns the controller this slot has registered for `spaceId`, or
     /// nil. Used by theme application across slots.
     func windowController(for spaceId: String) -> MainBrowserWindowController? {
@@ -11312,16 +12124,10 @@ final class SpaceWindowSlot: ObservableObject {
         manager?.notifySlotBecameKey(self)
     }
 
-    /// Swap the move/resize observers onto `controller`'s window so any drag
-    /// or resize of the visible window is mirrored onto every sibling in this
-    /// slot immediately — siblings stay pre-aligned to the user's current
-    /// position/size, so any subsequent swap surfaces them at the right place
-    /// regardless of which code path runs (swap or spawn).
-    ///
-    /// Observing only the visible window is essential: siblings receive the
-    /// propagated `setFrame` and fire their own didMove/didResize, but no
-    /// observer is hooked to them, so there is no echo. Hooking every window
-    /// would create an A→B→A feedback loop.
+    /// Swap the move/resize observers onto `controller`'s window so the slot's
+    /// remembered geometry follows the window currently visible to the user.
+    /// Switch and spawn paths apply that geometry when another Space surfaces;
+    /// grouped windows continue to share geometry through AppKit.
     private func observeFrameChanges(on controller: MainBrowserWindowController?) {
         for token in visibleFrameObservers {
             NotificationCenter.default.removeObserver(token)
@@ -11333,7 +12139,7 @@ final class SpaceWindowSlot: ObservableObject {
         // PREVIOUS window's subscription alive.
         observeSidebarWidth(on: controller)
         guard let window = controller?.window else { return }
-        let propagate: () -> Void = { [weak self, weak window] in
+        let recordFrameChange: () -> Void = { [weak self, weak window] in
             guard let self,
                   !self.isAnimatingWindowSlide,
                   let window,
@@ -11379,12 +12185,11 @@ final class SpaceWindowSlot: ObservableObject {
             // the window while the FIRST prompt is up, answer "Leave" to it, and
             // then "Cancel" a later sibling's prompt. That drag is refused here
             // and the dragged window is gone before the recovery runs, so the
-            // slot settles on the survivor's older position instead. Every way
-            // of keeping the drag re-opens the hole this guard closes —
-            // propagating to siblings mid-cascade carries a clobbered frame the
-            // same way, and `pressedMouseButtons` is the unreliable proxy that
-            // was removed from here for good reason. Losing one drag on that
-            // path is the cheaper failure.
+            // slot settles on the survivor's older position instead. Accepting
+            // that transient frame into the cache re-opens the hole this guard
+            // closes, and `pressedMouseButtons` is the unreliable proxy that was
+            // removed from here for good reason. Losing one drag on that path is
+            // the cheaper failure.
             if self.isCascadingSlotClose {
                 return
             }
@@ -11392,22 +12197,13 @@ final class SpaceWindowSlot: ObservableObject {
             // record it so a later spawn/switch inherits the user's drag even
             // if the source window is gone by then.
             self.lastKnownFrame = frame
-            // Never push a fullscreen rect onto the siblings. A sibling that has
-            // been ordered out is a plain windowed NSWindow, and a screen-sized
-            // rect puts its title bar above the menu bar — AppKit used to shove
-            // that back down on order-in, but Phi's
-            // `constrainFrameRect:toScreen:` override deliberately hands such a
-            // frame back untouched now, so an unreachable sibling would stay
-            // unreachable. The slot's own frame still follows fullscreen above:
-            // the in-fullscreen swap path inherits it.
-            //
-            // Keyed on the frame rather than on the window's `.fullScreen`
-            // styleMask, so that re-aligning the siblings on the way out of
-            // fullscreen does not hinge on when AppKit flips that mask — a point
-            // this code cannot observe (`windowFullScreenStateChanged` runs off
-            // the WILL hooks, which by design fire before the flip). The
-            // didResize that lands while leaving fullscreen already carries the
-            // windowed rect, so it propagates whatever the mask says.
+            // Never record a fullscreen rect as the slot's windowed geometry.
+            // `lastKnownFrame` above still follows fullscreen for switches inside
+            // that Space, while `lastKnownWindowedFrame` must retain the ordinary
+            // rect used for restore. Keyed on the frame rather than the window's
+            // `.fullScreen` styleMask because the will-enter / will-exit hooks run
+            // before AppKit flips that mask; the didResize delivered on exit
+            // already carries the settled windowed rect.
             if NSScreen.screens.contains(where: { $0.frame.equalTo(frame) }) {
                 return
             }
@@ -11436,21 +12232,18 @@ final class SpaceWindowSlot: ObservableObject {
                 self.lastKnownWindowedFrame = frame
                 self.manager?.scheduleSlotsSnapshotPersist()
             }
-            for (_, sibling) in self.windowsBySpaceId where sibling !== visible {
-                sibling.window?.setFrame(frame, display: false)
-            }
         }
         let move = NotificationCenter.default.addObserver(
             forName: NSWindow.didMoveNotification,
             object: window,
             queue: .main,
-            using: { _ in propagate() }
+            using: { _ in recordFrameChange() }
         )
         let resize = NotificationCenter.default.addObserver(
             forName: NSWindow.didResizeNotification,
             object: window,
             queue: .main,
-            using: { _ in propagate() }
+            using: { _ in recordFrameChange() }
         )
         visibleFrameObservers = [move, resize]
     }
@@ -11513,9 +12306,9 @@ final class SpaceWindowSlot: ObservableObject {
     }
 
     /// Re-checks this slot's placement after a screen-layout change and pulls
-    /// the windows back when the new layout left them unreachable. Only the
-    /// visible window is moved; the frame observer mirrors the correction onto
-    /// the siblings and records it, exactly as it does for a user drag.
+    /// the visible window back when the new layout left it unreachable. The
+    /// frame observer records the correction so later switches and spawns
+    /// inherit it, exactly as it does for a user drag.
     ///
     /// Skipped in fullscreen (the frame is legitimately the whole screen there)
     /// and mid-cascade (the slot is tearing down, and the observer refuses
@@ -11542,6 +12335,67 @@ final class SpaceWindowSlot: ObservableObject {
             lastKnownFrame = frame
         }
         return lastKnownFrame
+    }
+
+    /// Hands a slot minted for a saved snapshot entry the geometry the record
+    /// remembers for it: where the group sat. The spawn that follows inherits
+    /// it through the route it already uses — `resolveInheritedFrame` →
+    /// `SpawnContext.inheritedFrame` → `pendingFrameByWindowId` — so the window
+    /// arrives where the user left the group instead of on Chromium's own
+    /// `browser.window_placement`. No new route and no second source of truth:
+    /// this is the slot remembering what a window of its own would have told
+    /// it, one step before it has one.
+    ///
+    /// Handed the rect rather than the entry it came from, and that is the
+    /// layer boundary rather than an omission: `SlotRestoreEntry` is private to
+    /// `SpaceManager`, and a slot reads no part of the restore record anywhere
+    /// else.
+    ///
+    /// The sidebar width the record also carries is deliberately NOT seeded,
+    /// and this is measured rather than an oversight. It was, for one build:
+    /// `MainSplitViewController` gives its split view an `autosaveName`, and
+    /// AppKit restores the app-wide saved divider position at the moment that
+    /// name is assigned — a deferred `viewDidLoad` tick, i.e. AFTER
+    /// `registerWindow`'s `syncSidebar`. Three real-hardware rounds seeded 260,
+    /// 0 and 340 and the reopened window came back at the autosaved 193 every
+    /// time. The width is already app-wide state, so a per-slot value cannot
+    /// win without fighting that autosave, which is a product decision and not
+    /// this function's to make. Do not re-add it without changing that first.
+    ///
+    /// Never overwrites what the slot already remembers, and the guards are
+    /// load-bearing rather than tidy: `slotForRestoreIndex` hands the same slot
+    /// back for every window of a group, and a slot that has been on screen
+    /// holds a live position the record cannot improve on — seeding over it
+    /// would drag the user's window back to wherever the last snapshot froze
+    /// it. It asks BOTH caches because they can legitimately diverge —
+    /// `snapshotFrame` writes the windowed one alone — so a slot that knows
+    /// either of them already knows better than the record does.
+    ///
+    /// Both frames are seeded, for the reason a live window keeps both current:
+    /// `lastKnownFrame` is what the spawn inherits, `lastKnownWindowedFrame` is
+    /// what the next persist writes back. An entry claimed straight into
+    /// fullscreen (`markPendingRestoreFullScreen`) never gives the frame
+    /// observer a windowed rect to record, so seeding only the first would have
+    /// that entry spawn on its remembered rect and then lose it on the write
+    /// that follows.
+    ///
+    /// A nil frame means the record carries none — an entry written before the
+    /// field existed, or one whose stored value no longer parses
+    /// (`SpaceManager.decodedSlotFrame`) — and leaves the spawn placed exactly
+    /// as it is today. The frame is trusted as given: it arrives non-empty from
+    /// the decoder and already clamped to the screens attached now
+    /// (`SpaceManager.loadRestoreSnapshot`).
+    fileprivate func seedRememberedGeometry(frame: NSRect?) {
+        guard let frame, lastKnownFrame == nil, lastKnownWindowedFrame == nil
+        else { return }
+        lastKnownFrame = frame
+        lastKnownWindowedFrame = frame
+        // Paired with the mint line this lands right after: together they say
+        // whether the window about to be spawned was placed by the record or
+        // left to Chromium, which is the whole of the reopen's placement from a
+        // log bundle. Silent when nothing was taken, so a slot that already
+        // knew better does not read like one that was seeded.
+        AppLogInfo("[SpaceWindowSlot] seeded from the saved entry: frame=\(NSStringFromRect(frame))")
     }
 
     /// Tears down every NotificationCenter registration this slot owns —
@@ -11663,6 +12517,13 @@ extension Notification.Name {
     /// the app is inactive, where an ordered-front window cannot become key.
     static let spaceSlotVisibleWindowDidChange =
         Notification.Name("PhiSpaceSlotVisibleWindowDidChange")
+
+    /// Posted by `SpaceManager` (as the notification object) whenever the
+    /// ORDER of `spaces` changes — a Space created, deleted, reordered, or an
+    /// agent Space appearing or ending. Not posted for in-place edits (rename,
+    /// icon, theme): only the position → Space mapping is at stake here.
+    static let spaceListDidChange =
+        Notification.Name("PhiSpaceListDidChange")
 }
 
 /// The loading window a windowless reopen puts on screen immediately, on the

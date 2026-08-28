@@ -30,9 +30,8 @@ enum AgentTaskAccessPolicy {
 }
 
 /// Parses `agentSpace.*` extension messages and drives `AgentSpaceManager`.
-/// Extension messages are delivered on the main thread (same assumption the
-/// `toggleAgentAnimation` handler relies on), so the manager's main-actor state
-/// is accessed via `MainActor.assumeIsolated`. Messages arrive both from the
+/// Extension messages are delivered on the main thread, so the manager's
+/// main-actor state is accessed via `MainActor.assumeIsolated`. Messages arrive both from the
 /// Kensington extension and — with senderId "cdp" — from remote-debugging
 /// clients through the PhiAgentSpace CDP domain.
 enum AgentSpaceRouter {

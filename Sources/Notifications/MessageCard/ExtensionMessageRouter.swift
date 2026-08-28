@@ -102,8 +102,8 @@ final class ExtensionMessageRouter {
         register(type: "getServiceExports") { context in
             Task {
                 do {
-                    let result = try await SentinelIPCClient.shared.getComponentExports()
-                    await ExtensionMessaging.shared.sendResponse(result, requestId: context.requestId)
+                    let exports = try await SentinelIPCClient.shared.getComponentExports()
+                    await ExtensionMessaging.shared.sendResponse(exports.exportsJSON, requestId: context.requestId)
                 } catch {
                     await ExtensionMessaging.shared.sendError(error.localizedDescription, requestId: context.requestId)
                 }
@@ -111,8 +111,14 @@ final class ExtensionMessageRouter {
             return nil
         }
 
-        register(type: "toggleAgentAnimation") { context in
-            return AgentAnimationManager.shared.handleRequest(context: context)
+        for type in ServiceBrokerExtensionProtocol.messageTypes {
+            register(type: type) { context in
+                Task {
+                    let reply = await ServiceBrokerExtensionProtocol.shared.handle(context)
+                    await ExtensionMessaging.shared.sendResponse(reply, requestId: context.requestId)
+                }
+                return nil
+            }
         }
 
         // Both reader types ack synchronously — the extension's reports are

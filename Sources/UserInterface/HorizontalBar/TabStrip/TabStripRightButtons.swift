@@ -5,6 +5,7 @@
 
 import SwiftUI
 import AppKit
+import Combine
 
 /// Right-side buttons area for the TabStrip bar
 /// Contains CardEntryButton and future buttons
@@ -13,6 +14,9 @@ struct TabStripRightButtons: View {
     let browserState: BrowserState
     let onCardEntryTap: () -> Void
     let onSearchTabsTap: (NSView?) -> Void
+
+    /// Set once Sparkle has prepared a downloaded update for installation.
+    @State private var availableUpdateVersion: String? = nil
 
     // Organize-tabs is unavailable when AI is disabled, in incognito windows,
     // or when there are too few eligible tabs. `@AppStorage` keeps the AI toggle
@@ -36,10 +40,22 @@ struct TabStripRightButtons: View {
         self.onSearchTabsTap = onSearchTabsTap
         _eligibleTabCount = State(
             initialValue: FarringdonOrganizer.eligibleTabCount(in: browserState.normalTabs))
+
+        #if DEBUG && !PHI_OSS_BUILD
+        _availableUpdateVersion = State(initialValue: Self.uiTestUpdateVersion())
+        #endif
     }
 
     var body: some View {
         HStack(spacing: 6) {
+            #if !PHI_OSS_BUILD
+            if availableUpdateVersion != nil {
+                TabStripUpdateButton {
+                    AppController.shared.checkForUpdate(nil)
+                }
+            }
+            #endif
+
             if showCardEntry {
                 CardEntryButton(action: onCardEntryTap)
                     .transition(
@@ -61,8 +77,19 @@ struct TabStripRightButtons: View {
         }
         .animation(.spring(response: 0.3, dampingFraction: 0.7), value: showCardEntry)
         .animation(.spring(response: 0.3, dampingFraction: 0.7), value: showFarringdonButton)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .trailing)
-//        .offset(y: -4) // Visual alignment adjustment
+        #if !PHI_OSS_BUILD
+        .onReceive(NotificationCenter.default.publisher(for: .sparkleDidDownloadUpdate)) { notification in
+            availableUpdateVersion = notification.userInfo?["displayVersion"] as? String ?? ""
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .sparkleDidSkipUpdate)) { _ in
+            availableUpdateVersion = nil
+        }
+        #endif
+        // The update action is text-based, unlike the other 24pt controls. Keep
+        // the existing 88pt minimum for the icon-only state, while letting the
+        // hosting view grow when an update is ready so it never overlaps tabs.
+        .frame(minWidth: 88, maxWidth: .infinity, maxHeight: .infinity, alignment: .trailing)
+        .animation(.spring(response: 0.3, dampingFraction: 0.7), value: availableUpdateVersion != nil)
         .ignoresSafeArea()
     }
     
@@ -77,7 +104,62 @@ struct TabStripRightButtons: View {
             eligibleTabCount: eligibleTabCount
         )
     }
+
+    #if DEBUG && !PHI_OSS_BUILD
+    private static func uiTestUpdateVersion() -> String? {
+        let arguments = ProcessInfo.processInfo.arguments
+        guard arguments.contains("-uitest"),
+              let versionFlagIndex = arguments.firstIndex(of: "-tabStripUpdateVersion"),
+              arguments.indices.contains(versionFlagIndex + 1) else {
+            return nil
+        }
+
+        let version = arguments[versionFlagIndex + 1]
+        return version.isEmpty ? nil : version
+    }
+    #endif
 }
+
+#if !PHI_OSS_BUILD
+/// Update action displayed to the left of the notification-card entry once
+/// Sparkle has a downloaded update ready to install. Its visual configuration
+/// intentionally mirrors `SidebarHeaderView.upgradeButton`.
+private struct TabStripUpdateButton: View {
+    private static let accessibilityIdentifier = "tabStrip.updateButton"
+
+    @StateObject private var state = HoverableButtonState()
+    let action: () -> Void
+
+    private var title: String {
+        NSLocalizedString(
+            "sidebar.updateReminder.updateButton",
+            value: "Update",
+            comment: "Tab strip update button title"
+        )
+    }
+
+    private var config: HoverableButtonConfig {
+        HoverableButtonConfig(
+            title: title,
+            displayMode: .titleOnly,
+            backgroundColor: .themeColor,
+            hoverBackgroundColor: .themeColorOnHover,
+            titleColor: .custom(light: .white, dark: .white),
+            titleFont: .system(size: 11, weight: .medium),
+            edgeInsets: EdgeInsets(top: 2, leading: 4, bottom: 2, trailing: 4),
+            cornerRadius: 6
+        )
+    }
+
+    var body: some View {
+        HoverableButton(config: config, state: state, action: action)
+            .frame(width: 56, height: 24)
+            .help(title)
+            .accessibilityIdentifier(Self.accessibilityIdentifier)
+            .accessibilityLabel(Text(title))
+    }
+}
+#endif
 
 /// "Organize tabs with AI" (Farringdon) button for the horizontal tab strip,
 /// shown next to the search button. Triggers the same focused-window organize run
@@ -162,6 +244,8 @@ private struct TabStripFarringdonButton: View {
 }
 
 private struct TabStripSearchTabsButton: View {
+    private static let accessibilityIdentifier = "tabStrip.searchTabsButton"
+
     let action: (NSView?) -> Void
 
     @State private var isHovering = false
@@ -203,6 +287,7 @@ private struct TabStripSearchTabsButton: View {
                 isHovering = hovering
             }
         }
+        .accessibilityIdentifier(Self.accessibilityIdentifier)
         .accessibilityLabel(Text(searchTabsLabel))
     }
 }

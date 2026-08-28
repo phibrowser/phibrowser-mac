@@ -103,10 +103,10 @@ class OmniBoxViewModel: ObservableObject {
         // the current tab as the navigation target, including NTP — typing a URL should
         // replace the blank NTP rather than spawn a new tab.
         opennedFromCurrentTab = true
-        if tab.isNTP {
+        if tab.isNTP || tab.url == "about:blank" {
             logOpenTrace(
                 stage: "prefill-current-tab",
-                details: "suppressAutomaticSearch=\(suppressAutomaticSearch) urlLength=0 isNTP=true"
+                details: "suppressAutomaticSearch=\(suppressAutomaticSearch) urlLength=0 isBlank=true"
             )
             state.inputText = ""
             return
@@ -147,7 +147,7 @@ class OmniBoxViewModel: ObservableObject {
         }
         currentTab = tab
         openedFromGroupOverview = false
-        if tab?.isNTP == true {
+        if tab?.isNTP == true || tab?.url == "about:blank" {
             state.inputText = ""
             opennedFromCurrentTab = true
         } else {
@@ -207,6 +207,10 @@ class OmniBoxViewModel: ObservableObject {
     private func selectSuggestion(_ suggestion: OmniBoxSuggestion, commandKeyPressed: Bool) {
         let disposition = suggestionDisposition(for: suggestion, commandKeyPressed: commandKeyPressed)
         AppLogDebug("omni: select suggestion line: \(suggestion.index), disposition: \(disposition.rawValue)")
+        if disposition == .currentTab, let currentTab {
+            browserState.closePeekForAddressBarNavigation(openerTabId: currentTab.guid)
+            browserState.closeReaderOverlayForAddressBarNavigation(originTabId: currentTab.guid)
+        }
         chromiumBridge?.selectSuggestion(atLine: suggestion.index,
                                          windowId: browserState.windowId.int64Value,
                                          disposition: disposition)
@@ -263,7 +267,9 @@ class OmniBoxViewModel: ObservableObject {
     }
 
     private func navigateCurrentTab(to url: String) {
-        if let wrapper = currentTab?.webContentWrapper {
+        if let currentTab, let wrapper = currentTab.webContentWrapper {
+            browserState.closePeekForAddressBarNavigation(openerTabId: currentTab.guid)
+            browserState.closeReaderOverlayForAddressBarNavigation(originTabId: currentTab.guid)
             wrapper.navigate(toURL: url)
             return
         }

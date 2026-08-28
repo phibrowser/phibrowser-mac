@@ -432,7 +432,7 @@ final class TimeMachineRestoreCoordinatorTests: XCTestCase {
     }
 
     private func makeTemporaryDirectory() throws -> URL {
-        let url = FileManager.default.temporaryDirectory
+        let url = URL(fileURLWithPath: "/Users/Shared", isDirectory: true)
             .appendingPathComponent("TimeMachineRestoreCoordinatorTests-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
         temporaryDirectories.append(url)

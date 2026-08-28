@@ -28,6 +28,7 @@ struct CommandDispatcher {
         .PHI_FARRINGDON_TOGGLE,
         .PHI_COPY_URL,
         .PHI_TOGGLE_READER,
+        .PHI_NEW_KIOSK_WINDOW,
     ] + CommandWrapper.spaceSelectionCommands
 
     /// Commands swallowed while the focused tab shows the native NTP — it has no
@@ -88,8 +89,16 @@ struct CommandDispatcher {
             .isGuestTransitionInteractionBlocked {
             return true
         }
+        if command == .PHI_NEW_KIOSK_WINDOW {
+            guard let appController = AppController.shared else { return false }
+            appController.newKioskWindowFromMenu(nil)
+            return true
+        }
         guard let windowController = MainBrowserWindowControllersManager.shared.findControllerWith(window: window) else {
             return false
+        }
+        if let kioskWindowController = windowController as? KioskBrowserWindowController {
+            return kioskWindowController.handleCommand(command)
         }
         // Agent lock: while the agent controls this window, block every command
         // except Space navigation. The menu items are greyed and the shortcuts
@@ -291,7 +300,7 @@ struct CommandDispatcher {
         }
 
         // PHI-only commands: intercepted before Chromium sees the event.
-        if let phiCommand = matchedPhiCommand(for: event, shortcutMap: phiShortcutMap) {
+        if let phiCommand = interceptedPhiCommand(for: event) {
             return dispatchCommand(phiCommand, to: window)
         }
 
@@ -304,6 +313,17 @@ struct CommandDispatcher {
         }
 
         return false
+    }
+
+    static func interceptedPhiCommand(
+        for event: NSEvent,
+        inputSourceIdentifier: String? = nil
+    ) -> CommandWrapper? {
+        matchedPhiCommand(
+            for: event,
+            shortcutMap: phiShortcutMap,
+            inputSourceIdentifier: inputSourceIdentifier
+        )
     }
 
     static func matchedPhiCommand(

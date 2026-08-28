@@ -26,6 +26,12 @@ struct AgentIdentity: Equatable {
     let displayName: String
     /// Team identifier from the code signature, nil when unsigned.
     let teamId: String?
+    /// Signing identifier from the code signature ("com.apple.login"), nil
+    /// when unsigned. Apple's own platform binaries carry no team identifier,
+    /// so on a launch chain full of them this is the only thing that says what
+    /// a verified process actually IS — which is the whole reason the chain is
+    /// on screen.
+    let signingId: String?
     /// True when the responsible process carries a valid code signature.
     let verified: Bool
     /// Absolute path of the responsible process's executable.
@@ -37,8 +43,116 @@ struct AgentIdentity: Equatable {
     /// — still learns the agent pid to record for its detached daemon and
     /// watchers to claim.
     let pid: pid_t?
+    /// True only for the browser's own agent runtime, recognized by
+    /// `AgentPeerIdentity.firstPartyAgent` rather than resolved from an
+    /// arbitrary peer's ancestry. It is the one identity that connects without
+    /// the user's consent (see `AgentCDPListener.evaluate`).
+    let firstParty: Bool
+
+    /// The initializer every resolved peer goes through. `firstParty` is
+    /// deliberately not a parameter: being the browser's own runtime is
+    /// something this file establishes from the connection, never something a
+    /// caller can assert.
+    init(key: String, displayName: String, teamId: String?,
+         signingId: String? = nil, verified: Bool,
+         executablePath: String, pid: pid_t?) {
+        self.init(key: key, displayName: displayName, teamId: teamId,
+                  signingId: signingId, verified: verified,
+                  executablePath: executablePath, pid: pid, firstParty: false)
+    }
+
+    fileprivate init(key: String, displayName: String, teamId: String?,
+                     signingId: String?, verified: Bool,
+                     executablePath: String, pid: pid_t?, firstParty: Bool) {
+        self.key = key
+        self.displayName = displayName
+        self.teamId = teamId
+        self.signingId = signingId
+        self.verified = verified
+        self.executablePath = executablePath
+        self.pid = pid
+        self.firstParty = firstParty
+    }
+
+    /// Key of the identity below. Its own constant because the rule attached
+    /// to it — never admitted, never remembered, never interchangeable with
+    /// another peer wearing it — is enforced in more than one file, and a
+    /// literal "unknown" spread across them is a rule waiting to be missed.
+    static let unresolvedKey = "unknown"
+
+    /// The stand-in for a peer whose process could not be resolved at all:
+    /// the socket would not name a pid, so there is no ancestry to walk, no
+    /// signature to check, and nothing to tell the user.
+    ///
+    /// It is not an identity but the absence of one, and every unidentifiable
+    /// peer that ever connects wears exactly this key. That is what makes it
+    /// unanswerable: an "Always Allow" against it would not approve a program,
+    /// it would approve the *condition* of being unidentifiable, permanently
+    /// and for everyone. `AgentCDPListener.evaluate` refuses it outright
+    /// instead of asking (see there for why that is safe).
+    static let unresolved = AgentIdentity(
+        key: unresolvedKey, displayName: "Unknown process", teamId: nil,
+        verified: false, executablePath: "", pid: nil)
+
+    /// The same absence reached a second way: the ancestry walk ran, but
+    /// everything it found was the phi-browser skill's own plumbing — its
+    /// heredoc runner, its CLI, its detached mirror daemon — with no agent
+    /// above them to name.
+    ///
+    /// That is not an agent called "phi-browser", which is what this used to
+    /// resolve to and what the prompt then asked the user about. The skill's
+    /// scripts act for whoever drives them; when the walk can see nothing but
+    /// them, what it has established is that it could not find the driver.
+    /// Saying so is both truer and safer: the old name was keyed to the skill
+    /// directory, so one "Always Allow" would have been inherited by every
+    /// future process running anything out of it.
+    ///
+    /// A helper in this position has a way in that does not depend on the
+    /// walk — the capability its spawning round delegates joins the agent's
+    /// session directly, and a connection carrying one is evaluated as that
+    /// session and never arrives here. Reaching this point means none was
+    /// presented. `executablePath` is kept for the log line that says so.
+    static func unresolvedOwnPlumbing(executablePath: String) -> AgentIdentity {
+        AgentIdentity(key: unresolvedKey,
+                      displayName: "the phi-browser skill's own plumbing",
+                      teamId: nil, verified: false,
+                      executablePath: executablePath, pid: nil)
+    }
+
+    /// The same absence reached a third way: the peer is Phi's OWN signed code
+    /// — Sentinel's bundled runtime — that did not pass the first-party check,
+    /// because whatever launched it is not Phi-signed.
+    ///
+    /// Resolved normally it is worse than nameless. `signingIdentity` reports
+    /// the outermost bundle a binary sits in, which for anything under
+    /// `Phi.app/Contents/Library/LoginItems/…` is the browser itself, so the
+    /// prompt asks whether to let "Phi" control Phi Browser — the browser
+    /// asking the user to approve it to itself. There is no answer to that, and
+    /// the two on offer are both bad: "Deny" turns off a built-in feature, and
+    /// "Always Allow" records a grant keyed to a bare interpreter's signature
+    /// (`87DQ3HMK5G:node`), which from then on silently admits anything at all
+    /// that Sentinel's node is ever pointed at.
+    ///
+    /// So it is refused instead of asked about, exactly like the other two. A
+    /// component genuinely started by the browser passes the first-party check
+    /// and never arrives here; one that arrives here has been orphaned or
+    /// re-launched by something else, and relaunching the browser restores it.
+    static func unresolvedOwnCode(executablePath: String) -> AgentIdentity {
+        AgentIdentity(key: unresolvedKey,
+                      displayName: "Phi's own runtime, started outside the browser",
+                      teamId: nil, verified: false,
+                      executablePath: executablePath, pid: nil)
+    }
+
+    /// Whether this is that stand-in, in any of its forms.
+    var isUnresolved: Bool { key == Self.unresolvedKey }
 
     /// Secondary line for the prompt, e.g. "Team 87DQ3HMK5G · verified".
+    ///
+    /// A verified process always names what it is signed as: its team when it
+    /// has one, and otherwise its signing identifier — Apple's own binaries
+    /// have no team, and a launch chain of bare "verified" rows says nothing
+    /// the user can act on.
     var detail: String {
         let trust = verified
             ? NSLocalizedString("agentControl.connectionApproval.identity.verifiedStatus", value: "verified", comment: "CDP consent - signature verified")
@@ -48,6 +162,12 @@ struct AgentIdentity: Equatable {
                 format: NSLocalizedString("agentControl.connectionApproval.identity.teamSummary", value: "Team %@ · %@",
                                           comment: "CDP consent - team and trust"),
                 teamId, trust)
+        }
+        if let signingId, !signingId.isEmpty {
+            return String(
+                format: NSLocalizedString("agentControl.connectionApproval.identity.signingIdSummary", value: "%@ · %@",
+                                          comment: "CDP consent - signing identifier and trust, for a signature that carries no team identifier (Apple's own binaries); first %@ is the signing identifier, second is the trust word"),
+                signingId, trust)
         }
         return trust
     }
@@ -132,6 +252,52 @@ struct AgentDenial: Codable, Equatable, Identifiable {
     }
 }
 
+/// One process in the chain that led to an agent connecting, as shown behind
+/// the consent prompt's "Details" disclosure.
+///
+/// The prompt names an agent; this is the evidence for that name. It matters
+/// most when the agent is unsigned, where the name is derived from a script
+/// path or an `argv[0]` the process chose for itself and there is no signature
+/// standing behind it — the command and the chain above it are then the only
+/// things the user can actually check.
+struct AgentProcessNode: Equatable, Identifiable {
+    let pid: pid_t
+    /// Short name for the row, e.g. "node" or the brand in `argv[0]`.
+    let name: String
+    /// Full command line, or the executable path when argv is unreadable.
+    let command: String
+    /// True for the one process the prompt is naming as the agent.
+    let isAgent: Bool
+    /// Who this process is by its code signature — the same question the
+    /// prompt's Identity row answers about the agent, asked of the thing that
+    /// launched it. It is also what a decision retargeted onto this row would
+    /// be recorded under, so a user who does not recognise an unsigned script
+    /// can answer about the signed app above it instead. Nil when the process
+    /// has no readable executable to check.
+    let identity: AgentIdentity?
+
+    var id: pid_t { pid }
+
+    /// Whether the prompt will let the user answer about this row. The root of
+    /// every process on the machine is not a meaningful "who is asking":
+    /// allowing launchd would admit anything the user ever runs, which is what
+    /// the alert's "Apply to all agents" switch says out loud and Settings can
+    /// take back — reaching the same power through an innocuous-looking row is
+    /// the trap this closes.
+    var isSelectableSubject: Bool { identity != nil && pid > 1 }
+}
+
+/// What the consent prompt shows behind "Details": the asking agent's own
+/// command line and the ancestry that launched it.
+struct AgentProcessDetails: Equatable {
+    /// The agent's command line, or its executable path as a fallback.
+    let command: String
+    let executablePath: String
+    /// Oldest ancestor first, the agent process last, so the list reads as a
+    /// tree from the top down. Empty when the ancestry can't be read.
+    let tree: [AgentProcessNode]
+}
+
 enum AgentPeerIdentity {
     /// Tools that merely *carry* an agent's work — interpreters, shells,
     /// process wrappers, and the transports an agent reaches the socket
@@ -210,6 +376,163 @@ enum AgentPeerIdentity {
         return resolve(pid: pid, claimed: true)
     }
 
+    // MARK: - First-party pass
+
+    /// The browser's own code, which Sentinel starts as a component of the
+    /// product rather than as an outside agent the user invited in:
+    ///
+    ///     Phi Sentinel.app → runner → node → pi-agent.bundle
+    ///
+    /// It is recognized instead of prompted for, and `AgentCDPListener` admits
+    /// it without consent and without the two master switches — a built-in
+    /// feature must not ask the user to turn on Developer mode to work. That
+    /// makes this the one identity where the code signature IS the boundary
+    /// rather than an aid to naming the agent, so both of these must hold and
+    /// the same-uid gate still applies before either:
+    ///
+    ///   1. the connecting process is Phi-signed — team 87DQ3HMK5G under an
+    ///      Apple-issued chain — pinned to this socket by its peer audit token;
+    ///   2. its parent is Phi-signed too — Sentinel's `runner`.
+    ///
+    /// (2) is what carries the check: (1) alone is satisfied by anyone who runs
+    /// Sentinel's bundled node, which is readable by every process of this
+    /// user. The signature on the peer says only "this binary shipped with
+    /// Phi"; it takes a Phi-signed parent to say "Phi started it".
+    ///
+    /// What is deliberately NOT checked is what the process is *running*. This
+    /// used to additionally require argv[1] to name a known agent bundle that
+    /// still existed on disk, and both halves of that misfired in the field —
+    /// each time dropping a genuine first-party connection into the consent
+    /// prompt under the outermost bundle's name, asking the user whether to let
+    /// "Phi" control Phi Browser, which is not a question anyone can answer:
+    ///
+    ///   • the runtime is not always launched as `node <bundle>` — a `-e`
+    ///     bootstrap has no script argument at all; and
+    ///   • Sentinel's updater renames the live install directory before
+    ///     swapping the new one in, so a component still running out of the old
+    ///     directory carries an argv path that no longer resolves.
+    ///
+    /// Neither check was ever load-bearing: an argument the peer chose for
+    /// itself is not evidence about the peer, and anyone able to satisfy (2)
+    /// could as easily name a file `pi-agent.bundle` and point our node at it.
+    /// Dropping them widens *which* first-party binary is recognized, never
+    /// *who* may present it — the pair above is the whole boundary, and it is
+    /// the pair that was carrying it all along.
+    ///
+    /// Returns nil for every other connection, which then resolves normally
+    /// and faces the consent prompt.
+    static func firstPartyAgent(socketFD: Int32) -> AgentIdentity? {
+        guard let auditToken = peerAuditToken(socketFD: socketFD) else { return nil }
+        // The audit token's sixth word is the pid. `audit_token_to_pid` lives
+        // in libbsm, which has no module map to import from Swift.
+        let peerPID = pid_t(bitPattern: auditToken.val.5)
+        guard peerPID > 0 else { return nil }
+
+        let tokenData = withUnsafeBytes(of: auditToken) { Data($0) } as CFData
+        guard isFirstPartyCode(guestAttributes: [kSecGuestAttributeAudit: tokenData],
+                               pid: peerPID) else {
+            return nil
+        }
+        // Falls back to the kernel's recorded exec path for the same reason
+        // `isFirstPartyCode` does: a rebuild or an update can unlink the binary
+        // a long-lived component is still running from.
+        let executable = executablePath(peerPID) ?? recordedExecutablePath(peerPID)
+        guard let parent = parentPID(peerPID), parent > 1,
+              isFirstPartyCode(guestAttributes: [kSecGuestAttributePid: parent],
+                               pid: parent) else {
+            let name = executable.map { ($0 as NSString).lastPathComponent }
+                ?? "pid \(peerPID)"
+            AppLogWarn("[AgentCDP] \(name) is Phi-signed but was not launched by "
+                       + "Phi-signed code; falling back to the ancestry walk")
+            return nil
+        }
+
+        return AgentIdentity(
+            key: firstPartyKey,
+            displayName: firstPartyDisplayName,
+            teamId: FileSystemUtils.teamId,
+            signingId: FileSystemUtils.bundleId,
+            verified: true,
+            executablePath: executable ?? "",
+            pid: peerPID,
+            firstParty: true)
+    }
+
+    /// Identity key for the pass. Deliberately a constant: the key a normal
+    /// resolve would produce embeds the bundle's version and the signed-in
+    /// account (".../phi-agent/2026.8.21.1619/arm64/phi-agent.bundle.js"), so
+    /// it would name a different agent after every component update.
+    static let firstPartyKey = "phi:phi-agent"
+
+    /// Shown wherever a driving agent is named — the Space switcher, the
+    /// transcript — so the browser's own agent reads as itself rather than as
+    /// the "phi-agent.bundle" script an ancestry walk would call it.
+    static let firstPartyDisplayName = "Phi Agent"
+
+    /// Peer credentials as an audit token, which names the process on the
+    /// other end of `socketFD` unambiguously. `LOCAL_PEERPID` gives only a pid,
+    /// and a pid can be recycled onto an unrelated process between reading it
+    /// and checking its signature.
+    private static func peerAuditToken(socketFD: Int32) -> audit_token_t? {
+        var token = audit_token_t()
+        var len = socklen_t(MemoryLayout<audit_token_t>.size)
+        let rc = withUnsafeMutablePointer(to: &token) {
+            getsockopt(socketFD, SOL_LOCAL, LOCAL_PEERTOKEN, $0, &len)
+        }
+        guard rc == 0, len == socklen_t(MemoryLayout<audit_token_t>.size) else { return nil }
+        return token
+    }
+
+    /// Whether a process is Phi's own code. `guestAttributes` locates the
+    /// running process (an audit token where we have one, else a pid); `pid`
+    /// is only for the fallback below.
+    private static func isFirstPartyCode(guestAttributes: [CFString: Any],
+                                         pid: pid_t) -> Bool {
+        if satisfiesFirstPartyRequirement(guestAttributes: guestAttributes) { return true }
+        // The running process can be unreadable because its executable was
+        // replaced on disk since it launched — routine during development,
+        // where a rebuild unlinks the binary that a long-lived Sentinel is
+        // still running from and the dynamic query then fails with ENOENT.
+        // Fall back to the exec path the kernel recorded, which the process
+        // itself cannot rewrite: it still takes a Phi-signed binary to have
+        // been launched from one. What lapses is only the assurance that the
+        // copy on disk is the code the process is running.
+        guard let path = recordedExecutablePath(pid) else { return false }
+        var staticCode: SecStaticCode?
+        guard let requirement = firstPartyRequirement,
+              SecStaticCodeCreateWithPath(URL(fileURLWithPath: path) as CFURL,
+                                          [], &staticCode) == errSecSuccess,
+              let staticCode else {
+            return false
+        }
+        return SecStaticCodeCheckValidity(staticCode, [], requirement) == errSecSuccess
+    }
+
+    private static func satisfiesFirstPartyRequirement(guestAttributes: [CFString: Any]) -> Bool {
+        guard let requirement = firstPartyRequirement else { return false }
+        var code: SecCode?
+        guard SecCodeCopyGuestWithAttributes(
+                nil, guestAttributes as CFDictionary, [], &code) == errSecSuccess,
+              let code else {
+            return false
+        }
+        return SecCodeCheckValidity(code, [], requirement) == errSecSuccess
+    }
+
+    /// Valid signature, Apple-issued chain, Phi's team. `anchor apple generic`
+    /// is what makes the team identifier mean anything: without it a
+    /// self-signed certificate carrying "87DQ3HMK5G" in its OU would satisfy
+    /// the check.
+    private static let firstPartyRequirement: SecRequirement? = {
+        var requirement: SecRequirement?
+        let text = "anchor apple generic and certificate leaf[subject.OU] = \"\(FileSystemUtils.teamId)\"" as CFString
+        guard SecRequirementCreateWithString(text, [], &requirement) == errSecSuccess else {
+            AppLogError("[AgentCDP] could not compile the first-party code requirement")
+            return nil
+        }
+        return requirement
+    }()
+
     /// Identity of an arbitrary same-user process — the socket peer, or a
     /// pid the peer claims to act for (`claimed`).
     private static func resolve(pid peerPID: pid_t, claimed: Bool = false) -> AgentIdentity? {
@@ -236,6 +559,16 @@ enum AgentPeerIdentity {
         // only ever yield pi — never override another agent's signed grant.
         if let pi = piIdentity(startingAt: peerPID, claimed: claimed) {
             return pi
+        }
+        // Phi's own signed code, reached here only by failing the first-party
+        // check above. Naming it from its signature would name the browser
+        // itself and key a grant to a bare interpreter, so it is refused rather
+        // than presented (see AgentIdentity.unresolvedOwnCode). Checked last,
+        // so a nameable script or a pi session running on our runtime still
+        // resolves to what it actually is.
+        if isFirstPartyCode(guestAttributes: [kSecGuestAttributePid: responsible],
+                            pid: responsible) {
+            return .unresolvedOwnCode(executablePath: path)
         }
         return signingIdentity(pid: responsible, executablePath: path)
     }
@@ -315,9 +648,10 @@ enum AgentPeerIdentity {
         // Below a real responsible process, the launcher above is the better
         // identity than the skill's own plumbing.
         guard boundary == nil, let ownPlumbingExe else { return nil }
-        // The skill's own plumbing is not an agent — no pid to echo back.
-        return unsignedIdentity(name: "phi-browser", path: "phi-browser",
-                                exe: ownPlumbingExe, pid: nil)
+        // Nothing but our own scripts, all the way up: the walk did not find
+        // an agent, so it says that rather than naming the scripts as one
+        // (see AgentIdentity.unresolvedOwnPlumbing).
+        return .unresolvedOwnPlumbing(executablePath: ownPlumbingExe)
     }
 
     /// Identity of one interpreter process: prefers a custom `argv[0]` the
@@ -396,14 +730,52 @@ enum AgentPeerIdentity {
         "phi-mirror-tailer", "phibrowser-cli",
     ]
 
-    /// The script an interpreter runs: its first existing non-flag argument.
+    /// The script an interpreter runs: its first existing non-flag argument,
+    /// else the first one that still reads as a path to a script.
+    ///
+    /// Existing on disk is the reliable signal and stays the first choice, but
+    /// it cannot be a requirement. Sentinel's updater renames the live install
+    /// directory out from under running components before swapping the new one
+    /// in, and prunes old versions behind them, so a long-lived agent's argv
+    /// routinely names a path that is gone. Insisting the file be there made
+    /// such an agent unnameable, and an unnameable script-run agent falls all
+    /// the way through to the signature of the interpreter running it — which
+    /// is how a stale `phi-agent.bundle` came to introduce itself as "Phi".
     private static func scriptArgument(in argv: [String]) -> String? {
+        var vanished: String?
         for arg in argv.dropFirst() {
             if arg.hasPrefix("-") { continue }
             if FileManager.default.fileExists(atPath: arg) { return arg }
+            if vanished == nil, looksLikeScriptPath(arg) { vanished = arg }
         }
-        return nil
+        return vanished
     }
+
+    /// Whether an argument reads as the path of a script file. Only consulted
+    /// for arguments that are NOT on disk, where there is nothing left to check
+    /// but the shape of the string — so it has to be strict enough that a
+    /// flag's value is not mistaken for a vanished script. `node -e "…"` is the
+    /// case that matters: its inline program is a positional argument by the
+    /// time it is seen here, and naming an agent after a fragment of source
+    /// would be worse than not naming it.
+    private static func looksLikeScriptPath(_ argument: String) -> Bool {
+        guard !argument.isEmpty else { return false }
+        // A script extension is enough on its own, spaces in the path included.
+        if scriptFileExtensions.contains((argument as NSString).pathExtension.lowercased()) {
+            return true
+        }
+        // Otherwise only directory structure says "path", and inline source can
+        // contain slashes too — so anything carrying whitespace is left alone.
+        return argument.contains("/")
+            && argument.rangeOfCharacter(from: .whitespacesAndNewlines) == nil
+    }
+
+    /// Extensions that name a script file rather than a flag's value. `bundle`
+    /// covers the browser's own packaged runtimes (`pi-agent.bundle`), which
+    /// are the ones the updater strands most often.
+    private static let scriptFileExtensions: Set<String> = [
+        "js", "mjs", "cjs", "ts", "mts", "cts", "py", "rb", "pl", "php", "bundle",
+    ]
 
     private static func unsignedIdentity(name: String, path: String,
                                          exe: String, pid: pid_t?) -> AgentIdentity {
@@ -455,6 +827,14 @@ enum AgentPeerIdentity {
         processArgsAndEnv(pid)?.argv
     }
 
+    /// The executable path the kernel recorded for `pid` when it exec'd.
+    /// Unlike `proc_pidpath` this still answers after the binary is unlinked
+    /// or replaced on disk, which is what the first-party fallback needs.
+    private static func recordedExecutablePath(_ pid: pid_t) -> String? {
+        guard let path = processArgsAndEnv(pid)?.execPath, !path.isEmpty else { return nil }
+        return path
+    }
+
     /// True when `pid`'s exec-time environment carries pi's session marker
     /// (`PI_CODING_AGENT=true`). Pi sets it at runtime, so it is ABSENT from
     /// pi's own snapshot but inherited by every child pi spawns — read it from
@@ -484,7 +864,8 @@ enum AgentPeerIdentity {
     /// absent, but everything it inherited (and hands to its children) is
     /// present. Nil when unreadable — a process that exited, or a sandboxed
     /// peer whose seatbelt denies the sysctl.
-    private static func processArgsAndEnv(_ pid: pid_t) -> (argv: [String], env: [String])? {
+    private static func processArgsAndEnv(_ pid: pid_t)
+        -> (execPath: String, argv: [String], env: [String])? {
         var mib: [Int32] = [CTL_KERN, KERN_PROCARGS2, pid]
         var size = 0
         guard sysctl(&mib, UInt32(mib.count), nil, &size, nil, 0) == 0, size > 4 else {
@@ -507,7 +888,7 @@ enum AgentPeerIdentity {
             pos += 1  // skip the null terminator
             return s
         }
-        _ = nextString()                                  // exec_path
+        let execPath = nextString() ?? ""
         while pos < size && buffer[pos] == 0 { pos += 1 } // padding before argv[0]
         var args: [String] = []
         for _ in 0..<Int(argc) {
@@ -518,7 +899,7 @@ enum AgentPeerIdentity {
         while let s = nextString() {
             if !s.isEmpty { env.append(s) }
         }
-        return (args, env)
+        return (execPath, args, env)
     }
 
     /// True when the socket peer runs under the same uid as this process. The
@@ -543,6 +924,133 @@ enum AgentPeerIdentity {
         }
         guard rc == size else { return nil }
         return "\(identity.key)|\(pid)|\(info.pbi_start_tvsec)|\(info.pbi_start_tvusec)"
+    }
+
+    // MARK: - Consent prompt details
+
+    /// How far up the ancestry the prompt's tree goes. Deep enough for the
+    /// shapes agents actually arrive in (agent → shell → terminal → launchd,
+    /// or an editor's helper stack) without letting a pathological chain push
+    /// the alert past the height it scrolls at.
+    private static let maxTreeDepth = 10
+
+    /// The command line and launch chain behind `identity`, for the consent
+    /// prompt's "Details" disclosure — or nil when there is nothing to show.
+    ///
+    /// Read at prompt time rather than at resolve time: the peer is blocked on
+    /// the answer, so its ancestry is still live, and the many connections an
+    /// agent makes per task would otherwise each pay for a walk nobody looks
+    /// at. Runs synchronous sysctls — call it off the main thread.
+    ///
+    /// Everything here is best effort. A process that exits mid-walk, or one
+    /// whose argv the kernel won't hand over, drops to its executable path
+    /// rather than dropping the whole disclosure: a partial chain still tells
+    /// the user more than "unsigned" alone.
+    static func processDetails(for identity: AgentIdentity) -> AgentProcessDetails? {
+        guard let agentPID = identity.pid else {
+            // No live process behind the identity (the skill's own plumbing,
+            // or a peer that has gone). The executable is all that is left,
+            // and an empty path is not worth a disclosure row.
+            guard !identity.executablePath.isEmpty else { return nil }
+            return AgentProcessDetails(command: identity.executablePath,
+                                       executablePath: identity.executablePath,
+                                       tree: [])
+        }
+
+        var chain: [AgentProcessNode] = []
+        var pid = agentPID
+        var guardCount = 0
+        while pid > 0 && guardCount < maxTreeDepth {
+            guardCount += 1
+            chain.append(processNode(pid, agentIdentity: pid == agentPID ? identity : nil))
+            guard let parent = parentPID(pid), parent != pid else { break }
+            pid = parent
+        }
+
+        let agentCommand = chain.first?.command
+            ?? (identity.executablePath.isEmpty ? nil : identity.executablePath)
+        guard let agentCommand else { return nil }
+        return AgentProcessDetails(
+            command: agentCommand,
+            executablePath: executablePath(agentPID) ?? identity.executablePath,
+            // Walked from the agent upward; shown from the top down.
+            tree: chain.reversed())
+    }
+
+    /// One row of the tree. Named by `argv[0]` when the process branded itself
+    /// with a bare name (how pi and other agents present themselves, and the
+    /// same signal the identity walk trusts), else by its executable.
+    ///
+    /// `agentIdentity` is non-nil for the one row that IS the agent, and is
+    /// the identity already resolved for it — which is better than what a
+    /// signature check on that pid alone would say, since the resolve walk
+    /// names a script-run agent by its script rather than by its interpreter's
+    /// meaningless ad-hoc id. Every other row is identified from its signature
+    /// here, and pays a `SecCode` check for it; that cost is why this runs on
+    /// the about-to-prompt path and not per connection.
+    private static func processNode(_ pid: pid_t,
+                                    agentIdentity: AgentIdentity?) -> AgentProcessNode {
+        let exe = executablePath(pid) ?? recordedExecutablePath(pid)
+        let exeName = exe.map { ($0 as NSString).lastPathComponent }
+        let argv = processArgv(pid)
+        var name = exeName ?? "pid \(pid)"
+        if let arg0 = argv?.first, !arg0.contains("/"), !arg0.isEmpty {
+            name = arg0
+        }
+        let command = argv.map(commandLine(from:)).flatMap { $0.isEmpty ? nil : $0 }
+            ?? exe
+            ?? NSLocalizedString("agentControl.connectionApproval.details.commandUnavailable", value: "(command unavailable)", comment: "CDP consent - shown in the details disclosure when a process's command line cannot be read")
+        return AgentProcessNode(
+            pid: pid,
+            name: name,
+            command: command,
+            isAgent: agentIdentity != nil,
+            identity: agentIdentity ?? exe.map { signingIdentity(pid: pid, executablePath: $0) })
+    }
+
+    /// Every identity this connection could be decided by, most specific
+    /// first: the agent that asked, then the processes that launched it,
+    /// nearest first.
+    ///
+    /// The list exists because the prompt lets the user answer about an
+    /// ancestor instead of the agent — the useful move when the agent is an
+    /// unsigned script and the signed app above it is the thing they actually
+    /// recognise. An answer recorded that way is only worth anything if the
+    /// next connection finds it, which is what `AgentCDPListener` walks this
+    /// list to do.
+    ///
+    /// Deduped by key, keeping the most specific occurrence: an agent whose
+    /// signature matches its launcher's is one decision, not two.
+    /// Non-selectable rows are left out — a grant can never be recorded under
+    /// one, so matching against it could only ever surprise.
+    static func decisionCandidates(for identity: AgentIdentity,
+                                   details: AgentProcessDetails?) -> [AgentIdentity] {
+        var seen = Set([identity.key])
+        var candidates = [identity]
+        // The tree is stored oldest-first for drawing; specificity runs the
+        // other way.
+        for node in (details?.tree ?? []).reversed() {
+            guard node.isSelectableSubject, let nodeIdentity = node.identity,
+                  seen.insert(nodeIdentity.key).inserted else {
+                continue
+            }
+            candidates.append(nodeIdentity)
+        }
+        return candidates
+    }
+
+    /// argv rendered as a copyable one-liner. Arguments carrying whitespace are
+    /// quoted, so a single path with a space in it doesn't read as two
+    /// arguments — the detail that decides whether a command looks right.
+    /// Internal for unit coverage.
+    static func commandLine(from argv: [String]) -> String {
+        argv.map { argument in
+            guard argument.rangeOfCharacter(from: .whitespacesAndNewlines) != nil else {
+                return argument
+            }
+            return "\"\(argument.replacingOccurrences(of: "\"", with: "\\\""))\""
+        }
+        .joined(separator: " ")
     }
 
     // MARK: - Peer credentials
@@ -712,6 +1220,7 @@ enum AgentPeerIdentity {
             key: key,
             displayName: bundleName ?? signingId ?? fallbackName,
             teamId: teamId,
+            signingId: signingId,
             verified: true,
             executablePath: path,
             pid: pid)

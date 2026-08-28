@@ -147,7 +147,7 @@ final class AgentDriverSessionRegistry {
               let caller = sessionsByCapability.values
                 .first(where: { $0.principalId == callerPrincipalId }),
               owner.identity.key == caller.identity.key,
-              owner.identity.key != "unknown" else {
+              !owner.identity.isUnresolved else {
             return false
         }
         return !Self.ownerProcessAlive(owner)

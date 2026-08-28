@@ -10,12 +10,14 @@ import Foundation
 struct OAuthConnection: Codable {
     let provider: String
     let connected: Bool
+    let profileId: String?
     let connectedAt: String?
     let expiresAt: String?
     let scope: String?
 
     enum CodingKeys: String, CodingKey {
         case provider, connected, scope
+        case profileId = "profile_id"
         case connectedAt = "connected_at"
         case expiresAt = "expires_at"
     }
@@ -35,6 +37,28 @@ struct GetOAuthAuthorizationResponse: Codable {
 
 struct DeleteOAuthTokenResponse: Codable {
     let message: String
+}
+
+struct DisconnectAllOAuthTokensResponse: Codable {
+    let message: String
+    let disconnectedCount: Int
+
+    enum CodingKeys: String, CodingKey {
+        case message
+        case disconnectedCount = "disconnected_count"
+    }
+}
+
+struct BindOAuthTokenResponse: Codable {
+    let message: String
+}
+
+struct BindOAuthTokenRequest: Codable {
+    let profileId: String
+
+    enum CodingKeys: String, CodingKey {
+        case profileId = "profile_id"
+    }
 }
 
 // MARK: - Request Models

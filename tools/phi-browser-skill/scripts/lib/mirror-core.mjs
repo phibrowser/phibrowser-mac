@@ -27,10 +27,15 @@ import {
   discoverEndpoints,
   isDeadSocketError,
   isEndpointTimeout,
+  isPhiDenied,
   verifyEndpoint,
   FALLBACK_ENDPOINT_WAIT_MS,
   DirectPhiChannel,
 } from './cdp.mjs'
+
+// Re-exported so the daemon can tell a refusal from a restart without
+// reaching past this module into the transport.
+export { isPhiDenied }
 
 // Same directory as helpers.mjs's task files — path derived identically on
 // both sides so writer (heredoc) and reader (daemon) always agree.

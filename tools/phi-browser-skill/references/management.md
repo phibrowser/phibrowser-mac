@@ -19,6 +19,13 @@ Space.
 - References: every `space` parameter takes a spaceId or a Space name
   (case-insensitive; ambiguous names are refused); `profile` takes a
   profileId or display name. Enumerate with `listSpaces()` / `listProfiles()`.
+  A Space open in SEVERAL windows resolves to its key (focused) window by
+  default; the window-taking helpers (`enterContext({kind:'user', window})`,
+  `openSpaceTab({window})`, `listSpaceTabs({window})`) accept a windowId to
+  pick one exactly — ids come from `listSpaces()`'s per-Space `windowIds`
+  (empty when the Space has no open window), `userFocus()`, or an earlier
+  binding's return. A windowId that doesn't show the Space fails
+  `window_not_open` — re-list rather than retrying.
 - `createSpace(name, {profile, colorHex, iconName, activate})` — `iconName`
   is `"phi:phi-icon-N"` or `"emoji:<hex codepoint>"` (e.g. `"emoji:1F977"`),
   `colorHex` is `"#RRGGBB"`. `{activate: true}` also surfaces the new Space
@@ -43,13 +50,15 @@ Space.
   `settled: false` (or `deleted`/`closed`/`removed`/`ungrouped: false`) —
   the operation was SENT but unconfirmed, not failed; re-list to check
   before assuming either way.
-- `openSpaceTab(space, url, {activate})` — open a URL as a new tab in a user
-  Space's open window ("open X in my space"), returning the new tab row
-  `{tabId, targetId, url, title, active, windowId}`. `activate` defaults
-  true (the tab is selected — the user asked to see it); pass
-  `{activate: false}` for background bulk opens. Fails with
-  `space_not_open` when the Space has no open window. This changes the
-  user's visible window — do it on their ask, not as a side effect.
+- `openSpaceTab(space, url, {activate, window})` — open a URL as a new tab
+  in a user Space's open window ("open X in my space"), returning the new
+  tab row `{tabId, targetId, url, title, active, windowId}`. `activate`
+  defaults true (the tab is selected — the user asked to see it); pass
+  `{activate: false}` for background bulk opens; `{window}` (a windowId)
+  targets one specific window when several show the Space. Fails with
+  `space_not_open` when the Space has no open window (`window_not_open` for
+  a `{window}` mismatch). This changes the user's visible window — do it on
+  their ask, not as a side effect.
 - `userFocus()` — where the user is right now: `{spaceId, spaceName,
   isAgentSpace, isIncognito, windowId?, tab?}`, `tab` being the selected tab
   `{tabId, targetId, url, title}` of the active Space's window. Use it to
@@ -95,6 +104,15 @@ Semantics and differences from a task Space:
   `{activate: true}` also surfaces an already-open Space. It attaches to
   the Space's currently selected tab and returns `{spaceId, name, windowId,
   created, tabs}`.
+- Window pinning: with the Space open in several windows the binding
+  defaults to the key window; `{window}` (a windowId — see the References
+  bullet above for where ids come from) binds that exact window instead,
+  and `openTab`, tab layout, and downloads then stay on it. `window` also
+  stands alone: `enterContext({kind:'user', window})` with no `space`
+  derives the Space from the window. The pinned window must already be
+  open: `create`/`activate` fallbacks don't apply (`activate` alongside
+  `window` is refused — activation targets the focused window), and a
+  mismatch fails `window_not_open`.
 - No ownership model: there is no handoff/takeover and no "user is
   controlling" stop — the user is inherently in control of their own
   window. Expect their clicks and yours to interleave; act in small steps,
@@ -141,9 +159,14 @@ Every helper also takes a `{space}` option (Space name or id) to target a
 USER Space's open window instead — app-level like the rest of browser
 management: no agent Space and no control ownership involved. Enumerate that
 Space's tabs first with `listSpaceTabs(space)` → `[{tabId, targetId, url,
-title, active}]`; the integer `tabId`s work directly as tab references (a
-user tab may have no CDP target — `targetId: null` — its `tabId` still
-works). Needs the Space to have an open window (`space_not_open` otherwise).
+title, active, kind}]` — the window's FULL inventory: `kind` is `normal`,
+`pinned` (an open pinned tab), or `bookmark` (a tab opened from a bookmark
+or a bookmark-bound split), so pinned/bookmark tabs the sidebar projects
+outside the normal list are still listed. The integer `tabId`s work
+directly as tab references (a user tab may have no CDP target —
+`targetId: null` — its `tabId` still works). Needs the Space to have an
+open window (`space_not_open` otherwise; `window_not_ready` means the
+window exists but its state is still attaching — transient, retry).
 Arranging the user's visible window is an on-screen change they'll see
 immediately — do it only when asked.
 

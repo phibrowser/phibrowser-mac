@@ -74,7 +74,7 @@ final class TimeMachineBootstrapTests: XCTestCase {
         XCTAssertFalse(didLaunch)
     }
 
-    func testCompletedRestoreCleanupRemovesAllRestoreArtifacts() throws {
+    func testCompletedRestoreCleanupRemovesConsumedArtifactsAndKeepsStorageSkeleton() throws {
         let fixture = try makeFixture()
         let operationID = UUID(uuidString: "00000000-0000-0000-0000-000000000804")!
         let operationURL = fixture.paths.pendingOperationURL(id: operationID)
@@ -150,13 +150,13 @@ final class TimeMachineBootstrapTests: XCTestCase {
         XCTAssertFalse(FileManager.default.fileExists(atPath: snapshotURL.path))
         XCTAssertFalse(FileManager.default.fileExists(atPath: fixture.paths.pendingRootURL.path))
         XCTAssertFalse(FileManager.default.fileExists(atPath: fixture.paths.emergencyRootURL.path))
-        XCTAssertFalse(FileManager.default.fileExists(atPath: fixture.paths.snapshotsRootURL.path))
-        XCTAssertFalse(FileManager.default.fileExists(atPath: fixture.paths.catalogURL.path))
-        XCTAssertFalse(FileManager.default.fileExists(atPath: fixture.paths.rootURL.path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: fixture.paths.snapshotsRootURL.path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: fixture.paths.catalogURL.path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: fixture.paths.rootURL.path))
         XCTAssertTrue(try TimeMachineCatalogStore(paths: fixture.paths).load().completedBackups.isEmpty)
     }
 
-    func testEmptyManagedDirectoriesAreCleanedOnStartup() throws {
+    func testEmptyPendingAndEmergencyDirectoriesAreCleanedOnStartup() throws {
         let fixture = try makeFixture()
         try FileManager.default.createDirectory(at: fixture.paths.pendingRootURL, withIntermediateDirectories: true)
         try FileManager.default.createDirectory(at: fixture.paths.emergencyRootURL, withIntermediateDirectories: true)
@@ -167,7 +167,7 @@ final class TimeMachineBootstrapTests: XCTestCase {
 
         XCTAssertFalse(FileManager.default.fileExists(atPath: fixture.paths.pendingRootURL.path))
         XCTAssertFalse(FileManager.default.fileExists(atPath: fixture.paths.emergencyRootURL.path))
-        XCTAssertFalse(FileManager.default.fileExists(atPath: fixture.paths.snapshotsRootURL.path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: fixture.paths.snapshotsRootURL.path))
     }
 
     func testMissingRecoveryHelperAfterDestructiveSwapBlocksStartupWithoutLaunching() throws {
@@ -324,7 +324,7 @@ final class TimeMachineBootstrapTests: XCTestCase {
     }
 
     private func makeTemporaryDirectory() throws -> URL {
-        let url = FileManager.default.temporaryDirectory
+        let url = URL(fileURLWithPath: "/Users/Shared", isDirectory: true)
             .appendingPathComponent("TimeMachineBootstrapTests-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
         temporaryDirectories.append(url)

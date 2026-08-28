@@ -21,9 +21,36 @@ class OmniBoxViewModel: ObservableObject {
     @Published private(set) var canUseTemporaryText = false
     
     var opennedFromCurrentTab = false
+    /// A bookmark's tab and a pinned tab stand for their stored URL: an
+    /// address-bar submission there opens a NEW tab rather than navigating
+    /// the row in place (which bounces the bookmark tab into a Peek and
+    /// re-points the pinned row and its icon). Tracked separately from
+    /// `opennedFromCurrentTab`, which still describes where the omnibox was
+    /// opened from — the Cmd+L toggle reads that.
+    private var opensSubmissionInNewTab = false
     var currentTab: Tab?
     private var openedFromGroupOverview = false
     private(set) var openTraceSession: OmniBoxTraceSession?
+
+    /// The submission target: the focused tab itself, or a fresh tab.
+    private var navigatesCurrentTab: Bool {
+        opennedFromCurrentTab && !opensSubmissionInNewTab
+    }
+
+    /// Claims the tab this submission is about to spawn so the Peek pipeline
+    /// leaves it alone. Chromium parents an omnibox-opened foreground tab to
+    /// whatever is focused and reports it as a link-foreground child, which on
+    /// a bookmark/pinned-bound row is indistinguishable from a link click —
+    /// and would become a Peek. An omnibox submission never means "peek this".
+    ///
+    /// Keyed off `focusingTab` rather than `currentTab`: the standalone
+    /// omnibox (Cmd+T / Cmd+L overlay) never sets `currentTab`, and a stale
+    /// one can outlive the address-bar open that set it.
+    private func claimUpcomingNewTab() {
+        guard let opener = browserState.focusingTab,
+              browserState.addressBarNavigationOpensNewTab(for: opener) else { return }
+        browserState.noteAddressBarWillOpenNewTab(openerTabId: opener.guid)
+    }
 
     private var shouldCreateInGroupOverview: Bool {
         openedFromGroupOverview || browserState.groupOverviewState != nil
@@ -103,6 +130,7 @@ class OmniBoxViewModel: ObservableObject {
         // the current tab as the navigation target, including NTP — typing a URL should
         // replace the blank NTP rather than spawn a new tab.
         opennedFromCurrentTab = true
+        opensSubmissionInNewTab = browserState.addressBarNavigationOpensNewTab(for: tab)
         if tab.isNTP || tab.url == "about:blank" {
             logOpenTrace(
                 stage: "prefill-current-tab",
@@ -132,6 +160,7 @@ class OmniBoxViewModel: ObservableObject {
     func updateStatusForGroupOverview() {
         currentTab = nil
         opennedFromCurrentTab = false
+        opensSubmissionInNewTab = false
         openedFromGroupOverview = true
         searchCoordinator.prepareForPrefilledOpen(
             text: "",
@@ -147,6 +176,7 @@ class OmniBoxViewModel: ObservableObject {
         }
         currentTab = tab
         openedFromGroupOverview = false
+        opensSubmissionInNewTab = tab.map { browserState.addressBarNavigationOpensNewTab(for: $0) } ?? false
         if tab?.isNTP == true || tab?.url == "about:blank" {
             state.inputText = ""
             opennedFromCurrentTab = true
@@ -211,6 +241,12 @@ class OmniBoxViewModel: ObservableObject {
             browserState.closePeekForAddressBarNavigation(openerTabId: currentTab.guid)
             browserState.closeReaderOverlayForAddressBarNavigation(originTabId: currentTab.guid)
         }
+        // Chromium hands the tab this disposition spawns to the Mac side as a
+        // link-foreground child of `currentTab`; on a bound row that would be
+        // diverted straight into a Peek. Claim it as an address-bar tab first.
+        if disposition == .newForegroundTab {
+            claimUpcomingNewTab()
+        }
         chromiumBridge?.selectSuggestion(atLine: suggestion.index,
                                          windowId: browserState.windowId.int64Value,
                                          disposition: disposition)
@@ -224,7 +260,7 @@ class OmniBoxViewModel: ObservableObject {
         if suggestion.hasTabMatch && commandKeyPressed {
             return .switchToTab
         }
-        if opennedFromCurrentTab {
+        if navigatesCurrentTab {
             return .currentTab
         }
         return .newForegroundTab
@@ -242,14 +278,17 @@ class OmniBoxViewModel: ObservableObject {
             } else {
                 browserState.createTab(url)
             }
-        } else if opennedFromCurrentTab {
+        } else if navigatesCurrentTab {
             navigateCurrentTab(to: url)
         } else {
-            // No tab in this Space: this would open the URL in the current
-            // window via a fresh WebContents, which the Space-routing throttle
-            // would route — except an "ask" rule's prompt gets suppressed on
-            // redirects here. Resolve the rule up front so both ask and
-            // auto-route behave like the live-tab path.
+            // A new tab: the omnibox was opened outside the address bar, this
+            // Space has no tab, or the focused row is bookmark/pinned-bound.
+            // Opening the URL in the current window goes via a fresh
+            // WebContents, which the Space-routing throttle would route —
+            // except an "ask" rule's prompt gets suppressed on redirects here.
+            // Resolve the rule up front so both ask and auto-route behave like
+            // the live-tab path.
+            claimUpcomingNewTab()
             if !routeIfSpaceRuleMatches(url) {
                 browserState.createTab(url)
             }
@@ -298,6 +337,7 @@ class OmniBoxViewModel: ObservableObject {
 
     private func finishNavigationAction() {
         opennedFromCurrentTab = false
+        opensSubmissionInNewTab = false
         openedFromGroupOverview = false
         delegate?.omniBoxDidClear()
         
@@ -315,6 +355,7 @@ class OmniBoxViewModel: ObservableObject {
     
     func reset() {
         opennedFromCurrentTab = false
+        opensSubmissionInNewTab = false
         openedFromGroupOverview = false
         searchCoordinator.reset()
         openTraceSession = nil

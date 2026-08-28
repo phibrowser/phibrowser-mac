@@ -3262,6 +3262,37 @@ class BrowserState {
     }
     private var pendingExplicitPeek: PendingExplicitPeek?
 
+    /// Address-bar submission in flight from a bookmark/pinned-bound row.
+    /// Chromium reports the tab the omnibox spawns as a link-FOREGROUND child
+    /// of the submitting tab — indistinguishable at arrival from a real link
+    /// click — so without this the Peek pipeline would divert it into a peek,
+    /// which is precisely the surface the submission is meant to escape.
+    /// One-shot, consumed by the first arrival from that opener.
+    private struct PendingAddressBarTab {
+        let openerTabId: Int
+        let requestedAt: Date
+    }
+    private var pendingAddressBarTab: PendingAddressBarTab?
+
+    /// The omnibox is about to open a new foreground tab on behalf of
+    /// `openerTabId`'s address bar. See `PendingAddressBarTab`.
+    func noteAddressBarWillOpenNewTab(openerTabId: Int) {
+        pendingAddressBarTab = PendingAddressBarTab(openerTabId: openerTabId,
+                                                    requestedAt: Date())
+    }
+
+    /// Consumes the pending address-bar request when `openerTabId` matches.
+    /// The arrival is immediate in practice; the window only bounds a request
+    /// whose tab never showed up (navigation blocked, Space rule re-homed it).
+    private func consumeAddressBarNewTab(openerTabId: Int) -> Bool {
+        guard let pending = pendingAddressBarTab,
+              pending.openerTabId == openerTabId else { return false }
+        pendingAddressBarTab = nil
+        return Date().timeIntervalSince(pending.requestedAt) < Self.addressBarNewTabWindowSeconds
+    }
+
+    private static let addressBarNewTabWindowSeconds: TimeInterval = 5
+
     /// Creation context of each presented peek tab (keyed by the peek tab's
     /// guid), kept so `expandPeekIntoTab` places the tab exactly where a
     /// normal arrival would have.
@@ -3320,6 +3351,12 @@ class BrowserState {
         // A marker-carrying arrival (AI chat, group seed, bookmark/pinned
         // rebind) is never a peek candidate.
         if let customGuid = tab.guidInLocalDB, !customGuid.isEmpty { return false }
+        // An address-bar submission from a bound row asked for a plain new
+        // tab; Chromium just reports it like a link child. Never peek it.
+        if consumeAddressBarNewTab(openerTabId: openerTabId) {
+            AppLogInfo("👀 [Peek] tabId=\(tab.guid) is an address-bar new tab from opener=\(openerTabId) — not a candidate")
+            return false
+        }
         guard let boundURLString = boundURLStringForPeekOpener(openerTabId) else { return false }
 
         // A peek candidate never shows the native crash page (AI-chat rule).
@@ -3450,8 +3487,16 @@ class BrowserState {
     /// `guidInLocalDB` belongs to a bookmark or a pinned record. Returns nil
     /// when the opener is not bound that way (normal tab behavior applies).
     private func boundURLStringForPeekOpener(_ openerTabId: Int) -> String? {
-        guard let opener = tabs.first(where: { $0.guid == openerTabId }),
-              let localGuid = opener.guidInLocalDB, !localGuid.isEmpty,
+        guard let opener = tabs.first(where: { $0.guid == openerTabId }) else { return nil }
+        return boundRecordURLString(for: opener)
+    }
+
+    /// The stored URL of the sidebar record `tab` is bound to — a bookmark
+    /// row or a pinned tab — or nil for a plain tab. Split panes and the
+    /// marker namespaces (AI chat, group seed, peek) are never bound this
+    /// way: they carry no record guid by the time they are live.
+    func boundRecordURLString(for tab: Tab) -> String? {
+        guard let localGuid = tab.guidInLocalDB, !localGuid.isEmpty,
               !Self.isAIChatId(localGuid),
               !Self.isBookmarkGroupSeedGuid(localGuid) else { return nil }
         if let bookmark = bookmarkManager.bookmark(withGuid: localGuid),
@@ -3464,6 +3509,18 @@ class BrowserState {
             return url
         }
         return nil
+    }
+
+    /// Whether an address-bar submission made while `tab` is focused must
+    /// open a NEW tab instead of navigating `tab` itself. True for the
+    /// sidebar rows that stand for a stored URL — a bookmark's tab and a
+    /// pinned tab — in the vertical layouts: navigating them in place either
+    /// bounces the load into a Peek (bookmark) or re-points the pinned row
+    /// and its icon at whatever was typed. The traditional (Comfortable)
+    /// layout has neither surface and keeps plain same-tab navigation.
+    func addressBarNavigationOpensNewTab(for tab: Tab) -> Bool {
+        guard !layoutMode.isTraditional else { return false }
+        return boundRecordURLString(for: tab) != nil
     }
 
     /// Completes the pending candidate's decision: same site (or non-web
@@ -3858,6 +3915,7 @@ class BrowserState {
     func teardownPeekForWindowClose() {
         finishPeekCandidate(adopt: false)
         pendingExplicitPeek = nil
+        pendingAddressBarTab = nil
         presentedPeekContexts.removeAll()
         peekState.clear()
     }

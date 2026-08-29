@@ -7,18 +7,34 @@ final class DevicesSettingHostingViewController: NSViewController, NSWindowDeleg
     /// state, since there is no account for the coordinator to build one against.
     /// Kept around (not just its manager/approvals) so pairing entry points
     /// (`needsPairing`, `startPairing(controller:)`) have something to call.
-    private lazy var syncKeyController: SyncKeyController? =
+    ///
+    /// Resolved on every access rather than captured once: the coordinator
+    /// drops and rebuilds this controller across sign-out / sign-in, so a pane
+    /// that was opened while signed out must pick up the real controller once
+    /// an account exists instead of staying pinned to nil.
+    private var syncKeyController: SyncKeyController? {
         PhiChromiumCoordinator.shared.syncKeyControllerCreatingIfNeeded()
+    }
+    /// Signed-out fallback stack. Created at most once per pane so the pane's
+    /// view model and its key-layer window keep talking to the same
+    /// `AccountKeyManager` (the unlocked ARK lives in that instance).
+    private var fallbackSyncStack: (manager: AccountKeyManager, approvals: DeviceApprovalService)?
     /// Manager/approvals for the pane's own unlock + approval flow — from the
-    /// shared controller when one exists, otherwise a pane-local fallback stack.
-    private lazy var syncStack: (manager: AccountKeyManager, approvals: DeviceApprovalService) = {
+    /// shared controller when one exists, otherwise the pane-local fallback.
+    private var syncStack: (manager: AccountKeyManager, approvals: DeviceApprovalService) {
         if let shared = syncKeyController {
             return (shared.manager, shared.approvals)
         }
+        if let fallbackSyncStack { return fallbackSyncStack }
         let stack = SyncKeyStack.make()
-        return (stack.manager, stack.approvals)
-    }()
+        let made = (manager: stack.manager, approvals: stack.approvals)
+        fallbackSyncStack = made
+        return made
+    }
     private lazy var viewModel = DevicesSettingViewModel(manager: syncStack.manager, approvals: syncStack.approvals)
+    /// The `AccountKeyManager` the current `viewModel` was built against, used
+    /// to detect that the pane is showing a stack from a previous account.
+    private weak var boundManager: AccountKeyManager?
     private var hostingController: ThemedHostingController<DevicesSettingView>?
     private var keyLayerWindow: NSWindow?
 
@@ -30,6 +46,29 @@ final class DevicesSettingHostingViewController: NSViewController, NSWindowDeleg
 
     override func viewDidLoad() {
         super.viewDidLoad()
+        installHostingController()
+    }
+
+    /// Rebinds the pane when the account changed underneath it. `viewModel`
+    /// captures an `AccountKeyManager` at construction, so a pane first laid
+    /// out while signed out stays bound to the fallback stack even after the
+    /// coordinator builds the real one. Comparing manager identity keeps this
+    /// a no-op in the common case (same account, pane merely re-shown).
+    override func viewWillAppear() {
+        super.viewWillAppear()
+        guard boundManager !== syncStack.manager else { return }
+        let stale = viewModel
+        Task { @MainActor in await stale.stopPolling() }
+        hostingController?.view.removeFromSuperview()
+        hostingController?.removeFromParent()
+        hostingController = nil
+        viewModel = DevicesSettingViewModel(manager: syncStack.manager, approvals: syncStack.approvals)
+        installHostingController()
+        Task { @MainActor in await viewModel.loadAll() }
+    }
+
+    private func installHostingController() {
+        boundManager = syncStack.manager
         let host = ThemedHostingController(rootView: DevicesSettingView(viewModel: viewModel,
             onJoinThisDevice: { [weak self] in self?.presentKeyLayer() },
             onResolvePairing: { [weak self] in self?.presentKeyLayer(startPairing: true) },

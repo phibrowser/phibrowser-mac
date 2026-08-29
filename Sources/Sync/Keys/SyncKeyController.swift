@@ -61,36 +61,101 @@ final class SyncKeyController {
     /// Startup/login entry: unlock without UI, then resolve mappings and ping.
     /// `.needsJoin` / `.notSignedIn` leave the cache empty — the Devices pane
     /// remains the place where joining/bootstrap UI happens.
+    ///
+    /// Any outcome other than `.unlocked` (including a thrown, possibly
+    /// transient, failure) CLEARS the cache rather than leaving it standing.
+    /// This direction is deliberately the opposite of `resolveMappings()`'s
+    /// transient handling: here the unknown state fails *closed* (Chromium
+    /// pulls nil and the sync gate shuts), which is always safe. In
+    /// `resolveMappings()` the same uncertainty would fail *open* — minting a
+    /// fresh UUID over a live mapping — so there it must be preserved instead.
     func silentUnlockAndResolve() async {
+        let result: UnlockResult
         do {
-            guard try await manager.unlockAtStartup() == .unlocked else { return }
+            result = try await manager.unlockAtStartup()
         } catch {
-            return // transient (offline etc.) — a later trigger retries
+            clearResolved()  // transient (offline etc.) — a later trigger retries
+            return
+        }
+        guard result == .unlocked else {
+            clearResolved()
+            return
         }
         await resolveMappings()
     }
 
+    /// Drops every cached key and pings Chromium if there was anything to drop,
+    /// so a locked / signed-out / account-switched controller stops serving the
+    /// previous session's passphrases across the bridge.
+    func clearResolved() {
+        let wasPopulated = !resolved.isEmpty
+        resolved = [:]
+        needsPairing = false
+        if wasPopulated { notifyChromium() }
+    }
+
     /// Re-runs resolution after external events (pairing applied, approval
     /// completed, bootstrap finished in the Devices pane).
+    ///
+    /// Error taxonomy (C-1). A local profile's lookup has three outcomes, and
+    /// conflating the last two is what caused the silent re-registration bug:
+    ///
+    /// - record returned  -> mapped and readable; cache it.
+    /// - nil returned     -> definitively unmapped (no mapping stored, or the
+    ///                       mapping's remote is gone / 404). Eligible for the
+    ///                       register / adopt decision below.
+    /// - throws           -> UNKNOWN, not absent (offline, 5xx, 401, still
+    ///                       locked). Keep whatever was previously resolved and
+    ///                       hold this local out of the decision entirely.
+    ///
+    /// A single unknown local also poisons the *decision* for every other
+    /// local: its remote UUID cannot be counted as claimed, so an unrelated
+    /// unmapped local could auto-adopt the envelope that actually belongs to
+    /// it. So when any local is unknown, the whole register/adopt/pairing
+    /// decision is skipped this pass and retried on the next trigger. Likewise
+    /// a failed `accountProfiles()` aborts the pass outright — the branches
+    /// below are only sound with a fully known remote set.
     func resolveMappings() async {
-        needsPairing = false
         var next: [String: (uuid: String, passphrase: String)] = [:]
+        var nextNeedsPairing = false
         let locals = localProfilesProvider()
         var unmappedLocals: [(profileId: String, displayName: String)] = []
+        var hasUnknownLocal = false
         for local in locals {
-            if let rec = try? await profileKeys.resolvedRecord(forLocalProfile: local.profileId) {
-                next[local.profileId] = (rec.uuid, rec.passphrase)
-            } else {
-                unmappedLocals.append(local)
+            do {
+                if let rec = try await profileKeys.resolvedRecord(forLocalProfile: local.profileId) {
+                    next[local.profileId] = (rec.uuid, rec.passphrase)
+                } else {
+                    unmappedLocals.append(local)
+                }
+            } catch {
+                hasUnknownLocal = true
+                if let previous = resolved[local.profileId] { next[local.profileId] = previous }
             }
         }
-        if !unmappedLocals.isEmpty {
-            let remotes = (try? await profileKeys.accountProfiles()) ?? []
+        if unmappedLocals.isEmpty {
+            nextNeedsPairing = false
+        } else if hasUnknownLocal {
+            // Undecidable this pass — hold the previous answer rather than
+            // dropping a "needs pairing" banner because of a network blip.
+            nextNeedsPairing = needsPairing
+        } else {
+            let remotes: [RemoteProfile]
+            do {
+                remotes = try await profileKeys.accountProfiles()
+            } catch {
+                // Unknown remote set: abort without touching the cache or
+                // pinging. Never fall through to register/adopt from here.
+                return
+            }
             let claimedUuids = Set(next.values.map { $0.uuid })
             let unclaimedRemotes = remotes.filter { !claimedUuids.contains($0.uuid) }
             if unclaimedRemotes.isEmpty {
                 // First device (or all remotes already claimed): register the rest.
                 for local in unmappedLocals {
+                    // `alreadyMapped` cannot normally reach here (only unmapped
+                    // locals are in this list); if it does, skipping is correct
+                    // — same handling as any other transient registration miss.
                     if let rec = try? await profileKeys.registerLocalProfile(
                         profileId: local.profileId, displayName: local.displayName) {
                         next[local.profileId] = (rec.uuid, rec.passphrase)
@@ -102,10 +167,14 @@ final class SyncKeyController {
                     next[unmappedLocals[0].profileId] = (rec.uuid, rec.passphrase)
                 }
             } else {
-                needsPairing = true
+                nextNeedsPairing = true
             }
         }
-        resolved = next
+        // Monotonic within a signed-in session: merge rather than replace, so a
+        // partial pass can never erase a previously-good entry. The cache is
+        // fully cleared only by `clearResolved()` (lock / sign-out / switch).
+        resolved.merge(next) { _, new in new }
+        needsPairing = nextNeedsPairing
         if !resolved.isEmpty { notifyChromium() }
     }
 }

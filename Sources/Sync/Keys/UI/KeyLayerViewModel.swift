@@ -157,16 +157,30 @@ final class KeyLayerViewModel: ObservableObject {
 
     // MARK: - Semi-automatic profile pairing (M2-4 Task 5)
 
-    /// Loads every local profile and every remote (account-registered) profile
-    /// and moves to `.pairingProfiles` so the user can resolve the ambiguous
-    /// mapping by hand.
+    /// Loads the still-unmapped local profiles and the still-unclaimed remote
+    /// (account-registered) profiles and moves to `.pairingProfiles` so the
+    /// user can resolve the ambiguous mapping by hand.
+    ///
+    /// Both sides are filtered by the persisted mapping rather than shown
+    /// whole. An already-mapped local must not appear here: every row offers
+    /// "Register as new", which `ProfileKeyManager.registerLocalProfile` now
+    /// refuses with `alreadyMapped` for a mapped profile — and rightly so,
+    /// since minting a second UUID would orphan that profile's existing
+    /// envelope. Excluding the remotes those locals already claim likewise
+    /// keeps the "create on this Mac" toggle from duplicating a profile that
+    /// is in fact already present.
     func startPairing(controller: SyncKeyController) async {
         phase = .working
         do {
-            let locals = controller.localProfiles().map {
-                PairingLocal(profileId: $0.profileId, displayName: $0.displayName)
-            }
+            let allLocals = controller.localProfiles()
+            let claimedUuids = Set(allLocals.compactMap {
+                controller.profileKeys.mappedGlobalUuid(forProfileId: $0.profileId)
+            })
+            let locals = allLocals
+                .filter { controller.profileKeys.mappedGlobalUuid(forProfileId: $0.profileId) == nil }
+                .map { PairingLocal(profileId: $0.profileId, displayName: $0.displayName) }
             let remotes = try await controller.profileKeys.accountProfiles()
+                .filter { !claimedUuids.contains($0.uuid) }
             phase = .pairingProfiles(locals: locals, remotes: remotes)
         } catch {
             phase = .error("\(error)")

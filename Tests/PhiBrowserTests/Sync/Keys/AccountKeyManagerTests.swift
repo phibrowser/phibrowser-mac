@@ -65,16 +65,27 @@ final class AccountKeyManagerTests: XCTestCase {
         var profileEnvelopes: [String: Data] = [:]
         static let profileCreatedAt = Date(timeIntervalSince1970: 1_700_000_000)
 
+        /// Error injection for the per-profile endpoints. Kept separate from
+        /// `listProfilesError` so a test can make a single profile lookup fail
+        /// transiently while the account-wide listing still succeeds (and vice
+        /// versa) — the two failures take different paths through
+        /// `SyncKeyController.resolveMappings()`.
+        var profileEndpointError: Error?
+        var listProfilesError: Error?
+
         func listProfiles() async throws -> [ProfileSummaryDTO] {
-            profileEnvelopes.keys.sorted().map {
+            if let listProfilesError { throw listProfilesError }
+            return profileEnvelopes.keys.sorted().map {
                 ProfileSummaryDTO(profileUuid: $0, hasEnvelope: true, createdAt: Self.profileCreatedAt)
             }
         }
         func getProfileKey(uuid: String) async throws -> ProfileKeyDTO? {
+            if let profileEndpointError { throw profileEndpointError }
             guard let e = profileEnvelopes[uuid] else { return nil }
             return ProfileKeyDTO(profileUuid: uuid, profileKeyEnvelope: e, createdAt: Self.profileCreatedAt)
         }
         func putProfileKey(uuid: String, envelope: Data) async throws -> Bool {
+            if let profileEndpointError { throw profileEndpointError }
             if profileEnvelopes[uuid] != nil { return false }
             profileEnvelopes[uuid] = envelope
             return true

@@ -29,8 +29,10 @@ import SwiftUI
     var isBackupImportInProgress = false
 
     /// App-scoped sync key layer (M2-4). Built on first use once an account
-    /// exists; nil while signed out.
-    var syncKeyController: SyncKeyController?
+    /// exists; nil while signed out. Write access is confined to this file so
+    /// the build/invalidate lifecycle stays in one place — an outside setter
+    /// could leave a previous account's keys reachable over the bridge.
+    private(set) var syncKeyController: SyncKeyController?
 
     /// Builds `syncKeyController` on first call if an account is signed in;
     /// no-op if it already exists. Does not kick the silent unlock — callers
@@ -66,6 +68,30 @@ import SwiftUI
     func ensureSyncKeyControllerAndUnlock() {
         let controller = syncKeyControllerCreatingIfNeeded()
         Task { @MainActor in await controller?.silentUnlockAndResolve() }
+    }
+
+    /// Drops the sync key layer on sign-out or account switch and tells
+    /// Chromium to re-pull immediately (it gets nil, which closes the sync
+    /// gate). The controller binds an account-scoped stack and mapping store,
+    /// so it must not survive the account it was built for — otherwise the
+    /// previous account's UUID + passphrase keep crossing the bridge.
+    ///
+    /// Rebuilding is left to the existing `.loginCompleted` /
+    /// `.loginStatusRefreshCompleted` observers, both of which fire *after*
+    /// `AccountController.account` is assigned, and to the Devices pane's
+    /// per-access `syncKeyControllerCreatingIfNeeded()`.
+    ///
+    /// `clearResolved()` is called before dropping the reference because this
+    /// coordinator is not necessarily the last owner — an open key-layer window
+    /// captured the controller when it was presented, and that copy must stop
+    /// holding the previous account's passphrases too. It may emit its own
+    /// ping; the unconditional one below covers the case where the cache was
+    /// already empty, and a duplicate merely makes Chromium re-pull nil twice.
+    @MainActor
+    func invalidateSyncKeyController() {
+        syncKeyController?.clearResolved()
+        syncKeyController = nil
+        ChromiumLauncher.sharedInstance().bridge?.notifyPhiSyncKeysChanged?()
     }
 }
 
@@ -823,6 +849,19 @@ extension PhiChromiumCoordinator: PhiChromiumBridgeDelegate {
             // older framework may not implement the selector — both degrade
             // to Chromium's 30s poll.
             ChromiumLauncher.sharedInstance().bridge?.notifyPhiAuthStateChanged?()
+        }
+
+        // Sign-out and account switch. `.mainAccountChanged` is the minimal
+        // signal that covers both: every sign-out path nils
+        // `AccountController.account` (AccountSettingViewController's logout
+        // and AuthManager's unrecoverable-session reset), and every sign-in /
+        // switch assigns it. `.phiAuthSessionDidChange` is deliberately NOT
+        // used here — it also fires on routine token renewal, which would tear
+        // down a perfectly good key layer roughly hourly.
+        NotificationCenter.default.addObserver(
+            forName: .mainAccountChanged, object: nil, queue: .main
+        ) { _ in
+            Task { @MainActor in PhiChromiumCoordinator.shared.invalidateSyncKeyController() }
         }
 
         NotificationCenter.default.addObserver(

@@ -2,7 +2,12 @@ import CryptoKit
 import Foundation
 import Security
 
-enum ProfileKeyManagerError: Error, Equatable { case notUnlocked, badEnvelope }
+/// `alreadyMapped` is a *refusal to mint*, not a failure: it means the caller
+/// asked to register a brand-new global UUID for a local profile that already
+/// carries a mapping. Minting there would orphan the account's real envelope
+/// and permanently diverge the two devices, so it is rejected at the lowest
+/// layer regardless of what the caller believed about the mapping state.
+enum ProfileKeyManagerError: Error, Equatable { case notUnlocked, badEnvelope, alreadyMapped }
 
 struct ProfileKeyRecord: Equatable {
     let uuid: String
@@ -62,10 +67,27 @@ final class ProfileKeyManager {
 
     // MARK: - Flows
 
+    /// The global UUID this local profile is already mapped to, nil when it has
+    /// never been registered or adopted on this device. Exposed so callers (the
+    /// pairing UI) can offer "register as new" only for genuinely unmapped
+    /// locals rather than discovering the refusal via `alreadyMapped`.
+    func mappedGlobalUuid(forProfileId profileId: String) -> String? {
+        mappingStore.globalUuid(forProfileId: profileId)
+    }
+
     /// First registration of a local profile: mint a global UUID, generate the
     /// key, seal, and PUT. A 409 (concurrent registration of the same uuid)
     /// adopts the winner's envelope instead.
+    ///
+    /// Refuses with `alreadyMapped` when this local profile already has a
+    /// mapping. This is the last line of defence for C-1: a caller that
+    /// mistook a transient lookup failure for "no mapping" would otherwise
+    /// mint a fresh UUID here, silently abandoning the account's existing
+    /// envelope for this profile.
     func registerLocalProfile(profileId: String, displayName: String) async throws -> ProfileKeyRecord {
+        guard mappingStore.globalUuid(forProfileId: profileId) == nil else {
+            throw ProfileKeyManagerError.alreadyMapped
+        }
         guard let ark = keyManager.currentARK else { throw ProfileKeyManagerError.notUnlocked }
         var key = Data(count: 32)
         let status = key.withUnsafeMutableBytes { SecRandomCopyBytes(kSecRandomDefault, 32, $0.baseAddress!) }

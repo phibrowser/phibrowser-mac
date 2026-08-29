@@ -66,6 +66,22 @@ final class ProfileKeyManagerTests: XCTestCase {
         XCTAssertNil(unmapped)
     }
 
+    /// C-1 defence in depth: whatever a caller believes about the mapping
+    /// state, minting a second global UUID for an already-mapped local profile
+    /// is refused outright — that is the step that would orphan the account's
+    /// real envelope and diverge the devices for good.
+    func testRegisterOnAlreadyMappedProfileThrows() async throws {
+        let (api, _, pkm, store) = try await unlockedStack()
+        let first = try await pkm.registerLocalProfile(profileId: "Default", displayName: "Work")
+        XCTAssertEqual(api.profileEnvelopes.count, 1)
+        do {
+            _ = try await pkm.registerLocalProfile(profileId: "Default", displayName: "Work")
+            XCTFail("expected alreadyMapped")
+        } catch ProfileKeyManagerError.alreadyMapped {}
+        XCTAssertEqual(store.map["Default"], first.uuid, "mapping must survive the refusal")
+        XCTAssertEqual(api.profileEnvelopes.count, 1, "no second envelope may be minted")
+    }
+
     func testAccountProfilesDecryptsNames() async throws {
         let (_, _, pkm, _) = try await unlockedStack()
         _ = try await pkm.registerLocalProfile(profileId: "Default", displayName: "Work")

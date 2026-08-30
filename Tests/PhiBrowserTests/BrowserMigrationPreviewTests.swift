@@ -326,4 +326,9 @@ final class BrowserMigrationPreviewTests: XCTestCase {
             requested, Set([ImportDataType.history, .cookies, .extensions].map(\.rawValue)))
         XCTAssertEqual(requested, supported.subtracting([ImportDataType.bookmarks.rawValue]))
     }
+
+    /// Zen's table is history alone; `ImportDataType.availableTypes` says why.
+    func testZenIsOfferedHistoryOnly() {
+        XCTAssertEqual(ImportDataType.availableTypes(for: .zen), [.history])
+    }
 }

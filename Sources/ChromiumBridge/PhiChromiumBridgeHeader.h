@@ -54,7 +54,10 @@ typedef NS_ENUM(NSUInteger, BrowserType) {
     BrowserTypeArc,
     // Not a browser: import from a user-picked file (e.g. a bookmarks HTML file).
     // The downward call carries a file path; Chromium sniffs the type and parses.
-    BrowserTypeFile
+    BrowserTypeFile,
+    // Zen (Firefox-based). The profile argument is the profile directory's
+    // basename under Zen's Profiles folder; Chromium imports its history only.
+    BrowserTypeZen
 };
 
 /// Loading state mapped from Chromium TabNetworkState.

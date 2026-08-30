@@ -18,10 +18,12 @@ final class BrowserMigrationPlannerTests: XCTestCase {
     private func profile(
         _ key: String,
         _ displayName: String,
+        sourceDirectory: String? = nil,
         pinsUnavailable: BrowserMigrationPinsUnavailableReason? = nil
     ) -> BrowserMigrationSourceProfile {
         BrowserMigrationSourceProfile(
-            key: key, displayName: displayName, pinsUnavailable: pinsUnavailable)
+            key: key, displayName: displayName, sourceDirectory: sourceDirectory,
+            pinsUnavailable: pinsUnavailable)
     }
 
     private func pinnedGroup(
@@ -92,6 +94,23 @@ final class BrowserMigrationPlannerTests: XCTestCase {
     }
 
     // MARK: - Profiles and Spaces
+
+    /// The directory the run imports from is the source profile's own, which
+    /// several source profiles may share (Zen's container Profiles); a
+    /// profile the source never listed reads from its key, as before.
+    func testAPlannedProfileImportsFromItsSourceDirectory() {
+        let model = source(
+            profiles: [profile("fx#2", "Work", sourceDirectory: "fx")],
+            spaces: [
+                space("s-desk", "Desk", profileKey: "fx#2"),
+                space("s-loose", "Loose", profileKey: "Unlisted"),
+            ])
+
+        let result = plan(model)
+
+        XCTAssertEqual(result.profiles.map(\.sourceProfileKey), ["fx#2", "Unlisted"])
+        XCTAssertEqual(result.profiles.map(\.sourceDirectory), ["fx", "Unlisted"])
+    }
 
     func testSpacesKeepSourceOrderWithTheirColourAndTheDefaultIcon() {
         let result = plan(twoProfileSource())

@@ -8,11 +8,12 @@ import SwiftUI
 
 // MARK: - Migration Sources
 
-/// A browser a Migration can be run from. Arc ships first; Dia and Zen become
-/// further cases without the wizard learning anything about them — it knows a
+/// A browser a Migration can be run from. Arc and Zen so far; Dia becomes a
+/// further case without the wizard learning anything about it — it knows a
 /// source only through this type and the model the source hands back.
 enum BrowserMigrationSourceKind: String, CaseIterable, Identifiable {
     case arc
+    case zen
 
     var id: String { rawValue }
 
@@ -20,6 +21,7 @@ enum BrowserMigrationSourceKind: String, CaseIterable, Identifiable {
     var displayName: String {
         switch self {
         case .arc: return "Arc"
+        case .zen: return "Zen"
         }
     }
 
@@ -28,6 +30,7 @@ enum BrowserMigrationSourceKind: String, CaseIterable, Identifiable {
     var appIcon: ImageResource {
         switch self {
         case .arc: return .arcIcon
+        case .zen: return .zenIcon
         }
     }
 
@@ -35,36 +38,50 @@ enum BrowserMigrationSourceKind: String, CaseIterable, Identifiable {
     var browserType: BrowserType {
         switch self {
         case .arc: return .arc
+        case .zen: return .zen
         }
     }
 
-    /// The source's Chromium user-data directory: its presence is what
-    /// "installed" means, and its per-profile directories are where the Web
-    /// Store extension list is read from.
+    /// The directory the source's per-profile directories sit in — a source
+    /// profile's key is its basename there, which is also what the
+    /// Chromium-side importer resolves — and where the Web Store extension
+    /// list is read from. Zen's profiles carry none: Firefox extensions do not
+    /// migrate.
     var userDataURL: URL {
         switch self {
         case .arc: return BrowserDataImporter.arcUserDataURL
+        case .zen: return BrowserDataImporter.zenProfilesURL
         }
     }
 
     /// Every data type this source supports — Migration has no per-type
     /// toggles, so it always asks for all of them. What a browser supports is
-    /// `ImportDataType`'s to say, not this enum's. Arc's bookmarks are the one
-    /// subtraction: Phi parses its sidebar itself and writes each Space's tree
-    /// Mac-side, the same strip the import window makes.
+    /// `ImportDataType`'s to say, not this enum's. Bookmarks are the one
+    /// subtraction, for Arc and Zen alike: Phi parses their sidebars itself
+    /// and writes each Space's tree Mac-side, the same strip the import window
+    /// makes. (Zen's table lists history alone today, so for it the strip is
+    /// the rule stated rather than a change.)
     var migrationDataTypes: [String] {
         let supported = ImportDataType.availableTypes(for: browserType)
         switch self {
-        case .arc:
+        case .arc, .zen:
             return supported.filter { $0 != .bookmarks }.map(\.rawValue)
         }
     }
 
-    /// A non-blocking notice shown before a run starts. Arc and Dia share one:
-    /// the Chromium importer decrypts their cookies with a key it reads from
-    /// their Keychain item, and builds a fresh decryptor — so asks again — for
-    /// every Profile it imports into.
-    var preflightHint: String {
+    /// A non-blocking notice shown before a run starts, or nil when the source
+    /// has none to give right now. Per source, and conditional: Arc and Dia
+    /// share one, always — the Chromium importer decrypts their cookies with a
+    /// key it reads from their Keychain item, and builds a fresh decryptor —
+    /// so asks again — for every Profile it imports into. Zen's is advice to
+    /// quit it, only while it is running.
+    var preflightHint: String? {
+        preflightHint(sourceIsRunning: isRunning)
+    }
+
+    /// The rule apart from the running check, so it can be asserted without
+    /// the source on the machine.
+    func preflightHint(sourceIsRunning: Bool) -> String? {
         switch self {
         case .arc:
             return String(
@@ -72,19 +89,47 @@ enum BrowserMigrationSourceKind: String, CaseIterable, Identifiable {
                     value: "macOS will ask to use %@'s encryption key so your cookies can come across. Choose “Always Allow”, or it asks again for every Profile.",
                     comment: "Browser migration wizard - warns that the OS Keychain prompt is coming before a run starts; %@ is the source browser's name"),
                 displayName)
+        case .zen:
+            // The Firefox importer copies Zen's main database files and misses
+            // what a running Zen has not yet checkpointed, so the advice is
+            // only worth giving while it runs. No Keychain hint: Zen's data is
+            // unencrypted.
+            guard sourceIsRunning else { return nil }
+            return NSLocalizedString("app.browserMigration.preflight.quitZen",
+                value: "Zen is running. Quit it before you start so its latest changes come across — Phi reads copies of Zen's files, and anything Zen hasn't saved yet would be missed.",
+                comment: "Browser migration wizard - advises quitting Zen before a run starts; shown only while Zen is running")
         }
+    }
+
+    /// What the running check looks the source up by.
+    private var bundleIdentifier: String {
+        switch self {
+        case .arc: return "company.thebrowser.Browser"
+        case .zen: return "app.zen-browser.zen"
+        }
+    }
+
+    /// Whether the source browser is open right now — a bundle-identifier
+    /// check, nothing parsed.
+    private var isRunning: Bool {
+        !NSRunningApplication.runningApplications(withBundleIdentifier: bundleIdentifier).isEmpty
     }
 
     /// A cheap presence check: the menu item validates this on every menu open,
     /// so it must not parse the source's data. That happens once, when the
-    /// wizard opens.
+    /// wizard opens. Arc is its Chromium user-data directory; Zen is its
+    /// `profiles.ini`.
     var isInstalled: Bool {
-        FileManager.default.fileExists(atPath: userDataURL.path)
+        let marker: URL
+        switch self {
+        case .arc: marker = userDataURL
+        case .zen: marker = BrowserDataImporter.zenProfilesINIURL
+        }
+        return FileManager.default.fileExists(atPath: marker.path)
     }
 
-    /// Every source alphabetically — which is also the order the phases ship
-    /// in. Separate from `installed` so the ordering can be asserted without a
-    /// real install of anything.
+    /// Every source alphabetically. Separate from `installed` so the ordering
+    /// can be asserted without a real install of anything.
     static var allInDisplayOrder: [BrowserMigrationSourceKind] {
         allCases.sorted { $0.displayName < $1.displayName }
     }
@@ -95,11 +140,14 @@ enum BrowserMigrationSourceKind: String, CaseIterable, Identifiable {
     }
 
     /// Reads the whole source model. Nil when the source is installed but its
-    /// own data cannot be read — a missing or malformed sidebar file.
+    /// own data cannot be read — a missing or malformed sidebar file, a
+    /// malformed session or containers file.
     func loadSource() -> BrowserMigrationSource? {
         switch self {
         case .arc:
             return BrowserDataImporter().loadArcMigrationSource()?.migrationSource
+        case .zen:
+            return BrowserDataImporter().loadZenMigrationSource()?.migrationSource
         }
     }
 }
@@ -1008,7 +1056,7 @@ struct BrowserMigrationWizardView: View {
             }
 
             // One slot, and what is wrong wins it: a run that will not happen
-            // prompts for nothing, so the Keychain hint gives way rather than
+            // prompts for nothing, so the source's hint gives way rather than
             // stacking underneath it.
             if model.hasNothingToMigrate {
                 fieldWell(String(
@@ -1016,13 +1064,14 @@ struct BrowserMigrationWizardView: View {
                         value: "Phi found %1$@, but there's nothing here to migrate — no %2$@ profile has data Phi can move.",
                         comment: "Browser migration wizard - shown under the tree when the source read fine and offers nothing; %1$@ and %2$@ are both the source browser's name"),
                     sourceName, sourceName))
-            } else if let source = model.pickedSource {
-                // Said before anything starts rather than when the prompt
-                // appears: the run is serial, so a user who dismisses it once
-                // is asked again for every Profile. It stands under the tree
-                // and never in the footer's conditional line, which is spoken
-                // for by whatever is wrong.
-                fieldWell(source.preflightHint)
+            } else if let hint = model.pickedSource?.preflightHint {
+                // Said before anything starts rather than when it would
+                // matter: Arc's Keychain prompt is asked again for every
+                // Profile of a serial run, and a running Zen's recent changes
+                // are missed silently. It stands under the tree and never in
+                // the footer's conditional line, which is spoken for by
+                // whatever is wrong.
+                fieldWell(hint)
             }
         }
         .frame(width: Self.contentColumnWidth)

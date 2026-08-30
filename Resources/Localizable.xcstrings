@@ -8509,6 +8509,18 @@
         }
       }
     },
+    "app.browserMigration.preflight.quitZen" : {
+      "comment" : "Browser migration wizard - advises quitting Zen before a run starts; shown only while Zen is running",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Zen is running. Quit it before you start so its latest changes come across — Phi reads copies of Zen's files, and anything Zen hasn't saved yet would be missed."
+          }
+        }
+      }
+    },
     "app.browserMigration.preview.accountRequired" : {
       "comment" : "Browser migration wizard - shown instead of starting when no account is bound",
       "extractionState" : "extracted_with_value",
@@ -9183,6 +9195,30 @@
           "stringUnit" : {
             "state" : "new",
             "value" : "Migrate to Phi"
+          }
+        }
+      }
+    },
+    "app.browserMigration.zen.container.numbered" : {
+      "comment" : "Browser migration wizard - name of the Profile made from a Zen container that has no readable name; %d is the container's number",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Container %d"
+          }
+        }
+      }
+    },
+    "app.browserMigration.zen.untitledSpaceName" : {
+      "comment" : "Browser migration wizard - fallback name for a Zen workspace that has no name",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Untitled Space"
           }
         }
       }

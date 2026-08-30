@@ -215,7 +215,8 @@ final class BrowserMigrationRunner: ObservableObject {
     }
 
     /// Moves the source profile's history, cookies and extensions into the
-    /// Profile just created for it. The Profile is named by its on-disk
+    /// Profile just created for it, from the directory the plan names for it —
+    /// several Profiles may read one. The Profile is named by its on-disk
     /// basename, so no window is opened on it — a Profile Migration creates has
     /// none, and the user's own window must not be moved to make one.
     ///
@@ -239,7 +240,7 @@ final class BrowserMigrationRunner: ObservableObject {
         let imported = await importer.importDataIntoProfile(
             source.browserType,
             destinationProfileId: profileID,
-            sourceProfileDirectory: planned.sourceProfileKey,
+            sourceProfileDirectory: planned.sourceDirectory,
             dataTypes: source.migrationDataTypes)
         guard imported else {
             AppLogWarn("[BrowserMigration] couldn't import \(source.displayName) data "
@@ -249,7 +250,7 @@ final class BrowserMigrationRunner: ObservableObject {
         outcomes.profileExtensionCounts[planned.sourceProfileKey] =
             BrowserDataImporter.webStoreExtensionCount(
                 userDataURL: source.userDataURL,
-                sourceProfileDirectory: planned.sourceProfileKey)
+                sourceProfileDirectory: planned.sourceDirectory)
     }
 
     private func create(

@@ -331,4 +331,31 @@ final class BrowserMigrationPreviewTests: XCTestCase {
     func testZenIsOfferedHistoryOnly() {
         XCTAssertEqual(ImportDataType.availableTypes(for: .zen), [.history])
     }
+
+    /// History alone is all of Zen's table, and its sidebar is parsed Mac-side
+    /// too, so nothing is stripped from it.
+    func testZenIsAskedForHistoryOnly() {
+        XCTAssertEqual(
+            BrowserMigrationSourceKind.zen.migrationDataTypes, [ImportDataType.history.rawValue])
+    }
+
+    /// The quit-Zen advice exists only while Zen runs, and is never the
+    /// Keychain hint.
+    func testZenAdvisesQuittingOnlyWhileItRuns() {
+        let zen = BrowserMigrationSourceKind.zen
+
+        XCTAssertNil(zen.preflightHint(sourceIsRunning: false))
+        let advice = zen.preflightHint(sourceIsRunning: true)
+        XCTAssertNotNil(advice)
+        XCTAssertNotEqual(advice, BrowserMigrationSourceKind.arc.preflightHint(sourceIsRunning: true))
+    }
+
+    /// Arc's hint is about the Keychain prompt, so it does not depend on
+    /// whether Arc runs.
+    func testArcKeepsItsKeychainHintWhetherOrNotItRuns() {
+        let arc = BrowserMigrationSourceKind.arc
+
+        XCTAssertNotNil(arc.preflightHint(sourceIsRunning: false))
+        XCTAssertEqual(arc.preflightHint(sourceIsRunning: false), arc.preflightHint(sourceIsRunning: true))
+    }
 }

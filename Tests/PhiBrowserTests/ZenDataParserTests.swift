@@ -1,0 +1,761 @@
+// Copyright 2026 Phinomenon Inc.
+//
+// Use of this source code is governed by an Apache license that can be
+// found in the LICENSE file.
+
+import Compression
+import XCTest
+@testable import Phi
+
+/// Zen's on-disk data read from fixtures: three `profiles.ini` shapes, the
+/// Mozilla LZ4 container, a session file captured from a real install, and
+/// the Zen source-model builder over the two.
+final class ZenDataParserTests: XCTestCase {
+
+    // MARK: - profiles.ini fixtures
+
+    /// One usable profile, which the install section names.
+    private let oneProfileINI = """
+    [General]
+    StartWithLastProfile=1
+    Version=2
+
+    [Profile0]
+    Name=Default (release)
+    IsRelative=1
+    Path=Profiles/abcd1234.Default (release)
+    Default=1
+
+    [Install6ED35B3CA1B5D3AF]
+    Default=Profiles/abcd1234.Default (release)
+    Locked=1
+    """
+
+    /// Two usable profiles; the second is the install's default.
+    private let twoProfilesINI = """
+    [General]
+    StartWithLastProfile=1
+    Version=2
+
+    [Profile0]
+    Name=Work
+    IsRelative=1
+    Path=Profiles/aaaa0000.Work
+
+    [Profile1]
+    Name=Personal
+    IsRelative=1
+    Path=Profiles/bbbb1111.Personal
+
+    [Install6ED35B3CA1B5D3AF]
+    Default=Profiles/bbbb1111.Personal
+    Locked=1
+    """
+
+    /// This machine's file (Zen 1.21.15b, 2026-08-30): a never-launched ghost
+    /// carrying `Default=1` beside the profile the install section names.
+    private let ghostINI = """
+    [General]
+    StartWithLastProfile=1
+    Version=2
+
+    [Profile0]
+    Name=Default (release)
+    IsRelative=1
+    Path=Profiles/fgpkjy7r.Default (release)
+
+    [Profile1]
+    Name=Default Profile
+    IsRelative=1
+    Path=Profiles/gxnlgs9z.Default Profile
+    Default=1
+
+    [Install6ED35B3CA1B5D3AF]
+    Default=Profiles/fgpkjy7r.Default (release)
+    Locked=1
+
+    [6ED35B3CA1B5D3AF]
+    Default=Profiles/fgpkjy7r.Default (release)
+    Locked=1
+    """
+
+    private let realKey = "fgpkjy7r.Default (release)"
+    private let ghostKey = "gxnlgs9z.Default Profile"
+
+    private func ini(_ text: String) -> ZenDataParserTool.ProfilesINI {
+        ZenDataParserTool.parseProfilesINI(text)
+    }
+
+    // MARK: - profiles.ini
+
+    func testProfilesComeOutInSectionOrderWithTheirNamesAndBasenames() {
+        let profiles = ini(twoProfilesINI).profiles
+
+        XCTAssertEqual(profiles.map(\.name), ["Work", "Personal"])
+        XCTAssertEqual(profiles.map(\.key), ["aaaa0000.Work", "bbbb1111.Personal"])
+    }
+
+    func testTheInstallSectionNamesTheDefaultProfile() {
+        XCTAssertEqual(ini(twoProfilesINI).defaultProfileKey, "bbbb1111.Personal")
+        XCTAssertEqual(ini(oneProfileINI).defaultProfileKey, "abcd1234.Default (release)")
+    }
+
+    /// The flag sits on the ghost; the install section is what counts.
+    func testTheDefaultFlagDoesNotMakeAProfileTheDefault() {
+        let parsed = ini(ghostINI)
+
+        XCTAssertEqual(parsed.profiles.map(\.key), [realKey, ghostKey])
+        XCTAssertEqual(parsed.defaultProfileKey, realKey)
+    }
+
+    /// Not even as a fallback: without an install section nothing is the
+    /// default, whatever a profile section flags.
+    func testWithoutAnInstallSectionThereIsNoDefault() {
+        let parsed = ini("""
+        [Profile0]
+        Name=First
+        IsRelative=1
+        Path=Profiles/a.First
+
+        [Profile1]
+        Name=Second
+        IsRelative=1
+        Path=Profiles/b.Second
+        Default=1
+        """)
+
+        XCTAssertEqual(parsed.profiles.map(\.name), ["First", "Second"])
+        XCTAssertNil(parsed.defaultProfileKey)
+    }
+
+    func testAProfileWithoutANameHasAnEmptyOne() {
+        let parsed = ini("""
+        [Profile0]
+        IsRelative=1
+        Path=Profiles/abcd.nameless
+        """)
+
+        XCTAssertEqual(parsed.profiles.map(\.name), [""])
+        XCTAssertEqual(parsed.profiles.map(\.key), ["abcd.nameless"])
+    }
+
+    /// Only a profile under Zen's own `Profiles` directory is listed: that
+    /// is the one place the Chromium-side import resolves a profile key, so
+    /// a profile the user put elsewhere would preview and then fail to
+    /// import. An install section naming such a profile names no default.
+    func testAProfileWithoutAPathOrOutsideZensProfilesDirectoryIsNotListed() {
+        let parsed = ini("""
+        [Profile0]
+        Name=Broken
+
+        [Profile1]
+        Name=Elsewhere
+        IsRelative=0
+        Path=/Volumes/Elsewhere/Whole
+
+        [Profile2]
+        Name=Nested
+        IsRelative=1
+        Path=Backups/Profiles/x.Nested
+
+        [Profile3]
+        Name=Fine
+        IsRelative=1
+        Path=Profiles/ok.Fine
+
+        [InstallABCD]
+        Default=/Volumes/Elsewhere/Whole
+        """)
+
+        XCTAssertEqual(parsed.profiles, [ZenDataParserTool.Profile(name: "Fine", key: "ok.Fine")])
+        XCTAssertNil(parsed.defaultProfileKey)
+    }
+
+    func testAnEmptyFileHasNoProfilesAndNoDefault() {
+        let parsed = ini("")
+
+        XCTAssertTrue(parsed.profiles.isEmpty)
+        XCTAssertNil(parsed.defaultProfileKey)
+    }
+
+    // MARK: - The Mozilla LZ4 container
+
+    /// `zen-live-folders.jsonlz4` as Zen wrote it on this machine, all fifteen
+    /// bytes: the magic, a decoded size of two, and the block for `[]`.
+    private let containerZenWrote = Data([
+        0x6d, 0x6f, 0x7a, 0x4c, 0x7a, 0x34, 0x30, 0x00,
+        0x02, 0x00, 0x00, 0x00,
+        0x20, 0x5b, 0x5d,
+    ])
+
+    /// Wraps JSON the way Zen writes its session file — the mozlz4 header
+    /// over one raw LZ4 block — with the block from the platform's own
+    /// encoder.
+    private func container(_ json: String) -> Data {
+        let source = [UInt8](json.utf8)
+        var block = [UInt8](repeating: 0, count: source.count + source.count / 255 + 64)
+        let size = compression_encode_buffer(
+            &block, block.count, source, source.count, nil, COMPRESSION_LZ4_RAW)
+        XCTAssertGreaterThan(size, 0)
+        var bytes = [UInt8]("mozLz40\0".utf8)
+        bytes += withUnsafeBytes(of: UInt32(source.count).littleEndian, Array.init)
+        bytes += block[..<size]
+        return Data(bytes)
+    }
+
+    func testAContainerZenWroteDecodesWithThePlatformDecoder() throws {
+        XCTAssertEqual(try ZenDataParserTool.decodeMozillaLZ4(containerZenWrote), Data("[]".utf8))
+    }
+
+    func testAFileWithoutTheMagicIsRejected() {
+        XCTAssertThrowsError(try ZenDataParserTool.decodeMozillaLZ4(Data("{\"spaces\": []}".utf8))) {
+            XCTAssertEqual($0 as? ZenDataParserTool.SessionFileError, .notAMozillaLZ4Container)
+        }
+    }
+
+    func testAHeaderWithNothingAfterItIsRejected() {
+        XCTAssertThrowsError(try ZenDataParserTool.decodeMozillaLZ4(containerZenWrote.prefix(12))) {
+            XCTAssertEqual($0 as? ZenDataParserTool.SessionFileError, .notAMozillaLZ4Container)
+        }
+    }
+
+    func testATruncatedContainerIsRejected() {
+        let whole = container(capturedSession)
+        let truncated = whole.prefix(whole.count / 2)
+
+        XCTAssertThrowsError(try ZenDataParserTool.decodeMozillaLZ4(truncated)) {
+            guard case .truncatedOrCorrupt(let decoded, let declared)? = $0 as? ZenDataParserTool.SessionFileError else {
+                return XCTFail("unexpected error \($0)")
+            }
+            XCTAssertLessThan(decoded, declared)
+            XCTAssertEqual(declared, capturedSession.utf8.count)
+        }
+    }
+
+    /// A header claiming four gigabytes is a malformed file, not a large one,
+    /// and must not be allocated for.
+    func testAnAbsurdDeclaredSizeIsRejectedWithoutAllocating() {
+        var bytes = [UInt8](containerZenWrote)
+        bytes.replaceSubrange(8..<12, with: [0xff, 0xff, 0xff, 0xff])
+
+        XCTAssertThrowsError(try ZenDataParserTool.decodeMozillaLZ4(Data(bytes))) {
+            XCTAssertEqual($0 as? ZenDataParserTool.SessionFileError, .declaredSizeOutOfRange(0xffff_ffff))
+        }
+    }
+
+    // MARK: - The session file
+
+    /// `zen-sessions.jsonlz4` from this machine's Zen 1.21.15b profile
+    /// (2026-08-30, re-read after the user set the spaces' containers),
+    /// decoded; its pinned tabs and folders are emptied (they carry every URL
+    /// and title, and are the next ticket's), and the two-stop space's stops
+    /// are swapped so that the primary is second — Zen had written the
+    /// primary first. As Zen writes it, `icon` is absent from a space with
+    /// none, `lightness` is sometimes a string, and `containerTabId` is the
+    /// container's id — 6 the custom one, 3 Banking, 0 none, 1 Personal.
+    private let capturedSession = """
+    {
+      "lastCollected": 1788092851102,
+      "tabs": [],
+      "spaces": [
+        {
+          "containerTabId": 6,
+          "hasCollapsedPinnedTabs": false,
+          "icon": "chrome://browser/skin/zen-icons/selectable/airplane.svg",
+          "name": "Space",
+          "theme": { "gradientColors": [], "opacity": 0.5, "texture": 0, "type": "gradient" },
+          "uuid": "{c406b463-0db9-48a4-90a8-317bd1bd9d12}"
+        },
+        {
+          "containerTabId": 3,
+          "hasCollapsedPinnedTabs": false,
+          "icon": "chrome://browser/skin/zen-icons/selectable/american-football.svg",
+          "name": "TTT",
+          "theme": {
+            "gradientColors": [
+              { "algorithm": "complementary", "c": [45, 113, 251], "isCustom": false, "isPrimary": false,
+                "lightness": 58, "position": { "x": 94, "y": 107 }, "type": "undefined" },
+              { "algorithm": "complementary", "c": [250, 181, 40], "isCustom": false, "isPrimary": true,
+                "lightness": 58, "position": { "x": 264, "y": 251 }, "type": "undefined" }
+            ],
+            "opacity": 0.5, "texture": 0, "type": "gradient"
+          },
+          "uuid": "{9438b3f9-b6e7-41d9-8c70-61e1fedea9e9}"
+        },
+        {
+          "containerTabId": 0,
+          "hasCollapsedPinnedTabs": false,
+          "name": "qqq",
+          "theme": {
+            "gradientColors": [
+              { "algorithm": "", "c": [168, 6, 58], "isCustom": false, "isPrimary": true,
+                "lightness": 34, "position": { "x": 243, "y": 158 }, "type": "undefined" }
+            ],
+            "opacity": 0.5, "texture": 0, "type": "gradient"
+          },
+          "uuid": "{d84b71ba-bc19-41e0-a6a0-28a93aa9d024}"
+        },
+        {
+          "containerTabId": 1,
+          "hasCollapsedPinnedTabs": false,
+          "icon": "🤡",
+          "name": "abc",
+          "theme": {
+            "gradientColors": [
+              { "algorithm": "floating", "c": [70, 236, 168], "isCustom": false, "isPrimary": true,
+                "lightness": "60", "position": { "x": 147, "y": 195 }, "type": "explicit-lightness" }
+            ],
+            "opacity": 0.695, "texture": 0, "type": "gradient"
+          },
+          "uuid": "{ddae1ff1-c30a-45dc-b8ac-b5f70db8fed4}"
+        }
+      ],
+      "folders": [],
+      "groups": [],
+      "splitViewData": []
+    }
+    """
+
+    private func spaces(_ json: String) throws -> [ZenDataParserTool.Space] {
+        try ZenDataParserTool.parseSession(json: Data(json.utf8)).spaces
+    }
+
+    func testSpacesComeOutInArrayOrder() throws {
+        let spaces = try spaces(capturedSession)
+
+        XCTAssertEqual(spaces.map(\.name), ["Space", "TTT", "qqq", "abc"])
+        XCTAssertEqual(spaces.map(\.id), [
+            "{c406b463-0db9-48a4-90a8-317bd1bd9d12}",
+            "{9438b3f9-b6e7-41d9-8c70-61e1fedea9e9}",
+            "{d84b71ba-bc19-41e0-a6a0-28a93aa9d024}",
+            "{ddae1ff1-c30a-45dc-b8ac-b5f70db8fed4}",
+        ])
+    }
+
+    /// The stop flagged primary, which here is the second one.
+    func testTheColourIsThePrimaryStopNotTheFirst() throws {
+        XCTAssertEqual(try spaces(capturedSession)[1].colorHex, "#fab528")
+    }
+
+    func testAOneStopThemeYieldsThatStopWhateverItsLightnessLooksLike() throws {
+        let spaces = try spaces(capturedSession)
+
+        XCTAssertEqual(spaces[2].colorHex, "#a8063a")
+        XCTAssertEqual(spaces[3].colorHex, "#46eca8")
+    }
+
+    func testNoStopsYieldsNoColour() throws {
+        XCTAssertNil(try spaces(capturedSession)[0].colorHex)
+    }
+
+    func testTheIconIsCarriedAsWritten() throws {
+        let spaces = try spaces(capturedSession)
+
+        XCTAssertEqual(spaces[0].icon, "chrome://browser/skin/zen-icons/selectable/airplane.svg")
+        XCTAssertEqual(spaces[1].icon, "chrome://browser/skin/zen-icons/selectable/american-football.svg")
+        XCTAssertNil(spaces[2].icon)
+        XCTAssertEqual(spaces[3].icon, "🤡")
+    }
+
+    func testTheCapturedFileParsesFromItsContainer() throws {
+        let session = try ZenDataParserTool.parseSession(container: container(capturedSession))
+
+        XCTAssertEqual(session.spaces.map(\.name), ["Space", "TTT", "qqq", "abc"])
+    }
+
+    func testWhenNoStopIsFlaggedPrimaryTheFirstStands() throws {
+        let spaces = try spaces("""
+        { "spaces": [ { "uuid": "{1}", "name": "A", "theme": { "gradientColors": [
+            { "c": [0, 0, 255] }, { "c": [255, 0, 0] } ] } } ] }
+        """)
+
+        XCTAssertEqual(spaces[0].colorHex, "#0000ff")
+    }
+
+    func testAnOutOfRangeChannelIsClamped() throws {
+        let spaces = try spaces("""
+        { "spaces": [ { "uuid": "{1}", "name": "A", "theme": { "gradientColors": [
+            { "c": [300, -20, 127.6], "isPrimary": true } ] } } ] }
+        """)
+
+        XCTAssertEqual(spaces[0].colorHex, "#ff0080")
+    }
+
+    func testANullIconAndAMissingThemeAreNoIconAndNoColour() throws {
+        let spaces = try spaces("""
+        { "spaces": [ { "uuid": "{1}", "name": "A", "icon": null }, { "uuid": "{2}", "name": "B", "icon": "" } ] }
+        """)
+
+        XCTAssertEqual(spaces.map(\.icon), [nil, nil])
+        XCTAssertEqual(spaces.map(\.colorHex), [nil, nil])
+    }
+
+    func testAnEmptyNameTakesTheExistingPlaceholder() throws {
+        let spaces = try spaces("""
+        { "spaces": [ { "uuid": "{1}", "name": "  " }, { "uuid": "{2}" } ] }
+        """)
+
+        let placeholder = NSLocalizedString("app.browserMigration.zen.untitledSpaceName",
+            value: "Untitled Space", comment: "Browser migration wizard - fallback name for a Zen workspace that has no name")
+        XCTAssertEqual(spaces.map(\.name), [placeholder, placeholder])
+    }
+
+    /// A theme this parser cannot read costs the colour, never the space.
+    func testAMalformedThemeCostsTheColourNotTheSpace() throws {
+        let spaces = try spaces("""
+        { "spaces": [ { "uuid": "{1}", "name": "A", "theme": { "gradientColors": [ { "c": "red" } ] } },
+                      { "uuid": "{2}", "name": "B", "theme": "none" } ] }
+        """)
+
+        XCTAssertEqual(spaces.map(\.name), ["A", "B"])
+        XCTAssertEqual(spaces.map(\.colorHex), [nil, nil])
+    }
+
+    /// A profile predating workspaces has no `spaces` at all: no Spaces, not
+    /// an unreadable file.
+    func testAFileWithoutASpacesArrayHasNoSpaces() throws {
+        XCTAssertEqual(try spaces("{ \"tabs\": [] }"), [])
+    }
+
+    func testASpaceWithoutAnIdentifierMakesTheFileUnreadable() {
+        XCTAssertThrowsError(try spaces("{ \"spaces\": [ { \"name\": \"A\" } ] }"))
+    }
+
+    func testAFileThatIsNotJSONIsUnreadable() {
+        let prose = String(repeating: "This is not a session file. ", count: 8)
+
+        XCTAssertThrowsError(try ZenDataParserTool.parseSession(container: container(prose)))
+    }
+
+    func testASpaceCarriesTheContainerItIsSetToAndNoneIsZero() throws {
+        XCTAssertEqual(try spaces(capturedSession).map(\.containerTabId), [6, 3, 0, 1])
+        XCTAssertEqual(try spaces("{ \"spaces\": [ { \"uuid\": \"{1}\", \"name\": \"A\" } ] }").map(\.containerTabId), [0])
+    }
+
+    // MARK: - containers.json
+
+    /// This machine's `containers.json` (2026-08-30): the four Firefox
+    /// defaults, Firefox's two internal identities, the custom container the
+    /// user made ("AAAAAAAAA", which the captured session's first space is
+    /// set to), and — appended by hand from a later read of the same file,
+    /// its icon and colour not captured — the custom "NOT USED" the user made
+    /// next and set no space to.
+    private let capturedContainers = """
+    {"version":6,"lastUserContextId":7,"identities":[{"icon":"fingerprint","color":"blue","l10nId":"user-context-personal","public":true,"userContextId":1},{"icon":"briefcase","color":"orange","l10nId":"user-context-work","public":true,"userContextId":2},{"icon":"dollar","color":"green","l10nId":"user-context-banking","public":true,"userContextId":3},{"icon":"cart","color":"pink","l10nId":"user-context-shopping","public":true,"userContextId":4},{"public":false,"icon":"","color":"","name":"userContextIdInternal.thumbnail","accessKey":"","userContextId":5},{"userContextId":4294967295,"public":false,"icon":"","color":"","name":"userContextIdInternal.webextStorageLocal","accessKey":""},{"userContextId":6,"public":true,"icon":"briefcase","color":"blue","name":"AAAAAAAAA"},{"userContextId":7,"public":true,"name":"NOT USED"}]}
+    """
+
+    private func containers(_ json: String) throws -> [ZenDataParserTool.Container] {
+        try ZenDataParserTool.parseContainers(json: Data(json.utf8))
+    }
+
+    func testContainersComeOutInFileOrderWithoutTheInternalOnes() throws {
+        let containers = try containers(capturedContainers)
+
+        XCTAssertEqual(containers.map(\.userContextId), [1, 2, 3, 4, 6, 7])
+        XCTAssertEqual(containers.map(\.l10nId), [
+            "user-context-personal", "user-context-work", "user-context-banking",
+            "user-context-shopping", nil, nil,
+        ])
+        XCTAssertEqual(containers.map(\.name), [nil, nil, nil, nil, "AAAAAAAAA", "NOT USED"])
+    }
+
+    func testAContainersFileWithNoIdentitiesHasNone() throws {
+        XCTAssertEqual(try containers("{ \"version\": 6 }"), [])
+    }
+
+    /// Firefox reads a missing `public` as not public; and an identity with
+    /// the id of no container would double the no-container Profile.
+    func testAnIdentityWithoutThePublicFlagOrWithTheNoContainerIdIsLeftOut() throws {
+        let containers = try containers("""
+        { "identities": [
+            { "userContextId": 9, "name": "Unflagged" },
+            { "userContextId": 0, "public": true, "name": "Zero" },
+            { "userContextId": 8, "public": true, "name": "Kept" } ] }
+        """)
+
+        XCTAssertEqual(containers.map(\.userContextId), [8])
+    }
+
+    func testAMalformedContainersFileIsUnreadable() {
+        XCTAssertThrowsError(try containers("[]"))
+        XCTAssertThrowsError(try containers("{ \"identities\": [ { \"name\": \"no id\" } ] }"))
+    }
+
+    // MARK: - Source model
+
+    private typealias Zen = BrowserDataImporter.ZenMigrationSource
+
+    private func zenSpace(
+        _ id: String, _ name: String, colorHex: String? = nil, container: Int = 0, icon: String? = nil
+    ) -> ZenDataParserTool.Space {
+        ZenDataParserTool.Space(
+            id: id, name: name, colorHex: colorHex, containerTabId: container, icon: icon)
+    }
+
+    private func source(
+        _ text: String,
+        sessions: [String: [ZenDataParserTool.Space]],
+        containers: [String: [ZenDataParserTool.Container]] = [:]
+    ) -> BrowserMigrationSource {
+        Zen(
+            profilesINI: ini(text),
+            sessions: sessions.mapValues { ZenDataParserTool.Session(spaces: $0) },
+            containers: containers
+        ).migrationSource
+    }
+
+    private func rows(_ source: BrowserMigrationSource) -> [BrowserMigrationPreviewProfileRow] {
+        let plan = BrowserMigrationPlanner.plan(
+            source: source,
+            existingProfileDisplayNames: [],
+            pinnedTabScope: .profile,
+            selection: .all(in: source),
+            operationID: UUID(uuidString: "00000000-0000-0000-0000-0000000000CC")!)
+        return BrowserMigrationPreview.rows(source: source, plan: plan)
+    }
+
+    /// The design machine as it stands: the captured spaces over the captured
+    /// containers under the profile the install names, beside the
+    /// never-launched ghost. One for the Space set to none, then the
+    /// containers in use — the custom one, Banking, Personal — in first
+    /// appearance order rather than the containers' own, then Work, Shopping
+    /// and the custom NOT USED, which no Space uses, greyed as having none;
+    /// every Profile reads the Firefox profile's directory; the ghost, which
+    /// the user never chose anything in, gets no row at all.
+    func testProfilesAreDerivedFromTheContainersSpacesAreSetTo() throws {
+        let source = source(
+            ghostINI,
+            sessions: [realKey: try spaces(capturedSession)],
+            containers: [realKey: try containers(capturedContainers)])
+
+        XCTAssertEqual(source.profiles.map(\.key), [
+            "\(realKey)#0", "\(realKey)#6", "\(realKey)#3", "\(realKey)#1",
+            "\(realKey)#2", "\(realKey)#4", "\(realKey)#7",
+        ])
+        XCTAssertEqual(source.profiles.map(\.displayName),
+                       ["Zen", "AAAAAAAAA", "Banking", "Personal", "Work", "Shopping", "NOT USED"])
+        XCTAssertEqual(Set(source.profiles.map(\.sourceDirectory)), [realKey])
+        XCTAssertEqual(source.spaces.map(\.profileKey),
+                       ["\(realKey)#6", "\(realKey)#3", "\(realKey)#0", "\(realKey)#1"])
+        XCTAssertEqual(source.defaultProfileKey, "\(realKey)#0")
+
+        let rows = rows(source)
+        XCTAssertEqual(rows.map(\.displayName),
+                       ["Zen", "AAAAAAAAA", "Banking", "Personal", "Work", "Shopping", "NOT USED"])
+        XCTAssertEqual(rows.map { $0.spaces.map(\.name) },
+                       [["qqq"], ["Space"], ["TTT"], ["abc"], [], [], []])
+        XCTAssertEqual(rows.map(\.skipReason), [nil, nil, nil, nil, .noSpaces, .noSpaces, .noSpaces])
+    }
+
+    func testSpacesAllSetToContainersLeaveNoNoContainerProfile() throws {
+        let source = source(
+            oneProfileINI,
+            sessions: ["abcd1234.Default (release)": [
+                zenSpace("{1}", "Desk", container: 2), zenSpace("{2}", "Lab", container: 2),
+            ]],
+            containers: ["abcd1234.Default (release)": try containers(capturedContainers)])
+
+        XCTAssertEqual(source.profiles.map(\.displayName),
+                       ["Work", "Personal", "Banking", "Shopping", "AAAAAAAAA", "NOT USED"])
+        XCTAssertEqual(rows(source).map { $0.spaces.map(\.name) },
+                       [["Desk", "Lab"], [], [], [], [], []])
+        XCTAssertEqual(rows(source).map(\.skipReason),
+                       [nil, .noSpaces, .noSpaces, .noSpaces, .noSpaces, .noSpaces])
+    }
+
+    /// A Space set to a container the list no longer holds binds to the
+    /// install default's no-container Profile and says so — and that Profile
+    /// is listed for it even though no Space is set to none.
+    func testASpaceSetToAMissingContainerBindsToTheInstallDefaultsNoContainerProfile() throws {
+        let source = source(
+            ghostINI,
+            sessions: [realKey: [
+                zenSpace("{1}", "Home", container: 1), zenSpace("{2}", "Gone", container: 9),
+            ]],
+            containers: [realKey: try containers(capturedContainers)])
+
+        XCTAssertEqual(source.profiles.prefix(2).map(\.key), ["\(realKey)#0", "\(realKey)#1"])
+        XCTAssertEqual(source.profiles.prefix(2).map(\.displayName), ["Zen", "Personal"])
+        XCTAssertEqual(source.spaces.map(\.profileKey), ["\(realKey)#1", nil])
+        XCTAssertEqual(source.defaultProfileKey, "\(realKey)#0")
+
+        let rows = rows(source)
+        XCTAssertEqual(rows[0].spaces.map(\.name), ["Gone"])
+        XCTAssertEqual(rows[0].spaces.map(\.boundToDefaultProfile), [true])
+        XCTAssertEqual(rows[1].spaces.map(\.name), ["Home"])
+    }
+
+    /// When the install's default profile is not usable, the binding host
+    /// is the first usable one — so the bound Space still lands on a listed
+    /// Profile rather than one the planner would have to invent.
+    func testWhenTheInstallDefaultIsNotUsableAMissingContainerBindsToTheFirstUsableProfile() throws {
+        let source = source("""
+        [Profile0]
+        Name=Ghost
+        IsRelative=1
+        Path=Profiles/gg.Ghost
+
+        [Profile1]
+        Name=Live
+        IsRelative=1
+        Path=Profiles/ll.Live
+
+        [InstallABCD]
+        Default=Profiles/gg.Ghost
+        """, sessions: ["ll.Live": [zenSpace("{1}", "Gone", container: 9)]],
+           containers: ["ll.Live": try containers(capturedContainers)])
+
+        XCTAssertEqual(source.defaultProfileKey, "ll.Live#0")
+        XCTAssertEqual(source.profiles.first?.key, "ll.Live#0")
+        XCTAssertEqual(source.profiles.first?.displayName, "Zen")
+        XCTAssertEqual(rows(source)[0].spaces.map(\.boundToDefaultProfile), [true])
+    }
+
+    /// A profile with no `containers.json` at all knows no container, so a
+    /// Space set to one is the same missing-container case.
+    func testWithoutAContainersFileEverySetContainerIsMissing() {
+        let source = source(oneProfileINI, sessions: ["abcd1234.Default (release)": [
+            zenSpace("{1}", "Home", container: 1),
+        ]])
+
+        XCTAssertEqual(source.profiles.map(\.key), ["abcd1234.Default (release)#0"])
+        XCTAssertEqual(source.spaces.map(\.profileKey), [nil])
+    }
+
+    func testContainerNamesFollowTheirIdentities() throws {
+        let defaults = try containers(capturedContainers).prefix(4).map(Zen.displayName(of:))
+
+        XCTAssertEqual(defaults, ["Personal", "Work", "Banking", "Shopping"])
+        XCTAssertEqual(Zen.displayName(of: .init(userContextId: 6, l10nId: nil, name: "AAAAAAAAA")), "AAAAAAAAA")
+        XCTAssertEqual(Zen.displayName(of: .init(userContextId: 7, l10nId: "user-context-later", name: nil)), "Container 7")
+        XCTAssertEqual(Zen.displayName(of: .init(userContextId: 8, l10nId: nil, name: "  ")), "Container 8")
+    }
+
+    /// Two usable Firefox profiles each derive their own container Profiles
+    /// under their own names, with no prefixing: the "Personal" Profiles
+    /// collide, and the planner's suffix tells the planned ones apart — an
+    /// unused container's greyed row is not in the plan and keeps its plain
+    /// name.
+    func testTwoUsableFirefoxProfilesDeriveTheirOwnContainerProfiles() throws {
+        let containers = Array(try containers(capturedContainers).prefix(2))
+        let source = source(
+            twoProfilesINI,
+            sessions: [
+                "aaaa0000.Work": [zenSpace("{1}", "Desk", container: 1)],
+                "bbbb1111.Personal": [zenSpace("{2}", "Sofa", container: 1), zenSpace("{3}", "Loose")],
+            ],
+            containers: ["aaaa0000.Work": containers, "bbbb1111.Personal": containers])
+
+        XCTAssertEqual(source.profiles.map(\.key), [
+            "aaaa0000.Work#1", "aaaa0000.Work#2",
+            "bbbb1111.Personal#0", "bbbb1111.Personal#1", "bbbb1111.Personal#2",
+        ])
+        XCTAssertEqual(source.profiles.map(\.displayName),
+                       ["Personal", "Work", "Personal", "Personal", "Work"])
+        XCTAssertEqual(rows(source).map(\.displayName),
+                       ["Personal", "Work", "Personal 2", "Personal 3", "Work"])
+    }
+
+    /// The design machine's ghost — no session file, so no Spaces — is not
+    /// listed: a Firefox profile is nothing the user chose in Zen. The sole
+    /// usable profile's no-container Profile is named "Zen".
+    func testASoleUsableProfileIsNamedZenAndTheGhostIsNotListed() {
+        let source = source(ghostINI, sessions: [realKey: [zenSpace("{1}", "Home")]])
+
+        XCTAssertEqual(source.profiles.map(\.key), ["\(realKey)#0"])
+        XCTAssertEqual(source.profiles.map(\.displayName), ["Zen"])
+
+        let rows = rows(source)
+        XCTAssertEqual(rows.map(\.displayName), ["Zen"])
+        XCTAssertEqual(rows.map(\.skipReason), [nil])
+        XCTAssertEqual(rows[0].spaces.map(\.name), ["Home"])
+    }
+
+    /// An install whose profiles are all unusable offers nothing — the
+    /// wizard's nothing-to-migrate state, not a list of greyed profiles.
+    func testAnInstallWhoseProfilesAreAllUnusableHasNothingToMigrate() {
+        let source = source(ghostINI, sessions: [:])
+
+        XCTAssertTrue(source.profiles.isEmpty)
+        XCTAssertTrue(BrowserMigrationPreview.hasNothingToMigrate(rows: rows(source)))
+    }
+
+    func testSeveralUsableProfilesKeepTheirProfilesININamesForTheNoContainerProfile() {
+        let source = source(twoProfilesINI, sessions: [
+            "aaaa0000.Work": [zenSpace("{1}", "Desk")],
+            "bbbb1111.Personal": [zenSpace("{2}", "Sofa")],
+        ])
+
+        XCTAssertEqual(source.profiles.map(\.displayName), ["Work", "Personal"])
+        XCTAssertEqual(source.profiles.map(\.sourceDirectory), ["aaaa0000.Work", "bbbb1111.Personal"])
+    }
+
+    /// A session file with no spaces in it is as unusable as none, so the
+    /// other profile is still the sole usable one.
+    func testAProfileWhoseSessionFileYieldsNoSpaceIsNotUsable() {
+        let source = source(twoProfilesINI, sessions: [
+            "aaaa0000.Work": [],
+            "bbbb1111.Personal": [zenSpace("{2}", "Sofa")],
+        ])
+
+        XCTAssertEqual(source.profiles.map(\.key), ["bbbb1111.Personal#0"])
+        XCTAssertEqual(source.profiles.map(\.displayName), ["Zen"])
+    }
+
+    /// An empty `profiles.ini` name falls back to the directory basename —
+    /// here, in the builder, since the key no longer is the basename.
+    func testAUsableProfileWithNoNamePreviewsAsItsBasename() {
+        let source = source("""
+        [Profile0]
+        IsRelative=1
+        Path=Profiles/abcd.nameless
+
+        [Profile1]
+        Name=Named
+        IsRelative=1
+        Path=Profiles/efgh.named
+        """, sessions: [
+            "abcd.nameless": [zenSpace("{1}", "A")],
+            "efgh.named": [zenSpace("{2}", "B")],
+        ])
+
+        XCTAssertEqual(rows(source).map(\.displayName), ["abcd.nameless", "Named"])
+    }
+
+    func testSpacesFollowTheirProfileInFileOrderWithTheirColourAndIcon() {
+        let source = source(twoProfilesINI, sessions: [
+            "aaaa0000.Work": [
+                zenSpace("{1}", "Desk", colorHex: "#fab528", icon: "chrome://browser/skin/zen-icons/selectable/airplane.svg"),
+                zenSpace("{2}", "Lab"),
+            ],
+            "bbbb1111.Personal": [zenSpace("{3}", "Sofa", icon: "🤡")],
+        ])
+
+        XCTAssertEqual(source.spaces.map(\.id), ["{1}", "{2}", "{3}"])
+        XCTAssertEqual(source.spaces.map(\.profileKey),
+                       ["aaaa0000.Work#0", "aaaa0000.Work#0", "bbbb1111.Personal#0"])
+        XCTAssertEqual(source.spaces.map(\.name), ["Desk", "Lab", "Sofa"])
+        XCTAssertEqual(source.spaces.map(\.colorHex), ["#fab528", nil, nil])
+        XCTAssertEqual(source.spaces.map(\.icon), [.zenNamed("airplane"), nil, .emoji("🤡")])
+        XCTAssertEqual(source.spaces.map { $0.bookmarkRoot == nil }, [true, true, true])
+        XCTAssertTrue(source.pinnedGroups.isEmpty)
+    }
+
+    func testTheIconAdapterNamesABuiltInByItsFileAndKeepsAnEmojiAsItself() {
+        let adapt = Zen.sourceIcon
+
+        XCTAssertEqual(adapt("chrome://browser/skin/zen-icons/selectable/american-football.svg"),
+                       .zenNamed("american-football"))
+        XCTAssertEqual(adapt("🤡"), .emoji("🤡"))
+        XCTAssertNil(adapt(nil))
+        XCTAssertNil(adapt(""))
+    }
+
+    func testAnInstallWithNoProfilesHasNothingToMigrate() {
+        let source = source("", sessions: [:])
+
+        XCTAssertTrue(source.profiles.isEmpty)
+        XCTAssertTrue(source.spaces.isEmpty)
+        XCTAssertTrue(BrowserMigrationPreview.hasNothingToMigrate(rows: rows(source)))
+    }
+}

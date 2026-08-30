@@ -222,6 +222,7 @@
 		6A4750023B12345600000002 /* GuestDataMigration.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6A4750023B12345600000001 /* GuestDataMigration.swift */; };
 		6A4750023B12345600000102 /* BrowserMigrationPlanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6A4750023B12345600000101 /* BrowserMigrationPlanner.swift */; };
 		6A4750023B12345600000402 /* BrowserMigrationSpaceIconResolver.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6A4750023B12345600000401 /* BrowserMigrationSpaceIconResolver.swift */; };
+		6A4750023B12345600000502 /* ZenDataParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6A4750023B12345600000501 /* ZenDataParser.swift */; };
 		6A4750023B12345600000202 /* BrowserMigrationWizard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6A4750023B12345600000201 /* BrowserMigrationWizard.swift */; };
 		6A4750023B12345600000302 /* BrowserMigrationRunner.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6A4750023B12345600000301 /* BrowserMigrationRunner.swift */; };
 		793C1DDEA1022CC850FEFFF9 /* SentinelWatchdog.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6A44C5FF60DF6F7860A061D4 /* SentinelWatchdog.swift */; };
@@ -894,6 +895,7 @@
 		6A4750023B12345600000001 /* GuestDataMigration.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GuestDataMigration.swift; sourceTree = "<group>"; };
 		6A4750023B12345600000101 /* BrowserMigrationPlanner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrowserMigrationPlanner.swift; sourceTree = "<group>"; };
 		6A4750023B12345600000401 /* BrowserMigrationSpaceIconResolver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrowserMigrationSpaceIconResolver.swift; sourceTree = "<group>"; };
+		6A4750023B12345600000501 /* ZenDataParser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ZenDataParser.swift; sourceTree = "<group>"; };
 		6A4750023B12345600000201 /* BrowserMigrationWizard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrowserMigrationWizard.swift; sourceTree = "<group>"; };
 		6A4750023B12345600000301 /* BrowserMigrationRunner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrowserMigrationRunner.swift; sourceTree = "<group>"; };
 		7A5B00A02EF0000000000002 /* MemoryButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MemoryButton.swift; sourceTree = "<group>"; };
@@ -2481,6 +2483,7 @@
 				6A4750023B12345600000201 /* BrowserMigrationWizard.swift */,
 				375B2D392ED009F60053FECC /* BrowserDataImporter.swift */,
 				3769C2E72EF9437A00A94DE0 /* ArcDataParser.swift */,
+				6A4750023B12345600000501 /* ZenDataParser.swift */,
 			);
 			path = Importer;
 			sourceTree = "<group>";
@@ -3107,6 +3110,7 @@
 				7B00AAAA000000070000A7B7 /* PostHogConfig.generated.swift in Sources */,
 				B025870E2E430305001B08FC /* MainSplitViewController.swift in Sources */,
 				3769C2E82EF9437A00A94DE0 /* ArcDataParser.swift in Sources */,
+				6A4750023B12345600000502 /* ZenDataParser.swift in Sources */,
 				CCBF8F422E653D9600B9A99E /* SidebarBottomBar.swift in Sources */,
 				CCBF8F822E67F7C400B9A99E /* ExtensionManager.swift in Sources */,
 				B0F370D02E432CB8000B51F9 /* MainBrowserWindowController+Actions.swift in Sources */,

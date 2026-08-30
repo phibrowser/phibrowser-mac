@@ -38,11 +38,16 @@ struct BrowserMigrationSourcePinnedGroup {
     let entries: [BrowserMigrationPinnedEntry]
 }
 
-/// A Migration Source's profile, keyed by the on-disk directory basename the
-/// Chromium-side importer needs.
+/// A Migration Source's profile. The key identifies it within the source;
+/// the directory the Chromium-side importer reads from is carried apart from
+/// it, because a Zen container Profile is one of several that read the same
+/// Firefox profile directory (ADR 0005). For Arc the two are one.
 struct BrowserMigrationSourceProfile {
     let key: String
     let displayName: String
+    /// The on-disk profile directory basename the Chromium-side importer
+    /// reads from. Several source profiles may share one.
+    let sourceDirectory: String
     /// Non-nil when the source has pinned entries but could not read them;
     /// distinct from an empty pinned group, which means the user had none.
     let pinsUnavailable: BrowserMigrationPinsUnavailableReason?
@@ -50,10 +55,12 @@ struct BrowserMigrationSourceProfile {
     init(
         key: String,
         displayName: String,
+        sourceDirectory: String? = nil,
         pinsUnavailable: BrowserMigrationPinsUnavailableReason? = nil
     ) {
         self.key = key
         self.displayName = displayName
+        self.sourceDirectory = sourceDirectory ?? key
         self.pinsUnavailable = pinsUnavailable
     }
 }
@@ -405,9 +412,12 @@ struct BrowserMigrationPlannedSpace {
 
 /// One Profile a run creates.
 struct BrowserMigrationPlannedProfile {
-    /// The source profile's on-disk directory basename — both this plan's key
-    /// and what the Chromium-side importer reads from.
+    /// The source profile's key within the plan.
     let sourceProfileKey: String
+    /// The on-disk profile directory the Chromium-side importer reads from:
+    /// the source profile's, or the key itself for a profile the source never
+    /// listed.
+    let sourceDirectory: String
     /// Free of collisions with existing Phi Profiles and with the other
     /// Profiles this plan creates, because Profile creation rejects duplicate
     /// display names outright.
@@ -511,6 +521,7 @@ enum BrowserMigrationPlanner {
             }
             profiles.append(BrowserMigrationPlannedProfile(
                 sourceProfileKey: profileKey,
+                sourceDirectory: sourceProfile?.sourceDirectory ?? profileKey,
                 displayName: uniqueDisplayName(displayName, taken: &takenDisplayNames),
                 spaces: plannedSpaces,
                 pinnedTabs: plannedPinnedTabs(

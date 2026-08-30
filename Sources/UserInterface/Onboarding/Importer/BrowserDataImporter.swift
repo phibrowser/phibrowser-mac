@@ -487,6 +487,204 @@ class BrowserDataImporter {
             profiles: loadChromiumProfiles(localStateURL: localStateURL), sidebar: sidebar)
     }
     
+    // MARK: - Zen
+
+    /// Zen's application-support directory; `profiles.ini` in it is what
+    /// "Zen is installed" means to the Migration wizard.
+    static let zenApplicationSupportURL = FileManager.default.homeDirectoryForCurrentUser
+        .appendingPathComponent("Library/Application Support/zen")
+    static let zenProfilesINIURL = zenApplicationSupportURL.appendingPathComponent("profiles.ini")
+    /// Where Zen keeps its profile directories; a source profile's key is its
+    /// basename here, which the Chromium-side Zen import resolves the same way.
+    static let zenProfilesURL = zenApplicationSupportURL
+        .appendingPathComponent(ZenDataParserTool.profilesDirectoryName)
+    /// Zen's own store of its spaces and pinned tabs, in each profile
+    /// directory — not Firefox's window session beside it.
+    static let zenSessionFileName = "zen-sessions.jsonlz4"
+
+    /// Zen's containers, in each profile directory: what a Space is set to.
+    static let zenContainersFileName = "containers.json"
+
+    /// The Zen install as a Migration Source: the Firefox profiles
+    /// `profiles.ini` lists, and for each one that has them its session file
+    /// and its containers.
+    struct ZenMigrationSource {
+        let profilesINI: ZenDataParserTool.ProfilesINI
+        /// By Firefox profile key. A profile with no session file — never
+        /// launched — has no entry here, and so no Spaces.
+        let sessions: [String: ZenDataParserTool.Session]
+        /// By Firefox profile key; a profile with no `containers.json` has
+        /// none.
+        let containers: [String: [ZenDataParserTool.Container]]
+
+        /// What the no-container Profile of an install's sole usable Firefox
+        /// profile is called. Firefox names a default profile after its
+        /// release channel ("Default (release)"), which means nothing to the
+        /// user. A product name, so not localized.
+        static let soleProfileDisplayName = "Zen"
+
+        /// A Zen Profile's key: the Firefox profile's directory basename and
+        /// the id of the container, 0 for the Spaces set to none.
+        static func profileKey(_ firefoxProfileKey: String, container userContextId: Int) -> String {
+            "\(firefoxProfileKey)#\(userContextId)"
+        }
+
+        /// The source-agnostic model the Migration planner consumes.
+        /// Containers are Profiles (ADR 0005): per usable Firefox profile —
+        /// one whose session file yields a Space; the others are not listed
+        /// at all, a Firefox profile being nothing the user chose in Zen —
+        /// one Profile for the Spaces set to no container when there are
+        /// any, then one per container: the ones Spaces are set to by first
+        /// appearance in the session file, then the rest in the container
+        /// list's own order, which the planner greys as having no Spaces
+        /// (ADR 0005: an unused container still shows, so the user can see
+        /// what Phi looked at). Every Profile derived from a
+        /// Firefox profile reads its data from that profile's directory. A
+        /// Space set to a container the list does not hold has no resolvable
+        /// profile record: it binds to the install default's no-container
+        /// Profile — the first usable profile's when the default is not
+        /// usable — which is listed for it when nothing else would. Names
+        /// are decided here, as the Migration Source interface leaves them to
+        /// the source: a container Profile takes its container's name; the
+        /// no-container Profile is "Zen" when exactly one Firefox profile is
+        /// usable, and the `profiles.ini` name — empty → the directory
+        /// basename — otherwise.
+        var migrationSource: BrowserMigrationSource {
+            let usableKeys = profilesINI.profiles.map(\.key)
+                .filter { !(sessions[$0]?.spaces.isEmpty ?? true) }
+            let soleUsableKey = usableKeys.count == 1 ? usableKeys[0] : nil
+            let containersByID: [String: [Int: ZenDataParserTool.Container]] = Dictionary(
+                usableKeys.map { key in
+                    (key, Dictionary(
+                        (containers[key] ?? []).map { ($0.userContextId, $0) },
+                        uniquingKeysWith: { first, _ in first }))
+                },
+                uniquingKeysWith: { first, _ in first })
+            // Set to a container the list does not hold — deleted since, or
+            // never listed.
+            func isMissingContainer(_ space: ZenDataParserTool.Space, in key: String) -> Bool {
+                space.containerTabId != ZenDataParserTool.noContainerID
+                    && containersByID[key]?[space.containerTabId] == nil
+            }
+            let bindingHostKey = usableKeys.first { $0 == profilesINI.defaultProfileKey }
+                ?? usableKeys.first
+            let hasMissingContainer = usableKeys.contains { key in
+                (sessions[key]?.spaces ?? []).contains { isMissingContainer($0, in: key) }
+            }
+
+            var profiles: [BrowserMigrationSourceProfile] = []
+            var spaces: [BrowserMigrationSourceSpace] = []
+            for profile in profilesINI.profiles where usableKeys.contains(profile.key) {
+                let profileSpaces = sessions[profile.key]?.spaces ?? []
+                let known = containersByID[profile.key] ?? [:]
+                if profileSpaces.contains(where: { $0.containerTabId == ZenDataParserTool.noContainerID })
+                    || (profile.key == bindingHostKey && hasMissingContainer) {
+                    profiles.append(BrowserMigrationSourceProfile(
+                        key: Self.profileKey(profile.key, container: 0),
+                        displayName: profile.key == soleUsableKey
+                            ? Self.soleProfileDisplayName
+                            : BrowserMigrationPlanner.resolvedDisplayName(of: profile.name, key: profile.key),
+                        sourceDirectory: profile.key))
+                }
+                let inUse = profileSpaces.compactMap { known[$0.containerTabId] }
+                var listed = Set<Int>()
+                for container in inUse + (containers[profile.key] ?? [])
+                where listed.insert(container.userContextId).inserted {
+                    profiles.append(BrowserMigrationSourceProfile(
+                        key: Self.profileKey(profile.key, container: container.userContextId),
+                        displayName: Self.displayName(of: container),
+                        sourceDirectory: profile.key))
+                }
+                for space in profileSpaces {
+                    spaces.append(BrowserMigrationSourceSpace(
+                        id: space.id,
+                        name: space.name,
+                        colorHex: space.colorHex,
+                        icon: Self.sourceIcon(space.icon),
+                        profileKey: isMissingContainer(space, in: profile.key)
+                            ? nil : Self.profileKey(profile.key, container: space.containerTabId)))
+                }
+            }
+            return BrowserMigrationSource(
+                profiles: profiles,
+                defaultProfileKey: bindingHostKey.map { Self.profileKey($0, container: 0) } ?? "",
+                spaces: spaces)
+        }
+
+        /// A container Profile's name: Firefox's own English names for its
+        /// four defaults, keyed off their `l10nId` and deliberately not
+        /// localized — they are the containers' names, not Phi's copy; a
+        /// custom container's name as typed; a number for an identity with
+        /// neither.
+        static func displayName(of container: ZenDataParserTool.Container) -> String {
+            switch container.l10nId {
+            case "user-context-personal": return "Personal"
+            case "user-context-work": return "Work"
+            case "user-context-banking": return "Banking"
+            case "user-context-shopping": return "Shopping"
+            default:
+                if let name = container.name,
+                   !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    return name
+                }
+                return String(
+                    format: NSLocalizedString("app.browserMigration.zen.container.numbered", value: "Container %d",
+                        comment: "Browser migration wizard - name of the Profile made from a Zen container that has no readable name; %d is the container's number"),
+                    container.userContextId)
+            }
+        }
+
+        /// The Zen adapter the icon resolver's Zen table was written for: a
+        /// built-in icon arrives as its
+        /// `chrome://…/zen-icons/selectable/<name>.svg` URL and is named by
+        /// that basename; any other non-empty string is the emoji text as
+        /// typed.
+        static func sourceIcon(_ icon: String?) -> BrowserMigrationSourceIcon? {
+            guard let icon, !icon.isEmpty else { return nil }
+            guard icon.hasPrefix("chrome://") else { return .emoji(icon) }
+            let file = (icon as NSString).lastPathComponent as NSString
+            return .zenNamed(file.deletingPathExtension)
+        }
+    }
+
+    /// Reads the Zen install as a Migration Source. Nil when `profiles.ini`
+    /// cannot be read, or a profile's session or containers file is there but
+    /// malformed — either puts the source in the wizard's "could not read"
+    /// state. A profile with no session file is a never-launched one and
+    /// simply has no Spaces; one with no containers file has no containers.
+    func loadZenMigrationSource(
+        profilesINIURL: URL = zenProfilesINIURL
+    ) -> ZenMigrationSource? {
+        guard let text = try? String(contentsOf: profilesINIURL, encoding: .utf8) else {
+            AppLogError("Unable to read Zen profiles.ini at \(profilesINIURL.path)")
+            return nil
+        }
+        let ini = ZenDataParserTool.parseProfilesINI(text)
+        let profilesDirectory = profilesINIURL.deletingLastPathComponent()
+            .appendingPathComponent(ZenDataParserTool.profilesDirectoryName)
+        var sessions: [String: ZenDataParserTool.Session] = [:]
+        var containers: [String: [ZenDataParserTool.Container]] = [:]
+        for profile in ini.profiles {
+            let directory = profilesDirectory.appendingPathComponent(profile.key)
+            let sessionURL = directory.appendingPathComponent(Self.zenSessionFileName)
+            let containersURL = directory.appendingPathComponent(Self.zenContainersFileName)
+            do {
+                if FileManager.default.fileExists(atPath: sessionURL.path) {
+                    sessions[profile.key] = try ZenDataParserTool.parseSession(
+                        container: Data(contentsOf: sessionURL))
+                }
+                if FileManager.default.fileExists(atPath: containersURL.path) {
+                    containers[profile.key] = try ZenDataParserTool.parseContainers(
+                        json: Data(contentsOf: containersURL))
+                }
+            } catch {
+                AppLogError("Unable to read Zen profile \(directory.path): \(error)")
+                return nil
+            }
+        }
+        return ZenMigrationSource(profilesINI: ini, sessions: sessions, containers: containers)
+    }
+
     /// Imports data for one browser using a continuation-backed async flow.
     private enum SourceImportResult {
         case completed(Bool)

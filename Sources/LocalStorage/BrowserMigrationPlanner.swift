@@ -172,9 +172,17 @@ extension BrowserMigrationSource {
         group.profileKey ?? defaultProfileKey
     }
 
+    /// This profile's Spaces, in source order, each with its position in the
+    /// source's own list.
+    func indexedSpaces(
+        ofProfile key: String
+    ) -> [(offset: Int, element: BrowserMigrationSourceSpace)] {
+        spaces.enumerated().filter { resolvedProfileKey(for: $0.element) == key }
+    }
+
     /// This profile's Spaces, in source order.
     func spaces(ofProfile key: String) -> [BrowserMigrationSourceSpace] {
-        spaces.filter { resolvedProfileKey(for: $0) == key }
+        indexedSpaces(ofProfile: key).map(\.element)
     }
 
     /// This profile's pinned entries, in source order.
@@ -397,6 +405,10 @@ struct BrowserMigrationPlannedSpace {
     /// The source Space this was planned from; the executor maps it to the
     /// created Space's identifier.
     let sourceSpaceID: String
+    /// Where the source Space sits in the source's own list, ticked or not —
+    /// the order the run creates the Spaces in across Profiles (see
+    /// `spacesInSourceOrder`).
+    let sourceIndex: Int
     let name: String
     /// The colour the pinned theme shows, not the source's own colour: eight
     /// hues is the whole vocabulary, so the plan states what will exist.
@@ -467,6 +479,19 @@ struct BrowserMigrationPlan {
     let skippedProfiles: [BrowserMigrationSkippedProfile]
 }
 
+extension BrowserMigrationPlan {
+    /// Every planned Space with the Profile it binds to, in the source's own
+    /// order across Profiles. The run creates them in this order: a new Space
+    /// appends to the end of the strip, so this is the order the strip shows
+    /// them in, as the source did even where the Spaces of different
+    /// Profiles interleave.
+    var spacesInSourceOrder:
+        [(profile: BrowserMigrationPlannedProfile, space: BrowserMigrationPlannedSpace)] {
+        profiles.flatMap { profile in profile.spaces.map { (profile: profile, space: $0) } }
+            .sorted { $0.space.sourceIndex < $1.space.sourceIndex }
+    }
+}
+
 // MARK: - Planner
 
 /// Turns a Migration Source into a plan. Every mapping decision of the
@@ -506,7 +531,7 @@ enum BrowserMigrationPlanner {
             let sourceProfile = source.profiles.first { $0.key == profileKey }
             let displayName = resolvedDisplayName(
                 of: sourceProfile?.displayName, key: profileKey)
-            let spaces = source.spaces(ofProfile: profileKey)
+            let spaces = source.indexedSpaces(ofProfile: profileKey)
             guard !spaces.isEmpty else {
                 skippedProfiles.append(BrowserMigrationSkippedProfile(
                     sourceProfileKey: profileKey,
@@ -518,14 +543,15 @@ enum BrowserMigrationPlanner {
             }
 
             // A Profile follows its Spaces: none ticked, nothing created.
-            let tickedSpaces = spaces.filter { selection.isTicked(spaceID: $0.id) }
+            let tickedSpaces = spaces.filter { selection.isTicked(spaceID: $0.element.id) }
             guard !tickedSpaces.isEmpty else { continue }
 
-            let plannedSpaces = tickedSpaces.map { space in
+            let plannedSpaces = tickedSpaces.map { sourceIndex, space in
                 let theme = BrowserMigrationSpaceTheme.resolved(
                     forSourceColorHex: space.colorHex)
                 return BrowserMigrationPlannedSpace(
                     sourceSpaceID: space.id,
+                    sourceIndex: sourceIndex,
                     name: space.name,
                     colorHex: theme.colorHex,
                     themeID: theme.themeID,
@@ -772,8 +798,9 @@ struct BrowserMigrationReport: Equatable {
 
     /// In plan order, which is the source's own order.
     let profiles: [ProfileRow]
-    /// The first Space the run created, or nil when it created none — in which
-    /// case the report hides its button rather than offering a dead one.
+    /// The first Space the run created — the source's first ticked Space that
+    /// landed — or nil when it created none, in which case the report hides
+    /// its button rather than offering a dead one.
     let firstCreatedSpace: FirstSpace?
 
     static func folded(
@@ -804,9 +831,9 @@ struct BrowserMigrationReport: Equatable {
                         bookmarks: bookmarks(of: space, created: created, outcomes: outcomes))
                 })
         }
-        let firstCreatedSpace = plan.profiles.lazy.flatMap(\.spaces).compactMap { space in
-            outcomes.spaceIDs[space.sourceSpaceID]
-                .map { FirstSpace(spaceID: $0, name: space.name) }
+        let firstCreatedSpace = plan.spacesInSourceOrder.lazy.compactMap { entry in
+            outcomes.spaceIDs[entry.space.sourceSpaceID]
+                .map { FirstSpace(spaceID: $0, name: entry.space.name) }
         }.first
         return BrowserMigrationReport(
             profiles: profiles, firstCreatedSpace: firstCreatedSpace)

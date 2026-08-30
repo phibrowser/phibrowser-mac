@@ -86,6 +86,29 @@ final class BrowserMigrationRunTests: XCTestCase {
             operationID: operationID)
     }
 
+    /// Two profiles whose Spaces alternate in the source's order — the shape
+    /// the run has to keep rather than regroup by Profile — with the first
+    /// Space belonging to the second Profile.
+    private func interleavedPlan() -> BrowserMigrationPlan {
+        let source = BrowserMigrationSource(
+            profiles: [
+                BrowserMigrationSourceProfile(key: "Default", displayName: "Personal"),
+                BrowserMigrationSourceProfile(key: "Profile 1", displayName: "Work"),
+            ],
+            defaultProfileKey: "Default",
+            spaces: [
+                space("s-research", "Research", profileKey: "Profile 1"),
+                space("s-home", "Home", profileKey: "Default"),
+                space("s-side", "Side Projects", profileKey: "Default"),
+            ])
+        return BrowserMigrationPlanner.plan(
+            source: source,
+            existingProfileDisplayNames: [],
+            pinnedTabScope: .profile,
+            selection: .all(in: source),
+            operationID: operationID)
+    }
+
     /// One Space with an Arc icon that lands on a Phi icon — a name whose
     /// table row is a Phi icon needs no emoji catalog — so the fold has an
     /// icon other than the default to carry.
@@ -413,11 +436,24 @@ final class BrowserMigrationRunTests: XCTestCase {
 
     // MARK: - The Space the report jumps to
 
-    func testTheReportJumpsToTheFirstSpaceInPlanOrder() {
+    func testTheReportJumpsToTheFirstCreatedSpace() {
         let report = BrowserMigrationReport.folded(plan: plan(), outcomes: fullOutcomes())
 
         XCTAssertEqual(report.firstCreatedSpace?.spaceID, "id-home")
         XCTAssertEqual(report.firstCreatedSpace?.name, "Home")
+    }
+
+    /// The source's first ticked Space that landed — the first the run
+    /// creates — even when it belongs to the Profile the plan lists second.
+    func testTheReportJumpsToTheSourcesFirstSpaceAcrossProfiles() {
+        let report = BrowserMigrationReport.folded(
+            plan: interleavedPlan(),
+            outcomes: outcomes(
+                profiles: ["Default": "Profile 2", "Profile 1": "Profile 3"],
+                spaces: ["s-research": "id-research", "s-home": "id-home", "s-side": "id-side"]))
+
+        XCTAssertEqual(report.firstCreatedSpace?.spaceID, "id-research")
+        XCTAssertEqual(report.firstCreatedSpace?.name, "Research")
     }
 
     func testTheFirstCreatedSpaceSkipsOneThatFailed() {
@@ -647,17 +683,17 @@ final class BrowserMigrationRunTests: XCTestCase {
     // MARK: - The unit list the progress publishes
 
     /// The window draws its checklist off this list rather than rebuilding it
-    /// from the plan, so the order and the kinds are the run's own. A Profile
-    /// leads the Spaces bound to it, and the fixture's Profile and Space that
-    /// share the name "Work" are told apart by the kind alone.
+    /// from the plan, so the order and the kinds are the run's own: every
+    /// Profile first, so a Space always has its Profile by the time its unit
+    /// runs, then the Spaces in the source's own order across Profiles.
     @MainActor
-    func testTheProgressPublishesEveryUnitInRunOrder() {
-        let progress = BrowserMigrationRunner.progress(at: 0, of: plan())
+    func testTheProgressPublishesEveryProfileThenEverySpaceInSourceOrder() {
+        let progress = BrowserMigrationRunner.progress(at: 0, of: interleavedPlan())
 
         XCTAssertEqual(
             progress.units.map(\.name),
-            ["Personal", "Home", "Side Projects", "Work", "Work"])
-        XCTAssertEqual(progress.units.map(\.isSpace), [false, true, true, false, true])
+            ["Personal", "Work", "Research", "Home", "Side Projects"])
+        XCTAssertEqual(progress.units.map(\.isSpace), [false, false, true, true, true])
         XCTAssertEqual(progress.currentUnit.name, "Personal")
     }
 

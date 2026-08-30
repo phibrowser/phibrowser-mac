@@ -130,6 +130,16 @@ final class BrowserMigrationPlannerTests: XCTestCase {
         XCTAssertTrue(result.skippedProfiles.isEmpty)
     }
 
+    /// Where each Space sits in the source's own list, carried so the run can
+    /// create the Spaces of different Profiles in that order rather than
+    /// grouped by Profile.
+    func testASpaceCarriesItsPositionInTheSourcesList() {
+        let result = plan(twoProfileSource())
+
+        XCTAssertEqual(result.profiles[0].spaces.map(\.sourceIndex), [0, 2])
+        XCTAssertEqual(result.profiles[1].spaces.map(\.sourceIndex), [1])
+    }
+
     func testEmptyDisplayNameFallsBackToTheDirectoryBasename() {
         let result = plan(source(
             profiles: [profile("Profile 3", "   ")],

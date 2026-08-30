@@ -1416,10 +1416,11 @@ struct BrowserMigrationWizardView: View {
         return String(format: format, progress.unitIndex + 1, progress.unitCount)
     }
 
-    /// Every unit of the run in order, in the two-level shape the preview gave
-    /// the same tree: what has landed, what is in flight and what is still to
-    /// come. It is the difference between a window that is working and one
-    /// that is stuck while a Chromium import takes minutes over one Profile.
+    /// Every unit of the run in the order it works through them — every
+    /// Profile, then every Space in the source's own order: what has landed,
+    /// what is in flight and what is still to come. It is the difference
+    /// between a window that is working and one that is stuck while a
+    /// Chromium import takes minutes over one Profile.
     private func checklist(_ progress: BrowserMigrationProgress) -> some View {
         ScrollViewReader { proxy in
             VStack(alignment: .leading, spacing: 0) {
@@ -1454,8 +1455,6 @@ struct BrowserMigrationWizardView: View {
                 .foregroundColor(state.textColor)
         }
         .padding(.vertical, 4)
-        // A Space sits under the Profile it will be bound to.
-        .padding(.leading, unit.isSpace ? 20 : 0)
     }
 
     @ViewBuilder

@@ -9,7 +9,7 @@ import Foundation
 // MARK: - Progress
 
 /// One unit of a run as the window draws it: what it is called, and whether it
-/// is a Profile or one of the Spaces bound to the Profile above it.
+/// is a Profile or a Space.
 struct BrowserMigrationRunUnit: Equatable {
     let name: String
     let isSpace: Bool
@@ -37,10 +37,10 @@ struct BrowserMigrationProgress: Equatable {
 /// wizard does not interrupt a run, and reopening the menu item returns to the
 /// live progress or to the report of the run that just finished.
 ///
-/// Work is strictly serial — one unit at a time, a Profile before the Spaces
-/// bound to it — and best effort: a unit that fails is recorded and the run
-/// carries on to the next one. Nothing is rolled back, and a failure never
-/// disturbs browsing.
+/// Work is strictly serial — one unit at a time, every Profile before any
+/// Space — and best effort: a unit that fails is recorded and the run carries
+/// on to the next one. Nothing is rolled back, and a failure never disturbs
+/// browsing.
 @MainActor
 final class BrowserMigrationRunner: ObservableObject {
     static let shared = BrowserMigrationRunner()
@@ -143,13 +143,14 @@ final class BrowserMigrationRunner: ObservableObject {
         }
     }
 
-    /// A Profile ahead of the Spaces bound to it, so a Space always has one to
-    /// bind to by the time its unit runs.
+    /// Every Profile ahead of every Space, so a Space always has its Profile
+    /// by the time its unit runs; then the Spaces in the source's own order
+    /// across Profiles (`spacesInSourceOrder` says why).
     private static func units(of plan: BrowserMigrationPlan) -> [Unit] {
-        plan.profiles.flatMap { profile in
-            [Unit(name: profile.displayName, profile: profile, space: nil)]
-                + profile.spaces.map { Unit(name: $0.name, profile: profile, space: $0) }
-        }
+        plan.profiles.map { Unit(name: $0.displayName, profile: $0, space: nil) }
+            + plan.spacesInSourceOrder.map {
+                Unit(name: $0.space.name, profile: $0.profile, space: $0.space)
+            }
     }
 
     private static func progress(

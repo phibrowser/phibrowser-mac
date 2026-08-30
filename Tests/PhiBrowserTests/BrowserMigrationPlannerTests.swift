@@ -363,6 +363,27 @@ final class BrowserMigrationPlannerTests: XCTestCase {
         XCTAssertEqual(result.profiles[0].pinnedTabs.map(\.title), ["Mail", "Orphan"])
     }
 
+    /// A profile with no Spaces creates nothing, its pinned entries
+    /// included — a Zen container no Space is set to still has Essentials —
+    /// and the skip says how many were left behind, so the report can.
+    func testPinnedEntriesOfASkippedProfileAreDroppedAndCounted() {
+        let result = plan(source(
+            profiles: [profile("Default", "Work"), profile("Profile 1", "Abandoned")],
+            spaces: [space("s1", "One", profileKey: "Default")],
+            pinnedGroups: [
+                pinnedGroup("Default", [("Mail", "https://mail.example")]),
+                pinnedGroup("Profile 1", [("A", "https://a.example"), ("B", "https://b.example")]),
+            ]
+        ))
+
+        XCTAssertEqual(result.profiles.map { $0.pinnedTabs.map(\.title) }, [["Mail"]])
+        XCTAssertEqual(result.skippedProfiles, [
+            BrowserMigrationSkippedProfile(
+                sourceProfileKey: "Profile 1", displayName: "Abandoned", reason: .noSpaces,
+                droppedPinnedEntries: 2),
+        ])
+    }
+
     func testPinsUnavailablePlansNoPinnedEntriesAndCarriesTheMarker() {
         let result = plan(favouriteSource(pinsUnavailable: .noSourceWindow), scope: .space)
 

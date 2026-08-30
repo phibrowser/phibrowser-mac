@@ -440,6 +440,20 @@ struct BrowserMigrationSkippedProfile: Equatable {
     let sourceProfileKey: String
     let displayName: String
     let reason: Reason
+    /// How many of the source profile's pinned entries go nowhere with it —
+    /// a Zen container no Space is set to still has its Essentials — so the
+    /// report can say what was left behind rather than imply there was
+    /// nothing.
+    let droppedPinnedEntries: Int
+
+    init(
+        sourceProfileKey: String, displayName: String, reason: Reason, droppedPinnedEntries: Int = 0
+    ) {
+        self.sourceProfileKey = sourceProfileKey
+        self.displayName = displayName
+        self.reason = reason
+        self.droppedPinnedEntries = droppedPinnedEntries
+    }
 }
 
 /// Exactly what a run would create: building one performs no I/O and touches
@@ -497,7 +511,8 @@ enum BrowserMigrationPlanner {
                 skippedProfiles.append(BrowserMigrationSkippedProfile(
                     sourceProfileKey: profileKey,
                     displayName: displayName,
-                    reason: .noSpaces
+                    reason: .noSpaces,
+                    droppedPinnedEntries: source.pinnedEntries(ofProfile: profileKey).count
                 ))
                 continue
             }

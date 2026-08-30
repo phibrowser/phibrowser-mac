@@ -173,10 +173,52 @@ enum ZenDataParserTool {
     // MARK: - The session file
 
     /// The session file's spaces — Zen's workspaces — in array order, which
-    /// is their order (the file has no position field). Its pinned tabs and
-    /// folders are the next ticket's.
+    /// is their order (the file has no position field); its pinned tabs, in
+    /// file order; and its folders, the tree those sit in.
     struct Session: Equatable {
         let spaces: [Space]
+        let pinnedTabs: [PinnedTab]
+        let folders: [Folder]
+
+        init(spaces: [Space], pinnedTabs: [PinnedTab] = [], folders: [Folder] = []) {
+            self.spaces = spaces
+            self.pinnedTabs = pinnedTabs
+            self.folders = folders
+        }
+    }
+
+    /// One pinned tab of the session file: an Essential, or a workspace pin.
+    /// Not here: an empty pinned placeholder (`zenIsEmpty`), a Glance tab
+    /// (`zenIsGlance`), a tab that is not pinned — Zen writes its open tabs
+    /// beside the pins while it runs — and a tab with no URL to read.
+    struct PinnedTab: Equatable {
+        /// `zenWorkspace`: the space a workspace pin belongs to. An
+        /// Essential names one too, which means nothing for it.
+        let workspaceID: String?
+        /// `zenEssential`: an Essential belongs to its container, not to a
+        /// space.
+        let isEssential: Bool
+        /// `userContextId`: the container the tab is in — the one an
+        /// Essential's Profile is derived from; 0 when none.
+        let userContextId: Int
+        /// `groupId`: the folder a workspace pin sits in; nil at the root.
+        let folderID: String?
+        /// From the pinned-at entry (`_zenPinnedInitialState.entry`, which is
+        /// what Zen's own "reset pinned tab" returns to), falling back to the
+        /// current session entry when there is none. Empty when the entry
+        /// has no title.
+        let title: String
+        let url: String
+    }
+
+    /// One `folders[]` entry: a Firefox tab group Zen shows as a folder of
+    /// pins. `parentId` nests it; its own workspace field is not read — the
+    /// pins in it say where it is.
+    struct Folder: Equatable {
+        let id: String
+        /// Empty when the folder has no name.
+        let name: String
+        let parentID: String?
     }
 
     struct Space: Equatable {
@@ -204,7 +246,7 @@ enum ZenDataParserTool {
 
     static func parseSession(json: Data) throws -> Session {
         let file = try JSONDecoder().decode(SessionFile.self, from: json)
-        return Session(spaces: (file.spaces ?? []).map { record -> Space in
+        let spaces = (file.spaces ?? []).map { record -> Space in
             let trimmed = (record.name ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
             return Space(
                 id: record.uuid,
@@ -216,17 +258,38 @@ enum ZenDataParserTool {
                 colorHex: record.theme?.primaryStop?.hexRGBString,
                 containerTabId: record.containerTabId ?? noContainerID,
                 icon: (record.icon ?? "").isEmpty ? nil : record.icon)
-        })
+        }
+        let pinnedTabs = (file.tabs ?? []).compactMap { record -> PinnedTab? in
+            guard record.pinned == true, record.zenIsEmpty != true, record.zenIsGlance != true,
+                  let entry = record.entry, let url = entry.url, !url.isEmpty else { return nil }
+            return PinnedTab(
+                workspaceID: record.zenWorkspace,
+                isEssential: record.zenEssential == true,
+                userContextId: record.userContextId ?? noContainerID,
+                folderID: record.groupId,
+                title: entry.title ?? "",
+                url: url)
+        }
+        let folders = (file.folders ?? []).compactMap { record -> Folder? in
+            guard let id = record.id else { return nil }
+            return Folder(id: id, name: record.name ?? "", parentID: record.parentId)
+        }
+        return Session(spaces: spaces, pinnedTabs: pinnedTabs, folders: folders)
     }
 
     /// The slice of the file this parser reads. Only `uuid` is required of a
     /// space: its name, icon, theme and container are each decoded apart and
     /// tolerantly, so a shape this parser does not recognise costs that one
     /// thing — a container id that is not a number reads as no container —
-    /// never the space, and never the file. A file with no `spaces` at all
-    /// predates workspaces and simply has none.
+    /// never the space, and never the file. A tab and a folder are read the
+    /// same way, and nothing is required of them: a tab this parser cannot
+    /// read a URL from is not a pin, a folder with no id cannot be sat in.
+    /// A file with no `spaces` at all predates workspaces and simply has
+    /// none.
     private struct SessionFile: Decodable {
         let spaces: [SpaceRecord]?
+        let tabs: [TabRecord]?
+        let folders: [FolderRecord]?
     }
 
     private struct SpaceRecord: Decodable {
@@ -270,6 +333,77 @@ enum ZenDataParserTool {
             guard c.count >= 3 else { return nil }
             func channel(_ component: Double) -> Int { Int(min(max(component, 0), 255).rounded()) }
             return String(format: "#%02x%02x%02x", channel(c[0]), channel(c[1]), channel(c[2]))
+        }
+    }
+
+    private struct TabRecord: Decodable {
+        let pinned: Bool?
+        let zenEssential: Bool?
+        let zenIsEmpty: Bool?
+        let zenIsGlance: Bool?
+        let zenWorkspace: String?
+        let groupId: String?
+        let userContextId: Int?
+        /// `_zenPinnedInitialState.entry`: what the tab showed when it was
+        /// pinned.
+        let pinnedAt: Entry?
+        /// The navigation history, and `index` — one-based — the current
+        /// entry in it.
+        let entries: [Entry]?
+        let index: Int?
+
+        private enum CodingKeys: String, CodingKey {
+            case pinned, zenEssential, zenIsEmpty, zenIsGlance, zenWorkspace, groupId, userContextId
+            case pinnedAt = "_zenPinnedInitialState"
+            case entries, index
+        }
+
+        init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            pinned = try? c.decodeIfPresent(Bool.self, forKey: .pinned)
+            zenEssential = try? c.decodeIfPresent(Bool.self, forKey: .zenEssential)
+            zenIsEmpty = try? c.decodeIfPresent(Bool.self, forKey: .zenIsEmpty)
+            zenIsGlance = try? c.decodeIfPresent(Bool.self, forKey: .zenIsGlance)
+            zenWorkspace = try? c.decodeIfPresent(String.self, forKey: .zenWorkspace)
+            groupId = try? c.decodeIfPresent(String.self, forKey: .groupId)
+            userContextId = try? c.decodeIfPresent(Int.self, forKey: .userContextId)
+            pinnedAt = (try? c.decodeIfPresent(PinnedInitialState.self, forKey: .pinnedAt))?.entry
+            entries = try? c.decodeIfPresent([Entry].self, forKey: .entries)
+            index = try? c.decodeIfPresent(Int.self, forKey: .index)
+        }
+
+        /// The entry the pin's URL and title are read from: the pinned-at
+        /// one when it names a URL, else the current one — the last entry
+        /// when `index` is absent or out of range.
+        var entry: Entry? {
+            if let pinnedAt, !(pinnedAt.url ?? "").isEmpty { return pinnedAt }
+            guard let entries, !entries.isEmpty else { return nil }
+            let position = (index ?? entries.count) - 1
+            return entries.indices.contains(position) ? entries[position] : entries.last
+        }
+    }
+
+    private struct PinnedInitialState: Decodable {
+        let entry: Entry?
+    }
+
+    private struct Entry: Decodable {
+        let url: String?
+        let title: String?
+    }
+
+    private struct FolderRecord: Decodable {
+        let id: String?
+        let name: String?
+        let parentId: String?
+
+        private enum CodingKeys: String, CodingKey { case id, name, parentId }
+
+        init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            id = try? c.decodeIfPresent(String.self, forKey: .id)
+            name = try? c.decodeIfPresent(String.self, forKey: .name)
+            parentId = try? c.decodeIfPresent(String.self, forKey: .parentId)
         }
     }
 }

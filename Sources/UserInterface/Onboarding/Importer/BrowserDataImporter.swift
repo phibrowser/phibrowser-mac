@@ -549,6 +549,18 @@ class BrowserDataImporter {
         /// no-container Profile is "Zen" when exactly one Firefox profile is
         /// usable, and the `profiles.ini` name — empty → the directory
         /// basename — otherwise.
+        ///
+        /// The sidebar fills the model's two remaining parts. Each Space
+        /// carries its workspace's own pins as its bookmark tree
+        /// (`bookmarkRoot(of:in:)`). The Essentials are the pinned entries
+        /// of the Profile of the container each carries (ADR 0005), in file
+        /// order; those in a container no Space is set to go to its greyed
+        /// row, where the planner creates nothing and counts them for the
+        /// report — which is why the no-container Profile is listed, greyed
+        /// and after the containers in use, for Essentials in no container
+        /// even when no Space is set to none. An Essential in a container
+        /// the list does not hold has no resolvable profile record and, like
+        /// a Space set to one, follows the default Profile.
         var migrationSource: BrowserMigrationSource {
             let usableKeys = profilesINI.profiles.map(\.key)
                 .filter { !(sessions[$0]?.spaces.isEmpty ?? true) }
@@ -562,38 +574,83 @@ class BrowserDataImporter {
                 uniquingKeysWith: { first, _ in first })
             // Set to a container the list does not hold — deleted since, or
             // never listed.
-            func isMissingContainer(_ space: ZenDataParserTool.Space, in key: String) -> Bool {
-                space.containerTabId != ZenDataParserTool.noContainerID
-                    && containersByID[key]?[space.containerTabId] == nil
+            func isMissingContainer(_ userContextId: Int, in key: String) -> Bool {
+                userContextId != ZenDataParserTool.noContainerID
+                    && containersByID[key]?[userContextId] == nil
             }
             let bindingHostKey = usableKeys.first { $0 == profilesINI.defaultProfileKey }
                 ?? usableKeys.first
-            let hasMissingContainer = usableKeys.contains { key in
-                (sessions[key]?.spaces ?? []).contains { isMissingContainer($0, in: key) }
+            // What binds to the host's no-container Profile from anywhere in
+            // the install: a Space set to a missing container gives it a
+            // Space, an Essential in one gives it a pinned entry.
+            let hostsASpace = usableKeys.contains { key in
+                (sessions[key]?.spaces ?? []).contains { isMissingContainer($0.containerTabId, in: key) }
+            }
+            let hostsAnEssential = usableKeys.contains { key in
+                (sessions[key]?.pinnedTabs ?? []).contains {
+                    $0.isEssential && isMissingContainer($0.userContextId, in: key)
+                }
             }
 
             var profiles: [BrowserMigrationSourceProfile] = []
             var spaces: [BrowserMigrationSourceSpace] = []
+            var pinnedGroups: [BrowserMigrationSourcePinnedGroup] = []
             for profile in profilesINI.profiles where usableKeys.contains(profile.key) {
-                let profileSpaces = sessions[profile.key]?.spaces ?? []
+                guard let session = sessions[profile.key] else { continue }
+                let profileSpaces = session.spaces
                 let known = containersByID[profile.key] ?? [:]
-                if profileSpaces.contains(where: { $0.containerTabId == ZenDataParserTool.noContainerID })
-                    || (profile.key == bindingHostKey && hasMissingContainer) {
-                    profiles.append(BrowserMigrationSourceProfile(
-                        key: Self.profileKey(profile.key, container: 0),
-                        displayName: profile.key == soleUsableKey
-                            ? Self.soleProfileDisplayName
-                            : BrowserMigrationPlanner.resolvedDisplayName(of: profile.name, key: profile.key),
-                        sourceDirectory: profile.key))
+                let isHost = profile.key == bindingHostKey
+                // Essentials by the container they carry, in file order; one
+                // in a missing container has no resolvable profile record.
+                var essentials: [Int: [BrowserMigrationPinnedEntry]] = [:]
+                var unresolvedEssentials: [BrowserMigrationPinnedEntry] = []
+                for tab in session.pinnedTabs where tab.isEssential {
+                    let entry = BrowserMigrationPinnedEntry(title: tab.title, url: tab.url)
+                    if isMissingContainer(tab.userContextId, in: profile.key) {
+                        unresolvedEssentials.append(entry)
+                    } else {
+                        essentials[tab.userContextId, default: []].append(entry)
+                    }
                 }
-                let inUse = profileSpaces.compactMap { known[$0.containerTabId] }
-                var listed = Set<Int>()
-                for container in inUse + (containers[profile.key] ?? [])
-                where listed.insert(container.userContextId).inserted {
+                func listProfile(container userContextId: Int, displayName: String) {
+                    let key = Self.profileKey(profile.key, container: userContextId)
                     profiles.append(BrowserMigrationSourceProfile(
-                        key: Self.profileKey(profile.key, container: container.userContextId),
-                        displayName: Self.displayName(of: container),
-                        sourceDirectory: profile.key))
+                        key: key, displayName: displayName, sourceDirectory: profile.key))
+                    if let entries = essentials[userContextId] {
+                        pinnedGroups.append(
+                            BrowserMigrationSourcePinnedGroup(profileKey: key, entries: entries))
+                    }
+                }
+                let noContainerName = profile.key == soleUsableKey
+                    ? Self.soleProfileDisplayName
+                    : BrowserMigrationPlanner.resolvedDisplayName(of: profile.name, key: profile.key)
+                // The no-container Profile leads when it has Spaces. When it
+                // has only pinned entries — Essentials in no container, and
+                // no Space set to none — it is listed greyed after the
+                // containers in use, so those Essentials are counted rather
+                // than lost.
+                let noContainerHasSpaces = profileSpaces.contains { $0.containerTabId == ZenDataParserTool.noContainerID }
+                    || (isHost && hostsASpace)
+                let noContainerHasPins = essentials[ZenDataParserTool.noContainerID] != nil
+                    || (isHost && hostsAnEssential)
+                if noContainerHasSpaces {
+                    listProfile(container: ZenDataParserTool.noContainerID, displayName: noContainerName)
+                }
+                var listed = Set<Int>()
+                for container in profileSpaces.compactMap({ known[$0.containerTabId] })
+                where listed.insert(container.userContextId).inserted {
+                    listProfile(container: container.userContextId, displayName: Self.displayName(of: container))
+                }
+                if !noContainerHasSpaces, noContainerHasPins {
+                    listProfile(container: ZenDataParserTool.noContainerID, displayName: noContainerName)
+                }
+                for container in containers[profile.key] ?? []
+                where listed.insert(container.userContextId).inserted {
+                    listProfile(container: container.userContextId, displayName: Self.displayName(of: container))
+                }
+                if !unresolvedEssentials.isEmpty {
+                    pinnedGroups.append(BrowserMigrationSourcePinnedGroup(
+                        profileKey: nil, entries: unresolvedEssentials))
                 }
                 for space in profileSpaces {
                     spaces.append(BrowserMigrationSourceSpace(
@@ -601,14 +658,16 @@ class BrowserDataImporter {
                         name: space.name,
                         colorHex: space.colorHex,
                         icon: Self.sourceIcon(space.icon),
-                        profileKey: isMissingContainer(space, in: profile.key)
-                            ? nil : Self.profileKey(profile.key, container: space.containerTabId)))
+                        profileKey: isMissingContainer(space.containerTabId, in: profile.key)
+                            ? nil : Self.profileKey(profile.key, container: space.containerTabId),
+                        bookmarkRoot: Self.bookmarkRoot(of: space, in: session)))
                 }
             }
             return BrowserMigrationSource(
                 profiles: profiles,
                 defaultProfileKey: bindingHostKey.map { Self.profileKey($0, container: 0) } ?? "",
-                spaces: spaces)
+                spaces: spaces,
+                pinnedGroups: pinnedGroups)
         }
 
         /// A container Profile's name: Firefox's own English names for its
@@ -644,6 +703,45 @@ class BrowserDataImporter {
             guard icon.hasPrefix("chrome://") else { return .emoji(icon) }
             let file = (icon as NSString).lastPathComponent as NSString
             return .zenNamed(file.deletingPathExtension)
+        }
+
+        /// A workspace's own pins as the Space's bookmark tree: the session
+        /// file's workspace pins — not its Essentials, which belong to a
+        /// container — that name this space, in file order and whatever
+        /// container they carry, with their folders nested as `folders[]`
+        /// nests them. A folder sits where its first pin appears, which is
+        /// where Zen shows it (a folder is a Firefox tab group, and a
+        /// group's tabs sit together), so a folder with nothing in it is
+        /// never written. A pin in a folder the file does not list sits at
+        /// the root; a chain of folders that loops — a shape Zen never
+        /// writes — is cut where it comes back round, and the pin still
+        /// sits inside its folders. The tree is the one type every Mac-side
+        /// sidebar parser produces and the store's landing call takes.
+        static func bookmarkRoot(
+            of space: ZenDataParserTool.Space,
+            in session: ZenDataParserTool.Session
+        ) -> ArcDataParserTool.Bookmark {
+            let root = ArcDataParserTool.Bookmark(
+                guid: space.id, title: space.name, url: nil, isFolder: true)
+            let folders = Dictionary(
+                session.folders.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+            var nodes: [String: ArcDataParserTool.Bookmark] = [:]
+            func node(forFolder id: String, above: Set<String> = []) -> ArcDataParserTool.Bookmark {
+                if let node = nodes[id] { return node }
+                guard let folder = folders[id], !above.contains(id) else { return root }
+                let parent = folder.parentID.map { node(forFolder: $0, above: above.union([id])) } ?? root
+                let node = ArcDataParserTool.Bookmark(
+                    guid: folder.id, title: folder.name, url: nil, isFolder: true)
+                parent.children.append(node)
+                nodes[id] = node
+                return node
+            }
+            for pin in session.pinnedTabs where !pin.isEssential && pin.workspaceID == space.id {
+                let parent = pin.folderID.map { node(forFolder: $0) } ?? root
+                parent.children.append(ArcDataParserTool.Bookmark(
+                    guid: UUID().uuidString, title: pin.title, url: pin.url, isFolder: false))
+            }
+            return root
         }
     }
 
@@ -681,8 +779,23 @@ class BrowserDataImporter {
                 AppLogError("Unable to read Zen profile \(directory.path): \(error)")
                 return nil
             }
+            if let session = sessions[profile.key], !session.spaces.isEmpty {
+                Self.logZenPinsNamingNoSpace(in: session, profile: profile.key)
+            }
         }
         return ZenMigrationSource(profilesINI: ini, sessions: sessions, containers: containers)
+    }
+
+    /// The workspace pins of a usable Zen profile that name a space the file
+    /// does not list: no Space's tree takes them and nothing re-homes them,
+    /// so the file read says so, once. (The builder's trees take exactly the
+    /// pins naming a listed space; this is the complement.)
+    private static func logZenPinsNamingNoSpace(in session: ZenDataParserTool.Session, profile: String) {
+        let spaceIDs = Set(session.spaces.map(\.id))
+        for pin in session.pinnedTabs where !pin.isEssential && !spaceIDs.contains(pin.workspaceID ?? "") {
+            AppLogWarn("[BrowserMigration] dropping Zen pin \(pin.url) in \(profile): "
+                + "workspace \(pin.workspaceID ?? "none") is not listed")
+        }
     }
 
     /// Imports data for one browser using a continuation-backed async flow.

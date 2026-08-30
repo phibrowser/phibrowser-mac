@@ -247,16 +247,180 @@ final class ZenDataParserTests: XCTestCase {
 
     /// `zen-sessions.jsonlz4` from this machine's Zen 1.21.15b profile
     /// (2026-08-30, re-read after the user set the spaces' containers),
-    /// decoded; its pinned tabs and folders are emptied (they carry every URL
-    /// and title, and are the next ticket's), and the two-stop space's stops
-    /// are swapped so that the primary is second — Zen had written the
-    /// primary first. As Zen writes it, `icon` is absent from a space with
-    /// none, `lightness` is sometimes a string, and `containerTabId` is the
-    /// container's id — 6 the custom one, 3 Banking, 0 none, 1 Personal.
+    /// decoded, with the two-stop space's stops swapped so that the primary
+    /// is second — Zen had written the primary first. As Zen writes it,
+    /// `icon` is absent from a space with none, `lightness` is sometimes a
+    /// string, and `containerTabId` is the container's id — 6 the custom one,
+    /// 3 Banking, 0 none, 1 Personal.
+    ///
+    /// The pinned tabs and folders are this machine's too, every URL and
+    /// title scrubbed and each tab cut down to the keys Zen's own shape
+    /// carries for them, in Zen's order: two Essentials (one in no
+    /// container, one in Personal), an empty placeholder and a pin in the
+    /// "zen basics" folder, four loose pins, and — under "qqq" — a loose pin,
+    /// a placeholder and a pin in "New Folder", a loose pin; then the pins of
+    /// "abc"; and an open, unpinned tab, which Zen writes beside the pins
+    /// while it runs. Added by hand for the cases the real file did not hold
+    /// at once: an Essential in Work (a container no Space is set to), a
+    /// pin whose pinned-at entry differs from its current one ("OS"), a
+    /// "Reading" folder nested in "New Folder" with a pin, an "Empty" folder
+    /// holding only a placeholder, a Glance tab, a pin with no pinned-at
+    /// entry ("Current"), and a pin naming a workspace that is not in
+    /// `spaces[]` ("Orphan"). `groups[]` — copies of the folders as Firefox
+    /// tab groups — is emptied, being ignored.
     private let capturedSession = """
     {
       "lastCollected": 1788092851102,
-      "tabs": [],
+      "tabs": [
+        {
+          "entries": [
+            { "url": "https://search.example/policy/", "title": "Policy" },
+            { "url": "https://search.example/", "title": "Search" }
+          ],
+          "pinned": true, "zenWorkspace": "{c406b463-0db9-48a4-90a8-317bd1bd9d12}",
+          "zenSyncId": "1787729867468-64", "zenEssential": true, "zenIsEmpty": false, "zenIsGlance": false,
+          "_zenPinnedInitialState": { "entry": { "url": "https://search.example/", "title": "Search" }, "image": null },
+          "userContextId": 0, "index": 2
+        },
+        {
+          "entries": [ { "url": "https://social.example/", "title": "Social" } ],
+          "pinned": true, "zenWorkspace": "{ddae1ff1-c30a-45dc-b8ac-b5f70db8fed4}",
+          "zenSyncId": "1788087466541-13", "zenEssential": true, "zenIsEmpty": false, "zenIsGlance": false,
+          "_zenPinnedInitialState": { "entry": { "url": "https://social.example/", "title": "Social" }, "image": null },
+          "userContextId": 1, "index": 1
+        },
+        {
+          "entries": [ { "url": "https://mail.example/", "title": "Mail" } ],
+          "pinned": true, "zenWorkspace": "{c406b463-0db9-48a4-90a8-317bd1bd9d12}",
+          "zenSyncId": "1788099000000-01", "zenEssential": true, "zenIsEmpty": false, "zenIsGlance": false,
+          "_zenPinnedInitialState": { "entry": { "url": "https://mail.example/", "title": "Mail" }, "image": null },
+          "userContextId": 2, "index": 1
+        },
+        {
+          "entries": [ { "url": "about:blank" } ],
+          "pinned": true, "groupId": "1787729895449-23", "zenWorkspace": "{c406b463-0db9-48a4-90a8-317bd1bd9d12}",
+          "zenSyncId": "1787729895454-87", "zenEssential": false, "zenIsEmpty": true, "zenIsGlance": false,
+          "_zenPinnedInitialState": { "entry": { "url": "about:blank" }, "image": null },
+          "userContextId": 0, "index": 1
+        },
+        {
+          "entries": [ { "url": "https://zen.example/welcome/", "title": "Welcome" } ],
+          "pinned": true, "groupId": "1787729895449-23", "zenWorkspace": "{c406b463-0db9-48a4-90a8-317bd1bd9d12}",
+          "zenSyncId": "1787729867469-83", "zenEssential": false, "zenIsEmpty": false, "zenIsGlance": false,
+          "_zenPinnedInitialState": { "entry": { "url": "https://zen.example/welcome/", "title": "Welcome" }, "image": null },
+          "userContextId": 0, "index": 1
+        },
+        {
+          "entries": [ { "url": "https://zen.example/welcome/", "title": "Welcome" } ],
+          "pinned": true, "zenWorkspace": "{c406b463-0db9-48a4-90a8-317bd1bd9d12}",
+          "zenSyncId": "1787729956461-80", "zenEssential": false, "zenIsEmpty": false, "zenIsGlance": false,
+          "_zenPinnedInitialState": { "entry": { "url": "https://zen.example/welcome/", "title": "Welcome" }, "image": null },
+          "userContextId": 0, "index": 1
+        },
+        {
+          "entries": [ { "url": "https://video.example/", "title": "Video" } ],
+          "pinned": true, "zenWorkspace": "{c406b463-0db9-48a4-90a8-317bd1bd9d12}",
+          "zenSyncId": "1787729956441-24", "zenEssential": false, "zenIsEmpty": false, "zenIsGlance": false,
+          "_zenPinnedInitialState": { "entry": { "url": "https://video.example/", "title": "Video" }, "image": null },
+          "userContextId": 0, "index": 1
+        },
+        {
+          "entries": [ { "url": "https://wiki.example/", "title": "Wiki" } ],
+          "pinned": true, "zenWorkspace": "{c406b463-0db9-48a4-90a8-317bd1bd9d12}",
+          "zenSyncId": "1787729930022-20", "zenEssential": false, "zenIsEmpty": false, "zenIsGlance": false,
+          "_zenPinnedInitialState": { "entry": { "url": "https://wiki.example/", "title": "Wiki" }, "image": null },
+          "userContextId": 0, "index": 1
+        },
+        {
+          "entries": [ { "url": "https://os.example/changed/", "title": "OS, changed" } ],
+          "pinned": true, "zenWorkspace": "{c406b463-0db9-48a4-90a8-317bd1bd9d12}",
+          "zenSyncId": "1788086996175-64", "zenEssential": false, "zenIsEmpty": false, "zenIsGlance": false,
+          "_zenPinnedInitialState": { "entry": { "url": "https://os.example/", "title": "OS" }, "image": null },
+          "userContextId": 0, "index": 1
+        },
+        {
+          "entries": [ { "url": "https://forum.example/topic/1/", "title": "Topic" } ],
+          "pinned": true, "zenWorkspace": "{d84b71ba-bc19-41e0-a6a0-28a93aa9d024}",
+          "zenSyncId": "1788098557189-59", "zenEssential": false, "zenIsEmpty": false, "zenIsGlance": false,
+          "_zenPinnedInitialState": { "entry": { "url": "https://forum.example/topic/1/", "title": "Topic" }, "image": null },
+          "userContextId": 0, "index": 1
+        },
+        {
+          "entries": [ { "url": "about:blank" } ],
+          "pinned": true, "groupId": "1788098553873-3", "zenWorkspace": "{d84b71ba-bc19-41e0-a6a0-28a93aa9d024}",
+          "zenSyncId": "1788098553880-31", "zenEssential": false, "zenIsEmpty": true, "zenIsGlance": false,
+          "_zenPinnedInitialState": { "entry": { "url": "about:blank" }, "image": null },
+          "userContextId": 0, "index": 1
+        },
+        {
+          "entries": [ { "url": "https://forum.example/", "title": "Forum" } ],
+          "pinned": true, "groupId": "1788098553873-3", "zenWorkspace": "{d84b71ba-bc19-41e0-a6a0-28a93aa9d024}",
+          "zenSyncId": "1788098544470-70", "zenEssential": false, "zenIsEmpty": false, "zenIsGlance": false,
+          "_zenPinnedInitialState": { "entry": { "url": "https://forum.example/", "title": "Forum" }, "image": null },
+          "userContextId": 0, "index": 1
+        },
+        {
+          "entries": [ { "url": "https://forum.example/reading/", "title": "Reading list" } ],
+          "pinned": true, "groupId": "1788098553873-4", "zenWorkspace": "{d84b71ba-bc19-41e0-a6a0-28a93aa9d024}",
+          "zenSyncId": "1788099000000-02", "zenEssential": false, "zenIsEmpty": false, "zenIsGlance": false,
+          "_zenPinnedInitialState": { "entry": { "url": "https://forum.example/reading/", "title": "Reading list" }, "image": null },
+          "userContextId": 0, "index": 1
+        },
+        {
+          "entries": [ { "url": "about:blank" } ],
+          "pinned": true, "groupId": "1788098553873-5", "zenWorkspace": "{d84b71ba-bc19-41e0-a6a0-28a93aa9d024}",
+          "zenSyncId": "1788099000000-03", "zenEssential": false, "zenIsEmpty": true, "zenIsGlance": false,
+          "_zenPinnedInitialState": { "entry": { "url": "about:blank" }, "image": null },
+          "userContextId": 0, "index": 1
+        },
+        {
+          "entries": [ { "url": "https://glance.example/", "title": "Glance" } ],
+          "pinned": true, "zenWorkspace": "{d84b71ba-bc19-41e0-a6a0-28a93aa9d024}",
+          "zenSyncId": "1788099000000-04", "zenEssential": false, "zenIsEmpty": false, "zenIsGlance": true,
+          "_zenPinnedInitialState": { "entry": { "url": "https://glance.example/", "title": "Glance" }, "image": null },
+          "userContextId": 0, "index": 1
+        },
+        {
+          "entries": [
+            { "url": "https://engine.example/start/", "title": "Start" },
+            { "url": "https://engine.example/", "title": "Engine" }
+          ],
+          "pinned": true, "zenWorkspace": "{d84b71ba-bc19-41e0-a6a0-28a93aa9d024}",
+          "zenSyncId": "1788098572307-51", "zenEssential": false, "zenIsEmpty": false, "zenIsGlance": false,
+          "_zenPinnedInitialState": { "entry": { "url": "https://engine.example/", "title": "Engine" }, "image": null },
+          "userContextId": 0, "index": 2
+        },
+        {
+          "entries": [ { "url": "https://os.example/io/", "title": "OS (io)" } ],
+          "pinned": true, "zenWorkspace": "{ddae1ff1-c30a-45dc-b8ac-b5f70db8fed4}",
+          "zenSyncId": "1788087438888-39", "zenEssential": false, "zenIsEmpty": false, "zenIsGlance": false,
+          "_zenPinnedInitialState": { "entry": { "url": "https://os.example/io/", "title": "OS (io)" }, "image": null },
+          "userContextId": 1, "index": 1
+        },
+        {
+          "entries": [
+            { "url": "https://fallback.example/first/", "title": "First" },
+            { "url": "https://fallback.example/current/", "title": "Current" }
+          ],
+          "pinned": true, "zenWorkspace": "{ddae1ff1-c30a-45dc-b8ac-b5f70db8fed4}",
+          "zenSyncId": "1788099000000-05", "zenEssential": false, "zenIsEmpty": false, "zenIsGlance": false,
+          "userContextId": 1, "index": 2
+        },
+        {
+          "entries": [ { "url": "https://orphan.example/", "title": "Orphan" } ],
+          "pinned": true, "zenWorkspace": "{00000000-0000-0000-0000-000000000000}",
+          "zenSyncId": "1788099000000-06", "zenEssential": false, "zenIsEmpty": false, "zenIsGlance": false,
+          "_zenPinnedInitialState": { "entry": { "url": "https://orphan.example/", "title": "Orphan" }, "image": null },
+          "userContextId": 0, "index": 1
+        },
+        {
+          "entries": [ { "url": "about:preferences#containers", "title": "Settings" } ],
+          "pinned": false, "zenWorkspace": "{c406b463-0db9-48a4-90a8-317bd1bd9d12}",
+          "zenSyncId": "1788095333100-4", "zenEssential": false, "zenIsEmpty": false, "zenIsGlance": false,
+          "_zenPinnedInitialState": {},
+          "userContextId": 0, "index": 1
+        }
+      ],
       "spaces": [
         {
           "containerTabId": 6,
@@ -310,7 +474,20 @@ final class ZenDataParserTests: XCTestCase {
           "uuid": "{ddae1ff1-c30a-45dc-b8ac-b5f70db8fed4}"
         }
       ],
-      "folders": [],
+      "folders": [
+        { "pinned": true, "splitViewGroup": false, "id": "1787729895449-23", "name": "zen basics", "collapsed": true,
+          "saveOnWindowClose": true, "parentId": null, "prevSiblingInfo": null, "userIcon": "",
+          "workspaceId": "{c406b463-0db9-48a4-90a8-317bd1bd9d12}" },
+        { "pinned": true, "splitViewGroup": false, "id": "1788098553873-3", "name": "New Folder", "collapsed": true,
+          "saveOnWindowClose": true, "parentId": null, "prevSiblingInfo": { "type": "tab", "id": "1788098557189-59" },
+          "userIcon": "", "workspaceId": "{d84b71ba-bc19-41e0-a6a0-28a93aa9d024}" },
+        { "pinned": true, "splitViewGroup": false, "id": "1788098553873-4", "name": "Reading", "collapsed": false,
+          "saveOnWindowClose": true, "parentId": "1788098553873-3", "prevSiblingInfo": { "type": "tab", "id": "1788098544470-70" },
+          "userIcon": "", "workspaceId": "{d84b71ba-bc19-41e0-a6a0-28a93aa9d024}" },
+        { "pinned": true, "splitViewGroup": false, "id": "1788098553873-5", "name": "Empty", "collapsed": false,
+          "saveOnWindowClose": true, "parentId": null, "prevSiblingInfo": { "type": "tab", "id": "1788099000000-02" },
+          "userIcon": "", "workspaceId": "{d84b71ba-bc19-41e0-a6a0-28a93aa9d024}" }
+      ],
       "groups": [],
       "splitViewData": []
     }
@@ -432,6 +609,82 @@ final class ZenDataParserTests: XCTestCase {
         XCTAssertEqual(try spaces("{ \"spaces\": [ { \"uuid\": \"{1}\", \"name\": \"A\" } ] }").map(\.containerTabId), [0])
     }
 
+    // MARK: - Pinned tabs and folders
+
+    private func session(_ json: String) throws -> ZenDataParserTool.Session {
+        try ZenDataParserTool.parseSession(json: Data(json.utf8))
+    }
+
+    /// In file order, Essentials and workspace pins alike. The two empty
+    /// placeholders, the Glance tab and the open tab are not pins.
+    func testPinnedTabsComeOutInFileOrderWithoutPlaceholdersGlanceTabsOrOpenTabs() throws {
+        let tabs = try session(capturedSession).pinnedTabs
+
+        XCTAssertEqual(tabs.map(\.title), [
+            "Search", "Social", "Mail",
+            "Welcome", "Welcome", "Video", "Wiki", "OS",
+            "Topic", "Forum", "Reading list", "Engine",
+            "OS (io)", "Current", "Orphan",
+        ])
+    }
+
+    func testAnEssentialIsMarkedAndCarriesItsContainer() throws {
+        let tabs = try session(capturedSession).pinnedTabs
+
+        XCTAssertEqual(tabs.prefix(3).map(\.isEssential), [true, true, true])
+        XCTAssertEqual(tabs.prefix(3).map(\.userContextId), [0, 1, 2])
+        XCTAssertFalse(tabs.dropFirst(3).contains(where: \.isEssential))
+    }
+
+    /// "Welcome" is pinned twice: once in the "zen basics" folder, once loose.
+    func testAWorkspacePinNamesItsWorkspaceAndTheFolderItSitsIn() throws {
+        let tabs = try session(capturedSession).pinnedTabs
+        func pin(_ title: String) -> ZenDataParserTool.PinnedTab? { tabs.first { $0.title == title } }
+
+        XCTAssertEqual(pin("Welcome")?.workspaceID, "{c406b463-0db9-48a4-90a8-317bd1bd9d12}")
+        XCTAssertEqual(pin("Welcome")?.folderID, "1787729895449-23")
+        XCTAssertNil(tabs.last { $0.title == "Welcome" }?.folderID)
+        XCTAssertNil(pin("Video")?.folderID)
+        XCTAssertEqual(pin("Reading list")?.folderID, "1788098553873-4")
+        XCTAssertEqual(pin("Orphan")?.workspaceID, "{00000000-0000-0000-0000-000000000000}")
+    }
+
+    /// The pinned-at entry is what Zen's own "reset pinned tab" returns to;
+    /// a pin without one reads its current entry.
+    func testTheURLAndTitleAreThePinnedAtEntryFallingBackToTheCurrentOne() throws {
+        let tabs = try session(capturedSession).pinnedTabs
+        func pin(_ title: String) -> ZenDataParserTool.PinnedTab? { tabs.first { $0.title == title } }
+
+        XCTAssertEqual(pin("OS")?.url, "https://os.example/")
+        XCTAssertNil(pin("OS, changed"))
+        XCTAssertEqual(pin("Current")?.url, "https://fallback.example/current/")
+        XCTAssertNil(pin("First"))
+    }
+
+    func testFoldersComeOutWithTheirNesting() throws {
+        let folders = try session(capturedSession).folders
+
+        XCTAssertEqual(folders.map(\.id),
+                       ["1787729895449-23", "1788098553873-3", "1788098553873-4", "1788098553873-5"])
+        XCTAssertEqual(folders.map(\.name), ["zen basics", "New Folder", "Reading", "Empty"])
+        XCTAssertEqual(folders.map(\.parentID), [nil, nil, "1788098553873-3", nil])
+    }
+
+    /// A tab with no entry to read a URL from is not a pin; without an
+    /// `index` the current entry is the last one; a missing title is empty.
+    func testATabWithoutAURLIsNotAPinAndWithoutAnIndexTheLastEntryIsCurrent() throws {
+        let tabs = try session("""
+        { "spaces": [], "tabs": [
+            { "pinned": true, "zenWorkspace": "{1}", "entries": [] },
+            { "pinned": true, "zenWorkspace": "{1}",
+              "entries": [ { "url": "https://a.example/" }, { "url": "https://b.example/" } ] } ] }
+        """).pinnedTabs
+
+        XCTAssertEqual(tabs, [ZenDataParserTool.PinnedTab(
+            workspaceID: "{1}", isEssential: false, userContextId: 0, folderID: nil,
+            title: "", url: "https://b.example/")])
+    }
+
     // MARK: - containers.json
 
     /// This machine's `containers.json` (2026-08-30): the four Firefox
@@ -504,14 +757,42 @@ final class ZenDataParserTests: XCTestCase {
         ).migrationSource
     }
 
-    private func rows(_ source: BrowserMigrationSource) -> [BrowserMigrationPreviewProfileRow] {
-        let plan = BrowserMigrationPlanner.plan(
+    private func source(
+        _ text: String,
+        session: ZenDataParserTool.Session,
+        under key: String,
+        containers: [ZenDataParserTool.Container] = []
+    ) -> BrowserMigrationSource {
+        Zen(profilesINI: ini(text), sessions: [key: session], containers: [key: containers])
+            .migrationSource
+    }
+
+    /// A Space's tree, a folder bracketing what it holds.
+    private func outline(_ node: ArcDataParserTool.Bookmark) -> [String] {
+        node.children.map { child in
+            child.isFolder
+                ? "\(child.title ?? "")[\(outline(child).joined(separator: ", "))]"
+                : child.title ?? ""
+        }
+    }
+
+    private func plan(_ source: BrowserMigrationSource) -> BrowserMigrationPlan {
+        BrowserMigrationPlanner.plan(
             source: source,
             existingProfileDisplayNames: [],
             pinnedTabScope: .profile,
             selection: .all(in: source),
             operationID: UUID(uuidString: "00000000-0000-0000-0000-0000000000CC")!)
-        return BrowserMigrationPreview.rows(source: source, plan: plan)
+    }
+
+    private func rows(_ source: BrowserMigrationSource) -> [BrowserMigrationPreviewProfileRow] {
+        BrowserMigrationPreview.rows(source: source, plan: plan(source))
+    }
+
+    private func essential(container: Int, _ title: String, _ url: String) -> ZenDataParserTool.PinnedTab {
+        ZenDataParserTool.PinnedTab(
+            workspaceID: "{1}", isEssential: true, userContextId: container, folderID: nil,
+            title: title, url: url)
     }
 
     /// The design machine as it stands: the captured spaces over the captured
@@ -737,8 +1018,130 @@ final class ZenDataParserTests: XCTestCase {
         XCTAssertEqual(source.spaces.map(\.name), ["Desk", "Lab", "Sofa"])
         XCTAssertEqual(source.spaces.map(\.colorHex), ["#fab528", nil, nil])
         XCTAssertEqual(source.spaces.map(\.icon), [.zenNamed("airplane"), nil, .emoji("🤡")])
-        XCTAssertEqual(source.spaces.map { $0.bookmarkRoot == nil }, [true, true, true])
+        XCTAssertEqual(source.spaces.map { $0.bookmarkRoot?.children.isEmpty }, [true, true, true])
         XCTAssertTrue(source.pinnedGroups.isEmpty)
+    }
+
+    // MARK: - Space Bookmarks from workspace pins
+
+    /// Each Space's tree is its workspace's pins in file order — a folder
+    /// sitting where its first pin does, nested as `folders[]` nests it —
+    /// directly at the root, whatever container the pins carry. A folder
+    /// holding only a placeholder is not written, nor is the pin naming a
+    /// workspace that is not in the file; Essentials are not in any tree.
+    func testEachSpacesBookmarksAreItsWorkspacePinsWithTheirFolders() throws {
+        let source = source(
+            ghostINI, session: try session(capturedSession), under: realKey,
+            containers: try containers(capturedContainers))
+
+        XCTAssertEqual(source.spaces.map(\.name), ["Space", "TTT", "qqq", "abc"])
+        XCTAssertEqual(source.spaces.map { $0.bookmarkRoot.map(outline) }, [
+            ["zen basics[Welcome]", "Welcome", "Video", "Wiki", "OS"],
+            [],
+            ["Topic", "New Folder[Forum, Reading[Reading list]]", "Engine"],
+            ["OS (io)", "Current"],
+        ])
+    }
+
+    func testABookmarkCarriesItsPinsURLAndAFolderNone() throws {
+        let source = source(
+            ghostINI, session: try session(capturedSession), under: realKey,
+            containers: try containers(capturedContainers))
+        let qqq = try XCTUnwrap(source.spaces[2].bookmarkRoot)
+
+        XCTAssertEqual(qqq.title, "qqq")
+        XCTAssertEqual(qqq.children.map(\.url),
+                       ["https://forum.example/topic/1/", nil, "https://engine.example/"])
+        XCTAssertEqual(qqq.children[1].children[1].children.map(\.url),
+                       ["https://forum.example/reading/"])
+    }
+
+    /// A chain of folders that loops — a shape Zen never writes — is cut
+    /// where it comes back round rather than followed forever; the pin
+    /// still sits inside its folders.
+    func testAChainOfFoldersThatLoopsIsCutWhereItComesBackRound() throws {
+        let session = try session("""
+        { "spaces": [ { "uuid": "{1}", "name": "A" } ],
+          "folders": [ { "id": "f1", "name": "Outer", "parentId": "f2" },
+                       { "id": "f2", "name": "Inner", "parentId": "f1" } ],
+          "tabs": [ { "pinned": true, "zenWorkspace": "{1}", "groupId": "f1",
+                      "_zenPinnedInitialState": { "entry": { "url": "https://a.example/", "title": "A" } } } ] }
+        """)
+        let source = source(oneProfileINI, session: session, under: "abcd1234.Default (release)")
+
+        XCTAssertEqual(source.spaces[0].bookmarkRoot.map(outline), ["Inner[Outer[A]]"])
+    }
+
+    // MARK: - Pinned tabs from Essentials
+
+    /// An Essential is a pinned entry of the Profile of its own container,
+    /// in file order: the one in no container goes to "Zen", the one in
+    /// Personal to "Personal", and the one in Work — a container no Space is
+    /// set to — to Work's greyed row, which the planner creates nothing for.
+    func testEssentialsBecomeTheirContainersProfilesPinnedEntries() throws {
+        let source = source(
+            ghostINI, session: try session(capturedSession), under: realKey,
+            containers: try containers(capturedContainers))
+
+        XCTAssertEqual(source.pinnedGroups.map(\.profileKey),
+                       ["\(realKey)#0", "\(realKey)#1", "\(realKey)#2"])
+        XCTAssertEqual(source.pinnedGroups.map { $0.entries.map(\.title) },
+                       [["Search"], ["Social"], ["Mail"]])
+        XCTAssertEqual(source.pinnedGroups[0].entries.map(\.url), ["https://search.example/"])
+
+        let plan = plan(source)
+        XCTAssertEqual(plan.profiles.map(\.displayName), ["Zen", "AAAAAAAAA", "Banking", "Personal"])
+        XCTAssertEqual(plan.profiles.map { $0.pinnedTabs.map(\.title) },
+                       [["Search"], [], [], ["Social"]])
+        XCTAssertEqual(plan.skippedProfiles.map(\.displayName), ["Work", "Shopping", "NOT USED"])
+        XCTAssertEqual(plan.skippedProfiles.map(\.droppedPinnedEntries), [1, 0, 0])
+    }
+
+    /// With every Space set to a container, the no-container Profile is
+    /// still listed when there are Essentials in no container — greyed,
+    /// having no Spaces, and after the containers in use like the other
+    /// greyed rows — so that they are dropped where the plan counts them
+    /// rather than lost in silence.
+    func testEssentialsInNoContainerListTheNoContainerProfileWhenNoSpaceIsSetToNone() throws {
+        let key = "abcd1234.Default (release)"
+        let source = source(
+            oneProfileINI,
+            session: ZenDataParserTool.Session(
+                spaces: [zenSpace("{1}", "Desk", container: 2)],
+                pinnedTabs: [essential(container: 0, "Search", "https://search.example/")]),
+            under: key,
+            containers: try containers(capturedContainers))
+
+        XCTAssertEqual(source.profiles.map(\.displayName),
+                       ["Work", "Zen", "Personal", "Banking", "Shopping", "AAAAAAAAA", "NOT USED"])
+        XCTAssertEqual(source.pinnedGroups.map(\.profileKey), ["\(key)#0"])
+        XCTAssertEqual(rows(source).map(\.skipReason).prefix(2), [nil, .noSpaces])
+        XCTAssertEqual(plan(source).skippedProfiles.first?.droppedPinnedEntries, 1)
+    }
+
+    /// An Essential in a container the list does not hold has no resolvable
+    /// profile record and, like a Space set to one, follows the default
+    /// Profile: it lands there when that Profile has Spaces, and is counted
+    /// on its greyed row when it has none.
+    func testAnEssentialInAContainerTheListDoesNotHoldFollowsTheDefaultProfile() throws {
+        let key = "abcd1234.Default (release)"
+        let gone = essential(container: 9, "Gone", "https://gone.example/")
+        let landed = source(
+            oneProfileINI,
+            session: ZenDataParserTool.Session(spaces: [zenSpace("{1}", "Home")], pinnedTabs: [gone]),
+            under: key, containers: try containers(capturedContainers))
+        let counted = source(
+            oneProfileINI,
+            session: ZenDataParserTool.Session(spaces: [zenSpace("{1}", "Desk", container: 1)], pinnedTabs: [gone]),
+            under: key, containers: try containers(capturedContainers))
+
+        XCTAssertEqual(landed.pinnedGroups.map(\.profileKey), [nil])
+        XCTAssertEqual(plan(landed).profiles.map { $0.pinnedTabs.map(\.title) }, [["Gone"]])
+
+        XCTAssertEqual(counted.profiles.prefix(2).map(\.displayName), ["Personal", "Zen"])
+        XCTAssertEqual(plan(counted).skippedProfiles.first?.displayName, "Zen")
+        XCTAssertEqual(plan(counted).skippedProfiles.first?.droppedPinnedEntries, 1)
+        XCTAssertFalse(landed.profiles.contains { $0.key == "\(key)#9" })
     }
 
     func testTheIconAdapterNamesABuiltInByItsFileAndKeepsAnEmojiAsItself() {

@@ -9211,7 +9211,7 @@
       }
     },
     "app.browserMigration.title" : {
-      "comment" : "Browser migration wizard - heading of the source step, which also names the window",
+      "comment" : "Browser migration wizard - heading of the source step; the window title is a key of its own",
       "extractionState" : "extracted_with_value",
       "localizations" : {
         "en" : {
@@ -36923,66 +36923,6 @@
         }
       }
     },
-    "localData.arcImport.untitledSpaceName" : {
-      "comment" : "Arc import - fallback name for an Arc Space with no title",
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Unbenannter Space"
-          }
-        },
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "Untitled Space"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Espacio sin título"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Espace sans titre"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "無題のスペース"
-          }
-        },
-        "ko" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "이름 없는 스페이스"
-          }
-        },
-        "nl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Naamloze Space"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "未命名空间"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "未命名空間"
-          }
-        }
-      }
-    },
     "localData.bookmarks.importedFromArcFolderTitle" : {
       "comment" : "Arc bookmarks import folder title",
       "extractionState" : "extracted_with_value",
@@ -39871,66 +39811,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "正在匯入 Safari 資料…"
-          }
-        }
-      }
-    },
-    "oobe.importBrowserData.resetTitle" : {
-      "comment" : "Import browser data page - Page title restored after resetting the import state",
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Browserdaten"
-          }
-        },
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "Browser data"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Datos del navegador"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Données du navigateur"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "ブラウザデータ"
-          }
-        },
-        "ko" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "브라우저 데이터"
-          }
-        },
-        "nl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Browsergegevens"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "浏览器数据"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "瀏覽器資料"
           }
         }
       }

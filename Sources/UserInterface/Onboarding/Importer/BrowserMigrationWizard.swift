@@ -665,7 +665,7 @@ struct BrowserMigrationWizardView: View {
         switch model.step {
         case .pick:
             return NSLocalizedString("app.browserMigration.title", value: "Migrate to Phi",
-                comment: "Browser migration wizard - heading of the source step, which also names the window")
+                comment: "Browser migration wizard - heading of the source step; the window title is a key of its own")
         case .preview:
             return NSLocalizedString("app.browserMigration.preview.heading",
                 value: "Review what will be created",

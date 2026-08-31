@@ -307,12 +307,13 @@ extension LocalStore {
                     let landingRoot: TabDataModel?
                     if landingFolder {
                         let importRoot = TabDataModel(
-                            // Defensive fallback: the parser fills the Space title
-                            // (real or localized "Untitled Space"), so this only
-                            // matters if a nil-title root ever reaches here — share
-                            // the SAME localized fallback the picker shows, not the
-                            // legacy generic "Imported From Arc" name.
-                            title: spaceRoot.title ?? NSLocalizedString("localData.arcImport.untitledSpaceName", value: "Untitled Space", comment: "Arc import - fallback name for an Arc Space with no title"),
+                            // Defensive fallback: the parser already fills every
+                            // Space title (the real one, or its localized "Untitled
+                            // Space"), so this only matters if a nil-title root ever
+                            // reaches here. It uses the parser's own key so the two
+                            // cannot drift apart — not the legacy generic "Imported
+                            // From Arc" name.
+                            title: spaceRoot.title ?? NSLocalizedString("oobe.importBrowserData.arc.untitledSpaceName", value: "Untitled Space", comment: "Arc import - fallback name for an Arc Space with no title"),
                             guid: UUID().uuidString, index: 0, url: Self.folderPlaceholderURL,
                             favicon: nil, createdDate: now, updatedDate: now)
                         importRoot.dataType = .bookmarkFolder

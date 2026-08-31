@@ -901,7 +901,7 @@ class ImportFromOtherBrowserViewController: OnboardingBaseViewController {
         permisionImageView.isHidden = true
         desLabel.isHidden = true
         importStatusLabel.isHidden = true
-        setTitle(NSLocalizedString("oobe.importBrowserData.resetTitle", value: "Browser data", comment: "Import browser data page - Page title restored after resetting the import state"))
+        setTitle(NSLocalizedString("oobe.importBrowserData.initialTitle", value: "Browser data", comment: "Import browser data page - Initial page title"))
         nextButton.title = NSLocalizedString("oobe.importBrowserData.nextButton", value: "Next", comment: "Import browser data page - Next button after resetting the import state")
         nextButton.snp.remakeConstraints { make in
             make.bottom.equalToSuperview().offset(buttonBottomOffset)

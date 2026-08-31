@@ -535,7 +535,7 @@ class BrowserState {
     init(windowId: Int,
          localStore: LocalStore,
          profileId: String = LocalStore.defaultProfileId,
-         spaceId: String = LocalStore.defaultSpaceId,
+         spaceId: String = SpaceManager.shared.currentDefaultSpaceId,
          isIncognito: Bool = false,
          isIncognitoSpace: Bool = false,
          isKioskWindow: Bool = false) {

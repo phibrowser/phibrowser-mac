@@ -168,7 +168,8 @@ struct ProfilesSettingsView: View {
     private var canDeleteSelected: Bool {
         guard let profile = selectedProfile,
               profile.profileId != LocalStore.defaultProfileId else { return false }
-        return spaceManager.spaces.allSatisfy { $0.profileId != profile.profileId }
+        // Store-read, not the `spaces` cache — see `isProfileInUse`.
+        return !spaceManager.isProfileInUse(profile.profileId)
     }
 
     private func selectInitialProfile() {
@@ -246,6 +247,21 @@ struct ProfilesSettingsView: View {
         alert.addButton(withTitle: NSLocalizedString("settings.profiles.deleteConfirmation.deleteButton", value: "Delete", comment: "Destructive button"))
         alert.addButton(withTitle: NSLocalizedString("settings.profiles.deleteConfirmation.cancelButton", value: "Cancel", comment: "Cancel button"))
         guard alert.runModal() == .alertFirstButtonReturn else { return }
+        // Re-check AFTER the modal: the delete button was validated before it
+        // opened, and a Space can be bound to this profile while the
+        // confirmation sits on screen (background work — the agent surface
+        // included — keeps running under runModal). Nothing below this guard
+        // re-checks: neither ProfileManager nor the Chromium bridge knows
+        // about Space bindings.
+        guard !spaceManager.isProfileInUse(profile.profileId) else {
+            let errAlert = NSAlert()
+            errAlert.messageText = NSLocalizedString("settings.profiles.deleteFailure.title", value: "Couldn't delete profile", comment: "Title of the profile-delete error")
+            errAlert.informativeText = NSLocalizedString("settings.profiles.deleteFailure.inUseBySpace", value: "A Space is using this profile. Delete that Space or change its profile first.",
+                comment: "Body of the profile-delete error when a Space became bound to the profile before the deletion ran"
+            )
+            errAlert.runModal()
+            return
+        }
         profileManager.deleteProfile(profile.profileId) { success, error in
             if !success {
                 let errAlert = NSAlert()

@@ -177,7 +177,10 @@ struct SpacesSettingsView: View {
 
     private func spaceListRow(_ space: SpaceModel) -> some View {
         let isSelected = space.spaceId == selectedSpaceId
-        let isDefault = space.spaceId == LocalStore.defaultSpaceId
+        // The well-known default-space row's profile is immutable (its
+        // bookmark root is shared with the legacy per-profile root) — keyed
+        // to the literal id, not the floating default role.
+        let isProfileLocked = space.spaceId == LocalStore.defaultSpaceId
         return HStack(spacing: 8) {
             Image(systemName: "line.3.horizontal")
                 .font(.system(size: 12, weight: .medium))
@@ -192,9 +195,6 @@ struct SpacesSettingsView: View {
                         .themedForeground(isSelected ? ThemedColor(.white) : .textPrimary)
                         .lineLimit(1)
                         .customTooltip(space.name)
-                    if isDefault {
-                        SettingsDefaultBadge(onAccent: isSelected)
-                    }
                     Spacer(minLength: 4)
                 }
                 .contentShape(Rectangle())
@@ -211,7 +211,7 @@ struct SpacesSettingsView: View {
             .lineLimit(1)
             .frame(maxWidth: 100, alignment: .trailing)
             .fixedSize(horizontal: false, vertical: true)
-            .disabled(isDefault)
+            .disabled(isProfileLocked)
         }
         .padding(.horizontal, 8)
         .padding(.vertical, 6)
@@ -259,13 +259,12 @@ struct SpacesSettingsView: View {
     }
 
     /// The floating image shown under the cursor while a Space row is dragged.
-    /// Mirrors the list row — drag handle, icon, name, Default badge, and the
-    /// profile selector — at the same width, so the lifted preview looks like
-    /// the item it came from rather than a smaller content-hugging chip. A
-    /// dedicated, full-opacity view because the implicit snapshot inherited the
-    /// dimmed in-list row and blanked the dragged item.
+    /// Mirrors the list row — drag handle, icon, name, and the profile
+    /// selector — at the same width, so the lifted preview looks like the
+    /// item it came from rather than a smaller content-hugging chip. A
+    /// dedicated, full-opacity view because the implicit snapshot inherited
+    /// the dimmed in-list row and blanked the dragged item.
     private func spaceDragPreview(_ space: SpaceModel) -> some View {
-        let isDefault = space.spaceId == LocalStore.defaultSpaceId
         let profileName = profileManager.profile(for: space.profileId)?.displayName ?? ""
         return HStack(spacing: 8) {
             Image(systemName: "line.3.horizontal")
@@ -276,9 +275,6 @@ struct SpacesSettingsView: View {
                 .font(.system(size: 13))
                 .foregroundStyle(Color.white)
                 .lineLimit(1)
-            if isDefault {
-                SettingsDefaultBadge(onAccent: true)
-            }
             Spacer(minLength: 4)
             // Static stand-in for the row's profile picker (a drag image is
             // never interactive); matches its label and trailing chevron.
@@ -527,7 +523,7 @@ struct SpacesSettingsView: View {
 
     private var canDeleteSelected: Bool {
         guard let space = selectedSpace else { return false }
-        return space.spaceId != LocalStore.defaultSpaceId
+        return spaceManager.canDeleteSpace(spaceId: space.spaceId)
     }
 
     private var canRenameSelected: Bool {
@@ -535,7 +531,7 @@ struct SpacesSettingsView: View {
     }
 
     private func selectInitialSpace() {
-        let preferred = listedSpaces.first(where: { $0.spaceId == LocalStore.defaultSpaceId })
+        let preferred = listedSpaces.first(where: { $0.spaceId == spaceManager.currentDefaultSpaceId })
             ?? listedSpaces.first
         if let space = preferred {
             select(space.spaceId)
@@ -688,7 +684,7 @@ struct SpacesSettingsView: View {
 
     private func newSpace() {
         let activeProfileId = selectedSpace?.profileId
-            ?? spaceManager.spaces.first(where: { $0.spaceId == LocalStore.defaultSpaceId })?.profileId
+            ?? spaceManager.spaces.first(where: { $0.spaceId == spaceManager.currentDefaultSpaceId })?.profileId
             ?? LocalStore.defaultProfileId
         // Always present the floating popup here. `requestCreation` would route
         // to the active browser window's sidebar overlay in vertical layouts —
@@ -745,7 +741,7 @@ struct SpacesSettingsView: View {
     }
 
     private func deleteSpace(_ space: SpaceModel) {
-        guard space.spaceId != LocalStore.defaultSpaceId else { return }
+        guard spaceManager.canDeleteSpace(spaceId: space.spaceId) else { return }
         let alert = NSAlert()
         alert.messageText = String(
             format: NSLocalizedString("settings.spaces.deleteConfirmation.title", value: "Delete \u{201C}%@\u{201D}?", comment: "Title of the delete-Space confirmation"),

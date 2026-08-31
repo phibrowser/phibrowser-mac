@@ -97,7 +97,7 @@ class MainBrowserWindowControllersManager: MainBrowserWindowLookup {
                            windowId: Int,
                            browserType: ChromiumBrowserType,
                            profileId: String,
-                           spaceId: String = LocalStore.defaultSpaceId,
+                           spaceId: String = SpaceManager.shared.currentDefaultSpaceId,
                            slot: SpaceWindowSlot? = nil) {
         assert(Thread.isMainThread)
         AppLogInfo("🪟 [WindowManager] Adding dangling window - windowId: \(windowId), type: \(browserType.rawValue)")
@@ -396,7 +396,7 @@ class MainBrowserWindowControllersManager: MainBrowserWindowLookup {
         windowId: Int,
         browserType: ChromiumBrowserType,
         profileId: String,
-        spaceId: String = LocalStore.defaultSpaceId,
+        spaceId: String = SpaceManager.shared.currentDefaultSpaceId,
         account: Account = AccountController.shared.account
             ?? AccountController.defaultAccount,
         slot: SpaceWindowSlot? = nil,

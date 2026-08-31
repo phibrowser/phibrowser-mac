@@ -9907,6 +9907,18 @@
         }
       }
     },
+    "app.deleteProfileFailure.inUseBySpace" : {
+      "comment" : "Body of the profile-delete error when a Space became bound to the profile before the deletion ran",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "A Space is using this profile. Delete that Space or change its profile first."
+          }
+        }
+      }
+    },
     "app.deleteProfileFailure.title" : {
       "comment" : "Title of the profile-delete error",
       "extractionState" : "extracted_with_value",
@@ -62587,6 +62599,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "要刪除設定檔「%@」嗎？"
+          }
+        }
+      }
+    },
+    "settings.profiles.deleteFailure.inUseBySpace" : {
+      "comment" : "Body of the profile-delete error when a Space became bound to the profile before the deletion ran",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "A Space is using this profile. Delete that Space or change its profile first."
           }
         }
       }

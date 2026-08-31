@@ -249,6 +249,12 @@ extension AccountUserDefaults {
         case authReauthenticationReason
         case authReauthenticationFirstDetectedAt
         case activeSpaceId
+        /// The Space currently holding the "default" role (see
+        /// `SpaceManager.currentDefaultSpaceId`). Absent until the user
+        /// deletes the well-known `default-space`, whose id is the
+        /// implicit initial value; deletion hands the role to another
+        /// Space and records it here so it survives relaunches.
+        case defaultSpaceId
         /// Per-Space theme override map (`[spaceId: themeId]`). A spaceId
         /// missing from this map means "follow the global theme"; an entry
         /// means the Space pins itself to that theme regardless of the

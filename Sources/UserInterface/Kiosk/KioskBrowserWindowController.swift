@@ -338,7 +338,7 @@ final class KioskBrowserWindowController: MainBrowserWindowController {
             windowId: windowId,
             browserType: browserType,
             profileId: profileId,
-            spaceId: LocalStore.defaultSpaceId,
+            spaceId: SpaceManager.shared.currentDefaultSpaceId,
             account: account,
             slot: nil,
             browserState: state
@@ -971,7 +971,7 @@ final class KioskBrowserWindowController: MainBrowserWindowController {
               let tab = browserState.focusingTab else { return }
         SpaceManager.shared.moveTab(
             tab,
-            toSpaceId: LocalStore.defaultSpaceId
+            toSpaceId: SpaceManager.shared.currentDefaultSpaceId
         )
     }
 

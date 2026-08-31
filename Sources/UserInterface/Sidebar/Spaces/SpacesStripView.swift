@@ -1584,14 +1584,13 @@ private struct SpacePickerPopup: View {
                         SpacePickerRow(
                             space: space,
                             isActive: space.spaceId == slot.activeSpaceId,
-                            // Neither the default Space nor an Incognito
-                            // Space can be deleted, and an Incognito Space's
-                            // name is derived ("Incognito" / "Incognito N";
-                            // it ends via Close Incognito Space instead).
-                            // Its theme remains user-changeable; its icon is
-                            // editable when multiple Spaces exist.
-                            isDeletable: space.spaceId != LocalStore.defaultSpaceId
-                                && !SpaceManager.isIncognitoSpaceId(space.spaceId),
+                            // The last user Space and Incognito Spaces can't
+                            // be deleted; an Incognito Space's name is
+                            // derived ("Incognito" / "Incognito N"; it ends
+                            // via Close Incognito Space instead). Its theme
+                            // remains user-changeable; its icon is editable
+                            // when multiple Spaces exist.
+                            isDeletable: manager.canDeleteSpace(spaceId: space.spaceId),
                             showsIconAction: manager.spaces.count > 1,
                             isRenamable: !SpaceManager.isIncognitoSpaceId(space.spaceId),
                             tint: iconColor(for: space),

@@ -168,7 +168,7 @@ class MainBrowserWindowController: NSWindowController {
          windowId: Int,
          browserType: ChromiumBrowserType = .normal,
          profileId: String = LocalStore.defaultProfileId,
-         spaceId: String = LocalStore.defaultSpaceId,
+         spaceId: String = SpaceManager.shared.currentDefaultSpaceId,
          account: Account = AccountController.shared.account ?? AccountController.defaultAccount,
          slot: SpaceWindowSlot? = nil,
          browserState suppliedBrowserState: BrowserState? = nil) {

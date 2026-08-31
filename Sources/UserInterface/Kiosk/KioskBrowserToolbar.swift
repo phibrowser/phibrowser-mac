@@ -508,7 +508,7 @@ enum KioskSpaceMenuTargetResolver {
             return activeSpace
         }
         return spaces.first(where: {
-            $0.spaceId == LocalStore.defaultSpaceId
+            $0.spaceId == SpaceManager.shared.currentDefaultSpaceId
         }) ?? spaces.first
     }
 }

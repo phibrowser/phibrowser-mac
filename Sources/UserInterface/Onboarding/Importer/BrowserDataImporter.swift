@@ -170,7 +170,7 @@ class BrowserDataImporter {
     private let analytics: BrowserImportAnalytics
 
     init(targetProfileId: String = LocalStore.defaultProfileId,
-         targetSpaceId: String = LocalStore.defaultSpaceId,
+         targetSpaceId: String = SpaceManager.shared.currentDefaultSpaceId,
          targetWindowId: Int? = nil,
          localDataStoreProvider: @escaping () -> LocalStore? = {
              AccountController.shared.localDataAccount?.localStorage

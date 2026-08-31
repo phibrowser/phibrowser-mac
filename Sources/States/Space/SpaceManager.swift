@@ -871,6 +871,61 @@ final class SpaceManager: ObservableObject {
         keySlot?.activeSpaceId ?? persistedActiveSpaceId
     }
 
+    /// The Space currently holding the "default" role: the landing target
+    /// for retreats and windows opened without a Space context, the
+    /// app-chrome theme anchor, and the pre-selected import target. The
+    /// role starts on the well-known `default-space` row and, when its
+    /// holder is deleted, is handed to the first remaining user Space
+    /// (strip order) by `deleteSpace`, persisted per account so the
+    /// hand-off survives relaunches. Falls back to the well-known id when
+    /// no store is bound yet (early launch, kiosk) — the pre-hand-off
+    /// behavior.
+    var currentDefaultSpaceId: String {
+        let persisted = boundAccount?.userDefaults
+            .string(forKey: AccountUserDefaults.DefaultsKey.defaultSpaceId.rawValue)
+        let known = userSpaces
+        guard !known.isEmpty else { return persisted ?? LocalStore.defaultSpaceId }
+        if let persisted, known.contains(where: { $0.spaceId == persisted }) {
+            return persisted
+        }
+        if known.contains(where: { $0.spaceId == LocalStore.defaultSpaceId }) {
+            return LocalStore.defaultSpaceId
+        }
+        // The recorded holder is gone (e.g. a restored backup) — the first
+        // user Space takes the role until the next hand-off persists.
+        return known.first?.spaceId ?? LocalStore.defaultSpaceId
+    }
+
+    /// Whether the UI may offer Delete for this Space. Everything is
+    /// deletable except an Incognito Space (closed, not deleted) and the
+    /// last remaining user Space — "last" is global, across profiles.
+    /// Agent Spaces are always deletable: they are ephemeral and never
+    /// count toward (or against) the user-Space minimum.
+    func canDeleteSpace(spaceId: String) -> Bool {
+        if Self.isIncognitoSpaceId(spaceId) { return false }
+        guard let space = spaces.first(where: { $0.spaceId == spaceId }) else { return false }
+        if space.isAgentSpace { return true }
+        return userSpaces.count > 1
+    }
+
+    /// Whether any Space in the bound account's store is bound to this
+    /// profile — the authoritative check behind every profile-delete
+    /// affordance. Reads the store directly instead of `spaces`: the
+    /// published cache is legitimately empty or stale around account
+    /// transitions (`unbind` clears it; bind reseeds, then subscribes
+    /// asynchronously) and across the write→publish gap after Space
+    /// mutations, and a stale "not in use" answer would offer deleting a
+    /// profile whose Spaces exist — stranding them on a nonexistent
+    /// profile. With no account bound the answer is "in use": a transition
+    /// window should disable profile deletion, not arm it.
+    func isProfileInUse(_ profileId: String) -> Bool {
+        guard let account = boundAccount else { return true }
+        let storeSpaces = MainActor.assumeIsolated {
+            account.localStorage.getAllSpaces()
+        }
+        return storeSpaces.contains { $0.profileId == profileId }
+    }
+
     /// Currently-active Space of the key slot, derived from `activeSpaceId`.
     var activeSpace: SpaceModel? {
         guard let id = activeSpaceId else { return nil }
@@ -5436,8 +5491,15 @@ final class SpaceManager: ObservableObject {
             MainActor.assumeIsolated { closeIncognitoSpace(spaceId: spaceId) }
             return
         }
-        guard spaceId != LocalStore.defaultSpaceId else {
-            AppLogWarn("[SpaceManager] refusing to delete the default space")
+        // The last user Space can't be deleted — retreat targets, new-window
+        // fallbacks, and the default-role hand-off below all need at least
+        // one persisted regular Space to land on. Only user Spaces are
+        // guarded: agent-Space cleanup (orphan sweep, task teardown) must
+        // never be blocked by the count.
+        let remainingUserSpaces = userSpaces.filter { $0.spaceId != spaceId }
+        if remainingUserSpaces.isEmpty,
+           userSpaces.contains(where: { $0.spaceId == spaceId }) {
+            AppLogWarn("[SpaceManager] refusing to delete the last Space")
             return
         }
         // An import currently writing into this Space must finish first, or its
@@ -5477,6 +5539,19 @@ final class SpaceManager: ObservableObject {
         // A queued profile-change reopen for this Space is moot once the
         // Space itself goes away.
         pendingProfileChangeReopens.removeValue(forKey: spaceId)
+        // Deleting the current default Space hands the role to the first
+        // remaining user Space, persisted so it survives relaunches. Done
+        // before the window teardown so the retreat below already lands on
+        // the successor, and the app-chrome theme republishes from it.
+        if spaceId == currentDefaultSpaceId,
+           let successor = remainingUserSpaces.first {
+            boundAccount?.userDefaults.set(
+                successor.spaceId,
+                forKey: AccountUserDefaults.DefaultsKey.defaultSpaceId.rawValue
+            )
+            AppLogInfo("[SpaceManager] default Space role handed to \(successor.spaceId)")
+            publishResolvedDefaultSpaceThemeIfNeeded(spaceId: successor.spaceId)
+        }
         closeSpaceWindows(spaceId: spaceId)
         // Cascade-delete the Space row, its tagged tabs/bookmarks, and its
         // URL rules in a SINGLE write (LocalStore.deleteSpace intentionally
@@ -5517,7 +5592,7 @@ final class SpaceManager: ObservableObject {
                    spaces.contains(where: { $0.spaceId == last }) {
                     return last
                 }
-                return LocalStore.defaultSpaceId
+                return currentDefaultSpaceId
             }()
             slot.activate(spaceId: retreatTarget) { [weak slot] in
                 guard let slot,
@@ -5725,7 +5800,7 @@ final class SpaceManager: ObservableObject {
         for slot in slots where slot !== respawnSlot {
             guard let controller = slot.windowController(for: spaceId) else { continue }
             if slot.activeSpaceId == spaceId {
-                slot.activate(spaceId: LocalStore.defaultSpaceId)
+                slot.activate(spaceId: currentDefaultSpaceId)
             }
             // Same guard as `deleteSpace`: if the retreat above failed to
             // spawn, closing the still-visible window would be classified
@@ -5975,7 +6050,7 @@ final class SpaceManager: ObservableObject {
     /// resolved copy without writing the per-Space adjustment into the shared
     /// registry or the canonical built-in themes.
     private func publishResolvedDefaultSpaceThemeIfNeeded(spaceId: String) {
-        guard spaceId == LocalStore.defaultSpaceId else { return }
+        guard spaceId == currentDefaultSpaceId else { return }
         MainActor.assumeIsolated {
             ThemeManager.shared.currentTheme = resolvedTheme(forSpaceId: spaceId)
         }
@@ -7018,7 +7093,7 @@ final class SpaceManager: ObservableObject {
     private func closeIncognitoSpaceWindows(spaceId: String) {
         let retreatingSlots = slots.filter { $0.activeSpaceId == spaceId }
         for slot in retreatingSlots {
-            slot.activate(spaceId: LocalStore.defaultSpaceId) { [weak slot] in
+            slot.activate(spaceId: currentDefaultSpaceId) { [weak slot] in
                 guard let slot,
                       let controller = slot.windowController(for: spaceId) else { return }
                 guard slot.visibleController !== controller else {
@@ -7138,8 +7213,9 @@ final class SpaceManager: ObservableObject {
             updated.insert(makeIncognitoSpace(descriptor: descriptor, sortOrder: index), at: index)
         }
         spaces = updated
-        if updated.contains(where: { $0.spaceId == LocalStore.defaultSpaceId }) {
-            publishResolvedDefaultSpaceThemeIfNeeded(spaceId: LocalStore.defaultSpaceId)
+        let defaultSpaceId = currentDefaultSpaceId
+        if updated.contains(where: { $0.spaceId == defaultSpaceId }) {
+            publishResolvedDefaultSpaceThemeIfNeeded(spaceId: defaultSpaceId)
         }
         let validIds = Set(updated.map(\.spaceId))
 

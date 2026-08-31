@@ -59,7 +59,7 @@ class ImportFromOtherBrowserViewController: OnboardingBaseViewController {
     init(
         displayMode: DisplayMode = .login,
         targetProfileId: String = LocalStore.defaultProfileId,
-        targetSpaceId: String = LocalStore.defaultSpaceId,
+        targetSpaceId: String = SpaceManager.shared.currentDefaultSpaceId,
         targetWindowId: Int? = nil
     ) {
         self.displayMode = displayMode
@@ -72,7 +72,7 @@ class ImportFromOtherBrowserViewController: OnboardingBaseViewController {
     required init?(coder: NSCoder) {
         self.displayMode = .login
         self.targetProfileId = LocalStore.defaultProfileId
-        self.targetSpaceId = LocalStore.defaultSpaceId
+        self.targetSpaceId = SpaceManager.shared.currentDefaultSpaceId
         self.targetWindowId = nil
         super.init(coder: coder)
     }

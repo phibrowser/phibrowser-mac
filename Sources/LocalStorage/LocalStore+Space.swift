@@ -27,13 +27,10 @@ extension LocalStore {
                 let defaultSpaceDescriptor = FetchDescriptor<SpaceModel>(
                     predicate: #Predicate { $0.spaceId == defaultSpaceId }
                 )
-                let profileSpacesDescriptor = FetchDescriptor<SpaceModel>(
-                    predicate: #Predicate { $0.profileId == profileId }
-                )
                 let defaultSpace: SpaceModel
                 if let existing = try context.fetch(defaultSpaceDescriptor).first {
                     defaultSpace = existing
-                } else if try context.fetchCount(profileSpacesDescriptor) == 0 {
+                } else if try context.fetchCount(FetchDescriptor<SpaceModel>()) == 0 {
                     let created = SpaceModel(
                         spaceId: Self.defaultSpaceId,
                         profileId: profileId,
@@ -45,9 +42,12 @@ extension LocalStore {
                     context.insert(created)
                     defaultSpace = created
                 } else {
-                    // Spaces exist for this profile but none is the default —
-                    // don't fabricate one, the data shape is something we
-                    // didn't write and we shouldn't paper over it here.
+                    // Other Spaces exist but the well-known default row is
+                    // gone — the user deleted it and its role moved to
+                    // another Space (`SpaceManager.currentDefaultSpaceId`).
+                    // Recreating it here would resurrect a deleted Space,
+                    // so this is strictly a first-launch (empty store)
+                    // bootstrap.
                     return
                 }
 

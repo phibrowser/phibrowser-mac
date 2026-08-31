@@ -761,9 +761,9 @@ extension AppController {
             menu.addItem(empty)
             return
         }
-        let boundProfileIds = Set(SpaceManager.shared.spaces.map { $0.profileId })
         for profile in deletable {
-            let inUse = boundProfileIds.contains(profile.profileId)
+            // Store-read, not the `spaces` cache — see `isProfileInUse`.
+            let inUse = SpaceManager.shared.isProfileInUse(profile.profileId)
             let title: String
             if inUse {
                 title = String(
@@ -806,6 +806,21 @@ extension AppController {
         alert.addButton(withTitle: NSLocalizedString("app.deleteProfileConfirmation.deleteButton", value: "Delete", comment: "Destructive button"))
         alert.addButton(withTitle: NSLocalizedString("app.deleteProfileConfirmation.cancelButton", value: "Cancel", comment: "Cancel button"))
         guard alert.runModal() == .alertFirstButtonReturn else { return }
+        // Re-check AFTER the modal: the menu item was validated when the menu
+        // opened, and a Space can be bound to this profile while the
+        // confirmation sits on screen (background work — the agent surface
+        // included — keeps running under runModal). Nothing below this guard
+        // re-checks: neither ProfileManager nor the Chromium bridge knows
+        // about Space bindings.
+        guard !SpaceManager.shared.isProfileInUse(profile.profileId) else {
+            let errAlert = NSAlert()
+            errAlert.messageText = NSLocalizedString("app.deleteProfileFailure.title", value: "Couldn't delete profile", comment: "Title of the profile-delete error")
+            errAlert.informativeText = NSLocalizedString("app.deleteProfileFailure.inUseBySpace", value: "A Space is using this profile. Delete that Space or change its profile first.",
+                comment: "Body of the profile-delete error when a Space became bound to the profile before the deletion ran"
+            )
+            errAlert.runModal()
+            return
+        }
         ProfileManager.shared.deleteProfile(profile.profileId) { success, error in
             if !success {
                 let errAlert = NSAlert()
@@ -2224,7 +2239,7 @@ extension AppController {
 
     @objc func deleteActiveSpace(_ sender: Any?) {
         guard let space = currentActiveSpace(),
-              space.spaceId != LocalStore.defaultSpaceId else { return }
+              SpaceManager.shared.canDeleteSpace(spaceId: space.spaceId) else { return }
         let alert = NSAlert()
         alert.messageText = String(
             format: NSLocalizedString("app.deleteSpaceConfirmation.title", value: "Delete \u{201C}%@\u{201D}?", comment: "Title of the delete-Space confirmation"),
@@ -2820,7 +2835,7 @@ extension AppController {
                   let profile = menuItem.representedObject as? PhiBrowserProfile else {
                 return false
             }
-            return !SpaceManager.shared.spaces.contains(where: { $0.profileId == profile.profileId })
+            return !SpaceManager.shared.isProfileInUse(profile.profileId)
         }
         let spacesActions: [Selector] = [
             #selector(newSpaceFromMenu(_:)),
@@ -2859,10 +2874,9 @@ extension AppController {
                 return currentActiveSpace() != nil
             }
             if action == #selector(deleteActiveSpace(_:)) {
-                // The default Space can't be deleted — its bookmark root is
-                // shared with the legacy per-profile root.
+                // Any Space can be deleted except the last user Space.
                 guard let space = currentActiveSpace() else { return false }
-                return space.spaceId != LocalStore.defaultSpaceId
+                return SpaceManager.shared.canDeleteSpace(spaceId: space.spaceId)
             }
             if action == #selector(selectSpaceProfile(_:)) {
                 // The default space's profile can't change — its bookmark

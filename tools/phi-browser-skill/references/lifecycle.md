@@ -172,7 +172,10 @@ expires, the task record is gone: the next
 the expired one are lost (cookies persist in the profile; use
 `saveState`/`loadState` around long gaps you can foresee). Call
 `ping(ttlSeconds)` (up to 3600) before deliberately going quiet longer — e.g.
-a page runs a long export while you work elsewhere.
+a page runs a long export while you work elsewhere. The bought window
+survives the round end — the round-end grace never overrides an explicit
+deadline that still lies ahead, in either direction — and the next round's
+start returns the Space to the normal driving clock.
 
 ## Completion and the session mirror
 

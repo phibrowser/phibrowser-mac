@@ -82,12 +82,16 @@ const state = {
   windowBoundsCheckedAt: 0,  // when it was checked — see maybeTrackWindowResize
   lastPingAt: 0,             // epoch ms of the last keep-alive ping (see maybePing)
   pingTimer: null,           // round-long heartbeat interval (see ensureAgentSpace)
+  explicitTtl: null,         // {taskId, deadline} bought by ping(ttlSeconds) —
+                             // honored over the default round-end grace while
+                             // the deadline lies ahead (see releaseTtlSeconds)
 }
 
 // The app auto-closes an agent Space when its driver goes silent (~120s while
 // driving; paused while the USER holds control). Live rounds stay alive via
-// the throttled heartbeat in maybePing; the round-end dispose ping buys this
-// much for the gap until the next heredoc round.
+// the throttled heartbeat in maybePing; the round-end release ping buys this
+// much for the gap until the next heredoc round — unless an explicit
+// ping(ttlSeconds) bought a window that still lies ahead (releaseTtlSeconds).
 const INTER_ROUND_KEEPALIVE_SECONDS = 30 * 60
 
 // DevTools Network capture retains every response BODY in the browser so
@@ -504,6 +508,7 @@ async function enterAgentContext(name, { profile = '', persistent = false } = {}
     // The window seeds its first tab ~0.6s after spawn.
     await wait(1.6)
   }
+  await releaseBoundTask({ shadow: false, taskId: name })
   state.task = task
   state.userSpace = null  // task binding supersedes any user-space binding
   // Start (or re-target) the session mirror: the driving session's prompts
@@ -643,6 +648,7 @@ async function enterShadowContext(name, { profile = '', incognito = false } = {}
       "enterContext({kind:'shadow', incognito:true}): this Phi build does not " +
       'support incognito shadow windows — update Phi Browser, or drop `incognito`.')
   }
+  await releaseBoundTask({ shadow: true, taskId: name })
   // Rides state.task (see contextKind): a shadow context IS a task — same
   // taskId, keep-alive and complete() — with `shadow` marking the one
   // difference, that its window has no presence surfaces.
@@ -1007,15 +1013,63 @@ function pingCall() {
  * next round, and the next round's start resets the short driving window.
  * Call with a larger ttlSeconds (up to 3600) before deliberately going quiet
  * for longer — e.g. leaving a page to run a long export while you work
- * elsewhere — or a small one to let an abandoned Space close sooner.
+ * elsewhere — or a small one to let an abandoned Space close sooner. The
+ * explicit window survives the round end: while its deadline still lies
+ * ahead, the round-end release honors it instead of the default grace.
  */
 export async function ping(ttlSeconds) {
   const task = requireTask()
   state.lastPingAt = Date.now()
+  if (ttlSeconds !== undefined && Number.isFinite(Number(ttlSeconds))) {
+    state.explicitTtl = { taskId: task.taskId,
+                          deadline: Date.now() + Number(ttlSeconds) * 1000 }
+  }
   return phiSend(pingCall(), {
     taskId: task.taskId,
     ...(ttlSeconds !== undefined ? { ttlSeconds: Number(ttlSeconds) } : {}),
   })
+}
+
+/**
+ * The grace to buy when a round boundary releases `taskId` — __dispose at the
+ * round's end, or a mid-round rebind away (releaseBoundTask). An explicit
+ * ping(ttlSeconds) declared an absolute expiry; while that deadline still
+ * lies ahead it is authoritative in BOTH directions (a bought hour must not
+ * shrink to the default grace, a deliberately short leash must not stretch
+ * to it). A deadline the round outlived is spent — the heartbeat kept the
+ * Space alive past it — so fall back to the default inter-round grace.
+ */
+function releaseTtlSeconds(taskId) {
+  const explicit = state.explicitTtl
+  if (explicit && explicit.taskId === taskId) {
+    const remaining = Math.round((explicit.deadline - Date.now()) / 1000)
+    if (remaining > 0) return remaining
+  }
+  return INTER_ROUND_KEEPALIVE_SECONDS
+}
+
+/**
+ * Mid-round rebind away from a live agent context: flip its badge idle (a
+ * no-op for shadow, which has no badge) and buy the release grace NOW —
+ * __dispose only releases the task still bound when the round ends, so
+ * without this the departing Space or shadow window would expire ~120s into
+ * the gap despite the session being alive, and a later re-enter would get a
+ * fresh, empty one. Each kind is released on its own channel (pingCall,
+ * read while the departing task is still bound). `except` identifies the
+ * context being entered — re-entering the bound one is a refresh, not a
+ * departure, and the match is kind + taskId: a Space and a shadow window
+ * sharing a name are different contexts in different registries.
+ */
+async function releaseBoundTask(except) {
+  const task = state.task
+  if (!task || task.ownership !== 'agent') return
+  if (except && !!task.shadow === !!except.shadow &&
+      task.taskId === except.taskId) return
+  await reportRunState(false)
+  await phiSend(pingCall(), {
+    taskId: task.taskId,
+    ttlSeconds: releaseTtlSeconds(task.taskId),
+  }).catch(() => {})
 }
 
 // Per-task memory of the tab the task last drove. The Node process dies with
@@ -7279,16 +7333,7 @@ async function enterUserContext(space, { profile = '', create = true,
     }
   }
   const entry = (await listSpaces()).find((s) => s.spaceId === spaceId)
-  // Rebinding away from a live agent task: release its busy badge and grant
-  // the inter-round grace now — __dispose skips both once task is null, and
-  // without the ping an ephemeral Space would expire ~120s into the gap.
-  if (state.task && state.task.ownership === 'agent') {
-    await reportRunState(false)
-    await phiSend('agentSpace.ping', {
-      taskId: state.task.taskId,
-      ttlSeconds: INTER_ROUND_KEEPALIVE_SECONDS,
-    }).catch(() => {})
-  }
+  await releaseBoundTask()
   state.task = null  // user-space binding supersedes any task binding
   state.userSpace = { spaceId, name: entry?.name ?? space ?? '',
                       windowId: reply.windowId }
@@ -7565,10 +7610,12 @@ export async function __dispose() {
     await reportRunState(false)
     // Buy the between-rounds grace: without it the Space would expire ~120s
     // after this round ends. A session that never comes back (crash, kill,
-    // conversation abandoned) still lets the Space close on its own.
+    // conversation abandoned) still lets the Space close on its own. An
+    // explicit ping(ttlSeconds) whose deadline still lies ahead overrides
+    // the default in both directions — see releaseTtlSeconds.
     await phiSend(pingCall(), {
       taskId: state.task.taskId,
-      ttlSeconds: INTER_ROUND_KEEPALIVE_SECONDS,
+      ttlSeconds: releaseTtlSeconds(state.task.taskId),
     }).catch(() => {})
     // Reclaim the renderer's between-rounds bloat while the Space is idle —
     // this runs only at hand-back, so it never races a live action.

@@ -1042,10 +1042,10 @@ struct BrowserMigrationWizardView: View {
                     .scrollsWhenTall()
                     .migrationCard()
 
-                // Withheld when there is nothing to migrate: "Will create 0
-                // Profiles and 0 Spaces." under a sentence that already said
-                // so is a total nobody asked for.
-                if !model.hasNothingToMigrate {
+                // Withheld while the plan creates nothing: "Will create 0
+                // Profiles and 0 Spaces." is a total nobody asked for, whether
+                // the source offers nothing or the user has unticked everything.
+                if model.plannedProfileCount > 0 {
                     Text(summary)
                         .font(.system(size: 13))
                         .foregroundColor(Ink.secondary)

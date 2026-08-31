@@ -1519,8 +1519,9 @@ struct BrowserMigrationWizardView: View {
 
             // The whole tree, always: the promoted rows appear in it again in
             // their own place rather than being moved out of it, so the card
-            // above adds and never reorders. The tree alone scrolls when it is
-            // taller than the band; the summary and the problems stay put.
+            // above adds and never reorders. The tree scrolls when it is
+            // taller than what the band has left; the summary stays put, and
+            // the card holds at a few rows so the tree is what gets the band.
             reportTree(report)
                 .padding(12)
                 .scrollsWhenTall()
@@ -1572,9 +1573,19 @@ struct BrowserMigrationWizardView: View {
             count)
     }
 
-    /// The failures, always open. Everything in it is also in the tree below,
-    /// so this is a shortcut to what is wrong rather than a place things are
-    /// taken to.
+    /// Three rows of the problem grid and half of a fourth: the card's 12pt
+    /// top padding, then rows of 15pt text that the grid lays out 19pt tall
+    /// on the glyph's baseline, at its 6pt spacing — the fourth row starts
+    /// at 87 and 96 cuts it in the middle. The card is the shortcut to what
+    /// is wrong and the tree is the report, so a run that went wrong in
+    /// many places — the one that needs the tree most — must not have the
+    /// card take the band from it. The half row is what says there is more
+    /// to scroll to.
+    private static let problemCardMaxHeight: CGFloat = 96
+
+    /// The failures, always open, and never more than a few rows tall.
+    /// Everything in it is also in the tree below, so this is a shortcut to
+    /// what is wrong rather than a place things are taken to.
     private func problemCard(
         _ problems: [BrowserMigrationReport.Problem], requested: Set<ImportDataType>
     ) -> some View {
@@ -1599,6 +1610,14 @@ struct BrowserMigrationWizardView: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(12)
+        // As the tree: the card is as tall as the grid while that fits under
+        // the cap, and past it the rows scroll inside the card. The fixed
+        // size is what keeps the card at the grid's own height under the
+        // cap — a flexible frame on its own would claim the cap whatever it
+        // holds, and a two-row card would grow to it.
+        .scrollsWhenTall()
+        .frame(maxHeight: Self.problemCardMaxHeight)
+        .fixedSize(horizontal: false, vertical: true)
         .migrationCard()
     }
 

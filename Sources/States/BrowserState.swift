@@ -3345,6 +3345,9 @@ class BrowserState {
         // path above is likewise sidebar-only — Comfortable hides the menu
         // item, and openLinkAsPeek degrades to a plain new tab as backstop.
         guard !layoutMode.isTraditional else { return false }
+        // The automatic bound-opener diversion has its own sub-toggle; the
+        // explicit path above answers to the master gate alone.
+        guard PhiPreferences.GeneralSettings.autoPeekViewEnabled.loadValue() else { return false }
         guard let context,
               context.creationKind == .linkForeground,
               let openerTabId = context.openerTabId else { return false }
@@ -3554,11 +3557,13 @@ class BrowserState {
         }
 
         // Peek previews web pages only; anything else keeps stock behavior.
-        // The layout re-check covers a switch to traditional layout while the
-        // candidate was waiting for its first URL.
+        // The layout and auto-toggle re-checks cover a switch to traditional
+        // layout or a flipped setting while the candidate was waiting for its
+        // first URL.
         let scheme = URL(string: targetURLString)?.scheme?.lowercased() ?? ""
         let isWebURL = scheme == "http" || scheme == "https"
         if !isWebURL || layoutMode.isTraditional
+            || !PhiPreferences.GeneralSettings.autoPeekViewEnabled.loadValue()
             || peekIsSameSite(candidate.boundURLString, targetURLString) {
             AppLogInfo("👀 [Peek] tabId=\(candidate.tab.guid) url=\(targetURLString) adopting as normal tab")
             adoptPeekTabIntoStrip(candidate.tab, context: candidate.context, activate: true)

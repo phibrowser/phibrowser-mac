@@ -62111,6 +62111,30 @@
         }
       }
     },
+    "settings.navigations.peek.autoToggle.description" : {
+      "comment" : "Navigations settings - Explanation of the automatic Peek View toggle for pinned tabs and bookmarks",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Links that leave a pinned tab’s or bookmark’s site open in a Peek panel instead of a new tab."
+          }
+        }
+      }
+    },
+    "settings.navigations.peek.autoToggle.title" : {
+      "comment" : "Navigations settings - Toggle title for automatically opening cross-site links from pinned tabs and bookmarks in Peek View",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Automatically peek from pinned tabs and bookmarks"
+          }
+        }
+      }
+    },
     "settings.navigations.peek.enableToggle.description" : {
       "comment" : "Navigations settings - Explanation of the Peek View toggle",
       "extractionState" : "extracted_with_value",

@@ -19,6 +19,9 @@ struct NavigationsSettingsView: View {
     @AppStorage(PhiPreferences.GeneralSettings.peekViewEnabled.rawValue)
     private var peekViewEnabled: Bool = PhiPreferences.GeneralSettings.peekViewEnabled.defaultValue
 
+    @AppStorage(PhiPreferences.GeneralSettings.autoPeekViewEnabled.rawValue)
+    private var autoPeekViewEnabled: Bool = PhiPreferences.GeneralSettings.autoPeekViewEnabled.defaultValue
+
     @State private var kioskShortcutDescription =
         NavigationsSettingsView.currentKioskShortcutDescription
 
@@ -70,8 +73,25 @@ struct NavigationsSettingsView: View {
                             title: NSLocalizedString("settings.navigations.peek.enableToggle.title", value: "Enable Peek View", comment: "Navigations settings - Toggle title for enabling Peek View"),
                             description: NSLocalizedString("settings.navigations.peek.enableToggle.description", value: "Shift-click a link, or choose “Open Link in Peek View”, to preview it in a floating panel over the page. Not available in the Comfortable layout.", comment: "Navigations settings - Explanation of the Peek View toggle"),
                             isOn: $peekViewEnabled,
-                            onChange: { PeekViewAnalytics.settingChanged(enabled: $0) }
+                            onChange: { enabled in
+                                PeekViewAnalytics.settingChanged(enabled: enabled)
+                                // The automatic sub-toggle follows the master's
+                                // transitions: enabling Peek View re-enables it,
+                                // disabling Peek View switches it off.
+                                autoPeekViewEnabled = enabled
+                            }
                         )
+
+                        SettingsRowDivider()
+
+                        NavigationsSettingsToggleRow(
+                            title: NSLocalizedString("settings.navigations.peek.autoToggle.title", value: "Automatically peek from pinned tabs and bookmarks", comment: "Navigations settings - Toggle title for automatically opening cross-site links from pinned tabs and bookmarks in Peek View"),
+                            description: NSLocalizedString("settings.navigations.peek.autoToggle.description", value: "Links that leave a pinned tab’s or bookmark’s site open in a Peek panel instead of a new tab.", comment: "Navigations settings - Explanation of the automatic Peek View toggle for pinned tabs and bookmarks"),
+                            isOn: $autoPeekViewEnabled,
+                            onChange: { PeekViewAnalytics.autoSettingChanged(enabled: $0) }
+                        )
+                        .disabled(!peekViewEnabled)
+                        .opacity(peekViewEnabled ? 1.0 : 0.4)
                     }
                 }
 

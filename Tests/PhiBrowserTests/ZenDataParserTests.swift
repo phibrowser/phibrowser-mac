@@ -266,7 +266,12 @@ final class ZenDataParserTests: XCTestCase {
     /// "Reading" folder nested in "New Folder" with a pin, an "Empty" folder
     /// holding only a placeholder, a Glance tab, a pin with no pinned-at
     /// entry ("Current"), and a pin naming a workspace that is not in
-    /// `spaces[]` ("Orphan"). `groups[]` — copies of the folders as Firefox
+    /// `spaces[]` ("Orphan"); and, for the split views, with example hosts:
+    /// two pins split inside "zen basics" — with the `folders[]` record Zen
+    /// writes for a split placed in a folder, flagged `splitViewGroup` —
+    /// two pins split stacked at the root of "Space", whose layout names
+    /// them the other way round from the file ("Docs" first), and a grid
+    /// of three under "qqq". `groups[]` — copies of the folders as Firefox
     /// tab groups — is emptied, being ignored.
     private let capturedSession = """
     {
@@ -311,6 +316,20 @@ final class ZenDataParserTests: XCTestCase {
           "userContextId": 0, "index": 1
         },
         {
+          "entries": [ { "url": "https://notes.example/", "title": "Notes" } ],
+          "pinned": true, "groupId": "1788100000000-11", "zenWorkspace": "{c406b463-0db9-48a4-90a8-317bd1bd9d12}",
+          "zenSyncId": "1788100000000-12", "zenEssential": false, "zenIsEmpty": false, "zenIsGlance": false,
+          "_zenPinnedInitialState": { "entry": { "url": "https://notes.example/", "title": "Notes" }, "image": null },
+          "userContextId": 0, "index": 1
+        },
+        {
+          "entries": [ { "url": "https://tasks.example/", "title": "Tasks" } ],
+          "pinned": true, "groupId": "1788100000000-11", "zenWorkspace": "{c406b463-0db9-48a4-90a8-317bd1bd9d12}",
+          "zenSyncId": "1788100000000-13", "zenEssential": false, "zenIsEmpty": false, "zenIsGlance": false,
+          "_zenPinnedInitialState": { "entry": { "url": "https://tasks.example/", "title": "Tasks" }, "image": null },
+          "userContextId": 0, "index": 1
+        },
+        {
           "entries": [ { "url": "https://zen.example/welcome/", "title": "Welcome" } ],
           "pinned": true, "zenWorkspace": "{c406b463-0db9-48a4-90a8-317bd1bd9d12}",
           "zenSyncId": "1787729956461-80", "zenEssential": false, "zenIsEmpty": false, "zenIsGlance": false,
@@ -322,6 +341,20 @@ final class ZenDataParserTests: XCTestCase {
           "pinned": true, "zenWorkspace": "{c406b463-0db9-48a4-90a8-317bd1bd9d12}",
           "zenSyncId": "1787729956441-24", "zenEssential": false, "zenIsEmpty": false, "zenIsGlance": false,
           "_zenPinnedInitialState": { "entry": { "url": "https://video.example/", "title": "Video" }, "image": null },
+          "userContextId": 0, "index": 1
+        },
+        {
+          "entries": [ { "url": "https://chat.example/", "title": "Chat" } ],
+          "pinned": true, "groupId": "1788100000000-21", "zenWorkspace": "{c406b463-0db9-48a4-90a8-317bd1bd9d12}",
+          "zenSyncId": "1788100000000-22", "zenEssential": false, "zenIsEmpty": false, "zenIsGlance": false,
+          "_zenPinnedInitialState": { "entry": { "url": "https://chat.example/", "title": "Chat" }, "image": null },
+          "userContextId": 0, "index": 1
+        },
+        {
+          "entries": [ { "url": "https://docs.example/", "title": "Docs" } ],
+          "pinned": true, "groupId": "1788100000000-21", "zenWorkspace": "{c406b463-0db9-48a4-90a8-317bd1bd9d12}",
+          "zenSyncId": "1788100000000-23", "zenEssential": false, "zenIsEmpty": false, "zenIsGlance": false,
+          "_zenPinnedInitialState": { "entry": { "url": "https://docs.example/", "title": "Docs" }, "image": null },
           "userContextId": 0, "index": 1
         },
         {
@@ -389,6 +422,27 @@ final class ZenDataParserTests: XCTestCase {
           "zenSyncId": "1788098572307-51", "zenEssential": false, "zenIsEmpty": false, "zenIsGlance": false,
           "_zenPinnedInitialState": { "entry": { "url": "https://engine.example/", "title": "Engine" }, "image": null },
           "userContextId": 0, "index": 2
+        },
+        {
+          "entries": [ { "url": "https://alpha.example/", "title": "Alpha" } ],
+          "pinned": true, "groupId": "1788100000000-31", "zenWorkspace": "{d84b71ba-bc19-41e0-a6a0-28a93aa9d024}",
+          "zenSyncId": "1788100000000-32", "zenEssential": false, "zenIsEmpty": false, "zenIsGlance": false,
+          "_zenPinnedInitialState": { "entry": { "url": "https://alpha.example/", "title": "Alpha" }, "image": null },
+          "userContextId": 0, "index": 1
+        },
+        {
+          "entries": [ { "url": "https://beta.example/", "title": "Beta" } ],
+          "pinned": true, "groupId": "1788100000000-31", "zenWorkspace": "{d84b71ba-bc19-41e0-a6a0-28a93aa9d024}",
+          "zenSyncId": "1788100000000-33", "zenEssential": false, "zenIsEmpty": false, "zenIsGlance": false,
+          "_zenPinnedInitialState": { "entry": { "url": "https://beta.example/", "title": "Beta" }, "image": null },
+          "userContextId": 0, "index": 1
+        },
+        {
+          "entries": [ { "url": "https://gamma.example/", "title": "Gamma" } ],
+          "pinned": true, "groupId": "1788100000000-31", "zenWorkspace": "{d84b71ba-bc19-41e0-a6a0-28a93aa9d024}",
+          "zenSyncId": "1788100000000-34", "zenEssential": false, "zenIsEmpty": false, "zenIsGlance": false,
+          "_zenPinnedInitialState": { "entry": { "url": "https://gamma.example/", "title": "Gamma" }, "image": null },
+          "userContextId": 0, "index": 1
         },
         {
           "entries": [ { "url": "https://os.example/io/", "title": "OS (io)" } ],
@@ -478,6 +532,10 @@ final class ZenDataParserTests: XCTestCase {
         { "pinned": true, "splitViewGroup": false, "id": "1787729895449-23", "name": "zen basics", "collapsed": true,
           "saveOnWindowClose": true, "parentId": null, "prevSiblingInfo": null, "userIcon": "",
           "workspaceId": "{c406b463-0db9-48a4-90a8-317bd1bd9d12}" },
+        { "pinned": true, "splitViewGroup": true, "id": "1788100000000-11", "name": "", "collapsed": false,
+          "saveOnWindowClose": true, "parentId": "1787729895449-23", "prevSiblingInfo": { "type": "tab", "id": "1787729867469-83" },
+          "userIcon": "", "essential": false, "emptyTabIds": [],
+          "workspaceId": "{c406b463-0db9-48a4-90a8-317bd1bd9d12}" },
         { "pinned": true, "splitViewGroup": false, "id": "1788098553873-3", "name": "New Folder", "collapsed": true,
           "saveOnWindowClose": true, "parentId": null, "prevSiblingInfo": { "type": "tab", "id": "1788098557189-59" },
           "userIcon": "", "workspaceId": "{d84b71ba-bc19-41e0-a6a0-28a93aa9d024}" },
@@ -489,7 +547,25 @@ final class ZenDataParserTests: XCTestCase {
           "userIcon": "", "workspaceId": "{d84b71ba-bc19-41e0-a6a0-28a93aa9d024}" }
       ],
       "groups": [],
-      "splitViewData": []
+      "splitViewData": [
+        { "groupId": "1788100000000-11", "gridType": "vsep",
+          "layoutTree": { "type": "splitter", "direction": "row", "sizeInParent": 100, "children": [
+            { "type": "leaf", "tabId": "1788100000000-12", "sizeInParent": 50 },
+            { "type": "leaf", "tabId": "1788100000000-13", "sizeInParent": 50 } ] },
+          "tabs": [ "1788100000000-12", "1788100000000-13" ] },
+        { "groupId": "1788100000000-21", "gridType": "hsep",
+          "layoutTree": { "type": "splitter", "direction": "column", "sizeInParent": 100, "children": [
+            { "type": "leaf", "tabId": "1788100000000-23", "sizeInParent": 50 },
+            { "type": "leaf", "tabId": "1788100000000-22", "sizeInParent": 50 } ] },
+          "tabs": [ "1788100000000-22", "1788100000000-23" ] },
+        { "groupId": "1788100000000-31", "gridType": "grid",
+          "layoutTree": { "type": "splitter", "direction": "row", "sizeInParent": 100, "children": [
+            { "type": "splitter", "direction": "column", "sizeInParent": 50, "children": [
+              { "type": "leaf", "tabId": "1788100000000-32", "sizeInParent": 50 },
+              { "type": "leaf", "tabId": "1788100000000-33", "sizeInParent": 50 } ] },
+            { "type": "leaf", "tabId": "1788100000000-34", "sizeInParent": 50 } ] },
+          "tabs": [ "1788100000000-32", "1788100000000-33", "1788100000000-34" ] }
+      ]
     }
     """
 
@@ -622,8 +698,8 @@ final class ZenDataParserTests: XCTestCase {
 
         XCTAssertEqual(tabs.map(\.title), [
             "Search", "Social", "Mail",
-            "Welcome", "Welcome", "Video", "Wiki", "OS",
-            "Topic", "Forum", "Reading list", "Engine",
+            "Welcome", "Notes", "Tasks", "Welcome", "Video", "Chat", "Docs", "Wiki", "OS",
+            "Topic", "Forum", "Reading list", "Engine", "Alpha", "Beta", "Gamma",
             "OS (io)", "Current", "Orphan",
         ])
     }
@@ -642,10 +718,10 @@ final class ZenDataParserTests: XCTestCase {
         func pin(_ title: String) -> ZenDataParserTool.PinnedTab? { tabs.first { $0.title == title } }
 
         XCTAssertEqual(pin("Welcome")?.workspaceID, "{c406b463-0db9-48a4-90a8-317bd1bd9d12}")
-        XCTAssertEqual(pin("Welcome")?.folderID, "1787729895449-23")
-        XCTAssertNil(tabs.last { $0.title == "Welcome" }?.folderID)
-        XCTAssertNil(pin("Video")?.folderID)
-        XCTAssertEqual(pin("Reading list")?.folderID, "1788098553873-4")
+        XCTAssertEqual(pin("Welcome")?.groupID, "1787729895449-23")
+        XCTAssertNil(tabs.last { $0.title == "Welcome" }?.groupID)
+        XCTAssertNil(pin("Video")?.groupID)
+        XCTAssertEqual(pin("Reading list")?.groupID, "1788098553873-4")
         XCTAssertEqual(pin("Orphan")?.workspaceID, "{00000000-0000-0000-0000-000000000000}")
     }
 
@@ -661,6 +737,8 @@ final class ZenDataParserTests: XCTestCase {
         XCTAssertNil(pin("First"))
     }
 
+    /// The record flagged `splitViewGroup` — the split view placed in "zen
+    /// basics" — is not a folder and is not among them.
     func testFoldersComeOutWithTheirNesting() throws {
         let folders = try session(capturedSession).folders
 
@@ -668,6 +746,54 @@ final class ZenDataParserTests: XCTestCase {
                        ["1787729895449-23", "1788098553873-3", "1788098553873-4", "1788098553873-5"])
         XCTAssertEqual(folders.map(\.name), ["zen basics", "New Folder", "Reading", "Empty"])
         XCTAssertEqual(folders.map(\.parentID), [nil, nil, "1788098553873-3", nil])
+    }
+
+    /// A split view is a Firefox tab group of its own — its pins carry its
+    /// id in `groupId` — and `splitViewData[]` says which groups are splits
+    /// and how they are laid out. The one placed in "zen basics" has the
+    /// `folders[]` record too, which names that folder; the one at the root
+    /// has none; the grid of three nests a splitter in a pane, so its top
+    /// level is not all leaves and it has no panes to pair.
+    func testSplitViewsComeOutWithTheirPanesDirectionAndParentFolder() throws {
+        let splitViews = try session(capturedSession).splitViews
+
+        XCTAssertEqual(splitViews, [
+            ZenDataParserTool.SplitView(
+                id: "1788100000000-11", parentFolderID: "1787729895449-23",
+                direction: "row", paneTabIDs: ["1788100000000-12", "1788100000000-13"]),
+            ZenDataParserTool.SplitView(
+                id: "1788100000000-21", parentFolderID: nil,
+                direction: "column", paneTabIDs: ["1788100000000-23", "1788100000000-22"]),
+            ZenDataParserTool.SplitView(
+                id: "1788100000000-31", parentFolderID: nil, direction: "row", paneTabIDs: nil),
+        ])
+    }
+
+    /// A split's layout names its panes by the tabs' `zenSyncId`; a pin in a
+    /// split carries the split's id where a folder's pins carry the folder's.
+    func testAPinCarriesItsSyncIdAndTheSplitViewItSitsIn() throws {
+        let tabs = try session(capturedSession).pinnedTabs
+        func pin(_ title: String) -> ZenDataParserTool.PinnedTab? { tabs.first { $0.title == title } }
+
+        XCTAssertEqual(pin("Docs")?.syncID, "1788100000000-23")
+        XCTAssertEqual(pin("Docs")?.groupID, "1788100000000-21")
+        XCTAssertEqual(pin("Notes")?.groupID, "1788100000000-11")
+        XCTAssertEqual(pin("Welcome")?.syncID, "1787729867469-83")
+    }
+
+    /// A `splitViewGroup` record with no `splitViewData[]` entry — a shape
+    /// Zen does not write — is still not a folder: it is a split with no
+    /// layout, and so no panes, placed in the folder the record names.
+    func testASplitViewGroupRecordWithoutAnEntryIsASplitWithNoPanes() throws {
+        let session = try session("""
+        { "spaces": [], "folders": [
+            { "id": "f1", "name": "Folder" },
+            { "id": "s1", "name": "", "parentId": "f1", "splitViewGroup": true } ] }
+        """)
+
+        XCTAssertEqual(session.folders.map(\.id), ["f1"])
+        XCTAssertEqual(session.splitViews, [ZenDataParserTool.SplitView(
+            id: "s1", parentFolderID: "f1", direction: nil, paneTabIDs: nil)])
     }
 
     /// A tab with no entry to read a URL from is not a pin; without an
@@ -681,8 +807,8 @@ final class ZenDataParserTests: XCTestCase {
         """).pinnedTabs
 
         XCTAssertEqual(tabs, [ZenDataParserTool.PinnedTab(
-            workspaceID: "{1}", isEssential: false, userContextId: 0, folderID: nil,
-            title: "", url: "https://b.example/")])
+            workspaceID: "{1}", isEssential: false, userContextId: 0, groupID: nil,
+            title: "", url: "https://b.example/", syncID: nil)])
     }
 
     // MARK: - containers.json
@@ -767,12 +893,13 @@ final class ZenDataParserTests: XCTestCase {
             .migrationSource
     }
 
-    /// A Space's tree, a folder bracketing what it holds.
+    /// A Space's tree: a folder bracketing what it holds, a split showing
+    /// its second page after its first.
     private func outline(_ node: ArcDataParserTool.Bookmark) -> [String] {
         node.children.map { child in
-            child.isFolder
-                ? "\(child.title ?? "")[\(outline(child).joined(separator: ", "))]"
-                : child.title ?? ""
+            if child.isFolder { return "\(child.title ?? "")[\(outline(child).joined(separator: ", "))]" }
+            if let split = child.split { return "\(child.title ?? "") ⫽ \(split.secondaryTitle)" }
+            return child.title ?? ""
         }
     }
 
@@ -791,8 +918,8 @@ final class ZenDataParserTests: XCTestCase {
 
     private func essential(container: Int, _ title: String, _ url: String) -> ZenDataParserTool.PinnedTab {
         ZenDataParserTool.PinnedTab(
-            workspaceID: "{1}", isEssential: true, userContextId: container, folderID: nil,
-            title: title, url: url)
+            workspaceID: "{1}", isEssential: true, userContextId: container, groupID: nil,
+            title: title, url: url, syncID: nil)
     }
 
     /// The design machine as it stands: the captured spaces over the captured
@@ -1029,6 +1156,9 @@ final class ZenDataParserTests: XCTestCase {
     /// directly at the root, whatever container the pins carry. A folder
     /// holding only a placeholder is not written, nor is the pin naming a
     /// workspace that is not in the file; Essentials are not in any tree.
+    /// A split view of two pins is one entry where the first of its pins
+    /// sits — inside the folder the split is placed in, or at the root —
+    /// never a folder; the grid of three falls back to its pins, in place.
     func testEachSpacesBookmarksAreItsWorkspacePinsWithTheirFolders() throws {
         let source = source(
             ghostINI, session: try session(capturedSession), under: realKey,
@@ -1036,9 +1166,9 @@ final class ZenDataParserTests: XCTestCase {
 
         XCTAssertEqual(source.spaces.map(\.name), ["Space", "TTT", "qqq", "abc"])
         XCTAssertEqual(source.spaces.map { $0.bookmarkRoot.map(outline) }, [
-            ["zen basics[Welcome]", "Welcome", "Video", "Wiki", "OS"],
+            ["zen basics[Welcome, Notes ⫽ Tasks]", "Welcome", "Video", "Docs ⫽ Chat", "Wiki", "OS"],
             [],
-            ["Topic", "New Folder[Forum, Reading[Reading list]]", "Engine"],
+            ["Topic", "New Folder[Forum, Reading[Reading list]]", "Engine", "Alpha", "Beta", "Gamma"],
             ["OS (io)", "Current"],
         ])
     }
@@ -1050,8 +1180,10 @@ final class ZenDataParserTests: XCTestCase {
         let qqq = try XCTUnwrap(source.spaces[2].bookmarkRoot)
 
         XCTAssertEqual(qqq.title, "qqq")
-        XCTAssertEqual(qqq.children.map(\.url),
-                       ["https://forum.example/topic/1/", nil, "https://engine.example/"])
+        XCTAssertEqual(qqq.children.map(\.url), [
+            "https://forum.example/topic/1/", nil, "https://engine.example/",
+            "https://alpha.example/", "https://beta.example/", "https://gamma.example/",
+        ])
         XCTAssertEqual(qqq.children[1].children[1].children.map(\.url),
                        ["https://forum.example/reading/"])
     }
@@ -1070,6 +1202,125 @@ final class ZenDataParserTests: XCTestCase {
         let source = source(oneProfileINI, session: session, under: "abcd1234.Default (release)")
 
         XCTAssertEqual(source.spaces[0].bookmarkRoot.map(outline), ["Inner[Outer[A]]"])
+    }
+
+    /// A split view of two workspace pins is one Split Bookmark: the first
+    /// pane's page on the row, the second riding on it, the divider read
+    /// from the axis Zen names — `column` (stacked) is Phi's horizontal
+    /// bar, `row` its vertical one. It sits where the first of the split's
+    /// pins is in the file, which at the root of "Space" is the second
+    /// pane's place ("Chat" is written before "Docs").
+    func testATwoPaneSplitViewIsOneSplitBookmarkWhereItsFirstPinSits() throws {
+        let source = source(
+            ghostINI, session: try session(capturedSession), under: realKey,
+            containers: try containers(capturedContainers))
+        let space = try XCTUnwrap(source.spaces[0].bookmarkRoot)
+
+        let atRoot = space.children[3]
+        XCTAssertEqual(atRoot.title, "Docs")
+        XCTAssertEqual(atRoot.url, "https://docs.example/")
+        XCTAssertEqual(atRoot.split, ArcSplit(
+            secondaryTitle: "Chat", secondaryURL: "https://chat.example/",
+            layout: SplitLayout.horizontal.rawValue))
+        XCTAssertFalse(atRoot.isFolder)
+        XCTAssertTrue(atRoot.children.isEmpty)
+
+        let inFolder = try XCTUnwrap(space.children[0].children.last)
+        XCTAssertEqual(inFolder.url, "https://notes.example/")
+        XCTAssertEqual(inFolder.split, ArcSplit(
+            secondaryTitle: "Tasks", secondaryURL: "https://tasks.example/",
+            layout: SplitLayout.vertical.rawValue))
+    }
+
+    /// One space with two pins, "A" then "B", in a split view at its root,
+    /// laid out as given.
+    private func splitSession(layoutTree: String) throws -> ZenDataParserTool.Session {
+        try session("""
+        { "spaces": [ { "uuid": "{1}", "name": "S" } ],
+          "tabs": [
+            { "pinned": true, "zenWorkspace": "{1}", "groupId": "s1", "zenSyncId": "t1",
+              "_zenPinnedInitialState": { "entry": { "url": "https://a.example/", "title": "A" } } },
+            { "pinned": true, "zenWorkspace": "{1}", "groupId": "s1", "zenSyncId": "t2",
+              "_zenPinnedInitialState": { "entry": { "url": "https://b.example/", "title": "B" } } } ],
+          "splitViewData": [ { "groupId": "s1", "layoutTree": \(layoutTree) } ] }
+        """)
+    }
+
+    private func twoLeaves(_ direction: String, _ first: String = "t1", _ second: String = "t2") -> String {
+        #"""
+        { "type": "splitter", "direction": "\#(direction)", "children": [
+            { "type": "leaf", "tabId": "\#(first)" }, { "type": "leaf", "tabId": "\#(second)" } ] }
+        """#
+    }
+
+    private func spaceOutline(_ session: ZenDataParserTool.Session) -> [String] {
+        source(oneProfileINI, session: session, under: "abcd1234.Default (release)")
+            .spaces[0].bookmarkRoot.map(outline) ?? []
+    }
+
+    /// Zen's `direction` names the axis the panes run along; Phi names the
+    /// divider. `row` (side by side) is Phi's vertical bar, `column`
+    /// (stacked) its horizontal one, and a direction Phi does not know
+    /// leaves the default.
+    func testAZenDirectionBecomesPhisDividerLayout() throws {
+        func split(_ direction: String) throws -> ArcSplit? {
+            source(oneProfileINI, session: try splitSession(layoutTree: twoLeaves(direction)),
+                   under: "abcd1234.Default (release)")
+                .spaces[0].bookmarkRoot?.children.first?.split
+        }
+
+        XCTAssertEqual(try split("row")?.layout, SplitLayout.vertical.rawValue)
+        XCTAssertEqual(try split("column")?.layout, SplitLayout.horizontal.rawValue)
+        XCTAssertEqual(try split("diagonal"), ArcSplit(
+            secondaryTitle: "B", secondaryURL: "https://b.example/", layout: nil))
+    }
+
+    /// A pane whose tab is not a pin of the Space — here one the file does
+    /// not hold — leaves nothing to pair, and so does a layout naming one
+    /// of the pins twice: the split's pins land plain, in place.
+    func testASplitWhosePanesAreNotItsTwoPinsFallsBackToItsPins() throws {
+        XCTAssertEqual(spaceOutline(try splitSession(layoutTree: twoLeaves("row", "t1", "t9"))), ["A", "B"])
+        XCTAssertEqual(spaceOutline(try splitSession(layoutTree: twoLeaves("row", "t1", "t1"))), ["A", "B"])
+    }
+
+    /// A `splitViewGroup` record with no `splitViewData[]` entry is a split
+    /// with no panes: its pins land plain, in the folder the record names —
+    /// never in a folder of the split's own.
+    func testASplitViewGroupRecordWithoutALayoutLandsItsPinsPlainInItsFolder() throws {
+        let session = try session("""
+        { "spaces": [ { "uuid": "{1}", "name": "S" } ],
+          "folders": [ { "id": "f1", "name": "Folder" },
+                       { "id": "s1", "name": "", "parentId": "f1", "splitViewGroup": true } ],
+          "tabs": [
+            { "pinned": true, "zenWorkspace": "{1}", "groupId": "f1", "zenSyncId": "t0",
+              "_zenPinnedInitialState": { "entry": { "url": "https://x.example/", "title": "X" } } },
+            { "pinned": true, "zenWorkspace": "{1}", "groupId": "s1", "zenSyncId": "t1",
+              "_zenPinnedInitialState": { "entry": { "url": "https://a.example/", "title": "A" } } },
+            { "pinned": true, "zenWorkspace": "{1}", "groupId": "s1", "zenSyncId": "t2",
+              "_zenPinnedInitialState": { "entry": { "url": "https://b.example/", "title": "B" } } } ] }
+        """)
+
+        XCTAssertEqual(spaceOutline(session), ["Folder[X, A, B]"])
+    }
+
+    /// Zen never puts an Essential in a split view; should a layout name
+    /// one, the Essential is not a pin of the Space, so the workspace pin
+    /// beside it lands plain and the Essential stays its container
+    /// Profile's pinned entry.
+    func testAnEssentialNamedByASplitsLayoutStaysAPinnedEntry() throws {
+        let session = try session("""
+        { "spaces": [ { "uuid": "{1}", "name": "S" } ],
+          "tabs": [
+            { "pinned": true, "zenWorkspace": "{1}", "groupId": "s1", "zenSyncId": "t1",
+              "_zenPinnedInitialState": { "entry": { "url": "https://a.example/", "title": "A" } } },
+            { "pinned": true, "zenEssential": true, "zenWorkspace": "{1}", "groupId": "s1", "zenSyncId": "t2",
+              "_zenPinnedInitialState": { "entry": { "url": "https://e.example/", "title": "E" } } } ],
+          "splitViewData": [ { "groupId": "s1", "layoutTree": \(twoLeaves("row")) } ] }
+        """)
+        let source = source(oneProfileINI, session: session, under: "abcd1234.Default (release)")
+
+        XCTAssertEqual(source.spaces[0].bookmarkRoot.map(outline), ["A"])
+        XCTAssertEqual(source.pinnedGroups.map { $0.entries.map(\.title) }, [["E"]])
     }
 
     // MARK: - Pinned tabs from Essentials

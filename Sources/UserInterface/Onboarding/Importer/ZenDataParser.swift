@@ -174,16 +174,21 @@ enum ZenDataParserTool {
 
     /// The session file's spaces — Zen's workspaces — in array order, which
     /// is their order (the file has no position field); its pinned tabs, in
-    /// file order; and its folders, the tree those sit in.
+    /// file order; its folders, the tree those sit in; and its split views.
     struct Session: Equatable {
         let spaces: [Space]
         let pinnedTabs: [PinnedTab]
         let folders: [Folder]
+        let splitViews: [SplitView]
 
-        init(spaces: [Space], pinnedTabs: [PinnedTab] = [], folders: [Folder] = []) {
+        init(
+            spaces: [Space], pinnedTabs: [PinnedTab] = [], folders: [Folder] = [],
+            splitViews: [SplitView] = []
+        ) {
             self.spaces = spaces
             self.pinnedTabs = pinnedTabs
             self.folders = folders
+            self.splitViews = splitViews
         }
     }
 
@@ -201,24 +206,51 @@ enum ZenDataParserTool {
         /// `userContextId`: the container the tab is in — the one an
         /// Essential's Profile is derived from; 0 when none.
         let userContextId: Int
-        /// `groupId`: the folder a workspace pin sits in; nil at the root.
-        let folderID: String?
+        /// `groupId`: the tab group a workspace pin sits in — a folder, or a
+        /// split view; nil at the root.
+        let groupID: String?
         /// From the pinned-at entry (`_zenPinnedInitialState.entry`, which is
         /// what Zen's own "reset pinned tab" returns to), falling back to the
         /// current session entry when there is none. Empty when the entry
         /// has no title.
         let title: String
         let url: String
+        /// `zenSyncId`: what a split view's layout names its panes by; nil
+        /// when the tab carries none.
+        let syncID: String?
     }
 
     /// One `folders[]` entry: a Firefox tab group Zen shows as a folder of
     /// pins. `parentId` nests it; its own workspace field is not read — the
-    /// pins in it say where it is.
+    /// pins in it say where it is. A record flagged `splitViewGroup` is not
+    /// one: it is a split view placed inside a folder, and read as such.
     struct Folder: Equatable {
         let id: String
         /// Empty when the folder has no name.
         let name: String
         let parentID: String?
+    }
+
+    /// One split view: a Firefox tab group of its own that Zen shows two to
+    /// four workspace pins in together, whose pins carry its id in `groupId`
+    /// as a folder's do. Read from its `splitViewData[]` entry — the
+    /// authority for the layout — joined with the `folders[]` record Zen
+    /// writes for a split only when it is placed inside a folder (flagged
+    /// `splitViewGroup`). A record with no entry, a shape Zen does not
+    /// write, is a split with no layout, and so no panes.
+    struct SplitView: Equatable {
+        let id: String
+        /// The folder the split is placed in, from its `folders[]` record;
+        /// nil at the root.
+        let parentFolderID: String?
+        /// The layout root's `direction`: `row` is side by side, `column`
+        /// stacked.
+        let direction: String?
+        /// The top level's panes as their tabs' `zenSyncId`, in layout
+        /// order — when every pane is a leaf. A grid of three or four nests
+        /// a splitter in a pane, which leaves this nil: Phi's split is a
+        /// pair, and only a top level of exactly two leaves can be one.
+        let paneTabIDs: [String]?
     }
 
     struct Space: Equatable {
@@ -266,30 +298,55 @@ enum ZenDataParserTool {
                 workspaceID: record.zenWorkspace,
                 isEssential: record.zenEssential == true,
                 userContextId: record.userContextId ?? noContainerID,
-                folderID: record.groupId,
+                groupID: record.groupId,
                 title: entry.title ?? "",
-                url: url)
+                url: url,
+                syncID: record.zenSyncId)
         }
         let folders = (file.folders ?? []).compactMap { record -> Folder? in
-            guard let id = record.id else { return nil }
+            guard let id = record.id, record.splitViewGroup != true else { return nil }
             return Folder(id: id, name: record.name ?? "", parentID: record.parentId)
         }
-        return Session(spaces: spaces, pinnedTabs: pinnedTabs, folders: folders)
+        // A split placed inside a folder has a `folders[]` record naming
+        // that folder; a split at the root has none.
+        let splitRecords = Dictionary(
+            (file.folders ?? []).compactMap { record in
+                record.splitViewGroup == true ? record.id.map { ($0, record) } : nil
+            },
+            uniquingKeysWith: { first, _ in first })
+        var splitViews = (file.splitViewData ?? []).compactMap { record -> SplitView? in
+            guard let id = record.groupId else { return nil }
+            return SplitView(
+                id: id,
+                parentFolderID: splitRecords[id]?.parentId,
+                direction: record.layoutTree?.direction,
+                paneTabIDs: record.layoutTree?.paneTabIDs)
+        }
+        let laidOut = Set(splitViews.map(\.id))
+        for record in file.folders ?? [] where record.splitViewGroup == true {
+            guard let id = record.id, !laidOut.contains(id) else { continue }
+            splitViews.append(SplitView(
+                id: id, parentFolderID: record.parentId, direction: nil, paneTabIDs: nil))
+        }
+        return Session(
+            spaces: spaces, pinnedTabs: pinnedTabs, folders: folders, splitViews: splitViews)
     }
 
     /// The slice of the file this parser reads. Only `uuid` is required of a
     /// space: its name, icon, theme and container are each decoded apart and
     /// tolerantly, so a shape this parser does not recognise costs that one
     /// thing — a container id that is not a number reads as no container —
-    /// never the space, and never the file. A tab and a folder are read the
-    /// same way, and nothing is required of them: a tab this parser cannot
-    /// read a URL from is not a pin, a folder with no id cannot be sat in.
-    /// A file with no `spaces` at all predates workspaces and simply has
-    /// none.
+    /// never the space, and never the file. A tab, a folder and a split
+    /// view are read the same way, and nothing is required of them: a tab
+    /// this parser cannot read a URL from is not a pin, a folder with no id
+    /// cannot be sat in, a split view with no group id has no pins to name
+    /// it, and one whose layout cannot be read has no panes. A file with no
+    /// `spaces` at all predates workspaces and simply has none.
     private struct SessionFile: Decodable {
         let spaces: [SpaceRecord]?
         let tabs: [TabRecord]?
         let folders: [FolderRecord]?
+        let splitViewData: [SplitViewRecord]?
     }
 
     private struct SpaceRecord: Decodable {
@@ -344,6 +401,7 @@ enum ZenDataParserTool {
         let zenWorkspace: String?
         let groupId: String?
         let userContextId: Int?
+        let zenSyncId: String?
         /// `_zenPinnedInitialState.entry`: what the tab showed when it was
         /// pinned.
         let pinnedAt: Entry?
@@ -354,6 +412,7 @@ enum ZenDataParserTool {
 
         private enum CodingKeys: String, CodingKey {
             case pinned, zenEssential, zenIsEmpty, zenIsGlance, zenWorkspace, groupId, userContextId
+            case zenSyncId
             case pinnedAt = "_zenPinnedInitialState"
             case entries, index
         }
@@ -367,6 +426,7 @@ enum ZenDataParserTool {
             zenWorkspace = try? c.decodeIfPresent(String.self, forKey: .zenWorkspace)
             groupId = try? c.decodeIfPresent(String.self, forKey: .groupId)
             userContextId = try? c.decodeIfPresent(Int.self, forKey: .userContextId)
+            zenSyncId = try? c.decodeIfPresent(String.self, forKey: .zenSyncId)
             pinnedAt = (try? c.decodeIfPresent(PinnedInitialState.self, forKey: .pinnedAt))?.entry
             entries = try? c.decodeIfPresent([Entry].self, forKey: .entries)
             index = try? c.decodeIfPresent(Int.self, forKey: .index)
@@ -396,14 +456,59 @@ enum ZenDataParserTool {
         let id: String?
         let name: String?
         let parentId: String?
+        let splitViewGroup: Bool?
 
-        private enum CodingKeys: String, CodingKey { case id, name, parentId }
+        private enum CodingKeys: String, CodingKey { case id, name, parentId, splitViewGroup }
 
         init(from decoder: Decoder) throws {
             let c = try decoder.container(keyedBy: CodingKeys.self)
             id = try? c.decodeIfPresent(String.self, forKey: .id)
             name = try? c.decodeIfPresent(String.self, forKey: .name)
             parentId = try? c.decodeIfPresent(String.self, forKey: .parentId)
+            splitViewGroup = try? c.decodeIfPresent(Bool.self, forKey: .splitViewGroup)
+        }
+    }
+
+    /// One `splitViewData[]` entry. Its `gridType`, `tabs[]` and the panes'
+    /// sizes are not read: the layout tree carries the panes and their
+    /// direction.
+    private struct SplitViewRecord: Decodable {
+        let groupId: String?
+        let layoutTree: LayoutNode?
+
+        private enum CodingKeys: String, CodingKey { case groupId, layoutTree }
+
+        init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            groupId = try? c.decodeIfPresent(String.self, forKey: .groupId)
+            layoutTree = try? c.decodeIfPresent(LayoutNode.self, forKey: .layoutTree)
+        }
+    }
+
+    /// One node of a split view's layout tree: a `splitter` with a direction
+    /// and children, or a `leaf` naming a tab.
+    private struct LayoutNode: Decodable {
+        let type: String?
+        let direction: String?
+        let tabId: String?
+        let children: [LayoutNode]?
+
+        private enum CodingKeys: String, CodingKey { case type, direction, tabId, children }
+
+        init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            type = try? c.decodeIfPresent(String.self, forKey: .type)
+            direction = try? c.decodeIfPresent(String.self, forKey: .direction)
+            tabId = try? c.decodeIfPresent(String.self, forKey: .tabId)
+            children = try? c.decodeIfPresent([LayoutNode].self, forKey: .children)
+        }
+
+        /// The children's tabs, in order, when there are children and every
+        /// one is a leaf naming a tab; nil when one is a splitter of its own.
+        var paneTabIDs: [String]? {
+            guard let children, !children.isEmpty else { return nil }
+            let tabIDs = children.compactMap { $0.type == "leaf" ? $0.tabId : nil }
+            return tabIDs.count == children.count ? tabIDs : nil
         }
     }
 }

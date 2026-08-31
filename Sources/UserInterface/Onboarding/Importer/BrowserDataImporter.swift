@@ -731,8 +731,16 @@ class BrowserDataImporter {
         /// never written. A pin in a folder the file does not list sits at
         /// the root; a chain of folders that loops — a shape Zen never
         /// writes — is cut where it comes back round, and the pin still
-        /// sits inside its folders. The tree is the one type every Mac-side
-        /// sidebar parser produces and the store's landing call takes.
+        /// sits inside its folders. A split view of two of the pins — a tab
+        /// group of its own, whose pins carry its id as a folder's do — is
+        /// one entry carrying both pages (`split`), the first pane's on the
+        /// row, where the first of its pins appears: inside the folder the
+        /// split is placed in, or at the root, never in a folder of its
+        /// own. A split of any other shape — three or four panes, a pane
+        /// that is not one of this Space's pins, no layout at all — falls
+        /// back to its pins, plain, in place. The tree is the one type every
+        /// Mac-side sidebar parser produces and the store's landing call
+        /// takes, and it already carries a split.
         static func bookmarkRoot(
             of space: ZenDataParserTool.Space,
             in session: ZenDataParserTool.Session
@@ -741,6 +749,8 @@ class BrowserDataImporter {
                 guid: space.id, title: space.name, url: nil, isFolder: true)
             let folders = Dictionary(
                 session.folders.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+            let splitViews = Dictionary(
+                session.splitViews.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
             var nodes: [String: ArcDataParserTool.Bookmark] = [:]
             func node(forFolder id: String, above: Set<String> = []) -> ArcDataParserTool.Bookmark {
                 if let node = nodes[id] { return node }
@@ -752,12 +762,60 @@ class BrowserDataImporter {
                 nodes[id] = node
                 return node
             }
-            for pin in session.pinnedTabs where !pin.isEssential && pin.workspaceID == space.id {
-                let parent = pin.folderID.map { node(forFolder: $0) } ?? root
-                parent.children.append(ArcDataParserTool.Bookmark(
-                    guid: UUID().uuidString, title: pin.title, url: pin.url, isFolder: false))
+            let pins = session.pinnedTabs.filter { !$0.isEssential && $0.workspaceID == space.id }
+            /// The two pins a split shows, the first pane's first — when its
+            /// top level is exactly two leaves and its pins are exactly the
+            /// two they name; nil for any other shape.
+            func pair(of split: ZenDataParserTool.SplitView)
+                -> (primary: ZenDataParserTool.PinnedTab, secondary: ZenDataParserTool.PinnedTab)? {
+                let members = pins.filter { $0.groupID == split.id }
+                guard let paneTabIDs = split.paneTabIDs, paneTabIDs.count == 2, members.count == 2,
+                      let primary = members.first(where: { $0.syncID == paneTabIDs[0] }),
+                      let secondary = members.first(where: { $0.syncID == paneTabIDs[1] }),
+                      primary != secondary else { return nil }
+                return (primary, secondary)
+            }
+            func entry(for pin: ZenDataParserTool.PinnedTab) -> ArcDataParserTool.Bookmark {
+                ArcDataParserTool.Bookmark(
+                    guid: UUID().uuidString, title: pin.title, url: pin.url, isFolder: false)
+            }
+            var pairedSplits = Set<String>()
+            for pin in pins {
+                guard let split = pin.groupID.flatMap({ splitViews[$0] }) else {
+                    let parent = pin.groupID.map { node(forFolder: $0) } ?? root
+                    parent.children.append(entry(for: pin))
+                    continue
+                }
+                // A split view is not a folder: what it shows sits in the
+                // folder the split is placed in, or at the root.
+                let parent = split.parentFolderID.map { node(forFolder: $0) } ?? root
+                guard let pages = pair(of: split) else {
+                    parent.children.append(entry(for: pin))
+                    continue
+                }
+                // The pair lands once, where the first of its pins appears.
+                guard pairedSplits.insert(split.id).inserted else { continue }
+                let leaf = entry(for: pages.primary)
+                leaf.split = ArcSplit(
+                    secondaryTitle: pages.secondary.title,
+                    secondaryURL: pages.secondary.url,
+                    layout: splitLayout(fromZenDirection: split.direction))
+                parent.children.append(leaf)
             }
             return root
+        }
+
+        /// Zen's `direction` names the axis the panes run along; Phi's
+        /// `SplitLayout` names the divider between them. So Zen's `row`
+        /// (panes side by side) is Phi's `vertical` bar and `column`
+        /// (stacked) its `horizontal`; anything else is left to Phi's
+        /// default.
+        private static func splitLayout(fromZenDirection direction: String?) -> String? {
+            switch direction {
+            case "row": return SplitLayout.vertical.rawValue
+            case "column": return SplitLayout.horizontal.rawValue
+            default: return nil
+            }
         }
     }
 

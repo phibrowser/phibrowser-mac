@@ -5,6 +5,7 @@
 
 import Combine
 import Foundation
+import PostHog
 
 // MARK: - Progress
 
@@ -187,6 +188,13 @@ final class BrowserMigrationRunner: ObservableObject {
         }
         AppLogInfo("[BrowserMigration] run finished: created "
             + "\(outcomes.profileIDs.count) Profiles, \(outcomes.spaceIDs.count) Spaces")
+        // Once per run, whatever it left behind: the source and what was
+        // actually created — counts only, never a name or a path.
+        PostHogSDK.shared.capture("browser_migration_finished", properties: [
+            "source_browser": source.rawValue,
+            "profiles_created": outcomes.profileIDs.count,
+            "spaces_created": outcomes.spaceIDs.count,
+        ])
         // Marked only by a run that reached the end and created something:
         // one cut short by a quit, or one whose every Profile failed, left no
         // first copy for a second run to duplicate.

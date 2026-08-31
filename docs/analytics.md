@@ -1,6 +1,6 @@
 # Analytics
 
-Last updated: 2026-08-24
+Last updated: 2026-08-31
 
 Phi Browser emits product analytics to both [Countly](https://phi-browser-eaade70cfd902.flex.countly.com) (legacy) and [PostHog](https://us.posthog.com/project/385742) (current). Both pipelines run side-by-side; PostHog is the forward-looking source of truth.
 
@@ -122,6 +122,7 @@ are out of scope.
 | `import_types_selected` | The user commits an import; emitted once per selected source with normalized `types`. File imports use an empty array because Chromium detects their contents | `Onboarding/Importer/BrowserDataImporter.swift` |
 | `import_started` | The importer accepts a non-reentrant run and locks its target; includes sorted `source_browsers` | `Onboarding/Importer/BrowserDataImporter.swift` |
 | `import_finished` | All selected Chromium sources and deferred bookmark persistence finish; includes aggregate success, stable failed sources, duration, and an optional low-cardinality `error_code` | `Onboarding/Importer/BrowserDataImporter.swift` |
+| `browser_migration_finished` | A Migration run (the one-click wizard) reaches its end, however much of the plan landed; includes `source_browser` (`arc` / `zen`), `profiles_created` and `spaces_created` — counts only, never Profile or Space names or source paths | `States/BrowserMigrationRunner.swift` |
 | `first_time_action` | An eligible product action first succeeds on this installation; `action` is one of `space_created`, `ai_sidebar_opened`, `import_finished`, `memory_opened`, `agent_task`, `connector_connected`, or `phi_link_paired`, with `seconds_since_install` | `Utilities/FirstTimeActionTracker.swift` |
 | `space_created` | A user-created Space succeeds; includes `total_spaces` and whether it uses a non-default profile | `Sidebar/Spaces/CreateSpacePanel.swift` |
 | `profile_created` | A non-fallback profile is successfully created; includes `total_profiles` | `States/ProfileManager.swift` |
@@ -149,7 +150,8 @@ are out of scope.
 | *Chromium-originated events* | Captured in the browser core through `phi_analytics::Capture()`, not by Mac code; inventoried in the Chromium-side registry — see [Chromium-originated events](#chromium-originated-events) below | Chromium repo, `chrome/browser/phinomenon/analytics/README.md` |
 
 Import analytics never include source paths, browser profile names, Arc Space
-names, file names, or imported item counts. The current Chromium delegate
+names, file names, or imported item counts. The Migration event holds the
+same line: the source kind and two counts, nothing else. The current Chromium delegate
 reports only source and aggregate success, so per-type counts are unsupported.
 Bookmark persistence success uses the completion reported by the existing
 LocalStore async API; lower-level model save failures remain local logs rather

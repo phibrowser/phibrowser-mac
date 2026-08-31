@@ -597,8 +597,12 @@ final class AgentSpaceOverlayView: NSView {
     /// sample path, called directly by the mounter for each `cursorMoved`
     /// delivery so cursor motion never re-runs the full pill update above.
     /// `point` is in this view's coordinates (converted by the mounter).
+    /// Hidden while the USER holds control: the agent stops on takeover, and
+    /// its last-reported cursor would otherwise sit frozen next to the real
+    /// one. The stored point survives ownership flips (the mounter re-seeds
+    /// it), so the cursor reappears where it was on hand-back.
     func moveCursor(to point: CGPoint?) {
-        guard let point else {
+        guard let point, ownership == .agent else {
             cursorLayer.isHidden = true
             lastCursorTargetUpdate = nil
             return

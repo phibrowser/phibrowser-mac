@@ -208,6 +208,14 @@ no mirror is running (an unrecognized agent, or a session the discovery
 could not identify), use `say('…')` to reflect a line of your own prose into
 the console yourself.
 
+The mirror runs only while the user has the Agent Transcript console open
+(View ▸ Agent Transcript, or a pip's context menu), sampled at each round
+start. With the console closed, no tailer daemon is spawned and the session
+runs mirrorless — completion is immediate, and the console (if opened
+later) carries only the action log and your `narrate`/`say` lines — so
+deliver the user-facing result through those whenever the mirror may not be
+running.
+
 ## Saved state
 
 `saveState(name)` writes cookies plus the Space's open tab URLs to disk

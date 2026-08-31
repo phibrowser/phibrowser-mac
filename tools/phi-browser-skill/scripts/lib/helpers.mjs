@@ -85,6 +85,10 @@ const state = {
   explicitTtl: null,         // {taskId, deadline} bought by ping(ttlSeconds) —
                              // honored over the default round-end grace while
                              // the deadline lies ahead (see releaseTtlSeconds)
+  transcriptMirror: null,    // whether the Agent Transcript console is open
+                             // in the app (View ▸ Agent Transcript), stashed
+                             // from agentSpace.list; null on an app too old
+                             // to report it (mirror stays on)
 }
 
 // The app auto-closes an agent Space when its driver goes silent (~120s while
@@ -381,7 +385,11 @@ async function guardAgentControl() {
 // Agent spaces
 
 export async function listAgentSpaces() {
-  const { tasks } = await phiSend('agentSpace.list', {})
+  const { tasks, transcriptMirror } = await phiSend('agentSpace.list', {})
+  // Rides along on every list: whether the Agent Transcript console is open
+  // in the app — the gate for the session mirror (see spawnSessionMirror).
+  // Absent on older apps — leave the stash null and keep mirroring.
+  if (transcriptMirror !== undefined) state.transcriptMirror = !!transcriptMirror
   return tasks
 }
 
@@ -1244,6 +1252,28 @@ async function spawnSessionMirror(taskId) {
     const agentPid = agentRootPid() ?? appProvidedAgentPid()
     const transcript = discoverSessionTranscript(taskId, agentPid)
     if (!transcript) return  // unknown driver: say() remains
+    // The Agent Transcript console is closed (View ▸ Agent Transcript;
+    // stashed from agentSpace.list, which every agent bind runs first), so
+    // the user isn't watching a mirror. Spawn nothing, and drop this
+    // session's control file so a daemon from an earlier open-console round
+    // exits instead of running out its TTL — after delivering a deferred
+    // completion still pending for a DIFFERENT task, exactly as the
+    // re-target below would (re-entering the completing task itself keeps
+    // cancelling that completion, cleared file or not).
+    if (state.transcriptMirror === false) {
+      const prev = readDaemonControl(transcript.sessionKey)
+      if (prev && prev.completing && prev.taskId && prev.taskId !== taskId) {
+        await phiSend('agentSpace.complete', {
+          taskId: prev.taskId,
+          status: prev.completing.status === 'failure' ? 'failure' : 'success',
+          ...(prev.completing.message
+            ? { message: String(prev.completing.message) } : {}),
+        }).catch(() => {})
+        writeStoredViewport(prev.taskId, null)
+      }
+      clearDaemonControl(transcript.sessionKey)
+      return
+    }
     const prev = readDaemonControl(transcript.sessionKey)
     // Re-targeting the control file to a NEW task silently drops a deferred
     // completion still pending for the previous one — and once the file

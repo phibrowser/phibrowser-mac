@@ -272,11 +272,24 @@ enum AgentSpaceRouter {
                 ]
             }
         }
-        guard let data = try? JSONSerialization.data(withJSONObject: ["tasks": tasks]),
-              let reply = String(data: data, encoding: .utf8) else {
+        // Top-level because it is app state, not task state: whether the Agent
+        // Transcript console is open (View ▸ Agent Transcript, or a pip's
+        // context menu) — the user's existing toggle for the transcript. Every
+        // skill round lists tasks before binding, so this is the flag's live
+        // delivery path: the skill spawns its session-mirror daemon only while
+        // this reads true, sampled at each round start.
+        let transcriptOpen = MainActor.assumeIsolated {
+            AgentTranscriptPanelController.shared.isVisible
+        }
+        let reply: [String: Any] = [
+            "tasks": tasks,
+            "transcriptMirror": transcriptOpen,
+        ]
+        guard let data = try? JSONSerialization.data(withJSONObject: reply),
+              let text = String(data: data, encoding: .utf8) else {
             return "{\"tasks\":[]}"
         }
-        return reply
+        return text
     }
 
     static func handleSetState(context: ExtensionMessageContext) -> String? {

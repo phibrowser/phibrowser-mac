@@ -22,6 +22,7 @@ final class ArcDataParserTool {
         )
         let bookmarkMap = createBookmarks(from: sidebarItems)
         linkTree(byChildrenOrder: sidebarItems, bookmarks: bookmarkMap)
+        collapseSplitViews(in: sidebarItems, bookmarks: bookmarkMap)
 
         let containerSpaceModels = extractSpaceModels(
             from: arc.sidebar.containers.flatMap { $0.spaces ?? [] })
@@ -113,6 +114,13 @@ final class ArcDataParserTool {
                 isFolder = true
                 title = item.title ?? "Untitled"
                 url = nil
+
+            case .splitView:
+                // A placeholder: `collapseSplitViews` turns it into one split
+                // entry, or into its tabs, once the children are linked.
+                isFolder = true
+                title = ""
+                url = nil
             }
 
             map[item.id] = Bookmark(
@@ -145,6 +153,56 @@ final class ArcDataParserTool {
                 child.parent = parentBookmark
                 parentBookmark.children.append(child)
             }
+        }
+    }
+
+    // MARK: - Step 3b: Collapse split views
+
+    /// An Arc split view is an item of its own whose children are the tabs it
+    /// shows together, in a Space's pinned section or in the Arc Favorites row.
+    /// Phi's split is a pair, so a split of exactly two tabs becomes one entry
+    /// carrying both (`split`); any other number of panes — Arc allows up to
+    /// four — falls back to the tabs themselves, in order, where the split
+    /// stood. Either way the split item never lands as a folder.
+    private static func collapseSplitViews(
+        in items: [String: SidebarItem],
+        bookmarks: [String: Bookmark]
+    ) {
+        for item in items.values {
+            guard case .splitView(let orientation) = item.data,
+                  let node = bookmarks[item.id] else { continue }
+            let tabs = node.children
+            // Two plain tabs make a pair; a nested split (which Arc never
+            // writes) counts as "not a tab", so the walk's order cannot matter.
+            if tabs.count == 2, tabs.allSatisfy({ !$0.isFolder && $0.split == nil }),
+               let url = tabs[0].url, let secondaryURL = tabs[1].url {
+                node.isFolder = false
+                node.title = tabs[0].title
+                node.url = url
+                node.split = ArcSplit(
+                    secondaryTitle: tabs[1].title ?? "",
+                    secondaryURL: secondaryURL,
+                    layout: splitLayout(fromArcOrientation: orientation))
+                node.children = []
+                continue
+            }
+            guard let parent = node.parent,
+                  let index = parent.children.firstIndex(where: { $0 === node }) else { continue }
+            for tab in tabs { tab.parent = parent }
+            parent.children.replaceSubrange(index...index, with: tabs)
+            node.children = []
+        }
+    }
+
+    /// Arc names the axis the panes are laid along; Phi names the divider
+    /// between them. So Arc's `horizontal` (panes side by side) is Phi's
+    /// `vertical` bar, and the other way round; anything else is left to
+    /// Phi's default.
+    private static func splitLayout(fromArcOrientation orientation: String?) -> String? {
+        switch orientation {
+        case "horizontal": return SplitLayout.vertical.rawValue
+        case "vertical": return SplitLayout.horizontal.rawValue
+        default: return nil
         }
     }
 
@@ -207,7 +265,7 @@ final class ArcDataParserTool {
             case .containerID(let id):
                 let favorites = (bookmarkMap[id]?.children ?? []).compactMap { child -> ArcFavorite? in
                     guard !child.isFolder, let url = child.url else { return nil }
-                    return ArcFavorite(title: child.title ?? "", url: url)
+                    return ArcFavorite(title: child.title ?? "", url: url, split: child.split)
                 }
                 results.append(ArcFavorites(profile: currentProfile ?? .unknown, entries: favorites))
                 currentProfile = nil
@@ -363,6 +421,23 @@ struct ArcFavorites {
 struct ArcFavorite: Equatable {
     let title: String
     let url: String
+    /// Set when Arc showed this Arc Favorite as a split view of two pages.
+    let split: ArcSplit?
+
+    init(title: String, url: String, split: ArcSplit? = nil) {
+        self.title = title
+        self.url = url
+        self.split = split
+    }
+}
+
+/// The second page of an Arc split view — a pinned entry or an Arc Favorite
+/// that Arc showed as two pages together — and the orientation, already in Phi's
+/// own vocabulary (`SplitLayout`'s raw value; nil leaves Phi's default).
+struct ArcSplit: Equatable {
+    let secondaryTitle: String
+    let secondaryURL: String
+    let layout: String?
 }
 
 /// Which Chromium profile (under Arc/User Data) an Arc Space uses.
@@ -461,6 +536,8 @@ extension ArcDataParserTool {
         case tab(TabData)
         case list
         case container(spaceRefID: String?)
+        /// `layoutOrientation` as Arc wrote it; nil when unreadable.
+        case splitView(orientation: String?)
 
         init(from decoder: Decoder) throws {
             let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -472,6 +549,12 @@ extension ArcDataParserTool {
 
             if c.contains(.list) {
                 self = .list
+                return
+            }
+
+            if c.contains(.splitView) {
+                let split = try? c.decode(SplitViewData.self, forKey: .splitView)
+                self = .splitView(orientation: split?.layoutOrientation)
                 return
             }
 
@@ -487,12 +570,17 @@ extension ArcDataParserTool {
             case tab
             case list
             case itemContainer
+            case splitView
         }
     }
     
     struct TabData: Decodable {
         let savedURL: String
         let savedTitle: String?
+    }
+
+    struct SplitViewData: Decodable {
+        let layoutOrientation: String?
     }
     
     struct ItemContainer: Decodable {
@@ -683,6 +771,8 @@ extension ArcDataParserTool {
         var url: String?
         var isFolder: Bool
         var parent: Bookmark? = nil
+        /// Set on a leaf that stands for an Arc split view of two pages.
+        var split: ArcSplit? = nil
         init(guid: String, title: String, children: [Bookmark] = [], url: String?, isFolder: Bool) {
             self.title = title
             self.guid = guid

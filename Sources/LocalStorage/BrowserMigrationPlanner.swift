@@ -28,6 +28,22 @@ enum BrowserMigrationPinsUnavailableReason: String, Equatable {
 struct BrowserMigrationPinnedEntry: Equatable {
     let title: String
     let url: String
+    /// Set when the source pinned two pages as one split entry.
+    let split: BrowserMigrationPinnedSplit?
+
+    init(title: String, url: String, split: BrowserMigrationPinnedSplit? = nil) {
+        self.title = title
+        self.url = url
+        self.split = split
+    }
+}
+
+/// The second page of a split pinned entry and the pair's orientation, in
+/// Phi's own vocabulary (`SplitLayout`'s raw value; nil leaves the default).
+struct BrowserMigrationPinnedSplit: Equatable {
+    let secondaryTitle: String
+    let secondaryURL: String
+    let layout: String?
 }
 
 /// One source profile's top-level pinned entries, in source order. Like a
@@ -398,6 +414,32 @@ struct BrowserMigrationPlannedPinnedTab: Equatable {
     /// — the scope, not this pair, decides the row's owner.
     let ownerProfileKey: String
     let ownerSpaceID: String
+    /// On the first row of a split pair: the guid of the second row, planned
+    /// right after it for the same owner, which the run links to this one
+    /// once both exist. Nil on a plain row and on the second row itself.
+    let secondaryGUID: String?
+    /// The pair's orientation, on the first row only; nil leaves the default.
+    let splitLayout: String?
+
+    init(
+        guid: String,
+        lineageID: String,
+        title: String,
+        url: String,
+        ownerProfileKey: String,
+        ownerSpaceID: String,
+        secondaryGUID: String? = nil,
+        splitLayout: String? = nil
+    ) {
+        self.guid = guid
+        self.lineageID = lineageID
+        self.title = title
+        self.url = url
+        self.ownerProfileKey = ownerProfileKey
+        self.ownerSpaceID = ownerSpaceID
+        self.secondaryGUID = secondaryGUID
+        self.splitLayout = splitLayout
+    }
 }
 
 /// One Space a run creates.
@@ -537,7 +579,11 @@ enum BrowserMigrationPlanner {
                     sourceProfileKey: profileKey,
                     displayName: displayName,
                     reason: .noSpaces,
-                    droppedPinnedEntries: source.pinnedEntries(ofProfile: profileKey).count
+                    // Counted as the rows a run would have written — a split
+                    // entry is two — so the report's "left behind" number
+                    // speaks the same language as its "added" one.
+                    droppedPinnedEntries: source.pinnedEntries(ofProfile: profileKey)
+                        .reduce(0) { $0 + ($1.split == nil ? 1 : 2) }
                 ))
                 continue
             }
@@ -612,14 +658,31 @@ enum BrowserMigrationPlanner {
         }
 
         let entries = source.pinnedEntries(ofProfile: profileKey)
-        return entries.enumerated().flatMap { entryIndex, entry in
+        return entries.enumerated().flatMap { entryIndex, entry -> [BrowserMigrationPlannedPinnedTab] in
             let lineageID = identifier(
                 operationID: operationID,
                 kind: "pin-lineage",
                 path: [profileIndex, entryIndex]
             )
-            return ownerSpaceIDs.enumerated().map { ownerIndex, spaceID in
-                BrowserMigrationPlannedPinnedTab(
+            // A split entry is two rows per owner — the second page is a
+            // pinned tab of its own with its own lineage, under a kind of its
+            // own so a plain entry's identifiers are what they always were.
+            let secondaryLineageID = entry.split.map { _ in
+                identifier(
+                    operationID: operationID,
+                    kind: "pin-secondary-lineage",
+                    path: [profileIndex, entryIndex]
+                )
+            }
+            return ownerSpaceIDs.enumerated().flatMap { ownerIndex, spaceID -> [BrowserMigrationPlannedPinnedTab] in
+                let secondaryGUID = entry.split.map { _ in
+                    identifier(
+                        operationID: operationID,
+                        kind: "pin-secondary",
+                        path: [profileIndex, entryIndex, ownerIndex]
+                    )
+                }
+                let primary = BrowserMigrationPlannedPinnedTab(
                     guid: identifier(
                         operationID: operationID,
                         kind: "pin",
@@ -629,8 +692,20 @@ enum BrowserMigrationPlanner {
                     title: entry.title,
                     url: entry.url,
                     ownerProfileKey: profileKey,
-                    ownerSpaceID: spaceID
+                    ownerSpaceID: spaceID,
+                    secondaryGUID: secondaryGUID,
+                    splitLayout: entry.split?.layout
                 )
+                guard let split = entry.split,
+                      let secondaryGUID, let secondaryLineageID else { return [primary] }
+                return [primary, BrowserMigrationPlannedPinnedTab(
+                    guid: secondaryGUID,
+                    lineageID: secondaryLineageID,
+                    title: split.secondaryTitle,
+                    url: split.secondaryURL,
+                    ownerProfileKey: profileKey,
+                    ownerSpaceID: spaceID
+                )]
             }
         }
     }

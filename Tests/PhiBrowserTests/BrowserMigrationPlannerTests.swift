@@ -394,6 +394,56 @@ final class BrowserMigrationPlannerTests: XCTestCase {
         ])
     }
 
+    /// A split entry is two rows per owner: the first carries the second's
+    /// guid and the pair's layout so the run can link them; each row keeps a
+    /// lineage of its own, so widening the scope collapses each half's copies
+    /// the way Phi's own split pins collapse.
+    func testASplitPinnedEntryPlansAPairPerOwnerLinkedFromItsFirstRow() {
+        let result = plan(source(
+            profiles: [profile("Default", "Work")],
+            spaces: [space("s1", "One", profileKey: "Default"), space("s2", "Two", profileKey: "Default")],
+            pinnedGroups: [BrowserMigrationSourcePinnedGroup(profileKey: "Default", entries: [
+                BrowserMigrationPinnedEntry(title: "Mail", url: "https://mail.example"),
+                BrowserMigrationPinnedEntry(title: "Docs", url: "https://docs.example", split:
+                    BrowserMigrationPinnedSplit(
+                        secondaryTitle: "Sheets", secondaryURL: "https://sheets.example",
+                        layout: "horizontal")),
+            ])]
+        ), scope: .space)
+        let pins = result.profiles[0].pinnedTabs
+
+        XCTAssertEqual(pins.map(\.title), ["Mail", "Mail", "Docs", "Sheets", "Docs", "Sheets"])
+        XCTAssertEqual(pins.map(\.ownerSpaceID), ["s1", "s2", "s1", "s1", "s2", "s2"],
+                       "each owner gets its own pair, the two rows side by side")
+        XCTAssertEqual(pins[2].secondaryGUID, pins[3].guid)
+        XCTAssertEqual(pins[4].secondaryGUID, pins[5].guid)
+        XCTAssertEqual(pins[2].splitLayout, "horizontal")
+        XCTAssertTrue([pins[0], pins[1], pins[3], pins[5]].allSatisfy { $0.secondaryGUID == nil && $0.splitLayout == nil })
+        XCTAssertEqual(pins[2].lineageID, pins[4].lineageID)
+        XCTAssertEqual(pins[3].lineageID, pins[5].lineageID)
+        XCTAssertNotEqual(pins[2].lineageID, pins[3].lineageID)
+        XCTAssertEqual(Set(pins.map(\.guid)).count, 6)
+    }
+
+    /// The left-behind count speaks the report's language — rows, not source
+    /// entries — so a split entry on a skipped profile counts as two, the same
+    /// as it does on a created Profile's row.
+    func testASplitPinnedEntryOfASkippedProfileCountsAsTwoLeftBehind() {
+        let result = plan(source(
+            profiles: [profile("Default", "Work"), profile("Profile 1", "Abandoned")],
+            spaces: [space("s1", "One", profileKey: "Default")],
+            pinnedGroups: [BrowserMigrationSourcePinnedGroup(profileKey: "Profile 1", entries: [
+                BrowserMigrationPinnedEntry(title: "A", url: "https://a.example"),
+                BrowserMigrationPinnedEntry(title: "Docs", url: "https://docs.example", split:
+                    BrowserMigrationPinnedSplit(
+                        secondaryTitle: "Sheets", secondaryURL: "https://sheets.example",
+                        layout: nil)),
+            ])]
+        ))
+
+        XCTAssertEqual(result.skippedProfiles.map(\.droppedPinnedEntries), [3])
+    }
+
     func testPinsUnavailablePlansNoPinnedEntriesAndCarriesTheMarker() {
         let result = plan(favouriteSource(pinsUnavailable: .noSourceWindow), scope: .space)
 
@@ -438,6 +488,26 @@ final class BrowserMigrationPlannerTests: XCTestCase {
         XCTAssertEqual(model.pinnedGroups[0].entries,
                        [BrowserMigrationPinnedEntry(title: "Mail", url: "https://mail.example")])
         XCTAssertTrue(model.pinnedGroups[1].entries.isEmpty)
+    }
+
+    func testArcMigrationSourceTranslatesASplitFavorite() {
+        let model = BrowserDataImporter.ArcMigrationSource(
+            profiles: [.init(directory: "Default", name: "Work", email: nil)],
+            sidebar: ArcSidebar(
+                spaces: [arcSpace("s1", "One", profile: .default)],
+                favorites: [ArcFavorites(profile: .default, entries: [
+                    ArcFavorite(title: "Docs", url: "https://docs.example", split: ArcSplit(
+                        secondaryTitle: "Sheets", secondaryURL: "https://sheets.example",
+                        layout: "vertical")),
+                ])])
+        ).migrationSource
+
+        XCTAssertEqual(model.pinnedGroups[0].entries, [
+            BrowserMigrationPinnedEntry(title: "Docs", url: "https://docs.example", split:
+                BrowserMigrationPinnedSplit(
+                    secondaryTitle: "Sheets", secondaryURL: "https://sheets.example",
+                    layout: "vertical")),
+        ])
     }
 
     private func arcSpace(

@@ -460,7 +460,14 @@ class BrowserDataImporter {
                     BrowserMigrationSourcePinnedGroup(
                         profileKey: favorites.profile.directoryName,
                         entries: favorites.entries.map {
-                            BrowserMigrationPinnedEntry(title: $0.title, url: $0.url)
+                            BrowserMigrationPinnedEntry(
+                                title: $0.title, url: $0.url,
+                                split: $0.split.map {
+                                    BrowserMigrationPinnedSplit(
+                                        secondaryTitle: $0.secondaryTitle,
+                                        secondaryURL: $0.secondaryURL,
+                                        layout: $0.layout)
+                                })
                         })
                 })
         }

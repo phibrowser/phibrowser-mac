@@ -349,6 +349,20 @@ extension LocalStore {
                         node.profileId = profileId
                         node.source = 3
                         node.profile = profile
+                        if let split = arcBookmark.split {
+                            // A split-view entry: the second page rides on the
+                            // same row, as Phi's own split bookmarks do. A
+                            // second page whose URL cannot be read costs that
+                            // page, not the bookmark.
+                            if let secondaryURL = self.normalizedURL(from: split.secondaryURL) {
+                                node.secondaryUrl = secondaryURL
+                                node.secondaryTitle = split.secondaryTitle.isEmpty ? nil : split.secondaryTitle
+                                node.layout = split.layout
+                            } else {
+                                AppLogError("Dropping the second page of a split bookmark "
+                                    + "with an invalid URL: \(split.secondaryURL)")
+                            }
+                        }
                         context.insert(node)
                         try self.insert(node: node, to: parent, at: index, in: context)
                         insertedCount += 1

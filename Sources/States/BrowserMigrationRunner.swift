@@ -372,6 +372,19 @@ final class BrowserMigrationRunner: ObservableObject {
                     + "\(profile.displayName)")
             }
         }
+        // A split pair is two rows the store links after both exist — queued
+        // behind their creation on the same serial writer. A half the store
+        // refused leaves the other a plain pinned tab, which the report's
+        // shortfall already covers.
+        for pin in planned {
+            guard let secondaryGUID = pin.secondaryGUID,
+                  outcomes.pinnedTabGuids.contains(pin.guid),
+                  outcomes.pinnedTabGuids.contains(secondaryGUID) else { continue }
+            store.updatePinnedSplitPair(
+                primaryGuid: pin.guid,
+                secondaryGuid: secondaryGUID,
+                layout: pin.splitLayout ?? SplitLayout.vertical.rawValue)
+        }
         // The creation call enqueues its write rather than awaiting it, so
         // drain the store's queue before the lock goes: the Space has to still
         // be undeletable when these land.

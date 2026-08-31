@@ -470,6 +470,37 @@ final class LocalStoreProfileTests: XCTestCase {
         )
     }
 
+    /// An Arc split view lands as one of Phi's own split bookmarks: the
+    /// second page on the same row, opened together with the first.
+    func testSaveArcBookmarksLandsASplitEntryAsOneSplitBookmark() async throws {
+        let store = try makeStore()
+        let context = try XCTUnwrap(store.getMainContext())
+        context.insert(SpaceModel(
+            spaceId: "space-split", profileId: LocalStore.defaultProfileId,
+            name: "Split", colorHex: "#000000", iconName: "circle", sortOrder: 1))
+        try context.save()
+
+        let leaf = ArcDataParserTool.Bookmark(
+            guid: "arc-split", title: "GitHub", url: "https://github.com/", isFolder: false)
+        leaf.split = ArcSplit(
+            secondaryTitle: "Baidu", secondaryURL: "https://www.baidu.com/", layout: "vertical")
+        let root = ArcDataParserTool.Bookmark(guid: "s1", title: "Work", url: nil, isFolder: true)
+        root.children = [leaf]
+
+        let written = await store.saveArcBookmarksToLocalStore(
+            root, profileId: LocalStore.defaultProfileId, spaceId: "space-split", landingFolder: false)
+
+        XCTAssertEqual(written, 1, "a split entry is one bookmark, not two")
+        let bookmarks = store.fetchBookmarks(
+            parentId: nil, profileId: LocalStore.defaultProfileId, spaceId: "space-split")
+        XCTAssertEqual(bookmarks.map(\.title), ["GitHub"])
+        let bookmark = try XCTUnwrap(bookmarks.first)
+        XCTAssertEqual(bookmark.url.absoluteString, "https://github.com/")
+        XCTAssertEqual(bookmark.secondaryUrl?.absoluteString, "https://www.baidu.com/")
+        XCTAssertEqual(bookmark.secondaryTitle, "Baidu")
+        XCTAssertEqual(bookmark.layout, "vertical")
+    }
+
     func testSaveArcBookmarksLandsInSpaceNamedFolder() async throws {
         let store = try makeStore()
         let context = try XCTUnwrap(store.getMainContext())

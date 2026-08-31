@@ -322,4 +322,114 @@ final class ArcDataParserTests: XCTestCase {
     func testMalformedFavoritesFieldYieldsNoArcFavorites() throws {
         XCTAssertEqual(try parse(malformedFavoritesFieldSidebar()).favorites.count, 0)
     }
+
+    // MARK: - Split views
+
+    /// An Arc split view is an item of its own — `data.splitView` — whose
+    /// children are the tabs it shows side by side. It appears both in a
+    /// Space's pinned section (a split bookmark) and in the Arc Favorites row (a
+    /// split Arc Favorite). Shape copied from a real sidebar file.
+    private func splitView(_ id: String, children: [String], orientation: String = "horizontal") -> String {
+        let childIDs = children.map { "\"\($0)\"" }.joined(separator: ", ")
+        return """
+        { "id": "\(id)", "childrenIds": [\(childIDs)], "title": null, "data": { "splitView": { "layoutOrientation": "\(orientation)", "itemWidthFactors": [], "customInfo": null, "focusItemID": null } } }
+        """
+    }
+
+    private func splitFixture() -> Data {
+        sidebar(
+            spaces: [space("S1", title: "Fyde Innovations", containerIDs: ["pinned", "C1"])],
+            items: [
+                container("C1", spaceID: "S1", children: ["SV1"]),
+                splitView("SV1", children: ["T1", "T2"]),
+                tab("T1", title: "GitHub", url: "https://github.com/"),
+                tab("T2", title: "Baidu", url: "https://www.baidu.com/"),
+                container("F1", children: ["SV2"]),
+                splitView("SV2", children: ["T3", "T4"]),
+                tab("T3", title: "FydeOS", url: "https://fydeos.com/"),
+                tab("T4", title: "Phi Browser", url: "https://phibrowser.com/"),
+            ],
+            topApps: #"[\#(defaultProfile), "F1"]"#)
+    }
+
+    /// The bug this pins: a split view used to fall through the item decoder
+    /// as a nameless container, so it landed as an "Untitled" folder holding
+    /// its two tabs.
+    func testASplitViewInTheSpacesPinnedSectionIsOneSplitEntry() throws {
+        let root = try XCTUnwrap(try parse(splitFixture()).spaces.first?.root)
+        XCTAssertEqual(root.children.count, 1)
+        let entry = try XCTUnwrap(root.children.first)
+        XCTAssertFalse(entry.isFolder)
+        XCTAssertEqual(entry.title, "GitHub")
+        XCTAssertEqual(entry.url, "https://github.com/")
+        XCTAssertEqual(entry.split, ArcSplit(
+            secondaryTitle: "Baidu", secondaryURL: "https://www.baidu.com/",
+            layout: SplitLayout.vertical.rawValue))
+        XCTAssertTrue(entry.children.isEmpty)
+    }
+
+    /// The same bug on the Arc Favorites row, where the folder filter dropped the
+    /// split view and both tabs with it.
+    func testASplitViewInTheFavoritesRowIsOneSplitFavorite() throws {
+        let favorites = try XCTUnwrap(try parse(splitFixture()).favorites.first)
+        XCTAssertEqual(favorites.entries, [
+            ArcFavorite(title: "FydeOS", url: "https://fydeos.com/", split: ArcSplit(
+                secondaryTitle: "Phi Browser", secondaryURL: "https://phibrowser.com/",
+                layout: SplitLayout.vertical.rawValue)),
+        ])
+    }
+
+    /// Arc names the axis the panes run along; Phi names the divider. A
+    /// stacked Arc split (`vertical`) is a `horizontal` Phi bar, and an
+    /// orientation Phi does not know leaves the default.
+    func testASplitViewsOrientationBecomesPhisDividerLayout() throws {
+        func layout(_ orientation: String) throws -> String? {
+            let data = sidebar(
+                spaces: [space("S1", title: "Work", containerIDs: ["pinned", "C1"])],
+                items: [
+                    container("C1", spaceID: "S1", children: ["SV1"]),
+                    splitView("SV1", children: ["T1", "T2"], orientation: orientation),
+                    tab("T1", title: "A", url: "https://a.example"),
+                    tab("T2", title: "B", url: "https://b.example"),
+                ])
+            return try parse(data).spaces.first?.root.children.first?.split?.layout
+        }
+        XCTAssertEqual(try layout("vertical"), SplitLayout.horizontal.rawValue)
+        XCTAssertNil(try layout("diagonal"))
+    }
+
+    /// Phi's split is a pair. A split of any other size falls back to its tabs,
+    /// in order, where the split stood — never to a folder.
+    func testASplitViewOfThreeTabsFallsBackToItsTabsInPlace() throws {
+        let data = sidebar(
+            spaces: [space("S1", title: "Work", containerIDs: ["pinned", "C1"])],
+            items: [
+                container("C1", spaceID: "S1", children: ["T0", "SV1", "T4"]),
+                tab("T0", title: "Before", url: "https://before.example"),
+                splitView("SV1", children: ["T1", "T2", "T3"]),
+                tab("T1", title: "A", url: "https://a.example"),
+                tab("T2", title: "B", url: "https://b.example"),
+                tab("T3", title: "C", url: "https://c.example"),
+                tab("T4", title: "After", url: "https://after.example"),
+            ])
+        let root = try XCTUnwrap(try parse(data).spaces.first?.root)
+        XCTAssertEqual(root.children.map(\.title), ["Before", "A", "B", "C", "After"])
+        XCTAssertFalse(root.children.contains { $0.isFolder || $0.split != nil })
+    }
+
+    func testASplitViewInsideAFolderStaysInThatFolder() throws {
+        let data = sidebar(
+            spaces: [space("S1", title: "Work", containerIDs: ["pinned", "C1"])],
+            items: [
+                container("C1", spaceID: "S1", children: ["L1"]),
+                #"{ "id": "L1", "childrenIds": ["SV1"], "title": "Reading", "data": { "list": {} } }"#,
+                splitView("SV1", children: ["T1", "T2"]),
+                tab("T1", title: "A", url: "https://a.example"),
+                tab("T2", title: "B", url: "https://b.example"),
+            ])
+        let folder = try XCTUnwrap(try parse(data).spaces.first?.root.children.first)
+        XCTAssertEqual(folder.title, "Reading")
+        XCTAssertEqual(folder.children.map(\.title), ["A"])
+        XCTAssertEqual(folder.children.first?.split?.secondaryURL, "https://b.example")
+    }
 }

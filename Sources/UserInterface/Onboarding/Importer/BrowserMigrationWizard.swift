@@ -62,10 +62,20 @@ enum BrowserMigrationSourceKind: String, CaseIterable, Identifiable {
     /// makes. (Zen's table lists history alone today, so for it the strip is
     /// the rule stated rather than a change.)
     var migrationDataTypes: [String] {
+        requestedDataTypes.map(\.rawValue)
+    }
+
+    /// `migrationDataTypes` before the bridge's string keys — and what the
+    /// report's Profile row answers for, since it answers for nothing else:
+    /// data the source keeps that no ticket carries yet (Zen's cookies,
+    /// Firefox bookmarks and extensions) is not on the row at all, by
+    /// direction (2026-08-31), so a data type Zen's table gains later is
+    /// asked for and reported without a second list to keep in step.
+    var requestedDataTypes: [ImportDataType] {
         let supported = ImportDataType.availableTypes(for: browserType)
         switch self {
         case .arc, .zen:
-            return supported.filter { $0 != .bookmarks }.map(\.rawValue)
+            return supported.filter { $0 != .bookmarks }
         }
     }
 
@@ -1490,11 +1500,21 @@ struct BrowserMigrationWizardView: View {
                         .font(.system(size: 15))
                         .foregroundColor(Ink.secondary)
                 }
+                // Source-level, because the Profile it would sit under was
+                // never created and has no row: what the plan left behind
+                // with the profiles it skipped, said rather than implied
+                // gone. Not a problem — it is the source's own arrangement
+                // — so it carries no glyph and is not promoted.
+                if report.droppedPinnedEntries > 0 {
+                    Text(Self.pinnedTabsLeftBehindLine(report.droppedPinnedEntries))
+                        .font(.system(size: 15))
+                        .foregroundColor(Ink.secondary)
+                }
             }
             .fixedSize(horizontal: false, vertical: true)
 
             if !problems.isEmpty {
-                problemCard(problems)
+                problemCard(problems, requested: report.requestedDataTypes)
             }
 
             // The whole tree, always: the promoted rows appear in it again in
@@ -1555,7 +1575,9 @@ struct BrowserMigrationWizardView: View {
     /// The failures, always open. Everything in it is also in the tree below,
     /// so this is a shortcut to what is wrong rather than a place things are
     /// taken to.
-    private func problemCard(_ problems: [BrowserMigrationReport.Problem]) -> some View {
+    private func problemCard(
+        _ problems: [BrowserMigrationReport.Problem], requested: Set<ImportDataType>
+    ) -> some View {
         // A grid rather than a stack of rows so the outcomes line up in a
         // column of their own however long the names beside them run.
         Grid(alignment: .leadingFirstTextBaseline, horizontalSpacing: 10, verticalSpacing: 6) {
@@ -1563,7 +1585,7 @@ struct BrowserMigrationWizardView: View {
                 GridRow {
                     HStack(alignment: .firstTextBaseline, spacing: 6) {
                         reportGlyph(ok: false)
-                        Text(Self.problemSubject(problem))
+                        Text(Self.problemSubject(problem, requested: requested))
                             .font(.system(size: 15))
                             .foregroundColor(Ink.primary)
                     }
@@ -1582,16 +1604,20 @@ struct BrowserMigrationWizardView: View {
 
     /// Where the failure happened, deepest named thing last: a Profile, a
     /// Profile and its Space, or a Profile and the facet of it that fell short.
-    private static func problemSubject(_ problem: BrowserMigrationReport.Problem) -> String {
+    private static func problemSubject(
+        _ problem: BrowserMigrationReport.Problem, requested: Set<ImportDataType>
+    ) -> String {
         switch problem {
         case .profileNotCreated(let profile):
             return profile
         case .browserDataFailed(let profile):
-            // Not `browserDataLabel`: one Chromium flag answers for all three
-            // facets, so the row the reader is made to look at names all three.
-            // The grid under `Show all` still splits them, because there the
+            // Not `browserDataLabel`: one Chromium flag answers for every
+            // facet that was asked for, so the row the reader is made to look
+            // at names all of them — the three, or history alone when the
+            // source's cookies and extensions were never part of the request.
+            // The Profile's own grid still splits them, because there the
             // labels are a fixed ladder rather than a description of a failure.
-            return "\(profile) · \(browserDataAndExtensionsLabel)"
+            return "\(profile) · \(browserDataFailedSubjectLabel(requested: requested))"
         case .spaceNotCreated(let profile, let space),
              .bookmarksFailed(let profile, let space),
              .bookmarksNoneSaved(let profile, let space):
@@ -1640,7 +1666,7 @@ struct BrowserMigrationWizardView: View {
                     // spelled out: a Profile that does not exist imported
                     // nothing, and its own row already says so.
                     if profile.created {
-                        outcomeGrid(profile)
+                        outcomeGrid(profile, requested: report.requestedDataTypes)
                             .padding(.leading, 22)
                     }
                     ForEach(profile.spaces) { space in
@@ -1742,19 +1768,31 @@ struct BrowserMigrationWizardView: View {
         value: "No bookmarks were saved",
         comment: "Browser migration wizard - shown on a Space whose source tree carried bookmarks of which none landed")
 
-    /// Three labels, always present once the Profile exists, so a facet Phi
-    /// worked on can never go unmentioned. The values carry the whole hedge:
-    /// what Chromium only answers with one success flag is *finished* and
-    /// *started*, never *imported* with a count.
-    private func outcomeGrid(_ profile: BrowserMigrationReport.ProfileRow) -> some View {
+    /// The labels always present once the Profile exists — history and
+    /// pinned tabs for every source, the cookies on the history line and the
+    /// extensions on a line of their own where the run asked for them — so
+    /// a facet Phi worked on can never go unmentioned. What the run did not
+    /// ask for is not on the row at all: a source's data no ticket carries
+    /// yet (Zen's cookies, Firefox bookmarks and extensions) is neither
+    /// claimed nor disclaimed here, by direction. The values carry the whole
+    /// hedge: what Chromium only answers with one success flag is *finished*
+    /// and *started*, never *imported* with a count.
+    private func outcomeGrid(
+        _ profile: BrowserMigrationReport.ProfileRow, requested: Set<ImportDataType>
+    ) -> some View {
         Grid(alignment: .leadingFirstTextBaseline, horizontalSpacing: 10, verticalSpacing: 3) {
             GridRow {
-                Self.outcomeLabel(Self.browserDataLabel)
+                // History shares its line with the cookies when both were
+                // asked for; alone, it is the recent history and says so.
+                Self.outcomeLabel(requested.contains(.cookies)
+                    ? Self.browserDataLabel : Self.recentHistoryLabel)
                 Self.outcomeValue(Self.browserDataOutcome(profile))
             }
-            GridRow {
-                Self.outcomeLabel(Self.extensionsLabel)
-                Self.outcomeValue(Self.extensionsOutcome(profile))
+            if requested.contains(.extensions) {
+                GridRow {
+                    Self.outcomeLabel(Self.extensionsLabel)
+                    Self.outcomeValue(Self.extensionsOutcome(profile))
+                }
             }
             GridRow {
                 Self.outcomeLabel(Self.pinnedTabsLabel)
@@ -1798,6 +1836,34 @@ struct BrowserMigrationWizardView: View {
         "app.browserMigration.report.labelPinnedTabs",
         value: "Pinned tabs",
         comment: "Browser migration wizard - label of a migrated Profile's pinned tabs outcome")
+
+    /// History on a line of its own, when the cookies were not part of the
+    /// request. "Recent" rather than "all": the import keeps the most recent
+    /// entries only, and the label is where that is said.
+    private static let recentHistoryLabel = NSLocalizedString(
+        "app.browserMigration.report.labelRecentHistory",
+        value: "Recent history",
+        comment: "Browser migration wizard - label of a migrated Profile's history outcome in the report's detail grid when history was the only data the source's import was asked for, as with Zen; \"recent\" because the import keeps only the most recent entries")
+
+    /// The subject of a promoted import failure: every facet the one Chromium
+    /// flag answered for — all three; history and cookies when the extensions
+    /// were not part of the request; history alone when neither was. (No
+    /// source asks for extensions without cookies, so that pairing has no
+    /// label.)
+    private static func browserDataFailedSubjectLabel(
+        requested: Set<ImportDataType>
+    ) -> String {
+        if requested.contains(.extensions) { return browserDataAndExtensionsLabel }
+        return requested.contains(.cookies) ? browserDataLabel : recentHistoryLabel
+    }
+
+    private static func pinnedTabsLeftBehindLine(_ count: Int) -> String {
+        String.localizedStringWithFormat(
+            NSLocalizedString("app.browserMigration.report.pinnedTabsLeftBehind",
+                value: "%d pinned tabs were left behind because their Profile had no Spaces.",
+                comment: "Browser migration wizard - report note counting the source's pinned entries the run could not place because the Profile they belong to has no Spaces and so was not created; %d is the number of them"),
+            count)
+    }
 
     /// One failure for the three facets, because the Chromium side answers the
     /// whole request with a single flag: the two rows it can reach say the same

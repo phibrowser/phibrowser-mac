@@ -186,10 +186,26 @@ final class BrowserMigrationRunTests: XCTestCase {
             spaces: ["s-home": "id-home", "s-side": "id-side", "s-work": "id-work"])
     }
 
+    /// Arc's request — history, cookies and extensions — which every
+    /// Arc-shaped fixture here takes.
+    private static let arcRequest: Set<ImportDataType> = [.history, .cookies, .extensions]
+
+    /// The fold, over Arc's request unless a case says otherwise. The real
+    /// fold has no such default: what a run's source was asked for is the
+    /// caller's to state.
+    private func folded(
+        plan: BrowserMigrationPlan,
+        outcomes: BrowserMigrationOutcomes,
+        requestedDataTypes: Set<ImportDataType> = arcRequest
+    ) -> BrowserMigrationReport {
+        BrowserMigrationReport
+            .folded(plan: plan, outcomes: outcomes, requestedDataTypes: requestedDataTypes)
+    }
+
     // MARK: - Structure
 
     func testTheReportListsProfilesAndTheirSpacesInPlanOrder() {
-        let report = BrowserMigrationReport.folded(plan: plan(), outcomes: fullOutcomes())
+        let report = folded(plan: plan(), outcomes: fullOutcomes())
 
         XCTAssertEqual(report.profiles.map(\.displayName), ["Personal", "Work"])
         XCTAssertEqual(report.profiles[0].spaces.map(\.name), ["Home", "Side Projects"])
@@ -197,7 +213,7 @@ final class BrowserMigrationRunTests: XCTestCase {
     }
 
     func testEverythingThatLandedIsReportedCreated() {
-        let report = BrowserMigrationReport.folded(plan: plan(), outcomes: fullOutcomes())
+        let report = folded(plan: plan(), outcomes: fullOutcomes())
 
         XCTAssertTrue(report.profiles.allSatisfy(\.created))
         XCTAssertTrue(report.profiles.flatMap(\.spaces).allSatisfy(\.created))
@@ -211,7 +227,7 @@ final class BrowserMigrationRunTests: XCTestCase {
     func testASpaceRowCarriesThePlansIcon() {
         let plan = planWithIcon()
 
-        let report = BrowserMigrationReport.folded(
+        let report = folded(
             plan: plan,
             outcomes: outcomes(profiles: ["Default": "Profile 2"], spaces: ["s-home": "id-home"]))
 
@@ -222,7 +238,7 @@ final class BrowserMigrationRunTests: XCTestCase {
     // MARK: - Failures
 
     func testAFailedUnitIsReportedNotCreatedAndTheRestStillLand() {
-        let report = BrowserMigrationReport.folded(
+        let report = folded(
             plan: plan(),
             outcomes: outcomes(
                 profiles: ["Default": "Profile 2", "Profile 1": "Profile 3"],
@@ -233,7 +249,7 @@ final class BrowserMigrationRunTests: XCTestCase {
     }
 
     func testAProfileThatFailedReportsItsSpacesNotCreatedToo() {
-        let report = BrowserMigrationReport.folded(
+        let report = folded(
             plan: plan(),
             outcomes: outcomes(
                 profiles: ["Profile 1": "Profile 3"], spaces: ["s-work": "id-work"]))
@@ -249,7 +265,7 @@ final class BrowserMigrationRunTests: XCTestCase {
         var outcomes = fullOutcomes()
         outcomes.spaceBookmarkCounts = ["s-home": 4, "s-side": 3, "s-work": 2]
 
-        let report = BrowserMigrationReport.folded(plan: plan(), outcomes: outcomes)
+        let report = folded(plan: plan(), outcomes: outcomes)
 
         XCTAssertEqual(report.profiles[0].spaces.map(\.bookmarks), [.written(4), .written(3)])
         XCTAssertEqual(report.profiles[1].spaces[0].bookmarks, .written(2))
@@ -284,7 +300,7 @@ final class BrowserMigrationRunTests: XCTestCase {
     /// The source Space genuinely had none, so nothing was lost and the report
     /// promotes nothing.
     func testASpaceWhoseSourceHadNoBookmarksSaysSoAndIsNotPromoted() {
-        let report = BrowserMigrationReport.folded(
+        let report = folded(
             plan: planWithTree(emptyTree()), outcomes: oneSpaceOutcomes(bookmarks: 0))
 
         XCTAssertEqual(report.profiles[0].spaces[0].bookmarks, .noneInSource)
@@ -294,7 +310,7 @@ final class BrowserMigrationRunTests: XCTestCase {
     /// A folder is not a bookmark — the count the store returns leaves folders
     /// out — so a Space holding nothing else had none to lose either.
     func testASourceTreeOfFoldersAloneCountsAsHavingHadNoBookmarks() {
-        let report = BrowserMigrationReport.folded(
+        let report = folded(
             plan: planWithTree(folderOnlyTree()), outcomes: oneSpaceOutcomes(bookmarks: 0))
 
         XCTAssertEqual(report.profiles[0].spaces[0].bookmarks, .noneInSource)
@@ -304,7 +320,7 @@ final class BrowserMigrationRunTests: XCTestCase {
     /// This is the visible symptom of the inherited staged-root defect, and it
     /// is promoted where the empty Space above is not.
     func testASpaceWhoseBookmarksAllVanishedIsWordedApartAndPromoted() {
-        let report = BrowserMigrationReport.folded(
+        let report = folded(
             plan: planWithTree(nestedTree()), outcomes: oneSpaceOutcomes(bookmarks: 0))
 
         XCTAssertEqual(report.profiles[0].spaces[0].bookmarks, .noneSaved)
@@ -319,7 +335,7 @@ final class BrowserMigrationRunTests: XCTestCase {
         var outcomes = fullOutcomes()
         outcomes.spaceBookmarkCounts = ["s-home": 3, "s-work": 1]
 
-        let report = BrowserMigrationReport.folded(plan: plan(), outcomes: outcomes)
+        let report = folded(plan: plan(), outcomes: outcomes)
 
         XCTAssertEqual(report.profiles[0].spaces.map(\.bookmarks), [.written(3), .failed])
         XCTAssertTrue(report.profiles[0].spaces.allSatisfy(\.created))
@@ -328,7 +344,7 @@ final class BrowserMigrationRunTests: XCTestCase {
     }
 
     func testASpaceThatWasNeverCreatedAttemptsNoBookmarks() {
-        let report = BrowserMigrationReport.folded(
+        let report = folded(
             plan: plan(), outcomes: outcomes(profiles: ["Default": "Profile 2"]))
 
         XCTAssertEqual(
@@ -338,7 +354,7 @@ final class BrowserMigrationRunTests: XCTestCase {
     /// Distinct from a failed write: nothing was to be written in the first
     /// place, so the report must not imply anything was lost.
     func testASpaceWithNoSourceTreeAttemptsNoBookmarks() {
-        let report = BrowserMigrationReport.folded(
+        let report = folded(
             plan: planWithoutTrees(),
             outcomes: outcomes(
                 profiles: ["Default": "Profile 2"], spaces: ["s-home": "id-home"]))
@@ -356,7 +372,7 @@ final class BrowserMigrationRunTests: XCTestCase {
         var outcomes = fullOutcomes()
         outcomes.profileExtensionCounts = ["Default": 7, "Profile 1": 0]
 
-        let report = BrowserMigrationReport.folded(plan: plan(), outcomes: outcomes)
+        let report = folded(plan: plan(), outcomes: outcomes)
 
         XCTAssertEqual(report.profiles[0].browserData, .requested(extensions: 7))
         XCTAssertEqual(report.profiles[1].browserData, .requested(extensions: 0))
@@ -366,7 +382,7 @@ final class BrowserMigrationRunTests: XCTestCase {
         var outcomes = fullOutcomes()
         outcomes.profileExtensionCounts = ["Profile 1": 2]
 
-        let report = BrowserMigrationReport.folded(plan: plan(), outcomes: outcomes)
+        let report = folded(plan: plan(), outcomes: outcomes)
 
         XCTAssertEqual(report.profiles[0].browserData, .failed)
         XCTAssertTrue(report.profiles[0].created)
@@ -376,11 +392,128 @@ final class BrowserMigrationRunTests: XCTestCase {
     /// Distinct from a failed import: there was no Profile to import into, so
     /// the report must not imply anything was lost.
     func testAProfileThatWasNeverCreatedAttemptsNoDataImport() {
-        let report = BrowserMigrationReport.folded(
+        let report = folded(
             plan: plan(), outcomes: outcomes(profiles: ["Profile 1": "Profile 3"]))
 
         XCTAssertEqual(report.profiles[0].browserData, .notAttempted)
         XCTAssertEqual(report.profiles[1].browserData, .failed)
+    }
+
+    // MARK: - What a Zen-shaped row answers for
+
+    /// Two Profiles derived from one Firefox profile — the shape Zen's
+    /// container mapping produces.
+    private func zenShapedPlan() -> BrowserMigrationPlan {
+        let source = BrowserMigrationSource(
+            profiles: [
+                BrowserMigrationSourceProfile(
+                    key: "fx#0", displayName: "Zen", sourceDirectory: "fx"),
+                BrowserMigrationSourceProfile(
+                    key: "fx#1", displayName: "Personal", sourceDirectory: "fx"),
+            ],
+            defaultProfileKey: "fx#0",
+            spaces: [
+                space("s-home", "Home", profileKey: "fx#0"),
+                space("s-work", "Work", profileKey: "fx#1"),
+            ])
+        return BrowserMigrationPlanner.plan(
+            source: source,
+            existingProfileDisplayNames: [],
+            pinnedTabScope: .profile,
+            selection: .all(in: source),
+            operationID: operationID)
+    }
+
+    /// Zen's request today: history alone.
+    private static let zenRequest: Set<ImportDataType> = [.history]
+
+    /// Every Space and its tree landed; whether the history imports did is
+    /// the case's to say.
+    private func zenOutcomes(importsFinished: Bool = true) -> BrowserMigrationOutcomes {
+        var landed = outcomes(
+            profiles: ["fx#0": "Profile 2", "fx#1": "Profile 3"],
+            spaces: ["s-home": "id-home", "s-work": "id-work"])
+        landed.spaceBookmarkCounts = ["s-home": 1, "s-work": 1]
+        if importsFinished {
+            landed.profileExtensionCounts = ["fx#0": 0, "fx#1": 0]
+        }
+        return landed
+    }
+
+    /// History landed on both rows, and the report carries the request the
+    /// rows answer for — history alone — so nothing else is on them.
+    func testAZenProfileRowAnswersForHistoryAlone() {
+        let report = folded(
+            plan: zenShapedPlan(), outcomes: zenOutcomes(), requestedDataTypes: Self.zenRequest)
+
+        XCTAssertEqual(
+            report.profiles.map(\.browserData),
+            [.requested(extensions: 0), .requested(extensions: 0)])
+        XCTAssertEqual(report.requestedDataTypes, [.history])
+        XCTAssertEqual(report.problems, [])
+    }
+
+    /// A failed history import is the same promoted failure it is for Arc,
+    /// against the same request.
+    func testAZenProfileWhoseHistoryImportFailedIsPromotedForHistoryAlone() {
+        let report = folded(
+            plan: zenShapedPlan(), outcomes: zenOutcomes(importsFinished: false),
+            requestedDataTypes: Self.zenRequest)
+
+        XCTAssertEqual(report.profiles.map(\.browserData), [.failed, .failed])
+        XCTAssertEqual(report.requestedDataTypes, Self.zenRequest)
+        XCTAssertEqual(report.problems, [
+            .browserDataFailed(profile: "Zen"),
+            .browserDataFailed(profile: "Personal"),
+        ])
+    }
+
+    /// An Arc row answers for all three, as it did.
+    func testAnArcRowAnswersForHistoryCookiesAndExtensions() {
+        let report = folded(plan: plan(), outcomes: fullOutcomes())
+
+        XCTAssertEqual(report.requestedDataTypes, [.history, .cookies, .extensions])
+    }
+
+    // MARK: - What the source-level note counts
+
+    /// Two profiles the plan skipped for having no Spaces, one of them with
+    /// pinned entries — a Zen container no Space is set to keeps its
+    /// Essentials — and one with none: the report counts what went nowhere.
+    func testTheReportCountsThePinnedEntriesLeftBehindWithTheirProfiles() {
+        let source = BrowserMigrationSource(
+            profiles: [
+                BrowserMigrationSourceProfile(key: "Default", displayName: "Personal"),
+                BrowserMigrationSourceProfile(key: "Profile 1", displayName: "Work"),
+                BrowserMigrationSourceProfile(key: "Profile 2", displayName: "Shopping"),
+            ],
+            defaultProfileKey: "Default",
+            spaces: [space("s-home", "Home", profileKey: "Default")],
+            pinnedGroups: [BrowserMigrationSourcePinnedGroup(
+                profileKey: "Profile 1",
+                entries: [
+                    BrowserMigrationPinnedEntry(title: "Mail", url: "https://mail.example"),
+                    BrowserMigrationPinnedEntry(title: "Docs", url: "https://docs.example"),
+                ])])
+        let plan = BrowserMigrationPlanner.plan(
+            source: source,
+            existingProfileDisplayNames: [],
+            pinnedTabScope: .profile,
+            selection: .all(in: source),
+            operationID: operationID)
+
+        let report = folded(
+            plan: plan,
+            outcomes: outcomes(profiles: ["Default": "Profile 2"], spaces: ["s-home": "id-home"]))
+
+        XCTAssertEqual(plan.skippedProfiles.map(\.droppedPinnedEntries), [2, 0])
+        XCTAssertEqual(report.droppedPinnedEntries, 2)
+    }
+
+    func testARunThatLeftNoPinnedEntryBehindCountsNone() {
+        let report = folded(plan: plan(), outcomes: fullOutcomes())
+
+        XCTAssertEqual(report.droppedPinnedEntries, 0)
     }
 
     // MARK: - Pinned tabs
@@ -390,7 +523,7 @@ final class BrowserMigrationRunTests: XCTestCase {
         var landed = pinnedEntryOutcomes()
         landed.pinnedTabGuids = Set(plan.profiles[0].pinnedTabs.map(\.guid))
 
-        let report = BrowserMigrationReport.folded(plan: plan, outcomes: landed)
+        let report = folded(plan: plan, outcomes: landed)
 
         XCTAssertEqual(report.profiles[0].pinnedTabsWritten, 2)
         XCTAssertEqual(report.profiles[0].pinnedTabsPlanned, 2)
@@ -404,7 +537,7 @@ final class BrowserMigrationRunTests: XCTestCase {
         landed.pinnedTabGuids = Set(plan.profiles[0].pinnedTabs.map(\.guid))
 
         XCTAssertEqual(plan.profiles[0].pinnedTabs.count, 4)
-        let report = BrowserMigrationReport.folded(plan: plan, outcomes: landed)
+        let report = folded(plan: plan, outcomes: landed)
 
         XCTAssertEqual(report.profiles[0].pinnedTabsWritten, 2)
         XCTAssertEqual(report.profiles[0].pinnedTabsPlanned, 2)
@@ -417,7 +550,7 @@ final class BrowserMigrationRunTests: XCTestCase {
         var landed = pinnedEntryOutcomes()
         landed.pinnedTabGuids = [plan.profiles[0].pinnedTabs[0].guid]
 
-        let report = BrowserMigrationReport.folded(plan: plan, outcomes: landed)
+        let report = folded(plan: plan, outcomes: landed)
 
         XCTAssertEqual(report.profiles[0].pinnedTabsWritten, 1)
         XCTAssertEqual(report.profiles[0].pinnedTabsPlanned, 2)
@@ -428,7 +561,7 @@ final class BrowserMigrationRunTests: XCTestCase {
     /// Distinct from a shortfall: the source had nothing to pin, so the report
     /// must not imply anything was lost.
     func testAProfileWhoseSourceHadNoPinnedEntriesReportsNone() {
-        let report = BrowserMigrationReport.folded(plan: plan(), outcomes: fullOutcomes())
+        let report = folded(plan: plan(), outcomes: fullOutcomes())
 
         XCTAssertTrue(report.profiles.allSatisfy { $0.pinnedTabsPlanned == 0 })
         XCTAssertTrue(report.profiles.allSatisfy { $0.pinnedTabsWritten == 0 })
@@ -437,7 +570,7 @@ final class BrowserMigrationRunTests: XCTestCase {
     // MARK: - The Space the report jumps to
 
     func testTheReportJumpsToTheFirstCreatedSpace() {
-        let report = BrowserMigrationReport.folded(plan: plan(), outcomes: fullOutcomes())
+        let report = folded(plan: plan(), outcomes: fullOutcomes())
 
         XCTAssertEqual(report.firstCreatedSpace?.spaceID, "id-home")
         XCTAssertEqual(report.firstCreatedSpace?.name, "Home")
@@ -446,7 +579,7 @@ final class BrowserMigrationRunTests: XCTestCase {
     /// The source's first ticked Space that landed — the first the run
     /// creates — even when it belongs to the Profile the plan lists second.
     func testTheReportJumpsToTheSourcesFirstSpaceAcrossProfiles() {
-        let report = BrowserMigrationReport.folded(
+        let report = folded(
             plan: interleavedPlan(),
             outcomes: outcomes(
                 profiles: ["Default": "Profile 2", "Profile 1": "Profile 3"],
@@ -457,7 +590,7 @@ final class BrowserMigrationRunTests: XCTestCase {
     }
 
     func testTheFirstCreatedSpaceSkipsOneThatFailed() {
-        let report = BrowserMigrationReport.folded(
+        let report = folded(
             plan: plan(),
             outcomes: outcomes(
                 profiles: ["Default": "Profile 2", "Profile 1": "Profile 3"],
@@ -467,7 +600,7 @@ final class BrowserMigrationRunTests: XCTestCase {
     }
 
     func testARunThatCreatedNoSpaceHasNoneToJumpTo() {
-        let report = BrowserMigrationReport.folded(
+        let report = folded(
             plan: plan(), outcomes: outcomes(profiles: ["Default": "Profile 2"]))
 
         XCTAssertNil(report.firstCreatedSpace)
@@ -522,7 +655,7 @@ final class BrowserMigrationRunTests: XCTestCase {
         landed.profileExtensionCounts = ["Default": 3]
         landed.pinnedTabGuids = [plan.profiles[0].pinnedTabs[0].guid]
 
-        let report = BrowserMigrationReport.folded(plan: plan, outcomes: landed)
+        let report = folded(plan: plan, outcomes: landed)
 
         XCTAssertEqual(report.problems, [
             .pinnedTabsIncomplete(profile: "Personal", written: 1, planned: 2),
@@ -539,7 +672,7 @@ final class BrowserMigrationRunTests: XCTestCase {
         landed.spaceBookmarkCounts = ["s-home": 4, "s-side": 3, "s-work": 2]
         landed.profileExtensionCounts = ["Default": 7, "Profile 1": 0]
 
-        let report = BrowserMigrationReport.folded(plan: plan(), outcomes: landed)
+        let report = folded(plan: plan(), outcomes: landed)
 
         XCTAssertEqual(report.problems, [])
     }
@@ -555,7 +688,7 @@ final class BrowserMigrationRunTests: XCTestCase {
         landed.spaceBookmarkCounts = ["s-home": 4, "s-side": 3, "s-work": 2]
         landed.profileExtensionCounts = ["Default": 7]
 
-        let report = BrowserMigrationReport.folded(plan: plan(), outcomes: landed)
+        let report = folded(plan: plan(), outcomes: landed)
 
         XCTAssertEqual(report.profiles[1].browserData, .failed)
         XCTAssertEqual(report.problems, [.browserDataFailed(profile: "Work")])
@@ -579,7 +712,7 @@ final class BrowserMigrationRunTests: XCTestCase {
         landed.profileExtensionCounts = [:]
         landed.pinnedTabGuids = [plan.profiles[0].pinnedTabs[0].guid]
 
-        let report = BrowserMigrationReport.folded(plan: plan, outcomes: landed)
+        let report = folded(plan: plan, outcomes: landed)
 
         XCTAssertEqual(report.profiles[0].browserData, .failed)
         XCTAssertEqual(report.problems, [
@@ -597,7 +730,7 @@ final class BrowserMigrationRunTests: XCTestCase {
         landed.profileExtensionCounts = ["Default": 0]
         landed.pinnedTabGuids = [plan.profiles[0].pinnedTabs[0].guid]
 
-        let report = BrowserMigrationReport.folded(plan: plan, outcomes: landed)
+        let report = folded(plan: plan, outcomes: landed)
 
         XCTAssertEqual(
             report.problems,
@@ -608,7 +741,7 @@ final class BrowserMigrationRunTests: XCTestCase {
     /// written to it because there was nothing to write to, which its own row
     /// already says.
     func testAProfileThatWasNeverCreatedDoesNotAlsoPromoteItsPinnedShortfall() {
-        let report = BrowserMigrationReport.folded(
+        let report = folded(
             plan: planWithPinnedEntries(scope: .profile), outcomes: outcomes())
 
         XCTAssertEqual(report.problems, [
@@ -621,7 +754,7 @@ final class BrowserMigrationRunTests: XCTestCase {
     // MARK: - What the summary counts
 
     func testTheSummaryCountsOnlyWhatWasCreated() {
-        let report = BrowserMigrationReport.folded(
+        let report = folded(
             plan: plan(),
             outcomes: outcomes(
                 profiles: ["Default": "Profile 2"],
@@ -632,7 +765,7 @@ final class BrowserMigrationRunTests: XCTestCase {
     }
 
     func testARunThatCreatedNothingCountsNothing() {
-        let report = BrowserMigrationReport.folded(plan: plan(), outcomes: outcomes())
+        let report = folded(plan: plan(), outcomes: outcomes())
 
         XCTAssertEqual(report.createdProfileCount, 0)
         XCTAssertEqual(report.createdSpaceCount, 0)

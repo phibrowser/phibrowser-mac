@@ -802,10 +802,28 @@ struct BrowserMigrationReport: Equatable {
     /// landed — or nil when it created none, in which case the report hides
     /// its button rather than offering a dead one.
     let firstCreatedSpace: FirstSpace?
+    /// What the run asked the Chromium-side importer for on every Profile's
+    /// behalf — history always; Arc's cookies and extensions too. A Profile
+    /// row answers for these and only these: data the source keeps that no
+    /// ticket carries yet (Zen's cookies, its Firefox bookmarks, its
+    /// extensions) is not on the row at all, neither claimed nor
+    /// disclaimed, by direction (2026-08-31). One source per run, so one
+    /// answer for every row.
+    let requestedDataTypes: Set<ImportDataType>
+    /// How many of the source's pinned entries the plan left behind because
+    /// the Profile they belong to has no Spaces and so was never created — a
+    /// Zen container no Space is set to still has its Essentials — summed
+    /// over the skipped profiles. Zero when none were, and the report then
+    /// says nothing about it.
+    let droppedPinnedEntries: Int
 
+    /// `requestedDataTypes` is what the run's source was asked for, and is
+    /// the caller's to state: a fold that assumed Arc's request would call
+    /// Zen's cookies requested.
     static func folded(
         plan: BrowserMigrationPlan,
-        outcomes: BrowserMigrationOutcomes
+        outcomes: BrowserMigrationOutcomes,
+        requestedDataTypes: Set<ImportDataType>
     ) -> BrowserMigrationReport {
         let profiles = plan.profiles.map { profile in
             let profileCreated = outcomes.profileIDs[profile.sourceProfileKey] != nil
@@ -836,7 +854,10 @@ struct BrowserMigrationReport: Equatable {
                 .map { FirstSpace(spaceID: $0, name: entry.space.name) }
         }.first
         return BrowserMigrationReport(
-            profiles: profiles, firstCreatedSpace: firstCreatedSpace)
+            profiles: profiles,
+            firstCreatedSpace: firstCreatedSpace,
+            requestedDataTypes: requestedDataTypes,
+            droppedPinnedEntries: plan.skippedProfiles.reduce(0) { $0 + $1.droppedPinnedEntries })
     }
 
     /// One source entry per lineage, however many owners it was written to.

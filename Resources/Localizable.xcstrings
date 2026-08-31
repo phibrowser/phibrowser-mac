@@ -8890,6 +8890,18 @@
         }
       }
     },
+    "app.browserMigration.report.labelRecentHistory" : {
+      "comment" : "Browser migration wizard - label of a migrated Profile's history outcome in the report's detail grid when history was the only data the source's import was asked for, as with Zen; \"recent\" because the import keeps only the most recent entries",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Recent history"
+          }
+        }
+      }
+    },
     "app.browserMigration.report.notCreated" : {
       "comment" : "Browser migration wizard - outcome of a Profile or Space the run failed to create",
       "extractionState" : "extracted_with_value",
@@ -8922,6 +8934,29 @@
           "stringUnit" : {
             "state" : "new",
             "value" : "%1$d of %2$d couldn't be added"
+          }
+        }
+      }
+    },
+    "app.browserMigration.report.pinnedTabsLeftBehind" : {
+      "comment" : "Browser migration wizard - report note counting the source's pinned entries the run could not place because the Profile they belong to has no Spaces and so was not created; %d is the number of them",
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "new",
+                  "value" : "%d pinned tab was left behind because its Profile had no Spaces."
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "new",
+                  "value" : "%d pinned tabs were left behind because their Profile had no Spaces."
+                }
+              }
+            }
           }
         }
       }

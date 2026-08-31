@@ -193,7 +193,8 @@ final class BrowserMigrationRunner: ObservableObject {
         if !outcomes.profileIDs.isEmpty {
             Self.accountDefaults?.addMigratedBrowserSource(source.rawValue)
         }
-        state = .finished(.folded(plan: plan, outcomes: outcomes))
+        state = .finished(.folded(
+            plan: plan, outcomes: outcomes, requestedDataTypes: Set(source.requestedDataTypes)))
     }
 
     private func create(

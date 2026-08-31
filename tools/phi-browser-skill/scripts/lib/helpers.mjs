@@ -5812,7 +5812,9 @@ export async function setStatus(caption) {
 /** Alias of setStatus, named for the console: the caption shows on the
  *  overlay pill AND lands in the live transcript as narration — one wire
  *  message, so the two can never disagree. Narrate what you are about to do,
- *  never secrets (both surfaces are displayed and buffered). */
+ *  never secrets (both surfaces are displayed and buffered). Keep it to a
+ *  short phrase — the pill is a single truncating line; put a long result in
+ *  your reply prose or say(...) instead. */
 export const narrate = setStatus
 
 /**

@@ -42,6 +42,23 @@ final class AgentSpaceOverlayView: NSView {
     private let captionLabel = NSTextField(labelWithString: "")
     private let primaryButton = NSButton()
     private let secondaryButton = NSButton()
+    /// Folds the pill down to its ownership buttons and parks it in the
+    /// bottom-right corner, for a user who wants the page back.
+    private let collapseButton = NSButton()
+    /// Collapsed is a deliberate user choice, so it survives every `update`
+    /// and every ownership flip — nothing re-expands the pill but the user.
+    private var isCollapsed = false
+    /// Bottom-centre when expanded, bottom-right corner when collapsed; one is
+    /// always active and the other never is.
+    private var pillCenterX: NSLayoutConstraint?
+    private var pillCornerTrailing: NSLayoutConstraint?
+    /// Holds the badge, divider and caption — everything the fold takes away.
+    /// Its width is the one thing the animation drives; the pill's own width
+    /// follows its content, so the ownership buttons are never compressed.
+    private let detailBox = NSView()
+    /// Pins the box open at a measured width, or shut at zero. Inactive while
+    /// the pill is expanded, so the pane clamp governs the caption as usual.
+    private var detailWidth: NSLayoutConstraint?
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
@@ -168,6 +185,9 @@ final class AgentSpaceOverlayView: NSView {
         pill.state = .active
         pill.wantsLayer = true
         pill.layer?.cornerRadius = 16
+        // The fold narrows the pill over content that is still laid out wide;
+        // clip so nothing spills past the rounded edge on the way in or out.
+        pill.layer?.masksToBounds = true
         pill.translatesAutoresizingMaskIntoConstraints = false
         addSubview(pill)
 
@@ -192,19 +212,60 @@ final class AgentSpaceOverlayView: NSView {
         captionLabel.font = .systemFont(ofSize: 12, weight: .medium)
         captionLabel.textColor = .labelColor
         captionLabel.lineBreakMode = .byTruncatingTail
+        captionLabel.maximumNumberOfLines = 1
+        captionLabel.cell?.truncatesLastVisibleLine = true
+        // The caption is agent-authored free text and can run to a whole
+        // sentence, so it is the ONE part of the pill allowed to give up width:
+        // the driver badge stays readable and the ownership buttons stay on
+        // screen and clickable however much the agent narrates.
+        captionLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         captionLabel.translatesAutoresizingMaskIntoConstraints = false
 
         configureButton(primaryButton, action: #selector(primaryTapped))
         configureButton(secondaryButton, action: #selector(secondaryTapped))
+        setupCollapseButton()
+
+        // The badge and caption live in their own box, and the box's width is
+        // what the fold animates. Squeezing the PILL instead made the stack
+        // compress, and compression came for the buttons too — "Hand back"
+        // visibly shrank on the way in and sprang back at the end. Nothing
+        // squeezes the row now: the box gives up its width, the pill's width
+        // follows its content, and the buttons are never asked to move.
+        let detailStack = NSStackView(views: [
+            agentIcon, agentLabel, agentDivider, captionLabel])
+        detailStack.orientation = .horizontal
+        detailStack.spacing = 8
+        detailStack.alignment = .centerY
+        detailStack.setCustomSpacing(6, after: agentIcon)
+        detailStack.setCustomSpacing(10, after: agentDivider)
+        detailStack.translatesAutoresizingMaskIntoConstraints = false
+
+        detailBox.wantsLayer = true
+        // Closing over content that is still laid out wide: clip it.
+        detailBox.layer?.masksToBounds = true
+        detailBox.translatesAutoresizingMaskIntoConstraints = false
+        detailBox.addSubview(detailStack)
+
+        // The gap between the caption and the first button lives INSIDE the
+        // box, so a box closed to nothing leaves nothing behind — no stray
+        // spacing to snap away at the end of the fold.
+        let detailTrailing = detailStack.trailingAnchor.constraint(
+            equalTo: detailBox.trailingAnchor, constant: -8)
+        detailTrailing.priority = .required - 1
+        NSLayoutConstraint.activate([
+            detailStack.leadingAnchor.constraint(equalTo: detailBox.leadingAnchor),
+            detailStack.topAnchor.constraint(equalTo: detailBox.topAnchor),
+            detailStack.bottomAnchor.constraint(equalTo: detailBox.bottomAnchor),
+            detailTrailing,
+        ])
+        detailWidth = detailBox.widthAnchor.constraint(equalToConstant: 0)
 
         let stack = NSStackView(views: [
-            agentIcon, agentLabel, agentDivider, captionLabel,
-            primaryButton, secondaryButton])
+            detailBox, primaryButton, secondaryButton, collapseButton])
         stack.orientation = .horizontal
         stack.spacing = 8
         stack.alignment = .centerY
-        stack.setCustomSpacing(6, after: agentIcon)
-        stack.setCustomSpacing(10, after: agentDivider)
+        stack.setCustomSpacing(0, after: detailBox)
         stack.translatesAutoresizingMaskIntoConstraints = false
         pill.addSubview(stack)
 
@@ -212,8 +273,21 @@ final class AgentSpaceOverlayView: NSView {
             agentDivider.heightAnchor.constraint(equalToConstant: 18),
         ])
 
+        // Width is content-driven but bounded: a long caption truncates instead
+        // of growing the pill past the content pane — which pushed "Hand back"
+        // and "Finish" off screen, leaving the user no way to return control —
+        // and never past a readable line length on a wide display.
+        pillCenterX = pill.centerXAnchor.constraint(equalTo: centerXAnchor)
+        pillCornerTrailing = pill.trailingAnchor.constraint(
+            equalTo: trailingAnchor, constant: -Self.pillCornerInset)
+        pillCenterX?.isActive = true
+
         NSLayoutConstraint.activate([
-            pill.centerXAnchor.constraint(equalTo: centerXAnchor),
+            pill.leadingAnchor.constraint(
+                greaterThanOrEqualTo: leadingAnchor, constant: Self.pillMinSideInset),
+            pill.trailingAnchor.constraint(
+                lessThanOrEqualTo: trailingAnchor, constant: -Self.pillMinSideInset),
+            pill.widthAnchor.constraint(lessThanOrEqualToConstant: Self.pillMaxWidth),
             pill.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -24),
             pill.heightAnchor.constraint(equalToConstant: 40),
             stack.leadingAnchor.constraint(equalTo: pill.leadingAnchor, constant: 16),
@@ -222,12 +296,155 @@ final class AgentSpaceOverlayView: NSView {
         ])
     }
 
+    /// Widest the pill may get, and the gutter it keeps to the pane's edges.
+    /// Both are upper bounds on the same width, so the pill settles at
+    /// whichever is smaller — a narrow pane clamps before the line-length cap.
+    private static let pillMaxWidth: CGFloat = 720
+    private static let pillMinSideInset: CGFloat = 16
+    /// Distance the collapsed pill keeps from the pane's trailing edge —
+    /// the same 24 the expanded pill keeps from the bottom, so it sits square
+    /// in the corner.
+    private static let pillCornerInset: CGFloat = 24
+    /// Fold/unfold timing. The fade is short enough to feel like part of the
+    /// fold rather than a step before it.
+    private static let foldDuration: TimeInterval = 0.3
+    private static let detailFadeDuration: TimeInterval = 0.14
+
+    /// Longest caption laid out. Truncation already handles display; this only
+    /// keeps the text engine off a runaway string. The untrimmed caption stays
+    /// on the tooltip and in the transcript console.
+    private static let captionCharacterLimit = 240
+
     private func configureButton(_ button: NSButton, action: Selector) {
         button.bezelStyle = .rounded
         button.controlSize = .small
         button.target = self
         button.action = action
+        // Never squeezed by a long caption — these are the only way to move
+        // ownership, so they keep their full width and the caption yields.
+        // Above the labels but below required: in a pane too narrow to hold
+        // even the buttons, a truncated title beats breaking the width cap and
+        // letting the pill spill off screen again.
+        button.setContentCompressionResistancePriority(.required - 100, for: .horizontal)
+        button.setContentHuggingPriority(.required, for: .horizontal)
         button.translatesAutoresizingMaskIntoConstraints = false
+    }
+
+    private func setupCollapseButton() {
+        collapseButton.isBordered = false
+        collapseButton.bezelStyle = .regularSquare
+        collapseButton.imagePosition = .imageOnly
+        collapseButton.imageScaling = .scaleProportionallyDown
+        collapseButton.contentTintColor = .secondaryLabelColor
+        collapseButton.target = self
+        collapseButton.action = #selector(collapseTapped)
+        collapseButton.setContentCompressionResistancePriority(.required, for: .horizontal)
+        collapseButton.setContentHuggingPriority(.required, for: .horizontal)
+        collapseButton.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            collapseButton.widthAnchor.constraint(equalToConstant: 16),
+            collapseButton.heightAnchor.constraint(equalToConstant: 16),
+        ])
+        applyCollapseButtonAppearance()
+    }
+
+    private func applyCollapseButtonAppearance() {
+        // The chevron points the way the pill travels: right to park it in the
+        // corner, left to bring it back out to the middle.
+        let symbol = isCollapsed ? "chevron.left" : "chevron.right"
+        let title = isCollapsed
+            ? NSLocalizedString("agent.controlPill.expandButton", value: "Expand",
+                                comment: "Agent control pill - expand the collapsed pill")
+            : NSLocalizedString("agent.controlPill.minimiseButton", value: "Minimise",
+                                comment: "Agent control pill - collapse the pill into the corner")
+        collapseButton.image = NSImage(systemSymbolName: symbol, accessibilityDescription: title)
+        collapseButton.symbolConfiguration = .init(pointSize: 11, weight: .semibold)
+        collapseButton.toolTip = title
+        collapseButton.setAccessibilityLabel(title)
+    }
+
+    /// Collapsed keeps ONLY the ownership buttons — the badge, divider and
+    /// caption go, and the pill parks in the bottom-right corner so the page
+    /// is clear. Everything the caption said is still in the transcript
+    /// console, and on the pill's own tooltip.
+    /// One continuous motion: the detail box closes, the pill's width follows
+    /// it, and the pill travels to the corner — all on the same clock, and
+    /// none of it reaching the ownership buttons.
+    private func applyCollapsedState(animated: Bool) {
+        pill.toolTip = isCollapsed ? captionLabel.toolTip : nil
+        applyCollapseButtonAppearance()
+
+        // Respect the system's reduce-motion setting: same end state, no travel.
+        guard animated, !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion else {
+            detailBox.alphaValue = isCollapsed ? 0 : 1
+            detailWidth?.constant = 0
+            detailWidth?.isActive = isCollapsed
+            applyPillPosition()
+            layoutSubtreeIfNeeded()
+            return
+        }
+
+        // Mid-flight, `frame` already holds the destination — the presentation
+        // layer is where the box actually is, and where this fold must start.
+        let startWidth = detailBox.layer?.presentation()?.bounds.width
+            ?? detailBox.frame.width
+        let targetWidth = isCollapsed ? 0 : measuredDetailWidth()
+
+        detailWidth?.constant = startWidth
+        detailWidth?.isActive = true
+        applyPillPosition()
+        layoutSubtreeIfNeeded()
+
+        NSAnimationContext.runAnimationGroup({ context in
+            context.duration = Self.foldDuration
+            // Quick off the mark, long soft landing — the pill reads as being
+            // put down in the corner rather than sliding there at a constant clip.
+            context.timingFunction = CAMediaTimingFunction(
+                controlPoints: 0.32, 0.72, 0, 1)
+            context.allowsImplicitAnimation = true
+            detailWidth?.animator().constant = targetWidth
+            layoutSubtreeIfNeeded()
+        }, completionHandler: { [weak self] in
+            guard let self else { return }
+            // Expanded, the caption answers to the pane clamp again, so the
+            // measured width has to let go. Collapsed, the zero stays put.
+            detailWidth?.isActive = isCollapsed
+        })
+
+        // Concurrent, not sequential — but on its own clock: collapsing dims
+        // the detail early so no half-truncated caption is on screen while the
+        // box closes over it, and expanding holds it back until the pill has
+        // most of its width.
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = isCollapsed ? Self.detailFadeDuration : Self.foldDuration
+            context.timingFunction = CAMediaTimingFunction(
+                name: isCollapsed ? .easeOut : .easeIn)
+            detailBox.animator().alphaValue = isCollapsed ? 0 : 1
+        }
+    }
+
+    /// Width the open box settles at: let the pane clamp decide it, read it,
+    /// and pin it back. Runs to completion inside one turn of the run loop, so
+    /// the intermediate state is never drawn.
+    private func measuredDetailWidth() -> CGFloat {
+        let wasActive = detailWidth?.isActive ?? false
+        detailWidth?.isActive = false
+        layoutSubtreeIfNeeded()
+        let width = detailBox.frame.width
+        detailWidth?.isActive = wasActive
+        layoutSubtreeIfNeeded()
+        return width
+    }
+
+    /// Bottom-centre when expanded, bottom-right corner when collapsed.
+    private func applyPillPosition() {
+        pillCenterX?.isActive = !isCollapsed
+        pillCornerTrailing?.isActive = isCollapsed
+    }
+
+    @objc private func collapseTapped() {
+        isCollapsed.toggle()
+        applyCollapsedState(animated: true)
     }
 
     // MARK: - Primary action tint
@@ -273,6 +490,42 @@ final class AgentSpaceOverlayView: NSView {
         return pill.bounds.contains(pill.convert(point, from: sourceView))
     }
 
+    /// The control pill's frame in this view's coordinates — for layout
+    /// assertions over a long, agent-authored caption.
+    var controlPillFrameForTesting: NSRect { pill.frame }
+
+    /// Freezes the fold part-way — 0 wide open, 1 fully shut — so a test can
+    /// inspect the geometry the animation passes through.
+    func setFoldProgressForTesting(_ fraction: CGFloat) {
+        let open = measuredDetailWidth()
+        detailWidth?.constant = open * (1 - max(0, min(1, fraction)))
+        detailWidth?.isActive = true
+        layoutSubtreeIfNeeded()
+    }
+
+    /// The ownership button's frame — it must not move or resize mid-fold.
+    var controlPillPrimaryButtonFrameForTesting: NSRect { primaryButton.frame }
+
+    /// Drives the minimise toggle the way its button does, minus the animation
+    /// so the new geometry has landed by the time the caller reads it.
+    func toggleCollapsedForTesting() {
+        isCollapsed.toggle()
+        applyCollapsedState(animated: false)
+    }
+
+    /// What the collapsed pill still shows: the ownership buttons, nothing else.
+    var controlPillVisibleItemsForTesting: [String] {
+        var items: [String] = []
+        // Faded out or closed to nothing — to a reader the detail is gone
+        // either way.
+        let detailShows = detailBox.alphaValue > 0.01 && detailBox.frame.width > 1
+        if detailShows { items.append("badge") }
+        if detailShows { items.append("caption") }
+        if !primaryButton.isHidden { items.append(primaryButton.title) }
+        if !secondaryButton.isHidden { items.append(secondaryButton.title) }
+        return items
+    }
+
     // MARK: - Update
 
     func update(with task: AgentTask?) {
@@ -297,13 +550,13 @@ final class AgentSpaceOverlayView: NSView {
 
         switch task.status {
         case .failed(let message):
-            captionLabel.stringValue = "⚠︎ \(message)"
-            captionLabel.textColor = .systemRed
+            setCaption("⚠︎ \(message)", color: .systemRed)
         default:
-            captionLabel.stringValue = task.statusCaption.isEmpty
-                ? (ownership == .agent ? "Agent is working…" : "Agent paused")
-                : task.statusCaption
-            captionLabel.textColor = .labelColor
+            setCaption(
+                task.statusCaption.isEmpty
+                    ? (ownership == .agent ? "Agent is working…" : "Agent paused")
+                    : task.statusCaption,
+                color: .labelColor)
         }
 
         let primaryTitle: String
@@ -320,8 +573,24 @@ final class AgentSpaceOverlayView: NSView {
         }
         primaryButton.title = primaryTitle
         applyPrimaryButtonTint(title: primaryTitle)
+        // `update` re-decides what the ownership row shows; re-assert the
+        // user's collapse choice on top of it.
+        applyCollapsedState(animated: false)
 
         moveCursor(to: task.cursor)
+    }
+
+    /// Puts one line of agent-authored text on the pill. Captions arrive as
+    /// free text — newlines and runs of spaces included — and the pill is a
+    /// single line, so collapse the whitespace first and hand the full caption
+    /// to the tooltip, which is where a truncated one stays readable.
+    private func setCaption(_ text: String, color: NSColor) {
+        let flattened = text.split(whereSeparator: { $0.isWhitespace }).joined(separator: " ")
+        captionLabel.stringValue = flattened.count > Self.captionCharacterLimit
+            ? String(flattened.prefix(Self.captionCharacterLimit)) + "…"
+            : flattened
+        captionLabel.textColor = color
+        captionLabel.toolTip = flattened.isEmpty ? nil : flattened
     }
 
     /// Moves (or hides, for `nil`) the agent cursor alone — the streamed-

@@ -413,7 +413,10 @@ Keep the user informed while working: call `setStatus('Reading results…')`
 (or its alias `narrate(...)`) before long steps — it is displayed in the
 overlay pill AND appears as narration in the live transcript console (View ▸
 Agent Transcript in Phi). Every page/tab primitive you run is logged there
-automatically as an action line — narrate intent, not mechanics. NEVER put
+automatically as an action line — narrate intent, not mechanics. Keep a
+caption to a short phrase: the pill is one line and truncates (the full text
+survives on its tooltip and in the console), so findings and recommendations
+belong in your reply prose or `say(...)`, not in the caption. NEVER put
 secrets (passwords, tokens, cookie values) into `setStatus`/`narrate`/`say`
 text: both surfaces are displayed and buffered. Under all six supported
 agents — Claude Code, Codex, OpenClaw, Pi, Hermes, and Cursor — the console

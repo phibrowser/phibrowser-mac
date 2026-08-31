@@ -8458,6 +8458,54 @@
             "state" : "new",
             "value" : "Continue"
           }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "继续"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "繼續"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "続ける"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "계속"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Continuer"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Weiter"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ga door"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Continuar"
+          }
         }
       }
     },
@@ -8469,6 +8517,54 @@
           "stringUnit" : {
             "state" : "new",
             "value" : "Phi didn't find Arc, Dia or Zen on this Mac."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Phi 未在这台 Mac 上找到 Arc、Dia 或 Zen。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Phi 在這台 Mac 上找不到 Arc、Dia 或 Zen。"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "PhiはこのMacでArc、Dia、Zenを見つけられませんでした。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Phi가 이 Mac에서 Arc, Dia, Zen을 찾지 못했어요."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Phi n'a trouvé ni Arc, ni Dia, ni Zen sur ce Mac."
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Phi hat Arc, Dia oder Zen auf diesem Mac nicht gefunden."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Phi heeft Arc, Dia of Zen niet op deze Mac gevonden."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Phi no encontró Arc, Dia ni Zen en este Mac."
           }
         }
       }
@@ -8482,6 +8578,54 @@
             "state" : "new",
             "value" : "Phi recreates your Profiles and Spaces from another browser. It only ever creates — nothing you already have is changed."
           }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Phi 会重新创建你在其他浏览器中的个人资料和空间。整个过程只会新建内容，你已有的一切都不会被更改。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Phi 會重新建立你在其他瀏覽器中的設定檔和空間。整個過程只會新增，不會變更你現有的任何內容。"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "他のブラウザのプロファイルとスペースをPhiが再現します。新しく作成するだけで、今あるものは何も変更されません。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Phi가 다른 브라우저의 프로필과 스페이스를 그대로 다시 만들어요. 새로 만들기만 할 뿐, 이미 있는 것은 아무것도 바뀌지 않아요."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Phi recrée vos Profils et vos Espaces depuis un autre navigateur. Il ne fait que créer : rien de ce que vous avez déjà n'est modifié."
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Phi baut deine Profile und Spaces aus einem anderen Browser nach. Dabei wird nur Neues erstellt; nichts, was du schon hast, wird verändert."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Phi bouwt je Profielen en Spaces uit een andere browser opnieuw op. Er komt alleen iets bij: niets van wat je al hebt wordt gewijzigd."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Phi recrea tus Perfiles y Espacios desde otro navegador. Solo crea elementos nuevos: no se modifica nada de lo que ya tienes."
+          }
         }
       }
     },
@@ -8493,6 +8637,54 @@
           "stringUnit" : {
             "state" : "new",
             "value" : "Phi couldn't read %1$@'s data. Open %1$@ once so it writes its sidebar, then try again."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Phi 未能读取 %1$@ 的数据。请打开一次 %1$@，让它写入侧边栏数据，然后再试一次。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Phi 無法讀取 %1$@ 的資料。請先開啟 %1$@ 一次，讓它寫入側邊欄資料，然後再試一次。"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Phiは%1$@のデータを読み取れませんでした。%1$@を一度起動してサイドバーのデータを保存させてから、もう一度お試しください。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Phi가 %1$@의 데이터를 읽지 못했어요. 사이드바 정보가 저장되도록 %1$@ 앱을 한 번 실행한 다음 다시 시도해 주세요."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Phi n'a pas pu lire les données de %1$@. Ouvrez %1$@ une fois pour qu'il enregistre sa barre latérale, puis réessayez."
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Phi konnte die Daten von %1$@ nicht lesen. Öffne %1$@ einmal, damit die Seitenleiste geschrieben wird, und versuche es dann erneut."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Phi kon de gegevens van %1$@ niet lezen. Open %1$@ één keer zodat die zijn zijbalk wegschrijft, en probeer het daarna opnieuw."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Phi no pudo leer los datos de %1$@. Abre %1$@ una vez para que escriba su barra lateral y vuelve a intentarlo."
           }
         }
       }
@@ -8506,6 +8698,54 @@
             "state" : "new",
             "value" : "macOS will ask to use %@'s encryption key so your cookies can come across. Choose “Always Allow”, or it asks again for every Profile."
           }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "macOS 会请求使用 %@ 的加密密钥，以便迁移你的 Cookie。请选择「始终允许」，否则每个个人资料都会再次询问。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "macOS 會要求使用 %@ 的加密金鑰，以便將你的 Cookie 移轉過來。請選擇「永遠允許」，否則每個設定檔都會再次詢問。"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cookieを引き継ぐため、macOSが%@の暗号化キーの使用許可を求めます。「常に許可」を選択しないと、プロファイルごとに毎回確認が表示されます。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "쿠키를 가져올 수 있도록 macOS가 %@의 암호화 키 사용 권한을 요청해요. “항상 허용”을 선택해 주세요. 그렇지 않으면 프로필마다 다시 요청해요."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "macOS demandera l'autorisation d'utiliser la clé de chiffrement de %@ pour que vos cookies puissent être transférés. Choisissez « Toujours autoriser », sinon la demande réapparaîtra pour chaque Profil."
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "macOS bittet um Zugriff auf den Verschlüsselungsschlüssel von %@, damit deine Cookies übernommen werden können. Wähle „Immer erlauben“, sonst fragt macOS bei jedem Profil erneut."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "macOS vraagt om de versleutelingssleutel van %@ te gebruiken, zodat je cookies kunnen worden overgezet. Kies “Sta altijd toe”, anders vraagt macOS het voor elk Profiel opnieuw."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "macOS pedirá permiso para usar la clave de cifrado de %@ para que tus cookies puedan transferirse. Elige “Permitir siempre” o te lo volverá a pedir con cada Perfil."
+          }
         }
       }
     },
@@ -8517,6 +8757,54 @@
           "stringUnit" : {
             "state" : "new",
             "value" : "Zen is running. Quit it before you start so its latest changes come across — Phi reads copies of Zen's files, and anything Zen hasn't saved yet would be missed."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Zen 正在运行。请在开始前退出 Zen，以便迁移它最新的更改：Phi 读取的是 Zen 文件的副本，Zen 尚未保存的内容会被遗漏。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Zen 正在執行中。請先結束 Zen 再開始，讓最新的變更能一併移轉過來：Phi 讀取的是 Zen 檔案的副本，Zen 尚未儲存的內容不會包含在內。"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Zenが起動中です。最新の変更を引き継ぐため、開始する前にZenを終了してください。PhiはZenのファイルのコピーを読み取るため、Zenがまだ保存していない内容は移行されません。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Zen이 실행 중이에요. 최신 변경 사항까지 가져올 수 있도록 시작하기 전에 Zen을 종료해 주세요. Phi는 Zen 파일의 복사본을 읽기 때문에, Zen이 아직 저장하지 않은 내용은 누락될 수 있어요."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Zen est en cours d'exécution. Quittez-le avant de commencer pour que ses derniers changements soient transférés : Phi lit des copies des fichiers de Zen, et tout ce que Zen n'a pas encore enregistré serait ignoré."
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Zen läuft gerade. Beende Zen vor dem Start, damit die letzten Änderungen übernommen werden. Phi liest Kopien der Zen-Dateien, und alles, was Zen noch nicht gespeichert hat, würde fehlen."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Zen is actief. Stop Zen voordat je begint, zodat de laatste wijzigingen meekomen: Phi leest kopieën van de bestanden van Zen, en alles wat Zen nog niet heeft bewaard zou ontbreken."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Zen está abierto. Ciérralo antes de empezar para que se transfieran sus últimos cambios: Phi lee copias de los archivos de Zen, y cualquier cosa que Zen aún no haya guardado quedaría fuera."
           }
         }
       }
@@ -8530,6 +8818,54 @@
             "state" : "new",
             "value" : "Sign in to Phi — or continue as a guest — before migrating."
           }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "迁移前请先登录 Phi，或以访客身份继续。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "開始移轉前，請先登入 Phi，或以訪客身分繼續。"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "移行する前に、Phiにログインするか、ゲストとして続けてください。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "마이그레이션하기 전에 Phi에 로그인하거나 게스트로 계속해 주세요."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Avant de migrer, connectez-vous à Phi ou continuez en tant qu'invité."
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Melde dich vor der Migration bei Phi an oder fahre als Gast fort."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Log in bij Phi (of ga door als gast) voordat je migreert."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Inicia sesión en Phi (o continúa como invitado) antes de migrar."
+          }
         }
       }
     },
@@ -8541,6 +8877,54 @@
           "stringUnit" : {
             "state" : "new",
             "value" : "You already migrated from %@ for this account. Migrating again creates a second set of Profiles and Spaces — it doesn't update the first."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "你已经用此账号从 %@ 迁移过。再次迁移会创建第二套个人资料和空间，而不会更新第一套。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "你已經用這個帳號從 %@ 移轉過。再次移轉會建立第二組設定檔和空間，不會更新原有的那一組。"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "このアカウントでは、%@からすでに移行しています。もう一度移行すると、プロファイルとスペースがもう1セット作成されます。最初のセットが更新されるわけではありません。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "이 계정에서는 이미 %@에서 마이그레이션한 적이 있어요. 다시 마이그레이션하면 프로필과 스페이스 세트가 하나 더 만들어지며, 기존 세트는 업데이트되지 않아요."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vous avez déjà migré depuis %@ pour ce compte. Migrer à nouveau crée un second ensemble de Profils et d'Espaces, sans mettre à jour le premier."
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Du hast für dieses Konto bereits aus %@ migriert. Eine erneute Migration erstellt einen zweiten Satz Profile und Spaces; der erste wird nicht aktualisiert."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Je hebt voor dit account al uit %@ gemigreerd. Opnieuw migreren maakt een tweede set Profielen en Spaces aan: de eerste wordt niet bijgewerkt."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ya migraste desde %@ con esta cuenta. Migrar de nuevo crea un segundo conjunto de Perfiles y Espacios; no actualiza el primero."
           }
         }
       }
@@ -8554,6 +8938,54 @@
             "state" : "new",
             "value" : "Back"
           }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "返回"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "上一頁"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "戻る"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "뒤로"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Retour"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Zurück"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Terug"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Atrás"
+          }
         }
       }
     },
@@ -8565,6 +8997,54 @@
           "stringUnit" : {
             "state" : "new",
             "value" : "Cancel"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "取消"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "取消"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "キャンセル"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "취소"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Annuler"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Abbrechen"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Annuleer"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cancelar"
           }
         }
       }
@@ -8578,6 +9058,54 @@
             "state" : "new",
             "value" : "Phi couldn't tell which profile this belongs to, so it will go to %@."
           }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Phi 无法确定它属于哪个个人资料，因此会将它归入 %@。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Phi 無法判斷這個空間屬於哪個設定檔，因此會將它放到 %@ 之下。"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Phiはどのプロファイルに属するのか判別できなかったため、%@に作成されます。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Phi가 어느 프로필에 속하는지 알 수 없어서 %@에 만들어져요."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Phi n'a pas pu déterminer à quel profil cet Espace appartient, il sera donc placé dans %@."
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Phi konnte nicht erkennen, zu welchem Profil das gehört, daher wird es unter %@ erstellt."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Phi kon niet bepalen bij welk profiel dit hoort, dus gaat het naar %@."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Phi no pudo determinar a qué perfil pertenece, así que irá a %@."
+          }
         }
       }
     },
@@ -8589,6 +9117,54 @@
           "stringUnit" : {
             "state" : "new",
             "value" : "Review what will be created"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "确认将要创建的内容"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "檢視將建立的內容"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "作成される内容を確認"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "만들어질 항목 확인"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vérifiez ce qui sera créé"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sieh dir an, was erstellt wird"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bekijk wat er wordt aangemaakt"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Revisa lo que se creará"
           }
         }
       }
@@ -8602,6 +9178,54 @@
             "state" : "new",
             "value" : "No Spaces"
           }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "没有空间"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "沒有任何空間"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "スペースなし"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "스페이스 없음"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aucun Espace"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Keine Spaces"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Geen Spaces"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sin Espacios"
+          }
         }
       }
     },
@@ -8614,6 +9238,54 @@
             "state" : "new",
             "value" : "Choose at least one Space to migrate."
           }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "请至少选择一个要迁移的空间。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "請至少選擇一個要移轉的空間。"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "移行するスペースを1つ以上選択してください。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "마이그레이션할 스페이스를 하나 이상 선택해 주세요."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Choisissez au moins un Espace à migrer."
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wähle mindestens einen Space zum Migrieren aus."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kies minstens één Space om te migreren."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Elige al menos un Espacio para migrar."
+          }
         }
       }
     },
@@ -8625,6 +9297,54 @@
           "stringUnit" : {
             "state" : "new",
             "value" : "Phi found %1$@, but there's nothing here to migrate — no %2$@ profile has data Phi can move."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Phi 找到了 %1$@，但这里没有可迁移的内容：没有任何 %2$@ 个人资料包含 Phi 可以迁移的数据。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Phi 找到了 %1$@，但這裡沒有可移轉的內容：沒有任何 %2$@ 設定檔含有 Phi 可以移轉的資料。"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Phiは%1$@を見つけましたが、移行できるものがありません。%2$@のどのプロファイルにも、Phiが引き継げるデータがありません。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Phi가 %1$@ 브라우저를 찾았지만, 마이그레이션할 항목이 없어요. Phi가 옮길 수 있는 데이터가 있는 %2$@ 프로필이 없어요."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Phi a trouvé %1$@, mais il n'y a rien à migrer ici : aucun profil %2$@ ne contient de données que Phi puisse déplacer."
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Phi hat %1$@ gefunden, aber hier gibt es nichts zu migrieren: Kein %2$@-Profil enthält Daten, die Phi übernehmen kann."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Phi heeft %1$@ gevonden, maar er valt hier niets te migreren: geen enkel %2$@-profiel heeft gegevens die Phi kan overzetten."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Phi encontró %1$@, pero aquí no hay nada que migrar: ningún perfil de %2$@ tiene datos que Phi pueda mover."
           }
         }
       }
@@ -8645,6 +9365,102 @@
                 "stringUnit" : {
                   "state" : "new",
                   "value" : "%d Profiles"
+                }
+              }
+            }
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%d 个个人资料"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%d 個設定檔"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%d個のプロファイル"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "프로필 %d개"
+          }
+        },
+        "de" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%d Profil"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%d Profile"
+                }
+              }
+            }
+          }
+        },
+        "fr" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%d Profil"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%d Profils"
+                }
+              }
+            }
+          }
+        },
+        "es" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%d Perfil"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%d Perfiles"
+                }
+              }
+            }
+          }
+        },
+        "nl" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%d Profiel"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%d Profielen"
                 }
               }
             }
@@ -8672,6 +9488,102 @@
               }
             }
           }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%d 个空间"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%d 個空間"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%d個のスペース"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "스페이스 %d개"
+          }
+        },
+        "de" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%d Space"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%d Spaces"
+                }
+              }
+            }
+          }
+        },
+        "fr" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%d Espace"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%d Espaces"
+                }
+              }
+            }
+          }
+        },
+        "es" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%d Espacio"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%d Espacios"
+                }
+              }
+            }
+          }
+        },
+        "nl" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%d Space"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%d Spaces"
+                }
+              }
+            }
+          }
         }
       }
     },
@@ -8684,6 +9596,54 @@
             "state" : "new",
             "value" : "Start Migration"
           }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "开始迁移"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "開始移轉"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "移行を開始"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "마이그레이션 시작"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Démarrer la migration"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Migration starten"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Start migratie"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Iniciar migración"
+          }
         }
       }
     },
@@ -8695,6 +9655,54 @@
           "stringUnit" : {
             "state" : "new",
             "value" : "Will create %1$@ and %2$@."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "将创建 %1$@、%2$@。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "將建立 %1$@ 和 %2$@。"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@と%2$@を作成します。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@와 %2$@를 만들 예정이에요."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ et %2$@ seront créés."
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Es werden %1$@ und %2$@ erstellt."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Er worden %1$@ en %2$@ aangemaakt."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Se crearán %1$@ y %2$@."
           }
         }
       }
@@ -8719,6 +9727,102 @@
               }
             }
           }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%d 个书签"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%d 個書籤"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%d件のブックマーク"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "북마크 %d개"
+          }
+        },
+        "de" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%d Lesezeichen"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%d Lesezeichen"
+                }
+              }
+            }
+          }
+        },
+        "fr" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%d favori"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%d favoris"
+                }
+              }
+            }
+          }
+        },
+        "es" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%d marcador"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%d marcadores"
+                }
+              }
+            }
+          }
+        },
+        "nl" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%d bladwijzer"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%d bladwijzers"
+                }
+              }
+            }
+          }
         }
       }
     },
@@ -8730,6 +9834,54 @@
           "stringUnit" : {
             "state" : "new",
             "value" : "Bookmarks couldn't be saved"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "书签未能保存"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "書籤無法儲存"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ブックマークを保存できませんでした"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "북마크를 저장하지 못함"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Les favoris n'ont pas pu être enregistrés"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lesezeichen konnten nicht gespeichert werden"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bladwijzers konden niet worden bewaard"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No se pudieron guardar los marcadores"
           }
         }
       }
@@ -8743,6 +9895,54 @@
             "state" : "new",
             "value" : "No bookmarks — this Space had none in %@"
           }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "没有书签：此空间在 %@ 中本来就没有书签"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "沒有書籤：這個空間在 %@ 中沒有任何書籤"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ブックマークなし（%@のこのスペースにはありませんでした）"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "북마크 없음. 이 스페이스는 %@에서도 북마크가 없었어요."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aucun favori : cet Espace n'en avait pas dans %@"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Keine Lesezeichen: Dieser Space hatte in %@ keine."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Geen bladwijzers: deze Space had er geen in %@"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sin marcadores: este Espacio no tenía ninguno en %@"
+          }
         }
       }
     },
@@ -8754,6 +9954,54 @@
           "stringUnit" : {
             "state" : "new",
             "value" : "No bookmarks were saved"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "未能保存任何书签"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "未儲存任何書籤"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ブックマークは1つも保存されませんでした"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "저장된 북마크 없음"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aucun favori n'a été enregistré"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Es wurden keine Lesezeichen gespeichert"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Er zijn geen bladwijzers bewaard"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No se guardó ningún marcador"
           }
         }
       }
@@ -8767,6 +10015,54 @@
             "state" : "new",
             "value" : "Couldn't be imported"
           }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "未能导入"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "無法匯入"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "インポートできませんでした"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "가져오지 못함"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Importation impossible"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Import fehlgeschlagen"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Importeren mislukt"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No se pudo importar"
+          }
         }
       }
     },
@@ -8778,6 +10074,54 @@
           "stringUnit" : {
             "state" : "new",
             "value" : "Import finished"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "导入已完成"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "匯入完成"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "インポート完了"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "가져오기 완료"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Importation terminée"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Import abgeschlossen"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Importeren voltooid"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Importación finalizada"
           }
         }
       }
@@ -8791,6 +10135,54 @@
             "state" : "new",
             "value" : "Done"
           }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "完成"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "完成"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "完了"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "완료"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Terminé"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fertig"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Gereed"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Listo"
+          }
         }
       }
     },
@@ -8802,6 +10194,54 @@
           "stringUnit" : {
             "state" : "new",
             "value" : "None found"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "未找到"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "沒有找到任何項目"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "見つかりませんでした"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "발견된 항목 없음"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aucune extension trouvée"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Keine gefunden"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Geen gevonden"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No se encontró ninguna"
           }
         }
       }
@@ -8815,6 +10255,54 @@
             "state" : "new",
             "value" : "Install started for %d"
           }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已开始安装 %d 个"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已開始安裝 %d 個"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%d件のインストールを開始"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%d개 설치 시작됨"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Installation lancée pour %d"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Installation für %d gestartet"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Installatie gestart voor %d"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Instalación iniciada para %d"
+          }
         }
       }
     },
@@ -8826,6 +10314,54 @@
           "stringUnit" : {
             "state" : "new",
             "value" : "Go to %@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "前往 %@"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "前往 %@"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@へ移動"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@(으)로 이동"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Accéder à %@"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Zu %@ wechseln"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ga naar %@"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ir a %@"
           }
         }
       }
@@ -8839,6 +10375,54 @@
             "state" : "new",
             "value" : "Migration finished"
           }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "迁移完成"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "移轉完成"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "移行が完了しました"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "마이그레이션 완료"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Migration terminée"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Migration abgeschlossen"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Migratie voltooid"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Migración finalizada"
+          }
         }
       }
     },
@@ -8850,6 +10434,54 @@
           "stringUnit" : {
             "state" : "new",
             "value" : "History & cookies"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "历史记录和 Cookie"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "歷史記錄與 Cookie"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "履歴とCookie"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "방문 기록 및 쿠키"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Historique et cookies"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Verlauf & Cookies"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Geschiedenis en cookies"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Historial y cookies"
           }
         }
       }
@@ -8863,6 +10495,54 @@
             "state" : "new",
             "value" : "History, cookies & extensions"
           }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "历史记录、Cookie 和扩展程序"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "歷史記錄、Cookie 與擴充功能"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "履歴、Cookie、拡張機能"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "방문 기록, 쿠키 및 확장 프로그램"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Historique, cookies et extensions"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Verlauf, Cookies & Erweiterungen"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Geschiedenis, cookies en extensies"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Historial, cookies y extensiones"
+          }
         }
       }
     },
@@ -8874,6 +10554,54 @@
           "stringUnit" : {
             "state" : "new",
             "value" : "Extensions"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "扩展程序"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "擴充功能"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "拡張機能"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "확장 프로그램"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Extensions"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Erweiterungen"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Extensies"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Extensiones"
           }
         }
       }
@@ -8887,6 +10615,54 @@
             "state" : "new",
             "value" : "Pinned tabs"
           }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "固定的标签页"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "釘選分頁"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "固定タブ"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "고정된 탭"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Onglets épinglés"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Angeheftete Tabs"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vastgezette tabbladen"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pestañas fijadas"
+          }
         }
       }
     },
@@ -8898,6 +10674,54 @@
           "stringUnit" : {
             "state" : "new",
             "value" : "Recent history"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "近期历史记录"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "近期歷史記錄"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "最近の履歴"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "최근 방문 기록"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Historique récent"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Neuester Verlauf"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Recente geschiedenis"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Historial reciente"
           }
         }
       }
@@ -8911,6 +10735,54 @@
             "state" : "new",
             "value" : "Not created"
           }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "未创建"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "未建立"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "作成されませんでした"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "만들지 못함"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Non créé"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nicht erstellt"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Niet aangemaakt"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No creado"
+          }
         }
       }
     },
@@ -8923,6 +10795,54 @@
             "state" : "new",
             "value" : "%d added"
           }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已添加 %d 个"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已加入 %d 個"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%d件追加"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%d개 추가됨"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ajouts : %d"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%d hinzugefügt"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%d toegevoegd"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Añadidas: %d"
+          }
         }
       }
     },
@@ -8934,6 +10854,54 @@
           "stringUnit" : {
             "state" : "new",
             "value" : "%1$d of %2$d couldn't be added"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%2$d 个中有 %1$d 个未能添加"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%2$d 個中有 %1$d 個無法加入"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%2$d件中%1$d件を追加できませんでした"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%2$d개 중 %1$d개를 추가하지 못함"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Impossible d'ajouter %1$d sur %2$d"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$d von %2$d nicht hinzugefügt"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$d van %2$d niet toegevoegd"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sin añadir: %1$d de %2$d"
           }
         }
       }
@@ -8958,6 +10926,102 @@
               }
             }
           }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%d 个固定标签页因所属个人资料没有空间而未被迁移。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "有 %d 個釘選分頁因所屬的設定檔沒有任何空間而未能移轉。"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "所属するプロファイルにスペースがなかったため、%d件の固定タブは移行されませんでした。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "고정된 탭 %d개는 속한 프로필에 스페이스가 없어서 가져오지 못했어요."
+          }
+        },
+        "de" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%d angehefteter Tab wurde nicht übernommen, weil sein Profil keine Spaces hatte."
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%d angeheftete Tabs wurden nicht übernommen, weil ihr Profil keine Spaces hatte."
+                }
+              }
+            }
+          }
+        },
+        "fr" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%d onglet épinglé a été laissé de côté parce que son Profil n'avait aucun Espace."
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%d onglets épinglés ont été laissés de côté parce que leur Profil n'avait aucun Espace."
+                }
+              }
+            }
+          }
+        },
+        "es" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%d pestaña fijada se quedó fuera porque su Perfil no tenía Espacios."
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%d pestañas fijadas se quedaron fuera porque su Perfil no tenía Espacios."
+                }
+              }
+            }
+          }
+        },
+        "nl" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%d vastgezet tabblad is achtergebleven omdat zijn Profiel geen Spaces had."
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%d vastgezette tabbladen zijn achtergebleven omdat hun Profiel geen Spaces had."
+                }
+              }
+            }
+          }
         }
       }
     },
@@ -8969,6 +11033,54 @@
           "stringUnit" : {
             "state" : "new",
             "value" : "None in %@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ 中没有"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ 中沒有任何項目"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@にはありませんでした"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@에 없음"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aucun dans %@"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Keine in %@"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Geen in %@"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ninguna en %@"
           }
         }
       }
@@ -8993,6 +11105,102 @@
               }
             }
           }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%d 个个人资料"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%d 個設定檔"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%d個のプロファイル"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "프로필 %d개"
+          }
+        },
+        "de" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%d Profil"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%d Profile"
+                }
+              }
+            }
+          }
+        },
+        "fr" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%d Profil"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%d Profils"
+                }
+              }
+            }
+          }
+        },
+        "es" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%d Perfil"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%d Perfiles"
+                }
+              }
+            }
+          }
+        },
+        "nl" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%d Profiel"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%d Profielen"
+                }
+              }
+            }
+          }
         }
       }
     },
@@ -9004,6 +11212,54 @@
           "stringUnit" : {
             "state" : "new",
             "value" : "Profile not created"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "个人资料未创建"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "未能建立設定檔"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "プロファイルが作成されませんでした"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "프로필을 만들지 못함"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Profil non créé"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Profil nicht erstellt"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Profiel niet aangemaakt"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Perfil no creado"
           }
         }
       }
@@ -9028,6 +11284,102 @@
               }
             }
           }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%d 个空间"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%d 個空間"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%d個のスペース"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "스페이스 %d개"
+          }
+        },
+        "de" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%d Space"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%d Spaces"
+                }
+              }
+            }
+          }
+        },
+        "fr" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%d Espace"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%d Espaces"
+                }
+              }
+            }
+          }
+        },
+        "es" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%d Espacio"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%d Espacios"
+                }
+              }
+            }
+          }
+        },
+        "nl" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%d Space"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%d Spaces"
+                }
+              }
+            }
+          }
         }
       }
     },
@@ -9039,6 +11391,54 @@
           "stringUnit" : {
             "state" : "new",
             "value" : "Space not created"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "空间未创建"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "未能建立空間"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "スペースが作成されませんでした"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "스페이스를 만들지 못함"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Espace non créé"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Space nicht erstellt"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Space niet aangemaakt"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Espacio no creado"
           }
         }
       }
@@ -9052,6 +11452,54 @@
             "state" : "new",
             "value" : "Created %1$@ and %2$@."
           }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已创建 %1$@、%2$@。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已建立 %1$@ 和 %2$@。"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@と%2$@を作成しました。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@와 %2$@를 만들었어요."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ et %2$@ ont été créés."
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Es wurden %1$@ und %2$@ erstellt."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ en %2$@ aangemaakt."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Se crearon %1$@ y %2$@."
+          }
         }
       }
     },
@@ -9063,6 +11511,54 @@
           "stringUnit" : {
             "state" : "new",
             "value" : "Nothing was created."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "未创建任何内容。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "未建立任何項目。"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "何も作成されませんでした。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "만들어진 항목이 없어요."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Rien n'a été créé."
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Es wurde nichts erstellt."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Er is niets aangemaakt."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No se creó nada."
           }
         }
       }
@@ -9087,6 +11583,102 @@
               }
             }
           }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "有 %d 项需要你注意。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "有 %d 個項目需要你留意。"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "確認が必要な項目が%d件あります。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "확인이 필요한 항목이 %d개 있어요."
+          }
+        },
+        "de" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%d Punkt erfordert deine Aufmerksamkeit."
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%d Punkte erfordern deine Aufmerksamkeit."
+                }
+              }
+            }
+          }
+        },
+        "fr" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%d élément nécessite votre attention."
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%d éléments nécessitent votre attention."
+                }
+              }
+            }
+          }
+        },
+        "es" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%d elemento requiere tu atención."
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%d elementos requieren tu atención."
+                }
+              }
+            }
+          }
+        },
+        "nl" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%d ding heeft je aandacht nodig."
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%d dingen hebben je aandacht nodig."
+                }
+              }
+            }
+          }
         }
       }
     },
@@ -9098,6 +11690,54 @@
           "stringUnit" : {
             "state" : "new",
             "value" : "Cancel"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "取消"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "取消"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "キャンセル"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "취소"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Annuler"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Abbrechen"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Annuleer"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cancelar"
           }
         }
       }
@@ -9111,6 +11751,54 @@
             "state" : "new",
             "value" : "Migrate Again"
           }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "再次迁移"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "再次移轉"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "もう一度移行"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "다시 마이그레이션"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Migrer à nouveau"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Erneut migrieren"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Migreer opnieuw"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Migrar de nuevo"
+          }
         }
       }
     },
@@ -9122,6 +11810,54 @@
           "stringUnit" : {
             "state" : "new",
             "value" : "You've migrated from this browser into this account before. Phi will create a new set of Profiles and Spaces — the ones you already have stay exactly as they are."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "你之前已经从这个浏览器迁移到此账号。Phi 会创建一套新的个人资料和空间，你已有的那些会保持原样。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "你之前已經從這個瀏覽器移轉到這個帳號。Phi 會建立一組全新的設定檔和空間，你現有的則會完全保持原樣。"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "このブラウザからこのアカウントへは、以前に移行したことがあります。Phiはプロファイルとスペースの新しいセットを作成します。すでにあるものはそのまま変わりません。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "이 브라우저에서 이 계정으로 마이그레이션한 적이 있어요. Phi가 새로운 프로필과 스페이스 세트를 만들며, 이미 있는 항목은 그대로 유지돼요."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vous avez déjà migré depuis ce navigateur vers ce compte. Phi créera un nouvel ensemble de Profils et d'Espaces : ceux que vous avez déjà restent exactement tels quels."
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Du hast aus diesem Browser schon einmal in dieses Konto migriert. Phi erstellt einen neuen Satz Profile und Spaces; alles, was du schon hast, bleibt genau so, wie es ist."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Je hebt al eerder uit deze browser naar dit account gemigreerd. Phi maakt een nieuwe set Profielen en Spaces aan: alles wat je al hebt blijft precies zoals het is."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ya migraste desde este navegador a esta cuenta anteriormente. Phi creará un nuevo conjunto de Perfiles y Espacios: los que ya tienes se quedan exactamente como están."
           }
         }
       }
@@ -9135,6 +11871,54 @@
             "state" : "new",
             "value" : "Migrate from %@ again?"
           }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "再次从 %@ 迁移？"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "要再次從 %@ 移轉嗎？"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@からもう一度移行しますか？"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@에서 다시 마이그레이션할까요?"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Migrer à nouveau depuis %@ ?"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Erneut aus %@ migrieren?"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Opnieuw migreren uit %@?"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "¿Migrar de nuevo desde %@?"
+          }
         }
       }
     },
@@ -9146,6 +11930,54 @@
           "stringUnit" : {
             "state" : "new",
             "value" : "Close"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "关闭"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "關閉"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "閉じる"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "닫기"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fermer"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Schließen"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sluit"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cerrar"
           }
         }
       }
@@ -9159,6 +11991,54 @@
             "state" : "new",
             "value" : "Creating %@"
           }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在创建 %@"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在建立 %@"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@を作成中"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ 만드는 중"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Création de %@"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ wird erstellt"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ wordt aangemaakt"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Creando %@"
+          }
         }
       }
     },
@@ -9170,6 +12050,54 @@
           "stringUnit" : {
             "state" : "new",
             "value" : "Migrating…"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在迁移…"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在移轉…"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "移行中…"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "마이그레이션 중…"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Migration en cours…"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Migration läuft…"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bezig met migreren…"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Migrando…"
           }
         }
       }
@@ -9183,6 +12111,54 @@
             "state" : "new",
             "value" : "This can take a few minutes."
           }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "这可能需要几分钟。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "這可能需要幾分鐘。"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "数分かかることがあります。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "몇 분 정도 걸릴 수 있어요."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cette opération peut prendre quelques minutes."
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Das kann einige Minuten dauern."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dit kan een paar minuten duren."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Esto puede tardar unos minutos."
+          }
         }
       }
     },
@@ -9194,6 +12170,54 @@
           "stringUnit" : {
             "state" : "new",
             "value" : "Profile %1$d of %2$d"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "个人资料 %1$d / %2$d"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "設定檔：第 %1$d 項，共 %2$d 項"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "プロファイル%1$d/%2$d"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "프로필 %1$d/%2$d"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Profil %1$d sur %2$d"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Profil %1$d von %2$d"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Profiel %1$d van %2$d"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Perfil %1$d de %2$d"
           }
         }
       }
@@ -9207,6 +12231,54 @@
             "state" : "new",
             "value" : "Space %1$d of %2$d"
           }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "空间 %1$d / %2$d"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "空間：第 %1$d 項，共 %2$d 項"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "スペース%1$d/%2$d"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "스페이스 %1$d/%2$d"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Espace %1$d sur %2$d"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Space %1$d von %2$d"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Space %1$d van %2$d"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Espacio %1$d de %2$d"
+          }
         }
       }
     },
@@ -9218,6 +12290,54 @@
           "stringUnit" : {
             "state" : "new",
             "value" : "Migrate to Phi"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "迁移到 Phi"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "移轉到 Phi"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Phiへ移行"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Phi로 마이그레이션"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Migrer vers Phi"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Zu Phi migrieren"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Naar Phi migreren"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Migrar a Phi"
           }
         }
       }
@@ -9231,6 +12351,54 @@
             "state" : "new",
             "value" : "Migrate to Phi"
           }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "迁移到 Phi"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "移轉到 Phi"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Phiへ移行"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Phi로 마이그레이션"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Migrer vers Phi"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Zu Phi migrieren"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Naar Phi migreren"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Migrar a Phi"
+          }
         }
       }
     },
@@ -9243,6 +12411,54 @@
             "state" : "new",
             "value" : "Container %d"
           }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "容器 %d"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "容器 %d"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "コンテナー%d"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "컨테이너 %d"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Conteneur %d"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Umgebung %d"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Container %d"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Contenedor %d"
+          }
         }
       }
     },
@@ -9254,6 +12470,54 @@
           "stringUnit" : {
             "state" : "new",
             "value" : "Untitled Space"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "未命名空间"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "未命名空間"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "名称未設定のスペース"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "이름 없는 스페이스"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Espace sans titre"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Unbenannter Space"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Naamloze Space"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Espacio sin título"
           }
         }
       }
@@ -9986,6 +13250,54 @@
           "stringUnit" : {
             "state" : "new",
             "value" : "A Space is using this profile. Delete that Space or change its profile first."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "有空间正在使用此个人资料。请先删除该空间或更改其个人资料。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "有空間正在使用這個設定檔。請先刪除該空間，或變更它的設定檔。"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "このプロファイルを使用しているスペースがあります。先にそのスペースを削除するか、そのスペースのプロファイルを変更してください。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "스페이스가 이 프로필을 사용하고 있어요. 먼저 해당 스페이스를 삭제하거나 그 스페이스의 프로필을 변경해 주세요."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Un Espace utilise ce profil. Supprimez d'abord cet Espace ou attribuez-lui un autre profil."
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ein Space verwendet dieses Profil. Lösche zuerst diesen Space oder ändere dessen Profil."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Een Space gebruikt dit profiel. Verwijder eerst die Space of wijzig het profiel ervan."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Un Espacio está usando este perfil. Elimina ese Espacio o cambia su perfil primero."
           }
         }
       }
@@ -12519,6 +15831,54 @@
             "state" : "new",
             "value" : "Import from Another Browser..."
           }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "从其他浏览器导入..."
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "從其他瀏覽器匯入…"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "他のブラウザからインポート…"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "다른 브라우저에서 가져오기..."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Importer depuis un autre navigateur…"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aus anderem Browser importieren..."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Importeer uit een andere browser..."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Importar desde otro navegador..."
+          }
         }
       }
     },
@@ -12530,6 +15890,54 @@
           "stringUnit" : {
             "state" : "new",
             "value" : "Migrate from Another Browser…"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "从其他浏览器迁移…"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "從其他瀏覽器移轉…"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "他のブラウザから移行…"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "다른 브라우저에서 마이그레이션…"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Migrer depuis un autre navigateur…"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aus anderem Browser migrieren…"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Migreer uit een andere browser…"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Migrar desde otro navegador…"
           }
         }
       }
@@ -37291,6 +40699,54 @@
           "stringUnit" : {
             "state" : "new",
             "value" : "The pinned tab scope can’t be changed while a migration from another browser is running. Try again when it has finished."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "从其他浏览器迁移期间无法更改固定标签页的范围。请等迁移完成后再试。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在從其他瀏覽器移轉時，無法變更釘選分頁的範圍。請在移轉完成後再試一次。"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "他のブラウザからの移行中は、固定タブの適用範囲を変更できません。移行が完了してから、もう一度お試しください。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "다른 브라우저에서 마이그레이션이 진행되는 동안에는 고정 탭 범위를 변경할 수 없어요. 마이그레이션이 끝난 후 다시 시도해 주세요."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La portée des onglets épinglés ne peut pas être modifiée pendant une migration depuis un autre navigateur. Réessayez une fois celle-ci terminée."
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Der Geltungsbereich angehefteter Tabs kann nicht geändert werden, während eine Migration aus einem anderen Browser läuft. Versuche es erneut, sobald sie abgeschlossen ist."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Het bereik van vastgezette tabbladen kan niet worden gewijzigd terwijl een migratie uit een andere browser bezig is. Probeer het opnieuw wanneer die is voltooid."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "El ámbito de las pestañas fijadas no se puede cambiar mientras hay una migración desde otro navegador en curso. Inténtalo de nuevo cuando haya terminado."
           }
         }
       }
@@ -62563,6 +66019,54 @@
             "state" : "new",
             "value" : "A Space is using this profile. Delete that Space or change its profile first."
           }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "有空间正在使用此个人资料。请先删除该空间或更改其个人资料。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "有空間正在使用這個設定檔。請先刪除該空間，或變更它的設定檔。"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "このプロファイルを使用しているスペースがあります。先にそのスペースを削除するか、そのスペースのプロファイルを変更してください。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "스페이스가 이 프로필을 사용하고 있어요. 먼저 해당 스페이스를 삭제하거나 그 스페이스의 프로필을 변경해 주세요."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Un Espace utilise ce profil. Supprimez d'abord cet Espace ou attribuez-lui un autre profil."
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ein Space verwendet dieses Profil. Lösche zuerst diesen Space oder ändere dessen Profil."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Een Space gebruikt dit profiel. Verwijder eerst die Space of wijzig het profiel ervan."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Un Espacio está usando este perfil. Elimina ese Espacio o cambia su perfil primero."
+          }
         }
       }
     },
@@ -68814,6 +72318,54 @@
           "stringUnit" : {
             "state" : "new",
             "value" : "Can’t be changed while a migration from another browser is running."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "从其他浏览器迁移期间无法更改。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在從其他瀏覽器移轉時無法變更。"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "他のブラウザからの移行中は変更できません。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "다른 브라우저에서 마이그레이션이 진행되는 동안에는 변경할 수 없어요."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Modification impossible pendant une migration depuis un autre navigateur."
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kann nicht geändert werden, während eine Migration aus einem anderen Browser läuft."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kan niet worden gewijzigd terwijl een migratie uit een andere browser bezig is."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No se puede cambiar mientras hay una migración desde otro navegador en curso."
           }
         }
       }

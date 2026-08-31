@@ -1277,6 +1277,21 @@ typedef NS_ENUM(NSInteger, PhiGhostMaterializeOutcome) {
 // Favicon service
 - (void)getFaviconForURL:(NSString *)urlString completion:(void (^)(NSData * _Nullable faviconData))completion;
 - (void)getFaviconForURL:(NSString *)urlString profileId:(NSString * _Nullable)profileId completion:(void (^)(NSData * _Nullable faviconData))completion;
+/// Like getFaviconForURL:profileId:completion:, except that when the
+/// profile's favicon database holds no icon for the page it first downloads
+/// the site's own <origin>/favicon.ico (no cookies or credentials) and stores
+/// it as an on-demand icon, so the answer is what every later lookup answers.
+/// Answers nil for an invalid URL, a profile that is not loaded, a page that
+/// is not http(s), or an icon URL that could not be downloaded this session.
+/// The on-demand icon never replaces an existing one and is replaced by the
+/// page's own icon on the first real visit. Meant for the Bookmarks and
+/// pinned tabs a Migration or a browser-data import just wrote; answers for
+/// a profile no window was ever opened on. A call still in flight when the
+/// profile shuts down (its last window closed) is dropped without an answer,
+/// as getFaviconForURL:'s is — callers must not assume every call settles.
+- (void)getOrFetchFaviconForURL:(NSString *)urlString
+                      profileId:(NSString * _Nullable)profileId
+                     completion:(void (^)(NSData * _Nullable faviconData))completion;
 
 // Thumbnail service
 /// Returns cached JPEG thumbnail data for a tab, or nil if unavailable.

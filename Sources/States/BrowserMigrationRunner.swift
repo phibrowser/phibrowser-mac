@@ -291,18 +291,37 @@ final class BrowserMigrationRunner: ObservableObject {
         // theme re-derives, so pinning the theme is what makes the colour
         // stick — and what the sidebar and window actually render.
         SpaceManager.shared.setTheme(forSpaceId: spaceID, themeId: planned.themeID)
+        var pinnedGUIDs: [String] = []
         await ImportTargetLock.shared.holding(spaceID) {
             // The Space's own content lands here: its Bookmarks and the pinned
             // entries the plan gave it. Both write into a Space that must not
             // be deleted or re-profiled underneath them, which is what the
             // lock refuses for as long as it is held.
             await persistBookmarks(of: planned, profileID: profileID, spaceID: spaceID)
-            await persistPinnedTabs(
+            pinnedGUIDs = await persistPinnedTabs(
                 of: profile,
                 ownerSpaceID: planned.sourceSpaceID,
                 profileID: profileID,
                 spaceID: spaceID)
         }
+        // The rows are in and the Space is deletable again: hand what the
+        // run just wrote to the favicon backfill and move on. It is never
+        // awaited, and the run's progress, outcomes and report say nothing
+        // about icons.
+        backfillFavicons(profileID: profileID, spaceID: spaceID, pinnedGUIDs: pinnedGUIDs)
+    }
+
+    /// Hands the Space's rows to the favicon backfill: the pinned entries the
+    /// run recorded for it, then its Bookmarks read back from the store in
+    /// sidebar order. Which of them are asked, and what is written, is the
+    /// backfill's decision alone.
+    private func backfillFavicons(profileID: String, spaceID: String, pinnedGUIDs: [String]) {
+        var guids = pinnedGUIDs
+        if let store = AccountController.shared.localDataAccount?.localStorage {
+            guids += FaviconBackfill.bookmarkGUIDs(
+                under: store.fetchBookmarks(parentId: nil, profileId: profileID, spaceId: spaceID))
+        }
+        FaviconBackfill.shared.enqueue(profileId: profileID, guids: guids)
     }
 
     /// Writes the source Space's own tree into the Space just created for it,
@@ -341,20 +360,22 @@ final class BrowserMigrationRunner: ObservableObject {
     /// The copies of one source entry carry one lineage, so widening the
     /// Pinned Tab Scope later collapses them back into one entry as far as
     /// Phi's own fan-out copies collapse. An entry the store refuses is left
-    /// out of the outcomes and reported as such; the rest still land.
+    /// out of the outcomes and reported as such; the rest still land, and
+    /// their identifiers come back in source order.
     private func persistPinnedTabs(
         of profile: BrowserMigrationPlannedProfile,
         ownerSpaceID: String,
         profileID: String,
         spaceID: String
-    ) async {
+    ) async -> [String] {
         let planned = profile.pinnedTabs.filter { $0.ownerSpaceID == ownerSpaceID }
-        guard !planned.isEmpty else { return }
+        guard !planned.isEmpty else { return [] }
         guard let store = AccountController.shared.localDataAccount?.localStorage else {
             AppLogWarn("[BrowserMigration] no local store for \(profile.displayName)'s "
                 + "pinned tabs")
-            return
+            return []
         }
+        var landed: [String] = []
         for pin in planned {
             // In source order, and appended at the end of the collection, so
             // the order the user built survives the move.
@@ -367,6 +388,7 @@ final class BrowserMigrationRunner: ObservableObject {
                 lineageId: pin.lineageID
             ) {
                 outcomes.pinnedTabGuids.insert(pin.guid)
+                landed.append(pin.guid)
             } else {
                 AppLogWarn("[BrowserMigration] couldn't pin \(pin.url) in "
                     + "\(profile.displayName)")
@@ -389,6 +411,7 @@ final class BrowserMigrationRunner: ObservableObject {
         // drain the store's queue before the lock goes: the Space has to still
         // be undeletable when these land.
         await store.performBackgroundWriteAndWait { _ in }
+        return landed
     }
 }
 

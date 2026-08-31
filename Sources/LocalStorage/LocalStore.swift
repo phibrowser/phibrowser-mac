@@ -467,11 +467,23 @@ extension LocalStore {
         }
     }
 
-    func updateTabFavicon(_ guid: String, favicon: Data) {
+    /// `sourceURLString` names the page the bytes were fetched for: a row
+    /// whose URL is no longer that page is left alone. `onlyIfMissing`
+    /// leaves a row that already holds bytes alone. The favicon backfill
+    /// writes with both: a fetched icon must never replace one a visit put
+    /// on the row first, nor land on a row the user re-pointed while the
+    /// fetch was out, and deciding that on the serial writer is what keeps
+    /// a live-path write queued ahead of it from being overwritten.
+    func updateTabFavicon(_ guid: String,
+                          favicon: Data,
+                          sourceURLString: String? = nil,
+                          onlyIfMissing: Bool = false) {
         updateTabFavicon(
             guid,
             favicon: favicon,
-            pinnedSourceURLString: nil
+            sourceURLString: sourceURLString,
+            pinnedOnly: false,
+            onlyIfMissing: onlyIfMissing
         )
     }
 
@@ -481,24 +493,33 @@ extension LocalStore {
         updateTabFavicon(
             guid,
             favicon: favicon,
-            pinnedSourceURLString: sourceURLString
+            sourceURLString: sourceURLString,
+            pinnedOnly: true,
+            onlyIfMissing: false
         )
     }
 
     private func updateTabFavicon(_ guid: String,
                                   favicon: Data,
-                                  pinnedSourceURLString: String?) {
+                                  sourceURLString: String?,
+                                  pinnedOnly: Bool,
+                                  onlyIfMissing: Bool) {
         performBackgroundWrite { context in
             do {
                 let predicate = #Predicate<TabDataModel> { $0.guid == guid }
                 let descriptor = FetchDescriptor<TabDataModel>(predicate: predicate)
                 if let tab = try context.fetch(descriptor).first {
-                    if let pinnedSourceURLString {
-                        guard tab.dataType == .pinnedTab,
-                              let persistedURLString = canonicalFaviconURLString(tab.url.absoluteString),
-                              canonicalFaviconURLString(pinnedSourceURLString) == persistedURLString else {
+                    if pinnedOnly, tab.dataType != .pinnedTab {
+                        return
+                    }
+                    if let sourceURLString {
+                        guard let persistedURLString = canonicalFaviconURLString(tab.url.absoluteString),
+                              canonicalFaviconURLString(sourceURLString) == persistedURLString else {
                             return
                         }
+                    }
+                    if onlyIfMissing, tab.favicon != nil {
+                        return
                     }
                     if tab.favicon == favicon {
                         return

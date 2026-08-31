@@ -157,6 +157,36 @@ class BookmarkItemView: NSView {
                                      secondaryTitle: secondaryTitle)
             }
             .store(in: &cancellables)
+
+        // A Split Bookmark's second icon lives in the Profile's favicon
+        // database, not on the row. The favicon backfill hands its answer for
+        // that page to the repository, which names the page (see
+        // `FaviconBackfill`): resolve the second icon again when it is ours.
+        ProfileScopedFaviconRepository.shared.iconStored
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] stored in
+                guard let self,
+                      let secondaryUrl = self.bookmark.secondaryUrl, !secondaryUrl.isEmpty,
+                      stored.profileId == self.bookmark.profileId,
+                      stored.pageURLString == secondaryUrl else { return }
+                self.loadSecondaryFavicon(bookmark: self.bookmark, pageUrl: secondaryUrl)
+            }
+            .store(in: &cancellables)
+
+        // The row's stored icon changing — a visit, or the backfill writing
+        // the first page's — is a cue too: the second may have reached the
+        // database meanwhile. The value replayed on subscription is dropped —
+        // the split state above loads it.
+        bookmark.$cachedFaviconData
+            .removeDuplicates()
+            .dropFirst()
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in
+                guard let self,
+                      let secondaryUrl = self.bookmark.secondaryUrl, !secondaryUrl.isEmpty else { return }
+                self.loadSecondaryFavicon(bookmark: self.bookmark, pageUrl: secondaryUrl)
+            }
+            .store(in: &cancellables)
     }
 
     /// True while the bound bookmark is a split-view bookmark. Drives both

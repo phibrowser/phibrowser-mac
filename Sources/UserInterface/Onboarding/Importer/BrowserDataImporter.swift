@@ -245,6 +245,7 @@ class BrowserDataImporter {
             return false
         }
         isImporting = true
+        let lockedProfileId = targetProfileId
         let lockedSpaceId = targetSpaceId
         ImportTargetLock.shared.begin(into: lockedSpaceId)
         failedImports.removeAll()
@@ -389,6 +390,14 @@ class BrowserDataImporter {
                     if self.failedImports.isEmpty {
                         FirstTimeActionTracker.capture(.importFinished)
                     }
+                    // The tree is in and the completion is announced: hand
+                    // the Bookmarks still without an icon in the Space it
+                    // landed in — the locked target, whatever the importer
+                    // is retargeted to once `isImporting` clears — to the
+                    // favicon backfill and move on. Never awaited; the
+                    // status, the analytics and the lock below are as they
+                    // were.
+                    self.backfillFavicons(profileId: lockedProfileId, spaceId: lockedSpaceId)
                     self.isImporting = false
                 }
                 ImportTargetLock.shared.end(into: lockedSpaceId)
@@ -1080,6 +1089,22 @@ class BrowserDataImporter {
         await store.reorderImportedBrowserFolders(
             profileId: targetProfileId, spaceId: targetSpaceId)
         return true
+    }
+
+    /// Hands the Space's Bookmarks that hold no icon to the favicon backfill,
+    /// in sidebar order: the rows the import just wrote, and any the Space
+    /// already had without one. Leaving out the rows with an icon here is a
+    /// pre-filter — an import lands in a Space the user already has, and
+    /// the backfill reads every queued row back one by one — not a
+    /// decision: which rows are asked, and what is written, the backfill
+    /// still settles at each row's turn.
+    @MainActor
+    private func backfillFavicons(profileId: String, spaceId: String) {
+        guard let store = localDataStoreProvider() else { return }
+        let guids = FaviconBackfill.bookmarkGUIDs(
+            under: store.fetchBookmarks(parentId: nil, profileId: profileId, spaceId: spaceId),
+            where: { $0.favicon == nil })
+        FaviconBackfill.shared.enqueue(profileId: profileId, guids: guids)
     }
 
     private static func uniqueBrowserTypes(

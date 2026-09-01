@@ -29,6 +29,7 @@ struct CommandDispatcher {
         .PHI_COPY_URL,
         .PHI_TOGGLE_READER,
         .PHI_NEW_KIOSK_WINDOW,
+        .PHI_NEW_INCOGNITO_SPACE,
     ] + CommandWrapper.spaceSelectionCommands
 
     /// Commands swallowed while the focused tab shows the native NTP — it has no
@@ -92,6 +93,12 @@ struct CommandDispatcher {
         if command == .PHI_NEW_KIOSK_WINDOW {
             guard let appController = AppController.shared else { return false }
             appController.newKioskWindowFromMenu(nil)
+            return true
+        }
+        if command == .PHI_NEW_INCOGNITO_SPACE {
+            guard spacesShortcutsEnabled else { return true }
+            guard let appController = AppController.shared else { return false }
+            appController.newIncognitoSpaceFromMenu(nil)
             return true
         }
         guard let windowController = MainBrowserWindowControllersManager.shared.findControllerWith(window: window) else {

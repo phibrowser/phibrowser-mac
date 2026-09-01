@@ -281,7 +281,6 @@ extension AppController {
     static let spacesProfileSeparatorTag = 500020
     static let deleteProfileSubmenuIdentifier = NSUserInterfaceItemIdentifier("phi.spaces.deleteProfile")
     static let spacesMenuItemTag = 500018
-    static let fileNewIncognitoSpaceItemTag = 500019
     static let spacesNewSpaceItemTag = 500030
     static let spacesRenameItemTag = 500031
     static let spacesChangeThemeParentTag = 500033
@@ -713,7 +712,7 @@ extension AppController {
         // below New Incognito Window.
         subMenu.items.removeAll { item in
             item.tag == CommandWrapper.PHI_NEW_KIOSK_WINDOW.rawValue
-                || item.tag == AppController.fileNewIncognitoSpaceItemTag
+                || item.tag == CommandWrapper.PHI_NEW_INCOGNITO_SPACE.rawValue
         }
 
         let newKioskWindowItem = NSMenuItem(
@@ -734,12 +733,14 @@ extension AppController {
             title: NSLocalizedString(
                 "app.fileMenu.createNewIncognitoSpace",
                 value: "New Incognito Space",
-                comment: "File menu - Create a new Incognito Space and bring it to the front"
+                comment: "File menu and Shortcuts settings - Command title for creating a new Incognito Space"
             ),
             action: #selector(AppController.newIncognitoSpaceFromMenu(_:)),
-            keyEquivalent: ""
+            keyEquivalent: "n"
         )
-        newIncognitoSpaceItem.tag = AppController.fileNewIncognitoSpaceItemTag
+        newIncognitoSpaceItem.keyEquivalentModifierMask = [.control, .shift]
+        newIncognitoSpaceItem.tag = CommandWrapper.PHI_NEW_INCOGNITO_SPACE.rawValue
+        Shortcuts.updateShortcut(for: newIncognitoSpaceItem)
         newIncognitoSpaceItem.target = target
 
         let insertionIndex = subMenu.items.firstIndex(where: {

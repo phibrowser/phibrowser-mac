@@ -4065,6 +4065,54 @@
             "state" : "new",
             "value" : "Expand"
           }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "展开"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "展開"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "展開"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "펼치기"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Développer"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Erweitern"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vouw uit"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Expandir"
+          }
         }
       }
     },
@@ -4076,6 +4124,54 @@
           "stringUnit" : {
             "state" : "new",
             "value" : "Minimise"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "收起"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "收合"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "折りたたむ"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "접기"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Réduire"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Minimieren"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Minimaliseer"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Minimizar"
           }
         }
       }
@@ -62144,6 +62240,54 @@
             "state" : "new",
             "value" : "Links that leave a pinned tab’s or bookmark’s site open in a Peek panel instead of a new tab."
           }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "离开固定的标签页或书签所在网站的链接，会在 Peek 面板中打开，而不是新标签页。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "離開釘選分頁或書籤所在網站的連結，會在 Peek 面板中開啟，而非新分頁。"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "固定タブやブックマークのサイト外へ移動するリンクは、新しいタブではなくPeekビューで開きます。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "고정된 탭이나 북마크의 사이트를 벗어나는 링크는 새 탭 대신 Peek 패널에서 열려요."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Les liens qui quittent le site d'un onglet épinglé ou d'un favori s'ouvrent dans un panneau Peek au lieu d'un nouvel onglet."
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Links, die die Website eines angehefteten Tabs oder Lesezeichens verlassen, öffnen sich in einem Peek-Panel statt in einem neuen Tab."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Links die de site van een vastgezet tabblad of bladwijzer verlaten, worden in een Peek-paneel geopend in plaats van in een nieuw tabblad."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Los enlaces que salen del sitio de una pestaña fijada o de un marcador se abren en un panel Peek en lugar de en una pestaña nueva."
+          }
         }
       }
     },
@@ -62155,6 +62299,54 @@
           "stringUnit" : {
             "state" : "new",
             "value" : "Automatically peek from pinned tabs and bookmarks"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "自动在 Peek 视图中打开固定的标签页和书签中的链接"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "自動以 Peek 開啟釘選分頁與書籤中的連結"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "固定タブとブックマークから自動的にPeekビューで開く"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "고정된 탭과 북마크의 링크를 자동으로 Peek 뷰에서 열기"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ouvrir automatiquement la vue Peek depuis les onglets épinglés et les favoris"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Links aus angehefteten Tabs und Lesezeichen automatisch in der Peek-Ansicht öffnen"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Open automatisch in Peek vanuit vastgezette tabbladen en bladwijzers"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Abrir automáticamente en vista Peek desde pestañas fijadas y marcadores"
           }
         }
       }

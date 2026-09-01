@@ -100,6 +100,8 @@ class Tab: WebContentRepresentable {
 
     /// Whether Sidecar has completed at least one response for this tab.
     @Published var hasPairedChat: Bool = false
+    /// Whether Sidecar has submitted or streamed a response for the current chat.
+    @Published var hasStartedChatGeneration: Bool = false
     /// Whether Sidecar is submitting or streaming a response for this tab.
     @Published var isPairedChatGenerating: Bool = false
 

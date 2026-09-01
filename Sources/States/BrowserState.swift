@@ -723,6 +723,7 @@ class BrowserState {
                 pinnedTab.setWebContentsWrapper(wrapper: activeTab.webContentWrapper)
                 pinnedTab.guid = activeTab.guid
                 pinnedTab.hasPairedChat = activeTab.hasPairedChat
+                pinnedTab.hasStartedChatGeneration = activeTab.hasStartedChatGeneration
                 pinnedTab.isPairedChatGenerating = activeTab.isPairedChatGenerating
             }
         }
@@ -766,12 +767,14 @@ class BrowserState {
                 pinnedTab.setWebContentsWrapper(wrapper: activeTab.webContentWrapper)
                 pinnedTab.guid = activeTab.guid
                 pinnedTab.hasPairedChat = activeTab.hasPairedChat
+                pinnedTab.hasStartedChatGeneration = activeTab.hasStartedChatGeneration
                 pinnedTab.isPairedChatGenerating = activeTab.isPairedChatGenerating
             } else {
                 pinnedTab.isOpenned = false
                 pinnedTab.guid = -1
                 pinnedTab.setWebContentsWrapper(wrapper: nil)
                 pinnedTab.hasPairedChat = false
+                pinnedTab.hasStartedChatGeneration = false
                 pinnedTab.isPairedChatGenerating = false
             }
             
@@ -4260,6 +4263,7 @@ class BrowserState {
         pinnedTab.setWebContentsWrapper(wrapper: tab.webContentWrapper)
         pinnedTab.guid = tab.guid
         pinnedTab.hasPairedChat = tab.hasPairedChat
+        pinnedTab.hasStartedChatGeneration = tab.hasStartedChatGeneration
         pinnedTab.isPairedChatGenerating = tab.isPairedChatGenerating
         // If this pinned tab was part of a pinned-split before the last
         // shutdown and its partner is also live now, re-create the split

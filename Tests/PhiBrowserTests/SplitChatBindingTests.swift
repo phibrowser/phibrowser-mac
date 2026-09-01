@@ -128,6 +128,7 @@ final class SplitChatBindingTests: XCTestCase {
             seq: 1
         ), in: state))
         XCTAssertFalse(state.tabs[0].isPairedChatGenerating)
+        XCTAssertFalse(state.tabs[0].hasStartedChatGeneration)
 
         XCTAssertTrue(store.apply(SidecarAIOutputPayload(
             tabId: 1,
@@ -137,6 +138,7 @@ final class SplitChatBindingTests: XCTestCase {
             seq: 1
         ), in: state))
         XCTAssertTrue(state.tabs[0].isPairedChatGenerating)
+        XCTAssertTrue(state.tabs[0].hasStartedChatGeneration)
     }
 
     func testDissolvingSplitRestoresEachPanesOwnAIOutputState() throws {
@@ -155,11 +157,15 @@ final class SplitChatBindingTests: XCTestCase {
         ), in: state))
         XCTAssertTrue(state.tabs[0].isPairedChatGenerating)
         XCTAssertTrue(state.tabs[1].isPairedChatGenerating)
+        XCTAssertTrue(state.tabs[0].hasStartedChatGeneration)
+        XCTAssertTrue(state.tabs[1].hasStartedChatGeneration)
 
         store.splitDidDissolve(group, in: state)
 
         XCTAssertTrue(state.tabs[0].isPairedChatGenerating)
         XCTAssertFalse(state.tabs[1].isPairedChatGenerating)
+        XCTAssertTrue(state.tabs[0].hasStartedChatGeneration)
+        XCTAssertFalse(state.tabs[1].hasStartedChatGeneration)
         XCTAssertFalse(state.tabs[1].hasPairedChat)
     }
 
@@ -185,7 +191,9 @@ final class SplitChatBindingTests: XCTestCase {
         store.contentTabDidClose(1, in: state)
 
         XCTAssertFalse(state.tabs[0].isPairedChatGenerating)
+        XCTAssertFalse(state.tabs[0].hasStartedChatGeneration)
         XCTAssertFalse(pinnedRepresentation.isPairedChatGenerating)
+        XCTAssertFalse(pinnedRepresentation.hasStartedChatGeneration)
         XCTAssertTrue(store.apply(SidecarAIOutputPayload(
             tabId: 1,
             windowId: 7,
@@ -210,7 +218,9 @@ final class SplitChatBindingTests: XCTestCase {
 
         store.contentTabDidClose(1, in: state, migratingConversationTo: 2)
         XCTAssertFalse(state.tabs[0].isPairedChatGenerating)
+        XCTAssertFalse(state.tabs[0].hasStartedChatGeneration)
         XCTAssertTrue(state.tabs[1].isPairedChatGenerating)
+        XCTAssertTrue(state.tabs[1].hasStartedChatGeneration)
 
         XCTAssertTrue(store.apply(SidecarAIOutputPayload(
             tabId: 2,
@@ -220,6 +230,7 @@ final class SplitChatBindingTests: XCTestCase {
             seq: 2
         ), in: state))
         XCTAssertTrue(state.tabs[1].hasPairedChat)
+        XCTAssertTrue(state.tabs[1].hasStartedChatGeneration)
         XCTAssertFalse(state.tabs[1].isPairedChatGenerating)
     }
 

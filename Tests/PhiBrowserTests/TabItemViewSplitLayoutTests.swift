@@ -179,6 +179,7 @@ final class TabItemViewSplitLayoutTests: XCTestCase {
     func test_statusBadgeOverhangsTheTopTrailingCornerAndRemainsVisibleOnHover() throws {
         let tab = Tab(guid: 1, url: "https://example.com", isActive: false, index: 0)
         tab.hasPairedChat = true
+        tab.hasStartedChatGeneration = true
         tab.aiChatCollapsed = false
         let view = TabItemView()
         view.configure(with: TabRenderData(
@@ -229,6 +230,7 @@ final class TabItemViewSplitLayoutTests: XCTestCase {
     func test_compactStatusBadgeRemainsVisibleWhileHovered() throws {
         let tab = Tab(guid: 1, url: "https://example.com", isActive: false, index: 0)
         tab.hasPairedChat = true
+        tab.hasStartedChatGeneration = true
         tab.aiChatCollapsed = false
         let view = TabItemView()
         view.configure(with: TabRenderData(

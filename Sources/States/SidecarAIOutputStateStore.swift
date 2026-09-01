@@ -28,6 +28,7 @@ struct SidecarAIOutputState: Equatable {
     let active: Bool
     let phase: SidecarAIOutputPhase
     let seq: Int
+    let hasStartedGeneration: Bool
     let hasCompletedOutput: Bool
 }
 
@@ -46,6 +47,7 @@ struct SidecarAIOutputStateTracker {
             active: payload.active,
             phase: payload.phase,
             seq: payload.seq,
+            hasStartedGeneration: previous?.hasStartedGeneration == true || payload.active,
             hasCompletedOutput: previous?.hasCompletedOutput == true || didCompleteOutput
         )
         statesByTabId[payload.tabId] = state
@@ -87,6 +89,7 @@ struct SidecarAIOutputStateTracker {
             active: sourceState.active,
             phase: sourceState.phase,
             seq: sourceState.seq,
+            hasStartedGeneration: sourceState.hasStartedGeneration,
             hasCompletedOutput: sourceState.hasCompletedOutput
         )
         statesByTabId[destinationTabId] = movedState
@@ -266,6 +269,7 @@ final class SidecarAIOutputStateStore {
     private func apply(_ state: SidecarAIOutputState, to tabs: [Tab]) {
         for tab in tabs {
             tab.hasPairedChat = state.hasCompletedOutput
+            tab.hasStartedChatGeneration = state.hasStartedGeneration
             tab.isPairedChatGenerating = state.active
         }
     }
@@ -273,6 +277,7 @@ final class SidecarAIOutputStateStore {
     private func clear(tabs: [Tab]) {
         for tab in tabs {
             tab.hasPairedChat = false
+            tab.hasStartedChatGeneration = false
             tab.isPairedChatGenerating = false
         }
     }

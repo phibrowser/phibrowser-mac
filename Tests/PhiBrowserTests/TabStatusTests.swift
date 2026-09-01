@@ -12,17 +12,29 @@ final class TabStatusTests: XCTestCase {
             isAgentActive: false,
             isChatGenerating: false,
             hasPairedChat: false,
+            hasStartedChatGeneration: false,
             isChatCollapsed: false
         ))
     }
 
-    func testCornerBadgeShowsChatForAPairedConversation() {
+    func testCornerBadgeShowsChatAfterPairedConversationStartsGenerating() {
         XCTAssertEqual(TabCornerBadgeStatus.resolve(
             isAgentActive: false,
             isChatGenerating: false,
             hasPairedChat: true,
+            hasStartedChatGeneration: true,
             isChatCollapsed: false
         ), .chat)
+    }
+
+    func testChatBadgeIsHiddenBeforePairedConversationStartsGenerating() {
+        XCTAssertNil(TabCornerBadgeStatus.resolve(
+            isAgentActive: false,
+            isChatGenerating: false,
+            hasPairedChat: true,
+            hasStartedChatGeneration: false,
+            isChatCollapsed: false
+        ))
     }
 
     func testInputtingBadgeTakesPriorityOverChat() {
@@ -30,6 +42,7 @@ final class TabStatusTests: XCTestCase {
             isAgentActive: false,
             isChatGenerating: true,
             hasPairedChat: true,
+            hasStartedChatGeneration: false,
             isChatCollapsed: true
         ), .inputting)
     }
@@ -39,8 +52,19 @@ final class TabStatusTests: XCTestCase {
             isAgentActive: true,
             isChatGenerating: true,
             hasPairedChat: true,
+            hasStartedChatGeneration: true,
             isChatCollapsed: true
         ), .agent)
+    }
+
+    func testAgentBadgeIsHiddenBeforePairedChatGeneratesAReply() {
+        XCTAssertNil(TabCornerBadgeStatus.resolve(
+            isAgentActive: true,
+            isChatGenerating: false,
+            hasPairedChat: false,
+            hasStartedChatGeneration: false,
+            isChatCollapsed: false
+        ))
     }
 
     func testChatBadgeIsHiddenWhileChatIsCollapsed() {
@@ -48,6 +72,7 @@ final class TabStatusTests: XCTestCase {
             isAgentActive: false,
             isChatGenerating: false,
             hasPairedChat: true,
+            hasStartedChatGeneration: true,
             isChatCollapsed: true
         ))
     }
@@ -120,6 +145,7 @@ final class TabStatusTests: XCTestCase {
             seq: 1
         ))
         XCTAssertEqual(generating?.active, true)
+        XCTAssertEqual(generating?.hasStartedGeneration, true)
         XCTAssertEqual(generating?.hasCompletedOutput, false)
 
         let completed = tracker.apply(SidecarAIOutputPayload(
@@ -130,6 +156,7 @@ final class TabStatusTests: XCTestCase {
             seq: 2
         ))
         XCTAssertEqual(completed?.active, false)
+        XCTAssertEqual(completed?.hasStartedGeneration, true)
         XCTAssertEqual(completed?.hasCompletedOutput, true)
     }
 
@@ -200,6 +227,7 @@ final class TabStatusTests: XCTestCase {
             seq: 1
         ))
 
+        XCTAssertEqual(idle?.hasStartedGeneration, false)
         XCTAssertEqual(idle?.hasCompletedOutput, false)
     }
 

@@ -16,11 +16,13 @@ enum TabCornerBadgeStatus: Int, CaseIterable {
         isAgentActive: Bool,
         isChatGenerating: Bool,
         hasPairedChat: Bool,
+        hasStartedChatGeneration: Bool,
         isChatCollapsed: Bool
     ) -> TabCornerBadgeStatus? {
+        guard isChatGenerating || hasPairedChat else { return nil }
         if isAgentActive { return .agent }
         if isChatGenerating { return .inputting }
-        if hasPairedChat && !isChatCollapsed { return .chat }
+        if hasPairedChat && hasStartedChatGeneration && !isChatCollapsed { return .chat }
         return nil
     }
 
@@ -35,6 +37,7 @@ final class TabStatusModel: ObservableObject {
     @Published private(set) var isUnloaded = false
     @Published private(set) var isAgentActive = false
     @Published private(set) var hasPairedChat = false
+    @Published private(set) var hasStartedChatGeneration = false
     @Published private(set) var isChatGenerating = false
     @Published private(set) var isChatCollapsed = true
 
@@ -43,6 +46,7 @@ final class TabStatusModel: ObservableObject {
             isAgentActive: isAgentActive,
             isChatGenerating: isChatGenerating,
             hasPairedChat: hasPairedChat,
+            hasStartedChatGeneration: hasStartedChatGeneration,
             isChatCollapsed: isChatCollapsed
         )
     }
@@ -62,6 +66,7 @@ final class TabStatusModel: ObservableObject {
         isUnloaded = tab.isUnloaded
         isAgentActive = AgentAnimationManager.shared.isActive(for: expectedGuid)
         hasPairedChat = chatStateTab.hasPairedChat
+        hasStartedChatGeneration = chatStateTab.hasStartedChatGeneration
         isChatGenerating = chatStateTab.isPairedChatGenerating
         isChatCollapsed = chatStateTab.aiChatCollapsed
 
@@ -117,6 +122,19 @@ final class TabStatusModel: ObservableObject {
             }
             .store(in: &cancellables)
 
+        chatStateTab.$hasStartedChatGeneration
+            .removeDuplicates()
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] hasStartedGeneration in
+                guard let self,
+                      self.isCurrentConfiguration(
+                        expectedGuid: expectedGuid,
+                        expectedGeneration: expectedGeneration
+                      ) else { return }
+                self.hasStartedChatGeneration = hasStartedGeneration
+            }
+            .store(in: &cancellables)
+
         chatStateTab.$aiChatCollapsed
             .removeDuplicates()
             .receive(on: DispatchQueue.main)
@@ -156,6 +174,7 @@ final class TabStatusModel: ObservableObject {
         isUnloaded = false
         isAgentActive = false
         hasPairedChat = false
+        hasStartedChatGeneration = false
         isChatGenerating = false
         isChatCollapsed = true
     }

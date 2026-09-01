@@ -398,6 +398,17 @@ import PostHog
             }
         }
 
+        // AppKit delivers launch URLs between `applicationWillFinishLaunching`
+        // and `applicationDidFinishLaunching`, i.e. before the latter resolves
+        // the browser-access gate. Until then a signed-in user still reads the
+        // persisted default (`.loginRequired`), which presented the login
+        // window for a moment and then dismissed it. Resolve the gate on
+        // demand, exactly as `applicationDidFinishLaunching` and Chromium's
+        // window checks do, so the URL takes its ordinary path.
+        if !hasFinishedLaunching {
+            resolveBrowserAccessFromAuthentication(checkChromiumLaunchStatus: true)
+        }
+
         let requiresRegularWindowBeforeKiosk =
             PhiPreferences.GeneralSettings.openExternalLinksInKiosk.loadValue()
                 && !hasFinishedLaunching

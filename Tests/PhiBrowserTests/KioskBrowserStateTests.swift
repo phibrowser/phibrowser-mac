@@ -381,6 +381,35 @@ final class KioskBrowserStateTests: XCTestCase {
         )
     }
 
+    func testKioskWindowRemainsWindowedInExistingFullscreenSpace() throws {
+        let state = try makeState()
+        let window = makeWindow(
+            frame: NSRect(x: 0, y: 0, width: 900, height: 640)
+        )
+        window.collectionBehavior = [
+            .managed,
+            .participatesInCycle,
+            .fullScreenPrimary,
+        ]
+        let controller = KioskBrowserWindowController(
+            window: window,
+            windowId: state.windowId,
+            browserType: .kiosk,
+            profileId: state.profileId,
+            account: state.localStore.account
+        )
+        defer {
+            window.close()
+            withExtendedLifetime(controller) {}
+        }
+
+        XCTAssertTrue(window.collectionBehavior.contains(.fullScreenAuxiliary))
+        XCTAssertFalse(window.collectionBehavior.contains(.fullScreenPrimary))
+        XCTAssertFalse(window.collectionBehavior.contains(.fullScreenNone))
+        XCTAssertTrue(window.collectionBehavior.contains(.managed))
+        XCTAssertTrue(window.collectionBehavior.contains(.participatesInCycle))
+    }
+
     func testKioskOmniBoxIsCentered() throws {
         let state = try makeState()
         let window = makeWindow(

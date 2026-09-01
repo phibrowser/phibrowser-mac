@@ -840,6 +840,19 @@ final class KioskBrowserWindowController: MainBrowserWindowController {
         _ window: NSWindow,
         presentationRequest: KioskWindowPresentationRequest?
     ) {
+        // Chromium creates Kiosk as a popup-backed browser, so its NSWindow
+        // starts as FullScreenPrimary. If another Phi window owns the active
+        // fullscreen Space, AppKit promotes a newly ordered primary window into
+        // its own fullscreen Space. This controller is installed synchronously
+        // from Chromium's window-created callback, before the first Show(), so
+        // make Kiosk an auxiliary window while its restored frame is still
+        // authoritative.
+        var collectionBehavior = window.collectionBehavior
+        collectionBehavior.remove(.fullScreenPrimary)
+        collectionBehavior.remove(.fullScreenNone)
+        collectionBehavior.insert(.fullScreenAuxiliary)
+        window.collectionBehavior = collectionBehavior
+
         window.styleMask.insert(.fullSizeContentView)
         let toolbar = NSToolbar(identifier: Self.toolbarIdentifier)
         toolbar.allowsUserCustomization = false

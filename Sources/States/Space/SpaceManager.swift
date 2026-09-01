@@ -357,11 +357,28 @@ final class SpaceManager: ObservableObject {
     /// surfaces, so nothing else would tell them to.
     @Published private(set) var spaces: [SpaceModel] = [] {
         didSet {
-            guard Self.spaceOrderDidChange(from: oldValue.map(\.spaceId),
-                                           to: spaces.map(\.spaceId)) else { return }
+            // Compare against ids snapshotted at the previous assignment —
+            // never against `oldValue`'s models. `SpaceModel`s are live
+            // SwiftData references, and a store teardown between two
+            // assignments (guest→account promotion's terminal close, an
+            // account switch releasing the old container) resets their
+            // backing data, so the first persisted-property read on one
+            // traps (PHIBROWSER-MAC-QP). The incoming array is safe to
+            // read: every assignment site fetched it from a live context
+            // in the same main-thread turn, or assigned empty.
+            let newIds = spaces.map(\.spaceId)
+            let orderChanged = Self.spaceOrderDidChange(from: publishedSpaceIds,
+                                                        to: newIds)
+            publishedSpaceIds = newIds
+            guard orderChanged else { return }
             NotificationCenter.default.post(name: .spaceListDidChange, object: self)
         }
     }
+
+    /// Value snapshot of `spaces.map(\.spaceId)` taken by the didSet at each
+    /// assignment, so the next assignment's order comparison never reads a
+    /// persisted property on models whose container may since be gone.
+    private var publishedSpaceIds: [String] = []
 
     /// Whether a `spaces` write invalidates every cached POSITION → Space
     /// mapping. Deliberately order-sensitive rather than set-sensitive: the
@@ -6911,7 +6928,8 @@ final class SpaceManager: ObservableObject {
         // `AccountController.account`'s didSet, whose shortcut reload asks
         // the bridge to rebuild the main menu before AppKit is ready
         // (startup crash in `NSMenu _setMenuName:`). Assigning the
-        // @Published array is effect-free here (no subscribers exist yet);
+        // @Published array is safe here — no subscribers exist yet, and the
+        // didSet only snapshots ids and posts `spaceListDidChange`;
         // slot reconciliation, migrations, and the default-space theme
         // publish all run on the publisher's first emission, which replaces
         // this seed wholesale through `handleSpacesUpdate` as before. The
@@ -6922,8 +6940,15 @@ final class SpaceManager: ObservableObject {
         let seededSpaces = MainActor.assumeIsolated {
             account.localStorage.getAllSpaces()
         }
+        // Reassigned even when the fetch is empty: a rebind reaches here
+        // without an intervening `unbind` (`refreshAccountBindingForBrowserAccess`
+        // binds the new account directly), and keeping the PREVIOUS
+        // account's models in `lastStoreSpaces` hands
+        // `refreshIncognitoSpacePresence()` references that die with that
+        // store's container. `spaces` keeps the non-empty gate so the strip
+        // isn't blanked before the new store's first delivery.
+        lastStoreSpaces = seededSpaces
         if !seededSpaces.isEmpty {
-            lastStoreSpaces = seededSpaces
             spaces = seededSpaces
         }
 
@@ -7124,6 +7149,11 @@ final class SpaceManager: ObservableObject {
         rulesCancellable = nil
         cachedURLRules = []
         hasLoadedURLRules = false
+        // `lastStoreSpaces` aliases the unbound store's live models; a
+        // `refreshIncognitoSpacePresence()` after that store's container is
+        // gone would otherwise replay destroyed models into
+        // `handleSpacesUpdate` (same trap as the `spaces` didSet documents).
+        lastStoreSpaces = []
         spaces = []
         // Tear down each slot's NotificationCenter registrations before
         // dropping the registry — controllers may keep the slots alive past

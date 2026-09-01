@@ -339,16 +339,6 @@ class PinnedTabItem: NSCollectionViewItem, NSMenuDelegate {
         statusModel.configure(with: tab, in: browserState)
         updateStatusBadge(isSuppressed: false)
 
-        statusModel.$isUnloaded
-            .removeDuplicates()
-            .receive(on: DispatchQueue.main)
-            .sink { [weak self] isUnloaded in
-                self?.iconImageView.alphaValue = TabFaviconPresentation.opacity(
-                    isUnloaded: isUnloaded
-                )
-            }
-            .store(in: &cancellables)
-
         setupFavicon()
         if let browserState {
             tabPreviewRegistration.configure(

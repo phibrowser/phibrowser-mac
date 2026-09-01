@@ -17,6 +17,8 @@ class PinnedSplitItem: NSCollectionViewItem, NSMenuDelegate {
     static var reuseIdentifier: NSUserInterfaceItemIdentifier { .init(rawValue: "\(Self.self)") }
     private static let faviconSize: CGFloat = 16
     private static let faviconCornerRadius: CGFloat = 3
+    private static let defaultFaviconCenterOffset: CGFloat = 10
+    private static let separatedFaviconCenterOffset: CGFloat = 13
 
     private var leftIconView: NSImageView!
     private var rightIconView: NSImageView!
@@ -24,6 +26,8 @@ class PinnedSplitItem: NSCollectionViewItem, NSMenuDelegate {
     private var leftDiscardedOutlineHost: TabDecorativeHostingView!
     private var rightDiscardedOutlineHost: TabDecorativeHostingView!
     private var statusBadgeHost: TabDecorativeHostingView!
+    private var leftIconCenterXConstraint: Constraint?
+    private var rightIconCenterXConstraint: Constraint?
     private let leftStatusModel = TabStatusModel()
     private let rightStatusModel = TabStatusModel()
     private var leftTab: Tab?
@@ -67,6 +71,7 @@ class PinnedSplitItem: NSCollectionViewItem, NSMenuDelegate {
         rightIconView.alphaValue = 1
         leftStatusModel.prepareForReuse()
         rightStatusModel.prepareForReuse()
+        updateFaviconCenterOffset(separatesDashedOutlines: false)
         splitTabPreviewRegistration.invalidate()
         leftTab = nil
         rightTab = nil
@@ -130,12 +135,12 @@ class PinnedSplitItem: NSCollectionViewItem, NSMenuDelegate {
             make.edges.equalToSuperview()
         }
 
-        // Two 16x16 favicons centered as a pair, separated by a small gap.
-        // 16 + 4 + 16 = 36pt total — fits inside the 54pt-wide background
-        // without crowding the rounded corners.
+        // Preserve the original spacing by default. When both favicons show
+        // dashed state outlines, their symmetric offsets expand dynamically.
         leftIconView.snp.makeConstraints { make in
             make.centerY.equalToSuperview()
-            make.centerX.equalToSuperview().offset(-10)
+            leftIconCenterXConstraint = make.centerX.equalToSuperview()
+                .offset(-Self.defaultFaviconCenterOffset).constraint
             make.size.equalTo(CGSize(
                 width: Self.faviconSize,
                 height: Self.faviconSize
@@ -143,7 +148,8 @@ class PinnedSplitItem: NSCollectionViewItem, NSMenuDelegate {
         }
         rightIconView.snp.makeConstraints { make in
             make.centerY.equalToSuperview()
-            make.centerX.equalToSuperview().offset(10)
+            rightIconCenterXConstraint = make.centerX.equalToSuperview()
+                .offset(Self.defaultFaviconCenterOffset).constraint
             make.size.equalTo(CGSize(
                 width: Self.faviconSize,
                 height: Self.faviconSize
@@ -223,26 +229,27 @@ class PinnedSplitItem: NSCollectionViewItem, NSMenuDelegate {
         rightFaviconHandle = nil
         leftStatusModel.configure(with: leftTab, in: browserState)
         rightStatusModel.configure(with: rightTab, in: browserState)
+        updateFaviconCenterOffset(
+            separatesDashedOutlines: bothFaviconsShowDashedOutline
+        )
 
-        leftStatusModel.$isUnloaded
-            .removeDuplicates()
-            .receive(on: DispatchQueue.main)
-            .sink { [weak self] isUnloaded in
-                self?.leftIconView.alphaValue = TabFaviconPresentation.opacity(
-                    isUnloaded: isUnloaded
-                )
-            }
-            .store(in: &cancellables)
-
-        rightStatusModel.$isUnloaded
-            .removeDuplicates()
-            .receive(on: DispatchQueue.main)
-            .sink { [weak self] isUnloaded in
-                self?.rightIconView.alphaValue = TabFaviconPresentation.opacity(
-                    isUnloaded: isUnloaded
-                )
-            }
-            .store(in: &cancellables)
+        Publishers.CombineLatest4(
+            leftStatusModel.$isDiscarded,
+            leftStatusModel.$isUnloaded,
+            rightStatusModel.$isDiscarded,
+            rightStatusModel.$isUnloaded
+        )
+        .map { leftDiscarded, leftUnloaded, rightDiscarded, rightUnloaded in
+            (leftDiscarded || leftUnloaded) && (rightDiscarded || rightUnloaded)
+        }
+        .removeDuplicates()
+        .receive(on: DispatchQueue.main)
+        .sink { [weak self] separatesDashedOutlines in
+            self?.updateFaviconCenterOffset(
+                separatesDashedOutlines: separatesDashedOutlines
+            )
+        }
+        .store(in: &cancellables)
 
         refreshFavicon(for: leftTab)
         refreshFavicon(for: rightTab)
@@ -294,6 +301,24 @@ class PinnedSplitItem: NSCollectionViewItem, NSMenuDelegate {
             .store(in: &cancellables)
 
         rebindThemeSubscription()
+    }
+
+    private var bothFaviconsShowDashedOutline: Bool {
+        TabFaviconPresentation.showsDashedOutline(
+            isDiscarded: leftStatusModel.isDiscarded,
+            isUnloaded: leftStatusModel.isUnloaded
+        ) && TabFaviconPresentation.showsDashedOutline(
+            isDiscarded: rightStatusModel.isDiscarded,
+            isUnloaded: rightStatusModel.isUnloaded
+        )
+    }
+
+    private func updateFaviconCenterOffset(separatesDashedOutlines: Bool) {
+        let offset = separatesDashedOutlines
+            ? Self.separatedFaviconCenterOffset
+            : Self.defaultFaviconCenterOffset
+        leftIconCenterXConstraint?.update(offset: -offset)
+        rightIconCenterXConstraint?.update(offset: offset)
     }
 
     override var isSelected: Bool {

@@ -93,6 +93,7 @@ final class TabItemView: NSView {
     /// renders two favicons side-by-side; the secondary view model carries
     /// the partner's bindings so favicon updates flow independently.
     private weak var pinnedSplitPartner: Tab?
+    private var separatesPinnedSplitFaviconOutlines = false
     private var isDragHighlighted = false {
         didSet {
             guard oldValue != isDragHighlighted else { return }
@@ -294,6 +295,8 @@ final class TabItemView: NSView {
 
     private let muteButtonSize = CGSize(width: 16, height: 16)
     private let recordingIconSize = CGSize(width: 14, height: 14)
+    private let defaultMergedFaviconGap: CGFloat = 2
+    private let separatedPinnedSplitFaviconGap: CGFloat = 7
 
     // MARK: - Layout
 
@@ -373,7 +376,9 @@ final class TabItemView: NSView {
                 // occupies a single slot in the strip's layout.
                 let centerY = bounds.height / 2
                 let iconSize = metrics.faviconSize
-                let gap: CGFloat = 2
+                let gap = separatesPinnedSplitFaviconOutlines
+                    ? separatedPinnedSplitFaviconGap
+                    : defaultMergedFaviconGap
                 let pairWidth = iconSize.width * 2 + gap
                 let leftX = (bounds.width - pairWidth) / 2
                 faviconHostingView.isHidden = false
@@ -755,6 +760,11 @@ final class TabItemView: NSView {
         isPinned = data.isPinned
         sourceTab = data.sourceTab
         pinnedSplitPartner = data.pinnedSplitPartner
+        separatesPinnedSplitFaviconOutlines = data.isPinned
+            && Self.bothTabsShowDashedFaviconOutline(
+                primary: data.sourceTab,
+                secondary: data.pinnedSplitPartner
+            )
         backgroundLayer.splitPairPosition = data.splitPairPosition
         backgroundLayer.isSplitGroupActive = data.isSplitGroupActive
         updateOpenPinnedBorder()
@@ -863,9 +873,52 @@ final class TabItemView: NSView {
                     self?.updateOpenPinnedBorder()
                 }
                 .store(in: &cancellables)
+
+            if data.isPinned, let tab = data.sourceTab {
+                Publishers.CombineLatest4(
+                    tab.$isDiscarded,
+                    tab.$isUnloaded,
+                    partner.$isDiscarded,
+                    partner.$isUnloaded
+                )
+                .map { primaryDiscarded, primaryUnloaded, secondaryDiscarded, secondaryUnloaded in
+                    TabFaviconPresentation.showsDashedOutline(
+                        isDiscarded: primaryDiscarded,
+                        isUnloaded: primaryUnloaded
+                    ) && TabFaviconPresentation.showsDashedOutline(
+                        isDiscarded: secondaryDiscarded,
+                        isUnloaded: secondaryUnloaded
+                    )
+                }
+                .removeDuplicates()
+                .receive(on: DispatchQueue.main)
+                .sink { [weak self] separatesOutlines in
+                    guard let self,
+                          separatesOutlines != self.separatesPinnedSplitFaviconOutlines else {
+                        return
+                    }
+                    self.separatesPinnedSplitFaviconOutlines = separatesOutlines
+                    self.layoutContent()
+                }
+                .store(in: &cancellables)
+            }
         }
 
         layoutContent()
+    }
+
+    private static func bothTabsShowDashedFaviconOutline(
+        primary: Tab?,
+        secondary: Tab?
+    ) -> Bool {
+        guard let primary, let secondary else { return false }
+        return TabFaviconPresentation.showsDashedOutline(
+            isDiscarded: primary.isDiscarded,
+            isUnloaded: primary.isUnloaded
+        ) && TabFaviconPresentation.showsDashedOutline(
+            isDiscarded: secondary.isDiscarded,
+            isUnloaded: secondary.isUnloaded
+        )
     }
 
     /// Exposes this cell to UI testing as a single accessibility button.

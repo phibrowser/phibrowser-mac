@@ -33,10 +33,8 @@ enum TabCornerBadgeMetrics {
 }
 
 enum TabFaviconPresentation {
-    static let unloadedOpacity: CGFloat = 0.3
-
-    static func opacity(isUnloaded: Bool) -> CGFloat {
-        isUnloaded ? unloadedOpacity : 1
+    static func showsDashedOutline(isDiscarded: Bool, isUnloaded: Bool) -> Bool {
+        isDiscarded || isUnloaded
     }
 }
 
@@ -146,7 +144,10 @@ struct TabDiscardedFaviconOutline: View {
     @Environment(\.phiAppearance) private var appearance
 
     var body: some View {
-        if model.isDiscarded {
+        if TabFaviconPresentation.showsDashedOutline(
+            isDiscarded: model.isDiscarded,
+            isUnloaded: model.isUnloaded
+        ) {
             Circle()
                 .stroke(
                     ThemedColor.textPrimary.swiftUIColor(
@@ -335,16 +336,10 @@ private struct TabTitleShimmerMask: View {
 
 struct UnifiedTabFaviconView: View {
     let viewModel: TabViewModel
-    @ObservedObject private var statusModel: TabStatusModel
     @Environment(\.phiAppearance) private var phiAppearance
 
     private static let faviconSize: CGFloat = 14
     private static let faviconCornerRadius: CGFloat = 3
-
-    init(viewModel: TabViewModel) {
-        self.viewModel = viewModel
-        statusModel = viewModel.status
-    }
 
     var body: some View {
         Group {
@@ -361,7 +356,6 @@ struct UnifiedTabFaviconView: View {
                     .id(viewModel.faviconRevision)
             }
         }
-        .opacity(TabFaviconPresentation.opacity(isUnloaded: statusModel.isUnloaded))
         .frame(width: Self.faviconSize, height: Self.faviconSize)
         .clipShape(RoundedRectangle(cornerRadius: Self.faviconCornerRadius, style: .continuous))
         .overlay {

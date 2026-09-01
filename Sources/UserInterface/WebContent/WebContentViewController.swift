@@ -34,7 +34,7 @@
  - embeddedChatViewController: min width 300, max width 600, collapsible
  
  AI Chat state management:
- - Tab.aiChatEnabled: whether AI Chat can be expanded (false on NTP)
+ - Tab.aiChatEnabled: whether AI Chat can be expanded (false on phi:// and chrome:// pages)
  - Tab.aiChatCollapsed: current expand/collapse state
  - Auto-collapses when aiChatEnabled becomes false
  - Follows aiChatCollapsed when aiChatEnabled is true

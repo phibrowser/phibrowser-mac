@@ -478,12 +478,7 @@ class Tab: WebContentRepresentable {
             .store(in: &cancellables)
         
         $url
-            .compactMap { urlStr in
-                guard let urlStr else {
-                    return false
-                }
-                return !urlStr.isLocalUrlString
-            }
+            .map(Self.supportsAIChat(urlString:))
             .assign(to: \.aiChatEnabled, on: self)
             .store(in: &cancellables)
         
@@ -494,6 +489,12 @@ class Tab: WebContentRepresentable {
                 self?.onFocusGained?()
             }
             .store(in: &cancellables)
+    }
+
+    static func supportsAIChat(urlString: String?) -> Bool {
+        guard let urlString else { return false }
+        return !urlString.hasPrefix("phi://")
+            && !urlString.hasPrefix("chrome://")
     }
     
     func setWebContentsWrapper(wrapper: (WebContentWrapper & NSObject)?) {

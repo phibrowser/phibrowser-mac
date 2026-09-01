@@ -528,25 +528,33 @@ struct BrowserMigrationWizardView: View {
     /// window's top edge, which both windows draw under their transparent
     /// titlebars, so the band clears the window controls by the same margin.
     private static let headerTopInset: CGFloat = 56
-    /// Fixed whatever the step, so the body starts at one height on every step.
-    /// The tallest step is Source: the brand face's 48pt line at 32, the import
-    /// window's 12pt to its caption, and a subtitle that runs to two 18pt lines
-    /// at the column width — 160 once the band's own insets are added.
-    private static let headerBandHeight: CGFloat = 164
+    /// The onboarding pages' gap between the title and the card under it, as
+    /// the eye measures it rather than as their constraints do. Those pages
+    /// put the card 12 under a 68pt label frame (`contentTopSpacing`) that
+    /// keeps about 9pt of empty space under the 46pt face's descender, so what
+    /// shows is about 21 — 26 on Next steps, whose card sits 17 under the
+    /// frame. This heading's 32pt face sits in a 48pt line box with about 7
+    /// under its descender, so 18 shows about 25: level with the 24 of air
+    /// the footer keeps over the buttons. The band ends here under whatever
+    /// the step's header holds — the heading alone on Review and Report, the
+    /// subtitle on Source and Migrating — so the body can reach as far up as
+    /// that card does. Content-sized rather than fixed on purpose: a band
+    /// fixed for the tallest header left 60pt empty under a heading with no
+    /// subtitle.
+    private static let headerBottomInset: CGFloat = 18
     /// The import window's container width for a 640pt-wide window, centred as
     /// it is there. Every step's body keeps to it, as do the subtitle and the
     /// footer's reason line.
     private static let contentColumnWidth: CGFloat = 472
     /// The import window's CTA geometry. Both slots are reserved on every step,
-    /// so the band does not move under a step that fills only one of them —
+    /// so the buttons do not move under a step that fills only one of them —
     /// Migrating, whose single button is a secondary.
     private static let footerPrimaryHeight: CGFloat = 40
     private static let footerPrimaryMinWidth: CGFloat = 120
-    /// Fixed for the same reason the header band is: the body must end at one
-    /// height on every step too. 10 + a reason line that runs to two 13pt
-    /// lines + 10 + both button slots + the onboarding bottom margin, which
-    /// only Review ever fills.
-    private static let footerBandHeight: CGFloat = 190
+    /// The onboarding pages' air between the card and the button under it
+    /// (`contentBottomSpacing`, 24 on both Before-we-begin and Next steps):
+    /// the body ends this far above the primary's slot, on every step.
+    private static let footerTopInset: CGFloat = 24
     /// Where the onboarding pages put their CTA pair: the primary's bottom
     /// edge 96pt above the window's and the secondary 8pt under it
     /// (`OnboardingBaseViewController`'s Next and Skip constraints), so the
@@ -589,17 +597,18 @@ struct BrowserMigrationWizardView: View {
         self.onClose = onClose
     }
 
-    /// Header, body and footer have the same geometry on every step; changing
-    /// step swaps only the body.
+    /// Header, body and footer on every step; changing step swaps the body.
+    /// The header and footer are as tall as their step's content and the body
+    /// takes what is left: the onboarding pages' card reaches from 12 under
+    /// the title to 24 above the button, and this body can reach the same. It
+    /// only does when a step's content is that tall — every step centres its
+    /// content while it fits, so a short step is not stretched to the reach.
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             header
             stepBody
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                 .padding(.horizontal, Self.bandInset)
-                // The import window lets its container sit 8pt under its caption.
-                .padding(.top, 8)
-                .padding(.bottom, 12)
             footer
         }
         .frame(
@@ -617,15 +626,17 @@ struct BrowserMigrationWizardView: View {
     // MARK: Header band
 
     /// Centred, as the import window's title and the caption under it are, and
-    /// at that window's spacing between the two.
+    /// at that window's spacing between the two. As tall as what the step puts
+    /// in it: the band ends 12 under the heading or the subtitle, whichever
+    /// the step has, rather than at one height for all four.
     private var header: some View {
         VStack(spacing: 12) {
             Text(stepHeading)
                 .font(headingFont(stepHeading))
                 .foregroundColor(Ink.primary)
                 // One line, for the same reason the subtitle is capped at two:
-                // the band's height is fixed and a second 48pt line would run
-                // the heading into the body.
+                // the band is as tall as they are, and a second 48pt line
+                // would take that much from the body.
                 .lineLimit(1)
             if let stepSubtitle {
                 Text(stepSubtitle)
@@ -633,9 +644,9 @@ struct BrowserMigrationWizardView: View {
                     .foregroundColor(Ink.secondary)
                     .multilineTextAlignment(.center)
                     .fixedSize(horizontal: false, vertical: true)
-                    // The band's height is fixed so the body cannot move, so a
-                    // subtitle longer than English's must truncate inside it
-                    // rather than run into the body.
+                    // Two lines at most: a localization longer than English's
+                    // takes one more line from the body, then truncates rather
+                    // than going on taking.
                     .lineLimit(2)
                     .frame(maxWidth: Self.contentColumnWidth)
             }
@@ -643,8 +654,7 @@ struct BrowserMigrationWizardView: View {
         .frame(maxWidth: .infinity)
         .padding(.horizontal, Self.bandInset)
         .padding(.top, Self.headerTopInset)
-        .padding(.bottom, 8)
-        .frame(height: Self.headerBandHeight, alignment: .top)
+        .padding(.bottom, Self.headerBottomInset)
     }
 
     /// The onboarding brand face the import window titles itself in. Built
@@ -716,68 +726,27 @@ struct BrowserMigrationWizardView: View {
 
     // MARK: Footer band
 
+    /// As tall as its content, like the header — and the same on every step:
+    /// the onboarding pages' 24 of air over the buttons, the two button slots
+    /// and the onboarding bottom margin, 160 in all. The band says nothing;
+    /// whatever stops Start is said in the well under the tree, so the body
+    /// ends 24 above the primary's slot on all four steps.
     private var footer: some View {
         let buttons = footerButtons
-        return VStack(spacing: 10) {
-            if let contextLine {
-                Text(contextLine)
-                    // The reason a disabled button is disabled has to be read,
-                    // so it takes the secondary rung rather than the hint one.
-                    .font(.system(size: 13))
-                    .foregroundColor(Ink.secondary)
-                    .multilineTextAlignment(.center)
-                    .fixedSize(horizontal: false, vertical: true)
-                    // The band's height is fixed, so a reason longer than
-                    // English's truncates inside it rather than pushing the
-                    // buttons out of the band.
-                    .lineLimit(2)
-                    .frame(maxWidth: Self.contentColumnWidth)
+        return VStack(spacing: 8) {
+            ZStack {
+                if let primary = buttons.primary { primaryButton(primary) }
             }
-            // Holds the buttons against the bottom of the band whether or not
-            // the step has a reason to give, so they sit at one height on all
-            // four.
-            Spacer(minLength: 0)
-            VStack(spacing: 8) {
-                ZStack {
-                    if let primary = buttons.primary { primaryButton(primary) }
-                }
-                .frame(height: Self.footerPrimaryHeight)
-                HStack(spacing: 24) {
-                    ForEach(buttons.secondary) { secondaryButton($0) }
-                }
-                .frame(height: Self.footerSecondaryHeight)
+            .frame(height: Self.footerPrimaryHeight)
+            HStack(spacing: 24) {
+                ForEach(buttons.secondary) { secondaryButton($0) }
             }
-            .frame(maxWidth: .infinity)
+            .frame(height: Self.footerSecondaryHeight)
         }
         .frame(maxWidth: .infinity)
         .padding(.horizontal, Self.bandInset)
-        .padding(.top, 10)
+        .padding(.top, Self.footerTopInset)
         .padding(.bottom, Self.footerBottomInset)
-        .frame(height: Self.footerBandHeight)
-    }
-
-    /// The one line the footer speaks, and only when Start is disabled for a
-    /// reason nothing else on the step states. First applicable wins — it is
-    /// never disabled without one showing somewhere. A second Migration is not
-    /// one of them: the banner under the tree says so, and the confirmation on
-    /// Start says it again.
-    private var contextLine: String? {
-        guard model.step == .preview else { return nil }
-        if !model.isAccountBound {
-            return NSLocalizedString("app.browserMigration.preview.accountRequired",
-                value: "Sign in to Phi — or continue as a guest — before migrating.",
-                comment: "Browser migration wizard - shown instead of starting when no account is bound")
-        }
-        // The well under the tree, directly above this band, already says so;
-        // and it also empties the plan, so the nothing-ticked line must not
-        // speak for it either.
-        if model.hasNothingToMigrate { return nil }
-        if model.plannedProfileCount == 0 {
-            return NSLocalizedString("app.browserMigration.preview.nothingTicked",
-                value: "Choose at least one Space to migrate.",
-                comment: "Browser migration wizard - why Start is disabled when the user has unticked everything")
-        }
-        return nil
     }
 
     /// The picked source's name, which every line about the source interpolates.
@@ -948,7 +917,7 @@ struct BrowserMigrationWizardView: View {
                 .multilineTextAlignment(.center)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {
-            VStack(alignment: .leading, spacing: 10) {
+            VStack(alignment: .leading, spacing: 12) {
                 // One container round every row, as the import window lays its
                 // sources out: its 8pt inside the card and between rows.
                 VStack(spacing: 8) {
@@ -1068,19 +1037,13 @@ struct BrowserMigrationWizardView: View {
             // One slot, and what is wrong wins it: a run that will not happen
             // prompts for nothing, so the source's hint gives way rather than
             // stacking underneath it.
-            if model.hasNothingToMigrate {
-                fieldWell(String(
-                    format: NSLocalizedString("app.browserMigration.preview.nothingToMigrate",
-                        value: "Phi found %1$@, but there's nothing here to migrate — no %2$@ profile has data Phi can move.",
-                        comment: "Browser migration wizard - shown under the tree when the source read fine and offers nothing; %1$@ and %2$@ are both the source browser's name"),
-                    sourceName, sourceName))
+            if let blocker = startBlocker {
+                fieldWell(blocker)
             } else if let hint = model.pickedSource?.preflightHint {
                 // Said before anything starts rather than when it would
                 // matter: Arc's Keychain prompt is asked again for every
                 // Profile of a serial run, and a running Zen's recent changes
-                // are missed silently. It stands under the tree and never in
-                // the footer's conditional line, which is spoken for by
-                // whatever is wrong.
+                // are missed silently.
                 fieldWell(hint)
             }
         }
@@ -1110,6 +1073,34 @@ struct BrowserMigrationWizardView: View {
                 value: "You've migrated from this browser into this account before. Phi will create a new set of Profiles and Spaces — the ones you already have stay exactly as they are.",
                 comment: "Browser migration wizard - explains that a second migration creates a fresh set of Profiles and Spaces rather than updating the first one's"))
         }
+    }
+
+    /// Why Start is disabled, when it is — said once, in the well slot the
+    /// source's hint otherwise takes, so the footer never has to. First
+    /// applicable wins: Start is never disabled without one of these showing.
+    /// A second Migration is not one of them: the banner above the slot says
+    /// so, and the confirmation on Start says it again.
+    private var startBlocker: String? {
+        // Asked first: it empties the plan too, and signing in would not fill
+        // it, so neither line below may speak for it.
+        if model.hasNothingToMigrate {
+            return String(
+                format: NSLocalizedString("app.browserMigration.preview.nothingToMigrate",
+                    value: "Phi found %1$@, but there's nothing here to migrate — no %2$@ profile has data Phi can move.",
+                    comment: "Browser migration wizard - shown under the tree when the source read fine and offers nothing; %1$@ and %2$@ are both the source browser's name"),
+                sourceName, sourceName)
+        }
+        if !model.isAccountBound {
+            return NSLocalizedString("app.browserMigration.preview.accountRequired",
+                value: "Sign in to Phi — or continue as a guest — before migrating.",
+                comment: "Browser migration wizard - shown instead of starting when no account is bound")
+        }
+        if model.plannedProfileCount == 0 {
+            return NSLocalizedString("app.browserMigration.preview.nothingTicked",
+                value: "Choose at least one Space to migrate.",
+                comment: "Browser migration wizard - why Start is disabled when the user has unticked everything")
+        }
+        return nil
     }
 
     private var treeRows: some View {
@@ -1147,16 +1138,18 @@ struct BrowserMigrationWizardView: View {
             count)
     }
 
-    /// A statement that is true for the whole step, in the same card the rest
-    /// of the window is built from. Deliberately not a warning shape: nothing
-    /// here is wrong, and the footer owns what is.
+    /// One shape for everything said under the tree — what is true for the
+    /// whole step and what stops Start alike — in the same card the rest of
+    /// the window is built from. Deliberately not a warning shape even for
+    /// the latter: each is an instruction the user can act on, not an error.
     private func fieldWell(_ text: String) -> some View {
         Text(text)
             .font(.system(size: 13))
             .foregroundColor(Ink.secondary)
             .fixedSize(horizontal: false, vertical: true)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.horizontal, 10)
+            // 12 in, where the rows of the cards above it start.
+            .padding(.horizontal, 12)
             .padding(.vertical, 8)
             .migrationCard()
     }
@@ -1670,12 +1663,19 @@ struct BrowserMigrationWizardView: View {
         }
     }
 
+    /// Where a Profile row's children — its outcome grid and its Space rows —
+    /// start: at the Profile's own name, past the glyph's 16 and the row's 6.
+    /// The preview's 20 is the same rule with a 14pt checkbox in the glyph's
+    /// place.
+    private static let reportChildInset: CGFloat = 22
+
     /// Every Profile and every Space, in plan order, each with what became of
-    /// it. Shown only once the disclosure is open.
+    /// it, in its own card under the summary — always open. Rows at the
+    /// preview tree's spacings, so the two trees read as one.
     private func reportTree(_ report: BrowserMigrationReport) -> some View {
         VStack(alignment: .leading, spacing: 10) {
             ForEach(report.profiles) { profile in
-                VStack(alignment: .leading, spacing: 4) {
+                VStack(alignment: .leading, spacing: 6) {
                     reportObjectRow(
                         name: profile.displayName,
                         ok: profile.landedCleanly,
@@ -1686,7 +1686,7 @@ struct BrowserMigrationWizardView: View {
                     // nothing, and its own row already says so.
                     if profile.created {
                         outcomeGrid(profile, requested: report.requestedDataTypes)
-                            .padding(.leading, 22)
+                            .padding(.leading, Self.reportChildInset)
                     }
                     ForEach(profile.spaces) { space in
                         reportObjectRow(
@@ -1695,7 +1695,7 @@ struct BrowserMigrationWizardView: View {
                             outcome: spaceOutcome(space),
                             weight: .regular,
                             space: space)
-                            .padding(.leading, 20)
+                            .padding(.leading, Self.reportChildInset)
                     }
                 }
             }
@@ -1710,8 +1710,8 @@ struct BrowserMigrationWizardView: View {
         HStack(alignment: .firstTextBaseline, spacing: 6) {
             reportGlyph(ok: ok)
             // The icon and the swatch centre on the name, and the group sits
-            // on the row's baseline through the name.
-            HStack(spacing: 6) {
+            // on the row's baseline through the name — at the preview row's 8.
+            HStack(spacing: 8) {
                 // A Space repeats the icon and the swatch the preview promised
                 // for it, in the preview's order: icon, name, swatch.
                 if let space {

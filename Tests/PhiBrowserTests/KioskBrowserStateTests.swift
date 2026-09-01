@@ -455,6 +455,95 @@ final class KioskBrowserStateTests: XCTestCase {
         wait(for: [frameUpdated], timeout: 1)
     }
 
+    func testKioskAddressClickPrefillsPhiBrandedURL() throws {
+        let state = try makeState()
+        let window = makeWindow(
+            frame: NSRect(x: 0, y: 0, width: 640, height: 640)
+        )
+        let controller = KioskBrowserWindowController(
+            window: window,
+            windowId: state.windowId,
+            browserType: .kiosk,
+            profileId: state.profileId,
+            account: state.localStore.account
+        )
+        defer {
+            window.close()
+            withExtendedLifetime(controller) {}
+        }
+        controller.browserState.handleNewTabFromChromium(Tab(
+            guid: 42,
+            url: "chrome://settings/privacy",
+            isActive: false,
+            index: 0,
+            windowId: state.windowId
+        ))
+        let contentController = try XCTUnwrap(
+            controller.contentViewController as? KioskBrowserContentViewController
+        )
+        let addressField = try XCTUnwrap(
+            contentController.addressBarAnchorView.subviews
+                .compactMap { $0 as? NSTextField }
+                .first
+        )
+        let event = try XCTUnwrap(NSEvent.mouseEvent(
+            with: .leftMouseDown,
+            location: .zero,
+            modifierFlags: [],
+            timestamp: 0,
+            windowNumber: 0,
+            context: nil,
+            eventNumber: 0,
+            clickCount: 1,
+            pressure: 1
+        ))
+
+        addressField.mouseDown(with: event)
+
+        let omniBoxView = try XCTUnwrap(
+            controller.omniBoxContainerViewController?.omniBoxController?.view
+        )
+        XCTAssertEqual(
+            findTextField(in: omniBoxView)?.stringValue,
+            "phi://settings/privacy"
+        )
+    }
+
+    func testKioskFocusLocationPrefillsPhiBrandedURL() throws {
+        let state = try makeState()
+        let window = makeWindow(
+            frame: NSRect(x: 0, y: 0, width: 640, height: 640)
+        )
+        let controller = KioskBrowserWindowController(
+            window: window,
+            windowId: state.windowId,
+            browserType: .kiosk,
+            profileId: state.profileId,
+            account: state.localStore.account
+        )
+        defer {
+            window.close()
+            withExtendedLifetime(controller) {}
+        }
+        controller.browserState.handleNewTabFromChromium(Tab(
+            guid: 42,
+            url: "chrome://settings/privacy",
+            isActive: false,
+            index: 0,
+            windowId: state.windowId
+        ))
+
+        XCTAssertTrue(controller.handleCommand(.IDC_FOCUS_LOCATION))
+
+        let omniBoxView = try XCTUnwrap(
+            controller.omniBoxContainerViewController?.omniBoxController?.view
+        )
+        XCTAssertEqual(
+            findTextField(in: omniBoxView)?.stringValue,
+            "phi://settings/privacy"
+        )
+    }
+
     func testToolbarAndNativeTrafficLightsMoveDownTogether() throws {
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 900, height: 640),
@@ -645,6 +734,35 @@ final class KioskBrowserStateTests: XCTestCase {
 
         XCTAssertEqual(viewModel.state.inputText, "")
         XCTAssertTrue(viewModel.opennedFromCurrentTab)
+    }
+
+    func testKioskOmniBoxHidesSwitchToTabHint() throws {
+        let state = try makeState()
+        let container = OmniBoxContainerViewController(browserState: state)
+        let omniBox = try XCTUnwrap(container.omniBoxController)
+        let suggestion = OmniBoxSuggestion(
+            type: .url,
+            title: "Example",
+            url: "https://example.com",
+            index: 0,
+            stringToFill: "https://example.com",
+            swapContentsAndDescription: false,
+            hasTabMatch: true
+        )
+        let kioskCell = OmniBoxSuggestionCellView(
+            suggestion: suggestion,
+            index: 0,
+            showsSwitchToTabHint: omniBox.showsSwitchToTabHintForTesting
+        )
+        let regularCell = OmniBoxSuggestionCellView(
+            suggestion: suggestion,
+            index: 0,
+            showsSwitchToTabHint: true
+        )
+
+        XCTAssertFalse(omniBox.showsSwitchToTabHintForTesting)
+        XCTAssertTrue(kioskCell.isSwitchToTabViewHiddenForTesting)
+        XCTAssertFalse(regularCell.isSwitchToTabViewHiddenForTesting)
     }
 
     func testKioskOmniBoxDismissalRestoresWindowInteraction() throws {

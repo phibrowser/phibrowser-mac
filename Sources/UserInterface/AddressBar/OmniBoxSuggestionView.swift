@@ -12,6 +12,7 @@ protocol OmniBoxSuggestionViewDelegate: AnyObject {
 
 class OmniBoxSuggestionView: NSView {
     weak var delegate: OmniBoxSuggestionViewDelegate?
+    var showsSwitchToTabHint = true
     static let topPadding: CGFloat = 2
     static let bottomPadding: CGFloat = 4
     private var suggestions: [OmniBoxSuggestion] = []
@@ -128,7 +129,11 @@ extension OmniBoxSuggestionView: NSTableViewDataSource {
 extension OmniBoxSuggestionView: NSTableViewDelegate {
     func tableView(_ tableView: NSTableView, viewFor tableColumn: NSTableColumn?, row: Int) -> NSView? {
         guard row >= 0 && row < suggestions.count else { return nil }
-        let cellView = OmniBoxSuggestionCellView(suggestion: suggestions[row], index: row)
+        let cellView = OmniBoxSuggestionCellView(
+            suggestion: suggestions[row],
+            index: row,
+            showsSwitchToTabHint: showsSwitchToTabHint
+        )
         cellView.configure(with: suggestions[row], index: row)
         cellView.delegate = self
         

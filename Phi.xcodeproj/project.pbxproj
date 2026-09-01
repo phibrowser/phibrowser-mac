@@ -7,7 +7,6 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		A10A10000000000000000002 /* SidecarAIOutputStateStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10A10000000000000000001 /* SidecarAIOutputStateStore.swift */; };
 		04FE4637EFE3A1396687DD63 /* AISettingsConnectorViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = D8FCAEAE328C802016D87943 /* AISettingsConnectorViewModel.swift */; };
 		15B618E574463D94C98AEA5F /* AISettingHostingViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1B584F695BF7833FAA99558 /* AISettingHostingViewController.swift */; };
 		2ABF91DB68C2445BAA58C9BA /* GroupTabsTableView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 457F461C0F164136A46FF641 /* GroupTabsTableView.swift */; };
@@ -97,7 +96,6 @@
 		37C1B0E22ED80CFB00DD4496 /* ShortcutsSettingViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 37C1B0E12ED80CFB00DD4496 /* ShortcutsSettingViewController.swift */; };
 		37C1B0E72ED851CE00DD4496 /* ShortcutsViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 37C1B0E62ED851CE00DD4496 /* ShortcutsViewModel.swift */; };
 		37C1B0E92ED8531700DD4496 /* Shortcuts+Custom.swift in Sources */ = {isa = PBXBuildFile; fileRef = 37C1B0E82ED8531700DD4496 /* Shortcuts+Custom.swift */; };
-		4B4B00000000000000000001 /* KioskGlobalShortcutRegistrar.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4B4B00000000000000000002 /* KioskGlobalShortcutRegistrar.swift */; };
 		37C1B1E42EDEA03400DD4496 /* FeedbackView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 37C1B1E32EDEA03400DD4496 /* FeedbackView.swift */; };
 		37C1B1E62EDEA1E200DD4496 /* FeedbackViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 37C1B1E52EDEA1E200DD4496 /* FeedbackViewController.swift */; };
 		37C1B2822EE0396900DD4496 /* DownloadsManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 37C1B2812EE0396900DD4496 /* DownloadsManager.swift */; };
@@ -155,6 +153,7 @@
 		3AC6117E11925E637EB4711A /* SentinelBackupCoordination.swift in Sources */ = {isa = PBXBuildFile; fileRef = 11E8BEE1510290AB35D5C5AD /* SentinelBackupCoordination.swift */; };
 		3BCDDE6FBABE4BD8A51F0127 /* TabGroupCellView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE7E61A49E8A472DB330779E /* TabGroupCellView.swift */; };
 		4508A9362EEFF2EB007C94E2 /* AccountWebWindowController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4508A9352EEFF2EB007C94E2 /* AccountWebWindowController.swift */; };
+		4B4B00000000000000000001 /* KioskGlobalShortcutRegistrar.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4B4B00000000000000000002 /* KioskGlobalShortcutRegistrar.swift */; };
 		4D454D4F5259000000000001 /* MemoryUsageModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4D454D4F5259000000000002 /* MemoryUsageModels.swift */; };
 		4D454D4F5259000000000004 /* MemoryUsageMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4D454D4F5259000000000005 /* MemoryUsageMonitor.swift */; };
 		4D454D4F5259000000000006 /* ProcessMemorySampler.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4D454D4F5259000000000007 /* ProcessMemorySampler.swift */; };
@@ -222,11 +221,11 @@
 		6A4750013B12345600000002 /* LoginRequiredPresentation.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6A4750013B12345600000001 /* LoginRequiredPresentation.swift */; };
 		6A4750023B12345600000002 /* GuestDataMigration.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6A4750023B12345600000001 /* GuestDataMigration.swift */; };
 		6A4750023B12345600000102 /* BrowserMigrationPlanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6A4750023B12345600000101 /* BrowserMigrationPlanner.swift */; };
+		6A4750023B12345600000202 /* BrowserMigrationWizard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6A4750023B12345600000201 /* BrowserMigrationWizard.swift */; };
+		6A4750023B12345600000302 /* BrowserMigrationRunner.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6A4750023B12345600000301 /* BrowserMigrationRunner.swift */; };
 		6A4750023B12345600000402 /* BrowserMigrationSpaceIconResolver.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6A4750023B12345600000401 /* BrowserMigrationSpaceIconResolver.swift */; };
 		6A4750023B12345600000502 /* ZenDataParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6A4750023B12345600000501 /* ZenDataParser.swift */; };
 		6A4750023B12345600000602 /* FaviconBackfill.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6A4750023B12345600000601 /* FaviconBackfill.swift */; };
-		6A4750023B12345600000202 /* BrowserMigrationWizard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6A4750023B12345600000201 /* BrowserMigrationWizard.swift */; };
-		6A4750023B12345600000302 /* BrowserMigrationRunner.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6A4750023B12345600000301 /* BrowserMigrationRunner.swift */; };
 		793C1DDEA1022CC850FEFFF9 /* SentinelWatchdog.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6A44C5FF60DF6F7860A061D4 /* SentinelWatchdog.swift */; };
 		7A5B00A02EF0000000000001 /* MemoryButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A5B00A02EF0000000000002 /* MemoryButton.swift */; };
 		7B00AAAA000000050000A5B5 /* PostHogEnv.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7B00AAAA000000040000A4B4 /* PostHogEnv.swift */; };
@@ -298,6 +297,7 @@
 		8EF36C082F4EA95B00FCC91E /* SideTabView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8EF36C072F4EA95B00FCC91E /* SideTabView.swift */; };
 		A10500022FF1000000000002 /* NextStepViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10500012FF1000000000001 /* NextStepViewController.swift */; };
 		A10600022FF2000000000002 /* GuestPrivacyConfirmationViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10600012FF2000000000001 /* GuestPrivacyConfirmationViewController.swift */; };
+		A10A10000000000000000002 /* SidecarAIOutputStateStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10A10000000000000000001 /* SidecarAIOutputStateStore.swift */; };
 		A11E00000000000000000001 /* PhiScriptingService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A11E00000000000000000011 /* PhiScriptingService.swift */; };
 		A11E00000000000000000002 /* PhiScriptCommands.swift in Sources */ = {isa = PBXBuildFile; fileRef = A11E00000000000000000012 /* PhiScriptCommands.swift */; };
 		A11E00000000000000000003 /* Phi.sdef in Resources */ = {isa = PBXBuildFile; fileRef = A11E00000000000000000013 /* Phi.sdef */; };
@@ -348,7 +348,6 @@
 		B02586F52E42FD97001B08FC /* ChromiumLauncher.m in Sources */ = {isa = PBXBuildFile; fileRef = B02586EE2E42FD97001B08FC /* ChromiumLauncher.m */; };
 		B02586F62E42FD97001B08FC /* AppController.swift in Sources */ = {isa = PBXBuildFile; fileRef = B02586F02E42FD97001B08FC /* AppController.swift */; };
 		B02586F72E42FD97001B08FC /* MainBrowserWindowController.swift in Sources */ = {isa = PBXBuildFile; fileRef = B02586F12E42FD97001B08FC /* MainBrowserWindowController.swift */; };
-		B0FEED022E42FD97001B08FC /* TrafficLightPositioner.swift in Sources */ = {isa = PBXBuildFile; fileRef = B0FEED012E42FD97001B08FC /* TrafficLightPositioner.swift */; };
 		B02586F82E42FD97001B08FC /* PhiApplication.m in Sources */ = {isa = PBXBuildFile; fileRef = B02586F32E42FD97001B08FC /* PhiApplication.m */; };
 		B025870E2E430305001B08FC /* MainSplitViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = B025870D2E430305001B08FC /* MainSplitViewController.swift */; };
 		B02587122E43038B001B08FC /* Tab.swift in Sources */ = {isa = PBXBuildFile; fileRef = B02587112E43038B001B08FC /* Tab.swift */; };
@@ -364,6 +363,7 @@
 		B0F370CB2E43261A000B51F9 /* EventBus.swift in Sources */ = {isa = PBXBuildFile; fileRef = B0F370CA2E43261A000B51F9 /* EventBus.swift */; };
 		B0F370D02E432CB8000B51F9 /* MainBrowserWindowController+Actions.swift in Sources */ = {isa = PBXBuildFile; fileRef = B0F370CF2E432CB8000B51F9 /* MainBrowserWindowController+Actions.swift */; };
 		B0F370DA2E433F0E000B51F9 /* OverlayWindowController.swift in Sources */ = {isa = PBXBuildFile; fileRef = B0F370D92E433F0E000B51F9 /* OverlayWindowController.swift */; };
+		B0FEED022E42FD97001B08FC /* TrafficLightPositioner.swift in Sources */ = {isa = PBXBuildFile; fileRef = B0FEED012E42FD97001B08FC /* TrafficLightPositioner.swift */; };
 		B17DE0000000000000000005 /* CredentialProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = B17DE0000000000000000021 /* CredentialProvider.swift */; };
 		B17DE0000000000000000006 /* BitwardenService.swift in Sources */ = {isa = PBXBuildFile; fileRef = B17DE0000000000000000022 /* BitwardenService.swift */; };
 		B17DE0000000000000000008 /* PasswordManagerSectionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B17DE0000000000000000023 /* PasswordManagerSectionView.swift */; };
@@ -685,7 +685,6 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
-		A10A10000000000000000001 /* SidecarAIOutputStateStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SidecarAIOutputStateStore.swift; sourceTree = "<group>"; };
 		11E8BEE1510290AB35D5C5AD /* SentinelBackupCoordination.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SentinelBackupCoordination.swift; sourceTree = "<group>"; };
 		19B477B37CF44BC48335A032 /* AccountDeletedEventAuthentication.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccountDeletedEventAuthentication.swift; sourceTree = "<group>"; };
 		3703C88B2F68F78500E7CF6D /* AISettingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AISettingView.swift; sourceTree = "<group>"; };
@@ -779,7 +778,6 @@
 		37C1B0E12ED80CFB00DD4496 /* ShortcutsSettingViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShortcutsSettingViewController.swift; sourceTree = "<group>"; };
 		37C1B0E62ED851CE00DD4496 /* ShortcutsViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShortcutsViewModel.swift; sourceTree = "<group>"; };
 		37C1B0E82ED8531700DD4496 /* Shortcuts+Custom.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Shortcuts+Custom.swift"; sourceTree = "<group>"; };
-		4B4B00000000000000000002 /* KioskGlobalShortcutRegistrar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KioskGlobalShortcutRegistrar.swift; sourceTree = "<group>"; };
 		37C1B1142ED98B6000DD4496 /* README.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = README.md; sourceTree = "<group>"; };
 		37C1B1E32EDEA03400DD4496 /* FeedbackView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeedbackView.swift; sourceTree = "<group>"; };
 		37C1B1E52EDEA1E200DD4496 /* FeedbackViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeedbackViewController.swift; sourceTree = "<group>"; };
@@ -839,6 +837,7 @@
 		37FC8DA92F39B2DE004675B8 /* LayoutModeSettingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LayoutModeSettingView.swift; sourceTree = "<group>"; };
 		4508A9352EEFF2EB007C94E2 /* AccountWebWindowController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccountWebWindowController.swift; sourceTree = "<group>"; };
 		457F461C0F164136A46FF641 /* GroupTabsTableView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GroupTabsTableView.swift; sourceTree = "<group>"; };
+		4B4B00000000000000000002 /* KioskGlobalShortcutRegistrar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KioskGlobalShortcutRegistrar.swift; sourceTree = "<group>"; };
 		4D454D4F5259000000000002 /* MemoryUsageModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MemoryUsageModels.swift; sourceTree = "<group>"; };
 		4D454D4F5259000000000005 /* MemoryUsageMonitor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MemoryUsageMonitor.swift; sourceTree = "<group>"; };
 		4D454D4F5259000000000007 /* ProcessMemorySampler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProcessMemorySampler.swift; sourceTree = "<group>"; };
@@ -901,11 +900,11 @@
 		6A4750013B12345600000001 /* LoginRequiredPresentation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LoginRequiredPresentation.swift; sourceTree = "<group>"; };
 		6A4750023B12345600000001 /* GuestDataMigration.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GuestDataMigration.swift; sourceTree = "<group>"; };
 		6A4750023B12345600000101 /* BrowserMigrationPlanner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrowserMigrationPlanner.swift; sourceTree = "<group>"; };
+		6A4750023B12345600000201 /* BrowserMigrationWizard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrowserMigrationWizard.swift; sourceTree = "<group>"; };
+		6A4750023B12345600000301 /* BrowserMigrationRunner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrowserMigrationRunner.swift; sourceTree = "<group>"; };
 		6A4750023B12345600000401 /* BrowserMigrationSpaceIconResolver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrowserMigrationSpaceIconResolver.swift; sourceTree = "<group>"; };
 		6A4750023B12345600000501 /* ZenDataParser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ZenDataParser.swift; sourceTree = "<group>"; };
 		6A4750023B12345600000601 /* FaviconBackfill.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FaviconBackfill.swift; sourceTree = "<group>"; };
-		6A4750023B12345600000201 /* BrowserMigrationWizard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrowserMigrationWizard.swift; sourceTree = "<group>"; };
-		6A4750023B12345600000301 /* BrowserMigrationRunner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrowserMigrationRunner.swift; sourceTree = "<group>"; };
 		7A5B00A02EF0000000000002 /* MemoryButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MemoryButton.swift; sourceTree = "<group>"; };
 		7B00AAAA000000040000A4B4 /* PostHogEnv.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PostHogEnv.swift; sourceTree = "<group>"; };
 		7B00AAAA000000060000A6B6 /* PostHogConfig.generated.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PostHogConfig.generated.swift; sourceTree = "<group>"; };
@@ -977,6 +976,7 @@
 		8EF36C072F4EA95B00FCC91E /* SideTabView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SideTabView.swift; sourceTree = "<group>"; };
 		A10500012FF1000000000001 /* NextStepViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; lineEnding = 0; path = NextStepViewController.swift; sourceTree = "<group>"; };
 		A10600012FF2000000000001 /* GuestPrivacyConfirmationViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GuestPrivacyConfirmationViewController.swift; sourceTree = "<group>"; };
+		A10A10000000000000000001 /* SidecarAIOutputStateStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SidecarAIOutputStateStore.swift; sourceTree = "<group>"; };
 		A11E00000000000000000011 /* PhiScriptingService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhiScriptingService.swift; sourceTree = "<group>"; };
 		A11E00000000000000000012 /* PhiScriptCommands.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhiScriptCommands.swift; sourceTree = "<group>"; };
 		A11E00000000000000000013 /* Phi.sdef */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = Phi.sdef; sourceTree = "<group>"; };
@@ -1027,7 +1027,6 @@
 		B02586EE2E42FD97001B08FC /* ChromiumLauncher.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = ChromiumLauncher.m; sourceTree = "<group>"; };
 		B02586F02E42FD97001B08FC /* AppController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppController.swift; sourceTree = "<group>"; };
 		B02586F12E42FD97001B08FC /* MainBrowserWindowController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainBrowserWindowController.swift; sourceTree = "<group>"; };
-		B0FEED012E42FD97001B08FC /* TrafficLightPositioner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrafficLightPositioner.swift; sourceTree = "<group>"; };
 		B02586F22E42FD97001B08FC /* PhiApplication.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = PhiApplication.h; sourceTree = "<group>"; };
 		B02586F32E42FD97001B08FC /* PhiApplication.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = PhiApplication.m; sourceTree = "<group>"; };
 		B025870D2E430305001B08FC /* MainSplitViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainSplitViewController.swift; sourceTree = "<group>"; };
@@ -1049,6 +1048,7 @@
 		B0F370CA2E43261A000B51F9 /* EventBus.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EventBus.swift; sourceTree = "<group>"; };
 		B0F370CF2E432CB8000B51F9 /* MainBrowserWindowController+Actions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MainBrowserWindowController+Actions.swift"; sourceTree = "<group>"; };
 		B0F370D92E433F0E000B51F9 /* OverlayWindowController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OverlayWindowController.swift; sourceTree = "<group>"; };
+		B0FEED012E42FD97001B08FC /* TrafficLightPositioner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrafficLightPositioner.swift; sourceTree = "<group>"; };
 		B17DE0000000000000000021 /* CredentialProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CredentialProvider.swift; sourceTree = "<group>"; };
 		B17DE0000000000000000022 /* BitwardenService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BitwardenService.swift; sourceTree = "<group>"; };
 		B17DE0000000000000000023 /* PasswordManagerSectionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PasswordManagerSectionView.swift; sourceTree = "<group>"; };

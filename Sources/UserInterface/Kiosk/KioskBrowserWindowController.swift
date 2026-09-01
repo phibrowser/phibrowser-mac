@@ -369,7 +369,7 @@ final class KioskBrowserWindowController: MainBrowserWindowController {
             browserState.focusingTab?.stopLoading()
             return true
         case .IDC_FOCUS_LOCATION:
-            presentOmniBoxCentered()
+            presentCurrentTabOmniBoxCentered()
             return true
         case .IDC_OPEN_FILE:
             openFocusedTabInCurrentSpace()
@@ -1017,9 +1017,14 @@ final class KioskBrowserWindowController: MainBrowserWindowController {
                     SpaceManager.shared.moveTab(tab, toSpaceId: spaceId)
                 },
                 onOmniBoxRequest: { [weak self] in
-                    self?.presentOmniBoxCentered()
+                    self?.presentCurrentTabOmniBoxCentered()
                 }
             )
+    }
+
+    @MainActor
+    private func presentCurrentTabOmniBoxCentered() {
+        toggleOmniBox(fromAddressBar: true)
     }
 
     @MainActor

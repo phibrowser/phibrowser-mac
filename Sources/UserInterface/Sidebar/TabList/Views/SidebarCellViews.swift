@@ -508,6 +508,7 @@ class SidebarSplitPairCellView: SidebarCellView, TabPreviewInteractionCancelling
     private let rightIconView = NSImageView()
     private var leftDiscardedOutlineHost: TabDecorativeHostingView!
     private var rightDiscardedOutlineHost: TabDecorativeHostingView!
+    private var statusBadgeHost: TabDecorativeHostingView!
     private let leftStatusModel = TabStatusModel()
     private let rightStatusModel = TabStatusModel()
     private let leftTitleLabel = TrailingFadeTextField()
@@ -725,6 +726,25 @@ class SidebarSplitPairCellView: SidebarCellView, TabPreviewInteractionCancelling
             make.centerY.equalToSuperview()
             make.width.equalTo(1)
             make.height.equalTo(16)
+        }
+
+        // Treat the pair as one tab for chat and agent status. Each pane feeds
+        // its own model, while the merged view applies the shared priority and
+        // renders a single badge on the whole cell.
+        statusBadgeHost = TabDecorativeHostingView(
+            rootView: MergedTabCornerBadgeView(
+                primaryModel: leftStatusModel,
+                secondaryModel: rightStatusModel
+            )
+        )
+        addSubview(statusBadgeHost)
+        statusBadgeHost.snp.makeConstraints { make in
+            make.top.trailing.equalTo(outerBackground)
+                .inset(-TabCornerBadgeMetrics.overhang)
+            make.size.equalTo(CGSize(
+                width: TabCornerBadgeMetrics.visualSize,
+                height: TabCornerBadgeMetrics.visualSize
+            ))
         }
     }
 

@@ -59,6 +59,13 @@ final class TabStatusTests: XCTestCase {
         )
     }
 
+    func testSplitInputtingBadgeTakesPriorityOverChatPane() {
+        XCTAssertEqual(
+            TabCornerBadgeStatus.highestPriority([.chat, .inputting]),
+            .inputting
+        )
+    }
+
     func testDiscardedOutlineClearsRoundedFaviconCorners() {
         XCTAssertEqual(
             TabCornerBadgeMetrics.discardedOutlineSize(

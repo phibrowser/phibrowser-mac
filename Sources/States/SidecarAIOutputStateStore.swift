@@ -78,7 +78,7 @@ final class SidecarAIOutputStateStore {
 
     func handle(_ context: ExtensionMessageContext) {
         guard context.senderId == Self.extensionId else {
-            AppLogDebug("[AIOutputState] Dropped message from sender=\(context.senderId)")
+            AppLogDebug("[AIOutputState] Dropped message from ccsender=\(context.senderId)")
             return
         }
         guard let data = context.payload.data(using: .utf8),

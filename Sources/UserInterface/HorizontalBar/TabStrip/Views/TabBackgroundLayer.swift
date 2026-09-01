@@ -32,6 +32,16 @@ final class TabBackgroundLayer: CAShapeLayer {
         }
     }
 
+    /// Mirrors the sidebar pinned-grid treatment: an inactive pinned cell
+    /// gets a subtle border while it still owns live web content.
+    var showsOpenPinnedBorder = false {
+        didSet {
+            if oldValue != showsOpenPinnedBorder {
+                updateAppearance()
+            }
+        }
+    }
+
     /// Position within a Chromium split pair, if any. Drives merged-bar shape.
     var splitPairPosition: SplitPairPosition? {
         didSet {
@@ -62,6 +72,7 @@ final class TabBackgroundLayer: CAShapeLayer {
         if let other = layer as? TabBackgroundLayer {
             self.tabState = other.tabState
             self.isPinned = other.isPinned
+            self.showsOpenPinnedBorder = other.showsOpenPinnedBorder
             self.splitPairPosition = other.splitPairPosition
             self.isSplitGroupActive = other.isSplitGroupActive
         }
@@ -154,6 +165,10 @@ final class TabBackgroundLayer: CAShapeLayer {
         }
         strokeColor = NSColor.clear.cgColor
         lineWidth = 0
+        if isPinned, tabState != .active, showsOpenPinnedBorder {
+            strokeColor = ThemedColor.border.resolve(in: sourceView).cgColor
+            lineWidth = 1
+        }
 
         CATransaction.commit()
     }

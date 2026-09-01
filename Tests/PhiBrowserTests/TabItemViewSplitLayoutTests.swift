@@ -34,9 +34,19 @@ final class TabItemViewSplitLayoutTests: XCTestCase {
 
     private func visibleFrames(of view: TabItemView) -> [CGRect] {
         view.subviews
-            .filter { !$0.isHidden && !$0.frame.isEmpty }
+            .filter {
+                !$0.isHidden
+                    && !$0.frame.isEmpty
+                    && $0.identifier != TabItemView.statusBadgeViewIdentifier
+            }
             .map(\.frame)
             .sorted { $0.minX < $1.minX }
+    }
+
+    private func statusBadgeHost(in view: TabItemView) -> NSView? {
+        view.subviews.first {
+            $0.identifier == TabItemView.statusBadgeViewIdentifier
+        }
     }
 
     func test_mergedSplitCellBelowSplitThresholdShowsOnlyCenteredFaviconPair() {
@@ -164,6 +174,80 @@ final class TabItemViewSplitLayoutTests: XCTestCase {
         let faviconSize = TabStripMetrics.Content.faviconSize
         XCTAssertTrue(frames.contains(CGRect(x: 6, y: 8, width: faviconSize.width, height: faviconSize.height)),
             "A 100pt single tab must keep the leading favicon (normal mode), not the centered compact layout.")
+    }
+
+    func test_statusBadgeOverhangsTheTopTrailingCornerAndRemainsVisibleOnHover() throws {
+        let tab = Tab(guid: 1, url: "https://example.com", isActive: false, index: 0)
+        tab.hasPairedChat = true
+        tab.aiChatCollapsed = false
+        let view = TabItemView()
+        view.configure(with: TabRenderData(
+            id: "tab-1",
+            title: "Example",
+            url: "https://example.com",
+            isActive: false,
+            isPinned: false,
+            isSplitGroupActive: false,
+            sourceTab: tab
+        ))
+        view.frame = CGRect(x: 0, y: 0, width: 100, height: TabStripMetrics.Strip.tabHeight)
+        view.layout()
+
+        let badge = try XCTUnwrap(statusBadgeHost(in: view))
+        XCTAssertFalse(badge.isHidden)
+        XCTAssertEqual(badge.safeAreaInsets.top, 0)
+        XCTAssertEqual(badge.safeAreaInsets.left, 0)
+        XCTAssertEqual(badge.safeAreaInsets.bottom, 0)
+        XCTAssertEqual(badge.safeAreaInsets.right, 0)
+        let expectedY = view.isFlipped
+            ? -TabCornerBadgeMetrics.overhang
+            : TabStripMetrics.Strip.tabHeight
+                - TabCornerBadgeMetrics.visualSize
+                + TabCornerBadgeMetrics.overhang
+        XCTAssertEqual(
+            badge.frame,
+            CGRect(
+                x: 100 - TabCornerBadgeMetrics.visualSize + TabCornerBadgeMetrics.overhang,
+                y: expectedY,
+                width: TabCornerBadgeMetrics.visualSize,
+                height: TabCornerBadgeMetrics.visualSize
+            )
+        )
+        XCTAssertGreaterThan(badge.frame.maxX, view.bounds.maxX)
+        if view.isFlipped {
+            XCTAssertLessThan(badge.frame.minY, view.bounds.minY)
+        } else {
+            XCTAssertGreaterThan(badge.frame.maxY, view.bounds.maxY)
+        }
+
+        view.mouseEntered(with: makeHoverEvent())
+
+        XCTAssertFalse(badge.isHidden)
+        XCTAssertFalse(badge.frame.isEmpty)
+    }
+
+    func test_compactStatusBadgeRemainsVisibleWhileHovered() throws {
+        let tab = Tab(guid: 1, url: "https://example.com", isActive: false, index: 0)
+        tab.hasPairedChat = true
+        tab.aiChatCollapsed = false
+        let view = TabItemView()
+        view.configure(with: TabRenderData(
+            id: "tab-1",
+            title: "Example",
+            url: "https://example.com",
+            isActive: false,
+            isPinned: false,
+            isSplitGroupActive: false,
+            sourceTab: tab
+        ))
+        view.frame = CGRect(x: 0, y: 0, width: 48, height: TabStripMetrics.Strip.tabHeight)
+        view.layout()
+
+        view.mouseEntered(with: makeHoverEvent())
+
+        let badge = try XCTUnwrap(statusBadgeHost(in: view))
+        XCTAssertFalse(badge.isHidden)
+        XCTAssertFalse(badge.frame.isEmpty)
     }
 }
 

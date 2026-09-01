@@ -436,7 +436,10 @@ final class TabStrip: NSView, TitlebarAwareHitTestable {
     private lazy var normalContainer: NSView = {
         let view = NSView()
         view.wantsLayer = true
-        view.layer?.masksToBounds = true
+        // Tab status badges overhang the tab background's top-right corner.
+        // Horizontal overflow is still clipped by `containerMaskLayer` while
+        // scrolling, but the container itself must not crop the vertical peek.
+        view.layer?.masksToBounds = false
         return view
     }()
 
@@ -2902,9 +2905,9 @@ final class TabStrip: NSView, TitlebarAwareHitTestable {
         containerMaskLayer.fillColor = NSColor.black.cgColor
         containerMaskLayer.path = CGPath(rect: CGRect(
             x: startX,
-            y: 0,
+            y: -TabCornerBadgeMetrics.overhang,
             width: max(0, endX - startX),
-            height: normalContainer.bounds.height
+            height: normalContainer.bounds.height + TabCornerBadgeMetrics.overhang * 2
         ), transform: nil)
 
         normalContainer.layer?.mask = containerMaskLayer
@@ -4155,7 +4158,7 @@ final class TabStrip: NSView, TitlebarAwareHitTestable {
             )
 
             let proxy = TabItemView()
-            proxy.configure(with: renderData)
+            proxy.configure(with: renderData, browserState: browserState)
             if !renderData.isActive {
                 proxy.setDragHighlighted(true)
             }
@@ -4217,7 +4220,7 @@ final class TabStrip: NSView, TitlebarAwareHitTestable {
                     sourceTab: siblingInfo.tab
                 )
                 let siblingProxy = TabItemView()
-                siblingProxy.configure(with: siblingRenderData)
+                siblingProxy.configure(with: siblingRenderData, browserState: browserState)
                 if !siblingRenderData.isActive {
                     siblingProxy.setDragHighlighted(true)
                 }
@@ -4304,7 +4307,7 @@ final class TabStrip: NSView, TitlebarAwareHitTestable {
             let renderData = dragRenderData(for: unit.primary,
                                             partner: unit.partner,
                                             isPinned: isPinned)
-            companion.configure(with: renderData)
+            companion.configure(with: renderData, browserState: browserState)
             if !renderData.isActive {
                 companion.setDragHighlighted(true)
             }
@@ -5278,13 +5281,13 @@ extension TabStrip: TabStripDragDelegate {
             pinnedSplitPartner: mergedPartner,
             sourceTab: tab
         )
-        draggingView.configure(with: renderData)
+        draggingView.configure(with: renderData, browserState: browserState)
         draggingView.layoutSubtreeIfNeeded()
         for companion in draggingCompanionProxyViews {
             let companionRenderData = dragRenderData(for: companion.tab,
                                                      partner: companion.partner,
                                                      isPinned: zone == .pinned)
-            companion.view.configure(with: companionRenderData)
+            companion.view.configure(with: companionRenderData, browserState: browserState)
             companion.view.layoutSubtreeIfNeeded()
         }
         cachedTabDragImage = draggingView.createDraggingSnapshot(cornerRadius: TabStripMetrics.Tab.cornerRadius)

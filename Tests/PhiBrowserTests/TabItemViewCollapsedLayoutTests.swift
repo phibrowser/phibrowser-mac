@@ -82,6 +82,42 @@ final class TabItemViewCollapsedLayoutTests: XCTestCase {
         )
     }
 
+    func test_openInactivePinnedTabDrawsBorder() {
+        let layer = makeBackgroundLayer()
+        layer.isPinned = true
+        layer.tabState = .inactive
+
+        XCTAssertEqual(layer.lineWidth, 0)
+
+        layer.showsOpenPinnedBorder = true
+
+        XCTAssertEqual(layer.lineWidth, 1)
+        XCTAssertGreaterThan(layer.strokeColor?.alpha ?? 0, 0)
+    }
+
+    func test_openPinnedTabBorderIsSuppressedWhenActiveOrNotPinned() {
+        let layer = makeBackgroundLayer()
+        layer.isPinned = true
+        layer.showsOpenPinnedBorder = true
+        layer.tabState = .active
+
+        XCTAssertEqual(layer.lineWidth, 0)
+
+        layer.tabState = .inactive
+        layer.isPinned = false
+
+        XCTAssertEqual(layer.lineWidth, 0)
+    }
+
+    private func makeBackgroundLayer() -> TabBackgroundLayer {
+        let sourceView = NSView(frame: CGRect(x: 0, y: 0, width: 28, height: 28))
+        let layer = TabBackgroundLayer()
+        layer.sourceView = sourceView
+        layer.frame = sourceView.bounds
+        layer.updatePath(in: sourceView.bounds)
+        return layer
+    }
+
     /// Bounding box of what the layer actually draws. An absent path and an
     /// empty path both mean "paints nothing".
     private func paintedBox(_ layer: TabBackgroundLayer) -> CGRect {

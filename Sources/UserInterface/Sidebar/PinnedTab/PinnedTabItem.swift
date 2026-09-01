@@ -203,6 +203,7 @@ class PinnedTabItem: NSCollectionViewItem, NSMenuDelegate {
         faviconLoadHandle?.cancel()
         faviconLoadHandle = nil
         iconImageView.image = nil
+        iconImageView.alphaValue = 1
         tabPreviewRegistration.invalidate()
         peekBadge.isHidden = true
         peekBadge.faviconImage = nil
@@ -337,6 +338,16 @@ class PinnedTabItem: NSCollectionViewItem, NSMenuDelegate {
         faviconLoadHandle = nil
         statusModel.configure(with: tab, in: browserState)
         updateStatusBadge(isSuppressed: false)
+
+        statusModel.$isUnloaded
+            .removeDuplicates()
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] isUnloaded in
+                self?.iconImageView.alphaValue = TabFaviconPresentation.opacity(
+                    isUnloaded: isUnloaded
+                )
+            }
+            .store(in: &cancellables)
 
         setupFavicon()
         if let browserState {

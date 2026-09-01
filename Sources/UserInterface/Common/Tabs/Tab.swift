@@ -66,6 +66,7 @@ class Tab: WebContentRepresentable {
     @Published private(set) var liveFaviconRevision: Int = 0
     @Published private(set) var hasWebContent = false
     @Published private(set) var isDiscarded = false
+    @Published private(set) var isUnloaded = false
     @Published private(set) var isLoading = false
     @Published private(set) var loadingProgress: CGFloat = 1
     @Published private(set) var canGoBack: Bool = false
@@ -236,6 +237,7 @@ class Tab: WebContentRepresentable {
     /// state and must outlive the wrapper bindings.
     private var readerOfferabilityTrigger: AnyCancellable?
     private var aiOutputNavigationTrigger: AnyCancellable?
+    private static let isUnloadedSelector = NSSelectorFromString("isUnloaded")
     
     init(guid: Int = UUID().hashValue,
          url: String?,
@@ -318,6 +320,11 @@ class Tab: WebContentRepresentable {
         liveFaviconRevision = 0
         hasWebContent = wrapper != nil
         isDiscarded = wrapper?.isDiscarded ?? false
+        if let wrapper, wrapper.responds(to: Self.isUnloadedSelector) {
+            isUnloaded = wrapper.isUnloaded
+        } else {
+            isUnloaded = false
+        }
 
         guard let wrapper else {
             return
@@ -358,6 +365,13 @@ class Tab: WebContentRepresentable {
             .removeDuplicates()
             .assign(to: \.isDiscarded, on: self)
             .store(in: &cancellables)
+
+        if wrapper.responds(to: Self.isUnloadedSelector) {
+            wrapper.publisher(for: \.isUnloaded)
+                .removeDuplicates()
+                .assign(to: \.isUnloaded, on: self)
+                .store(in: &cancellables)
+        }
         
         wrapper.publisher(for: \.loadProgress)
             .assign(to: \.loadingProgress, on: self)

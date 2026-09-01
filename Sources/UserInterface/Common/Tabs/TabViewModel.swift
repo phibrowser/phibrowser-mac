@@ -32,6 +32,7 @@ enum TabCornerBadgeStatus: Int, CaseIterable {
 @MainActor
 final class TabStatusModel: ObservableObject {
     @Published private(set) var isDiscarded = false
+    @Published private(set) var isUnloaded = false
     @Published private(set) var isAgentActive = false
     @Published private(set) var hasPairedChat = false
     @Published private(set) var isChatGenerating = false
@@ -58,6 +59,7 @@ final class TabStatusModel: ObservableObject {
         let chatStateTab = browserState?.resolveTab(expectedGuid) ?? tab
         configuredTabGuid = expectedGuid
         isDiscarded = tab.isDiscarded
+        isUnloaded = tab.isUnloaded
         isAgentActive = AgentAnimationManager.shared.isActive(for: expectedGuid)
         hasPairedChat = chatStateTab.hasPairedChat
         isChatGenerating = chatStateTab.isPairedChatGenerating
@@ -73,6 +75,19 @@ final class TabStatusModel: ObservableObject {
                         expectedGeneration: expectedGeneration
                       ) else { return }
                 self.isDiscarded = isDiscarded
+            }
+            .store(in: &cancellables)
+
+        tab.$isUnloaded
+            .removeDuplicates()
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] isUnloaded in
+                guard let self,
+                      self.isCurrentConfiguration(
+                        expectedGuid: expectedGuid,
+                        expectedGeneration: expectedGeneration
+                      ) else { return }
+                self.isUnloaded = isUnloaded
             }
             .store(in: &cancellables)
 
@@ -138,6 +153,7 @@ final class TabStatusModel: ObservableObject {
         cancelSubscriptions()
         configuredTabGuid = nil
         isDiscarded = false
+        isUnloaded = false
         isAgentActive = false
         hasPairedChat = false
         isChatGenerating = false

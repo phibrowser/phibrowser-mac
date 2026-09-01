@@ -83,6 +83,11 @@ final class TabStatusTests: XCTestCase {
         )
     }
 
+    func testUnloadedFaviconUsesReducedOpacity() {
+        XCTAssertEqual(TabFaviconPresentation.opacity(isUnloaded: true), 0.3)
+        XCTAssertEqual(TabFaviconPresentation.opacity(isUnloaded: false), 1)
+    }
+
     func testAIOutputBecomesChatAfterGeneratingCompletes() {
         var tracker = SidecarAIOutputStateTracker()
 

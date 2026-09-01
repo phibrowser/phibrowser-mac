@@ -63,6 +63,8 @@ class PinnedSplitItem: NSCollectionViewItem, NSMenuDelegate {
         rightFaviconHandle = nil
         leftIconView.image = nil
         rightIconView.image = nil
+        leftIconView.alphaValue = 1
+        rightIconView.alphaValue = 1
         leftStatusModel.prepareForReuse()
         rightStatusModel.prepareForReuse()
         splitTabPreviewRegistration.invalidate()
@@ -221,6 +223,26 @@ class PinnedSplitItem: NSCollectionViewItem, NSMenuDelegate {
         rightFaviconHandle = nil
         leftStatusModel.configure(with: leftTab, in: browserState)
         rightStatusModel.configure(with: rightTab, in: browserState)
+
+        leftStatusModel.$isUnloaded
+            .removeDuplicates()
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] isUnloaded in
+                self?.leftIconView.alphaValue = TabFaviconPresentation.opacity(
+                    isUnloaded: isUnloaded
+                )
+            }
+            .store(in: &cancellables)
+
+        rightStatusModel.$isUnloaded
+            .removeDuplicates()
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] isUnloaded in
+                self?.rightIconView.alphaValue = TabFaviconPresentation.opacity(
+                    isUnloaded: isUnloaded
+                )
+            }
+            .store(in: &cancellables)
 
         refreshFavicon(for: leftTab)
         refreshFavicon(for: rightTab)

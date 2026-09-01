@@ -36,6 +36,24 @@ final class BrowserStateBookmarkLayoutTests: XCTestCase {
         try super.tearDownWithError()
     }
 
+    func testTabTracksWebContentUnloadedState() {
+        let wrapper = BookmarkLayoutTestWebContentWrapper(urlString: "https://example.com")
+        wrapper.isUnloaded = true
+        let tab = Tab(
+            guid: 100,
+            url: wrapper.urlString,
+            isActive: false,
+            index: 0,
+            webContentView: wrapper
+        )
+
+        XCTAssertTrue(tab.isUnloaded)
+
+        wrapper.isUnloaded = false
+
+        XCTAssertTrue(waitUntil { !tab.isUnloaded })
+    }
+
     func testSwitchingToComfortableDetachesOpenBookmarkTab() throws {
         let state = try makeState()
         let bookmarkGuid = "bookmark-comfortable"
@@ -287,7 +305,6 @@ final class BrowserStateBookmarkLayoutTests: XCTestCase {
 private final class BookmarkLayoutTestWebContentWrapper: NSObject, WebContentWrapper {
     @objc dynamic weak var nativeView: NSView?
     @objc dynamic var isLoading = false
-    @objc dynamic var isDiscarded = false
     @objc dynamic var loadingState = PhiTabLoadingState(rawValue: 0)!
     @objc dynamic var isFocused = false
     @objc dynamic var loadProgress: CGFloat = 1

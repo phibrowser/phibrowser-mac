@@ -4837,6 +4837,7 @@ class BrowserState {
         // `Task @MainActor`, so we are no longer inside Chromium's tab strip
         // change callback and can call `WebContentWrapper.close()` directly.
         let identifier = getTabIdentifier(for: closedTab)
+        var migratedConversationTabId: Int?
         if let group = splitGroup(forTabId: closedTab.guid),
            let partnerId = group.partnerTabId(of: closedTab.guid),
            let survivor = tabs.first(where: { $0.guid == partnerId }),
@@ -4845,10 +4846,15 @@ class BrowserState {
             // surviving pane instead of closing it (follow survivor).
             migrateAIChatTab(fromIdentifier: identifier,
                              toIdentifier: getTabIdentifier(for: survivor))
+            migratedConversationTabId = survivor.guid
         } else {
             closeAIChatTab(for: identifier)
         }
-        SidecarAIOutputStateStore.shared.contentTabDidClose(tabId)
+        SidecarAIOutputStateStore.shared.contentTabDidClose(
+            tabId,
+            in: self,
+            migratingConversationTo: migratedConversationTabId
+        )
         
         // Remove the tab from pinned state if it was mirrored there.
         if let localGuid = closedTab.guidInLocalDB,

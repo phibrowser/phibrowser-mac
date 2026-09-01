@@ -54,6 +54,48 @@ final class BrowserStateBookmarkLayoutTests: XCTestCase {
         XCTAssertTrue(waitUntil { !tab.isUnloaded })
     }
 
+    func testSidebarSplitPairTracksEachPanesUnloadedFaviconOpacity() {
+        let leftWrapper = BookmarkLayoutTestWebContentWrapper(urlString: "https://left.example")
+        leftWrapper.isUnloaded = true
+        let rightWrapper = BookmarkLayoutTestWebContentWrapper(urlString: "https://right.example")
+        let leftTab = Tab(
+            guid: 1,
+            url: leftWrapper.urlString,
+            isActive: false,
+            index: 0,
+            webContentView: leftWrapper
+        )
+        let rightTab = Tab(
+            guid: 2,
+            url: rightWrapper.urlString,
+            isActive: false,
+            index: 1,
+            webContentView: rightWrapper
+        )
+        let cell = SidebarSplitPairCellView()
+        cell.configure(with: SplitPairSidebarItem(
+            groupId: "split-1-2",
+            leftTab: leftTab,
+            rightTab: rightTab,
+            browserState: nil
+        ))
+
+        XCTAssertEqual(cell.faviconOpacity(isLeft: true), 0.3)
+        XCTAssertEqual(cell.faviconOpacity(isLeft: false), 1)
+
+        leftWrapper.isUnloaded = false
+        rightWrapper.isUnloaded = true
+
+        XCTAssertTrue(waitUntil {
+            cell.faviconOpacity(isLeft: true) == 1 &&
+                cell.faviconOpacity(isLeft: false) == 0.3
+        })
+
+        cell.prepareForReuse()
+        XCTAssertEqual(cell.faviconOpacity(isLeft: true), 1)
+        XCTAssertEqual(cell.faviconOpacity(isLeft: false), 1)
+    }
+
     func testSwitchingToComfortableDetachesOpenBookmarkTab() throws {
         let state = try makeState()
         let bookmarkGuid = "bookmark-comfortable"

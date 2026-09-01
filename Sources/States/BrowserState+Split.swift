@@ -599,12 +599,16 @@ extension BrowserState {
 
     @MainActor
     func handleSplitRemoved(splitId: String) {
+        let removedSplit = splits.first { $0.id == splitId }
         // A pinned split's underlying Chromium split only dissolves on close
         // (its panes can't be "Remove from Split"-ed). Capture the partner
         // linkage from the still-present live group before dropping it, so the
         // two pinned records survive as one reopenable merged cell instead of
         // splintering into two separate pinned tabs.
         reconcilePinnedSplitPartners()
+        if let removedSplit {
+            SidecarAIOutputStateStore.shared.splitDidDissolve(removedSplit, in: self)
+        }
         splits.removeAll { $0.id == splitId }
         // Drop any split-bookmark bindings that pointed at this split so the
         // bookmark cell stops claiming "opened" and a fresh click re-opens

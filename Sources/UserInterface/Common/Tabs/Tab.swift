@@ -293,8 +293,12 @@ class Tab: WebContentRepresentable {
                       transition.previous?.isNTP == true,
                       transition.current?.isNTP != true else { return }
                 let tabId = self.guid
+                let windowId = self.windowId
                 Task { @MainActor in
-                    SidecarAIOutputStateStore.shared.removeConversation(boundTo: tabId)
+                    SidecarAIOutputStateStore.shared.removeConversation(
+                        boundTo: tabId,
+                        windowId: windowId
+                    )
                 }
             }
     }

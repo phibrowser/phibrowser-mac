@@ -53,14 +53,44 @@ struct SidecarAIOutputStateTracker {
     }
 
     @discardableResult
-    mutating func remove(tabId: Int) -> SidecarAIOutputState? {
-        statesByTabId.removeValue(forKey: tabId)
+    mutating func remove(tabId: Int, windowId: Int? = nil) -> SidecarAIOutputState? {
+        if let windowId,
+           statesByTabId[tabId]?.windowId != windowId {
+            return nil
+        }
+        return statesByTabId.removeValue(forKey: tabId)
     }
 
-    mutating func remove(tabIds: Set<Int>) {
+    mutating func remove(tabIds: Set<Int>, windowId: Int? = nil) {
         for tabId in tabIds {
-            statesByTabId.removeValue(forKey: tabId)
+            remove(tabId: tabId, windowId: windowId)
         }
+    }
+
+    mutating func moveState(
+        from sourceTabId: Int,
+        to destinationTabId: Int,
+        windowId: Int
+    ) -> SidecarAIOutputState? {
+        guard sourceTabId != destinationTabId else {
+            return statesByTabId[destinationTabId].flatMap {
+                $0.windowId == windowId ? $0 : nil
+            }
+        }
+        guard let sourceState = remove(tabId: sourceTabId, windowId: windowId) else {
+            return statesByTabId[destinationTabId].flatMap {
+                $0.windowId == windowId ? $0 : nil
+            }
+        }
+        let movedState = SidecarAIOutputState(
+            windowId: windowId,
+            active: sourceState.active,
+            phase: sourceState.phase,
+            seq: sourceState.seq,
+            hasCompletedOutput: sourceState.hasCompletedOutput
+        )
+        statesByTabId[destinationTabId] = movedState
+        return movedState
     }
 
     mutating func removeAll() {
@@ -86,42 +116,62 @@ final class SidecarAIOutputStateStore {
             AppLogDebug("[AIOutputState] Dropped invalid payload: \(context.payload)")
             return
         }
+        guard let browserState = MainBrowserWindowControllersManager.shared.getBrowserState(
+            for: payload.windowId
+        ) else {
+            AppLogDebug("[AIOutputState] No browser window for id=\(payload.windowId)")
+            return
+        }
+        apply(payload, in: browserState)
+    }
+
+    @discardableResult
+    func apply(_ payload: SidecarAIOutputPayload, in browserState: BrowserState) -> Bool {
+        guard browserState.windowId == payload.windowId,
+              let tab = browserState.resolveTab(payload.tabId) else {
+            AppLogDebug(
+                "[AIOutputState] No content tab for " +
+                "window=\(payload.windowId) tab=\(payload.tabId)"
+            )
+            return false
+        }
         guard let state = tracker.apply(payload) else {
             AppLogDebug(
                 "[AIOutputState] Dropped stale or inconsistent state " +
                 "tab=\(payload.tabId) phase=\(payload.phase.rawValue) seq=\(payload.seq)"
             )
-            return
-        }
-        guard let resolved = resolveTab(payload.tabId) else {
-            AppLogDebug("[AIOutputState] No content tab for id=\(payload.tabId)")
-            return
+            return false
         }
 
-        for tab in affectedTabs(for: resolved.tab, in: resolved.state) {
-            tab.hasPairedChat = state.hasCompletedOutput
-            tab.isPairedChatGenerating = state.active
-        }
+        apply(state, to: affectedTabs(for: tab, in: browserState))
+        return true
     }
 
-    func removeConversation(boundTo tabId: Int) {
-        guard let resolved = resolveTab(tabId) else {
-            tracker.remove(tabId: tabId)
+    func removeConversation(boundTo tabId: Int, windowId: Int) {
+        guard let browserState = MainBrowserWindowControllersManager.shared.getBrowserState(
+            for: windowId
+        ) else {
+            tracker.remove(tabId: tabId, windowId: windowId)
+            return
+        }
+        removeConversation(boundTo: tabId, in: browserState)
+    }
+
+    private func removeConversation(boundTo tabId: Int, in browserState: BrowserState) {
+        guard let tab = browserState.resolveTab(tabId) else {
+            tracker.remove(tabId: tabId, windowId: browserState.windowId)
             return
         }
 
-        let tabs = affectedTabs(for: resolved.tab, in: resolved.state)
-        tracker.remove(tabIds: Set(tabs.map(\.guid)))
-        for tab in tabs {
-            tab.hasPairedChat = false
-            tab.isPairedChatGenerating = false
-        }
+        let tabs = affectedTabs(for: tab, in: browserState)
+        tracker.remove(tabIds: Set(tabs.map(\.guid)), windowId: browserState.windowId)
+        clear(tabs: tabs)
     }
 
     func removeConversation(boundTo identifier: String, in browserState: BrowserState) {
         guard let tab = browserState.tab(forChatIdentifier: identifier) else { return }
         guard let split = browserState.splitGroup(forTabId: tab.guid) else {
-            removeConversation(boundTo: tab.guid)
+            removeConversation(boundTo: tab.guid, in: browserState)
             return
         }
 
@@ -131,7 +181,7 @@ final class SidecarAIOutputStateStore {
             forLiveTabs: liveSplitTabs,
             in: browserState
         )
-        tracker.remove(tabId: tab.guid)
+        tracker.remove(tabId: tab.guid, windowId: browserState.windowId)
 
         let survivingChatTab = liveSplitTabs.first { candidate in
             candidate.guid != tab.guid &&
@@ -143,12 +193,50 @@ final class SidecarAIOutputStateStore {
             return
         }
 
-        tracker.remove(tabIds: splitTabIds)
+        tracker.remove(tabIds: splitTabIds, windowId: browserState.windowId)
         clear(tabs: representedSplitTabs)
     }
 
-    func contentTabDidClose(_ tabId: Int) {
-        tracker.remove(tabId: tabId)
+    func splitDidDissolve(_ split: SplitGroup, in browserState: BrowserState) {
+        for tabId in [split.primaryTabId, split.secondaryTabId] {
+            guard let tab = browserState.resolveTab(tabId) else {
+                tracker.remove(tabId: tabId, windowId: browserState.windowId)
+                continue
+            }
+            let representations = representedTabs(forLiveTabs: [tab], in: browserState)
+            if let state = tracker.statesByTabId[tabId],
+               state.windowId == browserState.windowId {
+                apply(state, to: representations)
+            } else {
+                clear(tabs: representations)
+            }
+        }
+    }
+
+    func contentTabDidClose(
+        _ tabId: Int,
+        in browserState: BrowserState,
+        migratingConversationTo destinationTabId: Int? = nil
+    ) {
+        let closedTabRepresentations = browserState.resolveTab(tabId).map {
+            representedTabs(forLiveTabs: [$0], in: browserState)
+        } ?? []
+
+        if let destinationTabId,
+           let destinationTab = browserState.resolveTab(destinationTabId),
+           let state = tracker.moveState(
+               from: tabId,
+               to: destinationTabId,
+               windowId: browserState.windowId
+           ) {
+            apply(
+                state,
+                to: representedTabs(forLiveTabs: [destinationTab], in: browserState)
+            )
+        } else {
+            tracker.remove(tabId: tabId, windowId: browserState.windowId)
+        }
+        clear(tabs: closedTabRepresentations)
     }
 
     func removeAll() {
@@ -157,16 +245,6 @@ final class SidecarAIOutputStateStore {
             let state = controller.browserState
             clear(tabs: representedTabs(forLiveTabs: state.tabs, in: state))
         }
-    }
-
-    private func resolveTab(_ tabId: Int) -> (tab: Tab, state: BrowserState)? {
-        for controller in MainBrowserWindowControllersManager.shared.getAllWindows() {
-            let state = controller.browserState
-            if let tab = state.resolveTab(tabId) {
-                return (tab, state)
-            }
-        }
-        return nil
     }
 
     private func affectedTabs(for tab: Tab, in browserState: BrowserState) -> [Tab] {

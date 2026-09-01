@@ -115,6 +115,114 @@ final class SplitChatBindingTests: XCTestCase {
         XCTAssertTrue(state.aiChatTabs[id2] === chat)
     }
 
+    func testAIOutputRejectsAWindowMismatchBeforeAdvancingSequence() throws {
+        let state = try makeState()
+        seed(state, guids: [1])
+        let store = SidecarAIOutputStateStore()
+
+        XCTAssertFalse(store.apply(SidecarAIOutputPayload(
+            tabId: 1,
+            windowId: 8,
+            active: true,
+            phase: .streaming,
+            seq: 1
+        ), in: state))
+        XCTAssertFalse(state.tabs[0].isPairedChatGenerating)
+
+        XCTAssertTrue(store.apply(SidecarAIOutputPayload(
+            tabId: 1,
+            windowId: 7,
+            active: true,
+            phase: .streaming,
+            seq: 1
+        ), in: state))
+        XCTAssertTrue(state.tabs[0].isPairedChatGenerating)
+    }
+
+    func testDissolvingSplitRestoresEachPanesOwnAIOutputState() throws {
+        let state = try makeState()
+        seed(state, guids: [1, 2])
+        let group = splitGroup(1, 2)
+        state.splits = [group]
+        let store = SidecarAIOutputStateStore()
+
+        XCTAssertTrue(store.apply(SidecarAIOutputPayload(
+            tabId: 1,
+            windowId: 7,
+            active: true,
+            phase: .streaming,
+            seq: 1
+        ), in: state))
+        XCTAssertTrue(state.tabs[0].isPairedChatGenerating)
+        XCTAssertTrue(state.tabs[1].isPairedChatGenerating)
+
+        store.splitDidDissolve(group, in: state)
+
+        XCTAssertTrue(state.tabs[0].isPairedChatGenerating)
+        XCTAssertFalse(state.tabs[1].isPairedChatGenerating)
+        XCTAssertFalse(state.tabs[1].hasPairedChat)
+    }
+
+    func testClosingContentTabClearsLiveAndPinnedAIOutputProjections() throws {
+        let state = try makeState()
+        seed(state, guids: [1])
+        let pinnedRepresentation = Tab(
+            guid: 1,
+            url: "https://e1.example",
+            isActive: false,
+            index: 0
+        )
+        state.pinnedTabs = [pinnedRepresentation]
+        let store = SidecarAIOutputStateStore()
+        XCTAssertTrue(store.apply(SidecarAIOutputPayload(
+            tabId: 1,
+            windowId: 7,
+            active: true,
+            phase: .streaming,
+            seq: 1
+        ), in: state))
+
+        store.contentTabDidClose(1, in: state)
+
+        XCTAssertFalse(state.tabs[0].isPairedChatGenerating)
+        XCTAssertFalse(pinnedRepresentation.isPairedChatGenerating)
+        XCTAssertTrue(store.apply(SidecarAIOutputPayload(
+            tabId: 1,
+            windowId: 7,
+            active: true,
+            phase: .submitted,
+            seq: 1
+        ), in: state))
+    }
+
+    func testClosingSplitChatOwnerMigratesAIOutputStateToSurvivor() throws {
+        let state = try makeState()
+        seed(state, guids: [1, 2])
+        state.splits = [splitGroup(1, 2)]
+        let store = SidecarAIOutputStateStore()
+        XCTAssertTrue(store.apply(SidecarAIOutputPayload(
+            tabId: 1,
+            windowId: 7,
+            active: true,
+            phase: .streaming,
+            seq: 1
+        ), in: state))
+
+        store.contentTabDidClose(1, in: state, migratingConversationTo: 2)
+        XCTAssertFalse(state.tabs[0].isPairedChatGenerating)
+        XCTAssertTrue(state.tabs[1].isPairedChatGenerating)
+
+        XCTAssertTrue(store.apply(SidecarAIOutputPayload(
+            tabId: 2,
+            windowId: 7,
+            active: false,
+            phase: .idle,
+            seq: 2
+        ), in: state))
+        XCTAssertTrue(state.tabs[1].hasPairedChat)
+        XCTAssertFalse(state.tabs[1].isPairedChatGenerating)
+    }
+
     func testSidebarOpenTriggerIsConsumedOnce() throws {
         let state = try makeState()
 

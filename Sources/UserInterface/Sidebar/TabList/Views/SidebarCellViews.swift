@@ -574,6 +574,8 @@ class SidebarSplitPairCellView: SidebarCellView, TabPreviewInteractionCancelling
         rightFaviconHandle = nil
         leftIconView.image = nil
         rightIconView.image = nil
+        leftIconView.alphaValue = 1
+        rightIconView.alphaValue = 1
         leftStatusModel.prepareForReuse()
         rightStatusModel.prepareForReuse()
         leftTitleLabel.stringValue = ""
@@ -967,6 +969,30 @@ class SidebarSplitPairCellView: SidebarCellView, TabPreviewInteractionCancelling
         let state = browserState ?? pair.browserState
         leftStatusModel.configure(with: pair.leftTab, in: state)
         rightStatusModel.configure(with: pair.rightTab, in: state)
+        leftIconView.alphaValue = TabFaviconPresentation.opacity(
+            isUnloaded: leftStatusModel.isUnloaded
+        )
+        rightIconView.alphaValue = TabFaviconPresentation.opacity(
+            isUnloaded: rightStatusModel.isUnloaded
+        )
+        leftStatusModel.$isUnloaded
+            .removeDuplicates()
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] isUnloaded in
+                self?.leftIconView.alphaValue = TabFaviconPresentation.opacity(
+                    isUnloaded: isUnloaded
+                )
+            }
+            .store(in: &cancellables)
+        rightStatusModel.$isUnloaded
+            .removeDuplicates()
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] isUnloaded in
+                self?.rightIconView.alphaValue = TabFaviconPresentation.opacity(
+                    isUnloaded: isUnloaded
+                )
+            }
+            .store(in: &cancellables)
         if let state,
            let target = SplitTabPreviewTarget.make(representing: pair.leftTab, in: state) {
             splitTabPreviewRegistration.configure(
@@ -1190,6 +1216,11 @@ class SidebarSplitPairCellView: SidebarCellView, TabPreviewInteractionCancelling
     /// Test seam: whether the given pane currently shows its recording badge.
     func isRecordingIndicatorVisible(isLeft: Bool) -> Bool {
         !(isLeft ? leftRecordingHost : rightRecordingHost).isHidden
+    }
+
+    /// Test seam: current unloaded-state opacity for the given pane's favicon.
+    func faviconOpacity(isLeft: Bool) -> CGFloat {
+        (isLeft ? leftIconView : rightIconView).alphaValue
     }
 
     private func updateSelected() {

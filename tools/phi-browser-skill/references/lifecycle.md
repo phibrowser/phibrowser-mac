@@ -129,6 +129,8 @@ Other differences worth knowing:
   lost.
 - **Viewport** is the window's own real off-screen frame, not a mirror of the
   user's window, so `setViewport` is normally unnecessary.
+- **Tabs start muted.** Every tab that lands in a shadow window is muted
+  on arrival.
 
 ## Space status
 

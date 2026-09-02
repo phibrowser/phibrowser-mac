@@ -349,16 +349,63 @@ final class PhiScriptingServiceTests: XCTestCase {
         ])
     }
 
-    func testWindowCommandsRouteNormalAndIncognitoKinds() {
+    func testWindowAndSpaceCommandsRouteAllCreationRequests() {
         let recorder = Recorder()
         let service = makeService(recorder: recorder)
 
         let normal = service.newWindow()
         let incognito = service.newIncognitoWindow()
+        let kiosk = service.newKioskWindow(url: " https://example.com/path ")
+        let aboutKiosk = service.newKioskWindow(url: "about:blank")
+        let fileKiosk = service.newKioskWindow(url: "file:///tmp/example.html")
+        let internalKiosk = service.newKioskWindow(url: "phi://version")
+        let domainKiosk = service.newKioskWindow(url: "google.com")
+        let searchKiosk = service.newKioskWindow(url: "kiosk browser")
+        let omittedURLKiosk = service.newKioskWindow(url: nil)
+        let blankURLKiosk = service.newKioskWindow(url: " \n ")
+        let incognitoSpace = service.newIncognitoSpace()
 
         XCTAssertEqual(normal["ok"] as? Bool, true)
         XCTAssertEqual(incognito["ok"] as? Bool, true)
-        XCTAssertEqual(recorder.calls, ["window:normal", "window:incognito"])
+        XCTAssertEqual(kiosk["ok"] as? Bool, true)
+        XCTAssertEqual(kiosk["outcome"] as? String, "completed")
+        XCTAssertEqual(aboutKiosk["ok"] as? Bool, true)
+        XCTAssertEqual(fileKiosk["ok"] as? Bool, true)
+        XCTAssertEqual(internalKiosk["ok"] as? Bool, true)
+        XCTAssertEqual(domainKiosk["ok"] as? Bool, true)
+        XCTAssertEqual(searchKiosk["ok"] as? Bool, true)
+        XCTAssertEqual(omittedURLKiosk["ok"] as? Bool, true)
+        XCTAssertEqual(blankURLKiosk["ok"] as? Bool, true)
+        XCTAssertEqual(incognitoSpace["ok"] as? Bool, true)
+        XCTAssertEqual(incognitoSpace["outcome"] as? String, "accepted")
+        XCTAssertEqual(recorder.calls, [
+            "window:normal",
+            "window:incognito",
+            "kiosk:https://example.com/path",
+            "kiosk:about:blank",
+            "kiosk:file:///tmp/example.html",
+            "kiosk:chrome://version",
+            "kiosk:https://google.com",
+            "kiosk:https://www.google.com/search?q=kiosk browser",
+            "kiosk:about:blank",
+            "kiosk:about:blank",
+            "incognito-space",
+        ])
+    }
+
+    func testIncognitoSpaceCreationIsBlockedWhileLazyRestoreDropsActivations() {
+        XCTAssertFalse(PhiScriptingService.shouldBlockIncognitoSpaceCreation(
+            isSessionRestoreInFlight: true,
+            isLazyReopenArmed: false
+        ))
+        XCTAssertFalse(PhiScriptingService.shouldBlockIncognitoSpaceCreation(
+            isSessionRestoreInFlight: false,
+            isLazyReopenArmed: true
+        ))
+        XCTAssertTrue(PhiScriptingService.shouldBlockIncognitoSpaceCreation(
+            isSessionRestoreInFlight: true,
+            isLazyReopenArmed: true
+        ))
     }
 
     func testInvalidScopeAndStaleSpaceReturnStableErrorCodes() throws {
@@ -407,6 +454,8 @@ final class PhiScriptingServiceTests: XCTestCase {
         dependencies.openBookmark = { _, _ in .failed }
         dependencies.openTab = { _, _ in .failed }
         dependencies.createWindow = { _ in .failed }
+        dependencies.createKioskWindow = { _ in .failed }
+        dependencies.createIncognitoSpace = { .failed }
         let service = PhiScriptingService(dependencies: dependencies)
         let responses = [
             service.activateSpace(spaceId: "space-a"),
@@ -420,6 +469,8 @@ final class PhiScriptingServiceTests: XCTestCase {
             service.openTab(address: "https://example.com", spaceId: "space-a"),
             service.newWindow(),
             service.newIncognitoWindow(),
+            service.newKioskWindow(url: nil),
+            service.newIncognitoSpace(),
         ]
 
         XCTAssertEqual(responses.compactMap(errorCode), Array(repeating: "operation_failed", count: responses.count))
@@ -558,7 +609,7 @@ final class PhiScriptingServiceTests: XCTestCase {
         let service = makeService(recorder: Recorder())
         let response = service.getVersion()
 
-        XCTAssertEqual(response["apiVersion"] as? Int, 1)
+        XCTAssertEqual(response["apiVersion"] as? Int, 2)
         XCTAssertEqual(response["version"] as? String, "1.2.3")
         XCTAssertEqual(response["build"] as? String, "456")
     }
@@ -612,6 +663,22 @@ final class PhiScriptingServiceTests: XCTestCase {
             "source_client",
             "succeeded",
         ]))
+    }
+
+    func testRaycastCreationCommandsAreAcceptedClientContextValues() throws {
+        for command in ["new-kiosk-window", "new-incognito-space"] {
+            let rawContext = """
+            {
+              "schemaVersion": 1,
+              "clientId": "raycast",
+              "clientCommand": "\(command)",
+              "invocationId": "34A33E4B-B86E-4077-9C4A-A08BCF876472"
+            }
+            """
+
+            let context = try XCTUnwrap(PhiScriptingClientContext.parse(rawContext))
+            XCTAssertEqual(context.clientCommand, command)
+        }
     }
 
     func testClientContextRejectsInvalidAttributionAndBoundsPropertyCardinality() {
@@ -679,6 +746,9 @@ final class PhiScriptingServiceTests: XCTestCase {
         XCTAssertTrue(definition.contains("<command name=\"get chromium data directory\""))
         XCTAssertTrue(definition.contains("<command name=\"create phi window\""))
         XCTAssertTrue(definition.contains("<command name=\"create phi incognito window\""))
+        XCTAssertTrue(definition.contains("<command name=\"create phi kiosk window\""))
+        XCTAssertTrue(definition.contains("<command name=\"create phi incognito space\""))
+        XCTAssertTrue(definition.contains("<parameter name=\"url\" code=\"KURL\" type=\"text\" optional=\"yes\""))
         XCTAssertTrue(definition.contains("<command name=\"force reload tab\""))
         XCTAssertTrue(definition.contains("<command name=\"add split view\""))
         XCTAssertTrue(definition.contains("<command name=\"open pinned tab\""))
@@ -745,6 +815,14 @@ final class PhiScriptingServiceTests: XCTestCase {
                     recorder.calls.append("window:incognito")
                 }
                 return .completed
+            },
+            createKioskWindow: {
+                recorder.calls.append("kiosk:\($0)")
+                return .completed
+            },
+            createIncognitoSpace: {
+                recorder.calls.append("incognito-space")
+                return .accepted
             },
             applicationVersion: { ("1.2.3", "456") },
             chromiumDataDirectory: {

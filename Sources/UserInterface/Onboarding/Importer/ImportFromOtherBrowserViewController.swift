@@ -789,24 +789,40 @@ class ImportFromOtherBrowserViewController: OnboardingBaseViewController {
             return
         }
         chromeProfiles = importer.loadChromiumProfiles()
-        if chromeProfiles.count > 1 {
-            chromeOptionView.setProfileSelectorVisible(true)
-            let names = chromeProfiles.map { $0.name }
-            let menuTitles = chromeProfiles.map { chromeProfileMenuTitle($0) }
-            let selectedIndex = selectedChromeProfileIndex(in: chromeProfiles) ?? 0
-            chromeOptionView.updateProfileOptions(
-                buttonTitles: names,
-                menuTitles: menuTitles,
-                selectedIndex: selectedIndex
-            )
-            selectedChromeProfile = chromeProfiles[selectedIndex]
-        } else if chromeProfiles.count == 1 {
-            chromeOptionView.setProfileSelectorVisible(false)
-            selectedChromeProfile = chromeProfiles.first
-        } else {
-            chromeOptionView.setProfileSelectorVisible(false)
-            selectedChromeProfile = nil
+        selectedChromeProfile = fillChromiumProfileSelector(
+            of: chromeOptionView,
+            with: chromeProfiles,
+            keeping: selectedChromeProfile
+        )
+    }
+
+    /// Fills a Chromium-shaped Import Source row's profile dropdown from the
+    /// profiles read out of that source's `Local State` and returns the
+    /// profile the row will import from: the one already selected when it is
+    /// still listed, otherwise the first, or nil when there is none. The
+    /// dropdown shows only for more than one profile; its menu names each
+    /// profile with its account email when it has one.
+    private func fillChromiumProfileSelector(
+        of row: BrowserOptionView,
+        with profiles: [BrowserDataImporter.ChromiumProfileInfo],
+        keeping selected: BrowserDataImporter.ChromiumProfileInfo?
+    ) -> BrowserDataImporter.ChromiumProfileInfo? {
+        guard profiles.count > 1 else {
+            row.setProfileSelectorVisible(false)
+            return profiles.first
         }
+        let selectedIndex = selected.flatMap { current in
+            profiles.firstIndex { $0.directory == current.directory }
+        } ?? 0
+        row.setProfileSelectorVisible(true)
+        row.updateProfileOptions(
+            buttonTitles: profiles.map { $0.name },
+            menuTitles: profiles.map {
+                Self.formatNameWithParenthetical(primary: $0.name, secondary: $0.email)
+            },
+            selectedIndex: selectedIndex
+        )
+        return profiles[selectedIndex]
     }
 
     private func arcProfileDisplayNames() -> [String: String] {
@@ -847,20 +863,6 @@ class ImportFromOtherBrowserViewController: OnboardingBaseViewController {
             arcOptionView.setEnabled(false)        // no Spaces → nothing to import
             selectedArcSpaceIndex = nil
         }
-    }
-
-    private func chromeProfileMenuTitle(_ profile: BrowserDataImporter.ChromiumProfileInfo) -> String {
-        guard let email = profile.email, !email.isEmpty else {
-            return profile.name
-        }
-        return "\(profile.name) (\(email))"
-    }
-
-    private func selectedChromeProfileIndex(in profiles: [BrowserDataImporter.ChromiumProfileInfo]) -> Int? {
-        guard let selected = selectedChromeProfile else {
-            return nil
-        }
-        return profiles.firstIndex { $0.directory == selected.directory }
     }
 
     private func showPermissionView() {

@@ -114,6 +114,12 @@ final class BrowserImportAnalyticsTests: XCTestCase {
         XCTAssertNil(properties["error_code"])
     }
 
+    /// Dia imports are counted beside Chrome, Arc, Safari and file imports
+    /// under a source name of their own.
+    func testDiaReportsItsOwnSourceName() {
+        XCTAssertEqual(BrowserImportAnalytics.sourceName(.dia), "dia")
+    }
+
     private func makeAnalytics(
         recorder: Recorder
     ) -> BrowserImportAnalytics {

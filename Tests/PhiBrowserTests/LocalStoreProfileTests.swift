@@ -4,6 +4,7 @@
 // found in the LICENSE file.
 
 import XCTest
+import Combine
 import SwiftData
 import Cocoa
 @testable import Phi
@@ -767,6 +768,57 @@ final class LocalStoreProfileTests: XCTestCase {
         XCTAssertEqual(importer.targetProfileId, "Work")
         XCTAssertEqual(importer.targetSpaceId, "space-B")
         XCTAssertEqual(importer.targetWindowId, 2)
+    }
+
+    /// The import window's Dia row drives the importer like Chrome's: the run
+    /// announces "Importing Dia data...", and when nothing can take the request
+    /// — here, no Chromium bridge — the completion names Dia as the source that
+    /// failed, while analytics report the run as started for "dia" and finished
+    /// on the bridge-unavailable code. History only, so neither the bookmark
+    /// staging nor the store is touched. This is the test that fails if Dia
+    /// falls back into Zen's empty phase arm.
+    func testImportFromDiaWithoutABridgeNamesDiaAndReportsIt() async {
+        final class Recorder {
+            var events: [(name: String, properties: [String: Any])] = []
+            var statuses: [String] = []
+        }
+        let recorder = Recorder()
+        let importer = BrowserDataImporter(
+            targetProfileId: LocalStore.defaultProfileId,
+            targetSpaceId: "space-dia-\(UUID().uuidString)",
+            targetWindowId: 1,
+            localDataStoreProvider: { nil },
+            bridgeProvider: { nil },
+            analyticsCapture: { name, properties in
+                recorder.events.append((name, properties))
+            }
+        )
+        let subscription = importer.$status.sink { recorder.statuses.append($0) }
+        defer { subscription.cancel() }
+
+        let started = await importer.startImportData(
+            [.dia],
+            diaProfileDirectory: "Profile 1",
+            dataTypesPerBrowser: [.dia: [ImportDataType.history.rawValue]]
+        )
+
+        XCTAssertTrue(started)
+        XCTAssertFalse(importer.isImporting)
+        XCTAssertTrue(recorder.statuses.contains(NSLocalizedString(
+            "oobe.importBrowserData.progress.importingDia", value: "Importing Dia data...",
+            comment: "Browser data importer - Status message while importing Dia browser data")))
+        XCTAssertEqual(importer.status, String(
+            format: NSLocalizedString(
+                "oobe.importBrowserData.progress.completedWithErrors",
+                value: "Import completed with errors. Failed to import from: %@",
+                comment: "Browser data importer - Status message when some imports failed, shows list of failed browsers"),
+            "Dia"))
+        XCTAssertEqual(
+            recorder.events.map(\.name),
+            ["import_types_selected", "import_started", "import_finished"])
+        XCTAssertEqual(recorder.events[1].properties["source_browsers"] as? [String], ["dia"])
+        XCTAssertEqual(recorder.events[2].properties["failed_sources"] as? [String], ["dia"])
+        XCTAssertEqual(recorder.events[2].properties["error_code"] as? String, "bridge_unavailable")
     }
 
     func testArcBookmarkRootGatedByArcOption() {

@@ -43283,6 +43283,18 @@
         }
       }
     },
+    "oobe.importBrowserData.progress.importingDia" : {
+      "comment" : "Browser data importer - Status message while importing Dia browser data",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Importing Dia data..."
+          }
+        }
+      }
+    },
     "oobe.importBrowserData.progress.importingFile" : {
       "comment" : "Browser data importer - Status message while importing data from a file",
       "extractionState" : "extracted_with_value",
@@ -43579,6 +43591,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "從 Chrome"
+          }
+        }
+      }
+    },
+    "oobe.importBrowserData.source.diaOption" : {
+      "comment" : "Import browser data page - Option label to import data from Dia browser",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "From Dia"
           }
         }
       }

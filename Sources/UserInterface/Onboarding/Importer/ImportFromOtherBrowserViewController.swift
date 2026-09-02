@@ -16,7 +16,7 @@ class ImportFromOtherBrowserViewController: OnboardingBaseViewController {
     
     enum DisplayMode {
         case login   // 640x800 for onboarding.
-        case normal  // 500x700 for the standalone window.
+        case normal  // 500x760 for the standalone window.
     }
     
     var onCompletion: (() -> Void)?
@@ -36,10 +36,11 @@ class ImportFromOtherBrowserViewController: OnboardingBaseViewController {
     
     private var viewWidth: CGFloat { displayMode == .login ? 640 : 500 }
     /// Normal (standalone window) height is sized for the worst-case expanded
-    /// accordion row: title chain bottom 136 + 8 + card 440 (4-toggle row) +
-    /// 12 + Next button 40 + bottom margin 56 = 692, rounded up — so an expanded
-    /// card can never overlap (and hitTest-swallow) the Next button.
-    private var viewHeight: CGFloat { displayMode == .login ? 800 : 700 }
+    /// accordion: five rows (Chrome, Arc, Dia, Safari, file) with one expanded
+    /// to four toggles — title chain bottom 136 + 8 + card 504 + 12 + Next
+    /// button 40 + bottom margin 56 = 756, rounded up — so an expanded card
+    /// can never overlap (and hitTest-swallow) the Next button.
+    private var viewHeight: CGFloat { displayMode == .login ? 800 : 760 }
     private var titleFontSize: CGFloat { displayMode == .login ? 46 : 32 }
     private var titleTopOffset: CGFloat { displayMode == .login ? 96 : 56 }
     private var optionWidth: CGFloat { displayMode == .login ? 472 : 380 }
@@ -157,6 +158,8 @@ class ImportFromOtherBrowserViewController: OnboardingBaseViewController {
     private var expandedBrowser: BrowserType?
     private var chromeProfiles: [BrowserDataImporter.ChromiumProfileInfo] = []
     private var selectedChromeProfile: BrowserDataImporter.ChromiumProfileInfo?
+    private var diaProfiles: [BrowserDataImporter.ChromiumProfileInfo] = []
+    private var selectedDiaProfile: BrowserDataImporter.ChromiumProfileInfo?
     private var arcSpaces: [ArcSpace] = []
     private var selectedArcSpaceIndex: Int?
     private var selectedArcSpace: ArcSpace? {
@@ -265,6 +268,32 @@ class ImportFromOtherBrowserViewController: OnboardingBaseViewController {
             self.selectedArcSpaceIndex = index
             self.resetToggles(for: .arc)
         }
+        return view
+    }()
+
+    /// Header for the Dia accordion row: Chrome's shape — a profile dropdown
+    /// over Dia's profile directories and a body of four data-type toggles.
+    private lazy var diaOptionView: BrowserOptionView = {
+        let view = BrowserOptionView(
+            icon: .diaIcon,
+            title: NSLocalizedString("oobe.importBrowserData.source.diaOption", value: "From Dia", comment: "Import browser data page - Option label to import data from Dia browser"),
+            isSelected: false
+        )
+        view.onTap = { [weak self] in
+            self?.toggleExpansion(.dia)
+        }
+        view.onProfileSelection = { [weak self] index in
+            guard let self, index >= 0, index < self.diaProfiles.count else {
+                return
+            }
+            let newProfile = self.diaProfiles[index]
+            if self.selectedDiaProfile?.directory != newProfile.directory {
+                self.selectedDiaProfile = newProfile
+                self.resetToggles(for: .dia)
+            }
+        }
+
+        view.wantsLayer = true
         return view
     }()
 
@@ -395,10 +424,12 @@ class ImportFromOtherBrowserViewController: OnboardingBaseViewController {
         applyOptionViewStyle(chromeOptionView)
         applyOptionViewStyle(safariOptionView)
         applyOptionViewStyle(arcOptionView)
+        applyOptionViewStyle(diaOptionView)
         applyOptionViewStyle(fileOptionView)
 
         let hasChrome = hasChromeData()
         let hasArc = hasArcData()
+        let hasDia = hasDiaData()
         if hasChrome {
             browserOptionsStackView.addArrangedSubview(makeAccordionWrapper(header: chromeOptionView, browser: .chrome))
             refreshChromeProfilesIfNeeded()
@@ -407,6 +438,11 @@ class ImportFromOtherBrowserViewController: OnboardingBaseViewController {
         if hasArc {
             browserOptionsStackView.addArrangedSubview(makeAccordionWrapper(header: arcOptionView, browser: .arc))
             refreshArcSpacesIfNeeded()
+        }
+
+        if hasDia {
+            browserOptionsStackView.addArrangedSubview(makeAccordionWrapper(header: diaOptionView, browser: .dia))
+            refreshDiaProfilesIfNeeded()
         }
 
         browserOptionsStackView.addArrangedSubview(makeAccordionWrapper(header: safariOptionView, browser: .safari))
@@ -483,8 +519,8 @@ class ImportFromOtherBrowserViewController: OnboardingBaseViewController {
     }
 
     /// Resets a browser's inline selection (its toggles + configured state) after
-    /// the user picks a different Chrome profile / Arc Space — the old selection
-    /// belonged to the previous profile. The row stays expanded.
+    /// the user picks a different Chrome or Dia profile / Arc Space — the old
+    /// selection belonged to the previous profile. The row stays expanded.
     private func resetToggles(for browser: BrowserType) {
         selectedTypesPerBrowser[browser] = nil
         toggleRowsPerBrowser[browser]?.forEach { $0.setOn(false) }
@@ -495,6 +531,7 @@ class ImportFromOtherBrowserViewController: OnboardingBaseViewController {
         switch browser {
         case .chrome: return chromeOptionView
         case .arc: return arcOptionView
+        case .dia: return diaOptionView
         case .file: return fileOptionView
         default: return safariOptionView
         }
@@ -724,6 +761,7 @@ class ImportFromOtherBrowserViewController: OnboardingBaseViewController {
         chromeOptionView.setConfigured(configuredBrowsers.contains(.chrome))
         safariOptionView.setConfigured(configuredBrowsers.contains(.safari))
         arcOptionView.setConfigured(configuredBrowsers.contains(.arc))
+        diaOptionView.setConfigured(configuredBrowsers.contains(.dia))
         fileOptionView.setConfigured(configuredBrowsers.contains(.file))
     }
 
@@ -782,6 +820,11 @@ class ImportFromOtherBrowserViewController: OnboardingBaseViewController {
         return FileManager.default.fileExists(atPath: chromePath)
     }
 
+    /// Dia's user-data folder is what makes the Dia row show, as Arc's does
+    /// for Arc's; whether Dia.app is installed is not consulted.
+    private func hasDiaData() -> Bool {
+        FileManager.default.fileExists(atPath: BrowserDataImporter.diaUserDataURL.path)
+    }
 
     private func refreshChromeProfilesIfNeeded() {
         guard hasChromeData() else {
@@ -793,6 +836,23 @@ class ImportFromOtherBrowserViewController: OnboardingBaseViewController {
             of: chromeOptionView,
             with: chromeProfiles,
             keeping: selectedChromeProfile
+        )
+    }
+
+    /// Fills the Dia row from Dia's `Local State` the way Chrome's row is
+    /// filled. An unreadable `Local State` yields no profiles: the dropdown
+    /// stays hidden, the row stays enabled and the import addresses Dia's
+    /// `Default` directory.
+    private func refreshDiaProfilesIfNeeded() {
+        guard hasDiaData() else {
+            diaOptionView.setProfileSelectorVisible(false)
+            return
+        }
+        diaProfiles = importer.loadChromiumProfiles(localStateURL: BrowserDataImporter.diaLocalStateURL)
+        selectedDiaProfile = fillChromiumProfileSelector(
+            of: diaOptionView,
+            with: diaProfiles,
+            keeping: selectedDiaProfile
         )
     }
 
@@ -953,6 +1013,7 @@ class ImportFromOtherBrowserViewController: OnboardingBaseViewController {
                     Array(configuredBrowsers),
                     chromeProfileDirectory: selectedChromeProfile?.directory,
                     arcSpace: configuredBrowsers.contains(.arc) ? selectedArcSpace : nil,
+                    diaProfileDirectory: selectedDiaProfile?.directory,
                     dataTypesPerBrowser: dataTypesPerBrowser,
                     importFilePath: selectedImportFileURL?.path
                 )
@@ -1368,7 +1429,7 @@ class OnboardingBaseViewController: NSViewController {
         
         // Constraint-built aspect-fill for the two 640×800 (4:5) bitmap layers.
         // At exactly 4:5 (OOBE's 640×800) this is pixel-identical to edge-pinning;
-        // at any other ratio (the 500×700 standalone import window) the images
+        // at any other ratio (the 500×760 standalone import window) the images
         // cover the view at 4:5 and crop, instead of letterboxing and exposing
         // bands of the bare video layer beneath.
         for background in [placeholderView, dotView] {

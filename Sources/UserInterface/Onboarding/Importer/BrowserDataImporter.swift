@@ -136,6 +136,7 @@ class BrowserDataImporter {
         case importingChromeData
         case importingSafariData
         case importingArcData
+        case importingDiaData
         case importingFile
         case done
     }
@@ -171,6 +172,9 @@ class BrowserDataImporter {
     /// rather than a published identity, so this must resolve the same way the
     /// rest of the browser does and must not depend on a signed-in account.
     private let localDataStoreProvider: () -> LocalStore?
+    /// Resolves the Chromium bridge every import request goes through, so a
+    /// test can drive the importer without one.
+    private let bridgeProvider: () -> PhiChromiumBridgeProtocol?
     private let analytics: BrowserImportAnalytics
 
     init(targetProfileId: String = LocalStore.defaultProfileId,
@@ -178,6 +182,9 @@ class BrowserDataImporter {
          targetWindowId: Int? = nil,
          localDataStoreProvider: @escaping () -> LocalStore? = {
              AccountController.shared.localDataAccount?.localStorage
+         },
+         bridgeProvider: @escaping () -> PhiChromiumBridgeProtocol? = {
+             ChromiumLauncher.sharedInstance().bridge
          },
          analyticsCapture: @escaping BrowserImportAnalytics.Capture = {
              event, properties in
@@ -187,6 +194,7 @@ class BrowserDataImporter {
         self.targetSpaceId = targetSpaceId
         self.targetWindowId = targetWindowId
         self.localDataStoreProvider = localDataStoreProvider
+        self.bridgeProvider = bridgeProvider
         self.analytics = BrowserImportAnalytics(capture: analyticsCapture)
         NotificationCenter.default.addObserver(
             self,
@@ -233,6 +241,7 @@ class BrowserDataImporter {
         _ options: [BrowserType],
         chromeProfileDirectory: String? = nil,
         arcSpace: ArcSpace? = nil,
+        diaProfileDirectory: String? = nil,
         dataTypesPerBrowser: [BrowserType: [String]]? = nil,
         importFilePath: String? = nil
     ) async -> Bool {
@@ -304,7 +313,7 @@ class BrowserDataImporter {
         }
         let chromiumBookmarkSources = bookmarkSources.filter { $0 != .arc }
         if !chromiumBookmarkSources.isEmpty {
-            ChromiumLauncher.sharedInstance().bridge?.removeAllBookmarks(withWindowId: windowId.int64Value)
+            bridgeProvider()?.removeAllBookmarks(withWindowId: windowId.int64Value)
         }
 
         for option in options {
@@ -321,6 +330,7 @@ class BrowserDataImporter {
             switch option {
             case .chrome: sourceProfileDirectory = chromeProfileDirectory
             case .arc:    sourceProfileDirectory = arcSpace?.profile.directoryName
+            case .dia:    sourceProfileDirectory = diaProfileDirectory
             default:      sourceProfileDirectory = nil
             }
             // .unknown Arc profile (nil dir) → bookmarks only; never import Default's data.
@@ -505,6 +515,15 @@ class BrowserDataImporter {
             profiles: loadChromiumProfiles(localStateURL: localStateURL), sidebar: sidebar)
     }
     
+    // MARK: - Dia
+
+    /// Dia's Chromium data folder, in the standard layout; its presence is
+    /// what "Dia is installed" means to the import window.
+    static let diaUserDataURL = FileManager.default.homeDirectoryForCurrentUser
+        .appendingPathComponent("Library/Application Support/Dia/User Data")
+    /// Dia's `Local State`; its profile cache reads through `loadChromiumProfiles`.
+    static let diaLocalStateURL = diaUserDataURL.appendingPathComponent("Local State")
+
     // MARK: - Zen
 
     /// Zen's application-support directory; `profiles.ini` in it is what
@@ -920,7 +939,7 @@ class BrowserDataImporter {
         // The profile-addressed selector arrives with the matching Phi Framework;
         // an older one would answer it with an unrecognised selector, so refuse
         // here the way the other new bridge calls do.
-        guard let bridge = ChromiumLauncher.sharedInstance().bridge,
+        guard let bridge = bridgeProvider(),
               bridge.responds(to: #selector(PhiChromiumBridgeProtocol
                   .importBrowserData(from:profile:dataTypes:targetProfileId:)))
         else {
@@ -951,7 +970,7 @@ class BrowserDataImporter {
         dataTypes: [String]?,
         importFilePath: String? = nil
     ) async -> SourceImportResult {
-        guard let bridge = ChromiumLauncher.sharedInstance().bridge else {
+        guard let bridge = bridgeProvider() else {
             AppLogError(
                 "Import from \(Self.browserName(for: option)) was not "
                     + "dispatched: no Chromium bridge"
@@ -1039,10 +1058,12 @@ class BrowserDataImporter {
         case .file:
             phase = .importingFile
             status = NSLocalizedString("oobe.importBrowserData.progress.importingFile", value: "Importing data from file...", comment: "Browser data importer - Status message while importing data from a file")
-        case .zen, .dia:
+        case .dia:
+            phase = .importingDiaData
+            status = NSLocalizedString("oobe.importBrowserData.progress.importingDia", value: "Importing Dia data...", comment: "Browser data importer - Status message while importing Dia browser data")
+        case .zen:
             // Zen is never offered by the import window: Migration drives it
-            // through `importDataIntoProfile`, which reports no phase. Dia's
-            // phase arrives with its row in the import window.
+            // through `importDataIntoProfile`, which reports no phase.
             phase = .waiting
             status = ""
         @unknown default:
@@ -1102,7 +1123,7 @@ class BrowserDataImporter {
         let snapshotSucceeded: Bool
         if requiresChromiumSnapshot {
             let snapshot = await MainActor.run {
-                ChromiumLauncher.sharedInstance().bridge?.getAllBookmarks(
+                self.bridgeProvider()?.getAllBookmarks(
                     withWindowId: windowId.int64Value
                 )
             }

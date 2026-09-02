@@ -57,14 +57,14 @@ final class TabStatusTests: XCTestCase {
         ), .agent)
     }
 
-    func testAgentBadgeIsHiddenBeforePairedChatGeneratesAReply() {
-        XCTAssertNil(TabCornerBadgeStatus.resolve(
+    func testAgentBadgeIsShownWithoutAPairedChat() {
+        XCTAssertEqual(TabCornerBadgeStatus.resolve(
             isAgentActive: true,
             isChatGenerating: false,
             hasPairedChat: false,
             hasStartedChatGeneration: false,
             isChatCollapsed: false
-        ))
+        ), .agent)
     }
 
     func testChatBadgeIsHiddenWhileChatIsCollapsed() {

@@ -19,8 +19,8 @@ enum TabCornerBadgeStatus: Int, CaseIterable {
         hasStartedChatGeneration: Bool,
         isChatCollapsed: Bool
     ) -> TabCornerBadgeStatus? {
-        guard isChatGenerating || hasPairedChat else { return nil }
         if isAgentActive { return .agent }
+        guard isChatGenerating || hasPairedChat else { return nil }
         if isChatGenerating { return .inputting }
         if hasPairedChat && hasStartedChatGeneration && !isChatCollapsed { return .chat }
         return nil

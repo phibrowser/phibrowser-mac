@@ -783,6 +783,85 @@ final class LocalStoreProfileTests: XCTestCase {
         XCTAssertNil(BrowserDataImporter.arcBookmarkRoot(options: [.arc], arcSpace: space, wantsBookmarks: false))
     }
 
+    /// The Chromium side lands Dia's bookmarks under "Imported From Dia". When
+    /// the Space root is reordered, that folder counts as an imported-browser
+    /// folder — behind the user's own folders, right after Arc's and before
+    /// Safari's, the order of the import window's rows — and only on its
+    /// localised title, not on "dia" as a substring ("Wikipedia" ends in it
+    /// and must stay a user folder).
+    func testReorderImportedBrowserFoldersRanksTheDiaFolderAfterArcs() async throws {
+        let store = try makeStore()
+        let arcFolderTitle = NSLocalizedString(
+            "localData.bookmarks.importedFromArcFolderTitle", value: "Imported From Arc",
+            comment: "Arc bookmarks import folder title")
+        let diaFolderTitle = NSLocalizedString(
+            "localData.bookmarks.importedFromDiaFolderTitle", value: "Imported From Dia",
+            comment: "Bookmark folder - Wrapper created at the Space root to hold the bookmarks imported from Dia; its title must match the one the browser side writes")
+        let leaf = { StubBookmarkWrapper(title: "Example", urlString: "https://example.com") }
+        let bookmarksBar = StubBookmarkWrapper(
+            title: "Bookmarks Bar", isFolder: true,
+            children: [
+                StubBookmarkWrapper(title: diaFolderTitle, isFolder: true, indexInParent: 0, children: [leaf()]),
+                StubBookmarkWrapper(title: "Wikipedia", isFolder: true, indexInParent: 1, children: [leaf()]),
+                StubBookmarkWrapper(title: "Imported From Safari", isFolder: true, indexInParent: 2, children: [leaf()]),
+                StubBookmarkWrapper(title: arcFolderTitle, isFolder: true, indexInParent: 3, children: [leaf()]),
+                StubBookmarkWrapper(title: "Imported From Chrome", isFolder: true, indexInParent: 4, children: [leaf()]),
+            ])
+
+        await store.saveChromiumBookmarksToLocalStore(
+            [bookmarksBar],
+            profileId: LocalStore.defaultProfileId,
+            spaceId: LocalStore.defaultSpaceId
+        )
+        await store.reorderImportedBrowserFolders(
+            profileId: LocalStore.defaultProfileId,
+            spaceId: LocalStore.defaultSpaceId
+        )
+
+        let titles = store.fetchBookmarks(
+            parentId: nil,
+            profileId: LocalStore.defaultProfileId,
+            spaceId: LocalStore.defaultSpaceId
+        ).map(\.title)
+        XCTAssertEqual(
+            titles,
+            ["Wikipedia", "Imported From Chrome", arcFolderTitle, diaFolderTitle, "Imported From Safari"])
+    }
+
+    /// Each top-level imported-browser folder is tagged with where it came from
+    /// (1 Chromium, 2 Safari); Dia's is Chromium data, so it is tagged like
+    /// Chrome's. The tag is keyed off the folder's rank, so re-ranking the
+    /// folders must not move Safari's tag.
+    func testSaveChromiumBookmarksTagsImportedBrowserFoldersBySource() async throws {
+        let store = try makeStore()
+        let diaFolderTitle = NSLocalizedString(
+            "localData.bookmarks.importedFromDiaFolderTitle", value: "Imported From Dia",
+            comment: "Bookmark folder - Wrapper created at the Space root to hold the bookmarks imported from Dia; its title must match the one the browser side writes")
+        let leaf = { StubBookmarkWrapper(title: "Example", urlString: "https://example.com") }
+        let bookmarksBar = StubBookmarkWrapper(
+            title: "Bookmarks Bar", isFolder: true,
+            children: [
+                StubBookmarkWrapper(title: "Imported From Chrome", isFolder: true, indexInParent: 0, children: [leaf()]),
+                StubBookmarkWrapper(title: diaFolderTitle, isFolder: true, indexInParent: 1, children: [leaf()]),
+                StubBookmarkWrapper(title: "Imported From Safari", isFolder: true, indexInParent: 2, children: [leaf()]),
+            ])
+
+        await store.saveChromiumBookmarksToLocalStore(
+            [bookmarksBar],
+            profileId: LocalStore.defaultProfileId,
+            spaceId: LocalStore.defaultSpaceId
+        )
+
+        let sourceByTitle = Dictionary(
+            uniqueKeysWithValues: store.fetchBookmarks(
+                parentId: nil,
+                profileId: LocalStore.defaultProfileId,
+                spaceId: LocalStore.defaultSpaceId
+            ).map { ($0.title, $0.source) })
+        XCTAssertEqual(
+            sourceByTitle, ["Imported From Chrome": 1, diaFolderTitle: 1, "Imported From Safari": 2])
+    }
+
     func testProjectDataTypesDropsEmptyBrowsersAndNilsWhenAllEmpty() {
         // Nothing selected anywhere → nil.
         XCTAssertNil(ImportFromOtherBrowserViewController.projectDataTypes([:]))

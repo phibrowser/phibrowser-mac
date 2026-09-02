@@ -57,7 +57,10 @@ typedef NS_ENUM(NSUInteger, BrowserType) {
     BrowserTypeFile,
     // Zen (Firefox-based). The profile argument is the profile directory's
     // basename under Zen's Profiles folder; Chromium imports its history only.
-    BrowserTypeZen
+    BrowserTypeZen,
+    // Dia (Chromium-based). The profile argument is the profile directory's
+    // basename under Dia's User Data, as for Chrome and Arc.
+    BrowserTypeDia
 };
 
 /// Loading state mapped from Chromium TabNetworkState.

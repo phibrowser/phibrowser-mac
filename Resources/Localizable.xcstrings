@@ -40511,6 +40511,18 @@
         }
       }
     },
+    "localData.bookmarks.importedFromDiaFolderTitle" : {
+      "comment" : "Bookmark folder - Wrapper created at the Space root to hold the bookmarks imported from Dia; its title must match the one the browser side writes",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Imported From Dia"
+          }
+        }
+      }
+    },
     "localData.bookmarks.importedFromGuestFolderTitle" : {
       "comment" : "Bookmark folder - Container created when Guest bookmarks are moved into a signed-in account",
       "extractionState" : "extracted_with_value",

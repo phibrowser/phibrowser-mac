@@ -111,6 +111,8 @@ struct BrowserImportAnalytics {
             return "file"
         case .zen:
             return "zen"
+        case .dia:
+            return "dia"
         @unknown default:
             return "unknown"
         }
@@ -1037,9 +1039,10 @@ class BrowserDataImporter {
         case .file:
             phase = .importingFile
             status = NSLocalizedString("oobe.importBrowserData.progress.importingFile", value: "Importing data from file...", comment: "Browser data importer - Status message while importing data from a file")
-        case .zen:
-            // Never offered by the import window: Migration drives Zen through
-            // `importDataIntoProfile`, which reports no phase.
+        case .zen, .dia:
+            // Zen is never offered by the import window: Migration drives it
+            // through `importDataIntoProfile`, which reports no phase. Dia's
+            // phase arrives with its row in the import window.
             phase = .waiting
             status = ""
         @unknown default:
@@ -1072,6 +1075,8 @@ class BrowserDataImporter {
             return "File"
         case .zen:
             return "Zen"
+        case .dia:
+            return "Dia"
         @unknown default:
             return "Unknown"
         }

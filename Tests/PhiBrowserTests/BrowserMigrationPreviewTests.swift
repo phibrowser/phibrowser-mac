@@ -332,6 +332,13 @@ final class BrowserMigrationPreviewTests: XCTestCase {
         XCTAssertEqual(ImportDataType.availableTypes(for: .zen), [.history])
     }
 
+    /// Dia is Chromium-based, so its table is Arc's: all four types, read
+    /// Chromium-side.
+    func testDiaIsOfferedEveryDataType() {
+        XCTAssertEqual(
+            ImportDataType.availableTypes(for: .dia), [.bookmarks, .history, .cookies, .extensions])
+    }
+
     /// History alone is all of Zen's table, and its sidebar is parsed Mac-side
     /// too, so nothing is stripped from it.
     func testZenIsAskedForHistoryOnly() {

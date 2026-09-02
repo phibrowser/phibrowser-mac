@@ -152,6 +152,61 @@ private final class PinnedItemRootView: NSView {
     }
 }
 
+final class PinnedTabStateBorderView: NSView {
+    private static let cornerRadius: CGFloat = 8
+    private let borderLayer = CAShapeLayer()
+
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        setupLayer()
+    }
+
+    required init?(coder: NSCoder) {
+        super.init(coder: coder)
+        setupLayer()
+    }
+
+    override func layout() {
+        super.layout()
+        borderLayer.frame = bounds
+        let inset = TabStateBorderMetrics.lineWidth / 2
+        borderLayer.path = CGPath(
+            roundedRect: bounds.insetBy(dx: inset, dy: inset),
+            cornerWidth: Self.cornerRadius - inset,
+            cornerHeight: Self.cornerRadius - inset,
+            transform: nil
+        )
+    }
+
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
+
+    func update(style: TabStateBorderStyle, color: NSColor) {
+        borderLayer.isHidden = style == .none
+        borderLayer.strokeColor = color.cgColor
+        borderLayer.lineWidth = style == .none ? 0 : TabStateBorderMetrics.lineWidth
+        borderLayer.lineDashPattern = style == .dashed
+            ? TabStateBorderMetrics.dashPattern.map { NSNumber(value: Double($0)) }
+            : nil
+    }
+
+    private func setupLayer() {
+        wantsLayer = true
+        layer?.masksToBounds = false
+        borderLayer.fillColor = NSColor.clear.cgColor
+        borderLayer.lineCap = .round
+        borderLayer.contentsScale = NSScreen.main?.backingScaleFactor ?? 2
+        borderLayer.actions = [
+            "path": NSNull(),
+            "strokeColor": NSNull(),
+            "lineWidth": NSNull(),
+            "lineDashPattern": NSNull(),
+            "hidden": NSNull(),
+        ]
+        layer?.addSublayer(borderLayer)
+        update(style: .none, color: .clear)
+    }
+}
+
 class PinnedTabItem: NSCollectionViewItem, NSMenuDelegate {
     static var reuseIdentifier: NSUserInterfaceItemIdentifier { .init(rawValue: "\(Self.self)") }
     /// Identifier stamped on every visible sidebar pinned-grid item (solo
@@ -161,8 +216,8 @@ class PinnedTabItem: NSCollectionViewItem, NSMenuDelegate {
     private static let faviconCornerRadius: CGFloat = 4
     private var iconImageView: NSImageView!
     private var backgroundView: HoverableView!
+    private var stateBorderView: PinnedTabStateBorderView!
     private var peekBadge: PinnedPeekBadgeView!
-    private var discardedOutlineHost: TabDecorativeHostingView!
     private var statusBadgeHost: TabDecorativeHostingView!
     private let statusModel = TabStatusModel()
     private var tab: Tab?
@@ -209,6 +264,7 @@ class PinnedTabItem: NSCollectionViewItem, NSMenuDelegate {
         peekBadge.faviconImage = nil
         statusModel.prepareForReuse()
         updateStatusBadge(isSuppressed: false)
+        stateBorderView.update(style: .none, color: .clear)
         tab = nil
         browserState = nil
     }
@@ -254,14 +310,8 @@ class PinnedTabItem: NSCollectionViewItem, NSMenuDelegate {
         view.addSubview(backgroundView)
         backgroundView.addSubview(iconImageView)
 
-        discardedOutlineHost = TabDecorativeHostingView(
-            rootView: TabDiscardedFaviconOutline(
-                model: statusModel,
-                faviconSize: Self.faviconSize,
-                faviconCornerRadius: Self.faviconCornerRadius
-            )
-        )
-        backgroundView.addSubview(discardedOutlineHost)
+        stateBorderView = PinnedTabStateBorderView()
+        backgroundView.addSubview(stateBorderView)
 
         // Layout.
         backgroundView.snp.makeConstraints { make in
@@ -276,18 +326,8 @@ class PinnedTabItem: NSCollectionViewItem, NSMenuDelegate {
             ))
         }
 
-        discardedOutlineHost.snp.makeConstraints { make in
-            make.center.equalTo(iconImageView)
-            make.size.equalTo(CGSize(
-                width: TabCornerBadgeMetrics.discardedOutlineSize(
-                    for: Self.faviconSize,
-                    cornerRadius: Self.faviconCornerRadius
-                ),
-                height: TabCornerBadgeMetrics.discardedOutlineSize(
-                    for: Self.faviconSize,
-                    cornerRadius: Self.faviconCornerRadius
-                )
-            ))
+        stateBorderView.snp.makeConstraints { make in
+            make.edges.equalToSuperview()
         }
 
         statusBadgeHost = TabDecorativeHostingView(
@@ -404,7 +444,18 @@ class PinnedTabItem: NSCollectionViewItem, NSMenuDelegate {
             }
             .store(in: &cancellables)
 
-        tab.$hasWebContent
+        Publishers.CombineLatest3(
+            tab.$hasWebContent,
+            tab.$isDiscarded,
+            tab.$isUnloaded
+        )
+            .map { isOpened, isDiscarded, isUnloaded in
+                TabStateBorderStyle.resolve(
+                    isOpened: isOpened,
+                    isDiscarded: isDiscarded,
+                    isUnloaded: isUnloaded
+                )
+            }
             .removeDuplicates()
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in
@@ -470,22 +521,21 @@ class PinnedTabItem: NSCollectionViewItem, NSMenuDelegate {
     }
 
     private func updateSelectedState() {
-        if isSelected {
-            backgroundView.isSelected = true
-            backgroundView.layer?.borderWidth = 0
-            backgroundView.layer?.borderColor = NSColor.clear.cgColor
-        } else if tab?.hasWebContent == true {
-            backgroundView.isSelected = false
-            backgroundView.layer?.borderWidth = 1
-            let provider = themeProvider ?? ThemeManager.shared
-            backgroundView.layer?.borderColor = ThemedColor.border
-                .resolve(theme: provider.currentTheme, appearance: provider.currentAppearance)
-                .cgColor
-        } else {
-            backgroundView.isSelected = false
-            backgroundView.layer?.borderWidth = 0
-            backgroundView.layer?.borderColor = NSColor.clear.cgColor
-        }
+        backgroundView.isSelected = isSelected
+        backgroundView.layer?.borderWidth = 0
+        backgroundView.layer?.borderColor = NSColor.clear.cgColor
+
+        let borderStyle = isSelected ? TabStateBorderStyle.none : TabStateBorderStyle.resolve(
+            isOpened: tab?.hasWebContent == true,
+            isDiscarded: tab?.isDiscarded == true,
+            isUnloaded: tab?.isUnloaded == true
+        )
+        let provider = themeProvider ?? ThemeManager.shared
+        let borderColor = ThemedColor.border.resolve(
+            theme: provider.currentTheme,
+            appearance: provider.currentAppearance
+        )
+        stateBorderView.update(style: borderStyle, color: borderColor)
     }
 
     private func updateStatusBadge(isSuppressed: Bool) {

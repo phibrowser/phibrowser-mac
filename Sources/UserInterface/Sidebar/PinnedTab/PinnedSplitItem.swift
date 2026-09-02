@@ -18,16 +18,12 @@ class PinnedSplitItem: NSCollectionViewItem, NSMenuDelegate {
     private static let faviconSize: CGFloat = 16
     private static let faviconCornerRadius: CGFloat = 3
     private static let defaultFaviconCenterOffset: CGFloat = 10
-    private static let separatedFaviconCenterOffset: CGFloat = 13
 
     private var leftIconView: NSImageView!
     private var rightIconView: NSImageView!
     private var backgroundView: HoverableView!
-    private var leftDiscardedOutlineHost: TabDecorativeHostingView!
-    private var rightDiscardedOutlineHost: TabDecorativeHostingView!
+    private var stateBorderView: PinnedTabStateBorderView!
     private var statusBadgeHost: TabDecorativeHostingView!
-    private var leftIconCenterXConstraint: Constraint?
-    private var rightIconCenterXConstraint: Constraint?
     private let leftStatusModel = TabStatusModel()
     private let rightStatusModel = TabStatusModel()
     private var leftTab: Tab?
@@ -71,7 +67,7 @@ class PinnedSplitItem: NSCollectionViewItem, NSMenuDelegate {
         rightIconView.alphaValue = 1
         leftStatusModel.prepareForReuse()
         rightStatusModel.prepareForReuse()
-        updateFaviconCenterOffset(separatesDashedOutlines: false)
+        stateBorderView.update(style: .none, color: .clear)
         splitTabPreviewRegistration.invalidate()
         leftTab = nil
         rightTab = nil
@@ -114,33 +110,16 @@ class PinnedSplitItem: NSCollectionViewItem, NSMenuDelegate {
         backgroundView.addSubview(leftIconView)
         backgroundView.addSubview(rightIconView)
 
-        leftDiscardedOutlineHost = TabDecorativeHostingView(
-            rootView: TabDiscardedFaviconOutline(
-                model: leftStatusModel,
-                faviconSize: Self.faviconSize,
-                faviconCornerRadius: Self.faviconCornerRadius
-            )
-        )
-        rightDiscardedOutlineHost = TabDecorativeHostingView(
-            rootView: TabDiscardedFaviconOutline(
-                model: rightStatusModel,
-                faviconSize: Self.faviconSize,
-                faviconCornerRadius: Self.faviconCornerRadius
-            )
-        )
-        backgroundView.addSubview(leftDiscardedOutlineHost)
-        backgroundView.addSubview(rightDiscardedOutlineHost)
+        stateBorderView = PinnedTabStateBorderView()
+        backgroundView.addSubview(stateBorderView)
 
         backgroundView.snp.makeConstraints { make in
             make.edges.equalToSuperview()
         }
 
-        // Preserve the original spacing by default. When both favicons show
-        // dashed state outlines, their symmetric offsets expand dynamically.
         leftIconView.snp.makeConstraints { make in
             make.centerY.equalToSuperview()
-            leftIconCenterXConstraint = make.centerX.equalToSuperview()
-                .offset(-Self.defaultFaviconCenterOffset).constraint
+            make.centerX.equalToSuperview().offset(-Self.defaultFaviconCenterOffset)
             make.size.equalTo(CGSize(
                 width: Self.faviconSize,
                 height: Self.faviconSize
@@ -148,39 +127,15 @@ class PinnedSplitItem: NSCollectionViewItem, NSMenuDelegate {
         }
         rightIconView.snp.makeConstraints { make in
             make.centerY.equalToSuperview()
-            rightIconCenterXConstraint = make.centerX.equalToSuperview()
-                .offset(Self.defaultFaviconCenterOffset).constraint
+            make.centerX.equalToSuperview().offset(Self.defaultFaviconCenterOffset)
             make.size.equalTo(CGSize(
                 width: Self.faviconSize,
                 height: Self.faviconSize
             ))
         }
 
-        leftDiscardedOutlineHost.snp.makeConstraints { make in
-            make.center.equalTo(leftIconView)
-            make.size.equalTo(CGSize(
-                width: TabCornerBadgeMetrics.discardedOutlineSize(
-                    for: Self.faviconSize,
-                    cornerRadius: Self.faviconCornerRadius
-                ),
-                height: TabCornerBadgeMetrics.discardedOutlineSize(
-                    for: Self.faviconSize,
-                    cornerRadius: Self.faviconCornerRadius
-                )
-            ))
-        }
-        rightDiscardedOutlineHost.snp.makeConstraints { make in
-            make.center.equalTo(rightIconView)
-            make.size.equalTo(CGSize(
-                width: TabCornerBadgeMetrics.discardedOutlineSize(
-                    for: Self.faviconSize,
-                    cornerRadius: Self.faviconCornerRadius
-                ),
-                height: TabCornerBadgeMetrics.discardedOutlineSize(
-                    for: Self.faviconSize,
-                    cornerRadius: Self.faviconCornerRadius
-                )
-            ))
+        stateBorderView.snp.makeConstraints { make in
+            make.edges.equalToSuperview()
         }
 
         statusBadgeHost = TabDecorativeHostingView(
@@ -229,25 +184,30 @@ class PinnedSplitItem: NSCollectionViewItem, NSMenuDelegate {
         rightFaviconHandle = nil
         leftStatusModel.configure(with: leftTab, in: browserState)
         rightStatusModel.configure(with: rightTab, in: browserState)
-        updateFaviconCenterOffset(
-            separatesDashedOutlines: bothFaviconsShowDashedOutline
-        )
 
-        Publishers.CombineLatest4(
-            leftStatusModel.$isDiscarded,
-            leftStatusModel.$isUnloaded,
-            rightStatusModel.$isDiscarded,
-            rightStatusModel.$isUnloaded
+        Publishers.CombineLatest(
+            Publishers.CombineLatest3(
+                leftTab.$hasWebContent,
+                leftTab.$isDiscarded,
+                leftTab.$isUnloaded
+            ),
+            Publishers.CombineLatest3(
+                rightTab.$hasWebContent,
+                rightTab.$isDiscarded,
+                rightTab.$isUnloaded
+            )
         )
-        .map { leftDiscarded, leftUnloaded, rightDiscarded, rightUnloaded in
-            (leftDiscarded || leftUnloaded) && (rightDiscarded || rightUnloaded)
+        .map { left, right in
+            TabStateBorderStyle.resolve(
+                isOpened: left.0 || right.0,
+                isDiscarded: left.1 || right.1,
+                isUnloaded: left.2 || right.2
+            )
         }
         .removeDuplicates()
         .receive(on: DispatchQueue.main)
-        .sink { [weak self] separatesDashedOutlines in
-            self?.updateFaviconCenterOffset(
-                separatesDashedOutlines: separatesDashedOutlines
-            )
+        .sink { [weak self] _ in
+            self?.updateSelectedState()
         }
         .store(in: &cancellables)
 
@@ -292,33 +252,7 @@ class PinnedSplitItem: NSCollectionViewItem, NSMenuDelegate {
             }
             .store(in: &cancellables)
 
-        Publishers.CombineLatest(leftTab.$hasWebContent, rightTab.$hasWebContent)
-            .removeDuplicates { $0 == $1 }
-            .receive(on: DispatchQueue.main)
-            .sink { [weak self] _, _ in
-                self?.updateSelectedState()
-            }
-            .store(in: &cancellables)
-
         rebindThemeSubscription()
-    }
-
-    private var bothFaviconsShowDashedOutline: Bool {
-        TabFaviconPresentation.showsDashedOutline(
-            isDiscarded: leftStatusModel.isDiscarded,
-            isUnloaded: leftStatusModel.isUnloaded
-        ) && TabFaviconPresentation.showsDashedOutline(
-            isDiscarded: rightStatusModel.isDiscarded,
-            isUnloaded: rightStatusModel.isUnloaded
-        )
-    }
-
-    private func updateFaviconCenterOffset(separatesDashedOutlines: Bool) {
-        let offset = separatesDashedOutlines
-            ? Self.separatedFaviconCenterOffset
-            : Self.defaultFaviconCenterOffset
-        leftIconCenterXConstraint?.update(offset: -offset)
-        rightIconCenterXConstraint?.update(offset: offset)
     }
 
     override var isSelected: Bool {
@@ -334,22 +268,21 @@ class PinnedSplitItem: NSCollectionViewItem, NSMenuDelegate {
     }
 
     private func updateSelectedState() {
-        if isSelected {
-            backgroundView.isSelected = true
-            backgroundView.layer?.borderWidth = 0
-            backgroundView.layer?.borderColor = NSColor.clear.cgColor
-        } else if leftTab?.hasWebContent == true || rightTab?.hasWebContent == true {
-            backgroundView.isSelected = false
-            backgroundView.layer?.borderWidth = 1
-            let provider = themeProvider ?? ThemeManager.shared
-            backgroundView.layer?.borderColor = ThemedColor.border
-                .resolve(theme: provider.currentTheme, appearance: provider.currentAppearance)
-                .cgColor
-        } else {
-            backgroundView.isSelected = false
-            backgroundView.layer?.borderWidth = 0
-            backgroundView.layer?.borderColor = NSColor.clear.cgColor
-        }
+        backgroundView.isSelected = isSelected
+        backgroundView.layer?.borderWidth = 0
+        backgroundView.layer?.borderColor = NSColor.clear.cgColor
+
+        let borderStyle = isSelected ? TabStateBorderStyle.none : TabStateBorderStyle.resolve(
+            isOpened: leftTab?.hasWebContent == true || rightTab?.hasWebContent == true,
+            isDiscarded: leftTab?.isDiscarded == true || rightTab?.isDiscarded == true,
+            isUnloaded: leftTab?.isUnloaded == true || rightTab?.isUnloaded == true
+        )
+        let provider = themeProvider ?? ThemeManager.shared
+        let borderColor = ThemedColor.border.resolve(
+            theme: provider.currentTheme,
+            appearance: provider.currentAppearance
+        )
+        stateBorderView.update(style: borderStyle, color: borderColor)
     }
 
     /// Choose which pane a click should focus: the one currently active in

@@ -7,6 +7,15 @@ import Foundation
 
 actor ServiceBrokerChannelStore {
     private static let maximumQueuedEvents = 128
+    /// One `broker.ws.pull` costs a full round trip across the extension bridge,
+    /// so a pull drains as much of the queue as these limits allow rather than a
+    /// single event. phi-agent emits one frame per model delta, and a per-frame
+    /// round trip cannot keep up with a long streamed reply.
+    private static let maximumEventsPerPull = 64
+    private static let maximumBytesPerPull = 512 * 1024
+    /// The queue depth a paused WebSocket read loop resumes at. Halving the
+    /// high-water marks keeps a resumed loop from stalling again immediately.
+    private static let lowWaterQueuedEvents = maximumQueuedEvents / 2
 
     typealias HTTPStreamOpener = @Sendable (BrokerHTTPRequest) async throws -> BrokerHTTPStreamSource
     typealias WebSocketOpener = @Sendable (String, [String: String]) async throws -> BrokerWebSocketSource
@@ -48,6 +57,10 @@ actor ServiceBrokerChannelStore {
         var activityGeneration: UInt64 = 0
         var idleTask: Task<Void, Never>?
         var readTask: Task<Void, Never>?
+        /// Set while the read loop is parked at the high-water mark. Resumed by
+        /// a pull that drains below the low-water mark, and by every terminal
+        /// transition so the loop can observe the channel and exit.
+        var readGate: CheckedContinuation<Void, Never>?
     }
 
     private enum Channel {
@@ -255,13 +268,26 @@ actor ServiceBrokerChannelStore {
         }
 
         guard channel.queue.isEmpty else {
-            let event = channel.queue.removeFirst()
-            channel.queuedBytes -= event.byteCount
+            var events = [BrokerWebSocketEvent]()
+            var batchBytes = 0
+            while let next = channel.queue.first {
+                let nextBytes = next.byteCount
+                guard events.isEmpty
+                    || (events.count < Self.maximumEventsPerPull
+                        && batchBytes + nextBytes <= Self.maximumBytesPerPull) else { break }
+                channel.queue.removeFirst()
+                channel.queuedBytes -= nextBytes
+                batchBytes += nextBytes
+                events.append(next)
+                if next.isTerminal { break }
+            }
             channels[channelID] = .webSocket(channel)
             if channel.terminal && channel.queue.isEmpty {
                 removeChannel(channelID)
+            } else {
+                resumeReadGateIfDrained(channelID: channelID)
             }
-            return BrokerWebSocketPullResponse(event: event)
+            return BrokerWebSocketPullResponse(events: events)
         }
 
         return await withCheckedContinuation { continuation in
@@ -397,6 +423,8 @@ actor ServiceBrokerChannelStore {
     private func readWebSocket(channelID: String, source: BrokerWebSocketSource) async {
         do {
             while true {
+                await awaitReadCapacity(channelID: channelID)
+                guard isReadable(channelID: channelID) else { return }
                 let event = try await source.receive()
                 receiveWebSocketEvent(event, channelID: channelID)
                 switch event {
@@ -429,22 +457,54 @@ actor ServiceBrokerChannelStore {
             if terminal { removeChannel(channelID) } else { touchWebSocket(channelID: channelID) }
             return
         }
-        if !terminal {
-            guard channel.queue.count < Self.maximumQueuedEvents,
-                  channel.queuedBytes <= configuration.unacknowledgedWindowBytes - event.byteCount else {
-                channels[channelID] = .webSocket(channel)
-                failWebSocket(
-                    channelID: channelID,
-                    code: .flowControlTimeout,
-                    message: "Channel backpressure limit exceeded."
-                )
-                return
-            }
-        }
+        // The event was already read off the socket, so it is always enqueued —
+        // it may push the queue past the high-water mark. `awaitReadCapacity`
+        // then parks the read loop until a pull drains the queue, which lets the
+        // kernel socket buffer, and in turn the broker, feel the backpressure.
         channel.terminal = terminal
         channel.queue.append(event)
         channel.queuedBytes += event.byteCount
         channels[channelID] = .webSocket(channel)
+    }
+
+    /// Parks the WebSocket read loop while the channel sits at or above its
+    /// high-water mark. Only the channel's own read loop calls this, so at most
+    /// one continuation is ever stored.
+    private func awaitReadCapacity(channelID: String) async {
+        guard case .webSocket(let channel) = channels[channelID],
+              !channel.terminal,
+              isAtHighWater(channel) else { return }
+        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+            guard case .webSocket(var stored) = channels[channelID], !stored.terminal else {
+                continuation.resume()
+                return
+            }
+            stored.readGate = continuation
+            channels[channelID] = .webSocket(stored)
+        }
+    }
+
+    /// A parked read loop is released by expiry, failure and removal as well as
+    /// by drainage, so it must re-check the channel before reading again.
+    private func isReadable(channelID: String) -> Bool {
+        guard case .webSocket(let channel) = channels[channelID] else { return false }
+        return !channel.terminal
+    }
+
+    private func isAtHighWater(_ channel: WebSocketChannel) -> Bool {
+        channel.queue.count >= Self.maximumQueuedEvents
+            || channel.queuedBytes >= configuration.unacknowledgedWindowBytes
+    }
+
+    private func resumeReadGateIfDrained(channelID: String) {
+        guard case .webSocket(var channel) = channels[channelID],
+              channel.readGate != nil,
+              channel.queue.count <= Self.lowWaterQueuedEvents,
+              channel.queuedBytes <= configuration.unacknowledgedWindowBytes / 2 else { return }
+        let gate = channel.readGate
+        channel.readGate = nil
+        channels[channelID] = .webSocket(channel)
+        gate?.resume()
     }
 
     private func failWebSocket(channelID: String, error: Error) {
@@ -464,11 +524,18 @@ actor ServiceBrokerChannelStore {
         channel.terminal = true
         channel.queue.removeAll(keepingCapacity: false)
         channel.queuedBytes = 0
+        // Take the gate out of the stored channel before any removal so it is
+        // resumed exactly once, whichever branch runs.
+        let gate = channel.readGate
+        channel.readGate = nil
+        let pending = channel.pendingPull
+        channel.pendingPull = nil
         let event = BrokerWebSocketEvent.failure(code: code, message: message)
         let source = channel.source
         let closeCode: UInt16 = code == .protocolError ? 1002 : 1011
         Task { await source.close(code: closeCode, reason: message) }
-        if let pending = channel.pendingPull {
+        if let pending {
+            channels[channelID] = .webSocket(channel)
             pending.timeoutTask.cancel()
             pending.continuation.resume(returning: BrokerWebSocketPullResponse(event: event))
             removeChannel(channelID)
@@ -476,6 +543,7 @@ actor ServiceBrokerChannelStore {
             channel.queue.append(event)
             channels[channelID] = .webSocket(channel)
         }
+        gate?.resume()
     }
 
     private func timeoutHTTPPull(channelID: String, token: UUID) {
@@ -564,16 +632,23 @@ actor ServiceBrokerChannelStore {
     private func removeChannel(_ channelID: String) -> Channel? {
         guard let channel = channels.removeValue(forKey: channelID) else { return nil }
         switch channel {
-        case .http(let channel):
-            channel.readTask?.cancel()
-            channel.idleTask?.cancel()
-            channel.pendingPull?.timeoutTask.cancel()
-        case .webSocket(let channel):
-            channel.readTask?.cancel()
-            channel.idleTask?.cancel()
-            channel.pendingPull?.timeoutTask.cancel()
+        case .http(let http):
+            http.readTask?.cancel()
+            http.idleTask?.cancel()
+            http.pendingPull?.timeoutTask.cancel()
+            return channel
+        case .webSocket(var webSocket):
+            webSocket.readTask?.cancel()
+            webSocket.idleTask?.cancel()
+            webSocket.pendingPull?.timeoutTask.cancel()
+            // Cancelling the read task does not resume a parked continuation, so
+            // release the gate here: expiry, close and failure all remove the
+            // channel, and the released loop then observes it is gone and exits.
+            let gate = webSocket.readGate
+            webSocket.readGate = nil
+            gate?.resume()
+            return .webSocket(webSocket)
         }
-        return channel
     }
 
     private func validateConfiguration() throws {
@@ -604,5 +679,12 @@ private extension BrokerWebSocketEvent {
     var byteCount: Int {
         if case .frame(_, let frame) = self { return frame.data.count }
         return 0
+    }
+
+    var isTerminal: Bool {
+        switch self {
+        case .close, .failure: true
+        case .frame, .timeout: false
+        }
     }
 }

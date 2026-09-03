@@ -397,7 +397,7 @@ actor ServiceBrokerExtensionProtocol {
                     )
                     throw error
                 }
-                return try encode(pulled.event)
+                return try encode(pulled.events)
 
             case "broker.ws.close":
                 let request = try decode(
@@ -736,6 +736,17 @@ actor ServiceBrokerExtensionProtocol {
     }
 
     private func encode(_ event: BrokerPullEvent) throws -> ServiceBrokerExtensionReply {
+        try success(["events": [try encoded(event)]])
+    }
+
+    /// One reply carries every event the pull drained, in order. The extension
+    /// already iterates `events` and checks each sequence, so a batch needs no
+    /// extension change.
+    private func encode(_ events: [BrokerWebSocketEvent]) throws -> ServiceBrokerExtensionReply {
+        try success(["events": try events.map(encoded)])
+    }
+
+    private func encoded(_ event: BrokerPullEvent) throws -> [String: Any] {
         let encoded: [String: Any]
         switch event {
         case .data(let sequence, let data):
@@ -750,10 +761,10 @@ actor ServiceBrokerExtensionProtocol {
         case .failure(let code, let message):
             encoded = ["type": "error", "code": code.rawValue, "message": message]
         }
-        return try success(["events": [encoded]])
+        return encoded
     }
 
-    private func encode(_ event: BrokerWebSocketEvent) throws -> ServiceBrokerExtensionReply {
+    private func encoded(_ event: BrokerWebSocketEvent) throws -> [String: Any] {
         let encoded: [String: Any]
         switch event {
         case .frame(let sequence, let frame):
@@ -775,7 +786,7 @@ actor ServiceBrokerExtensionProtocol {
         case .failure(let code, let message):
             encoded = ["type": "error", "code": code.rawValue, "message": message]
         }
-        return try success(["events": [encoded]])
+        return encoded
     }
 
     private func success(_ result: [String: Any]) throws -> ServiceBrokerExtensionReply {

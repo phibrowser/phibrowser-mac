@@ -553,6 +553,7 @@ final class SplitTabPreviewTests: XCTestCase {
             TabPreviewContent(
                 id: .tab("regular-preview"),
                 title: title,
+                isMemoryReclaimed: false,
                 url: url,
                 image: image,
                 imageSource: .thumbnail(tabID: 1)

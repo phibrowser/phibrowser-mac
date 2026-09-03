@@ -18,6 +18,11 @@ enum TabPreviewURLPolicy {
         return URLProcessor.phiBrandEnsuredUrlString(rawURL)
     }
 
+    static func shortDisplayURL(for rawURL: String) -> String {
+        guard let host = URL(string: rawURL)?.host, !host.isEmpty else { return rawURL }
+        return host.hasPrefix("www.") ? String(host.dropFirst(4)) : host
+    }
+
     static func allowsSnapshot(for rawURL: String) -> Bool {
         guard let components = URLComponents(string: rawURL),
               let scheme = components.scheme?.lowercased(),
@@ -50,6 +55,7 @@ enum TabPreviewTarget {
 struct TabPreviewContent {
     let id: TabPreviewTargetID
     let title: String
+    let isMemoryReclaimed: Bool
     let url: String
     let image: NSImage?
     let imageSource: TabPreviewImageSource
@@ -102,6 +108,8 @@ struct TabPreviewContentResolver {
         return TabPreviewContent(
             id: resolved.id,
             title: resolved.title.isEmpty ? displayURL : resolved.title,
+            isMemoryReclaimed: resolved.liveTab?.isDiscarded == true
+                || resolved.liveTab?.isUnloaded == true,
             url: displayURL,
             image: resolvedImage.image,
             imageSource: resolvedImage.source
@@ -317,6 +325,29 @@ final class TabPreviewViewModel: ObservableObject {
     }
 }
 
+struct TabPreviewTitleView: View {
+    let title: String
+    let isMemoryReclaimed: Bool
+
+    var body: some View {
+        HStack(alignment: .center, spacing: 5) {
+            if isMemoryReclaimed {
+                Image(systemName: "leaf.fill")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(.green)
+                    .fixedSize()
+                    .accessibilityHidden(true)
+            }
+
+            Text(title)
+                .foregroundStyle(.primary)
+                .lineLimit(2)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .font(.system(size: 14, weight: .semibold))
+    }
+}
+
 struct TabPreviewView: View {
     @ObservedObject var viewModel: TabPreviewViewModel
 
@@ -338,14 +369,13 @@ struct TabPreviewView: View {
                 }
 
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(content.title)
-                        .font(.system(size: 14, weight: .semibold))
-                        .foregroundStyle(.primary)
-                        .lineLimit(2)
-                        .fixedSize(horizontal: false, vertical: true)
+                    TabPreviewTitleView(
+                        title: content.title,
+                        isMemoryReclaimed: content.isMemoryReclaimed
+                    )
 
                     if !content.url.isEmpty {
-                        Text(content.url)
+                        Text(TabPreviewURLPolicy.shortDisplayURL(for: content.url))
                             .font(.system(size: 12))
                             .foregroundStyle(.secondary)
                             .lineLimit(1)
@@ -842,6 +872,14 @@ final class TabPreviewRegistration {
         liveTabCancellables.removeAll()
         observedLiveTab = nextLiveTab
         guard let nextLiveTab else { return }
+        Publishers.CombineLatest(nextLiveTab.$isDiscarded, nextLiveTab.$isUnloaded)
+            .map { $0 || $1 }
+            .removeDuplicates()
+            .dropFirst()
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in self?.refreshIfHovering() }
+            .store(in: &liveTabCancellables)
+
         if case .tab(let targetTab) = target, targetTab === nextLiveTab {
             return
         }

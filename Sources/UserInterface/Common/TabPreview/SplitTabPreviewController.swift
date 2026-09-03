@@ -92,6 +92,7 @@ struct SplitTabPreviewTarget {
 struct SplitTabPreviewPaneContent {
     fileprivate let id: SplitTabPreviewPaneID
     let title: String
+    let isMemoryReclaimed: Bool
     let url: String
     let image: NSImage?
     let imageSource: SplitTabPreviewImageSource
@@ -311,6 +312,8 @@ struct SplitTabPreviewContentResolver {
         return SplitTabPreviewPaneContent(
             id: pane.id,
             title: title,
+            isMemoryReclaimed: pane.liveTab?.isDiscarded == true
+                || pane.liveTab?.isUnloaded == true,
             url: displayURL,
             image: resolvedImage.image,
             imageSource: resolvedImage.source
@@ -512,14 +515,13 @@ struct SplitTabPreviewView: View {
             .clipped()
 
             VStack(alignment: .leading, spacing: 4) {
-                Text(content.title)
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(.primary)
-                    .lineLimit(2)
-                    .fixedSize(horizontal: false, vertical: true)
+                TabPreviewTitleView(
+                    title: content.title,
+                    isMemoryReclaimed: content.isMemoryReclaimed
+                )
 
                 if !content.url.isEmpty {
-                    Text(displayURL(content.url))
+                    Text(TabPreviewURLPolicy.shortDisplayURL(for: content.url))
                         .font(.system(size: 12))
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
@@ -538,11 +540,10 @@ struct SplitTabPreviewView: View {
         width: CGFloat
     ) -> some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text(content.title)
-                .font(.system(size: 14, weight: .semibold))
-                .foregroundStyle(.primary)
-                .lineLimit(2)
-                .fixedSize(horizontal: false, vertical: true)
+            TabPreviewTitleView(
+                title: content.title,
+                isMemoryReclaimed: content.isMemoryReclaimed
+            )
 
             if !content.url.isEmpty {
                 Text(content.url)
@@ -555,11 +556,6 @@ struct SplitTabPreviewView: View {
         .padding(.horizontal, 12)
         .padding(.vertical, 10)
         .frame(width: width, alignment: .leading)
-    }
-
-    private func displayURL(_ rawValue: String) -> String {
-        guard let host = URL(string: rawValue)?.host, !host.isEmpty else { return rawValue }
-        return host.hasPrefix("www.") ? String(host.dropFirst(4)) : host
     }
 }
 
@@ -888,6 +884,14 @@ final class SplitTabPreviewRegistration {
         paneCancellables.removeAll()
         guard let target, let browserState else { return }
         for tab in resolver.paneTabs(for: target, in: browserState) {
+            Publishers.CombineLatest(tab.$isDiscarded, tab.$isUnloaded)
+                .map { $0 || $1 }
+                .removeDuplicates()
+                .dropFirst()
+                .receive(on: DispatchQueue.main)
+                .sink { [weak self] _ in self?.refreshIfHovering() }
+                .store(in: &paneCancellables)
+
             Publishers.CombineLatest3(tab.$title, tab.$url, tab.$isActive)
                 .dropFirst()
                 .receive(on: DispatchQueue.main)

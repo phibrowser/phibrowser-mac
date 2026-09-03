@@ -3075,11 +3075,18 @@ class WebContentViewController: NSViewController {
         // browser-reported drive carries no identity, so that falls back to the
         // roster's best guess.
         let named = AgentUserSpaceDriveRegistry.shared.record(forTabId: tabId)?.driverName
+        // A drive by the browser's own agent is not "some CDP client": the
+        // badge reads it as Phi and wears the product's mark. Taken from the
+        // roster's KEY-based answer rather than from the name above, which is
+        // whatever string the identity resolved to (see
+        // `soleRecentDriverIsFirstParty`).
+        let origin: AgentTaskOrigin =
+            AgentCDPDriverRoster.shared.soleRecentDriverIsFirstParty ? .phiAgent : .cdp
         return AgentTask(
             taskId: "user-space-drive-\(tabId)",
             spaceId: browserState?.spaceId ?? "",
             profileId: "",
-            origin: .cdp,
+            origin: origin,
             driverPrincipalId: nil,
             number: 0,
             windowId: browserState?.windowId ?? 0,

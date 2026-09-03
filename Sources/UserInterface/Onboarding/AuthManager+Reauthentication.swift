@@ -16,21 +16,24 @@ enum AuthReauthenticationState: Equatable {
     case normal
     case required(
         reason: AuthReauthenticationReason,
-        firstDetectedAt: Date
+        firstDetectedAt: Date,
+        incidentID: UUID
     )
     case reauthenticating(
         reason: AuthReauthenticationReason,
-        firstDetectedAt: Date
+        firstDetectedAt: Date,
+        incidentID: UUID
     )
 
     var requiredDetails: (
         reason: AuthReauthenticationReason,
-        firstDetectedAt: Date
+        firstDetectedAt: Date,
+        incidentID: UUID
     )? {
         switch self {
-        case let .required(reason, firstDetectedAt),
-             let .reauthenticating(reason, firstDetectedAt):
-            return (reason, firstDetectedAt)
+        case let .required(reason, firstDetectedAt, incidentID),
+             let .reauthenticating(reason, firstDetectedAt, incidentID):
+            return (reason, firstDetectedAt, incidentID)
         case .normal:
             return nil
         }
@@ -97,6 +100,7 @@ enum AuthReauthenticationWebAuthRunner {
 private struct PersistedAuthReauthenticationState {
     let reason: AuthReauthenticationReason
     let firstDetectedAt: Date
+    let incidentID: UUID
 }
 
 extension AuthManager {
@@ -124,7 +128,8 @@ extension AuthManager {
         hasPersistedReauthenticationState = true
         reauthenticationState = .required(
             reason: persisted.reason,
-            firstDetectedAt: persisted.firstDetectedAt
+            firstDetectedAt: persisted.firstDetectedAt,
+            incidentID: persisted.incidentID
         )
 
         if promptIfDue {
@@ -145,12 +150,14 @@ extension AuthManager {
         let existing = reauthenticationState.requiredDetails
         let persisted = existing == nil ? persistedReauthenticationState() : nil
         let firstDetectedAt = existing?.firstDetectedAt ?? persisted?.firstDetectedAt ?? now
+        let incidentID = existing?.incidentID ?? persisted?.incidentID ?? UUID()
 
         recordTrace(
             "reauthentication-required",
             details: [
                 "reason": reason.rawValue,
-                "firstDetectedAt": iso8601String(firstDetectedAt)
+                "firstDetectedAt": iso8601String(firstDetectedAt),
+                "incidentID": incidentID.uuidString
             ],
             callStackSymbols: Array(Thread.callStackSymbols.prefix(16))
         )
@@ -159,12 +166,23 @@ extension AuthManager {
 
         reauthenticationState = .required(
             reason: reason,
-            firstDetectedAt: firstDetectedAt
+            firstDetectedAt: firstDetectedAt,
+            incidentID: incidentID
         )
         persistReauthenticationState(
             reason: reason,
-            firstDetectedAt: firstDetectedAt
+            firstDetectedAt: firstDetectedAt,
+            incidentID: incidentID
         )
+
+        // Upload the full logs once per incident, not again for a restored pending session.
+        if existing == nil {
+            reportReauthenticationRequired(
+                reason: reason,
+                firstDetectedAt: firstDetectedAt,
+                incidentID: incidentID
+            )
+        }
 
         promptForReauthenticationIfNeeded(trigger: "renew_failed")
     }
@@ -260,14 +278,16 @@ extension AuthManager {
     private func performReauthentication(
         details: (
             reason: AuthReauthenticationReason,
-            firstDetectedAt: Date
+            firstDetectedAt: Date,
+            incidentID: UUID
         ),
         attemptID: UUID,
         replacingActiveSession: Bool
     ) async -> Bool {
         reauthenticationState = .reauthenticating(
             reason: details.reason,
-            firstDetectedAt: details.firstDetectedAt
+            firstDetectedAt: details.firstDetectedAt,
+            incidentID: details.incidentID
         )
         recordTrace(
             "reauthentication-started",
@@ -311,6 +331,7 @@ extension AuthManager {
             reportReauthenticationResult(
                 succeeded: true,
                 reason: details.reason,
+                incidentID: details.incidentID,
                 details: credentialSnapshotDetails()
             )
             return true
@@ -341,7 +362,8 @@ extension AuthManager {
     private func handleReauthenticationFailure(
         details: (
             reason: AuthReauthenticationReason,
-            firstDetectedAt: Date
+            firstDetectedAt: Date,
+            incidentID: UUID
         ),
         failure: String,
         extraDetails: [String: String]
@@ -359,13 +381,14 @@ extension AuthManager {
         reportReauthenticationResult(
             succeeded: false,
             reason: details.reason,
+            incidentID: details.incidentID,
             details: reportDetails
         )
     }
 
     @MainActor
     func forceLogoutAfterReauthenticationFailure(reason: String, shouldReport: Bool = true) {
-        let reauthenticationReason = reauthenticationState.requiredDetails?.reason
+        let reauthenticationDetails = reauthenticationState.requiredDetails
         recordTrace(
             "reauthentication-forced-logout",
             details: [
@@ -373,10 +396,11 @@ extension AuthManager {
             ],
             callStackSymbols: Array(Thread.callStackSymbols.prefix(16))
         )
-        if shouldReport, let reauthenticationReason {
+        if shouldReport, let reauthenticationDetails {
             reportReauthenticationResult(
                 succeeded: false,
-                reason: reauthenticationReason,
+                reason: reauthenticationDetails.reason,
+                incidentID: reauthenticationDetails.incidentID,
                 details: [
                     "failure": "forced_logout",
                     "forcedLogoutReason": reason
@@ -400,20 +424,33 @@ extension AuthManager {
             return nil
         }
 
+        let incidentID: UUID
+        if let rawID = defaults.string(forKey: AccountUserDefaults.DefaultsKey.authReauthenticationIncidentID.rawValue),
+           let storedID = UUID(uuidString: rawID) {
+            incidentID = storedID
+        } else {
+            // Give pending incidents from older versions a stable ID for subsequent restores.
+            incidentID = UUID()
+            defaults.set(incidentID.uuidString, forKey: .authReauthenticationIncidentID)
+        }
+
         return PersistedAuthReauthenticationState(
             reason: reason,
-            firstDetectedAt: Date(timeIntervalSince1970: firstDetectedTimestamp)
+            firstDetectedAt: Date(timeIntervalSince1970: firstDetectedTimestamp),
+            incidentID: incidentID
         )
     }
 
     func persistReauthenticationState(
         reason: AuthReauthenticationReason,
-        firstDetectedAt: Date
+        firstDetectedAt: Date,
+        incidentID: UUID
     ) {
         guard let defaults = AccountController.shared.account?.userDefaults else {
             return
         }
 
+        defaults.set(incidentID.uuidString, forKey: .authReauthenticationIncidentID)
         defaults.set(reason.rawValue, forKey: .authReauthenticationReason)
         defaults.set(firstDetectedAt.timeIntervalSince1970, forKey: .authReauthenticationFirstDetectedAt)
         hasPersistedReauthenticationState = true
@@ -428,6 +465,7 @@ extension AuthManager {
 
         defaults.set(nil, forKey: .authReauthenticationReason)
         defaults.set(nil, forKey: .authReauthenticationFirstDetectedAt)
+        defaults.set(nil, forKey: .authReauthenticationIncidentID)
         defaults.set(nil, forKey: "authReauthenticationFailedAttempts")
         defaults.set(nil, forKey: "authReauthenticationPromptDeferrals")
         defaults.set(nil, forKey: "authReauthenticationNextPromptAt")

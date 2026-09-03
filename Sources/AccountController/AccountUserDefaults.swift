@@ -248,6 +248,7 @@ extension AccountUserDefaults {
         case lastKnownSidebarWidth
         case authReauthenticationReason
         case authReauthenticationFirstDetectedAt
+        case authReauthenticationIncidentID
         case activeSpaceId
         /// The Space currently holding the "default" role (see
         /// `SpaceManager.currentDefaultSpaceId`). Absent until the user

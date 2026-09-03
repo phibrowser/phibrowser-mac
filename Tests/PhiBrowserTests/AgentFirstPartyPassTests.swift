@@ -75,6 +75,56 @@ final class AgentFirstPartyPassTests: XCTestCase {
         XCTAssertNil(AgentPeerIdentity.firstPartyAgent(socketFD: -1))
     }
 
+    // MARK: - Which component the pass is for
+
+    /// The component named here is the one that actually opens the socket.
+    /// Naming a sibling would not narrow the pass, it would disable it: the
+    /// real agent would fall through to the ancestry walk and be refused as
+    /// `unresolvedOwnCode`, taking the browser's own agent offline.
+    func testPassIsScopedToThePhiAgentComponent() {
+        XCTAssertEqual(AgentPeerIdentity.phiAgentComponentName, "phi-agent")
+    }
+
+    /// The shape Sentinel actually launches, argv[1] as seen in the field.
+    func testAgentBundleArgumentIsRecognized() {
+        XCTAssertTrue(AgentPeerIdentity.namesPhiAgentComponent(
+            "/Users/x/Library/Application Support/com.phibrowser.canary.Sentinel/"
+            + "google-oauth2_1/bins/third_party/phi-agent/2026.9.3.1616/arm64/"
+            + "phi-agent.bundle.js"))
+    }
+
+    /// Matched on the name alone. Sentinel's updater renames the live install
+    /// directory out from under a running component, so requiring the file to
+    /// exist is what previously dropped genuine first-party connections into
+    /// the consent prompt.
+    func testVanishedBundlePathStillMatches() {
+        let gone = "/nonexistent/bins/third_party/phi-agent/0.0.0/arm64/phi-agent.bundle.js"
+        XCTAssertFalse(FileManager.default.fileExists(atPath: gone))
+        XCTAssertTrue(AgentPeerIdentity.namesPhiAgentComponent(gone))
+    }
+
+    /// The siblings share the interpreter and the runner, and none of them
+    /// drives CDP, so none may take a pass that skips consent outright.
+    func testSiblingSentinelComponentsAreNotTheAgent() {
+        for sibling in ["pi-agent", "phi-memory", "im-server", "phi-mcp-server"] {
+            XCTAssertFalse(
+                AgentPeerIdentity.namesPhiAgentComponent(
+                    "/x/bins/third_party/\(sibling)/1.0.0/arm64/\(sibling).bundle.mjs"),
+                "\(sibling) must not satisfy the phi-agent name check")
+        }
+    }
+
+    /// Whole path components only — a lookalike directory an outsider controls
+    /// must not pass by embedding the name in a longer one.
+    func testLookalikeNamesDoNotMatch() {
+        for imposter in ["/tmp/not-phi-agent/x.js",
+                         "/tmp/phi-agent-evil/x.js",
+                         "/tmp/xphi-agent/phi-agentx.bundle.js"] {
+            XCTAssertFalse(AgentPeerIdentity.namesPhiAgentComponent(imposter),
+                           "\(imposter) must not satisfy the phi-agent name check")
+        }
+    }
+
     /// A listening AF_UNIX socket plus a connected client, both in this
     /// process — the shape `firstPartyAgent` reads peer credentials from.
     private static func connectedPair(at path: String) throws -> (listener: Int32, peer: Int32) {

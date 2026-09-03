@@ -381,46 +381,51 @@ enum AgentPeerIdentity {
     /// The browser's own code, which Sentinel starts as a component of the
     /// product rather than as an outside agent the user invited in:
     ///
-    ///     Phi Sentinel.app → runner → node → pi-agent.bundle
+    ///     Phi Sentinel.app → runner → node → phi-agent.bundle
     ///
     /// It is recognized instead of prompted for, and `AgentCDPListener` admits
     /// it without consent and without the two master switches — a built-in
     /// feature must not ask the user to turn on Developer mode to work. That
     /// makes this the one identity where the code signature IS the boundary
-    /// rather than an aid to naming the agent, so both of these must hold and
-    /// the same-uid gate still applies before either:
+    /// rather than an aid to naming the agent, so all of these must hold and
+    /// the same-uid gate still applies before any of them:
     ///
     ///   1. the connecting process is Phi-signed — team 87DQ3HMK5G under an
     ///      Apple-issued chain — pinned to this socket by its peer audit token;
-    ///   2. its parent is Phi-signed too — Sentinel's `runner`.
+    ///   2. its command line names the phi-agent bundle, the one component this
+    ///      pass exists for;
+    ///   3. it descends from the `Phi Sentinel.app` of THIS browser bundle, and
+    ///      that ancestor is Phi-signed too.
     ///
-    /// (2) is what carries the check: (1) alone is satisfied by anyone who runs
-    /// Sentinel's bundled node, which is readable by every process of this
-    /// user. The signature on the peer says only "this binary shipped with
-    /// Phi"; it takes a Phi-signed parent to say "Phi started it".
+    /// (3) is what carries the check. A signature on the peer cannot say who
+    /// started it: `node` and `runner` ship inside the app bundle and are
+    /// readable and executable by every process of this user, so a same-uid
+    /// process can run them itself. Requiring a Phi-signed *parent* did not
+    /// close that, which is why it is no longer what this rests on — the
+    /// parent can be a second copy of our own `node`, launched by the same
+    /// outsider, and both halves of that pair then pass honestly. What an
+    /// outsider cannot do is arrange to be forked by the Sentinel this browser
+    /// launched: ppid is set by the kernel at fork, so descent is the one
+    /// thing here a peer cannot assert about itself.
     ///
-    /// What is deliberately NOT checked is what the process is *running*. This
-    /// used to additionally require argv[1] to name a known agent bundle that
-    /// still existed on disk, and both halves of that misfired in the field —
-    /// each time dropping a genuine first-party connection into the consent
-    /// prompt under the outermost bundle's name, asking the user whether to let
-    /// "Phi" control Phi Browser, which is not a question anyone can answer:
+    /// (2) is matched on the NAME only, never on the file existing. Requiring
+    /// the file on disk misfired in the field, dropping genuine first-party
+    /// connections into the consent prompt under the outermost bundle's name —
+    /// asking the user whether to let "Phi" control Phi Browser, which is not
+    /// a question anyone can answer — because Sentinel's updater renames the
+    /// live install directory before swapping the new one in and prunes old
+    /// versions behind it, so a component still running out of the old
+    /// directory carries an argv path that no longer resolves. The name is
+    /// matched as a whole path component, so the sibling `pi-agent` bundle —
+    /// same interpreter, same runner — cannot satisfy it. On its own an
+    /// argument the peer chose for itself is no evidence about the peer; it
+    /// narrows *which* component is admitted, while (3) decides *who* may
+    /// present it.
     ///
-    ///   • the runtime is not always launched as `node <bundle>` — a `-e`
-    ///     bootstrap has no script argument at all; and
-    ///   • Sentinel's updater renames the live install directory before
-    ///     swapping the new one in, so a component still running out of the old
-    ///     directory carries an argv path that no longer resolves.
-    ///
-    /// Neither check was ever load-bearing: an argument the peer chose for
-    /// itself is not evidence about the peer, and anyone able to satisfy (2)
-    /// could as easily name a file `pi-agent.bundle` and point our node at it.
-    /// Dropping them widens *which* first-party binary is recognized, never
-    /// *who* may present it — the pair above is the whole boundary, and it is
-    /// the pair that was carrying it all along.
-    ///
-    /// Returns nil for every other connection, which then resolves normally
-    /// and faces the consent prompt.
+    /// Returns nil for every other connection, which then resolves normally.
+    /// Phi's own code that fails these checks does not reach the consent
+    /// prompt either: `resolve` reports it as `unresolvedOwnCode` and the
+    /// listener refuses it, rather than asking the user to approve Phi to Phi.
     static func firstPartyAgent(socketFD: Int32) -> AgentIdentity? {
         guard let auditToken = peerAuditToken(socketFD: socketFD) else { return nil }
         // The audit token's sixth word is the pid. `audit_token_to_pid` lives
@@ -437,13 +442,18 @@ enum AgentPeerIdentity {
         // `isFirstPartyCode` does: a rebuild or an update can unlink the binary
         // a long-lived component is still running from.
         let executable = executablePath(peerPID) ?? recordedExecutablePath(peerPID)
-        guard let parent = parentPID(peerPID), parent > 1,
-              isFirstPartyCode(guestAttributes: [kSecGuestAttributePid: parent],
-                               pid: parent) else {
-            let name = executable.map { ($0 as NSString).lastPathComponent }
-                ?? "pid \(peerPID)"
-            AppLogWarn("[AgentCDP] \(name) is Phi-signed but was not launched by "
-                       + "Phi-signed code; falling back to the ancestry walk")
+        let name = executable.map { ($0 as NSString).lastPathComponent }
+            ?? "pid \(peerPID)"
+
+        guard runsPhiAgentBundle(peerPID) else {
+            AppLogWarn("[AgentCDP] \(name) is Phi-signed but is not running the "
+                       + "\(phiAgentComponentName) bundle; falling back to the ancestry walk")
+            return nil
+        }
+        guard sentinelAncestor(of: peerPID) != nil else {
+            AppLogWarn("[AgentCDP] \(name) is Phi-signed and runs the "
+                       + "\(phiAgentComponentName) bundle but does not descend from this "
+                       + "browser's Phi Sentinel; falling back to the ancestry walk")
             return nil
         }
 
@@ -465,9 +475,111 @@ enum AgentPeerIdentity {
     static let firstPartyKey = "phi:phi-agent"
 
     /// Shown wherever a driving agent is named — the Space switcher, the
-    /// transcript — so the browser's own agent reads as itself rather than as
-    /// the "phi-agent.bundle" script an ancestry walk would call it.
-    static let firstPartyDisplayName = "Phi Agent"
+    /// transcript, the pill over a driven tab — so the browser's own agent
+    /// reads as itself rather than as the "phi-agent.bundle" script an
+    /// ancestry walk would call it. (Left to the walk it reads worse than
+    /// that: `AgentDriverBadge.friendlyName` keeps only the text after the
+    /// last dot, so "phi-agent.bundle" reaches the pill as "bundle".)
+    ///
+    /// The product's name, not the component's: to the user this is Phi
+    /// driving itself, and every other badge here names a product too.
+    static let firstPartyDisplayName = "Phi"
+
+    /// Path component naming the runtime this pass exists for. Sentinel runs
+    /// several components on the same interpreter under the same runner
+    /// (`pi-agent`, `phi-memory`, `im-server`, …); only this one drives CDP.
+    ///
+    /// It is the component that discovers the browser's `CDPAgentSocket`
+    /// pointer and connects — see phi-agent's `api/tasks/phi-browser-channel.ts`,
+    /// which pins the channel it belongs to and refuses the other one. Its
+    /// siblings never open the socket at all, which is why naming the wrong
+    /// one here does not merely narrow the pass, it disables it: the real
+    /// agent then falls through to `resolve`, comes back as
+    /// `unresolvedOwnCode`, and is refused outright.
+    static let phiAgentComponentName = "phi-agent"
+
+    /// True when `pid`'s command line names the phi-agent bundle. Nil argv — a
+    /// process that exited mid-check, or one whose arguments the kernel will
+    /// not hand over — is not a match: this gate only ever admits.
+    private static func runsPhiAgentBundle(_ pid: pid_t) -> Bool {
+        guard let argv = processArgv(pid) else { return false }
+        return argv.dropFirst().contains(where: namesPhiAgentComponent)
+    }
+
+    /// Whether an argument names the phi-agent component: any whole path
+    /// component whose name before the first "." is exactly it. Both the
+    /// bundle file and the directory version it sits in match
+    /// ("…/third_party/phi-agent/<version>/arm64/phi-agent.bundle.js"), while
+    /// the sibling "pi-agent.bundle.mjs" does not — which is the whole reason
+    /// this compares components instead of searching the string. Internal for
+    /// unit coverage.
+    static func namesPhiAgentComponent(_ argument: String) -> Bool {
+        for component in argument.split(separator: "/") {
+            let stem = component.prefix { $0 != "." }
+            if String(stem) == phiAgentComponentName { return true }
+        }
+        return false
+    }
+
+    /// The `Phi Sentinel.app` process this connection descends from, or nil
+    /// when the ancestry reaches no Sentinel of ours that is also Phi-signed.
+    ///
+    /// Bounded like every other walk here. `parentPID` falls back to the
+    /// world-readable kernel process table, so a setuid ancestor cannot end
+    /// the walk early and hide the Sentinel above it.
+    private static func sentinelAncestor(of peerPID: pid_t) -> pid_t? {
+        var pid = peerPID
+        var guardCount = 0
+        while pid > 1 && guardCount < 32 {
+            guardCount += 1
+            if let path = executablePath(pid) ?? recordedExecutablePath(pid),
+               isOurSentinelExecutable(path),
+               isFirstPartyCode(guestAttributes: [kSecGuestAttributePid: pid],
+                                pid: pid) {
+                return pid
+            }
+            guard let parent = parentPID(pid), parent != pid else { break }
+            pid = parent
+        }
+        return nil
+    }
+
+    /// The Sentinel login item shipped inside the RUNNING browser bundle.
+    ///
+    /// Pinned to this bundle rather than matched by name, because
+    /// `Phi Sentinel.app` is as readable as the rest of the bundle: a copy
+    /// dropped somewhere writable would otherwise be an ancestor anyone could
+    /// produce, and the point of the ancestry check is that it cannot be.
+    private static let sentinelExecutablePath: String? = canonicalPath(
+        Bundle.main.bundleURL
+            .appendingPathComponent("Contents/Library/LoginItems/Phi Sentinel.app",
+                                    isDirectory: true)
+            .appendingPathComponent("Contents/MacOS/Phi Sentinel", isDirectory: false)
+            .path)
+
+    private static func isOurSentinelExecutable(_ path: String) -> Bool {
+        guard let sentinelExecutablePath, let candidate = canonicalPath(path) else {
+            return false
+        }
+        return candidate == sentinelExecutablePath
+    }
+
+    /// True when `path` is inside the running browser's own app bundle.
+    private static func isInsideRunningAppBundle(_ path: String) -> Bool {
+        guard let root = canonicalPath(Bundle.main.bundleURL.path),
+              let candidate = canonicalPath(path) else {
+            return false
+        }
+        return candidate.hasPrefix(root + "/")
+    }
+
+    /// Symlink-resolved absolute path, so the two spellings the kernel hands
+    /// back for one file ("/tmp/…" and "/private/tmp/…", which a build under
+    /// the temporary directory produces routinely) compare equal.
+    private static func canonicalPath(_ path: String) -> String? {
+        guard !path.isEmpty else { return nil }
+        return URL(fileURLWithPath: path).resolvingSymlinksInPath().path
+    }
 
     /// Peer credentials as an audit token, which names the process on the
     /// other end of `socketFD` unambiguously. `LOCAL_PEERPID` gives only a pid,
@@ -497,7 +609,18 @@ enum AgentPeerIdentity {
         // itself cannot rewrite: it still takes a Phi-signed binary to have
         // been launched from one. What lapses is only the assurance that the
         // copy on disk is the code the process is running.
-        guard let path = recordedExecutablePath(pid) else { return false }
+        //
+        // That lapse is why the fallback is bounded to our own bundle. The
+        // kernel records the PATH, but the FILE at it can be replaced
+        // afterwards, and the dynamic check fails with exactly that ("the code
+        // on disk does not match what is running") — so without the bound, a
+        // process running anything at all could exec from a directory it
+        // controls, drop our signed binary there, and satisfy a check its
+        // running code never passed. Inside the app bundle the same move takes
+        // write access to the installed app, which is a different threat than
+        // the one this pass defends against.
+        guard let path = recordedExecutablePath(pid),
+              isInsideRunningAppBundle(path) else { return false }
         var staticCode: SecStaticCode?
         guard let requirement = firstPartyRequirement,
               SecStaticCodeCreateWithPath(URL(fileURLWithPath: path) as CFURL,

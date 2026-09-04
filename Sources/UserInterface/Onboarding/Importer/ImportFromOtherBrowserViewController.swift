@@ -59,7 +59,7 @@ class ImportFromOtherBrowserViewController: OnboardingBaseViewController {
     init(
         displayMode: DisplayMode = .login,
         targetProfileId: String = LocalStore.defaultProfileId,
-        targetSpaceId: String = LocalStore.defaultSpaceId,
+        targetSpaceId: String = SpaceManager.shared.currentDefaultSpaceId,
         targetWindowId: Int? = nil
     ) {
         self.displayMode = displayMode
@@ -72,7 +72,7 @@ class ImportFromOtherBrowserViewController: OnboardingBaseViewController {
     required init?(coder: NSCoder) {
         self.displayMode = .login
         self.targetProfileId = LocalStore.defaultProfileId
-        self.targetSpaceId = LocalStore.defaultSpaceId
+        self.targetSpaceId = SpaceManager.shared.currentDefaultSpaceId
         self.targetWindowId = nil
         super.init(coder: coder)
     }
@@ -82,6 +82,11 @@ class ImportFromOtherBrowserViewController: OnboardingBaseViewController {
         targetSpaceId: targetSpaceId,
         targetWindowId: targetWindowId
     )
+
+    /// Whether this window's import is still going. Read by
+    /// `BrowserDataActivity`, which greys the Migration menu item out for as
+    /// long as it is true — including after the window has been closed.
+    var isImporting: Bool { importer.isImporting }
 
     /// Retargets this single import window when it is re-invoked from another
     /// Space. No-op while an import is in flight, so the running import keeps the
@@ -805,10 +810,10 @@ class ImportFromOtherBrowserViewController: OnboardingBaseViewController {
     }
 
     private func arcProfileDisplayNames() -> [String: String] {
-        let url = FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent("Library/Application Support/Arc/User Data/Local State")
         var map: [String: String] = [:]
-        for p in importer.loadChromiumProfiles(localStateURL: url) { map[p.directory] = p.name }
+        for p in importer.loadChromiumProfiles(localStateURL: BrowserDataImporter.arcLocalStateURL) {
+            map[p.directory] = p.name
+        }
         return map
     }
 
@@ -817,7 +822,10 @@ class ImportFromOtherBrowserViewController: OnboardingBaseViewController {
             arcOptionView.setProfileSelectorVisible(false)
             return
         }
-        arcSpaces = importer.loadArcSpaces()
+        // The picker lists Spaces alphabetically; the parser keeps Arc's order.
+        arcSpaces = importer.loadArcSpaces().sorted {
+            $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending
+        }
         let profileNames = arcProfileDisplayNames()
         if arcSpaces.count > 1 {
             arcOptionView.setEnabled(true)
@@ -893,7 +901,7 @@ class ImportFromOtherBrowserViewController: OnboardingBaseViewController {
         permisionImageView.isHidden = true
         desLabel.isHidden = true
         importStatusLabel.isHidden = true
-        setTitle(NSLocalizedString("oobe.importBrowserData.resetTitle", value: "Browser data", comment: "Import browser data page - Page title restored after resetting the import state"))
+        setTitle(NSLocalizedString("oobe.importBrowserData.initialTitle", value: "Browser data", comment: "Import browser data page - Initial page title"))
         nextButton.title = NSLocalizedString("oobe.importBrowserData.nextButton", value: "Next", comment: "Import browser data page - Next button after resetting the import state")
         nextButton.snp.remakeConstraints { make in
             make.bottom.equalToSuperview().offset(buttonBottomOffset)

@@ -4,6 +4,7 @@
 // found in the LICENSE file.
 
 import Cocoa
+import Combine
 import Kingfisher
 
 /// Normalizes a page URL before deciding whether favicon data belongs to a
@@ -115,8 +116,23 @@ final class ProfileScopedFaviconRepository {
     private let fetcher: any ProfileScopedFaviconFetching
     private let memoryCache = NSCache<NSString, NSData>()
 
+    /// Fires when a page's icon arrives outside a lookup — the favicon
+    /// backfill's answer for a Split Bookmark's second page, which no row
+    /// field carries — naming the Profile and page, so a view showing that
+    /// page's icon resolves it again.
+    let iconStored = PassthroughSubject<ProfileScopedFaviconRequest, Never>()
+
     init(fetcher: any ProfileScopedFaviconFetching) {
         self.fetcher = fetcher
+    }
+
+    /// Keeps `data` as the page's icon in this Profile and tells the views
+    /// showing it through `iconStored`.
+    func store(_ data: Data, profileId: String, pageURLString: String) {
+        let request = ProfileScopedFaviconRequest(
+            profileId: profileId, pageURLString: pageURLString, snapshotData: nil)
+        store(data, for: request)
+        iconStored.send(request)
     }
 
     @discardableResult

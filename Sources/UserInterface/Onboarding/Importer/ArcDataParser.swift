@@ -8,11 +8,12 @@ final class ArcDataParserTool {
     private static func log(_ message: String) {
         AppLogDebug(message)
     }
-    /// Parse StorableSidebar.json and return Space-rooted Bookmark trees
-    static func parse(data: Data) throws -> [ArcSpace] {
+    /// Parse StorableSidebar.json and return Space-rooted Bookmark trees in
+    /// Arc's own sidebar order, plus each profile's Arc Favorites.
+    static func parse(data: Data) throws -> ArcSidebar {
         let arc = try JSONDecoder().decode(ArcRoot.self, from: data)
 
-        let containerEntries = extractSidebarItemEntries(from: arc.sidebar.containers)
+        let containerEntries = arc.sidebar.containers.flatMap { $0.items ?? [] }
         log("sidebarSyncState.items=\(arc.sidebarSyncState.items.count) sidebar.containers.items=\(containerEntries.count)")
 
         let sidebarItems = buildSidebarItemMap(
@@ -21,11 +22,13 @@ final class ArcDataParserTool {
         )
         let bookmarkMap = createBookmarks(from: sidebarItems)
         linkTree(byChildrenOrder: sidebarItems, bookmarks: bookmarkMap)
+        collapseSplitViews(in: sidebarItems, bookmarks: bookmarkMap)
 
-        let containerSpaceModels = extractSpaceModels(from: arc.sidebar.containers)
+        let containerSpaceModels = extractSpaceModels(
+            from: arc.sidebar.containers.flatMap { $0.spaces ?? [] })
         let syncSpaceModels = arc.sidebarSyncState.spaceModels
             .map { extractSpaceModels(from: $0) }
-            ?? [:]
+            ?? []
         let spaceModels = !containerSpaceModels.isEmpty
             ? containerSpaceModels
             : syncSpaceModels
@@ -35,10 +38,11 @@ final class ArcDataParserTool {
             sidebarItems: sidebarItems,
             bookmarkMap: bookmarkMap
         )
-
-        return spaces.sorted {
-            $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending
-        }
+        let favorites = buildFavorites(
+            from: arc.sidebar.containers.flatMap { $0.topAppsContainerIDs ?? [] },
+            bookmarkMap: bookmarkMap
+        )
+        return ArcSidebar(spaces: spaces, favorites: favorites)
     }
 
     // MARK: - Step 1: Build the sidebar item map
@@ -110,6 +114,13 @@ final class ArcDataParserTool {
                 isFolder = true
                 title = item.title ?? "Untitled"
                 url = nil
+
+            case .splitView:
+                // A placeholder: `collapseSplitViews` turns it into one split
+                // entry, or into its tabs, once the children are linked.
+                isFolder = true
+                title = ""
+                url = nil
             }
 
             map[item.id] = Bookmark(
@@ -145,16 +156,66 @@ final class ArcDataParserTool {
         }
     }
 
+    // MARK: - Step 3b: Collapse split views
+
+    /// An Arc split view is an item of its own whose children are the tabs it
+    /// shows together, in a Space's pinned section or in the Arc Favorites row.
+    /// Phi's split is a pair, so a split of exactly two tabs becomes one entry
+    /// carrying both (`split`); any other number of panes — Arc allows up to
+    /// four — falls back to the tabs themselves, in order, where the split
+    /// stood. Either way the split item never lands as a folder.
+    private static func collapseSplitViews(
+        in items: [String: SidebarItem],
+        bookmarks: [String: Bookmark]
+    ) {
+        for item in items.values {
+            guard case .splitView(let orientation) = item.data,
+                  let node = bookmarks[item.id] else { continue }
+            let tabs = node.children
+            // Two plain tabs make a pair; a nested split (which Arc never
+            // writes) counts as "not a tab", so the walk's order cannot matter.
+            if tabs.count == 2, tabs.allSatisfy({ !$0.isFolder && $0.split == nil }),
+               let url = tabs[0].url, let secondaryURL = tabs[1].url {
+                node.isFolder = false
+                node.title = tabs[0].title
+                node.url = url
+                node.split = ArcSplit(
+                    secondaryTitle: tabs[1].title ?? "",
+                    secondaryURL: secondaryURL,
+                    layout: splitLayout(fromArcOrientation: orientation))
+                node.children = []
+                continue
+            }
+            guard let parent = node.parent,
+                  let index = parent.children.firstIndex(where: { $0 === node }) else { continue }
+            for tab in tabs { tab.parent = parent }
+            parent.children.replaceSubrange(index...index, with: tabs)
+            node.children = []
+        }
+    }
+
+    /// Arc names the axis the panes are laid along; Phi names the divider
+    /// between them. So Arc's `horizontal` (panes side by side) is Phi's
+    /// `vertical` bar, and the other way round; anything else is left to
+    /// Phi's default.
+    private static func splitLayout(fromArcOrientation orientation: String?) -> String? {
+        switch orientation {
+        case "horizontal": return SplitLayout.vertical.rawValue
+        case "vertical": return SplitLayout.horizontal.rawValue
+        default: return nil
+        }
+    }
+
     // MARK: - Step 4: Build Arc space roots
 
     private static func buildSpaceRoots(
-        spaceModels: [String: SpaceWrapper],
+        spaceModels: [SpaceWrapper],
         sidebarItems: [String: SidebarItem],
         bookmarkMap: [String: Bookmark]
     ) -> [ArcSpace] {
         var results: [ArcSpace] = []
 
-        for space in spaceModels.values {
+        for space in spaceModels {
             let trimmed = space.title?.trimmingCharacters(in: .whitespacesAndNewlines)
             let title = (trimmed?.isEmpty == false ? trimmed : nil)
                 ?? NSLocalizedString("oobe.importBrowserData.arc.untitledSpaceName", value: "Untitled Space",
@@ -173,7 +234,42 @@ final class ArcDataParserTool {
                 }
             }
 
-            results.append(ArcSpace(id: space.id, title: title, profile: space.profile, root: spaceRoot))
+            results.append(ArcSpace(
+                id: space.id,
+                title: title,
+                profile: space.profile,
+                colorHex: space.colorHex,
+                icon: space.icon,
+                root: spaceRoot))
+        }
+
+        return results
+    }
+
+    // MARK: - Step 5: Collect each profile's Arc Favorites
+
+    /// `topAppsContainerIDs` interleaves a profile marker with the id of that
+    /// profile's Arc Favorites container: `[marker, id, marker, id, …]`. A
+    /// container with no marker (or an unreadable one) is kept as `.unknown`.
+    private static func buildFavorites(
+        from entries: [TopAppsEntry],
+        bookmarkMap: [String: Bookmark]
+    ) -> [ArcFavorites] {
+        var results: [ArcFavorites] = []
+        var currentProfile: ArcSourceProfile?
+
+        for entry in entries {
+            switch entry {
+            case .profile(let profile):
+                currentProfile = profile
+            case .containerID(let id):
+                let favorites = (bookmarkMap[id]?.children ?? []).compactMap { child -> ArcFavorite? in
+                    guard !child.isFolder, let url = child.url else { return nil }
+                    return ArcFavorite(title: child.title ?? "", url: url, split: child.split)
+                }
+                results.append(ArcFavorites(profile: currentProfile ?? .unknown, entries: favorites))
+                currentProfile = nil
+            }
         }
 
         return results
@@ -181,49 +277,13 @@ final class ArcDataParserTool {
 
     // MARK: - Helpers
 
-    private static func extractSpaceModels(
-        from containers: [SidebarContainer]
-    ) -> [String: SpaceWrapper] {
-
-        var models: [String: SpaceWrapper] = [:]
-
-        for container in containers {
-            guard let entries = container.spacesEntries else { continue }
-
-            var currentID: String?
-            for entry in entries {
-                switch entry {
-                case .id(let id):
-                    currentID = id
-                case .object(let wrapper):
-                    let key = wrapper.id.isEmpty
-                        ? (currentID ?? UUID().uuidString)
-                        : wrapper.id
-                    models[key] = wrapper
-                    currentID = nil
-                }
-            }
-        }
-
-        return models
-    }
-
-    private static func extractSidebarItemEntries(
-        from containers: [SidebarContainer]
-    ) -> [SidebarItemEntry] {
-        var results: [SidebarItemEntry] = []
-        for container in containers {
-            if let entries = container.itemEntries {
-                results.append(contentsOf: entries)
-            }
-        }
-        return results
-    }
-
+    /// Space models in file order; a repeated id keeps its first position and
+    /// its last value.
     private static func extractSpaceModels(
         from entries: [SpaceEntry]
-    ) -> [String: SpaceWrapper] {
+    ) -> [SpaceWrapper] {
 
+        var order: [String] = []
         var models: [String: SpaceWrapper] = [:]
         var currentID: String?
 
@@ -235,12 +295,14 @@ final class ArcDataParserTool {
                 let key = wrapper.id.isEmpty
                     ? (currentID ?? UUID().uuidString)
                     : wrapper.id
-                models[key] = wrapper
+                if models.updateValue(wrapper, forKey: key) == nil {
+                    order.append(key)
+                }
                 currentID = nil
             }
         }
 
-        return models
+        return order.compactMap { models[$0] }
     }
 
     private static func resolveSpaceContainerIDs(
@@ -316,12 +378,66 @@ final class ArcDataParserTool {
     }
 }
 
-/// A parsed Arc Space with its profile binding and bookmark tree root.
+/// Everything the sidebar file yields: the Spaces in Arc's sidebar order and
+/// each profile's Arc Favorites.
+struct ArcSidebar {
+    let spaces: [ArcSpace]
+    let favorites: [ArcFavorites]
+}
+
+/// A parsed Arc Space with its profile binding, colour and bookmark tree root.
 struct ArcSpace {
     let id: String
     let title: String
     let profile: ArcSourceProfile
+    /// Hex colour derived from the Space's theme; nil when the Space has none,
+    /// or one this parser does not read. Kept distinct from a colour so a
+    /// consumer can tell "the user chose no colour" from "the user chose this
+    /// one" — substituting a default here would make an untitled, unthemed
+    /// Arc Space indistinguishable from one deliberately painted that colour.
+    let colorHex: String?
+    /// The Space's icon as Arc recorded it; nil when it has none, or a record
+    /// this parser does not read.
+    let icon: ArcSpaceIcon?
     let root: ArcDataParserTool.Bookmark
+}
+
+/// An Arc Space's icon as Arc recorded it.
+enum ArcSpaceIcon: Equatable {
+    /// The emoji text. Older Arc data records only the leading code point;
+    /// that arrives as the scalar it names.
+    case emoji(String)
+    /// One of Arc's built-in icons, by Arc's own name for it (`medical`,
+    /// `notifications`).
+    case named(String)
+}
+
+/// One profile's Arc Favorites (Arc's top-app row), in source order.
+struct ArcFavorites {
+    let profile: ArcSourceProfile
+    let entries: [ArcFavorite]
+}
+
+struct ArcFavorite: Equatable {
+    let title: String
+    let url: String
+    /// Set when Arc showed this Arc Favorite as a split view of two pages.
+    let split: ArcSplit?
+
+    init(title: String, url: String, split: ArcSplit? = nil) {
+        self.title = title
+        self.url = url
+        self.split = split
+    }
+}
+
+/// The second page of an Arc split view — a pinned entry or an Arc Favorite
+/// that Arc showed as two pages together — and the orientation, already in Phi's
+/// own vocabulary (`SplitLayout`'s raw value; nil leaves Phi's default).
+struct ArcSplit: Equatable {
+    let secondaryTitle: String
+    let secondaryURL: String
+    let layout: String?
 }
 
 /// Which Chromium profile (under Arc/User Data) an Arc Space uses.
@@ -420,6 +536,8 @@ extension ArcDataParserTool {
         case tab(TabData)
         case list
         case container(spaceRefID: String?)
+        /// `layoutOrientation` as Arc wrote it; nil when unreadable.
+        case splitView(orientation: String?)
 
         init(from decoder: Decoder) throws {
             let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -431,6 +549,12 @@ extension ArcDataParserTool {
 
             if c.contains(.list) {
                 self = .list
+                return
+            }
+
+            if c.contains(.splitView) {
+                let split = try? c.decode(SplitViewData.self, forKey: .splitView)
+                self = .splitView(orientation: split?.layoutOrientation)
                 return
             }
 
@@ -446,12 +570,17 @@ extension ArcDataParserTool {
             case tab
             case list
             case itemContainer
+            case splitView
         }
     }
     
     struct TabData: Decodable {
         let savedURL: String
         let savedTitle: String?
+    }
+
+    struct SplitViewData: Decodable {
+        let layoutOrientation: String?
     }
     
     struct ItemContainer: Decodable {
@@ -470,54 +599,38 @@ extension ArcDataParserTool {
         let containers: [SidebarContainer]
     }
 
-    enum SidebarContainer: Decodable {
-        case global
-        case spaces([SpaceEntry])
-        case items([SidebarItemEntry])
-        case payload(spaces: [SpaceEntry], items: [SidebarItemEntry])
+    /// One entry of `sidebar.containers`. The global container carries none
+    /// of these keys; the profile-independent one carries all three.
+    struct SidebarContainer: Decodable {
+        let spaces: [SpaceEntry]?
+        let items: [SidebarItemEntry]?
+        /// Interleaved `[profile marker, Arc Favorites container id, …]`.
+        let topAppsContainerIDs: [TopAppsEntry]?
+
+        private enum CodingKeys: String, CodingKey { case spaces, items, topAppsContainerIDs }
 
         init(from decoder: Decoder) throws {
             let c = try decoder.container(keyedBy: CodingKeys.self)
-            if c.contains(.spaces) {
-                let spaces = try c.decode([SpaceEntry].self, forKey: .spaces)
-                if c.contains(.items) {
-                    let items = try c.decode([SidebarItemEntry].self, forKey: .items)
-                    self = .payload(spaces: spaces, items: items)
-                } else {
-                    self = .spaces(spaces)
-                }
-            } else if c.contains(.items) {
-                self = .items(try c.decode([SidebarItemEntry].self, forKey: .items))
+            spaces = try c.decodeIfPresent([SpaceEntry].self, forKey: .spaces)
+            items = try c.decodeIfPresent([SidebarItemEntry].self, forKey: .items)
+            // Arc Favorites are read on top of what the import has always read,
+            // so a shape this parser does not recognise costs the Favorites and
+            // never the Spaces: synthesised decoding would throw here and take
+            // the whole sidebar — and with it the Space picker — down with it.
+            topAppsContainerIDs = try? c.decode([TopAppsEntry].self, forKey: .topAppsContainerIDs)
+        }
+    }
+
+    enum TopAppsEntry: Decodable {
+        case profile(ArcSourceProfile)
+        case containerID(String)
+
+        init(from decoder: Decoder) throws {
+            let c = try decoder.singleValueContainer()
+            if let id = try? c.decode(String.self) {
+                self = .containerID(id)
             } else {
-                self = .global
-            }
-        }
-
-        enum CodingKeys: String, CodingKey {
-            case global
-            case spaces
-            case items
-        }
-
-        var spacesEntries: [SpaceEntry]? {
-            switch self {
-            case .spaces(let entries):
-                return entries
-            case .payload(let spaces, _):
-                return spaces
-            default:
-                return nil
-            }
-        }
-
-        var itemEntries: [SidebarItemEntry]? {
-            switch self {
-            case .items(let entries):
-                return entries
-            case .payload(_, let items):
-                return items
-            default:
-                return nil
+                self = .profile((try? c.decode(ArcSourceProfile.self)) ?? .unknown)
             }
         }
     }
@@ -547,8 +660,14 @@ extension ArcDataParserTool {
         let title: String?
         let containerIDs: [String]?
         let profile: ArcSourceProfile
+        /// Colour derived from the Space's window theme; nil when it has none
+        /// or one this parser does not read.
+        let colorHex: String?
+        /// The Space's icon; nil when it has none or one this parser does not
+        /// read.
+        let icon: ArcSpaceIcon?
 
-        private enum CodingKeys: String, CodingKey { case id, title, containerIDs, profile }
+        private enum CodingKeys: String, CodingKey { case id, title, containerIDs, profile, customInfo }
 
         init(from decoder: Decoder) throws {
             let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -560,6 +679,88 @@ extension ArcDataParserTool {
             } else {
                 profile = .default
             }
+            let customInfo = try? c.decode(SpaceCustomInfo.self, forKey: .customInfo)
+            colorHex = customInfo?.themeColor?.hexRGBString
+            icon = customInfo?.iconType?.spaceIcon
+        }
+    }
+
+    /// The slice of a Space's `customInfo` this parser reads: the window
+    /// theme's colour and the icon record. Arc encodes its theme enums as
+    /// `{ "<case>": { "_0": payload } }`:
+    /// `windowTheme.background.single._0.style.color._0` is either
+    /// `blendedSingleColor` (one colour) or `blendedGradient` (`baseColors`,
+    /// the first one stands for the Space). The two are decoded apart, so a
+    /// shape this parser does not recognise costs that one thing — never the
+    /// other, and never the Space.
+    struct SpaceCustomInfo: Decodable {
+        let windowTheme: WindowTheme?
+        let iconType: IconType?
+
+        private enum CodingKeys: String, CodingKey { case windowTheme, iconType }
+
+        init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            windowTheme = try? c.decode(WindowTheme.self, forKey: .windowTheme)
+            iconType = try? c.decode(IconType.self, forKey: .iconType)
+        }
+
+        struct WindowTheme: Decodable { let background: Background? }
+        struct Background: Decodable { let single: Payload<Single>? }
+        struct Single: Decodable { let style: Style? }
+        struct Style: Decodable { let color: Payload<ColorType>? }
+        struct ColorType: Decodable {
+            let blendedSingleColor: Payload<BlendedSingleColor>?
+            let blendedGradient: Payload<BlendedGradient>?
+        }
+        struct BlendedSingleColor: Decodable { let color: ThemeColor }
+        struct BlendedGradient: Decodable { let baseColors: [ThemeColor] }
+        struct Payload<Value: Decodable>: Decodable { let _0: Value }
+
+        var themeColor: ThemeColor? {
+            let colorType = windowTheme?.background?.single?._0.style?.color?._0
+            return colorType?.blendedSingleColor?._0.color
+                ?? colorType?.blendedGradient?._0.baseColors.first
+        }
+
+        /// `iconType` on disk is an emoji record — `emoji_v2` is the text and
+        /// `emoji`, the older field, its leading code point as an integer — or
+        /// a named-icon record (`icon`). The text is preferred; the integer
+        /// alone is older Arc data, and the emoji is what it names.
+        struct IconType: Decodable {
+            let emojiText: String?
+            let emojiCodePoint: Int?
+            let iconName: String?
+
+            private enum CodingKeys: String, CodingKey {
+                case emojiText = "emoji_v2"
+                case emojiCodePoint = "emoji"
+                case iconName = "icon"
+            }
+
+            var spaceIcon: ArcSpaceIcon? {
+                if let text = emojiText { return .emoji(text) }
+                if let codePoint = emojiCodePoint,
+                   let value = UInt32(exactly: codePoint),
+                   let scalar = Unicode.Scalar(value) {
+                    return .emoji(String(Character(scalar)))
+                }
+                if let iconName { return .named(iconName) }
+                return nil
+            }
+        }
+    }
+
+    /// An Arc theme colour. Components are extended sRGB and may fall outside
+    /// 0–1; they are clamped before conversion.
+    struct ThemeColor: Decodable {
+        let red: Double
+        let green: Double
+        let blue: Double
+
+        var hexRGBString: String {
+            func channel(_ component: Double) -> Int { Int((min(max(component, 0), 1) * 255).rounded()) }
+            return String(format: "#%02x%02x%02x", channel(red), channel(green), channel(blue))
         }
     }
     
@@ -570,6 +771,8 @@ extension ArcDataParserTool {
         var url: String?
         var isFolder: Bool
         var parent: Bookmark? = nil
+        /// Set on a leaf that stands for an Arc split view of two pages.
+        var split: ArcSplit? = nil
         init(guid: String, title: String, children: [Bookmark] = [], url: String?, isFolder: Bool) {
             self.title = title
             self.guid = guid

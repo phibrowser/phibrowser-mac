@@ -314,4 +314,19 @@ final class ExtensionMessagingTests: XCTestCase {
         XCTAssertEqual(secondResponse, "second-response")
         XCTAssertEqual(handledTypes, ["test.first", "test.second"])
     }
+
+    @MainActor
+    func testAIOutputStateMessageIsAcknowledgedSynchronously() {
+        let router = ExtensionMessageRouter()
+
+        let response = router.handle(
+            type: "sidecar.aiOutputState",
+            payload: #"{"tabId":42,"windowId":7,"active":true,"phase":"submitted","seq":1}"#,
+            requestId: "ai-output-state",
+            senderId: SidecarAIOutputStateStore.extensionId
+        )
+
+        XCTAssertEqual(response, "{}")
+        SidecarAIOutputStateStore.shared.removeAll()
+    }
 }

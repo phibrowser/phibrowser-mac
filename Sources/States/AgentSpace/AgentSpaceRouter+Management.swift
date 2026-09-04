@@ -67,7 +67,7 @@ extension AgentSpaceRouter {
                         "iconName": space.iconName,
                         "profileId": space.profileId,
                         "sortOrder": space.sortOrder,
-                        "isDefault": space.spaceId == LocalStore.defaultSpaceId,
+                        "isDefault": space.spaceId == SpaceManager.shared.currentDefaultSpaceId,
                         "isActive": space.spaceId == activeId,
                         "windowIds": controllers
                             .filter { $0.spaceId == space.spaceId }
@@ -150,7 +150,7 @@ extension AgentSpaceRouter {
     }
 
     /// `agentSpace.spaces.delete` — delete a normal user Space (closes its
-    /// windows, cascade-deletes its bookmarks and URL rules). The default
+    /// windows, cascade-deletes its bookmarks and URL rules). The last user
     /// Space and agent Spaces are refused; an import in progress is reported
     /// as an error instead of tripping `deleteSpace`'s modal alert.
     static func handleSpacesDelete(context: ExtensionMessageContext) -> String? {
@@ -158,9 +158,14 @@ extension AgentSpaceRouter {
               let spaceId = obj["spaceId"] as? String else { return invalid() }
         return MainActor.assumeIsolated {
             let manager = SpaceManager.shared
-            guard spaceId != LocalStore.defaultSpaceId else { return failure("default_space") }
             guard let space = manager.spaces.first(where: { $0.spaceId == spaceId }) else {
                 return failure("unknown_space")
+            }
+            // Incognito ids pass through: `deleteSpace` redirects them to a
+            // close, the behavior this surface has always had for them.
+            guard SpaceManager.isIncognitoSpaceId(spaceId)
+                    || manager.canDeleteSpace(spaceId: spaceId) else {
+                return failure("last_space")
             }
             guard !space.isAgentSpace else { return failure("agent_space") }
             guard !ImportTargetLock.shared.isImporting(into: spaceId) else {
@@ -854,7 +859,7 @@ extension AgentSpaceRouter {
             return activeSpaceId
         }
         return manager.spaces.first(where: { $0.profileId == profileId })?.spaceId
-            ?? LocalStore.defaultSpaceId
+            ?? SpaceManager.shared.currentDefaultSpaceId
     }
 
     /// `agentSpace.pinnedTabs.list` — pinned-tab records visible in the
@@ -968,7 +973,7 @@ extension AgentSpaceRouter {
     private static func bookmarkScope(_ requestedSpaceId: String?)
         -> (profileId: String, spaceId: String)? {
         let spaceId = (requestedSpaceId?.isEmpty == false)
-            ? requestedSpaceId! : LocalStore.defaultSpaceId
+            ? requestedSpaceId! : SpaceManager.shared.currentDefaultSpaceId
         guard let space = SpaceManager.shared.spaces.first(where: { $0.spaceId == spaceId })
         else { return nil }
         return (space.profileId, spaceId)
@@ -1107,7 +1112,7 @@ extension AgentSpaceRouter {
                                  profileId: profileId,
                                  title: obj["title"] as? String,
                                  url: url)
-            return encode(["ok": true, "spaceId": model.spaceId ?? LocalStore.defaultSpaceId])
+            return encode(["ok": true, "spaceId": model.spaceId ?? SpaceManager.shared.currentDefaultSpaceId])
         }
     }
 
@@ -1137,7 +1142,7 @@ extension AgentSpaceRouter {
                                profileId: profileId,
                                to: obj["parentGuid"] as? String,
                                newIndex: (obj["index"] as? NSNumber)?.intValue ?? Int.max)
-            return encode(["ok": true, "spaceId": model.spaceId ?? LocalStore.defaultSpaceId])
+            return encode(["ok": true, "spaceId": model.spaceId ?? SpaceManager.shared.currentDefaultSpaceId])
         }
     }
 
@@ -1157,7 +1162,7 @@ extension AgentSpaceRouter {
                 return failure("unknown_bookmark")
             }
             store.deleteBookmark(guid, profileId: profileId)
-            return encode(["ok": true, "spaceId": model.spaceId ?? LocalStore.defaultSpaceId])
+            return encode(["ok": true, "spaceId": model.spaceId ?? SpaceManager.shared.currentDefaultSpaceId])
         }
     }
 

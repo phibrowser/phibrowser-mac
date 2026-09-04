@@ -19,6 +19,8 @@ class HitTransparentHostingView<Content: View>: ZeroSafeAreaHostingView<Content>
 }
 
 final class TabItemView: NSView {
+    static let statusBadgeViewIdentifier = NSUserInterfaceItemIdentifier("tabStripStatusBadge")
+
     // MARK: - Types
 
     private enum LayoutMode {
@@ -86,6 +88,7 @@ final class TabItemView: NSView {
     private var isActive = false
     private var isMultiSelected = false
     private var isPinned = false
+    private var statusBadgeRepresentsMergedCell = false
     /// Backing for the second pane of a pinned split. When non-nil this cell
     /// renders two favicons side-by-side; the secondary view model carries
     /// the partner's bindings so favicon updates flow independently.
@@ -141,6 +144,18 @@ final class TabItemView: NSView {
         let view = HitTransparentHostingView(rootView: makeSecondaryTitleRootView())
         view.layer?.backgroundColor = .clear
         view.isHidden = true
+        return view
+    }()
+
+    /// Cell-level Sidecar/agent status. A merged split still exposes one badge
+    /// for the whole cell, using the same cross-pane priority as sidebar split
+    /// cells. The host is decorative so it never intercepts tab interaction.
+    private lazy var statusBadgeHostingView: HitTransparentHostingView<AnyView> = {
+        let view = HitTransparentHostingView(
+            rootView: makeStatusBadgeRootView(representsMergedCell: false)
+        )
+        view.identifier = Self.statusBadgeViewIdentifier
+        view.layer?.backgroundColor = .clear
         return view
     }()
 
@@ -260,6 +275,7 @@ final class TabItemView: NSView {
         addSubview(titleHostingView)
         addSubview(secondaryTitleHostingView)
         addSubview(splitDividerView)
+        addSubview(statusBadgeHostingView)
         addSubview(closeButtonHostingView)
         addSubview(secondaryCloseButtonHostingView)
     }
@@ -278,6 +294,7 @@ final class TabItemView: NSView {
 
     private let muteButtonSize = CGSize(width: 16, height: 16)
     private let recordingIconSize = CGSize(width: 14, height: 14)
+    private let defaultMergedFaviconGap: CGFloat = 2
 
     // MARK: - Layout
 
@@ -357,7 +374,7 @@ final class TabItemView: NSView {
                 // occupies a single slot in the strip's layout.
                 let centerY = bounds.height / 2
                 let iconSize = metrics.faviconSize
-                let gap: CGFloat = 2
+                let gap = defaultMergedFaviconGap
                 let pairWidth = iconSize.width * 2 + gap
                 let leftX = (bounds.width - pairWidth) / 2
                 faviconHostingView.isHidden = false
@@ -580,7 +597,23 @@ final class TabItemView: NSView {
             }
         }
 
+        layoutStatusBadge()
         updatePaneToolTips(mode: mode)
+    }
+
+    private func layoutStatusBadge() {
+        let size = TabCornerBadgeMetrics.visualSize
+        let overhang = TabCornerBadgeMetrics.overhang
+        let y = isFlipped
+            ? bounds.minY - overhang
+            : bounds.maxY - size + overhang
+        statusBadgeHostingView.isHidden = false
+        statusBadgeHostingView.frame = CGRect(
+            x: bounds.maxX - size + overhang,
+            y: y,
+            width: size,
+            height: size
+        )
     }
 
     private func hideContentForEmptyBounds() {
@@ -593,6 +626,7 @@ final class TabItemView: NSView {
             titleHostingView,
             secondaryTitleHostingView,
             splitDividerView,
+            statusBadgeHostingView,
             closeButtonHostingView,
             secondaryCloseButtonHostingView,
         ] {
@@ -626,6 +660,21 @@ final class TabItemView: NSView {
         
         backgroundLayer.refreshAppearance()
     }
+
+    private func updatePinnedBorder() {
+        guard isPinned else {
+            backgroundLayer.pinnedBorderStyle = .none
+            return
+        }
+        backgroundLayer.pinnedBorderStyle = TabStateBorderStyle.resolve(
+            isOpened: sourceTab?.hasWebContent == true
+                || pinnedSplitPartner?.hasWebContent == true,
+            isDiscarded: sourceTab?.isDiscarded == true
+                || pinnedSplitPartner?.isDiscarded == true,
+            isUnloaded: sourceTab?.isUnloaded == true
+                || pinnedSplitPartner?.isUnloaded == true
+        )
+    }
     
     private func bindTheme() {
         themeObservation = subscribe { [weak self] _, _ in
@@ -634,11 +683,48 @@ final class TabItemView: NSView {
     }
     
     private func makeFaviconRootView() -> AnyView {
-        AnyView(UnifiedTabFaviconView(viewModel: viewModel).phiThemeObserver(themeObserver))
+        AnyView(
+            UnifiedTabFaviconView(
+                viewModel: viewModel,
+                showsDiscardedOutline: !isPinned
+            )
+            .phiThemeObserver(themeObserver)
+        )
     }
 
     private func makeSecondaryFaviconRootView() -> AnyView {
-        AnyView(UnifiedTabFaviconView(viewModel: secondaryFaviconViewModel).phiThemeObserver(themeObserver))
+        AnyView(
+            UnifiedTabFaviconView(
+                viewModel: secondaryFaviconViewModel,
+                showsDiscardedOutline: !isPinned
+            )
+            .phiThemeObserver(themeObserver)
+        )
+    }
+
+    private func updateStatusBadgeContent() {
+        let representsMergedCell = pinnedSplitPartner != nil
+        guard representsMergedCell != statusBadgeRepresentsMergedCell else { return }
+        statusBadgeRepresentsMergedCell = representsMergedCell
+        statusBadgeHostingView.rootView = makeStatusBadgeRootView(
+            representsMergedCell: representsMergedCell
+        )
+    }
+
+    private func makeStatusBadgeRootView(representsMergedCell: Bool) -> AnyView {
+        if representsMergedCell {
+            return AnyView(
+                MergedTabCornerBadgeView(
+                    primaryModel: viewModel.status,
+                    secondaryModel: secondaryFaviconViewModel.status
+                )
+                .phiThemeObserver(themeObserver)
+            )
+        }
+        return AnyView(
+            TabCornerBadgeView(model: viewModel.status)
+                .phiThemeObserver(themeObserver)
+        )
     }
     
     private func makeTitleRootView() -> AnyView {
@@ -684,12 +770,18 @@ final class TabItemView: NSView {
     // MARK: - Configuration
 
     func configure(with data: TabRenderData, browserState: BrowserState? = nil) {
+        cancellables.removeAll()
         currentTabId = data.id
         isActive = data.isActive
         isMultiSelected = data.isMultiSelected
         isPinned = data.isPinned
+        sourceTab = data.sourceTab
+        pinnedSplitPartner = data.pinnedSplitPartner
+        faviconHostingView.rootView = makeFaviconRootView()
+        secondaryFaviconHostingView.rootView = makeSecondaryFaviconRootView()
         backgroundLayer.splitPairPosition = data.splitPairPosition
         backgroundLayer.isSplitGroupActive = data.isSplitGroupActive
+        updatePinnedBorder()
 
         if let tab = data.sourceTab,
            let browserState,
@@ -717,9 +809,8 @@ final class TabItemView: NSView {
         // Pinned-split first pane: bind the secondary view model so the right
         // favicon renders the partner. The configure() call subscribes to the
         // partner tab's Combine publishers; clearing back to nil drops them.
-        pinnedSplitPartner = data.pinnedSplitPartner
         if let partner = data.pinnedSplitPartner {
-            secondaryFaviconViewModel.configure(with: partner)
+            secondaryFaviconViewModel.configure(with: partner, in: browserState)
             secondaryFaviconViewModel.onToggleMute = { [weak partner] in
                 guard let partner else { return }
                 partner.setAudioMuted(!partner.isAudioMuted)
@@ -735,12 +826,12 @@ final class TabItemView: NSView {
             secondaryFaviconHostingView.isHidden = true
             secondaryMuteButtonHostingView.isHidden = true
         }
+        updateStatusBadgeContent()
 
         updateAppearance()
         
         if let tab = data.sourceTab {
-            sourceTab = tab
-            viewModel.configure(with: tab)
+            viewModel.configure(with: tab, in: browserState)
             viewModel.onToggleMute = { [weak tab] in
                 guard let tab else { return }
                 tab.setAudioMuted(!tab.isAudioMuted)
@@ -753,7 +844,6 @@ final class TabItemView: NSView {
             updateTitleHostingToolTips()
 
             // Listen for state changes to trigger re-layout
-            cancellables.removeAll()
             Publishers.CombineLatest3(tab.$isCapturingAudio, tab.$isCapturingVideo, tab.$isSharingScreen)
                 .receive(on: DispatchQueue.main)
                 .sink { [weak self] _, _, _ in
@@ -768,6 +858,25 @@ final class TabItemView: NSView {
                     self?.layoutContent()
                 }
                 .store(in: &cancellables)
+
+            Publishers.CombineLatest3(
+                tab.$hasWebContent,
+                tab.$isDiscarded,
+                tab.$isUnloaded
+            )
+                .map { isOpened, isDiscarded, isUnloaded in
+                    TabStateBorderStyle.resolve(
+                        isOpened: isOpened,
+                        isDiscarded: isDiscarded,
+                        isUnloaded: isUnloaded
+                    )
+                }
+                .removeDuplicates()
+                .receive(on: DispatchQueue.main)
+                .sink { [weak self] _ in
+                    self?.updatePinnedBorder()
+                }
+                .store(in: &cancellables)
         }
 
         // Same re-layout trigger for the partner pane so the right-side
@@ -779,6 +888,25 @@ final class TabItemView: NSView {
                 .receive(on: DispatchQueue.main)
                 .sink { [weak self] _, _ in
                     self?.layoutContent()
+                }
+                .store(in: &cancellables)
+
+            Publishers.CombineLatest3(
+                partner.$hasWebContent,
+                partner.$isDiscarded,
+                partner.$isUnloaded
+            )
+                .map { isOpened, isDiscarded, isUnloaded in
+                    TabStateBorderStyle.resolve(
+                        isOpened: isOpened,
+                        isDiscarded: isDiscarded,
+                        isUnloaded: isUnloaded
+                    )
+                }
+                .removeDuplicates()
+                .receive(on: DispatchQueue.main)
+                .sink { [weak self] _ in
+                    self?.updatePinnedBorder()
                 }
                 .store(in: &cancellables)
         }

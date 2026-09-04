@@ -160,6 +160,35 @@ final class PinnedTabScopeTests: XCTestCase {
         XCTAssertTrue(restored.allSatisfy { !$0.isPinnedTabDormant })
     }
 
+    func testScopeChangeIsRefusedWhileAMigrationRunIsInFlight() async throws {
+        let store = try makeStore()
+        let fixture = try seedProfilesAndSpaces(in: store)
+        try insertPinnedTab(
+            in: store,
+            guid: "work-pin",
+            lineageId: "work-lineage",
+            profile: fixture.workProfile,
+            title: "Work",
+            url: "https://work.example"
+        )
+
+        BrowserDataActivity.migrationRunOverrideForTesting = true
+        defer { BrowserDataActivity.migrationRunOverrideForTesting = nil }
+
+        do {
+            try await store.changePinnedTabScope(to: .space)
+            XCTFail("changing the scope during a Migration run should throw")
+        } catch {
+            XCTAssertEqual(error as? LocalStoreWriteError, .migrationInFlight)
+        }
+
+        XCTAssertEqual(store.pinnedTabScope(), .profile)
+        XCTAssertEqual(
+            store.getAllPinnedTabs(for: "Work", spaceId: "space-c").map(\.guid),
+            ["work-pin"]
+        )
+    }
+
     func testSpaceToProfileRebuildDoesNotReviveStaleProfileBackup() async throws {
         let store = try makeStore()
         let fixture = try seedProfilesAndSpaces(in: store)
@@ -631,6 +660,80 @@ final class PinnedTabScopeTests: XCTestCase {
             store.getAllPinnedTabs(for: "Default", spaceId: "space-b").map(\.guid),
             ["space-b-pin"]
         )
+    }
+
+    // MARK: - Migrated pinned tabs
+
+    /// The copies a Migration fans out over a Profile's Spaces carry one
+    /// lineage, so widening the scope afterwards collapses them back into the
+    /// single entry they were made from.
+    func testCopiesSharingALineageCollapseWhenTheScopeWidens() async throws {
+        let store = try makeStore()
+        _ = try seedProfilesAndSpaces(in: store)
+        try await store.changePinnedTabScope(to: .space)
+
+        for (guid, spaceId) in [("pin-a", "space-a"), ("pin-b", "space-b")] {
+            XCTAssertTrue(store.createPinnedTab(
+                guid: guid,
+                url: "https://pinned.example",
+                title: "Pinned",
+                profileId: "Default",
+                spaceId: spaceId,
+                lineageId: "shared-lineage"
+            ))
+        }
+        await flushWrites(store)
+        try drainMainQueue()
+
+        try await store.changePinnedTabScope(to: .profile)
+        try drainMainQueue()
+
+        let merged = store.getAllPinnedTabs(for: "Default", spaceId: "space-a")
+        XCTAssertEqual(merged.map(\.pinLineageId), ["shared-lineage"])
+        // Migrated pins carry no favicon; icons arrive on first load.
+        XCTAssertNil(merged.first?.favicon)
+    }
+
+    /// The lineage is the only lever the call gained: without one, a row is
+    /// still its own lineage, and the scope is still whatever it was.
+    func testAPinnedTabCreatedWithoutALineageKeepsItsOwnGuid() async throws {
+        let store = try makeStore()
+        _ = try seedProfilesAndSpaces(in: store)
+
+        XCTAssertTrue(store.createPinnedTab(
+            guid: "own-lineage-pin",
+            url: "https://own.example",
+            title: "Own",
+            profileId: "Default",
+            spaceId: "space-a"
+        ))
+        await flushWrites(store)
+        try drainMainQueue()
+
+        XCTAssertEqual(
+            store.getAllPinnedTabs(for: "Default", spaceId: "space-a").map(\.pinLineageId),
+            ["own-lineage-pin"]
+        )
+        XCTAssertEqual(store.pinnedTabScope(), .profile)
+    }
+
+    /// The one failure the call can report as it is made: nothing was written,
+    /// so a Migration counts that entry as dropped rather than as landed.
+    func testCreatingAPinnedTabFromAnUnusableURLWritesNothing() async throws {
+        let store = try makeStore()
+        _ = try seedProfilesAndSpaces(in: store)
+
+        XCTAssertFalse(store.createPinnedTab(
+            guid: "unusable-pin",
+            url: "",
+            title: "Unusable",
+            profileId: "Default",
+            spaceId: "space-a"
+        ))
+        await flushWrites(store)
+        try drainMainQueue()
+
+        XCTAssertTrue(store.getAllPinnedTabs(for: "Default", spaceId: "space-a").isEmpty)
     }
 
     // MARK: - Fixtures

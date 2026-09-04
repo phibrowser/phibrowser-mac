@@ -762,7 +762,7 @@ extension PhiChromiumCoordinator: PhiChromiumBridgeDelegate {
             } else {
                 let initial = SpaceManager.shared.keySlot?.activeSpaceId
                     ?? SpaceManager.shared.persistedActiveSpaceId
-                    ?? LocalStore.defaultSpaceId
+                    ?? SpaceManager.shared.currentDefaultSpaceId
                 // Correct BEFORE creating the slot so it starts on the
                 // resolved Space and the window surfaces as the slot's
                 // active window below. The mint variant also steers off a
@@ -786,7 +786,7 @@ extension PhiChromiumCoordinator: PhiChromiumBridgeDelegate {
         } else {
             // Incognito / shadow windows are orthogonal to Spaces.
             resolvedSlot = nil
-            spaceId = SpaceManager.shared.persistedActiveSpaceId ?? LocalStore.defaultSpaceId
+            spaceId = SpaceManager.shared.persistedActiveSpaceId ?? SpaceManager.shared.currentDefaultSpaceId
         }
 
         if canUseBrowser,

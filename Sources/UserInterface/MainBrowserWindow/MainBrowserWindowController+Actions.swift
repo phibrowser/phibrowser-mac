@@ -540,11 +540,31 @@ extension MainBrowserWindowController: NSMenuItemValidation {
         window.makeKeyAndOrderFront(nil)
     }
     
+    /// The import window is a singleton and is not released when it closes, so
+    /// this identifier is how its re-invocation path finds it again.
+    static let importWindowIdentifier =
+        NSUserInterfaceItemIdentifier("Phi Import Data Window")
+
+    /// The import window is on screen, or an import it started is still going
+    /// with the window closed. Read by `BrowserDataActivity`, which greys the
+    /// Migration menu item out for as long as it is true. A miniaturised
+    /// window reports itself invisible but is still the user's open window, so
+    /// neither test answers this on its own.
+    @MainActor
+    static var importIsInFlight: Bool {
+        guard let window = NSApp.windows.first(where: {
+            $0.identifier == importWindowIdentifier
+        }) else { return false }
+        return window.isVisible || window.isMiniaturized
+            || (window.contentViewController
+                as? ImportFromOtherBrowserViewController)?.isImporting == true
+    }
+
     /// Stable key for associating the long-lived import view controller with its
     /// window, so a re-invocation can retarget it (see `objc_setAssociatedObject`).
     private static var importVCAssociationKey: UInt8 = 0
 
-    /// Shown when "Import Bookmarks and Settings..." is invoked from an
+    /// Shown when "Import from Another Browser..." is invoked from an
     /// off-the-record window: import writes into a Space's profile, which
     /// neither a standalone incognito window nor the Incognito Space has.
     func presentImportUnavailableInIncognitoAlert() {
@@ -565,7 +585,7 @@ extension MainBrowserWindowController: NSMenuItemValidation {
     }
 
     func showImportDataWindow() {
-        let identifier = NSUserInterfaceItemIdentifier("Phi Import Data Window")
+        let identifier = Self.importWindowIdentifier
         BrowserImportAnalytics().captureMenuPresentation()
         // The import window is a singleton. Re-invoking import from another Space
         // retargets the existing window to the current context — unless an import

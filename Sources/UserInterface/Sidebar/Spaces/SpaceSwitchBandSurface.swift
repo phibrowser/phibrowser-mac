@@ -73,7 +73,7 @@ extension SpaceSwitchBandSurface {
               let rep = container.bitmapImageRepForCachingDisplay(in: bandInContainer) else {
             return nil
         }
-        withStaticSpaceSwitchSnapshotIcons {
+        withStaticSpaceSwitchSnapshotRendering {
             container.cacheDisplay(in: bandInContainer, to: rep)
         }
         let image = NSImage(size: bandInContainer.size)
@@ -187,15 +187,16 @@ extension SpaceSwitchBandSurface {
 
     // MARK: - Snapshot helpers
 
-    /// Animated icons don't survive `cacheDisplay` reliably; use snapshot-safe
-    /// representations for the duration of the render.
-    private func withStaticSpaceSwitchSnapshotIcons(_ body: () -> Void) {
-        withStaticNewTabSnapshotIcons {
+    /// Animated icons and translucent AppKit labels don't survive
+    /// `cacheDisplay` consistently; use snapshot-safe representations for the
+    /// duration of the render.
+    private func withStaticSpaceSwitchSnapshotRendering(_ body: () -> Void) {
+        withStaticNewTabSnapshotContent {
             withStaticBookmarkFolderSnapshotIcons(body)
         }
     }
 
-    private func withStaticNewTabSnapshotIcons(_ body: () -> Void) {
+    private func withStaticNewTabSnapshotContent(_ body: () -> Void) {
         let cells = newTabButtonCells(in: spaceSwitchBandContainer)
         guard !cells.isEmpty else {
             body()
@@ -207,7 +208,7 @@ extension SpaceSwitchBandSurface {
                 body()
                 return
             }
-            cells[index].withStaticSnapshotIcon {
+            cells[index].withStaticSnapshotContent {
                 apply(at: index + 1)
             }
         }

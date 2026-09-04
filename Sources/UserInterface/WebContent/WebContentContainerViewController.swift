@@ -126,8 +126,62 @@ class WebContentContainerViewController: NSViewController {
     /// Timeout duration for waiting for first paint (in seconds)
     private static let firstPaintTimeoutSeconds: Double = 0.05
 
+    /// First-paint budget for a mount with no outgoing tab underneath it — the
+    /// first tab of a Space window surfaced by a cold Space switch (a spawn, or
+    /// a parked ghost materialized by `SpaceWindowSlot.activate`).
+    ///
+    /// The 50ms above is calibrated for a warm in-window tab switch, where the
+    /// outgoing tab's pixels stay on screen until the promotion, so expiring
+    /// early costs at most a flash. A cold window has nothing on screen but
+    /// `pageAreaBackdrop`, and its tab has usually not begun loading: a
+    /// materialized Space's tab starts its navigation only when the reveal
+    /// un-defers it (`Browser::SetRestoredSiblingConcealed(false)`), which
+    /// happens AFTER this mount runs. 50ms therefore always expires first and
+    /// force-promotes a view with no frame over the themed backdrop, exposing
+    /// Chromium's white pre-paint background — the white blink on the first
+    /// switch to each Space, visible only in dark mode.
+    ///
+    /// Waiting longer costs nothing here. The promotion being delayed would
+    /// have put a blank view on screen anyway, and the cleanup it gates
+    /// (`notifyViewSwitchCompleted`) has no previous tab to release — which is
+    /// exactly the condition this budget is selected on.
+    private static let coldFirstPaintTimeoutSeconds: Double = 2.0
+
     /// Fallback duration to clear the close-snapshot placeholder when no swap signal arrives (in seconds)
     private static let closeSnapshotTimeoutSeconds: Double = 0.8
+
+    /// Opaque themed cover held over the page area across a cold Space reveal.
+    /// A spawned or materialized Space window is fronted before its tab has
+    /// painted (a materialized Space does not even begin its navigation until
+    /// the reveal un-defers it), and what Chromium leaves in the page rect
+    /// until its first frame lands is not ours to colour. `pageAreaBackdrop`
+    /// covers the same gap from BELOW and stops covering it the moment the
+    /// tab's view is promoted above it; this covers it from above, and is
+    /// committed to the WindowServer before the window is fronted so it cannot
+    /// arrive a frame late.
+    private var coldRevealMask: NSView?
+
+    /// Fallback that lifts `coldRevealMask` if no promotion ever arrives.
+    private var coldRevealMaskTimeout: DispatchWorkItem?
+
+    /// One-shot hook a cold Space reveal arms to be told when this window's
+    /// content has actually painted (`SpaceWindowSlot`'s reveal waits on it
+    /// before fronting the window). Fired and cleared at first-paint
+    /// promotion; the reveal side pairs it with its own deadline, so a page
+    /// that never paints still presents.
+    var onColdContentReady: (() -> Void)?
+
+    /// Deliberately longer than `coldFirstPaintTimeoutSeconds` so the
+    /// first-paint promotion always wins the race — the mask should lift on
+    /// real content, and fall back to a deadline only when there will never be
+    /// any (a tab that closes mid-load, a page that never paints).
+    private static let coldRevealMaskTimeoutSeconds: Double = 3.0
+
+    /// How long the cover takes to cross-fade into the page it was covering.
+    /// Kept just under the vertical Space-switch slide (0.15s) so the reveal
+    /// reads as part of the same gesture rather than as a separate event
+    /// afterwards.
+    private static let coldRevealMaskFadeDuration: TimeInterval = 0.12
 
     // MARK: - UI Components
 
@@ -1745,6 +1799,81 @@ class WebContentContainerViewController: NSViewController {
         DispatchQueue.main.asyncAfter(deadline: .now() + Self.closeSnapshotTimeoutSeconds, execute: timeout)
     }
 
+    /// Cover the page area with the themed backdrop colour for the duration of
+    /// a cold Space reveal. Called by `SpaceWindowSlot` immediately before the
+    /// entering window is fronted.
+    ///
+    /// No-op once a tab is mounted, which is every warm switch: there the
+    /// target's content is already on screen and a cover would be the only
+    /// thing anyone saw change.
+    @MainActor
+    func maskPageAreaForColdReveal() {
+        guard currentWebContentController == nil, coldRevealMask == nil else { return }
+
+        let mask = NSView()
+        mask.wantsLayer = true
+        mask.layer?.cornerCurve = .continuous
+        mask.layer?.cornerRadius = LiquidGlassCompatible.webContentContainerCornerRadius
+        mask.phiLayer?.setBackgroundColor(ThemedColor.contentOverlayBackground)
+        // Above every sibling, and on the same rect as `pageAreaBackdrop` — the
+        // inset content region only. Covering the side margins too would make
+        // AppKit additively re-tint that vibrancy strip, which is its own
+        // flicker (see `maskClosingTab`).
+        contentContainer.addSubview(mask, positioned: .above, relativeTo: nil)
+        mask.snp.makeConstraints { make in
+            make.leading.equalToSuperview().inset(pageAreaLeadingInset)
+            make.trailing.bottom.equalToSuperview().inset(WebContentConstant.edgesSpacing)
+            make.top.equalToSuperview()
+        }
+        coldRevealMask = mask
+
+        // Laid out and drawn now so the cover has real content in the same
+        // turn, but deliberately NOT `CATransaction.flush()`ed the way
+        // `maskClosingTab` does. That flush commits app-wide, synchronously,
+        // mid-turn — ahead of the `beforeWaiting` observer
+        // `TrafficLightPositioner` uses to correct the discs before AppKit
+        // presents. Forcing the frame out early presents an uncorrected
+        // placement and the traffic lights are left off the chrome row. No
+        // flush is needed here anyway: this runs in the same run-loop turn as
+        // `revealConcealedWindow`, so the cover is in the transaction that
+        // carries the un-conceal.
+        view.layoutSubtreeIfNeeded()
+        mask.display()
+
+        let timeout = DispatchWorkItem { [weak self] in
+            self?.clearColdRevealMask()
+        }
+        coldRevealMaskTimeout = timeout
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.coldRevealMaskTimeoutSeconds,
+                                      execute: timeout)
+    }
+
+    /// Lift the cold-reveal mask and cancel its timeout. Idempotent.
+    ///
+    /// The cover cross-fades into the page rather than being cut away: the
+    /// content under it has just arrived, and swapping a flat colour for a
+    /// rendered page in one frame reads as a second flash — the opposite of
+    /// what the cover is for.
+    private func clearColdRevealMask() {
+        guard coldRevealMask != nil || coldRevealMaskTimeout != nil else { return }
+        coldRevealMaskTimeout?.cancel()
+        coldRevealMaskTimeout = nil
+        guard let mask = coldRevealMask else { return }
+
+        // Give up the slot before the fade starts, so a cold reveal arriving
+        // mid-fade installs its own cover instead of being turned away by the
+        // guard in `maskPageAreaForColdReveal`. The outgoing one owns itself
+        // from here and tears itself down when the fade lands.
+        coldRevealMask = nil
+        NSAnimationContext.runAnimationGroup({ context in
+            context.duration = Self.coldRevealMaskFadeDuration
+            context.timingFunction = CAMediaTimingFunction(name: .easeOut)
+            mask.animator().alphaValue = 0
+        }, completionHandler: {
+            mask.removeFromSuperview()
+        })
+    }
+
     /// Remove the close snapshot placeholder and cancel its timeout. Idempotent.
     @MainActor
     private func clearClosePlaceholder() {
@@ -1900,8 +2029,14 @@ class WebContentContainerViewController: NSViewController {
             self?.handleFirstPaintTimeout(tabId: tabId)
         }
         pendingNewTabTimeoutWorkItem = timeoutWorkItem
+        // Nothing mounted and no close snapshot standing in means the page area
+        // is showing `pageAreaBackdrop` alone: there are no pixels to protect,
+        // so this mount gets the cold budget rather than the warm-switch one.
+        let firstPaintBudget = currentWebContentController == nil && closePlaceholder == nil
+            ? Self.coldFirstPaintTimeoutSeconds
+            : Self.firstPaintTimeoutSeconds
         DispatchQueue.main.asyncAfter(
-            deadline: .now() + Self.firstPaintTimeoutSeconds,
+            deadline: .now() + firstPaintBudget,
             execute: timeoutWorkItem
         )
 
@@ -1917,8 +2052,6 @@ class WebContentContainerViewController: NSViewController {
             // Pending state was cleared (first paint arrived or tab changed)
             return
         }
-
-        // AppLogDebug("[FlickerFix][Mac] ⚠️ First paint timeout reached for tabId=\(tabId), forcing switch")
 
         // Force the switch using the same logic as handleTabReadyToDisplay
         handleTabReadyToDisplay(tabId: tabId)
@@ -2094,6 +2227,15 @@ class WebContentContainerViewController: NSViewController {
     func handleTabReadyToDisplay(tabId: Int) {
         // AppLogDebug("[FlickerFix][Mac] ⬅️ tabReadyToDisplay received, tabId=\(tabId)")
 
+        // A cold reveal waiting on this window's first paint is answered by
+        // ANY paint arriving — with or without a pending switch (the mounted
+        // view painting in place has no pending entry, but the content is
+        // just as real).
+        if let ready = onColdContentReady {
+            onColdContentReady = nil
+            ready()
+        }
+
         // Check if we have a pending new tab switch waiting for this tab
         guard let pending = pendingNewTabSwitch else {
             // AppLogDebug("[FlickerFix][Mac] No pending new tab switch (first paint for already-visible tab)")
@@ -2124,6 +2266,13 @@ class WebContentContainerViewController: NSViewController {
         // Bring new view to front
         contentContainer.addSubview(pending.controller.view, positioned: .above, relativeTo: nil)
 
+        // The promotion inserts above every sibling, which buries the
+        // cold-reveal mask a turn before it is lifted. Put it back on top; the
+        // lift below is what ends it.
+        if let coldRevealMask {
+            contentContainer.addSubview(coldRevealMask, positioned: .above, relativeTo: nil)
+        }
+
         attachSharedBookmarkBar(to: pending.controller)
 
         // Update current controller and identifier
@@ -2148,6 +2297,14 @@ class WebContentContainerViewController: NSViewController {
         // New view is on top now — real first paint, or forced by the first-paint
         // timeout (successor may still be blank, accepted). Drop the close snapshot.
         clearClosePlaceholder()
+
+        // The promoted view is in the hierarchy, but its content reaches the
+        // WindowServer on this turn's commit — lifting the cold-reveal mask
+        // inline would uncover the very frame it exists to cover, so it goes
+        // one turn later. Idempotent, so the timeout racing it is harmless.
+        DispatchQueue.main.async { [weak self] in
+            self?.clearColdRevealMask()
+        }
 
         // "Open as Split" promotes the freshly-painted pane over its still-
         // visible partner — same no-Chromium-hide situation as a same-split

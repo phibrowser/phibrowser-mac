@@ -133,7 +133,7 @@ struct TimeMachineSentryTraceStore {
 
         SentrySDK.start { options in
             options.dsn = ""
-            options.experimental.enableLogs = true
+            options.enableLogs = true
             
             if let basePath = NSSearchPathForDirectoriesInDomains(.applicationSupportDirectory, .userDomainMask, true).first,
                let appName = Bundle.main.infoDictionary?["CFBundleIdentifier"] as? String {
@@ -240,15 +240,51 @@ struct TimeMachineSentryTraceStore {
         SentrySDK.setUser(user)
     }
 
+    static func captureAuthReauthenticationRequired(
+        reason: String,
+        incidentID: String,
+        trace: String,
+        attributes: [String: String]
+    ) {
+        var enrichedAttributes = attributes
+        enrichedAttributes["reason"] = reason
+        enrichedAttributes["incidentID"] = incidentID
+
+        SentrySDK.capture(message: "Auth reauthentication required: \(reason)") { scope in
+            scope.setLevel(.warning)
+            scope.setTag(value: "auth", key: "area")
+            scope.setTag(value: "reauthentication", key: "auth.operation")
+            scope.setTag(value: reason, key: "auth.reason")
+            scope.setTag(value: "required", key: "auth.reauthentication.state")
+            scope.setTag(value: incidentID, key: "auth.reauthentication.id")
+            scope.setContext(value: enrichedAttributes, key: "auth_reauthentication")
+            scope.setExtra(value: trace, key: "auth_trace")
+
+            // Replace the inherited startup log excerpt with complete, current log files.
+            scope.clearAttachments()
+            if let data = trace.data(using: .utf8) {
+                scope.addAttachment(Attachment(data: data, filename: "auth-trace.txt"))
+            }
+            if let sentinelLogData = SentinelHelper.recentBootLog() {
+                scope.addAttachment(Attachment(data: sentinelLogData, filename: "sentinel-boot.log"))
+            }
+            for logFile in PhiLogging.applicationLogFiles() {
+                scope.addAttachment(Attachment(data: logFile.data, filename: logFile.filename))
+            }
+        }
+    }
+
     static func captureAuthReauthenticationResult(
         succeeded: Bool,
         reason: String,
+        incidentID: String,
         trace: String,
         attributes: [String: String]
     ) {
         var enrichedAttributes = attributes
         enrichedAttributes["reason"] = reason
         enrichedAttributes["result"] = succeeded ? "success" : "failure"
+        enrichedAttributes["incidentID"] = incidentID
 
         if !succeeded {
             SentrySDK.logger.error("Auth reauthentication failed", attributes: enrichedAttributes)
@@ -261,6 +297,7 @@ struct TimeMachineSentryTraceStore {
             scope.setTag(value: "reauthentication", key: "auth.operation")
             scope.setTag(value: reason, key: "auth.reason")
             scope.setTag(value: result, key: "auth.reauthentication.result")
+            scope.setTag(value: incidentID, key: "auth.reauthentication.id")
             scope.setContext(value: enrichedAttributes, key: "auth_reauthentication")
             scope.setExtra(value: trace, key: "auth_trace")
             if let data = trace.data(using: .utf8) {

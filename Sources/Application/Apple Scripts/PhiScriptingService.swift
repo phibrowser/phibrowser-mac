@@ -248,6 +248,8 @@ struct PhiScriptingDependencies {
     var openBookmark: (String, String) -> PhiScriptingOperationResult
     var openTab: (String, String?) -> PhiScriptingOperationResult
     var createWindow: (PhiScriptingWindowKind) -> PhiScriptingOperationResult
+    var createKioskWindow: (String) -> PhiScriptingOperationResult
+    var createIncognitoSpace: () -> PhiScriptingOperationResult
     var applicationVersion: () -> (version: String, build: String)
     var chromiumDataDirectory: () -> String
 }
@@ -255,7 +257,7 @@ struct PhiScriptingDependencies {
 @MainActor
 final class PhiScriptingService {
     static let schemaVersion = 1
-    static let apiVersion = 1
+    static let apiVersion = 2
     static let spaceIconPointSize: CGFloat = 20
     static let spaceIconScale: CGFloat = 2
     static let shared = PhiScriptingService(dependencies: .live)
@@ -274,6 +276,16 @@ final class PhiScriptingService {
         )?
         .pngData()?
         .base64EncodedString()
+    }
+
+    static func shouldBlockIncognitoSpaceCreation(
+        isSessionRestoreInFlight: Bool,
+        isLazyReopenArmed: Bool
+    ) -> Bool {
+        SpaceManager.reopenDropsActivations(
+            isSessionRestoreInFlight: isSessionRestoreInFlight,
+            isLazyReopenArmed: isLazyReopenArmed
+        )
     }
 
     func listSpaces() -> [String: Any] {
@@ -413,6 +425,15 @@ final class PhiScriptingService {
         createWindow(kind: .incognito)
     }
 
+    func newKioskWindow(url: String?) -> [String: Any] {
+        let targetURL = normalizedKioskURL(url)
+        return response(for: dependencies.createKioskWindow(targetURL))
+    }
+
+    func newIncognitoSpace() -> [String: Any] {
+        response(for: dependencies.createIncognitoSpace())
+    }
+
     func getVersion() -> [String: Any] {
         let version = dependencies.applicationVersion()
         return success([
@@ -466,6 +487,19 @@ final class PhiScriptingService {
         return value
     }
 
+    private func normalizedKioskURL(_ value: String?) -> String {
+        guard let value = nonEmpty(value) else {
+            return "about:blank"
+        }
+        guard let scheme = URLComponents(string: value)?.scheme else {
+            return URLProcessor.processUserInput(value)
+        }
+        guard scheme.caseInsensitiveCompare("phi") == .orderedSame else {
+            return value
+        }
+        return "chrome:" + String(value.dropFirst(scheme.count + 1))
+    }
+
     private func success(_ payload: [String: Any] = [:]) -> [String: Any] {
         var response = payload
         response["schemaVersion"] = Self.schemaVersion
@@ -500,6 +534,8 @@ extension PhiScriptingDependencies {
             openBookmark: openLiveBookmark,
             openTab: openLiveTab,
             createWindow: createLiveWindow,
+            createKioskWindow: createLiveKioskWindow,
+            createIncognitoSpace: createLiveIncognitoSpace,
             applicationVersion: {
                 let info = Bundle.main.infoDictionary
                 return (
@@ -1094,6 +1130,35 @@ extension PhiScriptingDependencies {
                 hidden: false
             ) != nil ? .completed : .failed
         }
+    }
+
+    private static func createLiveKioskWindow(
+        _ url: String
+    ) -> PhiScriptingOperationResult {
+        guard let appController = AppController.shared else {
+            return .failed
+        }
+        return appController.openNewKioskWindow(
+            url: url,
+            bringToFront: true
+        ) ? .completed : .failed
+    }
+
+    private static func createLiveIncognitoSpace() -> PhiScriptingOperationResult {
+        let spaceManager = SpaceManager.shared
+        guard !PhiScriptingService.shouldBlockIncognitoSpaceCreation(
+                  isSessionRestoreInFlight: spaceManager.isSessionRestoreInFlight,
+                  isLazyReopenArmed: spaceManager.lastReopenArmedLazyRestore
+              ),
+              PhiPreferences.GeneralSettings.spacesFeatureEnabled.loadValue(),
+              ApplicationState.shared.canUseBrowser,
+              !MainBrowserWindowControllersManager.shared.isGuestTransitionInteractionBlocked,
+              ChromiumLauncher.sharedInstance().bridge != nil,
+              let appController = AppController.shared else {
+            return .failed
+        }
+        appController.openNewIncognitoSpace()
+        return .accepted
     }
 
     private static func liveTab(

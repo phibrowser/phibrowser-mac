@@ -177,10 +177,14 @@ class BookmarkCellView: SidebarCellView, TabPreviewInteractionCancelling {
     }
 
     private func setupViews() {
+        wantsLayer = true
+        layer?.masksToBounds = false
         hostingView = ThemedHostingView(rootView: SidebarBookmarkCellContentView(
             state: viewState,
             primaryTabViewModel: primaryTabViewModel,
             secondaryTabViewModel: secondaryTabViewModel,
+            primaryStatusModel: primaryTabViewModel.status,
+            secondaryStatusModel: secondaryTabViewModel.status,
             peekTabViewModel: peekTabViewModel,
             onClose: { [weak self] in
                 self?.closeButtonTapped()
@@ -200,6 +204,8 @@ class BookmarkCellView: SidebarCellView, TabPreviewInteractionCancelling {
                 self?.selectFolderIcon(icon)
             }
         ))
+        hostingView.wantsLayer = true
+        hostingView.layer?.masksToBounds = false
         addSubview(hostingView)
         hostingView.snp.makeConstraints { make in
             make.edges.equalToSuperview()
@@ -412,6 +418,36 @@ class BookmarkCellView: SidebarCellView, TabPreviewInteractionCancelling {
             }
             .store(in: &cancellables)
 
+        // A Split Bookmark's second icon lives in the Profile's favicon
+        // database, not on the row. The favicon backfill hands its answer for
+        // that page to the repository, which names the page (see
+        // `FaviconBackfill`): resolve the second icon again when it is ours.
+        ProfileScopedFaviconRepository.shared.iconStored
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self, weak bookmark] stored in
+                guard let self, let bookmark,
+                      let secondaryUrl = bookmark.secondaryUrl, !secondaryUrl.isEmpty,
+                      stored.profileId == bookmark.profileId,
+                      stored.pageURLString == secondaryUrl else { return }
+                self.loadSecondaryFavicon(bookmark: bookmark, pageUrl: secondaryUrl)
+            }
+            .store(in: &cancellables)
+
+        // The row's stored icon changing — a visit, or the backfill writing
+        // the first page's — is a cue too: the second may have reached the
+        // database meanwhile. The value replayed on subscription is dropped —
+        // the bind above loaded it already.
+        bookmark.$cachedFaviconData
+            .removeDuplicates()
+            .dropFirst()
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self, weak bookmark] _ in
+                guard let self, let bookmark,
+                      let secondaryUrl = bookmark.secondaryUrl, !secondaryUrl.isEmpty else { return }
+                self.loadSecondaryFavicon(bookmark: bookmark, pageUrl: secondaryUrl)
+            }
+            .store(in: &cancellables)
+
         bookmark.$isActive
             .removeDuplicates()
             .receive(on: DispatchQueue.main)
@@ -563,7 +599,9 @@ class BookmarkCellView: SidebarCellView, TabPreviewInteractionCancelling {
         configure(viewModel: secondaryTabViewModel, with: panes.secondary)
         viewState.primaryTabIsLive = panes.primary != nil
         viewState.secondaryTabIsLive = panes.secondary != nil
-        viewState.isOpened = panes.primary != nil || panes.secondary != nil || bookmark.isOpened
+        viewState.isOpened = panes.primary?.hasWebContent == true
+            || panes.secondary?.hasWebContent == true
+            || bookmark.webContentWrapper != nil
     }
 
     private func configure(viewModel: TabViewModel, with tab: Tab?) {
@@ -609,10 +647,9 @@ class BookmarkCellView: SidebarCellView, TabPreviewInteractionCancelling {
             return
         }
 
-        guard bookmark.isOpened else {
-            viewState.primaryFaviconImage = storedPrimaryFaviconImage(bookmark: bookmark, pageUrl: pageUrl)
-            return
-        }
+        // Seed the row, then ask Chromium either way: an imported or migrated
+        // bookmark arrives without bytes and has no snapshot to fall back on.
+        viewState.primaryFaviconImage = storedPrimaryFaviconImage(bookmark: bookmark, pageUrl: pageUrl)
 
         if let liveFaviconData = bookmark.liveFaviconData,
            let image = NSImage(data: liveFaviconData) {
@@ -843,6 +880,8 @@ private struct SidebarBookmarkCellContentView: View {
     let state: BookmarkCellViewState
     let primaryTabViewModel: TabViewModel
     let secondaryTabViewModel: TabViewModel
+    @ObservedObject var primaryStatusModel: TabStatusModel
+    @ObservedObject var secondaryStatusModel: TabStatusModel
     let peekTabViewModel: TabViewModel
     let onClose: () -> Void
     let onClosePeek: () -> Void
@@ -877,10 +916,37 @@ private struct SidebarBookmarkCellContentView: View {
     }
 
     private var borderColor: Color {
-        if isHighlighted && appearance == .dark {
+        if tabStateBorderStyle != .none {
+            return ThemedColor.border.swiftUIColor(theme: theme, appearance: appearance)
+        }
+        if showsSelectionBorder && appearance == .dark {
             return .white.opacity(0.2)
         }
         return .clear
+    }
+
+    private var tabStateBorderStyle: TabStateBorderStyle {
+        guard !state.isFolder, !state.isActive else { return .none }
+        return TabStateBorderStyle.resolve(
+            isOpened: state.isOpened,
+            isDiscarded: primaryStatusModel.isDiscarded || secondaryStatusModel.isDiscarded,
+            isUnloaded: primaryStatusModel.isUnloaded || secondaryStatusModel.isUnloaded
+        )
+    }
+
+    private var showsSelectionBorder: Bool {
+        !state.isActive && (state.isDropTargetHighlighted || state.isMultiSelected)
+    }
+
+    private var borderStrokeStyle: StrokeStyle {
+        let resolvedStyle = tabStateBorderStyle == .none && showsSelectionBorder
+            ? TabStateBorderStyle.solid
+            : tabStateBorderStyle
+        return StrokeStyle(
+            lineWidth: resolvedStyle == .none ? 0 : TabStateBorderMetrics.lineWidth,
+            lineCap: .round,
+            dash: resolvedStyle == .dashed ? TabStateBorderMetrics.dashPattern : []
+        )
     }
 
     private var textColor: ThemedColor {
@@ -990,9 +1056,22 @@ private struct SidebarBookmarkCellContentView: View {
         )
         .overlay(
             RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .stroke(borderColor, lineWidth: isHighlighted ? 1 : 0)
+                .stroke(borderColor, style: borderStrokeStyle)
         )
         .shadow(color: .black.opacity(isHighlighted ? 0.15 : 0), radius: 1, x: 0, y: 1)
+        .overlay(alignment: .topTrailing) {
+            if !state.isFolder {
+                MergedTabCornerBadgeView(
+                    primaryModel: primaryTabViewModel.status,
+                    secondaryModel: secondaryTabViewModel.status,
+                    isSuppressed: state.showsPeek
+                )
+                .offset(
+                    x: TabCornerBadgeMetrics.overhang,
+                    y: -TabCornerBadgeMetrics.overhang
+                )
+            }
+        }
         .padding(.leading, WebContentConstant.edgesSpacing)
         .padding(.trailing, WebContentConstant.edgesSpacing)
         .padding(.vertical, 2)
@@ -1201,7 +1280,10 @@ private struct BookmarkFaviconView: View {
     @ViewBuilder
     private var faviconContent: some View {
         if let liveTabViewModel {
-            UnifiedTabFaviconView(viewModel: liveTabViewModel)
+            UnifiedTabFaviconView(
+                viewModel: liveTabViewModel,
+                showsDiscardedOutline: false
+            )
         } else if let image {
             faviconImage(image)
         } else {

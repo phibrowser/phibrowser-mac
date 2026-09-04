@@ -276,11 +276,11 @@ extension AppController {
     // (harmless across submenus, but tags must stay unique to grep sanely).
     static let agentTranscriptItemTag = 500025
     static let uninstallPhiItemTag = 500026
+    static let browserMigrationItemTag = 500038
     static let debugMenuItemTag = 500027
     static let spacesProfileSeparatorTag = 500020
     static let deleteProfileSubmenuIdentifier = NSUserInterfaceItemIdentifier("phi.spaces.deleteProfile")
     static let spacesMenuItemTag = 500018
-    static let fileNewIncognitoSpaceItemTag = 500019
     static let spacesNewSpaceItemTag = 500030
     static let spacesRenameItemTag = 500031
     static let spacesChangeThemeParentTag = 500033
@@ -478,6 +478,55 @@ extension AppController {
                     }
                 }
                 #endif
+
+                // "Import from Another Browser..." is built here rather than
+                // by Chromium, which drops it under the Phi build flag: an item
+                // Chromium builds is validated by its own command controller,
+                // which the client cannot drive, and this one has to grey out
+                // while a Migration is in flight. It keeps the command
+                // identifier as its tag, so the shortcut the user assigns to
+                // that command still reaches it.
+                // Remove-then-insert keeps this idempotent across menu rebuilds
+                // (Chromium can swap the main menu wholesale).
+                subMenu.items.removeAll {
+                    $0.tag == CommandWrapper.IDC_IMPORT_SETTINGS.rawValue
+                }
+                let importItem = NSMenuItem(
+                    title: NSLocalizedString("app.phiMenu.importFromAnotherBrowser", value: "Import from Another Browser...",
+                        comment: "Phi menu - Menu item opening the window that imports bookmarks and settings from another browser"),
+                    action: #selector(showImportDataWindowFromMenu(_:)),
+                    keyEquivalent: ""
+                )
+                importItem.tag = CommandWrapper.IDC_IMPORT_SETTINGS.rawValue
+                importItem.target = self
+                Shortcuts.updateShortcut(for: importItem)
+                if let clearBrowsingDataIndex = subMenu.items.firstIndex(where: {
+                    $0.tag == CommandWrapper.IDC_CLEAR_BROWSING_DATA.rawValue
+                }) {
+                    subMenu.insertItem(importItem, at: clearBrowsingDataIndex + 1)
+                } else {
+                    subMenu.addItem(importItem)
+                }
+
+                // Sits beside "Import from Another Browser...", the item this
+                // one is the structural counterpart to. Remove-then-insert
+                // keeps it idempotent across menu rebuilds too.
+                subMenu.items.removeAll { $0.tag == AppController.browserMigrationItemTag }
+                let migrationItem = NSMenuItem(
+                    title: NSLocalizedString("app.phiMenu.migrateFromAnotherBrowser", value: "Migrate from Another Browser…",
+                        comment: "Phi menu - Menu item opening the wizard that recreates another browser's profiles and spaces in Phi"),
+                    action: #selector(showBrowserMigrationWizard(_:)),
+                    keyEquivalent: ""
+                )
+                migrationItem.tag = AppController.browserMigrationItemTag
+                migrationItem.target = self
+                if let importIndex = subMenu.items.firstIndex(where: {
+                    $0.tag == CommandWrapper.IDC_IMPORT_SETTINGS.rawValue
+                }) {
+                    subMenu.insertItem(migrationItem, at: importIndex + 1)
+                } else {
+                    subMenu.addItem(migrationItem)
+                }
             } else
             
             if menuRole == .edit, let subMenu = menuItem.submenu {
@@ -663,7 +712,7 @@ extension AppController {
         // below New Incognito Window.
         subMenu.items.removeAll { item in
             item.tag == CommandWrapper.PHI_NEW_KIOSK_WINDOW.rawValue
-                || item.tag == AppController.fileNewIncognitoSpaceItemTag
+                || item.tag == CommandWrapper.PHI_NEW_INCOGNITO_SPACE.rawValue
         }
 
         let newKioskWindowItem = NSMenuItem(
@@ -684,12 +733,14 @@ extension AppController {
             title: NSLocalizedString(
                 "app.fileMenu.createNewIncognitoSpace",
                 value: "New Incognito Space",
-                comment: "File menu - Create a new Incognito Space and bring it to the front"
+                comment: "File menu and Shortcuts settings - Command title for creating a new Incognito Space"
             ),
             action: #selector(AppController.newIncognitoSpaceFromMenu(_:)),
-            keyEquivalent: ""
+            keyEquivalent: "n"
         )
-        newIncognitoSpaceItem.tag = AppController.fileNewIncognitoSpaceItemTag
+        newIncognitoSpaceItem.keyEquivalentModifierMask = [.control, .shift]
+        newIncognitoSpaceItem.tag = CommandWrapper.PHI_NEW_INCOGNITO_SPACE.rawValue
+        Shortcuts.updateShortcut(for: newIncognitoSpaceItem)
         newIncognitoSpaceItem.target = target
 
         let insertionIndex = subMenu.items.firstIndex(where: {
@@ -711,9 +762,9 @@ extension AppController {
             menu.addItem(empty)
             return
         }
-        let boundProfileIds = Set(SpaceManager.shared.spaces.map { $0.profileId })
         for profile in deletable {
-            let inUse = boundProfileIds.contains(profile.profileId)
+            // Store-read, not the `spaces` cache — see `isProfileInUse`.
+            let inUse = SpaceManager.shared.isProfileInUse(profile.profileId)
             let title: String
             if inUse {
                 title = String(
@@ -756,6 +807,21 @@ extension AppController {
         alert.addButton(withTitle: NSLocalizedString("app.deleteProfileConfirmation.deleteButton", value: "Delete", comment: "Destructive button"))
         alert.addButton(withTitle: NSLocalizedString("app.deleteProfileConfirmation.cancelButton", value: "Cancel", comment: "Cancel button"))
         guard alert.runModal() == .alertFirstButtonReturn else { return }
+        // Re-check AFTER the modal: the menu item was validated when the menu
+        // opened, and a Space can be bound to this profile while the
+        // confirmation sits on screen (background work — the agent surface
+        // included — keeps running under runModal). Nothing below this guard
+        // re-checks: neither ProfileManager nor the Chromium bridge knows
+        // about Space bindings.
+        guard !SpaceManager.shared.isProfileInUse(profile.profileId) else {
+            let errAlert = NSAlert()
+            errAlert.messageText = NSLocalizedString("app.deleteProfileFailure.title", value: "Couldn't delete profile", comment: "Title of the profile-delete error")
+            errAlert.informativeText = NSLocalizedString("app.deleteProfileFailure.inUseBySpace", value: "A Space is using this profile. Delete that Space or change its profile first.",
+                comment: "Body of the profile-delete error when a Space became bound to the profile before the deletion ran"
+            )
+            errAlert.runModal()
+            return
+        }
         ProfileManager.shared.deleteProfile(profile.profileId) { success, error in
             if !success {
                 let errAlert = NSAlert()
@@ -2174,7 +2240,7 @@ extension AppController {
 
     @objc func deleteActiveSpace(_ sender: Any?) {
         guard let space = currentActiveSpace(),
-              space.spaceId != LocalStore.defaultSpaceId else { return }
+              SpaceManager.shared.canDeleteSpace(spaceId: space.spaceId) else { return }
         let alert = NSAlert()
         alert.messageText = String(
             format: NSLocalizedString("app.deleteSpaceConfirmation.title", value: "Delete \u{201C}%@\u{201D}?", comment: "Title of the delete-Space confirmation"),
@@ -2221,35 +2287,40 @@ extension AppController {
     /// each is its own Space in the strip until it's closed.
     @objc func newIncognitoSpaceFromMenu(_ sender: Any?) {
         MainActor.assumeIsolated {
-            let manager = SpaceManager.shared
-            let spaceId = manager.createIncognitoSpace()
-            if let slot = currentSpacesSlot() {
-                slot.suppressHoverCard(spaceId: spaceId)
-                slot.activate(spaceId: spaceId)
-            } else {
-                // No browser window open (menu-bar-only state): mint a slot
-                // and spawn the Space's window into it, the same shape a
-                // Chromium-initiated Cmd+N takes.
-                let slot = manager.createSlot(initialSpaceId: spaceId)
-                slot.activate(spaceId: spaceId, onActivationFailed: {
-                    // Undo the whole menu action rather than half of it: with
-                    // nothing on screen, a Space left in the strip behind a
-                    // reclaimed slot is one the user has no surface to reach.
-                    //
-                    // Conditioned on the reclaim, not on the failure report:
-                    // `activate` also reports failure with the spawned window
-                    // registered (the user switched Space mid-spawn), and
-                    // closing the Space there would tear down a window that
-                    // did arrive. `reclaimMintedSlot` is the one place that
-                    // tells those two apart.
-                    //
-                    // Slot first: `closeIncognitoSpace` retreats any slot
-                    // showing the Space to the default one, which would spawn
-                    // a window into the very slot being reclaimed.
-                    guard manager.reclaimMintedSlot(slot, mintedForThisAttempt: true) else { return }
-                    manager.closeIncognitoSpace(spaceId: spaceId)
-                })
-            }
+            openNewIncognitoSpace()
+        }
+    }
+
+    @MainActor
+    func openNewIncognitoSpace() {
+        let manager = SpaceManager.shared
+        let spaceId = manager.createIncognitoSpace()
+        if let slot = currentSpacesSlot() {
+            slot.suppressHoverCard(spaceId: spaceId)
+            slot.activate(spaceId: spaceId)
+        } else {
+            // No browser window open (menu-bar-only state): mint a slot
+            // and spawn the Space's window into it, the same shape a
+            // Chromium-initiated Cmd+N takes.
+            let slot = manager.createSlot(initialSpaceId: spaceId)
+            slot.activate(spaceId: spaceId, onActivationFailed: {
+                // Undo the whole menu action rather than half of it: with
+                // nothing on screen, a Space left in the strip behind a
+                // reclaimed slot is one the user has no surface to reach.
+                //
+                // Conditioned on the reclaim, not on the failure report:
+                // `activate` also reports failure with the spawned window
+                // registered (the user switched Space mid-spawn), and
+                // closing the Space there would tear down a window that
+                // did arrive. `reclaimMintedSlot` is the one place that
+                // tells those two apart.
+                //
+                // Slot first: `closeIncognitoSpace` retreats any slot
+                // showing the Space to the default one, which would spawn
+                // a window into the very slot being reclaimed.
+                guard manager.reclaimMintedSlot(slot, mintedForThisAttempt: true) else { return }
+                manager.closeIncognitoSpace(spaceId: spaceId)
+            })
         }
     }
 
@@ -2270,32 +2341,38 @@ extension AppController {
     }
 
     @MainActor
-    private func openNewKioskWindow(bringToFront: Bool) {
+    @discardableResult
+    func openNewKioskWindow(
+        url: String = "about:blank",
+        bringToFront: Bool
+    ) -> Bool {
         let manager = MainBrowserWindowControllersManager.shared
         guard ApplicationState.shared.canOpenExternalLinksInKiosk,
               !manager.isGuestTransitionInteractionBlocked,
               let bridge = ChromiumLauncher.sharedInstance().bridge else {
-            return
+            return false
         }
         if manager.activeWindowController == nil,
            SpaceManager.shared.isSessionRestoreInFlight {
-            return
+            return false
         }
 
         let kioskController: KioskBrowserWindowController?
         if let source = manager.activeWindowController {
             kioskController = openKioskWindow(
+                url: url,
                 from: source,
                 bridge: bridge,
                 manager: manager
             )
         } else {
             kioskController = openWindowlessKiosk(
+                url: url,
                 bridge: bridge,
                 manager: manager
             )
         }
-        guard let kioskController else { return }
+        guard let kioskController else { return false }
 
         let windowId = kioskController.windowId
         DispatchQueue.main.async { [weak kioskController] in
@@ -2306,8 +2383,11 @@ extension AppController {
             if bringToFront, let window = kioskController.window {
                 Self.bringKioskWindowToFront(window)
             }
-            kioskController.presentOmniBoxCentered()
+            if url == "about:blank" {
+                kioskController.presentOmniBoxCentered()
+            }
         }
+        return true
     }
 
     @MainActor
@@ -2320,6 +2400,7 @@ extension AppController {
 
     @MainActor
     private func openKioskWindow(
+        url: String,
         from source: MainBrowserWindowController,
         bridge: PhiChromiumBridgeProtocol,
         manager: MainBrowserWindowControllersManager
@@ -2329,7 +2410,7 @@ extension AppController {
 
         let existingWindowIds = Set(manager.getAllWindows().map(\.windowId))
         guard bridge.openURL(
-            inKiosk: "about:blank",
+            inKiosk: url,
             sourceWindowId: Int64(source.windowId)
         ) else {
             return nil
@@ -2341,6 +2422,7 @@ extension AppController {
 
     @MainActor
     private func openWindowlessKiosk(
+        url: String,
         bridge: PhiChromiumBridgeProtocol,
         manager: MainBrowserWindowControllersManager
     ) -> KioskBrowserWindowController? {
@@ -2356,7 +2438,7 @@ extension AppController {
         guard let controller = manager.controller(for: windowId)
                 as? KioskBrowserWindowController,
               bridge.createNewTabStrictly(
-                withUrl: "about:blank",
+                withUrl: url,
                 windowId: Int64(windowId),
                 focusAfterCreate: true
               ) else {
@@ -2411,6 +2493,92 @@ extension AppController {
         window.setContentSize(NSSize(width: 680, height: 460))
         window.center()
         window.makeKeyAndOrderFront(nil)
+    }
+
+    static let browserMigrationWindowIdentifier =
+        NSUserInterfaceItemIdentifier("Phi Browser Migration Window")
+
+    /// The Migration wizard is on screen. Like the import window it is not
+    /// released when it closes, and a miniaturised window reports itself
+    /// invisible, so neither test answers this on its own.
+    @MainActor
+    static var browserMigrationWizardIsOnScreen: Bool {
+        guard let window = NSApp.windows.first(where: {
+            $0.identifier == browserMigrationWindowIdentifier
+        }) else { return false }
+        return window.isVisible || window.isMiniaturized
+    }
+
+    /// Opens the Migration wizard. Like the import window it is a singleton, so
+    /// a second invocation returns to the one that is already open rather than
+    /// starting a second run against the same source.
+    @MainActor
+    @objc func showBrowserMigrationWizard(_ sender: Any?) {
+        if let existing = NSApp.windows.first(where: {
+            $0.identifier == Self.browserMigrationWindowIdentifier
+        }) {
+            if existing.isMiniaturized { existing.deminiaturize(nil) }
+            existing.makeKeyAndOrderFront(nil)
+            return
+        }
+
+        let window = NSWindow(
+            contentRect: .zero,
+            styleMask: [.titled, .closable, .fullSizeContentView],
+            backing: .buffered,
+            defer: false
+        )
+        window.identifier = Self.browserMigrationWindowIdentifier
+        // Kept although nothing draws it: the window still reports the title to
+        // accessibility and to the Window menu, while the wizard's own per-step
+        // heading does the naming on screen.
+        window.title = NSLocalizedString("app.browserMigration.windowTitle", value: "Migrate to Phi",
+            comment: "Browser migration wizard - window title")
+        window.titlebarAppearsTransparent = true
+        window.titleVisibility = .hidden
+        window.isMovableByWindowBackground = true
+        window.isReleasedWhenClosed = false
+        // The wizard wears the import window's dress and is hard-coded dark
+        // with it. That window can leave the system appearance alone because it
+        // hand-paints every label and carries almost no system controls; this
+        // one has a bridged mixed checkbox, a disclosure and two progress
+        // views, each of which would draw for a light system on a dark ground.
+        // One line here is cheaper and more complete than painting all four.
+        window.appearance = NSAppearance(named: .darkAqua)
+        let wizard = BrowserMigrationWizardView(
+            model: BrowserMigrationWizardModel()
+        ) { [weak window] in
+            window?.close()
+        }
+        let hosting = ThemedHostingController(rootView: wizard)
+        // The view still declares the size — a root view that asked to fill
+        // would report a runaway fitting size and grow the window visibly, the
+        // way migration ticket 04's 640 x 1713 did. What changes is where that
+        // size lands: the wizard draws under the transparent titlebar, so it is
+        // the whole window's frame rather than the content rect the hosting
+        // controller would push out as its preferred size, which adds the
+        // titlebar's height on top of it.
+        let declaredSize = hosting.view.fittingSize
+        hosting.sizingOptions = []
+        window.contentViewController = hosting
+        window.setFrame(
+            NSRect(origin: window.frame.origin, size: declaredSize),
+            display: false)
+        window.center()
+        window.makeKeyAndOrderFront(nil)
+    }
+
+    /// Runs the import command the Chromium-built menu item used to carry.
+    /// The item keeps that command as its tag, so handing the item itself to
+    /// the dispatcher takes exactly the route it took before — including the
+    /// Incognito answer, which belongs to the command rather than to this
+    /// menu item.
+    @MainActor
+    @objc func showImportDataWindowFromMenu(_ sender: Any?) {
+        guard let sender,
+              let window = MainBrowserWindowControllersManager.shared
+                .activeWindowController?.window else { return }
+        _ = CommandDispatcher.dispatchCommand(sender, window: window)
     }
 
     // MARK: - Chromium Menu Actions
@@ -2542,6 +2710,26 @@ extension AppController {
             return ApplicationState.shared.canUseBrowser
         }
 
+        // Migration and browser-data import must never write into the user's
+        // data at the same time, so each greys the other out for as long as it
+        // is in flight — window closed included. The import item additionally
+        // needs a window, because that is where it reads its target Space from.
+        if item.action == #selector(showImportDataWindowFromMenu(_:)) {
+            guard MainBrowserWindowControllersManager.shared
+                .activeWindowController != nil else { return false }
+            // `validateUserInterfaceItem` is a nonisolated @objc entry point
+            // but always arrives on the main thread, so assume isolation here
+            // rather than annotating it (same pattern as
+            // closeIncognitoSpaceFromMenu).
+            return MainActor.assumeIsolated { !BrowserDataActivity.migrationBlocksImport }
+        }
+
+        // Nothing to migrate from: no Migration Source is installed here.
+        if item.action == #selector(showBrowserMigrationWizard(_:)) {
+            guard !BrowserMigrationSourceKind.installed.isEmpty else { return false }
+            return MainActor.assumeIsolated { !BrowserDataActivity.importBlocksMigration }
+        }
+
         if item.action == #selector(openBookmarkManager(_:)) {
             return ApplicationState.shared.canUseBrowser &&
                 MainBrowserWindowControllersManager.shared.activeWindowController != nil &&
@@ -2664,7 +2852,7 @@ extension AppController {
                   let profile = menuItem.representedObject as? PhiBrowserProfile else {
                 return false
             }
-            return !SpaceManager.shared.spaces.contains(where: { $0.profileId == profile.profileId })
+            return !SpaceManager.shared.isProfileInUse(profile.profileId)
         }
         let spacesActions: [Selector] = [
             #selector(newSpaceFromMenu(_:)),
@@ -2703,10 +2891,9 @@ extension AppController {
                 return currentActiveSpace() != nil
             }
             if action == #selector(deleteActiveSpace(_:)) {
-                // The default Space can't be deleted — its bookmark root is
-                // shared with the legacy per-profile root.
+                // Any Space can be deleted except the last user Space.
                 guard let space = currentActiveSpace() else { return false }
-                return space.spaceId != LocalStore.defaultSpaceId
+                return SpaceManager.shared.canDeleteSpace(spaceId: space.spaceId)
             }
             if action == #selector(selectSpaceProfile(_:)) {
                 // The default space's profile can't change — its bookmark

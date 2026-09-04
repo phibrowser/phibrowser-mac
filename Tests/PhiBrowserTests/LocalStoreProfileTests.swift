@@ -453,12 +453,13 @@ final class LocalStoreProfileTests: XCTestCase {
         )
         let root = ArcDataParserTool.Bookmark(guid: "s1", title: "Work", url: nil, isFolder: true)
         root.children = [leaf]
-        await store.saveArcBookmarksToLocalStore(
+        let written = await store.saveArcBookmarksToLocalStore(
             root,
             profileId: LocalStore.defaultProfileId,
             spaceId: targetSpaceId
         )
 
+        XCTAssertNil(written, "A dropped write must report itself, not a count.")
         XCTAssertTrue(
             store.fetchBookmarks(parentId: nil, profileId: LocalStore.defaultProfileId, spaceId: targetSpaceId).isEmpty,
             "Nothing should be written into a Space that no longer exists."
@@ -467,6 +468,37 @@ final class LocalStoreProfileTests: XCTestCase {
             store.fetchBookmarks(parentId: nil, profileId: LocalStore.defaultProfileId, spaceId: LocalStore.defaultSpaceId).isEmpty,
             "A dropped import must not spill into the default Space either."
         )
+    }
+
+    /// An Arc split view lands as one of Phi's own split bookmarks: the
+    /// second page on the same row, opened together with the first.
+    func testSaveArcBookmarksLandsASplitEntryAsOneSplitBookmark() async throws {
+        let store = try makeStore()
+        let context = try XCTUnwrap(store.getMainContext())
+        context.insert(SpaceModel(
+            spaceId: "space-split", profileId: LocalStore.defaultProfileId,
+            name: "Split", colorHex: "#000000", iconName: "circle", sortOrder: 1))
+        try context.save()
+
+        let leaf = ArcDataParserTool.Bookmark(
+            guid: "arc-split", title: "GitHub", url: "https://github.com/", isFolder: false)
+        leaf.split = ArcSplit(
+            secondaryTitle: "Baidu", secondaryURL: "https://www.baidu.com/", layout: "vertical")
+        let root = ArcDataParserTool.Bookmark(guid: "s1", title: "Work", url: nil, isFolder: true)
+        root.children = [leaf]
+
+        let written = await store.saveArcBookmarksToLocalStore(
+            root, profileId: LocalStore.defaultProfileId, spaceId: "space-split", landingFolder: false)
+
+        XCTAssertEqual(written, 1, "a split entry is one bookmark, not two")
+        let bookmarks = store.fetchBookmarks(
+            parentId: nil, profileId: LocalStore.defaultProfileId, spaceId: "space-split")
+        XCTAssertEqual(bookmarks.map(\.title), ["GitHub"])
+        let bookmark = try XCTUnwrap(bookmarks.first)
+        XCTAssertEqual(bookmark.url.absoluteString, "https://github.com/")
+        XCTAssertEqual(bookmark.secondaryUrl?.absoluteString, "https://www.baidu.com/")
+        XCTAssertEqual(bookmark.secondaryTitle, "Baidu")
+        XCTAssertEqual(bookmark.layout, "vertical")
     }
 
     func testSaveArcBookmarksLandsInSpaceNamedFolder() async throws {
@@ -505,12 +537,53 @@ final class LocalStoreProfileTests: XCTestCase {
 
         let emptyRoot = ArcDataParserTool.Bookmark(guid: "s1", title: "Empty",
                                                    url: nil, isFolder: true)
-        await store.saveArcBookmarksToLocalStore(emptyRoot,
+        let written = await store.saveArcBookmarksToLocalStore(emptyRoot,
             profileId: LocalStore.defaultProfileId, spaceId: "space-a")
 
+        XCTAssertEqual(written, 0, "A Space with nothing to import is not a failed write.")
         let top = store.fetchBookmarks(parentId: nil,
             profileId: LocalStore.defaultProfileId, spaceId: "space-a")
         XCTAssertNil(top.first { $0.title == "Empty" })
+    }
+
+    /// A Migration creates each Space for exactly one source tree, so the tree
+    /// goes to that Space's bookmark root: the Space-named folder is there to
+    /// keep an import apart from bookmarks the target Space already had, and a
+    /// freshly created Space has none.
+    func testSaveArcBookmarksWithoutLandingFolderLandsAtTheSpaceRoot() async throws {
+        let store = try makeStore()
+        let context = try XCTUnwrap(store.getMainContext())
+        let space = SpaceModel(spaceId: "space-a", profileId: LocalStore.defaultProfileId,
+                               name: "A", colorHex: "#000000", iconName: "star", sortOrder: 0)
+        context.insert(space)
+        try context.save()
+
+        let nested = ArcDataParserTool.Bookmark(guid: "t2", title: "Figma",
+                                                url: "https://figma.com", isFolder: false)
+        let folder = ArcDataParserTool.Bookmark(guid: "f1", title: "Design",
+                                                url: nil, isFolder: true)
+        folder.children = [nested]
+        let leaf = ArcDataParserTool.Bookmark(guid: "t1", title: "Linear",
+                                              url: "https://linear.app", isFolder: false)
+        let root = ArcDataParserTool.Bookmark(guid: "s1", title: "Work",
+                                              url: nil, isFolder: true)
+        root.children = [leaf, folder]
+
+        let written = await store.saveArcBookmarksToLocalStore(root,
+            profileId: LocalStore.defaultProfileId, spaceId: "space-a",
+            landingFolder: false)
+
+        XCTAssertEqual(written, 2, "The count is bookmarks; the folder is not one.")
+        let top = store.fetchBookmarks(parentId: nil,
+            profileId: LocalStore.defaultProfileId, spaceId: "space-a")
+        XCTAssertEqual(top.map { $0.title }, ["Linear", "Design"],
+                       "No folder named after the Space wraps the tree, and source order holds.")
+        let design = try XCTUnwrap(top.last)
+        XCTAssertEqual(design.dataType, .bookmarkFolder)
+        XCTAssertNil(design.favicon, "Favicons are not carried over; icons arrive on first load.")
+        let children = store.fetchBookmarks(parentId: design.guid,
+            profileId: LocalStore.defaultProfileId, spaceId: "space-a")
+        XCTAssertEqual(children.map { $0.title }, ["Figma"], "Folder nesting is preserved.")
     }
 
     /// Chromium titles its permanent bookmark bar node in the UI language, so
@@ -698,7 +771,7 @@ final class LocalStoreProfileTests: XCTestCase {
 
     func testArcBookmarkRootGatedByArcOption() {
         let root = ArcDataParserTool.Bookmark(guid: "s", title: "Work", url: nil, isFolder: true)
-        let space = ArcSpace(id: "s", title: "Work", profile: .default, root: root)
+        let space = ArcSpace(id: "s", title: "Work", profile: .default, colorHex: "#3A6FF8", icon: nil, root: root)
 
         // Arc NOT among the selected browsers -> no Arc bookmarks even with a cached space.
         XCTAssertNil(BrowserDataImporter.arcBookmarkRoot(options: [.chrome], arcSpace: space, wantsBookmarks: true))
@@ -835,7 +908,7 @@ final class LocalStoreProfileTests: XCTestCase {
     func testParseCustomProfileSpace() throws {
         let json = makeArcSidebar(
             profileJSON: #"{"custom":{"_0":{"machineID":"M","directoryBasename":"Profile 1"}}}"#)
-        let spaces = try ArcDataParserTool.parse(data: json)
+        let spaces = try ArcDataParserTool.parse(data: json).spaces
         XCTAssertEqual(spaces.count, 1)
         let s = try XCTUnwrap(spaces.first)
         XCTAssertEqual(s.id, "S1")
@@ -847,20 +920,20 @@ final class LocalStoreProfileTests: XCTestCase {
     }
 
     func testParseDefaultProfileSpace() throws {
-        let spaces = try ArcDataParserTool.parse(data: makeArcSidebar(profileJSON: #"{"default": true}"#))
+        let spaces = try ArcDataParserTool.parse(data: makeArcSidebar(profileJSON: #"{"default": true}"#)).spaces
         XCTAssertEqual(spaces.first?.profile, .default)
         XCTAssertEqual(spaces.first?.profile.directoryName, "Default")
     }
 
     func testParseMalformedProfileBecomesUnknownWithoutAborting() throws {
-        let spaces = try ArcDataParserTool.parse(data: makeArcSidebar(profileJSON: #"{"weird":1}"#))
+        let spaces = try ArcDataParserTool.parse(data: makeArcSidebar(profileJSON: #"{"weird":1}"#)).spaces
         XCTAssertEqual(spaces.count, 1)               // parse did not abort
         XCTAssertEqual(spaces.first?.profile, .unknown)
         XCTAssertNil(spaces.first?.profile.directoryName)
     }
 
     func testParseUntitledEmptySpaceIsSurfaced() throws {
-        let spaces = try ArcDataParserTool.parse(data: makeArcSidebarEmptySpace())
+        let spaces = try ArcDataParserTool.parse(data: makeArcSidebarEmptySpace()).spaces
         XCTAssertEqual(spaces.count, 1)
         XCTAssertEqual(spaces.first?.title, NSLocalizedString("oobe.importBrowserData.arc.untitledSpaceName", value: "Untitled Space", comment: "Arc import - Fallback name for an Arc Space with no title"))
         XCTAssertEqual(spaces.first?.root.children.count, 0)
@@ -905,21 +978,112 @@ final class LocalStoreProfileTests: XCTestCase {
         XCTAssertEqual(try profile("Profile 1").directoryName, "Profile 1")
     }
 
-    func testLoadChromiumProfilesFromInjectedLocalState() throws {
+    /// Writes `json` as a `Local State` file in a fresh temporary directory.
+    private func writeLocalState(_ json: String) throws -> URL {
         let dir = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         let url = dir.appendingPathComponent("Local State")
-        try Data("""
+        try Data(json.utf8).write(to: url)
+        return url
+    }
+
+    func testLoadChromiumProfilesFromInjectedLocalState() throws {
+        let url = try writeLocalState("""
         {"profile":{"profiles_order":["Default","Profile 1"],
           "info_cache":{"Default":{"name":"Your Arc","user_name":""},
                         "Profile 1":{"name":"aa","user_name":""}}}}
-        """.utf8).write(to: url)
+        """)
 
         let importer = BrowserDataImporter()
         let profiles = importer.loadChromiumProfiles(localStateURL: url)
         XCTAssertEqual(profiles.map { $0.directory }, ["Default", "Profile 1"])
         XCTAssertEqual(profiles.map { $0.name }, ["Your Arc", "aa"])
+    }
+
+    func testLoadChromiumProfilesFallsBackToDirectoryWhenNameIsEmpty() throws {
+        let url = try writeLocalState("""
+        {"profile":{"profiles_order":["Profile 1"],
+          "info_cache":{"Profile 1":{"name":"","user_name":""}}}}
+        """)
+
+        let profiles = BrowserDataImporter().loadChromiumProfiles(localStateURL: url)
+        XCTAssertEqual(profiles.map { $0.name }, ["Profile 1"])
+    }
+
+    func testLoadArcMigrationSourceJoinsProfilesWithSidebar() throws {
+        let localStateURL = try writeLocalState("""
+        {"profile":{"profiles_order":["Default"],
+          "info_cache":{"Default":{"name":"Your Arc","user_name":""}}}}
+        """)
+        let sidebarURL = localStateURL.deletingLastPathComponent()
+            .appendingPathComponent("StorableSidebar.json")
+        try makeArcSidebar(profileJSON: #"{"default": true}"#).write(to: sidebarURL)
+
+        let source = try XCTUnwrap(BrowserDataImporter().loadArcMigrationSource(
+            sidebarURL: sidebarURL, localStateURL: localStateURL))
+        XCTAssertEqual(source.profiles.map { $0.name }, ["Your Arc"])
+        XCTAssertEqual(source.sidebar.spaces.map { $0.title }, ["Work"])
+    }
+
+    /// Writes `json` as one source profile's `Secure Preferences` under a fresh
+    /// temporary user-data directory, and returns that directory.
+    private func writeSecurePreferences(
+        _ json: String, profile: String = "Profile 1"
+    ) throws -> URL {
+        let userDataURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let profileURL = userDataURL.appendingPathComponent(profile, isDirectory: true)
+        try FileManager.default.createDirectory(
+            at: profileURL, withIntermediateDirectories: true)
+        try Data(json.utf8).write(to: profileURL.appendingPathComponent("Secure Preferences"))
+        return userDataURL
+    }
+
+    /// The count the migration report names has to be the set the Chromium-side
+    /// extension importer will act on, since its own per-extension result never
+    /// comes back: Web Store origin and a Web Store install location, both.
+    func testWebStoreExtensionCountCountsOnlyWebStoreExtensions() throws {
+        let url = try writeSecurePreferences("""
+        {"extensions":{"settings":{
+          "aaaa":{"from_webstore":true,"location":1,"manifest":{"name":"Kept"}},
+          "bbbb":{"from_webstore":true,"location":1},
+          "cccc":{"from_webstore":false,"location":1},
+          "dddd":{"from_webstore":true,"location":10},
+          "eeee":{},
+          "ffff":"not a dictionary"}}}
+        """)
+
+        XCTAssertEqual(
+            BrowserDataImporter.webStoreExtensionCount(
+                userDataURL: url, sourceProfileDirectory: "Profile 1"),
+            2)
+    }
+
+    /// A source profile Phi cannot read names no extensions — which is what the
+    /// Chromium-side importer finds there too.
+    func testWebStoreExtensionCountIsZeroWithoutAReadableFile() throws {
+        let missing = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        XCTAssertEqual(
+            BrowserDataImporter.webStoreExtensionCount(
+                userDataURL: missing, sourceProfileDirectory: "Profile 1"),
+            0)
+
+        let malformed = try writeSecurePreferences("not json")
+        XCTAssertEqual(
+            BrowserDataImporter.webStoreExtensionCount(
+                userDataURL: malformed, sourceProfileDirectory: "Profile 1"),
+            0)
+    }
+
+    func testLoadArcMigrationSourceIsNilWithoutSidebarFile() throws {
+        let localStateURL = try writeLocalState(#"{"profile":{"profiles_order":[],"info_cache":{}}}"#)
+        let missingSidebarURL = localStateURL.deletingLastPathComponent()
+            .appendingPathComponent("StorableSidebar.json")
+
+        XCTAssertNil(BrowserDataImporter().loadArcMigrationSource(
+            sidebarURL: missingSidebarURL, localStateURL: localStateURL))
     }
 }
 

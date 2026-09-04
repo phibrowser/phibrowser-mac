@@ -181,9 +181,14 @@ final class ProfileManager: ObservableObject {
     }
 
     /// Schedules a profile for deletion. Completion fires on the main queue
-    /// with success/error. The caller (UI) is expected to refuse the action
-    /// up front when any Space is bound to this profile — see
-    /// `SpaceManager.spaces`; the bridge enforces it as a backstop.
+    /// with success/error. Callers MUST refuse the action while any Space is
+    /// bound to this profile — `SpaceManager.isProfileInUse` is the
+    /// authoritative check, including at action time after a confirmation
+    /// modal. There is no backstop below this call: Space bindings are a
+    /// Mac-side concept the Chromium bridge knows nothing about, so an
+    /// unguarded delete strands the bound Spaces on a nonexistent profile.
+    /// The user-data backup rollback flow bypasses the guard deliberately —
+    /// it deletes profiles wholesale while restoring a snapshot.
     func deleteProfile(_ profileId: String,
                        completion: @escaping (Bool, String?) -> Void) {
         guard let bridge = ChromiumLauncher.sharedInstance().bridge else {

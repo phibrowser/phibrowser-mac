@@ -8,6 +8,25 @@ import CocoaLumberjack
 import CocoaLumberjackSwift
 
 struct PhiLogging {
+    /// Snapshots every retained log file without truncating or removing its contents.
+    static func applicationLogFiles(log: DDLog = .sharedInstance) -> [(filename: String, data: Data)] {
+        // Include queued messages, especially the reauthentication-required trace.
+        log.flushLog()
+        guard let fileLogger = log.allLoggers.first(where: { $0 is DDFileLogger }) as? DDFileLogger else {
+            return []
+        }
+
+        return fileLogger.logFileManager.sortedLogFilePaths.compactMap { path in
+            let url = URL(fileURLWithPath: path)
+            do {
+                return (filename: url.lastPathComponent, data: try Data(contentsOf: url))
+            } catch {
+                AppLogError("Unable to read log file for attachment: \(path): \(error.localizedDescription)")
+                return nil
+            }
+        }
+    }
+
     static func applicationLog(maxLength length: Int) -> String? {
         guard let fileLogger = DDLog.sharedInstance.allLoggers.first(where: { $0 is DDFileLogger }) as? DDFileLogger else {
             return nil
@@ -72,7 +91,7 @@ public func setupLogging() {
     
     let fileManager = DDLogFileManagerDefault(logsDirectory: getLogsDirectory())
     let fileLogger = DDFileLogger(logFileManager: fileManager)
-    fileLogger.rollingFrequency = 24 * 60 * 60 // Rotate daily.
+    fileLogger.rollingFrequency = -1 // Rotate by file size only.
     fileLogger.logFileManager.maximumNumberOfLogFiles = 7
     fileLogger.maximumFileSize = 5 * 1024 * 1024
     fileLogger.logFormatter = PhiLogFormatter()

@@ -46,7 +46,7 @@ final class KioskBrowserState: BrowserState {
             windowId: windowId,
             localStore: localStore,
             profileId: profileId,
-            spaceId: LocalStore.defaultSpaceId,
+            spaceId: SpaceManager.shared.currentDefaultSpaceId,
             isIncognito: isIncognito,
             isIncognitoSpace: false,
             isKioskWindow: true

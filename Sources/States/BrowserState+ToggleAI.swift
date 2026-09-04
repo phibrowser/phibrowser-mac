@@ -67,6 +67,9 @@ extension BrowserState {
     }
 
     func closeAllAIContent() {
+        MainActor.assumeIsolated {
+            SidecarAIOutputStateStore.shared.removeAll()
+        }
         for tab in tabs {
             tab.toggleAIChat(true)
         }

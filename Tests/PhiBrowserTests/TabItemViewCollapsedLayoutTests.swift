@@ -82,6 +82,74 @@ final class TabItemViewCollapsedLayoutTests: XCTestCase {
         )
     }
 
+    func test_openInactivePinnedTabDrawsBorder() {
+        let layer = makeBackgroundLayer()
+        layer.isPinned = true
+        layer.tabState = .inactive
+
+        XCTAssertEqual(layer.lineWidth, 0)
+
+        layer.pinnedBorderStyle = .solid
+
+        XCTAssertEqual(layer.lineWidth, 1)
+        XCTAssertGreaterThan(layer.strokeColor?.alpha ?? 0, 0)
+        XCTAssertNil(layer.lineDashPattern)
+    }
+
+    func test_openPinnedTabBorderIsSuppressedWhenActiveOrNotPinned() {
+        let layer = makeBackgroundLayer()
+        layer.isPinned = true
+        layer.pinnedBorderStyle = .solid
+        layer.tabState = .active
+
+        XCTAssertEqual(layer.lineWidth, 0)
+
+        layer.tabState = .inactive
+        layer.isPinned = false
+
+        XCTAssertEqual(layer.lineWidth, 0)
+    }
+
+    func test_discardedOrUnloadedPinnedTabDrawsDashedBorder() {
+        let layer = makeBackgroundLayer()
+        layer.isPinned = true
+        layer.tabState = .inactive
+
+        layer.pinnedBorderStyle = .dashed
+
+        XCTAssertEqual(layer.lineWidth, 1)
+        XCTAssertEqual(
+            layer.lineDashPattern?.map(\.doubleValue),
+            TabStateBorderMetrics.dashPattern.map(Double.init)
+        )
+    }
+
+    func test_sidebarPinnedTabStateBorderDrawsDashedOutline() {
+        let view = PinnedTabStateBorderView(frame: CGRect(x: 0, y: 0, width: 48, height: 48))
+        view.update(style: .dashed, color: .labelColor)
+        view.layout()
+
+        guard let layer = view.layer?.sublayers?.compactMap({ $0 as? CAShapeLayer }).first else {
+            return XCTFail("Pinned tabs should own a state border layer.")
+        }
+        XCTAssertFalse(layer.isHidden)
+        XCTAssertEqual(layer.lineWidth, 1)
+        XCTAssertEqual(
+            layer.lineDashPattern?.map(\.doubleValue),
+            TabStateBorderMetrics.dashPattern.map(Double.init)
+        )
+        XCTAssertNotNil(layer.path)
+    }
+
+    private func makeBackgroundLayer() -> TabBackgroundLayer {
+        let sourceView = NSView(frame: CGRect(x: 0, y: 0, width: 28, height: 28))
+        let layer = TabBackgroundLayer()
+        layer.sourceView = sourceView
+        layer.frame = sourceView.bounds
+        layer.updatePath(in: sourceView.bounds)
+        return layer
+    }
+
     /// Bounding box of what the layer actually draws. An absent path and an
     /// empty path both mean "paints nothing".
     private func paintedBox(_ layer: TabBackgroundLayer) -> CGRect {

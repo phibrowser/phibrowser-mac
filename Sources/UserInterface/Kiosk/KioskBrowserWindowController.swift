@@ -338,7 +338,7 @@ final class KioskBrowserWindowController: MainBrowserWindowController {
             windowId: windowId,
             browserType: browserType,
             profileId: profileId,
-            spaceId: LocalStore.defaultSpaceId,
+            spaceId: SpaceManager.shared.currentDefaultSpaceId,
             account: account,
             slot: nil,
             browserState: state
@@ -369,7 +369,7 @@ final class KioskBrowserWindowController: MainBrowserWindowController {
             browserState.focusingTab?.stopLoading()
             return true
         case .IDC_FOCUS_LOCATION:
-            presentOmniBoxCentered()
+            presentCurrentTabOmniBoxCentered()
             return true
         case .IDC_OPEN_FILE:
             openFocusedTabInCurrentSpace()
@@ -840,6 +840,19 @@ final class KioskBrowserWindowController: MainBrowserWindowController {
         _ window: NSWindow,
         presentationRequest: KioskWindowPresentationRequest?
     ) {
+        // Chromium creates Kiosk as a popup-backed browser, so its NSWindow
+        // starts as FullScreenPrimary. If another Phi window owns the active
+        // fullscreen Space, AppKit promotes a newly ordered primary window into
+        // its own fullscreen Space. This controller is installed synchronously
+        // from Chromium's window-created callback, before the first Show(), so
+        // make Kiosk an auxiliary window while its restored frame is still
+        // authoritative.
+        var collectionBehavior = window.collectionBehavior
+        collectionBehavior.remove(.fullScreenPrimary)
+        collectionBehavior.remove(.fullScreenNone)
+        collectionBehavior.insert(.fullScreenAuxiliary)
+        window.collectionBehavior = collectionBehavior
+
         window.styleMask.insert(.fullSizeContentView)
         let toolbar = NSToolbar(identifier: Self.toolbarIdentifier)
         toolbar.allowsUserCustomization = false
@@ -971,7 +984,7 @@ final class KioskBrowserWindowController: MainBrowserWindowController {
               let tab = browserState.focusingTab else { return }
         SpaceManager.shared.moveTab(
             tab,
-            toSpaceId: LocalStore.defaultSpaceId
+            toSpaceId: SpaceManager.shared.currentDefaultSpaceId
         )
     }
 
@@ -1004,9 +1017,14 @@ final class KioskBrowserWindowController: MainBrowserWindowController {
                     SpaceManager.shared.moveTab(tab, toSpaceId: spaceId)
                 },
                 onOmniBoxRequest: { [weak self] in
-                    self?.presentOmniBoxCentered()
+                    self?.presentCurrentTabOmniBoxCentered()
                 }
             )
+    }
+
+    @MainActor
+    private func presentCurrentTabOmniBoxCentered() {
+        toggleOmniBox(fromAddressBar: true)
     }
 
     @MainActor

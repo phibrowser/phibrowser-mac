@@ -535,7 +535,7 @@ class BrowserState {
     init(windowId: Int,
          localStore: LocalStore,
          profileId: String = LocalStore.defaultProfileId,
-         spaceId: String = LocalStore.defaultSpaceId,
+         spaceId: String = SpaceManager.shared.currentDefaultSpaceId,
          isIncognito: Bool = false,
          isIncognitoSpace: Bool = false,
          isKioskWindow: Bool = false) {
@@ -722,6 +722,9 @@ class BrowserState {
                 pinnedTab.isOpenned = true
                 pinnedTab.setWebContentsWrapper(wrapper: activeTab.webContentWrapper)
                 pinnedTab.guid = activeTab.guid
+                pinnedTab.hasPairedChat = activeTab.hasPairedChat
+                pinnedTab.hasStartedChatGeneration = activeTab.hasStartedChatGeneration
+                pinnedTab.isPairedChatGenerating = activeTab.isPairedChatGenerating
             }
         }
         updateNormalTabs()
@@ -763,10 +766,16 @@ class BrowserState {
                 pinnedTab.isOpenned = true
                 pinnedTab.setWebContentsWrapper(wrapper: activeTab.webContentWrapper)
                 pinnedTab.guid = activeTab.guid
+                pinnedTab.hasPairedChat = activeTab.hasPairedChat
+                pinnedTab.hasStartedChatGeneration = activeTab.hasStartedChatGeneration
+                pinnedTab.isPairedChatGenerating = activeTab.isPairedChatGenerating
             } else {
                 pinnedTab.isOpenned = false
                 pinnedTab.guid = -1
                 pinnedTab.setWebContentsWrapper(wrapper: nil)
+                pinnedTab.hasPairedChat = false
+                pinnedTab.hasStartedChatGeneration = false
+                pinnedTab.isPairedChatGenerating = false
             }
             
             if pinnedTab.guidInLocalDB == focusingTab?.guidInLocalDB {
@@ -2923,7 +2932,7 @@ class BrowserState {
         // AI Chat tabs redirect focus back to the associated content tab.
         for (identifier, aiTab) in aiChatTabs {
             if aiTab.guid == tabId {
-                if let associatedTab = findTabByIdentifier(identifier) {
+                if let associatedTab = tab(forChatIdentifier: identifier) {
                     focuseTab(associatedTab)
                 }
                 return
@@ -2993,7 +3002,7 @@ class BrowserState {
     }
     
     /// Find a tab by its identifier (either guidInLocalDB or chromium guid as string)
-    private func findTabByIdentifier(_ identifier: String) -> Tab? {
+    func tab(forChatIdentifier identifier: String) -> Tab? {
         if let tab = tabs.first(where: { $0.guidInLocalDB == identifier }) {
             return tab
         }
@@ -3038,6 +3047,12 @@ class BrowserState {
     /// Chromium's selection logic).
     func closeAIChatTab(for identifier: String) {
         guard let aiTab = aiChatTabs.removeValue(forKey: identifier) else { return }
+        MainActor.assumeIsolated {
+            SidecarAIOutputStateStore.shared.removeConversation(
+                boundTo: identifier,
+                in: self
+            )
+        }
         // Restore transaction: this can be reached from split replay
         // (`handleSplitCreated` → `reconcileSplitChatBinding`) while the
         // transaction is executing inside Chromium's replay stack — defer
@@ -3053,7 +3068,7 @@ class BrowserState {
     /// Close the normal tab associated with the specified identifier (called when AI Chat tab is closed)
     /// - Parameter identifier: The tab identifier of the normal tab to close
     private func closeAssociatedTab(for identifier: String) {
-        guard let tab = findTabByIdentifier(identifier) else { return }
+        guard let tab = tab(forChatIdentifier: identifier) else { return }
         tab.close()
     }
     
@@ -3262,6 +3277,37 @@ class BrowserState {
     }
     private var pendingExplicitPeek: PendingExplicitPeek?
 
+    /// Address-bar submission in flight from a bookmark/pinned-bound row.
+    /// Chromium reports the tab the omnibox spawns as a link-FOREGROUND child
+    /// of the submitting tab — indistinguishable at arrival from a real link
+    /// click — so without this the Peek pipeline would divert it into a peek,
+    /// which is precisely the surface the submission is meant to escape.
+    /// One-shot, consumed by the first arrival from that opener.
+    private struct PendingAddressBarTab {
+        let openerTabId: Int
+        let requestedAt: Date
+    }
+    private var pendingAddressBarTab: PendingAddressBarTab?
+
+    /// The omnibox is about to open a new foreground tab on behalf of
+    /// `openerTabId`'s address bar. See `PendingAddressBarTab`.
+    func noteAddressBarWillOpenNewTab(openerTabId: Int) {
+        pendingAddressBarTab = PendingAddressBarTab(openerTabId: openerTabId,
+                                                    requestedAt: Date())
+    }
+
+    /// Consumes the pending address-bar request when `openerTabId` matches.
+    /// The arrival is immediate in practice; the window only bounds a request
+    /// whose tab never showed up (navigation blocked, Space rule re-homed it).
+    private func consumeAddressBarNewTab(openerTabId: Int) -> Bool {
+        guard let pending = pendingAddressBarTab,
+              pending.openerTabId == openerTabId else { return false }
+        pendingAddressBarTab = nil
+        return Date().timeIntervalSince(pending.requestedAt) < Self.addressBarNewTabWindowSeconds
+    }
+
+    private static let addressBarNewTabWindowSeconds: TimeInterval = 5
+
     /// Creation context of each presented peek tab (keyed by the peek tab's
     /// guid), kept so `expandPeekIntoTab` places the tab exactly where a
     /// normal arrival would have.
@@ -3314,12 +3360,21 @@ class BrowserState {
         // path above is likewise sidebar-only — Comfortable hides the menu
         // item, and openLinkAsPeek degrades to a plain new tab as backstop.
         guard !layoutMode.isTraditional else { return false }
+        // The automatic bound-opener diversion has its own sub-toggle; the
+        // explicit path above answers to the master gate alone.
+        guard PhiPreferences.GeneralSettings.autoPeekViewEnabled.loadValue() else { return false }
         guard let context,
               context.creationKind == .linkForeground,
               let openerTabId = context.openerTabId else { return false }
         // A marker-carrying arrival (AI chat, group seed, bookmark/pinned
         // rebind) is never a peek candidate.
         if let customGuid = tab.guidInLocalDB, !customGuid.isEmpty { return false }
+        // An address-bar submission from a bound row asked for a plain new
+        // tab; Chromium just reports it like a link child. Never peek it.
+        if consumeAddressBarNewTab(openerTabId: openerTabId) {
+            AppLogInfo("👀 [Peek] tabId=\(tab.guid) is an address-bar new tab from opener=\(openerTabId) — not a candidate")
+            return false
+        }
         guard let boundURLString = boundURLStringForPeekOpener(openerTabId) else { return false }
 
         // A peek candidate never shows the native crash page (AI-chat rule).
@@ -3450,8 +3505,16 @@ class BrowserState {
     /// `guidInLocalDB` belongs to a bookmark or a pinned record. Returns nil
     /// when the opener is not bound that way (normal tab behavior applies).
     private func boundURLStringForPeekOpener(_ openerTabId: Int) -> String? {
-        guard let opener = tabs.first(where: { $0.guid == openerTabId }),
-              let localGuid = opener.guidInLocalDB, !localGuid.isEmpty,
+        guard let opener = tabs.first(where: { $0.guid == openerTabId }) else { return nil }
+        return boundRecordURLString(for: opener)
+    }
+
+    /// The stored URL of the sidebar record `tab` is bound to — a bookmark
+    /// row or a pinned tab — or nil for a plain tab. Split panes and the
+    /// marker namespaces (AI chat, group seed, peek) are never bound this
+    /// way: they carry no record guid by the time they are live.
+    func boundRecordURLString(for tab: Tab) -> String? {
+        guard let localGuid = tab.guidInLocalDB, !localGuid.isEmpty,
               !Self.isAIChatId(localGuid),
               !Self.isBookmarkGroupSeedGuid(localGuid) else { return nil }
         if let bookmark = bookmarkManager.bookmark(withGuid: localGuid),
@@ -3464,6 +3527,18 @@ class BrowserState {
             return url
         }
         return nil
+    }
+
+    /// Whether an address-bar submission made while `tab` is focused must
+    /// open a NEW tab instead of navigating `tab` itself. True for the
+    /// sidebar rows that stand for a stored URL — a bookmark's tab and a
+    /// pinned tab — in the vertical layouts: navigating them in place either
+    /// bounces the load into a Peek (bookmark) or re-points the pinned row
+    /// and its icon at whatever was typed. The traditional (Comfortable)
+    /// layout has neither surface and keeps plain same-tab navigation.
+    func addressBarNavigationOpensNewTab(for tab: Tab) -> Bool {
+        guard !layoutMode.isTraditional else { return false }
+        return boundRecordURLString(for: tab) != nil
     }
 
     /// Completes the pending candidate's decision: same site (or non-web
@@ -3497,11 +3572,13 @@ class BrowserState {
         }
 
         // Peek previews web pages only; anything else keeps stock behavior.
-        // The layout re-check covers a switch to traditional layout while the
-        // candidate was waiting for its first URL.
+        // The layout and auto-toggle re-checks cover a switch to traditional
+        // layout or a flipped setting while the candidate was waiting for its
+        // first URL.
         let scheme = URL(string: targetURLString)?.scheme?.lowercased() ?? ""
         let isWebURL = scheme == "http" || scheme == "https"
         if !isWebURL || layoutMode.isTraditional
+            || !PhiPreferences.GeneralSettings.autoPeekViewEnabled.loadValue()
             || peekIsSameSite(candidate.boundURLString, targetURLString) {
             AppLogInfo("👀 [Peek] tabId=\(candidate.tab.guid) url=\(targetURLString) adopting as normal tab")
             adoptPeekTabIntoStrip(candidate.tab, context: candidate.context, activate: true)
@@ -3858,6 +3935,7 @@ class BrowserState {
     func teardownPeekForWindowClose() {
         finishPeekCandidate(adopt: false)
         pendingExplicitPeek = nil
+        pendingAddressBarTab = nil
         presentedPeekContexts.removeAll()
         peekState.clear()
     }
@@ -4184,6 +4262,9 @@ class BrowserState {
         pinnedTab.isOpenned = true
         pinnedTab.setWebContentsWrapper(wrapper: tab.webContentWrapper)
         pinnedTab.guid = tab.guid
+        pinnedTab.hasPairedChat = tab.hasPairedChat
+        pinnedTab.hasStartedChatGeneration = tab.hasStartedChatGeneration
+        pinnedTab.isPairedChatGenerating = tab.isPairedChatGenerating
         // If this pinned tab was part of a pinned-split before the last
         // shutdown and its partner is also live now, re-create the split
         // so the pair shows as one again. Skipped when a `SplitGroup`
@@ -4682,6 +4763,10 @@ class BrowserState {
         for (identifier, aiTab) in aiChatTabs {
             if aiTab.guid == tabId {
                 aiChatTabs.removeValue(forKey: identifier)
+                SidecarAIOutputStateStore.shared.removeConversation(
+                    boundTo: identifier,
+                    in: self
+                )
                 closeAssociatedTab(for: identifier)
                 return
             }
@@ -4756,6 +4841,7 @@ class BrowserState {
         // `Task @MainActor`, so we are no longer inside Chromium's tab strip
         // change callback and can call `WebContentWrapper.close()` directly.
         let identifier = getTabIdentifier(for: closedTab)
+        var migratedConversationTabId: Int?
         if let group = splitGroup(forTabId: closedTab.guid),
            let partnerId = group.partnerTabId(of: closedTab.guid),
            let survivor = tabs.first(where: { $0.guid == partnerId }),
@@ -4764,9 +4850,15 @@ class BrowserState {
             // surviving pane instead of closing it (follow survivor).
             migrateAIChatTab(fromIdentifier: identifier,
                              toIdentifier: getTabIdentifier(for: survivor))
+            migratedConversationTabId = survivor.guid
         } else {
             closeAIChatTab(for: identifier)
         }
+        SidecarAIOutputStateStore.shared.contentTabDidClose(
+            tabId,
+            in: self,
+            migratingConversationTo: migratedConversationTabId
+        )
         
         // Remove the tab from pinned state if it was mirrored there.
         if let localGuid = closedTab.guidInLocalDB,

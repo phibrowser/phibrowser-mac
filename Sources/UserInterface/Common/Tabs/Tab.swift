@@ -64,6 +64,9 @@ class Tab: WebContentRepresentable {
     @Published private(set) var cachedFaviconData: Data?
     @Published private(set) var liveFaviconData: Data?
     @Published private(set) var liveFaviconRevision: Int = 0
+    @Published private(set) var hasWebContent = false
+    @Published private(set) var isDiscarded = false
+    @Published private(set) var isUnloaded = false
     @Published private(set) var isLoading = false
     @Published private(set) var loadingProgress: CGFloat = 1
     @Published private(set) var canGoBack: Bool = false
@@ -94,6 +97,13 @@ class Tab: WebContentRepresentable {
     /// Per-tab AI Chat sidebar collapsed state.
     @Published var aiChatCollapsed: Bool = true
     @Published var aiChatEnabled: Bool = false
+
+    /// Whether Sidecar has completed at least one response for this tab.
+    @Published var hasPairedChat: Bool = false
+    /// Whether Sidecar has submitted or streamed a response for the current chat.
+    @Published var hasStartedChatGeneration: Bool = false
+    /// Whether Sidecar is submitting or streaming a response for this tab.
+    @Published var isPairedChatGenerating: Bool = false
 
     /// Native renderer crash-page state, set by `PhiChromiumCoordinator` from
     /// the `showCrashPage` bridge event and cleared on teardown. Non-nil drives
@@ -228,6 +238,8 @@ class Tab: WebContentRepresentable {
     /// on every wrapper swap; this pipeline watches the tab's own published
     /// state and must outlive the wrapper bindings.
     private var readerOfferabilityTrigger: AnyCancellable?
+    private var aiOutputNavigationTrigger: AnyCancellable?
+    private static let isUnloadedSelector = NSSelectorFromString("isUnloaded")
     
     init(guid: Int = UUID().hashValue,
          url: String?,
@@ -251,6 +263,7 @@ class Tab: WebContentRepresentable {
         self.cachedFaviconData = faviconData
         setupObservers(for: webContentView)
         setupReaderOfferabilityTrigger()
+        setupAIOutputNavigationTrigger()
     }
 
     /// Re-judges the reader button whenever the page plausibly changed: a
@@ -265,6 +278,31 @@ class Tab: WebContentRepresentable {
         .sink { [weak self] in
             self?.refreshReaderOfferability()
         }
+    }
+
+    /// NTP hosts Sidecar in the content tab itself. Navigating away destroys
+    /// that Sidecar without closing a hidden AI Chat tab, so clear its badge
+    /// state when the tab leaves the NTP document.
+    private func setupAIOutputNavigationTrigger() {
+        aiOutputNavigationTrigger = $url
+            .removeDuplicates()
+            .scan((previous: String?.none, current: String?.none)) { transition, current in
+                (previous: transition.current, current: current)
+            }
+            .dropFirst()
+            .sink { [weak self] transition in
+                guard let self,
+                      transition.previous?.isNTP == true,
+                      transition.current?.isNTP != true else { return }
+                let tabId = self.guid
+                let windowId = self.windowId
+                Task { @MainActor in
+                    SidecarAIOutputStateStore.shared.removeConversation(
+                        boundTo: tabId,
+                        windowId: windowId
+                    )
+                }
+            }
     }
 
     /// Re-judges the button from the signals in hand: the URL gate and
@@ -286,6 +324,13 @@ class Tab: WebContentRepresentable {
         cancellables.removeAll()
         liveFaviconData = nil
         liveFaviconRevision = 0
+        hasWebContent = wrapper != nil
+        isDiscarded = wrapper?.isDiscarded ?? false
+        if let wrapper, wrapper.responds(to: Self.isUnloadedSelector) {
+            isUnloaded = wrapper.isUnloaded
+        } else {
+            isUnloaded = false
+        }
 
         guard let wrapper else {
             return
@@ -321,6 +366,18 @@ class Tab: WebContentRepresentable {
         wrapper.publisher(for: \.isLoading)
             .assign(to: \.isLoading, on: self)
             .store(in: &cancellables)
+
+        wrapper.publisher(for: \.isDiscarded)
+            .removeDuplicates()
+            .assign(to: \.isDiscarded, on: self)
+            .store(in: &cancellables)
+
+        if wrapper.responds(to: Self.isUnloadedSelector) {
+            wrapper.publisher(for: \.isUnloaded)
+                .removeDuplicates()
+                .assign(to: \.isUnloaded, on: self)
+                .store(in: &cancellables)
+        }
         
         wrapper.publisher(for: \.loadProgress)
             .assign(to: \.loadingProgress, on: self)
@@ -423,12 +480,7 @@ class Tab: WebContentRepresentable {
             .store(in: &cancellables)
         
         $url
-            .compactMap { urlStr in
-                guard let urlStr else {
-                    return false
-                }
-                return !urlStr.isLocalUrlString
-            }
+            .map(Self.supportsAIChat(urlString:))
             .assign(to: \.aiChatEnabled, on: self)
             .store(in: &cancellables)
         
@@ -439,6 +491,12 @@ class Tab: WebContentRepresentable {
                 self?.onFocusGained?()
             }
             .store(in: &cancellables)
+    }
+
+    static func supportsAIChat(urlString: String?) -> Bool {
+        guard let urlString else { return false }
+        return !urlString.hasPrefix("phi://")
+            && !urlString.hasPrefix("chrome://")
     }
     
     func setWebContentsWrapper(wrapper: (WebContentWrapper & NSObject)?) {

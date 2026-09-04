@@ -129,6 +129,8 @@ Other differences worth knowing:
   lost.
 - **Viewport** is the window's own real off-screen frame, not a mirror of the
   user's window, so `setViewport` is normally unnecessary.
+- **Tabs start muted.** Every tab that lands in a shadow window is muted
+  on arrival.
 
 ## Space status
 
@@ -172,7 +174,10 @@ expires, the task record is gone: the next
 the expired one are lost (cookies persist in the profile; use
 `saveState`/`loadState` around long gaps you can foresee). Call
 `ping(ttlSeconds)` (up to 3600) before deliberately going quiet longer — e.g.
-a page runs a long export while you work elsewhere.
+a page runs a long export while you work elsewhere. The bought window
+survives the round end — the round-end grace never overrides an explicit
+deadline that still lies ahead, in either direction — and the next round's
+start returns the Space to the normal driving clock.
 
 ## Completion and the session mirror
 
@@ -204,6 +209,14 @@ the mirror drops those tool calls instead of echoing every script twice. When
 no mirror is running (an unrecognized agent, or a session the discovery
 could not identify), use `say('…')` to reflect a line of your own prose into
 the console yourself.
+
+The mirror runs only while the user has the Agent Transcript console open
+(View ▸ Agent Transcript, or a pip's context menu), sampled at each round
+start. With the console closed, no tailer daemon is spawned and the session
+runs mirrorless — completion is immediate, and the console (if opened
+later) carries only the action log and your `narrate`/`say` lines — so
+deliver the user-facing result through those whenever the mirror may not be
+running.
 
 ## Saved state
 

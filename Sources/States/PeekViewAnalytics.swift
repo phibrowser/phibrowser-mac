@@ -11,8 +11,9 @@ import PostHog
 /// `peek_view_opened` fires when the panel actually presents — a same-site
 /// candidate that becomes a plain tab never counts. `peek_view_ended` fires
 /// once per peek with how it ended and how long it lived; window teardown
-/// deliberately reports nothing (quit noise). The Settings › Navigations toggle
-/// reports `peek_view_setting_changed`.
+/// deliberately reports nothing (quit noise). The Settings › Navigations
+/// toggles report `peek_view_setting_changed` (master) and
+/// `peek_view_auto_setting_changed` (automatic diversion).
 @MainActor
 enum PeekViewAnalytics {
 
@@ -64,6 +65,12 @@ enum PeekViewAnalytics {
 
     static func settingChanged(enabled: Bool) {
         PostHogSDK.shared.capture("peek_view_setting_changed", properties: [
+            "enabled": enabled,
+        ])
+    }
+
+    static func autoSettingChanged(enabled: Bool) {
+        PostHogSDK.shared.capture("peek_view_auto_setting_changed", properties: [
             "enabled": enabled,
         ])
     }

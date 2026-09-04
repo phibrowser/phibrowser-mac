@@ -553,7 +553,7 @@ class BookmarkManager: ObservableObject {
                      targetIndex: Int? = nil,
                      faviconData: Data? = nil) {
         guard let profileId = browserState?.profileId else { return }
-        let spaceId = browserState?.spaceId ?? LocalStore.defaultSpaceId
+        let spaceId = browserState?.spaceId ?? SpaceManager.shared.currentDefaultSpaceId
         browserState?.localStore.createBookmark(url: url,
                                                 title: title,
                                                 profileId: profileId,
@@ -576,7 +576,7 @@ class BookmarkManager: ObservableObject {
                           targetIndex: Int? = nil,
                           primaryFaviconData: Data? = nil) {
         guard let profileId = browserState?.profileId else { return }
-        let spaceId = browserState?.spaceId ?? LocalStore.defaultSpaceId
+        let spaceId = browserState?.spaceId ?? SpaceManager.shared.currentDefaultSpaceId
         browserState?.localStore.createBookmark(url: primaryURL,
                                                 title: title,
                                                 profileId: profileId,
@@ -594,7 +594,7 @@ class BookmarkManager: ObservableObject {
                    guid: String? = nil,
                    targetIndex: Int? = nil) {
         guard let profileId = browserState?.profileId else { return }
-        let spaceId = browserState?.spaceId ?? LocalStore.defaultSpaceId
+        let spaceId = browserState?.spaceId ?? SpaceManager.shared.currentDefaultSpaceId
         browserState?.localStore.createDirectory(title: title,
                                                  profileId: profileId,
                                                  parentId: parent?.guid,
@@ -608,7 +608,7 @@ class BookmarkManager: ObservableObject {
         let newGuid = UUID().uuidString
         pendingEditGuid = newGuid
         guard let profileId = browserState?.profileId else { return }
-        let spaceId = browserState?.spaceId ?? LocalStore.defaultSpaceId
+        let spaceId = browserState?.spaceId ?? SpaceManager.shared.currentDefaultSpaceId
         browserState?.localStore.createDirectory(title: title, profileId: profileId, parentId: parent?.guid, guid: newGuid, spaceId: spaceId)
     }
 
@@ -621,7 +621,7 @@ class BookmarkManager: ObservableObject {
                               completion: @escaping (Bool, String) -> Void) {
         let newGuid = UUID().uuidString
         guard let profileId = browserState?.profileId else { return }
-        let spaceId = browserState?.spaceId ?? LocalStore.defaultSpaceId
+        let spaceId = browserState?.spaceId ?? SpaceManager.shared.currentDefaultSpaceId
         browserState?.localStore.createDirectoryWithBookmark(folderTitle: title,
                                                              folderGuid: newGuid,
                                                              profileId: profileId,

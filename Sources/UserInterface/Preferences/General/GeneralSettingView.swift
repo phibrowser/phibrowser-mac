@@ -223,17 +223,17 @@ private struct ThemeSectionView: View {
         // This control edits the default Space; SpaceManager also switches
         // the global theme to it so non-browser chrome and pre-Space
         // fallbacks stay in step.
-        SpaceManager.shared.setTheme(forSpaceId: LocalStore.defaultSpaceId, themeId: theme.id)
+        SpaceManager.shared.setTheme(forSpaceId: SpaceManager.shared.currentDefaultSpaceId, themeId: theme.id)
         syncSliderValue()
     }
 
     private func handleSliderValueChanged(_ newSliderValue: Double) {
         let appearance = ThemeManager.shared.currentAppearance
-        let themeId = SpaceManager.shared.resolvedThemeId(forSpaceId: LocalStore.defaultSpaceId)
+        let themeId = SpaceManager.shared.resolvedThemeId(forSpaceId: SpaceManager.shared.currentDefaultSpaceId)
         if themeId == Theme.pure.id {
             SpaceManager.shared.setPureThemeSliderValue(
                 newSliderValue,
-                forSpaceId: LocalStore.defaultSpaceId
+                forSpaceId: SpaceManager.shared.currentDefaultSpaceId
             )
         } else {
             let saturation = CGFloat(
@@ -241,29 +241,29 @@ private struct ThemeSectionView: View {
             )
             SpaceManager.shared.setOverlaySaturation(
                 saturation,
-                forSpaceId: LocalStore.defaultSpaceId,
+                forSpaceId: SpaceManager.shared.currentDefaultSpaceId,
                 appearance: appearance
             )
         }
     }
 
     private func syncThemeControls() {
-        selectedThemeId = SpaceManager.shared.resolvedThemeId(forSpaceId: LocalStore.defaultSpaceId)
+        selectedThemeId = SpaceManager.shared.resolvedThemeId(forSpaceId: SpaceManager.shared.currentDefaultSpaceId)
         syncSliderValue()
     }
 
     private func syncSliderValue() {
         let appearance = ThemeManager.shared.currentAppearance
-        let themeId = SpaceManager.shared.resolvedThemeId(forSpaceId: LocalStore.defaultSpaceId)
+        let themeId = SpaceManager.shared.resolvedThemeId(forSpaceId: SpaceManager.shared.currentDefaultSpaceId)
         let newSliderValue: Double
         if themeId == Theme.pure.id {
             newSliderValue = SpaceManager.shared.effectivePureThemeSliderValue(
-                forSpaceId: LocalStore.defaultSpaceId,
+                forSpaceId: SpaceManager.shared.currentDefaultSpaceId,
                 appearance: appearance
             )
         } else {
             let saturation = SpaceManager.shared.effectiveOverlaySaturation(
-                forSpaceId: LocalStore.defaultSpaceId,
+                forSpaceId: SpaceManager.shared.currentDefaultSpaceId,
                 appearance: appearance
             )
             newSliderValue = OverlaySaturationScale.sliderValue(

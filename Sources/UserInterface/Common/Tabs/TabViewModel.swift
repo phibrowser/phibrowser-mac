@@ -7,6 +7,183 @@ import SwiftUI
 import Combine
 import AppKit
 
+enum TabCornerBadgeStatus: Int, CaseIterable {
+    case chat
+    case inputting
+    case agent
+
+    static func resolve(
+        isAgentActive: Bool,
+        isChatGenerating: Bool,
+        hasPairedChat: Bool,
+        hasStartedChatGeneration: Bool,
+        isChatCollapsed: Bool
+    ) -> TabCornerBadgeStatus? {
+        if isAgentActive { return .agent }
+        guard isChatGenerating || hasPairedChat else { return nil }
+        if isChatGenerating { return .inputting }
+        if hasPairedChat && hasStartedChatGeneration && !isChatCollapsed { return .chat }
+        return nil
+    }
+
+    static func highestPriority(_ statuses: [TabCornerBadgeStatus?]) -> TabCornerBadgeStatus? {
+        statuses.compactMap { $0 }.max { $0.rawValue < $1.rawValue }
+    }
+}
+
+@MainActor
+final class TabStatusModel: ObservableObject {
+    @Published private(set) var isDiscarded = false
+    @Published private(set) var isUnloaded = false
+    @Published private(set) var isAgentActive = false
+    @Published private(set) var hasPairedChat = false
+    @Published private(set) var hasStartedChatGeneration = false
+    @Published private(set) var isChatGenerating = false
+    @Published private(set) var isChatCollapsed = true
+
+    var cornerBadgeStatus: TabCornerBadgeStatus? {
+        TabCornerBadgeStatus.resolve(
+            isAgentActive: isAgentActive,
+            isChatGenerating: isChatGenerating,
+            hasPairedChat: hasPairedChat,
+            hasStartedChatGeneration: hasStartedChatGeneration,
+            isChatCollapsed: isChatCollapsed
+        )
+    }
+
+    private var configuredTabGuid: Int?
+    private var configurationGeneration: UInt64 = 0
+    private var cancellables = Set<AnyCancellable>()
+
+    func configure(with tab: Tab, in browserState: BrowserState? = nil) {
+        cancelSubscriptions()
+
+        let expectedGuid = tab.guid
+        let expectedGeneration = configurationGeneration
+        let chatStateTab = browserState?.resolveTab(expectedGuid) ?? tab
+        configuredTabGuid = expectedGuid
+        isDiscarded = tab.isDiscarded
+        isUnloaded = tab.isUnloaded
+        isAgentActive = AgentAnimationManager.shared.isActive(for: expectedGuid)
+        hasPairedChat = chatStateTab.hasPairedChat
+        hasStartedChatGeneration = chatStateTab.hasStartedChatGeneration
+        isChatGenerating = chatStateTab.isPairedChatGenerating
+        isChatCollapsed = chatStateTab.aiChatCollapsed
+
+        tab.$isDiscarded
+            .removeDuplicates()
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] isDiscarded in
+                guard let self,
+                      self.isCurrentConfiguration(
+                        expectedGuid: expectedGuid,
+                        expectedGeneration: expectedGeneration
+                      ) else { return }
+                self.isDiscarded = isDiscarded
+            }
+            .store(in: &cancellables)
+
+        tab.$isUnloaded
+            .removeDuplicates()
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] isUnloaded in
+                guard let self,
+                      self.isCurrentConfiguration(
+                        expectedGuid: expectedGuid,
+                        expectedGeneration: expectedGeneration
+                      ) else { return }
+                self.isUnloaded = isUnloaded
+            }
+            .store(in: &cancellables)
+
+        chatStateTab.$hasPairedChat
+            .removeDuplicates()
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] hasPairedChat in
+                guard let self,
+                      self.isCurrentConfiguration(
+                        expectedGuid: expectedGuid,
+                        expectedGeneration: expectedGeneration
+                      ) else { return }
+                self.hasPairedChat = hasPairedChat
+            }
+            .store(in: &cancellables)
+
+        chatStateTab.$isPairedChatGenerating
+            .removeDuplicates()
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] isGenerating in
+                guard let self,
+                      self.isCurrentConfiguration(
+                        expectedGuid: expectedGuid,
+                        expectedGeneration: expectedGeneration
+                      ) else { return }
+                self.isChatGenerating = isGenerating
+            }
+            .store(in: &cancellables)
+
+        chatStateTab.$hasStartedChatGeneration
+            .removeDuplicates()
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] hasStartedGeneration in
+                guard let self,
+                      self.isCurrentConfiguration(
+                        expectedGuid: expectedGuid,
+                        expectedGeneration: expectedGeneration
+                      ) else { return }
+                self.hasStartedChatGeneration = hasStartedGeneration
+            }
+            .store(in: &cancellables)
+
+        chatStateTab.$aiChatCollapsed
+            .removeDuplicates()
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] isCollapsed in
+                guard let self,
+                      self.isCurrentConfiguration(
+                        expectedGuid: expectedGuid,
+                        expectedGeneration: expectedGeneration
+                      ) else { return }
+                self.isChatCollapsed = isCollapsed
+            }
+            .store(in: &cancellables)
+
+        AgentAnimationManager.shared.stateChanged
+            .filter { $0 == expectedGuid }
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in
+                guard let self,
+                      self.isCurrentConfiguration(
+                        expectedGuid: expectedGuid,
+                        expectedGeneration: expectedGeneration
+                      ) else { return }
+                self.isAgentActive = AgentAnimationManager.shared.isActive(for: expectedGuid)
+            }
+            .store(in: &cancellables)
+    }
+
+    func cancelSubscriptions() {
+        configurationGeneration &+= 1
+        cancellables.removeAll()
+    }
+
+    func prepareForReuse() {
+        cancelSubscriptions()
+        configuredTabGuid = nil
+        isDiscarded = false
+        isUnloaded = false
+        isAgentActive = false
+        hasPairedChat = false
+        hasStartedChatGeneration = false
+        isChatGenerating = false
+        isChatCollapsed = true
+    }
+
+    private func isCurrentConfiguration(expectedGuid: Int, expectedGeneration: UInt64) -> Bool {
+        configuredTabGuid == expectedGuid && configurationGeneration == expectedGeneration
+    }
+}
+
 @Observable
 @MainActor
 final class TabViewModel {
@@ -51,6 +228,7 @@ final class TabViewModel {
     /// flag is the authoritative signal for layout decisions like
     /// indentation that should not flicker on color settling.
     var isInGroup: Bool = false
+    let status = TabStatusModel()
 
     var onToggleMute: (() -> Void)?
     var onToolTipUpdated: (() -> Void)?
@@ -78,6 +256,7 @@ final class TabViewModel {
     func cancelSubscriptions() {
         configurationGeneration &+= 1
         cancellables.removeAll()
+        status.cancelSubscriptions()
         profileFaviconLoadHandle?.cancel()
         profileFaviconLoadHandle = nil
     }
@@ -107,6 +286,7 @@ final class TabViewModel {
         isAudioMuted = false
         isCapturingMedia = false
         groupColor = nil
+        status.prepareForReuse()
         faviconRevision &+= 1
         onToggleMute = nil
         onToolTipUpdated = nil
@@ -142,6 +322,7 @@ final class TabViewModel {
         let expectedGuid = tab.guid
         let expectedGeneration = configurationGeneration
         configuredTabGuid = expectedGuid
+        status.configure(with: tab, in: browserState)
 
         self.title = tab.title
         self.url = tab.url

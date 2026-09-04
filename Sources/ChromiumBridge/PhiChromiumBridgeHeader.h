@@ -54,7 +54,10 @@ typedef NS_ENUM(NSUInteger, BrowserType) {
     BrowserTypeArc,
     // Not a browser: import from a user-picked file (e.g. a bookmarks HTML file).
     // The downward call carries a file path; Chromium sniffs the type and parses.
-    BrowserTypeFile
+    BrowserTypeFile,
+    // Zen (Firefox-based). The profile argument is the profile directory's
+    // basename under Zen's Profiles folder; Chromium imports its history only.
+    BrowserTypeZen
 };
 
 /// Loading state mapped from Chromium TabNetworkState.
@@ -286,7 +289,7 @@ typedef NS_ENUM(NSInteger, PhiGhostMaterializeOutcome) {
 - (void)bookmarksChanged:(NSArray <id<BookmarkWrapper>> *)newNodes windowId:(int64_t)windowId;
 - (void)bookmarkInfoChangedWithWindowId:(int64_t)windowId bookmarkId:(int64_t)id title:(NSString * _Nullable)title url:(NSString * _Nullable)url facicon:(NSString * _Nullable)favicon_url;
 
-// extension service 
+// extension service
 - (void)extensionsLoaded:(NSArray<NSDictionary *> *)extensions;
 - (void)extensionTriggered:(NSString *)extensionId;
 - (void)extensionPinned:(NSString *)extensionId;
@@ -310,6 +313,8 @@ typedef NS_ENUM(NSInteger, PhiGhostMaterializeOutcome) {
 
 // Login management
 - (BOOL)canShowChromiumWindow;
+/// Returns whether an external link may create a Kiosk window now. Unlike the
+/// general Chromium-window gate, this must reject transient Guest promotion.
 - (BOOL)canOpenExternalLinksInKiosk;
 - (BOOL)isPhiGuestMode;
 - (void)showLoginUI;
@@ -587,9 +592,7 @@ typedef NS_ENUM(NSInteger, PhiGhostMaterializeOutcome) {
 /// @param type Message type from the extension
 /// @param payload Message payload (JSON string)
 /// @param requestId The unique request ID for response correlation
-/// @param senderId The Chromium-attributed extension ID that sent the message.
-/// Security-sensitive handlers must authorize this value exactly; payload data
-/// must never be used as sender identity.
+/// @param senderId The extension ID that sent the message
 /// @return Response string if handled synchronously, nil for async handling
 - (NSString * _Nullable)handleExtensionMessage:(NSString *)type
                                       payload:(NSString *)payload
@@ -807,6 +810,14 @@ typedef NS_ENUM(NSInteger, PhiGhostMaterializeOutcome) {
 @protocol PhiChromiumBridgeProtocol <NSObject>
 @property (nonatomic, weak) id<PhiChromiumBridgeDelegate> delegate;
 
+/// Updates Chromium's process-local cache for the Phi-owned external-link
+/// Kiosk preference. Push once during launch and after every setting change.
+- (void)setOpenExternalLinksInKioskEnabled:(BOOL)enabled;
+
+/// Updates Chromium's process-local cache for Command-Option link clicks.
+/// Phi UserDefaults remains the persisted source of truth. Main thread only.
+- (void)setOpenKioskOnCommandOptionClickEnabled:(BOOL)enabled;
+
 /// Creates a detached WebContents loading `urlString` on the profile of the
 /// Browser identified by `windowId`, and returns a wrapper around it. Used by
 /// the native-NTP omnibox path, whose tab has no live WebContents for the
@@ -960,15 +971,14 @@ typedef NS_ENUM(NSInteger, PhiGhostMaterializeOutcome) {
 /// Like `openTabBypassingSpaceRoutingWithUrl:`, the bypass is a one-shot
 /// exemption matched on (url, windowId) so the same rule doesn't re-prompt in a
 /// loop. Falls back to opening a new tab if the window has no active tab.
-- (void)navigateActiveTabBypassingSpaceRoutingWithUrl:(NSString *)url
+- (void)navigateActiveTabBypassingSpaceRoutingWithUrl:(NSString*)url
                                              windowId:(int64_t)windowId;
 
 /// Opens `url` in a new Kiosk inheriting the exact profile of
 /// `sourceWindowId`, including off-the-record profiles. Returns NO when the
 /// source Browser is gone, the URL is invalid, or Kiosk creation fails; the
 /// ask-rule caller then re-opens the cancelled navigation in the source.
-- (BOOL)openURLInKiosk:(NSString *)url
-        sourceWindowId:(int64_t)sourceWindowId;
+- (BOOL)openURLInKiosk:(NSString*)url sourceWindowId:(int64_t)sourceWindowId;
 
 /// Create a new tab group containing the given Phi-stable tab ids in
 /// `windowId`. Returns the new group's 32-char uppercase hex token, or an
@@ -1137,10 +1147,10 @@ typedef NS_ENUM(NSInteger, PhiGhostMaterializeOutcome) {
 - (void)commandDispatchFromMenu:(id)sender;
 - (BOOL)validateUserInterfaceItemFromMenu:(id<NSValidatedUserInterfaceItem>)item;
 - (NSMenu*)applicationDockMenu:(NSApplication*)sender;
-- (BOOL)application:(NSApplication*)application 
+- (BOOL)application:(NSApplication*)application
     willContinueUserActivityWithType:(NSString*)userActivityType;
-- (BOOL)application:(NSApplication*)application 
-    continueUserActivity:(NSUserActivity*)userActivity 
+- (BOOL)application:(NSApplication*)application
+    continueUserActivity:(NSUserActivity*)userActivity
       restorationHandler:(void (^)(NSArray<id<NSUserActivityRestoring>>*))restorationHandler;
 
 /// Each dictionary includes id, name, icon, version, isPinned, pinnedIndex,
@@ -1274,6 +1284,21 @@ typedef NS_ENUM(NSInteger, PhiGhostMaterializeOutcome) {
 // Favicon service
 - (void)getFaviconForURL:(NSString *)urlString completion:(void (^)(NSData * _Nullable faviconData))completion;
 - (void)getFaviconForURL:(NSString *)urlString profileId:(NSString * _Nullable)profileId completion:(void (^)(NSData * _Nullable faviconData))completion;
+/// Like getFaviconForURL:profileId:completion:, except that when the
+/// profile's favicon database holds no icon for the page it first downloads
+/// the site's own <origin>/favicon.ico (no cookies or credentials) and stores
+/// it as an on-demand icon, so the answer is what every later lookup answers.
+/// Answers nil for an invalid URL, a profile that is not loaded, a page that
+/// is not http(s), or an icon URL that could not be downloaded this session.
+/// The on-demand icon never replaces an existing one and is replaced by the
+/// page's own icon on the first real visit. Meant for the Bookmarks and
+/// pinned tabs a Migration or a browser-data import just wrote; answers for
+/// a profile no window was ever opened on. A call still in flight when the
+/// profile shuts down (its last window closed) is dropped without an answer,
+/// as getFaviconForURL:'s is — callers must not assume every call settles.
+- (void)getOrFetchFaviconForURL:(NSString *)urlString
+                      profileId:(NSString * _Nullable)profileId
+                     completion:(void (^)(NSData * _Nullable faviconData))completion;
 
 // Thumbnail service
 /// Returns cached JPEG thumbnail data for a tab, or nil if unavailable.
@@ -1295,6 +1320,15 @@ typedef NS_ENUM(NSInteger, PhiGhostMaterializeOutcome) {
 
 // Import management
 - (void)importBrowserDataFromBrowserType:(BrowserType)browserType profile:(NSString *)profile dataTypes:(nullable NSArray<NSString *> *)dataTypes windowId:(int64_t)windowId;
+
+/// Profile-addressed twin of the call above: resolves the Chromium-side importer
+/// through the target Profile's on-disk basename instead of an open window, so a
+/// caller can import into a Profile that has no window (Migration fills the
+/// Profiles it has just created). `targetProfileId` must name a loaded Profile;
+/// an empty or unknown basename fails through importCompleted:success: with
+/// success = NO rather than falling back to the current Profile. Completion stays
+/// keyed by browser type, exactly as the window-addressed path.
+- (void)importBrowserDataFromBrowserType:(BrowserType)browserType profile:(NSString *)profile dataTypes:(nullable NSArray<NSString *> *)dataTypes targetProfileId:(NSString *)targetProfileId;
 
 /// Import data from a user-picked file (e.g. a bookmarks HTML file). The Mac side
 /// does no parsing: Chromium sniffs the file type, parses it, and stages the result
@@ -1389,14 +1423,6 @@ typedef NS_ENUM(NSInteger, PhiGhostMaterializeOutcome) {
 /// never diverge. Main thread only.
 - (BOOL)isRestorePreviousSessionEnabled;
 - (void)setRestorePreviousSessionEnabled:(BOOL)enabled;
-
-/// Updates Chromium's process-local routing cache for external links. Phi
-/// UserDefaults remains the persisted source of truth. Main thread only.
-- (void)setOpenExternalLinksInKioskEnabled:(BOOL)enabled;
-
-/// Updates Chromium's process-local cache for Command-Option link clicks.
-/// Phi UserDefaults remains the persisted source of truth. Main thread only.
-- (void)setOpenKioskOnCommandOptionClickEnabled:(BOOL)enabled;
 
 /// Restores the previous session mid-session for a Dock reopen or an external
 /// link that arrives with no window open, mirroring cold start: every profile
@@ -1558,9 +1584,7 @@ typedef NS_ENUM(NSInteger, PhiGhostMaterializeOutcome) {
 /// @param type Message type from the extension
 /// @param payload Message payload (JSON string)
 /// @param requestId The unique request ID for response correlation
-/// @param senderId The Chromium-attributed extension ID that sent the message.
-/// Async request-scoped responses must use sendResponseForExtensionRequest;
-/// broadcastMessageToExtensions must not carry private response data.
+/// @param senderId The extension ID that sent the message
 - (void)onExtensionMessage:(NSString *)type
                    payload:(NSString *)payload
                  requestId:(NSString *)requestId
@@ -1784,6 +1808,23 @@ typedef NS_ENUM(NSInteger, PhiGhostMaterializeOutcome) {
 @property(nonatomic, assign, readonly) BOOL isSharingScreen;
 @property(nonatomic, assign, readonly) BOOL isInContentFullscreen;
 
+/// YES after Chromium has discarded this tab's renderer-backed page to
+/// reclaim memory. KVO-observable; returns to NO when the tab starts loading
+/// again.
+@property(nonatomic, assign, readonly) BOOL isDiscarded;
+
+/// YES while this tab holds navigation history it has not loaded yet — a tab
+/// restored from the previous session or duplicated from another tab, plus any
+/// tab Chromium has discarded. Phi never loads a restored background tab on
+/// its own, so for most restored tabs this is a steady state rather than a
+/// transient one. The Chromium side calls this a *dormant* tab; see
+/// `docs/adr/0009-dormant-restored-tabs.md` in the Chromium repo.
+/// KVO-observable, cleared when the tab starts loading. `isDiscarded` is the
+/// narrower flag, and the two only differ before that first load: unloaded
+/// without discarded is a tab that has never been loaded in this session.
+/// Afterwards they track each other.
+@property(nonatomic, assign, readonly) BOOL isUnloaded;
+
 /// Chromium's native verdict on whether this tab's page is a distillable
 /// article — upstream DOM Distiller's AdaBoost model over features Blink
 /// computes during layout, delivered after parse and again after load, so
@@ -1873,7 +1914,7 @@ typedef NS_ENUM(NSInteger, PhiGhostMaterializeOutcome) {
 - (void)unmuteAudio;
 @end
 
-@protocol BookmarkWrapper <NSObject> 
+@protocol BookmarkWrapper <NSObject>
 @property(nonatomic, copy, readonly, nullable) NSString *title;
 @property(nonatomic, copy, readonly, nullable) NSString *urlString;
 @property(nonatomic, copy, readonly, nullable) NSString *favIconURL;

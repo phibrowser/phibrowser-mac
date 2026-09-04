@@ -16,6 +16,7 @@ class OmniBoxSuggestionCellView: NSTableCellView {
     
     private var suggestion: OmniBoxSuggestion?
     private var index: Int = 0
+    private let showsSwitchToTabHint: Bool
     private var isHovered: Bool = false {
         didSet {
             updateAppearance()
@@ -98,7 +99,12 @@ class OmniBoxSuggestionCellView: NSTableCellView {
     private var switchTabTrailingConstraintToCloseButton: Constraint?
     private var switchTabTrailingConstraintToSuperView: Constraint?
     
-    init(suggestion: OmniBoxSuggestion, index: Int) {
+    init(
+        suggestion: OmniBoxSuggestion,
+        index: Int,
+        showsSwitchToTabHint: Bool
+    ) {
+        self.showsSwitchToTabHint = showsSwitchToTabHint
         super.init(frame: .zero)
         self.suggestion = suggestion
         self.index = index
@@ -107,6 +113,10 @@ class OmniBoxSuggestionCellView: NSTableCellView {
     
     required init?(coder: NSCoder) {
         fatalError("init(coder:) has not been implemented")
+    }
+
+    var isSwitchToTabViewHiddenForTesting: Bool {
+        switchToTabView.isHidden
     }
     
     private func setupViews() {
@@ -249,9 +259,16 @@ class OmniBoxSuggestionCellView: NSTableCellView {
     func updateAppearance() {
         let rowView = superview as? NSTableRowView
         let isSelected = rowView?.isSelected ?? false
+        let canShowSwitchToTab = showsSwitchToTabHint
+            && (suggestion?.hasTabMatch ?? false)
         hoverableBg.isSelected = isSelected
-        updateConstraint(canDelete: suggestion?.canDelete ?? false, canSwitch: suggestion?.hasTabMatch ?? false, hovered: isHovered, selected: isSelected)
-        if suggestion?.hasTabMatch ?? false {
+        updateConstraint(
+            canDelete: suggestion?.canDelete ?? false,
+            canSwitch: canShowSwitchToTab,
+            hovered: isHovered,
+            selected: isSelected
+        )
+        if canShowSwitchToTab {
             switchToTabView.setEmphasized(isSelected || isHovered)
         }
         

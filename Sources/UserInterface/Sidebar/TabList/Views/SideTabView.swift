@@ -90,6 +90,16 @@ struct SideTabView: View {
                 .stroke(borderColor, lineWidth: borderWidth)
         )
         .shadow(color: .black.opacity(dropShadowOpacity), radius: 1, x: 0, y: 1)
+        .overlay(alignment: .topTrailing) {
+            TabCornerBadgeView(
+                model: model.status,
+                isSuppressed: model.showsPeek
+            )
+            .offset(
+                x: TabCornerBadgeMetrics.overhang,
+                y: -TabCornerBadgeMetrics.overhang
+            )
+        }
         .padding(.leading, WebContentConstant.edgesSpacing)
         .padding(.trailing, model.isInGroup ? 2 : WebContentConstant.edgesSpacing)
         .padding(.vertical, 2)

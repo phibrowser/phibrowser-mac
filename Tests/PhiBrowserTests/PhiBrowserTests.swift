@@ -64,6 +64,20 @@ final class PhiBrowserTests: XCTestCase {
         )
     }
 
+    func testNewIncognitoSpaceShortcutIsCustomizableFromFileShortcuts() {
+        XCTAssertEqual(
+            Shortcuts.DefaultShortcuts[.PHI_NEW_INCOGNITO_SPACE],
+            ShortcutsKey(characters: "n", modifiers: [.control, .shift])
+        )
+        XCTAssertTrue(
+            Shortcuts.Group.file.commands.contains(.PHI_NEW_INCOGNITO_SPACE)
+        )
+        XCTAssertEqual(
+            CommandWrapper.PHI_NEW_INCOGNITO_SPACE.displayName,
+            "New Incognito Space"
+        )
+    }
+
     func testKioskGlobalShortcutDefaultsOffAndFormatsCurrentShortcut() {
         XCTAssertFalse(
             PhiPreferences.GeneralSettings
@@ -212,10 +226,36 @@ final class PhiBrowserTests: XCTestCase {
         )
     }
 
-    func testFileMenuInstallsKioskWindowBelowIncognitoWindow() throws {
+    func testNewIncognitoSpaceShortcutIsIntercepted() throws {
+        let previousOverrides = Shortcuts.overridedShortcuts
+        defer {
+            Shortcuts.overridedShortcuts = previousOverrides
+            CommandDispatcher.reloadPhiShortcutMap()
+        }
+        Shortcuts.overridedShortcuts.removeValue(forKey: .PHI_NEW_INCOGNITO_SPACE)
+        CommandDispatcher.reloadPhiShortcutMap()
+
+        let event = try makeShortcutKeyEvent(
+            characters: "N",
+            charactersIgnoringModifiers: "n",
+            modifiers: [.control, .shift],
+            keyCode: UInt16(kVK_ANSI_N)
+        )
+
+        XCTAssertEqual(
+            CommandDispatcher.interceptedPhiCommand(
+                for: event,
+                inputSourceIdentifier: InputSource.us
+            ),
+            .PHI_NEW_INCOGNITO_SPACE
+        )
+    }
+
+    func testFileMenuInstallsPhiItemsBelowIncognitoWindow() throws {
         let previousOverrides = Shortcuts.overridedShortcuts
         defer { Shortcuts.overridedShortcuts = previousOverrides }
         Shortcuts.overridedShortcuts.removeValue(forKey: .PHI_NEW_KIOSK_WINDOW)
+        Shortcuts.overridedShortcuts.removeValue(forKey: .PHI_NEW_INCOGNITO_SPACE)
 
         let menu = NSMenu(title: "File")
         let incognitoItem = NSMenuItem(
@@ -232,13 +272,29 @@ final class PhiBrowserTests: XCTestCase {
         let kioskItems = menu.items.filter {
             $0.tag == CommandWrapper.PHI_NEW_KIOSK_WINDOW.rawValue
         }
+        let incognitoSpaceItems = menu.items.filter {
+            $0.tag == CommandWrapper.PHI_NEW_INCOGNITO_SPACE.rawValue
+        }
         let kioskItem = try XCTUnwrap(kioskItems.first)
+        let incognitoSpaceItem = try XCTUnwrap(incognitoSpaceItems.first)
         let incognitoIndex = try XCTUnwrap(menu.items.firstIndex(of: incognitoItem))
         let kioskIndex = try XCTUnwrap(menu.items.firstIndex(of: kioskItem))
+        let incognitoSpaceIndex = try XCTUnwrap(
+            menu.items.firstIndex(of: incognitoSpaceItem)
+        )
 
         XCTAssertEqual(kioskItems.count, 1)
+        XCTAssertEqual(incognitoSpaceItems.count, 1)
         XCTAssertEqual(kioskIndex, incognitoIndex + 1)
-        XCTAssertEqual(kioskItem.title, "New Kiosk Window")
+        XCTAssertEqual(incognitoSpaceIndex, kioskIndex + 1)
+        XCTAssertEqual(
+            kioskItem.title,
+            NSLocalizedString(
+                "app.fileMenu.createNewKioskWindow",
+                value: "New Kiosk Window",
+                comment: "File menu - Create a Kiosk window and open its omnibox"
+            )
+        )
         XCTAssertEqual(
             kioskItem.action,
             NSSelectorFromString("newKioskWindowFromMenu:")
@@ -247,6 +303,23 @@ final class PhiBrowserTests: XCTestCase {
         XCTAssertEqual(
             kioskItem.keyEquivalentModifierMask,
             [.command, .option]
+        )
+        XCTAssertEqual(
+            incognitoSpaceItem.title,
+            NSLocalizedString(
+                "app.fileMenu.createNewIncognitoSpace",
+                value: "New Incognito Space",
+                comment: "File menu and Shortcuts settings - Command title for creating a new Incognito Space"
+            )
+        )
+        XCTAssertEqual(
+            incognitoSpaceItem.action,
+            NSSelectorFromString("newIncognitoSpaceFromMenu:")
+        )
+        XCTAssertEqual(incognitoSpaceItem.keyEquivalent, "N")
+        XCTAssertEqual(
+            incognitoSpaceItem.keyEquivalentModifierMask,
+            [.control]
         )
 
         Shortcuts.overridedShortcuts[.PHI_NEW_KIOSK_WINDOW] = ShortcutsKey(
@@ -260,6 +333,20 @@ final class PhiBrowserTests: XCTestCase {
         XCTAssertEqual(customizedItem.keyEquivalent, "k")
         XCTAssertEqual(
             customizedItem.keyEquivalentModifierMask,
+            [.command, .control]
+        )
+
+        Shortcuts.overridedShortcuts[.PHI_NEW_INCOGNITO_SPACE] = ShortcutsKey(
+            characters: "i",
+            modifiers: [.command, .control]
+        )
+        AppController.installOrUpdateFileMenuItems(in: menu, target: nil)
+        let customizedIncognitoSpaceItem = try XCTUnwrap(menu.items.first {
+            $0.tag == CommandWrapper.PHI_NEW_INCOGNITO_SPACE.rawValue
+        })
+        XCTAssertEqual(customizedIncognitoSpaceItem.keyEquivalent, "i")
+        XCTAssertEqual(
+            customizedIncognitoSpaceItem.keyEquivalentModifierMask,
             [.command, .control]
         )
     }

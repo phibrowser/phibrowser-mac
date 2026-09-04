@@ -342,6 +342,8 @@ class SidebarTabCellView: SidebarCellView, TabPreviewInteractionCancelling {
     }
     
     private func setupViews() {
+        wantsLayer = true
+        layer?.masksToBounds = false
         hostingView = ThemedHostingView(rootView: SideTabView(
             model: viewModel,
             onClose: { [weak self] in
@@ -352,6 +354,8 @@ class SidebarTabCellView: SidebarCellView, TabPreviewInteractionCancelling {
                 self?.closePeekTapped()
             }
         ))
+        hostingView.wantsLayer = true
+        hostingView.layer?.masksToBounds = false
         addSubview(hostingView)
         hostingView.snp.makeConstraints { make in
             make.edges.equalToSuperview()
@@ -488,6 +492,8 @@ class SidebarTabCellView: SidebarCellView, TabPreviewInteractionCancelling {
 /// cell hover. The pane whose tab is focused gets a solid white pill,
 /// the other half stays at the cell-level hover tint.
 class SidebarSplitPairCellView: SidebarCellView, TabPreviewInteractionCancelling {
+    private static let faviconSize: CGFloat = 16
+    private static let faviconCornerRadius: CGFloat = 3
     private static let closeButtonSize: CGFloat = 24
     private static let titleTrailingSpacing: CGFloat = 5
     /// The left pane is already inset 2 points from the row background, so
@@ -500,6 +506,11 @@ class SidebarSplitPairCellView: SidebarCellView, TabPreviewInteractionCancelling
     private let rightPane = HoverableView()
     private let leftIconView = NSImageView()
     private let rightIconView = NSImageView()
+    private var leftDiscardedOutlineHost: TabDecorativeHostingView!
+    private var rightDiscardedOutlineHost: TabDecorativeHostingView!
+    private var statusBadgeHost: TabDecorativeHostingView!
+    private let leftStatusModel = TabStatusModel()
+    private let rightStatusModel = TabStatusModel()
     private let leftTitleLabel = TrailingFadeTextField()
     private let rightTitleLabel = TrailingFadeTextField()
     private var leftCloseHost: ZeroSafeAreaHostingView<AnyView>!
@@ -563,6 +574,10 @@ class SidebarSplitPairCellView: SidebarCellView, TabPreviewInteractionCancelling
         rightFaviconHandle = nil
         leftIconView.image = nil
         rightIconView.image = nil
+        leftIconView.alphaValue = 1
+        rightIconView.alphaValue = 1
+        leftStatusModel.prepareForReuse()
+        rightStatusModel.prepareForReuse()
         leftTitleLabel.stringValue = ""
         rightTitleLabel.stringValue = ""
         leftTitleLabel.toolTip = nil
@@ -638,8 +653,24 @@ class SidebarSplitPairCellView: SidebarCellView, TabPreviewInteractionCancelling
         leftRecordingHost.isHidden = true
         rightRecordingHost.isHidden = true
 
+        leftDiscardedOutlineHost = TabDecorativeHostingView(
+            rootView: TabDiscardedFaviconOutline(
+                model: leftStatusModel,
+                faviconSize: Self.faviconSize,
+                faviconCornerRadius: Self.faviconCornerRadius
+            )
+        )
+        rightDiscardedOutlineHost = TabDecorativeHostingView(
+            rootView: TabDiscardedFaviconOutline(
+                model: rightStatusModel,
+                faviconSize: Self.faviconSize,
+                faviconCornerRadius: Self.faviconCornerRadius
+            )
+        )
+
         leftMuteWidth = configurePane(leftPane,
                                       icon: leftIconView,
+                                      discardedOutline: leftDiscardedOutlineHost,
                                       iconLeadingSpacing: Self.leftIconLeadingSpacing,
                                       title: leftTitleLabel,
                                       mute: leftMuteHost,
@@ -649,6 +680,7 @@ class SidebarSplitPairCellView: SidebarCellView, TabPreviewInteractionCancelling
                                       closeTrailing: &leftTitleCloseTrailing)
         rightMuteWidth = configurePane(rightPane,
                                        icon: rightIconView,
+                                       discardedOutline: rightDiscardedOutlineHost,
                                        iconLeadingSpacing: Self.rightIconLeadingSpacing,
                                        title: rightTitleLabel,
                                        mute: rightMuteHost,
@@ -697,6 +729,25 @@ class SidebarSplitPairCellView: SidebarCellView, TabPreviewInteractionCancelling
             make.width.equalTo(1)
             make.height.equalTo(16)
         }
+
+        // Treat the pair as one tab for chat and agent status. Each pane feeds
+        // its own model, while the merged view applies the shared priority and
+        // renders a single badge on the whole cell.
+        statusBadgeHost = TabDecorativeHostingView(
+            rootView: MergedTabCornerBadgeView(
+                primaryModel: leftStatusModel,
+                secondaryModel: rightStatusModel
+            )
+        )
+        addSubview(statusBadgeHost)
+        statusBadgeHost.snp.makeConstraints { make in
+            make.top.trailing.equalTo(outerBackground)
+                .inset(-TabCornerBadgeMetrics.overhang)
+            make.size.equalTo(CGSize(
+                width: TabCornerBadgeMetrics.visualSize,
+                height: TabCornerBadgeMetrics.visualSize
+            ))
+        }
     }
 
     private func handlePaneClick(isLeft: Bool) {
@@ -729,6 +780,7 @@ class SidebarSplitPairCellView: SidebarCellView, TabPreviewInteractionCancelling
     @discardableResult
     private func configurePane(_ pane: HoverableView,
                                icon: NSImageView,
+                               discardedOutline: NSView,
                                iconLeadingSpacing: CGFloat,
                                title: NSTextField,
                                mute: NSView,
@@ -747,16 +799,35 @@ class SidebarSplitPairCellView: SidebarCellView, TabPreviewInteractionCancelling
         pane.responseToClickAction = true
         pane.layer?.cornerRadius = 6
         pane.layer?.cornerCurve = .continuous
+        pane.layer?.masksToBounds = false
 
         icon.imageScaling = .scaleProportionallyUpOrDown
         icon.wantsLayer = true
-        icon.layer?.cornerRadius = 3
+        icon.layer?.cornerRadius = Self.faviconCornerRadius
         icon.layer?.masksToBounds = true
         pane.addSubview(icon)
         icon.snp.makeConstraints { make in
             make.centerY.equalToSuperview()
             make.leading.equalToSuperview().offset(iconLeadingSpacing)
-            make.size.equalTo(CGSize(width: 16, height: 16))
+            make.size.equalTo(CGSize(
+                width: Self.faviconSize,
+                height: Self.faviconSize
+            ))
+        }
+
+        pane.addSubview(discardedOutline)
+        discardedOutline.snp.makeConstraints { make in
+            make.center.equalTo(icon)
+            make.size.equalTo(CGSize(
+                width: TabCornerBadgeMetrics.discardedOutlineSize(
+                    for: Self.faviconSize,
+                    cornerRadius: Self.faviconCornerRadius
+                ),
+                height: TabCornerBadgeMetrics.discardedOutlineSize(
+                    for: Self.faviconSize,
+                    cornerRadius: Self.faviconCornerRadius
+                )
+            ))
         }
 
         // Recording badge sits at the favicon's top-trailing corner, matching
@@ -895,8 +966,9 @@ class SidebarSplitPairCellView: SidebarCellView, TabPreviewInteractionCancelling
         configuredLeftTab = pair.leftTab
         configuredRightTab = pair.rightTab
         configuredSplitId = pair.groupId
-
         let state = browserState ?? pair.browserState
+        leftStatusModel.configure(with: pair.leftTab, in: state)
+        rightStatusModel.configure(with: pair.rightTab, in: state)
         if let state,
            let target = SplitTabPreviewTarget.make(representing: pair.leftTab, in: state) {
             splitTabPreviewRegistration.configure(
@@ -1122,6 +1194,11 @@ class SidebarSplitPairCellView: SidebarCellView, TabPreviewInteractionCancelling
         !(isLeft ? leftRecordingHost : rightRecordingHost).isHidden
     }
 
+    /// Test seam: current unloaded-state opacity for the given pane's favicon.
+    func faviconOpacity(isLeft: Bool) -> CGFloat {
+        (isLeft ? leftIconView : rightIconView).alphaValue
+    }
+
     private func updateSelected() {
         guard let pair = item as? SplitPairSidebarItem else { return }
         // Match SideTabView: active split rows use the regular selected
@@ -1174,6 +1251,8 @@ class SidebarSplitPairCellView: SidebarCellView, TabPreviewInteractionCancelling
             pair.rightTab = oldLeft
             configuredLeftTab = pair.leftTab
             configuredRightTab = pair.rightTab
+            leftStatusModel.configure(with: pair.leftTab, in: pair.browserState)
+            rightStatusModel.configure(with: pair.rightTab, in: pair.browserState)
             updatePaneTitles(leftTitle: pair.leftTab.title, rightTitle: pair.rightTab.title)
             refreshFavicon(into: leftIconView, for: pair.leftTab, handle: &leftFaviconHandle)
             refreshFavicon(into: rightIconView, for: pair.rightTab, handle: &rightFaviconHandle)
@@ -1419,6 +1498,17 @@ final class BroomButton: NSButton {
     }
 }
 
+final class SnapshotTitleView: NSView {
+    var image: NSImage? {
+        didSet { needsDisplay = true }
+    }
+
+    override func draw(_ dirtyRect: NSRect) {
+        super.draw(dirtyRect)
+        image?.draw(at: .zero, from: .zero, operation: .sourceOver, fraction: 1)
+    }
+}
+
 // MARK: - New Tab Button Cell View
 class NewTabButtonCellView: SidebarCellView {
     var clickAction: (() -> Void)?
@@ -1471,6 +1561,17 @@ class NewTabButtonCellView: SidebarCellView {
         imageView.isHidden = true
         return imageView
     }()
+
+    /// Rasterized text used only while Space-switch snapshots are captured.
+    /// `NSTextField` applies translucent text differently when `cacheDisplay`
+    /// renders the band into a transparent bitmap, which makes the live
+    /// tertiary label look darker for the duration of the switch. Drawing the
+    /// attributed string into an image first preserves the intended alpha.
+    private lazy var snapshotTitleView: SnapshotTitleView = {
+        let view = SnapshotTitleView()
+        view.isHidden = true
+        return view
+    }()
     
     private var titleLabel: NSTextField = {
         let titleLabel = NSTextField(labelWithString: NSLocalizedString("sidebar.newTabRow.title", value: "New Tab", comment: "side bar new tab button text"))
@@ -1496,17 +1597,61 @@ class NewTabButtonCellView: SidebarCellView {
         cleanupButton.stopOrganizing()
     }
 
-    func withStaticSnapshotIcon<T>(_ body: () throws -> T) rethrows -> T {
+    func withStaticSnapshotContent<T>(_ body: () throws -> T) rethrows -> T {
         let wasLottieHidden = iconView.isHidden
         let wasSnapshotHidden = snapshotIconView.isHidden
-        snapshotIconView.contentTintColor = ThemedColor.textTertiary.resolve(in: self)
+        let wasTitleHidden = titleLabel.isHidden
+        let wasSnapshotTitleHidden = snapshotTitleView.isHidden
+        let resolvedColor = ThemedColor.textTertiary.resolve(in: self)
+        let titleFont = titleLabel.font ?? NSFont.systemFont(ofSize: 13)
+        let titleTextInset = titleLabel.alignmentRectInsets.left
+
+        snapshotIconView.contentTintColor = resolvedColor
+        // A plain sibling doesn't share NSTextField's alignment rect or text
+        // inset, so mirror both for a pixel-stable handoff.
+        snapshotTitleView.frame = titleLabel.frame
+        snapshotTitleView.image = Self.makeSnapshotTitleImage(
+            text: titleLabel.stringValue,
+            font: titleFont,
+            color: resolvedColor,
+            size: titleLabel.bounds.size,
+            drawingOrigin: NSPoint(x: titleTextInset, y: 0)
+        )
         iconView.isHidden = true
         snapshotIconView.isHidden = false
+        if snapshotTitleView.image != nil {
+            titleLabel.isHidden = true
+            snapshotTitleView.isHidden = false
+        }
         defer {
             iconView.isHidden = wasLottieHidden
             snapshotIconView.isHidden = wasSnapshotHidden
+            titleLabel.isHidden = wasTitleHidden
+            snapshotTitleView.isHidden = wasSnapshotTitleHidden
         }
         return try body()
+    }
+
+    static func makeSnapshotTitleImage(
+        text: String,
+        font: NSFont,
+        color: NSColor,
+        size: NSSize,
+        drawingOrigin: NSPoint = .zero
+    ) -> NSImage? {
+        guard size.width > 0, size.height > 0 else { return nil }
+
+        let attributedTitle = NSAttributedString(
+            string: text,
+            attributes: [
+                .font: font,
+                .foregroundColor: color
+            ]
+        )
+        return NSImage(size: size, flipped: false) { _ in
+            attributedTitle.draw(at: drawingOrigin)
+            return true
+        }
     }
 
     override func hitTest(_ point: NSPoint) -> NSView? {
@@ -1581,6 +1726,7 @@ class NewTabButtonCellView: SidebarCellView {
         backgoundView.addSubview(iconView)
         backgoundView.addSubview(snapshotIconView)
         backgoundView.addSubview(titleLabel)
+        backgoundView.addSubview(snapshotTitleView)
         backgoundView.addSubview(cleanupButton)
 
         iconView.snp.makeConstraints { make in

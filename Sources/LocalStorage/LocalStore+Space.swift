@@ -14,7 +14,7 @@ extension LocalStore {
     static let defaultSpaceId = "default-space"
 
     private static let defaultSpaceName = "Default"
-    private static let defaultSpaceColorHex = "#3A6FF8"
+    static let defaultSpaceColorHex = "#3A6FF8"
     // Keep the existing view-grid-add artwork while using the semantic asset
     // name written by the current icon chooser.
     private static let defaultSpaceIconName = "phi:phi-icon-view-grid-add"
@@ -27,13 +27,10 @@ extension LocalStore {
                 let defaultSpaceDescriptor = FetchDescriptor<SpaceModel>(
                     predicate: #Predicate { $0.spaceId == defaultSpaceId }
                 )
-                let profileSpacesDescriptor = FetchDescriptor<SpaceModel>(
-                    predicate: #Predicate { $0.profileId == profileId }
-                )
                 let defaultSpace: SpaceModel
                 if let existing = try context.fetch(defaultSpaceDescriptor).first {
                     defaultSpace = existing
-                } else if try context.fetchCount(profileSpacesDescriptor) == 0 {
+                } else if try context.fetchCount(FetchDescriptor<SpaceModel>()) == 0 {
                     let created = SpaceModel(
                         spaceId: Self.defaultSpaceId,
                         profileId: profileId,
@@ -45,9 +42,12 @@ extension LocalStore {
                     context.insert(created)
                     defaultSpace = created
                 } else {
-                    // Spaces exist for this profile but none is the default —
-                    // don't fabricate one, the data shape is something we
-                    // didn't write and we shouldn't paper over it here.
+                    // Other Spaces exist but the well-known default row is
+                    // gone — the user deleted it and its role moved to
+                    // another Space (`SpaceManager.currentDefaultSpaceId`).
+                    // Recreating it here would resurrect a deleted Space,
+                    // so this is strictly a first-launch (empty store)
+                    // bootstrap.
                     return
                 }
 
@@ -269,6 +269,20 @@ extension LocalStore {
             } catch {
                 AppLogError("[LocalStore] reorderSpaces failed: \(error)")
             }
+        }
+    }
+
+    /// How many Spaces the account holds. Separate from `getAllSpaces` because
+    /// callers that only need the size pay for neither the rows nor the three
+    /// sort descriptors that make the strip's order deterministic.
+    @MainActor
+    func spaceCount() -> Int {
+        guard let context = mainContext else { return 0 }
+        do {
+            return try context.fetchCount(FetchDescriptor<SpaceModel>())
+        } catch {
+            AppLogError("[LocalStore] spaceCount failed: \(error)")
+            return 0
         }
     }
 

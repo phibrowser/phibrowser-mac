@@ -86,6 +86,7 @@ extension PhiPreferences {
         case spacesFeatureEnabled // Master gate for Spaces + profile management UI; defaults on, no user-facing toggle
         case suppressCloseIncognitoSpaceWarning // "Do not ask again" on the close-Incognito-Space confirmation
         case peekViewEnabled // Master gate for Peek View: the context-menu item and the automatic cross-site diversion
+        case autoPeekViewEnabled // Sub-gate under peekViewEnabled: the automatic cross-site diversion from pinned/bookmark-bound tabs; explicit peeks are unaffected
 
         var defaultValue: Bool {
             switch self {
@@ -114,6 +115,8 @@ extension PhiPreferences {
             case .suppressCloseIncognitoSpaceWarning:
                 return false
             case .peekViewEnabled:
+                return true
+            case .autoPeekViewEnabled:
                 return true
             }
         }

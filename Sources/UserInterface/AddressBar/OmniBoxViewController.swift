@@ -72,6 +72,7 @@ class OmniBoxViewController: NSViewController {
     
     private lazy var suggestionView: OmniBoxSuggestionView = {
         let view = OmniBoxSuggestionView()
+        view.showsSwitchToTabHint = showsSwitchToTabHint
         view.translatesAutoresizingMaskIntoConstraints = false
         view.delegate = self
         view.isHidden = true
@@ -87,11 +88,14 @@ class OmniBoxViewController: NSViewController {
     private let maxSuggestionHeight: CGFloat = 226
     
     var openningFromCurrenTab: Bool { viewModel.opennedFromCurrentTab }
+    var showsSwitchToTabHintForTesting: Bool { showsSwitchToTabHint }
     
     private weak var browserState: BrowserState?
+    private let showsSwitchToTabHint: Bool
     // MARK: - Initialization
     init(viewModel: OmniBoxViewModel, state: BrowserState?) {
         self.viewModel = viewModel
+        showsSwitchToTabHint = state?.isKioskWindow != true
         super.init(nibName: nil, bundle: nil)
     }
     

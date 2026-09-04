@@ -35,6 +35,14 @@ final class PeekPanelController {
     /// Deliberately unclipped — `masksToBounds` would clip the layer's own
     /// shadow away, so the rounding of the page itself is `webHostView`'s job
     /// and this view only draws the card's background beneath it.
+    ///
+    /// The shadow is the view-level `NSView.shadow`, NOT `layer.shadow*`:
+    /// AppKit owns a backing layer's shadow properties and re-asserts the
+    /// view's (nil) shadow onto them when the view joins a superview —
+    /// values written straight to the layer are silently zeroed there
+    /// (macOS 26). A non-nil view shadow also keeps AppKit from adopting
+    /// `clipsToBounds = true` when the appear flight writes
+    /// `layer.cornerRadius`, which would clip the shadow just the same.
     private final class PeekContainerView: NSView {
         override init(frame frameRect: NSRect) {
             super.init(frame: frameRect)
@@ -42,10 +50,7 @@ final class PeekPanelController {
             layer?.cornerRadius = PeekPanelController.cornerRadius
             layer?.cornerCurve = .continuous
             layer?.masksToBounds = false
-            layer?.shadowColor = NSColor.black.cgColor
-            layer?.shadowOpacity = 0.35
-            layer?.shadowRadius = 10
-            layer?.shadowOffset = CGSize(width: 0, height: -3)
+            updateShadow()
             updateBackground()
         }
 
@@ -67,7 +72,19 @@ final class PeekPanelController {
 
         override func viewDidChangeEffectiveAppearance() {
             super.viewDidChangeEffectiveAppearance()
+            updateShadow()
             updateBackground()
+        }
+
+        /// A soft black shadow all but disappears against dark pages, so the
+        /// dark appearance gets a denser one.
+        private func updateShadow() {
+            let isDark = effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+            let cardShadow = NSShadow()
+            cardShadow.shadowColor = NSColor.black.withAlphaComponent(isDark ? 0.6 : 0.44)
+            cardShadow.shadowBlurRadius = 20
+            cardShadow.shadowOffset = NSSize(width: 0, height: -6)
+            shadow = cardShadow
         }
 
         private func updateBackground() {
@@ -105,10 +122,13 @@ final class PeekPanelController {
             // rounds the fill and the border on its own, and the glyph never
             // reaches the corners.
             layer?.masksToBounds = false
-            layer?.shadowColor = NSColor.black.cgColor
-            layer?.shadowOpacity = 0.24
-            layer?.shadowRadius = 4
-            layer?.shadowOffset = CGSize(width: 0, height: -1)
+            // Via `NSView.shadow`, not `layer.shadow*` — see
+            // `PeekContainerView` for why direct layer writes don't survive.
+            let chipShadow = NSShadow()
+            chipShadow.shadowColor = NSColor.black.withAlphaComponent(0.3)
+            chipShadow.shadowBlurRadius = 5
+            chipShadow.shadowOffset = NSSize(width: 0, height: -2)
+            shadow = chipShadow
         }
 
         required init?(coder: NSCoder) {
@@ -185,8 +205,8 @@ final class PeekPanelController {
     /// Horizontal margin between the page card's edges and the panel; the
     /// panel spans the card's height minus a small fixed breathing margin.
     private static let paneInsetRatio: CGFloat = 0.04
-    private static let minPaneInset: CGFloat = 16
-    private static let paneVerticalInset: CGFloat = 14
+    private static let minPaneInset: CGFloat = 24
+    private static let paneVerticalInset: CGFloat = 24
     private static let cornerRadius: CGFloat = 12
 
     /// The card carries no chrome of its own (Arc's peek layout): the page
@@ -203,8 +223,10 @@ final class PeekPanelController {
     /// window shadow can't be styled — so the panel carries its shadows
     /// itself and holds a margin for them. Taken out of the card's pane
     /// inset (`paneVerticalInset` is the tightest side), never added to the
-    /// window's reach: the panel still stops at the page card's edges.
-    private static let shadowMargin: CGFloat = 14
+    /// window's reach: the panel still stops at the page card's edges. Must
+    /// stay ≤ `paneVerticalInset` and ≤ `minPaneInset` for that to hold, and
+    /// large enough for the card shadow's ~20pt blur to fade out inside it.
+    private static let shadowMargin: CGFloat = 24
 
     /// Width of the card the panel grows out of — link-sized, so the flight
     /// reads as "that link became this panel".

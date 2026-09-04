@@ -168,7 +168,7 @@ class MainBrowserWindowController: NSWindowController {
          windowId: Int,
          browserType: ChromiumBrowserType = .normal,
          profileId: String = LocalStore.defaultProfileId,
-         spaceId: String = LocalStore.defaultSpaceId,
+         spaceId: String = SpaceManager.shared.currentDefaultSpaceId,
          account: Account = AccountController.shared.account ?? AccountController.defaultAccount,
          slot: SpaceWindowSlot? = nil,
          browserState suppliedBrowserState: BrowserState? = nil) {
@@ -459,6 +459,17 @@ class MainBrowserWindowController: NSWindowController {
                 self.updateTrafficLightPlacement(fullScreen: fullScreen)
             }
             .store(in: &cancellables)
+
+        // Again, synchronously, because the sink above delivers on the main
+        // queue: its first pass lands a turn after this window is built, and a
+        // Space switched to cold builds and presents its window inside that
+        // turn. The lights would be drawn once where AppKit put them and then
+        // visibly step onto the row. A warm Space was placed long before it is
+        // shown, which is why only a cold one shows the step. The layout guard
+        // inside makes the sink's own first pass a no-op.
+        updateTrafficLightPlacement(
+            fullScreen: browserState.isInFullScreenMode
+        )
         self.contentViewController = mainSplitViewController
         
         

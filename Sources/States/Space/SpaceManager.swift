@@ -357,11 +357,28 @@ final class SpaceManager: ObservableObject {
     /// surfaces, so nothing else would tell them to.
     @Published private(set) var spaces: [SpaceModel] = [] {
         didSet {
-            guard Self.spaceOrderDidChange(from: oldValue.map(\.spaceId),
-                                           to: spaces.map(\.spaceId)) else { return }
+            // Compare against ids snapshotted at the previous assignment —
+            // never against `oldValue`'s models. `SpaceModel`s are live
+            // SwiftData references, and a store teardown between two
+            // assignments (guest→account promotion's terminal close, an
+            // account switch releasing the old container) resets their
+            // backing data, so the first persisted-property read on one
+            // traps (PHIBROWSER-MAC-QP). The incoming array is safe to
+            // read: every assignment site fetched it from a live context
+            // in the same main-thread turn, or assigned empty.
+            let newIds = spaces.map(\.spaceId)
+            let orderChanged = Self.spaceOrderDidChange(from: publishedSpaceIds,
+                                                        to: newIds)
+            publishedSpaceIds = newIds
+            guard orderChanged else { return }
             NotificationCenter.default.post(name: .spaceListDidChange, object: self)
         }
     }
+
+    /// Value snapshot of `spaces.map(\.spaceId)` taken by the didSet at each
+    /// assignment, so the next assignment's order comparison never reads a
+    /// persisted property on models whose container may since be gone.
+    private var publishedSpaceIds: [String] = []
 
     /// Whether a `spaces` write invalidates every cached POSITION → Space
     /// mapping. Deliberately order-sensitive rather than set-sensitive: the
@@ -869,6 +886,61 @@ final class SpaceManager: ObservableObject {
     /// one exists, falling back to the persisted default.
     var activeSpaceId: String? {
         keySlot?.activeSpaceId ?? persistedActiveSpaceId
+    }
+
+    /// The Space currently holding the "default" role: the landing target
+    /// for retreats and windows opened without a Space context, the
+    /// app-chrome theme anchor, and the pre-selected import target. The
+    /// role starts on the well-known `default-space` row and, when its
+    /// holder is deleted, is handed to the first remaining user Space
+    /// (strip order) by `deleteSpace`, persisted per account so the
+    /// hand-off survives relaunches. Falls back to the well-known id when
+    /// no store is bound yet (early launch, kiosk) — the pre-hand-off
+    /// behavior.
+    var currentDefaultSpaceId: String {
+        let persisted = boundAccount?.userDefaults
+            .string(forKey: AccountUserDefaults.DefaultsKey.defaultSpaceId.rawValue)
+        let known = userSpaces
+        guard !known.isEmpty else { return persisted ?? LocalStore.defaultSpaceId }
+        if let persisted, known.contains(where: { $0.spaceId == persisted }) {
+            return persisted
+        }
+        if known.contains(where: { $0.spaceId == LocalStore.defaultSpaceId }) {
+            return LocalStore.defaultSpaceId
+        }
+        // The recorded holder is gone (e.g. a restored backup) — the first
+        // user Space takes the role until the next hand-off persists.
+        return known.first?.spaceId ?? LocalStore.defaultSpaceId
+    }
+
+    /// Whether the UI may offer Delete for this Space. Everything is
+    /// deletable except an Incognito Space (closed, not deleted) and the
+    /// last remaining user Space — "last" is global, across profiles.
+    /// Agent Spaces are always deletable: they are ephemeral and never
+    /// count toward (or against) the user-Space minimum.
+    func canDeleteSpace(spaceId: String) -> Bool {
+        if Self.isIncognitoSpaceId(spaceId) { return false }
+        guard let space = spaces.first(where: { $0.spaceId == spaceId }) else { return false }
+        if space.isAgentSpace { return true }
+        return userSpaces.count > 1
+    }
+
+    /// Whether any Space in the bound account's store is bound to this
+    /// profile — the authoritative check behind every profile-delete
+    /// affordance. Reads the store directly instead of `spaces`: the
+    /// published cache is legitimately empty or stale around account
+    /// transitions (`unbind` clears it; bind reseeds, then subscribes
+    /// asynchronously) and across the write→publish gap after Space
+    /// mutations, and a stale "not in use" answer would offer deleting a
+    /// profile whose Spaces exist — stranding them on a nonexistent
+    /// profile. With no account bound the answer is "in use": a transition
+    /// window should disable profile deletion, not arm it.
+    func isProfileInUse(_ profileId: String) -> Bool {
+        guard let account = boundAccount else { return true }
+        let storeSpaces = MainActor.assumeIsolated {
+            account.localStorage.getAllSpaces()
+        }
+        return storeSpaces.contains { $0.profileId == profileId }
     }
 
     /// Currently-active Space of the key slot, derived from `activeSpaceId`.
@@ -5436,8 +5508,15 @@ final class SpaceManager: ObservableObject {
             MainActor.assumeIsolated { closeIncognitoSpace(spaceId: spaceId) }
             return
         }
-        guard spaceId != LocalStore.defaultSpaceId else {
-            AppLogWarn("[SpaceManager] refusing to delete the default space")
+        // The last user Space can't be deleted — retreat targets, new-window
+        // fallbacks, and the default-role hand-off below all need at least
+        // one persisted regular Space to land on. Only user Spaces are
+        // guarded: agent-Space cleanup (orphan sweep, task teardown) must
+        // never be blocked by the count.
+        let remainingUserSpaces = userSpaces.filter { $0.spaceId != spaceId }
+        if remainingUserSpaces.isEmpty,
+           userSpaces.contains(where: { $0.spaceId == spaceId }) {
+            AppLogWarn("[SpaceManager] refusing to delete the last Space")
             return
         }
         // An import currently writing into this Space must finish first, or its
@@ -5477,6 +5556,19 @@ final class SpaceManager: ObservableObject {
         // A queued profile-change reopen for this Space is moot once the
         // Space itself goes away.
         pendingProfileChangeReopens.removeValue(forKey: spaceId)
+        // Deleting the current default Space hands the role to the first
+        // remaining user Space, persisted so it survives relaunches. Done
+        // before the window teardown so the retreat below already lands on
+        // the successor, and the app-chrome theme republishes from it.
+        if spaceId == currentDefaultSpaceId,
+           let successor = remainingUserSpaces.first {
+            boundAccount?.userDefaults.set(
+                successor.spaceId,
+                forKey: AccountUserDefaults.DefaultsKey.defaultSpaceId.rawValue
+            )
+            AppLogInfo("[SpaceManager] default Space role handed to \(successor.spaceId)")
+            publishResolvedDefaultSpaceThemeIfNeeded(spaceId: successor.spaceId)
+        }
         closeSpaceWindows(spaceId: spaceId)
         // Cascade-delete the Space row, its tagged tabs/bookmarks, and its
         // URL rules in a SINGLE write (LocalStore.deleteSpace intentionally
@@ -5517,7 +5609,7 @@ final class SpaceManager: ObservableObject {
                    spaces.contains(where: { $0.spaceId == last }) {
                     return last
                 }
-                return LocalStore.defaultSpaceId
+                return currentDefaultSpaceId
             }()
             slot.activate(spaceId: retreatTarget) { [weak slot] in
                 guard let slot,
@@ -5725,7 +5817,7 @@ final class SpaceManager: ObservableObject {
         for slot in slots where slot !== respawnSlot {
             guard let controller = slot.windowController(for: spaceId) else { continue }
             if slot.activeSpaceId == spaceId {
-                slot.activate(spaceId: LocalStore.defaultSpaceId)
+                slot.activate(spaceId: currentDefaultSpaceId)
             }
             // Same guard as `deleteSpace`: if the retreat above failed to
             // spawn, closing the still-visible window would be classified
@@ -5975,7 +6067,7 @@ final class SpaceManager: ObservableObject {
     /// resolved copy without writing the per-Space adjustment into the shared
     /// registry or the canonical built-in themes.
     private func publishResolvedDefaultSpaceThemeIfNeeded(spaceId: String) {
-        guard spaceId == LocalStore.defaultSpaceId else { return }
+        guard spaceId == currentDefaultSpaceId else { return }
         MainActor.assumeIsolated {
             ThemeManager.shared.currentTheme = resolvedTheme(forSpaceId: spaceId)
         }
@@ -6836,7 +6928,8 @@ final class SpaceManager: ObservableObject {
         // `AccountController.account`'s didSet, whose shortcut reload asks
         // the bridge to rebuild the main menu before AppKit is ready
         // (startup crash in `NSMenu _setMenuName:`). Assigning the
-        // @Published array is effect-free here (no subscribers exist yet);
+        // @Published array is safe here — no subscribers exist yet, and the
+        // didSet only snapshots ids and posts `spaceListDidChange`;
         // slot reconciliation, migrations, and the default-space theme
         // publish all run on the publisher's first emission, which replaces
         // this seed wholesale through `handleSpacesUpdate` as before. The
@@ -6847,8 +6940,15 @@ final class SpaceManager: ObservableObject {
         let seededSpaces = MainActor.assumeIsolated {
             account.localStorage.getAllSpaces()
         }
+        // Reassigned even when the fetch is empty: a rebind reaches here
+        // without an intervening `unbind` (`refreshAccountBindingForBrowserAccess`
+        // binds the new account directly), and keeping the PREVIOUS
+        // account's models in `lastStoreSpaces` hands
+        // `refreshIncognitoSpacePresence()` references that die with that
+        // store's container. `spaces` keeps the non-empty gate so the strip
+        // isn't blanked before the new store's first delivery.
+        lastStoreSpaces = seededSpaces
         if !seededSpaces.isEmpty {
-            lastStoreSpaces = seededSpaces
             spaces = seededSpaces
         }
 
@@ -7018,7 +7118,7 @@ final class SpaceManager: ObservableObject {
     private func closeIncognitoSpaceWindows(spaceId: String) {
         let retreatingSlots = slots.filter { $0.activeSpaceId == spaceId }
         for slot in retreatingSlots {
-            slot.activate(spaceId: LocalStore.defaultSpaceId) { [weak slot] in
+            slot.activate(spaceId: currentDefaultSpaceId) { [weak slot] in
                 guard let slot,
                       let controller = slot.windowController(for: spaceId) else { return }
                 guard slot.visibleController !== controller else {
@@ -7049,6 +7149,11 @@ final class SpaceManager: ObservableObject {
         rulesCancellable = nil
         cachedURLRules = []
         hasLoadedURLRules = false
+        // `lastStoreSpaces` aliases the unbound store's live models; a
+        // `refreshIncognitoSpacePresence()` after that store's container is
+        // gone would otherwise replay destroyed models into
+        // `handleSpacesUpdate` (same trap as the `spaces` didSet documents).
+        lastStoreSpaces = []
         spaces = []
         // Tear down each slot's NotificationCenter registrations before
         // dropping the registry — controllers may keep the slots alive past
@@ -7138,8 +7243,9 @@ final class SpaceManager: ObservableObject {
             updated.insert(makeIncognitoSpace(descriptor: descriptor, sortOrder: index), at: index)
         }
         spaces = updated
-        if updated.contains(where: { $0.spaceId == LocalStore.defaultSpaceId }) {
-            publishResolvedDefaultSpaceThemeIfNeeded(spaceId: LocalStore.defaultSpaceId)
+        let defaultSpaceId = currentDefaultSpaceId
+        if updated.contains(where: { $0.spaceId == defaultSpaceId }) {
+            publishResolvedDefaultSpaceThemeIfNeeded(spaceId: defaultSpaceId)
         }
         let validIds = Set(updated.map(\.spaceId))
 
@@ -7911,6 +8017,20 @@ final class SpaceWindowSlot: ObservableObject {
     /// band snapshot on the sidebar. A settled animation always fires its real
     /// completion within `duration`, so this margin only ever covers a lost one.
     private static let swapFinalizeFallbackMargin: TimeInterval = 0.5
+
+    /// How long a cold reveal waits for the entering Space's first paint
+    /// before presenting it unpainted. Below the container's cold first-paint
+    /// budget (2s) on purpose: the reveal is the outer gate, and a page slow
+    /// enough to blow this deadline is presented behind the themed page-pane
+    /// mask, which that budget then lifts.
+    static let coldRevealFirstPaintDeadline: TimeInterval = 1.0
+
+    /// Margin between the target's first-paint signal and the present. The
+    /// signal is the renderer's — the composited frame, and whatever theme or
+    /// layout settles right behind it, land a beat later; presenting on the
+    /// signal itself can still swap onto a frame that is not quite the one
+    /// the user should meet.
+    static let coldRevealPostPaintSettle: TimeInterval = 0.1
 
     private weak var manager: SpaceManager?
 
@@ -8788,6 +8908,25 @@ final class SpaceWindowSlot: ObservableObject {
                     return
                 }
                 self.pendingSpawnSpaceIds.remove(spaceId)
+                // Re-assert the slot frame, twice, exactly as the spawn path
+                // does after `createBrowser` — and with a stronger reason: the
+                // foreign restore rebuilt this window AT THE GHOST'S SAVED
+                // BOUNDS (the parked record round-trips
+                // CreateSetWindowBoundsCommand), and its remote_cocoa bounds
+                // updates land after `registerWindow` applied the inherited
+                // frame inside the ctor. Left alone, the reveal can present
+                // the window at — or moving through — wherever it sat when it
+                // was parked, which reads as the whole window flashing at the
+                // wrong place. The deferred re-assert is enqueued here, before
+                // the reveal's own one-turn hop, so FIFO ordering runs it
+                // ahead of the present. Both are idempotent no-ops once the
+                // frame has stuck.
+                if let inheritedFrame {
+                    self.windowsBySpaceId[spaceId]?.window?.setFrame(inheritedFrame, display: false)
+                    DispatchQueue.main.async { [weak self] in
+                        self?.windowsBySpaceId[spaceId]?.window?.setFrame(inheritedFrame, display: false)
+                    }
+                }
                 AppLogInfo("[SpaceWindowSlot] materialize(\(spaceId)): window \(windowId) rebuilt live")
                 completion(true)
             }
@@ -9453,25 +9592,118 @@ final class SpaceWindowSlot: ObservableObject {
         }
 
         handle.reveal = { [weak self, weak previousWindow] target in
-            guard let self else {
+            guard self != nil else {
                 restoreLeaving()
                 return
             }
-            // Unlike the clicked push-in's finalize, do NOT rebuild the slot
-            // tab group here even if the leaving window entered native
-            // fullscreen during the slide (fullscreen slots don't reach this
-            // path — `activate` spawns them visible — but the green button
-            // can be clicked mid-slide). The target has never been ordered
-            // in, and swapping a never-shown window into a fullscreen tab
-            // group corrupts NSWindowStackController's fullscreen
-            // bookkeeping ("windowToTakeFrom should be in FS" crash). Front
-            // it detached instead; `syncSlotTabGroup` regroups it on the
-            // next switch once it has been shown.
-            self.makeKeyAndOrderFrontHidingSlotTabBar(target.window)
-            self.orderOutIfNotTabbedWithTarget(previousWindow, targetWindow: target.window)
-            restoreLeaving()
-            self.verticalSwapCancel = nil
-            onSwapSettled?()
+            let present: () -> Void = { [weak self, weak previousWindow] in
+                guard self != nil else {
+                    restoreLeaving()
+                    return
+                }
+                // Force the draw in THIS turn, so the end-of-turn commit
+                // ships real content before next turn's present. An
+                // alpha-zero window counts as occluded, and AppKit can skip
+                // drawing occluded windows — left alone, the backing store
+                // can still be empty when the alpha flips, and the server
+                // composites an uncommitted (white) surface for the few ms
+                // until the commit lands. The WHOLE window, not
+                // `contentView` — the traffic lights live in the frame view,
+                // the content view's SUPERVIEW, and a content-only draw
+                // presents a titlebar with no discs for the first frames
+                // (measured: the first captured frame of a present has an
+                // empty top-left corner, and the lights pop in afterwards).
+                // Plain `display()` draws without flushing the transaction
+                // mid-turn, so the traffic-light pre-flush ordering is
+                // untouched.
+                target.window?.display()
+                // One runloop hop before fronting: on the paths that present
+                // without the readiness wait below (spawns, already-painted
+                // targets, the deadline) this can still run in the turn that
+                // BUILT the window — before any first pass delivered through
+                // the main queue (theme sinks, placement, the sidebar's
+                // SwiftUI commit) has applied, and in dark mode those
+                // pre-pass states are light. Same mechanism as the
+                // traffic-light step fixed synchronously in
+                // `MainBrowserWindowController.setupContentView`; the hop is
+                // the general half. The leaving window stays up one extra
+                // frame. Supersession stays safe across it: the handle is
+                // already `finished`, so a settle() from a newer switch is a
+                // no-op.
+                DispatchQueue.main.async { [weak self, weak previousWindow] in
+                    guard let self else {
+                        restoreLeaving()
+                        return
+                    }
+                    // Unlike the clicked push-in's finalize, do NOT rebuild
+                    // the slot tab group here even if the leaving window
+                    // entered native fullscreen during the slide (fullscreen
+                    // slots don't reach this path — `activate` spawns them
+                    // visible — but the green button can be clicked
+                    // mid-slide). The target has never been ordered in, and
+                    // swapping a never-shown window into a fullscreen tab
+                    // group corrupts NSWindowStackController's fullscreen
+                    // bookkeeping ("windowToTakeFrom should be in FS" crash).
+                    // Front it detached instead; `syncSlotTabGroup` regroups
+                    // it on the next switch once it has been shown.
+                    self.makeKeyAndOrderFrontHidingSlotTabBar(target.window)
+                    self.orderOutIfNotTabbedWithTarget(previousWindow, targetWindow: target.window)
+                    restoreLeaving()
+                    self.verticalSwapCancel = nil
+                    onSwapSettled?()
+                }
+            }
+            // Wait for the entering Space's first paint before presenting at
+            // all. A materialized window is ordered in at alpha 0 with its
+            // selected tab's load ALREADY running (the materialize path
+            // deliberately skips the Chromium-side load defer), so it paints
+            // while still invisible; presenting on that signal lands the
+            // swap on real pixels instead of whatever the window holds
+            // pre-paint. The leaving window stays fully on screen through
+            // the wait, with the band overlay already showing the target —
+            // the same held state the slow-spawn deadline path has always
+            // shown.
+            //
+            // Gated to windows that CAN paint concealed (`isVisible`:
+            // ordered in, alpha 0). A spawned window was never ordered in,
+            // its renderer produces no frames while hidden, and waiting
+            // would only ever hit the deadline — it presents immediately, as
+            // before. Already-painted targets present immediately too.
+            //
+            // Bounded: a page that never paints presents at the deadline,
+            // where the page-pane mask covers it exactly as today. The wait
+            // holds `verticalSwapCancel` armed, so the in-flight gate drops
+            // re-triggers for its duration the same way it does mid-slide.
+            let container = target.mainSplitViewController
+                .webContentContainerViewController
+            let canPaintConcealed = target.window?.isVisible == true
+            let alreadyPainted = target.browserState.focusingTab?.hasFirstPaint == true
+            if canPaintConcealed && !alreadyPainted {
+                var fired = false
+                let presentOnce: (TimeInterval) -> Void = { settle in
+                    guard !fired else { return }
+                    fired = true
+                    container.onColdContentReady = nil
+                    if settle > 0 {
+                        DispatchQueue.main.asyncAfter(deadline: .now() + settle,
+                                                      execute: present)
+                    } else {
+                        present()
+                    }
+                }
+                // Ready: give the painted frame its settle margin. Deadline:
+                // present immediately — it has waited long enough.
+                container.onColdContentReady = {
+                    presentOnce(SpaceWindowSlot.coldRevealPostPaintSettle)
+                }
+                DispatchQueue.main.asyncAfter(
+                    deadline: .now() + SpaceWindowSlot.coldRevealFirstPaintDeadline
+                ) {
+                    presentOnce(0)
+                }
+            } else {
+                present()
+            }
         }
 
         handle.restore = { [weak self] in
@@ -10143,6 +10375,41 @@ final class SpaceWindowSlot: ObservableObject {
     private func makeKeyAndOrderFrontHidingSlotTabBar(_ window: NSWindow?) {
         guard let window else { return }
 
+        // Staged BEFORE the un-conceal below, and it has to be. On the
+        // materialize path Chromium has already ordered this window in, so
+        // `revealConcealedWindow`'s alphaValue 0 -> 1 — not
+        // `makeKeyAndOrderFront` — is the moment the window becomes visible;
+        // a cover installed after it is installed a frame late and the user
+        // sees the uncovered frame.
+        //
+        // ONLY the cover moves up here. The titlebar work below deliberately
+        // stays after the un-conceal: run against a concealed window, AppKit
+        // lays the titlebar out for a window it is not yet showing and then
+        // corrects it once it is, which makes the traffic lights jump and
+        // settle.
+        MainActor.assumeIsolated {
+            windowsBySpaceId.values
+                .first { $0.window === window }?
+                .mainSplitViewController
+                .webContentContainerViewController
+                .maskPageAreaForColdReveal()
+        }
+
+        // MEASURED root cause of the cold-reveal white flash: an
+        // alpha-concealed window is ON SCREEN, so flipping its alpha shows it
+        // instantly — but AppKit never drew it (alpha zero counts as
+        // occluded), and the window server composites its empty surface as
+        // pure white until the next display pass catches up (~30ms). The
+        // probe's first two captured frames of a cold present are solid
+        // white edge to edge, while presents of ordered-OUT windows carry
+        // real content in their very first frame — because ordering a window
+        // in DISPLAYS it before showing it. So: take the concealed window off
+        // screen while it is still invisible, and let the front below go
+        // through the display-before-show path like every other window.
+        if window.isVisible, window.alphaValue == 0 {
+            window.orderOut(nil)
+        }
+
         // Every explicit fronting un-conceals: covers a mid-restore
         // pip-switch to a Space whose window is still alpha-concealed.
         revealConcealedWindow(window)
@@ -10157,6 +10424,15 @@ final class SpaceWindowSlot: ObservableObject {
         removeNativeTabBarAccessories(from: window)
 
         window.makeKeyAndOrderFront(nil)
+        // KNOWN RESIDUAL: on a cold present the traffic lights come up in
+        // their NOT-KEY (gray) appearance for 50-250ms before turning
+        // colored. The pre-present draw above necessarily runs before the
+        // window can be key, and neither `displayIfNeeded()` nor
+        // force-dirtying the frame view and buttons right here repaints them
+        // colored (both tried, measured no change) — which suggests keyness
+        // itself settles late, likely through remote_cocoa's activation
+        // path (`hasKeyAppearance` is consulted at draw time and answers
+        // through the bridge host). Chromium-side investigation needed.
 
         removeNativeTabBarAccessories(from: window)
         hideSlotTabBars()

@@ -39,6 +39,11 @@ enum ImportDataType: String, CaseIterable {
             // File import exposes no per-type toggles; the file row uses a picker
             // body instead. Chromium decides what the file contains.
             return []
+        case .zen:
+            // History only: Zen's bookmarks are parsed Mac-side by Migration, the
+            // Firefox importer has no cookie path, and Firefox extensions cannot
+            // be installed into Phi.
+            return [.history]
         default:
             return [.bookmarks, .history]
         }

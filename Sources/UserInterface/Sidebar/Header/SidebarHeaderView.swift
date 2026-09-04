@@ -276,7 +276,7 @@ class SidebarHeaderView: NSView, TitlebarAwareHitTestable {
         }
 
         upgradeButton.snp.makeConstraints { make in
-            make.top.equalToSuperview().offset(defaultSidebarButtonTopOffset)
+            make.centerY.equalTo(sidebarButton)
             upgradeButtonLeftConstraint = make.left.equalToSuperview().offset(sidebarButtonLeftOffset).constraint
             make.size.equalTo(NSSize(width: 56, height: 24))
         }

@@ -95,6 +95,12 @@ final class SidebarHeaderViewTests: XCTestCase {
         assertNotVisible(HeaderID.forwardButton)
         assertNotVisible(HeaderID.refreshButton)
         assertNotVisible(HeaderID.addressView)
+
+        let sidebarButton = element(matching: HeaderID.sidebarButton)
+        let searchTabsButton = element(matching: HeaderID.searchTabsButton)
+        let upgradeButton = element(matching: HeaderID.upgradeButton)
+        XCTAssertEqual(upgradeButton.frame.midY, sidebarButton.frame.midY, accuracy: 0.5)
+        XCTAssertEqual(upgradeButton.frame.midY, searchTabsButton.frame.midY, accuracy: 0.5)
     }
 
     @MainActor

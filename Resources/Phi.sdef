@@ -157,6 +157,23 @@
             </parameter>
             <result type="text" description="A versioned JSON acknowledgement or error."/>
         </command>
+        <command name="create phi kiosk window" code="PhisNKsk" description="Open a new Kiosk window with an optional URL.">
+            <cocoa class="PhiNewKioskWindowScriptCommand"/>
+            <parameter name="client context" code="ClCt" type="text" optional="yes" description="Optional versioned client attribution context.">
+                <cocoa key="clientContext"/>
+            </parameter>
+            <parameter name="url" code="KURL" type="text" optional="yes" description="The optional URL. Omit or pass an empty value to open a blank Kiosk window.">
+                <cocoa key="url"/>
+            </parameter>
+            <result type="text" description="A versioned JSON acknowledgement or error."/>
+        </command>
+        <command name="create phi incognito space" code="PhisNISp" description="Create and activate a new Incognito Space.">
+            <cocoa class="PhiNewIncognitoSpaceScriptCommand"/>
+            <parameter name="client context" code="ClCt" type="text" optional="yes" description="Optional versioned client attribution context.">
+                <cocoa key="clientContext"/>
+            </parameter>
+            <result type="text" description="A versioned JSON acknowledgement or error."/>
+        </command>
         <command name="get scripting version" code="PhisGVer" description="Return Phi and scripting API versions as versioned JSON.">
             <cocoa class="PhiGetVersionScriptCommand"/>
             <parameter name="client context" code="ClCt" type="text" optional="yes" description="Optional versioned client attribution context.">

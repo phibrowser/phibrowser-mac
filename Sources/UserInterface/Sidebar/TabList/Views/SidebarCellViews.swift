@@ -1498,6 +1498,17 @@ final class BroomButton: NSButton {
     }
 }
 
+final class SnapshotTitleView: NSView {
+    var image: NSImage? {
+        didSet { needsDisplay = true }
+    }
+
+    override func draw(_ dirtyRect: NSRect) {
+        super.draw(dirtyRect)
+        image?.draw(at: .zero, from: .zero, operation: .sourceOver, fraction: 1)
+    }
+}
+
 // MARK: - New Tab Button Cell View
 class NewTabButtonCellView: SidebarCellView {
     var clickAction: (() -> Void)?
@@ -1550,6 +1561,17 @@ class NewTabButtonCellView: SidebarCellView {
         imageView.isHidden = true
         return imageView
     }()
+
+    /// Rasterized text used only while Space-switch snapshots are captured.
+    /// `NSTextField` applies translucent text differently when `cacheDisplay`
+    /// renders the band into a transparent bitmap, which makes the live
+    /// tertiary label look darker for the duration of the switch. Drawing the
+    /// attributed string into an image first preserves the intended alpha.
+    private lazy var snapshotTitleView: SnapshotTitleView = {
+        let view = SnapshotTitleView()
+        view.isHidden = true
+        return view
+    }()
     
     private var titleLabel: NSTextField = {
         let titleLabel = NSTextField(labelWithString: NSLocalizedString("sidebar.newTabRow.title", value: "New Tab", comment: "side bar new tab button text"))
@@ -1575,17 +1597,61 @@ class NewTabButtonCellView: SidebarCellView {
         cleanupButton.stopOrganizing()
     }
 
-    func withStaticSnapshotIcon<T>(_ body: () throws -> T) rethrows -> T {
+    func withStaticSnapshotContent<T>(_ body: () throws -> T) rethrows -> T {
         let wasLottieHidden = iconView.isHidden
         let wasSnapshotHidden = snapshotIconView.isHidden
-        snapshotIconView.contentTintColor = ThemedColor.textTertiary.resolve(in: self)
+        let wasTitleHidden = titleLabel.isHidden
+        let wasSnapshotTitleHidden = snapshotTitleView.isHidden
+        let resolvedColor = ThemedColor.textTertiary.resolve(in: self)
+        let titleFont = titleLabel.font ?? NSFont.systemFont(ofSize: 13)
+        let titleTextInset = titleLabel.alignmentRectInsets.left
+
+        snapshotIconView.contentTintColor = resolvedColor
+        // A plain sibling doesn't share NSTextField's alignment rect or text
+        // inset, so mirror both for a pixel-stable handoff.
+        snapshotTitleView.frame = titleLabel.frame
+        snapshotTitleView.image = Self.makeSnapshotTitleImage(
+            text: titleLabel.stringValue,
+            font: titleFont,
+            color: resolvedColor,
+            size: titleLabel.bounds.size,
+            drawingOrigin: NSPoint(x: titleTextInset, y: 0)
+        )
         iconView.isHidden = true
         snapshotIconView.isHidden = false
+        if snapshotTitleView.image != nil {
+            titleLabel.isHidden = true
+            snapshotTitleView.isHidden = false
+        }
         defer {
             iconView.isHidden = wasLottieHidden
             snapshotIconView.isHidden = wasSnapshotHidden
+            titleLabel.isHidden = wasTitleHidden
+            snapshotTitleView.isHidden = wasSnapshotTitleHidden
         }
         return try body()
+    }
+
+    static func makeSnapshotTitleImage(
+        text: String,
+        font: NSFont,
+        color: NSColor,
+        size: NSSize,
+        drawingOrigin: NSPoint = .zero
+    ) -> NSImage? {
+        guard size.width > 0, size.height > 0 else { return nil }
+
+        let attributedTitle = NSAttributedString(
+            string: text,
+            attributes: [
+                .font: font,
+                .foregroundColor: color
+            ]
+        )
+        return NSImage(size: size, flipped: false) { _ in
+            attributedTitle.draw(at: drawingOrigin)
+            return true
+        }
     }
 
     override func hitTest(_ point: NSPoint) -> NSView? {
@@ -1660,6 +1726,7 @@ class NewTabButtonCellView: SidebarCellView {
         backgoundView.addSubview(iconView)
         backgoundView.addSubview(snapshotIconView)
         backgoundView.addSubview(titleLabel)
+        backgoundView.addSubview(snapshotTitleView)
         backgoundView.addSubview(cleanupButton)
 
         iconView.snp.makeConstraints { make in

@@ -57,14 +57,14 @@ final class TabStatusTests: XCTestCase {
         ), .agent)
     }
 
-    func testAgentBadgeIsHiddenBeforePairedChatGeneratesAReply() {
-        XCTAssertNil(TabCornerBadgeStatus.resolve(
+    func testAgentBadgeIsShownWithoutAPairedChat() {
+        XCTAssertEqual(TabCornerBadgeStatus.resolve(
             isAgentActive: true,
             isChatGenerating: false,
             hasPairedChat: false,
             hasStartedChatGeneration: false,
             isChatCollapsed: false
-        ))
+        ), .agent)
     }
 
     func testChatBadgeIsHiddenWhileChatIsCollapsed() {
@@ -115,7 +115,7 @@ final class TabStatusTests: XCTestCase {
         )
     }
 
-    func testDiscardedAndUnloadedFaviconsUseDashedOutline() {
+    func testNormalDiscardedAndUnloadedFaviconsUseDashedOutline() {
         XCTAssertFalse(TabFaviconPresentation.showsDashedOutline(
             isDiscarded: false,
             isUnloaded: false
@@ -132,6 +132,44 @@ final class TabStatusTests: XCTestCase {
             isDiscarded: true,
             isUnloaded: true
         ))
+    }
+
+    func testOpenPinnedAndBookmarkTabsUseSolidBorder() {
+        XCTAssertEqual(
+            TabStateBorderStyle.resolve(
+                isOpened: true,
+                isDiscarded: false,
+                isUnloaded: false
+            ),
+            .solid
+        )
+        XCTAssertEqual(
+            TabStateBorderStyle.resolve(
+                isOpened: false,
+                isDiscarded: false,
+                isUnloaded: false
+            ),
+            .none
+        )
+    }
+
+    func testDiscardedAndUnloadedTabsUseDashedBorder() {
+        XCTAssertEqual(
+            TabStateBorderStyle.resolve(
+                isOpened: true,
+                isDiscarded: true,
+                isUnloaded: false
+            ),
+            .dashed
+        )
+        XCTAssertEqual(
+            TabStateBorderStyle.resolve(
+                isOpened: true,
+                isDiscarded: false,
+                isUnloaded: true
+            ),
+            .dashed
+        )
     }
 
     func testAIOutputBecomesChatAfterGeneratingCompletes() {

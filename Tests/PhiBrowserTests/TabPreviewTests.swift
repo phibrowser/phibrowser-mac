@@ -585,6 +585,7 @@ final class TabPreviewTests: XCTestCase {
             TabPreviewContent(
                 id: .tab("layout"),
                 title: title,
+                isMemoryReclaimed: false,
                 url: url,
                 image: image,
                 imageSource: imageSource

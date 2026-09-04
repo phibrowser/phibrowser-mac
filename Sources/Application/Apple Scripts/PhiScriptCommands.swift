@@ -9,7 +9,9 @@ import PostHog
 struct PhiScriptingClientContext: Decodable, Equatable {
     private static let maxPayloadBytes = 1_024
     private static let knownCommands: Set<String> = [
+        "new-incognito-space",
         "new-incognito-window",
+        "new-kiosk-window",
         "new-tab",
         "new-window",
         "phi-actions",
@@ -323,6 +325,25 @@ final class PhiNewIncognitoWindowScriptCommand: NSScriptCommand {
     override func performDefaultImplementation() -> Any? {
         runPhiCommand("create_incognito_window") {
             PhiScriptingService.shared.newIncognitoWindow()
+        }
+    }
+}
+
+@objc(PhiNewKioskWindowScriptCommand)
+final class PhiNewKioskWindowScriptCommand: NSScriptCommand {
+    override func performDefaultImplementation() -> Any? {
+        let url = stringArgument("url")
+        return runPhiCommand("create_kiosk_window") {
+            PhiScriptingService.shared.newKioskWindow(url: url)
+        }
+    }
+}
+
+@objc(PhiNewIncognitoSpaceScriptCommand)
+final class PhiNewIncognitoSpaceScriptCommand: NSScriptCommand {
+    override func performDefaultImplementation() -> Any? {
+        runPhiCommand("create_incognito_space") {
+            PhiScriptingService.shared.newIncognitoSpace()
         }
     }
 }

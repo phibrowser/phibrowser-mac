@@ -183,6 +183,8 @@ class BookmarkCellView: SidebarCellView, TabPreviewInteractionCancelling {
             state: viewState,
             primaryTabViewModel: primaryTabViewModel,
             secondaryTabViewModel: secondaryTabViewModel,
+            primaryStatusModel: primaryTabViewModel.status,
+            secondaryStatusModel: secondaryTabViewModel.status,
             peekTabViewModel: peekTabViewModel,
             onClose: { [weak self] in
                 self?.closeButtonTapped()
@@ -878,6 +880,8 @@ private struct SidebarBookmarkCellContentView: View {
     let state: BookmarkCellViewState
     let primaryTabViewModel: TabViewModel
     let secondaryTabViewModel: TabViewModel
+    @ObservedObject var primaryStatusModel: TabStatusModel
+    @ObservedObject var secondaryStatusModel: TabStatusModel
     let peekTabViewModel: TabViewModel
     let onClose: () -> Void
     let onClosePeek: () -> Void
@@ -912,7 +916,7 @@ private struct SidebarBookmarkCellContentView: View {
     }
 
     private var borderColor: Color {
-        if showsOpenBorder {
+        if tabStateBorderStyle != .none {
             return ThemedColor.border.swiftUIColor(theme: theme, appearance: appearance)
         }
         if showsSelectionBorder && appearance == .dark {
@@ -921,16 +925,28 @@ private struct SidebarBookmarkCellContentView: View {
         return .clear
     }
 
-    private var showsOpenBorder: Bool {
-        !state.isFolder && state.isOpened && !state.isActive
+    private var tabStateBorderStyle: TabStateBorderStyle {
+        guard !state.isFolder, !state.isActive else { return .none }
+        return TabStateBorderStyle.resolve(
+            isOpened: state.isOpened,
+            isDiscarded: primaryStatusModel.isDiscarded || secondaryStatusModel.isDiscarded,
+            isUnloaded: primaryStatusModel.isUnloaded || secondaryStatusModel.isUnloaded
+        )
     }
 
     private var showsSelectionBorder: Bool {
         !state.isActive && (state.isDropTargetHighlighted || state.isMultiSelected)
     }
 
-    private var borderWidth: CGFloat {
-        showsOpenBorder || showsSelectionBorder ? 1 : 0
+    private var borderStrokeStyle: StrokeStyle {
+        let resolvedStyle = tabStateBorderStyle == .none && showsSelectionBorder
+            ? TabStateBorderStyle.solid
+            : tabStateBorderStyle
+        return StrokeStyle(
+            lineWidth: resolvedStyle == .none ? 0 : TabStateBorderMetrics.lineWidth,
+            lineCap: .round,
+            dash: resolvedStyle == .dashed ? TabStateBorderMetrics.dashPattern : []
+        )
     }
 
     private var textColor: ThemedColor {
@@ -1040,7 +1056,7 @@ private struct SidebarBookmarkCellContentView: View {
         )
         .overlay(
             RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .stroke(borderColor, lineWidth: borderWidth)
+                .stroke(borderColor, style: borderStrokeStyle)
         )
         .shadow(color: .black.opacity(isHighlighted ? 0.15 : 0), radius: 1, x: 0, y: 1)
         .overlay(alignment: .topTrailing) {
@@ -1264,7 +1280,10 @@ private struct BookmarkFaviconView: View {
     @ViewBuilder
     private var faviconContent: some View {
         if let liveTabViewModel {
-            UnifiedTabFaviconView(viewModel: liveTabViewModel)
+            UnifiedTabFaviconView(
+                viewModel: liveTabViewModel,
+                showsDiscardedOutline: false
+            )
         } else if let image {
             faviconImage(image)
         } else {

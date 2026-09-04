@@ -1827,14 +1827,31 @@ class AuthManager {
         }
     }
 
+    func reportReauthenticationRequired(
+        reason: AuthReauthenticationReason,
+        firstDetectedAt: Date,
+        incidentID: UUID
+    ) {
+        var details = credentialSnapshotDetails()
+        details["firstDetectedAt"] = iso8601String(firstDetectedAt)
+        SentryService.captureAuthReauthenticationRequired(
+            reason: reason.rawValue,
+            incidentID: incidentID.uuidString,
+            trace: failureTrace.renderedTrace(),
+            attributes: details
+        )
+    }
+
     func reportReauthenticationResult(
         succeeded: Bool,
         reason: AuthReauthenticationReason,
+        incidentID: UUID,
         details: [String: String]
     ) {
         SentryService.captureAuthReauthenticationResult(
             succeeded: succeeded,
             reason: reason.rawValue,
+            incidentID: incidentID.uuidString,
             trace: failureTrace.renderedTrace(),
             attributes: details
         )

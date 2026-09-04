@@ -13,6 +13,7 @@ enum TabCornerBadgeMetrics {
     static let overhang: CGFloat = 2
     static let discardedOutlineGap: CGFloat = 1
     static let discardedOutlineLineWidth: CGFloat = 1
+    static let discardedOutlineAlpha: CGFloat = 0.12
 
     /// Returns the smallest whole-point circle that clears every point of a
     /// rounded-square favicon by the configured gap, including half the stroke.
@@ -36,6 +37,27 @@ enum TabFaviconPresentation {
     static func showsDashedOutline(isDiscarded: Bool, isUnloaded: Bool) -> Bool {
         isDiscarded || isUnloaded
     }
+}
+
+enum TabStateBorderStyle: Equatable {
+    case none
+    case solid
+    case dashed
+
+    static func resolve(
+        isOpened: Bool,
+        isDiscarded: Bool,
+        isUnloaded: Bool
+    ) -> TabStateBorderStyle {
+        if isDiscarded || isUnloaded { return .dashed }
+        if isOpened { return .solid }
+        return .none
+    }
+}
+
+enum TabStateBorderMetrics {
+    static let lineWidth: CGFloat = 1
+    static let dashPattern: [CGFloat] = [3, 4]
 }
 
 final class TabDecorativeHostingView: ThemedHostingView {
@@ -150,10 +172,12 @@ struct TabDiscardedFaviconOutline: View {
         ) {
             Circle()
                 .stroke(
-                    ThemedColor.textPrimary.swiftUIColor(
-                        theme: theme,
-                        appearance: appearance
-                    ).opacity(0.72),
+                    ThemedColor.border
+                        .withAlphaComponent(TabCornerBadgeMetrics.discardedOutlineAlpha)
+                        .swiftUIColor(
+                            theme: theme,
+                            appearance: appearance
+                        ),
                     style: StrokeStyle(
                         lineWidth: TabCornerBadgeMetrics.discardedOutlineLineWidth,
                         lineCap: .round,
@@ -336,10 +360,16 @@ private struct TabTitleShimmerMask: View {
 
 struct UnifiedTabFaviconView: View {
     let viewModel: TabViewModel
+    let showsDiscardedOutline: Bool
     @Environment(\.phiAppearance) private var phiAppearance
 
     private static let faviconSize: CGFloat = 14
     private static let faviconCornerRadius: CGFloat = 3
+
+    init(viewModel: TabViewModel, showsDiscardedOutline: Bool = true) {
+        self.viewModel = viewModel
+        self.showsDiscardedOutline = showsDiscardedOutline
+    }
 
     var body: some View {
         Group {
@@ -359,11 +389,13 @@ struct UnifiedTabFaviconView: View {
         .frame(width: Self.faviconSize, height: Self.faviconSize)
         .clipShape(RoundedRectangle(cornerRadius: Self.faviconCornerRadius, style: .continuous))
         .overlay {
-            TabDiscardedFaviconOutline(
-                model: viewModel.status,
-                faviconSize: Self.faviconSize,
-                faviconCornerRadius: Self.faviconCornerRadius
-            )
+            if showsDiscardedOutline {
+                TabDiscardedFaviconOutline(
+                    model: viewModel.status,
+                    faviconSize: Self.faviconSize,
+                    faviconCornerRadius: Self.faviconCornerRadius
+                )
+            }
         }
         .overlay(alignment: .topTrailing) {
             if viewModel.isCapturingMedia {

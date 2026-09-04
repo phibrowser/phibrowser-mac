@@ -32,11 +32,11 @@ final class TabBackgroundLayer: CAShapeLayer {
         }
     }
 
-    /// Mirrors the sidebar pinned-grid treatment: an inactive pinned cell
-    /// gets a subtle border while it still owns live web content.
-    var showsOpenPinnedBorder = false {
+    /// Mirrors the sidebar pinned-grid treatment: inactive open pinned cells
+    /// use a solid border, while discarded or unloaded cells use a dashed one.
+    var pinnedBorderStyle: TabStateBorderStyle = .none {
         didSet {
-            if oldValue != showsOpenPinnedBorder {
+            if oldValue != pinnedBorderStyle {
                 updateAppearance()
             }
         }
@@ -72,7 +72,7 @@ final class TabBackgroundLayer: CAShapeLayer {
         if let other = layer as? TabBackgroundLayer {
             self.tabState = other.tabState
             self.isPinned = other.isPinned
-            self.showsOpenPinnedBorder = other.showsOpenPinnedBorder
+            self.pinnedBorderStyle = other.pinnedBorderStyle
             self.splitPairPosition = other.splitPairPosition
             self.isSplitGroupActive = other.isSplitGroupActive
         }
@@ -92,6 +92,7 @@ final class TabBackgroundLayer: CAShapeLayer {
             "fillColor": NSNull(),
             "strokeColor": NSNull(),
             "lineWidth": NSNull(),
+            "lineDashPattern": NSNull(),
         ]
     }
 
@@ -115,6 +116,7 @@ final class TabBackgroundLayer: CAShapeLayer {
     private func updateAppearance() {
         CATransaction.begin()
         CATransaction.setAnimationDuration(0.1)
+        lineDashPattern = nil
 
         // Border (top + sides + inverse curves) for the active normal tab is
         // drawn by WebContentViewController's outerBorderLayer as part of a
@@ -165,9 +167,14 @@ final class TabBackgroundLayer: CAShapeLayer {
         }
         strokeColor = NSColor.clear.cgColor
         lineWidth = 0
-        if isPinned, tabState != .active, showsOpenPinnedBorder {
+        if isPinned, tabState != .active, pinnedBorderStyle != .none {
             strokeColor = ThemedColor.border.resolve(in: sourceView).cgColor
-            lineWidth = 1
+            lineWidth = TabStateBorderMetrics.lineWidth
+            if pinnedBorderStyle == .dashed {
+                lineDashPattern = TabStateBorderMetrics.dashPattern.map {
+                    NSNumber(value: Double($0))
+                }
+            }
         }
 
         CATransaction.commit()

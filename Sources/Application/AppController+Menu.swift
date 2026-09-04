@@ -2287,35 +2287,40 @@ extension AppController {
     /// each is its own Space in the strip until it's closed.
     @objc func newIncognitoSpaceFromMenu(_ sender: Any?) {
         MainActor.assumeIsolated {
-            let manager = SpaceManager.shared
-            let spaceId = manager.createIncognitoSpace()
-            if let slot = currentSpacesSlot() {
-                slot.suppressHoverCard(spaceId: spaceId)
-                slot.activate(spaceId: spaceId)
-            } else {
-                // No browser window open (menu-bar-only state): mint a slot
-                // and spawn the Space's window into it, the same shape a
-                // Chromium-initiated Cmd+N takes.
-                let slot = manager.createSlot(initialSpaceId: spaceId)
-                slot.activate(spaceId: spaceId, onActivationFailed: {
-                    // Undo the whole menu action rather than half of it: with
-                    // nothing on screen, a Space left in the strip behind a
-                    // reclaimed slot is one the user has no surface to reach.
-                    //
-                    // Conditioned on the reclaim, not on the failure report:
-                    // `activate` also reports failure with the spawned window
-                    // registered (the user switched Space mid-spawn), and
-                    // closing the Space there would tear down a window that
-                    // did arrive. `reclaimMintedSlot` is the one place that
-                    // tells those two apart.
-                    //
-                    // Slot first: `closeIncognitoSpace` retreats any slot
-                    // showing the Space to the default one, which would spawn
-                    // a window into the very slot being reclaimed.
-                    guard manager.reclaimMintedSlot(slot, mintedForThisAttempt: true) else { return }
-                    manager.closeIncognitoSpace(spaceId: spaceId)
-                })
-            }
+            openNewIncognitoSpace()
+        }
+    }
+
+    @MainActor
+    func openNewIncognitoSpace() {
+        let manager = SpaceManager.shared
+        let spaceId = manager.createIncognitoSpace()
+        if let slot = currentSpacesSlot() {
+            slot.suppressHoverCard(spaceId: spaceId)
+            slot.activate(spaceId: spaceId)
+        } else {
+            // No browser window open (menu-bar-only state): mint a slot
+            // and spawn the Space's window into it, the same shape a
+            // Chromium-initiated Cmd+N takes.
+            let slot = manager.createSlot(initialSpaceId: spaceId)
+            slot.activate(spaceId: spaceId, onActivationFailed: {
+                // Undo the whole menu action rather than half of it: with
+                // nothing on screen, a Space left in the strip behind a
+                // reclaimed slot is one the user has no surface to reach.
+                //
+                // Conditioned on the reclaim, not on the failure report:
+                // `activate` also reports failure with the spawned window
+                // registered (the user switched Space mid-spawn), and
+                // closing the Space there would tear down a window that
+                // did arrive. `reclaimMintedSlot` is the one place that
+                // tells those two apart.
+                //
+                // Slot first: `closeIncognitoSpace` retreats any slot
+                // showing the Space to the default one, which would spawn
+                // a window into the very slot being reclaimed.
+                guard manager.reclaimMintedSlot(slot, mintedForThisAttempt: true) else { return }
+                manager.closeIncognitoSpace(spaceId: spaceId)
+            })
         }
     }
 
@@ -2336,32 +2341,38 @@ extension AppController {
     }
 
     @MainActor
-    private func openNewKioskWindow(bringToFront: Bool) {
+    @discardableResult
+    func openNewKioskWindow(
+        url: String = "about:blank",
+        bringToFront: Bool
+    ) -> Bool {
         let manager = MainBrowserWindowControllersManager.shared
         guard ApplicationState.shared.canOpenExternalLinksInKiosk,
               !manager.isGuestTransitionInteractionBlocked,
               let bridge = ChromiumLauncher.sharedInstance().bridge else {
-            return
+            return false
         }
         if manager.activeWindowController == nil,
            SpaceManager.shared.isSessionRestoreInFlight {
-            return
+            return false
         }
 
         let kioskController: KioskBrowserWindowController?
         if let source = manager.activeWindowController {
             kioskController = openKioskWindow(
+                url: url,
                 from: source,
                 bridge: bridge,
                 manager: manager
             )
         } else {
             kioskController = openWindowlessKiosk(
+                url: url,
                 bridge: bridge,
                 manager: manager
             )
         }
-        guard let kioskController else { return }
+        guard let kioskController else { return false }
 
         let windowId = kioskController.windowId
         DispatchQueue.main.async { [weak kioskController] in
@@ -2372,8 +2383,11 @@ extension AppController {
             if bringToFront, let window = kioskController.window {
                 Self.bringKioskWindowToFront(window)
             }
-            kioskController.presentOmniBoxCentered()
+            if url == "about:blank" {
+                kioskController.presentOmniBoxCentered()
+            }
         }
+        return true
     }
 
     @MainActor
@@ -2386,6 +2400,7 @@ extension AppController {
 
     @MainActor
     private func openKioskWindow(
+        url: String,
         from source: MainBrowserWindowController,
         bridge: PhiChromiumBridgeProtocol,
         manager: MainBrowserWindowControllersManager
@@ -2395,7 +2410,7 @@ extension AppController {
 
         let existingWindowIds = Set(manager.getAllWindows().map(\.windowId))
         guard bridge.openURL(
-            inKiosk: "about:blank",
+            inKiosk: url,
             sourceWindowId: Int64(source.windowId)
         ) else {
             return nil
@@ -2407,6 +2422,7 @@ extension AppController {
 
     @MainActor
     private func openWindowlessKiosk(
+        url: String,
         bridge: PhiChromiumBridgeProtocol,
         manager: MainBrowserWindowControllersManager
     ) -> KioskBrowserWindowController? {
@@ -2422,7 +2438,7 @@ extension AppController {
         guard let controller = manager.controller(for: windowId)
                 as? KioskBrowserWindowController,
               bridge.createNewTabStrictly(
-                withUrl: "about:blank",
+                withUrl: url,
                 windowId: Int64(windowId),
                 focusAfterCreate: true
               ) else {

@@ -661,6 +661,10 @@ extension PhiChromiumCoordinator: PhiChromiumBridgeDelegate {
                 || browserType == .agentSpace || browserType == .kiosk
                 || browserType == .kioskIncognito else {
             AppLogInfo("🌐 [Chromium] Ignoring unsupported window type: \(browserType.rawValue)")
+            // The framework keeps routing tab and extension events for this
+            // window (e.g. the Phi Chat web-app window); let EventBus drop them
+            // quietly instead of logging a missing window for each one.
+            MainBrowserWindowControllersManager.shared.registerUnmanagedWindow(window, windowId: Int(windowId))
             return
         }
 

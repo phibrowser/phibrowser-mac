@@ -421,7 +421,7 @@ secrets (passwords, tokens, cookie values) into `setStatus`/`narrate`/`say`
 text: both surfaces are displayed and buffered. Under all six supported
 agents — Claude Code, Codex, OpenClaw, Pi, Hermes, and Cursor — the console
 also mirrors your whole session (prompts, reply prose, tool calls)
-automatically; under any other agent (Grok Build, Deep Code, Gemini CLI,
+automatically; under any other agent (Grok, Antigravity,
 GitHub Copilot, OpenCode, Qwen Code, CodeBuddy, …) there is no mirror, and
 when no mirror is running, use `say('…')` to reflect your own prose into the
 console yourself. Mirror internals:

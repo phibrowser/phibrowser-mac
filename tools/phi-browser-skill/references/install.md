@@ -6,11 +6,12 @@ Easiest: in Phi Browser open **Settings → General → Developer**, under "Inst
 the phi-browser skill" pick your agent from **Add skill to…** — Claude Code
 (`~/.claude/skills`), Codex (`~/.codex/skills`), Cursor (`~/.cursor/skills`),
 OpenClaw (`~/.openclaw/skills`), Pi (`~/.pi/agent/skills`), Hermes
-(`~/.hermes/skills`), Grok Build (`~/.grok/skills`), Deep Code
-(`~/.agents/skills`, the cross-agent folder Kimi Code, Cline, and DeepSeek
-Harness read too), Gemini CLI (`~/.gemini/skills`), GitHub Copilot
-(`~/.copilot/skills`), OpenCode (`~/.config/opencode/skills`), Qwen Code
-(`~/.qwen/skills`), or CodeBuddy (`~/.codebuddy/skills`). This links the skill
+(`~/.hermes/skills`), Grok (`~/.grok/skills`), Antigravity
+(`~/.gemini/antigravity/skills`), GitHub Copilot (`~/.copilot/skills`),
+OpenCode (`~/.config/opencode/skills`), Qwen Code (`~/.qwen/skills`),
+CodeBuddy (`~/.codebuddy/skills`), or Common agents (`~/.agents/skills`, the
+cross-agent folder Deep Code, Kimi Code, Cline, and DeepSeek Harness read).
+This links the skill
 bundled inside the app into that agent's `skills/phi-browser`, so it stays
 current with each Phi Browser update. Every agent can drive Phi; only the
 first six also get the session mirror described in §4 — under the others,
@@ -155,7 +156,7 @@ The mirror then
   additionally posts a notice saying so, because an ended Cursor turn never
   runs another round until you prompt Cursor again.
 
-Agents outside those six (Grok Build, Deep Code, Gemini CLI, GitHub Copilot,
+Agents outside those six (Grok, Antigravity, GitHub Copilot,
 OpenCode, Qwen Code, CodeBuddy, or anything else that loads the skill) get no
 mirror at all: every discover* requires positive evidence of its own host
 (an exported session id, a known env marker, or the agent process's name),

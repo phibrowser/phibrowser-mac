@@ -77,6 +77,12 @@ final class AgentDriverBadgeTests: XCTestCase {
             ("Cursor", "agent-cursor"),
             ("hermes", "agent-hermes"),
             ("openclaw", "agent-openclaw"),
+            ("grok", "agent-grok"),
+            ("antigravity", "agent-antigravity"),
+            ("copilot", "agent-copilot"),
+            ("opencode", "agent-opencode"),
+            ("qwen", "agent-qwen"),
+            ("codebuddy", "agent-codebuddy"),
         ]
         for (name, asset) in expected {
             XCTAssertEqual(AgentDriverBadge.make(agentName: name, origin: .cdp).assetName,

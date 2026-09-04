@@ -334,6 +334,12 @@ private struct AgentControlSectionView: View {
         if name.contains("hermes") { return "agent-hermes" }
         if name.contains("openclaw") { return "agent-openclaw" }
         if name == "pi" { return "agent-pi" }
+        if name.contains("grok") { return "agent-grok" }
+        if name.contains("antigravity") { return "agent-antigravity" }
+        if name.contains("copilot") { return "agent-copilot" }
+        if name.contains("opencode") { return "agent-opencode" }
+        if name.contains("qwen") { return "agent-qwen" }
+        if name.contains("codebuddy") { return "agent-codebuddy" }
         return nil
     }
 
@@ -622,22 +628,26 @@ private struct SkillInstallRowView: View {
                 companionExtensionDirectory: home.appendingPathComponent(
                     ".pi/agent/extensions", isDirectory: true)),
             // Skill-only agents: no session mirror, no companion extension.
-            SkillTarget(id: "grok", name: "Grok Build", iconAsset: nil,
+            SkillTarget(id: "grok", name: "Grok", iconAsset: "agent-grok",
                         skillsDirectory: home.appendingPathComponent(".grok/skills", isDirectory: true)),
-            // Deep Code (DeepSeek's CLI) reads the cross-agent ~/.agents/skills
-            // folder, which Kimi Code, Cline, and DeepSeek Harness share.
-            SkillTarget(id: "deepcode", name: "Deep Code", iconAsset: nil,
-                        skillsDirectory: home.appendingPathComponent(".agents/skills", isDirectory: true)),
-            SkillTarget(id: "gemini", name: "Gemini CLI", iconAsset: nil,
-                        skillsDirectory: home.appendingPathComponent(".gemini/skills", isDirectory: true)),
-            SkillTarget(id: "copilot", name: "GitHub Copilot", iconAsset: nil,
+            SkillTarget(id: "antigravity", name: "Antigravity", iconAsset: "agent-antigravity",
+                        skillsDirectory: home.appendingPathComponent(".gemini/antigravity/skills", isDirectory: true)),
+            SkillTarget(id: "copilot", name: "GitHub Copilot", iconAsset: "agent-copilot",
                         skillsDirectory: home.appendingPathComponent(".copilot/skills", isDirectory: true)),
-            SkillTarget(id: "opencode", name: "OpenCode", iconAsset: nil,
+            SkillTarget(id: "opencode", name: "OpenCode", iconAsset: "agent-opencode",
                         skillsDirectory: home.appendingPathComponent(".config/opencode/skills", isDirectory: true)),
-            SkillTarget(id: "qwen", name: "Qwen Code", iconAsset: nil,
+            SkillTarget(id: "qwen", name: "Qwen Code", iconAsset: "agent-qwen",
                         skillsDirectory: home.appendingPathComponent(".qwen/skills", isDirectory: true)),
-            SkillTarget(id: "codebuddy", name: "CodeBuddy", iconAsset: nil,
+            SkillTarget(id: "codebuddy", name: "CodeBuddy", iconAsset: "agent-codebuddy",
                         skillsDirectory: home.appendingPathComponent(".codebuddy/skills", isDirectory: true)),
+            // The cross-agent folder of the agentskills.io convention, read by
+            // Deep Code, Kimi Code, Cline, DeepSeek Harness, and others; no
+            // single brand owns it, so it takes the generic terminal glyph —
+            // a bitmap cut to the same 14/18 ink fill as the brand marks,
+            // because a symbol image in a menu label ignores font sizing —
+            // and closes the list.
+            SkillTarget(id: "agents", name: "Common agents", iconAsset: "agent-generic",
+                        skillsDirectory: home.appendingPathComponent(".agents/skills", isDirectory: true)),
         ]
     }()
 

@@ -167,6 +167,20 @@ struct AgentDriverBadge {
                                     symbol: "chevron.left.forwardslash.chevron.right",
                                     label: "Cursor")
         }
+        // Skill-only agents (no session mirror) still get their mark.
+        let skillOnly: [(needle: String, asset: String, label: String)] = [
+            ("grok", "agent-grok", "Grok"),
+            ("antigravity", "agent-antigravity", "Antigravity"),
+            ("copilot", "agent-copilot", "GitHub Copilot"),
+            ("opencode", "agent-opencode", "OpenCode"),
+            ("qwen", "agent-qwen", "Qwen Code"),
+            ("codebuddy", "agent-codebuddy", "CodeBuddy"),
+        ]
+        if let hit = skillOnly.first(where: { lower.contains($0.needle) }) {
+            return AgentDriverBadge(assetName: hit.asset,
+                                    symbol: "chevron.left.forwardslash.chevron.right",
+                                    label: hit.label)
+        }
         // "pi" is a short token — match it precisely so it doesn't collide with
         // unrelated identities (api, raspberry, …).
         if lower == "pi" || lower.hasPrefix("pi.") || lower.hasPrefix("pi-")

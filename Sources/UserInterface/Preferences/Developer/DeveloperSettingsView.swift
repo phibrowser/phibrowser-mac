@@ -566,16 +566,17 @@ private struct SkillInstallRowView: View {
     private struct SkillTarget: Identifiable {
         let id: String
         let name: String
-        /// Bundled brand icon (imageset under Assets ▸ agents). Rendering
-        /// follows the asset's own intent: the monochrome brand glyphs are
-        /// template, Hermes's favicon artwork renders in original color.
-        let iconAsset: String
+        /// Bundled brand icon (imageset under Assets ▸ agents), or nil for an
+        /// agent without artwork yet (shown with a generic terminal glyph).
+        /// Rendering follows the asset's own intent: the monochrome brand
+        /// glyphs are template, Hermes's favicon artwork renders in color.
+        let iconAsset: String?
         let skillsDirectory: URL
         /// Pi alone exposes a supported in-process message API. Its companion
         /// extension wakes idle sessions when Agent Transcript receives input.
         let companionExtensionDirectory: URL?
 
-        init(id: String, name: String, iconAsset: String, skillsDirectory: URL,
+        init(id: String, name: String, iconAsset: String?, skillsDirectory: URL,
              companionExtensionDirectory: URL? = nil) {
             self.id = id
             self.name = name
@@ -594,6 +595,14 @@ private struct SkillInstallRowView: View {
         }
     }
 
+    /// Every agent the skill can be linked into. The first six are also the
+    /// agents whose driving session the skill mirrors into Agent Transcript
+    /// (see `scripts/lib/mirror-*.mjs`); the agents after Pi only DRIVE Phi.
+    /// Under them the transcript shows the browser steps and `say()` prose
+    /// but never the agent's own conversation — the skill's session
+    /// discovery is gated on positive evidence of a known host, so adding an
+    /// agent here never enrolls it in the mirror. Paths follow each agent's
+    /// documented user-level skills folder (agentskills.io convention).
     private static let skillTargets: [SkillTarget] = {
         let home = FileManager.default.homeDirectoryForCurrentUser
         return [
@@ -612,6 +621,23 @@ private struct SkillInstallRowView: View {
                 skillsDirectory: home.appendingPathComponent(".pi/agent/skills", isDirectory: true),
                 companionExtensionDirectory: home.appendingPathComponent(
                     ".pi/agent/extensions", isDirectory: true)),
+            // Skill-only agents: no session mirror, no companion extension.
+            SkillTarget(id: "grok", name: "Grok Build", iconAsset: nil,
+                        skillsDirectory: home.appendingPathComponent(".grok/skills", isDirectory: true)),
+            // Deep Code (DeepSeek's CLI) reads the cross-agent ~/.agents/skills
+            // folder, which Kimi Code, Cline, and DeepSeek Harness share.
+            SkillTarget(id: "deepcode", name: "Deep Code", iconAsset: nil,
+                        skillsDirectory: home.appendingPathComponent(".agents/skills", isDirectory: true)),
+            SkillTarget(id: "gemini", name: "Gemini CLI", iconAsset: nil,
+                        skillsDirectory: home.appendingPathComponent(".gemini/skills", isDirectory: true)),
+            SkillTarget(id: "copilot", name: "GitHub Copilot", iconAsset: nil,
+                        skillsDirectory: home.appendingPathComponent(".copilot/skills", isDirectory: true)),
+            SkillTarget(id: "opencode", name: "OpenCode", iconAsset: nil,
+                        skillsDirectory: home.appendingPathComponent(".config/opencode/skills", isDirectory: true)),
+            SkillTarget(id: "qwen", name: "Qwen Code", iconAsset: nil,
+                        skillsDirectory: home.appendingPathComponent(".qwen/skills", isDirectory: true)),
+            SkillTarget(id: "codebuddy", name: "CodeBuddy", iconAsset: nil,
+                        skillsDirectory: home.appendingPathComponent(".codebuddy/skills", isDirectory: true)),
         ]
     }()
 
@@ -659,10 +685,16 @@ private struct SkillInstallRowView: View {
                             Text("\(target.name)  \(Self.displayPath(target.skillsDirectory))"
                                  + (installedTargets.contains(target.id) ? "  ✓" : ""))
                         } icon: {
-                            Image(target.iconAsset)
-                                .resizable()
-                                .scaledToFit()
-                                .frame(width: 15, height: 15)
+                            if let asset = target.iconAsset {
+                                Image(asset)
+                                    .resizable()
+                                    .scaledToFit()
+                                    .frame(width: 15, height: 15)
+                            } else {
+                                Image(systemName: "terminal.fill")
+                                    .font(.system(size: 12, weight: .semibold))
+                                    .frame(width: 15, height: 15)
+                            }
                         }
                     }
                 }

@@ -3,11 +3,19 @@
 ## 1. Install the skill
 
 Easiest: in Phi Browser open **Settings → General → Developer**, under "Install
-the phi-browser skill" click **Install** next to your agent — Claude Code
+the phi-browser skill" pick your agent from **Add skill to…** — Claude Code
 (`~/.claude/skills`), Codex (`~/.codex/skills`), Cursor (`~/.cursor/skills`),
-OpenClaw (`~/.openclaw/skills`), Pi (`~/.pi/agent/skills`), or Hermes
-(`~/.hermes/skills`). This links the skill bundled inside the app into that
-agent's `skills/phi-browser`, so it stays current with each Phi Browser update.
+OpenClaw (`~/.openclaw/skills`), Pi (`~/.pi/agent/skills`), Hermes
+(`~/.hermes/skills`), Grok Build (`~/.grok/skills`), Deep Code
+(`~/.agents/skills`, the cross-agent folder Kimi Code, Cline, and DeepSeek
+Harness read too), Gemini CLI (`~/.gemini/skills`), GitHub Copilot
+(`~/.copilot/skills`), OpenCode (`~/.config/opencode/skills`), Qwen Code
+(`~/.qwen/skills`), or CodeBuddy (`~/.codebuddy/skills`). This links the skill
+bundled inside the app into that agent's `skills/phi-browser`, so it stays
+current with each Phi Browser update. Every agent can drive Phi; only the
+first six also get the session mirror described in §4 — under the others,
+Agent Transcript shows the browser steps and `say()` prose, not the agent's
+own conversation.
 For Pi, Install also links a companion extension at
 `~/.pi/agent/extensions/phi-browser`; run `/reload` in an already-open Pi
 session so it can wake automatically when Agent Transcript receives a command.
@@ -146,6 +154,14 @@ The mirror then
   next round drains them via `readUserMessages()`; under Cursor the console
   additionally posts a notice saying so, because an ended Cursor turn never
   runs another round until you prompt Cursor again.
+
+Agents outside those six (Grok Build, Deep Code, Gemini CLI, GitHub Copilot,
+OpenCode, Qwen Code, CodeBuddy, or anything else that loads the skill) get no
+mirror at all: every discover* requires positive evidence of its own host
+(an exported session id, a known env marker, or the agent process's name),
+so an unknown host never matches another agent's transcripts by accident.
+Their transcript shows the browser steps only; use `say()` for prose, and
+console commands are drained by `readUserMessages()` at the next round.
 
 The daemon exits on its own when the task completes, when the session goes
 quiet for 30 minutes, when the agent process exits, or when the task

@@ -54,7 +54,7 @@ final class BrowserStateBookmarkLayoutTests: XCTestCase {
         XCTAssertTrue(waitUntil { !tab.isUnloaded })
     }
 
-    func testSidebarSplitPairTracksEachPanesUnloadedFaviconOpacity() {
+    func testSidebarSplitPairTracksEachPanesMemoryReclaimedFaviconOpacity() {
         let leftWrapper = BookmarkLayoutTestWebContentWrapper(urlString: "https://left.example")
         leftWrapper.isUnloaded = true
         let rightWrapper = BookmarkLayoutTestWebContentWrapper(urlString: "https://right.example")
@@ -84,7 +84,7 @@ final class BrowserStateBookmarkLayoutTests: XCTestCase {
         XCTAssertEqual(cell.faviconOpacity(isLeft: false), 1)
 
         leftWrapper.isUnloaded = false
-        rightWrapper.isUnloaded = true
+        rightWrapper.isDiscarded = true
 
         XCTAssertTrue(waitUntil {
             cell.faviconOpacity(isLeft: true) == 1 &&
@@ -344,7 +344,7 @@ final class BrowserStateBookmarkLayoutTests: XCTestCase {
     }
 }
 
-private final class BookmarkLayoutTestWebContentWrapper: NSObject, WebContentWrapper {
+final class BookmarkLayoutTestWebContentWrapper: NSObject, WebContentWrapper {
     @objc dynamic weak var nativeView: NSView?
     @objc dynamic var isLoading = false
     @objc dynamic var loadingState = PhiTabLoadingState(rawValue: 0)!

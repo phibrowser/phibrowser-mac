@@ -32,16 +32,6 @@ final class TabBackgroundLayer: CAShapeLayer {
         }
     }
 
-    /// Mirrors the sidebar pinned-grid treatment: inactive open pinned cells
-    /// use a solid border, while discarded or unloaded cells use a dashed one.
-    var pinnedBorderStyle: TabStateBorderStyle = .none {
-        didSet {
-            if oldValue != pinnedBorderStyle {
-                updateAppearance()
-            }
-        }
-    }
-
     /// Position within a Chromium split pair, if any. Drives merged-bar shape.
     var splitPairPosition: SplitPairPosition? {
         didSet {
@@ -72,7 +62,6 @@ final class TabBackgroundLayer: CAShapeLayer {
         if let other = layer as? TabBackgroundLayer {
             self.tabState = other.tabState
             self.isPinned = other.isPinned
-            self.pinnedBorderStyle = other.pinnedBorderStyle
             self.splitPairPosition = other.splitPairPosition
             self.isSplitGroupActive = other.isSplitGroupActive
         }
@@ -167,16 +156,6 @@ final class TabBackgroundLayer: CAShapeLayer {
         }
         strokeColor = NSColor.clear.cgColor
         lineWidth = 0
-        if isPinned, tabState != .active, pinnedBorderStyle != .none {
-            strokeColor = ThemedColor.border.resolve(in: sourceView).cgColor
-            lineWidth = TabStateBorderMetrics.lineWidth
-            if pinnedBorderStyle == .dashed {
-                lineDashPattern = TabStateBorderMetrics.dashPattern.map {
-                    NSNumber(value: Double($0))
-                }
-            }
-        }
-
         CATransaction.commit()
     }
 

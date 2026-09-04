@@ -11,53 +11,25 @@ import Lottie
 enum TabCornerBadgeMetrics {
     static let visualSize: CGFloat = 12
     static let overhang: CGFloat = 2
-    static let discardedOutlineGap: CGFloat = 1
-    static let discardedOutlineLineWidth: CGFloat = 1
-    static let discardedOutlineAlpha: CGFloat = 0.12
-
-    /// Returns the smallest whole-point circle that clears every point of a
-    /// rounded-square favicon by the configured gap, including half the stroke.
-    static func discardedOutlineSize(
-        for faviconSize: CGFloat,
-        cornerRadius: CGFloat
-    ) -> CGFloat {
-        let normalizedCornerRadius = min(max(cornerRadius, 0), faviconSize / 2)
-        let cornerCenterOffset = faviconSize / 2 - normalizedCornerRadius
-        let faviconCircumradius = hypot(cornerCenterOffset, cornerCenterOffset)
-            + normalizedCornerRadius
-        let outlineRadius = faviconCircumradius
-            + discardedOutlineGap
-            + discardedOutlineLineWidth / 2
-
-        return ceil(outlineRadius * 2)
-    }
 }
 
 enum TabFaviconPresentation {
-    static func showsDashedOutline(isDiscarded: Bool, isUnloaded: Bool) -> Bool {
-        isDiscarded || isUnloaded
+    static let reclaimedOpacity: CGFloat = 0.3
+
+    static func opacity(isDiscarded: Bool, isUnloaded: Bool) -> CGFloat {
+        isDiscarded || isUnloaded ? reclaimedOpacity : 1
+    }
+
+    static func showsOpenIndicator(isOpened: Bool, isActive: Bool) -> Bool {
+        isOpened && !isActive
     }
 }
 
-enum TabStateBorderStyle: Equatable {
-    case none
-    case solid
-    case dashed
-
-    static func resolve(
-        isOpened: Bool,
-        isDiscarded: Bool,
-        isUnloaded: Bool
-    ) -> TabStateBorderStyle {
-        if isDiscarded || isUnloaded { return .dashed }
-        if isOpened { return .solid }
-        return .none
-    }
-}
-
-enum TabStateBorderMetrics {
-    static let lineWidth: CGFloat = 1
-    static let dashPattern: [CGFloat] = [3, 4]
+enum TabOpenIndicatorMetrics {
+    static let diameter: CGFloat = 2
+    static let pinnedSpacing: CGFloat = 3
+    static let comfortablePinnedSpacing: CGFloat = 2
+    static let bookmarkSpacing: CGFloat = 2
 }
 
 final class TabDecorativeHostingView: ThemedHostingView {
@@ -157,46 +129,18 @@ private struct TabCornerBadgeVisual: View {
     }
 }
 
-struct TabDiscardedFaviconOutline: View {
-    @ObservedObject var model: TabStatusModel
-    let faviconSize: CGFloat
-    let faviconCornerRadius: CGFloat
-
-    @Environment(\.phiTheme) private var theme
+struct TabOpenIndicatorView: View {
     @Environment(\.phiAppearance) private var appearance
 
     var body: some View {
-        if TabFaviconPresentation.showsDashedOutline(
-            isDiscarded: model.isDiscarded,
-            isUnloaded: model.isUnloaded
-        ) {
-            Circle()
-                .stroke(
-                    ThemedColor.border
-                        .withAlphaComponent(TabCornerBadgeMetrics.discardedOutlineAlpha)
-                        .swiftUIColor(
-                            theme: theme,
-                            appearance: appearance
-                        ),
-                    style: StrokeStyle(
-                        lineWidth: TabCornerBadgeMetrics.discardedOutlineLineWidth,
-                        lineCap: .round,
-                        dash: [3, 3]
-                    )
-                )
-                .frame(
-                    width: TabCornerBadgeMetrics.discardedOutlineSize(
-                        for: faviconSize,
-                        cornerRadius: faviconCornerRadius
-                    ),
-                    height: TabCornerBadgeMetrics.discardedOutlineSize(
-                        for: faviconSize,
-                        cornerRadius: faviconCornerRadius
-                    )
-                )
-                .allowsHitTesting(false)
-                .accessibilityHidden(true)
-        }
+        Circle()
+            .fill(appearance.isLight ? Color.black : Color.white)
+            .frame(
+                width: TabOpenIndicatorMetrics.diameter,
+                height: TabOpenIndicatorMetrics.diameter
+            )
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
     }
 }
 
@@ -360,15 +304,15 @@ private struct TabTitleShimmerMask: View {
 
 struct UnifiedTabFaviconView: View {
     let viewModel: TabViewModel
-    let showsDiscardedOutline: Bool
+    @ObservedObject private var statusModel: TabStatusModel
     @Environment(\.phiAppearance) private var phiAppearance
 
     private static let faviconSize: CGFloat = 14
     private static let faviconCornerRadius: CGFloat = 3
 
-    init(viewModel: TabViewModel, showsDiscardedOutline: Bool = true) {
+    init(viewModel: TabViewModel) {
         self.viewModel = viewModel
-        self.showsDiscardedOutline = showsDiscardedOutline
+        _statusModel = ObservedObject(wrappedValue: viewModel.status)
     }
 
     var body: some View {
@@ -388,15 +332,10 @@ struct UnifiedTabFaviconView: View {
         }
         .frame(width: Self.faviconSize, height: Self.faviconSize)
         .clipShape(RoundedRectangle(cornerRadius: Self.faviconCornerRadius, style: .continuous))
-        .overlay {
-            if showsDiscardedOutline {
-                TabDiscardedFaviconOutline(
-                    model: viewModel.status,
-                    faviconSize: Self.faviconSize,
-                    faviconCornerRadius: Self.faviconCornerRadius
-                )
-            }
-        }
+        .opacity(TabFaviconPresentation.opacity(
+            isDiscarded: statusModel.isDiscarded,
+            isUnloaded: statusModel.isUnloaded
+        ))
         .overlay(alignment: .topTrailing) {
             if viewModel.isCapturingMedia {
                 UnifiedTabRecordingIcon()

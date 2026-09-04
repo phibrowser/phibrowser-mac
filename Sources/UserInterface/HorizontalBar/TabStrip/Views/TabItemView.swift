@@ -131,6 +131,15 @@ final class TabItemView: NSView {
         return view
     }()
 
+    private lazy var openIndicatorHostingView: HitTransparentHostingView<AnyView> = {
+        let view = HitTransparentHostingView(
+            rootView: AnyView(TabOpenIndicatorView().phiThemeObserver(themeObserver))
+        )
+        view.layer?.backgroundColor = .clear
+        view.isHidden = true
+        return view
+    }()
+
     private lazy var titleHostingView: HitTransparentHostingView<AnyView> = {
         let view = HitTransparentHostingView(rootView: makeTitleRootView())
         view.layer?.backgroundColor = .clear
@@ -269,6 +278,7 @@ final class TabItemView: NSView {
 
         addSubview(faviconHostingView)
         addSubview(secondaryFaviconHostingView)
+        addSubview(openIndicatorHostingView)
         addSubview(muteButtonHostingView)
         addSubview(secondaryMuteButtonHostingView)
         addSubview(recordingIconHostingView)
@@ -329,6 +339,13 @@ final class TabItemView: NSView {
         // hidden up front so recycled cells transitioning into non-split
         // modes never leak the partner's mute icon.
         secondaryMuteButtonHostingView.isHidden = true
+        openIndicatorHostingView.isHidden = true
+        openIndicatorHostingView.alphaValue = TabFaviconPresentation.opacity(
+            isDiscarded: sourceTab?.isDiscarded == true
+                || pinnedSplitPartner?.isDiscarded == true,
+            isUnloaded: sourceTab?.isUnloaded == true
+                || pinnedSplitPartner?.isUnloaded == true
+        )
 
         switch mode {
         case .pinned, .compact:
@@ -374,8 +391,7 @@ final class TabItemView: NSView {
                 // occupies a single slot in the strip's layout.
                 let centerY = bounds.height / 2
                 let iconSize = metrics.faviconSize
-                let gap = defaultMergedFaviconGap
-                let pairWidth = iconSize.width * 2 + gap
+                let pairWidth = iconSize.width * 2 + defaultMergedFaviconGap
                 let leftX = (bounds.width - pairWidth) / 2
                 faviconHostingView.isHidden = false
                 faviconHostingView.frame = CGRect(
@@ -386,16 +402,29 @@ final class TabItemView: NSView {
                 )
                 secondaryFaviconHostingView.isHidden = false
                 secondaryFaviconHostingView.frame = CGRect(
-                    x: leftX + iconSize.width + gap,
+                    x: leftX + iconSize.width + defaultMergedFaviconGap,
                     y: centerY - iconSize.height / 2,
                     width: iconSize.width,
                     height: iconSize.height
                 )
+                if shouldShowOpenIndicator {
+                    openIndicatorHostingView.isHidden = false
+                    openIndicatorHostingView.frame = openIndicatorFrame(
+                        below: faviconHostingView.frame.union(secondaryFaviconHostingView.frame),
+                        centerX: bounds.midX
+                    )
+                }
                 muteButtonHostingView.isHidden = true
                 recordingIconHostingView.isHidden = true
             } else {
                 faviconHostingView.isHidden = false
                 faviconHostingView.frame = centeredFrame(for: metrics.faviconSize)
+                if shouldShowOpenIndicator {
+                    openIndicatorHostingView.isHidden = false
+                    openIndicatorHostingView.frame = openIndicatorFrame(
+                        below: faviconHostingView.frame
+                    )
+                }
                 secondaryFaviconHostingView.isHidden = true
                 muteButtonHostingView.isHidden = true
                 recordingIconHostingView.isHidden = true
@@ -620,6 +649,7 @@ final class TabItemView: NSView {
         for view in [
             faviconHostingView,
             secondaryFaviconHostingView,
+            openIndicatorHostingView,
             muteButtonHostingView,
             secondaryMuteButtonHostingView,
             recordingIconHostingView,
@@ -661,18 +691,29 @@ final class TabItemView: NSView {
         backgroundLayer.refreshAppearance()
     }
 
-    private func updatePinnedBorder() {
-        guard isPinned else {
-            backgroundLayer.pinnedBorderStyle = .none
-            return
-        }
-        backgroundLayer.pinnedBorderStyle = TabStateBorderStyle.resolve(
+    private var shouldShowOpenIndicator: Bool {
+        isPinned && TabFaviconPresentation.showsOpenIndicator(
             isOpened: sourceTab?.hasWebContent == true
                 || pinnedSplitPartner?.hasWebContent == true,
-            isDiscarded: sourceTab?.isDiscarded == true
-                || pinnedSplitPartner?.isDiscarded == true,
-            isUnloaded: sourceTab?.isUnloaded == true
-                || pinnedSplitPartner?.isUnloaded == true
+            isActive: isActive
+        )
+    }
+
+    private func openIndicatorFrame(
+        below faviconFrame: CGRect,
+        centerX: CGFloat? = nil
+    ) -> CGRect {
+        let diameter = TabOpenIndicatorMetrics.diameter
+        let y = isFlipped
+            ? faviconFrame.maxY + TabOpenIndicatorMetrics.comfortablePinnedSpacing
+            : faviconFrame.minY
+                - TabOpenIndicatorMetrics.comfortablePinnedSpacing
+                - diameter
+        return CGRect(
+            x: (centerX ?? faviconFrame.midX) - diameter / 2,
+            y: y,
+            width: diameter,
+            height: diameter
         )
     }
     
@@ -684,20 +725,14 @@ final class TabItemView: NSView {
     
     private func makeFaviconRootView() -> AnyView {
         AnyView(
-            UnifiedTabFaviconView(
-                viewModel: viewModel,
-                showsDiscardedOutline: !isPinned
-            )
+            UnifiedTabFaviconView(viewModel: viewModel)
             .phiThemeObserver(themeObserver)
         )
     }
 
     private func makeSecondaryFaviconRootView() -> AnyView {
         AnyView(
-            UnifiedTabFaviconView(
-                viewModel: secondaryFaviconViewModel,
-                showsDiscardedOutline: !isPinned
-            )
+            UnifiedTabFaviconView(viewModel: secondaryFaviconViewModel)
             .phiThemeObserver(themeObserver)
         )
     }
@@ -781,7 +816,6 @@ final class TabItemView: NSView {
         secondaryFaviconHostingView.rootView = makeSecondaryFaviconRootView()
         backgroundLayer.splitPairPosition = data.splitPairPosition
         backgroundLayer.isSplitGroupActive = data.isSplitGroupActive
-        updatePinnedBorder()
 
         if let tab = data.sourceTab,
            let browserState,
@@ -859,22 +893,18 @@ final class TabItemView: NSView {
                 }
                 .store(in: &cancellables)
 
-            Publishers.CombineLatest3(
-                tab.$hasWebContent,
-                tab.$isDiscarded,
-                tab.$isUnloaded
-            )
-                .map { isOpened, isDiscarded, isUnloaded in
-                    TabStateBorderStyle.resolve(
-                        isOpened: isOpened,
-                        isDiscarded: isDiscarded,
-                        isUnloaded: isUnloaded
-                    )
-                }
+            tab.$hasWebContent
                 .removeDuplicates()
                 .receive(on: DispatchQueue.main)
                 .sink { [weak self] _ in
-                    self?.updatePinnedBorder()
+                    self?.layoutContent()
+                }
+                .store(in: &cancellables)
+
+            Publishers.CombineLatest(tab.$isDiscarded, tab.$isUnloaded)
+                .receive(on: DispatchQueue.main)
+                .sink { [weak self] _, _ in
+                    self?.layoutContent()
                 }
                 .store(in: &cancellables)
         }
@@ -891,22 +921,18 @@ final class TabItemView: NSView {
                 }
                 .store(in: &cancellables)
 
-            Publishers.CombineLatest3(
-                partner.$hasWebContent,
-                partner.$isDiscarded,
-                partner.$isUnloaded
-            )
-                .map { isOpened, isDiscarded, isUnloaded in
-                    TabStateBorderStyle.resolve(
-                        isOpened: isOpened,
-                        isDiscarded: isDiscarded,
-                        isUnloaded: isUnloaded
-                    )
-                }
+            partner.$hasWebContent
                 .removeDuplicates()
                 .receive(on: DispatchQueue.main)
                 .sink { [weak self] _ in
-                    self?.updatePinnedBorder()
+                    self?.layoutContent()
+                }
+                .store(in: &cancellables)
+
+            Publishers.CombineLatest(partner.$isDiscarded, partner.$isUnloaded)
+                .receive(on: DispatchQueue.main)
+                .sink { [weak self] _, _ in
+                    self?.layoutContent()
                 }
                 .store(in: &cancellables)
         }

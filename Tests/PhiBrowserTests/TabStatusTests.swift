@@ -91,85 +91,45 @@ final class TabStatusTests: XCTestCase {
         )
     }
 
-    func testDiscardedOutlineClearsRoundedFaviconCorners() {
-        XCTAssertEqual(
-            TabCornerBadgeMetrics.discardedOutlineSize(
-                for: 14,
-                cornerRadius: 3
-            ),
-            21
-        )
-        XCTAssertEqual(
-            TabCornerBadgeMetrics.discardedOutlineSize(
-                for: 18,
-                cornerRadius: 4
-            ),
-            26
-        )
-        XCTAssertEqual(
-            TabCornerBadgeMetrics.discardedOutlineSize(
-                for: 16,
-                cornerRadius: 3
-            ),
-            24
-        )
-    }
-
-    func testNormalDiscardedAndUnloadedFaviconsUseDashedOutline() {
-        XCTAssertFalse(TabFaviconPresentation.showsDashedOutline(
+    func testDiscardedAndUnloadedFaviconsUseThirtyPercentOpacity() {
+        XCTAssertEqual(TabFaviconPresentation.opacity(
             isDiscarded: false,
             isUnloaded: false
-        ))
-        XCTAssertTrue(TabFaviconPresentation.showsDashedOutline(
+        ), 1)
+        XCTAssertEqual(TabFaviconPresentation.opacity(
             isDiscarded: true,
             isUnloaded: false
-        ))
-        XCTAssertTrue(TabFaviconPresentation.showsDashedOutline(
+        ), 0.3)
+        XCTAssertEqual(TabFaviconPresentation.opacity(
             isDiscarded: false,
             isUnloaded: true
-        ))
-        XCTAssertTrue(TabFaviconPresentation.showsDashedOutline(
+        ), 0.3)
+        XCTAssertEqual(TabFaviconPresentation.opacity(
             isDiscarded: true,
             isUnloaded: true
+        ), 0.3)
+    }
+
+    func testOpenIndicatorOnlyShowsForInactiveOpenTabs() {
+        XCTAssertTrue(TabFaviconPresentation.showsOpenIndicator(
+            isOpened: true,
+            isActive: false
+        ))
+        XCTAssertFalse(TabFaviconPresentation.showsOpenIndicator(
+            isOpened: true,
+            isActive: true
+        ))
+        XCTAssertFalse(TabFaviconPresentation.showsOpenIndicator(
+            isOpened: false,
+            isActive: false
         ))
     }
 
-    func testOpenPinnedAndBookmarkTabsUseSolidBorder() {
-        XCTAssertEqual(
-            TabStateBorderStyle.resolve(
-                isOpened: true,
-                isDiscarded: false,
-                isUnloaded: false
-            ),
-            .solid
-        )
-        XCTAssertEqual(
-            TabStateBorderStyle.resolve(
-                isOpened: false,
-                isDiscarded: false,
-                isUnloaded: false
-            ),
-            .none
-        )
-    }
-
-    func testDiscardedAndUnloadedTabsUseDashedBorder() {
-        XCTAssertEqual(
-            TabStateBorderStyle.resolve(
-                isOpened: true,
-                isDiscarded: true,
-                isUnloaded: false
-            ),
-            .dashed
-        )
-        XCTAssertEqual(
-            TabStateBorderStyle.resolve(
-                isOpened: true,
-                isDiscarded: false,
-                isUnloaded: true
-            ),
-            .dashed
-        )
+    func testOpenIndicatorMetricsMatchPinnedAndBookmarkSpacing() {
+        XCTAssertEqual(TabOpenIndicatorMetrics.diameter, 2)
+        XCTAssertEqual(TabOpenIndicatorMetrics.pinnedSpacing, 3)
+        XCTAssertEqual(TabOpenIndicatorMetrics.comfortablePinnedSpacing, 2)
+        XCTAssertEqual(TabOpenIndicatorMetrics.bookmarkSpacing, 2)
     }
 
     func testAIOutputBecomesChatAfterGeneratingCompletes() {

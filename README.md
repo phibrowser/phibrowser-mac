@@ -54,11 +54,12 @@ Do not present a build of your own as the application we distribute.
 
 ### Steps
 1. Check out this repository.
-2. Download the latest `Phi Framework` from [phibrowser/phibrowser-framework](https://github.com/phibrowser/phibrowser-framework/releases).
-3. Place `Phi Framework.framework` into the root `Frameworks/` directory.
-4. Open `Phi.xcodeproj` in Xcode and let Swift Package Manager resolve dependencies.
-5. Select the `PhiBrowser-OpenSource` scheme.
-6. Build.
+2. Install the latest `Phi Framework` using either method:
+   - **Automatically:** Run `./scripts/download_phi_framework.sh` from the repository root. The script downloads the latest release, verifies its SHA-256 digest, and installs it into `Frameworks/`.
+   - **Manually:** Download `Phi.Framework.zip` from [phibrowser/phibrowser-framework releases](https://github.com/phibrowser/phibrowser-framework/releases), extract it, and place `Phi Framework.framework` into the root `Frameworks/` directory.
+3. Open `Phi.xcodeproj` in Xcode and let Swift Package Manager resolve dependencies.
+4. Select the `PhiBrowser-OpenSource` scheme.
+5. Build.
 
 <br>
 

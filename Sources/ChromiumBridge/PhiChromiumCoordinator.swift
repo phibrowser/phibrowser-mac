@@ -4,6 +4,7 @@
 // found in the LICENSE file.
 
 import Cocoa
+import Combine
 import Foundation
 import SwiftUI
 @objc class PhiChromiumCoordinator: NSObject {
@@ -34,6 +35,15 @@ import SwiftUI
     /// could leave a previous account's keys reachable over the bridge.
     private(set) var syncKeyController: SyncKeyController?
 
+    /// Re-resolves mappings whenever the Chromium profile list changes. The
+    /// startup silent unlock fires on login, which can beat `ProfileManager`'s
+    /// async profile load — leaving `localProfilesProvider` empty so nothing is
+    /// delivered and a just-joined device sits Disabled with no retry. This
+    /// subscription closes that gap (and the mirror case: a profile created
+    /// mid-session, which previously also needed a restart to register). Bound
+    /// to the controller's lifetime; torn down in `invalidateSyncKeyController`.
+    private var profilesCancellable: AnyCancellable?
+
     /// Builds `syncKeyController` on first call if an account is signed in;
     /// no-op if it already exists. Does not kick the silent unlock — callers
     /// that also need that should go through `ensureSyncKeyControllerAndUnlock()`.
@@ -51,6 +61,17 @@ import SwiftUI
             notifyChromium: {
                 ChromiumLauncher.sharedInstance().bridge?.notifyPhiSyncKeysChanged?()
             })
+        // Re-resolve when the profile list changes (keyed by profile ids so a
+        // rename doesn't churn). `dropFirst()` skips the value present at
+        // subscribe time — the startup path's own silent unlock covers that;
+        // this only reacts to a *later* load/create.
+        profilesCancellable = ProfileManager.shared.$profiles
+            .map { $0.map(\.profileId) }
+            .removeDuplicates()
+            .dropFirst()
+            .sink { [weak self] _ in
+                Task { @MainActor in await self?.syncKeyController?.silentUnlockAndResolve() }
+            }
         return syncKeyController
     }
 
@@ -89,6 +110,8 @@ import SwiftUI
     /// already empty, and a duplicate merely makes Chromium re-pull nil twice.
     @MainActor
     func invalidateSyncKeyController() {
+        profilesCancellable?.cancel()
+        profilesCancellable = nil
         syncKeyController?.clearResolved()
         syncKeyController = nil
         ChromiumLauncher.sharedInstance().bridge?.notifyPhiSyncKeysChanged?()

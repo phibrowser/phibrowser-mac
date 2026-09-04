@@ -125,11 +125,18 @@ final class SyncKeyController {
             do {
                 if let rec = try await profileKeys.resolvedRecord(forLocalProfile: local.profileId) {
                     next[local.profileId] = (rec.uuid, rec.passphrase)
+                    probeResolve("existing", profileId: local.profileId, uuid: rec.uuid, passphrase: rec.passphrase)
                 } else {
+                    // A non-nil priorMapping here means the local is mapped to a UUID
+                    // whose server envelope is gone (404) — the stale-mapping wedge that
+                    // then trips `alreadyMapped` on re-register. Surface it explicitly.
+                    let priorMapping = profileKeys.mappedGlobalUuid(forProfileId: local.profileId)
+                    AppLogInfo("[phi-sync-probe] unmapped profile=\(local.profileId) priorMapping=\(priorMapping ?? "none")")
                     unmappedLocals.append(local)
                 }
             } catch {
                 hasUnknownLocal = true
+                AppLogInfo("[phi-sync-probe] unknown(transient) profile=\(local.profileId)")
                 if let previous = resolved[local.profileId] { next[local.profileId] = previous }
             }
         }
@@ -159,12 +166,14 @@ final class SyncKeyController {
                     if let rec = try? await profileKeys.registerLocalProfile(
                         profileId: local.profileId, displayName: local.displayName) {
                         next[local.profileId] = (rec.uuid, rec.passphrase)
+                        probeResolve("register", profileId: local.profileId, uuid: rec.uuid, passphrase: rec.passphrase)
                     }
                 }
             } else if unclaimedRemotes.count == 1, unmappedLocals.count == 1 {
                 if let rec = try? await profileKeys.adoptRemoteProfile(
                     uuid: unclaimedRemotes[0].uuid, forLocalProfile: unmappedLocals[0].profileId) {
                     next[unmappedLocals[0].profileId] = (rec.uuid, rec.passphrase)
+                    probeResolve("adopt", profileId: unmappedLocals[0].profileId, uuid: rec.uuid, passphrase: rec.passphrase)
                 }
             } else {
                 nextNeedsPairing = true
@@ -175,6 +184,18 @@ final class SyncKeyController {
         // fully cleared only by `clearResolved()` (lock / sign-out / switch).
         resolved.merge(next) { _, new in new }
         needsPairing = nextNeedsPairing
+        AppLogInfo("[phi-sync-probe] resolved=\(resolved.count) needsPairing=\(needsPairing)")
         if !resolved.isEmpty { notifyChromium() }
+    }
+
+    /// Temporary M2-5 diagnostic (issue ②, Needs-passphrase): records which key
+    /// a profile resolved to, tagged by source, so a delivered passphrase can be
+    /// compared across sessions — a changed hash for the same uuid is the
+    /// envelope/keybag key desync we're hunting. Logs only a short SHA-256
+    /// prefix, never the passphrase itself. Remove once ② is root-caused.
+    private func probeResolve(_ source: String, profileId: String, uuid: String, passphrase: String) {
+        let ppHash = SHA256.hash(data: Data(passphrase.utf8)).prefix(6)
+            .map { String(format: "%02x", $0) }.joined()
+        AppLogInfo("[phi-sync-probe] resolve source=\(source) profile=\(profileId) uuid=\(uuid) ppHash=\(ppHash)")
     }
 }

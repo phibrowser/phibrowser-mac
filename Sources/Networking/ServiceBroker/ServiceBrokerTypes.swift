@@ -250,6 +250,10 @@ enum NativeBrokerErrorCode: String, Codable, Equatable, Sendable {
     case channelNotFound = "channel_not_found"
     case ownerMismatch = "owner_mismatch"
     case pullAlreadyPending = "pull_already_pending"
+    /// Reachable for HTTP stream channels only. A WebSocket channel that fills
+    /// its queue pauses its upstream read loop instead of failing, so this code
+    /// is never produced for `broker.ws.pull`. It stays part of the stable
+    /// extension error set.
     case flowControlTimeout = "flow_control_timeout"
     case upstreamError = "upstream_error"
     case protocolError = "protocol_error"
@@ -302,7 +306,17 @@ struct BrokerWebSocketOpenResponse: Equatable, Sendable {
 }
 
 struct BrokerWebSocketPullResponse: Equatable, Sendable {
-    let event: BrokerWebSocketEvent
+    /// The events one pull drained, in queue order and with contiguous frame
+    /// sequences. Never empty, and a terminal event is always the last element.
+    let events: [BrokerWebSocketEvent]
+
+    init(events: [BrokerWebSocketEvent]) {
+        self.events = events
+    }
+
+    init(event: BrokerWebSocketEvent) {
+        events = [event]
+    }
 }
 
 struct ServiceBrokerChannelConfiguration: Equatable, Sendable {

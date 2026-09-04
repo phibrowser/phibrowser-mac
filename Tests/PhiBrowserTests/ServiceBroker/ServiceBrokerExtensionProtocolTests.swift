@@ -1468,6 +1468,36 @@ final class ServiceBrokerExtensionProtocolTests: XCTestCase {
         XCTAssertEqual(closed.error?.code, "channel_not_found")
     }
 
+    func testWebSocketPullEncodesEveryEventOfADrainedBatch() async throws {
+        let queued = (0..<4).map {
+            BrokerWebSocketEvent.frame(
+                sequence: UInt64($0),
+                BrokerWebSocketFrame(kind: .text, data: Data("delta-\($0)".utf8))
+            )
+        }
+        let socket = FakeProtocolWebSocket(events: queued)
+        let store = makeStore(webSocket: socket)
+        let handler = makeHandler(channelStore: store)
+        let opened = await handler.handle(
+            type: "broker.ws.open",
+            payload: #"{"path":"/ws/phi-agent/execute"}"#,
+            senderID: allowedSender
+        )
+        let channelID = try XCTUnwrap(try successResult(opened)["channelId"] as? String)
+        await socket.waitUntilReceiveCalls(queued.count + 1)
+
+        let pulled = await pull(type: "broker.ws.pull", channelID: channelID, handler: handler)
+
+        let events = try XCTUnwrap(try successResult(pulled)["events"] as? [[String: Any]])
+        XCTAssertEqual(events.count, queued.count)
+        XCTAssertEqual(events.map { $0["sequence"] as? Int }, [0, 1, 2, 3])
+        XCTAssertEqual(events.map { $0["type"] as? String }, ["text", "text", "text", "text"])
+        XCTAssertEqual(
+            events.map { $0["data"] as? String },
+            (0..<4).map { Data("delta-\($0)".utf8).base64EncodedString() }
+        )
+    }
+
     func testKensingtonCanOpenItsAuthorizedPhiAgentWebSocketPath() async throws {
         let socket = FakeProtocolWebSocket(events: [])
         let recorder = BrokerWebSocketOpenRecorder()
@@ -2002,6 +2032,8 @@ private actor FakeProtocolWebSocket {
     private var events: [BrokerWebSocketEvent]
     private var sent = [BrokerWebSocketFrame]()
     private var waiters = [CheckedContinuation<BrokerWebSocketEvent, Never>]()
+    private var receiveCalls = 0
+    private var callWaiters = [(count: Int, continuation: CheckedContinuation<Void, Never>)]()
 
     init(events: [BrokerWebSocketEvent]) {
         self.events = events
@@ -2019,6 +2051,14 @@ private actor FakeProtocolWebSocket {
         sent
     }
 
+    /// Waits until the channel store's read loop has asked for its `count`-th
+    /// frame. Call `n + 1` starts only after event `n` was queued, so this is a
+    /// race-free way to observe a full queue.
+    func waitUntilReceiveCalls(_ count: Int) async {
+        if receiveCalls >= count { return }
+        await withCheckedContinuation { callWaiters.append((count, $0)) }
+    }
+
     func enqueue(_ event: BrokerWebSocketEvent) {
         if !waiters.isEmpty {
             waiters.removeFirst().resume(returning: event)
@@ -2032,6 +2072,10 @@ private actor FakeProtocolWebSocket {
     }
 
     private func next() async -> BrokerWebSocketEvent {
+        receiveCalls += 1
+        let ready = callWaiters.filter { $0.count <= receiveCalls }
+        callWaiters.removeAll { $0.count <= receiveCalls }
+        ready.forEach { $0.continuation.resume() }
         if !events.isEmpty {
             return events.removeFirst()
         }

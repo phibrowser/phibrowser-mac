@@ -130,6 +130,7 @@ enum CommandWrapper: Int, Equatable {
     case PHI_TOGGLE_READER           = 90021
     case PHI_NEW_KIOSK_WINDOW        = 90022
     case PHI_NEW_INCOGNITO_SPACE     = 90023
+    case PHI_SHARE_PAGE              = 90024
 
     // System Preserved
     case IDS_HIDE_OTHERS_MAC         = 110
@@ -599,6 +600,7 @@ extension Shortcuts {
         .PHI_TOGGLE_READER: .init(characters: "r", modifiers: [.command, .option]),
         .PHI_NEW_KIOSK_WINDOW: .init(characters: "n", modifiers: [.command, .option]),
         .PHI_NEW_INCOGNITO_SPACE: .init(characters: "n", modifiers: [.control, .shift]),
+        .PHI_SHARE_PAGE: .init(characters: "s", modifiers: [.control, .option]),
 
         // System Preserved Shortcuts
         .IDS_HIDE_OTHERS_MAC: .init(characters: "h", modifiers: [.command, .option]),

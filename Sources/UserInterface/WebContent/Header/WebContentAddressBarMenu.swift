@@ -21,10 +21,6 @@ final class WebContentAddressBarMenuPresenter {
         }
     }
 
-    private static let excludedSharingServiceNames: Set<String> = [
-        "com.apple.share.System.add-to-safari-reading-list"
-    ]
-
     static func present(
         browserState: BrowserState?,
         currentTab: Tab?,
@@ -67,50 +63,6 @@ final class WebContentAddressBarMenuPresenter {
             return item
         }
 
-        func buildShareSubmenu(urlString: String?) -> NSMenu {
-            let submenu = NSMenu(title: NSLocalizedString("browser.addressBarMenu.shareSubmenu.title", value: "Share", comment: "Address bar menu - Share submenu title"))
-            guard
-                let urlString,
-                let url = URL(string: urlString)
-            else {
-                let unavailableItem = NSMenuItem(
-                    title: NSLocalizedString("browser.addressBarMenu.shareSubmenu.invalidURLPlaceholder", value: "No share actions available", comment: "Address bar menu - Placeholder when the current URL cannot be shared"),
-                    action: nil,
-                    keyEquivalent: ""
-                )
-                unavailableItem.isEnabled = false
-                submenu.addItem(unavailableItem)
-                return submenu
-            }
-
-            let services = NSSharingService.sharingServices(forItems: [url])
-                .filter { !isReadingListSharingService($0) }
-            if services.isEmpty {
-                let unavailableItem = NSMenuItem(
-                    title: NSLocalizedString("browser.addressBarMenu.shareSubmenu.noServicesPlaceholder", value: "No share actions available", comment: "Address bar menu - Placeholder when no sharing services are available"),
-                    action: nil,
-                    keyEquivalent: ""
-                )
-                unavailableItem.isEnabled = false
-                submenu.addItem(unavailableItem)
-                return submenu
-            }
-
-            for service in services {
-                let item = NSMenuItem(title: service.title, action: nil, keyEquivalent: "")
-                item.image = service.image
-                let target = MenuActionTarget {
-                    service.perform(withItems: [url])
-                }
-                actionTargets.append(target)
-                item.target = target
-                item.action = #selector(MenuActionTarget.performAction(_:))
-                submenu.addItem(item)
-            }
-
-            return submenu
-        }
-        
         @MainActor
         func buildExtensionsSubmenu() -> NSMenu {
             let submenu = NSMenu(title: NSLocalizedString("browser.addressBarMenu.extensionsSubmenu.title", value: "Extensions", comment: "Address bar menu - Extensions submenu title"))
@@ -214,6 +166,16 @@ final class WebContentAddressBarMenuPresenter {
             submenu.addItem(moreSettingsItem)
 
             return submenu
+        }
+
+        // Share lives in this menu rather than as a standalone address bar
+        // action; the File menu item and shortcut offer the same services.
+        let shareItem = addMenuItem(
+            title: NSLocalizedString("browser.addressBarMenu.shareSubmenu.title", value: "Share", comment: "Address bar menu - Share submenu title"),
+            image: menuSymbol(named: "square.and.arrow.up")
+        )
+        MainActor.assumeIsolated {
+            shareItem.submenu = PageSharingPresenter.shareSubmenu(for: resolvedTab)
         }
 
         menu.addItem(.separator())
@@ -383,23 +345,6 @@ final class WebContentAddressBarMenuPresenter {
 
     private static func menuSymbol(named systemName: String) -> NSImage? {
         NSImage(systemSymbolName: systemName, accessibilityDescription: nil)
-    }
-
-    private static func isReadingListSharingService(_ service: NSSharingService) -> Bool {
-        let nameSelector = NSSelectorFromString("name")
-        if service.responds(to: nameSelector),
-           let unmanaged = service.perform(nameSelector),
-           let name = unmanaged.takeUnretainedValue() as? String,
-           excludedSharingServiceNames.contains(name) {
-            return true
-        }
-
-        let loweredTitle = service.title.lowercased()
-        if loweredTitle.contains("reading list") {
-            return true
-        }
-
-        return false
     }
 
     private static func shouldShowSecuritySection(for rawURLString: String) -> Bool {

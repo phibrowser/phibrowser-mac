@@ -183,6 +183,8 @@ private extension CommandWrapper {
             return NSLocalizedString("settings.shortcuts.command.closeTab", value: "Close Tab", comment: "Shortcuts settings - Command title for closing the current tab")
         case .IDC_PRINT:
             return NSLocalizedString("settings.shortcuts.command.printPage", value: "Print…", comment: "Shortcuts settings - Command title for printing the current page")
+        case .PHI_SHARE_PAGE:
+            return NSLocalizedString("settings.shortcuts.command.sharePage", value: "Share Page", comment: "Shortcuts settings - Command title for sharing the current page via the macOS share picker")
         case .PHI_COPY_URL:
             return NSLocalizedString("settings.shortcuts.command.copyURL", value: "Copy URL", comment: "Shortcuts settings - Command title for copying the current URL")
         case .PHI_TOGGLE_READER:

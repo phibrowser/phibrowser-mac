@@ -707,12 +707,39 @@ extension AppController {
             }
         }
 
+        // Chromium's File menu ships its own Share submenu on macOS. Phi
+        // replaces it with a single picker-backed item so sharing has one
+        // owner (File menu, address bar menu, and shortcut all route through
+        // PageSharingPresenter). The submenu parent is the only Chromium File
+        // row without a command: its title is localized and its tag is not
+        // stable across Chromium versions, but every other Chromium row
+        // carries an IDC tag and dispatch action while separators identify
+        // themselves — so tag 0 + no action + not a separator is the row.
+        // Removal (not isHidden) so a Chromium-side menu refresh cannot
+        // resurface it without rebuilding the menu, which re-runs this hook.
+        subMenu.items.removeAll { item in
+            !item.isSeparatorItem && item.tag == 0
+                && (item.action == nil || item.submenu != nil)
+        }
+
+        // The removed Share row sat between two separators; collapse the
+        // resulting adjacent pair so the menu doesn't show a double divider.
+        var separatorScanIndex = subMenu.items.count - 1
+        while separatorScanIndex > 0 {
+            if subMenu.items[separatorScanIndex].isSeparatorItem,
+               subMenu.items[separatorScanIndex - 1].isSeparatorItem {
+                subMenu.removeItem(at: separatorScanIndex)
+            }
+            separatorScanIndex -= 1
+        }
+
         // Chromium can replace the main menu wholesale. Remove and reinsert
         // Phi's rows so rebuilding remains idempotent and keeps Kiosk directly
         // below New Incognito Window.
         subMenu.items.removeAll { item in
             item.tag == CommandWrapper.PHI_NEW_KIOSK_WINDOW.rawValue
                 || item.tag == CommandWrapper.PHI_NEW_INCOGNITO_SPACE.rawValue
+                || item.tag == CommandWrapper.PHI_SHARE_PAGE.rawValue
         }
 
         let newKioskWindowItem = NSMenuItem(
@@ -748,6 +775,29 @@ extension AppController {
         }).map { $0 + 1 } ?? subMenu.items.count
         subMenu.insertItem(newKioskWindowItem, at: insertionIndex)
         subMenu.insertItem(newIncognitoSpaceItem, at: insertionIndex + 1)
+
+        let sharePageItem = NSMenuItem(
+            title: NSLocalizedString(
+                "app.fileMenu.sharePage",
+                value: "Share\u{2026}",
+                comment: "File menu - Share the current page via the macOS share picker"
+            ),
+            action: #selector(AppController.sharePageFromMenu(_:)),
+            keyEquivalent: "s"
+        )
+        sharePageItem.keyEquivalentModifierMask = [.control, .option]
+        sharePageItem.tag = CommandWrapper.PHI_SHARE_PAGE.rawValue
+        Shortcuts.updateShortcut(for: sharePageItem)
+        sharePageItem.target = target
+
+        // Same slot Safari uses: directly above Print.
+        if let printIndex = subMenu.items.firstIndex(where: {
+            $0.tag == CommandWrapper.IDC_PRINT.rawValue
+        }) {
+            subMenu.insertItem(sharePageItem, at: printIndex)
+        } else {
+            subMenu.addItem(sharePageItem)
+        }
     }
 
     fileprivate func rebuildDeleteProfileSubmenu(_ menu: NSMenu) {
@@ -1029,6 +1079,11 @@ extension AppController {
             return
         }
         OverlayToastCenter.shared.showURLCopyConfirmation(copiedURLCount: copiedURLCount, in: state)
+    }
+
+    @MainActor
+    @objc func sharePageFromMenu(_ sender: Any?) {
+        MainBrowserWindowControllersManager.shared.activeWindowController?.sharePage(sender)
     }
 
     /// Starts a new AI conversation in the focused tab's sidebar.
@@ -2939,6 +2994,14 @@ extension AppController {
                     : NSLocalizedString("app.editMenu.copySelectedTabURLState", value: "Copy URL", comment: "Edit menu - Single selected-tab URL title when updating menu state")
             }
             return state.hasCopyableSelectedTabURLs
+        }
+        if item.action == #selector(sharePageFromMenu(_:)) {
+            guard let state = MainBrowserWindowControllersManager.shared.getActiveWindowState() else {
+                return false
+            }
+            return MainActor.assumeIsolated {
+                PageSharingPresenter.canShare(tab: state.focusingTab)
+            }
         }
         if item.action == #selector(bookmarkThisTab(_:)) {
             return canBookmarkCurrentTab()

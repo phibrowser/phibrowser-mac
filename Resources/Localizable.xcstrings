@@ -14382,6 +14382,18 @@
         }
       }
     },
+    "app.fileMenu.sharePage" : {
+      "comment" : "File menu - Share the current page via the macOS share picker",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Share…"
+          }
+        }
+      }
+    },
     "app.helpMenu.exportLogs" : {
       "comment" : "Help menu - Menu item to export Phi and Sentinel logs as a zip archive; visible only when holding Option key",
       "extractionState" : "extracted_with_value",
@@ -69966,6 +69978,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "選取上一個分頁"
+          }
+        }
+      }
+    },
+    "settings.shortcuts.command.sharePage" : {
+      "comment" : "Shortcuts settings - Command title for sharing the current page via the macOS share picker",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Share Page"
           }
         }
       }

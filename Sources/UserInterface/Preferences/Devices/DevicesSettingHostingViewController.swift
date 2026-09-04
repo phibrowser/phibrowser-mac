@@ -112,7 +112,7 @@ final class DevicesSettingHostingViewController: NSViewController, NSWindowDeleg
             if startPairing, let controller = syncKeyController {
                 await vm.startPairing(controller: controller)
             } else {
-                await vm.beginSetup()
+                await vm.beginSetup(controller: syncKeyController)
             }
         }
     }

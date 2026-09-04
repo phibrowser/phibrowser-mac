@@ -40,6 +40,14 @@ final class KeyLayerViewModel: ObservableObject {
     private let manager: AccountKeyManager
     private var currentRequestId: String?
     private var pollTimer: Timer?
+    /// The shared controller for the duration of this setup flow, captured when
+    /// the flow opens (`beginSetup(controller:)`). Every terminal transition to
+    /// `.done` re-runs `resolveMappings()` on it so a profile established in
+    /// this session (bootstrap, recovery-code join, or approval join) registers
+    /// immediately, instead of only on the next app launch's startup resolve.
+    /// Held only for the short life of the flow, so it cannot go stale against
+    /// a sign-out/sign-in controller rebuild; nil in tests and when signed out.
+    private var flowController: SyncKeyController?
 
     init(manager: AccountKeyManager) {
         self.manager = manager
@@ -47,11 +55,13 @@ final class KeyLayerViewModel: ObservableObject {
 
     /// Entry point when opening the key-layer window: unlock if possible, otherwise route to
     /// first-device bootstrap or the join-method choice.
-    func beginSetup() async {
+    func beginSetup(controller: SyncKeyController? = nil) async {
+        flowController = controller
         phase = .working
         do {
             switch try await manager.unlockAtStartup() {
             case .unlocked:
+                await flowController?.resolveMappings()
                 phase = .done
             case .notSignedIn:
                 phase = .error(NSLocalizedString("You’re not signed in.",
@@ -89,7 +99,9 @@ final class KeyLayerViewModel: ObservableObject {
         guard let id = currentRequestId else { return }
         do {
             switch try await manager.pollJoin(requestId: id) {
-            case .approved: stopPolling(); phase = .done
+            case .approved:
+                await flowController?.resolveMappings()
+                stopPolling(); phase = .done
             case .denied:   stopPolling(); phase = .joinDenied
             case .expired:  stopPolling(); phase = .joinExpired
             case .pending(let deadline):
@@ -137,8 +149,9 @@ final class KeyLayerViewModel: ObservableObject {
     }
 
     /// Confirms the user saved the displayed recovery code, completing bootstrap.
-    func confirmSaved() {
+    func confirmSaved() async {
         guard case .showingRecoveryCode = phase else { return }
+        await flowController?.resolveMappings()
         phase = .done
     }
 
@@ -147,6 +160,7 @@ final class KeyLayerViewModel: ObservableObject {
         phase = .working
         do {
             try await manager.joinWithRecoveryCode(code)
+            await flowController?.resolveMappings()
             phase = .done
         } catch {
             phase = .error(NSLocalizedString(

@@ -13,8 +13,42 @@ final class KeyLayerViewModelTests: XCTestCase {
         guard case .showingRecoveryCode(let code) = vm.phase else { return XCTFail("expected code") }
         XCTAssertFalse(code.isEmpty)
 
-        vm.confirmSaved()
+        await vm.confirmSaved()
         guard case .done = vm.phase else { return XCTFail("expected done") }
+    }
+
+    /// Regression (registration-timing bug): a first-device bootstrap must
+    /// register the local profile in the SAME session, not only on the next
+    /// launch's startup resolve. Before the fix, `confirmSaved()` set `.done`
+    /// without re-running `resolveMappings()`, so the profile's key envelope
+    /// was never PUT until a restart — a synced-but-unescrowed profile whose
+    /// data no other device could ever recover.
+    func testBootstrapRegistersLocalProfileInSession() async {
+        let api = AccountKeyManagerTests.FakeAPI()
+        let provider = AccountKeyManagerTests.FakeDeviceKeyProvider()
+        let mgr = AccountKeyManager(api: api, deviceKeyProvider: provider)
+        let pkm = ProfileKeyManager(api: api, keyManager: mgr,
+                                    mappingStore: ProfileKeyManagerTests.MemoryMappingStore())
+        let approvals = DeviceApprovalService(api: api, keyManager: mgr, deviceKeyProvider: provider)
+        let controller = SyncKeyController(
+            manager: mgr, approvals: approvals, profileKeys: pkm,
+            localProfilesProvider: { [(profileId: "Default", displayName: "Default")] },
+            notifyChromium: {})
+        let vm = KeyLayerViewModel(manager: mgr)
+
+        // Fresh account: beginSetup routes to first-device bootstrap and shows
+        // the recovery code. Nothing is registered yet.
+        await vm.beginSetup(controller: controller)
+        guard case .showingRecoveryCode = vm.phase else {
+            return XCTFail("expected recovery code")
+        }
+        XCTAssertEqual(api.profileEnvelopes.count, 0)
+
+        // Confirming the saved code completes bootstrap — and must register the
+        // local profile in-session, without waiting for a restart.
+        await vm.confirmSaved()
+        guard case .done = vm.phase else { return XCTFail("expected done") }
+        XCTAssertEqual(api.profileEnvelopes.count, 1)
     }
 
     func testBadCodeShowsError() async {

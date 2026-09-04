@@ -34,7 +34,7 @@ struct RecoveryCodeDisplayView: View {
             }
 
             Button(NSLocalizedString("I've saved it", comment: "Recovery code display - confirm button")) {
-                viewModel.confirmSaved()
+                Task { await viewModel.confirmSaved() }
             }
             .buttonStyle(.borderedProminent)
         }

@@ -52,6 +52,13 @@ class MainBrowserWindowControllersManager: MainBrowserWindowLookup {
     }
 
     static let shared = MainBrowserWindowControllersManager()
+
+    /// Chromium windows the shell deliberately leaves unmanaged: browser types
+    /// that never get a `MainBrowserWindowController`, such as web-app windows
+    /// (Phi Chat, hosted by its macOS app shim). Bridge events scoped to these
+    /// ids are expected and must not be reported as missing windows.
+    private var unmanagedWindowIds: Set<Int> = []
+    private var unmanagedWindowCloseObservers: [Int: NSObjectProtocol] = [:]
     private(set) var activeWindowController: MainBrowserWindowController? {
         didSet {
             guard oldValue !== activeWindowController else { return }
@@ -863,6 +870,33 @@ class MainBrowserWindowControllersManager: MainBrowserWindowLookup {
     
     func getBrowserState(for browserId: Int) -> BrowserState? {
         return windowControllers.first(where: { $0.windowId == browserId })?.browserState
+    }
+
+    /// Records a Chromium window the shell will not manage so that
+    /// window-scoped bridge events for it are dropped quietly until it closes.
+    func registerUnmanagedWindow(_ window: NSWindow, windowId: Int) {
+        unmanagedWindowIds.insert(windowId)
+        if let previous = unmanagedWindowCloseObservers[windowId] {
+            NotificationCenter.default.removeObserver(previous)
+        }
+        unmanagedWindowCloseObservers[windowId] = NotificationCenter.default.addObserver(
+            forName: NSWindow.willCloseNotification,
+            object: window,
+            queue: .main
+        ) { [weak self] _ in
+            self?.unregisterUnmanagedWindow(windowId)
+        }
+    }
+
+    func isUnmanagedWindow(_ windowId: Int) -> Bool {
+        unmanagedWindowIds.contains(windowId)
+    }
+
+    private func unregisterUnmanagedWindow(_ windowId: Int) {
+        unmanagedWindowIds.remove(windowId)
+        if let observer = unmanagedWindowCloseObservers.removeValue(forKey: windowId) {
+            NotificationCenter.default.removeObserver(observer)
+        }
     }
 
     func controller(for windowId: Int) -> MainBrowserWindowController? {

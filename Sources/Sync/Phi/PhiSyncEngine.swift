@@ -247,6 +247,19 @@ actor PhiSyncEngine {
             // domain key or a newer build heals this instead of it being terminal.
             AppLogWarn("[phi-sync] settings entity is unusable (\(reason)); not applying it and not publishing over it")
             storedMarker = nil
+            // The baseline goes with the marker, and that is what makes the refusal durable
+            // rather than a one-round suppression. `push`'s guard reads "an entity id with no
+            // baseline" as "the server holds bytes this device has not read"; a device that
+            // had synced before would otherwise keep the baseline it decrypted at an older
+            // version, and the next debounced local change — or the conflict retry, which
+            // reaches `push` with `allowInitialPull: false` and never sees `mayPublish` —
+            // would commit over the unreadable entity using the id and version harvested from
+            // it right here. `storedEntityId` survives (the server always sends a non-empty
+            // `id_string`: internal/chromiumsync/getupdates.go toSyncEntity, from the UUID
+            // commit.go assigns on create), so `hasSyncedBefore` stays true and no
+            // `version = 0` create can slip past the guard either. `apply` re-establishes the
+            // baseline as soon as a pull can read the entity again.
+            storedLastEntity = nil
             mayPublish = false
         case .absent:
             if drained, startedFromScratch, storedEntityId != nil {
@@ -304,7 +317,8 @@ actor PhiSyncEngine {
         // A round that knows the server holds bytes it could not decode must not overwrite
         // them. `storedLastEntity` is the decrypted baseline of what the server has; an entity
         // id with no baseline means the last pull saw the entity but could not read it (bad
-        // key, foreign payload, tombstone), or the baseline was lost. Committing here would
+        // key, foreign payload, tombstone — that pull drops the baseline precisely so this
+        // guard fires), or the baseline was lost with the process. Committing here would
         // replace the entire entity — every key, including a newer client's — with this
         // device's snapshot. Rewind the marker so the next pull re-reads the entity and can
         // re-establish the baseline.

@@ -76,6 +76,26 @@ final class PhiDomainKeyManagerTests: XCTestCase {
         XCTAssertEqual(api.putDomainKeyCalls, 0)
     }
 
+    /// An account switch inside one process changes the ARK. The cache is keyed on a
+    /// fingerprint of the ARK, so the previous account's key must not be served again.
+    func testCacheIsInvalidatedWhenTheARKChanges() async throws {
+        let (api, mgr) = try await makeUnlockedManager()
+        let dkm = PhiDomainKeyManager(api: api, keyManager: mgr)
+        let first = try await dkm.domainKey()
+        XCTAssertEqual(api.getDomainKeyCalls, 1)
+
+        // Second account: a fresh ARK on the same manager, and a server with no phi envelope.
+        api.initialized = false
+        api.account = nil
+        api.envelopes.removeAll()
+        api.domainEnvelopes.removeAll()
+        _ = try await mgr.bootstrap()
+
+        let second = try await dkm.domainKey()
+        XCTAssertNotEqual(rawBytes(first), rawBytes(second), "the previous account's key was served")
+        XCTAssertEqual(api.getDomainKeyCalls, 2, "the cache must not answer for a different ARK")
+    }
+
     /// `clear()` drops the cache so the next call refetches (sign-out / ARK change).
     func testClearDropsCache() async throws {
         let (api, mgr) = try await makeUnlockedManager()

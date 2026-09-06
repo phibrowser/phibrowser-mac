@@ -286,7 +286,7 @@ final class PhiSyncEngineTests: XCTestCase {
         XCTAssertEqual(client.commits.count, 1)
         let committed = try decryptSetting(client.commits[0].ciphertext, key: key)
         XCTAssertEqual(committed.values[settingKey]?.boolValue, true)
-        XCTAssertEqual(committed.values[settingKey]?.updatedAtMs, 3_000)
+        XCTAssertEqual(committed.values[settingKey]?.updatedAtMs, 2_000)
     }
 
     /// A ciphertext this device cannot open must never be applied — and, just as importantly,
@@ -687,6 +687,32 @@ final class PhiSyncEngineTests: XCTestCase {
         XCTAssertEqual(defaults.string(forKey: PhiSyncEngine.storeBirthdayStateKey), "birthday-1")
     }
 
+    /// NOT_MY_BIRTHDAY voids what this device knew about the *store*, not what it knows about
+    /// the *account*. The `<key>.phiSyncTs` sidecars still describe this account's settings, so
+    /// `hasAdopted` has to survive: clearing it would re-arm the wholesale adopt and hand a
+    /// peer's older value the right to overwrite an edit made just before the reset.
+    func testNotMyBirthdayKeepsThisDevicesSettingsHistory() async throws {
+        let key = SymmetricKey(size: .bits256)
+        let client = FakePhiSyncClient()
+        client.seed(ciphertext: try ciphertext(settingEntity(settingKey, false, at: 1_000), key: key), version: 5)
+        await makeEngine(client, key: key, now: 2_000).pullOnce()
+        XCTAssertNotNil(defaults.object(forKey: PhiSyncEngine.hasAdoptedStateKey),
+                        "precondition: the first pull adopted, so this device has settings history")
+
+        // A local edit, then a round the server answers with NOT_MY_BIRTHDAY.
+        defaults.set(true, forKey: settingKey)
+        client.getUpdatesErrorOnce = PhiSyncProtocolError.notMyBirthday
+        await makeEngine(client, key: key, now: 3_000).pullOnce()
+
+        XCTAssertNotNil(defaults.object(forKey: PhiSyncEngine.hasAdoptedStateKey),
+                        "a new store birthday is not an account switch")
+        XCTAssertTrue(defaults.bool(forKey: settingKey),
+                      "the replay after the reset must merge by timestamp, not adopt wholesale")
+        XCTAssertEqual(client.commits.count, 1, "and the surviving edit is published")
+        XCTAssertEqual(try decryptSetting(client.commits[0].ciphertext, key: key)
+                        .values[settingKey]?.boolValue, true)
+    }
+
     // MARK: - Push
 
     /// The brief's push case: a local change is committed, and the ciphertext the client
@@ -807,7 +833,11 @@ final class PhiSyncEngineTests: XCTestCase {
     /// on the update path, or a data_type mismatch). NOT_MY_BIRTHDAY never fires for it, and an
     /// incremental GetUpdates returns nothing, so without dropping the cursor the device would
     /// resend the same rejected id forever and never sync again.
-    func testCommitRejectedAsInvalidMessageDropsTheCursor() async throws {
+    ///
+    /// What goes is the *row identity* and the marker. The account did not change, so the
+    /// store birthday and — load-bearing — `hasAdopted` stay: see
+    /// `testALocalEditSurvivesAnInvalidMessageRejection`.
+    func testCommitRejectedAsInvalidMessageDropsTheEntityCursor() async throws {
         let key = SymmetricKey(size: .bits256)
         let client = FakePhiSyncClient()
         client.seed(ciphertext: try ciphertext(settingEntity(settingKey, false, at: 1_000), key: key), version: 5)
@@ -819,9 +849,50 @@ final class PhiSyncEngineTests: XCTestCase {
         await engine.pushLocalSettings()
 
         XCTAssertEqual(client.commits.count, 1)
-        for stateKey in PhiSyncEngine.stateKeys {
+        for stateKey in [PhiSyncEngine.entityIdStateKey, PhiSyncEngine.versionStateKey,
+                         PhiSyncEngine.lastEntityStateKey, PhiSyncEngine.markerStateKey] {
             XCTAssertNil(defaults.object(forKey: stateKey), "\(stateKey) survived INVALID_MESSAGE")
         }
+        XCTAssertNotNil(defaults.object(forKey: PhiSyncEngine.hasAdoptedStateKey),
+                        "this device's settings history is not the server's to invalidate")
+        XCTAssertEqual(defaults.string(forKey: PhiSyncEngine.storeBirthdayStateKey), "birthday-1",
+                       "the account row — and its store birthday — is untouched by INVALID_MESSAGE")
+    }
+
+    /// The regression the split above exists for. A rejected commit used to clear `hasAdopted`
+    /// along with the cursor, which re-armed the wholesale adopt: the next pull replaced the
+    /// edit that had just been snapshotted with a peer's older value and — because `apply` also
+    /// writes the remote timestamp into the key's sidecar — the edit was never re-pushed
+    /// either. It has to be merged and published instead.
+    func testALocalEditSurvivesAnInvalidMessageRejection() async throws {
+        let key = SymmetricKey(size: .bits256)
+        let client = FakePhiSyncClient()
+        client.seed(ciphertext: try ciphertext(settingEntity(settingKey, false, at: 1_000), key: key), version: 5)
+        let engine = makeEngine(client, key: key, now: 2_000)
+        await engine.pullOnce()
+        XCTAssertFalse(defaults.bool(forKey: settingKey), "precondition: the account's value is false")
+
+        // The user flips the setting; the commit names a row the server no longer has.
+        defaults.set(true, forKey: settingKey)
+        client.commitErrorOnce = PhiSyncProtocolError.commitRejected(.invalidMessage)
+        await engine.pushLocalSettings()
+        XCTAssertEqual(defaults.object(forKey: SyncableSettings.timestampKey(for: settingKey)) as? NSNumber,
+                       NSNumber(value: Int64(2_000)),
+                       "precondition: the refused push still stamped the edit at `now`")
+
+        // A peer has re-created the account's settings under the same client tag, still
+        // carrying the old value, and the next pull finds it.
+        client.seed(ciphertext: try ciphertext(settingEntity(settingKey, false, at: 1_000), key: key),
+                    version: 9, entityId: "srv-new")
+        await makeEngine(client, key: key, now: 4_000).pullOnce()
+
+        XCTAssertTrue(defaults.bool(forKey: settingKey),
+                      "the rejected commit must not cost this device the edit it was carrying")
+        XCTAssertEqual(client.commits.count, 2, "the surviving edit is published to the new row")
+        let committed = try decryptSetting(client.commits[1].ciphertext, key: key)
+        XCTAssertEqual(committed.values[settingKey]?.boolValue, true)
+        XCTAssertEqual(committed.values[settingKey]?.updatedAtMs, 2_000,
+                       "the edit keeps the timestamp it was stamped with, not a fresh one")
     }
 
     /// A locked key layer must abort the round quietly, without committing anything.

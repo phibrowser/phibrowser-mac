@@ -13,24 +13,17 @@ import SwiftProtobuf
 //     device's cache guid.
 //   - Body and response are raw serialized protobuf (application/octet-stream).
 //
-// Namespace contract — a known, deliberate divergence from the sync-service docs:
-//   sync-service documents an account-level namespace literally named `phi` for this data
-//   (docs/database.md:46 and :70, and the `entities.namespace` column comment in
-//   internal/migrations/20260812093000_init_schema.sql), but no route can produce it: both
-//   sync routes (internal/transport/router.go) go through `NamespaceForProfile`, which always
-//   prefixes `chromium:` (internal/transport/sync_handler.go). So `chromium:phi` is the only
-//   namespace a client can actually address, and it is what M3-1 ships (ruling R6).
-//   Consequences recorded here because the server side is out of this change's scope:
-//     - `phi` is a RESERVED profile segment. `profileIDPattern` accepts it as an ordinary
-//       profile id, so a Chromium profile literally named `phi` would land in the same
-//       namespace. Real profile segments are UUIDs, so nothing collides today, but any code
-//       that lets a profile id be chosen must keep `phi` out.
-//     - If the server ever implements the documented account-level `phi` namespace, entities
-//       already synced here are stranded in `chromium:phi` and need a migration; the engine
-//       would see an empty namespace and (per its INVALID_MESSAGE / full-replay recovery)
-//       re-create the entity there rather than failing permanently.
-//   The matching sync-service-side fix — either add the documented namespace or correct
-//   docs/database.md and the column comment — belongs to that repository.
+// Namespace contract — agreed with the server, and documented on both sides:
+//   Phi settings are an account-level store, but they do not get an account-level route. They
+//   reuse the existing profile-segment route with the literal segment `phi`, so the namespace
+//   goes through `NamespaceForProfile` (internal/transport/sync_handler.go) like any other and
+//   comes out as `chromium:phi`. That is the namespace M3-1 ships (ruling R6), and it is what
+//   sync-service now documents: docs/database.md §namespace (the `chromium:phi` row) and
+//   docs/architecture.md §协议要点.
+//   The consequence both sides record: **`phi` is a RESERVED profile segment.**
+//   `profileIDPattern` accepts it as an ordinary profile id, so a Chromium profile literally
+//   named `phi` would land in this same namespace. Real profile segments are UUIDs, so nothing
+//   collides today, but any change that lets a profile id be chosen must keep `phi` out.
 //
 // Zero knowledge: the only payload that crosses this boundary is the domain-key-sealed
 // ciphertext in `PhiSpecifics.ciphertext` (EntitySpecifics field 2000). Nothing here ever

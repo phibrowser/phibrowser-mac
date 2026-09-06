@@ -334,6 +334,7 @@ private struct AgentControlSectionView: View {
         if name.contains("hermes") { return "agent-hermes" }
         if name.contains("openclaw") { return "agent-openclaw" }
         if name == "pi" { return "agent-pi" }
+        if name.contains("grok bot") { return "agent-grokbot" }
         if name.contains("grok") { return "agent-grok" }
         if name.contains("antigravity") { return "agent-antigravity" }
         if name.contains("copilot") { return "agent-copilot" }
@@ -628,10 +629,18 @@ private struct SkillInstallRowView: View {
                 companionExtensionDirectory: home.appendingPathComponent(
                     ".pi/agent/extensions", isDirectory: true)),
             // Skill-only agents: no session mirror, no companion extension.
-            SkillTarget(id: "grok", name: "Grok", iconAsset: "agent-grok",
+            // Grok Build is the xAI CLI. Grok Bot, the desktop app, has no
+            // folder of its own — it reads this one plus Cursor's, Claude
+            // Code's, Codex's, and the common folder — so its row links the
+            // same folder: one link serves both, and both rows tick together.
+            SkillTarget(id: "grok", name: "Grok Build", iconAsset: "agent-grok",
                         skillsDirectory: home.appendingPathComponent(".grok/skills", isDirectory: true)),
+            SkillTarget(id: "grokbot", name: "Grok Bot", iconAsset: "agent-grokbot",
+                        skillsDirectory: home.appendingPathComponent(".grok/skills", isDirectory: true)),
+            // Antigravity's "shared" skills folder, which Gemini CLI reads too;
+            // its CLI-only global folder is ~/.gemini/antigravity-cli/skills.
             SkillTarget(id: "antigravity", name: "Antigravity", iconAsset: "agent-antigravity",
-                        skillsDirectory: home.appendingPathComponent(".gemini/antigravity/skills", isDirectory: true)),
+                        skillsDirectory: home.appendingPathComponent(".gemini/skills", isDirectory: true)),
             SkillTarget(id: "copilot", name: "GitHub Copilot", iconAsset: "agent-copilot",
                         skillsDirectory: home.appendingPathComponent(".copilot/skills", isDirectory: true)),
             SkillTarget(id: "opencode", name: "OpenCode", iconAsset: "agent-opencode",

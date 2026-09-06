@@ -167,9 +167,15 @@ struct AgentDriverBadge {
                                     symbol: "chevron.left.forwardslash.chevron.right",
                                     label: "Cursor")
         }
-        // Skill-only agents (no session mirror) still get their mark.
+        // Skill-only agents (no session mirror) still get their mark. Two
+        // Grok products, two marks, two signatures: Grok Bot is the desktop
+        // app (bundle name "Grok Bot", signed com.anysphere.sand, its own
+        // ball icon) and Grok Build the CLI (a bare binary named by its
+        // signing id, "xai-grok-pager", xAI's mark). Order matters — "grok
+        // bot" contains "grok".
         let skillOnly: [(needle: String, asset: String, label: String)] = [
-            ("grok", "agent-grok", "Grok"),
+            ("grok bot", "agent-grokbot", "Grok Bot"),
+            ("grok", "agent-grok", "Grok Build"),
             ("antigravity", "agent-antigravity", "Antigravity"),
             ("copilot", "agent-copilot", "GitHub Copilot"),
             ("opencode", "agent-opencode", "OpenCode"),

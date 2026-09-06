@@ -560,6 +560,9 @@ final class AgentCDPListener {
     /// back on as part of allowing it. That is the only path that flips them
     /// from outside Settings, and it always costs the user an explicit Allow.
     private func evaluate(_ identity: AgentIdentity) -> Bool {
+        // Whatever is decided below, the Settings lists will name this key by
+        // the name the prompt shows, not by its signing id.
+        AgentIdentityLabels.note(identity)
         // The browser's own agent runtime is admitted before any of it. It is
         // not an agent this system arbitrates but a part of the product, shipped
         // and signed with the browser, and it reaches CDP only because that is

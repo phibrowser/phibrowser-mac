@@ -186,10 +186,13 @@ struct AgentGrant: Identifiable {
     let remembered: Bool
     var id: String { key }
 
-    /// Signing identifier, or a friendly name derived from the path for an
-    /// unsigned/script peer (e.g. a `node` CLI agent named by the script it
-    /// runs, not the interpreter binary).
+    /// The name the agent was last seen with (its app bundle's name — the
+    /// consent prompt showed the same), else the signing identifier, or a
+    /// friendly name derived from the path for an unsigned/script peer (e.g.
+    /// a `node` CLI agent named by the script it runs, not the interpreter
+    /// binary).
     var displayName: String {
+        if let label = AgentIdentityLabels.label(forKey: key) { return label }
         if key.hasPrefix("unsigned:") {
             let path = String(key.dropFirst("unsigned:".count))
             return AgentPeerIdentity.deriveAgentName(fromPath: path)
@@ -205,6 +208,58 @@ struct AgentGrant: Identifiable {
         guard !key.hasPrefix("unsigned:"), !key.hasPrefix("signed:"),
               let range = key.range(of: ":") else { return nil }
         return String(key[..<range.lowerBound])
+    }
+}
+
+/// The user-facing names behind grant and denial keys.
+///
+/// A grant remembers only `AgentIdentity.key`, the stable, verifiable part —
+/// but for a modern app build that is an opaque signing id ("com.anysphere.sand"
+/// is Grok Bot, "com.todesktop.230313…" is Cursor), so a list decoded from
+/// keys alone names the agent by something the user never saw. The consent
+/// prompt, by contrast, showed the app bundle's name. Record that name against
+/// the key whenever an identity is resolved, and let the lists read it back.
+/// Names only; nothing here decides access.
+enum AgentIdentityLabels {
+    private static let lock = NSLock()
+    private static var cache: [String: String]?
+
+    /// Remembers `identity.displayName` for its key when the name says more
+    /// than the key does — a verified peer named by its bundle rather than by
+    /// its signing id. Unsigned peers are already named from their path, and
+    /// the unresolved/first-party sentinels are never listed.
+    static func note(_ identity: AgentIdentity) {
+        guard identity.verified, !identity.firstParty,
+              identity.key != AgentIdentity.unresolvedKey,
+              identity.displayName != identity.signingId,
+              !identity.displayName.isEmpty else { return }
+        lock.lock(); defer { lock.unlock() }
+        var labels = loadLocked()
+        guard labels[identity.key] != identity.displayName else { return }
+        labels[identity.key] = identity.displayName
+        cache = labels
+        PhiPreferences.AgentSpaces.agentIdentityLabels = labels
+    }
+
+    static func label(forKey key: String) -> String? {
+        lock.lock(); defer { lock.unlock() }
+        return loadLocked()[key]
+    }
+
+    /// Drops a remembered name (tests, or a revoked key nothing refers to).
+    static func forget(key: String) {
+        lock.lock(); defer { lock.unlock() }
+        var labels = loadLocked()
+        guard labels.removeValue(forKey: key) != nil else { return }
+        cache = labels
+        PhiPreferences.AgentSpaces.agentIdentityLabels = labels
+    }
+
+    private static func loadLocked() -> [String: String] {
+        if let cache { return cache }
+        let loaded = PhiPreferences.AgentSpaces.agentIdentityLabels
+        cache = loaded
+        return loaded
     }
 }
 
@@ -1341,12 +1396,46 @@ enum AgentPeerIdentity {
         }
         return AgentIdentity(
             key: key,
-            displayName: bundleName ?? signingId ?? fallbackName,
+            displayName: bundleName
+                ?? signedBinaryName(signingId: signingId, teamId: teamId, path: path)
+                ?? fallbackName,
             teamId: teamId,
             signingId: signingId,
             verified: true,
             executablePath: path,
             pid: pid)
+    }
+
+    /// Signed agents that are bare binaries with a signing identifier that
+    /// names nothing the user would recognize. Keyed by "teamId:signingId" —
+    /// the same key a grant is remembered under, so this can never rename an
+    /// agent signed by anyone else. Names only; nothing here decides access.
+    private static let knownSignedAgentNames: [String: String] = [
+        // Google's Antigravity CLI (`agy`) is signed simply "cli".
+        "EQHXZ8M8AV:cli": "Antigravity",
+    ]
+
+    /// Signing identifiers that say what KIND of thing a binary is, not which
+    /// one: shown on their own, the prompt reads "“cli” wants to control…".
+    private static let genericSigningIds: Set<String> = [
+        "cli", "app", "main", "bin", "agent", "index", "server", "tool",
+    ]
+
+    /// The name for a verified bare binary (no app bundle): a known product
+    /// name for its signature, else its signing identifier unless that is a
+    /// generic word — then the friendlier name its path offers ("agy" for
+    /// ~/.local/bin/agy), which is at least what the user typed to launch it.
+    static func signedBinaryName(signingId: String?, teamId: String?,
+                                 path: String) -> String? {
+        if let teamId, let signingId,
+           let known = knownSignedAgentNames["\(teamId):\(signingId)"] {
+            return known
+        }
+        guard let signingId else { return nil }
+        if genericSigningIds.contains(signingId.lowercased()) {
+            return deriveAgentName(fromPath: path)
+        }
+        return signingId
     }
 
     /// The outermost `.app` bundle's user-facing name for an executable

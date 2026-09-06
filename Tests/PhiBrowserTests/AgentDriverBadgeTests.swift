@@ -69,6 +69,17 @@ final class AgentDriverBadgeTests: XCTestCase {
         }
     }
 
+    /// Two Grok products, one mark, two labels: the desktop app by its
+    /// bundle name, the CLI by its signing id.
+    func testGrokBotAndGrokBuildAreToldApart() {
+        let bot = AgentDriverBadge.make(agentName: "Grok Bot", origin: .cdp)
+        XCTAssertEqual(bot.label, "Grok Bot")
+        XCTAssertEqual(bot.assetName, "agent-grokbot")
+        let build = AgentDriverBadge.make(agentName: "xai-grok-pager", origin: .cdp)
+        XCTAssertEqual(build.label, "Grok Build")
+        XCTAssertEqual(build.assetName, "agent-grok")
+    }
+
     /// The other brands still resolve, so the new branch did not shadow them.
     func testOtherAgentBrandsStillResolve() {
         let expected: [(String, String)] = [

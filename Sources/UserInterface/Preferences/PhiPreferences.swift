@@ -260,6 +260,7 @@ extension PhiPreferences {
         private static let cdpAgentAccessKey = "PhiCDPAgentAccessEnabled"
         private static let rememberedAgentGrantsKey = "PhiCDPRememberedAgentGrants"
         private static let allAgentsGrantKey = "PhiCDPAllAgentsGranted"
+        private static let agentIdentityLabelsKey = "PhiCDPAgentIdentityLabels"
         private static let agentDenialsKey = "PhiCDPAgentDenials"
         private static let autoViewKey = "PhiAgentSpaceAutoView"
         private static let userSpaceOperationsKey = "PhiAgentUserSpaceOperationsEnabled"
@@ -402,6 +403,22 @@ extension PhiPreferences {
                     UserDefaults.standard.removeObject(forKey: rememberedAgentGrantsKey)
                 } else {
                     UserDefaults.standard.set(Array(newValue), forKey: rememberedAgentGrantsKey)
+                }
+            }
+        }
+
+        /// The user-facing name each agent key was last seen with, keyed by
+        /// `AgentIdentity.key` ("Grok Bot" for DCNK4UB866:com.anysphere.sand).
+        /// A grant or denial remembers only the key, which for a modern app
+        /// build is an opaque signing id; this is how the Settings lists name
+        /// it after relaunch. See `AgentIdentityLabels`.
+        static var agentIdentityLabels: [String: String] {
+            get { UserDefaults.standard.dictionary(forKey: agentIdentityLabelsKey) as? [String: String] ?? [:] }
+            set {
+                if newValue.isEmpty {
+                    UserDefaults.standard.removeObject(forKey: agentIdentityLabelsKey)
+                } else {
+                    UserDefaults.standard.set(newValue, forKey: agentIdentityLabelsKey)
                 }
             }
         }

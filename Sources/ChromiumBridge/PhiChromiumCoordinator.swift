@@ -44,6 +44,66 @@ import SwiftUI
     /// to the controller's lifetime; torn down in `invalidateSyncKeyController`.
     private var profilesCancellable: AnyCancellable?
 
+    // MARK: - Phi settings sync (M3-1)
+    //
+    // The phi settings engine rides the same lifetime as the key layer above: it is built
+    // beside `syncKeyController` and torn down with it, because it consumes the account's
+    // ARK (through `PhiDomainKeyManager`) and must not outlive the account it was built for.
+    // Scheduling is separate from construction: the ARK is still nil at build time and only
+    // arrives from the async silent unlock, so `startPhiSyncIfReady()` runs after that await.
+
+    /// Account-wide PhiBrowser domain key holder. Held here (not only inside the engine) so
+    /// sign-out can `clear()` the in-memory key rather than waiting for the engine's own
+    /// deallocation.
+    private var phiDomainKeys: PhiDomainKeyManager?
+    /// Settings sync engine. Nil while signed out, or when the device key id could not be
+    /// read (the engine cannot address the server without a client id).
+    private var phiSyncEngine: PhiSyncEngine?
+    /// Debounced `UserDefaults.didChangeNotification` -> push. The engine's sidecar
+    /// timestamps (`<key>.phiSyncTs` / `.phiSyncVal`) are what actually suppress the echo of
+    /// its own remote apply; the debounce only coalesces bursts of local edits.
+    private var phiSyncPushCancellable: AnyCancellable?
+    /// Periodic GetUpdates.
+    private var phiSyncPullTimer: Timer?
+    /// `NSApplication.didBecomeActiveNotification` token for the foreground pull. `AppController`
+    /// implements no `applicationDidBecomeActive(_:)`, and an observer keeps this whole feature
+    /// inside one file.
+    private var phiSyncForegroundObserver: NSObjectProtocol?
+
+    /// Cadence of the periodic pull. Settings change rarely and the foreground pull covers
+    /// the case the user actually notices (switching to the browser after editing elsewhere),
+    /// so this only needs to bound the staleness of a window left open all day.
+    private static let phiSyncPullInterval: TimeInterval = 15 * 60
+    /// Coalescing window for local edits. A settings pane can write several keys in a row
+    /// (and unrelated app code writes the same domain constantly), so never push per write.
+    private static let phiSyncPushDebounce: TimeInterval = 2
+
+    /// `UserDefaults.standard` key recording which account the engine's persisted cursor
+    /// belongs to. Deliberately NOT one of `PhiSyncEngine.stateKeys`: the engine wipes those
+    /// itself on NOT_MY_BIRTHDAY, and losing the owner there would make the next mount look
+    /// like an account switch.
+    static let phiSyncCursorOwnerKey = PhiSyncEngine.statePrefix + "cursorAccount"
+
+    /// Drops the engine's persisted cursor when `defaults` still carries a *different*
+    /// account's, and records the new owner. Returns whether anything was dropped.
+    ///
+    /// The cursor (progress marker, entity id, version, store birthday, last-committed
+    /// entity, `hasAdopted`) lives in `UserDefaults.standard`, which is not account-scoped,
+    /// so without this account A's marker and entity version would be replayed against
+    /// account B. Keyed on the account id rather than done unconditionally in
+    /// `invalidateSyncKeyController` because `.mainAccountChanged` fires on *every* account
+    /// assignment — including the ordinary launch/refresh path — and wiping the cursor there
+    /// would clear `hasAdopted` on every launch, making the next pull adopt the server's
+    /// entity wholesale and discard settings edited while signed out.
+    @discardableResult
+    static func resetPhiSyncCursorIfAccountChanged(accountId: String, defaults: UserDefaults) -> Bool {
+        guard defaults.string(forKey: phiSyncCursorOwnerKey) != accountId else { return false }
+        defaults.set(accountId, forKey: phiSyncCursorOwnerKey)
+        let hadCursor = PhiSyncEngine.stateKeys.contains { defaults.object(forKey: $0) != nil }
+        for key in PhiSyncEngine.stateKeys { defaults.removeObject(forKey: key) }
+        return hadCursor
+    }
+
     /// Builds `syncKeyController` on first call if an account is signed in;
     /// no-op if it already exists. Does not kick the silent unlock — callers
     /// that also need that should go through `ensureSyncKeyControllerAndUnlock()`.
@@ -70,9 +130,93 @@ import SwiftUI
             .removeDuplicates()
             .dropFirst()
             .sink { [weak self] _ in
-                Task { @MainActor in await self?.syncKeyController?.silentUnlockAndResolve() }
+                Task { @MainActor in
+                    await self?.syncKeyController?.silentUnlockAndResolve()
+                    // A profile arriving late can be the first unlock this process gets, so
+                    // this path has to be able to start the settings scheduling too.
+                    self?.startPhiSyncIfReady()
+                }
             }
+        buildPhiSyncEngine(stack: stack, accountId: account.userID)
         return syncKeyController
+    }
+
+    /// Builds the settings sync engine alongside the key controller. Scheduling is NOT
+    /// started here — the ARK is still nil at this point (it arrives from the async silent
+    /// unlock, and the Devices-pane entry point never unlocks at all), so the readiness gate
+    /// lives in `startPhiSyncIfReady()`.
+    @MainActor
+    private func buildPhiSyncEngine(
+        stack: (api: KeyEnvelopeAPIClient, manager: AccountKeyManager, approvals: DeviceApprovalService),
+        accountId: String
+    ) {
+        let deviceKeyId: String
+        do {
+            // A second `DeviceKeyStore` is safe: it is stateless and reads the same Keychain
+            // item the stack's own store does. `SyncKeyStack.make()` keeps its store local.
+            deviceKeyId = try DeviceKeyStore().deviceKeyId()
+        } catch {
+            // Keychain unavailable (locked, denied). The key layer above degrades on its own;
+            // settings sync simply does not run this session.
+            AppLogWarn("[phi-sync] engine not built: device key id unavailable (\(error))")
+            return
+        }
+
+        // Do this before the engine exists so no round can read a half-cleared cursor.
+        let defaults = UserDefaults.standard
+        if Self.resetPhiSyncCursorIfAccountChanged(accountId: accountId, defaults: defaults) {
+            AppLogInfo("[phi-sync] dropped the previous account's settings cursor")
+        }
+
+        let domainKeys = PhiDomainKeyManager(api: stack.api, keyManager: stack.manager)
+        let client = PhiSyncHTTPClient(
+            tokenProvider: { AuthManager.shared.getAccessTokenSyncly() },
+            deviceKeyId: deviceKeyId)
+        phiDomainKeys = domainKeys
+        // `UserDefaults.standard`, not `account.userDefaults`: the syncable settings are
+        // `PhiPreferences` keys and every reader hardcodes the standard domain.
+        phiSyncEngine = PhiSyncEngine(domainKeys: domainKeys, client: client,
+                                      defaults: defaults, deviceKeyId: deviceKeyId)
+    }
+
+    /// Starts the settings sync schedule once the key layer is actually unlocked: a login
+    /// pull, then a periodic pull, a foreground pull and a debounced push for local edits.
+    ///
+    /// Idempotent — both `.loginCompleted` and `.loginStatusRefreshCompleted` reach here on a
+    /// single login, and the `$profiles` subscription can too, so a second call must not
+    /// double-schedule. Gated on the ARK because every round needs the domain key: without
+    /// it `PhiDomainKeyManager.domainKey()` throws `notUnlocked` and each tick would be a
+    /// wasted no-op.
+    @MainActor
+    private func startPhiSyncIfReady() {
+        guard let engine = phiSyncEngine, phiSyncPullTimer == nil else { return }
+        guard syncKeyController?.manager.currentARK != nil else { return }
+
+        phiSyncForegroundObserver = NotificationCenter.default.addObserver(
+            forName: NSApplication.didBecomeActiveNotification, object: nil, queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in await self?.phiSyncEngine?.pullOnce() }
+        }
+
+        phiSyncPushCancellable = NotificationCenter.default
+            .publisher(for: UserDefaults.didChangeNotification)
+            .debounce(for: .seconds(Self.phiSyncPushDebounce), scheduler: DispatchQueue.main)
+            .sink { [weak self] _ in
+                // The notification does not say which key changed, and the engine's own
+                // remote apply writes the same domain — `handleLocalDefaultsChange()` is the
+                // entry point that returns early while a remote apply is in flight and
+                // commits nothing when the snapshot still matches what the server holds.
+                Task { @MainActor in await self?.phiSyncEngine?.handleLocalDefaultsChange() }
+            }
+
+        phiSyncPullTimer = Timer.scheduledTimer(
+            withTimeInterval: Self.phiSyncPullInterval, repeats: true
+        ) { [weak self] _ in
+            Task { @MainActor in await self?.phiSyncEngine?.pullOnce() }
+        }
+
+        AppLogInfo("[phi-sync] scheduling started interval=\(Int(Self.phiSyncPullInterval))s debounce=\(Int(Self.phiSyncPushDebounce))s")
+        Task { await engine.pullOnce() }
     }
 
     /// Build-only entry point for consumers (the Devices pane) that just need
@@ -88,7 +232,12 @@ import SwiftUI
     @MainActor
     func ensureSyncKeyControllerAndUnlock() {
         let controller = syncKeyControllerCreatingIfNeeded()
-        Task { @MainActor in await controller?.silentUnlockAndResolve() }
+        Task { @MainActor in
+            await controller?.silentUnlockAndResolve()
+            // After the await, not before: the ARK the settings engine needs only exists
+            // once the unlock has run.
+            self.startPhiSyncIfReady()
+        }
     }
 
     /// Drops the sync key layer on sign-out or account switch and tells
@@ -112,9 +261,34 @@ import SwiftUI
     func invalidateSyncKeyController() {
         profilesCancellable?.cancel()
         profilesCancellable = nil
+        stopPhiSync()
         syncKeyController?.clearResolved()
         syncKeyController = nil
         ChromiumLauncher.sharedInstance().bridge?.notifyPhiSyncKeysChanged?()
+    }
+
+    /// Mirror image of `startPhiSyncIfReady()` + `buildPhiSyncEngine()`. Every schedule
+    /// source is torn down and the engine dropped, so no tick can fire against the previous
+    /// account. `PhiDomainKeyManager.clear()` is explicit rather than left to deallocation:
+    /// an in-flight round still holds the manager, and the account's domain key must stop
+    /// being reachable at sign-out, not whenever that round happens to finish.
+    ///
+    /// The persisted cursor is deliberately NOT wiped here — see
+    /// `resetPhiSyncCursorIfAccountChanged`, which does it at the next build and only when
+    /// the account actually differs.
+    @MainActor
+    private func stopPhiSync() {
+        phiSyncPushCancellable?.cancel()
+        phiSyncPushCancellable = nil
+        phiSyncPullTimer?.invalidate()
+        phiSyncPullTimer = nil
+        if let observer = phiSyncForegroundObserver {
+            NotificationCenter.default.removeObserver(observer)
+            phiSyncForegroundObserver = nil
+        }
+        phiSyncEngine = nil
+        phiDomainKeys?.clear()
+        phiDomainKeys = nil
     }
 }
 

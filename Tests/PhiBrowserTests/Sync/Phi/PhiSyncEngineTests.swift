@@ -47,8 +47,14 @@ final class PhiSyncEngineTests: XCTestCase {
 
     /// Lets a test reach the engine from inside a closure the engine itself calls (`now()`),
     /// which is the only seam that runs *between* a round's entry guard and its writes.
+    ///
+    /// The back-reference is `weak` on purpose: the engine owns the `now` closure, and the
+    /// closure captures the holder, so a strong `engine` here would close the cycle
+    /// engine -> now -> holder -> engine and leak the engine (with its stubbed key provider,
+    /// fake client and entity bytes) for the life of the test bundle. The test case holds its
+    /// own strong `engine` local for the whole case, so this stays non-nil while `now()` runs.
     final class EngineHolder: @unchecked Sendable {
-        var engine: PhiSyncEngine?
+        weak var engine: PhiSyncEngine?
     }
 
     /// Fixed domain key, standing in for `PhiDomainKeyManager`.

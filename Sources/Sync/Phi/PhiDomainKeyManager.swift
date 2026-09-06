@@ -17,7 +17,10 @@ final class PhiDomainKeyManager {
 
     private let api: KeyEnvelopeAPI
     private let keyManager: AccountKeyManager
-    private var cached: SymmetricKey?
+    /// The cached key together with a fingerprint of the ARK it was derived under. Tying the
+    /// two means an account switch inside one process cannot keep serving the previous
+    /// account's key: the fingerprint stops matching and the key is refetched.
+    private var cached: (arkFingerprint: Data, key: SymmetricKey)?
 
     init(api: KeyEnvelopeAPI, keyManager: AccountKeyManager) {
         self.api = api
@@ -28,11 +31,13 @@ final class PhiDomainKeyManager {
     /// Throws `ProfileKeyManagerError.notUnlocked` when the ARK is not available —
     /// a locked key layer must fail loudly rather than mint a key it cannot escrow.
     func domainKey() async throws -> SymmetricKey {
-        if let cached { return cached }
         guard let ark = keyManager.currentARK else { throw ProfileKeyManagerError.notUnlocked }
+        let fingerprint = Self.fingerprint(of: ark)
+        if let cached, cached.arkFingerprint == fingerprint { return cached.key }
+        self.cached = nil
 
         if let envelope = try await api.getDomainKey(domain: Self.domain) {
-            return cache(try Self.unseal(envelope, ark: ark))
+            return cache(try Self.unseal(envelope, ark: ark), fingerprint: fingerprint)
         }
 
         var key = Data(count: 32)
@@ -40,23 +45,28 @@ final class PhiDomainKeyManager {
         guard status == errSecSuccess else { throw AccountKeyError.randomGenerationFailed(status) }
         let envelope = try ProfileKeyManager.sealProfilePayload(key: key, name: Self.domain, ark: ark)
         if try await api.putDomainKey(domain: Self.domain, envelope: envelope) {
-            return cache(key)
+            return cache(key, fingerprint: fingerprint)
         }
         // Lost the race: another device escrowed first. Adopt its key and drop ours —
         // keeping the local one would encrypt data no other device could read.
         guard let winner = try await api.getDomainKey(domain: Self.domain) else {
             throw ProfileKeyManagerError.badEnvelope
         }
-        return cache(try Self.unseal(winner, ark: ark))
+        return cache(try Self.unseal(winner, ark: ark), fingerprint: fingerprint)
     }
 
     /// Drops the cached key (sign-out, or an ARK change that invalidates it).
     func clear() { cached = nil }
 
-    private func cache(_ raw: Data) -> SymmetricKey {
+    private func cache(_ raw: Data, fingerprint: Data) -> SymmetricKey {
         let key = SymmetricKey(data: raw)
-        cached = key
+        cached = (fingerprint, key)
         return key
+    }
+
+    /// Identifies the ARK without keeping a copy of it: SHA-256 over the raw key bytes.
+    private static func fingerprint(of ark: SymmetricKey) -> Data {
+        Data(SHA256.hash(data: ark.withUnsafeBytes { Data($0) }))
     }
 
     /// Reuses the per-profile envelope codec ({"v":1,"key":base64,"name":string}

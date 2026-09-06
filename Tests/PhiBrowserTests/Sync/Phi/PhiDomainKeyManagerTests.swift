@@ -2,6 +2,9 @@ import XCTest
 import CryptoKit
 @testable import Phi
 
+/// `@MainActor` because `PhiDomainKeyManager` is: it holds the account's ARK-derived key and
+/// reads `AccountKeyManager.currentARK`, both of which the M2 key layer keeps main-actor-confined.
+@MainActor
 final class PhiDomainKeyManagerTests: XCTestCase {
     private func rawBytes(_ key: SymmetricKey) -> Data { key.withUnsafeBytes { Data($0) } }
 

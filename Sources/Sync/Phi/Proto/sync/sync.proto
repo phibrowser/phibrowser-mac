@@ -1,0 +1,137 @@
+// TRIMMED COPY of components/sync/protocol/sync.proto from Chromium
+// 150.0.7871.47, as vendored in sync-service (branch feature/m3-phi-sync). Only
+// the fields the Phi sync engine sends or reads are kept; every kept field
+// carries the EXACT number, type and label of the upstream definition, so these
+// messages are wire compatible with the server's full messages (protobuf drops
+// unknown fields on parse). See ../README.md for the field-by-field table.
+//
+// Chromium sources are under a BSD-style license.
+
+syntax = "proto2";
+
+option optimize_for = LITE_RUNTIME;
+
+package sync_pb;
+
+import "data_type_progress_marker.proto";
+import "get_updates_caller_info.proto";
+import "sync_entity.proto";
+import "sync_enums.proto";
+
+// Dropped upstream fields: extensions_activity (3), config_params (4),
+// client_contexts (5), padding (6).
+message CommitMessage {
+  repeated SyncEntity entries = 1;
+
+  // A GUID that identifies the committing sync client. It's persisted and
+  // reused across restarts; the server echoes it as originator_cache_guid.
+  optional string cache_guid = 2;
+}
+
+// Dropped upstream fields: streaming (7), need_encryption_key (8) -- phi data is
+// not Nigori-encrypted -- is_retry (10) and client_contexts (11).
+message GetUpdatesMessage {
+  optional GetUpdatesCallerInfo caller_info = 2;
+
+  optional bool fetch_folders = 3 [default = true];
+
+  repeated DataTypeProgressMarker from_progress_marker = 6;
+
+  optional SyncEnums.GetUpdatesOrigin get_updates_origin = 9;
+
+  reserved 1;
+  reserved "from_timestamp";
+  reserved 4;
+  reserved "requested_types";
+  reserved 5;
+  reserved "batch_size";
+}
+
+message ClientStatus {
+  optional bool is_sync_feature_enabled = 2;
+}
+
+// Dropped upstream fields: debug_info (10), bag_of_chips (11), api_key (12),
+// invalidator_client_id (14, deprecated upstream) and clear_server_data (15).
+// `share` and `message_contents` stay REQUIRED, exactly as upstream: the server
+// unmarshals with the full Chromium schema, so omitting them would be rejected.
+message ClientToServerMessage {
+  required string share = 1;
+
+  optional int32 protocol_version = 2 [default = 99];
+
+  enum Contents {
+    COMMIT = 1;
+    GET_UPDATES = 2;
+    DEPRECATED_3 = 3;
+    DEPRECATED_4 = 4;
+    CLEAR_SERVER_DATA = 5;
+  }
+
+  required Contents message_contents = 3;
+
+  optional CommitMessage commit = 4;
+  optional GetUpdatesMessage get_updates = 5;
+
+  // Echo of the server's store birthday; empty on the very first sync cycle.
+  optional string store_birthday = 7;
+
+  optional ClientStatus client_status = 13;
+}
+
+message CommitResponse {
+  enum ResponseType {
+    SUCCESS = 1;
+    CONFLICT = 2;
+    RETRY = 3;
+    INVALID_MESSAGE = 4;
+    OVER_QUOTA = 5;
+    TRANSIENT_ERROR = 6;
+  }
+
+  // A proto2 group (not a nested message): it uses the start/end-group wire
+  // encoding, so it must stay a group to decode the server's bytes.
+  // Dropped upstream field: datatype_specific_error (11).
+  repeated group EntryResponse = 1 {
+    optional ResponseType response_type = 2;
+
+    optional string id_string = 3;
+
+    optional int64 version = 6;
+
+    optional string error_message = 9;
+
+    optional int64 mtime = 10 [deprecated = true];
+  }
+}
+
+// Dropped upstream fields: encryption_keys (6) and context_mutations (7).
+message GetUpdatesResponse {
+  repeated SyncEntity entries = 1;
+
+  optional int64 changes_remaining = 4;
+
+  repeated DataTypeProgressMarker new_progress_marker = 5;
+}
+
+// Dropped upstream fields: client_command (7), migrated_data_type_id (12),
+// new_bag_of_chips (14) and clear_server_data (15).
+message ClientToServerResponse {
+  optional CommitResponse commit = 1;
+  optional GetUpdatesResponse get_updates = 2;
+
+  optional SyncEnums.ErrorType error_code = 4 [default = UNKNOWN];
+  optional string error_message = 5;
+
+  optional string store_birthday = 6;
+
+  message Error {
+    optional SyncEnums.ErrorType error_type = 1 [default = UNKNOWN];
+    optional string error_description = 2;
+    optional SyncEnums.Action action = 4 [default = UNKNOWN_ACTION];
+
+    // Populated for PARTIAL_FAILURE: the data types the server refused.
+    repeated int32 error_data_type_ids = 5;
+  }
+  optional Error error = 13;
+}

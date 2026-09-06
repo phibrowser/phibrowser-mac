@@ -1,0 +1,29 @@
+// TRIMMED COPY of components/sync/protocol/entity_specifics.proto from Chromium 150.0.7871.47, as
+// vendored in sync-service (branch feature/m3-phi-sync). Only the fields the Phi
+// sync engine sends or reads are kept; every kept field carries the EXACT number,
+// type and label of the upstream definition, so these messages are wire
+// compatible with the server's full messages (protobuf drops unknown fields on
+// parse). See ../README.md for the field-by-field table.
+//
+// Chromium sources are under a BSD-style license; phi_specifics.proto is
+// authored by this project (Apache-2.0).
+
+syntax = "proto2";
+
+option optimize_for = LITE_RUNTIME;
+
+package sync_pb;
+
+import "encryption.proto";
+import "phi_specifics.proto";
+
+// Upstream EntitySpecifics also carries a `specifics_variant` oneof with ~70
+// per-datatype fields (31729..1588764). None of them is kept: the Phi engine
+// only ever writes `phi`, and any other variant arriving from the server is
+// preserved as an unknown field. `phi` is deliberately NOT part of that oneof
+// upstream either, so reading/writing it needs no oneof switch.
+message EntitySpecifics {
+  optional EncryptedData encrypted = 1;
+
+  optional PhiSpecifics phi = 2000;
+}

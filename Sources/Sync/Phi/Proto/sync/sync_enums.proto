@@ -1,0 +1,50 @@
+// TRIMMED COPY of components/sync/protocol/sync_enums.proto from Chromium 150.0.7871.47, as
+// vendored in sync-service (branch feature/m3-phi-sync). Only the fields the Phi
+// sync engine sends or reads are kept; every kept field carries the EXACT number,
+// type and label of the upstream definition, so these messages are wire
+// compatible with the server's full messages (protobuf drops unknown fields on
+// parse). See ../README.md for the field-by-field table.
+//
+// Chromium sources are under a BSD-style license; phi_specifics.proto is
+// authored by this project (Apache-2.0).
+
+syntax = "proto2";
+
+option optimize_for = LITE_RUNTIME;
+
+package sync_pb;
+
+message SyncEnums {
+  enum ErrorType {
+    SUCCESS = 0;
+    NOT_MY_BIRTHDAY = 2;
+    THROTTLED = 3;
+    TRANSIENT_ERROR = 8;
+    MIGRATION_DONE = 9;
+    DISABLED_BY_ADMIN = 10;
+    PARTIAL_FAILURE = 12;
+    CLIENT_DATA_OBSOLETE = 13;
+    ENCRYPTION_OBSOLETE = 14;
+    UNKNOWN = 100;
+  }
+
+  enum Action {
+    UPGRADE_CLIENT = 0;
+    UNKNOWN_ACTION = 5;
+  }
+
+  enum GetUpdatesOrigin {
+    UNKNOWN_ORIGIN = 0;
+    PERIODIC = 4;
+    NEWLY_SUPPORTED_DATATYPE = 7;
+    MIGRATION = 8;
+    NEW_CLIENT = 9;
+    RECONFIGURATION = 10;
+    GU_TRIGGER = 12;
+    PROGRAMMATIC = 14;
+    DEVICE_STATISTICS_METRICS = 15;
+
+    reserved 13;
+    reserved "RETRY";
+  }
+}

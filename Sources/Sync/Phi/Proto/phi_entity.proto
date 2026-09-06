@@ -1,0 +1,38 @@
+// Copyright 2026 The Phi Browser Authors.
+//
+// Payload schema for the opaque "phi" sync data type. A serialized PhiEntity is
+// what gets sealed with AES-GCM under the Phi domain key and shipped as
+// sync_pb.PhiSpecifics.ciphertext (EntitySpecifics field 2000). The server never
+// sees this schema: it stores and forwards the ciphertext verbatim.
+//
+// Field-level last-writer-wins timestamps live inside this payload
+// (PhiSettingValue.updated_at_ms), not on the sync entity.
+
+syntax = "proto3";
+
+package phi;
+
+// The envelope for one phi entity. `kind` leaves room for future payload
+// shapes without changing the sync data type.
+message PhiEntity {
+  oneof kind {
+    PhiSettingEntity setting = 1;
+  }
+}
+
+// A bag of synced settings, keyed by setting id (e.g. "theme.dark").
+message PhiSettingEntity {
+  map<string, PhiSettingValue> values = 1;
+}
+
+// One setting value plus the timestamp used for last-writer-wins merging.
+message PhiSettingValue {
+  // Milliseconds since the Unix epoch, taken on the device that wrote `v`.
+  int64 updated_at_ms = 1;
+
+  oneof v {
+    bool bool_value = 2;
+    string string_value = 3;
+    int64 int_value = 4;
+  }
+}

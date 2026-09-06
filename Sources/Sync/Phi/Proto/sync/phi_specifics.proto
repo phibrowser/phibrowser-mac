@@ -1,0 +1,24 @@
+// TRIMMED COPY of components/sync/protocol/phi_specifics.proto from Chromium 150.0.7871.47, as
+// vendored in sync-service (branch feature/m3-phi-sync). Only the fields the Phi
+// sync engine sends or reads are kept; every kept field carries the EXACT number,
+// type and label of the upstream definition, so these messages are wire
+// compatible with the server's full messages (protobuf drops unknown fields on
+// parse). See ../README.md for the field-by-field table.
+//
+// Chromium sources are under a BSD-style license; phi_specifics.proto is
+// authored by this project (Apache-2.0).
+
+syntax = "proto2";
+
+option optimize_for = LITE_RUNTIME;
+
+package sync_pb;
+
+// PhiSpecifics carries the opaque ciphertext for a Phi domain entity. Copied
+// verbatim (all one field) from sync-service; the server is zero-knowledge with
+// respect to this payload.
+message PhiSpecifics {
+  // AES-GCM ciphertext of a phi.PhiEntity, encrypted client-side under the Phi
+  // domain key.
+  optional bytes ciphertext = 1;
+}

@@ -1,0 +1,52 @@
+// TRIMMED COPY of components/sync/protocol/data_type_progress_marker.proto from Chromium 150.0.7871.47, as
+// vendored in sync-service (branch feature/m3-phi-sync). Only the fields the Phi
+// sync engine sends or reads are kept; every kept field carries the EXACT number,
+// type and label of the upstream definition, so these messages are wire
+// compatible with the server's full messages (protobuf drops unknown fields on
+// parse). See ../README.md for the field-by-field table.
+//
+// Chromium sources are under a BSD-style license; phi_specifics.proto is
+// authored by this project (Apache-2.0).
+
+syntax = "proto2";
+
+option optimize_for = LITE_RUNTIME;
+
+package sync_pb;
+
+message DataTypeProgressMarker {
+  // The EntitySpecifics field number of the data type -- 2000 for phi.
+  optional int32 data_type_id = 1;
+
+  // Opaque server watermark; echo back what the last GetUpdatesResponse gave.
+  optional bytes token = 2;
+
+  // Upstream field 5 (get_update_triggers) is dropped: the phi engine never
+  // sends GU_TRIGGER.
+  reserved 5;
+
+  optional GarbageCollectionDirective gc_directive = 6;
+}
+
+// A single datatype's sync context.
+message DataTypeContext {
+  optional int32 data_type_id = 1;
+  optional bytes context = 2;
+  optional int64 version = 3;
+}
+
+// Server -> client purge directive. Upstream also has `collaboration_gc` (5),
+// which only applies to shared data types and is dropped here.
+message GarbageCollectionDirective {
+  enum Type {
+    UNKNOWN = 0;
+    VERSION_WATERMARK = 1;
+    DEPRECATED_AGE_WATERMARK = 2 [deprecated = true];
+    DEPRECATED_MAX_ITEM_COUNT = 3 [deprecated = true];
+  }
+
+  optional Type type = 1 [default = UNKNOWN, deprecated = true];
+
+  // When set (at any value) the client must purge all local data for the type.
+  optional int64 version_watermark = 2;
+}

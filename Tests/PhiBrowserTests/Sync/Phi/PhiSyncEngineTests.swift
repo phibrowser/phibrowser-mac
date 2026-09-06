@@ -457,6 +457,61 @@ final class PhiSyncEngineTests: XCTestCase {
                      "a successful commit ends the streak")
     }
 
+    /// Healing the cursor says "the settings no longer live in that row", never "this device
+    /// has never synced". The two were the same predicate once, and a device whose cursor had
+    /// been healed adopted the next readable entity wholesale — silently discarding a local
+    /// edit whose debounced push had not run yet. `hasAdopted` survives `clearEntityCursor()`,
+    /// so the field-level merge still decides.
+    func testAHealedCursorStillMergesByTimestampInsteadOfAdoptingWholesale() async throws {
+        let key = SymmetricKey(size: .bits256)
+        let client = FakePhiSyncClient()
+        client.seed(ciphertext: try ciphertext(settingEntity(settingKey, false, at: 1_000), key: key), version: 5)
+        let engine = makeEngine(client, key: key, now: 2_000)
+        await engine.pullOnce()
+        XCTAssertFalse(defaults.bool(forKey: settingKey))
+
+        // The row stays tombstoned long enough to arm the heal, which drops the entity cursor.
+        client.seed(ciphertext: Data(), version: 6, deleted: true)
+        for _ in 0..<3 { await engine.pullOnce() }
+        XCTAssertNil(defaults.string(forKey: PhiSyncEngine.entityIdStateKey),
+                     "precondition: the heal armed and dropped the entity cursor")
+        XCTAssertNotNil(defaults.object(forKey: PhiSyncEngine.hasAdoptedStateKey),
+                        "the account's settings history is not part of the entity cursor")
+
+        // The user flips the setting; before the debounced push runs, a peer re-creates the
+        // row with an older value and the periodic pull gets there first.
+        defaults.set(true, forKey: settingKey)
+        client.seed(ciphertext: try ciphertext(settingEntity(settingKey, false, at: 3_000), key: key),
+                    version: 7, entityId: "srv-new")
+        await makeEngine(client, key: key, now: 5_000).pullOnce()
+
+        XCTAssertTrue(defaults.bool(forKey: settingKey),
+                      "a healed cursor must not turn the next pull into a wholesale adopt")
+        XCTAssertEqual(client.commits.count, 1, "the newer local value is published back")
+        let committed = try decryptSetting(client.commits[0].ciphertext, key: key)
+        XCTAssertEqual(committed.values[settingKey]?.boolValue, true)
+        XCTAssertEqual(committed.values[settingKey]?.updatedAtMs, 5_000)
+    }
+
+    /// Settings history is not only made by pulls: a device that created the account's entity
+    /// stamped a sidecar timestamp for every registered key on the way, so its later pulls must
+    /// merge too. (An `apply`-only flag would make this device adopt the peer's older value.)
+    func testADeviceThatCreatedTheEntityMergesLaterPullsInsteadOfAdopting() async throws {
+        let key = SymmetricKey(size: .bits256)
+        let client = FakePhiSyncClient()
+        defaults.set(true, forKey: settingKey)
+        await makeEngine(client, key: key, now: 1_000).pushLocalSettings()
+        XCTAssertEqual(client.commits.count, 1, "precondition: this device created the entity")
+
+        // A peer overwrites the row with a value that is older than this device's edit.
+        client.seed(ciphertext: try ciphertext(settingEntity(settingKey, false, at: 500), key: key),
+                    version: 200, entityId: "srv-1")
+        await makeEngine(client, key: key, now: 3_000).pullOnce()
+
+        XCTAssertTrue(defaults.bool(forKey: settingKey),
+                      "the value this device committed is newer and must win the field-level merge")
+    }
+
     /// The streak has to be consecutive. A readable entity in between resets it, so a fresh
     /// tombstone starts counting again and the durable refusal still holds.
     func testAReadableEntityResetsTheTombstoneStreak() async throws {

@@ -48,9 +48,13 @@ actor PhiSyncEngine {
     /// below; persisted because a tombstone only this process happened to see twice is not
     /// evidence enough to re-create an account's settings.
     static let tombstoneRoundsStateKey = statePrefix + "tombstoneRounds"
+    /// Set once this device has settings history for the account. Deliberately *not* part of
+    /// the entity cursor: see `hasAdopted`.
+    static let hasAdoptedStateKey = statePrefix + "hasAdopted"
 
     static let stateKeys = [entityIdStateKey, versionStateKey, storeBirthdayStateKey,
-                            markerStateKey, lastEntityStateKey, tombstoneRoundsStateKey]
+                            markerStateKey, lastEntityStateKey, tombstoneRoundsStateKey,
+                            hasAdoptedStateKey]
 
     /// GetUpdates pages drained in one pull before giving up until the next round. The server
     /// caps its own batch size; this only stops a pathological `changes_remaining` from
@@ -129,8 +133,10 @@ actor PhiSyncEngine {
         await serialized(.localChange)
     }
 
-    /// Drops every account-scoped cursor. Called on sign-out / account switch, and by the
-    /// engine itself when the server reports NOT_MY_BIRTHDAY.
+    /// Drops every account-scoped cursor, `hasAdopted` included, so the next account's entity
+    /// is adopted rather than merged against the previous account's timestamps. Called on
+    /// sign-out / account switch, and by the engine itself when the server reports
+    /// NOT_MY_BIRTHDAY.
     ///
     /// Deliberately synchronous and *not* queued: a sign-out must take effect immediately
     /// rather than behind an in-flight network round. It runs to completion between the
@@ -201,9 +207,6 @@ actor PhiSyncEngine {
             return false
         }
 
-        // Captured before the loop: the loop itself records the entity id, which would make
-        // `hasSyncedBefore` true by the time the merge decision is taken.
-        let adoptRemote = !hasSyncedBefore
         // A pull with no marker replays the whole type, so "the entity was not in the response"
         // is only evidence of absence when we started from scratch and drained every page.
         let startedFromScratch = storedMarker == nil
@@ -263,7 +266,11 @@ actor PhiSyncEngine {
         switch view {
         case .usable(let remote):
             tombstoneRounds = 0
-            apply(remote, adopt: adoptRemote)
+            // Wholesale only until this device has settings history of its own — which is
+            // `hasAdopted`, not "do we know which row they live in": a cursor dropped by the
+            // tombstone heal or the full-replay branch below must not cost this device its
+            // local timestamps. See `apply` and `hasAdopted`.
+            apply(remote, adopt: !hasAdopted)
         case .unusable(let reason):
             // The server holds bytes under our client tag that this build cannot read. Not
             // applying them is only half the job: the trailing push must not run either,
@@ -337,9 +344,9 @@ actor PhiSyncEngine {
     }
 
     private func apply(_ remote: Phi_PhiSettingEntity, adopt: Bool) {
-        // A device that has never synced has no timestamp history to compare against: every
-        // key it snapshots would be stamped `now` and beat the account's real edits. So the
-        // first pull adopts the account's entity wholesale; later pulls merge field by field.
+        // A device with no settings history has no timestamps to compare against: every key it
+        // snapshots would be stamped `now` and beat the account's real edits. So the first pull
+        // adopts the account's entity wholesale; later pulls merge field by field.
         let merged: Phi_PhiSettingEntity
         if adopt {
             merged = remote
@@ -355,6 +362,9 @@ actor PhiSyncEngine {
         // What the server holds, not what we now hold locally: `push` compares against this to
         // decide whether anything still needs publishing.
         storedLastEntity = remote
+        // `apply` leaves a `<key>.phiSyncTs` sidecar behind for every key it wrote, so from
+        // here on this device has timestamps a merge can compare — no later pull may adopt.
+        hasAdopted = true
         AppLogInfo("[phi-sync] applied remote settings keys=\(merged.values.count)")
     }
 
@@ -421,6 +431,10 @@ actor PhiSyncEngine {
                 // Whatever the row was before, it now holds bytes this device wrote and can
                 // read: any tombstone streak is over.
                 tombstoneRounds = 0
+                // A published snapshot is settings history too — `SyncableSettings.snapshot`
+                // stamped a sidecar timestamp for every registered key on the way here, and
+                // those are exactly what a later merge compares against.
+                hasAdopted = true
                 AppLogInfo("[phi-sync] pushed settings keys=\(outgoing.values.count) version=\(version)")
             case .conflict(let serverVersion):
                 guard retryOnConflict else {
@@ -451,12 +465,37 @@ actor PhiSyncEngine {
 
     // MARK: - Persisted state accessors
 
-    /// True once this device has either seen the account's entity or committed its own.
+    /// True once this device knows *which row* the account's settings live in — either it has
+    /// seen the entity or it has committed its own. Answers "may a `version = 0` create go
+    /// out?", nothing else; `clearEntityCursor()` makes it false again. The merge-vs-adopt
+    /// decision deliberately does not read it — that is `hasAdopted`.
     private var hasSyncedBefore: Bool { storedEntityId != nil || storedLastEntity != nil }
 
-    /// Forgets which entity the account's settings live in, keeping the progress marker and the
-    /// store birthday. Used when the server proves that entity is gone; the next round takes
-    /// the create path, which the server resolves by `client_tag_hash`.
+    /// True once this device has settings history for the account: a pull applied the account's
+    /// entity, or this device committed a snapshot of its own. Either way `<key>.phiSyncTs`
+    /// sidecars now exist for the registered keys, which is what makes a field-level merge
+    /// meaningful — so this, not `hasSyncedBefore`, is what gates the wholesale adopt in
+    /// `apply`. The two used to be the same predicate, and the coupling was a silent data
+    /// loss: `clearEntityCursor()` (the tombstone heal, the full-replay branch) forgets which
+    /// row the settings live in, and the next readable entity was then adopted wholesale over
+    /// local edits whose debounced push had not run yet.
+    ///
+    /// Not derived from the sidecars themselves: those sit next to the preference keys and are
+    /// not account-scoped, so they outlive `resetSyncState()` and would stop a device from
+    /// adopting the settings of an account it has just switched to. Only `resetSyncState()`
+    /// clears this.
+    private var hasAdopted: Bool {
+        get { defaults.bool(forKey: Self.hasAdoptedStateKey) }
+        set {
+            guard newValue else { return defaults.removeObject(forKey: Self.hasAdoptedStateKey) }
+            defaults.set(true, forKey: Self.hasAdoptedStateKey)
+        }
+    }
+
+    /// Forgets which entity the account's settings live in, keeping the progress marker, the
+    /// store birthday and `hasAdopted` — this says the row is gone, never that this device has
+    /// no settings history. Used when the server proves that entity is gone; the next round
+    /// takes the create path, which the server resolves by `client_tag_hash`.
     private func clearEntityCursor() {
         storedEntityId = nil
         storedVersion = nil

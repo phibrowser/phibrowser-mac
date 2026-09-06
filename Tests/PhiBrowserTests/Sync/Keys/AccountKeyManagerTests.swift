@@ -362,4 +362,46 @@ final class AccountKeyManagerTests: XCTestCase {
 
         await fulfillment(of: [once], timeout: 1)
     }
+
+    // MARK: - ARK storage
+
+    /// Hands a non-`Sendable` value to another thread deliberately. `AccountKeyManager` is not
+    /// `Sendable` and is not meant to become so — only its ARK store is synchronised — so the
+    /// test below has to opt out of the compiler's check to exercise exactly that.
+    private final class UnsafeHandoff<T>: @unchecked Sendable {
+        let value: T
+        init(_ value: T) { self.value = value }
+    }
+
+    /// The ARK store is lock-protected, which is what lets `AccountKeyManager` stay
+    /// un-isolated: its own `async` methods assign `currentARK` from the cooperative pool
+    /// (SE-0338) while `PhiDomainKeyManager` and the key-layer view models read it on the main
+    /// actor. This runs both sides against each other — the reads are off the cooperative pool
+    /// on purpose, so the unlock really is concurrent with them rather than interleaved by the
+    /// same executor. A reader may legitimately see either `nil` or the unlocked key; what it
+    /// must never see is a half-assigned one, which is what a thread-sanitizer run of this test
+    /// would catch if the storage regressed to a plain `var`.
+    func testTheARKStoreToleratesReadsConcurrentWithTheUnlockWrite() async throws {
+        let api = FakeAPI()
+        let first = makeManager(api)
+        _ = try await first.bootstrap()
+        let expected = first.currentARK!.withUnsafeBytes { Data($0) }
+        let fresh = AccountKeyManager(api: api, deviceKeyProvider: first.deviceKeyProviderForTesting)
+
+        let readersDone = expectation(description: "concurrent readers finished")
+        let handoff = UnsafeHandoff(fresh)
+        DispatchQueue.global(qos: .userInitiated).async {
+            for _ in 0..<20_000 {
+                guard let ark = handoff.value.currentARK else { continue }
+                XCTAssertEqual(ark.withUnsafeBytes { Data($0) }, expected)
+            }
+            readersDone.fulfill()
+        }
+
+        let result = try await fresh.unlockAtStartup()
+
+        await fulfillment(of: [readersDone], timeout: 10)
+        XCTAssertEqual(result, .unlocked)
+        XCTAssertEqual(fresh.currentARK!.withUnsafeBytes { Data($0) }, expected)
+    }
 }

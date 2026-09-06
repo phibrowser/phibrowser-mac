@@ -55,27 +55,53 @@ extension Notification.Name {
 /// Orchestrates the three key-layer flows and caches the decrypted ARK in memory
 /// (process lifetime only — it is never persisted to disk).
 ///
-/// Main-actor-confined by convention, not by annotation: every owner
-/// (`SyncKeyController`, `KeyLayerViewModel`, `DevicesSettingViewModel`,
-/// `PhiDomainKeyManager`) is `@MainActor`, so `currentARK` is only ever read and written
-/// there. Anything reaching this type from a background executor — a Swift `actor`'s round,
-/// say — must hop to the main actor first; `currentARK` is a plain `var` holding a refcounted
-/// value and has no synchronisation of its own.
+/// Isolation: this type is **not** actor-isolated, and it is not main-actor-confined. Its own
+/// `async` methods are `nonisolated`, so under SE-0338 they resume on the cooperative pool and
+/// assign `currentARK` from there, while `PhiDomainKeyManager`, `SyncKeyController`,
+/// `KeyLayerViewModel` and `DevicesSettingViewModel` read it on the main actor. The contract is
+/// therefore in the storage, not in the callers: the ARK lives behind `arkLock` and every read
+/// and write goes through it, so `currentARK` may be touched from any executor. Nothing else
+/// here needs synchronising — `api`, `deviceKeyProvider` and the two constants are immutable
+/// after `init`, and the flows themselves are driven from one UI at a time.
+///
+/// What the lock does *not* give callers is atomicity across statements: a
+/// "read, then act on it" sequence still has to tolerate the ARK arriving in between.
 final class AccountKeyManager {
     private let api: KeyEnvelopeAPI
     private let deviceKeyProvider: DeviceKeyProviding
     private let kdfVersion = "hkdf-sha256-v1"
     private let platform = "macos"
 
-    /// The unlocked ARK. The `didSet` is the single announcement point for "this device is
+    /// Guards `arkStorage`. An `NSLock` rather than an actor or `@MainActor`: the four unlock
+    /// flows and their callers span the main actor, the cooperative pool and `PhiSyncEngine`'s
+    /// own actor, and making the whole type isolated would ripple through every one of them
+    /// for a single stored property. `SymmetricKey?` is refcounted, so an unsynchronised
+    /// read/write pair is a torn read or an over-release, not merely a stale key.
+    private let arkLock = NSLock()
+    private var arkStorage: SymmetricKey?
+
+    /// The unlocked ARK. The setter is the single announcement point for "this device is
     /// now unlocked" — cheaper and harder to forget than a call at each of the four flows
     /// that assign it.
     private(set) var currentARK: SymmetricKey? {
-        didSet {
-            // Only the nil -> unlocked transition: an account switch drops the whole
-            // controller (and this manager with it), so no other transition can occur on a
-            // live instance.
-            guard oldValue == nil, currentARK != nil else { return }
+        get {
+            arkLock.lock()
+            defer { arkLock.unlock() }
+            return arkStorage
+        }
+        set {
+            arkLock.lock()
+            // Only the nil -> unlocked transition is announced: an account switch drops the
+            // whole controller (and this manager with it), so no other transition can occur
+            // on a live instance.
+            let wasLocked = arkStorage == nil
+            arkStorage = newValue
+            arkLock.unlock()
+
+            guard wasLocked, newValue != nil else { return }
+            // Posted outside the lock, deliberately. `NotificationCenter` delivers
+            // synchronously on this thread, and an observer's first move is normally to read
+            // `currentARK` back — which would deadlock on the non-recursive lock.
             NotificationCenter.default.post(name: .phiAccountKeyDidUnlock, object: self)
         }
     }

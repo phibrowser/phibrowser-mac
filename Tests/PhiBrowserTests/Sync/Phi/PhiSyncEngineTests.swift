@@ -881,4 +881,115 @@ final class PhiSyncEngineTests: XCTestCase {
             XCTAssertNil(defaults.object(forKey: stateKey), "\(stateKey) survived the reset")
         }
     }
+
+    // MARK: - Shutdown
+
+    /// Sign-out reaches the engine while a round is parked in the network. Dropping the
+    /// engine reference and cancelling the coordinator's timer/observer/debounce only stops
+    /// *new* rounds — this one is already on `roundQueue`, keeps the engine alive through its
+    /// own task, and resumes long after sign-out. It must write nothing: not the cursor, not
+    /// the settings it decrypted with the signed-out account's domain key, and no commit.
+    func testARoundParkedInTheNetworkWritesNothingAfterShutdown() async throws {
+        let key = SymmetricKey(size: .bits256)
+        let client = FakePhiSyncClient()
+        client.seed(ciphertext: try ciphertext(settingEntity(settingKey, true, at: 999), key: key), version: 5)
+
+        let arrived = Gate()
+        let release = Gate()
+        client.arrivedInGetUpdates = arrived
+        client.getUpdatesGate = release
+
+        let engine = makeEngine(client, key: key, now: 1_000)
+        let parked = Task { await engine.pullOnce() }
+        await arrived.wait()                     // the pull is now suspended inside getUpdates
+
+        engine.shutdown()                        // synchronous, exactly as `stopPhiSync()` calls it
+        await release.open()
+        await parked.value
+
+        for stateKey in PhiSyncEngine.stateKeys {
+            XCTAssertNil(defaults.object(forKey: stateKey), "\(stateKey) was written after shutdown")
+        }
+        XCTAssertNil(defaults.object(forKey: settingKey), "remote settings were applied after shutdown")
+        XCTAssertTrue(client.commits.isEmpty)
+    }
+
+    /// The other half of the same window: a debounced local change chained behind the parked
+    /// pull. It runs when the pull finally unwinds, i.e. after sign-out, and must not commit
+    /// the signed-out account's snapshot — the bearer token the client carries by then belongs
+    /// to whoever signed in next.
+    func testShutdownStopsRoundsQueuedBehindTheParkedOne() async throws {
+        let key = SymmetricKey(size: .bits256)
+        let client = FakePhiSyncClient()
+        client.seed(ciphertext: try ciphertext(settingEntity(settingKey, false, at: 1_000), key: key), version: 5)
+        // A first round establishes the cursor and the baseline, so the queued push has
+        // something to publish against and would otherwise really commit.
+        await makeEngine(client, key: key, now: 1_000).pullOnce()
+        let cursorBefore = PhiSyncEngine.stateKeys.map { defaults.object(forKey: $0) as? NSObject }
+
+        let arrived = Gate()
+        let release = Gate()
+        client.arrivedInGetUpdates = arrived
+        client.getUpdatesGate = release
+
+        let engine = makeEngine(client, key: key, now: 3_000)
+        let parked = Task { await engine.pullOnce() }
+        await arrived.wait()
+
+        defaults.set(true, forKey: settingKey)   // a user edit lands mid-round
+        let queued = Task { await engine.handleLocalDefaultsChange() }
+        for _ in 0..<32 { await Task.yield() }
+
+        engine.shutdown()
+        await release.open()
+        await parked.value
+        await queued.value
+
+        XCTAssertTrue(client.commits.isEmpty, "a round queued before sign-out still published")
+        let cursorAfter = PhiSyncEngine.stateKeys.map { defaults.object(forKey: $0) as? NSObject }
+        XCTAssertEqual(cursorBefore, cursorAfter, "the cursor moved after shutdown")
+    }
+
+    /// The account-isolation invariant end to end, in the shape the review found the hole in:
+    /// A's pull is parked, the user signs out and in as B (`stopPhiSync()` shuts A down,
+    /// `resetPhiSyncCursorIfAccountChanged` wipes the cursor, a second engine mounts over the
+    /// same `UserDefaults`), and only then does A's round resume. B's cursor and B's settings
+    /// must survive untouched.
+    func testADyingRoundCannotOverwriteTheNextAccountsCursor() async throws {
+        let keyA = SymmetricKey(size: .bits256)
+        let clientA = FakePhiSyncClient()
+        clientA.storeBirthday = "birthday-a"
+        clientA.seed(ciphertext: try ciphertext(settingEntity(settingKey, true, at: 9_000), key: keyA),
+                     version: 5, entityId: "srv-a")
+        let arrived = Gate()
+        let release = Gate()
+        clientA.arrivedInGetUpdates = arrived
+        clientA.getUpdatesGate = release
+
+        PhiChromiumCoordinator.resetPhiSyncCursorIfAccountChanged(accountId: "auth0|alice", defaults: defaults)
+        let engineA = makeEngine(clientA, key: keyA, now: 1_000)
+        let parked = Task { await engineA.pullOnce() }
+        await arrived.wait()
+
+        // Sign out, then sign in as account B.
+        engineA.shutdown()
+        PhiChromiumCoordinator.resetPhiSyncCursorIfAccountChanged(accountId: "auth0|bob", defaults: defaults)
+        let keyB = SymmetricKey(size: .bits256)
+        let clientB = FakePhiSyncClient()
+        clientB.storeBirthday = "birthday-b"
+        clientB.seed(ciphertext: try ciphertext(settingEntity(settingKey, false, at: 8_000), key: keyB),
+                     version: 11, entityId: "srv-b")
+        await makeEngine(clientB, key: keyB, now: 2_000).pullOnce()
+
+        // A's round only now comes back from the network.
+        await release.open()
+        await parked.value
+
+        XCTAssertEqual(defaults.string(forKey: PhiSyncEngine.entityIdStateKey), "srv-b")
+        XCTAssertEqual(defaults.object(forKey: PhiSyncEngine.versionStateKey) as? NSNumber,
+                       NSNumber(value: Int64(11)))
+        XCTAssertEqual(defaults.string(forKey: PhiSyncEngine.storeBirthdayStateKey), "birthday-b")
+        XCTAssertFalse(defaults.bool(forKey: settingKey), "account A's settings landed on account B")
+        XCTAssertTrue(clientA.commits.isEmpty, "the dying round committed against the previous account")
+    }
 }

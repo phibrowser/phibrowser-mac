@@ -90,6 +90,29 @@ final class AccountKeyManagerTests: XCTestCase {
             profileEnvelopes[uuid] = envelope
             return true
         }
+
+        // domain keys (account-level, one per domain — e.g. "phi")
+        var domainEnvelopes: [String: Data] = [:]
+        var domainEndpointError: Error?
+        private(set) var getDomainKeyCalls = 0
+        private(set) var putDomainKeyCalls = 0
+        /// Hook fired at the top of `putDomainKey`, so a test can simulate another
+        /// device winning the first-use race between this device's GET and PUT.
+        var beforePutDomainKey: ((String) -> Void)?
+
+        func getDomainKey(domain: String) async throws -> Data? {
+            getDomainKeyCalls += 1
+            if let domainEndpointError { throw domainEndpointError }
+            return domainEnvelopes[domain]
+        }
+        func putDomainKey(domain: String, envelope: Data) async throws -> Bool {
+            putDomainKeyCalls += 1
+            beforePutDomainKey?(domain)
+            if let domainEndpointError { throw domainEndpointError }
+            if domainEnvelopes[domain] != nil { return false }  // 409: first writer wins
+            domainEnvelopes[domain] = envelope
+            return true
+        }
     }
 
     // In-memory fake device key: same fingerprinting algorithm as `DeviceKeyStore`

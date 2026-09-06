@@ -182,6 +182,24 @@ struct ProfileKeyDTO: Decodable {
     }
 }
 
+/// Response for `GET /keys/v1/domains/{domain}`. One key per (account, domain);
+/// the Phi settings-sync domain is `"phi"`.
+struct DomainKeyDTO: Decodable {
+    let domainKeyEnvelope: Data
+
+    enum CodingKeys: String, CodingKey {
+        case domainKeyEnvelope = "domain_key_envelope"
+    }
+    init(domainKeyEnvelope: Data) { self.domainKeyEnvelope = domainKeyEnvelope }
+    init(from d: Decoder) throws {
+        let c = try d.container(keyedBy: CodingKeys.self)
+        guard let e = Data(base64Encoded: try c.decode(String.self, forKey: .domainKeyEnvelope)) else {
+            throw KeyAPIError.decode
+        }
+        domainKeyEnvelope = e
+    }
+}
+
 final class KeyEnvelopeAPIClient {
     private let session: URLSession
     private let tokenProvider: () async -> String?
@@ -295,6 +313,28 @@ final class KeyEnvelopeAPIClient {
             body: ["profile_key_envelope": envelope.base64EncodedString()])
         switch status {
         case 200, 204: return true
+        case 409: return false
+        default: throw KeyAPIError.http(status, String(data: data, encoding: .utf8) ?? "")
+        }
+    }
+
+    /// Returns `nil` if the account has no key for this domain yet (404).
+    func getDomainKey(domain: String) async throws -> Data? {
+        let (status, data) = try await request("GET", "/keys/v1/domains/\(domain)")
+        switch status {
+        case 200: return try JSONDecoder().decode(DomainKeyDTO.self, from: data).domainKeyEnvelope
+        case 404: return nil
+        default: throw KeyAPIError.http(status, String(data: data, encoding: .utf8) ?? "")
+        }
+    }
+
+    /// Returns `true` if created, `false` if the account already has a key for this
+    /// domain (409) — first writer wins, the loser re-GETs and adopts the winner.
+    func putDomainKey(domain: String, envelope: Data) async throws -> Bool {
+        let (status, data) = try await request("PUT", "/keys/v1/domains/\(domain)",
+            body: ["domain_key_envelope": envelope.base64EncodedString()])
+        switch status {
+        case 200, 201, 204: return true
         case 409: return false
         default: throw KeyAPIError.http(status, String(data: data, encoding: .utf8) ?? "")
         }

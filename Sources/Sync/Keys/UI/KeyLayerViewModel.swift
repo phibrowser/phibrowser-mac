@@ -270,6 +270,8 @@ struct PreviewKeyEnvelopeAPI: KeyEnvelopeAPI {
     func listProfiles() async throws -> [ProfileSummaryDTO] { [] }
     func getProfileKey(uuid: String) async throws -> ProfileKeyDTO? { nil }
     func putProfileKey(uuid: String, envelope: Data) async throws -> Bool { true }
+    func getDomainKey(domain: String) async throws -> Data? { nil }
+    func putDomainKey(domain: String, envelope: Data) async throws -> Bool { true }
 }
 
 /// No-op `DeviceKeyProviding` fake used only to drive SwiftUI previews for the

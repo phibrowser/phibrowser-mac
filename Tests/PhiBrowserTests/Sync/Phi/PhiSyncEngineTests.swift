@@ -317,6 +317,88 @@ final class PhiSyncEngineTests: XCTestCase {
         XCTAssertTrue(client.commits.isEmpty)
     }
 
+    /// The relaunch shape is not the only one: a device that *has* synced before holds a
+    /// decrypted baseline, and the refusal has to survive that too. Once a pull has seen bytes
+    /// it cannot read, the baseline it still holds describes an older version of the entity —
+    /// keeping it would let the very next debounced local change commit over the unreadable
+    /// bytes using the id and version harvested from them.
+    func testUnreadableEntityDropsTheBaselineSoLaterLocalChangesRefuse() async throws {
+        let key = SymmetricKey(size: .bits256)
+        let client = FakePhiSyncClient()
+        client.seed(ciphertext: try ciphertext(settingEntity(settingKey, true, at: 999), key: key), version: 5)
+
+        // Round 1: a readable entity, so this device really does hold a baseline.
+        await makeEngine(client, key: key, now: 1_000).pullOnce()
+        XCTAssertNotNil(defaults.data(forKey: PhiSyncEngine.lastEntityStateKey))
+
+        // A peer re-mints the domain key (or seals with an envelope version this build
+        // rejects) and writes a newer version this device cannot open.
+        let foreign = try ciphertext(settingEntity(settingKey, false, at: 3_000),
+                                     key: SymmetricKey(size: .bits256))
+        client.seed(ciphertext: foreign, version: 6)
+        let engine = makeEngine(client, key: key, now: 2_000)
+        await engine.pullOnce()
+
+        XCTAssertNil(defaults.data(forKey: PhiSyncEngine.lastEntityStateKey),
+                     "a baseline that predates bytes we could not read must not be kept")
+        XCTAssertEqual(defaults.string(forKey: PhiSyncEngine.entityIdStateKey), "srv-seed",
+                       "the id stays, so the push guard stays armed and no create can slip through")
+
+        // T9's debounced UserDefaults.didChangeNotification after a user edit.
+        defaults.set(false, forKey: settingKey)
+        await engine.handleLocalDefaultsChange()
+
+        XCTAssertTrue(client.commits.isEmpty,
+                      "a device that synced before must not publish over an entity it could not read")
+        XCTAssertEqual(client.stored[PhiSyncEntity.clientTagHash]?.ciphertext, foreign)
+        XCTAssertEqual(defaults.object(forKey: PhiSyncEngine.versionStateKey) as? NSNumber, NSNumber(value: Int64(6)))
+    }
+
+    /// The conflict retry reaches `push` with `allowInitialPull: false`, so the pull's
+    /// in-round `mayPublish` short circuit never covers it: only the durable guard does.
+    func testConflictRetryRefusesToCommitOverAnEntityThePullCouldNotRead() async throws {
+        let key = SymmetricKey(size: .bits256)
+        let client = FakePhiSyncClient()
+        client.seed(ciphertext: try ciphertext(settingEntity(settingKey, true, at: 999), key: key), version: 5)
+        await makeEngine(client, key: key, now: 1_000).pullOnce()
+
+        // The account moved on while this device was editing: the commit conflicts, and the
+        // pull the retry runs finds an entity this device cannot open.
+        let foreign = try ciphertext(settingEntity(settingKey, false, at: 3_000),
+                                     key: SymmetricKey(size: .bits256))
+        client.seed(ciphertext: foreign, version: 6)
+        client.forcedConflicts = 1
+        defaults.set(false, forKey: settingKey)
+
+        await makeEngine(client, key: key, now: 2_000).pushLocalSettings()
+
+        XCTAssertEqual(client.commits.count, 1, "only the first, rejected commit may reach the wire")
+        XCTAssertEqual(client.commits[0].baseVersion, 5)
+        XCTAssertEqual(client.stored[PhiSyncEntity.clientTagHash]?.ciphertext, foreign,
+                       "the retry must not overwrite bytes the pull could not read")
+        XCTAssertNil(defaults.data(forKey: PhiSyncEngine.lastEntityStateKey))
+    }
+
+    /// The tombstone reason takes the same branch, and needs the same durable refusal: a
+    /// device that had synced before must not undelete the account's settings on its next
+    /// local edit.
+    func testTombstoneAfterASuccessfulSyncBlocksTheNextLocalChange() async throws {
+        let key = SymmetricKey(size: .bits256)
+        let client = FakePhiSyncClient()
+        client.seed(ciphertext: try ciphertext(settingEntity(settingKey, true, at: 999), key: key), version: 5)
+        await makeEngine(client, key: key, now: 1_000).pullOnce()
+
+        client.seed(ciphertext: Data(), version: 6, deleted: true)
+        let engine = makeEngine(client, key: key, now: 2_000)
+        await engine.pullOnce()
+
+        defaults.set(false, forKey: settingKey)
+        await engine.handleLocalDefaultsChange()
+
+        XCTAssertTrue(client.commits.isEmpty, "a tombstone must not be resurrected by a later local edit")
+        XCTAssertEqual(client.stored[PhiSyncEntity.clientTagHash]?.deleted, true)
+    }
+
     /// A tombstone must not be decrypted or applied, its version is still the base for the next
     /// commit, and the trailing push must not resurrect it: the server's client-tag index
     /// reuses the tombstoned row, so a commit here would undelete the account's settings from

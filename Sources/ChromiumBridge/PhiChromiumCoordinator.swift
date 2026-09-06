@@ -279,8 +279,12 @@ import SwiftUI
     /// behind it) keep the engine alive through their own task and would otherwise resume
     /// after the next account has mounted — writing the previous account's entity id,
     /// version, marker, baseline and `hasAdopted` back over the freshly reset `phi.sync.*`
-    /// cursor and applying its decrypted settings. `shutdown()` is synchronous and takes
-    /// effect the moment it returns, so that window does not exist.
+    /// cursor and applying its decrypted settings. `shutdown()` is synchronous, so by the time
+    /// it returns no queued round can start and the round in flight skips every write it has
+    /// left; that window is closed. It is a one-way retirement and not an `await`, precisely so
+    /// the ordering against a round parked in the network is certain rather than probabilistic.
+    /// `PhiSyncEngine.shutdown()` documents the one-instruction residue that a genuinely
+    /// concurrent shutdown can still leave, and why it is harmless here.
     ///
     /// The persisted cursor is deliberately NOT wiped here — see
     /// `resetPhiSyncCursorIfAccountChanged`, which does it at the next build and only when

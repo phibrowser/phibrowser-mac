@@ -45,6 +45,12 @@ final class PhiSyncEngineTests: XCTestCase {
         }
     }
 
+    /// Lets a test reach the engine from inside a closure the engine itself calls (`now()`),
+    /// which is the only seam that runs *between* a round's entry guard and its writes.
+    final class EngineHolder: @unchecked Sendable {
+        var engine: PhiSyncEngine?
+    }
+
     /// Fixed domain key, standing in for `PhiDomainKeyManager`.
     final class StubDomainKeys: PhiDomainKeyProviding {
         let key: SymmetricKey
@@ -991,5 +997,38 @@ final class PhiSyncEngineTests: XCTestCase {
         XCTAssertEqual(defaults.string(forKey: PhiSyncEngine.storeBirthdayStateKey), "birthday-b")
         XCTAssertFalse(defaults.bool(forKey: settingKey), "account A's settings landed on account B")
         XCTAssertTrue(clientA.commits.isEmpty, "the dying round committed against the previous account")
+    }
+
+    /// The narrower window the review named: `shutdown()` is concurrent with the round, so it
+    /// can land *after* `apply` has passed its entry guard and before the settings are written.
+    /// The settings write makes its own check for exactly that reason — the same standard the
+    /// cursor writes already held — so the signed-out account's decrypted value is not applied.
+    ///
+    /// `now()` is the seam: the engine calls it while snapshotting the local side of the merge,
+    /// which is inside the stretch the entry guard cannot speak for. Shutting down from in
+    /// there reproduces the interleaving deterministically instead of racing two threads.
+    func testShutdownAfterTheApplyGuardStillStopsTheSettingsWrite() async throws {
+        let key = SymmetricKey(size: .bits256)
+        let client = FakePhiSyncClient()
+        client.seed(ciphertext: try ciphertext(settingEntity(settingKey, true, at: 9_000), key: key), version: 5)
+        // Settings history already exists, so the pull merges (and therefore snapshots) rather
+        // than adopting the remote entity wholesale without ever calling `now()`.
+        defaults.set(true, forKey: PhiSyncEngine.hasAdoptedStateKey)
+        defaults.set(false, forKey: settingKey)
+
+        let holder = EngineHolder()
+        let engine = PhiSyncEngine(domainKeys: StubDomainKeys(key: key),
+                                   client: client,
+                                   defaults: defaults,
+                                   deviceKeyId: "devA",
+                                   settings: registry(settingKey),
+                                   now: { [holder] in holder.engine?.shutdown(); return 1_000 })
+        holder.engine = engine
+
+        await engine.pullOnce()
+
+        XCTAssertFalse(defaults.bool(forKey: settingKey),
+                       "the remote value was applied by a round retired mid-apply")
+        XCTAssertTrue(client.commits.isEmpty, "the trailing push ran after shutdown")
     }
 }

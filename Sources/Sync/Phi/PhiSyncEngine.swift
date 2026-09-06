@@ -132,9 +132,25 @@ actor PhiSyncEngine {
     private let stopSignal = StopSignal()
     private var isStopped: Bool { stopSignal.isStopped }
 
-    /// Retires the engine for good: rounds queued behind an in-flight one never run, the
-    /// in-flight round writes nothing more (neither cursor nor settings), and no commit goes
-    /// out. Idempotent, and deliberately not reversible — a new sign-in builds a new engine.
+    /// Retires the engine for good: rounds queued behind an in-flight one never run, and the
+    /// round already in flight skips every write it has left — the account-scoped cursor
+    /// (`writeState`), the settings themselves and their `<key>.phiSync*` sidecars
+    /// (`writeSettings` / `snapshotLocalSettings`).
+    ///
+    /// The exact guarantee, because `shutdown()` is genuinely concurrent with the round (it runs
+    /// on the main actor at sign-out while the round runs on the actor's executor): the flag is
+    /// read immediately before each of those writes, not only at the round's entry, so what a
+    /// shutdown landing at the worst possible moment can still miss is one flag read rather than
+    /// a whole round. Concretely, two things may still happen after `shutdown()` returns — a
+    /// round that had just passed one of those checks completes that single write, and a commit
+    /// already encrypted and handed to the transport still reaches the server (nothing it
+    /// answers is persisted; the post-commit writes are checked again). Neither is harmful: at
+    /// the instant `shutdown()` returns the account being torn down is still the mounted one, so
+    /// those bytes are its own, and the sidecars are not account-scoped in the first place. What
+    /// the guarantee rules out is the thing that matters — a round resuming *after* the next
+    /// account has mounted and claiming its cursor or its settings.
+    ///
+    /// Idempotent, and deliberately not reversible — a new sign-in builds a new engine.
     nonisolated func shutdown() { stopSignal.stop() }
 
     /// What one queued round does. An enum rather than a closure so the body stays
@@ -402,6 +418,9 @@ actor PhiSyncEngine {
     private func apply(_ remote: Phi_PhiSettingEntity, adopt: Bool) {
         // A retired engine decrypted these settings with the signed-out account's domain key;
         // writing them now would hand the account mounted next the previous account's values.
+        // This entry check only saves the merge work — `shutdown()` is concurrent with this
+        // round, so what actually stops the writes is the check each of them makes for itself
+        // (`snapshotLocalSettings`, `writeSettings`, `writeState`).
         guard !isStopped else { return }
         // A device with no settings history has no timestamps to compare against: every key it
         // snapshots would be stamped `now` and beat the account's real edits. So the first pull
@@ -410,13 +429,11 @@ actor PhiSyncEngine {
         if adopt {
             merged = remote
         } else {
-            let local = SyncableSettings.snapshot(defaults, now: now(), settings: settings)
+            guard let local = snapshotLocalSettings() else { return }
             merged = SyncableSettings.merge(local: local, remote: remote)
         }
 
-        isApplyingRemote = true
-        SyncableSettings.apply(merged, to: defaults, settings: settings)
-        isApplyingRemote = false
+        guard writeSettings(merged) else { return }
 
         // What the server holds, not what we now hold locally: `push` compares against this to
         // decide whether anything still needs publishing.
@@ -470,13 +487,17 @@ actor PhiSyncEngine {
             AppLogWarn("[phi-sync] push skipped: domain key unavailable (\(error))")
             return
         }
-        // Nothing below suspends before `client.commit`, so this one check is what keeps a
-        // retired round from publishing the signed-out account's settings — the token
-        // provider behind the client now mints the *new* account's bearer token.
+        // Nothing below suspends before `client.commit`, so this check is the last thing that
+        // can keep a retired round from publishing the signed-out account's settings — the
+        // token provider behind the client now mints the *new* account's bearer token. It
+        // cannot be airtight (a `shutdown()` landing between here and URLSession's send is not
+        // seen), which `shutdown()` documents; what it does rule out is a round that resumed
+        // from the network long after sign-out going on to commit.
         guard !isStopped else { return }
 
         let last = storedLastEntity
-        let local = SyncableSettings.snapshot(defaults, now: now(), settings: settings)
+        // A snapshot is a write too — it stamps the sidecars — so it makes its own check.
+        guard let local = snapshotLocalSettings() else { return }
         // Merging against the last known server entity keeps keys this build does not know
         // about (a newer client's settings) instead of deleting them on every push.
         let outgoing = SyncableSettings.merge(local: local, remote: last ?? Phi_PhiSettingEntity())
@@ -534,14 +555,40 @@ actor PhiSyncEngine {
         }
     }
 
+    // MARK: - Guarded writes
+    //
+    // Everything this engine writes into the shared `UserDefaults` goes through one of the
+    // three functions here or in the section below, each of which reads the retirement flag
+    // immediately before its write. The guards at the rounds' entry and suspension points are
+    // an optimisation on top of that (they stop useless work and useless network), not the
+    // mechanism: `shutdown()` runs concurrently with the round, so a check taken at the top of
+    // `apply` or `push` says nothing about the flag's value a few statements later. See
+    // `shutdown()` for the exact guarantee this buys and the residue it leaves.
+
+    /// Single write path for the settings themselves. Returns whether the write happened, so a
+    /// caller can skip the cursor bookkeeping that only makes sense once the values landed.
+    @discardableResult
+    private func writeSettings(_ entity: Phi_PhiSettingEntity) -> Bool {
+        guard !isStopped else { return false }
+        isApplyingRemote = true
+        SyncableSettings.apply(entity, to: defaults, settings: settings)
+        isApplyingRemote = false
+        return true
+    }
+
+    /// `SyncableSettings.snapshot` is a write as much as a read: for every registered key whose
+    /// value differs from `<key>.phiSyncVal` it stamps `<key>.phiSyncTs = now()` and refreshes
+    /// the sidecar. So it takes the same check as the settings and the cursor. `nil` means the
+    /// engine was retired and nothing was stamped.
+    private func snapshotLocalSettings() -> Phi_PhiSettingEntity? {
+        guard !isStopped else { return nil }
+        return SyncableSettings.snapshot(defaults, now: now(), settings: settings)
+    }
+
     // MARK: - Persisted state accessors
 
     /// Single write path for the account-scoped cursor, so the shutdown check cannot be
     /// forgotten at one of the seven accessors below. `nil` removes the key.
-    ///
-    /// Belt and braces: the guards at the round's suspension points already stop a retired
-    /// round before it reaches any of these, and this makes the "a signed-out round never
-    /// writes the cursor" invariant hold even for a future code path that misses one.
     private func writeState(_ value: Any?, forKey key: String) {
         guard !isStopped else { return }
         guard let value else { return defaults.removeObject(forKey: key) }

@@ -286,7 +286,11 @@ final class PhiSyncEngineTests: XCTestCase {
         XCTAssertEqual(client.commits.count, 1)
         let committed = try decryptSetting(client.commits[0].ciphertext, key: key)
         XCTAssertEqual(committed.values[settingKey]?.boolValue, true)
-        XCTAssertEqual(committed.values[settingKey]?.updatedAtMs, 2_000)
+        // The edit was made with no sidecar of its own, so the snapshot this pull takes is what
+        // first stamps it — at the round's `now`, 3_000, not at the remote's 2_000. (Contrast
+        // `testALocalEditSurvivesAnInvalidMessageRejection`, where an earlier refused push had
+        // already stamped the sidecar and the later round has to preserve *that* timestamp.)
+        XCTAssertEqual(committed.values[settingKey]?.updatedAtMs, 3_000)
     }
 
     /// A ciphertext this device cannot open must never be applied — and, just as importantly,

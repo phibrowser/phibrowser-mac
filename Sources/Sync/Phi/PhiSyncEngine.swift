@@ -8,7 +8,40 @@ protocol PhiDomainKeyProviding: AnyObject {
     func domainKey() async throws -> SymmetricKey
 }
 
+/// The witness is `@MainActor` (see `PhiDomainKeyManager`), which an `async` requirement
+/// accepts: the engine's `await domainKeys.domainKey()` becomes a hop onto the main actor,
+/// which is exactly the point — it keeps the M2 key layer main-actor-confined.
 extension PhiDomainKeyManager: PhiDomainKeyProviding {}
+
+/// Metadata-only rendering of an error for the shipped log (design §8 / ruling R12).
+///
+/// A bare `\(error)` is not safe here: `KeyAPIError.http(Int, String)` carries the server's
+/// raw response body, and the key endpoints answer with sealed envelopes, so interpolating the
+/// whole value would put payload bytes into a log file support asks users to send. The cases
+/// enumerated below are all metadata by construction; everything else degrades to the error's
+/// type plus its bridged domain/code rather than its description.
+enum PhiSyncLog {
+    static func describe(_ error: Error) -> String {
+        switch error {
+        case let error as KeyAPIError:
+            switch error {
+            case .http(let status, _): return "KeyAPIError.http(\(status))"
+            case .transport(let underlying): return "KeyAPIError.transport(\(describe(underlying)))"
+            case .decode: return "KeyAPIError.decode"
+            }
+        case let error as PhiSyncProtocolError:
+            // Every case carries an HTTP status or a protocol enum, never content.
+            return String(describing: error)
+        case let error as CryptoKitError:
+            return String(describing: error)
+        case let error as ProfileKeyManagerError:
+            return String(describing: error)
+        default:
+            let bridged = error as NSError
+            return "\(type(of: error))(domain=\(bridged.domain) code=\(bridged.code))"
+        }
+    }
+}
 
 /// One round of Phi settings sync: pull (GetUpdates -> decrypt -> field-level LWW merge ->
 /// apply) and push (snapshot -> encrypt -> Commit), plus the conflict retry and the
@@ -194,9 +227,14 @@ actor PhiSyncEngine {
     }
 
     /// Drops every account-scoped cursor, `hasAdopted` included, so the next account's entity
-    /// is adopted rather than merged against the previous account's timestamps. Called on
-    /// sign-out / account switch, and by the engine itself when the server reports
-    /// NOT_MY_BIRTHDAY.
+    /// is adopted rather than merged against the previous account's timestamps.
+    ///
+    /// **Account scope only** — sign-out and account switch. Nothing that happens *within* one
+    /// account may call this: clearing `hasAdopted` re-arms the wholesale adopt in `apply`, and
+    /// the account's own settings history is precisely what makes a field-level merge possible.
+    /// The two same-account recoveries (a server row this device can no longer address, and a
+    /// store birthday that no longer matches) go through `clearRemoteCursor()` and
+    /// `resetForNewStoreBirthday()` instead.
     ///
     /// Deliberately synchronous and *not* queued: a sign-out must take effect immediately
     /// rather than behind an in-flight network round. It runs to completion between the
@@ -271,7 +309,7 @@ actor PhiSyncEngine {
         do {
             key = try await domainKeys.domainKey()
         } catch {
-            AppLogWarn("[phi-sync] pull skipped: domain key unavailable (\(error))")
+            AppLogWarn("[phi-sync] pull skipped: domain key unavailable (\(PhiSyncLog.describe(error)))")
             return false
         }
         // Sign-out can land in any of this round's suspension points; from here the round is
@@ -317,7 +355,7 @@ actor PhiSyncEngine {
                         // Wrong key (a re-mint this device has not caught up with, or a peer
                         // sealing with an envelope version this build rejects) or corrupt
                         // bytes. Never apply it, and never publish over it.
-                        AppLogError("[phi-sync] cannot open remote entity version=\(entity.version) ciphertext_bytes=\(entity.ciphertext.count) (\(error))")
+                        AppLogError("[phi-sync] cannot open remote entity version=\(entity.version) ciphertext_bytes=\(entity.ciphertext.count) (\(PhiSyncLog.describe(error)))")
                         view = .unusable(reason: .undecryptable)
                     }
                 }
@@ -326,11 +364,11 @@ actor PhiSyncEngine {
             }
             drained = !more
         } catch PhiSyncProtocolError.notMyBirthday {
-            resetSyncState()
+            resetForNewStoreBirthday()
             guard retryOnBirthday else { return false }
             return await pull(retryOnBirthday: false, thenPush: thenPush)
         } catch {
-            AppLogError("[phi-sync] pull failed device=\(deviceKeyId) (\(error))")
+            AppLogError("[phi-sync] pull failed device=\(deviceKeyId) (\(PhiSyncLog.describe(error)))")
             return false
         }
 
@@ -484,7 +522,7 @@ actor PhiSyncEngine {
         do {
             key = try await domainKeys.domainKey()
         } catch {
-            AppLogWarn("[phi-sync] push skipped: domain key unavailable (\(error))")
+            AppLogWarn("[phi-sync] push skipped: domain key unavailable (\(PhiSyncLog.describe(error)))")
             return
         }
         // Nothing below suspends before `client.commit`, so this check is the last thing that
@@ -537,7 +575,7 @@ actor PhiSyncEngine {
                 await push(retryOnConflict: false, allowInitialPull: false)
             }
         } catch PhiSyncProtocolError.notMyBirthday {
-            resetSyncState()
+            resetForNewStoreBirthday()
         } catch PhiSyncProtocolError.commitRejected(.invalidMessage) {
             // The server could not find the row this commit names: the update path returns
             // INVALID_MESSAGE on pgx.ErrNoRows and on a data_type mismatch
@@ -545,13 +583,20 @@ actor PhiSyncEngine {
             // account row — and with it store_birthday — is untouched. An incremental
             // GetUpdates cannot tell us either: it simply returns nothing. Without dropping the
             // cursor the device would send the same stale id and version forever and never sync
-            // again. Reset everything (the marker included) so the next round replays the type
+            // again. Drop the row identity and the marker so the next round replays the type
             // from scratch and either re-discovers the entity or creates it through the
             // client_tag_hash unique index.
-            AppLogWarn("[phi-sync] commit rejected as INVALID_MESSAGE; dropping the local sync cursor so the next round rediscovers the entity")
-            resetSyncState()
+            //
+            // `clearRemoteCursor()`, never `resetSyncState()`: the account is unchanged, and
+            // the snapshot taken a few statements above has just stamped `now` on the key the
+            // user edited. Clearing `hasAdopted` here would make the very next pull adopt a
+            // peer's entity wholesale over that edit — and, because `apply` also writes the
+            // remote timestamp into the key's sidecar, the edit would never be re-pushed
+            // either. That is the same distinction the `.absent` full-replay branch makes.
+            AppLogWarn("[phi-sync] commit rejected as INVALID_MESSAGE; dropping the entity cursor and the marker so the next round rediscovers the entity")
+            clearRemoteCursor()
         } catch {
-            AppLogError("[phi-sync] push failed device=\(deviceKeyId) (\(error))")
+            AppLogError("[phi-sync] push failed device=\(deviceKeyId) (\(PhiSyncLog.describe(error)))")
         }
     }
 
@@ -650,6 +695,28 @@ actor PhiSyncEngine {
         storedLastEntity = nil
     }
 
+    /// `clearEntityCursor()` plus the progress marker, so the next pull replays the whole type
+    /// instead of asking for changes after a watermark that describes a row the server no
+    /// longer has. Same-account recovery — the store birthday and `hasAdopted` stay.
+    private func clearRemoteCursor() {
+        clearEntityCursor()
+        storedMarker = nil
+    }
+
+    /// The store this device was tracking is gone (NOT_MY_BIRTHDAY): every cursor that
+    /// describes it is void, birthday included, and any tombstone streak counted against the
+    /// old store means nothing.
+    ///
+    /// `hasAdopted` survives, because the *account* did not change — only the server's store
+    /// identity did. The `<key>.phiSyncTs` sidecars this device has been keeping still describe
+    /// this account's settings, so the next readable entity must be merged against them, not
+    /// adopted over them. (`resetSyncState()` is the account-scope reset and does clear it.)
+    private func resetForNewStoreBirthday() {
+        clearRemoteCursor()
+        storedBirthday = ""
+        tombstoneRounds = 0
+    }
+
     private var storedEntityId: String? {
         get { defaults.string(forKey: Self.entityIdStateKey) }
         set { writeState(newValue, forKey: Self.entityIdStateKey) }
@@ -660,9 +727,12 @@ actor PhiSyncEngine {
         set { writeState(newValue.map { NSNumber(value: $0) }, forKey: Self.versionStateKey) }
     }
 
+    /// The empty string is "not known yet" on the wire, so it is stored as *absent* rather
+    /// than as an empty value — same convention as `storedMarker`, and it keeps `stateKeys` a
+    /// clean "nothing persisted" set after a reset.
     private var storedBirthday: String {
         get { defaults.string(forKey: Self.storeBirthdayStateKey) ?? "" }
-        set { writeState(newValue, forKey: Self.storeBirthdayStateKey) }
+        set { writeState(newValue.isEmpty ? nil : newValue, forKey: Self.storeBirthdayStateKey) }
     }
 
     private var storedMarker: Data? {

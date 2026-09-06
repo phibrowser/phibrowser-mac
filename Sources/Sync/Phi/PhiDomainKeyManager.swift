@@ -10,6 +10,20 @@ import Security
 /// under the fixed domain `"phi"` — so the whole lifecycle is: GET; if absent
 /// mint + seal + PUT; if the PUT loses the first-use race (409) re-GET and adopt
 /// the winner, discarding the key generated here.
+///
+/// Isolation: `@MainActor`, like every other owner of the M2 key layer
+/// (`SyncKeyController`, `KeyLayerViewModel`, `DevicesSettingViewModel`). That is not
+/// decoration — it is the invariant that keeps `AccountKeyManager` main-actor-confined.
+/// `PhiSyncEngine` is an `actor`, so without this annotation `domainKey()` would run on the
+/// cooperative pool (SE-0338: a `nonisolated` async function does not inherit its caller's
+/// executor) and would then read `AccountKeyManager.currentARK` — a plain `var` on a plain
+/// class that the unlock/join/sign-out flows mutate on the main actor — and read-modify-write
+/// `cached` concurrently with `PhiChromiumCoordinator.stopPhiSync()`'s `clear()`. Both are
+/// races on refcounted values, i.e. a torn read or an over-release, not merely a stale key.
+/// The engine already reaches this type through `await domainKeys.domainKey()`, so the
+/// annotation costs one hop per round and nothing else; the network call inside suspends, so
+/// the main actor is not held across it.
+@MainActor
 final class PhiDomainKeyManager {
     /// The one domain M3-1 uses. Matches the `{domain}` path segment of
     /// `/keys/v1/domains/{domain}` and the `phi` sync data type.

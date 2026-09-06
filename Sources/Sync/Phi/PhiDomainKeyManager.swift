@@ -12,17 +12,19 @@ import Security
 /// the winner, discarding the key generated here.
 ///
 /// Isolation: `@MainActor`, like every other owner of the M2 key layer
-/// (`SyncKeyController`, `KeyLayerViewModel`, `DevicesSettingViewModel`). That is not
-/// decoration — it is the invariant that keeps `AccountKeyManager` main-actor-confined.
-/// `PhiSyncEngine` is an `actor`, so without this annotation `domainKey()` would run on the
-/// cooperative pool (SE-0338: a `nonisolated` async function does not inherit its caller's
-/// executor) and would then read `AccountKeyManager.currentARK` — a plain `var` on a plain
-/// class that the unlock/join/sign-out flows mutate on the main actor — and read-modify-write
-/// `cached` concurrently with `PhiChromiumCoordinator.stopPhiSync()`'s `clear()`. Both are
-/// races on refcounted values, i.e. a torn read or an over-release, not merely a stale key.
+/// (`SyncKeyController`, `KeyLayerViewModel`, `DevicesSettingViewModel`). That is what
+/// serialises this type's own mutable state: `PhiSyncEngine` is an `actor`, so without the
+/// annotation `domainKey()` would run on the cooperative pool (SE-0338: a `nonisolated` async
+/// function does not inherit its caller's executor) and read-modify-write `cached` — a
+/// refcounted value, so a race there is a torn read or an over-release, not merely a stale key
+/// — concurrently with `PhiChromiumCoordinator.stopPhiSync()`'s `clear()` on the main actor.
 /// The engine already reaches this type through `await domainKeys.domainKey()`, so the
 /// annotation costs one hop per round and nothing else; the network call inside suspends, so
 /// the main actor is not held across it.
+///
+/// `AccountKeyManager` is a separate matter and is *not* main-actor-confined: its ARK store is
+/// lock-protected and may be read from any executor, so the `currentARK` read below is safe on
+/// its own terms rather than because of this annotation.
 @MainActor
 final class PhiDomainKeyManager {
     /// The one domain M3-1 uses. Matches the `{domain}` path segment of

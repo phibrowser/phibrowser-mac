@@ -952,8 +952,11 @@ final class PhiSyncEngineTests: XCTestCase {
 
     // MARK: - State
 
-    /// Sign-out / account switch: every account-scoped cursor is dropped so account A's
-    /// marker and version are never replayed against account B.
+    /// The account-scope reset drops every account-scoped cursor, so account A's marker and
+    /// version can never be replayed against account B. The app performs that wipe from
+    /// outside, in `PhiChromiumCoordinator.resetPhiSyncCursorIfAccountChanged`; this pins the
+    /// engine-side helper of the same shape, which is what the recovery paths are measured
+    /// against (`clearRemoteCursor()` / `resetForNewStoreBirthday()` keep `hasAdopted`).
     func testResetSyncStateClearsEveryCursorKey() async throws {
         let key = SymmetricKey(size: .bits256)
         let client = FakePhiSyncClient()

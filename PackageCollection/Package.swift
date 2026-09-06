@@ -25,6 +25,7 @@ let package = Package(
         .package(url: "https://github.com/airbnb/lottie-spm.git", exact: "4.5.2"),
         .package(url: "https://github.com/PostHog/posthog-ios.git", exact: "3.53.1"),
         .package(url: "https://github.com/exyte/SVGView.git", exact: "1.0.6"),
+        .package(url: "https://github.com/apple/swift-protobuf.git", from: "1.38.1"),
 
     ],
     targets: [
@@ -43,6 +44,7 @@ let package = Package(
                 .product(name: "Lottie", package: "lottie-spm"),
                 .product(name: "PostHog", package: "posthog-ios"),
                 .product(name: "SVGView", package: "SVGView"),
+                .product(name: "SwiftProtobuf", package: "swift-protobuf"),
             ])
     ]
 )

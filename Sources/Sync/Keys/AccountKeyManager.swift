@@ -34,15 +34,51 @@ enum UnlockResult { case unlocked, needsJoin, notSignedIn }
 struct JoinTicket: Equatable { let requestId: String; let verificationCode: String }
 enum JoinPollResult: Equatable { case pending(deadline: Date); case approved; case denied; case expired }
 
+extension Notification.Name {
+    /// Posted by an `AccountKeyManager` the moment it caches an ARK it did not have before —
+    /// i.e. on every path that unlocks this device: silent startup unlock, first-device
+    /// bootstrap, join-by-approval and join-by-recovery-code.
+    ///
+    /// `object` is the posting `AccountKeyManager`. Observers must re-check the manager they
+    /// actually care about rather than trusting the notification alone, and must hop to the
+    /// main actor themselves if they need to (the post happens on whichever thread completed
+    /// the unlock).
+    ///
+    /// It exists because the ARK arrives asynchronously and from four different UI flows,
+    /// while the things that depend on it (M3-1's settings sync scheduling) are built earlier
+    /// and elsewhere. Before this, only the two login-time paths could start the settings
+    /// engine, so a device that joined through the Devices pane synced nothing until the next
+    /// app launch.
+    static let phiAccountKeyDidUnlock = Notification.Name("PhiAccountKeyDidUnlock")
+}
+
 /// Orchestrates the three key-layer flows and caches the decrypted ARK in memory
 /// (process lifetime only — it is never persisted to disk).
+///
+/// Main-actor-confined by convention, not by annotation: every owner
+/// (`SyncKeyController`, `KeyLayerViewModel`, `DevicesSettingViewModel`,
+/// `PhiDomainKeyManager`) is `@MainActor`, so `currentARK` is only ever read and written
+/// there. Anything reaching this type from a background executor — a Swift `actor`'s round,
+/// say — must hop to the main actor first; `currentARK` is a plain `var` holding a refcounted
+/// value and has no synchronisation of its own.
 final class AccountKeyManager {
     private let api: KeyEnvelopeAPI
     private let deviceKeyProvider: DeviceKeyProviding
     private let kdfVersion = "hkdf-sha256-v1"
     private let platform = "macos"
 
-    private(set) var currentARK: SymmetricKey?
+    /// The unlocked ARK. The `didSet` is the single announcement point for "this device is
+    /// now unlocked" — cheaper and harder to forget than a call at each of the four flows
+    /// that assign it.
+    private(set) var currentARK: SymmetricKey? {
+        didSet {
+            // Only the nil -> unlocked transition: an account switch drops the whole
+            // controller (and this manager with it), so no other transition can occur on a
+            // live instance.
+            guard oldValue == nil, currentARK != nil else { return }
+            NotificationCenter.default.post(name: .phiAccountKeyDidUnlock, object: self)
+        }
+    }
     var deviceKeyProviderForTesting: DeviceKeyProviding { deviceKeyProvider }
 
     init(api: KeyEnvelopeAPI, deviceKeyProvider: DeviceKeyProviding) {

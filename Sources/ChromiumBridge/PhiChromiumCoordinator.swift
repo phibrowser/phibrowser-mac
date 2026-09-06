@@ -49,8 +49,12 @@ import SwiftUI
     // The phi settings engine rides the same lifetime as the key layer above: it is built
     // beside `syncKeyController` and torn down with it, because it consumes the account's
     // ARK (through `PhiDomainKeyManager`) and must not outlive the account it was built for.
-    // Scheduling is separate from construction: the ARK is still nil at build time and only
-    // arrives from the async silent unlock, so `startPhiSyncIfReady()` runs after that await.
+    // Scheduling is separate from construction: the ARK is still nil at build time and arrives
+    // later from any of four unlock flows — the login-time silent unlock, or one of the three
+    // the Devices pane drives (join by approval, join by recovery code, first-device
+    // bootstrap), none of which calls back into this file. `startPhiSyncIfReady()` is
+    // therefore driven by `.phiAccountKeyDidUnlock` (registered at build time) as well as by
+    // the login and `$profiles` paths, and is idempotent so all of them may fire.
 
     /// Account-wide PhiBrowser domain key holder. Held here (not only inside the engine) so
     /// sign-out can `clear()` the in-memory key rather than waiting for the engine's own
@@ -69,11 +73,17 @@ import SwiftUI
     /// implements no `applicationDidBecomeActive(_:)`, and an observer keeps this whole feature
     /// inside one file.
     private var phiSyncForegroundObserver: NSObjectProtocol?
+    /// `.phiAccountKeyDidUnlock` token. The engine is built before the ARK exists — the
+    /// Devices pane builds it with no unlock at all — so construction cannot start the
+    /// schedule; this is what does, on whichever of the four unlock flows gets there first.
+    private var phiSyncUnlockObserver: NSObjectProtocol?
 
-    /// Cadence of the periodic pull. Settings change rarely and the foreground pull covers
-    /// the case the user actually notices (switching to the browser after editing elsewhere),
-    /// so this only needs to bound the staleness of a window left open all day.
-    private static let phiSyncPullInterval: TimeInterval = 15 * 60
+    /// Cadence of the periodic pull, per the M3-1 design §5.3 ("保守间隔,如 60s"). M3-1 has no
+    /// invalidation, so this timer and the foreground pull are the only unattended triggers on
+    /// a peer, and the acceptance criterion (§9) is convergence "within seconds" — a longer
+    /// idle cadence has to wait for M4's FCM invalidation. One GetUpdates per minute per
+    /// device against a single small row is the deliberate cost.
+    private static let phiSyncPullInterval: TimeInterval = 60
     /// Coalescing window for local edits. A settings pane can write several keys in a row
     /// (and unrelated app code writes the same domain constantly), so never push per write.
     private static let phiSyncPushDebounce: TimeInterval = 2
@@ -158,7 +168,7 @@ import SwiftUI
         } catch {
             // Keychain unavailable (locked, denied). The key layer above degrades on its own;
             // settings sync simply does not run this session.
-            AppLogWarn("[phi-sync] engine not built: device key id unavailable (\(error))")
+            AppLogWarn("[phi-sync] engine not built: device key id unavailable (\(PhiSyncLog.describe(error)))")
             return
         }
 
@@ -177,16 +187,32 @@ import SwiftUI
         // `PhiPreferences` keys and every reader hardcodes the standard domain.
         phiSyncEngine = PhiSyncEngine(domainKeys: domainKeys, client: client,
                                       defaults: defaults, deviceKeyId: deviceKeyId)
+
+        // The ARK is nil right now on every path that reaches here, and on the Devices-pane
+        // path nothing in this file ever runs again: `syncKeyControllerCreatingIfNeeded()`
+        // builds and returns, and the join/bootstrap/recovery flows that follow only touch
+        // `AccountKeyManager` and `SyncKeyController`. Without this observer the freshly
+        // joined device — the second device of the M3-1 acceptance — would build the engine
+        // and never schedule a single round until the next app launch.
+        phiSyncUnlockObserver = NotificationCenter.default.addObserver(
+            forName: .phiAccountKeyDidUnlock, object: nil, queue: .main
+        ) { [weak self] _ in
+            // `object` is deliberately not filtered: the signed-out Devices pane can hold a
+            // second, pane-local `AccountKeyManager`, and `startPhiSyncIfReady()` already
+            // re-checks the ARK on the controller this coordinator owns. A post from any
+            // other manager is a cheap no-op.
+            Task { @MainActor in self?.startPhiSyncIfReady() }
+        }
     }
 
     /// Starts the settings sync schedule once the key layer is actually unlocked: a login
     /// pull, then a periodic pull, a foreground pull and a debounced push for local edits.
     ///
     /// Idempotent — both `.loginCompleted` and `.loginStatusRefreshCompleted` reach here on a
-    /// single login, and the `$profiles` subscription can too, so a second call must not
-    /// double-schedule. Gated on the ARK because every round needs the domain key: without
-    /// it `PhiDomainKeyManager.domainKey()` throws `notUnlocked` and each tick would be a
-    /// wasted no-op.
+    /// single login, and the `$profiles` subscription and `.phiAccountKeyDidUnlock` can too,
+    /// so a second call must not double-schedule. Gated on the ARK because every round needs
+    /// the domain key: without it `PhiDomainKeyManager.domainKey()` throws `notUnlocked` and
+    /// each tick would be a wasted no-op.
     @MainActor
     private func startPhiSyncIfReady() {
         guard let engine = phiSyncEngine, phiSyncPullTimer == nil else { return }
@@ -209,11 +235,15 @@ import SwiftUI
                 Task { @MainActor in await self?.phiSyncEngine?.handleLocalDefaultsChange() }
             }
 
-        phiSyncPullTimer = Timer.scheduledTimer(
-            withTimeInterval: Self.phiSyncPullInterval, repeats: true
-        ) { [weak self] _ in
+        // `.common`, not the default mode: `Timer.scheduledTimer` registers in `.default`
+        // only, which is suspended for the whole of a menu or scroll tracking loop — the
+        // periodic pull would then stall for as long as a menu stays open. Same construction
+        // as `KeyLayerViewModel.startPollTimer()`.
+        let pullTimer = Timer(timeInterval: Self.phiSyncPullInterval, repeats: true) { [weak self] _ in
             Task { @MainActor in await self?.phiSyncEngine?.pullOnce() }
         }
+        RunLoop.main.add(pullTimer, forMode: .common)
+        phiSyncPullTimer = pullTimer
 
         AppLogInfo("[phi-sync] scheduling started interval=\(Int(Self.phiSyncPullInterval))s debounce=\(Int(Self.phiSyncPushDebounce))s")
         Task { await engine.pullOnce() }
@@ -298,6 +328,10 @@ import SwiftUI
         if let observer = phiSyncForegroundObserver {
             NotificationCenter.default.removeObserver(observer)
             phiSyncForegroundObserver = nil
+        }
+        if let observer = phiSyncUnlockObserver {
+            NotificationCenter.default.removeObserver(observer)
+            phiSyncUnlockObserver = nil
         }
         phiSyncEngine?.shutdown()
         phiSyncEngine = nil

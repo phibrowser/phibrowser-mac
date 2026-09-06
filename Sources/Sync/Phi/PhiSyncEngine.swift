@@ -14,9 +14,12 @@ extension PhiDomainKeyManager: PhiDomainKeyProviding {}
 /// apply) and push (snapshot -> encrypt -> Commit), plus the conflict retry and the
 /// account-scoped cursor state both need.
 ///
-/// An `actor` so the debounced local-change push, the periodic pull, the foreground pull and
-/// the conflict retry cannot interleave: they all mutate the same persisted cursor and the
-/// same `UserDefaults` snapshot. `PhiDomainKeyManager` is only ever touched from in here.
+/// An `actor`, but actor isolation alone does **not** serialize the rounds: Swift actors are
+/// reentrant, so every `await` inside a round (the domain key, the network) lets the next
+/// message in. The debounced local-change push, the periodic pull, the foreground pull and the
+/// conflict retry all mutate the same persisted cursor and the same `UserDefaults` snapshot, so
+/// the three public entry points chain onto `roundQueue` and run strictly one after another —
+/// see `serialized(_:)`. `PhiDomainKeyManager` is only ever touched from in here.
 ///
 /// Zero knowledge: settings are sealed with the account's PhiBrowser domain key
 /// (`PhiEntityCodec` -> `PhiKeyCrypto` AES-GCM) before they reach the protocol client. The
@@ -63,6 +66,21 @@ actor PhiSyncEngine {
     /// the window while the write is in flight.
     private var isApplyingRemote = false
 
+    /// Tail of the round chain. Each public entry point appends its round to this task and
+    /// awaits it, so a round that suspends in `getUpdates` or `commit` still finishes before
+    /// the next one starts. Only the public entry points enqueue: the internal `pull` -> `push`
+    /// and conflict `push` -> `pull` -> `push` calls run inside an already-queued round and
+    /// would deadlock if they queued again.
+    private var roundQueue: Task<Void, Never>?
+
+    /// What one queued round does. An enum rather than a closure so the body stays
+    /// actor-isolated and needs no `@Sendable` gymnastics.
+    private enum Round {
+        case pull
+        case push
+        case localChange
+    }
+
     init(domainKeys: any PhiDomainKeyProviding,
          client: PhiSyncProtocolClient,
          defaults: UserDefaults,
@@ -82,27 +100,69 @@ actor PhiSyncEngine {
     /// GetUpdates -> decrypt -> merge -> apply, then publish anything the merge left the
     /// server behind on. Never throws: a failed round is logged and retried by the scheduler.
     func pullOnce() async {
-        _ = await pull(retryOnBirthday: true, thenPush: true)
+        await serialized(.pull)
     }
 
     /// Snapshot -> encrypt -> Commit, with one pull-and-retry on CONFLICT.
     func pushLocalSettings() async {
-        await push(retryOnConflict: true, allowInitialPull: true)
+        await serialized(.push)
     }
 
     /// Entry point for the debounced `UserDefaults.didChangeNotification` observer.
     func handleLocalDefaultsChange() async {
-        guard !isApplyingRemote else { return }
-        await pushLocalSettings()
+        await serialized(.localChange)
     }
 
     /// Drops every account-scoped cursor. Called on sign-out / account switch, and by the
     /// engine itself when the server reports NOT_MY_BIRTHDAY.
+    ///
+    /// Deliberately synchronous and *not* queued: a sign-out must take effect immediately
+    /// rather than behind an in-flight network round. It runs to completion between the
+    /// suspension points of any round, so it never tears a half-written cursor.
     func resetSyncState() {
         for key in Self.stateKeys { defaults.removeObject(forKey: key) }
     }
 
+    // MARK: - Round serialization
+
+    /// Runs `round` after every round enqueued before it. Actor reentrancy means a round that
+    /// is parked in `getUpdates` or `commit` would otherwise let the next one in and both would
+    /// interleave their writes to `storedVersion` / `storedMarker` / `storedLastEntity`.
+    private func serialized(_ round: Round) async {
+        let previous = roundQueue
+        let task = Task { [previous] in
+            await previous?.value
+            await self.run(round)
+        }
+        roundQueue = task
+        await task.value
+    }
+
+    private func run(_ round: Round) async {
+        switch round {
+        case .pull:
+            _ = await pull(retryOnBirthday: true, thenPush: true)
+        case .push:
+            await push(retryOnConflict: true, allowInitialPull: true)
+        case .localChange:
+            guard !isApplyingRemote else { return }
+            await push(retryOnConflict: true, allowInitialPull: true)
+        }
+    }
+
     // MARK: - Pull
+
+    /// What one pull could make of the account's settings entity.
+    private enum RemoteView {
+        /// The server sent nothing under our client tag this round.
+        case absent
+        /// Decrypted settings this device can merge against.
+        case usable(Phi_PhiSettingEntity)
+        /// The entity is there but this build cannot turn it into settings (a tombstone, a
+        /// ciphertext it cannot open, or a payload that is not `.setting`). Its bytes must
+        /// survive: this device may not publish over them.
+        case unusable(reason: String)
+    }
 
     /// Returns whether the round completed. The caller needs that: a first-ever push may only
     /// fall back to a `version = 0` create once it is sure the account holds nothing.
@@ -118,8 +178,11 @@ actor PhiSyncEngine {
         // Captured before the loop: the loop itself records the entity id, which would make
         // `hasSyncedBefore` true by the time the merge decision is taken.
         let adoptRemote = !hasSyncedBefore
-        var remote: Phi_PhiSettingEntity?
-        var sawEntity = false
+        // A pull with no marker replays the whole type, so "the entity was not in the response"
+        // is only evidence of absence when we started from scratch and drained every page.
+        let startedFromScratch = storedMarker == nil
+        var view = RemoteView.absent
+        var drained = false
         do {
             var marker = storedMarker
             var page = 0
@@ -133,32 +196,34 @@ actor PhiSyncEngine {
                 for entity in response.entities where entity.clientTagHash == PhiSyncEntity.clientTagHash {
                     if !entity.entityId.isEmpty { storedEntityId = entity.entityId }
                     storedVersion = entity.version
-                    sawEntity = true
                     guard !entity.deleted else {
-                        // A tombstone from another device: nothing to apply, but the version is
-                        // still the base the next commit has to build on.
-                        remote = nil
+                        // A tombstone from another device: nothing to apply, and nothing to
+                        // publish either — re-committing this device's snapshot on top of it
+                        // would silently undelete the account's settings (the server's
+                        // client_tag unique index reuses the tombstoned row).
+                        view = .unusable(reason: "tombstone")
                         continue
                     }
                     do {
                         let decoded = try PhiEntityCodec.decrypt(entity.ciphertext, key: key)
                         guard case .setting(let setting)? = decoded.kind else {
                             AppLogWarn("[phi-sync] remote entity carries no settings payload; ignoring")
-                            remote = nil
+                            view = .unusable(reason: "payload is not settings")
                             continue
                         }
-                        remote = setting
+                        view = .usable(setting)
                     } catch {
-                        // Wrong key or corrupt bytes. Never apply, never claim it as our
-                        // baseline — the recorded id/version still let a later local edit
-                        // replace it rather than leaving this device stuck forever.
+                        // Wrong key (a re-mint this device has not caught up with, or a peer
+                        // sealing with an envelope version this build rejects) or corrupt
+                        // bytes. Never apply it, and never publish over it.
                         AppLogError("[phi-sync] cannot open remote entity version=\(entity.version) ciphertext_bytes=\(entity.ciphertext.count) (\(error))")
-                        remote = nil
+                        view = .unusable(reason: "ciphertext could not be opened")
                     }
                 }
                 more = response.changesRemaining
                 page += 1
             }
+            drained = !more
         } catch PhiSyncProtocolError.notMyBirthday {
             resetSyncState()
             guard retryOnBirthday else { return false }
@@ -168,16 +233,36 @@ actor PhiSyncEngine {
             return false
         }
 
-        if let remote {
+        var mayPublish = true
+        switch view {
+        case .usable(let remote):
             apply(remote, adopt: adoptRemote)
-        } else if sawEntity {
-            AppLogInfo("[phi-sync] pull saw the settings entity but had nothing to apply")
+        case .unusable(let reason):
+            // The server holds bytes under our client tag that this build cannot read. Not
+            // applying them is only half the job: the trailing push must not run either,
+            // because it would commit this device's snapshot against the id and version we
+            // just harvested from that very entity and replace it for every other device —
+            // including the keys of a newer client that this build does not understand.
+            // Rewinding the marker makes the next round see the entity again, so a re-minted
+            // domain key or a newer build heals this instead of it being terminal.
+            AppLogWarn("[phi-sync] settings entity is unusable (\(reason)); not applying it and not publishing over it")
+            storedMarker = nil
+            mayPublish = false
+        case .absent:
+            if drained, startedFromScratch, storedEntityId != nil {
+                // A full replay carried no settings entity: the row this device points at is
+                // gone (a namespace change, a targeted delete, a partial restore). Keeping the
+                // id would make every later commit an update the server answers with
+                // INVALID_MESSAGE forever; dropping it lets the next push create instead.
+                AppLogWarn("[phi-sync] full replay carried no settings entity; dropping the stale entity cursor")
+                clearEntityCursor()
+            }
         }
 
         // Publish whatever the merge left the server short of (a locally newer value, or a
         // registered key the remote entity did not carry). `push` decides by comparison, so a
         // pure remote apply commits nothing.
-        if thenPush { await push(retryOnConflict: false, allowInitialPull: false) }
+        if thenPush, mayPublish { await push(retryOnConflict: false, allowInitialPull: false) }
         return true
     }
 
@@ -214,6 +299,19 @@ actor PhiSyncEngine {
                 AppLogWarn("[phi-sync] first push aborted: the account's current settings could not be read")
                 return
             }
+        }
+
+        // A round that knows the server holds bytes it could not decode must not overwrite
+        // them. `storedLastEntity` is the decrypted baseline of what the server has; an entity
+        // id with no baseline means the last pull saw the entity but could not read it (bad
+        // key, foreign payload, tombstone), or the baseline was lost. Committing here would
+        // replace the entire entity — every key, including a newer client's — with this
+        // device's snapshot. Rewind the marker so the next pull re-reads the entity and can
+        // re-establish the baseline.
+        if storedEntityId != nil, storedLastEntity == nil {
+            AppLogWarn("[phi-sync] push skipped: no readable baseline for the settings entity the server holds")
+            storedMarker = nil
+            return
         }
 
         let key: SymmetricKey
@@ -258,6 +356,18 @@ actor PhiSyncEngine {
             }
         } catch PhiSyncProtocolError.notMyBirthday {
             resetSyncState()
+        } catch PhiSyncProtocolError.commitRejected(.invalidMessage) {
+            // The server could not find the row this commit names: the update path returns
+            // INVALID_MESSAGE on pgx.ErrNoRows and on a data_type mismatch
+            // (internal/data/entities_write.go), and NOT_MY_BIRTHDAY never fires because the
+            // account row — and with it store_birthday — is untouched. An incremental
+            // GetUpdates cannot tell us either: it simply returns nothing. Without dropping the
+            // cursor the device would send the same stale id and version forever and never sync
+            // again. Reset everything (the marker included) so the next round replays the type
+            // from scratch and either re-discovers the entity or creates it through the
+            // client_tag_hash unique index.
+            AppLogWarn("[phi-sync] commit rejected as INVALID_MESSAGE; dropping the local sync cursor so the next round rediscovers the entity")
+            resetSyncState()
         } catch {
             AppLogError("[phi-sync] push failed device=\(deviceKeyId) (\(error))")
         }
@@ -267,6 +377,15 @@ actor PhiSyncEngine {
 
     /// True once this device has either seen the account's entity or committed its own.
     private var hasSyncedBefore: Bool { storedEntityId != nil || storedLastEntity != nil }
+
+    /// Forgets which entity the account's settings live in, keeping the progress marker and the
+    /// store birthday. Used when the server proves that entity is gone; the next round takes
+    /// the create path, which the server resolves by `client_tag_hash`.
+    private func clearEntityCursor() {
+        storedEntityId = nil
+        storedVersion = nil
+        storedLastEntity = nil
+    }
 
     private var storedEntityId: String? {
         get { defaults.string(forKey: Self.entityIdStateKey) }

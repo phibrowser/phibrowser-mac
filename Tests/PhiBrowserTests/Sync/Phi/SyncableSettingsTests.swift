@@ -197,7 +197,8 @@ final class SyncableSettingsTests: XCTestCase {
         XCTAssertEqual(entity.values[cmdT]?.boolValue, true, "default true must survive an unset key")
         XCTAssertEqual(
             entity.values[PhiPreferences.GeneralSettings.layoutModeKey]?.stringValue,
-            LayoutMode.performance.rawValue
+            LayoutMode.balanced.rawValue,
+            "must match what loadLayoutMode() resolves to when nothing is set: navigationAtTop defaults to true"
         )
         XCTAssertEqual(
             entity.values[PhiPreferences.GeneralSettings.autoPictureInPictureModeKey]?.stringValue,
@@ -209,6 +210,50 @@ final class SyncableSettingsTests: XCTestCase {
             "default"
         )
         XCTAssertEqual(entity.values[PhiPreferences.ThemeSettings.selectionTintEnabled.rawValue]?.boolValue, true)
+    }
+
+    /// The layout read closure replicates `GeneralSettings.loadLayoutMode()`'s
+    /// legacy dual-bool fallback *through the two cases' own defaults*, so a
+    /// device that has never opened the layout picker snapshots the layout it
+    /// is actually displaying instead of a bogus `.performance` that would be
+    /// committed and then applied back over a peer's real choice.
+    func testLayoutModeSnapshotFollowsTheLegacyDualBoolFallback() {
+        let layoutKey = PhiPreferences.GeneralSettings.layoutModeKey
+        let traditionalKey = PhiPreferences.GeneralSettings.traditionalLayout.rawValue
+        let navigationAtTopKey = PhiPreferences.GeneralSettings.navigationAtTop.rawValue
+
+        func snapshotLayout() -> String? {
+            SyncableSettings.snapshot(defaults, now: 1).values[layoutKey]?.stringValue
+        }
+
+        // Nothing set: navigationAtTop's default is true -> .balanced.
+        XCTAssertEqual(snapshotLayout(), LayoutMode.balanced.rawValue)
+
+        // traditionalLayout wins over navigationAtTop -> .comfortable.
+        defaults.set(true, forKey: traditionalKey)
+        XCTAssertEqual(snapshotLayout(), LayoutMode.comfortable.rawValue)
+
+        // Both legacy bools explicitly off -> .performance.
+        defaults.set(false, forKey: traditionalKey)
+        defaults.set(false, forKey: navigationAtTopKey)
+        XCTAssertEqual(snapshotLayout(), LayoutMode.performance.rawValue)
+
+        // An explicit layoutMode always beats the legacy encoding.
+        defaults.set(LayoutMode.balanced.rawValue, forKey: layoutKey)
+        XCTAssertEqual(snapshotLayout(), LayoutMode.balanced.rawValue)
+    }
+
+    /// An unparseable `layoutMode` string falls back to the legacy encoding
+    /// rather than being reported as `.performance`.
+    func testLayoutModeSnapshotIgnoresAnUnparseableExplicitValue() {
+        defaults.set("hyperspace", forKey: PhiPreferences.GeneralSettings.layoutModeKey)
+
+        let entity = SyncableSettings.snapshot(defaults, now: 1)
+
+        XCTAssertEqual(
+            entity.values[PhiPreferences.GeneralSettings.layoutModeKey]?.stringValue,
+            LayoutMode.balanced.rawValue
+        )
     }
 
     /// The registry table is pinned: `key` IS the UserDefaults raw key, the

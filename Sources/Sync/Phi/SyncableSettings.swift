@@ -81,7 +81,8 @@ enum SyncableSettings {
     ///   user preferences to propagate.
     /// - `GeneralSettings.navigationAtTop` / `.traditionalLayout` are the
     ///   superseded dual-bool encoding of `layoutMode`; syncing both encodings
-    ///   would let them disagree.
+    ///   would let them disagree. They are still *read* as `layoutMode`'s
+    ///   fallback, exactly as `loadLayoutMode()` does.
     static let all: [SyncableSetting] = generalBools + [layoutMode, autoPictureInPictureMode] + themeSettings
 
     // MARK: General (Bool)
@@ -115,16 +116,44 @@ enum SyncableSettings {
 
     // MARK: Layout (String)
 
-    /// Read from the explicit `layoutMode` key only. The legacy dual-bool
-    /// fallback in `GeneralSettings.loadLayoutMode()` cannot be replicated
-    /// here: `navigationAtTop` carries a registered default of `true`, so
-    /// probing it would resolve differently in the app than in a fresh suite.
+    /// Mirrors `GeneralSettings.loadLayoutMode()`, which is the single source
+    /// of truth for the layout the window actually uses: the explicit
+    /// `layoutMode` key first, then the superseded dual-bool encoding.
+    ///
+    /// The fallback is expressed through `traditionalLayout` /
+    /// `navigationAtTop`'s **own** `defaultValue`s (via
+    /// `UserDefaults.bool(forKey:default:)`), never through key presence, so a
+    /// fresh `UserDefaults(suiteName:)` and the app's registration domain agree
+    /// — `navigationAtTop` defaults to `true`, so a device whose user never
+    /// opened the layout picker is on `.balanced`, and that is what it must
+    /// push. Reading only the explicit key would emit `.performance` for every
+    /// such device and, once committed, apply it back over the user's (and
+    /// every peer's) real layout.
+    ///
+    /// `write` sets only the explicit key: `loadLayoutMode()` prefers it, so
+    /// the stale legacy bools are unreachable afterwards.
     private static let layoutMode = SyncableSetting(
         key: PhiPreferences.GeneralSettings.layoutModeKey,
         read: { defaults in
             let raw = defaults.string(forKey: PhiPreferences.GeneralSettings.layoutModeKey) ?? ""
+            let mode: LayoutMode
+            if let explicit = LayoutMode(rawValue: raw) {
+                mode = explicit
+            } else if defaults.bool(
+                forKey: PhiPreferences.GeneralSettings.traditionalLayout.rawValue,
+                default: PhiPreferences.GeneralSettings.traditionalLayout.defaultValue
+            ) {
+                mode = .comfortable
+            } else if defaults.bool(
+                forKey: PhiPreferences.GeneralSettings.navigationAtTop.rawValue,
+                default: PhiPreferences.GeneralSettings.navigationAtTop.defaultValue
+            ) {
+                mode = .balanced
+            } else {
+                mode = .performance
+            }
             var value = Phi_PhiSettingValue()
-            value.stringValue = (LayoutMode(rawValue: raw) ?? .performance).rawValue
+            value.stringValue = mode.rawValue
             return value
         },
         write: { value, defaults in

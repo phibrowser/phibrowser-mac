@@ -391,6 +391,12 @@ actor PhiSyncEngine {
         // replace the entire entity — every key, including a newer client's — with this
         // device's snapshot. Rewind the marker so the next pull re-reads the entity and can
         // re-establish the baseline.
+        //
+        // This returns before `SyncableSettings.snapshot` runs, so a local change made while
+        // the entity is unreadable leaves no `<key>.phiSyncTs` sidecar and never sets
+        // `hasAdopted`. That is deliberate, and it has a cost on the one device that has no
+        // other settings history — see `hasAdopted` for the window and why stamping here would
+        // lose more than it saves.
         if storedEntityId != nil, storedLastEntity == nil {
             AppLogWarn("[phi-sync] push skipped: no readable baseline for the settings entity the server holds")
             storedMarker = nil
@@ -484,6 +490,24 @@ actor PhiSyncEngine {
     /// not account-scoped, so they outlive `resetSyncState()` and would stop a device from
     /// adopting the settings of an account it has just switched to. Only `resetSyncState()`
     /// clears this.
+    ///
+    /// One known window, accepted rather than closed. The two predicates disagree the other way
+    /// when a device's only sight of the entity was `.unusable`: the pull records
+    /// `storedEntityId` from that entity before dropping the baseline, so `hasSyncedBefore` is
+    /// true while `hasAdopted` is false, and `push` then returns at its "an entity id with no
+    /// baseline" guard *before* `SyncableSettings.snapshot` can stamp anything. A setting the
+    /// user changes in that window is therefore adopted over — not merged — once the entity
+    /// becomes readable, with no log line of its own.
+    ///
+    /// Merging there instead would cost more. `snapshot` treats a key with no `<key>.phiSyncVal`
+    /// as locally changed, so on a device with no sidecar history at all it stamps *every*
+    /// registered key `now`: the merge would hand this device's whole local default set the
+    /// newest timestamps in the account and the trailing push would publish it over every other
+    /// device. Stamping the sidecars inside the guard to "give the merge real timestamps" has
+    /// the same defect — the fabricated timestamps would be `now` for every key, not just the
+    /// one the user touched, because nothing here knows which key changed. So the guard leaves
+    /// no trace on purpose, and the smaller loss stands.
+    /// `testAnUnreadableEntityLaterAdoptsWholesaleOverAnEditMadeInThatWindow` pins the choice.
     private var hasAdopted: Bool {
         get { defaults.bool(forKey: Self.hasAdoptedStateKey) }
         set {

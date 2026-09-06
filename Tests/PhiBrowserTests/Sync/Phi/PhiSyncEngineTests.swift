@@ -354,6 +354,56 @@ final class PhiSyncEngineTests: XCTestCase {
         XCTAssertEqual(defaults.object(forKey: PhiSyncEngine.versionStateKey) as? NSNumber, NSNumber(value: Int64(6)))
     }
 
+    /// Characterization, not a regression guard: this pins the one state where `hasAdopted` and
+    /// `hasSyncedBefore` deliberately disagree the *other* way from
+    /// `testAHealedCursorStillMergesByTimestampInsteadOfAdoptingWholesale`.
+    ///
+    /// A device whose only sight of the account's entity was unreadable holds an entity id with
+    /// no baseline and no sidecars, so `push` refuses before `SyncableSettings.snapshot` can
+    /// stamp anything — and an edit made in that window is adopted over, not merged, once the
+    /// entity becomes readable. Merging instead would be the larger loss: with no sidecars
+    /// `snapshot` stamps every registered key `now`, so this device's whole local default set
+    /// would beat the account's real settings and be published over every other device. If a
+    /// later change flips this to a merge, this test is where that decision has to be made
+    /// again.
+    func testAnUnreadableEntityLaterAdoptsWholesaleOverAnEditMadeInThatWindow() async throws {
+        let key = SymmetricKey(size: .bits256)
+        let client = FakePhiSyncClient()
+        // This device's first and only sight of the account's entity: bytes it cannot open.
+        client.seed(ciphertext: try ciphertext(settingEntity(settingKey, false, at: 1_000),
+                                               key: SymmetricKey(size: .bits256)),
+                    version: 5)
+
+        let engine = makeEngine(client, key: key, now: 2_000)
+        await engine.pullOnce()
+        XCTAssertEqual(defaults.string(forKey: PhiSyncEngine.entityIdStateKey), "srv-seed",
+                       "precondition: an entity id harvested from an entity we could not read")
+        XCTAssertNil(defaults.data(forKey: PhiSyncEngine.lastEntityStateKey),
+                     "precondition: no baseline, so the push guard is armed")
+        XCTAssertNil(defaults.object(forKey: PhiSyncEngine.hasAdoptedStateKey),
+                     "precondition: nothing applied and nothing committed, so no settings history")
+
+        // The user flips the setting inside that window. The push guard refuses, and returns
+        // before `snapshot` runs — so no sidecar timestamp is stamped for the edited key.
+        defaults.set(true, forKey: settingKey)
+        await engine.handleLocalDefaultsChange()
+        XCTAssertTrue(client.commits.isEmpty,
+                      "a device with no readable baseline must not publish over the entity")
+        XCTAssertNil(defaults.object(forKey: SyncableSettings.timestampKey(for: settingKey)),
+                     "the refused push stamps no timestamp it would then have to defend")
+
+        // A re-minted domain key (or a newer build) makes the same entity readable.
+        client.seed(ciphertext: try ciphertext(settingEntity(settingKey, false, at: 1_000), key: key),
+                    version: 6)
+        await makeEngine(client, key: key, now: 5_000).pullOnce()
+
+        XCTAssertFalse(defaults.bool(forKey: settingKey),
+                       "no settings history means the account's entity is adopted wholesale, "
+                       + "and the edit made in the window is lost with it")
+        XCTAssertTrue(client.commits.isEmpty,
+                      "the adopt is the point: none of this device's local defaults is published")
+    }
+
     /// The conflict retry reaches `push` with `allowInitialPull: false`, so the pull's
     /// in-round `mayPublish` short circuit never covers it: only the durable guard does.
     func testConflictRetryRefusesToCommitOverAnEntityThePullCouldNotRead() async throws {

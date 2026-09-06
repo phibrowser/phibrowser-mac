@@ -215,6 +215,7 @@
 		7A5B00A02EF0000000000001 /* MemoryButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A5B00A02EF0000000000002 /* MemoryButton.swift */; };
 		7B00AAAA000000050000A5B5 /* PostHogEnv.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7B00AAAA000000040000A4B4 /* PostHogEnv.swift */; };
 		7B00AAAA000000070000A7B7 /* PostHogConfig.generated.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7B00AAAA000000060000A6B6 /* PostHogConfig.generated.swift */; };
+		7BF37A101EC13E98467C36B0 /* PhiSyncProtocolClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3DBF9BA56BD068BB2E7DEDBE /* PhiSyncProtocolClient.swift */; };
 		86D6584B7E12124AFFC7CD71 /* phi_specifics.pb.swift in Sources */ = {isa = PBXBuildFile; fileRef = EFA5278C000987D588D0197B /* phi_specifics.pb.swift */; };
 		87F30FDCDBA26553DFA619EF /* RecoveryCodeDisplayView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 86DE5E18D7A0314781440048 /* RecoveryCodeDisplayView.swift */; };
 		897C09F42F6BEDA000E5CA9B /* IMChannelsViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 897C09F22F6BEDA000E5CA9B /* IMChannelsViewModel.swift */; };
@@ -320,6 +321,7 @@
 		C70000000000000000000012 /* CustomTooltip+Hosting.swift in Sources */ = {isa = PBXBuildFile; fileRef = C70000000000000000000002 /* CustomTooltip+Hosting.swift */; };
 		C70000000000000000000013 /* CommandShortcutTooltipContent.swift in Sources */ = {isa = PBXBuildFile; fileRef = C70000000000000000000003 /* CommandShortcutTooltipContent.swift */; };
 		C8D702469B5164CDCB72E3C8 /* PhiKeyCrypto.swift in Sources */ = {isa = PBXBuildFile; fileRef = D6CCBCF92F493BE791DFAC3A /* PhiKeyCrypto.swift */; };
+		CAFFCD641503577D0DA845BF /* PhiSyncEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4AAB7BA138E072B24EABDF00 /* PhiSyncEngine.swift */; };
 		CC24EF062E89223500CE9DD7 /* LoginController.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC24EF052E89223500CE9DD7 /* LoginController.swift */; };
 		CC24EF082E89251D00CE9DD7 /* AuthManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC24EF072E89251D00CE9DD7 /* AuthManager.swift */; };
 		CC2708982E7959DF00B65AB8 /* PinnedTabLayout.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC2708972E7959DF00B65AB8 /* PinnedTabLayout.swift */; };
@@ -710,9 +712,11 @@
 		37FA01142FDA000100000004 /* LocalStoreCompatibilityController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalStoreCompatibilityController.swift; sourceTree = "<group>"; };
 		37FC8C912F335942004675B8 /* WebContentProgressBarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WebContentProgressBarView.swift; sourceTree = "<group>"; };
 		37FC8DA92F39B2DE004675B8 /* LayoutModeSettingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LayoutModeSettingView.swift; sourceTree = "<group>"; };
+		3DBF9BA56BD068BB2E7DEDBE /* PhiSyncProtocolClient.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = PhiSyncProtocolClient.swift; sourceTree = "<group>"; };
 		40BAF44C72CFEA80E580CDF7 /* encryption.pb.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = encryption.pb.swift; sourceTree = "<group>"; };
 		4508A9352EEFF2EB007C94E2 /* AccountWebWindowController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccountWebWindowController.swift; sourceTree = "<group>"; };
 		457F461C0F164136A46FF641 /* GroupTabsTableView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GroupTabsTableView.swift; sourceTree = "<group>"; };
+		4AAB7BA138E072B24EABDF00 /* PhiSyncEngine.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = PhiSyncEngine.swift; sourceTree = "<group>"; };
 		4D454D4F5259000000000002 /* MemoryUsageModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MemoryUsageModels.swift; sourceTree = "<group>"; };
 		4D454D4F5259000000000005 /* MemoryUsageMonitor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MemoryUsageMonitor.swift; sourceTree = "<group>"; };
 		4D454D4F5259000000000007 /* ProcessMemorySampler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProcessMemorySampler.swift; sourceTree = "<group>"; };
@@ -1541,6 +1545,8 @@
 				E7194A390FE43820533B3998 /* Proto */,
 				A61CA1F7F5E9903A5A5624D6 /* PhiEntityCodec.swift */,
 				FED7DED52045A7D29820DB3B /* SyncableSettings.swift */,
+				3DBF9BA56BD068BB2E7DEDBE /* PhiSyncProtocolClient.swift */,
+				4AAB7BA138E072B24EABDF00 /* PhiSyncEngine.swift */,
 			);
 			name = Phi;
 			path = Phi;
@@ -3044,6 +3050,8 @@
 				4A1F8A4E3847DE0E10062837 /* sync_enums.pb.swift in Sources */,
 				9DA3DAC2E9DE1CCA0D831C9A /* PhiEntityCodec.swift in Sources */,
 				110106222C006D7EEEAE8F0F /* SyncableSettings.swift in Sources */,
+				7BF37A101EC13E98467C36B0 /* PhiSyncProtocolClient.swift in Sources */,
+				CAFFCD641503577D0DA845BF /* PhiSyncEngine.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

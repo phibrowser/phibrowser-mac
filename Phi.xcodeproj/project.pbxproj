@@ -322,6 +322,7 @@
 		A11E00000000000000000001 /* PhiScriptingService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A11E00000000000000000011 /* PhiScriptingService.swift */; };
 		A11E00000000000000000002 /* PhiScriptCommands.swift in Sources */ = {isa = PBXBuildFile; fileRef = A11E00000000000000000012 /* PhiScriptCommands.swift */; };
 		A11E00000000000000000003 /* Phi.sdef in Resources */ = {isa = PBXBuildFile; fileRef = A11E00000000000000000013 /* Phi.sdef */; };
+		91EBBA3B9E637B630495B980 /* PhiDomainKeyManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0BC93AB5984C221F1F3BC595 /* PhiDomainKeyManager.swift */; };
 		957735A9AD184AC362A69E70 /* SyncKeyStack.swift in Sources */ = {isa = PBXBuildFile; fileRef = A55D7E5143F932DF1031B744 /* SyncKeyStack.swift */; };
 		968126DBA688716A15DFAC27 /* KeyLayerViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1EAE9BC2177CD71475820E2A /* KeyLayerViewModel.swift */; };
 		A1B2C3D4E5F60718293A4B56 /* SharedAuthTokenStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F60718293A4B55 /* SharedAuthTokenStore.swift */; };
@@ -727,6 +728,7 @@
 		C0D3F1082026090800000002 /* SidebarFileDropView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SidebarFileDropView.swift; sourceTree = "<group>"; };
 		11E8BEE1510290AB35D5C5AD /* SentinelBackupCoordination.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SentinelBackupCoordination.swift; sourceTree = "<group>"; };
 		19B477B37CF44BC48335A032 /* AccountDeletedEventAuthentication.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccountDeletedEventAuthentication.swift; sourceTree = "<group>"; };
+		0BC93AB5984C221F1F3BC595 /* PhiDomainKeyManager.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = PhiDomainKeyManager.swift; sourceTree = "<group>"; };
 		1BEC0EBA18BE1C83C17B3D73 /* ProfileKeyManager.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ProfileKeyManager.swift; sourceTree = "<group>"; };
 		1EAE9BC2177CD71475820E2A /* KeyLayerViewModel.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = KeyLayerViewModel.swift; path = UI/KeyLayerViewModel.swift; sourceTree = "<group>"; };
 		23216985BAC98CA63F9CB2AC /* WaitingForApprovalView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = WaitingForApprovalView.swift; path = UI/WaitingForApprovalView.swift; sourceTree = "<group>"; };
@@ -1888,6 +1890,15 @@
 			name = "OS X";
 			sourceTree = "<group>";
 		};
+		87BBD9DD04F08DF788DE8800 /* Phi */ = {
+			isa = PBXGroup;
+			children = (
+				0BC93AB5984C221F1F3BC595 /* PhiDomainKeyManager.swift */,
+			);
+			name = Phi;
+			path = Phi;
+			sourceTree = "<group>";
+		};
 		897C09F32F6BEDA000E5CA9B /* IMChannels */ = {
 			isa = PBXGroup;
 			children = (
@@ -2090,6 +2101,7 @@
 			isa = PBXGroup;
 			children = (
 				8D5BC2CC89DF69775098173D /* Keys */,
+				87BBD9DD04F08DF788DE8800 /* Phi */,
 			);
 			name = Sync;
 			path = Sync;
@@ -3716,6 +3728,7 @@
 				184EE3BE148F696C555481F0 /* SyncKeyController.swift in Sources */,
 				0604A0F7564970C47522F57E /* AccountProfileSyncMappingStore.swift in Sources */,
 				686A8B97FDFABB61BB2539FD /* ProfilePairingView.swift in Sources */,
+				91EBBA3B9E637B630495B980 /* PhiDomainKeyManager.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

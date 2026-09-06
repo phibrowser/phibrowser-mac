@@ -10,6 +10,7 @@
 		04FE4637EFE3A1396687DD63 /* AISettingsConnectorViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = D8FCAEAE328C802016D87943 /* AISettingsConnectorViewModel.swift */; };
 		05170D58572AD0BE6C62021E /* KeyEnvelopeAPIClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 254713996DC310106F1FF7A7 /* KeyEnvelopeAPIClient.swift */; };
 		0604A0F7564970C47522F57E /* AccountProfileSyncMappingStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8ED3785F123750CD029A126E /* AccountProfileSyncMappingStore.swift */; };
+		110106222C006D7EEEAE8F0F /* SyncableSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = FED7DED52045A7D29820DB3B /* SyncableSettings.swift */; };
 		15B618E574463D94C98AEA5F /* AISettingHostingViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1B584F695BF7833FAA99558 /* AISettingHostingViewController.swift */; };
 		16733583CF857EA24EA6DE0D /* sync_entity.pb.swift in Sources */ = {isa = PBXBuildFile; fileRef = 57CD882BA97396ECFC85AAE6 /* sync_entity.pb.swift */; };
 		184EE3BE148F696C555481F0 /* SyncKeyController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 35EE13005B45461A584F7F1C /* SyncKeyController.swift */; };
@@ -1038,6 +1039,7 @@
 		F5D71320854F15DA33B8D7BA /* DevicesSettingView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = DevicesSettingView.swift; sourceTree = "<group>"; };
 		FBD200012FD0000000000002 /* FeedbackOutbox.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeedbackOutbox.swift; sourceTree = "<group>"; };
 		FBD200012FD0000000000004 /* FeedbackV2.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeedbackV2.swift; sourceTree = "<group>"; };
+		FED7DED52045A7D29820DB3B /* SyncableSettings.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = SyncableSettings.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -1538,6 +1540,7 @@
 				0BC93AB5984C221F1F3BC595 /* PhiDomainKeyManager.swift */,
 				E7194A390FE43820533B3998 /* Proto */,
 				A61CA1F7F5E9903A5A5624D6 /* PhiEntityCodec.swift */,
+				FED7DED52045A7D29820DB3B /* SyncableSettings.swift */,
 			);
 			name = Phi;
 			path = Phi;
@@ -3040,6 +3043,7 @@
 				16733583CF857EA24EA6DE0D /* sync_entity.pb.swift in Sources */,
 				4A1F8A4E3847DE0E10062837 /* sync_enums.pb.swift in Sources */,
 				9DA3DAC2E9DE1CCA0D831C9A /* PhiEntityCodec.swift in Sources */,
+				110106222C006D7EEEAE8F0F /* SyncableSettings.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

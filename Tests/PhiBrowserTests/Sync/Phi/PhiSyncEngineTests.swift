@@ -381,7 +381,8 @@ final class PhiSyncEngineTests: XCTestCase {
 
     /// The tombstone reason takes the same branch, and needs the same durable refusal: a
     /// device that had synced before must not undelete the account's settings on its next
-    /// local edit.
+    /// local edit. (Only a tombstone that outlasts several consecutive pulls is healed — see
+    /// `testRepeatedTombstoneLetsALaterLocalChangeRecreateTheEntity`.)
     func testTombstoneAfterASuccessfulSyncBlocksTheNextLocalChange() async throws {
         let key = SymmetricKey(size: .bits256)
         let client = FakePhiSyncClient()
@@ -415,6 +416,97 @@ final class PhiSyncEngineTests: XCTestCase {
         XCTAssertEqual(defaults.object(forKey: PhiSyncEngine.versionStateKey) as? NSNumber, NSNumber(value: Int64(7)))
         XCTAssertTrue(client.commits.isEmpty, "a tombstone must not be resurrected by the trailing push")
         XCTAssertEqual(client.stored[PhiSyncEntity.clientTagHash]?.deleted, true)
+    }
+
+    /// Refusing to publish over a tombstone is right, but on its own the refusal is permanent
+    /// and account-wide: the server keeps returning the tombstoned row on every replay
+    /// (FetchUpdates has no `deleted = false` filter and toSyncEntity emits a non-empty
+    /// `id_string`), so the `.absent` self-heal never fires and every device parks its pushes
+    /// forever. After `tombstoneHealAfterRounds` consecutive tombstone pulls the entity cursor
+    /// is dropped, so the next real local change goes out as a create.
+    func testRepeatedTombstoneLetsALaterLocalChangeRecreateTheEntity() async throws {
+        let key = SymmetricKey(size: .bits256)
+        let client = FakePhiSyncClient()
+        client.seed(ciphertext: try ciphertext(settingEntity(settingKey, true, at: 999), key: key), version: 5)
+        await makeEngine(client, key: key, now: 1_000).pullOnce()
+
+        // The row is deleted server-side, and every later replay hands back the same tombstone.
+        client.seed(ciphertext: Data(), version: 6, deleted: true)
+        let engine = makeEngine(client, key: key, now: 2_000)
+        await engine.pullOnce()
+        await engine.pullOnce()
+        XCTAssertEqual(defaults.string(forKey: PhiSyncEngine.entityIdStateKey), "srv-seed",
+                       "two rounds are not evidence enough to re-create the account's settings")
+
+        await engine.pullOnce()
+        XCTAssertNil(defaults.string(forKey: PhiSyncEngine.entityIdStateKey),
+                     "the third consecutive tombstone drops the entity cursor")
+        XCTAssertTrue(client.commits.isEmpty, "arming the heal must not publish anything by itself")
+        XCTAssertEqual(client.stored[PhiSyncEntity.clientTagHash]?.deleted, true)
+
+        // Only an explicit local change takes the create path.
+        defaults.set(false, forKey: settingKey)
+        await engine.handleLocalDefaultsChange()
+
+        XCTAssertEqual(client.commits.count, 1)
+        XCTAssertNil(client.commits[0].entityId, "a create, resolved by the client-tag index")
+        XCTAssertEqual(client.commits[0].baseVersion, 0)
+        XCTAssertEqual(client.stored[PhiSyncEntity.clientTagHash]?.deleted, false)
+        XCTAssertEqual(try decryptSetting(client.commits[0].ciphertext, key: key).values[settingKey]?.boolValue, false)
+        XCTAssertNil(defaults.object(forKey: PhiSyncEngine.tombstoneRoundsStateKey),
+                     "a successful commit ends the streak")
+    }
+
+    /// The streak has to be consecutive. A readable entity in between resets it, so a fresh
+    /// tombstone starts counting again and the durable refusal still holds.
+    func testAReadableEntityResetsTheTombstoneStreak() async throws {
+        let key = SymmetricKey(size: .bits256)
+        let client = FakePhiSyncClient()
+        client.seed(ciphertext: try ciphertext(settingEntity(settingKey, true, at: 999), key: key), version: 5)
+        let engine = makeEngine(client, key: key, now: 2_000)
+        await engine.pullOnce()
+
+        client.seed(ciphertext: Data(), version: 6, deleted: true)
+        await engine.pullOnce()
+        await engine.pullOnce()
+
+        // A peer re-creates the settings entity before the heal arms.
+        client.seed(ciphertext: try ciphertext(settingEntity(settingKey, false, at: 3_000), key: key), version: 7)
+        await engine.pullOnce()
+        XCTAssertNil(defaults.object(forKey: PhiSyncEngine.tombstoneRoundsStateKey))
+
+        // Deleted again: one tombstone is not three, so a local change is still refused.
+        client.seed(ciphertext: Data(), version: 8, deleted: true)
+        await engine.pullOnce()
+        XCTAssertEqual(defaults.string(forKey: PhiSyncEngine.entityIdStateKey), "srv-seed")
+
+        defaults.set(true, forKey: settingKey)
+        await engine.handleLocalDefaultsChange()
+
+        XCTAssertTrue(client.commits.isEmpty)
+        XCTAssertEqual(client.stored[PhiSyncEntity.clientTagHash]?.deleted, true)
+    }
+
+    /// Only a tombstone is healable: it carries no content. Bytes this device merely cannot
+    /// decrypt are real settings, so no number of rounds may drop the cursor and let a
+    /// `baseVersion = 0` create overwrite them.
+    func testUndecryptableEntityIsNeverHealedByTheTombstoneCounter() async throws {
+        let key = SymmetricKey(size: .bits256)
+        let client = FakePhiSyncClient()
+        let foreign = try ciphertext(settingEntity(settingKey, true, at: 999), key: SymmetricKey(size: .bits256))
+        client.seed(ciphertext: foreign, version: 5)
+        let engine = makeEngine(client, key: key, now: 1_000)
+
+        for _ in 0..<4 { await engine.pullOnce() }
+
+        XCTAssertEqual(defaults.string(forKey: PhiSyncEngine.entityIdStateKey), "srv-seed")
+        XCTAssertNil(defaults.object(forKey: PhiSyncEngine.tombstoneRoundsStateKey))
+
+        defaults.set(false, forKey: settingKey)
+        await engine.handleLocalDefaultsChange()
+
+        XCTAssertTrue(client.commits.isEmpty)
+        XCTAssertEqual(client.stored[PhiSyncEntity.clientTagHash]?.ciphertext, foreign)
     }
 
     /// A full replay that carries no settings entity proves the row is gone (a namespace

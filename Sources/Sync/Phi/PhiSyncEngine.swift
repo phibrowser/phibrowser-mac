@@ -44,14 +44,30 @@ actor PhiSyncEngine {
     /// this build does not know about, so a newer client's settings survive a round trip
     /// through this one.
     static let lastEntityStateKey = statePrefix + "lastEntity"
+    /// Consecutive pulls that found the account's settings row tombstoned. Drives the heal
+    /// below; persisted because a tombstone only this process happened to see twice is not
+    /// evidence enough to re-create an account's settings.
+    static let tombstoneRoundsStateKey = statePrefix + "tombstoneRounds"
 
     static let stateKeys = [entityIdStateKey, versionStateKey, storeBirthdayStateKey,
-                            markerStateKey, lastEntityStateKey]
+                            markerStateKey, lastEntityStateKey, tombstoneRoundsStateKey]
 
     /// GetUpdates pages drained in one pull before giving up until the next round. The server
     /// caps its own batch size; this only stops a pathological `changes_remaining` from
     /// spinning forever.
     private static let maxPullPages = 16
+
+    /// Consecutive tombstone pulls after which the entity cursor is dropped so a later local
+    /// change can re-create the row. Refusing to publish over a tombstone is right (the delete
+    /// must not be undone by the device that merely noticed it), but the refusal is otherwise
+    /// account-wide and permanent: the server keeps returning the tombstoned row on every
+    /// replay (`internal/data/entities_read.go` FetchUpdates has no `deleted = false` filter,
+    /// and `internal/chromiumsync/getupdates.go` toSyncEntity emits it with a non-empty
+    /// `id_string`), so `.absent`'s self-heal never fires and every device parks its pushes
+    /// forever. Requiring several rounds first keeps a fresh delete sticky; requiring an
+    /// explicit local change afterwards (this only clears the cursor, it never publishes)
+    /// keeps a deliberate deletion from being resurrected by a device that is merely polling.
+    private static let tombstoneHealAfterRounds = 3
 
     private let domainKeys: any PhiDomainKeyProviding
     private let client: PhiSyncProtocolClient
@@ -152,6 +168,16 @@ actor PhiSyncEngine {
 
     // MARK: - Pull
 
+    /// Why a pull could not turn the account's entity into settings. Only `.tombstone` is
+    /// healable: the other two mean the server holds real content this build must not
+    /// overwrite, and the refusal has to stand until a re-minted key or a newer build can read
+    /// it. A tombstone carries nothing to protect, so it may eventually be re-created.
+    private enum UnusableReason: String {
+        case tombstone
+        case foreignPayload = "payload is not settings"
+        case undecryptable = "ciphertext could not be opened"
+    }
+
     /// What one pull could make of the account's settings entity.
     private enum RemoteView {
         /// The server sent nothing under our client tag this round.
@@ -161,7 +187,7 @@ actor PhiSyncEngine {
         /// The entity is there but this build cannot turn it into settings (a tombstone, a
         /// ciphertext it cannot open, or a payload that is not `.setting`). Its bytes must
         /// survive: this device may not publish over them.
-        case unusable(reason: String)
+        case unusable(reason: UnusableReason)
     }
 
     /// Returns whether the round completed. The caller needs that: a first-ever push may only
@@ -201,14 +227,14 @@ actor PhiSyncEngine {
                         // publish either — re-committing this device's snapshot on top of it
                         // would silently undelete the account's settings (the server's
                         // client_tag unique index reuses the tombstoned row).
-                        view = .unusable(reason: "tombstone")
+                        view = .unusable(reason: .tombstone)
                         continue
                     }
                     do {
                         let decoded = try PhiEntityCodec.decrypt(entity.ciphertext, key: key)
                         guard case .setting(let setting)? = decoded.kind else {
                             AppLogWarn("[phi-sync] remote entity carries no settings payload; ignoring")
-                            view = .unusable(reason: "payload is not settings")
+                            view = .unusable(reason: .foreignPayload)
                             continue
                         }
                         view = .usable(setting)
@@ -217,7 +243,7 @@ actor PhiSyncEngine {
                         // sealing with an envelope version this build rejects) or corrupt
                         // bytes. Never apply it, and never publish over it.
                         AppLogError("[phi-sync] cannot open remote entity version=\(entity.version) ciphertext_bytes=\(entity.ciphertext.count) (\(error))")
-                        view = .unusable(reason: "ciphertext could not be opened")
+                        view = .unusable(reason: .undecryptable)
                     }
                 }
                 more = response.changesRemaining
@@ -236,6 +262,7 @@ actor PhiSyncEngine {
         var mayPublish = true
         switch view {
         case .usable(let remote):
+            tombstoneRounds = 0
             apply(remote, adopt: adoptRemote)
         case .unusable(let reason):
             // The server holds bytes under our client tag that this build cannot read. Not
@@ -245,7 +272,6 @@ actor PhiSyncEngine {
             // including the keys of a newer client that this build does not understand.
             // Rewinding the marker makes the next round see the entity again, so a re-minted
             // domain key or a newer build heals this instead of it being terminal.
-            AppLogWarn("[phi-sync] settings entity is unusable (\(reason)); not applying it and not publishing over it")
             storedMarker = nil
             // The baseline goes with the marker, and that is what makes the refusal durable
             // rather than a one-round suppression. `push`'s guard reads "an entity id with no
@@ -261,7 +287,9 @@ actor PhiSyncEngine {
             // baseline as soon as a pull can read the entity again.
             storedLastEntity = nil
             mayPublish = false
+            noteUnusable(reason)
         case .absent:
+            tombstoneRounds = 0
             if drained, startedFromScratch, storedEntityId != nil {
                 // A full replay carried no settings entity: the row this device points at is
                 // gone (a namespace change, a targeted delete, a partial restore). Keeping the
@@ -277,6 +305,35 @@ actor PhiSyncEngine {
         // pure remote apply commits nothing.
         if thenPush, mayPublish { await push(retryOnConflict: false, allowInitialPull: false) }
         return true
+    }
+
+    /// Records a pull that could not read the account's entity, and — for a tombstone only —
+    /// arms the heal once the row has been gone for `tombstoneHealAfterRounds` consecutive
+    /// pulls. Arming just drops the entity cursor: this never publishes anything, so a
+    /// deliberate deletion survives until some device actually changes a setting, and only then
+    /// does the commit go out as a create (`baseVersion = 0`, no entity id) that the server
+    /// resolves through its `ON CONFLICT (client_tag_hash) DO UPDATE` path.
+    ///
+    /// Logged at error level: both refusals leave settings sync dead for the whole account, and
+    /// `AppLogWarn`/`AppLogError` are the only levels that reach the shipped log file (release
+    /// installs the loggers at `.info`, `Logging.swift`), so this is the one support-visible
+    /// trace of a state the user cannot see or fix.
+    private func noteUnusable(_ reason: UnusableReason) {
+        guard reason == .tombstone else {
+            // Real content this build must not overwrite; nothing here may re-create it, and a
+            // non-tombstone round breaks the streak.
+            tombstoneRounds = 0
+            AppLogError("[phi-sync] settings entity is unusable (\(reason.rawValue)); not applying it and not publishing over it")
+            return
+        }
+        let rounds = tombstoneRounds + 1
+        tombstoneRounds = rounds
+        guard rounds >= Self.tombstoneHealAfterRounds else {
+            AppLogWarn("[phi-sync] settings entity is a tombstone (round \(rounds)/\(Self.tombstoneHealAfterRounds)); not applying it and not publishing over it")
+            return
+        }
+        AppLogError("[phi-sync] settings entity has been a tombstone for \(rounds) consecutive pulls; dropping the entity cursor so the next local change re-creates it")
+        clearEntityCursor()
     }
 
     private func apply(_ remote: Phi_PhiSettingEntity, adopt: Bool) {
@@ -318,7 +375,9 @@ actor PhiSyncEngine {
         // them. `storedLastEntity` is the decrypted baseline of what the server has; an entity
         // id with no baseline means the last pull saw the entity but could not read it (bad
         // key, foreign payload, tombstone — that pull drops the baseline precisely so this
-        // guard fires), or the baseline was lost with the process. Committing here would
+        // guard fires; a tombstone that has outlasted `tombstoneHealAfterRounds` pulls drops
+        // the id too, so this guard lets that one create), or the baseline was lost with the
+        // process. Committing here would
         // replace the entire entity — every key, including a newer client's — with this
         // device's snapshot. Rewind the marker so the next pull re-reads the entity and can
         // re-establish the baseline.
@@ -359,6 +418,9 @@ actor PhiSyncEngine {
                 storedVersion = version
                 storedBirthday = storeBirthday
                 storedLastEntity = outgoing
+                // Whatever the row was before, it now holds bytes this device wrote and can
+                // read: any tombstone streak is over.
+                tombstoneRounds = 0
                 AppLogInfo("[phi-sync] pushed settings keys=\(outgoing.values.count) version=\(version)")
             case .conflict(let serverVersion):
                 guard retryOnConflict else {
@@ -427,6 +489,16 @@ actor PhiSyncEngine {
         set {
             guard let newValue, !newValue.isEmpty else { return defaults.removeObject(forKey: Self.markerStateKey) }
             defaults.set(newValue, forKey: Self.markerStateKey)
+        }
+    }
+
+    /// Consecutive pulls that found the account's settings row tombstoned. Zero is stored as
+    /// "absent" so `stateKeys` stays a clean "nothing persisted" set after `resetSyncState()`.
+    private var tombstoneRounds: Int {
+        get { defaults.integer(forKey: Self.tombstoneRoundsStateKey) }
+        set {
+            guard newValue > 0 else { return defaults.removeObject(forKey: Self.tombstoneRoundsStateKey) }
+            defaults.set(newValue, forKey: Self.tombstoneRoundsStateKey)
         }
     }
 

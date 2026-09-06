@@ -25,6 +25,11 @@ extension PhiDomainKeyManager: PhiDomainKeyProviding {}
 /// (`PhiEntityCodec` -> `PhiKeyCrypto` AES-GCM) before they reach the protocol client. The
 /// field-level last-writer-wins timestamps live inside that ciphertext, so the server orders
 /// nothing and reads nothing.
+///
+/// The engine is single-account and single-use: sign-out must call `shutdown()` (see
+/// `PhiChromiumCoordinator.stopPhiSync()`), because dropping the reference alone leaves the
+/// rounds already on `roundQueue` running against the shared `phi.sync.*` cursor that the next
+/// account is about to claim.
 actor PhiSyncEngine {
     // MARK: - Persisted state
     //
@@ -93,6 +98,45 @@ actor PhiSyncEngine {
     /// would deadlock if they queued again.
     private var roundQueue: Task<Void, Never>?
 
+    // MARK: - Shutdown
+
+    /// One-way "this engine is retired" flag, set by `shutdown()` on sign-out / account
+    /// switch. From then on no queued round runs, a round already in flight unwinds without
+    /// writing anything, and no remote settings are applied.
+    ///
+    /// It lives in a lock-protected box rather than in actor state so `shutdown()` can be
+    /// `nonisolated` and take effect *synchronously*. The sign-out path runs on the main
+    /// actor while a round may be parked inside `getUpdates` (URLSession's default timeout is
+    /// 60 s) with a debounced push chained behind it; an `await engine.shutdown()` would be
+    /// just another message to a reentrant actor, with no ordering against that round's
+    /// resumption. With the box, the moment `PhiChromiumCoordinator.stopPhiSync()` returns the
+    /// dying round can no longer touch the shared `phi.sync.*` cursor — which the next account
+    /// is about to reset and claim in the same `UserDefaults`.
+    private final class StopSignal: @unchecked Sendable {
+        private let lock = NSLock()
+        private var stopped = false
+
+        var isStopped: Bool {
+            lock.lock()
+            defer { lock.unlock() }
+            return stopped
+        }
+
+        func stop() {
+            lock.lock()
+            stopped = true
+            lock.unlock()
+        }
+    }
+
+    private let stopSignal = StopSignal()
+    private var isStopped: Bool { stopSignal.isStopped }
+
+    /// Retires the engine for good: rounds queued behind an in-flight one never run, the
+    /// in-flight round writes nothing more (neither cursor nor settings), and no commit goes
+    /// out. Idempotent, and deliberately not reversible — a new sign-in builds a new engine.
+    nonisolated func shutdown() { stopSignal.stop() }
+
     /// What one queued round does. An enum rather than a closure so the body stays
     /// actor-isolated and needs no `@Sendable` gymnastics.
     private enum Round {
@@ -141,7 +185,11 @@ actor PhiSyncEngine {
     /// Deliberately synchronous and *not* queued: a sign-out must take effect immediately
     /// rather than behind an in-flight network round. It runs to completion between the
     /// suspension points of any round, so it never tears a half-written cursor.
+    ///
+    /// A retired engine skips it like every other write: after `shutdown()` the cursor in
+    /// this `UserDefaults` may already belong to the account mounted next.
     func resetSyncState() {
+        guard !isStopped else { return }
         for key in Self.stateKeys { defaults.removeObject(forKey: key) }
     }
 
@@ -161,6 +209,9 @@ actor PhiSyncEngine {
     }
 
     private func run(_ round: Round) async {
+        // A round enqueued before sign-out but still waiting behind an in-flight one must not
+        // start against the account that has since been mounted on the same defaults.
+        guard !isStopped else { return }
         switch round {
         case .pull:
             _ = await pull(retryOnBirthday: true, thenPush: true)
@@ -199,6 +250,7 @@ actor PhiSyncEngine {
     /// Returns whether the round completed. The caller needs that: a first-ever push may only
     /// fall back to a `version = 0` create once it is sure the account holds nothing.
     private func pull(retryOnBirthday: Bool, thenPush: Bool) async -> Bool {
+        guard !isStopped else { return false }
         let key: SymmetricKey
         do {
             key = try await domainKeys.domainKey()
@@ -206,6 +258,9 @@ actor PhiSyncEngine {
             AppLogWarn("[phi-sync] pull skipped: domain key unavailable (\(error))")
             return false
         }
+        // Sign-out can land in any of this round's suspension points; from here the round is
+        // holding the *previous* account's domain key, so everything below is off-limits.
+        guard !isStopped else { return false }
 
         // A pull with no marker replays the whole type, so "the entity was not in the response"
         // is only evidence of absence when we started from scratch and drained every page.
@@ -218,6 +273,7 @@ actor PhiSyncEngine {
             var more = true
             while more, page < Self.maxPullPages {
                 let response = try await client.getUpdates(marker: marker, storeBirthday: storedBirthday)
+                guard !isStopped else { return false }
                 storedBirthday = response.storeBirthday
                 marker = response.newMarker
                 storedMarker = marker
@@ -344,6 +400,9 @@ actor PhiSyncEngine {
     }
 
     private func apply(_ remote: Phi_PhiSettingEntity, adopt: Bool) {
+        // A retired engine decrypted these settings with the signed-out account's domain key;
+        // writing them now would hand the account mounted next the previous account's values.
+        guard !isStopped else { return }
         // A device with no settings history has no timestamps to compare against: every key it
         // snapshots would be stamped `now` and beat the account's real edits. So the first pull
         // adopts the account's entity wholesale; later pulls merge field by field.
@@ -371,6 +430,7 @@ actor PhiSyncEngine {
     // MARK: - Push
 
     private func push(retryOnConflict: Bool, allowInitialPull: Bool) async {
+        guard !isStopped else { return }
         // A `version = 0` commit takes the server's ON CONFLICT (client_tag_hash) DO UPDATE
         // path, which overwrites whatever is there. A device that has never synced must
         // discover the account's entity first or it silently clobbers every other device.
@@ -410,6 +470,10 @@ actor PhiSyncEngine {
             AppLogWarn("[phi-sync] push skipped: domain key unavailable (\(error))")
             return
         }
+        // Nothing below suspends before `client.commit`, so this one check is what keeps a
+        // retired round from publishing the signed-out account's settings — the token
+        // provider behind the client now mints the *new* account's bearer token.
+        guard !isStopped else { return }
 
         let last = storedLastEntity
         let local = SyncableSettings.snapshot(defaults, now: now(), settings: settings)
@@ -428,6 +492,7 @@ actor PhiSyncEngine {
                                                   ciphertext: ciphertext,
                                                   baseVersion: storedVersion ?? 0,
                                                   storeBirthday: storedBirthday)
+            guard !isStopped else { return }
             switch outcome {
             case .applied(let entityId, let version, let storeBirthday):
                 if !entityId.isEmpty { storedEntityId = entityId }
@@ -471,6 +536,18 @@ actor PhiSyncEngine {
 
     // MARK: - Persisted state accessors
 
+    /// Single write path for the account-scoped cursor, so the shutdown check cannot be
+    /// forgotten at one of the seven accessors below. `nil` removes the key.
+    ///
+    /// Belt and braces: the guards at the round's suspension points already stop a retired
+    /// round before it reaches any of these, and this makes the "a signed-out round never
+    /// writes the cursor" invariant hold even for a future code path that misses one.
+    private func writeState(_ value: Any?, forKey key: String) {
+        guard !isStopped else { return }
+        guard let value else { return defaults.removeObject(forKey: key) }
+        defaults.set(value, forKey: key)
+    }
+
     /// True once this device knows *which row* the account's settings live in — either it has
     /// seen the entity or it has committed its own. Answers "may a `version = 0` create go
     /// out?", nothing else; `clearEntityCursor()` makes it false again. The merge-vs-adopt
@@ -511,8 +588,8 @@ actor PhiSyncEngine {
     private var hasAdopted: Bool {
         get { defaults.bool(forKey: Self.hasAdoptedStateKey) }
         set {
-            guard newValue else { return defaults.removeObject(forKey: Self.hasAdoptedStateKey) }
-            defaults.set(true, forKey: Self.hasAdoptedStateKey)
+            let stored: Bool? = newValue ? true : nil
+            writeState(stored, forKey: Self.hasAdoptedStateKey)
         }
     }
 
@@ -528,30 +605,24 @@ actor PhiSyncEngine {
 
     private var storedEntityId: String? {
         get { defaults.string(forKey: Self.entityIdStateKey) }
-        set {
-            guard let newValue else { return defaults.removeObject(forKey: Self.entityIdStateKey) }
-            defaults.set(newValue, forKey: Self.entityIdStateKey)
-        }
+        set { writeState(newValue, forKey: Self.entityIdStateKey) }
     }
 
     private var storedVersion: Int64? {
         get { (defaults.object(forKey: Self.versionStateKey) as? NSNumber)?.int64Value }
-        set {
-            guard let newValue else { return defaults.removeObject(forKey: Self.versionStateKey) }
-            defaults.set(NSNumber(value: newValue), forKey: Self.versionStateKey)
-        }
+        set { writeState(newValue.map { NSNumber(value: $0) }, forKey: Self.versionStateKey) }
     }
 
     private var storedBirthday: String {
         get { defaults.string(forKey: Self.storeBirthdayStateKey) ?? "" }
-        set { defaults.set(newValue, forKey: Self.storeBirthdayStateKey) }
+        set { writeState(newValue, forKey: Self.storeBirthdayStateKey) }
     }
 
     private var storedMarker: Data? {
         get { defaults.data(forKey: Self.markerStateKey) }
         set {
-            guard let newValue, !newValue.isEmpty else { return defaults.removeObject(forKey: Self.markerStateKey) }
-            defaults.set(newValue, forKey: Self.markerStateKey)
+            let stored: Data? = (newValue?.isEmpty ?? true) ? nil : newValue
+            writeState(stored, forKey: Self.markerStateKey)
         }
     }
 
@@ -560,8 +631,8 @@ actor PhiSyncEngine {
     private var tombstoneRounds: Int {
         get { defaults.integer(forKey: Self.tombstoneRoundsStateKey) }
         set {
-            guard newValue > 0 else { return defaults.removeObject(forKey: Self.tombstoneRoundsStateKey) }
-            defaults.set(newValue, forKey: Self.tombstoneRoundsStateKey)
+            let stored: Int? = newValue > 0 ? newValue : nil
+            writeState(stored, forKey: Self.tombstoneRoundsStateKey)
         }
     }
 
@@ -570,11 +641,6 @@ actor PhiSyncEngine {
             guard let bytes = defaults.data(forKey: Self.lastEntityStateKey) else { return nil }
             return try? Phi_PhiSettingEntity(serializedBytes: bytes)
         }
-        set {
-            guard let newValue, let bytes = try? newValue.serializedData() else {
-                return defaults.removeObject(forKey: Self.lastEntityStateKey)
-            }
-            defaults.set(bytes, forKey: Self.lastEntityStateKey)
-        }
+        set { writeState(newValue.flatMap { try? $0.serializedData() }, forKey: Self.lastEntityStateKey) }
     }
 }

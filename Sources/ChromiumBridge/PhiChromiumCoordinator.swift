@@ -273,6 +273,15 @@ import SwiftUI
     /// an in-flight round still holds the manager, and the account's domain key must stop
     /// being reachable at sign-out, not whenever that round happens to finish.
     ///
+    /// Dropping the reference is not enough on its own, which is why `shutdown()` comes
+    /// first. Cancelling the sources only stops *new* rounds; the rounds already chained on
+    /// `PhiSyncEngine.roundQueue` (a pull parked in `getUpdates`, a debounced push queued
+    /// behind it) keep the engine alive through their own task and would otherwise resume
+    /// after the next account has mounted — writing the previous account's entity id,
+    /// version, marker, baseline and `hasAdopted` back over the freshly reset `phi.sync.*`
+    /// cursor and applying its decrypted settings. `shutdown()` is synchronous and takes
+    /// effect the moment it returns, so that window does not exist.
+    ///
     /// The persisted cursor is deliberately NOT wiped here — see
     /// `resetPhiSyncCursorIfAccountChanged`, which does it at the next build and only when
     /// the account actually differs.
@@ -286,6 +295,7 @@ import SwiftUI
             NotificationCenter.default.removeObserver(observer)
             phiSyncForegroundObserver = nil
         }
+        phiSyncEngine?.shutdown()
         phiSyncEngine = nil
         phiDomainKeys?.clear()
         phiDomainKeys = nil

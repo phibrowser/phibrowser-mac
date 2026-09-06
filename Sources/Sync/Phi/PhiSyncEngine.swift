@@ -66,8 +66,14 @@ enum PhiSyncLog {
 actor PhiSyncEngine {
     // MARK: - Persisted state
     //
-    // All account-scoped: a sign-out or account switch must call `resetSyncState()`, otherwise
-    // account A's progress marker and entity version get replayed against account B.
+    // All account-scoped, and they live in `UserDefaults.standard`, which is not — so account
+    // A's progress marker and entity version must never be replayed against account B. What
+    // enforces that is `PhiChromiumCoordinator.resetPhiSyncCursorIfAccountChanged`, which
+    // compares the recorded owner against the account being mounted and wipes these keys
+    // *before* the engine is built. Sign-out itself only calls `shutdown()`: the cursor is left
+    // where it is and either re-adopted by the same account or dropped by that owner check.
+    // (`resetSyncState()` below performs the same wipe on demand, but nothing in the app calls
+    // it.)
 
     static let statePrefix = "phi.sync."
     /// Server-assigned entity id (`id_string`) for the settings entity.
@@ -229,19 +235,24 @@ actor PhiSyncEngine {
     /// Drops every account-scoped cursor, `hasAdopted` included, so the next account's entity
     /// is adopted rather than merged against the previous account's timestamps.
     ///
-    /// **Account scope only** — sign-out and account switch. Nothing that happens *within* one
-    /// account may call this: clearing `hasAdopted` re-arms the wholesale adopt in `apply`, and
-    /// the account's own settings history is precisely what makes a field-level merge possible.
-    /// The two same-account recoveries (a server row this device can no longer address, and a
-    /// store birthday that no longer matches) go through `clearRemoteCursor()` and
+    /// **Test and recovery helper — the app never calls this.** The account-scope reset that
+    /// actually ships runs one layer up, in
+    /// `PhiChromiumCoordinator.resetPhiSyncCursorIfAccountChanged(accountId:defaults:)`: it
+    /// wipes the same `stateKeys` from outside, keyed on a recorded owner account, at the one
+    /// moment the wipe is safe — before the engine for the new account exists. Doing it from
+    /// in here cannot cover that case anyway: sign-out calls `shutdown()`, and the guard below
+    /// then makes this a no-op, precisely because a retired engine's `UserDefaults` may already
+    /// belong to the account mounted next.
+    ///
+    /// **Account scope only.** Nothing that happens *within* one account may call this:
+    /// clearing `hasAdopted` re-arms the wholesale adopt in `apply`, and the account's own
+    /// settings history is precisely what makes a field-level merge possible. The two
+    /// same-account recoveries (a server row this device can no longer address, and a store
+    /// birthday that no longer matches) go through `clearRemoteCursor()` and
     /// `resetForNewStoreBirthday()` instead.
     ///
-    /// Deliberately synchronous and *not* queued: a sign-out must take effect immediately
-    /// rather than behind an in-flight network round. It runs to completion between the
-    /// suspension points of any round, so it never tears a half-written cursor.
-    ///
-    /// A retired engine skips it like every other write: after `shutdown()` the cursor in
-    /// this `UserDefaults` may already belong to the account mounted next.
+    /// Deliberately synchronous and *not* queued: it runs to completion between the suspension
+    /// points of any round, so it never tears a half-written cursor.
     func resetSyncState() {
         guard !isStopped else { return }
         for key in Self.stateKeys { defaults.removeObject(forKey: key) }
@@ -656,9 +667,11 @@ actor PhiSyncEngine {
     /// local edits whose debounced push had not run yet.
     ///
     /// Not derived from the sidecars themselves: those sit next to the preference keys and are
-    /// not account-scoped, so they outlive `resetSyncState()` and would stop a device from
-    /// adopting the settings of an account it has just switched to. Only `resetSyncState()`
-    /// clears this.
+    /// not account-scoped, so they outlive the cursor wipe and would stop a device from
+    /// adopting the settings of an account it has just switched to. This is cleared only by an
+    /// account-scope reset of `stateKeys` — in the app that is
+    /// `PhiChromiumCoordinator.resetPhiSyncCursorIfAccountChanged`, run before the new
+    /// account's engine is built; `resetSyncState()` does the same wipe from in here.
     ///
     /// One known window, accepted rather than closed. The two predicates disagree the other way
     /// when a device's only sight of the entity was `.unusable`: the pull records
@@ -710,7 +723,8 @@ actor PhiSyncEngine {
     /// `hasAdopted` survives, because the *account* did not change — only the server's store
     /// identity did. The `<key>.phiSyncTs` sidecars this device has been keeping still describe
     /// this account's settings, so the next readable entity must be merged against them, not
-    /// adopted over them. (`resetSyncState()` is the account-scope reset and does clear it.)
+    /// adopted over them. (Only an account-scope reset of `stateKeys` clears it — see
+    /// `hasAdopted`.)
     private func resetForNewStoreBirthday() {
         clearRemoteCursor()
         storedBirthday = ""
@@ -744,7 +758,7 @@ actor PhiSyncEngine {
     }
 
     /// Consecutive pulls that found the account's settings row tombstoned. Zero is stored as
-    /// "absent" so `stateKeys` stays a clean "nothing persisted" set after `resetSyncState()`.
+    /// "absent" so `stateKeys` stays a clean "nothing persisted" set after a cursor wipe.
     private var tombstoneRounds: Int {
         get { defaults.integer(forKey: Self.tombstoneRoundsStateKey) }
         set {

@@ -101,7 +101,13 @@ public final class ThemeManager: NSObject, ThemeSource {
     
     /// Observation token for system appearance changes.
     private var appearanceObservation: NSKeyValueObservation?
-    
+
+    /// Observer for settings pulled by the Phi sync engine (M3-1). Both theme preferences are
+    /// cached in memory here and written back from the `didSet`s above, so a value the engine
+    /// writes straight into `UserDefaults` would otherwise not reach the UI until the next
+    /// launch — and could then be overwritten by this stale cache.
+    private var syncedSettingsObservation: NSObjectProtocol?
+
     // MARK: - Combine Publishers
     
     /// Publishes theme changes.
@@ -123,10 +129,31 @@ public final class ThemeManager: NSObject, ThemeSource {
         restorePersistedThemes()
         
         restoreUserPreferences()
-        
+
         setupAppearanceObservation()
+        setupSyncedSettingsObservation()
     }
-    
+
+    /// Re-reads the two synced theme preferences when the Phi sync engine applies a pulled
+    /// value for them.
+    ///
+    /// `restoreUserPreferences()` is idempotent and both setters below it are guarded by
+    /// `!= oldValue`, so a notification that changed nothing writes nothing back — and a write
+    /// that does happen re-persists the value the engine just stored, whose sidecars
+    /// `SyncableSettings.apply` has already refreshed, so it is not detected as a local edit
+    /// and not echoed back to the account.
+    private func setupSyncedSettingsObservation() {
+        syncedSettingsObservation = NotificationCenter.default.addObserver(
+            forName: .phiSyncedSettingsDidApply, object: nil, queue: .main
+        ) { [weak self] notification in
+            guard let self else { return }
+            let applied = notification.userInfo?[SyncableSettings.appliedKeysUserInfoKey] as? [String] ?? []
+            guard applied.contains(PhiPreferences.ThemeSettings.userAppearanceChoice.rawValue)
+                    || applied.contains(PhiPreferences.ThemeSettings.currentThemeId.rawValue) else { return }
+            self.restoreUserPreferences()
+        }
+    }
+
     /// Restores saved theme and appearance preferences from `UserDefaults`.
     private func restoreUserPreferences() {
         let savedChoice = UserDefaults.standard.integer(forKey: PhiPreferences.ThemeSettings.userAppearanceChoice.rawValue)

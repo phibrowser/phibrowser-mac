@@ -26,6 +26,25 @@ final class PhiSyncEngineTests: XCTestCase {
 
     // MARK: - Fakes
 
+    /// A one-shot gate. `wait()` suspends until someone calls `open()`, which is how a test
+    /// parks a round inside the fake network call and then lets it go.
+    actor Gate {
+        private var isOpen = false
+        private var waiters: [CheckedContinuation<Void, Never>] = []
+
+        func open() {
+            guard !isOpen else { return }
+            isOpen = true
+            for waiter in waiters { waiter.resume() }
+            waiters.removeAll()
+        }
+
+        func wait() async {
+            guard !isOpen else { return }
+            await withCheckedContinuation { waiters.append($0) }
+        }
+    }
+
     /// Fixed domain key, standing in for `PhiDomainKeyManager`.
     final class StubDomainKeys: PhiDomainKeyProviding {
         let key: SymmetricKey
@@ -76,6 +95,14 @@ final class PhiSyncEngineTests: XCTestCase {
         var forcedConflicts = 0
         /// When non-empty, `getUpdates` returns these pages in order instead of reading `stored`.
         var scriptedPages: [Page] = []
+        /// Opened as soon as `getUpdates` is entered, so a test can wait for a round to be
+        /// parked inside the network call.
+        var arrivedInGetUpdates: Gate?
+        /// Awaited inside `getUpdates`: while it is shut, the calling round is suspended.
+        var getUpdatesGate: Gate?
+        /// Ordered log of what the engine did on the wire, so a test can assert that a commit
+        /// happened after a parked pull finished rather than during it.
+        private(set) var callLog: [String] = []
 
         func seed(ciphertext: Data, version: Int64, entityId: String = "srv-seed", deleted: Bool = false) {
             stored[PhiSyncEntity.clientTagHash] = Stored(entityId: entityId, version: version,
@@ -85,6 +112,10 @@ final class PhiSyncEngineTests: XCTestCase {
         func getUpdates(marker: Data?, storeBirthday: String) async throws
             -> (entities: [PhiRemoteEntity], newMarker: Data, storeBirthday: String, changesRemaining: Bool) {
             getUpdatesCalls.append((marker, storeBirthday))
+            callLog.append("getUpdates.begin")
+            if let arrivedInGetUpdates { await arrivedInGetUpdates.open() }
+            if let getUpdatesGate { await getUpdatesGate.wait() }
+            defer { callLog.append("getUpdates.end") }
             if let error = getUpdatesErrorOnce {
                 getUpdatesErrorOnce = nil
                 throw error
@@ -110,6 +141,7 @@ final class PhiSyncEngineTests: XCTestCase {
             commits.append(CommitCall(entityId: entityId, clientTagHash: clientTagHash,
                                       ciphertext: ciphertext, baseVersion: baseVersion,
                                       storeBirthday: storeBirthday))
+            callLog.append("commit")
             if let error = commitErrorOnce {
                 commitErrorOnce = nil
                 throw error
@@ -245,23 +277,50 @@ final class PhiSyncEngineTests: XCTestCase {
         XCTAssertEqual(committed.values[settingKey]?.updatedAtMs, 3_000)
     }
 
-    /// A ciphertext this device cannot open must never be applied and must never be silently
-    /// treated as "no remote value" — the cursor still advances so the next commit has a base.
+    /// A ciphertext this device cannot open must never be applied — and, just as importantly,
+    /// must never be published over: the trailing push would commit this device's snapshot
+    /// against the id and version harvested from that very entity and replace the account's
+    /// settings for every other device.
     func testUndecryptableRemoteEntityLeavesLocalSettingsAlone() async throws {
         let key = SymmetricKey(size: .bits256)
         let client = FakePhiSyncClient()
-        client.seed(ciphertext: try ciphertext(settingEntity(settingKey, true, at: 999), key: SymmetricKey(size: .bits256)),
-                    version: 5)
+        let foreign = try ciphertext(settingEntity(settingKey, true, at: 999), key: SymmetricKey(size: .bits256))
+        client.seed(ciphertext: foreign, version: 5)
         defaults.set(false, forKey: settingKey)
 
         await makeEngine(client, key: key, now: 1_000).pullOnce()
 
         XCTAssertFalse(defaults.bool(forKey: settingKey))
         XCTAssertEqual(defaults.string(forKey: PhiSyncEngine.entityIdStateKey), "srv-seed")
+        XCTAssertTrue(client.commits.isEmpty, "an entity this device cannot read must not be overwritten")
+        XCTAssertEqual(client.stored[PhiSyncEntity.clientTagHash]?.ciphertext, foreign)
+        // The marker is rewound so the next round sees the entity again and can heal once the
+        // right domain key is available.
+        XCTAssertNil(defaults.data(forKey: PhiSyncEngine.markerStateKey))
     }
 
-    /// A tombstone must not be decrypted or applied, but its version is still the base for the
-    /// next commit.
+    /// The same protection has to survive a relaunch: the entity id and version persist but the
+    /// decrypted baseline does not, so a push that starts from an id with no baseline must
+    /// refuse rather than commit over bytes it never read.
+    func testPushRefusesWithoutAReadableBaseline() async throws {
+        let key = SymmetricKey(size: .bits256)
+        let client = FakePhiSyncClient()
+        client.seed(ciphertext: try ciphertext(settingEntity(settingKey, true, at: 999), key: SymmetricKey(size: .bits256)),
+                    version: 5)
+        await makeEngine(client, key: key, now: 1_000).pullOnce()
+        XCTAssertEqual(defaults.string(forKey: PhiSyncEngine.entityIdStateKey), "srv-seed")
+
+        // A fresh engine, as after a relaunch: only what UserDefaults kept survives.
+        defaults.set(true, forKey: settingKey)
+        await makeEngine(client, key: key, now: 2_000).pushLocalSettings()
+
+        XCTAssertTrue(client.commits.isEmpty)
+    }
+
+    /// A tombstone must not be decrypted or applied, its version is still the base for the next
+    /// commit, and the trailing push must not resurrect it: the server's client-tag index
+    /// reuses the tombstoned row, so a commit here would undelete the account's settings from
+    /// this one device's view.
     func testDeletedRemoteEntityIsNotApplied() async throws {
         let key = SymmetricKey(size: .bits256)
         let client = FakePhiSyncClient()
@@ -272,6 +331,28 @@ final class PhiSyncEngineTests: XCTestCase {
 
         XCTAssertTrue(defaults.bool(forKey: settingKey))
         XCTAssertEqual(defaults.object(forKey: PhiSyncEngine.versionStateKey) as? NSNumber, NSNumber(value: Int64(7)))
+        XCTAssertTrue(client.commits.isEmpty, "a tombstone must not be resurrected by the trailing push")
+        XCTAssertEqual(client.stored[PhiSyncEntity.clientTagHash]?.deleted, true)
+    }
+
+    /// A full replay that carries no settings entity proves the row is gone (a namespace
+    /// change, a targeted delete, a partial restore). The stale id goes with it, otherwise
+    /// every later commit is an update the server answers with INVALID_MESSAGE forever.
+    func testFullReplayWithoutTheEntityDropsTheStaleCursor() async throws {
+        let key = SymmetricKey(size: .bits256)
+        let client = FakePhiSyncClient()
+        defaults.set("srv-gone", forKey: PhiSyncEngine.entityIdStateKey)
+        defaults.set(NSNumber(value: Int64(42)), forKey: PhiSyncEngine.versionStateKey)
+        defaults.set(try settingEntity(settingKey, false, at: 1_000).serializedData(),
+                     forKey: PhiSyncEngine.lastEntityStateKey)
+        defaults.set(true, forKey: settingKey)
+
+        await makeEngine(client, key: key, now: 2_000).pullOnce()
+
+        XCTAssertEqual(client.commits.count, 1, "the round falls back to a create")
+        XCTAssertNil(client.commits[0].entityId)
+        XCTAssertEqual(client.commits[0].baseVersion, 0)
+        XCTAssertEqual(defaults.string(forKey: PhiSyncEngine.entityIdStateKey), "srv-1")
     }
 
     /// `changes_remaining > 0` means the server has more to hand over; the engine keeps asking
@@ -431,6 +512,27 @@ final class PhiSyncEngineTests: XCTestCase {
         XCTAssertEqual(client.commits.count, 2)
     }
 
+    /// INVALID_MESSAGE means the server has no row for the id this commit names (pgx.ErrNoRows
+    /// on the update path, or a data_type mismatch). NOT_MY_BIRTHDAY never fires for it, and an
+    /// incremental GetUpdates returns nothing, so without dropping the cursor the device would
+    /// resend the same rejected id forever and never sync again.
+    func testCommitRejectedAsInvalidMessageDropsTheCursor() async throws {
+        let key = SymmetricKey(size: .bits256)
+        let client = FakePhiSyncClient()
+        client.seed(ciphertext: try ciphertext(settingEntity(settingKey, false, at: 1_000), key: key), version: 5)
+        let engine = makeEngine(client, key: key, now: 2_000)
+        await engine.pullOnce()
+
+        defaults.set(true, forKey: settingKey)
+        client.commitErrorOnce = PhiSyncProtocolError.commitRejected(.invalidMessage)
+        await engine.pushLocalSettings()
+
+        XCTAssertEqual(client.commits.count, 1)
+        for stateKey in PhiSyncEngine.stateKeys {
+            XCTAssertNil(defaults.object(forKey: stateKey), "\(stateKey) survived INVALID_MESSAGE")
+        }
+    }
+
     /// A locked key layer must abort the round quietly, without committing anything.
     func testLockedDomainKeyAbortsTheRound() async throws {
         let client = FakePhiSyncClient()
@@ -443,6 +545,43 @@ final class PhiSyncEngineTests: XCTestCase {
         await engine.pushLocalSettings()
 
         XCTAssertTrue(client.commits.isEmpty)
+    }
+
+    // MARK: - Serialization
+
+    /// R8's invariant, which actor isolation alone does not provide: Swift actors are
+    /// reentrant, so a round parked at an `await` would otherwise let the next one in. A local
+    /// change raised while a pull is suspended inside `getUpdates` must wait for that pull's
+    /// whole round — cursor writes included — before it commits anything.
+    func testRoundsDoNotInterleaveWhileAPullIsSuspended() async throws {
+        let key = SymmetricKey(size: .bits256)
+        let client = FakePhiSyncClient()
+        client.seed(ciphertext: try ciphertext(settingEntity(settingKey, false, at: 1_000), key: key), version: 5)
+        // A first round establishes the cursor and the baseline.
+        await makeEngine(client, key: key, now: 1_000).pullOnce()
+
+        let arrived = Gate()
+        let release = Gate()
+        client.arrivedInGetUpdates = arrived
+        client.getUpdatesGate = release
+
+        let engine = makeEngine(client, key: key, now: 3_000)
+        let pull = Task { await engine.pullOnce() }
+        await arrived.wait()                     // the pull is now parked inside getUpdates
+
+        defaults.set(true, forKey: settingKey)   // a user edit lands mid-round
+        let push = Task { await engine.handleLocalDefaultsChange() }
+        for _ in 0..<32 { await Task.yield() }
+        XCTAssertTrue(client.commits.isEmpty, "the queued push must not run while the pull is parked")
+
+        await release.open()
+        await pull.value
+        await push.value
+
+        XCTAssertEqual(client.commits.count, 1)
+        XCTAssertEqual(client.callLog.filter { $0 != "getUpdates.begin" },
+                       ["getUpdates.end", "getUpdates.end", "commit"],
+                       "the commit lands after the parked pull finished its round, not during it")
     }
 
     // MARK: - State

@@ -297,4 +297,69 @@ final class AccountKeyManagerTests: XCTestCase {
         let after = try await mgr.accountExists()
         XCTAssertTrue(after)
     }
+
+    // MARK: - Unlock announcement
+
+    /// The ARK arrives from four flows, three of which live in the Devices pane and never call
+    /// back into `PhiChromiumCoordinator` — which is why M3-1's settings engine was built on a
+    /// freshly joined device and then never scheduled a round. `.phiAccountKeyDidUnlock` is the
+    /// one announcement every flow makes, so it has to fire for each of them. (`bootstrap` is
+    /// covered by `testUnlockIsAnnouncedOnce`.)
+    func testJoinWithRecoveryCodeAnnouncesTheUnlock() async throws {
+        let api = FakeAPI()
+        let code = try await makeManager(api).bootstrap()
+        let joiner = makeManager(api)
+        let expectation = XCTNSNotificationExpectation(name: .phiAccountKeyDidUnlock, object: joiner)
+
+        try await joiner.joinWithRecoveryCode(code)
+
+        await fulfillment(of: [expectation], timeout: 1)
+    }
+
+    func testStartupUnlockAnnouncesTheUnlock() async throws {
+        let api = FakeAPI()
+        let first = makeManager(api)
+        _ = try await first.bootstrap()
+        let fresh = AccountKeyManager(api: api, deviceKeyProvider: first.deviceKeyProviderForTesting)
+        let expectation = XCTNSNotificationExpectation(name: .phiAccountKeyDidUnlock, object: fresh)
+
+        _ = try await fresh.unlockAtStartup()
+
+        await fulfillment(of: [expectation], timeout: 1)
+    }
+
+    func testApprovedJoinAnnouncesTheUnlock() async throws {
+        let api = FakeAPI()
+        let approver = makeManager(api)
+        _ = try await approver.bootstrap()
+        let joinerProvider = FakeDeviceKeyProvider()
+        let joiner = AccountKeyManager(api: api, deviceKeyProvider: joinerProvider)
+        let ticket = try await joiner.requestJoinApproval()
+        let sealed = try PhiKeyCrypto.sealToPublicKey(
+            approver.currentARK!.withUnsafeBytes { Data($0) },
+            recipient: joinerProvider.loadOrCreatePrivateKey().publicKey)
+        try await api.approveJoinRequest(id: ticket.requestId, grantedArkEnvelope: sealed,
+                                         resolvedByDeviceKeyId: "approver")
+        let expectation = XCTNSNotificationExpectation(name: .phiAccountKeyDidUnlock, object: joiner)
+
+        let result = try await joiner.pollJoin(requestId: ticket.requestId)
+        XCTAssertEqual(result, .approved)
+
+        await fulfillment(of: [expectation], timeout: 1)
+    }
+
+    /// Only the nil -> unlocked edge announces: a second unlock of an already-unlocked manager
+    /// must not restart anything downstream.
+    func testUnlockIsAnnouncedOnce() async throws {
+        let api = FakeAPI()
+        let mgr = makeManager(api)
+        let once = XCTNSNotificationExpectation(name: .phiAccountKeyDidUnlock, object: mgr)
+        once.expectedFulfillmentCount = 1
+        once.assertForOverFulfill = true
+
+        _ = try await mgr.bootstrap()
+        _ = try await mgr.unlockAtStartup()
+
+        await fulfillment(of: [once], timeout: 1)
+    }
 }

@@ -209,7 +209,9 @@ final class KeyEnvelopeAPIClient {
         self.tokenProvider = tokenProvider
     }
 
-    private var baseURL: String {
+    /// Host of the sync backend for this build. Exposed because `PhiSyncHTTPClient` posts to
+    /// the same host (`/chromium-sync/...`) and the environment switch must live in one place.
+    static var syncBaseURL: String {
         #if DEBUG
         return AuthManager.useStagingAuth0 ? "https://sync.stag.phibrowser.com" : "https://sync.phibrowser.com"
         #elseif NIGHTLY_BUILD
@@ -218,6 +220,8 @@ final class KeyEnvelopeAPIClient {
         return "https://sync.phibrowser.com"
         #endif
     }
+
+    private var baseURL: String { Self.syncBaseURL }
 
     static func b64(_ c: KeyedDecodingContainer<AccountKeyStateDTO.CodingKeys>,
                     _ key: AccountKeyStateDTO.CodingKeys) throws -> Data {

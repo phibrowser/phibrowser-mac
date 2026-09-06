@@ -383,6 +383,38 @@ final class SyncableSettingsTests: XCTestCase {
         XCTAssertNil(defaults.object(forKey: layoutKey))
     }
 
+    // MARK: - applied-keys notification
+
+    /// Writing the preference domain is not the same as applying the preference: the two theme
+    /// keys are cached in memory by `ThemeManager`, which re-reads them on this notification.
+    /// So `apply` has to announce exactly the keys that landed.
+    func testApplyAnnouncesTheKeysThatLanded() {
+        let expectation = XCTNSNotificationExpectation(name: .phiSyncedSettingsDidApply)
+        var announced: [String]?
+        expectation.handler = { notification in
+            announced = notification.userInfo?[SyncableSettings.appliedKeysUserInfoKey] as? [String]
+            return true
+        }
+
+        SyncableSettings.apply(fromMap([probeKey: boolValue(true, at: 42)]),
+                               to: defaults, settings: probeRegistry)
+
+        wait(for: [expectation], timeout: 1)
+        XCTAssertEqual(announced, [probeKey])
+    }
+
+    /// A refused write leaves the local value standing, so there is nothing for an observer to
+    /// re-read and nothing is announced.
+    func testApplyAnnouncesNothingWhenNoKeyLanded() {
+        let expectation = XCTNSNotificationExpectation(name: .phiSyncedSettingsDidApply)
+        expectation.isInverted = true
+
+        SyncableSettings.apply(fromMap([probeKey: stringValue("not a bool", at: 42)]),
+                               to: defaults, settings: probeRegistry)
+
+        wait(for: [expectation], timeout: 0.2)
+    }
+
     // MARK: - round trip
 
     /// snapshot → merge → apply is the loop the engine runs; the newer remote

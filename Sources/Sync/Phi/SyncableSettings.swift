@@ -1,5 +1,23 @@
 import Foundation
 
+extension Notification.Name {
+    /// Posted by `SyncableSettings.apply` once a pulled entity has been written into
+    /// `UserDefaults`, carrying the keys that actually landed under
+    /// `SyncableSettings.appliedKeysUserInfoKey` (`[String]`).
+    ///
+    /// It exists because writing the preference domain is not the same as applying the
+    /// preference: components that cache a value in memory at launch — `ThemeManager` reads
+    /// `PhiUserAppearanceChoice` / `PhiCurrentThemeId` once and thereafter only writes them —
+    /// see nothing when the engine changes the stored value, so the setting would only take
+    /// effect on the next launch. Components whose readers already run off
+    /// `UserDefaults.didChangeNotification` need nothing from this.
+    ///
+    /// Posted on whichever thread ran the apply (the sync engine's, in production), so an
+    /// observer that touches UI must hop to the main actor itself. The notification names keys,
+    /// never values: observers re-read the preference they own.
+    static let phiSyncedSettingsDidApply = Notification.Name("PhiSyncedSettingsDidApply")
+}
+
 /// One synced preference.
 ///
 /// `key` IS the `UserDefaults` raw key, 1:1 — there is no separate sync
@@ -181,6 +199,12 @@ enum SyncableSettings {
 
     // MARK: Theme
 
+    /// `ThemeManager` caches `userAppearanceChoice` and `currentTheme` in memory and reads the
+    /// two `UserDefaults` keys only in its initializer, so writing them here is not enough for
+    /// the pulled value to take effect: it re-reads them on
+    /// ``Notification/Name/phiSyncedSettingsDidApply``, which ``apply(_:to:settings:)`` posts.
+    /// (The other registered keys need nothing — their readers already run off
+    /// `UserDefaults.didChangeNotification`.)
     private static let themeSettings: [SyncableSetting] = [
         // 0 = system, 1 = light, 2 = dark.
         SyncableSetting(
@@ -306,11 +330,16 @@ enum SyncableSettings {
     ///
     /// If a write is refused (a type-mismatched or unparseable value), the
     /// sidecars are left untouched so the local value is re-pushed instead.
+    ///
+    /// Finally posts ``Notification/Name/phiSyncedSettingsDidApply`` with the keys that landed,
+    /// so preferences whose owner caches them in memory (the theme keys) can re-read rather
+    /// than wait for the next launch. Nothing is posted when no key landed.
     static func apply(
         _ entity: Phi_PhiSettingEntity,
         to defaults: UserDefaults,
         settings: [SyncableSetting] = SyncableSettings.all
     ) {
+        var applied: [String] = []
         for setting in settings {
             guard let value = entity.values[setting.key] else { continue }
             setting.write(value, defaults)
@@ -318,6 +347,14 @@ enum SyncableSettings {
             guard let stored = setting.read(defaults), signature(of: stored) == expected else { continue }
             defaults.set(NSNumber(value: value.updatedAtMs), forKey: timestampKey(for: setting.key))
             defaults.set(expected, forKey: valueKey(for: setting.key))
+            applied.append(setting.key)
         }
+        guard !applied.isEmpty else { return }
+        NotificationCenter.default.post(name: .phiSyncedSettingsDidApply, object: nil,
+                                        userInfo: [appliedKeysUserInfoKey: applied])
     }
+
+    /// `userInfo` key of ``Notification/Name/phiSyncedSettingsDidApply``; the value is a
+    /// `[String]` of `UserDefaults` keys.
+    static let appliedKeysUserInfoKey = "phiSyncedSettingsAppliedKeys"
 }

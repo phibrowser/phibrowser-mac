@@ -244,15 +244,13 @@ final class ServiceBrokerChannelStoreTests: XCTestCase {
             sequence: 0, BrokerWebSocketFrame(kind: .binary, data: Data([1, 2, 3]))))
         socket.receive(.close(code: 1000, reason: "done"))
 
-        let frame = try await store.pullWebSocket(owner: owner, channelID: opened.channelID)
-        let close = try await store.pullWebSocket(owner: owner, channelID: opened.channelID)
+        let pulled = try await drainUntilTerminal(store, channelID: opened.channelID)
 
         XCTAssertEqual(socket.sentFrames, [outgoing])
-        XCTAssertEqual(
-            frame.event,
-            .frame(sequence: 0, BrokerWebSocketFrame(kind: .binary, data: Data([1, 2, 3])))
-        )
-        XCTAssertEqual(close.event, .close(code: 1000, reason: "done"))
+        XCTAssertEqual(pulled, [
+            .frame(sequence: 0, BrokerWebSocketFrame(kind: .binary, data: Data([1, 2, 3]))),
+            .close(code: 1000, reason: "done"),
+        ])
     }
 
     func testWebSocketTerminalCloseSurvivesAFullDataQueue() async throws {
@@ -278,12 +276,10 @@ final class ServiceBrokerChannelStoreTests: XCTestCase {
         }
         socket.receive(.close(code: 1000, reason: "done"))
 
-        var terminal: BrokerWebSocketEvent?
-        for _ in 0...128 {
-            terminal = try await store.pullWebSocket(
-                owner: owner, channelID: opened.channelID).event
-        }
-        XCTAssertEqual(terminal, .close(code: 1000, reason: "done"))
+        let drained = try await drainUntilTerminal(store, channelID: opened.channelID)
+
+        XCTAssertEqual(drained.count, 129)
+        XCTAssertEqual(drained.last, .close(code: 1000, reason: "done"))
     }
 
     func testWebSocketFramesHaveChannelOwnedSequenceNumbers() async throws {
@@ -296,13 +292,12 @@ final class ServiceBrokerChannelStoreTests: XCTestCase {
         socket.receive(.frame(
             sequence: 1, BrokerWebSocketFrame(kind: .text, data: Data("two".utf8))))
 
-        let first = try await store.pullWebSocket(owner: owner, channelID: opened.channelID)
-        let second = try await store.pullWebSocket(owner: owner, channelID: opened.channelID)
+        let events = try await collectEvents(store, channelID: opened.channelID, count: 2)
 
-        XCTAssertEqual(first.event, .frame(
-            sequence: 0, BrokerWebSocketFrame(kind: .text, data: Data("one".utf8))))
-        XCTAssertEqual(second.event, .frame(
-            sequence: 1, BrokerWebSocketFrame(kind: .text, data: Data("two".utf8))))
+        XCTAssertEqual(events, [
+            .frame(sequence: 0, BrokerWebSocketFrame(kind: .text, data: Data("one".utf8))),
+            .frame(sequence: 1, BrokerWebSocketFrame(kind: .text, data: Data("two".utf8))),
+        ])
         try await store.closeWebSocket(
             owner: owner, channelID: opened.channelID, code: 1000, reason: nil)
     }
@@ -351,7 +346,7 @@ final class ServiceBrokerChannelStoreTests: XCTestCase {
             owner: owner, channelID: opened.channelID, code: 1000, reason: "done")
 
         let result = try await pull.value
-        XCTAssertEqual(result.event, .close(code: 1000, reason: "done"))
+        XCTAssertEqual(result.events, [.close(code: 1000, reason: "done")])
         XCTAssertTrue(socket.isClosed)
         await assertChannelError(.channelNotFound) {
             _ = try await store.pullWebSocket(owner: self.owner, channelID: opened.channelID)
@@ -397,8 +392,197 @@ final class ServiceBrokerChannelStoreTests: XCTestCase {
         }
     }
 
+    func testWebSocketPullDrainsQueuedEventsAsOneBatch() async throws {
+        let socket = FakeBrokerWebSocket()
+        let store = makeWebSocketStore(socket: socket)
+        let opened = try await store.openWebSocket(
+            owner: owner, path: "/ws/phi-agent/execute", headers: [:])
+        let queued = (0..<5).map { textFrame(sequence: UInt64($0), body: "delta-\($0)") }
+        queued.forEach { socket.receive($0) }
+        await socket.waitUntilReceiveCalls(queued.count + 1)
+
+        let pulled = try await store.pullWebSocket(owner: owner, channelID: opened.channelID)
+
+        XCTAssertEqual(pulled.events, queued)
+        try await store.closeWebSocket(
+            owner: owner, channelID: opened.channelID, code: 1000, reason: nil)
+    }
+
+    func testWebSocketBatchStopsAtThePerPullEventLimit() async throws {
+        let socket = FakeBrokerWebSocket()
+        let store = makeWebSocketStore(socket: socket, unacknowledgedWindowBytes: 64 * 1024)
+        let opened = try await store.openWebSocket(
+            owner: owner, path: "/ws/phi-agent/execute", headers: [:])
+        let queued = (0..<70).map { textFrame(sequence: UInt64($0), body: "x") }
+        queued.forEach { socket.receive($0) }
+        await socket.waitUntilReceiveCalls(queued.count + 1)
+
+        let first = try await store.pullWebSocket(owner: owner, channelID: opened.channelID)
+        let second = try await store.pullWebSocket(owner: owner, channelID: opened.channelID)
+
+        XCTAssertEqual(first.events, Array(queued[0..<64]))
+        XCTAssertEqual(second.events, Array(queued[64...]))
+        try await store.closeWebSocket(
+            owner: owner, channelID: opened.channelID, code: 1000, reason: nil)
+    }
+
+    func testWebSocketBatchStopsAtThePerPullByteLimit() async throws {
+        let socket = FakeBrokerWebSocket()
+        let store = makeWebSocketStore(
+            socket: socket,
+            webSocketMessageBytes: 1024 * 1024,
+            unacknowledgedWindowBytes: 4 * 1024 * 1024
+        )
+        let opened = try await store.openWebSocket(
+            owner: owner, path: "/ws/phi-agent/execute", headers: [:])
+        let queued = (0..<3).map {
+            BrokerWebSocketEvent.frame(
+                sequence: UInt64($0),
+                BrokerWebSocketFrame(kind: .binary, data: Data(repeating: UInt8($0), count: 200 * 1024))
+            )
+        }
+        queued.forEach { socket.receive($0) }
+        await socket.waitUntilReceiveCalls(queued.count + 1)
+
+        let first = try await store.pullWebSocket(owner: owner, channelID: opened.channelID)
+        let second = try await store.pullWebSocket(owner: owner, channelID: opened.channelID)
+
+        XCTAssertEqual(first.events, Array(queued[0..<2]))
+        XCTAssertEqual(second.events, Array(queued[2...]))
+        try await store.closeWebSocket(
+            owner: owner, channelID: opened.channelID, code: 1000, reason: nil)
+    }
+
+    func testWebSocketBatchEndsAtATerminalEvent() async throws {
+        let socket = FakeBrokerWebSocket()
+        let store = makeWebSocketStore(socket: socket)
+        let opened = try await store.openWebSocket(
+            owner: owner, path: "/ws/phi-agent/execute", headers: [:])
+        let queued = (0..<3).map { textFrame(sequence: UInt64($0), body: "delta-\($0)") }
+            + [.close(code: 1000, reason: "done")]
+        queued.forEach { socket.receive($0) }
+        await socket.waitUntilReceiveCalls(queued.count)
+        try await Task.sleep(for: .milliseconds(50))
+
+        let pulled = try await store.pullWebSocket(owner: owner, channelID: opened.channelID)
+
+        XCTAssertEqual(pulled.events, queued)
+        await assertChannelError(.channelNotFound) {
+            _ = try await store.pullWebSocket(owner: self.owner, channelID: opened.channelID)
+        }
+    }
+
+    func testWebSocketPullOnAnEmptyQueueReturnsASingleEvent() async throws {
+        let socket = FakeBrokerWebSocket()
+        let pendingPull = AsyncSignal()
+        let store = makeWebSocketStore(socket: socket, pendingPull: pendingPull)
+        let opened = try await store.openWebSocket(
+            owner: owner, path: "/ws/phi-agent/execute", headers: [:])
+        let pull = Task { try await store.pullWebSocket(owner: owner, channelID: opened.channelID) }
+        await pendingPull.wait()
+        socket.receive(textFrame(sequence: 0, body: "one"))
+        socket.receive(textFrame(sequence: 1, body: "two"))
+
+        let result = try await pull.value
+
+        XCTAssertEqual(result.events, [textFrame(sequence: 0, body: "one")])
+        try await store.closeWebSocket(
+            owner: owner, channelID: opened.channelID, code: 1000, reason: nil)
+    }
+
+    func testWebSocketHighWaterPausesReadsInsteadOfFailingTheChannel() async throws {
+        let socket = FakeBrokerWebSocket()
+        let store = makeWebSocketStore(socket: socket, unacknowledgedWindowBytes: 64 * 1024)
+        let opened = try await store.openWebSocket(
+            owner: owner, path: "/ws/phi-agent/execute", headers: [:])
+        let queued = (0..<200).map { textFrame(sequence: UInt64($0), body: "x") }
+        queued.forEach { socket.receive($0) }
+
+        await socket.waitUntilReceiveCalls(128)
+        try await Task.sleep(for: .milliseconds(50))
+        XCTAssertEqual(socket.receiveCallCount, 128)
+        XCTAssertFalse(socket.isClosed)
+
+        let first = try await store.pullWebSocket(owner: owner, channelID: opened.channelID)
+        XCTAssertEqual(first.events, Array(queued[0..<64]))
+
+        await socket.waitUntilReceiveCalls(192)
+        XCTAssertFalse(socket.isClosed)
+        try await store.closeWebSocket(
+            owner: owner, channelID: opened.channelID, code: 1000, reason: nil)
+    }
+
+    func testWebSocketIdleExpiryReleasesAPausedReadLoop() async throws {
+        let idleGate = AsyncGate()
+        let socket = FakeBrokerWebSocket()
+        let store = makeWebSocketStore(
+            socket: socket,
+            unacknowledgedWindowBytes: 64 * 1024,
+            idleTimeoutSleeper: { _ in await idleGate.enter() }
+        )
+        let opened = try await store.openWebSocket(
+            owner: owner, path: "/ws/phi-agent/execute", headers: [:])
+        (0..<200).forEach { socket.receive(textFrame(sequence: UInt64($0), body: "x")) }
+        await socket.waitUntilReceiveCalls(128)
+        await idleGate.waitUntilEntered()
+        XCTAssertFalse(socket.isClosed)
+
+        await idleGate.release()
+        await socket.waitUntilClosed()
+
+        await assertChannelError(.channelNotFound) {
+            _ = try await store.pullWebSocket(owner: self.owner, channelID: opened.channelID)
+        }
+    }
+
     private func request() -> BrokerHTTPRequest {
         BrokerHTTPRequest(service: .phiAgent, path: "/stream")
+    }
+
+    private func textFrame(sequence: UInt64, body: String) -> BrokerWebSocketEvent {
+        .frame(sequence: sequence, BrokerWebSocketFrame(kind: .text, data: Data(body.utf8)))
+    }
+
+    /// Pulls until a terminal event arrives and returns every event in order.
+    /// A batch may only end with a terminal event, never carry one in the middle.
+    private func drainUntilTerminal(
+        _ store: ServiceBrokerChannelStore,
+        channelID: String,
+        maximumPulls: Int = 64,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) async throws -> [BrokerWebSocketEvent] {
+        var collected = [BrokerWebSocketEvent]()
+        for _ in 0..<maximumPulls {
+            let batch = try await store.pullWebSocket(owner: owner, channelID: channelID).events
+            XCTAssertFalse(batch.isEmpty, "A pull must return at least one event.", file: file, line: line)
+            XCTAssertFalse(
+                batch.dropLast().contains(where: \.isTerminal),
+                "A batch must stop at its terminal event.",
+                file: file,
+                line: line
+            )
+            collected.append(contentsOf: batch)
+            if batch.last?.isTerminal == true { return collected }
+        }
+        XCTFail("No terminal event after \(maximumPulls) pulls.", file: file, line: line)
+        return collected
+    }
+
+    private func collectEvents(
+        _ store: ServiceBrokerChannelStore,
+        channelID: String,
+        count: Int,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) async throws -> [BrokerWebSocketEvent] {
+        var collected = [BrokerWebSocketEvent]()
+        while collected.count < count {
+            let batch = try await store.pullWebSocket(owner: owner, channelID: channelID).events
+            XCTAssertFalse(batch.isEmpty, "A pull must return at least one event.", file: file, line: line)
+            collected.append(contentsOf: batch)
+        }
+        return collected
     }
 
     private func makeStore(
@@ -432,6 +616,8 @@ final class ServiceBrokerChannelStoreTests: XCTestCase {
 
     private func makeWebSocketStore(
         socket: FakeBrokerWebSocket,
+        webSocketMessageBytes: Int = 1_024,
+        unacknowledgedWindowBytes: Int = 1_024,
         pendingPull: AsyncSignal? = nil,
         idleTimeoutSleeper: @escaping ServiceBrokerChannelStore.PullTimeoutSleeper = { duration in
             try await Task.sleep(for: duration)
@@ -440,8 +626,8 @@ final class ServiceBrokerChannelStoreTests: XCTestCase {
         ServiceBrokerChannelStore(
             configuration: ServiceBrokerChannelConfiguration(
                 bridgeChunkBytes: 64,
-                webSocketMessageBytes: 1_024,
-                unacknowledgedWindowBytes: 1_024,
+                webSocketMessageBytes: webSocketMessageBytes,
+                unacknowledgedWindowBytes: unacknowledgedWindowBytes,
                 pullTimeout: .seconds(1),
                 idleTimeout: .seconds(1)
             ),
@@ -458,6 +644,7 @@ private final class FakeBrokerWebSocket: @unchecked Sendable {
     private var incoming = [Result<BrokerWebSocketEvent, Error>]()
     private var outgoing = [BrokerWebSocketFrame]()
     private var closed = false
+    private var receiveCalls = 0
     private let closeGate: AsyncGate?
 
     init(closeGate: AsyncGate? = nil) {
@@ -487,11 +674,31 @@ private final class FakeBrokerWebSocket: @unchecked Sendable {
         return closed
     }
 
+    /// How many times the channel store's read loop has asked for a frame. The
+    /// counter is raised before the call can return, so observing call `n + 1`
+    /// proves the first `n` events were already handed to the store.
+    var receiveCallCount: Int {
+        condition.lock()
+        defer { condition.unlock() }
+        return receiveCalls
+    }
+
     func waitUntilClosed() async {
         await withCheckedContinuation { continuation in
             DispatchQueue.global().async { [self] in
                 condition.lock()
                 while !closed { condition.wait() }
+                condition.unlock()
+                continuation.resume()
+            }
+        }
+    }
+
+    func waitUntilReceiveCalls(_ count: Int) async {
+        await withCheckedContinuation { continuation in
+            DispatchQueue.global().async { [self] in
+                condition.lock()
+                while receiveCalls < count { condition.wait() }
                 condition.unlock()
                 continuation.resume()
             }
@@ -522,6 +729,8 @@ private final class FakeBrokerWebSocket: @unchecked Sendable {
         try await withCheckedThrowingContinuation { continuation in
             DispatchQueue.global().async { [self] in
                 condition.lock()
+                receiveCalls += 1
+                condition.broadcast()
                 while incoming.isEmpty && !closed { condition.wait() }
                 let result = incoming.isEmpty
                     ? Result<BrokerWebSocketEvent, Error>.failure(ServiceBrokerWebSocketError.cancelled)
@@ -659,6 +868,15 @@ private actor AsyncGate {
         let waiters = releaseWaiters
         releaseWaiters.removeAll()
         waiters.forEach { $0.resume() }
+    }
+}
+
+private extension BrokerWebSocketEvent {
+    var isTerminal: Bool {
+        switch self {
+        case .close, .failure: true
+        case .frame, .timeout: false
+        }
     }
 }
 

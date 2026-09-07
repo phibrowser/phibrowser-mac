@@ -223,7 +223,9 @@ final class WebContentAddressBarMenuPresenter {
         }
 
         onPresentationChanged(true)
-        menu.popUp(positioning: nil, at: NSPoint(x: 0, y: -6), in: anchorView)
+        anchorView.effectiveAppearance.performAsCurrentDrawingAppearance {
+            menu.popUp(positioning: nil, at: NSPoint(x: 0, y: -6), in: anchorView)
+        }
         onPresentationChanged(false)
 
         _ = actionTargets

@@ -52,6 +52,17 @@ final class TabBackgroundLayer: CAShapeLayer {
         }
     }
 
+    /// Resolved by the visible address bar and mirrored into the active tab.
+    /// The active path contains both the tab body and its inverse corners, so
+    /// one fill color keeps the entire connected surface identical.
+    var activeFillColor: NSColor? {
+        didSet {
+            if oldValue != activeFillColor {
+                updateAppearance()
+            }
+        }
+    }
+
     override init() {
         super.init()
         setupLayer()
@@ -64,6 +75,7 @@ final class TabBackgroundLayer: CAShapeLayer {
             self.isPinned = other.isPinned
             self.splitPairPosition = other.splitPairPosition
             self.isSplitGroupActive = other.isSplitGroupActive
+            self.activeFillColor = other.activeFillColor
         }
     }
 
@@ -118,7 +130,8 @@ final class TabBackgroundLayer: CAShapeLayer {
         // single selected unit while the focused half visually stands out.
         if splitPairPosition != nil {
             if tabState == .active {
-                fillColor = ThemedColor.windowBackground.resolve(in: sourceView).cgColor
+                fillColor = (activeFillColor
+                    ?? ThemedColor.windowBackground.resolve(in: sourceView)).cgColor
                 strokeColor = NSColor.clear.cgColor
                 lineWidth = 0
             } else if isSplitGroupActive {
@@ -146,7 +159,8 @@ final class TabBackgroundLayer: CAShapeLayer {
 
         switch tabState {
             case .active:
-                fillColor = ThemedColor.windowBackground.resolve(in: sourceView).cgColor
+                fillColor = (activeFillColor
+                    ?? ThemedColor.windowBackground.resolve(in: sourceView)).cgColor
             case .subSelected:
                 fillColor = ThemedColor.tabSubSelectionBackground.resolve(in: sourceView).cgColor
             case .hovered:

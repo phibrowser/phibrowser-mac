@@ -82,6 +82,52 @@ final class TabItemViewCollapsedLayoutTests: XCTestCase {
         )
     }
 
+    func testActiveTabUsesAddressBarColorAcrossBodyAndInverseCorners() throws {
+        let view = TabItemView()
+        view.frame = CGRect(x: 0, y: 0, width: 180, height: 32)
+        view.configure(with: TabRenderData(
+            id: "tab-1",
+            title: "Example",
+            url: "https://example.com",
+            isActive: true,
+            isPinned: false,
+            isSplitGroupActive: false,
+            sourceTab: nil
+        ))
+        let addressBarColor = NSColor(srgbRed: 0.24, green: 0.07, blue: 0.31, alpha: 1)
+        view.setActivePageStyle(backgroundColor: addressBarColor, appearance: .dark)
+        view.layout()
+
+        let background = try XCTUnwrap(
+            view.layer?.sublayers?.compactMap { $0 as? TabBackgroundLayer }.first
+        )
+        let fillColor = try XCTUnwrap(background.fillColor.flatMap(NSColor.init(cgColor:)))
+        let fill = try XCTUnwrap(fillColor.usingColorSpace(.sRGB))
+        let expected = try XCTUnwrap(addressBarColor.usingColorSpace(.sRGB))
+        XCTAssertEqual(fill.redComponent, expected.redComponent, accuracy: 0.001)
+        XCTAssertEqual(fill.greenComponent, expected.greenComponent, accuracy: 0.001)
+        XCTAssertEqual(fill.blueComponent, expected.blueComponent, accuracy: 0.001)
+
+        let paintedBounds = try XCTUnwrap(background.path).boundingBoxOfPath
+        XCTAssertLessThan(paintedBounds.minX, view.bounds.minX)
+        XCTAssertGreaterThan(paintedBounds.maxX, view.bounds.maxX)
+        XCTAssertEqual(view.appearance?.phiAppearance, .dark)
+        XCTAssertTrue(view.subviews.allSatisfy { $0.effectiveAppearance.phiAppearance == .dark })
+
+        view.setActivePageStyle(backgroundColor: nil, appearance: nil)
+        XCTAssertNil(view.appearance)
+        let fallbackFillColor = try XCTUnwrap(
+            background.fillColor.flatMap(NSColor.init(cgColor:))
+        )
+        let fallbackFill = try XCTUnwrap(fallbackFillColor.usingColorSpace(.sRGB))
+        let expectedFallback = try XCTUnwrap(
+            ThemedColor.windowBackground.resolve(in: view).usingColorSpace(.sRGB)
+        )
+        XCTAssertEqual(fallbackFill.redComponent, expectedFallback.redComponent, accuracy: 0.001)
+        XCTAssertEqual(fallbackFill.greenComponent, expectedFallback.greenComponent, accuracy: 0.001)
+        XCTAssertEqual(fallbackFill.blueComponent, expectedFallback.blueComponent, accuracy: 0.001)
+    }
+
     func test_inactivePinnedTabDoesNotDrawStateBorder() {
         let layer = makeBackgroundLayer()
         layer.isPinned = true

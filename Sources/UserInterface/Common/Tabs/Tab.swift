@@ -67,6 +67,7 @@ class Tab: WebContentRepresentable {
     @Published private(set) var hasWebContent = false
     @Published private(set) var isDiscarded = false
     @Published private(set) var isUnloaded = false
+    @Published private(set) var pageColor: NSColor?
     @Published private(set) var isLoading = false
     @Published private(set) var loadingProgress: CGFloat = 1
     @Published private(set) var canGoBack: Bool = false
@@ -240,6 +241,7 @@ class Tab: WebContentRepresentable {
     private var readerOfferabilityTrigger: AnyCancellable?
     private var aiOutputNavigationTrigger: AnyCancellable?
     private static let isUnloadedSelector = NSSelectorFromString("isUnloaded")
+    private static let pageColorSelector = NSSelectorFromString("pageColor")
     
     init(guid: Int = UUID().hashValue,
          url: String?,
@@ -324,6 +326,7 @@ class Tab: WebContentRepresentable {
         cancellables.removeAll()
         liveFaviconData = nil
         liveFaviconRevision = 0
+        pageColor = nil
         hasWebContent = wrapper != nil
         isDiscarded = wrapper?.isDiscarded ?? false
         if let wrapper, wrapper.responds(to: Self.isUnloadedSelector) {
@@ -334,6 +337,19 @@ class Tab: WebContentRepresentable {
 
         guard let wrapper else {
             return
+        }
+
+        // Older frameworks do not implement this getter or its KVO key.
+        if wrapper.responds(to: Self.pageColorSelector) {
+            pageColor = wrapper.pageColor
+            wrapper.publisher(for: \.pageColor, options: [.new])
+                .receive(on: DispatchQueue.main)
+                .sink { [weak self, weak wrapper] color in
+                    guard let self, let wrapper,
+                          self.webContentWrapper === wrapper else { return }
+                    self.pageColor = color
+                }
+                .store(in: &cancellables)
         }
 
         faviconUrl = wrapper.favIconURL

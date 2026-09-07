@@ -18,6 +18,33 @@ class HitTransparentHostingView<Content: View>: ZeroSafeAreaHostingView<Content>
     }
 }
 
+private final class TabItemPageAppearanceState: ObservableObject {
+    @Published var appearance: Appearance?
+
+    init(appearance: Appearance? = nil) {
+        self.appearance = appearance
+    }
+}
+
+private struct TabItemPageAppearanceModifier: ViewModifier {
+    @ObservedObject private var state: TabItemPageAppearanceState
+    @Environment(\.phiAppearance) private var inheritedAppearance
+    @Environment(\.colorScheme) private var inheritedColorScheme
+
+    init(state: TabItemPageAppearanceState) {
+        _state = ObservedObject(wrappedValue: state)
+    }
+
+    func body(content: Content) -> some View {
+        let appearance = state.appearance ?? inheritedAppearance
+        let colorScheme = state.appearance.map { $0.isDark ? ColorScheme.dark : .light }
+            ?? inheritedColorScheme
+        content
+            .environment(\.phiAppearance, appearance)
+            .environment(\.colorScheme, colorScheme)
+    }
+}
+
 final class TabItemView: NSView {
     static let statusBadgeViewIdentifier = NSUserInterfaceItemIdentifier("tabStripStatusBadge")
 
@@ -69,6 +96,7 @@ final class TabItemView: NSView {
     private var cancellables = Set<AnyCancellable>()
     private var themeObservation: AnyObject?
     private var themeObserver = ThemeObserver.shared
+    private let pageAppearanceState = TabItemPageAppearanceState()
 
     private let backgroundLayer = TabBackgroundLayer()
     
@@ -86,6 +114,7 @@ final class TabItemView: NSView {
     // MARK: - State
 
     private var isActive = false
+    private var activePageAppearance: Appearance?
     private var isMultiSelected = false
     private var isPinned = false
     private var statusBadgeRepresentsMergedCell = false
@@ -669,6 +698,14 @@ final class TabItemView: NSView {
     // MARK: - Appearance
 
     private func updateAppearance() {
+        let pageAppearance = isActive ? activePageAppearance : nil
+        if appearance?.phiAppearance != pageAppearance {
+            appearance = pageAppearance?.nsAppearance
+        }
+        if pageAppearanceState.appearance != pageAppearance {
+            pageAppearanceState.appearance = pageAppearance
+        }
+
         backgroundLayer.isPinned = isPinned
 
         if isActive {
@@ -689,6 +726,14 @@ final class TabItemView: NSView {
         }
         
         backgroundLayer.refreshAppearance()
+    }
+
+    func setActivePageStyle(backgroundColor: NSColor?, appearance: Appearance?) {
+        guard backgroundLayer.activeFillColor != backgroundColor
+                || activePageAppearance != appearance else { return }
+        activePageAppearance = appearance
+        backgroundLayer.activeFillColor = backgroundColor
+        updateAppearance()
     }
 
     private var shouldShowOpenIndicator: Bool {
@@ -722,18 +767,24 @@ final class TabItemView: NSView {
             self?.backgroundLayer.refreshAppearance()
         }
     }
+
+    private func makeThemedRootView<Content: View>(_ content: Content) -> AnyView {
+        AnyView(
+            content
+                .modifier(TabItemPageAppearanceModifier(state: pageAppearanceState))
+                .phiThemeObserver(themeObserver)
+        )
+    }
     
     private func makeFaviconRootView() -> AnyView {
-        AnyView(
+        makeThemedRootView(
             UnifiedTabFaviconView(viewModel: viewModel)
-            .phiThemeObserver(themeObserver)
         )
     }
 
     private func makeSecondaryFaviconRootView() -> AnyView {
-        AnyView(
+        makeThemedRootView(
             UnifiedTabFaviconView(viewModel: secondaryFaviconViewModel)
-            .phiThemeObserver(themeObserver)
         )
     }
 
@@ -748,57 +799,51 @@ final class TabItemView: NSView {
 
     private func makeStatusBadgeRootView(representsMergedCell: Bool) -> AnyView {
         if representsMergedCell {
-            return AnyView(
+            return makeThemedRootView(
                 MergedTabCornerBadgeView(
                     primaryModel: viewModel.status,
                     secondaryModel: secondaryFaviconViewModel.status
                 )
-                .phiThemeObserver(themeObserver)
             )
         }
-        return AnyView(
-            TabCornerBadgeView(model: viewModel.status)
-                .phiThemeObserver(themeObserver)
-        )
+        return makeThemedRootView(TabCornerBadgeView(model: viewModel.status))
     }
     
     private func makeTitleRootView() -> AnyView {
-        AnyView(UnifiedTabTitleView(viewModel: viewModel).phiThemeObserver(themeObserver))
+        makeThemedRootView(UnifiedTabTitleView(viewModel: viewModel))
     }
 
     private func makeSecondaryTitleRootView() -> AnyView {
-        AnyView(UnifiedTabTitleView(viewModel: secondaryFaviconViewModel).phiThemeObserver(themeObserver))
+        makeThemedRootView(UnifiedTabTitleView(viewModel: secondaryFaviconViewModel))
     }
     
     private func makeMuteButtonRootView() -> AnyView {
-        AnyView(UnifiedTabMuteButton(viewModel: viewModel).phiThemeObserver(themeObserver))
+        makeThemedRootView(UnifiedTabMuteButton(viewModel: viewModel))
     }
 
     private func makeSecondaryMuteButtonRootView() -> AnyView {
-        AnyView(UnifiedTabMuteButton(viewModel: secondaryFaviconViewModel).phiThemeObserver(themeObserver))
+        makeThemedRootView(UnifiedTabMuteButton(viewModel: secondaryFaviconViewModel))
     }
     
     private func makeRecordingIconRootView() -> AnyView {
-        AnyView(UnifiedTabRecordingIcon().phiThemeObserver(themeObserver))
+        makeThemedRootView(UnifiedTabRecordingIcon())
     }
     
     private func makeSecondaryCloseButtonRootView() -> AnyView {
-        AnyView(
+        makeThemedRootView(
             UnifiedTabCloseButton { [weak self] in
                 self?.cancelPreviewForInteraction()
                 self?.pinnedSplitPartner?.close()
             }
-            .phiThemeObserver(themeObserver)
         )
     }
 
     private func makeCloseButtonRootView() -> AnyView {
-        AnyView(
+        makeThemedRootView(
             UnifiedTabCloseButton { [weak self] in
                 self?.cancelPreviewForInteraction()
                 self?.sourceTab?.close()
             }
-            .phiThemeObserver(themeObserver)
         )
     }
 

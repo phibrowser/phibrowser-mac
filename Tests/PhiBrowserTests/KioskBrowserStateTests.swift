@@ -936,6 +936,7 @@ private final class KioskTestWebContentWrapper: NSObject, WebContentWrapper {
     @objc dynamic var isDiscarded = false
     @objc dynamic var isUnloaded = false
     @objc dynamic var isDistillable = false
+    @objc dynamic var pageColor: NSColor?
     @objc dynamic var devToolsTargetId: String?
 
     private(set) var navigatedURLs: [String] = []

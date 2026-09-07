@@ -316,8 +316,6 @@ typedef NS_ENUM(NSInteger, PhiGhostMaterializeOutcome) {
 
 // Login management
 - (BOOL)canShowChromiumWindow;
-/// Returns whether an external link may create a Kiosk window now. Unlike the
-/// general Chromium-window gate, this must reject transient Guest promotion.
 - (BOOL)canOpenExternalLinksInKiosk;
 - (BOOL)isPhiGuestMode;
 - (void)showLoginUI;
@@ -595,7 +593,9 @@ typedef NS_ENUM(NSInteger, PhiGhostMaterializeOutcome) {
 /// @param type Message type from the extension
 /// @param payload Message payload (JSON string)
 /// @param requestId The unique request ID for response correlation
-/// @param senderId The extension ID that sent the message
+/// @param senderId The Chromium-attributed extension ID that sent the message.
+/// Security-sensitive handlers must authorize this value exactly; payload data
+/// must never be used as sender identity.
 /// @return Response string if handled synchronously, nil for async handling
 - (NSString * _Nullable)handleExtensionMessage:(NSString *)type
                                       payload:(NSString *)payload
@@ -813,14 +813,6 @@ typedef NS_ENUM(NSInteger, PhiGhostMaterializeOutcome) {
 @protocol PhiChromiumBridgeProtocol <NSObject>
 @property (nonatomic, weak) id<PhiChromiumBridgeDelegate> delegate;
 
-/// Updates Chromium's process-local cache for the Phi-owned external-link
-/// Kiosk preference. Push once during launch and after every setting change.
-- (void)setOpenExternalLinksInKioskEnabled:(BOOL)enabled;
-
-/// Updates Chromium's process-local cache for Command-Option link clicks.
-/// Phi UserDefaults remains the persisted source of truth. Main thread only.
-- (void)setOpenKioskOnCommandOptionClickEnabled:(BOOL)enabled;
-
 /// Creates a detached WebContents loading `urlString` on the profile of the
 /// Browser identified by `windowId`, and returns a wrapper around it. Used by
 /// the native-NTP omnibox path, whose tab has no live WebContents for the
@@ -981,7 +973,8 @@ typedef NS_ENUM(NSInteger, PhiGhostMaterializeOutcome) {
 /// `sourceWindowId`, including off-the-record profiles. Returns NO when the
 /// source Browser is gone, the URL is invalid, or Kiosk creation fails; the
 /// ask-rule caller then re-opens the cancelled navigation in the source.
-- (BOOL)openURLInKiosk:(NSString*)url sourceWindowId:(int64_t)sourceWindowId;
+- (BOOL)openURLInKiosk:(NSString *)url
+        sourceWindowId:(int64_t)sourceWindowId;
 
 /// Create a new tab group containing the given Phi-stable tab ids in
 /// `windowId`. Returns the new group's 32-char uppercase hex token, or an
@@ -1427,6 +1420,14 @@ typedef NS_ENUM(NSInteger, PhiGhostMaterializeOutcome) {
 - (BOOL)isRestorePreviousSessionEnabled;
 - (void)setRestorePreviousSessionEnabled:(BOOL)enabled;
 
+/// Updates Chromium's process-local routing cache for external links. Phi
+/// UserDefaults remains the persisted source of truth. Main thread only.
+- (void)setOpenExternalLinksInKioskEnabled:(BOOL)enabled;
+
+/// Updates Chromium's process-local cache for Command-Option link clicks.
+/// Phi UserDefaults remains the persisted source of truth. Main thread only.
+- (void)setOpenKioskOnCommandOptionClickEnabled:(BOOL)enabled;
+
 /// Restores the previous session mid-session for a Dock reopen or an external
 /// link that arrives with no window open, mirroring cold start: every profile
 /// that owned a window when the app last had windows is reloaded and its last
@@ -1587,7 +1588,9 @@ typedef NS_ENUM(NSInteger, PhiGhostMaterializeOutcome) {
 /// @param type Message type from the extension
 /// @param payload Message payload (JSON string)
 /// @param requestId The unique request ID for response correlation
-/// @param senderId The extension ID that sent the message
+/// @param senderId The Chromium-attributed extension ID that sent the message.
+/// Async request-scoped responses must use sendResponseForExtensionRequest;
+/// broadcastMessageToExtensions must not carry private response data.
 - (void)onExtensionMessage:(NSString *)type
                    payload:(NSString *)payload
                  requestId:(NSString *)requestId
@@ -1837,6 +1840,12 @@ typedef NS_ENUM(NSInteger, PhiGhostMaterializeOutcome) {
 /// probe stays the authority on that side. Reset to NO when a new page
 /// commits; a same-document (SPA) navigation keeps the last verdict.
 @property(nonatomic, assign, readonly) BOOL isDistillable;
+
+/// The representative color of the page's top visual region, computed by
+/// Phi's main-frame JavaScript detector. KVO-observable. Nil before the script
+/// reports a color, after ordinary cross-document navigation, or renderer loss.
+/// Successful reloads retain the previous color until the new document reports.
+@property(nonatomic, strong, readonly, nullable) NSColor* pageColor;
 
 /// DevTools page target id for this tab, or nil when the contents are gone.
 /// Lets the app open its own CDP session on the tab through the FD-injection

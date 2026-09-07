@@ -29,6 +29,8 @@ struct WebContentHeaderView: View {
     @State private var extensionsModel: WebContentHeaderExtensionsModel
     @State private var isExtensionPopoverShown = false
     @State private var totalHeaderWidth: CGFloat = 10000
+    @Environment(\.phiAppearance) private var appearance
+    @Environment(\.colorScheme) private var colorScheme
 
     init(
         state: WebContentHeaderState,
@@ -85,6 +87,7 @@ struct WebContentHeaderView: View {
                         loadingProgress: state.loadingProgress,
                         isLoading: state.isLoading,
                         isProgressVisible: state.isProgressVisible,
+                        backgroundColor: state.pageBackgroundColor.map { Color(nsColor: $0) },
                         onOpenLocationBar: onOpenLocationBar,
                         onAnchorResolved: onAnchorResolved
                     )
@@ -128,6 +131,8 @@ struct WebContentHeaderView: View {
             Spacer()
         }
         .frame(maxWidth: .infinity)
+        .environment(\.phiAppearance, state.pageAppearance ?? appearance)
+        .environment(\.colorScheme, state.pageAppearance.map { $0.isDark ? .dark : .light } ?? colorScheme)
     }
 
     private var leadingButtonsWidth: CGFloat {

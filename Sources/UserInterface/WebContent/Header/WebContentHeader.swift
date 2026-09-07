@@ -8,6 +8,16 @@ import Combine
 
 // MARK: - State
 
+struct WebContentHeaderPageColorPresentation: Equatable {
+    let backgroundColor: NSColor?
+    let appearance: Appearance?
+
+    static let inherited = WebContentHeaderPageColorPresentation(
+        backgroundColor: nil,
+        appearance: nil
+    )
+}
+
 class WebContentHeaderState: ObservableObject {
     @Published var showAddressBar: Bool = false
     @Published var showNavigationButtons: Bool = false
@@ -25,6 +35,10 @@ class WebContentHeaderState: ObservableObject {
     @Published var isDownloadPopoverShown: Bool = false
     @Published var isIncognito: Bool = false
     @Published var isInPlaceholderMode: Bool = false
+    @Published var pageColorPresentation = WebContentHeaderPageColorPresentation.inherited
+
+    var pageBackgroundColor: NSColor? { pageColorPresentation.backgroundColor }
+    var pageAppearance: Appearance? { pageColorPresentation.appearance }
 
     init() {
         let layoutMode = PhiPreferences.GeneralSettings.loadLayoutMode()
@@ -64,7 +78,7 @@ class WebContentHeaderState: ObservableObject {
 class WebContentHeader: NSView {
     var currentTab: Tab? {
         didSet {
-            if currentTab?.guid != oldValue?.guid {
+            if currentTab !== oldValue {
                 setupObservers()
                 updateHostingRoot()
             }
@@ -72,6 +86,13 @@ class WebContentHeader: NSView {
     }
 
     var onCurrentTabUrlChanged: ((String?) -> Void)?
+
+    var pageColorPresentation: WebContentHeaderPageColorPresentation {
+        state.pageColorPresentation
+    }
+    var pageColorPresentationPublisher: AnyPublisher<WebContentHeaderPageColorPresentation, Never> {
+        state.$pageColorPresentation.eraseToAnyPublisher()
+    }
 
     private(set) var addressBarAnchorView: NSView?
     private weak var sidebarButtonAnchorView: NSView?
@@ -87,10 +108,14 @@ class WebContentHeader: NSView {
     private var didSetupHostingView = false
     private var themeObserver = ThemeObserver.shared
 
+    private var owningBrowserState: BrowserState? { unsafeBrowserState ?? browserState }
+    private var headerThemeProvider: ThemeStateProvider {
+        owningBrowserState?.themeContext ?? themeStateProvider
+    }
+
     private lazy var bottomSeparator: NSView = {
         let view = NSView()
         view.wantsLayer = true
-        view.phiLayer?.setBackgroundColor(.separator)
         return view
     }()
 
@@ -134,9 +159,7 @@ class WebContentHeader: NSView {
         didSetupHostingView = true
 
         wantsLayer = true
-        phiLayer?.setBackgroundColor(.windowBackground)
-
-        themeObserver = ThemeObserver(themeSource: themeStateProvider)
+        themeObserver = ThemeObserver(themeSource: headerThemeProvider)
         let swiftUIView = makeSwiftUIView()
 
         let hosting = ZeroSafeAreaHostingView(rootView: swiftUIView)
@@ -160,6 +183,7 @@ class WebContentHeader: NSView {
             bottomSeparator.bottomAnchor.constraint(equalTo: bottomAnchor),
             bottomSeparator.heightAnchor.constraint(equalToConstant: 1)
         ])
+        setupObservers()
     }
 
     private func makeSwiftUIView() -> AnyView {
@@ -220,7 +244,7 @@ class WebContentHeader: NSView {
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
         if window != nil {
-            let provider = themeStateProvider
+            let provider = headerThemeProvider
             AppLogDebug("[ThemeDebug] WebContentHeader.viewDidMoveToWindow: provider=\(type(of: provider)), theme=\(provider.currentTheme.id), appearance=\(provider.currentAppearance)")
             themeObserver.rebind(to: provider)
         }
@@ -229,7 +253,7 @@ class WebContentHeader: NSView {
     }
 
     private func setupConfigObserver() {
-        guard let unsafeBrowserState else { return }
+        guard let unsafeBrowserState = owningBrowserState else { return }
         unsafeBrowserState
             .$layoutMode
             .combineLatest(unsafeBrowserState.$lastPhiAIEnabled)
@@ -257,6 +281,13 @@ class WebContentHeader: NSView {
         partnerAIChatEnabledCancellable = nil
         setupConfigObserver()
 
+        headerThemeProvider.themeAppearancePublisher
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in
+                self?.updatePageColor()
+            }
+            .store(in: &cancellables)
+
         NotificationCenter.default.publisher(for: .browserAccessStateDidChange)
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in
@@ -264,14 +295,14 @@ class WebContentHeader: NSView {
             }
             .store(in: &cancellables)
 
-        unsafeBrowserState?.$sidebarCollapsed
+        owningBrowserState?.$sidebarCollapsed
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in
                 self?.updateLayoutVisibility()
             }
             .store(in: &cancellables)
 
-        unsafeBrowserState?.$groupOverviewState
+        owningBrowserState?.$groupOverviewState
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in
                 self?.updateLayoutVisibility()
@@ -282,7 +313,7 @@ class WebContentHeader: NSView {
         // aiChatEnabled as a fallback for the chat button. Rebind the partner
         // observer and refresh on every splits change so the button reacts
         // when this tab joins or leaves a split.
-        unsafeBrowserState?.$splits
+        owningBrowserState?.$splits
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in
                 self?.observePartnerAIChatEnabled()
@@ -293,7 +324,17 @@ class WebContentHeader: NSView {
         state.loadingProgress = 0
         state.isLoading = false
         state.isProgressVisible = false
+        updateLayoutVisibility()
         guard let currentTab else { return }
+
+        currentTab.$pageColor
+            .combineLatest(currentTab.$url, currentTab.$crashState, currentTab.$hasWebContent)
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self, weak currentTab] _ in
+                guard let self, let currentTab, self.currentTab === currentTab else { return }
+                self.updatePageColor()
+            }
+            .store(in: &cancellables)
 
         currentTab.$loadingProgress
             .combineLatest(currentTab.$isLoading)
@@ -334,7 +375,7 @@ class WebContentHeader: NSView {
 
     /// Resolve the current tab's split partner, if any.
     private func splitPartner() -> Tab? {
-        guard let state = unsafeBrowserState,
+        guard let state = owningBrowserState,
               let tab = currentTab,
               let group = state.splitGroup(forTabId: tab.guid),
               let partnerId = group.partnerTabId(of: tab.guid) else {
@@ -357,19 +398,20 @@ class WebContentHeader: NSView {
     }
 
     private func updateLayoutVisibility() {
+        updatePageColor()
         let layoutMode = PhiPreferences.GeneralSettings.loadLayoutMode()
         let navigationAtTop = layoutMode.showsNavigationAtTop
         let traditionalLayout = layoutMode.isTraditional
-        let isCollapsed = unsafeBrowserState?.sidebarCollapsed ?? false
-        let isIncognito = unsafeBrowserState?.isIncognito ?? false
-        let overviewActive = unsafeBrowserState?.groupOverviewState != nil
+        let isCollapsed = owningBrowserState?.sidebarCollapsed ?? false
+        let isIncognito = owningBrowserState?.isIncognito ?? false
+        let overviewActive = owningBrowserState?.groupOverviewState != nil
         let focusedAIChat = currentTab?.aiChatEnabled ?? false
         // In a split the chat is shared between the two panes, so keep the
         // button visible while either pane has chat enabled (e.g. one side
         // is an NTP and the other is a real page).
         let partnerAIChat = splitPartner()?.aiChatEnabled ?? false
         let aiChatEnabled = focusedAIChat || partnerAIChat
-        let isInPlaceholder = unsafeBrowserState?.isInPlaceholderMode ?? false
+        let isInPlaceholder = owningBrowserState?.isInPlaceholderMode ?? false
         let phiAIEnabled = UserDefaults.standard.bool(forKey: PhiPreferences.AISettings.phiAIEnabled.rawValue)
         let isGuest = ApplicationState.shared.isGuest
 
@@ -389,6 +431,59 @@ class WebContentHeader: NSView {
             self.state.isIncognito = isIncognito
             self.state.isInPlaceholderMode = isInPlaceholder
         }
+    }
+
+    // MARK: - Page Color
+
+    private func updatePageColor() {
+        let provider = headerThemeProvider
+        let theme = provider.currentTheme
+        let fallbackAppearance = provider.currentAppearance
+        let fallback = ThemedColor.windowBackground.resolve(theme: theme, appearance: fallbackAppearance)
+        let tab = currentTab
+        let canApplyPageColor = tab?.hasWebContent == true
+            && tab?.isNTP != true
+            && tab?.crashState == nil
+            && !BookmarkManagerRoute.matches(tab?.url)
+            && owningBrowserState?.isInPlaceholderMode != true
+            && owningBrowserState?.groupOverviewState == nil
+            && tab.map { owningBrowserState?.splitGroup(forTabId: $0.guid) == nil } == true
+        let background = canApplyPageColor
+            ? tab?.pageColor.map { Self.compositePageColor($0, over: fallback) }
+            : nil
+        let pageAppearance: Appearance? = background.map {
+            $0.contrastRatio(with: .white) > $0.contrastRatio(with: .black) ? .dark : .light
+        }
+
+        // Own both layer colors here so a theme binding cannot overwrite the page override.
+        layer?.backgroundColor = (background ?? fallback).cgColor
+        bottomSeparator.layer?.backgroundColor = ThemedColor.separator.resolve(
+            theme: theme, appearance: pageAppearance ?? fallbackAppearance
+        ).cgColor
+        let pageColorPresentation = WebContentHeaderPageColorPresentation(
+            backgroundColor: background,
+            appearance: pageAppearance
+        )
+        if state.pageColorPresentation != pageColorPresentation {
+            state.pageColorPresentation = pageColorPresentation
+        }
+        if appearance?.phiAppearance != pageAppearance { appearance = pageAppearance?.nsAppearance }
+    }
+
+    /// Composite the supplied alpha over the existing header surface before choosing its ink.
+    static func compositePageColor(_ pageColor: NSColor, over background: NSColor) -> NSColor {
+        guard let foreground = pageColor.usingColorSpace(.sRGB),
+              let background = background.usingColorSpace(.sRGB) else { return background }
+        let alpha = foreground.alphaComponent
+        let backgroundAlpha = background.alphaComponent * (1 - alpha)
+        let resultAlpha = alpha + backgroundAlpha
+        guard resultAlpha > 0 else { return .clear }
+        return NSColor(
+            srgbRed: (foreground.redComponent * alpha + background.redComponent * backgroundAlpha) / resultAlpha,
+            green: (foreground.greenComponent * alpha + background.greenComponent * backgroundAlpha) / resultAlpha,
+            blue: (foreground.blueComponent * alpha + background.blueComponent * backgroundAlpha) / resultAlpha,
+            alpha: resultAlpha
+        )
     }
 
     // MARK: - Actions

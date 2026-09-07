@@ -80,7 +80,6 @@
 		3777EEF42FC4442700C85E41 /* FloatingNewTabView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3777EEF32FC4442700C85E41 /* FloatingNewTabView.swift */; };
 		377D210F2F51986900A68BE5 /* WebContentContainerViewController+FloatingSidebar.swift in Sources */ = {isa = PBXBuildFile; fileRef = 377D210E2F51986900A68BE5 /* WebContentContainerViewController+FloatingSidebar.swift */; };
 		377D21EC2F52C67300A68BE5 /* WebContentAddressBarMenu.swift in Sources */ = {isa = PBXBuildFile; fileRef = 377D21EB2F52C67300A68BE5 /* WebContentAddressBarMenu.swift */; };
-		3AC0FFEE00000000000000A1 /* PageSharingPresenter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3AC0FFEE00000000000000A2 /* PageSharingPresenter.swift */; };
 		3787811F2FE942E40028969F /* TimeMachineRollbackPolicy.json in Resources */ = {isa = PBXBuildFile; fileRef = 3787811E2FE942E40028969F /* TimeMachineRollbackPolicy.json */; };
 		378AFF262F78D6780016B334 /* ivy-presto-display-semi-bold.otf in Copy Fonts */ = {isa = PBXBuildFile; fileRef = 378AFF242F78D6530016B334 /* ivy-presto-display-semi-bold.otf */; };
 		378AFF622F78E5EA0016B334 /* BrowserThemeContext.swift in Sources */ = {isa = PBXBuildFile; fileRef = 378AFF612F78E5EA0016B334 /* BrowserThemeContext.swift */; };
@@ -151,6 +150,7 @@
 		37FA01042FDA000100000004 /* LocalStoreCompatibilityController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 37FA01142FDA000100000004 /* LocalStoreCompatibilityController.swift */; };
 		37FC8C922F335942004675B8 /* WebContentProgressBarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 37FC8C912F335942004675B8 /* WebContentProgressBarView.swift */; };
 		37FC8DAA2F39B2DE004675B8 /* LayoutModeSettingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 37FC8DA92F39B2DE004675B8 /* LayoutModeSettingView.swift */; };
+		3AC0FFEE00000000000000A1 /* PageSharingPresenter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3AC0FFEE00000000000000A2 /* PageSharingPresenter.swift */; };
 		3AC6117E11925E637EB4711A /* SentinelBackupCoordination.swift in Sources */ = {isa = PBXBuildFile; fileRef = 11E8BEE1510290AB35D5C5AD /* SentinelBackupCoordination.swift */; };
 		3BCDDE6FBABE4BD8A51F0127 /* TabGroupCellView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE7E61A49E8A472DB330779E /* TabGroupCellView.swift */; };
 		4508A9362EEFF2EB007C94E2 /* AccountWebWindowController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4508A9352EEFF2EB007C94E2 /* AccountWebWindowController.swift */; };
@@ -762,7 +762,6 @@
 		3777EEF32FC4442700C85E41 /* FloatingNewTabView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FloatingNewTabView.swift; sourceTree = "<group>"; };
 		377D210E2F51986900A68BE5 /* WebContentContainerViewController+FloatingSidebar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "WebContentContainerViewController+FloatingSidebar.swift"; sourceTree = "<group>"; };
 		377D21EB2F52C67300A68BE5 /* WebContentAddressBarMenu.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WebContentAddressBarMenu.swift; sourceTree = "<group>"; };
-		3AC0FFEE00000000000000A2 /* PageSharingPresenter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PageSharingPresenter.swift; sourceTree = "<group>"; };
 		3787811E2FE942E40028969F /* TimeMachineRollbackPolicy.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = TimeMachineRollbackPolicy.json; sourceTree = "<group>"; };
 		378AFF242F78D6530016B334 /* ivy-presto-display-semi-bold.otf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "ivy-presto-display-semi-bold.otf"; sourceTree = "<group>"; };
 		378AFF612F78E5EA0016B334 /* BrowserThemeContext.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrowserThemeContext.swift; sourceTree = "<group>"; };
@@ -837,6 +836,7 @@
 		37FA01142FDA000100000004 /* LocalStoreCompatibilityController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalStoreCompatibilityController.swift; sourceTree = "<group>"; };
 		37FC8C912F335942004675B8 /* WebContentProgressBarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WebContentProgressBarView.swift; sourceTree = "<group>"; };
 		37FC8DA92F39B2DE004675B8 /* LayoutModeSettingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LayoutModeSettingView.swift; sourceTree = "<group>"; };
+		3AC0FFEE00000000000000A2 /* PageSharingPresenter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PageSharingPresenter.swift; sourceTree = "<group>"; };
 		4508A9352EEFF2EB007C94E2 /* AccountWebWindowController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccountWebWindowController.swift; sourceTree = "<group>"; };
 		457F461C0F164136A46FF641 /* GroupTabsTableView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GroupTabsTableView.swift; sourceTree = "<group>"; };
 		4B4B00000000000000000002 /* KioskGlobalShortcutRegistrar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KioskGlobalShortcutRegistrar.swift; sourceTree = "<group>"; };

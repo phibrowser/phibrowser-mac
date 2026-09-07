@@ -176,6 +176,12 @@ class WebContentViewController: NSViewController {
     private var splitLoginRequiredViews: [Int: LoginRequiredOverlayView] = [:]
 
     var addressBarAnchorView: NSView? { headerView.addressBarAnchorView }
+    var headerPageColorPresentation: WebContentHeaderPageColorPresentation {
+        headerView.pageColorPresentation
+    }
+    var headerPageColorPresentationPublisher: AnyPublisher<WebContentHeaderPageColorPresentation, Never> {
+        headerView.pageColorPresentationPublisher
+    }
 
     /// Size of the web-content host area — the panel a page actually renders
     /// into (window minus sidebar, header, and bookmark bar), in points. Read

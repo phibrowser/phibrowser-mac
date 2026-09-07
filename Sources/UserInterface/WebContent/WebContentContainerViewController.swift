@@ -28,7 +28,13 @@ class WebContentContainerViewController: NSViewController {
     private var currentTabIdentifier: String?
     
     /// Currently displayed WebContentViewController
-    private weak var currentWebContentController: WebContentViewController?
+    private weak var currentWebContentController: WebContentViewController? {
+        didSet {
+            guard currentWebContentController !== oldValue else { return }
+            bindCurrentHeaderPageColorPresentation()
+        }
+    }
+    private var currentHeaderPageColorCancellable: AnyCancellable?
 
     /// The visible tab's web-content panel size, or nil when nothing is
     /// mounted (placeholder mode, window still restoring). See
@@ -511,6 +517,12 @@ class WebContentContainerViewController: NSViewController {
 
         let barController = TabStripBarController(browserState: state)
         tabStripBarController = barController
+        let pageColorPresentation = currentWebContentController?.headerPageColorPresentation
+            ?? .inherited
+        barController.setActivePageStyle(
+            backgroundColor: pageColorPresentation.backgroundColor,
+            appearance: pageColorPresentation.appearance
+        )
         barController.onTabStripLayoutChanged = { [weak self] in
             self?.updateContentOuterBorder()
         }
@@ -532,6 +544,33 @@ class WebContentContainerViewController: NSViewController {
         
         // Update content container constraints to be below topBar
         remakeContentLayout()
+    }
+
+    /// The visible address bar owns page-color eligibility, compositing,
+    /// contrast, and fallback. The horizontal tab strip only mirrors that
+    /// resolved presentation so its selected tab cannot drift to a second policy.
+    private func bindCurrentHeaderPageColorPresentation() {
+        currentHeaderPageColorCancellable = nil
+        guard let controller = currentWebContentController else {
+            tabStripBarController?.setActivePageStyle(backgroundColor: nil, appearance: nil)
+            return
+        }
+
+        let pageColorPresentation = controller.headerPageColorPresentation
+        tabStripBarController?.setActivePageStyle(
+            backgroundColor: pageColorPresentation.backgroundColor,
+            appearance: pageColorPresentation.appearance
+        )
+        currentHeaderPageColorCancellable = controller.headerPageColorPresentationPublisher
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self, weak controller] presentation in
+                guard let self, let controller,
+                      self.currentWebContentController === controller else { return }
+                self.tabStripBarController?.setActivePageStyle(
+                    backgroundColor: presentation.backgroundColor,
+                    appearance: presentation.appearance
+                )
+            }
     }
 
     // MARK: - Agent transcript dock

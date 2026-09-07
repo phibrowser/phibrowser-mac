@@ -324,6 +324,7 @@ private final class BookmarkOriginTestWebContentWrapper: NSObject, WebContentWra
     @objc dynamic var isDiscarded = false
     @objc dynamic var isUnloaded = false
     @objc dynamic var isDistillable = false
+    @objc dynamic var pageColor: NSColor?
     @objc dynamic var devToolsTargetId: String? = nil
 
     func requestAccessibilityTreeSnapshot(

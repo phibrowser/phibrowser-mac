@@ -79,7 +79,6 @@ enum CommandWrapper: Int, Equatable {
     case IDC_SHOW_DOWNLOADS          = 40012
     case IDC_MANAGE_EXTENSIONS       = 40022
     case IDC_TASK_MANAGER            = 40006
-    case IDC_ALL_WINDOWS_FRONT       = 34048
 
     // Tab
     case IDC_NEW_TAB_TO_RIGHT        = 35024
@@ -100,7 +99,7 @@ enum CommandWrapper: Int, Equatable {
     case IDC_WINDOW_GROUP_TAB        = 35014
     case IDC_WINDOW_CLOSE_OTHER_TABS = 35023
     case IDC_WINDOW_CLOSE_TABS_TO_RIGHT = 35022
-    case IDC_MOVE_TAB_TO_NEW_WINDOW  = 34054
+    case IDC_MOVE_TAB_TO_NEW_WINDOW  = 34056
     case IDC_TAB_SEARCH              = 52500
 
     // Help

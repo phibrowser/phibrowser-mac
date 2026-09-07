@@ -245,24 +245,47 @@ private struct LegacyImagePreviewBridgeItem: Decodable {
 
 enum ImagePreviewMessageHandler {
     static func handle(_ context: ExtensionMessageContext) {
-        do {
-            let request = try JSONDecoder().decode(ImagePreviewBridgeRequest.self, from: Data(context.payload.utf8))
-            let items = ImagePreviewItem.items(
-                fromAddressStrings: request.itemAddresses,
-                authorizedPhiAgentSenderID: context.senderId
-            )
-
-            guard let controller = MainBrowserWindowControllersManager.shared.controller(for: request.windowId) ?? MainBrowserWindowControllersManager.shared.activeWindowController
-            else {
-                AppLogWarn("[ImagePreview] Window not found for id: \(request.windowId)")
-                return
+        Task { @MainActor in
+            handle(context, messenger: ExtensionMessaging.shared) { windowID, items, currentIndex in
+                guard let controller = MainBrowserWindowControllersManager.shared.controller(for: windowID)
+                    ?? MainBrowserWindowControllersManager.shared.activeWindowController else {
+                    return false
+                }
+                controller.browserState.imagePreviewState.open(items: items, currentIndex: currentIndex)
+                return true
             }
-
-            Task { @MainActor in
-                controller.browserState.imagePreviewState.open(items: items, currentIndex: request.currentIndex)
-            }
-        } catch {
-            AppLogError("[ImagePreview] Failed to decode extension payload: \(error)\nRaw payload: \(context.payload.prefix(500))")
         }
+    }
+
+    /// Acknowledges presentation, not image loading or dismissal. Every request
+    /// settles through its own reply channel, never an extension broadcast.
+    @MainActor
+    static func handle(
+        _ context: ExtensionMessageContext,
+        messenger: ExtensionMessagingProtocol,
+        openPreview: (Int, [ImagePreviewItem], Int) -> Bool
+    ) {
+        let request: ImagePreviewBridgeRequest
+        do {
+            request = try JSONDecoder().decode(ImagePreviewBridgeRequest.self, from: Data(context.payload.utf8))
+        } catch {
+            // Payloads may contain private image URLs or inline image bytes.
+            messenger.sendError("Invalid image preview payload", requestId: context.requestId)
+            return
+        }
+
+        let items = ImagePreviewItem.items(
+            fromAddressStrings: request.itemAddresses,
+            authorizedPhiAgentSenderID: context.senderId
+        )
+        guard !items.isEmpty else {
+            messenger.sendError("No image preview items provided", requestId: context.requestId)
+            return
+        }
+        guard openPreview(request.windowId, items, request.currentIndex) else {
+            messenger.sendError("Image preview window unavailable", requestId: context.requestId)
+            return
+        }
+        messenger.sendResponse("{}", requestId: context.requestId)
     }
 }

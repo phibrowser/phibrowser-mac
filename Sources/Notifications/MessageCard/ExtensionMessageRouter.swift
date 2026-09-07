@@ -91,7 +91,7 @@ final class ExtensionMessageRouter {
 
         register(type: "imagePreview") { context in
             ImagePreviewMessageHandler.handle(context)
-            return nil
+            return nil  // The handler replies after presentation or validation failure.
         }
 
         register(type: "showDialog") { context in

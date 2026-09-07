@@ -499,8 +499,15 @@ private struct KioskCopyURLButtonView: View {
 enum KioskSpaceMenuTargetResolver {
     static func primarySpace(
         in spaces: [SpaceModel],
+        preferredSpaceId: String? = nil,
         activeSpaceId: String?
     ) -> SpaceModel? {
+        if let preferredSpaceId,
+           let preferredSpace = spaces.first(where: {
+               $0.spaceId == preferredSpaceId
+           }) {
+            return preferredSpace
+        }
         if let activeSpaceId,
            let activeSpace = spaces.first(where: {
                $0.spaceId == activeSpaceId
@@ -523,6 +530,7 @@ private struct KioskSpaceMenu: View {
     @ObservedObject private var spaceManager: SpaceManager
     @State private var isPrimaryActionHovered = false
     @State private var isSpaceListHovered = false
+    @State private var preferredSpaceId: String?
     let state: KioskBrowserState
     let onSelect: (String) -> Void
 
@@ -533,6 +541,7 @@ private struct KioskSpaceMenu: View {
     ) {
         self.spaceManager = spaceManager
         self.state = state
+        _preferredSpaceId = State(initialValue: state.preferredSpaceId)
         self.onSelect = onSelect
     }
 
@@ -547,6 +556,7 @@ private struct KioskSpaceMenu: View {
     private var primarySpace: SpaceModel? {
         KioskSpaceMenuTargetResolver.primarySpace(
             in: availableSpaces,
+            preferredSpaceId: preferredSpaceId,
             activeSpaceId: spaceManager.activeSpaceId
         )
     }
@@ -677,6 +687,9 @@ private struct KioskSpaceMenu: View {
                 )
         }
         .clipShape(Capsule())
+        .onReceive(state.$preferredSpaceId.receive(on: DispatchQueue.main)) {
+            preferredSpaceId = $0
+        }
     }
 
     private func openInPrimarySpace() {

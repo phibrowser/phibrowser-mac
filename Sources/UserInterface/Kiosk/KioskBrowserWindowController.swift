@@ -523,6 +523,8 @@ final class KioskBrowserWindowController: MainBrowserWindowController {
         replacementWindow: NSWindow
     ) {
         shouldCaptureKioskOpened = false
+        (browserState as? KioskBrowserState)?.preferredSpaceId =
+            (source.browserState as? KioskBrowserState)?.preferredSpaceId
         profileReplacementSource = source
         profileReplacementSourceWindowId = source.windowId
         profileReplacementInheritedFrame = inheritedFrame
@@ -996,6 +998,7 @@ final class KioskBrowserWindowController: MainBrowserWindowController {
         let spaceManager = SpaceManager.shared
         guard let space = KioskSpaceMenuTargetResolver.primarySpace(
             in: spaceManager.spaces,
+            preferredSpaceId: (browserState as? KioskBrowserState)?.preferredSpaceId,
             activeSpaceId: spaceManager.activeSpaceId
         ) else { return }
         spaceManager.moveTab(tab, toSpaceId: space.spaceId)

@@ -4,6 +4,7 @@
 // found in the LICENSE file.
 
 import AppKit
+import Combine
 import XCTest
 @testable import Phi
 
@@ -58,6 +59,72 @@ final class KioskBrowserStateTests: XCTestCase {
             )?.spaceId,
             activeSpace.spaceId
         )
+    }
+
+    func testSpaceMenuPrefersURLRuleTargetWhenSpacesShareProfile() {
+        let activeSpace = SpaceModel(
+            spaceId: "active-space",
+            profileId: LocalStore.defaultProfileId,
+            name: "Active",
+            colorHex: "#000000",
+            iconName: "circle",
+            sortOrder: 0
+        )
+        let ruleSpace = SpaceModel(
+            spaceId: "rule-space",
+            profileId: LocalStore.defaultProfileId,
+            name: "Rule Target",
+            colorHex: "#FFFFFF",
+            iconName: "rectangle.stack",
+            sortOrder: 1
+        )
+
+        for activeSpaceId in [activeSpace.spaceId, "another-active-space"] {
+            XCTAssertEqual(
+                KioskSpaceMenuTargetResolver.primarySpace(
+                    in: [activeSpace, ruleSpace],
+                    preferredSpaceId: ruleSpace.spaceId,
+                    activeSpaceId: activeSpaceId
+                )?.spaceId,
+                ruleSpace.spaceId
+            )
+        }
+        XCTAssertEqual(
+            KioskSpaceMenuTargetResolver.primarySpace(
+                in: [activeSpace],
+                preferredSpaceId: ruleSpace.spaceId,
+                activeSpaceId: activeSpace.spaceId
+            )?.spaceId,
+            activeSpace.spaceId
+        )
+        XCTAssertNil(
+            KioskSpaceMenuTargetResolver.primarySpace(
+                in: [],
+                preferredSpaceId: ruleSpace.spaceId,
+                activeSpaceId: activeSpace.spaceId
+            )
+        )
+    }
+
+    func testPreferredSpacePublishesWithoutChangingSpaceMembership() throws {
+        let state = try makeState()
+        let otherState = try makeState()
+        let originalSpaceId = state.spaceId
+        let activeSpaceId = SpaceManager.shared.activeSpaceId
+        var publishedSpaceIds: [String?] = []
+        let observation = state.$preferredSpaceId.sink {
+            publishedSpaceIds.append($0)
+        }
+        defer { observation.cancel() }
+
+        state.preferredSpaceId = "rule-space"
+
+        XCTAssertEqual(publishedSpaceIds, [nil, "rule-space"])
+        XCTAssertEqual(state.preferredSpaceId, "rule-space")
+        XCTAssertNil(otherState.preferredSpaceId)
+        XCTAssertEqual(state.spaceId, originalSpaceId)
+        XCTAssertFalse(state.participatesInSpaces)
+        XCTAssertEqual(SpaceManager.shared.activeSpaceId, activeSpaceId)
     }
 
     private var temporaryDirectories: [URL] = []

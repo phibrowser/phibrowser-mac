@@ -2399,21 +2399,47 @@ extension AppController {
     @discardableResult
     func openNewKioskWindow(
         url: String = "about:blank",
-        bringToFront: Bool
+        bringToFront: Bool,
+        profileId: String? = nil,
+        preferredSpaceId: String? = nil
     ) -> Bool {
         let manager = MainBrowserWindowControllersManager.shared
+        let bridge = ChromiumLauncher.sharedInstance().bridge
+        AppLogDebug(
+            "[ExternalKioskRouting] openNewKioskWindow "
+                + "requestedProfile=\(profileId ?? "inherited") "
+                + "preferredSpace=\(preferredSpaceId ?? "none") "
+                + "activeProfile=\(manager.activeWindowController?.profileId ?? "none") "
+                + "canOpenKiosk=\(ApplicationState.shared.canOpenExternalLinksInKiosk) "
+                + "guestTransitionBlocked=\(manager.isGuestTransitionInteractionBlocked) "
+                + "bridgeAvailable=\(bridge != nil)"
+        )
         guard ApplicationState.shared.canOpenExternalLinksInKiosk,
               !manager.isGuestTransitionInteractionBlocked,
-              let bridge = ChromiumLauncher.sharedInstance().bridge else {
+              let bridge else {
+            AppLogDebug(
+                "[ExternalKioskRouting] openNewKioskWindow rejected by precondition"
+            )
             return false
         }
         if manager.activeWindowController == nil,
            SpaceManager.shared.isSessionRestoreInFlight {
+            AppLogDebug(
+                "[ExternalKioskRouting] openNewKioskWindow rejected because "
+                    + "session restore is in flight without an active window"
+            )
             return false
         }
 
         let kioskController: KioskBrowserWindowController?
-        if let source = manager.activeWindowController {
+        if let profileId {
+            kioskController = openWindowlessKiosk(
+                url: url,
+                profileId: profileId,
+                bridge: bridge,
+                manager: manager
+            )
+        } else if let source = manager.activeWindowController {
             kioskController = openKioskWindow(
                 url: url,
                 from: source,
@@ -2427,9 +2453,23 @@ extension AppController {
                 manager: manager
             )
         }
-        guard let kioskController else { return false }
+        guard let kioskController else {
+            AppLogDebug(
+                "[ExternalKioskRouting] Kiosk creation returned no controller"
+            )
+            return false
+        }
 
         let windowId = kioskController.windowId
+        if let state = kioskController.browserState as? KioskBrowserState {
+            state.preferredSpaceId = preferredSpaceId
+            AppLogDebug(
+                "[ExternalKioskRouting] configured Open in Space target "
+                    + "windowId=\(windowId) "
+                    + "preferredSpace=\(state.preferredSpaceId ?? "none") "
+                    + "activeSpace=\(SpaceManager.shared.activeSpaceId ?? "none")"
+            )
+        }
         DispatchQueue.main.async { [weak kioskController] in
             guard let kioskController,
                   manager.controller(for: windowId) === kioskController else {
@@ -2478,31 +2518,71 @@ extension AppController {
     @MainActor
     private func openWindowlessKiosk(
         url: String,
+        profileId: String? = nil,
         bridge: PhiChromiumBridgeProtocol,
         manager: MainBrowserWindowControllersManager
     ) -> KioskBrowserWindowController? {
         guard let result = bridge.createBrowser(
             withWindowType: .kiosk,
-            profileId: nil,
+            profileId: profileId,
             hidden: false
-        ), let windowIdNumber = result["windowId"] as? NSNumber else {
+        ) else {
+            AppLogDebug(
+                "[ExternalKioskRouting] createBrowser returned nil "
+                    + "profile=\(profileId ?? "last-used")"
+            )
+            return nil
+        }
+        guard let windowIdNumber = result["windowId"] as? NSNumber else {
+            AppLogDebug(
+                "[ExternalKioskRouting] createBrowser result has no windowId "
+                    + "reportedProfile=\(result["profileId"] as? String ?? "none")"
+            )
             return nil
         }
 
         let windowId = windowIdNumber.intValue
+        let reportedProfileId = result["profileId"] as? String ?? "none"
+        AppLogDebug(
+            "[ExternalKioskRouting] createBrowser returned "
+                + "windowId=\(windowId) requestedProfile=\(profileId ?? "last-used") "
+                + "reportedProfile=\(reportedProfileId)"
+        )
         guard let controller = manager.controller(for: windowId)
-                as? KioskBrowserWindowController,
-              bridge.createNewTabStrictly(
-                withUrl: url,
-                windowId: Int64(windowId),
-                focusAfterCreate: true
-              ) else {
+                as? KioskBrowserWindowController else {
+            AppLogDebug(
+                "[ExternalKioskRouting] created Kiosk was not registered "
+                    + "windowId=\(windowId)"
+            )
             bridge.executeCommand(
                 Int32(CommandWrapper.IDC_CLOSE_WINDOW.rawValue),
                 windowId: Int64(windowId)
             )
             return nil
         }
+        AppLogDebug(
+            "[ExternalKioskRouting] registered Kiosk controller "
+                + "windowId=\(windowId) controllerProfile=\(controller.profileId)"
+        )
+        guard bridge.createNewTabStrictly(
+            withUrl: url,
+            windowId: Int64(windowId),
+            focusAfterCreate: true
+        ) else {
+            AppLogDebug(
+                "[ExternalKioskRouting] strict tab creation failed "
+                    + "windowId=\(windowId)"
+            )
+            bridge.executeCommand(
+                Int32(CommandWrapper.IDC_CLOSE_WINDOW.rawValue),
+                windowId: Int64(windowId)
+            )
+            return nil
+        }
+        AppLogDebug(
+            "[ExternalKioskRouting] strict tab creation succeeded "
+                + "windowId=\(windowId)"
+        )
         return controller
     }
 

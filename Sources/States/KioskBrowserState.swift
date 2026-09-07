@@ -3,14 +3,17 @@
 // Use of this source code is governed by an Apache license that can be
 // found in the LICENSE file.
 
+import Combine
 import Foundation
 
-/// Decides whether an external URL should bypass the user's Kiosk preference.
-/// A Space rule takes precedence over that preference, while the Kiosk rule
-/// target and an unmatched URL retain the existing Chromium Kiosk path.
+/// Decides how an external URL should combine URL Rules with the user's Kiosk
+/// preference. A deterministic user-Space rule supplies the identity for the
+/// Kiosk, while Ask, Incognito, explicit Kiosk, and unmatched URLs retain their
+/// established routing paths.
 enum ExternalKioskURLRuleResolver {
     enum Decision: Equatable {
         case useKiosk
+        case useKioskWithSpaceIdentity(String)
         case ask(defaultSpaceId: String)
         case openInSpace(String)
     }
@@ -26,7 +29,10 @@ enum ExternalKioskURLRuleResolver {
         if rule.askBeforeRouting {
             return .ask(defaultSpaceId: rule.spaceId)
         }
-        return .openInSpace(rule.spaceId)
+        if SpaceManager.isIncognitoSpaceId(rule.spaceId) {
+            return .openInSpace(rule.spaceId)
+        }
+        return .useKioskWithSpaceIdentity(rule.spaceId)
     }
 }
 
@@ -37,6 +43,10 @@ enum ExternalKioskURLRuleResolver {
 /// persisted tab-order, bookmark, split, and Space behavior that does not
 /// belong in a single-WebContents window.
 final class KioskBrowserState: BrowserState {
+    /// The URL Rule's preferred Open in Space destination, not Space membership.
+    /// Keep it window-scoped even when several Spaces share the same profile.
+    @Published var preferredSpaceId: String? = nil
+
     @MainActor
     init(windowId: Int,
          localStore: LocalStore,

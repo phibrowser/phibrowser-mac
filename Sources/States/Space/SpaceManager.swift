@@ -3630,6 +3630,29 @@ final class SpaceManager: ObservableObject {
         }
     }
 
+    /// Resolves the Chromium identity owned by a URL Rule's user-Space target.
+    /// The store fallback inside `boundProfileId` keeps cold external opens
+    /// correct before the asynchronous Space publisher has converged.
+    @MainActor
+    func profileId(forURLRuleTargetSpaceId spaceId: String) -> String? {
+        guard !Self.isIncognitoSpaceId(spaceId),
+              spaceId != Self.kioskRuleTargetId else {
+            AppLogDebug(
+                "[ExternalKioskRouting] profile lookup rejected reserved "
+                    + "targetSpace=\(spaceId)"
+            )
+            return nil
+        }
+        let foundInCache = spaces.contains(where: { $0.spaceId == spaceId })
+        let profileId = boundProfileId(forSpaceId: spaceId)
+        AppLogDebug(
+            "[ExternalKioskRouting] profile lookup targetSpace=\(spaceId) "
+                + "source=\(foundInCache ? "cache" : "store") "
+                + "profile=\(profileId ?? "none")"
+        )
+        return profileId
+    }
+
     /// Captures the concrete Chromium profile that a fresh Guest default
     /// Space must belong to. The coordinator calls this only for normal
     /// windows; Incognito and Agent profiles must never become its owner.

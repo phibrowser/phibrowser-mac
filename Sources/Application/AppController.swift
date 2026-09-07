@@ -601,8 +601,18 @@ import PostHog
         AppLogDebug("[coldopen] urls call bridge (\(label))")
         let opensInKiosk =
             PhiPreferences.GeneralSettings.openExternalLinksInKiosk.loadValue()
+        let hasLoadedURLRules = SpaceManager.shared.hasLoadedURLRules
+        AppLogDebug(
+            "[ExternalKioskRouting] forward label=\(label) count=\(urls.count) "
+                + "kioskPreference=\(opensInKiosk) "
+                + "rulesLoaded=\(hasLoadedURLRules)"
+        )
         guard opensInKiosk,
-              SpaceManager.shared.hasLoadedURLRules else {
+              hasLoadedURLRules else {
+            AppLogDebug(
+                "[ExternalKioskRouting] bypassing URL Rule evaluation; "
+                    + "forwarding directly to Chromium"
+            )
             forwardOpenURLsDirectlyToChromium(
                 application: application,
                 urls: urls
@@ -612,15 +622,48 @@ import PostHog
 
         let urlsForChromium = MainActor.assumeIsolated {
             let rules = SpaceManager.shared.allRules
+            AppLogDebug(
+                "[ExternalKioskRouting] evaluating \(urls.count) URL(s) "
+                    + "against \(rules.count) rule(s)"
+            )
             var urlsForChromium: [URL] = []
             var urlsByTargetSpaceId: [String: [String]] = [:]
             for url in urls {
-                switch ExternalKioskURLRuleResolver.decision(
+                let urlSummary = "\(url.scheme ?? "unknown")://"
+                    + "\(url.host ?? "no-host")"
+                let matchingRule = URLRouter.matchingRule(
                     for: url,
                     rules: rules
-                ) {
+                )
+                let matchedTarget = matchingRule?.spaceId ?? "none"
+                let decision = ExternalKioskURLRuleResolver.decision(
+                    for: url,
+                    rules: rules
+                )
+                let decisionSummary: String
+                switch decision {
+                case .useKiosk:
+                    decisionSummary = "useKiosk"
+                case let .useKioskWithSpaceIdentity(targetSpaceId):
+                    decisionSummary = "useKioskWithSpaceIdentity:\(targetSpaceId)"
+                case let .ask(defaultSpaceId):
+                    decisionSummary = "ask:\(defaultSpaceId)"
+                case let .openInSpace(targetSpaceId):
+                    decisionSummary = "openInSpace:\(targetSpaceId)"
+                }
+                AppLogDebug(
+                    "[ExternalKioskRouting] url=\(urlSummary) "
+                        + "matchedTarget=\(matchedTarget) "
+                        + "decision=\(decisionSummary)"
+                )
+                switch decision {
                 case .useKiosk:
                     urlsForChromium.append(url)
+                case let .useKioskWithSpaceIdentity(targetSpaceId):
+                    openExternalURLInKiosk(
+                        url,
+                        usingIdentityFromSpaceId: targetSpaceId
+                    )
                 case let .ask(defaultSpaceId):
                     askForExternalURLRuleDestination(
                         url,
@@ -645,6 +688,109 @@ import PostHog
                 urls: urlsForChromium
             )
         }
+    }
+
+    @MainActor
+    private func openExternalURLInKiosk(
+        _ url: URL,
+        usingIdentityFromSpaceId targetSpaceId: String
+    ) {
+        let manager = SpaceManager.shared
+        let profileId = manager.profileId(
+            forURLRuleTargetSpaceId: targetSpaceId
+        )
+        let activeProfileId = MainBrowserWindowControllersManager.shared
+            .activeWindowController?.profileId ?? "none"
+        AppLogDebug(
+            "[ExternalKioskRouting] resolved identity targetSpace=\(targetSpaceId) "
+                + "targetProfile=\(profileId ?? "none") "
+                + "activeProfile=\(activeProfileId)"
+        )
+        guard let profileId, !profileId.isEmpty else {
+            AppLogWarn(
+                "[ExternalKioskRouting] URL Rule target Space has no available "
+                    + "profile identity: \(targetSpaceId)"
+            )
+            manager.openExternalURLs(
+                [url.absoluteString],
+                inURLRuleTargetSpaceId: targetSpaceId
+            )
+            return
+        }
+        guard let bridge = ChromiumLauncher.sharedInstance().bridge else {
+            AppLogWarn(
+                "[ExternalKioskRouting] Chromium bridge unavailable for "
+                    + "targetSpace=\(targetSpaceId) targetProfile=\(profileId)"
+            )
+            manager.openExternalURLs(
+                [url.absoluteString],
+                inURLRuleTargetSpaceId: targetSpaceId
+            )
+            return
+        }
+
+        AppLogDebug(
+            "[ExternalKioskRouting] requesting profile load "
+                + "targetSpace=\(targetSpaceId) targetProfile=\(profileId)"
+        )
+        bridge.ensureProfileLoaded(profileId) { success in
+            AppLogDebug(
+                "[ExternalKioskRouting] profile load completed "
+                    + "targetSpace=\(targetSpaceId) "
+                    + "targetProfile=\(profileId) success=\(success)"
+            )
+            DispatchQueue.main.async {
+                MainActor.assumeIsolated {
+                    AppController.shared?.finishOpeningExternalURLInKiosk(
+                        url,
+                        targetSpaceId: targetSpaceId,
+                        profileId: profileId,
+                        profileLoadSucceeded: success
+                    )
+                }
+            }
+        }
+    }
+
+    @MainActor
+    private func finishOpeningExternalURLInKiosk(
+        _ url: URL,
+        targetSpaceId: String,
+        profileId: String,
+        profileLoadSucceeded: Bool
+    ) {
+        let manager = SpaceManager.shared
+        guard profileLoadSucceeded else {
+            AppLogWarn(
+                "[ExternalKioskRouting] Failed to load URL Rule target profile "
+                    + "\(profileId); opening in Space \(targetSpaceId)"
+            )
+            manager.openExternalURLs(
+                [url.absoluteString],
+                inURLRuleTargetSpaceId: targetSpaceId
+            )
+            return
+        }
+        guard openNewKioskWindow(
+            url: url.absoluteString,
+            bringToFront: false,
+            profileId: profileId,
+            preferredSpaceId: targetSpaceId
+        ) else {
+            AppLogWarn(
+                "[ExternalKioskRouting] Failed to open Kiosk with URL Rule profile "
+                    + "\(profileId); opening in Space \(targetSpaceId)"
+            )
+            manager.openExternalURLs(
+                [url.absoluteString],
+                inURLRuleTargetSpaceId: targetSpaceId
+            )
+            return
+        }
+        AppLogDebug(
+            "[ExternalKioskRouting] Kiosk open succeeded "
+                + "targetSpace=\(targetSpaceId) targetProfile=\(profileId)"
+        )
     }
 
     private func askForExternalURLRuleDestination(

@@ -196,7 +196,7 @@ final class URLRouterTests: XCTestCase {
         )
     }
 
-    func testExternalKioskBypassesKioskForDeterministicRuleTarget() {
+    func testExternalKioskUsesDeterministicRuleTargetIdentity() {
         let rules = [
             rule(space: "personal", host: "*.example.com"),
             rule(space: "work", host: "mail.example.com"),
@@ -207,7 +207,7 @@ final class URLRouterTests: XCTestCase {
                 for: URL(string: "https://mail.example.com/inbox")!,
                 rules: rules
             ),
-            .openInSpace("work")
+            .useKioskWithSpaceIdentity("work")
         )
     }
 
@@ -246,6 +246,23 @@ final class URLRouterTests: XCTestCase {
                 rules: askRules + kioskRules
             ),
             .useKiosk
+        )
+    }
+
+    func testExternalKioskPreservesIncognitoRuleRouting() {
+        let rules = [
+            rule(
+                space: SpaceManager.incognitoRuleTargetId,
+                host: "private.example"
+            ),
+        ]
+
+        XCTAssertEqual(
+            ExternalKioskURLRuleResolver.decision(
+                for: URL(string: "https://private.example/")!,
+                rules: rules
+            ),
+            .openInSpace(SpaceManager.incognitoRuleTargetId)
         )
     }
 

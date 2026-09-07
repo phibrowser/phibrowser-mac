@@ -104,6 +104,11 @@ final class PageSharingPresenter: NSObject {
                 keyEquivalent: ""
             )
             item.image = service.image
+            #if compiler(>=6.4)
+            if #available(macOS 27.0, *) {
+                item.preferredImageVisibility = .visible
+            }
+            #endif
             item.target = target
             item.representedObject = target
             submenu.addItem(item)

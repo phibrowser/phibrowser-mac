@@ -175,6 +175,11 @@ final class WebContentAddressBarMenuPresenter {
             image: menuSymbol(named: "square.and.arrow.up")
         )
         MainActor.assumeIsolated {
+            #if compiler(>=6.4)
+            if #available(macOS 27.0, *) {
+                shareItem.preferredImageVisibility = .visible
+            }
+            #endif
             shareItem.submenu = PageSharingPresenter.shareSubmenu(for: resolvedTab)
         }
 

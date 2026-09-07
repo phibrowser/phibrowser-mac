@@ -358,12 +358,8 @@ final class PhiAlertTests: XCTestCase {
     }
 
     func testRunModalBridgeUsesSheetAndReturnsResponseSynchronously() {
-        let sourceWindow = NSWindow(
-            contentRect: CGRect(x: 100, y: 100, width: 800, height: 600),
-            styleMask: [.titled],
-            backing: .buffered,
-            defer: false
-        )
+        let sourceWindow = makeVisibleSourceWindow()
+        defer { sourceWindow.close() }
         let expectedResponse = NSApplication.ModalResponse.alertSecondButtonReturn
         let configuration = PhiAlertAppKitConfiguration(
             title: "Synchronous alert",
@@ -406,12 +402,8 @@ final class PhiAlertTests: XCTestCase {
     }
 
     func testSynchronousSheetDispatchesAppKitEvents() {
-        let sourceWindow = NSWindow(
-            contentRect: CGRect(x: 100, y: 100, width: 800, height: 600),
-            styleMask: [.titled],
-            backing: .buffered,
-            defer: false
-        )
+        let sourceWindow = makeVisibleSourceWindow()
+        defer { sourceWindow.close() }
         let expectedResponse = NSApplication.ModalResponse.alertFirstButtonReturn
         var dismissHandler: ((NSApplication.ModalResponse) -> Void)?
         var didDispatchEvent = false
@@ -530,6 +522,15 @@ final class PhiAlertTests: XCTestCase {
         XCTAssertEqual(response, expectedResponse)
     }
 
+    /// The synchronous bridge hosts a sheet only on a visible window and
+    /// floats a standalone panel otherwise, so a sheet test has to put its
+    /// source window on screen first.
+    private func makeVisibleSourceWindow() -> NSWindow {
+        let window = makeParentWindow()
+        window.orderFront(nil)
+        return window
+    }
+
     private func makeParentWindow() -> NSWindow {
         let window = NSWindow(
             contentRect: CGRect(x: 100, y: 100, width: 800, height: 600),
@@ -574,12 +575,8 @@ final class PhiAlertTests: XCTestCase {
         keyCode: UInt16,
         runAlert: ((NSWindow) -> NSApplication.ModalResponse)? = nil
     ) -> NSApplication.ModalResponse {
-        let sourceWindow = NSWindow(
-            contentRect: CGRect(x: 100, y: 100, width: 800, height: 600),
-            styleMask: [.titled],
-            backing: .buffered,
-            defer: false
-        )
+        let sourceWindow = makeVisibleSourceWindow()
+        defer { sourceWindow.close() }
         let configuration = PhiAlertAppKitConfiguration(
             title: "Keyboard shortcut",
             message: "The alert should handle its standard keyboard shortcuts.",

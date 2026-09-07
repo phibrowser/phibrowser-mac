@@ -165,6 +165,10 @@ import PostHog
                                                name: Notification.Name("PhiWillTryToTerminateApplicationNotification"),
                                                object: nil)
         NotificationCenter.default.addObserver(self,
+                                               selector: #selector(phiDidCancelTerminateApplicationNotification(_:)),
+                                               name: Notification.Name("PhiDidCancelTerminateApplicationNotification"),
+                                               object: nil)
+        NotificationCenter.default.addObserver(self,
                                                selector: #selector(loginStatusRefreshCompleted(_:)),
                                                name: .loginStatusRefreshCompleted,
                                                object: nil)
@@ -873,13 +877,28 @@ import PostHog
     @MainActor
     @objc func phiWillTryToTerminateApplicationNotification(_ notification: Notification) {
         // Posted (synchronously, main thread) by phi_app_controller_mac.mm's
-        // -tryToTerminateApplication: BEFORE chrome::CloseAllBrowsers() tears the
-        // windows down. This is the only quit signal that fires ahead of that
-        // teardown cascade (the AppKit applicationWillTerminate hook runs after
-        // it). Freeze the restore snapshot here so the closing windows can't
-        // drain it — the next launch then regroups restored windows into their
-        // slots and re-enters fullscreen.
+        // -tryToTerminateApplication once the quit is past the confirm sheet and
+        // the in-progress-downloads prompt, BEFORE chrome::CloseAllBrowsers()
+        // tears the windows down. This is the only quit signal that fires ahead
+        // of that teardown cascade (the AppKit applicationWillTerminate hook runs
+        // after it). Freeze the restore snapshot here so the closing windows
+        // can't drain it — the next launch then regroups restored windows into
+        // their slots and re-enters fullscreen. One refusal is still ahead of
+        // the teardown, a page's beforeunload prompt; it lifts the freeze again
+        // through phiDidCancelTerminateApplicationNotification below.
         SpaceManager.shared.markTerminating()
+    }
+
+    @MainActor
+    @objc func phiDidCancelTerminateApplicationNotification(_ notification: Notification) {
+        // Posted (synchronously, main thread) by phi_app_controller_mac.mm when a
+        // beforeunload prompt answered "stay" calls off a quit it had announced
+        // above. No window has closed by then — Chromium asks every window's
+        // handlers before it closes the first — so the frozen layout is still
+        // the live one: lift the freeze and let layout changes persist again.
+        // Nothing is written here; a change refused during the freeze is still
+        // pending and lands with the next write.
+        SpaceManager.shared.clearTerminating()
     }
 
     @objc private func loginStatusRefreshCompleted(_ notification: Notification) {

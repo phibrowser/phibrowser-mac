@@ -3777,7 +3777,8 @@ final class SpaceManager: ObservableObject {
         return resolved
     }
 
-    /// Set once app termination begins (see `markTerminating`). Quit tears the
+    /// Set once app termination begins (see `markTerminating`) and cleared if
+    /// that quit is called off (`clearTerminating`). Quit tears the
     /// slots down window-by-window, and every teardown step that reaches
     /// `persistSlotsSnapshot` would otherwise rewrite the snapshot with the
     /// dismantled (eventually empty) layout — wiping the healthy grouping the
@@ -3786,11 +3787,13 @@ final class SpaceManager: ObservableObject {
 
     /// Called when quit begins, from `AppController`'s handler for
     /// `PhiWillTryToTerminateApplicationNotification` — posted by
-    /// phi_app_controller_mac.mm's -tryToTerminateApplication: BEFORE
+    /// phi_app_controller_mac.mm's -tryToTerminateApplication once the quit is
+    /// past the confirm sheet and the in-progress-downloads prompt, BEFORE
     /// chrome::CloseAllBrowsers(), the only quit signal that fires ahead of the
     /// window teardown (the AppKit applicationWillTerminate hook runs after it).
     /// Once set, `persistSlotsSnapshot` no-ops, freezing the snapshot at the last
-    /// healthy layout for the rest of the process's life.
+    /// healthy layout for the rest of the process's life — unless a page's
+    /// beforeunload prompt calls the quit off, which `clearTerminating` answers.
     func markTerminating() {
         // Land a debounced frame write before the freeze, or quitting within a
         // second of the last drag persists the position the window had BEFORE
@@ -3801,6 +3804,19 @@ final class SpaceManager: ObservableObject {
         // layout to come back to. That trade is deliberate.
         flushPendingSlotsSnapshotPersist()
         isTerminating = true
+    }
+
+    /// Called when the quit that `markTerminating` froze the snapshot for is
+    /// called off, from `AppController`'s handler for
+    /// `PhiDidCancelTerminateApplicationNotification` — posted when a
+    /// beforeunload prompt answered "stay" cancels the quit. That cancel lands
+    /// before any window has closed (Chromium asks every window's handlers
+    /// before it closes the first), so the frozen layout is still the live one
+    /// and persistence simply resumes. Writes nothing: a frame change refused
+    /// during the freeze is still pending (`pendingSlotsSnapshotPersistWorkItem`)
+    /// and lands with the next write of any kind.
+    func clearTerminating() {
+        isTerminating = false
     }
 
     /// Whether the live slot layout may be written over the saved snapshot at

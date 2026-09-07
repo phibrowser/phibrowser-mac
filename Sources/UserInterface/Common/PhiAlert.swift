@@ -779,6 +779,13 @@ final class PhiAlertPresenter {
         presentationStyle = .standalone
         isPresented = true
         alertWindow.level = .modalPanel
+        // Nothing sizes a standalone panel to its content the way AppKit
+        // sizes a sheet, and the fitting size measured before the hosting
+        // view lays out can still be zero; centering that would put the
+        // panel's corner, not its middle, at the center of the screen.
+        if let contentView = alertWindow.contentViewController?.view {
+            alertWindow.setContentSize(contentView.fittingSize)
+        }
         alertWindow.center()
         NSApp.activate(ignoringOtherApps: false)
         alertWindow.makeKeyAndOrderFront(nil)
@@ -1131,7 +1138,14 @@ extension NSApplication {
 extension PhiAlert where Icon == EmptyView, AlertContent == EmptyView, Actions == EmptyView {
     /// Presents the standard quit confirmation alert and returns whether the
     /// user confirmed termination.
-    static func runQuitAlert(relativeTo sourceWindow: NSWindow? = nil) -> Bool {
+    ///
+    /// Quit is an application-level question, so the caller decides whether a
+    /// window should host it: a browser window hosts the alert as its sheet,
+    /// while `nil` presents it standalone, centered on screen. Passing `nil`
+    /// deliberately skips the key-window fallback the other alerts use, so a
+    /// picture-in-picture or tool window that happens to be key never hosts
+    /// the sheet.
+    static func runQuitAlert(relativeTo sourceWindow: NSWindow?) -> Bool {
         let configuration = PhiAlertAppKitConfiguration(
             title:  NSLocalizedString("common.quitConfirmation.title", value: "Are you sure you want to quit Phi?",
                 comment: "Quit confirmation title"
@@ -1169,12 +1183,18 @@ extension PhiAlert where Icon == EmptyView, AlertContent == EmptyView, Actions =
             }
         }
 
-        let response = NSApp.runPhiAlert(relativeTo: sourceWindow) { dismiss in
+        let content = { (dismiss: PhiAlertDismissAction) in
             makeQuitAlertContent(
                 configuration: configuration,
                 dismiss: dismiss,
                 confirmationAction: confirmationAction
             )
+        }
+        let response: NSApplication.ModalResponse
+        if let sourceWindow {
+            response = NSApp.runPhiAlert(relativeTo: sourceWindow, content: content)
+        } else {
+            response = PhiAlertPresenter.runStandaloneSynchronously(content: content)
         }
 
         return response == .alertFirstButtonReturn

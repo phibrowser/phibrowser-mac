@@ -1289,7 +1289,14 @@ extension PhiChromiumCoordinator: PhiChromiumBridgeDelegate {
     
     @MainActor
     func runQuitConfirmAlert() -> Bool {
-        PhiAlert.runQuitAlert()
+        // A key browser window hosts the confirmation as its sheet. Any other
+        // key window (picture in picture, Task Manager, a tool panel) would
+        // only squeeze it, so the alert then stands on its own instead.
+        let keyWindow = NSApp.keyWindow
+        let hostWindow = keyWindow?.windowController is MainBrowserWindowController
+            ? keyWindow
+            : nil
+        return PhiAlert.runQuitAlert(relativeTo: hostWindow)
     }
     
     func activeTabChanged(_ tabId: Int64, index: Int32, windowId: Int64) {

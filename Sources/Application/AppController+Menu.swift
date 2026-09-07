@@ -8,21 +8,44 @@ import Cocoa
 import SwiftUI
 import UniformTypeIdentifiers
 
-// chrome/app/chrome_command_ids.h
+// chrome/app/chrome_command_ids.h. Chromium 152 moved the structural menu
+// containers to the "Centralized Placeholder Command IDs" block at the bottom
+// of that file (kEditMenuId, kMacViewMenuId, ...); 150 tags the same menus
+// with the legacy IDC_*_MENU values. Both sets are hand-copied and both are
+// accepted while the client ships against either framework, so re-check
+// them on every major.
 enum ChromiumMainMenuRole: Int {
-    case edit = 36004
-    case bookmarks = 40029
-    case help = 40244
-    case window = 34045
-    case view = 44000
-    case file = 44001
-    case app = 44002
-    case history = 46000
-    case tab = 46001
-    case profiles = 46100
+    case edit = 57343       // kEditMenuId
+    case bookmarks = 57333  // kBookmarksMenuId (AppMenuModel::kBookmarksMenuPlaceholder)
+    case help = 57330       // kHelpMenuId
+    case window = 57321     // kMacWindowMenuId
+    case view = 57327       // kMacViewMenuId
+    case file = 57326       // kMacFileMenuId
+    case app = 57325        // kMacChromeMenuId
+    case history = 57324    // kMacHistoryMenuId
+    case tab = 57323        // kMacTabMenuId
+    case profiles = 57322   // kMacProfileMainMenuId
+
+    private static let legacyTags: [Int: Self] = [
+        36004: .edit,       // IDC_EDIT_MENU
+        40029: .bookmarks,  // IDC_BOOKMARKS_MENU
+        40244: .help,       // IDC_HELP_MENU
+        34045: .window,     // IDC_WINDOW_MENU
+        44000: .view,       // IDC_VIEW_MENU
+        44001: .file,       // IDC_FILE_MENU
+        44002: .app,        // IDC_CHROME_MENU
+        46000: .history,    // IDC_HISTORY_MENU
+        46001: .tab,        // IDC_TAB_MENU
+        46100: .profiles,   // IDC_PROFILE_MAIN_MENU
+    ]
+
+    init?(tag: Int) {
+        guard let role = Self(rawValue: tag) ?? Self.legacyTags[tag] else { return nil }
+        self = role
+    }
 
     static func resolve(_ item: NSMenuItem, helpMenu: NSMenu?) -> Self? {
-        if let role = Self(rawValue: item.tag) {
+        if let role = Self(tag: item.tag) {
             return role
         }
         // Chromium currently assigns IDC_HELP_MENU to no AppKit item. Its
@@ -34,11 +57,11 @@ enum ChromiumMainMenuRole: Int {
     }
 
     func item(in menu: NSMenu) -> NSMenuItem? {
-        menu.items.first { $0.tag == rawValue }
+        menu.items.first { Self(tag: $0.tag) == self }
     }
 
     func index(in menu: NSMenu) -> Int? {
-        menu.items.firstIndex { $0.tag == rawValue }
+        menu.items.firstIndex { Self(tag: $0.tag) == self }
     }
 }
 

@@ -1766,6 +1766,25 @@ final class PhiBrowserTests: XCTestCase {
         XCTAssertEqual(ChromiumMainMenuRole.history.index(in: mainMenu), 2)
     }
 
+    func testChromiumMainMenuRoleAcceptsLegacyAndCurrentChromiumTags() {
+        // Chromium 150 tags the View menu IDC_VIEW_MENU; 152 tags it kMacViewMenuId.
+        XCTAssertEqual(ChromiumMainMenuRole(tag: 44000), .view)
+        XCTAssertEqual(ChromiumMainMenuRole(tag: 57327), .view)
+        XCTAssertEqual(ChromiumMainMenuRole(tag: 40029), .bookmarks)
+        XCTAssertEqual(ChromiumMainMenuRole(tag: 57333), .bookmarks)
+        XCTAssertNil(ChromiumMainMenuRole(tag: 0))
+
+        let mainMenu = NSMenu(title: "")
+        let legacyHistoryItem = NSMenuItem(title: "History", action: nil, keyEquivalent: "")
+        legacyHistoryItem.tag = 46000  // IDC_HISTORY_MENU
+        mainMenu.addItem(legacyHistoryItem)
+
+        XCTAssertEqual(ChromiumMainMenuRole.resolve(legacyHistoryItem, helpMenu: nil), .history)
+        XCTAssertTrue(ChromiumMainMenuRole.history.item(in: mainMenu) === legacyHistoryItem)
+        XCTAssertEqual(ChromiumMainMenuRole.history.index(in: mainMenu), 0)
+        XCTAssertEqual(BookmarkMainMenuItemRouting.action(tag: 40029), .hideSystemItem)
+    }
+
     func testChromiumMainMenuRoleRecognizesAppKitHelpMenuByIdentity() {
         let helpMenu = NSMenu(title: "Localized Help Menu")
         let helpItem = NSMenuItem(title: "Localized Help Menu", action: nil, keyEquivalent: "")

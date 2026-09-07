@@ -184,7 +184,7 @@ enum BookmarkMainMenuItemRouting: Equatable {
             return .configureCustomItem
         }
 
-        if tag == ChromiumMainMenuRole.bookmarks.rawValue {
+        if ChromiumMainMenuRole(tag: tag) == .bookmarks {
             return .hideSystemItem
         }
 

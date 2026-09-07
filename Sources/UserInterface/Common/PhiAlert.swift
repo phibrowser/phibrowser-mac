@@ -1151,16 +1151,21 @@ extension PhiAlert where Icon == EmptyView, AlertContent == EmptyView, Actions =
         )
 
         let confirmationAction = PhiAlertQuitConfirmationAction()
-        let commandQMonitor = NSEvent.addLocalMonitorForEvents(
+        let configuredQuitKey = Shortcuts.key(for: .IDC_EXIT)
+        let quitShortcutMonitor = NSEvent.addLocalMonitorForEvents(
             matching: .keyDown
         ) { event in
-            guard isCommandQ(event) else { return event }
+            guard let eventKeys = ShortcutsKey.eventKeys(for: event),
+                  isQuitShortcut(eventKeys, configuredQuitKey: configuredQuitKey)
+            else {
+                return event
+            }
             confirmationAction.handler?()
             return nil
         }
         defer {
-            if let commandQMonitor {
-                NSEvent.removeMonitor(commandQMonitor)
+            if let quitShortcutMonitor {
+                NSEvent.removeMonitor(quitShortcutMonitor)
             }
         }
 
@@ -1175,18 +1180,23 @@ extension PhiAlert where Icon == EmptyView, AlertContent == EmptyView, Actions =
         return response == .alertFirstButtonReturn
     }
 
-    private static func isCommandQ(_ event: NSEvent) -> Bool {
-        let modifiers = event.modifierFlags.intersection(
-            .deviceIndependentFlagsMask
-        )
-        let unsupportedModifiers: NSEvent.ModifierFlags = [
-            .control,
-            .option,
-            .shift,
-        ]
-        return modifiers.contains(.command)
-            && modifiers.intersection(unsupportedModifiers).isEmpty
-            && event.charactersIgnoringModifiers?.lowercased() == "q"
+    /// Pressing the Quit shortcut again while the sheet is up confirms it.
+    /// The shortcut is the user's configured "Quit Phi" key, or ⌘Q when none
+    /// is configured (`IDC_EXIT` has no default entry, and an explicitly
+    /// disabled key only leaves the menu and Dock quit paths, which never
+    /// show the sheet). An event matches when any of its resolved identities
+    /// equals the key or shares its menu key equivalent — the same two-step
+    /// comparison native shortcut dispatch uses, so recording and confirming
+    /// agree on every keyboard layout.
+    nonisolated static func isQuitShortcut(
+        _ eventKeys: ShortcutsKey.EventKeys,
+        configuredQuitKey: ShortcutsKey?
+    ) -> Bool {
+        let quitKey = configuredQuitKey
+            ?? ShortcutsKey(characters: "q", modifiers: .command)
+        return eventKeys.matchingKeys.contains { key in
+            key == quitKey || key.menuKeyEquivalent == quitKey.menuKeyEquivalent
+        }
     }
 
     private static func makeQuitAlertContent(

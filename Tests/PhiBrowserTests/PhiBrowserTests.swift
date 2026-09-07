@@ -665,6 +665,94 @@ final class PhiBrowserTests: XCTestCase {
         XCTAssertEqual(recordedKey.menuKeyEquivalent, existingKey.menuKeyEquivalent)
     }
 
+    func testQuitShortcutMatchesConfiguredKeyOrCommandQ() {
+        let commandQ = ShortcutsKey(characters: "q", modifiers: .command)
+        let controlOptionQ = ShortcutsKey(
+            characters: "q",
+            modifiers: [.control, .option]
+        )
+        let commandW = ShortcutsKey(characters: "w", modifiers: .command)
+        let cyrillicCommandQ = ShortcutsKey(
+            characters: "\u{0439}",
+            modifiers: .command
+        )
+        let cases: [(
+            name: String,
+            eventKeys: ShortcutsKey.EventKeys,
+            configuredQuitKey: ShortcutsKey?,
+            confirms: Bool
+        )] = [
+            (
+                "default ⌘Q",
+                .init(canonical: commandQ, legacy: nil),
+                nil,
+                true
+            ),
+            (
+                "custom ⌃⌥Q hit",
+                .init(canonical: controlOptionQ, legacy: nil),
+                controlOptionQ,
+                true
+            ),
+            (
+                "custom ⌃⌥Q rejects ⌘Q",
+                .init(canonical: commandQ, legacy: nil),
+                controlOptionQ,
+                false
+            ),
+            // Recording lowercases characters, so an uppercase stored key only
+            // arrives through legacy data; the row is here to exercise the
+            // menu-equivalent leg, which no recorded key reaches for Quit.
+            (
+                "shifted key shares the menu equivalent",
+                .init(
+                    canonical: ShortcutsKey(
+                        characters: "q",
+                        modifiers: [.command, .shift]
+                    ),
+                    legacy: nil
+                ),
+                ShortcutsKey(characters: "Q", modifiers: .command),
+                true
+            ),
+            (
+                "legacy non-Latin key",
+                .init(canonical: commandQ, legacy: cyrillicCommandQ),
+                cyrillicCommandQ,
+                true
+            ),
+            (
+                "⌘W is not Quit",
+                .init(canonical: commandW, legacy: nil),
+                nil,
+                false
+            ),
+            (
+                "⌘Q with extra modifier is not Quit",
+                .init(
+                    canonical: ShortcutsKey(
+                        characters: "q",
+                        modifiers: [.command, .option]
+                    ),
+                    legacy: nil
+                ),
+                nil,
+                false
+            ),
+        ]
+
+        for testCase in cases {
+            XCTAssertEqual(
+                PhiAlert.isQuitShortcut(
+                    testCase.eventKeys,
+                    configuredQuitKey: testCase.configuredQuitKey
+                ),
+                testCase.confirms,
+                testCase.name
+            )
+        }
+    }
+
     func testShortcutViewModelReportsMenuEquivalentConflict() throws {
         let previousOverrides = Shortcuts.overridedShortcuts
         defer { Shortcuts.overridedShortcuts = previousOverrides }

@@ -141,6 +141,11 @@ extension PhiChromiumCoordinator: PhiChromiumBridgeDelegate {
         PhiPreferences.PasswordManagerSettings.autoInstallICloudPasswords.loadValue()
     }
 
+    @objc(isShortHighlightLinkEnabled)
+    func isShortHighlightLinkEnabled() -> Bool {
+        PhiPreferences.GeneralSettings.shortHighlightLinksEnabled.loadValue()
+    }
+
     func isAutoPictureInPictureEnabled() -> Bool {
         PhiPreferences.GeneralSettings.loadAutoPictureInPictureMode() != .off
     }
@@ -1562,6 +1567,17 @@ extension PhiChromiumCoordinator: PhiChromiumBridgeDelegate {
     func tabLeftGroup(_ windowId: Int64, tabId: Int64, tokenHex: String) {
         dispatchGroupAction(.tabLeftGroup(tabId: tabId.intValue, token: tokenHex),
                             windowId: windowId)
+    }
+
+    @objc(linkToHighlightCopied:windowId:url:isShortLink:)
+    func link(toHighlightCopied tabId: Int64, windowId: Int64, url: String, isShortLink: Bool) {
+        guard !url.isEmpty, let copiedURL = URL(string: url) else { return }
+        DispatchQueue.main.async {
+            guard let controller = MainBrowserWindowControllersManager.shared
+                .controller(for: Int(windowId)) else { return }
+            // Chromium already wrote the clipboard, including long-link fallback.
+            OverlayToastCenter.shared.showHighlightLinkCopyConfirmation(url: copiedURL, in: controller.browserState)
+        }
     }
 
     func targetURLChanged(_ tabId: Int64, windowId: Int64, url: String) {

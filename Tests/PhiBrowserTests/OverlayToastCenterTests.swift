@@ -4,6 +4,7 @@
 // found in the LICENSE file.
 
 import Combine
+import SwiftUI
 import XCTest
 @testable import Phi
 
@@ -42,6 +43,58 @@ final class OverlayToastCenterTests: XCTestCase {
         }
     }
 
+    func testHighlightLinkCallbackIsExposedToObjectiveC() {
+        // Chromium uses respondsToSelector before delivering this optional event.
+        XCTAssertTrue(PhiChromiumCoordinator.shared.responds(
+            to: NSSelectorFromString("linkToHighlightCopied:windowId:url:isShortLink:")))
+    }
+
+    @MainActor
+    func testOverlayHitTestingReachesShareButtonAndPassesThroughEmptySpace() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = LocalStore(account: Account(userID: UUID().uuidString), storeDirectoryURL: directory)
+        let state = BrowserState(windowId: 7, localStore: store, isKioskWindow: true)
+        let viewModel = OverlayToastViewModel(browserState: state)
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 600, height: 400),
+            styleMask: [.borderless], backing: .buffered, defer: false
+        )
+        let root = OverlayToastViewController.BgView(frame: NSRect(x: 0, y: 0, width: 500, height: 300))
+        root.viewModel = viewModel
+        window.contentView?.addSubview(root)
+        let toast = OverlayToastItem(
+            id: UUID(), title: "Link copied", message: nil, duration: 3,
+            placement: .topCenter, shareURL: URL(string: "https://example.com/s/highlight")
+        )
+        let hostingView = NSHostingView(rootView: OverlayToastView(toast: toast))
+        hostingView.frame = NSRect(x: 20, y: 120, width: 350, height: 60)
+        root.addSubview(hostingView)
+        hostingView.layoutSubtreeIfNeeded()
+
+        func visibleShareButton(in view: NSView) -> NSButton? {
+            if let button = view as? NSButton,
+               button.accessibilityIdentifier() == "overlayToast.shareButton",
+               !button.isHiddenOrHasHiddenAncestor {
+                return button
+            }
+            return view.subviews.lazy.compactMap { visibleShareButton(in: $0) }.first
+        }
+        let button = try XCTUnwrap(visibleShareButton(in: hostingView))
+        let buttonRect = button.convert(button.bounds, to: root)
+        viewModel.hitTestFrames = [buttonRect.insetBy(dx: -10, dy: -10)]
+        let localPoint = NSPoint(x: buttonRect.midX, y: buttonRect.midY)
+
+        XCTAssertTrue(root.hitTest(root.convert(localPoint, to: root.superview)) === button)
+        XCTAssertNil(root.hitTest(root.convert(NSPoint(x: 450, y: 20), to: root.superview)))
+
+        root.setFrameOrigin(NSPoint(x: 40, y: 30))
+        XCTAssertTrue(root.hitTest(root.convert(localPoint, to: root.superview)) === button)
+        XCTAssertNotNil(button.target)
+        XCTAssertNotNil(button.action)
+    }
+
     func testReplacesVisibleToastForSameWindowAndPlacement() {
         let scheduler = ManualScheduler()
         let center = makeCenter(scheduler: scheduler)
@@ -54,6 +107,62 @@ final class OverlayToastCenterTests: XCTestCase {
 
         scheduler.fireNext()
 
+        XCTAssertTrue(center.visibleToasts(for: 1).isEmpty)
+    }
+
+    func testShareURLFollowsReplacementAndStaysScopedToItsWindow() throws {
+        let scheduler = ManualScheduler()
+        let center = makeCenter(scheduler: scheduler)
+        let shortURL = try XCTUnwrap(URL(string: "https://example.com/s/highlight"))
+        let fallbackURL = try XCTUnwrap(URL(string: "https://example.com/article#:~:text=Highlighted%20text"))
+
+        center.show(title: "First link", shareURL: shortURL, in: .windowId(1))
+        center.show(title: "Other window", shareURL: shortURL, in: .windowId(2))
+        center.show(title: "Replacement link", shareURL: fallbackURL, in: .windowId(1))
+
+        XCTAssertEqual(center.visibleToasts(for: 1).first?.shareURL, fallbackURL)
+        XCTAssertEqual(center.visibleToasts(for: 2).first?.shareURL, shortURL)
+
+        center.show(title: "Plain confirmation", in: .windowId(1))
+
+        XCTAssertNil(center.visibleToasts(for: 1).first?.shareURL)
+        XCTAssertEqual(center.visibleToasts(for: 2).first?.shareURL, shortURL)
+    }
+
+    func testMenuPausesOnlyItsToastAndDismissesImmediatelyAfterClosing() throws {
+        let scheduler = ManualScheduler()
+        let center = makeCenter(scheduler: scheduler)
+        let id = try XCTUnwrap(center.show(title: "Sharing", in: .windowId(1)))
+        center.show(title: "Other window", in: .windowId(2))
+
+        center.pauseDismissal(id: id)
+        scheduler.fireNext()
+        scheduler.fireNext()
+
+        XCTAssertEqual(center.visibleToasts(for: 1).first?.id, id)
+        XCTAssertTrue(center.visibleToasts(for: 2).isEmpty)
+        XCTAssertEqual(scheduler.pendingCount, 0)
+
+        XCTAssertTrue(center.dismiss(id: id))
+        XCTAssertTrue(center.visibleToasts(for: 1).isEmpty)
+        XCTAssertEqual(scheduler.pendingCount, 0)
+    }
+
+    func testClosingMenuDoesNotDismissReplacementToastOrReviveClosedWindow() throws {
+        let scheduler = ManualScheduler()
+        let center = makeCenter(scheduler: scheduler)
+        let oldID = try XCTUnwrap(center.show(title: "Sharing", in: .windowId(1)))
+        center.pauseDismissal(id: oldID)
+        let newID = try XCTUnwrap(center.show(title: "Replacement", in: .windowId(1)))
+
+        XCTAssertFalse(center.dismiss(id: oldID))
+        XCTAssertEqual(scheduler.pendingCount, 1)
+        XCTAssertEqual(center.visibleToasts(for: 1).first?.id, newID)
+
+        center.pauseDismissal(id: newID)
+        center.clearWindow(windowId: 1)
+        XCTAssertFalse(center.dismiss(id: newID))
+        XCTAssertEqual(scheduler.pendingCount, 0)
         XCTAssertTrue(center.visibleToasts(for: 1).isEmpty)
     }
 

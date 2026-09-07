@@ -194,35 +194,26 @@ private extension [String] {
 #endif
 
 extension OverlayToastViewController {
-    /// A transparent background view that allows click-through for empty areas,
-    /// but forwards events to NSHostingView when clicking on toast content areas.
-    ///
-    /// Uses viewModel to determine if a point is inside any visible toast area.
-    /// This approach works because SwiftUI doesn't create separate NSViews for each control -
-    /// instead, NSHostingView handles all events internally.
+    /// Allows click-through outside visible toast areas while preserving normal
+    /// hit testing for both SwiftUI content and embedded AppKit controls.
     class BgView: NSView {
         weak var viewModel: OverlayToastViewModel?
         
         override func hitTest(_ point: NSPoint) -> NSView? {
-            // Check if the point is inside any toast area using viewModel
             guard let viewModel = viewModel else {
                 AppLogDebug("[OverlayHitTest] viewModel is nil")
                 return nil
             }
-            // SwiftUI renders the toast stack inside one hosting view, so hit testing
-            // always lands on the overlay unless we explicitly gate events by toast frame.
-            let shouldHandle = viewModel.shouldHandleHitTest(at: point)
-//            AppLogDebug("[OverlayHitTest] point: \(point), toastFrame: \(toastFrame), shouldHandle: \(shouldHandle)")
-            
-            // If the point is inside a toast area, forward to NSHostingView
-            if shouldHandle {
-                AppLogDebug("[OverlayHitTest] forwarding to NSHostingView")
-                // Return the first subview (NSHostingView) to handle the event
-                return subviews.first
+            // AppKit supplies the point in the superview's coordinate space;
+            // the published toast frames use this view's local coordinates.
+            let localPoint = convert(point, from: superview)
+            guard bounds.contains(localPoint), viewModel.shouldHandleHitTest(at: localPoint) else {
+                return nil
             }
-            
-            // Point is outside all toast areas - allow click-through
-            return nil
+
+            // Returning the hosting view directly bypasses native descendants,
+            // preventing controls such as the Share button from receiving clicks.
+            return super.hitTest(point)
         }
     }
 }

@@ -465,6 +465,27 @@ typedef NS_ENUM(NSInteger, PhiGhostMaterializeOutcome) {
 - (void)openReaderViewForTabId:(int64_t)tabId windowId:(int64_t)windowId;
 
 @optional
+
+/// Queried synchronously on the browser UI thread before each highlight copy.
+/// Read the current native preference without blocking. NO skips authentication
+/// and the short-link request; the original highlight URL is copied instead.
+/// Changes apply to the next copy. Clients omitting this selector default to YES.
+- (BOOL)isShortHighlightLinkEnabled;
+
+/// Copy Link to Highlight completed, including the existing-highlight action.
+/// Called on the browser UI thread after the clipboard write. `url` is the
+/// nonempty URL actually copied: a short URL when `isShortLink` is YES, otherwise
+/// Chromium's original text-fragment URL (timeout, signed out or API failure).
+/// `tabId` is the Phi-stable tab id; `windowId` is its owning window's session id.
+/// Phi should present its own copied-link UI here; do not write the clipboard
+/// again. Chromium's native highlight toast is suppressed in Phi builds.
+/// No event is sent if the source document is gone before copy, or if Data
+/// Controls replaces the copied link. Older clients may omit this callback.
+- (void)linkToHighlightCopied:(int64_t)tabId
+                    windowId:(int64_t)windowId
+                         url:(NSString *)url
+                 isShortLink:(BOOL)isShortLink;
+
 // Per-window extension action badge state (text/colors/visibility/enabled).
 // Keys: windowId, extensionId, tabId, badgeText, backgroundColor, textColor,
 // visible (false only for a page action hidden on this tab — remove from

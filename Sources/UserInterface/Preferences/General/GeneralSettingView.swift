@@ -511,6 +511,9 @@ private struct BrowsingSectionView: View {
     @AppStorage(PhiPreferences.GeneralSettings.showTabPreviews.rawValue)
     private var showTabPreviews: Bool = PhiPreferences.GeneralSettings.showTabPreviews.defaultValue
 
+    @AppStorage(PhiPreferences.GeneralSettings.shortHighlightLinksEnabled.rawValue)
+    private var shortHighlightLinksEnabled: Bool = PhiPreferences.GeneralSettings.shortHighlightLinksEnabled.defaultValue
+
     @AppStorage(PhiPreferences.GeneralSettings.autoPictureInPictureModeKey)
     private var autoPictureInPictureModeRawValue: String = PhiPreferences.GeneralSettings.loadAutoPictureInPictureMode().rawValue
 
@@ -575,6 +578,16 @@ private struct BrowsingSectionView: View {
 
                     GeneralRowView(title: NSLocalizedString("settings.general.addressBar.showFullURLToggle", value: "Always show full URL", comment: "General settings - Toggle title for always showing full URL in address bar")) {
                         Toggle("", isOn: $alwaysShowURLPath)
+                            .labelsHidden()
+                            .toggleStyle(.switch)
+                            .controlSize(.mini)
+                            .themedTint(.themeColor)
+                    }
+
+                    Divider()
+
+                    GeneralRowView(title: NSLocalizedString("settings.general.highlightLinks.useShortLinksToggle", value: "Use short links for highlighted text", comment: "General settings - Toggle that controls whether Copy Link to Highlight generates a short link")) {
+                        Toggle("", isOn: $shortHighlightLinksEnabled)
                             .labelsHidden()
                             .toggleStyle(.switch)
                             .controlSize(.mini)

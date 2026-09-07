@@ -25067,6 +25067,30 @@
         }
       }
     },
+    "browser.highlightLink.copied" : {
+      "comment" : "Toast shown after copying a link to highlighted text, including when a short link is unavailable",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Link copied to highlight"
+          }
+        }
+      }
+    },
+    "browser.highlightLink.shareButton" : {
+      "comment" : "Highlight link copy confirmation - Button that opens the system sharing menu for the copied link",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Share"
+          }
+        }
+      }
+    },
     "browser.newTabPage.incognitoLabel" : {
       "comment" : "Incognito label in the native new tab page",
       "extractionState" : "extracted_with_value",
@@ -59299,6 +59323,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "開發者"
+          }
+        }
+      }
+    },
+    "settings.general.highlightLinks.useShortLinksToggle" : {
+      "comment" : "General settings - Toggle that controls whether Copy Link to Highlight generates a short link",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Use short links for highlighted text"
           }
         }
       }

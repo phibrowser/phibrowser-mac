@@ -9,7 +9,7 @@ import AppKit
 /// Shares a tab's page URL through the system sharing services. Single owner
 /// for every share entry point — the File menu item and keyboard shortcut show
 /// the `NSSharingServicePicker`, and the address bar menu lists the same
-/// services in a Share submenu.
+/// services in a Share submenu or a toast's popup menu.
 @MainActor
 final class PageSharingPresenter: NSObject {
     /// Menu item target that also travels as the item's `representedObject`,
@@ -71,9 +71,15 @@ final class PageSharingPresenter: NSObject {
     /// panel rather than listing services inline, so the services are
     /// enumerated directly here.
     static func shareSubmenu(for tab: Tab?) -> NSMenu {
+        shareMenu(for: shareableURL(for: tab))
+    }
+
+    /// Lists sharing services directly for an already resolved URL, including
+    /// copied highlight links that differ from the current page URL.
+    static func shareMenu(for url: URL?) -> NSMenu {
         let submenu = NSMenu(title: NSLocalizedString("browser.addressBarMenu.shareSubmenu.title", value: "Share", comment: "Address bar menu - Share submenu title"))
 
-        guard let url = shareableURL(for: tab) else {
+        guard let url else {
             submenu.addItem(placeholderItem(
                 title: NSLocalizedString("browser.addressBarMenu.shareSubmenu.invalidURLPlaceholder", value: "No share actions available", comment: "Address bar menu - Placeholder when the current URL cannot be shared")
             ))

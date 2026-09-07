@@ -141,6 +141,9 @@
 #if DEBUG || NIGHTLY_BUILD
                 [arguments addObject:@"--phi-ai-debug"];
                 [arguments addObject:@"--phi-no-embed-extensions"];
+                [arguments addObject:@"--phi-env=canary"];
+#else
+                [arguments addObject:@"--phi-env=release"];
 #endif
 #if DEBUG
                 [arguments addObject:@"--no-sandbox"];

@@ -33,6 +33,16 @@ struct OverlayToastView: View {
     }
 
     private var toastContent: some View {
+        HStack(spacing: 12) {
+            toastText
+            if let url = toast.shareURL {
+                OverlayToastShareButton(url: url, toastID: toast.id)
+                    .fixedSize()
+            }
+        }
+    }
+
+    private var toastText: some View {
         VStack(alignment: .leading, spacing: contentSpacing) {
             if let titleText {
                 Text(titleText)
@@ -110,6 +120,57 @@ private struct OverlayToastNaturalWidthKey: PreferenceKey {
 
     static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
         value = max(value, nextValue())
+    }
+}
+
+private struct OverlayToastShareButton: NSViewRepresentable {
+    let url: URL
+    let toastID: UUID
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(url: url, toastID: toastID)
+    }
+
+    func makeNSView(context: Context) -> NSButton {
+        let button = NSButton(
+            title: NSLocalizedString(
+                "browser.highlightLink.shareButton",
+                value: "Share",
+                comment: "Highlight link copy confirmation - Button that opens the system sharing menu for the copied link"
+            ),
+            target: context.coordinator,
+            action: #selector(Coordinator.share(_:))
+        )
+        button.bezelStyle = .rounded
+        button.controlSize = .small
+        button.setAccessibilityIdentifier("overlayToast.shareButton")
+        return button
+    }
+
+    func updateNSView(_ nsView: NSButton, context: Context) {
+        context.coordinator.url = url
+        context.coordinator.toastID = toastID
+    }
+
+    final class Coordinator: NSObject {
+        var url: URL
+        var toastID: UUID
+
+        init(url: URL, toastID: UUID) {
+            self.url = url
+            self.toastID = toastID
+        }
+
+        @MainActor @objc func share(_ sender: NSButton) {
+            guard sender.window != nil else { return }
+            let id = toastID
+            OverlayToastCenter.shared.pauseDismissal(id: id)
+            defer { OverlayToastCenter.shared.dismiss(id: id) }
+
+            let menu = PageSharingPresenter.shareMenu(for: url)
+            let point = NSPoint(x: sender.bounds.minX, y: sender.isFlipped ? sender.bounds.maxY : sender.bounds.minY)
+            menu.popUp(positioning: nil, at: point, in: sender)
+        }
     }
 }
 

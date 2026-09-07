@@ -139,6 +139,45 @@ Packet-capture verification must identify the Stable and Canary phi-agent ports 
 
 ## Native image previews
 
+### Request acknowledgement
+
+As of 2026-09-07, `imagePreview` settles each request through
+`ExtensionMessaging` after main-actor presentation: `{}` confirms that the
+preview state was opened, not that image loading finished or the user dismissed
+it. Invalid payloads, empty image lists, and unavailable windows reject the
+request explicitly. Error replies do not echo image URLs, inline bytes, or raw
+payloads. No reply is broadcast.
+
+This fixes the missing acknowledgement behind Sidecar's image-preview
+`Request to app timed out` reports (SIDECAR-E): the router returned `nil` for an
+asynchronous reply, but the handler never sent one, even when presentation
+succeeded. The extension must not swallow all native timeouts or retry opening
+the preview, since a timeout does not prove that presentation failed.
+
+The wire payload, legacy object-form items, requested-window/active-window
+selection, preview-state index clamping, file authorization, and image loading
+remain unchanged. No Sidecar or Sentinel update is required for the reply fix;
+old browser builds still exhibit the missing acknowledgement until updated.
+The separate SIDECAR-E conversation-load timeout and SIDECAR-C Runner discovery
+failures are not resolved by this change.
+
+`ImagePreviewMessageHandlerTests` injects the existing messaging boundary and a
+presentation closure, so success/error routing can be tested without opening a
+browser window or touching authentication. Cover exactly one request-scoped
+reply after presentation, explicit failures, legacy items, and no broadcasts.
+Validation on 2026-09-07: Xcode 26.6 `build-for-testing` with
+`PhiBrowser-canary` and `CODE_SIGNING_ALLOWED=NO` passed, including the new
+XCTest file. All six tests also executed successfully in an isolated SwiftPM
+fixture reusing the actual source and test files, with browser window/messaging
+and broker-authorization dependencies stubbed. This verifies reply logic, not
+live bridge delivery or authorization. The normal application-hosted XCTest
+suite and native smoke test were not run, to avoid launching the user's browser.
+A subsequent approved native smoke test should confirm a real Sidecar preview
+opens and its promise settles without waiting for the bridge timeout; image
+loading failures must remain visible inside the native preview.
+
+### Image loading and authorization
+
 The Sidecar may send a normalized relative phi-agent file address, under `/api/v1/files/` or `/v1/files/`, to the existing native image-preview message. This address is privileged only when the message sender exactly matches the pinned Canary Sidecar ID.
 
 For an authorized file address, `ImagePreviewLoader` asks `ServiceBrokerExtensionProtocol` to fetch the bytes from phi-agent through the negotiated service-broker UDS. The loader passes an opaque authenticated scope containing the account identity and auth revision. The protocol requires the current immutable shared-auth snapshot to match that exact scope, derives the socket/runtime from that snapshot's account, supplies that snapshot's access token as a Bearer credential, and pins `X-Phi-Extension-ID` to the authorized sender. Path validation and the negotiated non-streaming response-size limit are applied before image decoding.

@@ -6,6 +6,9 @@ import XCTest
 final class PhiSyncEngineSpaceTests: XCTestCase {
     typealias FakePhiSyncClient = PhiSyncEngineTests.FakePhiSyncClient
     typealias StubDomainKeys = PhiSyncEngineTests.StubDomainKeys
+    /// A one-shot gate, so a test can park a round inside `getUpdates` and act while it sits
+    /// there. Reused from `PhiSyncEngineTests` rather than re-declared.
+    typealias Gate = PhiSyncEngineTests.Gate
 
     final class MemorySpaceStore: PhiSpaceSyncStateStore {
         var table = PhiSpaceSyncTable()
@@ -373,5 +376,104 @@ final class PhiSyncEngineSpaceTests: XCTestCase {
         // Step 5 explicitly forbids hanging it off this round here. That task
         // turns this count into 1.
         XCTAssertEqual(spaceCommits(client).count, 0)
+    }
+
+    // MARK: - Durability of the Space-side state (fix round 1)
+
+    /// The shared marker is persisted page by page, so everything derived from it has to be
+    /// persisted page by page too. A gated-off round whose second page throws has already
+    /// moved the marker past whatever page 1 carried — a peer's Space rename, say. If
+    /// `markerMovedWhileGateShut` were written only on the round's success path, the next gate
+    /// open would take neither disjunct in `applySpaceGate`, never replay, and that rename
+    /// would be lost on this device until some peer touched the Space again.
+    func testAGatedOffRoundThatFailsOnALaterPageStillRecordsTheMarkerMove() async throws {
+        let access = FakePhiSpaceAccess()
+        let store = MemorySpaceStore()
+        // A device that drained during an earlier open episode: only `markerMovedWhileGateShut`
+        // can arm the replay below, which is what makes this test discriminating.
+        store.table.hasDrainedFullReplay = true
+        let client = FakePhiSyncClient()
+        client.seed(tagHash: spaceHash("u1"),
+                    ciphertext: try ciphertext(spaceEntity("u1")), version: 3)
+        client.pageBudgetExhaustsAfter = 8                    // page 1 says "more to come"
+        client.getUpdatesErrorAfterPages = (pages: 1, error: URLError(.timedOut))
+        let engine = makeEngine(access: access, store: store, client: client)
+
+        await engine.pullOnce()                               // gate shut; page 2 throws
+        XCTAssertEqual(client.getUpdatesCalls.count, 2)
+        XCTAssertNotNil(defaults.data(forKey: PhiSyncEngine.markerStateKey),
+                        "page 1's marker advance is durable — which is the whole problem")
+        XCTAssertTrue(store.table.markerMovedWhileGateShut,
+                      "the record of the move must be as durable as the move")
+
+        await engine.setSpaceSyncEnabled(true)
+        XCTAssertNil(defaults.data(forKey: PhiSyncEngine.markerStateKey),
+                     "so the gate open still replays what the failed round walked past")
+    }
+
+    /// The same rule on the drain side. Guard 1 is armed at the pull's entry from
+    /// `storedMarker == nil`, and page 1 makes the marker non-nil. An arming that lived only
+    /// in the round's local copy of the table would be thrown away when page 2 throws, leaving
+    /// a non-nil marker beside `drainInProgress == false` — a state whose entry precondition
+    /// can never be met again, so `hasDrainedFullReplay` would stay false for the whole
+    /// session and Task 9's `pushSpaces` guard would block every publish until relaunch.
+    func testADrainArmedByARoundThatFailsMidWaySurvivesAndCompletesLater() async throws {
+        let access = FakePhiSpaceAccess()
+        let store = MemorySpaceStore()
+        // Live and already drained once; the marker was dropped by something else (a
+        // NOT_MY_BIRTHDAY reset, the empty-table replay), so the arming happens at the pull's
+        // entry rather than on the gate edge.
+        store.table.spaceSectionEnabled = true
+        store.table.hasDrainedFullReplay = true
+        let client = FakePhiSyncClient()
+        client.seed(tagHash: spaceHash("u1"),
+                    ciphertext: try ciphertext(spaceEntity("u1")), version: 3)
+        client.pageBudgetExhaustsAfter = 8
+        client.getUpdatesErrorAfterPages = (pages: 1, error: URLError(.timedOut))
+        let engine = makeEngine(access: access, store: store, client: client)
+
+        await engine.pullOnce()
+        XCTAssertTrue(store.table.drainInProgress,
+                      "the arming belongs on disk, not in the round that armed it")
+        XCTAssertFalse(store.table.hasDrainedFullReplay)
+
+        client.pageBudgetExhaustsAfter = nil
+        await engine.pullOnce()
+        XCTAssertTrue(store.table.hasDrainedFullReplay, "the next round finishes the drain")
+        XCTAssertFalse(store.table.drainInProgress)
+    }
+
+    /// Reentrancy: the engine is an actor, so an awaited gate open can land while a round is
+    /// parked in `getUpdates`. A round that read the table before that point and wrote its
+    /// whole copy back afterwards would revert the edge — `spaceSectionEnabled`, the dropped
+    /// marker and the re-armed drain in one write — leaving the engine live in memory with a
+    /// drain nothing can arm again. The edge is a queued round, so it lands strictly between
+    /// rounds whichever way the two tasks interleave.
+    func testAGateOpenAwaitedDuringAParkedRoundIsNotRevertedByThatRound() async throws {
+        let access = FakePhiSpaceAccess()
+        let store = MemorySpaceStore()
+        let client = FakePhiSyncClient()
+        client.seed(tagHash: spaceHash("u1"),
+                    ciphertext: try ciphertext(spaceEntity("u1")), version: 3)
+        let arrived = Gate()
+        let release = Gate()
+        client.arrivedInGetUpdates = arrived
+        client.getUpdatesGate = release
+        let engine = makeEngine(access: access, store: store, client: client)
+
+        let round = Task { await engine.pullOnce() }        // gate shut
+        await arrived.wait()                                // ... and parked in getUpdates
+        let opened = Task { await engine.setSpaceSyncEnabled(true) }
+        await release.open()
+        await round.value
+        await opened.value
+
+        XCTAssertTrue(store.table.spaceSectionEnabled)
+        XCTAssertTrue(store.table.drainInProgress,
+                      "the gate edge must outlive the round it was awaited against")
+        XCTAssertFalse(store.table.hasDrainedFullReplay)
+        XCTAssertFalse(store.table.markerMovedWhileGateShut)
+        XCTAssertNil(defaults.data(forKey: PhiSyncEngine.markerStateKey),
+                     "the replay drops the marker the parked round advanced, not the reverse")
     }
 }

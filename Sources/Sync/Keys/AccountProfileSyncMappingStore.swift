@@ -26,4 +26,14 @@ final class AccountProfileSyncMappingStore: ProfileSyncMappingStore {
     func allMappings() -> [String: String] {
         defaults.codableValue(forKey: Self.defaultsKey) ?? [:]
     }
+
+    func removeMapping(forProfileId profileId: String) {
+        var map = allMappings()
+        guard map.removeValue(forKey: profileId) != nil else { return }
+        defaults.set(map, forCodableKey: Self.defaultsKey)
+    }
+
+    func removeAllMappings() {
+        defaults.set([String: String](), forCodableKey: Self.defaultsKey)
+    }
 }

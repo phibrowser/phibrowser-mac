@@ -58,6 +58,20 @@ final class SyncKeyController {
         localProfilesProvider()
     }
 
+    /// Main-actor face of `ProfileKeyManager.localProfileId(forGlobalUuid:)` for
+    /// the Space engine, which reaches the key layer only through a main-thread hop.
+    func localProfileId(forGlobalUuid uuid: String) -> String? {
+        profileKeys.localProfileId(forGlobalUuid: uuid)
+    }
+
+    /// §6.2 A0 / §3.6's single self-heal path: the local profile behind this
+    /// mapping no longer exists, so the entry has to go or the reverse lookup
+    /// keeps handing the Space engine a `profileId` that every landing throws on.
+    /// Dropping it puts the uuid back into §3.6's `missing` next round.
+    func removeMapping(forProfileId profileId: String) {
+        profileKeys.removeMapping(forProfileId: profileId)
+    }
+
     /// Startup/login entry: unlock without UI, then resolve mappings and ping.
     /// `.needsJoin` / `.notSignedIn` leave the cache empty — the Devices pane
     /// remains the place where joining/bootstrap UI happens.

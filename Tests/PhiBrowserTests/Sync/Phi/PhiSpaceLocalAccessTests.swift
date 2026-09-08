@@ -151,3 +151,59 @@ final class PhiSpaceLocalAccessTests: XCTestCase {
         XCTAssertNotEqual(a, b)
     }
 }
+
+/// The production `AccountPhiSpaceAccess` reaches the mapping table through
+/// `SyncKeyController` -> `ProfileKeyManager` -> `ProfileSyncMappingStore`.
+/// `FakePhiSpaceAccess` cannot cover that hop, and Task 4 had to ship both
+/// members as placeholders, so these pin that the real forwarding is in place:
+/// a reverse lookup that silently returned nil would land no inbound Space at
+/// all, and a `dropMapping` that silently did nothing would disable §6.2 A0's
+/// only self-heal — both invisible to every other test in the suite.
+@MainActor
+final class AccountPhiSpaceAccessMappingTests: XCTestCase {
+    typealias FakeAPI = AccountKeyManagerTests.FakeAPI
+    typealias FakeDeviceKeyProvider = AccountKeyManagerTests.FakeDeviceKeyProvider
+    typealias MemoryMappingStore = ProfileKeyManagerTests.MemoryMappingStore
+
+    /// `AccountPhiSpaceAccess` holds its controller weakly, so the test owns the
+    /// strong reference for the duration of the case.
+    private var controller: SyncKeyController?
+
+    override func tearDown() {
+        controller = nil
+        super.tearDown()
+    }
+
+    private func makeAccess(store: MemoryMappingStore) -> AccountPhiSpaceAccess {
+        let api = FakeAPI()
+        let provider = FakeDeviceKeyProvider()
+        let manager = AccountKeyManager(api: api, deviceKeyProvider: provider)
+        let profileKeys = ProfileKeyManager(api: api, keyManager: manager, mappingStore: store)
+        let approvals = DeviceApprovalService(api: api, keyManager: manager, deviceKeyProvider: provider)
+        let controller = SyncKeyController(manager: manager, approvals: approvals,
+                                           profileKeys: profileKeys,
+                                           localProfilesProvider: { [] },
+                                           notifyChromium: {})
+        self.controller = controller
+        return AccountPhiSpaceAccess(account: Account(userID: UUID().uuidString),
+                                     controller: controller)
+    }
+
+    func testLocalProfileIdForwardsToTheMappingStore() {
+        let store = MemoryMappingStore()
+        store.map = ["Default": "uuid-a", "Profile 1": "uuid-b"]
+        let access = makeAccess(store: store)
+        XCTAssertEqual(access.localProfileId(forGlobalUuid: "uuid-b"), "Profile 1")
+        XCTAssertNil(access.localProfileId(forGlobalUuid: "uuid-z"))
+    }
+
+    func testDropMappingForwardsToTheMappingStore() {
+        let store = MemoryMappingStore()
+        store.map = ["Default": "uuid-a", "Profile 1": "uuid-b"]
+        let access = makeAccess(store: store)
+        access.dropMapping(forProfileId: "Default")
+        XCTAssertEqual(store.map, ["Profile 1": "uuid-b"])
+        XCTAssertNil(access.localProfileId(forGlobalUuid: "uuid-a"),
+                     "the dropped uuid must go back to being unmapped")
+    }
+}

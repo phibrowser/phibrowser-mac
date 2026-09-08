@@ -92,10 +92,13 @@ final class ProfilePairingGate {
         ) { [weak self] note in
             MainActor.assumeIsolated {
                 guard let self, let c = note.object as? SyncKeyController ?? self.controller else { return }
-                let cleared = note.userInfo?[SyncKeyController.mappingsClearedKey] as? Bool ?? false
+                // An announcement with no outcome reads as `.held`: the safe
+                // direction, since `.held` is the one value that changes nothing.
+                let outcome = (note.userInfo?[SyncKeyController.mappingsOutcomeKey] as? String)
+                    .flatMap(SyncKeyController.MappingsOutcome.init(rawValue:)) ?? .held
                 self.handleMappingsDidResolve(needsPairing: c.needsPairing,
                                               needsPairingActionable: c.needsPairingActionable,
-                                              cleared: cleared)
+                                              outcome: outcome)
             }
         })
         observers.append(NotificationCenter.default.addObserver(
@@ -115,17 +118,19 @@ final class ProfilePairingGate {
     /// NOT "needsPairing is true" -- after the second revision that flips true for
     /// a moment every time §3.6 creates a profile.
     ///
-    /// `cleared` marks the announcement `SyncKeyController.clearResolved()` posts
-    /// (`SyncKeyController.mappingsClearedKey`). Its false predicates mean UNKNOWN
-    /// -- locked ARK, an `unlockAtStartup()` that threw because the machine is
-    /// still offline, sign-out, teardown -- so this gate takes its window down but
-    /// leaves `pending` exactly as it found it. Retiring the flag there would end
-    /// a join that never happened: a device joins, quits, relaunches offline, and
+    /// `outcome` says what the two predicates are worth (see
+    /// `SyncKeyController.MappingsOutcome`). ONLY `.measured` may retire
+    /// `sync.joinPairingPending`. Retiring it on either of the others would end a
+    /// join that never happened: a device joins, quits, relaunches offline, and
     /// the pre-existing profiles on both sides -- the one situation only this
-    /// modal can resolve -- would never be offered again.
+    /// modal can resolve -- would never be offered again. `.cleared` (locked ARK,
+    /// sign-out, teardown) takes the window down because the key layer behind it
+    /// is gone; `.held` (a pass whose network call flapped) leaves the window
+    /// alone, because nothing about the pairing picture changed.
     func handleMappingsDidResolve(needsPairing: Bool, needsPairingActionable: Bool,
-                                  cleared: Bool = false) {
-        if cleared {
+                                  outcome: SyncKeyController.MappingsOutcome = .measured) {
+        switch outcome {
+        case .cleared:
             // Nothing is known about the pairing picture any more, so the
             // hysteresis net is reset too rather than left holding a stale
             // `actionable` that would present a modal against a controller that
@@ -137,6 +142,22 @@ final class ProfilePairingGate {
                 modalHost?.dismiss()
             }
             return
+        case .held:
+            // These predicates are the last MEASURED answer carried forward -- on
+            // a fresh controller, the initial `false, false`, which measured
+            // nothing at all. So: never retire `pending`, and never take a live
+            // window down. Presenting is still allowed, because `actionable ==
+            // true` can only have come from a real pass; that keeps a gate which
+            // started between two passes from waiting for the next one.
+            lastPredicates = (needsPairing, needsPairingActionable)
+            if pending, needsPairingActionable, !isPresented {
+                isPresented = true
+                idleRounds = 0
+                modalHost?.present(controller: controller)
+            }
+            return
+        case .measured:
+            break
         }
         lastPredicates = (needsPairing, needsPairingActionable)
         if pending, needsPairingActionable {

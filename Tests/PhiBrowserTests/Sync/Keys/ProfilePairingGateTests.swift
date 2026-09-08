@@ -21,17 +21,24 @@ final class ProfilePairingGateTests: XCTestCase {
         func dismiss() { dismissCount += 1 }
     }
 
-    /// A real, never-unlocked controller: enough to post the two announcement
+    /// A real, never-unlocked controller: enough to post the announcement
     /// variants through `NotificationCenter` without a key stack.
     private func makeController() -> SyncKeyController {
-        let api = FakeAPI()
-        let provider = FakeDeviceKeyProvider()
+        makeController(api: FakeAPI(), provider: FakeDeviceKeyProvider())
+    }
+
+    /// A controller over a caller-supplied fake API (and, optionally, a seeded
+    /// mapping store), so a case can drive REAL `resolveMappings()` passes --
+    /// the bail-outs included -- instead of calling the handler by hand.
+    private func makeController(api: FakeAPI, provider: FakeDeviceKeyProvider,
+                                locals: [(profileId: String, displayName: String)] = [],
+                                store: ProfileSyncMappingStore = MemoryMappingStore()) -> SyncKeyController {
         let mgr = AccountKeyManager(api: api, deviceKeyProvider: provider)
         return SyncKeyController(
             manager: mgr,
             approvals: DeviceApprovalService(api: api, keyManager: mgr, deviceKeyProvider: provider),
-            profileKeys: ProfileKeyManager(api: api, keyManager: mgr, mappingStore: MemoryMappingStore()),
-            localProfilesProvider: { [] },
+            profileKeys: ProfileKeyManager(api: api, keyManager: mgr, mappingStore: store),
+            localProfilesProvider: { locals },
             notifyChromium: {})
     }
 
@@ -146,6 +153,82 @@ final class ProfilePairingGateTests: XCTestCase {
         XCTAssertEqual(host.presentCount, 1)
     }
 
+    /// The same hazard as the case above, reached through its sibling path: a pass
+    /// that RUNS but measures nothing. The join set `sync.joinPairingPending`, the
+    /// app relaunches, `unlockAtStartup()` goes through -- and the very next
+    /// network call, the account listing, hits a flap. Both predicates are still
+    /// their initial `false`, so an announcement that looked like a real pass
+    /// would read as "nothing left to pair" and retire the flag for good.
+    func testAHeldPassKeepsTheFlagAndALaterMeasuredPassStillPresents() async throws {
+        let api = FakeAPI()
+        let provider = FakeDeviceKeyProvider()
+        _ = try await AccountKeyManager(api: api, deviceKeyProvider: provider).bootstrap()
+        // A profile the account held before this device joined: precisely what the
+        // modal exists for, and the one thing no machine can match on its own.
+        api.profileEnvelopes["stranger"] = Data([0x00, 0x01])
+        let controller = makeController(api: api, provider: provider)
+
+        let host = FakeModalHost()
+        let gate = makeGate(host: host)
+        gate.joinPairingPendingOverride = true
+        gate.start(controller: controller)
+        defer { gate.stop() }
+
+        struct Offline: Error {}
+        api.listProfilesError = Offline()
+        await controller.silentUnlockAndResolve()   // unlock fine, listing flaps
+        XCTAssertFalse(controller.needsPairing, "the bail-out holds the initial answer")
+        XCTAssertEqual(host.presentCount, 0)
+        XCTAssertTrue(gate.joinPairingPendingOverride!,
+                      "a pass that measured nothing must not retire sync.joinPairingPending")
+
+        // Connectivity settles, and the first pass that actually looks at the
+        // account reports the truth.
+        api.listProfilesError = nil
+        await controller.resolveMappings()
+        XCTAssertTrue(controller.needsPairingActionable)
+        XCTAssertEqual(host.presentCount, 1,
+                       "the modal must still be offered once a real pass can see the account")
+    }
+
+    /// The other undecidable path into the same announcement: the account listing
+    /// is healthy, but a LOCAL profile's own lookup throws, which poisons the
+    /// register/adopt decision for every local and holds both predicates.
+    func testAnUnknownLocalHoldsTheFlagToo() async throws {
+        let api = FakeAPI()
+        let provider = FakeDeviceKeyProvider()
+        let mgr = AccountKeyManager(api: api, deviceKeyProvider: provider)
+        _ = try await mgr.bootstrap()
+        let store = MemoryMappingStore()
+        let pkm = ProfileKeyManager(api: api, keyManager: mgr, mappingStore: store)
+        _ = try await pkm.registerLocalProfile(profileId: "Default", displayName: "Default")
+        // A second account profile with no local counterpart, so a MEASURED pass
+        // here is actionable.
+        _ = try await pkm.registerLocalProfile(profileId: "temp", displayName: "Work")
+        store.removeMapping(forProfileId: "temp")
+        let controller = makeController(api: api, provider: provider,
+                                        locals: [(profileId: "Default", displayName: "Default")],
+                                        store: store)
+
+        let host = FakeModalHost()
+        let gate = makeGate(host: host)
+        gate.joinPairingPendingOverride = true
+        gate.start(controller: controller)
+        defer { gate.stop() }
+
+        api.profileEndpointError = KeyAPIError.http(503, "")
+        await controller.silentUnlockAndResolve()   // "Default" is UNKNOWN, not unmapped
+        XCTAssertFalse(controller.needsPairing, "an unknown local holds the previous answer")
+        XCTAssertEqual(host.presentCount, 0)
+        XCTAssertTrue(gate.joinPairingPendingOverride!,
+                      "an unmeasured pass leaves the join exactly as it found it")
+
+        api.profileEndpointError = nil
+        await controller.resolveMappings()
+        XCTAssertTrue(controller.needsPairingActionable)
+        XCTAssertEqual(host.presentCount, 1)
+    }
+
     /// The other half of the same distinction: a REAL pass that finds nothing left
     /// to pair still ends the join, so the modal does not come back next launch.
     func testARealResolveWithNothingLeftToPairRetiresTheFlag() {
@@ -157,6 +240,29 @@ final class ProfilePairingGateTests: XCTestCase {
         gate.handleMappingsDidResolve(needsPairing: false, needsPairingActionable: false)
         XCTAssertFalse(gate.joinPairingPendingOverride!)
         XCTAssertEqual(host.presentCount, 0)
+    }
+
+    /// And the same distinction driven through a real controller in the other
+    /// direction, so the marker has to be right ON THE WIRE and not only when the
+    /// handler is called by hand: a pass that measures a one-to-one account ends
+    /// the join.
+    func testAMeasuredPassThroughARealControllerRetiresTheFlag() async throws {
+        let api = FakeAPI()
+        let provider = FakeDeviceKeyProvider()
+        _ = try await AccountKeyManager(api: api, deviceKeyProvider: provider).bootstrap()
+        let controller = makeController(api: api, provider: provider,
+                                        locals: [(profileId: "Default", displayName: "Default")])
+        let host = FakeModalHost()
+        let gate = makeGate(host: host)
+        gate.joinPairingPendingOverride = true
+        gate.start(controller: controller)
+        defer { gate.stop() }
+
+        await controller.silentUnlockAndResolve()   // registers "Default"; nothing left over
+        XCTAssertFalse(controller.needsPairing)
+        XCTAssertEqual(host.presentCount, 0)
+        XCTAssertFalse(gate.joinPairingPendingOverride!,
+                       "a measured one-to-one account really is a finished join")
     }
 
     func testAPendingJoinFlagSurvivesARelaunchAndRepresents() {

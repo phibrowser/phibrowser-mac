@@ -78,6 +78,27 @@ import SwiftUI
     /// schedule; this is what does, on whichever of the four unlock flows gets there first.
     private var phiSyncUnlockObserver: NSObjectProtocol?
 
+    // MARK: - Phi Space sync (M3-2)
+    //
+    // The Space section rides inside the same engine and the same lifetime as the settings
+    // section above; everything below is what the Space half additionally needs — the gate
+    // that decides whether data type 2000 is live at all, its own local-change trigger, and
+    // the one piece of UI the engine cannot raise itself.
+
+    /// `.phiProfileMappingsDidResolve` token driving `refreshSpaceSyncGate()`. Registered
+    /// beside `phiSyncUnlockObserver` and removed with it: a surviving observer would keep
+    /// re-opening the gate after sign-out, and a rebuild would register a second copy.
+    private var phiSpaceGateObserver: NSObjectProtocol?
+    /// Debounced local Space edits -> push (§5.4). The SwiftData publisher merged with the
+    /// theme/opacity notification, because those two maps live in the account plist where
+    /// SwiftData cannot see them.
+    private var phiSpacesCancellable: AnyCancellable?
+    /// `.phiSpaceFirstSyncNeeded` token. The engine posts D2 from its own actor rather than
+    /// raising a sheet inside a round (the round queue is shared with settings sync).
+    private var phiSpaceFirstSyncObserver: NSObjectProtocol?
+    /// The D2 sheet while it is on screen, so the engine's per-round re-ask presents once.
+    private var phiSpaceFirstSyncWindow: NSWindow?
+
     /// Cadence of the periodic pull, per the M3-1 design §5.3 ("保守间隔,如 60s"). M3-1 has no
     /// invalidation, so this timer and the foreground pull are the only unattended triggers on
     /// a peer, and the acceptance criterion (§9) is convergence "within seconds" — a longer
@@ -123,6 +144,7 @@ import SwiftUI
         let stack = SyncKeyStack.make(accountId: account.userID)
         let mappingStore = AccountProfileSyncMappingStore(defaults: account.userDefaults)
         let profileKeys = ProfileKeyManager(api: stack.api, keyManager: stack.manager, mappingStore: mappingStore)
+        let spaceStateStore = AccountPhiSpaceSyncStateStore(defaults: account.userDefaults)
         syncKeyController = SyncKeyController(
             manager: stack.manager, approvals: stack.approvals, profileKeys: profileKeys,
             localProfilesProvider: {
@@ -130,7 +152,38 @@ import SwiftUI
             },
             notifyChromium: {
                 ChromiumLauncher.sharedInstance().bridge?.notifyPhiSyncKeysChanged?()
-            })
+            },
+            // A closure, not a direct reference to the singleton — same shape as
+            // `notifyChromium` above, and for the same reason: the self-revoke unit tests
+            // build their own controller and must not reach the real coordinator.
+            //
+            // Self-revoke calls this as step 1 of five and then carries on, so this REENTERS
+            // the controller: `invalidateSyncKeyController()` runs `clearResolved()` and drops
+            // the reference while `removeThisDeviceFromSync()` is still on the stack (it holds
+            // its own `self`, so its remaining steps still complete and its own
+            // `clearResolved()` is the second, idempotent one). That is deliberate — the
+            // ordering §3.3 step 2.0 demands, `shutdown()` before anything is cleared, is what
+            // this buys, and the duplicate `.cleared` announcement is a no-op at the gate.
+            retirePhiSync: { [weak self] in
+                MainActor.assumeIsolated { self?.invalidateSyncKeyController() }
+            },
+            deviceKeyRotator: DeviceKeyStore(accountId: account.userID),
+            engineDefaults: UserDefaults.standard,
+            spaceStateStore: spaceStateStore)
+
+        // The main-thread facade: read-only caches plus the no-engine fallback. Cleared in
+        // `invalidateSyncKeyController()` — the store and the two closures are bound to THIS
+        // account, and the facade is a process-wide singleton.
+        PhiSpaceSyncState.shared.directStore = spaceStateStore
+        PhiSpaceSyncState.shared.globalUuidLookup = { [weak self] profileId in
+            self?.syncKeyController?.profileKeys.mappedGlobalUuid(forProfileId: profileId)
+        }
+        PhiSpaceSyncState.shared.localSpaceProfileIds = {
+            account.localStorage.getAllSpaces().map { ($0.spaceId, $0.profileId) }
+        }
+        PhiSpaceSyncState.shared.refreshCaches(from: spaceStateStore.load())
+        ProfilePairingGate.shared.modalHost = AppModalPairingHost()
+        ProfilePairingGate.shared.start(controller: syncKeyController)
         // Re-resolve when the profile list changes (keyed by profile ids so a
         // rename doesn't churn). `dropFirst()` skips the value present at
         // subscribe time — the startup path's own silent unlock covers that;
@@ -145,9 +198,13 @@ import SwiftUI
                     // A profile arriving late can be the first unlock this process gets, so
                     // this path has to be able to start the settings scheduling too.
                     self?.startPhiSyncIfReady()
+                    // …and the Space gate, which `startPhiSyncIfReady()` does NOT touch (it
+                    // early-returns once the timer exists).
+                    self?.refreshSpaceSyncGate()
                 }
             }
-        buildPhiSyncEngine(stack: stack, accountId: account.userID)
+        buildPhiSyncEngine(stack: stack, accountId: account.userID,
+                           account: account, spaceStateStore: spaceStateStore)
         return syncKeyController
     }
 
@@ -158,7 +215,9 @@ import SwiftUI
     @MainActor
     private func buildPhiSyncEngine(
         stack: (api: KeyEnvelopeAPIClient, manager: AccountKeyManager, approvals: DeviceApprovalService),
-        accountId: String
+        accountId: String,
+        account: Account,
+        spaceStateStore: AccountPhiSpaceSyncStateStore
     ) {
         let deviceKeyId: String
         do {
@@ -186,9 +245,25 @@ import SwiftUI
             deviceKeyId: deviceKeyId)
         phiDomainKeys = domainKeys
         // `UserDefaults.standard`, not `account.userDefaults`: the syncable settings are
-        // `PhiPreferences` keys and every reader hardcodes the standard domain.
+        // `PhiPreferences` keys and every reader hardcodes the standard domain. The Space
+        // table is the opposite — account-scoped, so it goes to `account.userDefaults`
+        // through `spaceStateStore`.
+        let spaceAccess = AccountPhiSpaceAccess(account: account, controller: syncKeyController)
         phiSyncEngine = PhiSyncEngine(domainKeys: domainKeys, client: client,
-                                      defaults: defaults, deviceKeyId: deviceKeyId)
+                                      defaults: defaults, deviceKeyId: deviceKeyId,
+                                      spaceAccess: spaceAccess, spaceStore: spaceStateStore)
+        // With an engine present, every mutating call on the facade becomes an
+        // intent executed on the engine (§5.3 single writer).
+        PhiSpaceSyncState.shared.intentSink = { [weak self] intent in
+            guard let engine = self?.phiSyncEngine else { return }
+            Task { @MainActor in
+                switch intent {
+                case .recordLocalDeletion(let id): await engine.recordLocalDeletion(spaceId: id)
+                case .joinAccountSync(let id): await engine.joinAccountSync(spaceId: id)
+                case .runRetentionSweep: await engine.runRetentionSweep()
+                }
+            }
+        }
 
         // The ARK is nil right now on every path that reaches here, and on the Devices-pane
         // path nothing in this file ever runs again: `syncKeyControllerCreatingIfNeeded()`
@@ -203,8 +278,50 @@ import SwiftUI
             // second, pane-local `AccountKeyManager`, and `startPhiSyncIfReady()` already
             // re-checks the ARK on the controller this coordinator owns. A post from any
             // other manager is a cheap no-op.
-            Task { @MainActor in self?.startPhiSyncIfReady() }
+            Task { @MainActor in
+                self?.startPhiSyncIfReady()
+                self?.refreshSpaceSyncGate()
+            }
         }
+
+        // The gate's other driver: every mapping pass reports whether a join still has
+        // pairing outstanding, which is exactly what `refreshSpaceSyncGate()` reads.
+        //
+        // `queue: .main` rather than the gate's own `queue: nil`: `ProfilePairingGate`'s
+        // observer of the same notification blocks inside `NSApp.runModal(for:)` while the
+        // pairing window is up. A synchronous observer registered behind it would not run
+        // until that window closed — i.e. the Space section would stay live for the whole of
+        // the pairing modal, which is the one thing the gate exists to prevent. The main
+        // queue keeps draining in a modal run loop, so this hop runs while the window is up,
+        // and `MainActor.assumeIsolated` is valid because `OperationQueue.main` is the main
+        // thread.
+        phiSpaceGateObserver = NotificationCenter.default.addObserver(
+            forName: .phiProfileMappingsDidResolve, object: nil, queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated { self?.refreshSpaceSyncGate() }
+        }
+    }
+
+    /// The Space section's gate (§3.5). Hung on `sync.joinPairingPending`, NOT on
+    /// `needsPairing`: §3.6's auto-create flips the latter true for a moment every
+    /// time the account gains a profile, and each shut->open edge costs a dropped
+    /// marker and a full replay of data type 2000.
+    ///
+    /// Driven from three places (the two observers above and the `$profiles` sink), never
+    /// from `startPhiSyncIfReady()` — that one early-returns as soon as the pull timer
+    /// exists, so it would open the gate at most once per process.
+    ///
+    /// All three of those can fire BEFORE the first `pullOnce()`, which is fine:
+    /// `setSpaceSyncEnabled(true)` drops the marker and arms the drain on the FIRST opening,
+    /// without needing a shut-gate pull to have happened first. That is what lets a machine
+    /// upgrading from M3-1 start syncing Spaces at all.
+    @MainActor
+    private func refreshSpaceSyncGate() {
+        guard let engine = phiSyncEngine else { return }
+        let enabled = syncKeyController?.manager.currentARK != nil
+            && AccountController.shared.account != nil
+            && !ProfilePairingGate.joinPairingPending
+        Task { await engine.setSpaceSyncEnabled(enabled) }
     }
 
     /// Starts the settings sync schedule once the key layer is actually unlocked: a login
@@ -247,8 +364,91 @@ import SwiftUI
         RunLoop.main.add(pullTimer, forMode: .common)
         phiSyncPullTimer = pullTimer
 
+        // Local Space edits: the SwiftData publisher (already value-deduped) plus
+        // the theme/opacity notification, because those two maps live in the
+        // account plist where SwiftData cannot see them. NOT `SpaceManager.$spaces`
+        // -- it carries synthetic Incognito rows and optimistic pre-inserts.
+        //
+        // A remote apply writes local Spaces too, so this trigger sees its own echo. It
+        // cannot storm: `handleLocalSpacesChange()` is a push round, the apply has already
+        // written the baselines the push compares against, so the round commits nothing and
+        // writes nothing locally — there is no second emission to debounce.
+        if let account = AccountController.shared.account {
+            phiSpacesCancellable = account.localStorage.spacesPublisher()
+                .map { _ in () }
+                .merge(with: NotificationCenter.default
+                    .publisher(for: .spaceThemeDidChange).map { _ in () })
+                .debounce(for: .seconds(Self.phiSyncPushDebounce), scheduler: DispatchQueue.main)
+                .sink { [weak self] _ in
+                    Task { @MainActor in await self?.phiSyncEngine?.handleLocalSpacesChange() }
+                }
+        }
+
+        // `queue: .main` is load-bearing: the engine posts this from its own actor, i.e.
+        // off the main thread, and the block presents AppKit.
+        phiSpaceFirstSyncObserver = NotificationCenter.default.addObserver(
+            forName: .phiSpaceFirstSyncNeeded, object: nil, queue: .main
+        ) { [weak self] note in
+            MainActor.assumeIsolated { self?.presentFirstSyncSheet(note.userInfo) }
+        }
+
         AppLogInfo("[phi-sync] scheduling started interval=\(Int(Self.phiSyncPullInterval))s debounce=\(Int(Self.phiSyncPushDebounce))s")
         Task { await engine.pullOnce() }
+        // The 30-day sweep runs once per engine start.
+        Task { await engine.runRetentionSweep() }
+    }
+
+    /// Presents D2 (§8) on the front window: which of this Mac's Spaces join the account, or
+    /// does the account win. A sheet rather than a modal session — nothing this Mac owns is
+    /// published until the table records a decision, so an unanswered question costs delay,
+    /// not correctness, and the settings half of every round keeps converging behind it.
+    ///
+    /// Idempotent on purpose: the engine re-posts on EVERY pull round until the decision is
+    /// written, so without the window check the 60 s timer would stack one sheet a minute.
+    @MainActor
+    private func presentFirstSyncSheet(_ userInfo: [AnyHashable: Any]?) {
+        if let existing = phiSpaceFirstSyncWindow {
+            // Still on screen: this is the engine's per-round re-ask, not a new question.
+            guard !existing.isVisible else { return }
+            // The host window went away under it (its sheet went with it), so the question
+            // is unanswered and unpresented — drop the husk and ask again below.
+            dismissFirstSyncSheet()
+        }
+        let localNames = userInfo?["localNames"] as? [String] ?? []
+        let accountCount = userInfo?["accountCount"] as? Int ?? 0
+        // Both halves non-empty is the engine's own precondition for asking (§8); a payload
+        // that lost one of them would put a question with no options on screen.
+        guard !localNames.isEmpty, accountCount > 0 else { return }
+
+        let sheet = PhiSpaceFirstSyncSheet(localNames: localNames, accountCount: accountCount) {
+            [weak self] decision in
+            self?.dismissFirstSyncSheet()
+            Task { @MainActor in await self?.phiSyncEngine?.submitFirstSyncDecision(decision) }
+        }
+        let window = NSWindow(contentViewController: ThemedHostingController(rootView: sheet))
+        // No `.closable`: the sheet has no cancel by design, and a close button would offer a
+        // third outcome the engine has no case for.
+        window.styleMask = [.titled]
+        window.titleVisibility = .hidden
+        window.titlebarAppearsTransparent = true
+        window.isReleasedWhenClosed = false
+        phiSpaceFirstSyncWindow = window
+        if let host = NSApp.keyWindow ?? NSApp.mainWindow {
+            host.beginSheet(window) { _ in }
+        } else {
+            // No window to hang it on (every browser window closed, app still running).
+            window.center()
+            NSApp.activate(ignoringOtherApps: true)
+            window.makeKeyAndOrderFront(nil)
+        }
+    }
+
+    @MainActor
+    private func dismissFirstSyncSheet() {
+        guard let window = phiSpaceFirstSyncWindow else { return }
+        phiSpaceFirstSyncWindow = nil
+        window.sheetParent?.endSheet(window)
+        window.close()
     }
 
     /// Build-only entry point for consumers (the Devices pane) that just need
@@ -296,6 +496,17 @@ import SwiftUI
         stopPhiSync()
         syncKeyController?.clearResolved()
         syncKeyController = nil
+        ProfilePairingGate.shared.stop()
+        // The facade's seams are bound to the account that has just gone away: the store
+        // writes ITS plist and `localSpaceProfileIds` holds ITS `Account`. Leaving them
+        // standing would let the no-engine fallback (a Space deleted while signed out)
+        // read-modify-write the previous account's `sync.phiSpaces`. `intentSink` is cleared
+        // in `stopPhiSync()` instead — that path deliberately keeps the direct-store
+        // fallback alive (§5.3's one exception), and only this one owns the account switch.
+        PhiSpaceSyncState.shared.directStore = nil
+        PhiSpaceSyncState.shared.globalUuidLookup = nil
+        PhiSpaceSyncState.shared.localSpaceProfileIds = nil
+        PhiSpaceSyncState.shared.refreshCaches(from: PhiSpaceSyncTable())
         ChromiumLauncher.sharedInstance().bridge?.notifyPhiSyncKeysChanged?()
     }
 
@@ -335,6 +546,22 @@ import SwiftUI
             NotificationCenter.default.removeObserver(observer)
             phiSyncUnlockObserver = nil
         }
+        phiSpacesCancellable?.cancel()
+        phiSpacesCancellable = nil
+        if let observer = phiSpaceGateObserver {
+            NotificationCenter.default.removeObserver(observer)
+            phiSpaceGateObserver = nil
+        }
+        if let observer = phiSpaceFirstSyncObserver {
+            NotificationCenter.default.removeObserver(observer)
+            phiSpaceFirstSyncObserver = nil
+        }
+        // An unanswered question about an engine that no longer exists: the answer would
+        // reach `phiSyncEngine == nil` and be dropped, and the next engine re-asks by itself.
+        dismissFirstSyncSheet()
+        // Back to the direct-store fallback: with no engine there is no second
+        // writer, so the facade may touch the store itself (§5.3's one exception).
+        PhiSpaceSyncState.shared.intentSink = nil
         phiSyncEngine?.shutdown()
         phiSyncEngine = nil
         phiDomainKeys?.clear()

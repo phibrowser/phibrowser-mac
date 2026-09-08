@@ -133,7 +133,7 @@ of the execution paths cannot reproduce.
 - Select Previous/Next Tab use command-specific labels for their shifted bracket
   defaults while conflict detection continues to use `{` and `}`.
 
-## Kiosk-Only Shortcuts
+## Kiosk Shortcuts
 
 Kiosk has an independent set of command bindings, exposed in the Kiosk settings
 group (`Shortcuts.Group.kiosk`). It shares the existing `ShortcutsKey`
@@ -145,6 +145,11 @@ of ordinary-window commands that use the same default key.
 | --- | --- | --- |
 | `PHI_KIOSK_OPEN_IN_SPACE` | Cmd-O | Open the Kiosk page in the Space shown by the toolbar's primary action. |
 | `PHI_KIOSK_CHOOSE_SPACE` | Shift-Cmd-O | Show the toolbar's "Open in" Space selection menu. |
+
+Peek also uses `PHI_KIOSK_OPEN_IN_SPACE` for "Open as Tab" while its panel is
+visible in the active window and is not eclipsed by an in-window overlay.
+The binding is read from the same configuration, including overrides and
+disabling, and invokes the existing Peek expansion action.
 
 For example, changing or disabling `IDC_OPEN_FILE` does not change Kiosk's
 Cmd-O binding. The destination Space uses the existing toolbar target resolver,

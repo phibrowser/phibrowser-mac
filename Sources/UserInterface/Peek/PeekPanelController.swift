@@ -5,6 +5,7 @@
 
 import AppKit
 import SnapKit
+import SwiftUI
 
 /// Floating Peek panel: previews a cross-site page opened from a bookmark- or
 /// pinned-bound tab in a child window floating over the page pane (the web-
@@ -777,15 +778,24 @@ final class PeekPanelController {
             ),
             action: #selector(closeButtonClicked(_:))
         )
+        let expandTooltip = NSLocalizedString(
+            "peek.panel.expandButtonTooltip",
+            value: "Open as Tab",
+            comment: "Peek popup panel - Tooltip of the button that converts the floating page preview into a regular tab"
+        )
         let expandButton = makeControlButton(
             symbolName: "arrow.up.left.and.arrow.down.right",
-            tooltip: NSLocalizedString(
-                "peek.panel.expandButtonTooltip",
-                value: "Open as Tab",
-                comment: "Peek popup panel - Tooltip of the button that converts the floating page preview into a regular tab"
-            ),
+            tooltip: expandTooltip,
             action: #selector(expandButtonClicked(_:))
         )
+        MainActor.assumeIsolated {
+            expandButton.setCustomTooltip {
+                CommandShortcutTooltipContent(
+                    title: expandTooltip,
+                    command: .PHI_KIOSK_OPEN_IN_SPACE
+                )
+            }
+        }
         let splitButton = makeControlButton(
             symbolName: "rectangle.split.2x1",
             tooltip: NSLocalizedString(
@@ -981,6 +991,15 @@ final class PeekPanelController {
                 // event would otherwise walk the peek page's own history
                 // instead of reaching the menu command.
                 if let eventKeys = ShortcutsKey.eventKeys(for: event) {
+                    // Share Kiosk's configurable Open in Space binding with
+                    // Open as Tab, scoped to this Peek's window so another
+                    // visible Peek cannot consume the active window's command.
+                    if (NSApp.keyWindow === self.panel || NSApp.keyWindow === self.parentWindow),
+                       let expandKey = Shortcuts.key(for: .PHI_KIOSK_OPEN_IN_SPACE),
+                       eventKeys.matchingKeys.contains(expandKey) {
+                        self.expandButtonClicked(nil)
+                        return nil
+                    }
                     let backForwardKeys = [Shortcuts.key(for: .IDC_BACK),
                                            Shortcuts.key(for: .IDC_FORWARD)].compactMap { $0 }
                     if eventKeys.matchingKeys.contains(where: backForwardKeys.contains) {

@@ -68597,19 +68597,19 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Show \"Open in\" Menu"
+            "value" : "Show Kiosk \"Open in\" Menu"
           }
         }
       }
     },
     "settings.shortcuts.command.kioskOpenInSpace" : {
-      "comment" : "Shortcuts settings - Open the Kiosk page in the Space shown by the toolbar's primary action",
+      "comment" : "Shortcuts settings - Open the Kiosk page in the toolbar's target Space or expand Peek into a regular tab in the current Space",
       "extractionState" : "extracted_with_value",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Open in Current Space"
+            "value" : "Open Kiosk or Peek in current Space"
           }
         }
       }
@@ -71147,25 +71147,25 @@
       }
     },
     "settings.shortcuts.group.kiosk" : {
-      "comment" : "Shortcuts settings - Section title for commands available only in Kiosk windows",
+      "comment" : "Shortcuts settings - Section title for Kiosk and Peek commands",
       "extractionState" : "extracted_with_value",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Kiosk"
+            "value" : "Kiosk & Peek"
           }
         }
       }
     },
     "settings.shortcuts.group.kiosk.subtitle" : {
-      "comment" : "Shortcuts settings - Subtitle explaining that this group's shortcuts only work in Kiosk windows",
+      "comment" : "Shortcuts settings - Subtitle explaining that this group's shortcuts apply to Peek or Kiosk windows",
       "extractionState" : "extracted_with_value",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Only work in Kiosk windows."
+            "value" : "Only work in Peek or Kiosk windows."
           }
         }
       }

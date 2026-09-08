@@ -180,9 +180,9 @@ private extension CommandWrapper {
         case .PHI_NEW_KIOSK_WINDOW:
             return NSLocalizedString("settings.shortcuts.command.newKioskWindow", value: "New Kiosk Window", comment: "Shortcuts settings - Command title for opening a new Kiosk window")
         case .PHI_KIOSK_OPEN_IN_SPACE:
-            return NSLocalizedString("settings.shortcuts.command.kioskOpenInSpace", value: "Open in Current Space", comment: "Shortcuts settings - Open the Kiosk page in the Space shown by the toolbar's primary action")
+            return NSLocalizedString("settings.shortcuts.command.kioskOpenInSpace", value: "Open Kiosk or Peek in current Space", comment: "Shortcuts settings - Open the Kiosk page in the toolbar's target Space or expand Peek into a regular tab in the current Space")
         case .PHI_KIOSK_CHOOSE_SPACE:
-            return NSLocalizedString("settings.shortcuts.command.kioskChooseSpace", value: "Show \"Open in\" Menu", comment: "Shortcuts settings - Show the Open in menu for selecting a destination Space in a Kiosk window")
+            return NSLocalizedString("settings.shortcuts.command.kioskChooseSpace", value: "Show Kiosk \"Open in\" Menu", comment: "Shortcuts settings - Show the Open in menu for selecting a destination Space in a Kiosk window")
         case .IDC_RESTORE_TAB:
             return NSLocalizedString("settings.shortcuts.command.reopenClosedTab", value: "Reopen Closed Tab", comment: "Shortcuts settings - Command title for reopening the most recently closed tab")
         case .IDC_FOCUS_LOCATION:

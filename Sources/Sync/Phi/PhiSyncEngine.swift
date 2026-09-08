@@ -28,6 +28,7 @@ enum PhiSyncLog {
             case .http(let status, _): return "KeyAPIError.http(\(status))"
             case .transport(let underlying): return "KeyAPIError.transport(\(describe(underlying)))"
             case .decode: return "KeyAPIError.decode"
+            case .lastActiveDevice: return "KeyAPIError.lastActiveDevice"
             }
         case let error as PhiSyncProtocolError:
             // Every case carries an HTTP status or a protocol enum, never content.

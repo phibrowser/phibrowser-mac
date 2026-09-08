@@ -207,13 +207,26 @@ final class ProfilePairingGate {
 }
 
 /// The gate modal's root view: `ProfilePairingView` in its `.gate` context, plus
-/// the secondary "remove this device" slot. `onRemoveDevice` is nil here (Task 12
-/// supplies the action), and a nil action hides the button entirely rather than
-/// showing one that does nothing.
+/// the secondary "remove this device" slot -- the modal's only exit other than
+/// finishing the pairing. `onDismiss` takes the app-modal window down; the view
+/// owns the confirmation alert and the self-revoke call itself, because the 409
+/// `last_device` answer has to land back on THIS view (the button is greyed in
+/// place with the reason underneath) and an opaque `() -> Void` handed to the
+/// host could never carry it back.
 struct ProfilePairingGateView: View {
     @ObservedObject var viewModel: KeyLayerViewModel
     let controller: SyncKeyController
-    var onRemoveDevice: (() -> Void)?
+    let onDismiss: () -> Void
+
+    /// Non-nil once the server has refused: this account's last active device.
+    /// Deliberately sticky for the life of the window -- nothing the user can do
+    /// inside this modal adds a second device.
+    @State private var removeBlockedNote: String?
+
+    /// A transient failure of the same button (offline, 5xx, Keychain). Shown in
+    /// the same slot but deliberately does NOT disable: retrying is the fix.
+    /// Cleared at the start of every attempt.
+    @State private var removeErrorNote: String?
 
     var body: some View {
         switch viewModel.phase {
@@ -245,13 +258,46 @@ struct ProfilePairingGateView: View {
     }
 
     /// The "remove this device" slot, offered in EVERY branch: the gate is app
-    /// modal, so a branch without it is a window with no exit at all. nil here
-    /// this task (Task 12 supplies the action) hides the button.
-    private var secondaryButton: (title: String, action: () -> Void)? {
-        onRemoveDevice.map { action in
-            (title: NSLocalizedString("从同步中移除本设备…",
-                                      comment: "Pairing gate - remove this device"),
-             action: action)
+    /// modal, so a branch without it is a window with no exit at all.
+    private var secondaryButton: (title: String, enabled: Bool, note: String?, action: () -> Void)? {
+        (title: NSLocalizedString("从同步中移除本设备…",
+                                  comment: "Pairing gate - remove this device"),
+         enabled: removeBlockedNote == nil,
+         note: removeBlockedNote ?? removeErrorNote,
+         action: { confirmAndRemoveThisDevice() })
+    }
+
+    /// Second confirmation, then the retire-then-clean sequence. The client does
+    /// NOT pre-probe the account's device count (there is no listing endpoint on
+    /// this client): it asks, and greys the button in place if the server refuses.
+    private func confirmAndRemoveThisDevice() {
+        let alert = NSAlert()
+        alert.messageText = NSLocalizedString("把这台 Mac 移出账户同步？",
+                                              comment: "Self-revoke confirmation - title")
+        alert.informativeText = NSLocalizedString(
+            "这台 Mac 会退出账户同步。本机已有的浏览数据（Space、书签、历史、Pin Tab）全部保留，只是不再与其他设备同步。之后可以在「设置 → 设备」里重新加入。",
+            comment: "Self-revoke confirmation - body")
+        alert.addButton(withTitle: NSLocalizedString("移除本设备",
+                                                     comment: "Self-revoke confirmation - confirm"))
+        alert.addButton(withTitle: NSLocalizedString("取消",
+                                                     comment: "Self-revoke confirmation - cancel"))
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        removeErrorNote = nil
+        Task { @MainActor in
+            do {
+                try await controller.removeThisDeviceFromSync()
+                onDismiss()
+            } catch KeyAPIError.lastActiveDevice {
+                // The parenthetical is not politeness: an account profile whose
+                // envelope will not open under this ARK is read-only and does not
+                // count towards the actionable predicate, so "finish the pairing"
+                // really is reachable in such an account.
+                removeBlockedNote = NSLocalizedString(
+                    "这是账户里最后一台设备，无法移除；请完成配对（无法读取的 Profile 不影响完成）。",
+                    comment: "Self-revoke - last active device")
+            } catch {
+                removeErrorNote = PhiSyncLog.describe(error)
+            }
         }
     }
 
@@ -276,7 +322,11 @@ struct ProfilePairingGateView: View {
                 if let secondaryButton {
                     Button(secondaryButton.title, action: secondaryButton.action)
                         .buttonStyle(.bordered)
+                        .disabled(!secondaryButton.enabled)
                 }
+            }
+            if let note = secondaryButton?.note {
+                Text(note).font(.callout).foregroundColor(.secondary)
             }
         }
         .padding(32)
@@ -305,7 +355,8 @@ final class AppModalPairingHost: ProfilePairingModalHost {
         }
         guard window == nil else { return }
         let viewModel = KeyLayerViewModel(manager: controller.manager)
-        let root = ProfilePairingGateView(viewModel: viewModel, controller: controller)
+        let root = ProfilePairingGateView(viewModel: viewModel, controller: controller,
+                                          onDismiss: { [weak self] in self?.dismiss() })
         let window = NSWindow(contentViewController: ThemedHostingController(rootView: root))
         window.styleMask = [.titled]
         window.title = NSLocalizedString("完成 Profile 配对", comment: "Pairing gate window title")

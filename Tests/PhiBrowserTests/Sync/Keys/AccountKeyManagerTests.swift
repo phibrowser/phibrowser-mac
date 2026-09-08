@@ -26,6 +26,13 @@ final class AccountKeyManagerTests: XCTestCase {
             return envelopes[deviceKeyId]
         }
 
+        private(set) var revokedDeviceKeyIds: [String] = []
+        var revokeError: Error?
+        func revokeDevice(deviceKeyId: String) async throws {
+            if let revokeError { throw revokeError }
+            revokedDeviceKeyIds.append(deviceKeyId)
+        }
+
         // join queue
         var joinRequests: [String: JoinRequestDTO] = [:]
         var pendingSummaries: [JoinRequestSummaryDTO] = []

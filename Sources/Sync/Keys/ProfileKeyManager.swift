@@ -198,6 +198,16 @@ final class ProfileKeyManager {
         mappingStore.removeMapping(forProfileId: profileId)
     }
 
+    /// Self-revoke (§3.3): retire THIS device's row server-side. Throws
+    /// `KeyAPIError.lastActiveDevice` on 409 -- the account would be left with no
+    /// active device -- and the caller must then change nothing locally.
+    func revokeDevice(deviceKeyId: String) async throws {
+        try await api.revokeDevice(deviceKeyId: deviceKeyId)
+    }
+
+    /// Self-revoke (§3.3): the whole local-profile -> account-uuid table goes.
+    func removeAllMappings() { mappingStore.removeAllMappings() }
+
     /// The whole persisted table, local profile id -> account uuid. §3.6 reads it
     /// to tell an unmapped local profile (adoptable) from a mapped one.
     func allMappings() -> [String: String] { mappingStore.allMappings() }

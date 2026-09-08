@@ -141,9 +141,9 @@
 #if DEBUG || NIGHTLY_BUILD
                 [arguments addObject:@"--phi-ai-debug"];
                 [arguments addObject:@"--phi-no-embed-extensions"];
-                [arguments addObject:@"--phi-env=canary"];
-#else
-                [arguments addObject:@"--phi-env=release"];
+                // Chromium defaults to production; Canary uses the staging
+                // highlight-link endpoint to match its authentication setup.
+                [arguments addObject:@"--phi-highlight-link-url=https://stag.phi.to/api/v1/links"];
 #endif
 #if DEBUG
                 [arguments addObject:@"--no-sandbox"];

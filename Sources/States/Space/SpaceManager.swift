@@ -3005,7 +3005,35 @@ final class SpaceManager: ObservableObject {
     /// they answer nil on — switch off, a reopen in flight, an empty record,
     /// nothing eager — plus one of its own: no eager window resolves to a
     /// bound profile.
+    ///
+    /// Two sources for one answer. The pull that matters arrives before the
+    /// account binds and is answered from the snapshot on disk
+    /// (`earlyColdStartPreferredProfiles`); a pull with an account already
+    /// bound, which is Guest binding synchronously in `init`, is answered from
+    /// the same gate and classification as `coldStartRestorePlan()`.
     func coldStartPreferredProfiles() -> [String]? {
+        if boundAccount == nil {
+            // Chromium pulls this from `main.m`'s `launchChromiumWithArgc:`,
+            // ahead of `NSApplicationMain` and so ahead of any account bind.
+            // With no store to resolve owners from, the answer is read off the
+            // last bound account's snapshot on disk, which carries each Space's
+            // owner (`snapshotSpaceProfileIdsKey`).
+            let userID = UserDefaults.standard.string(
+                forKey: Self.lastBoundAccountUserIDKey)
+            let snapshot = userID.flatMap {
+                AccountUserDefaults.storedObject(
+                    forKey: .slotsRestoreSnapshot, ofAccountWithUserID: $0)
+                    as? [[String: Any]]
+            } ?? []
+            guard let preferred = Self.earlyColdStartPreferredProfiles(
+                snapshot: snapshot,
+                isLazySpaceRestoreEnabled: Self.isLazySpaceRestoreEnabled) else {
+                AppLogInfo("[SpaceManager] cold start head: no on-screen owner in the last bound account's snapshot (lazy=\(Self.isLazySpaceRestoreEnabled), account=\(userID ?? "none"), entries=\(snapshot.count); pulled before the account bound) — keeping the stored replay order")
+                return nil
+            }
+            AppLogInfo("[SpaceManager] cold start head: \(preferred.joined(separator: ", ")) own this launch's eager windows (from the last bound account's snapshot; pulled before the account bound)")
+            return preferred
+        }
         let plan = coldStartClassifiedAnswer()
         let preferred = plan.map { armed in
             Self.coldStartPreferredProfileOrder(
@@ -3024,6 +3052,85 @@ final class SpaceManager: ObservableObject {
         }
         AppLogInfo("[SpaceManager] cold start head: \(preferred.joined(separator: ", ")) own this launch's eager windows")
         return preferred
+    }
+
+    /// Snapshot entry key: the profile each Space of the entry's windowMap was
+    /// bound to when the entry was written (`encodedSpaceProfileIds`). Read by
+    /// the cold-start pull that lands before any account binds
+    /// (`earlyColdStartPreferredProfiles`), which has no Space store to
+    /// resolve owners from. Lives INSIDE the entry, next to the windowMap it
+    /// describes: a build that does not know the field drops it on a full
+    /// rewrite, so the pull answers nil, while an amend
+    /// (`amendPersistedSnapshotActiveSpaceId`) rewrites only `activeSpaceId`
+    /// and leaves a map that still resolves the promoted sibling.
+    static let snapshotSpaceProfileIdsKey = "spaceProfileIds"
+
+    /// App-domain pointer to the account bound last (`bind(to:)`), so that
+    /// pull can find the snapshot on disk before the account itself exists.
+    /// Cleared on sign-out (`unbind`). Only a userID: the answer stays in the
+    /// account's own snapshot, so there is no second copy that can go stale.
+    static let lastBoundAccountUserIDKey = "PhiLastBoundAccountUserID"
+
+    /// The owner map a snapshot entry stores under
+    /// `snapshotSpaceProfileIdsKey`. Agent Spaces are left out: the launch
+    /// that reads this excludes them from the eager set, so their owner would
+    /// be a profile that hands nothing back. A Space with no bound profile is
+    /// left out too, and the reader then names nothing for it. Pure and static
+    /// so the rule is pinned by table (`LazySpaceRestoreWiringTests`).
+    static func encodedSpaceProfileIds(
+        windowMap: [Int: String],
+        agentSpaceIds: Set<String>,
+        profileIdForSpaceId: (String) -> String?
+    ) -> [String: String] {
+        var owners: [String: String] = [:]
+        for spaceId in Set(windowMap.values) where !agentSpaceIds.contains(spaceId) {
+            if let profileId = profileIdForSpaceId(spaceId), !profileId.isEmpty {
+                owners[spaceId] = profileId
+            }
+        }
+        return owners
+    }
+
+    /// What the pull that lands before the account binds answers, from the
+    /// snapshot exactly as it stands on disk: the owner of each on-screen
+    /// group's active Space, landing entry first, then snapshot order,
+    /// deduplicated. Nil keeps the replay order Chromium already has.
+    ///
+    /// The same landing rule the classifier applies to a cold start
+    /// (`RestoreLandingMode.everyOnScreenEntry`): a closed group lands
+    /// nothing, and an entry whose active Space owns no window promotes
+    /// nothing in its place. Only the active Space's owner is named, because
+    /// only its window is eager; a parked sibling's owner is exactly the
+    /// profile that must not lead. An entry without the owner map, written by
+    /// a build that did not know it, names nothing.
+    ///
+    /// The switch gates it because with lazy Space restore off nothing parks,
+    /// so no profile can hand a replay back empty and no reorder is owed.
+    /// Pure and static so the rule is pinned by table
+    /// (`LazySpaceRestoreWiringTests`).
+    static func earlyColdStartPreferredProfiles(
+        snapshot dicts: [[String: Any]],
+        isLazySpaceRestoreEnabled: Bool
+    ) -> [String]? {
+        guard isLazySpaceRestoreEnabled else { return nil }
+        let isLanding = dicts.map { ($0["isLandingEntry"] as? Bool) ?? false }
+        let ordered = dicts.indices.sorted { lhs, rhs in
+            if isLanding[lhs] != isLanding[rhs] { return isLanding[lhs] }
+            return lhs < rhs
+        }
+        var preferred: [String] = []
+        var seen: Set<String> = []
+        for index in ordered {
+            let dict = dicts[index]
+            guard !decodedIsParkedOnlyEntry(dict["isParkedOnlyEntry"]),
+                  let activeSpaceId = dict["activeSpaceId"] as? String,
+                  decodedWindowMap(dict["windowMap"]).values.contains(activeSpaceId),
+                  let owners = dict[snapshotSpaceProfileIdsKey] as? [String: String],
+                  let profileId = owners[activeSpaceId], !profileId.isEmpty,
+                  seen.insert(profileId).inserted else { continue }
+            preferred.append(profileId)
+        }
+        return preferred.isEmpty ? nil : preferred
     }
 
     /// The pure half of `coldStartPreferredProfiles()`: which profiles own the
@@ -4454,6 +4561,12 @@ final class SpaceManager: ObservableObject {
             var dict: [String: Any] = [:]
             // Plist keys must be strings; convert the windowId map.
             dict["windowMap"] = Self.encodedWindowMap(entry.windowMap)
+            // Each Space's owner, for the cold-start pull that reads this
+            // record before any account binds (`snapshotSpaceProfileIdsKey`).
+            dict[Self.snapshotSpaceProfileIdsKey] = Self.encodedSpaceProfileIds(
+                windowMap: entry.windowMap,
+                agentSpaceIds: agentSpaceIds,
+                profileIdForSpaceId: { boundProfileId(forSpaceId: $0) })
             if entryPosition == landingPosition {
                 dict["isLandingEntry"] = true
             }
@@ -6945,6 +7058,9 @@ final class SpaceManager: ObservableObject {
     private func bind(to account: Account) {
         guard boundAccount !== account else { return }
         boundAccount = account
+        // The pointer the next launch's cold-start pull follows to this
+        // account's snapshot before anything binds (`coldStartPreferredProfiles`).
+        UserDefaults.standard.set(account.userID, forKey: Self.lastBoundAccountUserIDKey)
         // Load before the first Chromium window arrives so
         // `claimRestoredWindow` can answer for session-restore callbacks
         // that race the SwiftData publishers below.
@@ -7181,6 +7297,11 @@ final class SpaceManager: ObservableObject {
         boundAccount = nil
         if hadBoundAccount {
             observedNormalWindowProfileId = nil
+            // Signed out: the next launch has no account's snapshot to answer
+            // the cold-start pull from. The launch call with nothing bound yet
+            // must not take this, or it would drop the pointer the pull is
+            // about to follow.
+            UserDefaults.standard.removeObject(forKey: Self.lastBoundAccountUserIDKey)
         }
         spacesCancellable?.cancel()
         spacesCancellable = nil

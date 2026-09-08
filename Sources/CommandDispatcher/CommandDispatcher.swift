@@ -31,6 +31,7 @@ struct CommandDispatcher {
         .PHI_NEW_KIOSK_WINDOW,
         .PHI_NEW_INCOGNITO_SPACE,
         .PHI_SHARE_PAGE,
+        .PHI_SAVE_FOR_LATER,
     ] + CommandWrapper.spaceSelectionCommands
 
     /// Commands swallowed while the focused tab shows the native NTP — it has no
@@ -225,6 +226,13 @@ struct CommandDispatcher {
                 return false
             }
             state.toggleReaderView(for: tab, from: .shortcut)
+            return true
+        case .PHI_SAVE_FOR_LATER:
+            let state = windowController.browserState
+            guard let tab = state.focusingTab, SaveForLaterService.canSave(tab) else {
+                return false
+            }
+            SaveForLaterService.save(tab: tab, in: state)
             return true
         case let c where c.spaceSelectionIndex != nil:
             guard let index = c.spaceSelectionIndex else { return false }

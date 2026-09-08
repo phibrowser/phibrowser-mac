@@ -133,6 +133,7 @@ enum CommandWrapper: Int, Equatable {
     case PHI_SHARE_PAGE              = 90024
     case PHI_KIOSK_OPEN_IN_SPACE     = 90025
     case PHI_KIOSK_CHOOSE_SPACE      = 90026
+    case PHI_SAVE_FOR_LATER          = 90027
 
     // System Preserved
     case IDS_HIDE_OTHERS_MAC         = 110
@@ -605,6 +606,9 @@ extension Shortcuts {
         .PHI_SHARE_PAGE: .init(characters: "s", modifiers: [.control, .option]),
         .PHI_KIOSK_OPEN_IN_SPACE: .init(characters: "o", modifiers: .command),
         .PHI_KIOSK_CHOOSE_SPACE: .init(characters: "o", modifiers: [.command, .shift]),
+        // Cmd-S is the sidebar and Cmd-Shift-S the chatbar; Cmd-Opt-S keeps
+        // the save family together without displacing either.
+        .PHI_SAVE_FOR_LATER: .init(characters: "s", modifiers: [.command, .option]),
 
         // System Preserved Shortcuts
         .IDS_HIDE_OTHERS_MAC: .init(characters: "h", modifiers: [.command, .option]),

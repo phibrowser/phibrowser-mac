@@ -82,11 +82,12 @@ final class PhiAgentTransportTests: XCTestCase {
             "HTTP/1.1 200 OK\r\nContent-Length: 8\r\n\r\n12345678")
         let transport = PhiAgentTransport(
             resolver: makeResolver(socketPath: server.socketPath),
-            brokerClientFactory: {
+            brokerClientFactory: { socketPath, ioTimeoutMilliseconds in
                 ServiceBrokerClient(
-                    socketPath: $0,
+                    socketPath: socketPath,
                     nonStreamingResponseBytes: 4,
-                    peerAuthenticator: .allowingTests
+                    peerAuthenticator: .allowingTests,
+                    ioTimeoutMilliseconds: ioTimeoutMilliseconds
                 )
             }
         )
@@ -129,7 +130,9 @@ final class PhiAgentTransportTests: XCTestCase {
             resolver: resolver,
             session: session,
             brokerClientFactory: {
-                ServiceBrokerClient(socketPath: $0, peerAuthenticator: .allowingTests)
+                ServiceBrokerClient(socketPath: $0,
+                                    peerAuthenticator: .allowingTests,
+                                    ioTimeoutMilliseconds: $1)
             }
         )
     }

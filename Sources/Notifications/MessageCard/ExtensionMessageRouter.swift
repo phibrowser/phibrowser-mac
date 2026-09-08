@@ -151,6 +151,78 @@ final class ExtensionMessageRouter {
             return "{}"
         }
 
+        // Save for Later's site-action auto-save (SaveForLaterService): the
+        // extension pulls the armed state on boot and reports trigger
+        // activations; the service re-checks arming on every trigger.
+        register(type: "saveForLater.getArmed") { context in
+            return SaveForLaterService.handleGetArmed(context)
+        }
+        register(type: "saveForLater.trigger") { context in
+            SaveForLaterService.handleTrigger(context)
+            return "{}"
+        }
+        // The Save for Later library page's folder access; replies are async
+        // (file IO) via ExtensionMessaging.
+        // An older Mirage still asks the app to do the highlight; answer
+        // with a visible message rather than dropping it (see
+        // handleLegacyHighlight).
+        register(type: "saveForLater.highlight") { context in
+            SaveForLaterService.handleLegacyHighlight(context)
+            return "{}"
+        }
+        register(type: "saveForLater.delete") { context in
+            SaveForLaterService.handleLibraryDelete(context)
+            return nil
+        }
+        register(type: "saveForLater.reveal") { context in
+            SaveForLaterService.handleLibraryReveal(context)
+            return "{}"
+        }
+        // The capture RPC's report leg and the file broker's chunked write
+        // path (Mirage streams MHTML archives through it).
+        register(type: "saveForLater.fs.writeBegin") { context in
+            SaveForLaterService.handleFSWriteBegin(context)
+            return nil
+        }
+        register(type: "saveForLater.fs.writeChunk") { context in
+            SaveForLaterService.handleFSWriteChunk(context)
+            return nil
+        }
+        register(type: "saveForLater.fs.writeEnd") { context in
+            SaveForLaterService.handleFSWriteEnd(context)
+            return nil
+        }
+        register(type: "saveForLater.fs.list") { context in
+            SaveForLaterService.handleFSList(context)
+            return nil
+        }
+        register(type: "saveForLater.fs.read") { context in
+            SaveForLaterService.handleFSRead(context)
+            return nil
+        }
+        register(type: "saveForLater.fs.writeText") { context in
+            SaveForLaterService.handleFSWriteText(context)
+            return nil
+        }
+        register(type: "saveForLater.fs.rename") { context in
+            SaveForLaterService.handleFSRename(context)
+            return nil
+        }
+        // Mirage runs the save itself and reports back; the app keeps the
+        // toast (window chrome) and the authenticated video-gist call.
+        register(type: "saveForLater.saveResult") { context in
+            SaveForLaterService.handleSaveResult(context)
+            return "{}"
+        }
+        register(type: "saveForLater.toast") { context in
+            SaveForLaterService.handleToast(context)
+            return "{}"
+        }
+        register(type: "saveForLater.videoGist") { context in
+            SaveForLaterService.handleVideoGist(context)
+            return nil
+        }
+
         register(type: "agentSpace.create") { context in
             AgentSpaceRouter.handleCreate(context: context)
             return nil  // async reply via ExtensionMessaging

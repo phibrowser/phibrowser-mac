@@ -277,6 +277,7 @@ extension AppController {
     static let agentTranscriptItemTag = 500025
     static let uninstallPhiItemTag = 500026
     static let browserMigrationItemTag = 500038
+    static let fileSaveForLaterLibraryItemTag = 500039
     static let debugMenuItemTag = 500027
     static let spacesProfileSeparatorTag = 500020
     static let deleteProfileSubmenuIdentifier = NSUserInterfaceItemIdentifier("phi.spaces.deleteProfile")
@@ -740,6 +741,8 @@ extension AppController {
             item.tag == CommandWrapper.PHI_NEW_KIOSK_WINDOW.rawValue
                 || item.tag == CommandWrapper.PHI_NEW_INCOGNITO_SPACE.rawValue
                 || item.tag == CommandWrapper.PHI_SHARE_PAGE.rawValue
+                || item.tag == CommandWrapper.PHI_SAVE_FOR_LATER.rawValue
+                || item.tag == AppController.fileSaveForLaterLibraryItemTag
         }
 
         let newKioskWindowItem = NSMenuItem(
@@ -797,6 +800,58 @@ extension AppController {
             subMenu.insertItem(sharePageItem, at: printIndex)
         } else {
             subMenu.addItem(sharePageItem)
+        }
+
+        // Folio disabled: the rows above were already removed and nothing is
+        // reinserted — the feature leaves no trace in the menu.
+        guard SaveForLaterService.featureEnabled else { return }
+
+        let saveForLaterItem = NSMenuItem(
+            title: NSLocalizedString(
+                "app.fileMenu.saveToFolio",
+                value: "Save to Folio",
+                comment: "File menu - Saves the current page into the Folio folder as a markdown article plus a webpage copy"
+            ),
+            action: #selector(AppController.saveTabForLater(_:)),
+            keyEquivalent: "s"
+        )
+        saveForLaterItem.keyEquivalentModifierMask = [.command, .option]
+        saveForLaterItem.tag = CommandWrapper.PHI_SAVE_FOR_LATER.rawValue
+        Shortcuts.updateShortcut(for: saveForLaterItem)
+        saveForLaterItem.target = target
+
+        let libraryItem = NSMenuItem(
+            title: NSLocalizedString(
+                "app.fileMenu.openFolio",
+                value: "Open Folio",
+                comment: "File menu - Opens the library page listing the pages saved with Folio"
+            ),
+            action: #selector(AppController.openSaveForLaterLibrary(_:)),
+            keyEquivalent: ""
+        )
+        libraryItem.tag = AppController.fileSaveForLaterLibraryItemTag
+        libraryItem.target = target
+
+        // Next to Chromium's own Save Page, where a save action is looked
+        // for.
+        let savePageIndex = subMenu.items.firstIndex(where: {
+            $0.tag == CommandWrapper.IDC_SAVE_PAGE.rawValue
+        })
+        if let savePageIndex {
+            subMenu.insertItem(saveForLaterItem, at: savePageIndex + 1)
+        } else {
+            subMenu.addItem(saveForLaterItem)
+        }
+
+        // The library opens a place rather than saving one: it lives right
+        // under Open Location…, not among the save rows.
+        let openLocationIndex = subMenu.items.firstIndex(where: {
+            $0.tag == CommandWrapper.IDC_FOCUS_LOCATION.rawValue
+        }).map { $0 + 1 }
+        if let openLocationIndex {
+            subMenu.insertItem(libraryItem, at: openLocationIndex)
+        } else {
+            subMenu.addItem(libraryItem)
         }
     }
 
@@ -1067,6 +1122,20 @@ extension AppController {
             return
         }
         state.toggleReaderView(for: tab, from: .viewMenu)
+    }
+
+    @MainActor
+    @objc func saveTabForLater(_ sender: Any?) {
+        guard let state = MainBrowserWindowControllersManager.shared.activeWindowController?.browserState,
+              let tab = state.focusingTab else {
+            return
+        }
+        SaveForLaterService.save(tab: tab, in: state)
+    }
+
+    @MainActor
+    @objc func openSaveForLaterLibrary(_ sender: Any?) {
+        SaveForLaterService.openLibrary()
     }
 
     @MainActor
@@ -2922,6 +2991,23 @@ extension AppController {
                 guard let tab, !tab.isShowingNativeNTP else { return false }
                 return ApplicationState.shared.canUseBrowser
             }
+        }
+
+        if item.action == #selector(saveTabForLater(_:)) {
+            let canSave = MainActor.assumeIsolated {
+                SaveForLaterService.canSave(
+                    MainBrowserWindowControllersManager.shared
+                        .activeWindowController?.browserState.focusingTab)
+            }
+            return canSave && ApplicationState.shared.canUseBrowser
+        }
+
+        if item.action == #selector(openSaveForLaterLibrary(_:)) {
+            // The library is the permanent folder's face; Guest Mode gets
+            // neither its writes nor its reads.
+            return SaveForLaterService.featureEnabled
+                && ApplicationState.shared.canUseBrowser
+                && !ApplicationState.shared.isGuest
         }
 
         if item.action == #selector(toggleAgentTranscript(_:)) {

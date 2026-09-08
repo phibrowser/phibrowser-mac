@@ -83,7 +83,7 @@ extension Shortcuts {
             case .app:
                 return [.IDC_OPTIONS]
             case .file:
-                return [.IDC_NEW_TAB,
+                var commands: [CommandWrapper] = [.IDC_NEW_TAB,
                         .IDC_NEW_WINDOW,
                         .IDC_NEW_INCOGNITO_WINDOW,
                         .PHI_NEW_KIOSK_WINDOW,
@@ -93,7 +93,12 @@ extension Shortcuts {
                         .IDC_CLOSE_WINDOW,
                         .IDC_CLOSE_TAB,
                         .PHI_SHARE_PAGE,
+                        .PHI_SAVE_FOR_LATER,
                         .IDC_PRINT]
+                if !SaveForLaterService.featureEnabled {
+                    commands.removeAll { $0 == .PHI_SAVE_FOR_LATER }
+                }
+                return commands
             case .edit:
                 return [.PHI_COPY_URL,
                         .IDC_FIND,
@@ -419,6 +424,7 @@ extension CommandWrapper {
         .PHI_SHARE_PAGE: .init(title: "Share Page", keywords: ["share", "share page", "share link", "airdrop", "send"]),
         .PHI_KIOSK_OPEN_IN_SPACE: .init(title: "Open Kiosk or Peek in current Space", keywords: ["kiosk", "peek", "open as tab", "open in space", "current space", "move"]),
         .PHI_KIOSK_CHOOSE_SPACE: .init(title: "Show Kiosk \"Open in\" Menu", keywords: ["kiosk", "choose space", "open in", "menu"]),
+        .PHI_SAVE_FOR_LATER: .init(title: "Save to Folio", keywords: ["save", "save to folio", "folio", "read later", "markdown", "archive"]),
         .PHI_SELECT_NEXT_SPACE: .init(title: "Next Space", keywords: ["space", "next space", "forward"]),
         .PHI_SELECT_PREVIOUS_SPACE: .init(title: "Previous Space", keywords: ["space", "previous space", "backward"]),
         .PHI_SELECT_SPACE_0: .init(title: "Go to Space 1", keywords: ["space", "space1"]),

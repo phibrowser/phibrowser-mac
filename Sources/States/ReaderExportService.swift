@@ -79,12 +79,18 @@ enum ReaderExportService {
     }
 
     /// A filename built from the article title.
+    static func suggestedFileName(title: String, extension ext: String) -> String {
+        "\(sanitizedBaseName(title: title)).\(ext)"
+    }
+
+    /// A filesystem-safe basename built from a title. Shared with Save for
+    /// Later, whose file pair derives both names from one reserved basename.
     ///
     /// Path separators and the characters Finder and the common filesystems
     /// object to are replaced rather than stripped, so words do not run
     /// together, and the result is capped well under the 255-byte limit —
     /// which counts bytes, not characters, so a CJK title hits it far sooner.
-    static func suggestedFileName(title: String, extension ext: String) -> String {
+    static func sanitizedBaseName(title: String) -> String {
         let forbidden = CharacterSet(charactersIn: "/\\:?%*|\"<>\u{0}")
             .union(.controlCharacters)
         let cleaned = title.components(separatedBy: forbidden).joined(separator: " ")
@@ -102,6 +108,6 @@ enum ReaderExportService {
         while base.utf8.count > 120, !base.isEmpty {
             base.removeLast()
         }
-        return "\(base).\(ext)"
+        return base
     }
 }

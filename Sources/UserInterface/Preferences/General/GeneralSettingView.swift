@@ -47,6 +47,9 @@ struct GeneralSettingView: View {
                 }
                 AppearanceSectionView()
                 BrowsingSectionView()
+                if SaveForLaterService.featureEnabled {
+                    SaveForLaterSectionView()
+                }
                 ProfileSectionView()
             }
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -556,6 +559,110 @@ private struct BrowsingSectionView: View {
 /// needs the Profiles pane. Mirrors the Theme section's per-Space behavior:
 /// once more profiles exist each one carries its own settings, so the section
 /// collapses to a hint that jumps to the Profiles pane.
+private struct SaveForLaterSectionView: View {
+    @State private var folderPath: String = PhiPreferences.SaveForLater.globalFolderPath
+    @State private var autoSaveOnSiteActions = PhiPreferences.SaveForLater.autoSaveOnSiteActions
+
+    private var autoSaveBinding: Binding<Bool> {
+        Binding(
+            get: { autoSaveOnSiteActions },
+            set: { newValue in
+                autoSaveOnSiteActions = newValue
+                PhiPreferences.SaveForLater.autoSaveOnSiteActions = newValue
+                SaveForLaterService.broadcastArmedState()
+            }
+        )
+    }
+
+    var body: some View {
+        GeneralSectionView(title: NSLocalizedString("settings.general.folio.sectionTitle", value: "Folio", comment: "General settings - Folio section title")) {
+            VStack(alignment: .leading, spacing: 8) {
+                GeneralContainerView {
+                    HStack(alignment: .center, spacing: 12) {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(NSLocalizedString("settings.general.folio.folderTitle", value: "Save pages to", comment: "General settings - Row title for the folder saved pages are written into"))
+                                .font(.system(size: 13))
+                                .themedForeground(.textPrimary)
+                            Text(NSLocalizedString("settings.general.folio.folderHint", value: "Each save writes a markdown article and a webpage copy side by side. Profiles can override this folder in their own settings.", comment: "General settings - Hint under the Folio folder row describing the saved file pair and the per-profile override"))
+                                .font(.system(size: 11))
+                                .themedForeground(.textTertiary)
+                        }
+                        Spacer(minLength: 12)
+                        Button {
+                            chooseFolder()
+                        } label: {
+                            HStack(spacing: 6) {
+                                Image(systemName: "folder.fill")
+                                    .font(.system(size: 12))
+                                    .themedForeground(.textSecondary)
+                                Text((folderPath as NSString).lastPathComponent)
+                                    .font(.system(size: 13))
+                                    .themedForeground(.textPrimary)
+                                    .lineLimit(1)
+                            }
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 5)
+                            .background(Color.primary.opacity(0.06))
+                            .clipShape(RoundedRectangle(cornerRadius: 6))
+                        }
+                        .buttonStyle(.plain)
+                    }
+                    .padding(.vertical, 12)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+
+                    // The row exists only while the remote flag is on — the
+                    // flag is the rollout gate and kill switch for the whole
+                    // auto-trigger machinery.
+                    if SaveForLaterService.autoTriggerFlagEnabled {
+                        Divider()
+
+                        HStack(alignment: .center, spacing: 12) {
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(NSLocalizedString("settings.general.folio.autoSaveToggle", value: "Save when you like or bookmark on supported sites", comment: "General settings - Toggle title for the site-action auto-save: liking or bookmarking on supported sites also saves the page"))
+                                    .font(.system(size: 13))
+                                    .themedForeground(.textPrimary)
+                                Text(NSLocalizedString("settings.general.folio.autoSaveHint", value: "Liking a YouTube video or bookmarking on X, Reddit, or Stack Overflow also saves that page here. Everything stays on this Mac.", comment: "General settings - Hint under the site-action auto-save toggle naming the supported sites and the local-only behavior"))
+                                    .font(.system(size: 11))
+                                    .themedForeground(.textTertiary)
+                                // The sites themselves are the extension's
+                                // rules corpus, so the per-site switches
+                                // live on its page; this is the way in.
+                                Button(NSLocalizedString("settings.general.folio.autoSaveSites", value: "Choose sites…", comment: "General settings - Button under the site-action auto-save toggle that opens the page listing each supported site with its own switch")) {
+                                    SaveForLaterService.openAutoSaveSites()
+                                }
+                                .buttonStyle(.link)
+                                .font(.system(size: 11))
+                                .disabled(!PhiPreferences.SaveForLater.autoSaveOnSiteActions)
+                            }
+                            Spacer(minLength: 12)
+                            Toggle("", isOn: autoSaveBinding)
+                                .labelsHidden()
+                                .toggleStyle(.switch)
+                                .controlSize(.mini)
+                                .themedTint(.themeColor)
+                        }
+                        .padding(.vertical, 12)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                }
+            }
+        }
+    }
+
+    private func chooseFolder() {
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.allowsMultipleSelection = false
+        panel.prompt = NSLocalizedString("settings.general.folio.chooseButton", value: "Choose", comment: "General settings - Folio folder picker confirm button")
+        panel.message = NSLocalizedString("settings.general.folio.pickerMessage", value: "Choose where saved pages are stored.", comment: "General settings - Folio folder picker message")
+        panel.directoryURL = URL(fileURLWithPath: folderPath, isDirectory: true)
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        PhiPreferences.SaveForLater.globalFolderPath = url.path
+        folderPath = PhiPreferences.SaveForLater.globalFolderPath
+    }
+}
+
 private struct ProfileSectionView: View {
     @ObservedObject private var profileManager = ProfileManager.shared
 

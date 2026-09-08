@@ -74,7 +74,9 @@ final class IMChannelAPIClientTests: XCTestCase {
                 socketPathProvider: { _ in socketPath }
             ),
             brokerClientFactory: {
-                ServiceBrokerClient(socketPath: $0, peerAuthenticator: .allowingTests)
+                ServiceBrokerClient(socketPath: $0,
+                                    peerAuthenticator: .allowingTests,
+                                    ioTimeoutMilliseconds: $1)
             }
         )
     }

@@ -13,12 +13,22 @@ struct PhiAgentHTTPRequest: Sendable {
     let method: String
     let headers: [String: String]
     let body: Data?
+    /// Per-request budget in seconds, for the rare endpoint whose response is
+    /// legitimately slow (video-gist generation runs minutes). Nil keeps each
+    /// route's default: URLSession's request timeout on loopback, the broker
+    /// client's I/O budget on the socket.
+    let timeout: TimeInterval?
 
-    init(path: String, method: String = "GET", headers: [String: String] = [:], body: Data? = nil) {
+    init(path: String,
+         method: String = "GET",
+         headers: [String: String] = [:],
+         body: Data? = nil,
+         timeout: TimeInterval? = nil) {
         self.path = path
         self.method = method
         self.headers = headers
         self.body = body
+        self.timeout = timeout
     }
 }
 
@@ -63,13 +73,15 @@ final class PhiAgentTransport: Sendable {
 
     private let resolver: PhiAgentEndpointResolver
     private let session: URLSession
-    private let brokerClientFactory: @Sendable (String) -> ServiceBrokerClient
+    /// Builds the broker client for one request: socket path plus the I/O
+    /// budget in milliseconds (the request's own timeout, or the default).
+    private let brokerClientFactory: @Sendable (String, Int) -> ServiceBrokerClient
 
     init(
         resolver: PhiAgentEndpointResolver = .shared,
         session: URLSession = .shared,
-        brokerClientFactory: @escaping @Sendable (String) -> ServiceBrokerClient = {
-            ServiceBrokerClient(socketPath: $0)
+        brokerClientFactory: @escaping @Sendable (String, Int) -> ServiceBrokerClient = {
+            ServiceBrokerClient(socketPath: $0, ioTimeoutMilliseconds: $1)
         }
     ) {
         self.resolver = resolver
@@ -131,6 +143,9 @@ final class PhiAgentTransport: Sendable {
             urlRequest.setValue(value, forHTTPHeaderField: name)
         }
         urlRequest.httpBody = request.body
+        if let timeout = request.timeout {
+            urlRequest.timeoutInterval = timeout
+        }
 
         let data: Data
         let response: URLResponse
@@ -156,7 +171,10 @@ final class PhiAgentTransport: Sendable {
         _ request: PhiAgentHTTPRequest,
         socketPath: String
     ) async throws -> PhiAgentHTTPResponse {
-        let client = brokerClientFactory(socketPath)
+        let ioTimeoutMilliseconds = request.timeout
+            .map { max(1, Int($0 * 1000)) }
+            ?? ServiceBrokerClient.defaultIOTimeoutMilliseconds
+        let client = brokerClientFactory(socketPath, ioTimeoutMilliseconds)
         do {
             let response = try await client.request(BrokerHTTPRequest(
                 service: .phiAgent,

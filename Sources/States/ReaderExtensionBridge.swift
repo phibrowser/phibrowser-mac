@@ -232,6 +232,9 @@ enum ReaderExtensionBridge {
         let rung: String
         let coverage: Double
         let codeBlocks: [String]
+        /// Present only when the request asked for markdown; an extension
+        /// build without the converter simply omits it.
+        let contentMarkdown: String?
     }
 
     /// In-flight `reader.extract` requests, keyed by the requestId the
@@ -246,15 +249,30 @@ enum ReaderExtensionBridge {
     /// Extracts a tab's article through the extension without changing what
     /// the tab shows. `settle` walks the page for lazy content first —
     /// callers with no user watching the tab only (the agent API).
+    /// `includeMarkdown` additionally asks the extension to render the
+    /// article as markdown (`ReaderArticle.contentMarkdown`); conversion
+    /// failure degrades to a markdown-less article, never to an error.
     @MainActor
     static func extractArticle(from tab: Tab,
                                settle: Bool = true,
-                               timeout: TimeInterval = 45) async throws -> ExtractOutcome {
+                               timeout: TimeInterval = 45,
+                               includeMarkdown: Bool = false) async throws -> ExtractOutcome {
         let requestId = UUID().uuidString
+        // The bridge routes a broadcast by the payload's windowId; without
+        // one it goes to the ACTIVE window's profile, which for a tab in a
+        // background or hidden window (agent Spaces) is the wrong profile —
+        // whose Mirage cannot see the tab. Address the owning window.
+        let windowId = MainBrowserWindowControllersManager.shared.getAllWindows()
+            .first(where: { controller in
+                controller.browserState.tabs.contains(where: { $0.guid == tab.guid })
+            })?.browserState.windowId
+        let windowField = windowId.map { "\"windowId\":\($0)," } ?? ""
         ExtensionMessaging.shared.broadcast(
             type: "reader.extract",
-            payload: "{\"tabId\":\(tab.guid),\"requestId\":\"\(requestId)\"," +
-                     "\"settle\":\(settle)}")
+            payload: "{\(windowField)\"tabId\":\(tab.guid)," +
+                     "\"requestId\":\"\(requestId)\"," +
+                     "\"settle\":\(settle)," +
+                     "\"includeMarkdown\":\(includeMarkdown)}")
         let result: ExtractResult = await withCheckedContinuation { continuation in
             pendingExtractions[requestId] = continuation
             Task { @MainActor in
@@ -282,7 +300,7 @@ enum ReaderExtensionBridge {
                     result.error ?? "extraction_failed")
             }
         }
-        let article = ReaderArticle(
+        var article = ReaderArticle(
             title: wire.title,
             byline: wire.byline,
             siteName: wire.siteName,
@@ -292,6 +310,7 @@ enum ReaderExtensionBridge {
             rung: wire.rung,
             coverage: wire.coverage,
             codeBlocks: wire.codeBlocks)
+        article.contentMarkdown = wire.contentMarkdown
         return ExtractOutcome(article: article, ruleHost: result.ruleHost)
     }
 

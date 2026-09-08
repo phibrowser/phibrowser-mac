@@ -6,6 +6,10 @@
 import Foundation
 
 final class ServiceBrokerClient: Sendable {
+    /// One name for the default I/O budget, so a caller that builds a client
+    /// with a per-request timeout falls back to the same value this init does.
+    static let defaultIOTimeoutMilliseconds = 30_000
+
     private let socketPath: String
     private let nonStreamingResponseBytes: Int
     private let peerAuthenticator: ServiceBrokerPeerAuthenticator
@@ -15,7 +19,7 @@ final class ServiceBrokerClient: Sendable {
         socketPath: String,
         nonStreamingResponseBytes: Int = 16 * 1024 * 1024,
         peerAuthenticator: ServiceBrokerPeerAuthenticator = .production,
-        ioTimeoutMilliseconds: Int = 30_000
+        ioTimeoutMilliseconds: Int = ServiceBrokerClient.defaultIOTimeoutMilliseconds
     ) {
         self.socketPath = socketPath
         self.nonStreamingResponseBytes = nonStreamingResponseBytes

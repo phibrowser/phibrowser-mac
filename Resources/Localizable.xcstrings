@@ -14382,6 +14382,30 @@
         }
       }
     },
+    "app.fileMenu.openFolio" : {
+      "comment" : "File menu - Opens the library page listing the pages saved with Folio",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Open Folio"
+          }
+        }
+      }
+    },
+    "app.fileMenu.saveToFolio" : {
+      "comment" : "File menu - Saves the current page into the Folio folder as a markdown article plus a webpage copy",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Save to Folio"
+          }
+        }
+      }
+    },
     "app.fileMenu.sharePage" : {
       "comment" : "File menu - Share the current page via the macOS share picker",
       "extractionState" : "extracted_with_value",
@@ -25471,6 +25495,282 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "文章"
+          }
+        }
+      }
+    },
+    "browser.folio.addNoteAction" : {
+      "comment" : "Folio - Button on the highlight toast that opens a small dialog to attach a note to the just-saved highlight",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Add Note"
+          }
+        }
+      }
+    },
+    "browser.folio.addNoteCancelButton" : {
+      "comment" : "Folio - Cancel button of the add-note dialog",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Cancel"
+          }
+        }
+      }
+    },
+    "browser.folio.addNoteConfirmButton" : {
+      "comment" : "Folio - Confirm button of the add-note dialog",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Save Note"
+          }
+        }
+      }
+    },
+    "browser.folio.addNoteMessage" : {
+      "comment" : "Folio - Explanatory text of the add-note dialog",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "The note is written into the saved markdown, under the highlight."
+          }
+        }
+      }
+    },
+    "browser.folio.addNotePlaceholder" : {
+      "comment" : "Folio - Placeholder of the add-note dialog's text field",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Your note"
+          }
+        }
+      }
+    },
+    "browser.folio.addNoteTitle" : {
+      "comment" : "Folio - Title of the dialog that attaches a note to a saved highlight",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Add Note"
+          }
+        }
+      }
+    },
+    "browser.folio.failedToast" : {
+      "comment" : "Folio - Toast shown when nothing could be written to the destination folder",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Couldn't save this page"
+          }
+        }
+      }
+    },
+    "browser.folio.highlightAttribution" : {
+      "comment" : "Folio - Link text under a saved highlight; the link reopens the page scrolled to the highlighted passage",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Highlighted"
+          }
+        }
+      }
+    },
+    "browser.folio.alreadySavedToast" : {
+      "comment" : "Folio - Toast shown when a page is saved again: the item it already has is kept rather than a second copy being written",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Already in Folio"
+          }
+        }
+      }
+    },
+    "browser.folio.highlightSavedToast" : {
+      "comment" : "Folio - Toast shown when a highlighted selection was written into the page's saved markdown",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Highlight saved"
+          }
+        }
+      }
+    },
+    "browser.folio.noArticleNote" : {
+      "comment" : "Folio - Note written into the markdown file when the page yielded no readable article",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "No article could be extracted from this page. The saved webpage copy holds the full content."
+          }
+        }
+      }
+    },
+    "browser.folio.noteLabel" : {
+      "comment" : "Folio - Bold lead-in word of a note line written under a highlight in the saved markdown",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Note"
+          }
+        }
+      }
+    },
+    "browser.folio.reasonFolderUnreadable" : {
+      "comment" : "Folio - Failure toast detail: the destination folder exists but could not be listed, so saving would risk overwriting an item already there",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "The Folio folder could not be read."
+          }
+        }
+      }
+    },
+    "browser.folio.reasonNotAWebPage" : {
+      "comment" : "Folio - Failure toast detail: the tab was not showing an ordinary web page",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Only web pages can be saved."
+          }
+        }
+      }
+    },
+    "browser.folio.reasonWriteFailed" : {
+      "comment" : "Folio - Failure toast detail: the destination folder could not be written to",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Nothing could be written to the Folio folder."
+          }
+        }
+      }
+    },
+    "browser.folio.savedToast" : {
+      "comment" : "Folio - Toast shown when a page was saved to the destination folder",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Saved to Folio"
+          }
+        }
+      }
+    },
+    "browser.folio.savedPartialToast" : {
+      "comment" : "Folio - Toast shown when a page whose reader source did not answer was saved from the loaded page instead, so the item holds less than the whole page",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Saved only what had loaded"
+          }
+        }
+      }
+    },
+    "browser.folio.savedWithoutArticleToast" : {
+      "comment" : "Folio - Toast shown when the video save wrote its files but the article could not be generated from the video",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Saved without video article"
+          }
+        }
+      }
+    },
+    "browser.folio.savedWithoutWebpageToast" : {
+      "comment" : "Folio - Toast shown when the markdown file was saved but capturing the full webpage copy failed",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Saved without webpage copy"
+          }
+        }
+      }
+    },
+    "browser.folio.undoAction" : {
+      "comment" : "Folio - Undo button on the toast after an automatic site-action save; moves the just-saved files to the Trash",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Undo"
+          }
+        }
+      }
+    },
+    "browser.folio.staleExtensionToast" : {
+      "comment" : "Folio - Toast shown when the page-side extension is older than the app and can no longer save a highlight",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Folio needs a browser restart"
+          }
+        }
+      }
+    },
+    "browser.folio.videoArticleFailedNote" : {
+      "comment" : "Folio - Note written into the markdown file when the video could not be converted into an article",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "The video article could not be generated. The link above points to the original video."
+          }
+        }
+      }
+    },
+    "browser.folio.videoPendingNote" : {
+      "comment" : "Folio - Placeholder note inside the markdown file while the video-to-article generation is still running",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "The video is being converted into an article\u2026"
           }
         }
       }
@@ -61535,6 +61835,102 @@
         }
       }
     },
+    "settings.general.folio.autoSaveHint" : {
+      "comment" : "General settings - Hint under the site-action auto-save toggle naming the supported sites and the local-only behavior",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Liking a YouTube video or bookmarking on X, Reddit, or Stack Overflow also saves that page here. Everything stays on this Mac."
+          }
+        }
+      }
+    },
+    "settings.general.folio.autoSaveSites" : {
+      "comment" : "General settings - Button under the site-action auto-save toggle that opens the page listing each supported site with its own switch",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Choose sites…"
+          }
+        }
+      }
+    },
+    "settings.general.folio.autoSaveToggle" : {
+      "comment" : "General settings - Toggle title for the site-action auto-save: liking or bookmarking on supported sites also saves the page",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Save when you like or bookmark on supported sites"
+          }
+        }
+      }
+    },
+    "settings.general.folio.chooseButton" : {
+      "comment" : "General settings - Folio folder picker confirm button",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Choose"
+          }
+        }
+      }
+    },
+    "settings.general.folio.folderHint" : {
+      "comment" : "General settings - Hint under the Folio folder row describing the saved file pair and the per-profile override",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Each save writes a markdown article and a webpage copy side by side. Profiles can override this folder in their own settings."
+          }
+        }
+      }
+    },
+    "settings.general.folio.folderTitle" : {
+      "comment" : "General settings - Row title for the folder saved pages are written into",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Save pages to"
+          }
+        }
+      }
+    },
+    "settings.general.folio.pickerMessage" : {
+      "comment" : "General settings - Folio folder picker message",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Choose where saved pages are stored."
+          }
+        }
+      }
+    },
+    "settings.general.folio.sectionTitle" : {
+      "comment" : "General settings - Folio section title",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Folio"
+          }
+        }
+      }
+    },
     "settings.general.theme.colorTitle" : {
       "comment" : "General settings - Theme color row title",
       "extractionState" : "extracted_with_value",
@@ -67066,6 +67462,18 @@
         }
       }
     },
+    "settings.profiles.details.folioLabel" : {
+      "comment" : "Profiles settings - per-profile Folio destination override row label",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Folio Folder"
+          }
+        }
+      }
+    },
     "settings.profiles.details.searchEngineLabel" : {
       "comment" : "Profiles settings - search engine row label",
       "extractionState" : "extracted_with_value",
@@ -67962,6 +68370,54 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "未知錯誤"
+          }
+        }
+      }
+    },
+    "settings.profiles.folio.chooseButton" : {
+      "comment" : "Profiles settings - Folio folder picker confirm button",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Choose"
+          }
+        }
+      }
+    },
+    "settings.profiles.folio.clearOverrideHelp" : {
+      "comment" : "Profiles settings - help text on the control that removes this profile's Folio folder override",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Follow the General settings folder"
+          }
+        }
+      }
+    },
+    "settings.profiles.folio.pickerMessage" : {
+      "comment" : "Profiles settings - Folio folder picker message",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Choose where this profile's saved pages are stored."
+          }
+        }
+      }
+    },
+    "settings.profiles.folio.sameAsGeneral" : {
+      "comment" : "Profiles settings - Folio folder shown when the profile has no override and follows the General settings folder",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Same as General"
           }
         }
       }
@@ -69942,6 +70398,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "實際大小"
+          }
+        }
+      }
+    },
+    "settings.shortcuts.command.saveToFolio" : {
+      "comment" : "Shortcuts settings - Command title for saving the current page for later as markdown plus a webpage copy",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Save to Folio"
           }
         }
       }

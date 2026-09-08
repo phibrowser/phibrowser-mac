@@ -10,11 +10,15 @@ final class SyncableSpacesTests: XCTestCase {
     }
 
     func testRankBetweenIsStrictlyBetweenAndNeverEndsInZero() {
-        // `(nil, "0")` is deliberately NOT in this list: no non-empty string over
-        // `0-9A-Za-z` is lexicographically less than "0", so "strictly between"
-        // has no solution there. The invariant "a rank never ends in the lowest
-        // digit" is exactly what makes "0" an impossible upper bound, and the
-        // precondition below pins that.
+        // `(nil, "0")` and `(nil, "")` are deliberately NOT in this list: no
+        // string over `0-9A-Za-z` -- not even the empty string -- is
+        // lexicographically less than "0" or than "", so "strictly between"
+        // has no solution for either. The invariant "a rank never ends in the
+        // lowest digit" is exactly what makes "0" an impossible upper bound,
+        // and an empty rank is exactly as impossible for the same reason
+        // (nothing sorts below ""), so both are illegal upper bounds and the
+        // precondition below traps on either rather than silently returning a
+        // rank above the (missing) bound.
         let cases: [(String?, String?)] = [
             (nil, "V"), ("V", nil), ("V", "W"), ("a", "b"),
             ("V", "V1"), ("0001", "0002"), (nil, "01"), ("zzzz", nil),

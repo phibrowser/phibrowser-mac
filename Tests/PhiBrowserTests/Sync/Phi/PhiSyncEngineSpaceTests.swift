@@ -1099,4 +1099,92 @@ final class PhiSyncEngineSpaceTests: XCTestCase {
         XCTAssertTrue(client.commits.isEmpty)
         XCTAssertTrue(PhiSyncEngine.stateKeys.allSatisfy { defaults.object(forKey: $0) == nil })
     }
+
+    // MARK: - Per-round profile refresh (§3.6)
+
+    func testTheProfileRefreshRunsOncePerPullRoundEvenWithNoSpaceEntities() async throws {
+        let access = FakePhiSpaceAccess()
+        let store = MemorySpaceStore()
+        let client = FakePhiSyncClient()
+        let engine = makeEngine(access: access, store: store, client: client)
+        await engine.setSpaceSyncEnabled(true)
+        await engine.pullOnce()
+        XCTAssertEqual(access.calls.filter { $0 == .refreshProfiles }.count, 1,
+                       "waiting for a Space to arrive would hide a peer's new empty Profile forever")
+    }
+
+    func testAGatedOffEngineNeverRefreshesTheProfileList() async throws {
+        let access = FakePhiSpaceAccess()
+        let store = MemorySpaceStore()
+        let client = FakePhiSyncClient()
+        let engine = makeEngine(access: access, store: store, client: client)
+        await engine.pullOnce()
+        XCTAssertEqual(access.calls.filter { $0 == .refreshProfiles }.count, 0)
+    }
+
+    func testTheMinimumIntervalSuppressesASecondRefreshButNotOneAfterAFailure() async throws {
+        let access = FakePhiSpaceAccess()
+        let store = MemorySpaceStore()
+        let client = FakePhiSyncClient()
+        // The interval is measured on the engine's own clock, so the test drives
+        // it explicitly rather than trying to outrun a 30 s wall-clock window.
+        let clock = Clock()
+        let engine = makeEngine(access: access, store: store, client: client, clock: clock)
+        func refreshes() -> Int { access.calls.filter { $0 == .refreshProfiles }.count }
+
+        await engine.setSpaceSyncEnabled(true)
+        await engine.pullOnce()
+        XCTAssertEqual(refreshes(), 1)
+        await engine.pullOnce()          // same instant: inside the 30 s window
+        XCTAssertEqual(refreshes(), 1, "the minimum interval suppresses the second round")
+
+        clock.nowMs += 31_000
+        access.refreshOutcome = .failed
+        await engine.pullOnce()
+        XCTAssertEqual(refreshes(), 2)
+        // A failure must NOT arm the interval, or "retry next round" is a lie:
+        // the very next round refreshes again although no time has passed.
+        await engine.pullOnce()
+        XCTAssertEqual(refreshes(), 3)
+    }
+
+    func testAnUnknownBindingLandsInTheSameRoundOnceTheRefreshResolvesIt() async throws {
+        let access = FakePhiSpaceAccess()
+        let store = MemorySpaceStore()
+        let client = FakePhiSyncClient()
+        // The refresh is what creates the local profile the binding needs.
+        access.refreshOutcome = .changed
+        access.onRefresh = { access.profileIdByUuid["uuid-a"] = "P-new" }
+        client.seed(tagHash: PhiSyncEntity.clientTagHash(for: PhiSyncEntity.spaceClientTag("u1")),
+                    ciphertext: try ciphertext(spaceEntity("u1")), version: 7)
+        let engine = makeEngine(access: access, store: store, client: client)
+        await engine.setSpaceSyncEnabled(true)
+        await engine.pullOnce()
+        XCTAssertEqual(access.currentSpaces().first?.profileId, "P-new")
+        XCTAssertNil(store.table.cursors["u1"]?.pendingApply)
+    }
+
+    func testAFailedRefreshParksTheUnknownBindingAndLandsItNextRound() async throws {
+        let access = FakePhiSpaceAccess()
+        let store = MemorySpaceStore()
+        store.table.firstSyncDecision = "keepBoth"   // otherwise the push guard hides the point
+        let client = FakePhiSyncClient()
+        access.refreshOutcome = .failed
+        client.seed(tagHash: PhiSyncEntity.clientTagHash(for: PhiSyncEntity.spaceClientTag("u1")),
+                    ciphertext: try ciphertext(spaceEntity("u1")), version: 7)
+        let engine = makeEngine(access: access, store: store, client: client)
+        await engine.setSpaceSyncEnabled(true)
+        await engine.pullOnce()
+        XCTAssertTrue(access.calls.filter { $0 == .create("u1") }.isEmpty)
+        XCTAssertNil(store.table.cursors["u1"]?.reconciled)
+        XCTAssertNotNil(store.table.cursors["u1"]?.pendingApply)
+        XCTAssertTrue(spaceCommits(client).isEmpty,
+                      "standing in a local Default profile here would stamp `now` and win the account's LWW")
+
+        access.refreshOutcome = .changed
+        access.onRefresh = { access.profileIdByUuid["uuid-a"] = "P-new" }
+        await engine.pullOnce()
+        XCTAssertEqual(access.currentSpaces().first?.profileId, "P-new")
+        XCTAssertNil(store.table.cursors["u1"]?.pendingApply)
+    }
 }

@@ -180,17 +180,17 @@ final class AccountPhiSpaceAccess: PhiSpaceLocalAccess {
         ImportTargetLock.shared.isImporting(into: spaceId)
     }
 
+    /// A dropped controller means the refresh did not run: `.failed`, so the
+    /// engine retries next round instead of arming the 30 s interval on a round
+    /// that looked at nothing.
     func refreshAccountProfiles() async -> ProfileRefreshOutcome {
-        // Filled in by Task 11; until then a refresh is a no-op that never
-        // blocks a landing.
-        .unchanged
+        guard let controller else { return .failed }
+        return await controller.ensureLocalProfilesForAccount()
     }
 
-    /// Filled in by Task 11 together with `refreshAccountProfiles()`; until the
-    /// refresh actually runs, nothing was created, so 0 is the true answer and
-    /// §11's `profiles_created` reads 0.
+    /// §11's `profiles_created`, read straight after the refresh that produced it.
     func profilesCreatedInLastRefresh() -> Int {
-        0
+        controller?.lastRefreshCreatedCount ?? 0
     }
 
     // MARK: - Writes

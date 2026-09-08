@@ -147,6 +147,12 @@ actor PhiSyncEngine {
     /// detectable inside one process too.
     private var spaceSectionEnabled = false
 
+    /// §3.6's per-round account profile refresh. `GET /keys/v1/profiles` is small, but App
+    /// activation can fire `pullOnce()` far more often than the 60 s timer.
+    private static let profileRefreshMinIntervalMs: Int64 = 30_000
+    private var didRefreshProfilesThisRound = false
+    private var lastProfileRefreshAtMs: Int64 = 0
+
     /// Follow-up rounds already queued after a page-budget cut, reset by the round that
     /// finally drains. Bounds `maxFollowUpRounds`.
     private var followUpRoundsUsed = 0
@@ -381,6 +387,10 @@ actor PhiSyncEngine {
         // NOT_MY_BIRTHDAY retry, the push's initial pull and a scoped conflict
         // retry, and `pushSpaces` runs after the pull's tail has already finished.
         spaceCounters = SpaceRoundCounters()
+        // Same reason, same scope: the NOT_MY_BIRTHDAY recursion (:608), the push's initial
+        // pull (:1160 / :1456) and the CONFLICT retry (:1250) are all pulls inside ONE round,
+        // and none of them re-lists the account's profiles.
+        didRefreshProfilesThisRound = false
         switch round {
         case .pull:
             _ = await pull(retryOnBirthday: true, thenPush: true)
@@ -505,6 +515,34 @@ actor PhiSyncEngine {
             mutateSpaceTable { table in
                 table.drainInProgress = true
                 table.hasDrainedFullReplay = false
+            }
+        }
+        // Refresh the account profile list BEFORE the paging loop on purpose:
+        // the bindings this round pulls must resolve against the mapping this
+        // round just refreshed, or a Space a peer published seconds ago has to
+        // park for a whole round.
+        if spaceLive, !didRefreshProfilesThisRound, let spaceAccess {
+            let elapsed = now() - lastProfileRefreshAtMs
+            if lastProfileRefreshAtMs == 0 || elapsed >= Self.profileRefreshMinIntervalMs {
+                didRefreshProfilesThisRound = true
+                let outcome = await spaceAccess.refreshAccountProfiles()
+                // The refresh is an `await`: retirement / sign-out / an account
+                // switch can land inside it (§5.4 discipline).
+                guard !isStopped else { return false }
+                // A FAILED refresh does not arm the interval, or "retry next
+                // round" would be contradicted by the throttle itself. `.skipped`
+                // does not arm it either -- nothing ran.
+                if outcome != .failed, outcome != .skipped { lastProfileRefreshAtMs = now() }
+                // §11's two profile fields. `skipped` is the default the counter
+                // struct starts with, so the branches that never reach here
+                // (gate shut, already refreshed, inside the interval) report it
+                // by construction -- and §11 is explicit that it is not a failure.
+                switch outcome {
+                case .failed: spaceCounters.profileRefresh = "failed"
+                case .skipped: spaceCounters.profileRefresh = "skipped"
+                case .unchanged, .changed: spaceCounters.profileRefresh = "ok"
+                }
+                spaceCounters.profilesCreated = await spaceAccess.profilesCreatedInLastRefresh()
             }
         }
         var batch = SpacePullBatch()

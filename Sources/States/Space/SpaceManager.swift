@@ -492,6 +492,13 @@ final class SpaceManager: ObservableObject {
             name: .mainAccountChanged,
             object: nil
         )
+        NotificationCenter.default.addObserver(
+            forName: .phiSpaceHiddenSetDidChange, object: nil, queue: .main
+        ) { [weak self] _ in
+            // Replay the UNFILTERED store snapshot so unhiding needs no
+            // SwiftData write at all (§6.6 / §8.3).
+            MainActor.assumeIsolated { self?.refreshIncognitoSpacePresence() }
+        }
         // Always bind eagerly so the persisted last-active Space is primed
         // before the very first Chromium window arrives. In login flows
         // where the real account isn't set yet, `defaultAccount` provides a
@@ -1507,9 +1514,66 @@ final class SpaceManager: ObservableObject {
     /// from `spaces`) and reopens the captured tabs. The user never leaves
     /// the Space. Tagged rows and URL rules stay with the Space.
     func changeProfile(spaceId: String, toProfileId newProfileId: String) {
+        guard let respawnSlot = prepareProfileChange(spaceId: spaceId, toProfileId: newProfileId,
+                                                     showAlerts: true) else { return }
+        boundAccount?.localStorage.changeSpaceProfile(
+            spaceId: spaceId,
+            toProfileId: newProfileId
+        )
+        finishProfileChange(spaceId: spaceId, respawnSlot: respawnSlot)
+    }
+
+    /// The sync layer's rebind entry point (§6.3). Same preparation and same
+    /// window rebuild as the local path — the two differences are the throwing
+    /// store write (apply may not write a baseline until the row landed) and
+    /// `showAlerts: false`. The refused case is not an error: a guard (default
+    /// Space, agent Space, import in flight) legitimately declines, and the
+    /// round moves on.
+    ///
+    /// `@MainActor` is LOAD-BEARING, not decoration. `SpaceManager` is a plain
+    /// `final class SpaceManager: ObservableObject` with no actor isolation, so
+    /// a nonisolated `async` member does NOT inherit its caller's actor
+    /// (SE-0338): awaiting it from `@MainActor AccountPhiSpaceAccess.rebind`
+    /// would hop onto the generic executor, and the body reaches
+    /// `prepareProfileChange`, whose agent guard is
+    /// `MainActor.assumeIsolated { AgentSpaceManager.shared.isAgentSpace(...) }`
+    /// — that traps at runtime with "Incorrect actor executor assumption".
+    /// `finishProfileChange` closes and evicts `NSWindow`s, which must be on
+    /// the main thread too. It compiles cleanly either way, so the
+    /// compile-only gate cannot catch it.
+    ///
+    /// **Rule for this file, for the rest of the milestone**: any NEW `async`
+    /// member added to `SpaceManager` carries `@MainActor`, because the class is
+    /// nonisolated and its bodies rely on `MainActor.assumeIsolated`.
+    @MainActor
+    func applyRemoteRebind(spaceId: String, toProfileId newProfileId: String) async throws {
+        guard let respawnSlot = prepareProfileChange(spaceId: spaceId, toProfileId: newProfileId,
+                                                     showAlerts: false) else { return }
+        try await boundAccount?.localStorage.changeSpaceProfileThrowing(
+            spaceId: spaceId, toProfileId: newProfileId)
+        finishProfileChange(spaceId: spaceId, respawnSlot: respawnSlot)
+    }
+
+    /// Everything `changeProfile` does BEFORE the store write. Shared verbatim
+    /// with `applyRemoteRebind` so a remote rebind cannot drift from the local
+    /// one. Returns nil when a guard refused the change; the inner optional is
+    /// the respawn slot, which is legitimately nil when the Space was not
+    /// active in any slot.
+    ///
+    /// `showAlerts` is the ONE difference between the two callers. The
+    /// import-lock guard raises a user-facing `NSAlert(...).runModal()` —
+    /// correct for a rebind the user just asked for, wrong for one that arrived
+    /// over the wire: it would pop a modal for an action the user never took,
+    /// and `runModal` blocks the main thread INSIDE the engine's `@MainActor`
+    /// hop until it is dismissed, stalling the shared round queue and settings
+    /// sync with it. The remote path refuses silently instead and the entity is
+    /// retried next round, exactly like §9.2's import-lock tombstone path.
+    private func prepareProfileChange(spaceId: String,
+                                      toProfileId newProfileId: String,
+                                      showAlerts: Bool) -> SpaceWindowSlot?? {
         guard spaceId != LocalStore.defaultSpaceId else {
             AppLogWarn("[SpaceManager] refusing to change the default space's profile")
-            return
+            return nil
         }
         // An agent Space is bound to the profile its task runs against;
         // re-profiling replaces its windows and would break the running agent.
@@ -1524,7 +1588,7 @@ final class SpaceManager: ObservableObject {
         if hostsLiveAgentTask
             || spaces.first(where: { $0.spaceId == spaceId })?.isAgentSpace == true {
             AppLogWarn("[SpaceManager] refusing to change profile of agent Space \(spaceId)")
-            return
+            return nil
         }
         // An import currently writing into this Space must finish first:
         // re-profiling re-stamps the Space's bookmark rows, so the deferred
@@ -1532,30 +1596,32 @@ final class SpaceManager: ObservableObject {
         // and silently dropped by the persist backstop. Refuse and tell the user.
         guard !ImportTargetLock.shared.isImporting(into: spaceId) else {
             AppLogWarn("[SpaceManager] refusing to change profile of space \(spaceId): import in progress")
-            let alert = NSAlert()
-            alert.messageText = NSLocalizedString(
-                "Can’t change this Space’s profile yet",
-                comment: "Title shown when changing a Space's profile is blocked by an in-progress import"
-            )
-            alert.informativeText = NSLocalizedString(
-                "An import is still adding bookmarks to this Space. Wait for it to finish, then try again.",
-                comment: "Body shown when a Space action is blocked by an in-progress import"
-            )
-            alert.addButton(withTitle: NSLocalizedString("OK", comment: "Dismiss button"))
-            alert.runModal()
-            return
+            if showAlerts {
+                let alert = NSAlert()
+                alert.messageText = NSLocalizedString(
+                    "Can’t change this Space’s profile yet",
+                    comment: "Title shown when changing a Space's profile is blocked by an in-progress import"
+                )
+                alert.informativeText = NSLocalizedString(
+                    "An import is still adding bookmarks to this Space. Wait for it to finish, then try again.",
+                    comment: "Body shown when a Space action is blocked by an in-progress import"
+                )
+                alert.addButton(withTitle: NSLocalizedString("OK", comment: "Dismiss button"))
+                alert.runModal()
+            }
+            return nil
         }
         guard let space = spaces.first(where: { $0.spaceId == spaceId }) else {
             AppLogWarn("[SpaceManager] changeProfile: unknown space \(spaceId)")
-            return
+            return nil
         }
         guard space.profileId != newProfileId else {
             AppLogInfo("[SpaceManager] changeProfile: \(spaceId) already on \(newProfileId); nothing to do")
-            return
+            return nil
         }
         guard ProfileManager.shared.profile(for: newProfileId) != nil else {
             AppLogWarn("[SpaceManager] changeProfile: unknown profile \(newProfileId)")
-            return
+            return nil
         }
         AppLogInfo("[SpaceManager] changeProfile: \(spaceId) \(space.profileId) → \(newProfileId)")
         // Capture before closing anything. Pinned tabs are excluded because
@@ -1585,10 +1651,11 @@ final class SpaceManager: ObservableObject {
                 respawnSlot: respawnSlot
             )
         }
-        boundAccount?.localStorage.changeSpaceProfile(
-            spaceId: spaceId,
-            toProfileId: newProfileId
-        )
+        return .some(respawnSlot)
+    }
+
+    /// Everything `changeProfile` does AFTER the store write.
+    private func finishProfileChange(spaceId: String, respawnSlot: SpaceWindowSlot?) {
         // The respawn slot is deliberately untouched here: it keeps showing
         // the old window until the write lands, and `respawnWindow` then
         // swaps it for the new-profile window in place. Retreating it to
@@ -1695,6 +1762,37 @@ final class SpaceManager: ObservableObject {
         postSpaceThemeDidChange(spaceId: spaceId)
     }
 
+    /// Lands a remote Space's theme state. Deliberately NOT `setTheme`: that one
+    /// also calls `syncColorHexWithTheme` (which would overwrite the `color_hex`
+    /// this very round is applying, and raise a fresh local edit) and
+    /// `ThemeManager.switchTheme` (the default Space's theme is the GLOBAL
+    /// theme, synced by M3-1's PhiCurrentThemeId and owned by one writer).
+    func applyRemoteThemeState(spaceId: String, themeId: String?,
+                               opacityLight: Double?, opacityDark: Double?) {
+        guard let account = boundAccount else { return }
+        var pins = account.userDefaults.spaceThemeIds()
+        if let themeId, !themeId.isEmpty { pins[spaceId] = themeId } else { pins.removeValue(forKey: spaceId) }
+        account.userDefaults.setSpaceThemeIds(pins)
+
+        var opacities = account.userDefaults.spaceOverlayOpacities()
+        var entry = opacities[spaceId] ?? [:]
+        if let opacityLight { entry["light"] = opacityLight } else { entry.removeValue(forKey: "light") }
+        if let opacityDark { entry["dark"] = opacityDark } else { entry.removeValue(forKey: "dark") }
+        if entry.isEmpty { opacities.removeValue(forKey: spaceId) } else { opacities[spaceId] = entry }
+        account.userDefaults.setSpaceOverlayOpacities(opacities)
+
+        reapplyResolvedTheme(forSpaceId: spaceId)
+        postSpaceThemeDidChange(spaceId: spaceId)
+    }
+
+    /// Window half of hide / unhide. The hidden BIT lives in the sync table, not
+    /// here; this only retreats the windows parked on the Space so it does not
+    /// vanish under the user's hands (§6.6). The strip refresh rides
+    /// `.phiSpaceHiddenSetDidChange`.
+    func applyRemoteHidden(spaceId: String, hidden: Bool) {
+        if hidden { closeSpaceWindows(spaceId: spaceId) }
+    }
+
     /// The Space's custom overlay opacity for `appearance`, or nil when it
     /// uses its theme's own overlay alpha.
     func overlayOpacity(forSpaceId spaceId: String, appearance: Appearance) -> CGFloat? {
@@ -1757,16 +1855,17 @@ final class SpaceManager: ObservableObject {
     /// Removes both per-Space theme maps' entries for a Space id that is
     /// going away for good; nothing else prunes them and the id never
     /// comes back.
-    fileprivate func clearThemeRecords(forSpaceId spaceId: String) {
+    func clearThemeRecords(forSpaceId spaceId: String) {
         guard let account = boundAccount else { return }
         var pins = account.userDefaults.spaceThemeIds()
-        if pins.removeValue(forKey: spaceId) != nil {
-            account.userDefaults.setSpaceThemeIds(pins)
-        }
+        var changed = pins.removeValue(forKey: spaceId) != nil
+        if changed { account.userDefaults.setSpaceThemeIds(pins) }
         var opacities = account.userDefaults.spaceOverlayOpacities()
         if opacities.removeValue(forKey: spaceId) != nil {
             account.userDefaults.setSpaceOverlayOpacities(opacities)
+            changed = true
         }
+        if changed { postSpaceThemeDidChange(spaceId: spaceId) }
     }
 
     /// Re-derives the Space's persisted `colorHex` (the sidebar tint
@@ -2579,6 +2678,12 @@ final class SpaceManager: ObservableObject {
         var updated = storeSpaces.filter { !Self.isIncognitoSpaceId($0.spaceId) }
         lastStoreSpaces = updated
         migrateLegacyFollowGlobalPinsIfNeeded(storeSpaces: updated)
+        // AFTER `lastStoreSpaces` (the unfiltered snapshot replayed on unhide)
+        // and the legacy migration: one filter here takes the Space out of the
+        // strip, the switcher, `userSpaces`, the settings list, the URL-rule
+        // targets and the ^1..^9 shortcuts at once (§6.6).
+        let hidden = MainActor.assumeIsolated { PhiSpaceSyncState.shared.hiddenSpaceIds }
+        if !hidden.isEmpty { updated.removeAll { hidden.contains($0.spaceId) } }
         // Every live Incognito Space joins the list at its runtime position —
         // after all user Spaces (in ordinal order) until it's dragged,
         // clamped in case Spaces were deleted since. Because they flow

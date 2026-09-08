@@ -69,32 +69,60 @@ extension LocalStore {
                      spaceId: String = UUID().uuidString) {
         performBackgroundWrite { context in
             do {
-                let descriptor = FetchDescriptor<SpaceModel>(
-                    predicate: #Predicate { $0.profileId == profileId }
-                )
-                let existing = try context.fetch(descriptor)
-                let nextOrder = (existing.map(\.sortOrder).max() ?? -1) + 1
-                let space = SpaceModel(
-                    spaceId: spaceId,
-                    profileId: profileId,
-                    name: name,
-                    colorHex: colorHex,
-                    iconName: iconName,
-                    sortOrder: nextOrder
-                )
-                context.insert(space)
-                // Materialize an empty bookmark root immediately so the first
-                // bookmark write in this Space doesn't have to discover it
-                // lazily — `bookmarkRoot(profileId:spaceId:)` will simply
-                // return what's already linked.
-                _ = try self.bookmarkRoot(profileId: profileId,
-                                          spaceId: spaceId,
-                                          in: context,
-                                          createIfNeeded: true)
+                try self.createSpaceBody(profileId: profileId, name: name, colorHex: colorHex,
+                                         iconName: iconName, spaceId: spaceId,
+                                         createdDate: nil, in: context)
             } catch {
                 AppLogError("[LocalStore] createSpace failed: \(error)")
             }
         }
+    }
+
+    /// Throwing sibling used ONLY by the sync layer: `PhiSyncEngine` may write
+    /// the `reconciled` / `server` baselines only after the row landed, and the
+    /// fire-and-forget original swallows its own failure (§5.6).
+    func createSpaceThrowing(profileId: String,
+                             name: String,
+                             colorHex: String,
+                             iconName: String,
+                             spaceId: String,
+                             createdDate: Date?) async throws {
+        try await performBackgroundWriteAndWaitThrowing { context in
+            try self.createSpaceBody(profileId: profileId, name: name, colorHex: colorHex,
+                                     iconName: iconName, spaceId: spaceId,
+                                     createdDate: createdDate, in: context)
+        }
+    }
+
+    /// Single implementation shared by both entry points; the body is the
+    /// existing one verbatim, plus the optional `createdDate` the sync layer
+    /// needs so `created_at_ms` (merged with `min()`) really reaches the row.
+    private func createSpaceBody(profileId: String, name: String, colorHex: String,
+                                 iconName: String, spaceId: String,
+                                 createdDate: Date?, in context: ModelContext) throws {
+        let descriptor = FetchDescriptor<SpaceModel>(
+            predicate: #Predicate { $0.profileId == profileId }
+        )
+        let existing = try context.fetch(descriptor)
+        let nextOrder = (existing.map(\.sortOrder).max() ?? -1) + 1
+        let space = SpaceModel(
+            spaceId: spaceId,
+            profileId: profileId,
+            name: name,
+            colorHex: colorHex,
+            iconName: iconName,
+            sortOrder: nextOrder,
+            createdDate: createdDate ?? Date()
+        )
+        context.insert(space)
+        // Materialize an empty bookmark root immediately so the first
+        // bookmark write in this Space doesn't have to discover it
+        // lazily — `bookmarkRoot(profileId:spaceId:)` will simply
+        // return what's already linked.
+        _ = try self.bookmarkRoot(profileId: profileId,
+                                  spaceId: spaceId,
+                                  in: context,
+                                  createIfNeeded: true)
     }
 
     func updateSpace(spaceId: String,
@@ -103,18 +131,38 @@ extension LocalStore {
                      iconName: String? = nil) {
         performBackgroundWrite { context in
             do {
-                let descriptor = FetchDescriptor<SpaceModel>(
-                    predicate: #Predicate { $0.spaceId == spaceId }
-                )
-                guard let space = try context.fetch(descriptor).first else { return }
-                if let name { space.name = name }
-                if let colorHex { space.colorHex = colorHex }
-                if let iconName { space.iconName = iconName }
-                space.updatedDate = Date()
+                try self.updateSpaceBody(spaceId: spaceId, name: name, colorHex: colorHex,
+                                         iconName: iconName, createdDate: nil, in: context)
             } catch {
                 AppLogError("[LocalStore] updateSpace failed: \(error)")
             }
         }
+    }
+
+    /// Throwing sibling used ONLY by the sync layer — see `createSpaceThrowing`.
+    func updateSpaceThrowing(spaceId: String, name: String?, colorHex: String?,
+                             iconName: String?, createdDate: Date?) async throws {
+        try await performBackgroundWriteAndWaitThrowing { context in
+            try self.updateSpaceBody(spaceId: spaceId, name: name, colorHex: colorHex,
+                                     iconName: iconName, createdDate: createdDate, in: context)
+        }
+    }
+
+    /// Single implementation shared by both entry points; the existing body plus
+    /// the optional `createdDate` the sync layer needs so a remote
+    /// `created_at_ms` (merged with `min()`) really reaches the row.
+    private func updateSpaceBody(spaceId: String, name: String?, colorHex: String?,
+                                 iconName: String?, createdDate: Date?,
+                                 in context: ModelContext) throws {
+        let descriptor = FetchDescriptor<SpaceModel>(
+            predicate: #Predicate { $0.spaceId == spaceId }
+        )
+        guard let space = try context.fetch(descriptor).first else { return }
+        if let name { space.name = name }
+        if let colorHex { space.colorHex = colorHex }
+        if let iconName { space.iconName = iconName }
+        if let createdDate { space.createdDate = createdDate }
+        space.updatedDate = Date()
     }
 
     /// Re-binds a Space to a different profile. More than a field set, which
@@ -132,38 +180,56 @@ extension LocalStore {
     func changeSpaceProfile(spaceId: String, toProfileId newProfileId: String) {
         performBackgroundWrite { context in
             do {
-                guard spaceId != Self.defaultSpaceId else { return }
-                let descriptor = FetchDescriptor<SpaceModel>(
-                    predicate: #Predicate { $0.spaceId == spaceId }
-                )
-                guard let space = try context.fetch(descriptor).first,
-                      space.profileId != newProfileId else { return }
-                guard let newProfile = try self.profile(with: newProfileId,
-                                                        in: context,
-                                                        createIfNeeded: true) else { return }
-                // Flat fetch by spaceId rather than a walk from
-                // `space.bookmarkRoot`: it also catches orphan roots left by
-                // the heal-on-read path in `bookmarkRoot(profileId:spaceId:)`,
-                // which would otherwise stay keyed to the old profile and
-                // become unreachable.
-                let rows = try context.fetch(FetchDescriptor<TabDataModel>(
-                    predicate: #Predicate { $0.spaceId == spaceId }
-                ))
-                let bookmarkTypes = [TabDataType.bookmark.rawValue,
-                                     TabDataType.bookmarkFolder.rawValue]
-                let includesPinnedTabs = try self.pinnedTabScope(in: context) == .space
-                let pinnedType = TabDataType.pinnedTab.rawValue
-                for row in rows where bookmarkTypes.contains(row.type)
-                    || (includesPinnedTabs && row.type == pinnedType) {
-                    row.profileId = newProfileId
-                    row.profile = newProfile
-                }
-                space.profileId = newProfileId
-                space.updatedDate = Date()
+                try self.changeSpaceProfileBody(spaceId: spaceId,
+                                                toProfileId: newProfileId,
+                                                in: context)
             } catch {
                 AppLogError("[LocalStore] changeSpaceProfile failed: \(error)")
             }
         }
+    }
+
+    /// Throwing sibling used ONLY by the sync layer — see `createSpaceThrowing`.
+    func changeSpaceProfileThrowing(spaceId: String, toProfileId newProfileId: String) async throws {
+        try await performBackgroundWriteAndWaitThrowing { context in
+            try self.changeSpaceProfileBody(spaceId: spaceId,
+                                            toProfileId: newProfileId,
+                                            in: context)
+        }
+    }
+
+    /// Single implementation shared by both entry points; the existing body,
+    /// unchanged.
+    private func changeSpaceProfileBody(spaceId: String, toProfileId newProfileId: String,
+                                        in context: ModelContext) throws {
+        guard spaceId != Self.defaultSpaceId else { return }
+        let descriptor = FetchDescriptor<SpaceModel>(
+            predicate: #Predicate { $0.spaceId == spaceId }
+        )
+        guard let space = try context.fetch(descriptor).first,
+              space.profileId != newProfileId else { return }
+        guard let newProfile = try self.profile(with: newProfileId,
+                                                in: context,
+                                                createIfNeeded: true) else { return }
+        // Flat fetch by spaceId rather than a walk from
+        // `space.bookmarkRoot`: it also catches orphan roots left by
+        // the heal-on-read path in `bookmarkRoot(profileId:spaceId:)`,
+        // which would otherwise stay keyed to the old profile and
+        // become unreachable.
+        let rows = try context.fetch(FetchDescriptor<TabDataModel>(
+            predicate: #Predicate { $0.spaceId == spaceId }
+        ))
+        let bookmarkTypes = [TabDataType.bookmark.rawValue,
+                             TabDataType.bookmarkFolder.rawValue]
+        let includesPinnedTabs = try self.pinnedTabScope(in: context) == .space
+        let pinnedType = TabDataType.pinnedTab.rawValue
+        for row in rows where bookmarkTypes.contains(row.type)
+            || (includesPinnedTabs && row.type == pinnedType) {
+            row.profileId = newProfileId
+            row.profile = newProfile
+        }
+        space.profileId = newProfileId
+        space.updatedDate = Date()
     }
 
     /// Deletes a space row. Tagged pinned tabs / bookmarks are NOT cascade-deleted
@@ -219,24 +285,37 @@ extension LocalStore {
     func deleteSpaceCascade(spaceId: String) {
         performBackgroundWrite { context in
             do {
-                for row in try context.fetch(FetchDescriptor<TabDataModel>(
-                    predicate: #Predicate { $0.spaceId == spaceId }
-                )) {
-                    context.delete(row)
-                }
-                for rule in try context.fetch(FetchDescriptor<SpaceURLRule>(
-                    predicate: #Predicate { $0.spaceId == spaceId }
-                )) {
-                    context.delete(rule)
-                }
-                for space in try context.fetch(FetchDescriptor<SpaceModel>(
-                    predicate: #Predicate { $0.spaceId == spaceId }
-                )) {
-                    context.delete(space)
-                }
+                try self.deleteSpaceCascadeBody(spaceId: spaceId, in: context)
             } catch {
                 AppLogError("[LocalStore] deleteSpaceCascade failed: \(error)")
             }
+        }
+    }
+
+    /// Throwing sibling used ONLY by the sync layer — see `createSpaceThrowing`.
+    func deleteSpaceCascadeThrowing(spaceId: String) async throws {
+        try await performBackgroundWriteAndWaitThrowing { context in
+            try self.deleteSpaceCascadeBody(spaceId: spaceId, in: context)
+        }
+    }
+
+    /// Single implementation shared by both entry points; the existing body,
+    /// unchanged.
+    private func deleteSpaceCascadeBody(spaceId: String, in context: ModelContext) throws {
+        for row in try context.fetch(FetchDescriptor<TabDataModel>(
+            predicate: #Predicate { $0.spaceId == spaceId }
+        )) {
+            context.delete(row)
+        }
+        for rule in try context.fetch(FetchDescriptor<SpaceURLRule>(
+            predicate: #Predicate { $0.spaceId == spaceId }
+        )) {
+            context.delete(rule)
+        }
+        for space in try context.fetch(FetchDescriptor<SpaceModel>(
+            predicate: #Predicate { $0.spaceId == spaceId }
+        )) {
+            context.delete(space)
         }
     }
 
@@ -249,14 +328,27 @@ extension LocalStore {
     func reorderSpaces(orderedSpaceIds: [String]) {
         performBackgroundWrite { context in
             do {
-                let spaces = try context.fetch(FetchDescriptor<SpaceModel>())
-                let byId = Dictionary(uniqueKeysWithValues: spaces.map { ($0.spaceId, $0) })
-                for (index, spaceId) in orderedSpaceIds.enumerated() {
-                    byId[spaceId]?.sortOrder = index
-                }
+                try self.reorderSpacesBody(orderedSpaceIds: orderedSpaceIds, in: context)
             } catch {
                 AppLogError("[LocalStore] reorderSpaces failed: \(error)")
             }
+        }
+    }
+
+    /// Throwing sibling used ONLY by the sync layer — see `createSpaceThrowing`.
+    func reorderSpacesThrowing(orderedSpaceIds: [String]) async throws {
+        try await performBackgroundWriteAndWaitThrowing { context in
+            try self.reorderSpacesBody(orderedSpaceIds: orderedSpaceIds, in: context)
+        }
+    }
+
+    /// Single implementation shared by both entry points; the existing body,
+    /// unchanged.
+    private func reorderSpacesBody(orderedSpaceIds: [String], in context: ModelContext) throws {
+        let spaces = try context.fetch(FetchDescriptor<SpaceModel>())
+        let byId = Dictionary(uniqueKeysWithValues: spaces.map { ($0.spaceId, $0) })
+        for (index, spaceId) in orderedSpaceIds.enumerated() {
+            byId[spaceId]?.sortOrder = index
         }
     }
 

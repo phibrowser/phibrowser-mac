@@ -69,12 +69,33 @@ final class DeviceKeyStore {
     /// rejoining would fail forever. The new fingerprint is exactly what lets
     /// this Mac rejoin. The legacy item and every other account's item are
     /// untouched.
+    ///
+    /// The write is ONE `SecItemUpdate`, never delete-then-add. Delete-then-add
+    /// opens a window in which the item is absent, and both ways out of that
+    /// window are unrecoverable: a delete that succeeds followed by an add that
+    /// fails (locked or denied Keychain) leaves nothing, and a concurrent
+    /// `loadOrCreatePrivateKey()` that lands in the gap takes the legacy-copy
+    /// branch above and writes the just-revoked key straight back (the add then
+    /// fails `errSecDuplicateItem`). Either way the account item ends up holding a
+    /// fingerprint the server has revoked, `getDeviceEnvelope` 404s into
+    /// `.needsJoin`, and the rejoin is refused forever with 409 `device_revoked`
+    /// (`internal/data/keys_devices.go:91-95`). `SecItemUpdate` has no such window:
+    /// it either replaces the value or leaves the old one in place.
     func rotateForCurrentAccount() throws {
-        let status = SecItemDelete(baseQuery as CFDictionary)
-        guard status == errSecSuccess || status == errSecItemNotFound else {
+        let raw = PhiKeyCrypto.generateDeviceKeyPair().rawRepresentation
+        let status = SecItemUpdate(baseQuery as CFDictionary,
+                                   [kSecValueData as String: raw] as CFDictionary)
+        switch status {
+        case errSecSuccess:
+            return
+        case errSecItemNotFound:
+            // Nothing was ever written for this account (a device that never
+            // finished a join, or a store built before the first read). Adding
+            // reaches the same end state: an item that is present and fresh.
+            try store(raw)
+        default:
             throw DeviceKeyStoreError.keychainFailure(status)
         }
-        try store(PhiKeyCrypto.generateDeviceKeyPair().rawRepresentation)
     }
 
     func deviceKeyId() throws -> String {

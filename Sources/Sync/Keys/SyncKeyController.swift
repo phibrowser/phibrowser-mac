@@ -201,7 +201,15 @@ final class SyncKeyController {
         // 2. Keys. The device private key is ROTATED, not deleted: this Mac may
         //    hold other accounts' keys behind the same legacy item, and a revoked
         //    fingerprint can never be reused.
-        try? deviceKeyRotator?.rotateForCurrentAccount()
+        do {
+            try deviceKeyRotator?.rotateForCurrentAccount()
+        } catch {
+            // Non-fatal: the server has already revoked this device, so leaving the
+            // account is done either way and there is nothing to roll back to. But
+            // the Keychain may now hold a fingerprint the server refuses, and the
+            // next join would 409 `device_revoked` -- so this never goes unlogged.
+            AppLogWarn("[phi-sync] device key rotation failed (\(PhiSyncLog.describe(error)))")
+        }
         manager.discardARK()
 
         // 3. Mappings, through the store -- never a direct AccountUserDefaults write.

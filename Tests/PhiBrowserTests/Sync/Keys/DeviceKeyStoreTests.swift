@@ -79,4 +79,35 @@ final class DeviceKeyStoreTests: XCTestCase {
         XCTAssertNotEqual(after, try legacy.deviceKeyId(),
                           "the server never un-revokes an id; falling back would make rejoining impossible")
     }
+
+    /// Rotation on an account that has no item yet (a device that never finished a
+    /// join). It must still land a fresh key rather than throwing or leaving the
+    /// slot empty for the legacy-copy branch of `loadOrCreatePrivateKey()` to fill.
+    func testRotationOnAnAbsentItemWritesAFreshKeyRatherThanTheLegacyOne() throws {
+        let (legacy, scoped, _) = scopedStores()
+        defer { try? legacy.deleteForTesting(); try? scoped.deleteForTesting() }
+        let legacyId = try legacy.deviceKeyId()   // the legacy item exists; scoped's does not
+        try scoped.rotateForCurrentAccount()
+        XCTAssertNotEqual(try scoped.deviceKeyId(), legacyId,
+                          "an empty slot must not be filled by copying the revoked legacy key")
+        XCTAssertEqual(try legacy.deviceKeyId(), legacyId, "the legacy item is read-only")
+    }
+
+    /// The invariant the doc comment states: rotation NEVER leaves the account's
+    /// item absent, so a read that follows it can never take the legacy-copy branch.
+    /// Every rotation must produce a new fingerprint that is readable immediately.
+    func testRepeatedRotationsAlwaysLeaveAReadableNonLegacyKeyInPlace() throws {
+        let (legacy, scoped, _) = scopedStores()
+        defer { try? legacy.deleteForTesting(); try? scoped.deleteForTesting() }
+        let legacyId = try legacy.deviceKeyId()
+        var seen: Set<String> = [try scoped.deviceKeyId()]
+        for _ in 0..<3 {
+            try scoped.rotateForCurrentAccount()
+            let id = try scoped.deviceKeyId()
+            XCTAssertNotEqual(id, legacyId, "a hole here would copy the revoked legacy key back")
+            XCTAssertFalse(seen.contains(id), "each rotation must mint a fingerprint the server has not seen")
+            seen.insert(id)
+        }
+        XCTAssertEqual(try legacy.deviceKeyId(), legacyId)
+    }
 }

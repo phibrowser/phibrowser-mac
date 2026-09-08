@@ -407,9 +407,55 @@ actor PhiSyncEngine {
         writeSpaceTable(table)
     }
 
-    /// §9.2's 30-day sweep over expired soft deletes. Task 14 fills this in; the
-    /// `Round` case exists here so the enum is not reshaped twice.
-    private func applyRetentionSweep() async {}
+    /// Delivered by `PhiSpaceSyncState.shared` and executed on the engine actor --
+    /// the table has exactly one writer (§5.3). A main-thread read-modify-write
+    /// racing the engine's own would drop the delete intent and the tombstone
+    /// would never go out.
+    func recordLocalDeletion(spaceId: String) async {
+        runSpaceIntent { table in table.recordLocalDeletion(spaceId: spaceId) }
+    }
+
+    func joinAccountSync(spaceId: String) async {
+        let changed = runSpaceIntent { table in table.joinAccountSync(spaceId: spaceId) }
+        // It was never published, so this is an ordinary create -- no special path.
+        if changed { await serialized(.push) }
+    }
+
+    func runRetentionSweep() async {
+        await serialized(.retentionSweep)
+    }
+
+    /// §9.2's 30-day sweep over expired soft deletes. Runs as a queued round
+    /// (`case .retentionSweep`); never call it directly.
+    ///
+    /// Two phases, and the split is the point. `purgeExpired` trims the table
+    /// and is persisted BEFORE any `await`; only then does the data cascade run.
+    ///
+    /// The straight version -- load the table, trim it, `await spaceAccess.purge`
+    /// in a loop, write the trimmed copy back -- is a lost update: every `purge`
+    /// is a main-actor hop, i.e. an actor suspension point, and the round queued
+    /// behind it does its own read-modify-write of the same table. The final
+    /// `writeSpaceTable` would then put back a snapshot taken before that round
+    /// existed. This is exactly what §5.3's single-writer rule is for, so the
+    /// sweep runs as a round AND keeps no stale copy across a suspension.
+    private func applyRetentionSweep() async {
+        guard let spaceAccess, spaceStore != nil else { return }
+        var table = loadSpaceTable()
+        let expired = table.purgeExpired(nowMs: now())
+        guard !expired.isEmpty else { return }
+        // Phase 1: persist the trimmed table with no suspension in between. The
+        // cursors are now permanent tombstones -- §9.1's two promises (a
+        // replayed tombstone is a no-op, snapshot never resurrects the uuid)
+        // rest on the cursor being there with a `deletedAtMs`, so they hold even
+        // if the cascade below is interrupted.
+        writeSpaceTable(table)
+
+        // Phase 2: cascade the data. No table copy is held across these awaits.
+        for uuid in expired {
+            guard !isStopped else { return }
+            try? await spaceAccess.purge(spaceId: uuid)
+        }
+    }
 
     /// Drops every account-scoped cursor, `hasAdopted` included, so the next account's entity
     /// is adopted rather than merged against the previous account's timestamps.
@@ -1225,10 +1271,81 @@ actor PhiSyncEngine {
         }
     }
 
-    /// Remote deletes (§9.2). Filled in by Task 14; the pull already routes them
-    /// into `batch.tombstones`, and this is where they are hidden locally and the
-    /// cursor is turned into a tombstone record.
-    private func applySpaceTombstones(_ batch: SpacePullBatch, table: inout PhiSpaceSyncTable) async {}
+    /// Remote deletes (§9.2): the pull routes them into `batch.tombstones` and
+    /// this is where they are hidden locally and the cursor becomes a tombstone
+    /// record.
+    ///
+    /// A remote delete is a first-class product event for Spaces, not the hazard
+    /// the settings path treats it as: no `tombstoneRounds`, no three-round heal,
+    /// no suppression of the trailing push.
+    private func applySpaceTombstones(_ batch: SpacePullBatch, table: inout PhiSpaceSyncTable) async {
+        guard !isStopped, let spaceAccess else { return }
+        // Everything deferred by an import lock is retried alongside this round's
+        // arrivals: the shared marker has already moved past those pages, so the
+        // same tombstone will never be delivered again.
+        var work = batch.tombstones
+        for (uuid, cursor) in table.cursors.sorted(by: { $0.key < $1.key })
+        where cursor.pendingTombstone && !work.contains(where: { $0.uuid == uuid }) {
+            work.append((uuid: uuid, entityId: cursor.entityId ?? "", version: cursor.version))
+        }
+
+        for item in work {
+            guard !isStopped else { return }
+            // D1: the default Space cannot be deleted locally (`deleteSpace`
+            // refuses at SpaceManager.swift:1362) and by definition cannot be
+            // deleted remotely either.
+            guard item.uuid != LocalStore.defaultSpaceId else {
+                AppLogInfo("[phi-sync] ignoring a tombstone for the default Space")
+                continue
+            }
+            var cursor = table.cursors[item.uuid] ?? PhiSpaceCursor()
+            if let entityId = cursor.entityId, !item.entityId.isEmpty, entityId != item.entityId {
+                // The server never rewrites `client_tag_hash` on an update
+                // (`internal/data/entities_write.go:243-244`), so the hash is the
+                // stable identity and the id is only a cross-check.
+                AppLogError("[phi-sync] tombstone entity id disagrees with the cursor; trusting the tag hash")
+            }
+            guard cursor.deletedAtMs == nil else {
+                cursor.pendingTombstone = false
+                table.cursors[item.uuid] = cursor
+                continue
+            }
+
+            if await spaceAccess.isImporting(intoSpaceId: item.uuid) {
+                // No modal: nobody is there to see it. Persist the intent instead.
+                cursor.pendingTombstone = true
+                table.cursors[item.uuid] = cursor
+                continue
+            }
+            do {
+                // Windows first, so a window parked on this Space retreats along
+                // the existing fallback path instead of vanishing under the user.
+                try await spaceAccess.hide(spaceId: item.uuid)
+            } catch {
+                cursor.pendingTombstone = true
+                table.cursors[item.uuid] = cursor
+                continue
+            }
+            cursor.hidden = true
+            cursor.deletedAtMs = now()
+            cursor.pendingTombstone = false
+            cursor.pendingApply = nil
+            cursor.heldProfileUuid = nil
+            cursor.heldForLocalProfileId = nil
+            if !item.entityId.isEmpty { cursor.entityId = item.entityId }
+            cursor.version = max(cursor.version, item.version)
+            table.cursors[item.uuid] = cursor
+            spaceCounters.applied += 1   // §11: a remote soft delete is a landing
+            // A soft delete IS a successful interpretation of that tag.
+            table.unreadableTagHashes.removeValue(forKey:
+                PhiSyncEntity.clientTagHash(for: PhiSyncEntity.spaceClientTag(item.uuid)))
+            // Deliberately silent: a local delete has a confirmation dialog, a
+            // remote one has no alert, no toast and no hint. And no data is
+            // touched -- SpaceModel, bookmarks, pin tabs, URL rules and both theme
+            // maps stay on disk for the whole retention window.
+            AppLogInfo("[phi-sync] space soft-deleted by a remote tombstone")
+        }
+    }
 
     /// Records a pull that could not read the account's entity, and — for a tombstone only —
     /// arms the heal once the row has been gone for `tombstoneHealAfterRounds` consecutive
@@ -1733,6 +1850,28 @@ actor PhiSyncEngine {
         body(&table)
         guard table != before else { return }
         writeSpaceTable(table)
+    }
+
+    /// `mutateSpaceTable`'s sibling for the §5.3 intents delivered by
+    /// `PhiSpaceSyncState`: the same read-modify-write against `sync.phiSpaces`,
+    /// except that the intent itself reports whether it changed anything, so the
+    /// caller can decide to queue a push (`joinAccountSync`) instead of the
+    /// engine guessing from a `!=` comparison.
+    ///
+    /// For intents whose body is PURELY synchronous. `body` may not suspend --
+    /// that is what makes the read-modify-write atomic on the engine actor. An
+    /// intent that has to await something goes through `Round` instead
+    /// (`.firstSyncDecision`, `.retentionSweep`).
+    @discardableResult
+    private func runSpaceIntent(_ body: (inout PhiSpaceSyncTable) -> Bool) -> Bool {
+        // Redundant with `writeSpaceTable`'s own `guard let spaceStore`, but it
+        // avoids a pointless `PhiSpaceSyncTable()` round trip on a settings-only
+        // engine.
+        guard spaceStore != nil else { return false }
+        var table = loadSpaceTable()
+        let changed = body(&table)
+        if changed { writeSpaceTable(table) }
+        return changed
     }
 
     /// `SyncableSettings.snapshot` is a write as much as a read: for every registered key whose

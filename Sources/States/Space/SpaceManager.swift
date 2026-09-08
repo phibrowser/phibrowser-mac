@@ -5845,6 +5845,12 @@ final class SpaceManager: ObservableObject {
             AppLogInfo("[SpaceManager] default Space role handed to \(successor.spaceId)")
             publishResolvedDefaultSpaceThemeIfNeeded(spaceId: successor.spaceId)
         }
+        // Delete origin (§9.1). Every user-visible delete already funnels here:
+        // the strip, Settings > Spaces, the app menu, the CDP
+        // `agentSpace.spaces.delete` face, and the startup orphan sweep. The
+        // helper marks ONLY a uuid with an entityId, which is what makes the
+        // orphan sweep silent: agent Spaces never get one.
+        MainActor.assumeIsolated { PhiSpaceSyncState.shared.recordLocalDeletion(spaceId: spaceId) }
         closeSpaceWindows(spaceId: spaceId)
         // Cascade-delete the Space row, its tagged tabs/bookmarks, and its
         // URL rules in a SINGLE write (LocalStore.deleteSpace intentionally

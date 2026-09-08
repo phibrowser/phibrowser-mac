@@ -1359,4 +1359,222 @@ final class PhiSyncEngineSpaceTests: XCTestCase {
             $0.clientTagHash == PhiSyncEntity.settingsClientTagHash
         }, "the settings entity must still publish while the sheet is open")
     }
+
+    // MARK: - Remote tombstones (§9.2)
+
+    func testARemoteTombstoneSoftDeletesAndKeepsEveryRowOnDisk() async throws {
+        let access = FakePhiSpaceAccess()
+        access.spaces = [localSpace("u1", "Work", order: 1)]
+        let store = MemorySpaceStore()
+        var cursor = PhiSpaceCursor()
+        cursor.entityId = "srv-1"; cursor.version = 4
+        cursor.reconciled = try spaceEntity("u1").serializedData()
+        cursor.server = cursor.reconciled
+        store.table.cursors["u1"] = cursor
+        store.table.hasDrainedFullReplay = true
+        store.table.firstSyncDecision = "keepBoth"
+
+        let client = FakePhiSyncClient()
+        client.seed(tagHash: spaceHash("u1"), ciphertext: Data(), version: 9,
+                    entityId: "srv-1", deleted: true)
+        let engine = makeEngine(access: access, store: store, client: client)
+        await engine.setSpaceSyncEnabled(true)
+        await engine.pullOnce()
+
+        XCTAssertTrue(store.table.cursors["u1"]!.hidden)
+        XCTAssertNotNil(store.table.cursors["u1"]!.deletedAtMs)
+        XCTAssertTrue(access.calls.contains(.hide("u1")))
+        XCTAssertTrue(access.currentSpaces().contains { $0.spaceId == "u1" },
+                      "the 30-day window is only real if the data is still here")
+        XCTAssertTrue(access.calls.filter { if case .purge = $0 { return true } else { return false } }.isEmpty)
+    }
+
+    /// Regression for §5.2's ordering rule: routing the tombstone AFTER the
+    /// decrypt classifies every remote delete as "undecryptable" and, because the
+    /// marker has already moved past that page, loses it permanently.
+    func testATombstoneIsNeverTreatedAsADecryptFailure() async throws {
+        let access = FakePhiSpaceAccess()
+        access.spaces = [localSpace("u1", "Work", order: 1)]
+        let store = MemorySpaceStore()
+        var cursor = PhiSpaceCursor(); cursor.entityId = "srv-1"; cursor.version = 4
+        store.table.cursors["u1"] = cursor
+        store.table.hasDrainedFullReplay = true
+        store.table.firstSyncDecision = "keepBoth"
+        let client = FakePhiSyncClient()
+        client.seed(tagHash: spaceHash("u1"), ciphertext: Data(), version: 9,
+                    entityId: "srv-1", deleted: true)
+        let engine = makeEngine(access: access, store: store, client: client)
+        await engine.setSpaceSyncEnabled(true)
+        await engine.pullOnce()
+        XCTAssertTrue(store.table.unreadableTagHashes.isEmpty,
+                      "a tombstone in that set would block the soft delete AND any later rebuild")
+    }
+
+    func testATombstoneForAnUnknownHashIsIgnoredWithoutCreatingACursor() async throws {
+        let access = FakePhiSpaceAccess()
+        let store = MemorySpaceStore()
+        store.table.hasDrainedFullReplay = true
+        store.table.firstSyncDecision = "keepBoth"
+        let client = FakePhiSyncClient()
+        client.seed(tagHash: "hash-nobody-knows", ciphertext: Data(), version: 3,
+                    entityId: "srv-9", deleted: true)
+        let engine = makeEngine(access: access, store: store, client: client)
+        await engine.setSpaceSyncEnabled(true)
+        await engine.pullOnce()
+        XCTAssertTrue(store.table.cursors.isEmpty)
+    }
+
+    func testTheDefaultSpaceTombstoneIsIgnored() async throws {
+        let access = FakePhiSpaceAccess()
+        access.spaces = [localSpace(LocalStore.defaultSpaceId, "Default", order: 0)]
+        let store = MemorySpaceStore()
+        store.table.hasDrainedFullReplay = true
+        store.table.firstSyncDecision = "keepBoth"
+        let client = FakePhiSyncClient()
+        client.seed(tagHash: spaceHash(LocalStore.defaultSpaceId), ciphertext: Data(), version: 3,
+                    entityId: "srv-d", deleted: true)
+        let engine = makeEngine(access: access, store: store, client: client)
+        await engine.setSpaceSyncEnabled(true)
+        await engine.pullOnce()
+        XCTAssertNil(store.table.cursors[LocalStore.defaultSpaceId]?.deletedAtMs)
+        XCTAssertTrue(access.calls.filter { $0 == .hide(LocalStore.defaultSpaceId) }.isEmpty)
+    }
+
+    func testAnImportLockDefersTheTombstoneAndPersistsTheIntent() async throws {
+        let access = FakePhiSpaceAccess()
+        access.spaces = [localSpace("u1", "Work", order: 1)]
+        access.importingSpaceIds = ["u1"]
+        let store = MemorySpaceStore()
+        var cursor = PhiSpaceCursor(); cursor.entityId = "srv-1"; cursor.version = 4
+        store.table.cursors["u1"] = cursor
+        store.table.hasDrainedFullReplay = true
+        store.table.firstSyncDecision = "keepBoth"
+        let client = FakePhiSyncClient()
+        client.seed(tagHash: spaceHash("u1"), ciphertext: Data(), version: 9,
+                    entityId: "srv-1", deleted: true)
+        let engine = makeEngine(access: access, store: store, client: client)
+        await engine.setSpaceSyncEnabled(true)
+        await engine.pullOnce()
+
+        XCTAssertTrue(store.table.cursors["u1"]!.pendingTombstone,
+                      "the shared marker has moved past it; the intent must survive here or it is lost")
+        XCTAssertFalse(store.table.cursors["u1"]!.hidden)
+
+        access.importingSpaceIds = []
+        await engine.pullOnce()   // the tombstone is NOT redelivered
+        XCTAssertTrue(store.table.cursors["u1"]!.hidden)
+        XCTAssertFalse(store.table.cursors["u1"]!.pendingTombstone)
+    }
+
+    func testASoftDeletedSpaceIsNeverResurrectedBySnapshotOrByAReplayedTombstone() async throws {
+        let access = FakePhiSpaceAccess()
+        access.uuidByProfileId = ["Default": "uuid-a"]
+        access.spaces = [localSpace("u1", "Work", order: 1)]
+        let store = MemorySpaceStore()
+        var cursor = PhiSpaceCursor()
+        cursor.entityId = "srv-1"; cursor.version = 9
+        cursor.hidden = true; cursor.deletedAtMs = 5_000
+        store.table.cursors["u1"] = cursor
+        store.table.hasDrainedFullReplay = true
+        store.table.firstSyncDecision = "keepBoth"
+        let client = FakePhiSyncClient()
+        client.seed(tagHash: spaceHash("u1"), ciphertext: Data(), version: 9,
+                    entityId: "srv-1", deleted: true)
+        let engine = makeEngine(access: access, store: store, client: client)
+        await engine.setSpaceSyncEnabled(true)
+        await engine.pullOnce()
+        XCTAssertTrue(spaceCommits(client).isEmpty)
+        XCTAssertEqual(store.table.cursors["u1"]!.deletedAtMs, 5_000)
+    }
+
+    // MARK: - Retention sweep (§9.2)
+
+    func testTheSweepCascadesTheDataAndKeepsThePermanentTombstone() async throws {
+        let access = FakePhiSpaceAccess()
+        access.spaces = [localSpace("u1", "Work", order: 1)]
+        let store = MemorySpaceStore()
+        var cursor = PhiSpaceCursor()
+        cursor.entityId = "srv-1"; cursor.version = 9
+        cursor.hidden = true; cursor.deletedAtMs = 1
+        cursor.reconciled = Data([0x01])
+        store.table.cursors["u1"] = cursor
+        let client = FakePhiSyncClient()
+        let engine = makeEngine(access: access, store: store, client: client)
+        await engine.setSpaceSyncEnabled(true)
+        await engine.runRetentionSweep()
+
+        XCTAssertTrue(access.calls.contains(.purge("u1")))
+        XCTAssertFalse(access.currentSpaces().contains { $0.spaceId == "u1" })
+        let tombstone = try XCTUnwrap(store.table.cursors["u1"])
+        XCTAssertNotNil(tombstone.purgedAtMs)
+        XCTAssertNotNil(tombstone.deletedAtMs)
+        XCTAssertNil(tombstone.reconciled)
+    }
+
+    // MARK: - Join account sync (§8.3, moved here from Task 13's batch because
+    // `PhiSyncEngine.joinAccountSync` is produced by Step 4 of THIS task)
+
+    func testJoinAccountSyncPublishesAHiddenSpaceAsAPlainCreate() async throws {
+        let access = FakePhiSpaceAccess()
+        access.uuidByProfileId = ["Default": "uuid-a"]
+        access.spaces = [localSpace("mine", "Work", order: 1)]
+        let store = MemorySpaceStore()
+        store.table.firstSyncDecision = "accountWins"
+        store.table.hasDrainedFullReplay = true
+        var hidden = PhiSpaceCursor(); hidden.hidden = true
+        store.table.cursors["mine"] = hidden
+        let client = FakePhiSyncClient()
+        let engine = makeEngine(access: access, store: store, client: client)
+        await engine.setSpaceSyncEnabled(true)
+        await engine.joinAccountSync(spaceId: "mine")
+        XCTAssertFalse(store.table.cursors["mine"]!.hidden)
+        XCTAssertTrue(spaceCommits(client).contains { $0.clientTagHash == spaceHash("mine") })
+    }
+
+    // MARK: - Delete origin (§9.1)
+
+    func testRecordLocalDeletionOnlyMarksAPublishedSpace() async throws {
+        let access = FakePhiSpaceAccess()
+        let store = MemorySpaceStore()
+        var published = PhiSpaceCursor(); published.entityId = "srv-1"; published.version = 3
+        var refused = PhiSpaceCursor(); refused.refusedAtMs = 1
+        store.table.cursors = ["published": published, "agent": refused]
+        let client = FakePhiSyncClient()
+        let engine = makeEngine(access: access, store: store, client: client)
+        await engine.setSpaceSyncEnabled(true)
+        await engine.recordLocalDeletion(spaceId: "published")
+        await engine.recordLocalDeletion(spaceId: "agent")
+        await engine.recordLocalDeletion(spaceId: "never-seen")
+        XCTAssertTrue(store.table.cursors["published"]!.pendingDelete)
+        XCTAssertFalse(store.table.cursors["agent"]!.pendingDelete)
+        XCTAssertNil(store.table.cursors["never-seen"])
+    }
+
+    /// The single-writer rule (§5.3): the facade delivers an INTENT that runs on
+    /// the engine's serial queue rather than writing the table from the main
+    /// thread, so the delete is still there when the next round assembles its
+    /// batch. It deliberately does NOT claim immunity from a round already in
+    /// flight -- `pushSpaces` holds one table copy across its whole batch loop,
+    /// so an intent landing inside that window is still overwritten by its tail
+    /// (see the corrections file's D9). The ordering below is the one §5.3
+    /// actually promises: intent first, then the round that must honour it.
+    func testADeletionIntentSurvivesAConcurrentSnapshot() async throws {
+        let access = FakePhiSpaceAccess()
+        access.uuidByProfileId = ["Default": "uuid-a"]
+        access.spaces = [localSpace("u1", "Work", order: 1)]
+        let store = MemorySpaceStore()
+        var cursor = PhiSpaceCursor(); cursor.entityId = "srv-1"; cursor.version = 3
+        cursor.reconciled = try spaceEntity("u1").serializedData()
+        cursor.server = cursor.reconciled
+        store.table.cursors["u1"] = cursor
+        store.table.hasDrainedFullReplay = true
+        store.table.firstSyncDecision = "keepBoth"
+        let client = FakePhiSyncClient()
+        let engine = makeEngine(access: access, store: store, client: client)
+        await engine.setSpaceSyncEnabled(true)
+        await engine.recordLocalDeletion(spaceId: "u1")
+        await engine.handleLocalSpacesChange()
+        XCTAssertTrue(store.table.cursors["u1"]!.pendingDelete
+                      || store.table.cursors["u1"]!.deletedAtMs != nil)
+    }
 }

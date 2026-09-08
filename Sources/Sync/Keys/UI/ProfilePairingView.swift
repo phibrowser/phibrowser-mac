@@ -223,7 +223,11 @@ struct ProfilePairingView: View {
     let context: ProfilePairingContext
     /// Optional extra button next to the primary one (the gate passes
     /// "从同步中移除本设备…"; the Devices pane passes nil).
-    let secondaryButton: (title: String, action: () -> Void)?
+    ///
+    /// `enabled` / `note` exist for the gate's one degraded case: a 409
+    /// `last_device` is only knowable by trying, so the button is greyed IN PLACE
+    /// with the reason underneath rather than pre-probed away.
+    let secondaryButton: (title: String, enabled: Bool, note: String?, action: () -> Void)?
     var onSubmit: ([PairingDecision]) -> Void
 
     @State private var selections: [String: Choice]
@@ -233,7 +237,7 @@ struct ProfilePairingView: View {
          locals: [PairingLocal],
          remotes: [RemoteProfile],
          context: ProfilePairingContext = .settings,
-         secondaryButton: (title: String, action: () -> Void)? = nil,
+         secondaryButton: (title: String, enabled: Bool, note: String?, action: () -> Void)? = nil,
          onSubmit: @escaping ([PairingDecision]) -> Void) {
         self.context = context
         self.secondaryButton = secondaryButton
@@ -314,7 +318,11 @@ struct ProfilePairingView: View {
                     if let secondaryButton {
                         Button(secondaryButton.title, action: secondaryButton.action)
                             .buttonStyle(.bordered)
+                            .disabled(!secondaryButton.enabled)
                     }
+                }
+                if let note = secondaryButton?.note {
+                    Text(note).font(.callout).foregroundColor(.secondary)
                 }
             }
             .padding(32)
@@ -465,7 +473,7 @@ struct ProfilePairingView: View {
         remotes: [RemoteProfile(uuid: "11111111-1111-1111-1111-111111111111", name: "Home"),
                   RemoteProfile(uuid: "22222222-2222-2222-2222-222222222222", name: nil)],
         context: .gate,
-        secondaryButton: (title: "从同步中移除本设备…", action: {}),
+        secondaryButton: (title: "从同步中移除本设备…", enabled: true, note: nil, action: {}),
         onSubmit: { _ in })
 }
 #endif

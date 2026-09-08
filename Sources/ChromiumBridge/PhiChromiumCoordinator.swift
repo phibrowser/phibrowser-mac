@@ -120,7 +120,7 @@ import SwiftUI
     @MainActor
     private func buildSyncKeyControllerIfNeeded() -> SyncKeyController? {
         guard let account = AccountController.shared.account else { return nil }
-        let stack = SyncKeyStack.make()
+        let stack = SyncKeyStack.make(accountId: account.userID)
         let mappingStore = AccountProfileSyncMappingStore(defaults: account.userDefaults)
         let profileKeys = ProfileKeyManager(api: stack.api, keyManager: stack.manager, mappingStore: mappingStore)
         syncKeyController = SyncKeyController(
@@ -162,9 +162,11 @@ import SwiftUI
     ) {
         let deviceKeyId: String
         do {
-            // A second `DeviceKeyStore` is safe: it is stateless and reads the same Keychain
-            // item the stack's own store does. `SyncKeyStack.make()` keeps its store local.
-            deviceKeyId = try DeviceKeyStore().deviceKeyId()
+            // A second `DeviceKeyStore` is safe: it is stateless, and it reads the same
+            // Keychain item the stack's own store does ONLY because both are handed the
+            // same `accountId` -- the item is account-scoped as of M3-2, so passing a
+            // different id here would silently mint a second device identity.
+            deviceKeyId = try DeviceKeyStore(accountId: accountId).deviceKeyId()
         } catch {
             // Keychain unavailable (locked, denied). The key layer above degrades on its own;
             // settings sync simply does not run this session.

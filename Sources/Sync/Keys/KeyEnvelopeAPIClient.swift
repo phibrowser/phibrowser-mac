@@ -1,6 +1,6 @@
 import Foundation
 
-enum KeyAPIError: Error { case http(Int, String), transport(Error), decode }
+enum KeyAPIError: Error { case http(Int, String), transport(Error), decode, lastActiveDevice }
 
 /// Binary fields are base64(std)-encoded strings on the wire; `kdf_params` is passed through
 /// as raw JSON bytes. Note: /keys/v1 responses are NOT wrapped in the shared `Response<T>`
@@ -290,6 +290,19 @@ final class KeyEnvelopeAPIClient {
             let dto = try JSONDecoder().decode(DeviceEnvelopeDTO.self, from: data)
             return dto.arkEnvelope
         case 404: return nil
+        default: throw KeyAPIError.http(status, String(data: data, encoding: .utf8) ?? "")
+        }
+    }
+
+    /// `POST /keys/v1/devices/{id}/revoke`. 409 means the account would be left
+    /// with no active device; the client deliberately does NOT pre-probe the
+    /// device count (that would need a `GET /keys/v1/devices` this client does
+    /// not have), it reacts to this code.
+    func revokeDevice(deviceKeyId: String) async throws {
+        let (status, data) = try await request("POST", "/keys/v1/devices/\(deviceKeyId)/revoke")
+        switch status {
+        case 200, 204: return
+        case 409: throw KeyAPIError.lastActiveDevice
         default: throw KeyAPIError.http(status, String(data: data, encoding: .utf8) ?? "")
         }
     }

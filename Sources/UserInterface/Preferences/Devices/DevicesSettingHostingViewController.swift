@@ -26,7 +26,7 @@ final class DevicesSettingHostingViewController: NSViewController, NSWindowDeleg
             return (shared.manager, shared.approvals)
         }
         if let fallbackSyncStack { return fallbackSyncStack }
-        let stack = SyncKeyStack.make()
+        let stack = SyncKeyStack.make(accountId: AccountController.shared.account?.userID)
         let made = (manager: stack.manager, approvals: stack.approvals)
         fallbackSyncStack = made
         return made

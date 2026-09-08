@@ -67,6 +67,13 @@ final class SyncKeyController {
     private let localProfilesProvider: () -> [(profileId: String, displayName: String)]
     private let notifyChromium: () -> Void
     private let profileCreator: any LocalProfileCreating
+    /// Shuts the settings/Space engine down and unhooks it. Injected as a closure
+    /// (never a direct singleton reference) so the self-revoke tests do not reach
+    /// the real `PhiChromiumCoordinator.shared`.
+    private let retirePhiSync: () -> Void
+    private let deviceKeyRotator: (any DeviceKeyRotating)?
+    private let engineDefaults: UserDefaults
+    private let spaceStateStore: (any PhiSpaceSyncStateStore)?
 
     /// What an announcement says about the two pairing predicates it arrives
     /// with. `false, false` is produced by all three cases and means something
@@ -129,13 +136,21 @@ final class SyncKeyController {
     init(manager: AccountKeyManager, approvals: DeviceApprovalService, profileKeys: ProfileKeyManager,
          localProfilesProvider: @escaping () -> [(profileId: String, displayName: String)],
          notifyChromium: @escaping () -> Void,
-         profileCreator: any LocalProfileCreating = ProfileManager.shared) {
+         profileCreator: any LocalProfileCreating = ProfileManager.shared,
+         retirePhiSync: @escaping () -> Void = {},
+         deviceKeyRotator: (any DeviceKeyRotating)? = nil,
+         engineDefaults: UserDefaults = .standard,
+         spaceStateStore: (any PhiSpaceSyncStateStore)? = nil) {
         self.manager = manager
         self.approvals = approvals
         self.profileKeys = profileKeys
         self.localProfilesProvider = localProfilesProvider
         self.notifyChromium = notifyChromium
         self.profileCreator = profileCreator
+        self.retirePhiSync = retirePhiSync
+        self.deviceKeyRotator = deviceKeyRotator
+        self.engineDefaults = engineDefaults
+        self.spaceStateStore = spaceStateStore
     }
 
     /// Hot path: the bridge delegate calls this on every Chromium pull.
@@ -164,6 +179,60 @@ final class SyncKeyController {
     /// Dropping it puts the uuid back into §3.6's `missing` next round.
     func removeMapping(forProfileId profileId: String) {
         profileKeys.removeMapping(forProfileId: profileId)
+    }
+
+    /// The pairing modal's only other exit. Order is a HARD requirement, not
+    /// prudence (§3.3 step 2.0): a round parked in `getUpdates` still holds the
+    /// domain key it fetched before the suspension, and the server does not check
+    /// whether the committing device has been revoked. If the cleanup ran first,
+    /// that round would resume, write the `phi.sync.*` cursor and the whole
+    /// `sync.phiSpaces` table back, adopt the account's settings and every Space
+    /// wholesale (both baselines were just erased), and then commit this machine's
+    /// snapshot -- the exact opposite of what the confirmation promised.
+    func removeThisDeviceFromSync() async throws {
+        let deviceKeyId = try manager.deviceKeyProviderForTesting.deviceKeyId()
+        try await profileKeys.revokeDevice(deviceKeyId: deviceKeyId)   // 409 -> lastActiveDevice, nothing below runs
+
+        // 1. Retire the engine FIRST. `shutdown()` is nonisolated and synchronous,
+        //    so it takes effect on return rather than being one more message to a
+        //    reentrant actor.
+        retirePhiSync()
+
+        // 2. Keys. The device private key is ROTATED, not deleted: this Mac may
+        //    hold other accounts' keys behind the same legacy item, and a revoked
+        //    fingerprint can never be reused.
+        try? deviceKeyRotator?.rotateForCurrentAccount()
+        manager.discardARK()
+
+        // 3. Mappings, through the store -- never a direct AccountUserDefaults write.
+        profileKeys.removeAllMappings()
+
+        // 4. Engine state. `phi.sync.cursorAccount` is deliberately kept: it is
+        //    not a cursor, and dropping it would make the next build report a
+        //    phantom account switch. Writing the Space table through the store
+        //    directly is legal here precisely BECAUSE step 1 already shut the
+        //    engine down -- `PhiSpaceSyncState`'s documented "there is no engine"
+        //    exception to the single-writer rule, not a bypass of it. The facade's
+        //    main-actor caches are refreshed by hand for the same reason: nothing
+        //    else will push them back, and stale ones keep the departed account's
+        //    hidden/soft-deleted Spaces hidden and keep refusing profile deletions
+        //    until the next launch.
+        for key in PhiSyncEngine.stateKeys { engineDefaults.removeObject(forKey: key) }
+        spaceStateStore?.save(PhiSpaceSyncTable())
+        PhiSpaceSyncState.shared.refreshCaches(from: PhiSpaceSyncTable())
+
+        // 5. Resolved cache + both predicates, and the join flag. The `.cleared`
+        //    announcement `clearResolved()` posts does take the gate's window down
+        //    (`ProfilePairingGate`'s `.cleared` branch), but `.cleared` may never
+        //    retire `sync.joinPairingPending` -- only a `.measured` pass may, and
+        //    no measured pass will ever run again on this device -- so the flag is
+        //    retired here by hand.
+        clearResolved()
+        ProfilePairingGate.joinPairingPending = false
+
+        // Browsing data is untouched on purpose: LocalStore.sqlite and both
+        // per-Space theme maps stay exactly as they are.
+        AppLogInfo("[phi-sync] this device left the account's sync")
     }
 
     /// Startup/login entry: unlock without UI, then resolve mappings and ping.

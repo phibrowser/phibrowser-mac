@@ -7,6 +7,7 @@ protocol KeyEnvelopeAPI {
     func getAccount() async throws -> AccountKeyStateDTO?
     func postDevice(deviceKeyId: String, publicKey: Data, name: String, platform: String, arkEnvelope: Data?) async throws
     func getDeviceEnvelope(deviceKeyId: String) async throws -> Data?
+    func revokeDevice(deviceKeyId: String) async throws
     func postJoinRequest(publicKey: Data, name: String, platform: String) async throws -> String
     func listPendingJoinRequests() async throws -> [JoinRequestSummaryDTO]
     func getJoinRequest(id: String) async throws -> JoinRequestDTO
@@ -91,9 +92,13 @@ final class AccountKeyManager {
         }
         set {
             arkLock.lock()
-            // Only the nil -> unlocked transition is announced: an account switch drops the
-            // whole controller (and this manager with it), so no other transition can occur
-            // on a live instance.
+            // Only the nil -> unlocked transition is announced. The unlocked ->
+            // nil direction has ONE producer, `discardARK()` (self-revoke), and
+            // it deliberately announces nothing: every consumer of this manager
+            // is dropped in the same teardown, so there is nobody left to notify,
+            // and posting an "unlocked" notification here would be a lie.
+            // An account switch drops the whole controller (and this manager with
+            // it), so no other transition can occur on a live instance.
             let wasLocked = arkStorage == nil
             arkStorage = newValue
             arkLock.unlock()
@@ -105,6 +110,11 @@ final class AccountKeyManager {
             NotificationCenter.default.post(name: .phiAccountKeyDidUnlock, object: self)
         }
     }
+
+    /// Drops the cached ARK for good (self-revoke, §3.3). Not a lock: this device
+    /// is leaving the account, and the whole key layer is dropped with it.
+    func discardARK() { currentARK = nil }
+
     var deviceKeyProviderForTesting: DeviceKeyProviding { deviceKeyProvider }
 
     init(api: KeyEnvelopeAPI, deviceKeyProvider: DeviceKeyProviding) {

@@ -1577,4 +1577,90 @@ final class PhiSyncEngineSpaceTests: XCTestCase {
         XCTAssertTrue(store.table.cursors["u1"]!.pendingDelete
                       || store.table.cursors["u1"]!.deletedAtMs != nil)
     }
+
+    /// §9.2's landing is TERMINAL for that uuid: a local delete queued a moment
+    /// earlier (`SpaceManager.deleteSpace` -> `recordLocalDeletion`) is owed to
+    /// nobody once the peer's tombstone is here. `spaceCommitEntries` unions
+    /// EVERY `pendingDelete` cursor into the next batch, so a flag left standing
+    /// ships a redundant `deleted: true` commit for a row the server has already
+    /// tombstoned -- and its `.applied` outcome re-stamps `deletedAtMs = now()`,
+    /// restarting the 30-day window from the echo instead of from the delete.
+    func testARemoteTombstoneCancelsAQueuedLocalDeleteInsteadOfEchoingIt() async throws {
+        let access = FakePhiSpaceAccess()
+        access.uuidByProfileId = ["Default": "uuid-a"]
+        access.spaces = [localSpace("u1", "Work", order: 1)]
+        let store = MemorySpaceStore()
+        var cursor = PhiSpaceCursor()
+        cursor.entityId = "srv-1"; cursor.version = 4
+        cursor.reconciled = try spaceEntity("u1").serializedData()
+        cursor.server = cursor.reconciled
+        // The local delete is already queued when the peer's tombstone arrives,
+        // and it has been rejected twice, so the streak must be reset too.
+        cursor.pendingDelete = true
+        cursor.deleteRejectRounds = 2
+        store.table.cursors["u1"] = cursor
+        store.table.hasDrainedFullReplay = true
+        store.table.firstSyncDecision = "keepBoth"
+        let client = FakePhiSyncClient()
+        client.seed(tagHash: spaceHash("u1"), ciphertext: Data(), version: 9,
+                    entityId: "srv-1", deleted: true)
+        let clock = Clock()
+        let engine = makeEngine(access: access, store: store, client: client, clock: clock)
+        await engine.setSpaceSyncEnabled(true)
+        await engine.pullOnce()
+
+        let landed = try XCTUnwrap(store.table.cursors["u1"])
+        XCTAssertFalse(landed.pendingDelete)
+        XCTAssertEqual(landed.deleteRejectRounds, 0)
+        XCTAssertTrue(spaceCommits(client).isEmpty,
+                      "the account already holds this tombstone; echoing it costs a commit and the window")
+        XCTAssertEqual(landed.deletedAtMs, clock.nowMs,
+                       "the 30-day window runs from the delete, never from an echo of it")
+    }
+
+    /// D2 parks every decrypted entity while the sheet is open so nothing is
+    /// lost and nothing has to be replayed. A tombstone needs the same parking
+    /// for the same reason: the shared marker has already moved past that page,
+    /// so a tombstone dropped here is never redelivered -- the Space would land
+    /// from its parked entity once the user answers and then stay alive on this
+    /// Mac forever, after every other device had deleted it.
+    func testATombstoneArrivingWhileTheD2SheetIsOpenIsParkedNotDropped() async throws {
+        let access = FakePhiSpaceAccess()
+        access.uuidByProfileId = ["Default": "uuid-a"]
+        access.profileIdByUuid = ["uuid-a": "Default"]
+        access.spaces = [localSpace(LocalStore.defaultSpaceId, "Default", order: 0),
+                         localSpace("mine", "Work", order: 1),
+                         localSpace("gone", "Reading", order: 2)]
+        let store = MemorySpaceStore()
+        // "gone" is already in the account and "mine" is local-only: both halves
+        // non-empty is what makes the first-sync question fire at all.
+        var published = PhiSpaceCursor()
+        published.entityId = "srv-1"; published.version = 4
+        published.reconciled = try spaceEntity("gone", name: "Reading").serializedData()
+        published.server = published.reconciled
+        store.table.cursors["gone"] = published
+        store.table.hasDrainedFullReplay = true
+        let client = FakePhiSyncClient()
+        client.seed(tagHash: spaceHash("gone"), ciphertext: Data(), version: 9,
+                    entityId: "srv-1", deleted: true)
+        let engine = makeEngine(access: access, store: store, client: client)
+        await engine.setSpaceSyncEnabled(true)
+        await engine.pullOnce()
+
+        XCTAssertNil(store.table.firstSyncDecision, "the sheet is still open")
+        XCTAssertTrue(store.table.cursors["gone"]!.pendingTombstone,
+                      "the marker has moved past this page; the intent survives here or it is lost")
+        XCTAssertFalse(store.table.cursors["gone"]!.hidden,
+                       "hiding a Space is not part of the question the user was asked")
+        XCTAssertTrue(access.calls.filter { $0 == .hide("gone") }.isEmpty)
+
+        // The answer's trailing pull receives nothing (the fake filters by the
+        // version watermark), so only the parked intent can make the delete land.
+        await engine.submitFirstSyncDecision(.keepBoth)
+        let landed = try XCTUnwrap(store.table.cursors["gone"])
+        XCTAssertTrue(landed.hidden)
+        XCTAssertNotNil(landed.deletedAtMs)
+        XCTAssertFalse(landed.pendingTombstone)
+        XCTAssertTrue(access.calls.contains(.hide("gone")))
+    }
 }

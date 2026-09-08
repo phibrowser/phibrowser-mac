@@ -460,7 +460,18 @@ struct ProfilesSettingsView: View {
         // `blocksProfileDeletion` answers false until the account's Spaces have
         // been drained once, and on a long-offline or long-ARK-locked Mac a
         // fail-closed prompt might never clear.
-        if !PhiSpaceSyncState.shared.hasDrainedFullReplay {
+        //
+        // Gated on account Space sync being live for this Mac as well, and not on
+        // the drain flag alone: `hasDrainedFullReplay` is a per-process cache the
+        // engine pushes back after every table write, so with no engine at all
+        // (signed out, or the Spaces feature off) it stays false forever and the
+        // paragraph below would warn about "the Spaces in your account" on a Mac
+        // that has no account Spaces. Same pair of conditions the app menu's own
+        // profile-delete guard uses (`AppController+Menu.validateUserInterfaceItem`).
+        // This pane, unlike that menu item, is registered unconditionally.
+        if PhiPreferences.GeneralSettings.spacesFeatureEnabled.loadValue(),
+           LoginController.shared.isLoggedin(),
+           !PhiSpaceSyncState.shared.hasDrainedFullReplay {
             alert.informativeText += "\n\n" + NSLocalizedString(
                 "This Mac hasn’t finished syncing the Spaces in your account yet. After you delete this profile, Spaces on your other devices that use it may not open.",
                 comment: "Extra warning shown when the account's Spaces have not been synced yet"

@@ -913,6 +913,26 @@ actor PhiSyncEngine {
                         cursor.version = max(cursor.version, item.version)
                         spaceTable.cursors[item.uuid] = cursor
                     }
+                    // Tombstones are parked for exactly the same reason, and the
+                    // §9.2 import-lock note is the same hazard: the shared marker
+                    // has already moved past this page, so a tombstone dropped
+                    // here is never delivered again. The Space would then land
+                    // from its own parked entity once the user answers and stay
+                    // alive on this Mac forever, after every other device had
+                    // deleted it. `applySpaceTombstones` replays every
+                    // `pendingTombstone` cursor alongside the next round's
+                    // arrivals; nothing here hides anything, because hiding a
+                    // Space is not part of the question the user was asked.
+                    // Publishing cannot race the bumped version: `pushSpaces`
+                    // returns on `firstSyncDecision == nil`.
+                    for item in batch.tombstones where item.uuid != LocalStore.defaultSpaceId {
+                        var cursor = spaceTable.cursors[item.uuid] ?? PhiSpaceCursor()
+                        guard cursor.deletedAtMs == nil else { continue }
+                        cursor.pendingTombstone = true
+                        if !item.entityId.isEmpty { cursor.entityId = item.entityId }
+                        cursor.version = max(cursor.version, item.version)
+                        spaceTable.cursors[item.uuid] = cursor
+                    }
                     let names = localOnly.map(\.name)
                     NotificationCenter.default.post(
                         name: .phiSpaceFirstSyncNeeded, object: nil,
@@ -1329,6 +1349,17 @@ actor PhiSyncEngine {
             cursor.hidden = true
             cursor.deletedAtMs = now()
             cursor.pendingTombstone = false
+            // The landing is TERMINAL for this uuid, so it writes the same
+            // finished state §6.2 writes for a tombstone of our own: a local
+            // delete queued a moment earlier (`recordLocalDeletion`) is owed to
+            // nobody now that the account already holds the tombstone.
+            // `spaceCommitEntries` unions EVERY `pendingDelete` cursor into the
+            // next batch, so a flag left standing here ships a redundant
+            // `deleted: true` commit whose `.applied` outcome re-stamps
+            // `deletedAtMs = now()` -- restarting §9.2's 30-day window from the
+            // echo instead of from the delete.
+            cursor.pendingDelete = false
+            cursor.deleteRejectRounds = 0
             cursor.pendingApply = nil
             cursor.heldProfileUuid = nil
             cursor.heldForLocalProfileId = nil

@@ -548,7 +548,8 @@ class BrowserState {
         self.isKioskWindow = isKioskWindow
         self.imagePreviewState = BrowserImagePreviewState(loader: ImagePreviewLoader())
         self.themeContext = BrowserThemeContext(
-            configuration: BrowserThemeConfigurationResolver.resolve(isIncognito: isIncognito)
+            configuration: BrowserThemeConfigurationResolver.resolve(isIncognito: isIncognito),
+            fixedTheme: isKioskWindow ? .pure : nil
         )
         self.layoutMode = Self.buildLayoutMode()
         // Agent Spaces are isolated workspaces, like incognito: they show none

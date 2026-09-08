@@ -6680,9 +6680,9 @@ final class SpaceManager: ObservableObject {
     /// windows are skipped too; their synthetic Space never carries
     /// customization, so nothing changes for them.) For normal windows
     /// the register-time apply still runs afterwards and is an idempotent
-    /// re-assert.
+    /// re-assert. Kiosk windows keep their fixed neutral palette.
     func seedPersistedTheme(into browserState: BrowserState, spaceId: String) {
-        guard !browserState.isIncognito else { return }
+        guard !browserState.isIncognito, !browserState.isKioskWindow else { return }
         guard hasThemeCustomization(forSpaceId: spaceId) else { return }
         MainActor.assumeIsolated {
             let context = browserState.themeContext

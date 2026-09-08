@@ -10,6 +10,57 @@ import XCTest
 
 @MainActor
 final class KioskBrowserStateTests: XCTestCase {
+    func testKioskKeepsPurePaletteAcrossSpaceAndGlobalThemeChanges() throws {
+        let state = try makeState()
+        let context = state.themeContext
+        let originalTheme = context.currentTheme
+        XCTAssertEqual(originalTheme.id, Theme.pure.id)
+        XCTAssertFalse(context.mirrorsSharedTheme)
+
+        let red = Theme(id: "kiosk-test-red", name: "Red",
+                        colorPalette: [.windowOverlayBackground: ColorPair(.red)])
+        context.setTheme(red)
+        context.spaceThemeResolver = { red }
+        ThemeManager.shared.themePublisher.send(red)
+        drainThemeUpdates()
+
+        XCTAssertTrue(context.currentTheme === originalTheme)
+        for appearance in [Appearance.light, .dark] {
+            XCTAssertEqual(
+                ThemedColor.contentOverlayBackground.resolve(theme: context.currentTheme, appearance: appearance),
+                ThemedColor.contentOverlayBackground.resolve(theme: .pure, appearance: appearance)
+            )
+        }
+    }
+
+    func testKioskPurePaletteFollowsAppAppearance() throws {
+        let manager = ThemeManager.shared
+        let originalChoice = manager.userAppearanceChoice
+        defer { manager.userAppearanceChoice = originalChoice }
+        let state = try makeState()
+
+        for choice in [UserAppearanceChoice.light, .dark, .system] {
+            manager.userAppearanceChoice = choice
+            drainThemeUpdates()
+            XCTAssertEqual(state.themeContext.userAppearanceChoice, choice)
+            XCTAssertEqual(state.themeContext.currentAppearance, manager.currentAppearance)
+            XCTAssertEqual(state.themeContext.currentTheme.id, Theme.pure.id)
+        }
+    }
+
+    func testIncognitoKioskUsesPurePaletteAndKeepsDarkAppearance() throws {
+        let state = try makeState(isIncognito: true)
+        XCTAssertEqual(state.themeContext.currentTheme.id, Theme.pure.id)
+        XCTAssertEqual(state.themeContext.currentAppearance, .dark)
+        XCTAssertFalse(state.themeContext.mirrorsSharedAppearance)
+    }
+
+    private func drainThemeUpdates() {
+        let drained = expectation(description: "Kiosk theme updates delivered")
+        DispatchQueue.main.async { drained.fulfill() }
+        wait(for: [drained], timeout: 1)
+    }
+
     func testExternalLinksInKioskDefaultsOff() {
         XCTAssertFalse(
             PhiPreferences.GeneralSettings.openExternalLinksInKiosk.defaultValue
@@ -933,7 +984,8 @@ final class KioskBrowserStateTests: XCTestCase {
     }
 
     private func makeState(
-        profileId: String = LocalStore.defaultProfileId
+        profileId: String = LocalStore.defaultProfileId,
+        isIncognito: Bool = false
     ) throws -> KioskBrowserState {
         let directory = URL(fileURLWithPath: NSTemporaryDirectory())
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
@@ -952,7 +1004,7 @@ final class KioskBrowserStateTests: XCTestCase {
             windowId: 73,
             localStore: store,
             profileId: profileId,
-            isIncognito: false
+            isIncognito: isIncognito
         )
     }
 

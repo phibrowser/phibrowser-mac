@@ -44,6 +44,23 @@ enum PhiSyncLog {
     }
 }
 
+/// D2 (§8): what a joining Mac decided about the Spaces that only exist on it.
+///
+/// A `String` raw enum on purpose — it is persisted verbatim as
+/// `PhiSpaceSyncTable.firstSyncDecision`, and it crosses a `Task` boundary as
+/// the payload of a queued round.
+enum PhiSpaceFirstSyncDecision: String {
+    case keepBoth
+    case accountWins
+}
+
+extension Notification.Name {
+    /// Engine -> UI. The engine never raises an `NSAlert` inside a round: the
+    /// round queue is SHARED with settings sync, and parking it would stop that
+    /// too. userInfo: `localNames: [String]`, `accountCount: Int`.
+    static let phiSpaceFirstSyncNeeded = Notification.Name("phiSpaceFirstSyncNeeded")
+}
+
 /// One round of Phi settings sync: pull (GetUpdates -> decrypt -> field-level LWW merge ->
 /// apply) and push (snapshot -> encrypt -> Commit), plus the conflict retry and the
 /// account-scoped cursor state both need.
@@ -237,6 +254,11 @@ actor PhiSyncEngine {
         /// applied in place, so it can never land *inside* a round that is parked in
         /// `getUpdates` — see `setSpaceSyncEnabled`.
         case spaceGate(Bool)
+        /// §5.3: the two Space intents that CONTAIN suspension points get the
+        /// same exclusivity as any other round. The purely synchronous ones go
+        /// through their own in-place mutation instead.
+        case firstSyncDecision(PhiSpaceFirstSyncDecision)
+        case retentionSweep
     }
 
     init(domainKeys: any PhiDomainKeyProviding,
@@ -339,6 +361,56 @@ actor PhiSyncEngine {
         await serialized(.localSpaceChange)
     }
 
+    /// The user's answer to D2 (§8). Writes the decision, applies `accountWins`'s
+    /// fixed hidden set, and queues a round immediately so the parked entities
+    /// land.
+    ///
+    /// The whole body runs as ONE round intent (§5.3: "全部排进同一条 roundQueue").
+    /// Written straight, it reads the table, `await`s `currentSpaces()` and
+    /// `hide()`, then writes the table back -- and a round that runs inside
+    /// either suspension does its own read-modify-write of the same table, so the
+    /// decision (and every hidden bit with it) is clobbered by whichever finishes
+    /// last. The two suspensions are why this needs the queue and a purely
+    /// synchronous Space intent does not.
+    func submitFirstSyncDecision(_ decision: PhiSpaceFirstSyncDecision) async {
+        await serialized(.firstSyncDecision(decision))
+        await serialized(.pull)
+    }
+
+    /// The decision itself. Runs as a queued round; never call it directly.
+    private func applyFirstSyncDecision(_ decision: PhiSpaceFirstSyncDecision) async {
+        guard spaceStore != nil, let spaceAccess else { return }
+        var table = loadSpaceTable()
+        guard table.firstSyncDecision == nil else { return }
+        table.firstSyncDecision = decision.rawValue
+        if decision == .accountWins {
+            // A FIXED SET, not a mode: Spaces created after this answer sync
+            // normally. Data is never deleted -- M3-2 does not sync bookmarks, so
+            // this Mac holds the only copy and there is no recovery UI.
+            //
+            // The local-only set is computed BEFORE the first `hide()`, and the
+            // table is re-read afterwards, so a `hide` that suspends cannot
+            // strand a stale copy on top of what another writer did meanwhile.
+            let localOnly = await spaceAccess.currentSpaces().filter {
+                $0.spaceId != LocalStore.defaultSpaceId && table.cursors[$0.spaceId] == nil
+            }
+            for space in localOnly { try? await spaceAccess.hide(spaceId: space.spaceId) }
+            guard !isStopped else { return }
+            table = loadSpaceTable()
+            table.firstSyncDecision = decision.rawValue
+            for space in localOnly where table.cursors[space.spaceId] == nil {
+                var cursor = PhiSpaceCursor()
+                cursor.hidden = true
+                table.cursors[space.spaceId] = cursor
+            }
+        }
+        writeSpaceTable(table)
+    }
+
+    /// §9.2's 30-day sweep over expired soft deletes. Task 14 fills this in; the
+    /// `Round` case exists here so the enum is not reshaped twice.
+    private func applyRetentionSweep() async {}
+
     /// Drops every account-scoped cursor, `hasAdopted` included, so the next account's entity
     /// is adopted rather than merged against the previous account's timestamps.
     ///
@@ -405,6 +477,10 @@ actor PhiSyncEngine {
             await push(retryOnConflict: true, allowInitialPull: true)
         case .spaceGate(let enabled):
             applySpaceGate(enabled)
+        case .firstSyncDecision(let decision):
+            await applyFirstSyncDecision(decision)
+        case .retentionSweep:
+            await applyRetentionSweep()
         }
         logSpaceRound()
     }
@@ -678,6 +754,10 @@ actor PhiSyncEngine {
         }
 
         var maySettingsPublish = true
+        // D2 (§8): the Space half of this round stands down until the user
+        // answers. NOT a `return` — the trailing settings push is below, and a
+        // Mac that leaves the sheet open must keep converging settings.
+        var spaceQuestionPending = false
         switch view {
         case .usable(let remote):
             tombstoneRounds = 0
@@ -763,8 +843,44 @@ actor PhiSyncEngine {
             //     was populated and then lost.
             var spaceTable = loadSpaceTable()
             spaceCounters.pulled += batch.decoded.count + batch.tombstones.count
-            await applySpaces(batch, table: &spaceTable)
-            await applySpaceTombstones(batch, table: &spaceTable)
+            if spaceTable.firstSyncDecision == nil, spaceTable.hasDrainedFullReplay {
+                let localOnly = (await spaceAccess?.currentSpaces() ?? [])
+                    .filter { $0.spaceId != LocalStore.defaultSpaceId
+                              && spaceTable.cursors[$0.spaceId] == nil }
+                // Only entities this device could DECRYPT count: an unreadable one
+                // is already refused by guard 3, and every local-only uuid is a
+                // random UUID that cannot collide with anything in the account.
+                let accountCount = (batch.decoded.map(\.uuid)
+                                    + spaceTable.cursors.filter { $0.value.entityId != nil }.map(\.key))
+                    .filter { $0 != LocalStore.defaultSpaceId }
+                    .reduce(into: Set<String>()) { $0.insert($1) }.count
+                if localOnly.isEmpty || accountCount == 0 {
+                    spaceTable.firstSyncDecision = PhiSpaceFirstSyncDecision.keepBoth.rawValue
+                } else {
+                    // Park every decrypted entity in its own cursor and let the
+                    // marker advance: nothing is lost and nothing has to be
+                    // replayed once the user answers.
+                    for item in batch.decoded {
+                        var cursor = spaceTable.cursors[item.uuid] ?? PhiSpaceCursor()
+                        cursor.pendingApply = try? item.entity.serializedData()
+                        if !item.entityId.isEmpty { cursor.entityId = item.entityId }
+                        cursor.version = max(cursor.version, item.version)
+                        spaceTable.cursors[item.uuid] = cursor
+                    }
+                    let names = localOnly.map(\.name)
+                    NotificationCenter.default.post(
+                        name: .phiSpaceFirstSyncNeeded, object: nil,
+                        userInfo: ["localNames": names, "accountCount": accountCount])
+                    // NOT `return true`: the Space section stands down, the
+                    // settings half of this round carries on exactly as it does
+                    // today (see the note above this block).
+                    spaceQuestionPending = true
+                }
+            }
+            if !spaceQuestionPending {
+                await applySpaces(batch, table: &spaceTable)
+                await applySpaceTombstones(batch, table: &spaceTable)
+            }
             writeSpaceTable(spaceTable)
         }
         // The gated-off round's `markerMovedWhileGateShut` needs no write here: it was
@@ -785,7 +901,7 @@ actor PhiSyncEngine {
             if maySettingsPublish {
                 await pushSettings(retryOnConflict: false, allowInitialPull: false)
             }
-            await pushSpaces(retryOnConflict: false)
+            if !spaceQuestionPending { await pushSpaces(retryOnConflict: false) }
         }
 
         if !drained, followUpRoundsUsed < Self.maxFollowUpRounds {

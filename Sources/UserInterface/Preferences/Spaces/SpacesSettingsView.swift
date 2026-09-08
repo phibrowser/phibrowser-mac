@@ -35,6 +35,11 @@ struct SpacesSettingsView: View {
     @State private var draggingSpaceId: String?
     @State private var orderedIds: [String] = []
 
+    /// §8.3's rows: the Spaces D2's 「以账户为准」 left on this Mac alone.
+    /// Re-read from the local store on every change signal rather than derived
+    /// from `spaceManager.spaces`, which §6.6 filters exactly these rows out of.
+    @State private var unsyncedSpaces: [SpaceModel] = []
+
     var body: some View {
         ScrollView(.vertical) {
             VStack(spacing: 16) {
@@ -55,6 +60,12 @@ struct SpacesSettingsView: View {
                 SettingsDetailCard {
                     urlRulesRow
                 }
+                // §8.3: only shown when D2 actually left something behind.
+                if !unsyncedSpaces.isEmpty {
+                    SettingsDetailCard {
+                        unsyncedSpacesSection
+                    }
+                }
             }
             .frame(maxWidth: .infinity, alignment: .top)
             .padding(20)
@@ -64,6 +75,7 @@ struct SpacesSettingsView: View {
             pinnedTabScope = AccountController.shared.account?.localStorage.pinnedTabScope() ?? .profile
             orderedIds = listedSpaces.map(\.spaceId)
             if selectedSpaceId == nil { selectInitialSpace() }
+            reloadUnsyncedSpaces()
         }
         // Re-sync the local order when Spaces change elsewhere (never mid-drag),
         // and keep the selection valid as Spaces are created/deleted.
@@ -84,6 +96,18 @@ struct SpacesSettingsView: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: .appearanceDidChange)) { _ in
             syncThemeControls()
+        }
+        // §8.3's two refresh triggers. The notification is posted after every
+        // Space-table write (join / hide / soft delete / purge); the second is a
+        // pure CHANGE SIGNAL -- `spaceManager.spaces` can never be the row source
+        // here, because §6.6 filters every hidden Space out of it.
+        .onReceive(NotificationCenter.default.publisher(for: .phiSpaceHiddenSetDidChange)) { _ in
+            reloadUnsyncedSpaces()
+        }
+        // The zero-parameter closure on purpose: the value is a signal, not data,
+        // and the one-parameter spelling used above is deprecated on macOS 14.
+        .onChange(of: spaceManager.spaces.map(\.spaceId)) {
+            reloadUnsyncedSpaces()
         }
     }
 
@@ -721,6 +745,81 @@ struct SpacesSettingsView: View {
         alert.addButton(withTitle: NSLocalizedString("Cancel", comment: "Cancel button"))
         guard alert.runModal() == .alertFirstButtonReturn else { return }
         spaceManager.changeProfile(spaceId: spaceId, toProfileId: profile.profileId)
+    }
+
+    // MARK: - §8.3: Spaces that are not in the account
+
+    /// The Spaces D2 kept off the account: hidden from the strip, complete on
+    /// disk. Rows are `account.localStorage.getAllSpaces()` ∩
+    /// `PhiSpaceSyncState.shared.unsyncedSpaceIds` -- never `spaceManager.spaces`
+    /// (§6.6 filters these very rows out) and never `hiddenSpaceIds`, which also
+    /// holds remotely soft-deleted Spaces: for those the header's "only on this
+    /// Mac" is false, "join account sync" is a dud (the engine refuses a cursor
+    /// that carries `deletedAtMs` or an `entityId`), and the 30-day sweep would
+    /// cascade the Space away days after the user "added it back".
+    private var unsyncedSpacesSection: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(String(
+                    format: NSLocalizedString("未同步到账户 (%d)",
+                                              comment: "Spaces settings - not-synced-to-account section header"),
+                    unsyncedSpaces.count
+                ))
+                .font(.system(size: 13))
+                .themedForeground(.textPrimary)
+
+                Text(NSLocalizedString(
+                    "这些 Space 只存在于这台 Mac，不会出现在你的其他设备上。",
+                    comment: "Spaces settings - not-synced-to-account section explanation"))
+                    .font(.system(size: 11))
+                    .themedForeground(.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .padding(.vertical, 12)
+            .frame(maxWidth: .infinity, alignment: .leading)
+
+            ForEach(unsyncedSpaces, id: \.spaceId) { space in
+                SettingsRowDivider()
+                unsyncedSpaceRow(space)
+            }
+        }
+    }
+
+    private func unsyncedSpaceRow(_ space: SpaceModel) -> some View {
+        HStack(spacing: 8) {
+            Text(space.name)
+                .font(.system(size: 13))
+                .themedForeground(.textPrimary)
+                .lineLimit(1)
+
+            Spacer(minLength: 12)
+
+            Button(NSLocalizedString("加入账户同步",
+                                     comment: "Spaces settings - join account sync button")) {
+                PhiSpaceSyncState.shared.joinAccountSync(spaceId: space.spaceId)
+            }
+            .buttonStyle(.bordered)
+
+            Button(NSLocalizedString("删除\u{2026}",
+                                     comment: "Spaces settings - delete unsynced Space button")) {
+                deleteSpace(space)
+            }
+            .buttonStyle(.bordered)
+        }
+        .padding(.vertical, 8)
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    /// `getAllSpaces()` is the unfiltered local truth; the intersection with
+    /// `unsyncedSpaceIds` is what keeps remote soft deletes out of this list.
+    private func reloadUnsyncedSpaces() {
+        let unsynced = PhiSpaceSyncState.shared.unsyncedSpaceIds
+        guard !unsynced.isEmpty,
+              let storage = AccountController.shared.account?.localStorage else {
+            unsyncedSpaces = []
+            return
+        }
+        unsyncedSpaces = storage.getAllSpaces().filter { unsynced.contains($0.spaceId) }
     }
 
     private func deleteSpace(_ space: SpaceModel) {

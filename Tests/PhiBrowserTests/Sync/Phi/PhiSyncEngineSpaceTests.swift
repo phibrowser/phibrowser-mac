@@ -1187,4 +1187,176 @@ final class PhiSyncEngineSpaceTests: XCTestCase {
         XCTAssertEqual(access.currentSpaces().first?.profileId, "P-new")
         XCTAssertNil(store.table.cursors["u1"]?.pendingApply)
     }
+
+    // MARK: - §8 D2: the first-sync question
+
+    private func localSpace(_ id: String, _ name: String, order: Int) -> PhiLocalSpace {
+        PhiLocalSpace(spaceId: id, profileId: "Default", name: name, colorHex: "#3A6FF8",
+                      iconName: "phi:x", sortOrder: order,
+                      createdDate: Date(timeIntervalSince1970: TimeInterval(order + 1)),
+                      themeId: nil, opacityLight: nil, opacityDark: nil)
+    }
+
+    func testTheQuestionIsAskedOnlyWhenBothSidesAreNonEmpty() async throws {
+        let access = FakePhiSpaceAccess()
+        access.uuidByProfileId = ["Default": "uuid-a"]
+        access.profileIdByUuid = ["uuid-a": "Default"]
+        access.spaces = [localSpace(LocalStore.defaultSpaceId, "Default", order: 0),
+                         localSpace("mine", "Work", order: 1)]
+        let store = MemorySpaceStore()
+        let client = FakePhiSyncClient()
+        client.seed(tagHash: PhiSyncEntity.clientTagHash(for: PhiSyncEntity.spaceClientTag("theirs")),
+                    ciphertext: try ciphertext(spaceEntity("theirs", name: "Reading")), version: 4)
+
+        var payload: [AnyHashable: Any]?
+        let token = NotificationCenter.default.addObserver(
+            forName: .phiSpaceFirstSyncNeeded, object: nil, queue: .main) { payload = $0.userInfo }
+        defer { NotificationCenter.default.removeObserver(token) }
+
+        let engine = makeEngine(access: access, store: store, client: client)
+        await engine.setSpaceSyncEnabled(true)
+        await engine.pullOnce()
+
+        XCTAssertEqual(payload?["localNames"] as? [String], ["Work"])
+        XCTAssertEqual(payload?["accountCount"] as? Int, 1,
+                       "the default Space is the one being MERGED, not another Space in the account")
+        XCTAssertTrue(spaceCommits(client).isEmpty, "no Space is published before the answer")
+        XCTAssertNotNil(store.table.cursors["theirs"]?.pendingApply, "the pulled entity is parked, not lost")
+        XCTAssertNil(store.table.firstSyncDecision)
+    }
+
+    func testASecondMacWithOnlyTheDefaultSpaceIsNeverAsked() async throws {
+        let access = FakePhiSpaceAccess()
+        access.uuidByProfileId = ["Default": "uuid-a"]
+        access.profileIdByUuid = ["uuid-a": "Default"]
+        access.spaces = [localSpace(LocalStore.defaultSpaceId, "Default", order: 0)]
+        let store = MemorySpaceStore()
+        let client = FakePhiSyncClient()
+        client.seed(tagHash: PhiSyncEntity.clientTagHash(for: PhiSyncEntity.spaceClientTag("theirs")),
+                    ciphertext: try ciphertext(spaceEntity("theirs")), version: 4)
+        var asked = 0
+        let token = NotificationCenter.default.addObserver(
+            forName: .phiSpaceFirstSyncNeeded, object: nil, queue: .main) { _ in asked += 1 }
+        defer { NotificationCenter.default.removeObserver(token) }
+        let engine = makeEngine(access: access, store: store, client: client)
+        await engine.setSpaceSyncEnabled(true)
+        await engine.pullOnce()
+        XCTAssertEqual(asked, 0)
+        XCTAssertEqual(store.table.firstSyncDecision, "keepBoth")
+    }
+
+    func testTheFirstDeviceInAnEmptyAccountIsNeverAsked() async throws {
+        let access = FakePhiSpaceAccess()
+        access.uuidByProfileId = ["Default": "uuid-a"]
+        access.spaces = [localSpace(LocalStore.defaultSpaceId, "Default", order: 0),
+                         localSpace("mine", "Work", order: 1)]
+        let store = MemorySpaceStore()
+        let client = FakePhiSyncClient()
+        let engine = makeEngine(access: access, store: store, client: client)
+        await engine.setSpaceSyncEnabled(true)
+        await engine.pullOnce()
+        XCTAssertEqual(store.table.firstSyncDecision, "keepBoth")
+        XCTAssertFalse(spaceCommits(client).isEmpty)
+    }
+
+    func testAccountWinsHidesLocalOnlySpacesWithoutDeletingAnything() async throws {
+        let access = FakePhiSpaceAccess()
+        access.uuidByProfileId = ["Default": "uuid-a"]
+        access.profileIdByUuid = ["uuid-a": "Default"]
+        access.spaces = [localSpace(LocalStore.defaultSpaceId, "Default", order: 0),
+                         localSpace("mine", "Work", order: 1)]
+        let store = MemorySpaceStore()
+        let client = FakePhiSyncClient()
+        client.seed(tagHash: PhiSyncEntity.clientTagHash(for: PhiSyncEntity.spaceClientTag("theirs")),
+                    ciphertext: try ciphertext(spaceEntity("theirs")), version: 4)
+        let engine = makeEngine(access: access, store: store, client: client)
+        await engine.setSpaceSyncEnabled(true)
+        await engine.pullOnce()
+        await engine.submitFirstSyncDecision(.accountWins)
+
+        XCTAssertTrue(store.table.cursors["mine"]!.hidden)
+        XCTAssertNil(store.table.cursors["mine"]!.deletedAtMs)
+        XCTAssertTrue(access.calls.filter { if case .purge = $0 { return true } else { return false } }.isEmpty,
+                      "M3-2 does not sync bookmarks; deleting here would destroy the only copy")
+        XCTAssertTrue(access.currentSpaces().contains { $0.spaceId == "mine" })
+        XCTAssertTrue(access.calls.contains(.hide("mine")))
+        XCTAssertFalse(client.commits.contains {
+            $0.clientTagHash == PhiSyncEntity.clientTagHash(for: PhiSyncEntity.spaceClientTag("mine"))
+        })
+    }
+
+    func testKeepBothPublishesEveryLocalOnlySpaceUnderItsOwnUuid() async throws {
+        let access = FakePhiSpaceAccess()
+        access.uuidByProfileId = ["Default": "uuid-a"]
+        access.profileIdByUuid = ["uuid-a": "Default"]
+        access.spaces = [localSpace(LocalStore.defaultSpaceId, "Default", order: 0),
+                         localSpace("mine", "Work", order: 1)]
+        let store = MemorySpaceStore()
+        let client = FakePhiSyncClient()
+        client.seed(tagHash: PhiSyncEntity.clientTagHash(for: PhiSyncEntity.spaceClientTag("theirs")),
+                    ciphertext: try ciphertext(spaceEntity("theirs")), version: 4)
+        let engine = makeEngine(access: access, store: store, client: client)
+        await engine.setSpaceSyncEnabled(true)
+        await engine.pullOnce()
+        await engine.submitFirstSyncDecision(.keepBoth)
+        XCTAssertTrue(client.commits.contains {
+            $0.clientTagHash == PhiSyncEntity.clientTagHash(for: PhiSyncEntity.spaceClientTag("mine"))
+        })
+        XCTAssertNil(store.table.cursors["theirs"]?.pendingApply, "the parked entity lands on the answer")
+    }
+
+    func testTheQuestionIsAskedOnlyOnceAcrossRounds() async throws {
+        let access = FakePhiSpaceAccess()
+        access.uuidByProfileId = ["Default": "uuid-a"]
+        access.profileIdByUuid = ["uuid-a": "Default"]
+        access.spaces = [localSpace(LocalStore.defaultSpaceId, "Default", order: 0),
+                         localSpace("mine", "Work", order: 1)]
+        let store = MemorySpaceStore()
+        let client = FakePhiSyncClient()
+        client.seed(tagHash: PhiSyncEntity.clientTagHash(for: PhiSyncEntity.spaceClientTag("theirs")),
+                    ciphertext: try ciphertext(spaceEntity("theirs")), version: 4)
+        let engine = makeEngine(access: access, store: store, client: client)
+        await engine.setSpaceSyncEnabled(true)
+        await engine.pullOnce()
+        await engine.submitFirstSyncDecision(.accountWins)
+        var askedAfterAnswer = 0
+        let token = NotificationCenter.default.addObserver(
+            forName: .phiSpaceFirstSyncNeeded, object: nil, queue: .main) { _ in askedAfterAnswer += 1 }
+        defer { NotificationCenter.default.removeObserver(token) }
+        await engine.pullOnce()
+        XCTAssertEqual(askedAfterAnswer, 0)
+
+        // A Space created AFTER the decision syncs normally: accountWins is a
+        // fixed set, not a mode.
+        access.spaces.append(localSpace("later", "Client", order: 2))
+        await engine.handleLocalSpacesChange()
+        XCTAssertTrue(client.commits.contains {
+            $0.clientTagHash == PhiSyncEntity.clientTagHash(for: PhiSyncEntity.spaceClientTag("later"))
+        })
+    }
+
+    /// The D2 sheet must not stall the M3-1 settings path. `pull` may NOT
+    /// return early while the question is open -- its trailing settings push is
+    /// after that point, and a joining Mac that leaves the sheet open would stop
+    /// converging settings entirely, breaking "设置路径必须行为逐字节不变".
+    func testAnUnansweredD2SheetStillLetsSettingsPublish() async throws {
+        let access = FakePhiSpaceAccess()
+        access.uuidByProfileId = ["Default": "uuid-a"]
+        access.profileIdByUuid = ["uuid-a": "Default"]
+        access.spaces = [localSpace(LocalStore.defaultSpaceId, "Default", order: 0),
+                         localSpace("mine", "Work", order: 1)]
+        let store = MemorySpaceStore()
+        let client = FakePhiSyncClient()
+        client.seed(tagHash: PhiSyncEntity.clientTagHash(for: PhiSyncEntity.spaceClientTag("theirs")),
+                    ciphertext: try ciphertext(spaceEntity("theirs")), version: 4)
+        let engine = makeEngine(access: access, store: store, client: client)
+        await engine.setSpaceSyncEnabled(true)
+        await engine.pullOnce()
+
+        XCTAssertNil(store.table.firstSyncDecision, "the question is still open")
+        XCTAssertTrue(spaceCommits(client).isEmpty, "no Space is published before the answer")
+        XCTAssertTrue(client.commits.contains {
+            $0.clientTagHash == PhiSyncEntity.settingsClientTagHash
+        }, "the settings entity must still publish while the sheet is open")
+    }
 }

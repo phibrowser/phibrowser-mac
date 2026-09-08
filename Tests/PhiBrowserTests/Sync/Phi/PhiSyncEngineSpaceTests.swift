@@ -51,7 +51,16 @@ final class PhiSyncEngineSpaceTests: XCTestCase {
         entity.iconName = v("emoji:1F4BC")
         entity.colorHex = v("#3A6FF8")
         entity.rank = v("V", 0)
-        if let profileUuid, uuid != LocalStore.defaultSpaceId { entity.profileUuid = v(profileUuid) }
+        if uuid != LocalStore.defaultSpaceId {
+            // `phi_entity.proto`: "Every field is ALWAYS emitted, never
+            // omitted-when-empty", and `SyncableSpaces.snapshot` obeys that --
+            // a Space with no pinned theme carries the explicit "". A fixture
+            // that omitted `theme_id` therefore differed from its own snapshot
+            // in `has_theme_id` alone, and every "this round publishes nothing"
+            // assertion below would see one spurious no-op commit.
+            entity.themeID = v("")
+            if let profileUuid { entity.profileUuid = v(profileUuid) }
+        }
         var light = Phi_PhiSettingValue(); light.intValue = -1
         entity.overlayOpacityLight = light
         entity.overlayOpacityDark = light
@@ -147,10 +156,10 @@ final class PhiSyncEngineSpaceTests: XCTestCase {
         XCTAssertEqual(Set(store.table.unreadableTagHashes.keys), [badHash])
         XCTAssertNil(store.table.unreadableTagHashes[goodHash],
                      "one bad entity must not stop the good ones")
-        // Task 8 only ROUTES: the cursor for `good` is written by Task 9's apply
-        // path, so neither uuid has one yet.
+        // Task 9's apply path lands `good` and writes its cursor; `bad` never
+        // decoded, so it has none and lives only in `unreadableTagHashes`.
         XCTAssertNil(store.table.cursors["bad"])
-        XCTAssertNil(store.table.cursors["good"])
+        XCTAssertNotNil(store.table.cursors["good"])
         // A pull that reached the Space section still counts as a drain.
         XCTAssertTrue(store.table.hasDrainedFullReplay)
     }
@@ -372,10 +381,10 @@ final class PhiSyncEngineSpaceTests: XCTestCase {
         // The round really ran: `.localSpaceChange` reaches `push`, which pulls
         // first because this device has never synced.
         XCTAssertFalse(client.getUpdatesCalls.isEmpty)
-        // Task 8 wires the TRIGGER only -- `pushSpaces` is Task 9 Step 4.1, and
-        // Step 5 explicitly forbids hanging it off this round here. That task
-        // turns this count into 1.
-        XCTAssertEqual(spaceCommits(client).count, 0)
+        // ...and with Task 9 Step 4.0/4.1 in place the trigger now reaches
+        // `pushSpaces`: `push` runs the settings half and then the Space half
+        // unconditionally, so the one local Space is published this round.
+        XCTAssertEqual(spaceCommits(client).count, 1)
     }
 
     // MARK: - Durability of the Space-side state (fix round 1)
@@ -520,5 +529,503 @@ final class PhiSyncEngineSpaceTests: XCTestCase {
         XCTAssertFalse(store.table.markerMovedWhileGateShut)
         XCTAssertNil(defaults.data(forKey: PhiSyncEngine.markerStateKey),
                      "the replay drops the marker the parked round advanced, not the reverse")
+    }
+
+    // MARK: - apply (§6.2)
+
+    func testARemoteSpaceIsAdoptedWholesaleWhenThereIsNoBaseline() async throws {
+        let access = FakePhiSpaceAccess()
+        access.profileIdByUuid = ["uuid-a": "Profile 2"]
+        let store = MemorySpaceStore()
+        let client = FakePhiSyncClient()
+        client.seed(tagHash: spaceHash("u1"),
+                    ciphertext: try ciphertext(spaceEntity("u1", name: "Reading")), version: 7)
+        let engine = makeEngine(access: access, store: store, client: client)
+        await engine.setSpaceSyncEnabled(true)
+        await engine.pullOnce()
+
+        XCTAssertEqual(access.currentSpaces().first?.name, "Reading")
+        XCTAssertEqual(access.currentSpaces().first?.profileId, "Profile 2")
+        let cursor = try XCTUnwrap(store.table.cursors["u1"])
+        XCTAssertEqual(cursor.entityId, client.entityId(forTagHash: spaceHash("u1")))
+        XCTAssertEqual(cursor.version, 7)
+        XCTAssertNotNil(cursor.reconciled)
+        XCTAssertNotNil(cursor.server)
+        XCTAssertNil(cursor.pendingApply)
+    }
+
+    func testARemoteRebindGoesThroughRebindAndNotARawFieldWrite() async throws {
+        let access = FakePhiSpaceAccess()
+        access.profileIdByUuid = ["uuid-b": "Profile 3"]
+        access.spaces = [PhiLocalSpace(spaceId: "u1", profileId: "Default", name: "Work",
+                                       colorHex: "#3A6FF8", iconName: "emoji:1F4BC", sortOrder: 0,
+                                       createdDate: Date(timeIntervalSince1970: 1),
+                                       themeId: nil, opacityLight: nil, opacityDark: nil)]
+        let store = MemorySpaceStore()
+        var seeded = PhiSpaceCursor()
+        seeded.entityId = "srv-1"; seeded.version = 3
+        seeded.reconciled = try spaceEntity("u1").serializedData()
+        seeded.server = seeded.reconciled
+        store.table.cursors["u1"] = seeded
+        store.table.hasDrainedFullReplay = true
+
+        let client = FakePhiSyncClient()
+        var rebound = spaceEntity("u1", profileUuid: "uuid-b")
+        rebound.profileUuid.updatedAtMs = 500
+        client.seed(tagHash: spaceHash("u1"), ciphertext: try ciphertext(rebound), version: 8)
+        let engine = makeEngine(access: access, store: store, client: client)
+        await engine.setSpaceSyncEnabled(true)
+        await engine.pullOnce()
+        XCTAssertTrue(access.calls.contains(.rebind(spaceId: "u1", toProfileId: "Profile 3")))
+    }
+
+    /// §6.2 A0 / §3.6's "唯一的例外, 也是死映射的唯一自愈路径". The reverse
+    /// lookup resolves, but the local Chromium profile behind the mapping was
+    /// deleted, so every landing would throw on a profileId that no longer
+    /// exists and the entity would park forever with no self-heal path.
+    func testADeadMappingIsDroppedAndTheProfileIsRebuiltNextRound() async throws {
+        let access = FakePhiSpaceAccess()
+        access.profileIdByUuid = ["uuid-a": "P-deleted"]   // the mapping is still there
+        access.knownLocalProfileIds = []                   // the local profile is not
+        let store = MemorySpaceStore()
+        let client = FakePhiSyncClient()
+        client.seed(tagHash: spaceHash("u1"),
+                    ciphertext: try ciphertext(spaceEntity("u1")), version: 7)
+        let engine = makeEngine(access: access, store: store, client: client)
+        await engine.setSpaceSyncEnabled(true)
+        await engine.pullOnce()
+
+        XCTAssertEqual(access.droppedMappings, ["P-deleted"],
+                       "removeMapping(forProfileId:) must fire exactly once")
+        XCTAssertTrue(access.calls.filter { $0 == .create("u1") }.isEmpty)
+        XCTAssertTrue(access.calls.filter {
+            if case .rebind = $0 { return true } else { return false }
+        }.isEmpty)
+        XCTAssertNil(store.table.cursors["u1"]?.reconciled)
+        XCTAssertNotNil(store.table.cursors["u1"]?.pendingApply, "parked, not dropped")
+
+        // Next round §3.6 sees the uuid in `missing` again and rebuilds a local
+        // profile under its registered name; the parked entity then lands.
+        // Driven directly rather than through `access.onRefresh`: nothing in the
+        // engine calls `refreshAccountProfiles()` until Task 11 Step 6, so the
+        // hook would never fire and this round would simply re-park.
+        access.profileIdByUuid["uuid-a"] = "P-rebuilt"
+        access.knownLocalProfileIds = ["P-rebuilt"]
+        await engine.pullOnce()
+        XCTAssertEqual(access.currentSpaces().first?.profileId, "P-rebuilt")
+        XCTAssertNil(store.table.cursors["u1"]?.pendingApply)
+        XCTAssertEqual(access.droppedMappings, ["P-deleted"], "and only once")
+    }
+
+    /// §3.5 fallback A is transient. Once the held uuid resolves -- §3.6 created
+    /// the profile -- the row must actually move onto it and the next snapshot
+    /// must emit the mapping-derived `profile_uuid`, not the frozen echo.
+    func testAHeldBindingLandsAndClearsOnceTheProfileResolves() async throws {
+        let access = FakePhiSpaceAccess()
+        access.uuidByProfileId = ["Default": "uuid-a"]
+        access.profileIdByUuid = ["uuid-a": "Default"]
+        access.knownLocalProfileIds = ["Default"]
+        access.spaces = [PhiLocalSpace(spaceId: "u1", profileId: "Default", name: "Work",
+                                       colorHex: "#3A6FF8", iconName: "emoji:1F4BC", sortOrder: 0,
+                                       createdDate: Date(timeIntervalSince1970: 1),
+                                       themeId: nil, opacityLight: nil, opacityDark: nil)]
+        let store = MemorySpaceStore()
+        var seeded = PhiSpaceCursor()
+        seeded.entityId = "srv-1"; seeded.version = 3
+        seeded.reconciled = try spaceEntity("u1").serializedData()
+        seeded.server = seeded.reconciled
+        store.table.cursors["u1"] = seeded
+        store.table.hasDrainedFullReplay = true
+        store.table.firstSyncDecision = "keepBoth"
+
+        let client = FakePhiSyncClient()
+        var rebound = spaceEntity("u1", profileUuid: "uuid-新")
+        rebound.profileUuid.updatedAtMs = 500
+        client.seed(tagHash: spaceHash("u1"), ciphertext: try ciphertext(rebound), version: 8)
+        let engine = makeEngine(access: access, store: store, client: client)
+        await engine.setSpaceSyncEnabled(true)
+        await engine.pullOnce()
+        XCTAssertEqual(store.table.cursors["u1"]?.heldProfileUuid, "uuid-新")
+        XCTAssertEqual(store.table.cursors["u1"]?.heldForLocalProfileId, "Default")
+        XCTAssertTrue(spaceCommits(client).isEmpty, "a held binding never produces a commit")
+
+        // §3.6 creates the profile on the next round. Driven directly here for
+        // the same reason as the dead-mapping case above.
+        access.profileIdByUuid["uuid-新"] = "P-new"
+        access.uuidByProfileId["P-new"] = "uuid-新"
+        access.knownLocalProfileIds = ["Default", "P-new"]
+        await engine.pullOnce()
+        XCTAssertTrue(access.calls.contains(.rebind(spaceId: "u1", toProfileId: "P-new")))
+        XCTAssertNil(store.table.cursors["u1"]?.heldProfileUuid)
+        XCTAssertNil(store.table.cursors["u1"]?.heldForLocalProfileId)
+        XCTAssertTrue(spaceCommits(client).isEmpty,
+                      "landing the held value is convergence, not a new local edit")
+    }
+
+    /// §5.6's invariant, and the reason every write in `PhiSpaceLocalAccess` throws.
+    func testAFailedLandingWritesNoBaselineAndParksTheEntity() async throws {
+        struct Boom: Error {}
+        let access = FakePhiSpaceAccess()
+        access.profileIdByUuid = ["uuid-a": "Default"]
+        access.errorOnNextWrite = Boom()
+        let store = MemorySpaceStore()
+        let client = FakePhiSyncClient()
+        client.seed(tagHash: spaceHash("u1"),
+                    ciphertext: try ciphertext(spaceEntity("u1")), version: 7)
+        let engine = makeEngine(access: access, store: store, client: client)
+        await engine.setSpaceSyncEnabled(true)
+        await engine.pullOnce()
+
+        let cursor = try XCTUnwrap(store.table.cursors["u1"])
+        XCTAssertNil(cursor.reconciled)
+        XCTAssertNil(cursor.server)
+        XCTAssertNotNil(cursor.pendingApply, "the entity is retried next round, never dropped")
+
+        await engine.pullOnce()      // the armed error is one-shot
+        XCTAssertNil(store.table.cursors["u1"]!.pendingApply)
+        XCTAssertNotNil(store.table.cursors["u1"]!.reconciled)
+    }
+
+    /// Pins `server = remote`, not `merged`: recording the merge result as "what
+    /// the server holds" makes a local edit that survived the merge equal to both
+    /// baselines at once, and it is never published again.
+    ///
+    /// Two things this fixture has to spell out that the plan's sketch did not,
+    /// both forced by the code as it stands. (1) The surviving edit must be in
+    /// the BASELINE with a newer timestamp than the remote's: `land` rewrites the
+    /// row from `merged`, so an unstamped local rename is overwritten before any
+    /// snapshot can see it, and there would be nothing left to publish. (2) The
+    /// profile the rebind moves the row onto needs a mapping of its own, or
+    /// `SyncableSpaces.snapshot` skips the whole Space rather than putting a
+    /// device-local Chromium basename on the wire — and then no commit happens
+    /// for either choice of baseline, so the test could not discriminate.
+    func testAMergedLocalEditIsStillPublishedNextRound() async throws {
+        let access = FakePhiSpaceAccess()
+        access.uuidByProfileId = ["Default": "uuid-a", "Profile 3": "uuid-b"]
+        access.profileIdByUuid = ["uuid-a": "Default", "uuid-b": "Profile 3"]
+        access.spaces = [PhiLocalSpace(spaceId: "u1", profileId: "Default", name: "Work2",
+                                       colorHex: "#3A6FF8", iconName: "emoji:1F4BC", sortOrder: 0,
+                                       createdDate: Date(timeIntervalSince1970: 1),
+                                       themeId: nil, opacityLight: nil, opacityDark: nil)]
+        let store = MemorySpaceStore()
+        // This account renamed the Space to "Work2" and this device has the
+        // rename in its baseline; the row on the server is still the older one.
+        var baseline = spaceEntity("u1", name: "Work2")
+        baseline.name.updatedAtMs = 800
+        var seeded = PhiSpaceCursor()
+        seeded.entityId = "srv-1"; seeded.version = 3
+        seeded.reconciled = try baseline.serializedData()
+        seeded.server = try spaceEntity("u1", name: "Work").serializedData()
+        store.table.cursors["u1"] = seeded
+        store.table.hasDrainedFullReplay = true
+        store.table.firstSyncDecision = "keepBoth"   // Task 13 sets this automatically
+
+        let client = FakePhiSyncClient()
+        // A peer that has not seen the rename rebinds the Space: its own `name`
+        // is still "Work" at the older timestamp, so the merge keeps "Work2".
+        var rebound = spaceEntity("u1", name: "Work", profileUuid: "uuid-b")
+        rebound.profileUuid.updatedAtMs = 900
+        client.seed(tagHash: spaceHash("u1"), ciphertext: try ciphertext(rebound), version: 9)
+        let engine = makeEngine(access: access, store: store, client: client)
+        await engine.setSpaceSyncEnabled(true)
+        await engine.pullOnce()
+
+        XCTAssertEqual(store.table.cursors["u1"]!.server,
+                       try rebound.serializedData(),
+                       "server must be the entity we pulled, not the merge result")
+        let commits = spaceCommits(client)
+        XCTAssertEqual(commits.count, 1)
+        let sent = try Phi_PhiSpaceEntity(serializedBytes:
+            try PhiEntityCodec.decrypt(commits[0].ciphertext!, key: key).space.serializedData())
+        XCTAssertEqual(sent.name.stringValue, "Work2")
+        XCTAssertEqual(sent.profileUuid.stringValue, "uuid-b")
+        XCTAssertEqual(commits[0].baseVersion, 9)
+    }
+
+    /// §5.2 改动三, in the direction the settings path used to swallow: the
+    /// Space section must publish even when the account's SETTINGS entity is
+    /// unreadable. `maySettingsPublish == false` and `pushSettings`'s early
+    /// returns are statements about one settings row, not about Spaces.
+    func testAnUnreadableSettingsEntityDoesNotStopSpaceCommits() async throws {
+        let access = FakePhiSpaceAccess()
+        access.uuidByProfileId = ["Default": "uuid-a"]
+        access.spaces = [PhiLocalSpace(spaceId: "u1", profileId: "Default", name: "Work",
+                                       colorHex: "#3A6FF8", iconName: "emoji:1F4BC", sortOrder: 0,
+                                       createdDate: Date(timeIntervalSince1970: 1),
+                                       themeId: nil, opacityLight: nil, opacityDark: nil)]
+        let store = MemorySpaceStore()
+        store.table.hasDrainedFullReplay = true
+        store.table.firstSyncDecision = "keepBoth"
+        let client = FakePhiSyncClient()
+        // A settings entity this build cannot open: the pull records the id but
+        // no baseline, so `maySettingsPublish` goes false and `pushSettings`
+        // bails at its "no readable baseline" guard before it reaches a commit.
+        client.seed(tagHash: PhiSyncEntity.settingsClientTagHash,
+                    ciphertext: Data([0xDE, 0xAD]), version: 3)
+        let engine = makeEngine(access: access, store: store, client: client)
+        await engine.setSpaceSyncEnabled(true)
+        await engine.pullOnce()
+
+        XCTAssertTrue(client.commits.allSatisfy {
+            $0.clientTagHash != PhiSyncEntity.settingsClientTagHash
+        }, "the unreadable settings row must not be overwritten")
+        XCTAssertEqual(spaceCommits(client).count, 1,
+                       "the Space section publishes regardless of the settings half")
+    }
+
+    /// The steady state, and the reason `pushSpaces` cannot hang off the end of
+    /// `pushSettings`: on almost every round the settings entity is unchanged and
+    /// that half returns at `if let last, outgoing == last` long before its last
+    /// statement.
+    func testARoundWithNoSettingsChangeStillCommitsARenamedSpace() async throws {
+        let access = FakePhiSpaceAccess()
+        access.uuidByProfileId = ["Default": "uuid-a"]
+        access.spaces = [PhiLocalSpace(spaceId: "u1", profileId: "Default", name: "Work",
+                                       colorHex: "#3A6FF8", iconName: "emoji:1F4BC", sortOrder: 0,
+                                       createdDate: Date(timeIntervalSince1970: 1),
+                                       themeId: nil, opacityLight: nil, opacityDark: nil)]
+        let store = MemorySpaceStore()
+        store.table.hasDrainedFullReplay = true
+        store.table.firstSyncDecision = "keepBoth"
+        let client = FakePhiSyncClient()
+        let engine = makeEngine(access: access, store: store, client: client)
+        await engine.setSpaceSyncEnabled(true)
+        await engine.pushLocalSettings()          // round 1: settings entity created
+        let settingsCommits = client.commits.count - spaceCommits(client).count
+        XCTAssertGreaterThan(settingsCommits, 0)
+
+        // Round 2: the user renames the Space; the settings entity is untouched.
+        access.spaces[0].name = "Work2"
+        let before = spaceCommits(client).count
+        await engine.handleLocalSpacesChange()
+        XCTAssertEqual(spaceCommits(client).count, before + 1)
+        XCTAssertEqual(client.commits.count - spaceCommits(client).count, settingsCommits,
+                       "the settings half correctly published nothing this round")
+    }
+
+    // MARK: - Guard 3 (§5.5)
+
+    func testNothingIsCommittedForATagThisDeviceCannotRead() async throws {
+        let access = FakePhiSpaceAccess()
+        access.uuidByProfileId = ["Default": "uuid-a"]
+        access.spaces = [
+            PhiLocalSpace(spaceId: LocalStore.defaultSpaceId, profileId: "Default", name: "Default",
+                          colorHex: "#3A6FF8", iconName: "phi:x", sortOrder: 0,
+                          createdDate: Date(timeIntervalSince1970: 1),
+                          themeId: nil, opacityLight: nil, opacityDark: nil),
+            PhiLocalSpace(spaceId: "u2", profileId: "Default", name: "Reading",
+                          colorHex: "#111111", iconName: "phi:y", sortOrder: 1,
+                          createdDate: Date(timeIntervalSince1970: 2),
+                          themeId: nil, opacityLight: nil, opacityDark: nil),
+        ]
+        let store = MemorySpaceStore()
+        store.table.firstSyncDecision = "keepBoth"   // Task 13 sets this automatically
+        let client = FakePhiSyncClient()
+        let defaultHash = spaceHash(LocalStore.defaultSpaceId)
+        client.seed(tagHash: defaultHash, ciphertext: Data([0xDE, 0xAD]), version: 4)
+        let engine = makeEngine(access: access, store: store, client: client)
+        await engine.setSpaceSyncEnabled(true)
+        await engine.pullOnce()
+
+        XCTAssertTrue(store.table.hasDrainedFullReplay, "an undecryptable entity does not stop the drain")
+        let hashes = Set(spaceCommits(client).map(\.clientTagHash))
+        XCTAssertFalse(hashes.contains(defaultHash),
+                       "a version-0 create here takes the server's ON CONFLICT DO UPDATE path and destroys the account's row")
+        XCTAssertTrue(hashes.contains(spaceHash("u2")), "the readable Spaces still sync")
+
+        // Once the entity becomes readable again the refusal lifts by itself.
+        client.reseed(tagHash: defaultHash,
+                      ciphertext: try ciphertext(spaceEntity(LocalStore.defaultSpaceId)), version: 5)
+        await engine.pullOnce()
+        XCTAssertTrue(store.table.unreadableTagHashes.isEmpty)
+    }
+
+    // MARK: - Tombstones (§5.1 / §9.1)
+
+    func testALocalDeleteEmitsOneTombstoneAndFinalizesOnSuccess() async throws {
+        let access = FakePhiSpaceAccess()
+        let store = MemorySpaceStore()
+        var cursor = PhiSpaceCursor()
+        cursor.entityId = "srv-1"; cursor.version = 6
+        cursor.reconciled = try spaceEntity("u1").serializedData()
+        cursor.server = cursor.reconciled
+        cursor.pendingDelete = true
+        store.table.cursors["u1"] = cursor
+        store.table.hasDrainedFullReplay = true
+        store.table.firstSyncDecision = "keepBoth"   // Task 13 sets this automatically
+        let client = FakePhiSyncClient()
+        // The row the cursor points at, already tombstoned: the fake's update
+        // path THROWS on a missing row, which would abandon the whole batch
+        // before any outcome was applied. Seeding it as a tombstone also keeps
+        // the pull that precedes the push free of side effects — a deleted
+        // entity is routed to `batch.tombstones`, whose apply path is Task 14.
+        client.seed(tagHash: spaceHash("u1"), ciphertext: Data(),
+                    version: 6, entityId: "srv-1", deleted: true)
+        let engine = makeEngine(access: access, store: store, client: client)
+        await engine.setSpaceSyncEnabled(true)
+        await engine.pushLocalSettings()
+
+        let commits = spaceCommits(client)
+        XCTAssertEqual(commits.count, 1)
+        XCTAssertTrue(commits[0].deleted)
+        XCTAssertNil(commits[0].ciphertext)
+        XCTAssertEqual(commits[0].name, PhiSyncEntity.spaceEntityName)
+        let after = try XCTUnwrap(store.table.cursors["u1"])
+        XCTAssertFalse(after.pendingDelete)
+        XCTAssertNotNil(after.deletedAtMs)
+        XCTAssertNil(after.reconciled)
+        XCTAssertNil(after.server)
+        XCTAssertNotNil(after.entityId, "the cursor stays as a permanent tombstone record")
+    }
+
+    func testARejectedTombstoneIsResentUnchangedAndOnlyGivesUpAfterThree() async throws {
+        let access = FakePhiSpaceAccess()
+        let store = MemorySpaceStore()
+        var cursor = PhiSpaceCursor()
+        cursor.entityId = "srv-1"; cursor.version = 6
+        cursor.reconciled = try spaceEntity("u1").serializedData()
+        cursor.server = cursor.reconciled
+        cursor.pendingDelete = true
+        store.table.cursors["u1"] = cursor
+        store.table.hasDrainedFullReplay = true
+        store.table.firstSyncDecision = "keepBoth"   // Task 13 sets this automatically
+        let client = FakePhiSyncClient()
+        client.seed(tagHash: spaceHash("u1"), ciphertext: Data(),
+                    version: 6, entityId: "srv-1", deleted: true)
+        client.forceInvalidMessage = true
+        let engine = makeEngine(access: access, store: store, client: client)
+        await engine.setSpaceSyncEnabled(true)
+
+        await engine.pushLocalSettings()
+        var after = try XCTUnwrap(store.table.cursors["u1"])
+        XCTAssertTrue(after.pendingDelete, "INVALID_MESSAGE does not prove the row is gone")
+        XCTAssertEqual(after.deleteRejectRounds, 1)
+        XCTAssertNil(after.deletedAtMs)
+        XCTAssertEqual(after.entityId, "srv-1")
+
+        client.forceInvalidMessage = false
+        await engine.pushLocalSettings()
+        after = try XCTUnwrap(store.table.cursors["u1"])
+        XCTAssertFalse(after.pendingDelete)
+        XCTAssertEqual(after.deleteRejectRounds, 0)
+        XCTAssertNotNil(after.deletedAtMs)
+        let commits = spaceCommits(client)
+        XCTAssertEqual(commits.count, 2)
+        XCTAssertEqual(commits[0].baseVersion, commits[1].baseVersion)
+    }
+
+    func testThreeRejectionsFinalizeTheDeleteAndStopResending() async throws {
+        let access = FakePhiSpaceAccess()
+        let store = MemorySpaceStore()
+        var cursor = PhiSpaceCursor()
+        cursor.entityId = "srv-1"; cursor.version = 6
+        cursor.pendingDelete = true
+        store.table.cursors["u1"] = cursor
+        store.table.hasDrainedFullReplay = true
+        store.table.firstSyncDecision = "keepBoth"   // Task 13 sets this automatically
+        let client = FakePhiSyncClient()
+        client.forceInvalidMessage = true
+        let engine = makeEngine(access: access, store: store, client: client)
+        await engine.setSpaceSyncEnabled(true)
+        for _ in 0..<3 { await engine.pushLocalSettings() }
+        XCTAssertFalse(store.table.cursors["u1"]!.pendingDelete)
+        XCTAssertNotNil(store.table.cursors["u1"]!.deletedAtMs)
+        let sent = spaceCommits(client).count
+        await engine.pushLocalSettings()
+        XCTAssertEqual(spaceCommits(client).count, sent, "no per-round resend loop")
+    }
+
+    func testAPendingDeleteWithNoEntityIdIsDroppedBeforeItIsSent() async throws {
+        let access = FakePhiSpaceAccess()
+        let store = MemorySpaceStore()
+        var cursor = PhiSpaceCursor()
+        cursor.pendingDelete = true      // never published: no entityId, version 0
+        store.table.cursors["ghost"] = cursor
+        store.table.hasDrainedFullReplay = true
+        store.table.firstSyncDecision = "keepBoth"   // Task 13 sets this automatically
+        let client = FakePhiSyncClient()
+        let engine = makeEngine(access: access, store: store, client: client)
+        await engine.setSpaceSyncEnabled(true)
+        await engine.pushLocalSettings()
+        XCTAssertTrue(spaceCommits(client).isEmpty)
+        XCTAssertFalse(store.table.cursors["ghost"]!.pendingDelete)
+        XCTAssertNotNil(store.table.cursors["ghost"]!.deletedAtMs)
+    }
+
+    // MARK: - Per-entity conflict retry (§5.1)
+
+    func testOneConflictDoesNotAbandonTheRestOfTheBatch() async throws {
+        let access = FakePhiSpaceAccess()
+        access.uuidByProfileId = ["Default": "uuid-a"]
+        access.spaces = (1...3).map { i in
+            PhiLocalSpace(spaceId: "u\(i)", profileId: "Default", name: "S\(i)",
+                          colorHex: "#3A6FF8", iconName: "phi:x", sortOrder: i,
+                          createdDate: Date(timeIntervalSince1970: TimeInterval(i)),
+                          themeId: nil, opacityLight: nil, opacityDark: nil)
+        }
+        let store = MemorySpaceStore()
+        store.table.hasDrainedFullReplay = true
+        store.table.firstSyncDecision = "keepBoth"   // Task 13 sets this automatically
+        let client = FakePhiSyncClient()
+        client.conflictOnceForTagHashes = [spaceHash("u2")]
+        let engine = makeEngine(access: access, store: store, client: client)
+        await engine.setSpaceSyncEnabled(true)
+        await engine.pushLocalSettings()
+
+        XCTAssertNotNil(store.table.cursors["u1"]?.server)
+        XCTAssertNotNil(store.table.cursors["u3"]?.server)
+        XCTAssertNotNil(store.table.cursors["u2"]?.server, "the conflicting one is retried, not dropped")
+        // The retry is SCOPED: only the conflicting uuid goes back through the
+        // wire, not the whole batch recomputed from scratch.
+        XCTAssertEqual(spaceCommits(client).filter { $0.clientTagHash == spaceHash("u2") }.count, 2)
+        for uuid in ["u1", "u3"] {
+            XCTAssertEqual(spaceCommits(client).filter { $0.clientTagHash == spaceHash(uuid) }.count, 1,
+                           "\(uuid) already succeeded and must not be re-sent")
+        }
+    }
+
+    // MARK: - Echo suppression (§6.6)
+
+    func testASnapshotTakenRightAfterApplyStampsNothingAndCommitsNothing() async throws {
+        let access = FakePhiSpaceAccess()
+        access.uuidByProfileId = ["Default": "uuid-a"]
+        access.profileIdByUuid = ["uuid-a": "Default"]
+        let store = MemorySpaceStore()
+        let client = FakePhiSyncClient()
+        client.seed(tagHash: spaceHash("u1"),
+                    ciphertext: try ciphertext(spaceEntity("u1")), version: 7)
+        let engine = makeEngine(access: access, store: store, client: client)
+        await engine.setSpaceSyncEnabled(true)
+        await engine.pullOnce()
+        let commitsAfterApply = spaceCommits(client).count
+        await engine.handleLocalSpacesChange()
+        XCTAssertEqual(spaceCommits(client).count, commitsAfterApply)
+    }
+
+    // MARK: - Retirement (§3.3 step 2.0)
+
+    func testAnInFlightRoundWritesNothingAfterShutdown() async throws {
+        let access = FakePhiSpaceAccess()
+        let store = MemorySpaceStore()
+        let client = FakePhiSyncClient()
+        let gate = Gate()
+        client.getUpdatesGate = gate
+        client.seed(tagHash: spaceHash("u1"),
+                    ciphertext: try ciphertext(spaceEntity("u1")), version: 7)
+        let engine = makeEngine(access: access, store: store, client: client)
+        await engine.setSpaceSyncEnabled(true)
+
+        let round = Task { await engine.pullOnce() }
+        try await Task.sleep(nanoseconds: 50_000_000)
+        engine.shutdown()
+        store.table = PhiSpaceSyncTable()
+        for key in PhiSyncEngine.stateKeys { defaults.removeObject(forKey: key) }
+        await gate.open()
+        await round.value
+
+        XCTAssertEqual(store.table, PhiSpaceSyncTable())
+        XCTAssertTrue(access.calls.filter { $0 != .refreshProfiles }.isEmpty)
+        XCTAssertTrue(client.commits.isEmpty)
+        XCTAssertTrue(PhiSyncEngine.stateKeys.allSatisfy { defaults.object(forKey: $0) == nil })
     }
 }

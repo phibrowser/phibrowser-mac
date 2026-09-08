@@ -132,6 +132,15 @@ final class PhiSyncEngineTests: XCTestCase {
         /// already advanced the shared marker. `getUpdatesErrorOnce` cannot express it: it
         /// fires on the round's very first call, before anything is persisted.
         var getUpdatesErrorAfterPages: (pages: Int, error: Error)?
+        /// M3-2: while set, every commit ENTRY is answered INVALID_MESSAGE as an
+        /// outcome and the store is left untouched — the per-entry shape the real
+        /// server uses. Deliberately not a throw: a throw abandons the whole
+        /// batch, which is precisely what a Space batch must survive.
+        var forceInvalidMessage = false
+        /// M3-2: one-shot per tag. An entry whose `client_tag_hash` is in the set
+        /// is answered CONFLICT, the hash is removed and the store is left
+        /// untouched, so the scoped retry that follows it succeeds.
+        var conflictOnceForTagHashes: Set<String> = []
 
         func seed(ciphertext: Data, version: Int64, entityId: String = "srv-seed", deleted: Bool = false) {
             stored[PhiSyncEntity.settingsClientTagHash] = Stored(entityId: entityId, version: version,
@@ -148,6 +157,20 @@ final class PhiSyncEngineTests: XCTestCase {
             stored[tagHash] = Stored(entityId: id, version: version,
                                      ciphertext: ciphertext, deleted: deleted)
         }
+
+        /// M3-2: replace a seeded row's payload and version while KEEPING the id
+        /// the server assigned it. `seed(tagHash:…)` mints a fresh `srv-N` by
+        /// default, so re-seeding through it would make the engine's stored
+        /// entity id stop matching the row it points at.
+        func reseed(tagHash: String, ciphertext: Data, version: Int64) {
+            let id = stored[tagHash]?.entityId ?? { idCounter += 1; return "srv-\(idCounter)" }()
+            stored[tagHash] = Stored(entityId: id, version: version,
+                                     ciphertext: ciphertext, deleted: false)
+        }
+
+        /// M3-2: the id the server assigned to a seeded row, so a test can pin
+        /// the cursor the engine wrote against it (`stored` is `private(set)`).
+        func entityId(forTagHash tagHash: String) -> String { stored[tagHash]?.entityId ?? "" }
 
         func getUpdates(marker: Data?, storeBirthday: String) async throws
             -> (entities: [PhiRemoteEntity], newMarker: Data, storeBirthday: String, changesRemaining: Bool) {
@@ -212,6 +235,14 @@ final class PhiSyncEngineTests: XCTestCase {
                 if let error = commitErrorOnce {
                     commitErrorOnce = nil
                     throw error
+                }
+                if forceInvalidMessage {
+                    outcomes.append(.invalidMessage)
+                    continue
+                }
+                if conflictOnceForTagHashes.remove(clientTagHash) != nil {
+                    outcomes.append(.conflict(serverVersion: stored[clientTagHash]?.version))
+                    continue
                 }
                 if forcedConflicts > 0 {
                     forcedConflicts -= 1

@@ -377,6 +377,10 @@ actor PhiSyncEngine {
         // A round enqueued before sign-out but still waiting behind an in-flight one must not
         // start against the account that has since been mounted on the same defaults.
         guard !isStopped else { return }
+        // §11's counters are per ROUND, not per pull: one round can contain a
+        // NOT_MY_BIRTHDAY retry, the push's initial pull and a scoped conflict
+        // retry, and `pushSpaces` runs after the pull's tail has already finished.
+        spaceCounters = SpaceRoundCounters()
         switch round {
         case .pull:
             _ = await pull(retryOnBirthday: true, thenPush: true)
@@ -391,6 +395,53 @@ actor PhiSyncEngine {
         case .spaceGate(let enabled):
             applySpaceGate(enabled)
         }
+        logSpaceRound()
+    }
+
+    // MARK: - §11 round counters
+
+    /// §11's one-line-per-round counter set. Metadata only (R12): counts and
+    /// booleans, never a uuid, a name, an icon or a colour.
+    ///
+    /// `applied` counts entities that LANDED this round (creates, field updates,
+    /// rebinds and remote soft deletes); `tombstones` counts the tombstones this
+    /// device PUBLISHED, next to `pushed` and `conflicts`.
+    private struct SpaceRoundCounters {
+        var pulled = 0
+        var applied = 0
+        var refused = 0
+        var pushed = 0
+        var tombstones = 0
+        var conflicts = 0
+        var profilesCreated = 0
+        /// ok | failed | skipped. `skipped` covers "already refreshed this
+        /// round", "inside the 30 s interval" and "the gate is shut" -- §11 is
+        /// explicit that it is NOT a failure. Filled in by Task 11's refresh hook;
+        /// until that lands no refresh runs at all, so `skipped` is the true value.
+        var profileRefresh = "skipped"
+    }
+    private var spaceCounters = SpaceRoundCounters()
+
+    /// One info line per round, at the end of the round.
+    private func logSpaceRound() {
+        guard spaceSectionEnabled, spaceStore != nil else { return }
+        let table = loadSpaceTable()
+        let held = table.cursors.values.filter { $0.heldProfileUuid != nil }.count
+        // `parked` deliberately excludes the D2 wait: those cursors are parked
+        // on purpose until the user answers, while §11 says the steady-state
+        // value of this counter is 0.
+        let parked = table.firstSyncDecision == nil
+            ? 0
+            : table.cursors.values.filter { $0.pendingApply != nil }.count
+        AppLogInfo("""
+            [phi-sync] spaces pulled=\(spaceCounters.pulled) applied=\(spaceCounters.applied) \
+            held=\(held) parked=\(parked) refused=\(spaceCounters.refused) \
+            unreadable=\(table.unreadableTagHashes.count) pushed=\(spaceCounters.pushed) \
+            tombstones=\(spaceCounters.tombstones) conflicts=\(spaceCounters.conflicts) \
+            drained=\(table.hasDrainedFullReplay) drain_in_progress=\(table.drainInProgress) \
+            profiles_created=\(spaceCounters.profilesCreated) \
+            profile_refresh=\(spaceCounters.profileRefresh)
+            """)
     }
 
     // MARK: - Pull
@@ -649,6 +700,33 @@ actor PhiSyncEngine {
                 }
                 if !table.cursors.isEmpty { table.hadRecords = true }
             }
+
+            // The apply path is the one Space write that cannot be expressed as a
+            // `mutateSpaceTable` delta: `applySpaces` hops to the main actor on
+            // every landing, so its table copy necessarily spans suspension
+            // points. One load / apply / write is safe *here* and only here —
+            // rounds are serialized (`serialized(_:)` chains them, and the gate
+            // edge is itself a round), and this is the last Space work of the
+            // round, so nothing can touch the table between the load and the
+            // write.
+            //
+            // It MUST sit after `flushSpaceObservations(batch)` and after the
+            // block above, and both orderings are load-bearing:
+            //  1. `applySpaces` clears `unreadableTagHashes` for every uuid it
+            //     lands. Loading after the flush is what makes "the refusal lifts
+            //     by itself" true instead of racing this round's own record of
+            //     the same hash.
+            //  2. `applySpaces` writes cursors, so running it before guard 2
+            //     would make `table.cursors.isEmpty` false and silently disable
+            //     the one-shot empty-table replay. The cost is that cursors
+            //     created this round only set `hadRecords` on the NEXT round,
+            //     which is harmless: `hadRecords` exists to describe a table that
+            //     was populated and then lost.
+            var spaceTable = loadSpaceTable()
+            spaceCounters.pulled += batch.decoded.count + batch.tombstones.count
+            await applySpaces(batch, table: &spaceTable)
+            await applySpaceTombstones(batch, table: &spaceTable)
+            writeSpaceTable(spaceTable)
         }
         // The gated-off round's `markerMovedWhileGateShut` needs no write here: it was
         // persisted by the page that observed it.
@@ -658,7 +736,18 @@ actor PhiSyncEngine {
         // pure remote apply commits nothing. Settings only: whether the Space section may
         // publish is its own question (§5.5 guard 1 and §8's D2), and the two must not be able
         // to silence each other — an unreadable settings entity says nothing about the Spaces.
-        if thenPush, maySettingsPublish { await push(retryOnConflict: false, allowInitialPull: false) }
+        // So the two halves are called separately here rather than through the `push` wrapper:
+        // `maySettingsPublish == false` means "the SETTINGS row on the server is bytes this
+        // build cannot read", and letting it gate the Space section too is exactly the coupling
+        // §5.2 改动三 forbids. `pushSpaces` carries every Space-side guard of its own (the gate,
+        // the drain, D2, guard 3), so calling it unconditionally is safe — on a settings-only
+        // engine (`spaceStore == nil`) it returns on its first line.
+        if thenPush {
+            if maySettingsPublish {
+                await pushSettings(retryOnConflict: false, allowInitialPull: false)
+            }
+            await pushSpaces(retryOnConflict: false)
+        }
 
         if !drained, followUpRoundsUsed < Self.maxFollowUpRounds {
             // The page budget ran out with `changes_remaining` still set. Wait out the 60 s
@@ -763,6 +852,199 @@ actor PhiSyncEngine {
                               entityId: entity.entityId, version: entity.version))
     }
 
+    // MARK: - Space apply (§6.2 A0-A3)
+
+    /// Lands everything one pull collected. Never throws: a failed landing parks
+    /// its entity and the round moves on.
+    private func applySpaces(_ batch: SpacePullBatch, table: inout PhiSpaceSyncTable) async {
+        guard !isStopped, let spaceAccess else { return }
+
+        // §3.5 fallback A is transient by design. As soon as a held binding
+        // resolves -- §3.6 created the profile, or a dead mapping was rebuilt --
+        // re-park the baseline so the loop below RE-LANDS it and the row actually
+        // moves onto that profile. Without this the hold survives (no new entity
+        // for that uuid will ever arrive: the shared marker has moved past it) and
+        // the Space stays bound to the wrong profile forever.
+        for (uuid, var cursor) in table.cursors {
+            guard let held = cursor.heldProfileUuid,
+                  cursor.pendingApply == nil,
+                  let bytes = cursor.reconciled,
+                  await spaceAccess.localProfileId(forGlobalUuid: held) != nil else { continue }
+            cursor.pendingApply = bytes
+            table.cursors[uuid] = cursor
+        }
+
+        // Everything parked earlier is retried alongside this round's arrivals,
+        // oldest cursor first so ordering is device-independent.
+        var pending: [(uuid: String, entity: Phi_PhiSpaceEntity, entityId: String, version: Int64)] = []
+        for (uuid, cursor) in table.cursors.sorted(by: { $0.key < $1.key }) {
+            guard let bytes = cursor.pendingApply,
+                  let entity = try? Phi_PhiSpaceEntity(serializedBytes: bytes) else { continue }
+            pending.append((uuid: uuid, entity: entity,
+                            entityId: cursor.entityId ?? "", version: cursor.version))
+        }
+        let incoming = batch.decoded.sorted { $0.uuid < $1.uuid }
+        let all = pending.filter { p in !incoming.contains { $0.uuid == p.uuid } } + incoming
+
+        var landedAny = false
+        for item in all {
+            guard !isStopped else { return }
+            var cursor = table.cursors[item.uuid] ?? PhiSpaceCursor()
+            // R12: every Space log line names the entity by its client tag hash
+            // prefix, never by the `space_uuid` it was derived from.
+            let tag = PhiSyncEntity.clientTagHash(for: PhiSyncEntity.spaceClientTag(item.uuid))
+
+            // §6.5: refuse to materialize agent / incognito payloads. Refusing is
+            // NOT a claim the account should not hold it, so no tombstone is ever
+            // pushed back; `refusedAtMs` only stops the re-decrypt every round.
+            if SyncableSpaces.refuses(item.entity) {
+                cursor.refusedAtMs = now()
+                cursor.pendingApply = nil
+                table.cursors[item.uuid] = cursor
+                spaceCounters.refused += 1
+                continue
+            }
+            // A soft-deleted uuid is never resurrected by a replayed create.
+            if cursor.deletedAtMs != nil { cursor.pendingApply = nil; table.cursors[item.uuid] = cursor; continue }
+
+            // A0: resolve the binding. From Task 11 on the mapping is refreshed
+            // earlier in the SAME round (§5.2), so a Space bound to a profile the
+            // peer just created lands without waiting for the next one.
+            let isDefault = item.uuid == LocalStore.defaultSpaceId
+            var profileId: String?
+            if !isDefault {
+                let remoteUuid = item.entity.profileUuid.stringValue
+                profileId = await spaceAccess.localProfileId(forGlobalUuid: remoteUuid)
+                if let resolved = profileId, await !spaceAccess.isKnownLocalProfile(resolved) {
+                    // A DEAD MAPPING: the reverse lookup resolved, but the local
+                    // Chromium profile behind it was deleted (§3.6's "唯一的例外,
+                    // 也是死映射的唯一自愈路径"). The criterion has to be "is it
+                    // still in `userAssignableProfiles`" -- asking
+                    // `globalUuid(forProfileId:)` would read back the very mapping
+                    // the reverse lookup just resolved FROM and always say yes,
+                    // i.e. never fire.
+                    //
+                    // Drop the entry here and treat the binding as unresolved.
+                    // Next round §3.6's `missing` set contains that uuid again and
+                    // rebuilds the profile under its registered name; without the
+                    // drop, every landing throws on a profileId that no longer
+                    // exists, the entity parks forever, and `parked` sits non-zero
+                    // with no self-heal path at all.
+                    AppLogInfo("[phi-sync] dropping a dead profile mapping; the account profile will be rebuilt next round")
+                    await spaceAccess.dropMapping(forProfileId: resolved)
+                    profileId = nil
+                }
+                if profileId == nil {
+                    if cursor.reconciled == nil {
+                        // Fallback B: never a row, never a baseline, never
+                        // `refusedAtMs` -- park the whole entity and retry.
+                        cursor.pendingApply = try? item.entity.serializedData()
+                        cursor.entityId = item.entityId.isEmpty ? cursor.entityId : item.entityId
+                        cursor.version = max(cursor.version, item.version)
+                        table.cursors[item.uuid] = cursor
+                        continue
+                    }
+                    // Fallback A: already landed. Keep the local binding, record
+                    // the remote value, and echo it back with the BASELINE's
+                    // timestamp (see `SyncableSpaces.snapshot`) so this device
+                    // neither wins the field nor pings the binding back and forth.
+                    // The local profile the hold is taken against is recorded with
+                    // it: a later LOCAL rebind must be publishable (§3.5).
+                    cursor.heldProfileUuid = remoteUuid
+                    cursor.heldForLocalProfileId =
+                        await spaceAccess.currentSpaces().first { $0.spaceId == item.uuid }?.profileId
+                } else {
+                    // The binding resolves: any hold is obsolete. Clearing it here
+                    // is the other half of §3.5 -- a stale hold would keep winning
+                    // the snapshot's held branch over the mapping-derived value.
+                    cursor.heldProfileUuid = nil
+                    cursor.heldForLocalProfileId = nil
+                }
+            }
+
+            // A1: no baseline -> adopt wholesale. A device with no timestamp
+            // history that merged field by field would stamp its factory defaults
+            // `now` and push them over the account's real values.
+            let existing = await spaceAccess.currentSpaces().first { $0.spaceId == item.uuid }
+            let merged: Phi_PhiSpaceEntity
+            if let bytes = cursor.reconciled,
+               let baseline = try? Phi_PhiSpaceEntity(serializedBytes: bytes) {
+                merged = SyncableSpaces.merge(local: baseline, remote: item.entity)
+            } else {
+                merged = item.entity
+            }
+
+            // A2 + A3: land in order, await every step, and only THEN write the
+            // baselines. The reverse order leaves the shadow ahead of the row and
+            // the next snapshot stamps the stale value `now` for the whole account.
+            do {
+                try await SyncableSpaces.land(merged, existing: existing,
+                                              profileId: profileId, access: spaceAccess)
+            } catch {
+                AppLogWarn("[phi-sync] space landing failed tag=\(String(tag.prefix(8))) (\(PhiSyncLog.describe(error)))")
+                cursor.pendingApply = try? item.entity.serializedData()
+                table.cursors[item.uuid] = cursor
+                continue
+            }
+            guard !isStopped else { return }
+
+            // §5.6 again, for the one write that can report success without
+            // having happened: `SpaceManager.applyRemoteRebind` optional-chains
+            // through `boundAccount`, so a nil account returns normally and
+            // writes nothing, and `prepareProfileChange` is documented to refuse
+            // silently (an import in flight, an agent Space) with "the entity is
+            // retried next round" -- which is only true if this round declines to
+            // write a baseline. Verify the field that has that out-of-band
+            // refusal path rather than trusting the return, and park otherwise.
+            if !isDefault, let profileId, let existing, existing.profileId != profileId,
+               await spaceAccess.currentSpaces().first(
+                   where: { $0.spaceId == item.uuid })?.profileId != profileId {
+                AppLogWarn("[phi-sync] space rebind did not take effect tag=\(String(tag.prefix(8))); parking the entity")
+                cursor.pendingApply = try? item.entity.serializedData()
+                table.cursors[item.uuid] = cursor
+                continue
+            }
+
+            cursor.reconciled = try? merged.serializedData()
+            // `remote`, NOT `merged`: this is "what the server holds", the
+            // comparison that decides whether anything still needs publishing.
+            cursor.server = try? item.entity.serializedData()
+            if !item.entityId.isEmpty { cursor.entityId = item.entityId }
+            cursor.version = max(cursor.version, item.version)
+            cursor.pendingApply = nil
+            table.cursors[item.uuid] = cursor
+            table.unreadableTagHashes.removeValue(forKey: tag)
+            landedAny = true
+            spaceCounters.applied += 1
+        }
+
+        // One account-wide reorder after every entity landed (§7).
+        if landedAny {
+            var ranks: [String: String] = [:]
+            for (uuid, cursor) in table.cursors {
+                guard cursor.hidden == false, cursor.deletedAtMs == nil,
+                      let bytes = cursor.reconciled,
+                      let entity = try? Phi_PhiSpaceEntity(serializedBytes: bytes) else { continue }
+                ranks[uuid] = entity.rank.stringValue
+            }
+            // `allSpacesForOrdering()`, NOT `currentSpaces()`: the result goes
+            // straight to `LocalStore.reorderSpaces`, which renumbers exactly the
+            // ids it is given and leaves every other row's `sortOrder` untouched.
+            // Handing it the §6.5-filtered view would renumber the synced Spaces
+            // 0..n-1 while agent Spaces and Spaces on unmapped profiles kept stale
+            // values and interleaved arbitrarily -- the opposite of §7's "keep
+            // their own slots".
+            let order = SyncableSpaces.plannedOrder(
+                localOrder: await spaceAccess.allSpacesForOrdering(), syncedRanks: ranks)
+            try? await spaceAccess.applyOrder(order)
+        }
+    }
+
+    /// Remote deletes (§9.2). Filled in by Task 14; the pull already routes them
+    /// into `batch.tombstones`, and this is where they are hidden locally and the
+    /// cursor is turned into a tombstone record.
+    private func applySpaceTombstones(_ batch: SpacePullBatch, table: inout PhiSpaceSyncTable) async {}
+
     /// Records a pull that could not read the account's entity, and — for a tombstone only —
     /// arms the heal once the row has been gone for `tombstoneHealAfterRounds` consecutive
     /// pulls. Arming just drops the entity cursor: this never publishes anything, so a
@@ -823,7 +1105,23 @@ actor PhiSyncEngine {
 
     // MARK: - Push
 
+    /// One round's publish step: the settings half first (unchanged M3-1
+    /// behaviour), then the Space half — unconditionally, whatever the settings
+    /// half decided.
+    ///
+    /// The two must be siblings rather than one appended to the other. Every
+    /// early return in `pushSettings` is a statement about the SETTINGS entity,
+    /// and one of them is the steady state: `if let last, outgoing == last` fires
+    /// on almost every round, because the user changed a Space and not a setting.
+    /// A Space push hanging off the end of that function would therefore never
+    /// run in exactly the case it exists for (§5.2 改动三).
     private func push(retryOnConflict: Bool, allowInitialPull: Bool) async {
+        await pushSettings(retryOnConflict: retryOnConflict, allowInitialPull: allowInitialPull)
+        await pushSpaces(retryOnConflict: retryOnConflict)
+    }
+
+    /// The settings half: M3-1's `push`, renamed and otherwise untouched.
+    private func pushSettings(retryOnConflict: Bool, allowInitialPull: Bool) async {
         guard !isStopped else { return }
         // A `version = 0` commit takes the server's ON CONFLICT (client_tag_hash) DO UPDATE
         // path, which overwrites whatever is there. A device that has never synced must
@@ -920,7 +1218,9 @@ actor PhiSyncEngine {
                     return
                 }
                 _ = await pull(retryOnBirthday: true, thenPush: false)
-                await push(retryOnConflict: false, allowInitialPull: false)
+                // `pushSettings`, not `push`: this retry is the settings entity's
+                // own, and the Space half of this round has not run yet.
+                await pushSettings(retryOnConflict: false, allowInitialPull: false)
             case .invalidMessage:
                 // The same rejection as the `commitRejected(.invalidMessage)` catch below, only
                 // reported per entry instead of thrown for the whole batch. Both paths exist:
@@ -961,6 +1261,235 @@ actor PhiSyncEngine {
     private func dropTheEntityCursorAfterInvalidMessage() {
         AppLogWarn("[phi-sync] commit rejected as INVALID_MESSAGE; dropping the entity cursor and the marker so the next round rediscovers the entity")
         clearRemoteCursor()
+    }
+
+    // MARK: - Space push (§5.1 / §5.5 guard 3 / §9.1)
+
+    /// Assembles this round's Space commit batch. Returns the uuid alongside each
+    /// entry so per-entry outcomes can be applied without re-deriving anything.
+    private func spaceCommitEntries(
+        from table: PhiSpaceSyncTable,
+        outgoing: [String: Phi_PhiSpaceEntity]
+    ) -> [(uuid: String, entry: PhiCommitEntry, outgoing: Phi_PhiSpaceEntity?)] {
+        var result: [(uuid: String, entry: PhiCommitEntry, outgoing: Phi_PhiSpaceEntity?)] = []
+        for uuid in Set(outgoing.keys).union(table.cursors.filter { $0.value.pendingDelete }.keys).sorted() {
+            let cursor = table.cursors[uuid]
+            let tagHash = PhiSyncEntity.clientTagHash(for: PhiSyncEntity.spaceClientTag(uuid))
+
+            // Guard 3 (§5.5): the server holds a row under this tag that this
+            // build cannot read. A create would take the server's
+            // `ON CONFLICT (client_tag_hash) DO UPDATE` path, which has NO version
+            // check, and overwrite it irrecoverably -- not a delete, so M1's
+            // 30-day window does not apply either.
+            guard table.unreadableTagHashes[tagHash] == nil else {
+                AppLogWarn("[phi-sync] refusing to commit over an unreadable row tag=\(String(tagHash.prefix(8)))")
+                continue
+            }
+
+            if let cursor, cursor.pendingDelete {
+                // §9.1's second gate: a tombstone with no entityId / version 0 is
+                // illegal server-side and can only loop.
+                guard let entityId = cursor.entityId, cursor.version > 0 else { continue }
+                result.append((uuid: uuid,
+                               entry: PhiCommitEntry(entityId: entityId, clientTagHash: tagHash,
+                                                     name: PhiSyncEntity.spaceEntityName,
+                                                     ciphertext: nil, deleted: true,
+                                                     baseVersion: cursor.version),
+                               outgoing: nil))
+                continue
+            }
+
+            guard let snapshot = outgoing[uuid] else { continue }
+            // Merge against what the server holds so a newer client's reserved
+            // fields 11-14 survive a round trip through this build.
+            var toSend = snapshot
+            if let bytes = cursor?.server,
+               let server = try? Phi_PhiSpaceEntity(serializedBytes: bytes) {
+                toSend = SyncableSpaces.merge(local: snapshot, remote: server)
+                if toSend == server { continue }   // nothing to publish
+            }
+            result.append((uuid: uuid,
+                           entry: PhiCommitEntry(entityId: cursor?.entityId, clientTagHash: tagHash,
+                                                 name: PhiSyncEntity.spaceEntityName,
+                                                 ciphertext: nil, deleted: false,
+                                                 baseVersion: cursor?.version ?? 0),
+                           outgoing: toSend))
+        }
+        return result
+    }
+
+    /// `onlyUuids == nil` publishes everything this round's snapshot produced;
+    /// a non-nil set restricts the batch to those uuids, which is what the
+    /// CONFLICT retry passes so one conflicting Space cannot drag the other
+    /// twenty back through the wire.
+    private func pushSpaces(retryOnConflict: Bool, onlyUuids: Set<String>? = nil) async {
+        guard !isStopped, spaceSectionEnabled, let spaceAccess, spaceStore != nil else { return }
+        // The one Space read-modify-write that is not a `mutateSpaceTable` delta,
+        // for the same reason as the apply path's: per-entry outcomes have to be
+        // carried across the batch loop's suspension points. Safe here because
+        // rounds are serialized and `pushSpaces` is the last Space work of the
+        // round -- `applySpaces` has already written by the time this loads.
+        var table = loadSpaceTable()
+        // Guard 1: not one commit -- tombstones included -- until a full replay
+        // has finished, or a device that has not seen the account's Spaces yet can
+        // overwrite `default-space` with its factory defaults.
+        guard table.hasDrainedFullReplay else {
+            if table.drainInProgress {
+                AppLogInfo("[phi-sync] space push held: drain_in_progress")
+            }
+            return
+        }
+        // §8: the D2 question must be answered before anything is published.
+        guard table.firstSyncDecision != nil else { return }
+
+        let spaces = await spaceAccess.currentSpaces()
+        guard !isStopped else { return }
+        var uuidByProfile: [String: String] = [:]
+        for space in spaces {
+            if uuidByProfile[space.profileId] == nil {
+                uuidByProfile[space.profileId] = await spaceAccess.globalUuid(forProfileId: space.profileId)
+            }
+        }
+        let outgoing = SyncableSpaces.snapshot(spaces: spaces, table: table,
+                                               globalUuid: { uuidByProfile[$0] ?? nil },
+                                               now: now())
+        var work = spaceCommitEntries(from: table, outgoing: outgoing)
+        if let onlyUuids { work = work.filter { onlyUuids.contains($0.uuid) } }
+        // §9.1 second gate's bookkeeping half: an unpublished pendingDelete is
+        // finalized here rather than sent.
+        for (uuid, var cursor) in table.cursors where cursor.pendingDelete {
+            guard cursor.entityId == nil || cursor.version == 0 else { continue }
+            cursor.pendingDelete = false
+            cursor.reconciled = nil
+            cursor.server = nil
+            cursor.deletedAtMs = now()
+            table.cursors[uuid] = cursor
+        }
+        guard !work.isEmpty else { writeSpaceTable(table); return }
+
+        var conflicted: Set<String> = []
+        var encryptionFailed = false
+        while !work.isEmpty {
+            let slice = Array(work.prefix(Self.maxCommitEntriesPerBatch))
+            work.removeFirst(slice.count)
+            var entries: [PhiCommitEntry] = []
+            var payloads: [(uuid: String, entry: PhiCommitEntry, outgoing: Phi_PhiSpaceEntity?)] = []
+            for item in slice {
+                guard let payload = item.outgoing else {
+                    entries.append(item.entry); payloads.append(item); continue
+                }
+                var wrapper = Phi_PhiEntity()
+                wrapper.space = payload
+                guard let key = try? await domainKeys.domainKey(),
+                      let ciphertext = try? PhiEntityCodec.encrypt(wrapper, key: key) else {
+                    // `break`, not `return`: outcomes already applied for earlier
+                    // slices in this round are in `table` and must still be
+                    // persisted by the `writeSpaceTable` below, or an accepted
+                    // commit's baselines are silently thrown away and the next
+                    // round republishes what the server already has.
+                    encryptionFailed = true
+                    break
+                }
+                entries.append(PhiCommitEntry(entityId: item.entry.entityId,
+                                              clientTagHash: item.entry.clientTagHash,
+                                              name: item.entry.name, ciphertext: ciphertext,
+                                              deleted: false, baseVersion: item.entry.baseVersion))
+                payloads.append(item)
+            }
+            if encryptionFailed {
+                AppLogError("[phi-sync] space commit aborted: the domain key or the seal failed")
+                break
+            }
+            guard !isStopped else { break }
+            let outcomes: [PhiCommitOutcome]
+            do {
+                outcomes = try await client.commit(entries: entries, storeBirthday: storedBirthday)
+            } catch PhiSyncProtocolError.notMyBirthday {
+                resetForNewStoreBirthday()
+                return   // the reset rewrote the table itself; do not write the stale copy back
+            } catch {
+                AppLogError("[phi-sync] space commit failed (\(PhiSyncLog.describe(error)))")
+                break    // keep the outcomes earlier slices already produced
+            }
+            guard !isStopped else { return }
+            for (item, outcome) in zip(payloads, outcomes) {
+                applySpaceCommitOutcome(outcome, for: item, table: &table, conflicted: &conflicted)
+            }
+        }
+        writeSpaceTable(table)
+
+        // One pull, then re-send ONLY the entities that conflicted -- the retry
+        // is scoped by `onlyUuids`, so a single conflicting Space never drags
+        // the other twenty back through the wire (§5.1: "一次 pull 后只重发冲突的
+        // 那几条; 二次冲突放弃这几条, 本轮其余已生效").
+        if retryOnConflict, !conflicted.isEmpty {
+            _ = await pull(retryOnBirthday: true, thenPush: false)
+            await pushSpaces(retryOnConflict: false, onlyUuids: conflicted)
+        }
+    }
+
+    /// The five baseline write points of §6.2, in one place.
+    private func applySpaceCommitOutcome(
+        _ outcome: PhiCommitOutcome,
+        for item: (uuid: String, entry: PhiCommitEntry, outgoing: Phi_PhiSpaceEntity?),
+        table: inout PhiSpaceSyncTable,
+        conflicted: inout Set<String>
+    ) {
+        var cursor = table.cursors[item.uuid] ?? PhiSpaceCursor()
+        let isTombstone = item.entry.deleted
+        switch outcome {
+        case .applied(let entityId, let version, let storeBirthday):
+            if !entityId.isEmpty { cursor.entityId = entityId }
+            cursor.version = version
+            storedBirthday = storeBirthday
+            if isTombstone {
+                cursor.pendingDelete = false
+                cursor.deleteRejectRounds = 0
+                cursor.reconciled = nil
+                cursor.server = nil
+                cursor.deletedAtMs = now()
+                cursor.hidden = true
+                spaceCounters.tombstones += 1
+            } else if let outgoing = item.outgoing {
+                // BOTH baselines: updating only `server` would let the next
+                // snapshot decide the field still differs from `reconciled`,
+                // stamp `now` again, and win the account's LWW every round.
+                cursor.reconciled = try? outgoing.serializedData()
+                cursor.server = cursor.reconciled
+                cursor.deleteRejectRounds = 0
+                spaceCounters.pushed += 1
+            }
+        case .conflict:
+            conflicted.insert(item.uuid)
+            spaceCounters.conflicts += 1
+        case .invalidMessage:
+            guard isTombstone else {
+                // "The server has no such row": drop the server-side triple and
+                // let the next round re-create through the client_tag unique
+                // index. `reconciled` survives -- it is this device's timestamp
+                // history, not a statement about the server.
+                cursor.entityId = nil
+                cursor.version = 0
+                cursor.server = nil
+                break
+            }
+            // A rejected tombstone proves nothing: the server resolves a
+            // tombstone's data type with a query OUTSIDE the commit transaction,
+            // so any transient failure returns the same code as "no such row".
+            // Keep the intent and re-send it unchanged; give up only after three.
+            cursor.deleteRejectRounds += 1
+            if cursor.deleteRejectRounds >= Self.tombstoneRejectGiveUpRounds {
+                AppLogError("[phi-sync] giving up on a tombstone after \(cursor.deleteRejectRounds) rejections tag=\(String(item.entry.clientTagHash.prefix(8)))")
+                cursor.pendingDelete = false
+                cursor.reconciled = nil
+                cursor.server = nil
+                cursor.deletedAtMs = now()
+                cursor.hidden = true
+            }
+        case .rejected(let type):
+            AppLogError("[phi-sync] space commit rejected response_type=\(type) tag=\(String(item.entry.clientTagHash.prefix(8)))")
+        }
+        table.cursors[item.uuid] = cursor
     }
 
     // MARK: - Guarded writes

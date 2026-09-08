@@ -119,10 +119,29 @@ final class PhiSyncEngineTests: XCTestCase {
         /// Ordered log of what the engine did on the wire, so a test can assert that a commit
         /// happened after a parked pull finished rather than during it.
         private(set) var callLog: [String] = []
+        /// M3-2: while positive, every `getUpdates` answers `changes_remaining = true` and
+        /// spends one page of this supply, so the only thing that can end a pull is the
+        /// engine's own `maxPullPages` budget. Set it above the engine's total page budget
+        /// across all its follow-up rounds to keep a drain unfinished for a whole test phase.
+        var pageBudgetExhaustsAfter: Int?
+        /// M3-2: the next `getUpdates` answers NOT_MY_BIRTHDAY, then clears itself — the shape
+        /// the server uses when the store this device tracks is gone.
+        var throwNotMyBirthdayOnce = false
 
         func seed(ciphertext: Data, version: Int64, entityId: String = "srv-seed", deleted: Bool = false) {
             stored[PhiSyncEntity.settingsClientTagHash] = Stored(entityId: entityId, version: version,
                                                                  ciphertext: ciphertext, deleted: deleted)
+        }
+
+        /// M3-2: seed a row under an arbitrary `client_tag_hash` — a Space's, or a tag this
+        /// build cannot name at all. The id defaults to a fresh server-assigned one, because
+        /// the update path below matches on `row.entityId == entityId` and a shared literal id
+        /// would make two seeded rows indistinguishable.
+        func seed(tagHash: String, ciphertext: Data, version: Int64,
+                  entityId: String? = nil, deleted: Bool = false) {
+            let id = entityId ?? { idCounter += 1; return "srv-\(idCounter)" }()
+            stored[tagHash] = Stored(entityId: id, version: version,
+                                     ciphertext: ciphertext, deleted: deleted)
         }
 
         func getUpdates(marker: Data?, storeBirthday: String) async throws
@@ -135,6 +154,10 @@ final class PhiSyncEngineTests: XCTestCase {
             if let error = getUpdatesErrorOnce {
                 getUpdatesErrorOnce = nil
                 throw error
+            }
+            if throwNotMyBirthdayOnce {
+                throwNotMyBirthdayOnce = false
+                throw PhiSyncProtocolError.notMyBirthday
             }
             if !scriptedPages.isEmpty {
                 let page = scriptedPages.removeFirst()
@@ -149,6 +172,10 @@ final class PhiSyncEngineTests: XCTestCase {
             }
             let highest = fresh.map(\.version).max()
             let newMarker = highest.map { Data(String($0).utf8) } ?? (marker ?? Data())
+            if let budget = pageBudgetExhaustsAfter, budget > 0 {
+                pageBudgetExhaustsAfter = budget - 1
+                return (fresh, newMarker, storeBirthday, true)
+            }
             return (fresh, newMarker, storeBirthday, false)
         }
 

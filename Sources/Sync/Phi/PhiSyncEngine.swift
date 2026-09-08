@@ -100,10 +100,23 @@ actor PhiSyncEngine {
                             markerStateKey, lastEntityStateKey, tombstoneRoundsStateKey,
                             hasAdoptedStateKey]
 
-    /// GetUpdates pages drained in one pull before giving up until the next round. The server
-    /// caps its own batch size; this only stops a pathological `changes_remaining` from
-    /// spinning forever.
-    private static let maxPullPages = 16
+    /// GetUpdates pages drained in one pull before the round gives up. 16 was enough for one
+    /// settings entity; a first-time Space drain of a busy account is not. The budget still
+    /// exists only to stop a pathological `changes_remaining` from spinning forever —
+    /// exhausting it ends the ROUND, never the drain (§5.5 guard 1).
+    private static let maxPullPages = 64
+
+    /// A page-budget cut queues a follow-up round immediately instead of waiting out the 60 s
+    /// timer; bounded so a misbehaving server cannot spin.
+    private static let maxFollowUpRounds = 4
+
+    /// Consecutive INVALID_MESSAGE rejections after which a tombstone is finalized anyway
+    /// (§5.1). Same shape as `tombstoneHealAfterRounds`.
+    private static let tombstoneRejectGiveUpRounds = 3
+
+    /// The server's `MaxCommitEntries` default is 500; batching well under it keeps one bad
+    /// round small.
+    private static let maxCommitEntriesPerBatch = 25
 
     /// Consecutive tombstone pulls after which the entity cursor is dropped so a later local
     /// change can re-create the row. Refusing to publish over a tombstone is right (the delete
@@ -123,6 +136,20 @@ actor PhiSyncEngine {
     private let deviceKeyId: String
     private let settings: [SyncableSetting]
     private let now: () -> Int64
+
+    /// The Space section (M3-2). Both are `nil` on a build or an account that has no Space
+    /// sync at all, and every Space branch below is gated on them being present, so the M3-1
+    /// settings path is byte-for-byte what it was.
+    private let spaceAccess: (any PhiSpaceLocalAccess)?
+    private let spaceStore: (any PhiSpaceSyncStateStore)?
+
+    /// Mirror of the table's `spaceSectionEnabled`, kept in memory so the shut -> open EDGE is
+    /// detectable inside one process too.
+    private var spaceSectionEnabled = false
+
+    /// Follow-up rounds already queued after a page-budget cut, reset by the round that
+    /// finally drains. Bounds `maxFollowUpRounds`.
+    private var followUpRoundsUsed = 0
 
     /// Set around `SyncableSettings.apply` so a local-change notification raised by the engine's
     /// own write is not mistaken for a user edit. The load-bearing echo suppression is the
@@ -198,6 +225,7 @@ actor PhiSyncEngine {
         case pull
         case push
         case localChange
+        case localSpaceChange
     }
 
     init(domainKeys: any PhiDomainKeyProviding,
@@ -205,13 +233,18 @@ actor PhiSyncEngine {
          defaults: UserDefaults,
          deviceKeyId: String,
          settings: [SyncableSetting] = SyncableSettings.all,
+         spaceAccess: (any PhiSpaceLocalAccess)? = nil,
+         spaceStore: (any PhiSpaceSyncStateStore)? = nil,
          now: @escaping () -> Int64 = { Int64(Date().timeIntervalSince1970 * 1000) }) {
         self.domainKeys = domainKeys
         self.client = client
         self.defaults = defaults
         self.deviceKeyId = deviceKeyId
         self.settings = settings
+        self.spaceAccess = spaceAccess
+        self.spaceStore = spaceStore
         self.now = now
+        self.spaceSectionEnabled = spaceStore?.load().spaceSectionEnabled ?? false
     }
 
     // MARK: - Public surface
@@ -230,6 +263,50 @@ actor PhiSyncEngine {
     /// Entry point for the debounced `UserDefaults.didChangeNotification` observer.
     func handleLocalDefaultsChange() async {
         await serialized(.localChange)
+    }
+
+    /// The Space section's gate (§3.5): account bound AND ARK unlocked AND the join-time
+    /// pairing is finished. Driven by the coordinator, NOT by `needsPairing` — §3.6's
+    /// auto-create makes that predicate flip true for a moment every time the account gains a
+    /// profile, and hanging the gate on it would drop the shared marker and replay the whole
+    /// data type each time.
+    func setSpaceSyncEnabled(_ enabled: Bool) async {
+        guard spaceStore != nil, enabled != spaceSectionEnabled else { return }
+        spaceSectionEnabled = enabled
+        var table = loadSpaceTable()
+        table.spaceSectionEnabled = enabled
+        // Two triggers, one action. `markerMovedWhileGateShut` covers every shut episode this
+        // build observed. `!hasDrainedFullReplay` covers the one it could not observe: the
+        // M3-1 -> M3-2 UPGRADE, where the device already holds a non-nil `phi.sync.marker`
+        // from months of settings sync, an empty `sync.phiSpaces` (so `hadRecords == false`
+        // and guard 2's second trigger is disabled too), and no flag was ever set because the
+        // flag did not exist. Without this disjunct nothing ever drops that marker: the pull
+        // never sees `storedMarker == nil`, so `drainInProgress` is never armed,
+        // `hasDrainedFullReplay` stays false forever, `pushSpaces` returns at its own guard,
+        // and the device silently never publishes a single Space.
+        // Idempotent: once a drain completes, only a real shut episode re-arms it.
+        if enabled, table.markerMovedWhileGateShut || !table.hasDrainedFullReplay {
+            // Both kinds share ONE progress marker for data type 2000, so every Space entity
+            // the settings pulls walked past while the gate was shut will never be delivered
+            // again. Replay the type, and re-arm guard 1 so nothing is committed until the
+            // replay finishes.
+            AppLogInfo("[phi-sync] space gate opened (marker_moved=\(table.markerMovedWhileGateShut) drained=\(table.hasDrainedFullReplay)); replaying data type \(PhiSyncEntity.dataTypeID)")
+            storedMarker = nil
+            table.markerMovedWhileGateShut = false
+            table.hasDrainedFullReplay = false
+            table.drainInProgress = true
+            // Deliberately untouched: reconciled / server / entityId / version / hidden /
+            // deletedAtMs / purgedAtMs / firstSyncDecision. The ACCOUNT did not change;
+            // clearing them would re-arm the wholesale adopt and silently drop local edits
+            // that were just stamped.
+        }
+        writeSpaceTable(table)
+    }
+
+    /// Entry point for the debounced `spacesPublisher()` / `.spaceThemeDidChange` observers
+    /// (§5.4). Same shape as `handleLocalDefaultsChange()`.
+    func handleLocalSpacesChange() async {
+        await serialized(.localSpaceChange)
     }
 
     /// Drops every account-scoped cursor, `hasAdopted` included, so the next account's entity
@@ -285,6 +362,9 @@ actor PhiSyncEngine {
         case .localChange:
             guard !isApplyingRemote else { return }
             await push(retryOnConflict: true, allowInitialPull: true)
+        case .localSpaceChange:
+            guard !isApplyingRemote else { return }
+            await push(retryOnConflict: true, allowInitialPull: true)
         }
     }
 
@@ -327,9 +407,27 @@ actor PhiSyncEngine {
         // holding the *previous* account's domain key, so everything below is off-limits.
         guard !isStopped else { return false }
 
+        // Guard 1 (§5.5): the drain is a PROCESS, not the property of one pull. It is armed
+        // only while the Space section is live — a gated-off pull hands the Space section
+        // nothing, so letting it satisfy the guard would let a fresh device publish its
+        // factory default Space over the account's.
+        var spaceTable = loadSpaceTable()
+        let spaceLive = spaceSectionEnabled && spaceStore != nil && spaceAccess != nil
+        if spaceLive, storedMarker == nil, !spaceTable.drainInProgress {
+            spaceTable.drainInProgress = true
+            spaceTable.hasDrainedFullReplay = false
+        }
+        var batch = SpacePullBatch()
+        let tagIndex = spaceLive ? await spaceTagIndex(table: spaceTable) : [:]
+
         // A pull with no marker replays the whole type, so "the entity was not in the response"
         // is only evidence of absence when we started from scratch and drained every page.
         let startedFromScratch = storedMarker == nil
+        // What guard 2's first trigger compares against. `storedMarker`'s setter maps an empty
+        // marker to *absent*, so "the marker did not move" is spelled "unchanged", never
+        // "nil": the protocol client answers with `Data()` when the server sent no marker for
+        // the type, and a response's `newMarker` is non-optional.
+        let markerAtEntry = storedMarker
         var view = RemoteView.absent
         var drained = false
         do {
@@ -343,7 +441,15 @@ actor PhiSyncEngine {
                 marker = response.newMarker
                 storedMarker = marker
 
-                for entity in response.entities where entity.clientTagHash == PhiSyncEntity.settingsClientTagHash {
+                for entity in response.entities {
+                    guard entity.clientTagHash == PhiSyncEntity.settingsClientTagHash else {
+                        // Not the settings entity. With two kinds live on data type 2000 the
+                        // response is no longer "our row or noise": everything else is routed
+                        // to the Space section, and only while the gate is open.
+                        guard spaceLive else { continue }
+                        routeSpaceEntity(entity, key: key, tagIndex: tagIndex, into: &batch)
+                        continue
+                    }
                     if !entity.entityId.isEmpty { storedEntityId = entity.entityId }
                     storedVersion = entity.version
                     guard !entity.deleted else {
@@ -372,8 +478,20 @@ actor PhiSyncEngine {
                 }
                 more = response.changesRemaining
                 page += 1
+                if !spaceLive, storedMarker != markerAtEntry {
+                    // A page that advanced the shared marker while the gate was shut.
+                    // Recorded without inspecting its contents on purpose: deciding "did this
+                    // page hold a Space?" needs a decrypt, and an entity this build cannot
+                    // decrypt is exactly one of the things that gets missed.
+                    spaceTable.markerMovedWhileGateShut = true
+                }
             }
             drained = !more
+            if spaceLive, drained, spaceTable.drainInProgress {
+                spaceTable.drainInProgress = false
+                spaceTable.hasDrainedFullReplay = true
+                spaceTable.lastDrainedBirthday = storedBirthday
+            }
         } catch PhiSyncProtocolError.notMyBirthday {
             resetForNewStoreBirthday()
             guard retryOnBirthday else { return false }
@@ -383,7 +501,7 @@ actor PhiSyncEngine {
             return false
         }
 
-        var mayPublish = true
+        var maySettingsPublish = true
         switch view {
         case .usable(let remote):
             tombstoneRounds = 0
@@ -406,7 +524,7 @@ actor PhiSyncEngine {
             // baseline" as "the server holds bytes this device has not read"; a device that
             // had synced before would otherwise keep the baseline it decrypted at an older
             // version, and the next debounced local change — or the conflict retry, which
-            // reaches `push` with `allowInitialPull: false` and never sees `mayPublish` —
+            // reaches `push` with `allowInitialPull: false` and never sees `maySettingsPublish` —
             // would commit over the unreadable entity using the id and version harvested from
             // it right here. `storedEntityId` survives (the server always sends a non-empty
             // `id_string`: internal/chromiumsync/getupdates.go toSyncEntity, from the UUID
@@ -414,7 +532,7 @@ actor PhiSyncEngine {
             // `version = 0` create can slip past the guard either. `apply` re-establishes the
             // baseline as soon as a pull can read the entity again.
             storedLastEntity = nil
-            mayPublish = false
+            maySettingsPublish = false
             noteUnusable(reason)
         case .absent:
             tombstoneRounds = 0
@@ -428,11 +546,122 @@ actor PhiSyncEngine {
             }
         }
 
+        if spaceLive {
+            let seenAt = now()
+            for hash in batch.unreadableHashes { spaceTable.unreadableTagHashes[hash] = seenAt }
+            // Guard 2, trigger 2: the account plist was lost or restored from a backup.
+            // Guarded by a ONE-SHOT flag, never by `hadRecords` / `hasDrainedFullReplay`: an
+            // account whose Space entities all fail to decrypt keeps `cursors` empty and
+            // `hadRecords` true forever, and would drop the marker and replay on every single
+            // round.
+            if spaceTable.cursors.isEmpty, spaceTable.hadRecords, !spaceTable.didReplayForEmptyTable {
+                AppLogWarn("[phi-sync] space table is empty but had records; replaying data type \(PhiSyncEntity.dataTypeID) once")
+                spaceTable.didReplayForEmptyTable = true
+                storedMarker = nil
+                spaceTable.hasDrainedFullReplay = false
+                spaceTable.drainInProgress = true
+            }
+            if !spaceTable.cursors.isEmpty { spaceTable.hadRecords = true }
+            writeSpaceTable(spaceTable)
+        } else {
+            writeSpaceTable(spaceTable)   // markerMovedWhileGateShut
+        }
+
         // Publish whatever the merge left the server short of (a locally newer value, or a
         // registered key the remote entity did not carry). `push` decides by comparison, so a
-        // pure remote apply commits nothing.
-        if thenPush, mayPublish { await push(retryOnConflict: false, allowInitialPull: false) }
+        // pure remote apply commits nothing. Settings only: whether the Space section may
+        // publish is its own question (§5.5 guard 1 and §8's D2), and the two must not be able
+        // to silence each other — an unreadable settings entity says nothing about the Spaces.
+        if thenPush, maySettingsPublish { await push(retryOnConflict: false, allowInitialPull: false) }
+
+        if !drained, followUpRoundsUsed < Self.maxFollowUpRounds {
+            // The page budget ran out with `changes_remaining` still set. Wait out the 60 s
+            // timer and a first sync turns into minutes; the follow-up continues from the
+            // marker this round already advanced.
+            followUpRoundsUsed += 1
+            Task { [weak self] in await self?.pullOnce() }
+        } else if drained {
+            followUpRoundsUsed = 0
+        }
         return true
+    }
+
+    /// What one pull collected for the Space section.
+    private struct SpacePullBatch {
+        var decoded: [(uuid: String, entity: Phi_PhiSpaceEntity, entityId: String, version: Int64)] = []
+        var tombstones: [(uuid: String, entityId: String, version: Int64)] = []
+        var unreadableHashes: [String] = []
+        var unknownTombstoneHashes: [String] = []
+    }
+
+    /// `client_tag_hash -> space_uuid`, rebuilt once per pull. A tombstone carries no
+    /// ciphertext and no `space_uuid`, and SHA1 is one-way, so a remote delete can only be
+    /// identified by looking its hash up in a table this device builds from the uuids it
+    /// already knows: every cursor key, every sync-eligible local Space, and the literal
+    /// default Space (§5.2).
+    private func spaceTagIndex(table: PhiSpaceSyncTable) async -> [String: String] {
+        var uuids = Set(table.cursors.keys)
+        uuids.insert(LocalStore.defaultSpaceId)
+        if let spaceAccess {
+            for space in await spaceAccess.currentSpaces() { uuids.insert(space.spaceId) }
+        }
+        var index: [String: String] = [:]
+        for uuid in uuids {
+            index[PhiSyncEntity.clientTagHash(for: PhiSyncEntity.spaceClientTag(uuid))] = uuid
+        }
+        return index
+    }
+
+    /// §5.2 steps 2-5, in this exact order.
+    private func routeSpaceEntity(_ entity: PhiRemoteEntity,
+                                  key: SymmetricKey,
+                                  tagIndex: [String: String],
+                                  into batch: inout SpacePullBatch) {
+        let shortHash = String(entity.clientTagHash.prefix(8))
+
+        // 2. Tombstone FIRST, before any decrypt attempt. A deleted row's specifics are the
+        // type's default value the server backfilled, so its ciphertext is empty and
+        // decrypting it necessarily throws — routing it after the decrypt would classify every
+        // remote delete as "unreadable" and, since the marker has already moved past this
+        // page, lose it forever.
+        guard !entity.deleted else {
+            guard let uuid = tagIndex[entity.clientTagHash] else {
+                // Nothing to hide: this device has neither the row nor a cursor, and the
+                // server has already replaced the specifics, so no create for that row can
+                // ever arrive again.
+                AppLogInfo("[phi-sync] ignoring a tombstone for an unknown tag hash=\(shortHash)")
+                batch.unknownTombstoneHashes.append(entity.clientTagHash)
+                return
+            }
+            batch.tombstones.append((uuid: uuid, entityId: entity.entityId, version: entity.version))
+            return
+        }
+
+        // 3. Decrypt.
+        let decoded: Phi_PhiEntity
+        do {
+            decoded = try PhiEntityCodec.decrypt(entity.ciphertext, key: key)
+        } catch {
+            AppLogWarn("[phi-sync] cannot open a space entity tag=\(shortHash) ciphertext_bytes=\(entity.ciphertext.count) (\(PhiSyncLog.describe(error)))")
+            batch.unreadableHashes.append(entity.clientTagHash)
+            return
+        }
+
+        // 4. Unknown kind: ignore ONLY this entity. With two kinds live, a newer client's
+        // third kind is normal traffic — the settings path's `.foreignPayload` reaction
+        // (rewind the marker, drop the baseline, suppress the trailing push) would drag
+        // settings down with it.
+        guard case .space(let space)? = decoded.kind else { return }
+
+        // 5. The payload must hash back to the tag it arrived under.
+        let expected = PhiSyncEntity.clientTagHash(for: PhiSyncEntity.spaceClientTag(space.spaceUuid))
+        guard expected == entity.clientTagHash else {
+            AppLogError("[phi-sync] space payload does not hash back to its tag=\(shortHash)")
+            batch.unreadableHashes.append(entity.clientTagHash)
+            return
+        }
+        batch.decoded.append((uuid: space.spaceUuid, entity: space,
+                              entityId: entity.entityId, version: entity.version))
     }
 
     /// Records a pull that could not read the account's entity, and — for a tombstone only —
@@ -656,6 +885,19 @@ actor PhiSyncEngine {
         return true
     }
 
+    private func loadSpaceTable() -> PhiSpaceSyncTable {
+        spaceStore?.load() ?? PhiSpaceSyncTable()
+    }
+
+    /// Single write path for `sync.phiSpaces`, with the same retirement check every other
+    /// engine write takes — a round that resumes after `shutdown()` must not write the previous
+    /// account's Space shadow back over a freshly cleared table (§3.3 step 2.0).
+    private func writeSpaceTable(_ table: PhiSpaceSyncTable) {
+        guard !isStopped, let spaceStore else { return }
+        spaceStore.save(table)
+        Task { @MainActor in PhiSpaceSyncState.shared.refreshCaches(from: table) }
+    }
+
     /// `SyncableSettings.snapshot` is a write as much as a read: for every registered key whose
     /// value differs from `<key>.phiSyncVal` it stamps `<key>.phiSyncTs = now()` and refreshes
     /// the sidecar. So it takes the same check as the settings and the cursor. `nil` means the
@@ -748,11 +990,34 @@ actor PhiSyncEngine {
     /// identity did. The `<key>.phiSyncTs` sidecars this device has been keeping still describe
     /// this account's settings, so the next readable entity must be merged against them, not
     /// adopted over them. (Only an account-scope reset of `stateKeys` clears it — see
-    /// `hasAdopted`.)
+    /// `hasAdopted`.) The Space table's *server-side* triples are cleared alongside for the
+    /// same reason and with the same exception: what describes the store goes, what describes
+    /// this account's own history stays.
     private func resetForNewStoreBirthday() {
         clearRemoteCursor()
         storedBirthday = ""
         tombstoneRounds = 0
+        guard spaceStore != nil else { return }
+        // The server holds a different data set now, so every server-side triple and every
+        // loss guard has to be re-armed. `reconciled` / `hidden` / `deletedAtMs` /
+        // `purgedAtMs` / `firstSyncDecision` survive: the ACCOUNT did not change, and clearing
+        // them would re-arm the wholesale adopt and silently drop edits this device has just
+        // stamped.
+        var table = loadSpaceTable()
+        for (uuid, var cursor) in table.cursors {
+            cursor.entityId = nil
+            cursor.version = 0
+            cursor.server = nil
+            cursor.deleteRejectRounds = 0
+            table.cursors[uuid] = cursor
+        }
+        table.hasDrainedFullReplay = false
+        table.drainInProgress = false
+        table.markerMovedWhileGateShut = false
+        table.didReplayForEmptyTable = false
+        table.lastDrainedBirthday = nil
+        table.unreadableTagHashes = [:]
+        writeSpaceTable(table)
     }
 
     private var storedEntityId: String? {

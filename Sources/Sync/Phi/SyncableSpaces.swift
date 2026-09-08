@@ -30,17 +30,20 @@ enum SyncableSpaces {
     ///   between two *different* ranks -- so this traps rather than looping or
     ///   returning an endpoint. Callers separate tied endpoints first
     ///   (`assignRanks`'s tie-interval rule).
-    /// - Precondition: the upper bound never ends in the lowest digit. That is
-    ///   this type's own invariant (every rank this file produces ends in a
-    ///   midpoint digit >= 1), and it is what makes "strictly below `b`" always
-    ///   solvable: nothing over this alphabet is lexicographically less than
-    ///   `"0"`, and for `"<prefix>0"` the only room left is under the prefix.
-    ///   Trapping here is the same honesty as the `a == b` case -- silently
-    ///   returning a value ABOVE the bound would corrupt the account's order.
+    /// - Precondition: the upper bound is never empty and never ends in the
+    ///   lowest digit. Both are the same impossibility: nothing over this
+    ///   alphabet -- not even the empty string -- is lexicographically less
+    ///   than `""` or than `"0"`, so "strictly below `b`" has no solution for
+    ///   either. Every rank this file produces is non-empty and ends in a
+    ///   midpoint digit >= 1 (this type's own invariant), which is exactly
+    ///   what makes any OTHER upper bound always solvable: for `"<prefix>0"`
+    ///   the only room left is under the prefix. Trapping here is the same
+    ///   honesty as the `a == b` case -- silently returning a value ABOVE the
+    ///   bound would corrupt the account's order.
     static func rankBetween(_ a: String?, _ b: String?) -> String {
         if let a, let b { precondition(a < b, "rankBetween requires a < b") }
-        precondition(!(b?.hasSuffix("0") ?? false),
-                     "a rank never ends in the lowest digit, so it is not a legal upper bound")
+        precondition(b.map { !$0.isEmpty && !$0.hasSuffix("0") } ?? true,
+                     "an empty rank and a rank ending in the lowest digit are not legal upper bounds")
         let index = rankIndex
         let base = rankAlphabet.count
         let lower = (a ?? "").map { index[$0] ?? 0 }

@@ -207,15 +207,17 @@ extension SyncableSpaces {
                   let entity = try? Phi_PhiSpaceEntity(serializedBytes: bytes) else { return }
             out[space.spaceId] = entity
         }
-        // `rank` is an optional message field: a baseline that never carried one
-        // decodes to `""`, which is NOT a legal rank. It must degrade to "no
-        // rank" (so the element joins the complement and gets a real one) rather
-        // than be handed to `rankBetween`, whose upper-bound precondition traps
-        // on "" -- nothing over this alphabet sorts below it (`rankBetween`
-        // above). Publishing a rank the account has never seen IS a local write,
-        // so the normalized element is stamped `now` by the branch below.
+        // The single decode boundary for the rank channel. A baseline is peer
+        // bytes: `rank` is an optional message field, so one that never carried
+        // a rank decodes to `""`, and a peer may publish any string at all --
+        // nothing on the wire is validated. Only a rank this file could itself
+        // have produced may reach `rankBetween` (see `isLegalRank`); anything
+        // else degrades to "no rank", so the Space joins `assignRanks`'s
+        // complement and is handed a real one. Publishing a rank the account has
+        // never seen IS a local write, so a normalized element always lands in
+        // `newRanks` and is stamped `now` by the branch below.
         func baselineRank(_ uuid: String) -> String? {
-            guard let rank = baselines[uuid]?.rank.stringValue, !rank.isEmpty else { return nil }
+            guard let rank = baselines[uuid]?.rank.stringValue, isLegalRank(rank) else { return nil }
             return rank
         }
         // Rank channel: one pass over the CURRENT local order (§7).
@@ -286,6 +288,27 @@ extension SyncableSpaces {
             out[space.spaceId] = entity
         }
         return out
+    }
+
+    /// `rankAlphabet` as a set: the decode boundary tests every character of
+    /// every baseline rank, and `rankIndex` rebuilds its map on every access.
+    private static let rankCharacters = Set(rankAlphabet)
+
+    /// Whether a rank is one this file could itself have produced, and so one
+    /// `rankBetween` may safely be handed. All three rejected shapes are unsafe
+    /// in the same way -- they make "strictly between the bounds" unanswerable:
+    ///
+    /// - empty, and ending in the alphabet's lowest digit: `rankBetween`'s own
+    ///   documented pair of illegal upper bounds ("the same impossibility"),
+    ///   which it traps on rather than returning a rank above the bound. A
+    ///   `precondition` is live in every configuration this target builds, so
+    ///   letting either through means peer bytes can halt the browser.
+    /// - a character outside `rankAlphabet`: traps nothing, but `rankBetween`
+    ///   reads an unknown character as the lowest digit, which breaks the
+    ///   lexicographic == numeric equivalence the whole channel rests on -- the
+    ///   "midpoint" it computes need not lie between the bounds it was given.
+    private static func isLegalRank(_ rank: String) -> Bool {
+        !rank.isEmpty && !rank.hasSuffix("0") && rank.allSatisfy(rankCharacters.contains)
     }
 
     private static func string(_ s: String) -> Phi_PhiSettingValue {

@@ -267,6 +267,56 @@ final class SyncableSpacesTests: XCTestCase {
                        "publishing a rank the account has never seen IS a local write")
     }
 
+    /// The empty baseline above is only ONE of the shapes a peer can put in the
+    /// `rank` field -- the protocol validates none of them, and our own
+    /// `rankBetween` merely happens never to EMIT an illegal one. Its
+    /// precondition rejects an empty upper bound and one ending in the
+    /// alphabet's lowest digit as "the same impossibility", so `"M0"` traps the
+    /// process just as `""` does; a character outside `rankAlphabet` traps
+    /// nothing but silently breaks the lexicographic == numeric equivalence the
+    /// channel rests on (`rankBetween` reads an unknown character as the lowest
+    /// digit). All of them must degrade to "no rank" at the same decode
+    /// boundary. Local order is [u1 (no rank at all), u2 (the illegal one)], so
+    /// u2 wins the patience tail and, un-normalized, is offered to
+    /// `rankBetween` as the right endpoint.
+    func testSnapshotTreatsAnIllegalBaselineRankAsUnranked() throws {
+        for illegal in ["M0", "0", "M~", "M/"] {
+            var unranked = Phi_PhiSpaceEntity()
+            unranked.spaceUuid = "u1"
+            var poisoned = Phi_PhiSpaceEntity()
+            poisoned.spaceUuid = "u2"
+            var value = Phi_PhiSettingValue()
+            value.updatedAtMs = 1_000
+            value.stringValue = illegal
+            poisoned.rank = value
+
+            var table = PhiSpaceSyncTable()
+            var withoutRank = PhiSpaceCursor()
+            withoutRank.reconciled = try unranked.serializedData()
+            var withIllegalRank = PhiSpaceCursor()
+            withIllegalRank.reconciled = try poisoned.serializedData()
+            table.cursors = ["u1": withoutRank, "u2": withIllegalRank]
+
+            let out = SyncableSpaces.snapshot(
+                spaces: [local("u1"), local("u2")], table: table,
+                globalUuid: uuidMap(["Default": "uuid-a"]), now: 9_000)
+            let low = try XCTUnwrap(out["u1"]).rank
+            let high = try XCTUnwrap(out["u2"]).rank
+            for published in [low.stringValue, high.stringValue] {
+                XCTAssertFalse(published.isEmpty, "\(illegal): an empty rank is illegal on the wire")
+                XCTAssertFalse(published.hasSuffix("0"), "\(illegal): \(published) ends in the lowest digit")
+                XCTAssertTrue(published.allSatisfy(SyncableSpaces.rankAlphabet.contains),
+                              "\(illegal): \(published) leaves the rank alphabet")
+            }
+            XCTAssertNotEqual(high.stringValue, illegal,
+                              "\(illegal): an illegal rank must be replaced, not republished")
+            XCTAssertLessThan(low.stringValue, high.stringValue,
+                              "\(illegal): the local order must survive into the rank channel")
+            XCTAssertEqual(high.updatedAtMs, 9_000,
+                           "\(illegal): replacing an illegal rank IS a local write")
+        }
+    }
+
     func testSnapshotOmitsProfileAndThemeForTheDefaultSpace() {
         let entity = SyncableSpaces.snapshot(
             spaces: [local(LocalStore.defaultSpaceId, theme: "midnight")],

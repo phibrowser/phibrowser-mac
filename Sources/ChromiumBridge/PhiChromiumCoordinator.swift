@@ -433,12 +433,20 @@ import SwiftUI
         window.titlebarAppearsTransparent = true
         window.isReleasedWhenClosed = false
         phiSpaceFirstSyncWindow = window
-        if let host = NSApp.keyWindow ?? NSApp.mainWindow {
+        // `keyWindow` / `mainWindow` are both nil while the app is in the BACKGROUND, and the
+        // pull that asks this question runs on a timer — so fall through to any visible
+        // window rather than to the standalone branch, which would otherwise be the common
+        // case. `sheets.isEmpty` because a window can only host one sheet at a time.
+        let host = NSApp.keyWindow ?? NSApp.mainWindow
+            ?? NSApp.windows.first { $0.isVisible && $0.canBecomeKey && $0.sheets.isEmpty }
+        if let host {
             host.beginSheet(window) { _ in }
         } else {
             // No window to hang it on (every browser window closed, app still running).
+            // Deliberately NOT `NSApp.activate(ignoringOtherApps:)`: this can fire from a
+            // background pull, and the engine re-asks every round, so there is no need to
+            // pull the user out of another app to ask.
             window.center()
-            NSApp.activate(ignoringOtherApps: true)
             window.makeKeyAndOrderFront(nil)
         }
     }

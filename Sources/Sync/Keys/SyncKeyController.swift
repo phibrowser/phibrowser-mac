@@ -135,12 +135,20 @@ final class SyncKeyController {
     /// Drops every cached key and pings Chromium if there was anything to drop,
     /// so a locked / signed-out / account-switched controller stops serving the
     /// previous session's passphrases across the bridge.
+    ///
+    /// It ANNOUNCES like a `resolveMappings()` pass, because it is the other
+    /// writer of both pairing predicates: a lock or sign-out taken while the
+    /// app-modal pairing gate is up flips them false here with no pass to follow
+    /// (`silentUnlockAndResolve` returns straight after), and the gate dismisses
+    /// only from `.phiProfileMappingsDidResolve`. Staying silent would leave the
+    /// browser blocked behind a modal with nothing left to pair.
     func clearResolved() {
         let wasPopulated = !resolved.isEmpty
         resolved = [:]
         needsPairing = false
         needsPairingActionable = false
         if wasPopulated { notifyChromium() }
+        announceMappingsResolved()
     }
 
     /// Re-runs resolution after external events (pairing applied, approval

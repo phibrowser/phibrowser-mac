@@ -127,6 +127,11 @@ final class PhiSyncEngineTests: XCTestCase {
         /// M3-2: the next `getUpdates` answers NOT_MY_BIRTHDAY, then clears itself — the shape
         /// the server uses when the store this device tracks is gone.
         var throwNotMyBirthdayOnce = false
+        /// M3-2: answer `pages` calls normally and throw `error` on the one after them — the
+        /// "page 1 landed, page 2 failed" shape a round needs to be interrupted *after* it has
+        /// already advanced the shared marker. `getUpdatesErrorOnce` cannot express it: it
+        /// fires on the round's very first call, before anything is persisted.
+        var getUpdatesErrorAfterPages: (pages: Int, error: Error)?
 
         func seed(ciphertext: Data, version: Int64, entityId: String = "srv-seed", deleted: Bool = false) {
             stored[PhiSyncEntity.settingsClientTagHash] = Stored(entityId: entityId, version: version,
@@ -158,6 +163,14 @@ final class PhiSyncEngineTests: XCTestCase {
             if throwNotMyBirthdayOnce {
                 throwNotMyBirthdayOnce = false
                 throw PhiSyncProtocolError.notMyBirthday
+            }
+            if var scheduled = getUpdatesErrorAfterPages {
+                guard scheduled.pages > 0 else {
+                    getUpdatesErrorAfterPages = nil
+                    throw scheduled.error
+                }
+                scheduled.pages -= 1
+                getUpdatesErrorAfterPages = scheduled
             }
             if !scriptedPages.isEmpty {
                 let page = scriptedPages.removeFirst()

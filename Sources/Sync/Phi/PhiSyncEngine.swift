@@ -226,6 +226,10 @@ actor PhiSyncEngine {
         case push
         case localChange
         case localSpaceChange
+        /// The Space gate's shut <-> open edge. Queued like every other round rather than
+        /// applied in place, so it can never land *inside* a round that is parked in
+        /// `getUpdates` — see `setSpaceSyncEnabled`.
+        case spaceGate(Bool)
     }
 
     init(domainKeys: any PhiDomainKeyProviding,
@@ -270,37 +274,56 @@ actor PhiSyncEngine {
     /// auto-create makes that predicate flip true for a moment every time the account gains a
     /// profile, and hanging the gate on it would drop the shared marker and replay the whole
     /// data type each time.
+    ///
+    /// Queued through `serialized(_:)`, and that is not a detail: the engine is a reentrant
+    /// actor, so a gate open awaited from the coordinator while a round is parked in
+    /// `getUpdates` would otherwise land in the middle of that round — after it read the Space
+    /// table and before it writes anything back — and the round would carry on with a stale
+    /// `spaceLive` and re-establish the very marker this edge just dropped. Running it as a
+    /// round means the edge happens strictly between rounds: the replay it arms is the next
+    /// round's to perform.
+    ///
+    /// Must therefore be called from *outside* a round (the coordinator is the only caller);
+    /// calling it from inside one would wait on the queue that round is holding. A redundant
+    /// call is a no-op at the edge check inside the round, but it still queues behind whatever
+    /// is in flight, so the coordinator should keep driving it on real state changes only.
     func setSpaceSyncEnabled(_ enabled: Bool) async {
-        guard spaceStore != nil, enabled != spaceSectionEnabled else { return }
+        guard spaceStore != nil else { return }
+        await serialized(.spaceGate(enabled))
+    }
+
+    /// The gate edge itself. Runs as a queued round; never call it directly.
+    private func applySpaceGate(_ enabled: Bool) {
+        guard enabled != spaceSectionEnabled else { return }
         spaceSectionEnabled = enabled
-        var table = loadSpaceTable()
-        table.spaceSectionEnabled = enabled
-        // Two triggers, one action. `markerMovedWhileGateShut` covers every shut episode this
-        // build observed. `!hasDrainedFullReplay` covers the one it could not observe: the
-        // M3-1 -> M3-2 UPGRADE, where the device already holds a non-nil `phi.sync.marker`
-        // from months of settings sync, an empty `sync.phiSpaces` (so `hadRecords == false`
-        // and guard 2's second trigger is disabled too), and no flag was ever set because the
-        // flag did not exist. Without this disjunct nothing ever drops that marker: the pull
-        // never sees `storedMarker == nil`, so `drainInProgress` is never armed,
-        // `hasDrainedFullReplay` stays false forever, `pushSpaces` returns at its own guard,
-        // and the device silently never publishes a single Space.
-        // Idempotent: once a drain completes, only a real shut episode re-arms it.
-        if enabled, table.markerMovedWhileGateShut || !table.hasDrainedFullReplay {
-            // Both kinds share ONE progress marker for data type 2000, so every Space entity
-            // the settings pulls walked past while the gate was shut will never be delivered
-            // again. Replay the type, and re-arm guard 1 so nothing is committed until the
-            // replay finishes.
-            AppLogInfo("[phi-sync] space gate opened (marker_moved=\(table.markerMovedWhileGateShut) drained=\(table.hasDrainedFullReplay)); replaying data type \(PhiSyncEntity.dataTypeID)")
-            storedMarker = nil
-            table.markerMovedWhileGateShut = false
-            table.hasDrainedFullReplay = false
-            table.drainInProgress = true
-            // Deliberately untouched: reconciled / server / entityId / version / hidden /
-            // deletedAtMs / purgedAtMs / firstSyncDecision. The ACCOUNT did not change;
-            // clearing them would re-arm the wholesale adopt and silently drop local edits
-            // that were just stamped.
+        mutateSpaceTable { table in
+            table.spaceSectionEnabled = enabled
+            // Two triggers, one action. `markerMovedWhileGateShut` covers every shut episode this
+            // build observed. `!hasDrainedFullReplay` covers the one it could not observe: the
+            // M3-1 -> M3-2 UPGRADE, where the device already holds a non-nil `phi.sync.marker`
+            // from months of settings sync, an empty `sync.phiSpaces` (so `hadRecords == false`
+            // and guard 2's second trigger is disabled too), and no flag was ever set because the
+            // flag did not exist. Without this disjunct nothing ever drops that marker: the pull
+            // never sees `storedMarker == nil`, so `drainInProgress` is never armed,
+            // `hasDrainedFullReplay` stays false forever, `pushSpaces` returns at its own guard,
+            // and the device silently never publishes a single Space.
+            // Idempotent: once a drain completes, only a real shut episode re-arms it.
+            if enabled, table.markerMovedWhileGateShut || !table.hasDrainedFullReplay {
+                // Both kinds share ONE progress marker for data type 2000, so every Space entity
+                // the settings pulls walked past while the gate was shut will never be delivered
+                // again. Replay the type, and re-arm guard 1 so nothing is committed until the
+                // replay finishes.
+                AppLogInfo("[phi-sync] space gate opened (marker_moved=\(table.markerMovedWhileGateShut) drained=\(table.hasDrainedFullReplay)); replaying data type \(PhiSyncEntity.dataTypeID)")
+                storedMarker = nil
+                table.markerMovedWhileGateShut = false
+                table.hasDrainedFullReplay = false
+                table.drainInProgress = true
+                // Deliberately untouched: reconciled / server / entityId / version / hidden /
+                // deletedAtMs / purgedAtMs / firstSyncDecision. The ACCOUNT did not change;
+                // clearing them would re-arm the wholesale adopt and silently drop local edits
+                // that were just stamped.
+            }
         }
-        writeSpaceTable(table)
     }
 
     /// Entry point for the debounced `spacesPublisher()` / `.spaceThemeDidChange` observers
@@ -365,6 +388,8 @@ actor PhiSyncEngine {
         case .localSpaceChange:
             guard !isApplyingRemote else { return }
             await push(retryOnConflict: true, allowInitialPull: true)
+        case .spaceGate(let enabled):
+            applySpaceGate(enabled)
         }
     }
 
@@ -411,14 +436,29 @@ actor PhiSyncEngine {
         // only while the Space section is live — a gated-off pull hands the Space section
         // nothing, so letting it satisfy the guard would let a fresh device publish its
         // factory default Space over the account's.
-        var spaceTable = loadSpaceTable()
+        //
+        // The whole Space side of this round obeys one rule: **no copy of the table spans a
+        // suspension point, and every flag is persisted the moment it is observed**. The
+        // shared marker is written page by page (`storedMarker = marker` below), so a flag
+        // derived from it that is only written on the success path is simply gone when a
+        // later page throws — with the marker left standing past whatever it walked over.
+        let spaceTableAtEntry = loadSpaceTable()
         let spaceLive = spaceSectionEnabled && spaceStore != nil && spaceAccess != nil
-        if spaceLive, storedMarker == nil, !spaceTable.drainInProgress {
-            spaceTable.drainInProgress = true
-            spaceTable.hasDrainedFullReplay = false
+        if spaceLive, storedMarker == nil, !spaceTableAtEntry.drainInProgress {
+            // Persisted immediately, not at the tail: page 1 already makes the marker
+            // non-nil, so a round that dies on page 2 would otherwise leave a non-nil marker
+            // on disk beside `drainInProgress == false`. This precondition (`storedMarker ==
+            // nil`) could then never be met again, `hasDrainedFullReplay` would stay false
+            // for the rest of the session, and that flag is what Task 9's `pushSpaces` guard
+            // reads before it publishes anything.
+            mutateSpaceTable { table in
+                table.drainInProgress = true
+                table.hasDrainedFullReplay = false
+            }
         }
         var batch = SpacePullBatch()
-        let tagIndex = spaceLive ? await spaceTagIndex(table: spaceTable) : [:]
+        // A snapshot, used for the cursor keys it carries and never written back.
+        let tagIndex = spaceLive ? await spaceTagIndex(table: spaceTableAtEntry) : [:]
 
         // A pull with no marker replays the whole type, so "the entity was not in the response"
         // is only evidence of absence when we started from scratch and drained every page.
@@ -428,6 +468,12 @@ actor PhiSyncEngine {
         // "nil": the protocol client answers with `Data()` when the server sent no marker for
         // the type, and a response's `newMarker` is non-optional.
         let markerAtEntry = storedMarker
+        // Only a gated-off round records marker movement, and only once per round: the flag
+        // is a boolean, so the first page that moves the marker has already said everything
+        // there is to say. `spaceStore != nil` keeps a settings-only engine (M3-1) out of the
+        // Space table entirely.
+        let recordsGatedMarkerMoves = !spaceLive && spaceStore != nil
+        var markerMoveRecorded = false
         var view = RemoteView.absent
         var drained = false
         do {
@@ -478,26 +524,42 @@ actor PhiSyncEngine {
                 }
                 more = response.changesRemaining
                 page += 1
-                if !spaceLive, storedMarker != markerAtEntry {
+                if recordsGatedMarkerMoves, !markerMoveRecorded, storedMarker != markerAtEntry {
                     // A page that advanced the shared marker while the gate was shut.
                     // Recorded without inspecting its contents on purpose: deciding "did this
                     // page hold a Space?" needs a decrypt, and an entity this build cannot
                     // decrypt is exactly one of the things that gets missed.
-                    spaceTable.markerMovedWhileGateShut = true
+                    //
+                    // Written here rather than at the round's tail because the marker advance
+                    // is already durable: if a later page throws, the record of the move must
+                    // not go with it, or the next gate-open takes neither disjunct in
+                    // `applySpaceGate`, never replays, and whatever this page walked past is
+                    // lost on this device until some peer touches it again.
+                    markerMoveRecorded = true
+                    mutateSpaceTable { $0.markerMovedWhileGateShut = true }
                 }
             }
             drained = !more
-            if spaceLive, drained, spaceTable.drainInProgress {
-                spaceTable.drainInProgress = false
-                spaceTable.hasDrainedFullReplay = true
-                spaceTable.lastDrainedBirthday = storedBirthday
+            if spaceLive, drained {
+                mutateSpaceTable { table in
+                    guard table.drainInProgress else { return }
+                    table.drainInProgress = false
+                    table.hasDrainedFullReplay = true
+                    table.lastDrainedBirthday = storedBirthday
+                }
             }
         } catch PhiSyncProtocolError.notMyBirthday {
+            // Nothing to flush: the store those pages came from is gone, and
+            // `resetForNewStoreBirthday()` clears the Space table's server-side state and its
+            // unreadable-tag record wholesale.
             resetForNewStoreBirthday()
             guard retryOnBirthday else { return false }
             return await pull(retryOnBirthday: false, thenPush: thenPush)
         } catch {
             AppLogError("[phi-sync] pull failed device=\(deviceKeyId) (\(PhiSyncLog.describe(error)))")
+            // The pages that did land advanced the shared marker for good, so what this round
+            // learned about them has to outlive the failure.
+            if spaceLive { flushSpaceObservations(batch) }
             return false
         }
 
@@ -547,25 +609,25 @@ actor PhiSyncEngine {
         }
 
         if spaceLive {
-            let seenAt = now()
-            for hash in batch.unreadableHashes { spaceTable.unreadableTagHashes[hash] = seenAt }
-            // Guard 2, trigger 2: the account plist was lost or restored from a backup.
-            // Guarded by a ONE-SHOT flag, never by `hadRecords` / `hasDrainedFullReplay`: an
-            // account whose Space entities all fail to decrypt keeps `cursors` empty and
-            // `hadRecords` true forever, and would drop the marker and replay on every single
-            // round.
-            if spaceTable.cursors.isEmpty, spaceTable.hadRecords, !spaceTable.didReplayForEmptyTable {
-                AppLogWarn("[phi-sync] space table is empty but had records; replaying data type \(PhiSyncEntity.dataTypeID) once")
-                spaceTable.didReplayForEmptyTable = true
-                storedMarker = nil
-                spaceTable.hasDrainedFullReplay = false
-                spaceTable.drainInProgress = true
+            flushSpaceObservations(batch)
+            mutateSpaceTable { table in
+                // Guard 2, trigger 2: the account plist was lost or restored from a backup.
+                // Guarded by a ONE-SHOT flag, never by `hadRecords` / `hasDrainedFullReplay`:
+                // an account whose Space entities all fail to decrypt keeps `cursors` empty
+                // and `hadRecords` true forever, and would drop the marker and replay on every
+                // single round.
+                if table.cursors.isEmpty, table.hadRecords, !table.didReplayForEmptyTable {
+                    AppLogWarn("[phi-sync] space table is empty but had records; replaying data type \(PhiSyncEntity.dataTypeID) once")
+                    table.didReplayForEmptyTable = true
+                    storedMarker = nil
+                    table.hasDrainedFullReplay = false
+                    table.drainInProgress = true
+                }
+                if !table.cursors.isEmpty { table.hadRecords = true }
             }
-            if !spaceTable.cursors.isEmpty { spaceTable.hadRecords = true }
-            writeSpaceTable(spaceTable)
-        } else {
-            writeSpaceTable(spaceTable)   // markerMovedWhileGateShut
         }
+        // The gated-off round's `markerMovedWhileGateShut` needs no write here: it was
+        // persisted by the page that observed it.
 
         // Publish whatever the merge left the server short of (a locally newer value, or a
         // registered key the remote entity did not carry). `push` decides by comparison, so a
@@ -592,6 +654,19 @@ actor PhiSyncEngine {
         var tombstones: [(uuid: String, entityId: String, version: Int64)] = []
         var unreadableHashes: [String] = []
         var unknownTombstoneHashes: [String] = []
+    }
+
+    /// Persists what this round's routing learned about entities the shared marker has
+    /// already moved past. Called on the pull's tail *and* from its failure path, because the
+    /// marker advance those observations describe is durable either way: a hash recorded only
+    /// on the success path is lost by the throw that follows it, and nothing will ever deliver
+    /// that entity again.
+    private func flushSpaceObservations(_ batch: SpacePullBatch) {
+        guard !batch.unreadableHashes.isEmpty else { return }
+        let seenAt = now()
+        mutateSpaceTable { table in
+            for hash in batch.unreadableHashes { table.unreadableTagHashes[hash] = seenAt }
+        }
     }
 
     /// `client_tag_hash -> space_uuid`, rebuilt once per pull. A tombstone carries no
@@ -898,6 +973,30 @@ actor PhiSyncEngine {
         Task { @MainActor in PhiSpaceSyncState.shared.refreshCaches(from: table) }
     }
 
+    /// Read-modify-write against `sync.phiSpaces`, and the only way a round is allowed to
+    /// change it. Two reasons, both of which a load-once/write-once round gets wrong:
+    ///
+    /// 1. **Durability.** A pull persists the shared marker page by page. Anything derived
+    ///    from that marker therefore has to be persisted page by page too, or an error on
+    ///    page 2 throws away the record of what page 1 already walked past — while the marker
+    ///    itself stays advanced. Small deltas written where they are observed, never a whole
+    ///    table written at the end.
+    /// 2. **Freshness.** `body` sees the table as it is *now*, not as it was before the last
+    ///    suspension point, so a round can only overwrite the fields it actually touches.
+    ///    The gate edge runs as its own round (`setSpaceSyncEnabled`) so it cannot interleave
+    ///    in the first place; this is the belt to that suspenders, and it is what keeps
+    ///    Task 9's apply path from having to think about either question again.
+    ///
+    /// Writes only when `body` changed something, so a no-op mutation costs no plist write and
+    /// no main-actor cache refresh.
+    private func mutateSpaceTable(_ body: (inout PhiSpaceSyncTable) -> Void) {
+        var table = loadSpaceTable()
+        let before = table
+        body(&table)
+        guard table != before else { return }
+        writeSpaceTable(table)
+    }
+
     /// `SyncableSettings.snapshot` is a write as much as a read: for every registered key whose
     /// value differs from `<key>.phiSyncVal` it stamps `<key>.phiSyncTs = now()` and refreshes
     /// the sidecar. So it takes the same check as the settings and the cursor. `nil` means the
@@ -1003,21 +1102,21 @@ actor PhiSyncEngine {
         // `purgedAtMs` / `firstSyncDecision` survive: the ACCOUNT did not change, and clearing
         // them would re-arm the wholesale adopt and silently drop edits this device has just
         // stamped.
-        var table = loadSpaceTable()
-        for (uuid, var cursor) in table.cursors {
-            cursor.entityId = nil
-            cursor.version = 0
-            cursor.server = nil
-            cursor.deleteRejectRounds = 0
-            table.cursors[uuid] = cursor
+        mutateSpaceTable { table in
+            for (uuid, var cursor) in table.cursors {
+                cursor.entityId = nil
+                cursor.version = 0
+                cursor.server = nil
+                cursor.deleteRejectRounds = 0
+                table.cursors[uuid] = cursor
+            }
+            table.hasDrainedFullReplay = false
+            table.drainInProgress = false
+            table.markerMovedWhileGateShut = false
+            table.didReplayForEmptyTable = false
+            table.lastDrainedBirthday = nil
+            table.unreadableTagHashes = [:]
         }
-        table.hasDrainedFullReplay = false
-        table.drainInProgress = false
-        table.markerMovedWhileGateShut = false
-        table.didReplayForEmptyTable = false
-        table.lastDrainedBirthday = nil
-        table.unreadableTagHashes = [:]
-        writeSpaceTable(table)
     }
 
     private var storedEntityId: String? {

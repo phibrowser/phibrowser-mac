@@ -17,6 +17,9 @@ package phi;
 message PhiEntity {
   oneof kind {
     PhiSettingEntity setting = 1;
+    PhiSpaceEntity   space   = 2;   // M3-2
+    // M3-3: PhiBookmarkEntity bookmark = 3; PhiPinTabEntity pin_tab = 4;
+    // M3-4: PhiURLRuleEntity url_rule = 5; PhiProfileEntity profile = 6;
   }
 }
 
@@ -35,4 +38,77 @@ message PhiSettingValue {
     string string_value = 3;
     int64 int_value = 4;
   }
+}
+
+// One Space. Entity identity is the client tag "phi-space:<space_uuid>";
+// `space_uuid` is repeated inside the payload because client_tag_hash is a
+// one-way SHA1 and the receiver cannot recover the uuid from it.
+//
+// Every mutable field is a PhiSettingValue -- M3-1's "value + LWW timestamp"
+// message, reused verbatim so the shared LWW rule (larger updated_at_ms wins;
+// equal timestamps -> lexicographically greater serialized bytes) applies
+// field by field with no new merge code. The name PhiSettingValue is
+// historical; it is the generic LWW-stamped scalar.
+//
+// Every field is ALWAYS emitted, never omitted-when-empty: an absent field
+// cannot carry a timestamp, so "the user cleared it" and "an older client
+// never knew about it" would be indistinguishable. Empty string / -1 are the
+// explicit "cleared" encodings, documented per field.
+message PhiSpaceEntity {
+  // LocalStore SpaceModel.spaceId verbatim. Stable across every rename,
+  // recolor, reorder and rebind; the literal "default-space" for the
+  // account's single default Space (D1).
+  string space_uuid = 1;
+
+  // string_value. No uniqueness rule (matches the local model).
+  PhiSettingValue name = 2;
+
+  // string_value. Portable prefixed id: "phi:<catalog id>" or
+  // "emoji:<codepoints>". Persisted verbatim even when the local catalog does
+  // not know it -- IconPickerSelection.fromStorageValue returns nil and the UI
+  // falls back at render time. Never normalized away on apply.
+  PhiSettingValue icon_name = 3;
+
+  // string_value, "#RRGGBB". Derived locally from the resolved theme, but
+  // synced as an independent field: it is what the strip pill tints with, and
+  // the receiver may not have the sender's theme. Applied verbatim.
+  PhiSettingValue color_hex = 4;
+
+  // string_value. Fractional index over the alphabet
+  // "0-9A-Za-z" (ASCII-ascending, so byte order == rank order); never ends in
+  // '0'. Account-wide strip order (D4). Ties break on space_uuid.
+  PhiSettingValue rank = 5;
+
+  // string_value: the account-global profile UUID from the M2 mapping
+  // (AccountProfileSyncMappingStore "sync.profileGlobalUuids"), NEVER the
+  // device-local Chromium basename. Not emitted, and ignored on arrival, for
+  // space_uuid == "default-space" (D1). M1 §5: a rebind is exactly this one
+  // field changing; no contained entity is rewritten on the wire.
+  PhiSettingValue profile_uuid = 6;
+
+  // string_value. Per-Space pinned theme id (AccountUserDefaults
+  // "spaceThemeIds"). "" means "no pin, follow the global theme" -- the
+  // explicit cleared encoding. Not emitted, and ignored on arrival, for
+  // space_uuid == "default-space": that Space's theme IS the global theme,
+  // already synced as the PhiCurrentThemeId setting in M3-1 (D1).
+  PhiSettingValue theme_id = 7;
+
+  // int_value: window-overlay alpha in milli-units (0...1000) for the light
+  // appearance; -1 means "no custom opacity, use the resolved theme's own
+  // alpha". Milli-integers rather than a new double case on PhiSettingValue:
+  // it leaves the shipped M3-1 message untouched and is far below slider
+  // resolution, so an applied value snapshots back identically (no echo).
+  PhiSettingValue overlay_opacity_light = 8;
+
+  // int_value, same encoding, dark appearance.
+  PhiSettingValue overlay_opacity_dark = 9;
+
+  // NOT last-writer-wins: merged with min(). Epoch ms of
+  // SpaceModel.createdDate on the device that created the Space. Its only
+  // consumer is determinism -- it is the last tiebreak in
+  // LocalStore.getAllSpaces, so without it two devices can order rank-tied
+  // Spaces differently.
+  int64 created_at_ms = 10;
+
+  // 11-14 reserved for M3-3 / M3-4. Do not reuse.
 }

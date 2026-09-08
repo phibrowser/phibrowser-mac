@@ -343,7 +343,7 @@ actor PhiSyncEngine {
                 marker = response.newMarker
                 storedMarker = marker
 
-                for entity in response.entities where entity.clientTagHash == PhiSyncEntity.clientTagHash {
+                for entity in response.entities where entity.clientTagHash == PhiSyncEntity.settingsClientTagHash {
                     if !entity.entityId.isEmpty { storedEntityId = entity.entityId }
                     storedVersion = entity.version
                     guard !entity.deleted else {
@@ -557,12 +557,21 @@ actor PhiSyncEngine {
 
         do {
             let ciphertext = try PhiEntityCodec.encrypt(wrapper, key: key)
-            let outcome = try await client.commit(entityId: storedEntityId,
-                                                  clientTagHash: PhiSyncEntity.clientTagHash,
-                                                  ciphertext: ciphertext,
-                                                  baseVersion: storedVersion ?? 0,
-                                                  storeBirthday: storedBirthday)
+            // The settings entity is still exactly one entry: a one-element batch, committed
+            // under `phi-settings` as before. `name` moved from the client into the entry, so
+            // it is spelled out here rather than defaulted.
+            let outcomes = try await client.commit(entries: [
+                PhiCommitEntry(entityId: storedEntityId,
+                               clientTagHash: PhiSyncEntity.settingsClientTagHash,
+                               name: PhiSyncEntity.clientTag,
+                               ciphertext: ciphertext,
+                               deleted: false,
+                               baseVersion: storedVersion ?? 0),
+            ], storeBirthday: storedBirthday)
             guard !isStopped else { return }
+            guard let outcome = outcomes.first else {
+                throw PhiSyncProtocolError.malformedResponse
+            }
             switch outcome {
             case .applied(let entityId, let version, let storeBirthday):
                 if !entityId.isEmpty { storedEntityId = entityId }
@@ -584,31 +593,46 @@ actor PhiSyncEngine {
                 }
                 _ = await pull(retryOnBirthday: true, thenPush: false)
                 await push(retryOnConflict: false, allowInitialPull: false)
+            case .invalidMessage:
+                // The same rejection as the `commitRejected(.invalidMessage)` catch below, only
+                // reported per entry instead of thrown for the whole batch. Both paths exist:
+                // a peer that fails the round still throws.
+                dropTheEntityCursorAfterInvalidMessage()
+            case .rejected(let responseType):
+                AppLogError("[phi-sync] commit rejected response_type=\(responseType); abandoning this round")
+                return
             }
         } catch PhiSyncProtocolError.notMyBirthday {
             resetForNewStoreBirthday()
         } catch PhiSyncProtocolError.commitRejected(.invalidMessage) {
-            // The server could not find the row this commit names: the update path returns
-            // INVALID_MESSAGE on pgx.ErrNoRows and on a data_type mismatch
-            // (internal/data/entities_write.go), and NOT_MY_BIRTHDAY never fires because the
-            // account row — and with it store_birthday — is untouched. An incremental
-            // GetUpdates cannot tell us either: it simply returns nothing. Without dropping the
-            // cursor the device would send the same stale id and version forever and never sync
-            // again. Drop the row identity and the marker so the next round replays the type
-            // from scratch and either re-discovers the entity or creates it through the
-            // client_tag_hash unique index.
-            //
-            // `clearRemoteCursor()`, never `resetSyncState()`: the account is unchanged, and
-            // the snapshot taken a few statements above has just stamped `now` on the key the
-            // user edited. Clearing `hasAdopted` here would make the very next pull adopt a
-            // peer's entity wholesale over that edit — and, because `apply` also writes the
-            // remote timestamp into the key's sidecar, the edit would never be re-pushed
-            // either. That is the same distinction the `.absent` full-replay branch makes.
-            AppLogWarn("[phi-sync] commit rejected as INVALID_MESSAGE; dropping the entity cursor and the marker so the next round rediscovers the entity")
-            clearRemoteCursor()
+            dropTheEntityCursorAfterInvalidMessage()
         } catch {
             AppLogError("[phi-sync] push failed device=\(deviceKeyId) (\(PhiSyncLog.describe(error)))")
         }
+    }
+
+    /// INVALID_MESSAGE on the settings commit, however it was reported — as this batch entry's
+    /// outcome, or as a thrown `commitRejected(.invalidMessage)` for the whole round.
+    ///
+    /// The server could not find the row this commit names: the update path returns
+    /// INVALID_MESSAGE on pgx.ErrNoRows and on a data_type mismatch
+    /// (internal/data/entities_write.go), and NOT_MY_BIRTHDAY never fires because the
+    /// account row — and with it store_birthday — is untouched. An incremental
+    /// GetUpdates cannot tell us either: it simply returns nothing. Without dropping the
+    /// cursor the device would send the same stale id and version forever and never sync
+    /// again. Drop the row identity and the marker so the next round replays the type
+    /// from scratch and either re-discovers the entity or creates it through the
+    /// client_tag_hash unique index.
+    ///
+    /// `clearRemoteCursor()`, never `resetSyncState()`: the account is unchanged, and
+    /// the snapshot taken a few statements above has just stamped `now` on the key the
+    /// user edited. Clearing `hasAdopted` here would make the very next pull adopt a
+    /// peer's entity wholesale over that edit — and, because `apply` also writes the
+    /// remote timestamp into the key's sidecar, the edit would never be re-pushed
+    /// either. That is the same distinction the `.absent` full-replay branch makes.
+    private func dropTheEntityCursorAfterInvalidMessage() {
+        AppLogWarn("[phi-sync] commit rejected as INVALID_MESSAGE; dropping the entity cursor and the marker so the next round rediscovers the entity")
+        clearRemoteCursor()
     }
 
     // MARK: - Guarded writes

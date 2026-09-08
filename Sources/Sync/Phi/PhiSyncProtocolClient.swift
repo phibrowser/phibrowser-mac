@@ -35,22 +35,37 @@ enum PhiSyncEntity {
     /// (`DataTypePhi` in the server's registry).
     static let dataTypeID: Int32 = 2000
 
-    /// The fixed client tag. A client cannot pin its own entity id — the server assigns a
-    /// UUID on create — so cross-device convergence runs entirely through the
-    /// `client_tag_hash` unique index.
+    /// The fixed client tag of the single settings entity (M3-1). A client cannot pin its own
+    /// entity id — the server assigns a UUID on create — so cross-device convergence runs
+    /// entirely through the `client_tag_hash` unique index.
     static let clientTag = "phi-settings"
+
+    /// One Space = one entity, tagged `phi-space:<space_uuid>`. The SHA1 prefix
+    /// (the serialized empty specifics) is per DATA TYPE, not per entity, so
+    /// Spaces staying on 2000 changes nothing about the derivation.
+    static let spaceTagPrefix = "phi-space:"
+    static func spaceClientTag(_ spaceUuid: String) -> String { spaceTagPrefix + spaceUuid }
+
+    /// The plaintext name the server persists for EVERY phi Space entity
+    /// (`commitName` -> `entities.name`). A constant, so zero knowledge holds
+    /// and the server's `IS DISTINCT FROM` idempotence check still works.
+    static let spaceEntityName = "phi-space"
 
     /// Chromium's rule: `base64(SHA1(<serialized empty specifics for the type> + client_tag))`.
     /// The server treats it as an opaque uniqueness key, but keeping the Chromium derivation
     /// means a fork client computing it the standard way lands on the same entity.
-    static let clientTagHash: String = {
+    static func clientTagHash(for tag: String) -> String {
         var specifics = SyncPb_EntitySpecifics()
         specifics.phi = SyncPb_PhiSpecifics()
         // Deterministic and non-throwing in practice (no required fields); the literal
         // fallback is the same three bytes: tag 2000 (0x82 0x7D), length 0.
         let prefix = (try? specifics.serializedData()) ?? Data([0x82, 0x7D, 0x00])
-        return Data(Insecure.SHA1.hash(data: prefix + Data(clientTag.utf8))).base64EncodedString()
-    }()
+        return Data(Insecure.SHA1.hash(data: prefix + Data(tag.utf8))).base64EncodedString()
+    }
+
+    /// Renamed from `clientTagHash` now that the derivation is parameterized.
+    /// Its VALUE is unchanged and pinned by test.
+    static let settingsClientTagHash: String = clientTagHash(for: clientTag)
 }
 
 /// One entity as the server handed it back.
@@ -62,12 +77,26 @@ struct PhiRemoteEntity {
     let deleted: Bool
 }
 
-/// The four outcomes the server's per-entry response collapses to for a single-entry commit.
-/// INVALID_MESSAGE / TRANSIENT_ERROR are thrown rather than represented here: only `.conflict`
-/// may drive the engine's pull-and-retry loop.
+/// One entry of a batch commit. `ciphertext == nil` + `deleted == true` is a
+/// tombstone: the server backfills the type's default specifics itself.
+struct PhiCommitEntry {
+    let entityId: String?      // nil on create
+    let clientTagHash: String
+    let name: String           // "phi-settings", or the constant "phi-space"
+    let ciphertext: Data?      // nil for a tombstone
+    let deleted: Bool
+    let baseVersion: Int64     // 0 on create
+}
+
+/// What the server's per-entry response collapses to. Only `.conflict` may drive the engine's
+/// pull-and-retry loop.
 enum PhiCommitOutcome {
     case applied(entityId: String, version: Int64, storeBirthday: String)
     case conflict(serverVersion: Int64?)
+    /// Per-entry now, not a thrown error: one bad entry must not abandon the
+    /// other twenty-four in the batch (§5.1).
+    case invalidMessage
+    case rejected(SyncPb_CommitResponse.ResponseType)
 }
 
 enum PhiSyncProtocolError: Error, Equatable {
@@ -86,10 +115,15 @@ protocol PhiSyncProtocolClient {
     func getUpdates(marker: Data?, storeBirthday: String) async throws
         -> (entities: [PhiRemoteEntity], newMarker: Data, storeBirthday: String, changesRemaining: Bool)
 
-    /// One single-entry Commit. `entityId` is nil (and `baseVersion` 0) for the first commit,
-    /// which creates the entity under `clientTagHash`; afterwards both come from the server.
-    func commit(entityId: String?, clientTagHash: String, ciphertext: Data,
-                baseVersion: Int64, storeBirthday: String) async throws -> PhiCommitOutcome
+    /// A batch commit. Outcomes are paired to `entries` BY INDEX -- the server
+    /// allocates `responses` at `len(entries)`, fills illegal entries in place
+    /// and writes each store result back at its own index
+    /// (`internal/chromiumsync/commit.go:112-136`). A different count is a
+    /// broken peer, not a partial success, so it throws.
+    ///
+    /// An entry's `entityId` is nil (and `baseVersion` 0) for the first commit of that entity,
+    /// which creates it under `clientTagHash`; afterwards both come from the server.
+    func commit(entries: [PhiCommitEntry], storeBirthday: String) async throws -> [PhiCommitOutcome]
 }
 
 /// The real transport. Mirrors `KeyEnvelopeAPIClient`'s shape (injected session, injected
@@ -144,19 +178,26 @@ final class PhiSyncHTTPClient: PhiSyncProtocolClient {
         return (entities, newMarker, response.storeBirthday, updates.changesRemaining > 0)
     }
 
-    func commit(entityId: String?, clientTagHash: String, ciphertext: Data,
-                baseVersion: Int64, storeBirthday: String) async throws -> PhiCommitOutcome {
-        var entry = SyncPb_SyncEntity()
-        if let entityId { entry.idString = entityId }
-        entry.version = baseVersion
-        entry.clientTagHash = clientTagHash
-        // A stable name keeps the server's "did anything change" comparison from bumping the
-        // version on an otherwise identical commit from another device.
-        entry.name = PhiSyncEntity.clientTag
-        entry.specifics.phi.ciphertext = ciphertext
-
+    func commit(entries: [PhiCommitEntry], storeBirthday: String) async throws -> [PhiCommitOutcome] {
+        guard !entries.isEmpty else { return [] }
         var commitMessage = SyncPb_CommitMessage()
-        commitMessage.entries = [entry]
+        commitMessage.entries = entries.map { entry in
+            var wire = SyncPb_SyncEntity()
+            if let entityId = entry.entityId { wire.idString = entityId }
+            wire.version = entry.baseVersion
+            wire.clientTagHash = entry.clientTagHash
+            // A stable name keeps the server's "did anything change" comparison from bumping
+            // the version on an otherwise identical commit from another device — which is why
+            // it is a per-type constant and never a user-visible string.
+            wire.name = entry.name
+            // Set only when true, so a live commit's bytes stay exactly what they were before
+            // the field existed here (proto2 serializes any explicitly-set field, default or not).
+            if entry.deleted { wire.deleted = true }
+            if let ciphertext = entry.ciphertext {
+                wire.specifics.phi.ciphertext = ciphertext
+            }
+            return wire
+        }
         commitMessage.cacheGuid = deviceKeyId
 
         var message = Self.newMessage(storeBirthday: storeBirthday)
@@ -164,22 +205,28 @@ final class PhiSyncHTTPClient: PhiSyncProtocolClient {
         message.commit = commitMessage
 
         let response = try await send(message)
-        guard let entryResponse = response.commit.entryResponse.first else {
+        let responses = response.commit.entryResponse
+        guard responses.count == entries.count else {
+            AppLogError("[phi-sync] commit response count \(responses.count) != \(entries.count)")
             throw PhiSyncProtocolError.malformedResponse
         }
-        switch entryResponse.responseType {
-        case .success:
-            AppLogInfo("[phi-sync] commit applied version=\(entryResponse.version) ciphertext_bytes=\(ciphertext.count)")
-            return .applied(entityId: entryResponse.idString,
-                            version: entryResponse.version,
-                            storeBirthday: response.storeBirthday)
-        case .conflict:
-            AppLogInfo("[phi-sync] commit conflict base_version=\(baseVersion) server_version=\(entryResponse.version)")
-            return .conflict(serverVersion: entryResponse.hasVersion ? entryResponse.version : nil)
-        default:
-            AppLogError("[phi-sync] commit rejected response_type=\(entryResponse.responseType)")
-            throw PhiSyncProtocolError.commitRejected(entryResponse.responseType)
+        let outcomes: [PhiCommitOutcome] = responses.map { entryResponse in
+            switch entryResponse.responseType {
+            case .success:
+                return .applied(entityId: entryResponse.idString,
+                                version: entryResponse.version,
+                                storeBirthday: response.storeBirthday)
+            case .conflict:
+                return .conflict(serverVersion: entryResponse.hasVersion ? entryResponse.version : nil)
+            case .invalidMessage:
+                return .invalidMessage
+            default:
+                return .rejected(entryResponse.responseType)
+            }
         }
+        let applied = outcomes.filter { if case .applied = $0 { return true } else { return false } }.count
+        AppLogInfo("[phi-sync] commit entries=\(entries.count) applied=\(applied) bytes=\(entries.compactMap(\.ciphertext).reduce(0) { $0 + $1.count })")
+        return outcomes
     }
 
     // MARK: - Transport

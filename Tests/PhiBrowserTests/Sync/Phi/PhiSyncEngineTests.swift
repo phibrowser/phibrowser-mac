@@ -81,7 +81,11 @@ final class PhiSyncEngineTests: XCTestCase {
         struct CommitCall {
             let entityId: String?
             let clientTagHash: String
-            let ciphertext: Data
+            /// M3-2: "phi-settings", or the constant "phi-space".
+            let name: String
+            /// M3-2: nil for a tombstone.
+            let ciphertext: Data?
+            let deleted: Bool
             let baseVersion: Int64
             let storeBirthday: String
         }
@@ -94,7 +98,7 @@ final class PhiSyncEngineTests: XCTestCase {
         /// Keyed by client tag hash, exactly like the server's unique index.
         private(set) var stored: [String: Stored] = [:]
         private(set) var getUpdatesCalls: [(marker: Data?, storeBirthday: String)] = []
-        private(set) var commits: [CommitCall] = []
+        private(set) var commits: [CommitCall] = []   // name unchanged on purpose
 
         var storeBirthday = "birthday-1"
         /// Global version sequence, like `nextval('entity_version_seq')`.
@@ -117,8 +121,8 @@ final class PhiSyncEngineTests: XCTestCase {
         private(set) var callLog: [String] = []
 
         func seed(ciphertext: Data, version: Int64, entityId: String = "srv-seed", deleted: Bool = false) {
-            stored[PhiSyncEntity.clientTagHash] = Stored(entityId: entityId, version: version,
-                                                         ciphertext: ciphertext, deleted: deleted)
+            stored[PhiSyncEntity.settingsClientTagHash] = Stored(entityId: entityId, version: version,
+                                                                 ciphertext: ciphertext, deleted: deleted)
         }
 
         func getUpdates(marker: Data?, storeBirthday: String) async throws
@@ -148,39 +152,59 @@ final class PhiSyncEngineTests: XCTestCase {
             return (fresh, newMarker, storeBirthday, false)
         }
 
-        func commit(entityId: String?, clientTagHash: String, ciphertext: Data,
-                    baseVersion: Int64, storeBirthday: String) async throws -> PhiCommitOutcome {
-            commits.append(CommitCall(entityId: entityId, clientTagHash: clientTagHash,
-                                      ciphertext: ciphertext, baseVersion: baseVersion,
-                                      storeBirthday: storeBirthday))
-            callLog.append("commit")
-            if let error = commitErrorOnce {
-                commitErrorOnce = nil
-                throw error
-            }
-            if forcedConflicts > 0 {
-                forcedConflicts -= 1
-                return .conflict(serverVersion: stored[clientTagHash]?.version)
-            }
-            nextVersion += 1
-            if let entityId {
-                // Update path: the row must exist and the base version must match.
-                guard var row = stored[clientTagHash], row.entityId == entityId else {
-                    throw PhiSyncProtocolError.commitRejected(.invalidMessage)
+        /// One store write per entry, outcomes paired to `entries` by index — like the real
+        /// server, which allocates `responses` at `len(entries)` and writes each result back at
+        /// its own index. A *throw* still abandons the whole batch, which for the single-entry
+        /// settings path is exactly today's behaviour.
+        func commit(entries: [PhiCommitEntry], storeBirthday: String) async throws -> [PhiCommitOutcome] {
+            var outcomes: [PhiCommitOutcome] = []
+            for entry in entries {
+                let clientTagHash = entry.clientTagHash
+                let baseVersion = entry.baseVersion
+                // A tombstone carries no ciphertext; the server backfills the type's default
+                // specifics, so the stored row keeps empty bytes rather than a nil.
+                let ciphertext = entry.ciphertext ?? Data()
+                commits.append(CommitCall(entityId: entry.entityId, clientTagHash: clientTagHash,
+                                          name: entry.name, ciphertext: entry.ciphertext,
+                                          deleted: entry.deleted, baseVersion: baseVersion,
+                                          storeBirthday: storeBirthday))
+                callLog.append("commit")
+                if let error = commitErrorOnce {
+                    commitErrorOnce = nil
+                    throw error
                 }
-                guard row.version == baseVersion else { return .conflict(serverVersion: row.version) }
-                row.version = nextVersion
-                row.ciphertext = ciphertext
-                row.deleted = false
-                stored[clientTagHash] = row
-                return .applied(entityId: entityId, version: nextVersion, storeBirthday: self.storeBirthday)
+                if forcedConflicts > 0 {
+                    forcedConflicts -= 1
+                    outcomes.append(.conflict(serverVersion: stored[clientTagHash]?.version))
+                    continue
+                }
+                nextVersion += 1
+                if let entityId = entry.entityId {
+                    // Update path: the row must exist and the base version must match.
+                    guard var row = stored[clientTagHash], row.entityId == entityId else {
+                        throw PhiSyncProtocolError.commitRejected(.invalidMessage)
+                    }
+                    guard row.version == baseVersion else {
+                        outcomes.append(.conflict(serverVersion: row.version))
+                        continue
+                    }
+                    row.version = nextVersion
+                    row.ciphertext = ciphertext
+                    row.deleted = entry.deleted
+                    stored[clientTagHash] = row
+                    outcomes.append(.applied(entityId: entityId, version: nextVersion,
+                                             storeBirthday: self.storeBirthday))
+                    continue
+                }
+                // Create path: ON CONFLICT (client_tag_hash) DO UPDATE — it overwrites blindly,
+                // which is exactly why the engine must pull before its first commit.
+                let id = stored[clientTagHash]?.entityId ?? { idCounter += 1; return "srv-\(idCounter)" }()
+                stored[clientTagHash] = Stored(entityId: id, version: nextVersion,
+                                               ciphertext: ciphertext, deleted: entry.deleted)
+                outcomes.append(.applied(entityId: id, version: nextVersion,
+                                         storeBirthday: self.storeBirthday))
             }
-            // Create path: ON CONFLICT (client_tag_hash) DO UPDATE — it overwrites blindly,
-            // which is exactly why the engine must pull before its first commit.
-            let id = stored[clientTagHash]?.entityId ?? { idCounter += 1; return "srv-\(idCounter)" }()
-            stored[clientTagHash] = Stored(entityId: id, version: nextVersion,
-                                           ciphertext: ciphertext, deleted: false)
-            return .applied(entityId: id, version: nextVersion, storeBirthday: self.storeBirthday)
+            return outcomes
         }
 
         private static func watermark(_ marker: Data?) -> Int64 {
@@ -284,7 +308,7 @@ final class PhiSyncEngineTests: XCTestCase {
 
         XCTAssertTrue(defaults.bool(forKey: settingKey), "the newer local edit must win field-level LWW")
         XCTAssertEqual(client.commits.count, 1)
-        let committed = try decryptSetting(client.commits[0].ciphertext, key: key)
+        let committed = try decryptSetting(try XCTUnwrap(client.commits[0].ciphertext), key: key)
         XCTAssertEqual(committed.values[settingKey]?.boolValue, true)
         // The edit was made with no sidecar of its own, so the snapshot this pull takes is what
         // first stamps it — at the round's `now`, 3_000, not at the remote's 2_000. (Contrast
@@ -309,7 +333,7 @@ final class PhiSyncEngineTests: XCTestCase {
         XCTAssertFalse(defaults.bool(forKey: settingKey))
         XCTAssertEqual(defaults.string(forKey: PhiSyncEngine.entityIdStateKey), "srv-seed")
         XCTAssertTrue(client.commits.isEmpty, "an entity this device cannot read must not be overwritten")
-        XCTAssertEqual(client.stored[PhiSyncEntity.clientTagHash]?.ciphertext, foreign)
+        XCTAssertEqual(client.stored[PhiSyncEntity.settingsClientTagHash]?.ciphertext, foreign)
         // The marker is rewound so the next round sees the entity again and can heal once the
         // right domain key is available.
         XCTAssertNil(defaults.data(forKey: PhiSyncEngine.markerStateKey))
@@ -366,7 +390,7 @@ final class PhiSyncEngineTests: XCTestCase {
 
         XCTAssertTrue(client.commits.isEmpty,
                       "a device that synced before must not publish over an entity it could not read")
-        XCTAssertEqual(client.stored[PhiSyncEntity.clientTagHash]?.ciphertext, foreign)
+        XCTAssertEqual(client.stored[PhiSyncEntity.settingsClientTagHash]?.ciphertext, foreign)
         XCTAssertEqual(defaults.object(forKey: PhiSyncEngine.versionStateKey) as? NSNumber, NSNumber(value: Int64(6)))
     }
 
@@ -440,7 +464,7 @@ final class PhiSyncEngineTests: XCTestCase {
 
         XCTAssertEqual(client.commits.count, 1, "only the first, rejected commit may reach the wire")
         XCTAssertEqual(client.commits[0].baseVersion, 5)
-        XCTAssertEqual(client.stored[PhiSyncEntity.clientTagHash]?.ciphertext, foreign,
+        XCTAssertEqual(client.stored[PhiSyncEntity.settingsClientTagHash]?.ciphertext, foreign,
                        "the retry must not overwrite bytes the pull could not read")
         XCTAssertNil(defaults.data(forKey: PhiSyncEngine.lastEntityStateKey))
     }
@@ -463,7 +487,7 @@ final class PhiSyncEngineTests: XCTestCase {
         await engine.handleLocalDefaultsChange()
 
         XCTAssertTrue(client.commits.isEmpty, "a tombstone must not be resurrected by a later local edit")
-        XCTAssertEqual(client.stored[PhiSyncEntity.clientTagHash]?.deleted, true)
+        XCTAssertEqual(client.stored[PhiSyncEntity.settingsClientTagHash]?.deleted, true)
     }
 
     /// A tombstone must not be decrypted or applied, its version is still the base for the next
@@ -481,7 +505,7 @@ final class PhiSyncEngineTests: XCTestCase {
         XCTAssertTrue(defaults.bool(forKey: settingKey))
         XCTAssertEqual(defaults.object(forKey: PhiSyncEngine.versionStateKey) as? NSNumber, NSNumber(value: Int64(7)))
         XCTAssertTrue(client.commits.isEmpty, "a tombstone must not be resurrected by the trailing push")
-        XCTAssertEqual(client.stored[PhiSyncEntity.clientTagHash]?.deleted, true)
+        XCTAssertEqual(client.stored[PhiSyncEntity.settingsClientTagHash]?.deleted, true)
     }
 
     /// Refusing to publish over a tombstone is right, but on its own the refusal is permanent
@@ -508,7 +532,7 @@ final class PhiSyncEngineTests: XCTestCase {
         XCTAssertNil(defaults.string(forKey: PhiSyncEngine.entityIdStateKey),
                      "the third consecutive tombstone drops the entity cursor")
         XCTAssertTrue(client.commits.isEmpty, "arming the heal must not publish anything by itself")
-        XCTAssertEqual(client.stored[PhiSyncEntity.clientTagHash]?.deleted, true)
+        XCTAssertEqual(client.stored[PhiSyncEntity.settingsClientTagHash]?.deleted, true)
 
         // Only an explicit local change takes the create path.
         defaults.set(false, forKey: settingKey)
@@ -517,8 +541,8 @@ final class PhiSyncEngineTests: XCTestCase {
         XCTAssertEqual(client.commits.count, 1)
         XCTAssertNil(client.commits[0].entityId, "a create, resolved by the client-tag index")
         XCTAssertEqual(client.commits[0].baseVersion, 0)
-        XCTAssertEqual(client.stored[PhiSyncEntity.clientTagHash]?.deleted, false)
-        XCTAssertEqual(try decryptSetting(client.commits[0].ciphertext, key: key).values[settingKey]?.boolValue, false)
+        XCTAssertEqual(client.stored[PhiSyncEntity.settingsClientTagHash]?.deleted, false)
+        XCTAssertEqual(try decryptSetting(try XCTUnwrap(client.commits[0].ciphertext), key: key).values[settingKey]?.boolValue, false)
         XCTAssertNil(defaults.object(forKey: PhiSyncEngine.tombstoneRoundsStateKey),
                      "a successful commit ends the streak")
     }
@@ -554,7 +578,7 @@ final class PhiSyncEngineTests: XCTestCase {
         XCTAssertTrue(defaults.bool(forKey: settingKey),
                       "a healed cursor must not turn the next pull into a wholesale adopt")
         XCTAssertEqual(client.commits.count, 1, "the newer local value is published back")
-        let committed = try decryptSetting(client.commits[0].ciphertext, key: key)
+        let committed = try decryptSetting(try XCTUnwrap(client.commits[0].ciphertext), key: key)
         XCTAssertEqual(committed.values[settingKey]?.boolValue, true)
         XCTAssertEqual(committed.values[settingKey]?.updatedAtMs, 5_000)
     }
@@ -605,7 +629,7 @@ final class PhiSyncEngineTests: XCTestCase {
         await engine.handleLocalDefaultsChange()
 
         XCTAssertTrue(client.commits.isEmpty)
-        XCTAssertEqual(client.stored[PhiSyncEntity.clientTagHash]?.deleted, true)
+        XCTAssertEqual(client.stored[PhiSyncEntity.settingsClientTagHash]?.deleted, true)
     }
 
     /// Only a tombstone is healable: it carries no content. Bytes this device merely cannot
@@ -627,7 +651,7 @@ final class PhiSyncEngineTests: XCTestCase {
         await engine.handleLocalDefaultsChange()
 
         XCTAssertTrue(client.commits.isEmpty)
-        XCTAssertEqual(client.stored[PhiSyncEntity.clientTagHash]?.ciphertext, foreign)
+        XCTAssertEqual(client.stored[PhiSyncEntity.settingsClientTagHash]?.ciphertext, foreign)
     }
 
     /// A full replay that carries no settings entity proves the row is gone (a namespace
@@ -655,7 +679,7 @@ final class PhiSyncEngineTests: XCTestCase {
     func testPullDrainsPagesWhileChangesRemain() async throws {
         let key = SymmetricKey(size: .bits256)
         let client = FakePhiSyncClient()
-        let entity = PhiRemoteEntity(entityId: "srv-1", clientTagHash: PhiSyncEntity.clientTagHash,
+        let entity = PhiRemoteEntity(entityId: "srv-1", clientTagHash: PhiSyncEntity.settingsClientTagHash,
                                      version: 9,
                                      ciphertext: try ciphertext(settingEntity(settingKey, true, at: 999), key: key),
                                      deleted: false)
@@ -713,7 +737,7 @@ final class PhiSyncEngineTests: XCTestCase {
         XCTAssertTrue(defaults.bool(forKey: settingKey),
                       "the replay after the reset must merge by timestamp, not adopt wholesale")
         XCTAssertEqual(client.commits.count, 1, "and the surviving edit is published")
-        XCTAssertEqual(try decryptSetting(client.commits[0].ciphertext, key: key)
+        XCTAssertEqual(try decryptSetting(try XCTUnwrap(client.commits[0].ciphertext), key: key)
                         .values[settingKey]?.boolValue, true)
     }
 
@@ -733,13 +757,18 @@ final class PhiSyncEngineTests: XCTestCase {
         XCTAssertEqual(client.commits.count, 1)
         XCTAssertEqual(client.commits[0].entityId, "srv-seed")
         XCTAssertEqual(client.commits[0].baseVersion, 5)
-        XCTAssertEqual(client.commits[0].clientTagHash, PhiSyncEntity.clientTagHash)
+        XCTAssertEqual(client.commits[0].clientTagHash, PhiSyncEntity.settingsClientTagHash)
+        // M3-2: the wire `name` moved from the client into `PhiCommitEntry`. The settings
+        // entity must keep sending "phi-settings" — a different value would change the row the
+        // server persists and defeat its "did anything change" comparison.
+        XCTAssertEqual(client.commits[0].name, PhiSyncEntity.clientTag)
+        XCTAssertFalse(client.commits[0].deleted)
         XCTAssertEqual(client.commits[0].storeBirthday, "birthday-1")
-        let committed = try decryptSetting(client.commits[0].ciphertext, key: key)
+        let committed = try decryptSetting(try XCTUnwrap(client.commits[0].ciphertext), key: key)
         XCTAssertEqual(committed.values[settingKey]?.boolValue, true)
         XCTAssertEqual(committed.values[settingKey]?.updatedAtMs, 2_000)
         // The server-assigned id and the new version are persisted for the next round.
-        XCTAssertEqual(defaults.object(forKey: PhiSyncEngine.versionStateKey) as? NSNumber, NSNumber(value: client.stored[PhiSyncEntity.clientTagHash]!.version))
+        XCTAssertEqual(defaults.object(forKey: PhiSyncEngine.versionStateKey) as? NSNumber, NSNumber(value: client.stored[PhiSyncEntity.settingsClientTagHash]!.version))
     }
 
     /// R5: exactly one commit per local change, and none at all when nothing changed.
@@ -893,7 +922,7 @@ final class PhiSyncEngineTests: XCTestCase {
         XCTAssertTrue(defaults.bool(forKey: settingKey),
                       "the rejected commit must not cost this device the edit it was carrying")
         XCTAssertEqual(client.commits.count, 2, "the surviving edit is published to the new row")
-        let committed = try decryptSetting(client.commits[1].ciphertext, key: key)
+        let committed = try decryptSetting(try XCTUnwrap(client.commits[1].ciphertext), key: key)
         XCTAssertEqual(committed.values[settingKey]?.boolValue, true)
         XCTAssertEqual(committed.values[settingKey]?.updatedAtMs, 2_000,
                        "the edit keeps the timestamp it was stamped with, not a fresh one")

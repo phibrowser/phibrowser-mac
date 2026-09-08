@@ -5,6 +5,7 @@
 
 import SwiftUI
 import AppKit
+import Combine
 import UniformTypeIdentifiers
 
 /// Settings pane content for managing Spaces, laid out master-detail (mirroring
@@ -39,6 +40,14 @@ struct SpacesSettingsView: View {
     /// Re-read from the local store on every change signal rather than derived
     /// from `spaceManager.spaces`, which §6.6 filters exactly these rows out of.
     @State private var unsyncedSpaces: [SpaceModel] = []
+    /// §8.3's second refresh trigger: the LOCAL STORE's own Space feed, held for
+    /// the life of the pane. It cannot be `spaceManager.spaces` — §6.6 strips
+    /// every hidden Space out of that list (`SpaceManager.handleSpacesUpdate`),
+    /// and every row in this section is hidden by construction, so the row's own
+    /// 「删除…」 changes nothing there. `spacesPublisher()` allocates a fresh
+    /// subject *and* a fresh store observer on every call, so it is subscribed
+    /// exactly once here rather than rebuilt on each `body` evaluation.
+    @State private var storeSpacesCancellable: AnyCancellable?
 
     var body: some View {
         ScrollView(.vertical) {
@@ -76,6 +85,13 @@ struct SpacesSettingsView: View {
             orderedIds = listedSpaces.map(\.spaceId)
             if selectedSpaceId == nil { selectInitialSpace() }
             reloadUnsyncedSpaces()
+            subscribeToStoreSpaces()
+        }
+        .onDisappear {
+            // Releasing the subscription is what tears down the publisher's own
+            // store observer (`handleEvents(receiveCancel:)` in
+            // `spacesPublisher()`); `AnyCancellable.deinit` cancels for us.
+            storeSpacesCancellable = nil
         }
         // Re-sync the local order when Spaces change elsewhere (never mid-drag),
         // and keep the selection valid as Spaces are created/deleted.
@@ -97,16 +113,11 @@ struct SpacesSettingsView: View {
         .onReceive(NotificationCenter.default.publisher(for: .appearanceDidChange)) { _ in
             syncThemeControls()
         }
-        // §8.3's two refresh triggers. The notification is posted after every
-        // Space-table write (join / hide / soft delete / purge); the second is a
-        // pure CHANGE SIGNAL -- `spaceManager.spaces` can never be the row source
-        // here, because §6.6 filters every hidden Space out of it.
+        // §8.3's first refresh trigger, posted after every Space-table write
+        // (join / hide / soft delete / purge). It covers the id set changing;
+        // the store subscription set up in `onAppear` covers the rows
+        // themselves changing (this section's own 「删除…」, above all).
         .onReceive(NotificationCenter.default.publisher(for: .phiSpaceHiddenSetDidChange)) { _ in
-            reloadUnsyncedSpaces()
-        }
-        // The zero-parameter closure on purpose: the value is a signal, not data,
-        // and the one-parameter spelling used above is deprecated on macOS 14.
-        .onChange(of: spaceManager.spaces.map(\.spaceId)) {
             reloadUnsyncedSpaces()
         }
     }
@@ -820,6 +831,27 @@ struct SpacesSettingsView: View {
             return
         }
         unsyncedSpaces = storage.getAllSpaces().filter { unsynced.contains($0.spaceId) }
+    }
+
+    /// Subscribes once to the store's unfiltered Space feed — the same feed
+    /// `SpaceManager` runs on (`SpaceManager.swift:2461`), taken here *before*
+    /// §6.6's hidden filter.
+    ///
+    /// Deleting a row from this section is the case that needs it, and neither
+    /// of the cheaper signals can carry it: the Space is hidden, so it is absent
+    /// from `spaceManager.spaces` both before and after; and nothing writes the
+    /// Space table (`recordLocalDeletion` refuses a cursor with no `entityId`),
+    /// so `.phiSpaceHiddenSetDidChange` never fires either. Re-reading straight
+    /// after `deleteSpace(_:)` would not work: `deleteSpaceCascade` yields the
+    /// delete onto the store's write actor (`LocalStore.swift:455`), so the row
+    /// is still there when the call returns. This publisher emits once the write
+    /// has actually landed.
+    private func subscribeToStoreSpaces() {
+        guard storeSpacesCancellable == nil,
+              let storage = AccountController.shared.account?.localStorage else { return }
+        storeSpacesCancellable = storage.spacesPublisher()
+            .receive(on: DispatchQueue.main)
+            .sink { _ in reloadUnsyncedSpaces() }
     }
 
     private func deleteSpace(_ space: SpaceModel) {

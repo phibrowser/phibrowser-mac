@@ -190,8 +190,13 @@ final class SyncKeyControllerTests: XCTestCase {
                                     localsProvider: { [(profileId: "Default", displayName: "Default")] })
         await c.silentUnlockAndResolve()          // registers "Default"; needsPairing == false
         var announcements = 0
+        var lastOutcome: SyncKeyController.MappingsOutcome?
         let token = NotificationCenter.default.addObserver(
-            forName: .phiProfileMappingsDidResolve, object: nil, queue: nil) { _ in announcements += 1 }
+            forName: .phiProfileMappingsDidResolve, object: nil, queue: nil) { note in
+                announcements += 1
+                lastOutcome = (note.userInfo?[SyncKeyController.mappingsOutcomeKey] as? String)
+                    .flatMap(SyncKeyController.MappingsOutcome.init(rawValue:))
+            }
         defer { NotificationCenter.default.removeObserver(token) }
 
         struct Offline: Error {}
@@ -200,6 +205,9 @@ final class SyncKeyControllerTests: XCTestCase {
         await c.resolveMappings()
         XCTAssertEqual(c.needsPairing, before, "a network blip must never flip an app-modal gate true")
         XCTAssertEqual(announcements, 1, "every pass announces, the bail-outs included")
+        XCTAssertEqual(lastOutcome, SyncKeyController.MappingsOutcome.held,
+                       "and it announces as HELD: those predicates were not measured, so no consumer "
+                       + "may read them as an answer and retire a pending join")
     }
 
     func testActionableSeparatesOutTheUndecryptableRemote() async throws {

@@ -13,10 +13,11 @@ extension Notification.Name {
     /// today nothing broadcasts that and the Devices pane polls a closure every
     /// 3 s.
     ///
-    /// userInfo: `SyncKeyController.mappingsClearedKey` is present (and `true`)
-    /// on exactly the `clearResolved()` announcement, and absent on every real
-    /// pass. Observers that read the two pairing predicates MUST branch on it:
-    /// see that key's own comment for why the two cases are not interchangeable.
+    /// userInfo: `SyncKeyController.mappingsOutcomeKey` carries a
+    /// `SyncKeyController.MappingsOutcome` raw value on every announcement this
+    /// controller posts. Observers that read the two pairing predicates MUST
+    /// branch on it: see that type's own comment for why the three cases are not
+    /// interchangeable.
     static let phiProfileMappingsDidResolve = Notification.Name("phiProfileMappingsDidResolve")
 
     /// Posted by `ensureLocalProfilesForAccount()` immediately before EVERY
@@ -53,18 +54,42 @@ final class SyncKeyController {
     private let localProfilesProvider: () -> [(profileId: String, displayName: String)]
     private let notifyChromium: () -> Void
 
-    /// `userInfo` key on `.phiProfileMappingsDidResolve`, carried (as `true`) by
-    /// the `clearResolved()` announcement and by nothing else.
+    /// What an announcement says about the two pairing predicates it arrives
+    /// with. `false, false` is produced by all three cases and means something
+    /// different in each, so an observer that acts on the predicates has to read
+    /// this as well.
     ///
-    /// Both pairing predicates read `false` after a clear, but they mean UNKNOWN
-    /// -- the ARK is locked, the startup unlock threw because the machine is
-    /// still offline, the account signed out, or the controller is being torn
-    /// down -- and NOT "the account and this Mac are one-to-one". Only a real
-    /// `resolveMappings()` pass can say the latter, so only a real pass may
-    /// retire a pending join's pairing gate; a consumer that conflates the two
-    /// drops the join flag on the first offline launch and can never present the
-    /// blocking modal again.
-    static let mappingsClearedKey = "cleared"
+    /// Only `.measured` may retire a pending join's pairing gate: it is the only
+    /// case in which this pass actually looked at the account and this Mac and
+    /// found them one-to-one. A consumer that treats `.held` or `.cleared` as an
+    /// answer drops the join flag on the first offline launch and can never
+    /// present the blocking modal again -- and the profiles that existed on both
+    /// sides before this device joined are the one thing only that modal can
+    /// resolve.
+    enum MappingsOutcome: String {
+        /// The pass ran the register/adopt decision to the end and ASSIGNED both
+        /// predicates from a fully known picture. The only trustworthy answer.
+        case measured
+        /// The pass bailed out with nothing measured -- the account listing threw
+        /// (offline / 5xx / 401 / locked), or some local profile's own lookup did,
+        /// which poisons the decision for every other local. Both predicates are
+        /// HELD at whatever the last `.measured` pass left them, which on a fresh
+        /// controller is the initial `false, false`: never a measurement at all.
+        case held
+        /// `clearResolved()`: the key layer is gone (locked ARK, sign-out,
+        /// teardown, a startup unlock that threw), both predicates were reset to
+        /// `false`, and they mean UNKNOWN.
+        case cleared
+    }
+
+    /// `userInfo` key on `.phiProfileMappingsDidResolve` carrying a
+    /// `MappingsOutcome.rawValue`. Deliberately not the bare `"outcome"` that
+    /// `.phiProfileAutoCreateDidRun` uses for its own, unrelated vocabulary.
+    ///
+    /// `nonisolated` because a notification observer is not main-actor isolated
+    /// until it hops: an observer must be able to read the key to decide whether
+    /// the hop is even worth making.
+    nonisolated static let mappingsOutcomeKey = "mappingsOutcome"
 
     private(set) var resolved: [String: (uuid: String, passphrase: String)] = [:]
     /// The account and this Mac are not one-to-one yet: some local profile is
@@ -162,19 +187,19 @@ final class SyncKeyController {
     /// `.phiProfileMappingsDidResolve`. Staying silent would leave the browser
     /// blocked behind a modal with nothing left to pair.
     ///
-    /// It announces as CLEARED (`mappingsClearedKey`), NOT like a real pass: the
-    /// false predicates below say "unknown", so the gate may take its window
-    /// down but must not read them as "this join finished" and retire
-    /// `sync.joinPairingPending`. The common case is the exact opposite of
-    /// finished -- a relaunch seconds after a join, offline, where
-    /// `unlockAtStartup()` throws before any pass has ever run.
+    /// It announces as `.cleared`, NOT like a measured pass: the false predicates
+    /// below say "unknown", so the gate may take its window down but must not
+    /// read them as "this join finished" and retire `sync.joinPairingPending`.
+    /// The common case is the exact opposite of finished -- a relaunch seconds
+    /// after a join, offline, where `unlockAtStartup()` throws before any pass
+    /// has ever run.
     func clearResolved() {
         let wasPopulated = !resolved.isEmpty
         resolved = [:]
         needsPairing = false
         needsPairingActionable = false
         if wasPopulated { notifyChromium() }
-        announceMappingsResolved(cleared: true)
+        announceMappingsResolved(.cleared)
     }
 
     /// Re-runs resolution after external events (pairing applied, approval
@@ -199,6 +224,12 @@ final class SyncKeyController {
     /// a failed account listing skips the register/adopt decision and HOLDS both
     /// pairing predicates — the branches below are only sound with a fully known
     /// remote set, and an app-modal gate must never be flipped true by a blip.
+    ///
+    /// Both of those bail-outs still announce, but as `.held`: they hold values
+    /// this pass did not measure (on a fresh controller, the initial `false`),
+    /// and a consumer must no more read them as an answer than it reads
+    /// `clearResolved()`'s. Only the branch that ASSIGNS the two predicates
+    /// announces `.measured`.
     func resolveMappings() async {
         var next: [String: (uuid: String, passphrase: String)] = [:]
         let locals = localProfilesProvider()
@@ -237,10 +268,12 @@ final class SyncKeyController {
             // Unknown remote set (offline / 5xx / 401 / still locked). Hold the
             // previous answer -- NEVER flip an app-modal gate true on a blip --
             // and still announce, or the gate and the Space gate miss a state
-            // update until the next trigger.
+            // update until the next trigger. `.held`, because the predicates that
+            // ride along were not measured here: reading them as an answer is how
+            // one flap retires a pending join for good.
             resolved.merge(next) { _, new in new }
             if !resolved.isEmpty { notifyChromium() }
-            announceMappingsResolved()
+            announceMappingsResolved(.held)
             return
         }
 
@@ -273,6 +306,9 @@ final class SyncKeyController {
         // partial pass can never erase a previously-good entry. The cache is
         // fully cleared only by `clearResolved()` (lock / sign-out / switch).
         resolved.merge(next) { _, new in new }
+        // Set by the one branch that assigns the predicates, so the announcement's
+        // marker follows the assignment itself rather than a re-derived condition.
+        var outcome = MappingsOutcome.held
         if hasUnknownLocal {
             // Undecidable this pass; hold both predicates.
         } else {
@@ -282,20 +318,21 @@ final class SyncKeyController {
             needsPairing = !stillUnmapped.isEmpty || !stillUnclaimed.isEmpty
             needsPairingActionable = !stillUnmapped.isEmpty
                 || !stillUnclaimed.subtracting(undecryptableRemoteUuids).isEmpty
+            outcome = .measured
         }
-        AppLogInfo("[phi-sync-probe] resolved=\(resolved.count) needsPairing=\(needsPairing) actionable=\(needsPairingActionable)")
+        AppLogInfo("[phi-sync-probe] resolved=\(resolved.count) needsPairing=\(needsPairing) actionable=\(needsPairingActionable) outcome=\(outcome.rawValue)")
         if !resolved.isEmpty { notifyChromium() }
-        announceMappingsResolved()
+        announceMappingsResolved(outcome)
     }
 
-    /// `cleared: true` is the `clearResolved()` variant and carries
-    /// `mappingsClearedKey`; a real pass posts no userInfo at all, so an observer
-    /// reading the key back gets `false` for every pass without a default to
-    /// remember.
-    private func announceMappingsResolved(cleared: Bool = false) {
+    /// Every announcement states its outcome; there is no unmarked variant, so an
+    /// observer never has to guess what `false, false` meant. A poster that says
+    /// nothing (there is none today) is read as `.held` by the gate -- the safe
+    /// direction, since only `.measured` retires a pending join.
+    private func announceMappingsResolved(_ outcome: MappingsOutcome) {
         NotificationCenter.default.post(
             name: .phiProfileMappingsDidResolve, object: self,
-            userInfo: cleared ? [Self.mappingsClearedKey: true] : nil)
+            userInfo: [Self.mappingsOutcomeKey: outcome.rawValue])
     }
 
     /// Temporary M2-5 diagnostic (issue ②, Needs-passphrase): records which key

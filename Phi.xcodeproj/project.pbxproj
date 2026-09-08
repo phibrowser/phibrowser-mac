@@ -538,6 +538,7 @@
 		EAD00000000000000000001C /* URLPatternMatcher.swift in Sources */ = {isa = PBXBuildFile; fileRef = EAD00000000000000000001B /* URLPatternMatcher.swift */; };
 		EAD000000000000000000024 /* AgentSpaceRouter+Reader.swift in Sources */ = {isa = PBXBuildFile; fileRef = EAD000000000000000000023 /* AgentSpaceRouter+Reader.swift */; };
 		EAD000000000000000000026 /* ReaderExportService.swift in Sources */ = {isa = PBXBuildFile; fileRef = EAD000000000000000000025 /* ReaderExportService.swift */; };
+		EAD000000000000000000038 /* SaveForLaterService.swift in Sources */ = {isa = PBXBuildFile; fileRef = EAD000000000000000000037 /* SaveForLaterService.swift */; };
 		EAD000000000000000000028 /* ReaderImageInliner.swift in Sources */ = {isa = PBXBuildFile; fileRef = EAD000000000000000000027 /* ReaderImageInliner.swift */; };
 		EAD00000000000000000002A /* ReaderStyle.swift in Sources */ = {isa = PBXBuildFile; fileRef = EAD000000000000000000029 /* ReaderStyle.swift */; };
 		EAD000000000000000000032 /* ReaderExtensionBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = EAD000000000000000000031 /* ReaderExtensionBridge.swift */; };
@@ -1235,6 +1236,7 @@
 		EAD00000000000000000001B /* URLPatternMatcher.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = URLPatternMatcher.swift; sourceTree = "<group>"; };
 		EAD000000000000000000023 /* AgentSpaceRouter+Reader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AgentSpaceRouter+Reader.swift"; sourceTree = "<group>"; };
 		EAD000000000000000000025 /* ReaderExportService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReaderExportService.swift; sourceTree = "<group>"; };
+		EAD000000000000000000037 /* SaveForLaterService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SaveForLaterService.swift; sourceTree = "<group>"; };
 		EAD000000000000000000027 /* ReaderImageInliner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReaderImageInliner.swift; sourceTree = "<group>"; };
 		EAD000000000000000000029 /* ReaderStyle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReaderStyle.swift; sourceTree = "<group>"; };
 		EAD000000000000000000031 /* ReaderExtensionBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReaderExtensionBridge.swift; sourceTree = "<group>"; };
@@ -2635,6 +2637,7 @@
 				EAD000000000000000000011 /* ReaderExtractionService.swift */,
 				EAD000000000000000000019 /* ReaderAccessibilityExtractor.swift */,
 				EAD000000000000000000025 /* ReaderExportService.swift */,
+				EAD000000000000000000037 /* SaveForLaterService.swift */,
 				EAD000000000000000000013 /* BrowserState+Reader.swift */,
 				EAD000000000000000000031 /* ReaderExtensionBridge.swift */,
 				A10A10000000000000000001 /* SidecarAIOutputStateStore.swift */,
@@ -3411,6 +3414,7 @@
 				EAD000000000000000000012 /* ReaderExtractionService.swift in Sources */,
 				EAD00000000000000000001A /* ReaderAccessibilityExtractor.swift in Sources */,
 				EAD000000000000000000026 /* ReaderExportService.swift in Sources */,
+				EAD000000000000000000038 /* SaveForLaterService.swift in Sources */,
 				EAD000000000000000000014 /* BrowserState+Reader.swift in Sources */,
 				EAD000000000000000000032 /* ReaderExtensionBridge.swift in Sources */,
 				A10A10000000000000000002 /* SidecarAIOutputStateStore.swift in Sources */,

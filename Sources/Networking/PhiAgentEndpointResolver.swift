@@ -82,6 +82,17 @@ final actor PhiAgentEndpointResolver {
     ///   route is prescribed but no signed-in account (auth0 subject) or socket
     ///   path is available.
     func currentRoute() async throws -> PhiAgentRoute {
+        #if DEBUG
+        // Local phi-agent development: launching with
+        // `-PhiAgentLoopbackOverride http://127.0.0.1:8788` pins the route to
+        // a source-built phi-agent regardless of the transport mode Sentinel
+        // prescribes — its broker only ever serves the bundled build, so a
+        // dev instance is unreachable through it.
+        if let override = UserDefaults.standard.string(
+            forKey: "PhiAgentLoopbackOverride"), !override.isEmpty {
+            return .loopback(baseURL: override)
+        }
+        #endif
         let resolved = await resolution()
         guard resolved.transportMode != .legacy else {
             return .loopback(baseURL: resolved.baseURL)

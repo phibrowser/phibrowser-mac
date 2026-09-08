@@ -42,6 +42,10 @@ import PostHog
     #endif
     
     var menuObservation: NSKeyValueObservation?
+    /// Rebuilds flag-gated menu rows once PostHog's flags land — they arrive
+    /// after setup, over the network, and every menu built before then read
+    /// each flag as off.
+    var featureFlagObservation: NSObjectProtocol?
 
     // MARK: - Auth0 login gating
     private var pendingLaunchAfterLogin: Bool = true
@@ -268,6 +272,19 @@ import PostHog
                 return event
             }
             PostHogSDK.shared.setup(postHogConfig)
+            // Flags arrive after setup, over the network. Menus built
+            // before then read every flag as off, so a flag-gated row
+            // (Folio's File menu entries) would stay missing for the whole
+            // session even once the flag was known. The hook is
+            // remove-then-insert idempotent, so re-running it costs nothing
+            // when nothing moved.
+            featureFlagObservation = NotificationCenter.default.addObserver(
+                forName: PostHogSDK.didReceiveFeatureFlags,
+                object: nil,
+                queue: .main
+            ) { [weak self] _ in
+                MainActor.assumeIsolated { self?.refreshPrefGatedMenuItems() }
+            }
             AccountController.shared.reconcilePostHogIdentityForAnonymousLaunchIfNeeded(
                 isMetricsReportingEnabled: isMetricsReportingEnabled
             )

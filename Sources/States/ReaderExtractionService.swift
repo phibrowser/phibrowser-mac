@@ -32,6 +32,10 @@ struct ReaderArticle: Equatable {
     /// Pages captured so far, for the "still loading" affordance. Nil outside
     /// the paginated (PDF) path.
     var pageCount: Int?
+    /// The article rendered as markdown, present only when the extraction
+    /// asked for it (`extractArticle(includeMarkdown:)`). Converted in-page
+    /// by the extension; the accessibility path renders its own.
+    var contentMarkdown: String?
 }
 
 enum ReaderExtractionError: Error {

@@ -33,11 +33,24 @@ struct OverlayToastView: View {
     }
 
     private var toastContent: some View {
-        HStack(spacing: 12) {
+        HStack(alignment: .center, spacing: 12) {
             toastText
             if let url = toast.shareURL {
                 OverlayToastShareButton(url: url, toastID: toast.id)
                     .fixedSize()
+            }
+
+            if let action = toast.action {
+                Button {
+                    action.handler()
+                    OverlayToastCenter.shared.dismiss(id: toast.id)
+                } label: {
+                    Text(action.title)
+                        .font(.system(size: 12, weight: .semibold))
+                        .overlayToastPrimaryStyle()
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("overlayToast.action")
             }
         }
     }
@@ -68,7 +81,7 @@ struct OverlayToastView: View {
                         .lineLimit(3)
                         .fixedSize(horizontal: false, vertical: true)
                         .accessibilityIdentifier("overlayToast.message")
-                    }
+                }
             }
         }
     }

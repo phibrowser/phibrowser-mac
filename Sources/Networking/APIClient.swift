@@ -23,6 +23,14 @@ struct AgentAvatarImagePayload {
     let data: Data
 }
 
+/// `POST /api/video-gist` success body: the video rendered as a markdown
+/// article (opening `# Title` heading included), with `truncated` set when
+/// the backend capped the text.
+struct VideoGistArticle: Codable {
+    let markdown: String
+    let truncated: Bool
+}
+
 class APIClient {
     static let shared = APIClient()
     #if DEBUG
@@ -250,7 +258,8 @@ class APIClient {
     private func sendPhiAgentRequest(
         path: String,
         method: String = "GET",
-        body: Data? = nil
+        body: Data? = nil,
+        timeout: TimeInterval? = nil
     ) async throws -> PhiAgentHTTPResponse {
         try await PhiAgentTransport.shared.send(PhiAgentHTTPRequest(
             path: path,
@@ -259,8 +268,45 @@ class APIClient {
                 "Authorization": "Bearer \(token)",
                 "Content-Type": "application/json",
             ],
-            body: body
+            body: body,
+            timeout: timeout
         ))
+    }
+
+    // MARK: - Save for Later (video gist)
+
+    /// Generation runs minutes of video through the backend model; the
+    /// endpoint's own budget is 180 s, held slightly longer here so the
+    /// server's timeout answer arrives instead of a client-side cut.
+    private static let videoGistRequestTimeout: TimeInterval = 200
+
+    /// A failed `POST /api/video-gist`, carrying the endpoint's stable error
+    /// code (`video_gist_invalid_url`, `video_gist_video_too_long`,
+    /// `video_gist_disabled`, `video_gist_timeout`, …) so Save for Later can
+    /// write an honest note into the markdown stub.
+    struct VideoGistError: Error {
+        let code: String
+    }
+
+    /// The generated article for one public YouTube video, from phi-agent's
+    /// `/api/video-gist` (a thin wrapper over the video-gist capability with
+    /// a fixed article prompt). The markdown opens with a `# Title` heading.
+    func generateVideoGistArticle(videoURL: String) async throws -> VideoGistArticle {
+        let payload = try JSONSerialization.data(withJSONObject: ["url": videoURL])
+        let response = try await sendPhiAgentRequest(
+            path: "/api/video-gist",
+            method: "POST",
+            body: payload,
+            timeout: Self.videoGistRequestTimeout
+        )
+        guard (200...299).contains(response.statusCode) else {
+            struct ErrorBody: Decodable { let error: String }
+            if let body = try? JSONDecoder().decode(ErrorBody.self, from: response.body) {
+                throw VideoGistError(code: body.error)
+            }
+            throw APIError.httpError(statusCode: response.statusCode)
+        }
+        return try JSONDecoder().decode(VideoGistArticle.self, from: response.body)
     }
 
     func getAgentAvatarImageData() async throws -> AgentAvatarImagePayload {

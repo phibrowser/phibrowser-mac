@@ -25,6 +25,7 @@ struct ProfileDetailSettingsView: View {
     @State private var searchEngines: [SearchEngineInfo] = []
     @State private var defaultEngineId: String = ""
     @State private var downloadPath: String = ""
+    @State private var saveForLaterOverridePath: String = ""
     @State private var isLoadingDetail: Bool = false
 
     private var profileManager: ProfileManager { .shared }
@@ -40,6 +41,13 @@ struct ProfileDetailSettingsView: View {
                 SettingsDetailRow(NSLocalizedString("settings.profiles.details.downloadLocationLabel", value: "Download Location", comment: "Profiles settings - download location row label"),
                                   systemImage: "arrow.down.to.line") {
                     downloadLocationControl
+                }
+                if SaveForLaterService.featureEnabled {
+                    SettingsRowDivider()
+                    SettingsDetailRow(NSLocalizedString("settings.profiles.details.folioLabel", value: "Folio Folder", comment: "Profiles settings - per-profile Folio destination override row label"),
+                                      systemImage: "bookmark") {
+                        saveForLaterControl
+                    }
                 }
             }
             dataAndSettingsSection
@@ -147,6 +155,66 @@ struct ProfileDetailSettingsView: View {
         return (downloadPath as NSString).lastPathComponent
     }
 
+    /// Per-profile Folio destination. Unlike the download location
+    /// this is a client concept stored in `PhiPreferences`, so the reads and
+    /// writes are synchronous; a profile without an override follows the
+    /// General settings folder.
+    @ViewBuilder
+    private var saveForLaterControl: some View {
+        HStack(spacing: 4) {
+            Button {
+                chooseSaveForLaterFolder()
+            } label: {
+                trailingControlPill {
+                    Image(systemName: "folder.fill")
+                        .font(.system(size: 12))
+                        .themedForeground(.textSecondary)
+                    Text(saveForLaterFolderName)
+                        .font(.system(size: 13))
+                        .themedForeground(.textPrimary)
+                        .lineLimit(1)
+                    Spacer(minLength: 0)
+                }
+            }
+            .buttonStyle(.plain)
+            if !saveForLaterOverridePath.isEmpty {
+                Button {
+                    PhiPreferences.SaveForLater.setFolderOverride(nil, forProfile: profileId)
+                    saveForLaterOverridePath = ""
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.system(size: 12))
+                        .themedForeground(.textSecondary)
+                }
+                .buttonStyle(.plain)
+                .help(NSLocalizedString("settings.profiles.folio.clearOverrideHelp", value: "Follow the General settings folder", comment: "Profiles settings - help text on the control that removes this profile's Folio folder override"))
+            }
+        }
+    }
+
+    private var saveForLaterFolderName: String {
+        guard !saveForLaterOverridePath.isEmpty else {
+            return NSLocalizedString("settings.profiles.folio.sameAsGeneral", value: "Same as General", comment: "Profiles settings - Folio folder shown when the profile has no override and follows the General settings folder")
+        }
+        return (saveForLaterOverridePath as NSString).lastPathComponent
+    }
+
+    private func chooseSaveForLaterFolder() {
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.allowsMultipleSelection = false
+        panel.prompt = NSLocalizedString("settings.profiles.folio.chooseButton", value: "Choose", comment: "Profiles settings - Folio folder picker confirm button")
+        panel.message = NSLocalizedString("settings.profiles.folio.pickerMessage", value: "Choose where this profile's saved pages are stored.", comment: "Profiles settings - Folio folder picker message")
+        let current = saveForLaterOverridePath.isEmpty
+            ? PhiPreferences.SaveForLater.globalFolderPath
+            : saveForLaterOverridePath
+        panel.directoryURL = URL(fileURLWithPath: current, isDirectory: true)
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        PhiPreferences.SaveForLater.setFolderOverride(url.path, forProfile: profileId)
+        saveForLaterOverridePath = url.path
+    }
+
     // MARK: - Your Data and Settings links
 
     private struct DataLink: Identifiable {
@@ -224,6 +292,8 @@ struct ProfileDetailSettingsView: View {
             guard activeProfileId == profileId else { return }
             downloadPath = path ?? ""
         }
+        saveForLaterOverridePath =
+            PhiPreferences.SaveForLater.folderOverride(forProfile: profileId) ?? ""
     }
 
     private var searchBinding: Binding<String> {

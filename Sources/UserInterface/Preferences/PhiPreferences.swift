@@ -50,11 +50,11 @@ enum AutoPictureInPictureMode: String, CaseIterable, Identifiable {
     var displayName: String {
         switch self {
         case .off:
-            return NSLocalizedString("settings.general.pictureInPicture.offOption", value: "Off", comment: "Auto picture-in-picture option - never pop out automatically; manual picture-in-picture is unaffected")
+            return NSLocalizedString("settings.advanced.pictureInPicture.offOption", value: "Off", comment: "Auto picture-in-picture option - never pop out automatically; manual picture-in-picture is unaffected")
         case .normal:
-            return NSLocalizedString("settings.general.pictureInPicture.normalOption", value: "Normal", comment: "Auto picture-in-picture option - pop out and stay in place")
+            return NSLocalizedString("settings.advanced.pictureInPicture.normalOption", value: "Normal", comment: "Auto picture-in-picture option - pop out and stay in place")
         case .parked:
-            return NSLocalizedString("settings.general.pictureInPicture.parkAtEdgeOption", value: "Park at edge", comment: "Auto picture-in-picture option - pop out, then park at the screen edge until clicked")
+            return NSLocalizedString("settings.advanced.pictureInPicture.parkAtEdgeOption", value: "Park at edge", comment: "Auto picture-in-picture option - pop out, then park at the screen edge until clicked")
         }
     }
 }
@@ -83,6 +83,7 @@ extension PhiPreferences {
         case showBookmarkBarOnNewTabPage // In traditional layout, show bookmark bar on new tab page
         case alwaysShowURLPath // In address bar menu, always show full URL path
         case showTabPreviews // Whether open tabs use custom hover preview cards
+        case showOpenTabIndicators // Show dots on inactive open pinned tabs and bookmarks
         case shortHighlightLinksEnabled // Use the sharing service for Copy Link to Highlight
         case spacesFeatureEnabled // Master gate for Spaces + profile management UI; defaults on, no user-facing toggle
         case suppressCloseIncognitoSpaceWarning // "Do not ask again" on the close-Incognito-Space confirmation
@@ -111,6 +112,8 @@ extension PhiPreferences {
                 return false
             case .showTabPreviews:
                 return true
+            case .showOpenTabIndicators:
+                return false
             case .shortHighlightLinksEnabled:
                 return true
             case .spacesFeatureEnabled:

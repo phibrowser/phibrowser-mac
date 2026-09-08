@@ -557,6 +557,9 @@
 		F9E478A224C44EA7BC0D85CC /* AccountDeletedEventAuthentication.swift in Sources */ = {isa = PBXBuildFile; fileRef = 19B477B37CF44BC48335A032 /* AccountDeletedEventAuthentication.swift */; };
 		FBD200012FD0000000000001 /* FeedbackOutbox.swift in Sources */ = {isa = PBXBuildFile; fileRef = FBD200012FD0000000000002 /* FeedbackOutbox.swift */; };
 		FBD200012FD0000000000003 /* FeedbackV2.swift in Sources */ = {isa = PBXBuildFile; fileRef = FBD200012FD0000000000004 /* FeedbackV2.swift */; };
+		881CAE5213BC976ACACCC2BD /* AdvancedSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 92CA88B3B138AAC9F39F9DC9 /* AdvancedSettingsView.swift */; };
+		43C532DAE84A4F0EAACC5F85 /* AdvancedSettingViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9A1D8147A6979F022AFEB5B /* AdvancedSettingViewController.swift */; };
+		49ECA05E0E0E374C6D2CA9C2 /* AdvancedSettingHostingViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6B568F1D10AE6DD4026219CF /* AdvancedSettingHostingViewController.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -1250,6 +1253,9 @@
 		F7FD00000000000000000001 /* FullTitleDisplay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FullTitleDisplay.swift; sourceTree = "<group>"; };
 		FBD200012FD0000000000002 /* FeedbackOutbox.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeedbackOutbox.swift; sourceTree = "<group>"; };
 		FBD200012FD0000000000004 /* FeedbackV2.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeedbackV2.swift; sourceTree = "<group>"; };
+		92CA88B3B138AAC9F39F9DC9 /* AdvancedSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AdvancedSettingsView.swift; sourceTree = "<group>"; };
+		A9A1D8147A6979F022AFEB5B /* AdvancedSettingViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AdvancedSettingViewController.swift; sourceTree = "<group>"; };
+		6B568F1D10AE6DD4026219CF /* AdvancedSettingHostingViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AdvancedSettingHostingViewController.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -2423,6 +2429,7 @@
 				CC376CF92EC6D3F900270B93 /* SettingItemBackgroundView.swift */,
 				37C1B0E52ED8515C00DD4496 /* AISettings */,
 				37C1B0E42ED8515400DD4496 /* Account */,
+				8BBC69F26DC304B0A269C8D4 /* Advanced */,
 				37C1B4F62EE6CE8A00DD4496 /* General */,
 				5ACF00000000000000000020 /* Navigations */,
 				897C09F32F6BEDA000E5CA9B /* IMChannels */,
@@ -2740,6 +2747,16 @@
 				EE7E00000000000000000015 /* ReaderPanelController.swift */,
 			);
 			path = Reader;
+			sourceTree = "<group>";
+		};
+		8BBC69F26DC304B0A269C8D4 /* Advanced */ = {
+			isa = PBXGroup;
+			children = (
+				92CA88B3B138AAC9F39F9DC9 /* AdvancedSettingsView.swift */,
+				A9A1D8147A6979F022AFEB5B /* AdvancedSettingViewController.swift */,
+				6B568F1D10AE6DD4026219CF /* AdvancedSettingHostingViewController.swift */,
+			);
+			path = Advanced;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -3418,6 +3435,9 @@
 				37C1B4F72EE6CE8A00DD4496 /* GeneralSettingHostingViewController.swift in Sources */,
 				37C1B4F82EE6CE8A00DD4496 /* GeneralSettingViewController.swift in Sources */,
 				8EE5BEEC2F14FF9800698D7D /* TabCloseButton.swift in Sources */,
+				881CAE5213BC976ACACCC2BD /* AdvancedSettingsView.swift in Sources */,
+				43C532DAE84A4F0EAACC5F85 /* AdvancedSettingViewController.swift in Sources */,
+				49ECA05E0E0E374C6D2CA9C2 /* AdvancedSettingHostingViewController.swift in Sources */,
 				37C1B4F92EE6CE8A00DD4496 /* GeneralSettingView.swift in Sources */,
 				5ACF00000000000000000001 /* NavigationsSettingViewController.swift in Sources */,
 				5ACF00000000000000000002 /* NavigationsSettingHostingViewController.swift in Sources */,

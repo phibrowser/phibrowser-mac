@@ -31,6 +31,7 @@ extension AppController {
          NavigationsSettingViewController(),
          AISettingsViewController(),
          ShortcutsSettingViewController(),
+         AdvancedSettingViewController(),
         ]
         settingsPanesIncludeDeveloper = PhiPreferences.AgentSpaces.developerModeEnabled
         if settingsPanesIncludeDeveloper {
@@ -39,7 +40,7 @@ extension AppController {
         return panes
     }
 
-    /// Applies the General-tab "Developer mode" toggle. Off is a kill-switch,
+    /// Applies the Advanced-tab "Developer mode" toggle. Off is a kill-switch,
     /// not just UI hiding: the Developer tab disappears AND the features it
     /// governs shut off — agent CDP access (listener, View-menu items,
     /// transcript panel) and the agent password manager (provider disabled,
@@ -80,7 +81,7 @@ extension AppController {
 
     /// Rebuilds an open settings window when its toolbar no longer matches the
     /// developer-mode gate (the pane list is fixed at window creation), staying
-    /// on the General pane, where the toggle lives.
+    /// on the Advanced pane, where the toggle lives.
     @MainActor
     private func developerModeDidChange() {
         guard settingsWindowController != nil,
@@ -89,7 +90,7 @@ extension AppController {
         settingsWindowController?.close()
         settingsWindowController = nil
         let controller = ensureSettingsWindowController()
-        controller.show(pane: .general)
+        controller.show(pane: .advanced)
         controller.window?.orderFront(self)
     }
     

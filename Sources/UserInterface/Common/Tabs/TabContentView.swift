@@ -130,6 +130,9 @@ private struct TabCornerBadgeVisual: View {
 }
 
 struct TabOpenIndicatorView: View {
+    @AppStorage(PhiPreferences.GeneralSettings.showOpenTabIndicators.rawValue)
+    private var showOpenTabIndicators = PhiPreferences.GeneralSettings.showOpenTabIndicators.defaultValue
+
     @Environment(\.phiAppearance) private var appearance
 
     var body: some View {
@@ -139,6 +142,7 @@ struct TabOpenIndicatorView: View {
                 width: TabOpenIndicatorMetrics.diameter,
                 height: TabOpenIndicatorMetrics.diameter
             )
+            .opacity(showOpenTabIndicators ? 1 : 0)
             .allowsHitTesting(false)
             .accessibilityHidden(true)
     }

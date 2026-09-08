@@ -420,6 +420,7 @@
 		B17DE00000000000000000E4 /* Vendor/PhiBitwardenHelper-SOURCE-OFFER.txt in Copy Bitwarden GPL Notices */ = {isa = PBXBuildFile; fileRef = B17DE00000000000000000E6 /* Vendor/PhiBitwardenHelper-SOURCE-OFFER.txt */; };
 		B17DE0000000000000000B01 /* BitwardenSessionStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = B17DE0000000000000000B02 /* BitwardenSessionStore.swift */; };
 		B7A100013001000000000002 /* SentinelLanguagePreferenceSync.swift in Sources */ = {isa = PBXBuildFile; fileRef = B7A100013001000000000001 /* SentinelLanguagePreferenceSync.swift */; };
+		B7AAEAE10DB72C8730D754F2 /* ProfilePairingGate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4DE17EACA1FF4716231886E7 /* ProfilePairingGate.swift */; };
 		C0D1D0022FEA000000000002 /* SidebarTabListViewController+MultiSelectionDragPreview.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0D1D0012FEA000000000001 /* SidebarTabListViewController+MultiSelectionDragPreview.swift */; };
 		C0D3F1082026090800000001 /* SidebarFileDropView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0D3F1082026090800000002 /* SidebarFileDropView.swift */; };
 		C5BADF6174A250C6CE32EA57 /* DeviceApprovalService.swift in Sources */ = {isa = PBXBuildFile; fileRef = C80221E1E435653384260DC4 /* DeviceApprovalService.swift */; };
@@ -915,6 +916,7 @@
 		4D454D4F5259000000000002 /* MemoryUsageModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MemoryUsageModels.swift; sourceTree = "<group>"; };
 		4D454D4F5259000000000005 /* MemoryUsageMonitor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MemoryUsageMonitor.swift; sourceTree = "<group>"; };
 		4D454D4F5259000000000007 /* ProcessMemorySampler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProcessMemorySampler.swift; sourceTree = "<group>"; };
+		4DE17EACA1FF4716231886E7 /* ProfilePairingGate.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ProfilePairingGate.swift; path = UI/ProfilePairingGate.swift; sourceTree = "<group>"; };
 		500D8A44ACCDE44A010C744F /* DevicesSettingHostingViewController.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = DevicesSettingHostingViewController.swift; sourceTree = "<group>"; };
 		54A100112FE0000000000011 /* TimeMachineModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TimeMachineModels.swift; sourceTree = "<group>"; };
 		54A100122FE0000000000012 /* TimeMachinePaths.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TimeMachinePaths.swift; sourceTree = "<group>"; };
@@ -1439,6 +1441,7 @@
 				6819EF093F955DAFACDC4C94 /* JoinMethodChoiceView.swift */,
 				23216985BAC98CA63F9CB2AC /* WaitingForApprovalView.swift */,
 				7218F862C1F92C027CE8E979 /* ProfilePairingView.swift */,
+				4DE17EACA1FF4716231886E7 /* ProfilePairingGate.swift */,
 			);
 			name = UI;
 			sourceTree = "<group>";
@@ -3811,6 +3814,7 @@
 				5539D6819C400743DEF61B8D /* SyncableSpaces.swift in Sources */,
 				2850A45D3A2F2C11AF0F8F3B /* PhiSpaceSyncState.swift in Sources */,
 				130D33EF1674ABCCC6614434 /* PhiSpaceLocalAccess.swift in Sources */,
+				B7AAEAE10DB72C8730D754F2 /* ProfilePairingGate.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

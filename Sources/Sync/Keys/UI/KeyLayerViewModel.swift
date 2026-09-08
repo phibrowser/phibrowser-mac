@@ -100,6 +100,9 @@ final class KeyLayerViewModel: ObservableObject {
         do {
             switch try await manager.pollJoin(requestId: id) {
             case .approved:
+                // The join is under way: from here until the pairing wraps up, the gate
+                // may present. Always through the port, never a direct defaults write.
+                ProfilePairingGate.joinPairingPending = true
                 await flowController?.resolveMappings()
                 stopPolling(); phase = .done
             case .denied:   stopPolling(); phase = .joinDenied
@@ -151,6 +154,9 @@ final class KeyLayerViewModel: ObservableObject {
     /// Confirms the user saved the displayed recovery code, completing bootstrap.
     func confirmSaved() async {
         guard case .showingRecoveryCode = phase else { return }
+        // The join is under way: from here until the pairing wraps up, the gate
+        // may present. Always through the port, never a direct defaults write.
+        ProfilePairingGate.joinPairingPending = true
         await flowController?.resolveMappings()
         phase = .done
     }
@@ -160,6 +166,9 @@ final class KeyLayerViewModel: ObservableObject {
         phase = .working
         do {
             try await manager.joinWithRecoveryCode(code)
+            // The join is under way: from here until the pairing wraps up, the gate
+            // may present. Always through the port, never a direct defaults write.
+            ProfilePairingGate.joinPairingPending = true
             await flowController?.resolveMappings()
             phase = .done
         } catch {
@@ -195,6 +204,16 @@ final class KeyLayerViewModel: ObservableObject {
                 .map { PairingLocal(profileId: $0.profileId, displayName: $0.displayName) }
             let remotes = try await controller.profileKeys.accountProfiles()
                 .filter { !claimedUuids.contains($0.uuid) }
+            // The modal is the second writer of the undecryptable set (§3.6's
+            // per-round refresh is the first): a row whose envelope did not open
+            // here is read-only and must not make the gate think there is
+            // something the user could still decide.
+            for remote in remotes where remote.name == nil {
+                controller.noteUndecryptableRemote(remote.uuid)
+            }
+            for remote in remotes where remote.name != nil {
+                controller.noteDecryptableRemote(remote.uuid)
+            }
             phase = .pairingProfiles(locals: locals, remotes: remotes)
         } catch {
             phase = .error("\(error)")
@@ -244,8 +263,34 @@ final class KeyLayerViewModel: ObservableObject {
             await startPairing(controller: controller)
             return
         }
+        // The join is under way: from here until the pairing wraps up, the gate
+        // may present. Always through the port, never a direct defaults write.
+        // Redundant when this submit came from the `.settings` context — the
+        // `resolveMappings()` below then reports `needsPairing == false` and the
+        // gate clears the flag again without ever presenting.
+        ProfilePairingGate.joinPairingPending = true
         await controller.resolveMappings()
         phase = .done
+    }
+
+    /// Whether every row the user CAN decide has been decided. Rows whose remote
+    /// envelope will not open (`name == nil`) are excluded: they are read-only,
+    /// both of their decisions would throw inside `adoptRemoteProfile`, and
+    /// counting them would leave a modal that can never be closed.
+    ///
+    /// It takes only the REMOTE rows: a local row always has a decision (the
+    /// picker's `registerNew` is its default and `startPairing` seeds it), so
+    /// `locals` would be an unused parameter -- and an unused parameter in an
+    /// enable predicate reads like a check that is happening and is not.
+    /// `claimedRemoteUuids` / `createLocalUuids` are the view's own
+    /// `@State selections` / `remoteChoices`, projected to uuid sets.
+    func allRowsDecided(remotes: [RemoteProfile],
+                        claimedRemoteUuids: Set<String>,
+                        createLocalUuids: Set<String>) -> Bool {
+        let decidableRemotes = remotes.filter { $0.name != nil }
+        return !decidableRemotes.contains {
+            !claimedRemoteUuids.contains($0.uuid) && !createLocalUuids.contains($0.uuid)
+        }
     }
 }
 

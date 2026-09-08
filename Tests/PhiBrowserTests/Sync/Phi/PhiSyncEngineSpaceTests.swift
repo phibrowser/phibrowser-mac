@@ -1073,6 +1073,42 @@ final class PhiSyncEngineSpaceTests: XCTestCase {
         XCTAssertEqual(spaceCommits(client).count, commitsAfterApply)
     }
 
+    /// The coordinator's second trigger (§5.4) is a DEBOUNCED subscription to the local
+    /// Space rows, and a remote apply writes those rows — so the trigger sees its own echo
+    /// and fires `handleLocalSpacesChange()` behind every apply. `isApplyingRemote` is not
+    /// set around the Space landing (it guards the settings path), so nothing stops that
+    /// round from running: what stops the loop is that the round is a pure reader.
+    ///
+    /// This is the pin for that: after an apply, the local-change round must publish nothing
+    /// AND write nothing locally. One local write here would emit a new value from
+    /// `spacesPublisher()`, which would schedule another round, which would write again.
+    func testALocalSpaceChangeRoundBehindAnApplyWritesNothingLocallyAndCannotStorm() async throws {
+        let access = FakePhiSpaceAccess()
+        access.uuidByProfileId = ["Default": "uuid-a"]
+        access.profileIdByUuid = ["uuid-a": "Default"]
+        let store = MemorySpaceStore()
+        store.table.firstSyncDecision = "keepBoth"
+        let client = FakePhiSyncClient()
+        client.seed(tagHash: spaceHash("u1"),
+                    ciphertext: try ciphertext(spaceEntity("u1")), version: 7)
+        let engine = makeEngine(access: access, store: store, client: client)
+        await engine.setSpaceSyncEnabled(true)
+        await engine.pullOnce()
+        XCTAssertTrue(access.calls.contains(.create("u1")), "the apply is what arms the echo")
+
+        let callsAfterApply = access.calls.count
+        // Twice: the debounce coalesces a burst into one round, but a second burst (a theme
+        // notification arriving just after) must be just as inert as the first.
+        await engine.handleLocalSpacesChange()
+        await engine.handleLocalSpacesChange()
+
+        let sinceApply = access.calls.suffix(from: callsAfterApply)
+        XCTAssertTrue(sinceApply.allSatisfy { $0 == .refreshProfiles },
+                      "a local-change round may re-list profiles; it may not touch a Space row")
+        XCTAssertTrue(spaceCommits(client).isEmpty,
+                      "the baselines the apply wrote are what suppress the echo")
+    }
+
     // MARK: - Retirement (§3.3 step 2.0)
 
     func testAnInFlightRoundWritesNothingAfterShutdown() async throws {

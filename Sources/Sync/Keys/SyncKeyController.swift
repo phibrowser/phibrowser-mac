@@ -359,6 +359,44 @@ final class SyncKeyController {
     /// counter. Read through `PhiSpaceLocalAccess.profilesCreatedInLastRefresh()`.
     private(set) var lastRefreshCreatedCount = 0
 
+    /// Local profiles this controller created FOR an account uuid but has not
+    /// managed to map yet, keyed by that uuid. `adoptRemoteProfile` writes the
+    /// mapping only after the envelope is fetched and opened
+    /// (ProfileKeyManager.swift:115-118), so a 404/5xx/offline blip inside it
+    /// leaves the freshly created profile sitting on disk with nothing pointing
+    /// at it.
+    ///
+    /// The same-named twin search below cannot recover that profile: the name it
+    /// actually carries is `uniqueDisplayName`'s output, i.e. "Work (2)" whenever
+    /// a MAPPED local already holds "Work" -- the ordinary two-device case, where
+    /// both Macs made a "Work" profile and each registered its own uuid. The twin
+    /// search matches `remote.name` ("Work"), so without this record every failed
+    /// round would create "Work (3)", "Work (4)", … and leave each predecessor
+    /// behind; `resolveMappings()`'s register branch then pushes those empty
+    /// profiles to the account, and §3.6 on every other device auto-creates them
+    /// too. One blip would propagate an empty duplicate account-wide.
+    ///
+    /// In memory only, and deliberately so: it is a retry hint, never a source of
+    /// truth. A relaunch drops it and the un-suffixed half of the case is still
+    /// covered by the twin search; every read revalidates the entry
+    /// (`reusablePendingProfile(forUuid:)`) rather than trusting it.
+    private var pendingCreatedProfiles: [String: String] = [:]
+
+    /// The pending profile for `uuid`, but only when it is still a real,
+    /// user-assignable, still-unmapped local. A profile the user deleted in the
+    /// meantime, or one `resolveMappings()` registered under its own uuid while
+    /// the adopt kept failing, is not a candidate -- and the stale entry is
+    /// dropped here rather than left to accumulate for the life of the process.
+    private func reusablePendingProfile(forUuid uuid: String) -> String? {
+        guard let profileId = pendingCreatedProfiles[uuid] else { return nil }
+        let stillExists = profileCreator.userAssignableProfileIds.contains { $0.profileId == profileId }
+        guard stillExists, profileKeys.mappedGlobalUuid(forProfileId: profileId) == nil else {
+            pendingCreatedProfiles[uuid] = nil
+            return nil
+        }
+        return profileId
+    }
+
     /// Create a local Chromium profile for an account profile and claim it. The
     /// ONE implementation, shared by the pairing modal's `.createLocal` and by
     /// §3.6's auto-create -- two copies would diverge immediately (the automatic
@@ -368,22 +406,42 @@ final class SyncKeyController {
     /// Ordering is load-bearing: create -> fetch and OPEN the envelope under the
     /// ARK -> only then write the mapping (`adoptRemoteProfile`,
     /// ProfileKeyManager.swift:115-118). An envelope that will not open therefore
-    /// leaves NO mapping behind, which is exactly what makes the "adopt the
-    /// same-named unmapped profile" retry work next round.
+    /// leaves NO mapping behind, which is what makes both retries work next
+    /// round: `pendingCreatedProfiles` for the profile this call created, and the
+    /// "adopt the same-named unmapped profile" search for the un-suffixed case.
     func createLocalProfileAndAdopt(uuid: String, displayName: String) async throws -> String {
-        let name = uniqueDisplayName(basedOn: displayName)
-        guard let profileId = await profileCreator.createProfile(displayName: name) else {
-            throw ProfileKeyManagerError.badEnvelope
+        let profileId: String
+        if let pending = reusablePendingProfile(forUuid: uuid) {
+            // A previous attempt already made a profile for exactly this uuid and
+            // only the adopt failed. Re-adopt onto it; creating a second one is
+            // how one network blip becomes a permanent empty duplicate.
+            profileId = pending
+        } else {
+            let name = uniqueDisplayName(basedOn: displayName)
+            guard let created = await profileCreator.createProfile(displayName: name) else {
+                throw ProfileKeyManagerError.badEnvelope
+            }
+            // Recorded BEFORE the adopt, because the adopt is the step that can
+            // throw and the profile already exists on disk by now.
+            pendingCreatedProfiles[uuid] = created
+            profileId = created
         }
         // The create is this round's only suspension, and `$profiles` runs a
         // `resolveMappings()` pass inside it whose 1:1 branch may have claimed
         // this very uuid onto another local. Adopting anyway would leave two
         // locals on one uuid.
         if profileKeys.localProfileId(forGlobalUuid: uuid) != nil {
-            AppLogInfo("[phi-sync] uuid was claimed while the profile was being created; leaving the new profile for the next round")
+            // The uuid now belongs to another local, so it leaves §3.6's
+            // `missing` set and this profile is NOT revisited by the next round.
+            // It stays a plain unmapped local, which `resolveMappings()` registers
+            // under a uuid of its own once every account profile is claimed. The
+            // pending entry is kept, not dropped: if §6.2 A0 later removes the
+            // mapping that won the race, this profile is the right one to reuse.
+            AppLogInfo("[phi-sync] uuid was claimed while the profile was being created; the new profile stays local and unmapped")
             return profileId
         }
         _ = try await profileKeys.adoptRemoteProfile(uuid: uuid, forLocalProfile: profileId)
+        pendingCreatedProfiles[uuid] = nil
         return profileId
     }
 
@@ -454,14 +512,20 @@ final class SyncKeyController {
             }
             noteDecryptableRemote(uuid)
 
-            // Claim an existing same-named UNMAPPED local first. This covers both
-            // "last round created it but the adopt failed" and the plain
-            // coincidence of two devices having made the same name. The
-            // enumeration source is `userAssignableProfileIds`, never the whole
-            // `ProfileManager.profiles`: the agent fallback profile is in the
-            // latter and must never be handed to the account.
+            // Claim an existing same-named UNMAPPED local first. This covers the
+            // plain coincidence of two devices having made the same name, and the
+            // un-suffixed half of "last round created it but the adopt failed".
+            // The enumeration source is `userAssignableProfileIds`, never the
+            // whole `ProfileManager.profiles`: the agent fallback profile is in
+            // the latter and must never be handed to the account.
+            //
+            // A profile THIS controller created for THIS uuid outranks any name
+            // match, so the twin search stands down when one exists: going by name
+            // first would adopt a different local and orphan the created one for
+            // good. `createLocalProfileAndAdopt` picks it up below.
             let mappedIds = Set(profileKeys.allMappings().keys)
-            if let twin = profileCreator.userAssignableProfileIds.first(where: {
+            if reusablePendingProfile(forUuid: uuid) == nil,
+               let twin = profileCreator.userAssignableProfileIds.first(where: {
                 !mappedIds.contains($0.profileId)
                 && $0.displayName.caseInsensitiveCompare(name) == .orderedSame
             }) {

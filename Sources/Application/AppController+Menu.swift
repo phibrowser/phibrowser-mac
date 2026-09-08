@@ -1904,7 +1904,13 @@ extension AppController {
                   let profile = menuItem.representedObject as? PhiBrowserProfile else {
                 return false
             }
-            return !SpaceManager.shared.spaces.contains(where: { $0.profileId == profile.profileId })
+            // Local references AND account references (§9.4): a Profile whose only
+            // Space lives on another Mac must not look deletable here either.
+            let localReference = SpaceManager.shared.spaces.contains { $0.profileId == profile.profileId }
+            let accountReference = MainActor.assumeIsolated {
+                PhiSpaceSyncState.shared.blocksProfileDeletion(localProfileId: profile.profileId)
+            }
+            return !localReference && !accountReference
         }
         let spacesActions: [Selector] = [
             #selector(newSpaceFromMenu(_:)),

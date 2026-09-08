@@ -325,7 +325,11 @@ struct ProfilesSettingsView: View {
     private var canDeleteSelected: Bool {
         guard let profile = selectedProfile,
               profile.profileId != LocalStore.defaultProfileId else { return false }
-        return spaceManager.spaces.allSatisfy { $0.profileId != profile.profileId }
+        // Local references AND account references: once Spaces sync, a Profile
+        // referenced only by a Space that lives on another Mac would look
+        // deletable (§9.4).
+        guard spaceManager.spaces.allSatisfy({ $0.profileId != profile.profileId }) else { return false }
+        return !PhiSpaceSyncState.shared.blocksProfileDeletion(localProfileId: profile.profileId)
     }
 
     private func selectInitialProfile() {
@@ -452,6 +456,16 @@ struct ProfilesSettingsView: View {
             "All cookies, history, extensions, and saved data on this profile will be permanently removed. This cannot be undone.",
             comment: "Body of the delete-profile confirmation"
         )
+        // §9.4: deliberately fail-OPEN plus a warning rather than fail-closed.
+        // `blocksProfileDeletion` answers false until the account's Spaces have
+        // been drained once, and on a long-offline or long-ARK-locked Mac a
+        // fail-closed prompt might never clear.
+        if !PhiSpaceSyncState.shared.hasDrainedFullReplay {
+            alert.informativeText += "\n\n" + NSLocalizedString(
+                "This Mac hasn’t finished syncing the Spaces in your account yet. After you delete this profile, Spaces on your other devices that use it may not open.",
+                comment: "Extra warning shown when the account's Spaces have not been synced yet"
+            )
+        }
         alert.alertStyle = .warning
         alert.addButton(withTitle: NSLocalizedString("Delete", comment: "Destructive button"))
         alert.addButton(withTitle: NSLocalizedString("Cancel", comment: "Cancel button"))

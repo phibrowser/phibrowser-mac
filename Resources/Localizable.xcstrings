@@ -59327,6 +59327,18 @@
         }
       }
     },
+    "settings.general.highlightLinks.shortLinksDescription" : {
+      "comment" : "General settings - Explains where the short-link toggle applies and that disabling it copies the full link to the selected text",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Applies to “Copy Link to Highlight” in the right-click menu. Turn off to copy the full link."
+          }
+        }
+      }
+    },
     "settings.general.highlightLinks.useShortLinksToggle" : {
       "comment" : "General settings - Toggle that controls whether Copy Link to Highlight generates a short link",
       "extractionState" : "extracted_with_value",
@@ -59334,7 +59346,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Use short links for highlighted text"
+            "value" : "Shorten links to selected text"
           }
         }
       }

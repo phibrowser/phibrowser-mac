@@ -585,16 +585,26 @@ private struct BrowsingSectionView: View {
                     }
 
                     Divider()
-
-                    GeneralRowView(title: NSLocalizedString("settings.general.highlightLinks.useShortLinksToggle", value: "Use short links for highlighted text", comment: "General settings - Toggle that controls whether Copy Link to Highlight generates a short link")) {
-                        Toggle("", isOn: $shortHighlightLinksEnabled)
-                            .labelsHidden()
-                            .toggleStyle(.switch)
-                            .controlSize(.mini)
-                            .themedTint(.themeColor)
-                    }
-
-                    Divider()
+//
+//                    HStack(alignment: .center, spacing: 12) {
+//                        VStack(alignment: .leading, spacing: 4) {
+//                            Text(NSLocalizedString("settings.general.highlightLinks.useShortLinksToggle", value: "Shorten links to selected text", comment: "General settings - Toggle that controls whether Copy Link to Highlight generates a short link"))
+//                                .font(.system(size: 13))
+//                                .themedForeground(.textPrimary)
+//                            Text(NSLocalizedString("settings.general.highlightLinks.shortLinksDescription", value: "Applies to “Copy Link to Highlight” in the right-click menu. Turn off to copy the full link.", comment: "General settings - Explains where the short-link toggle applies and that disabling it copies the full link to the selected text"))
+//                                .font(.system(size: 11))
+//                                .themedForeground(.textTertiary)
+//                                .fixedSize(horizontal: false, vertical: true)
+//                        }
+//                        Spacer(minLength: 12)
+//                        Toggle("", isOn: $shortHighlightLinksEnabled)
+//                            .labelsHidden()
+//                            .toggleStyle(.switch)
+//                            .controlSize(.mini)
+//                            .themedTint(.themeColor)
+//                    }
+//                    .padding(.vertical, 12)
+//                    .frame(maxWidth: .infinity, alignment: .leading)
 
                     GeneralRowView(title: NSLocalizedString("settings.general.tabPreview.showToggle", value: "Show a preview card when hovering over a tab", comment: "General settings - Toggle title for showing custom preview cards when hovering over open tabs")) {
                         Toggle("", isOn: $showTabPreviews)
@@ -603,6 +613,29 @@ private struct BrowsingSectionView: View {
                             .controlSize(.mini)
                             .themedTint(.themeColor)
                     }
+                    
+                    
+                    Divider()
+
+                    HStack(alignment: .center, spacing: 12) {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(NSLocalizedString("settings.general.highlightLinks.useShortLinksToggle", value: "Shorten links to selected text", comment: "General settings - Toggle that controls whether Copy Link to Highlight generates a short link"))
+                                .font(.system(size: 13))
+                                .themedForeground(.textPrimary)
+                            Text(NSLocalizedString("settings.general.highlightLinks.shortLinksDescription", value: "Applies to “Copy Link to Highlight” in the right-click menu. Turn off to copy the full link.", comment: "General settings - Explains where the short-link toggle applies and that disabling it copies the full link to the selected text"))
+                                .font(.system(size: 11))
+                                .themedForeground(.textTertiary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                        Spacer(minLength: 12)
+                        Toggle("", isOn: $shortHighlightLinksEnabled)
+                            .labelsHidden()
+                            .toggleStyle(.switch)
+                            .controlSize(.mini)
+                            .themedTint(.themeColor)
+                    }
+                    .padding(.vertical, 12)
+                    .frame(maxWidth: .infinity, alignment: .leading)
 
                     Divider()
 

@@ -861,29 +861,47 @@ actor PhiSyncEngine {
 
         // §3.5 fallback A is transient by design. As soon as a held binding
         // resolves -- §3.6 created the profile, or a dead mapping was rebuilt --
-        // re-park the baseline so the loop below RE-LANDS it and the row actually
-        // moves onto that profile. Without this the hold survives (no new entity
-        // for that uuid will ever arrive: the shared marker has moved past it) and
-        // the Space stays bound to the wrong profile forever.
-        for (uuid, var cursor) in table.cursors {
+        // re-land the baseline so the row actually moves onto that profile.
+        // Without this the hold survives (no new entity for that uuid will ever
+        // arrive: the shared marker has moved past it) and the Space stays bound
+        // to the wrong profile forever.
+        //
+        // These entities go to the loop below DIRECTLY rather than through
+        // `cursor.pendingApply`, and carry `fromServer: false`. A re-park is this
+        // device's own baseline, NOT something the server sent, and `pendingApply`
+        // holds bytes with no room for that distinction. Landing one must
+        // therefore leave `server` alone: recording the local baseline as "what
+        // the server holds" makes `spaceCommitEntries`' `toSend == server`
+        // permanently true for every field this device still owes the account,
+        // and the owed value is never published again.
+        var reparked: [String: Phi_PhiSpaceEntity] = [:]
+        for (uuid, cursor) in table.cursors {
             guard let held = cursor.heldProfileUuid,
                   cursor.pendingApply == nil,
                   let bytes = cursor.reconciled,
+                  let entity = try? Phi_PhiSpaceEntity(serializedBytes: bytes),
                   await spaceAccess.localProfileId(forGlobalUuid: held) != nil else { continue }
-            cursor.pendingApply = bytes
-            table.cursors[uuid] = cursor
+            reparked[uuid] = entity
         }
 
         // Everything parked earlier is retried alongside this round's arrivals,
         // oldest cursor first so ordering is device-independent.
-        var pending: [(uuid: String, entity: Phi_PhiSpaceEntity, entityId: String, version: Int64)] = []
+        var pending: [(uuid: String, entity: Phi_PhiSpaceEntity, entityId: String,
+                       version: Int64, fromServer: Bool)] = []
         for (uuid, cursor) in table.cursors.sorted(by: { $0.key < $1.key }) {
+            if let entity = reparked[uuid] {
+                pending.append((uuid: uuid, entity: entity, entityId: cursor.entityId ?? "",
+                                version: cursor.version, fromServer: false))
+                continue
+            }
             guard let bytes = cursor.pendingApply,
                   let entity = try? Phi_PhiSpaceEntity(serializedBytes: bytes) else { continue }
-            pending.append((uuid: uuid, entity: entity,
-                            entityId: cursor.entityId ?? "", version: cursor.version))
+            pending.append((uuid: uuid, entity: entity, entityId: cursor.entityId ?? "",
+                            version: cursor.version, fromServer: true))
         }
         let incoming = batch.decoded.sorted { $0.uuid < $1.uuid }
+            .map { (uuid: $0.uuid, entity: $0.entity, entityId: $0.entityId,
+                    version: $0.version, fromServer: true) }
         let all = pending.filter { p in !incoming.contains { $0.uuid == p.uuid } } + incoming
 
         var landedAny = false
@@ -982,8 +1000,15 @@ actor PhiSyncEngine {
                                               profileId: profileId, access: spaceAccess)
             } catch {
                 AppLogWarn("[phi-sync] space landing failed tag=\(String(tag.prefix(8))) (\(PhiSyncLog.describe(error)))")
-                cursor.pendingApply = try? item.entity.serializedData()
-                table.cursors[item.uuid] = cursor
+                // A re-parked baseline is deliberately NOT written to
+                // `pendingApply`: next round it would be indistinguishable from a
+                // server entity and would be recorded as `server` on the retry.
+                // Discarding this round's cursor edits instead leaves the hold
+                // exactly as it was, so the re-park pass above picks it up again.
+                if item.fromServer {
+                    cursor.pendingApply = try? item.entity.serializedData()
+                    table.cursors[item.uuid] = cursor
+                }
                 continue
             }
             guard !isStopped else { return }
@@ -1000,15 +1025,20 @@ actor PhiSyncEngine {
                await spaceAccess.currentSpaces().first(
                    where: { $0.spaceId == item.uuid })?.profileId != profileId {
                 AppLogWarn("[phi-sync] space rebind did not take effect tag=\(String(tag.prefix(8))); parking the entity")
-                cursor.pendingApply = try? item.entity.serializedData()
-                table.cursors[item.uuid] = cursor
+                if item.fromServer {   // same reason as the landing-failure park above
+                    cursor.pendingApply = try? item.entity.serializedData()
+                    table.cursors[item.uuid] = cursor
+                }
                 continue
             }
 
             cursor.reconciled = try? merged.serializedData()
             // `remote`, NOT `merged`: this is "what the server holds", the
             // comparison that decides whether anything still needs publishing.
-            cursor.server = try? item.entity.serializedData()
+            // And only for an entity that actually CAME from the server: the
+            // held re-park above re-lands this device's own baseline, which says
+            // nothing about the server's copy and must leave it untouched.
+            if item.fromServer { cursor.server = try? item.entity.serializedData() }
             if !item.entityId.isEmpty { cursor.entityId = item.entityId }
             cursor.version = max(cursor.version, item.version)
             cursor.pendingApply = nil

@@ -662,6 +662,71 @@ final class PhiSyncEngineSpaceTests: XCTestCase {
                       "landing the held value is convergence, not a new local edit")
     }
 
+    /// The held re-park is the one path that feeds the apply loop an entity the
+    /// server never sent — the device's own baseline. Recording THAT as `server`
+    /// makes `spaceCommitEntries`' `toSend == server` true for every field this
+    /// device still owes the account, and the owed value is never published
+    /// again. Same invariant as `testAMergedLocalEditIsStillPublishedNextRound`,
+    /// re-entered through the re-park.
+    func testAReParkedHeldBaselineDoesNotOverwriteWhatTheServerHolds() async throws {
+        let access = FakePhiSpaceAccess()
+        access.uuidByProfileId = ["Default": "uuid-a"]
+        access.profileIdByUuid = ["uuid-a": "Default"]
+        access.knownLocalProfileIds = ["Default"]
+        access.spaces = [PhiLocalSpace(spaceId: "u1", profileId: "Default", name: "Work2",
+                                       colorHex: "#3A6FF8", iconName: "emoji:1F4BC", sortOrder: 0,
+                                       createdDate: Date(timeIntervalSince1970: 1),
+                                       themeId: nil, opacityLight: nil, opacityDark: nil)]
+        let store = MemorySpaceStore()
+        // This device holds the account's rename and has not published it yet.
+        var baseline = spaceEntity("u1", name: "Work2")
+        baseline.name.updatedAtMs = 800
+        var seeded = PhiSpaceCursor()
+        seeded.entityId = "srv-1"; seeded.version = 3
+        seeded.reconciled = try baseline.serializedData()
+        seeded.server = try spaceEntity("u1", name: "Work").serializedData()
+        store.table.cursors["u1"] = seeded
+        store.table.hasDrainedFullReplay = true
+        // `firstSyncDecision` stays nil for this round on purpose: D2 is still
+        // unanswered, so §8's guard stops the round from publishing the rename.
+        // Any other reason a round does not publish (offline, a commit throw,
+        // guard 1 re-armed) reaches the next round in exactly this state.
+
+        let client = FakePhiSyncClient()
+        // A peer that never saw the rename rebinds the Space onto a profile this
+        // device does not have yet.
+        var rebound = spaceEntity("u1", name: "Work", profileUuid: "uuid-新")
+        rebound.profileUuid.updatedAtMs = 900
+        client.seed(tagHash: spaceHash("u1"), ciphertext: try ciphertext(rebound), version: 9)
+        let engine = makeEngine(access: access, store: store, client: client)
+        await engine.setSpaceSyncEnabled(true)
+        await engine.pullOnce()
+        XCTAssertEqual(store.table.cursors["u1"]?.heldProfileUuid, "uuid-新")
+        XCTAssertTrue(spaceCommits(client).isEmpty, "D2 is unanswered: nothing may be published")
+        XCTAssertEqual(store.table.cursors["u1"]?.server, try rebound.serializedData())
+
+        // §3.6 creates the profile, so the hold resolves and the baseline is
+        // re-landed. Driven directly here for the same reason as the
+        // dead-mapping case above: nothing calls `refreshAccountProfiles()`
+        // until Task 11.
+        access.profileIdByUuid["uuid-新"] = "P-new"
+        access.uuidByProfileId["P-new"] = "uuid-新"
+        access.knownLocalProfileIds = ["Default", "P-new"]
+        store.table.firstSyncDecision = "keepBoth"   // Task 13 sets this automatically
+        await engine.pullOnce()
+
+        XCTAssertTrue(access.calls.contains(.rebind(spaceId: "u1", toProfileId: "P-new")))
+        XCTAssertEqual(store.table.cursors["u1"]?.server,
+                       try rebound.serializedData(),
+                       "re-landing the local baseline says nothing about what the server holds")
+        let commits = spaceCommits(client)
+        XCTAssertEqual(commits.count, 1, "the rename this device still owes the account goes out")
+        let sent = try Phi_PhiSpaceEntity(serializedBytes:
+            try PhiEntityCodec.decrypt(commits[0].ciphertext!, key: key).space.serializedData())
+        XCTAssertEqual(sent.name.stringValue, "Work2")
+        XCTAssertEqual(sent.profileUuid.stringValue, "uuid-新")
+    }
+
     /// §5.6's invariant, and the reason every write in `PhiSpaceLocalAccess` throws.
     func testAFailedLandingWritesNoBaselineAndParksTheEntity() async throws {
         struct Boom: Error {}
@@ -991,6 +1056,11 @@ final class PhiSyncEngineSpaceTests: XCTestCase {
         access.uuidByProfileId = ["Default": "uuid-a"]
         access.profileIdByUuid = ["uuid-a": "Default"]
         let store = MemorySpaceStore()
+        // Without the decision `pushSpaces` returns at §8's guard and both sides
+        // of the comparison below are 0 whatever the apply path wrote — the test
+        // would pass over re-stamped fields, wrong baselines and a push on every
+        // round alike.
+        store.table.firstSyncDecision = "keepBoth"   // Task 13 sets this automatically
         let client = FakePhiSyncClient()
         client.seed(tagHash: spaceHash("u1"),
                     ciphertext: try ciphertext(spaceEntity("u1")), version: 7)
@@ -998,6 +1068,7 @@ final class PhiSyncEngineSpaceTests: XCTestCase {
         await engine.setSpaceSyncEnabled(true)
         await engine.pullOnce()
         let commitsAfterApply = spaceCommits(client).count
+        XCTAssertEqual(commitsAfterApply, 0, "a pure remote apply publishes nothing")
         await engine.handleLocalSpacesChange()
         XCTAssertEqual(spaceCommits(client).count, commitsAfterApply)
     }

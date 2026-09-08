@@ -443,6 +443,51 @@ final class PhiSyncEngineSpaceTests: XCTestCase {
         XCTAssertFalse(store.table.drainInProgress)
     }
 
+    /// ...and it must finish the drain by *replaying* it, not by continuing over the hole the
+    /// failure left. An interrupted round consumed its pages: the shared marker moved past
+    /// them for good, while everything the routing decoded from them (`SpacePullBatch.decoded`
+    /// / `.tombstones` — Task 9's apply input) died with the throw. A later round resuming
+    /// from that advanced marker would reach `drained == true` and stamp
+    /// `hasDrainedFullReplay = true` over the gap, and from then on *neither* disjunct in
+    /// `applySpaceGate` can re-arm the replay: `markerMovedWhileGateShut` is false (the gate
+    /// was open the whole time) and `hasDrainedFullReplay` is true. The Spaces page 1 carried
+    /// would be missing until some peer happened to touch them, and Task 9's `pushSpaces`
+    /// would publish against a Space set this device never fully received. Dropping the
+    /// marker on the failure path makes the drain restart instead; `drainInProgress` stays
+    /// true, so nothing in between may declare it complete.
+    func testADrainInterruptedMidWayReplaysFromScratchInsteadOfCompletingOverTheGap() async throws {
+        let access = FakePhiSpaceAccess()
+        let store = MemorySpaceStore()
+        store.table.spaceSectionEnabled = true
+        // Already drained once, so the arming happens at the pull's entry (`storedMarker ==
+        // nil`) rather than on a gate edge — the gate never moves in this test, which is what
+        // makes `markerMovedWhileGateShut` powerless to save the replay afterwards.
+        store.table.hasDrainedFullReplay = true
+        let client = FakePhiSyncClient()
+        client.seed(tagHash: spaceHash("u1"),
+                    ciphertext: try ciphertext(spaceEntity("u1")), version: 3)
+        client.pageBudgetExhaustsAfter = 8                    // page 1 says "more to come"
+        client.getUpdatesErrorAfterPages = (pages: 1, error: URLError(.timedOut))
+        let engine = makeEngine(access: access, store: store, client: client)
+
+        await engine.pullOnce()                               // page 1 lands u1; page 2 throws
+        XCTAssertEqual(client.getUpdatesCalls.count, 2)
+        XCTAssertNil(defaults.data(forKey: PhiSyncEngine.markerStateKey),
+                     "a gapped drain drops the marker instead of counting page 1 as delivered")
+        XCTAssertTrue(store.table.drainInProgress, "and stays armed until a whole replay lands")
+        XCTAssertFalse(store.table.hasDrainedFullReplay)
+
+        client.pageBudgetExhaustsAfter = nil
+        await engine.pullOnce()
+        // The fake answers from a watermark parsed out of the marker, so a marker that had
+        // survived the failure would filter u1 out of this round exactly as the real server
+        // would — and the drain would then complete having never delivered it.
+        let lastCall = try XCTUnwrap(client.getUpdatesCalls.last)
+        XCTAssertNil(lastCall.marker, "the follow-up round replays the type from scratch")
+        XCTAssertTrue(store.table.hasDrainedFullReplay)
+        XCTAssertFalse(store.table.drainInProgress)
+    }
+
     /// Reentrancy: the engine is an actor, so an awaited gate open can land while a round is
     /// parked in `getUpdates`. A round that read the table before that point and wrote its
     /// whole copy back afterwards would revert the edge — `spaceSectionEnabled`, the dropped

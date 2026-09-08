@@ -559,7 +559,31 @@ actor PhiSyncEngine {
             AppLogError("[phi-sync] pull failed device=\(deviceKeyId) (\(PhiSyncLog.describe(error)))")
             // The pages that did land advanced the shared marker for good, so what this round
             // learned about them has to outlive the failure.
-            if spaceLive { flushSpaceObservations(batch) }
+            if spaceLive {
+                flushSpaceObservations(batch)
+                // ...and what it did NOT persist has to invalidate the drain. A round that
+                // threw mid-way consumed its pages — the marker moved past them — while
+                // everything the routing decoded from them (`batch.decoded` /
+                // `batch.tombstones`, the apply path's input) died with the throw. That is a
+                // GAP in the replay, not progress through it. Left alone, a later round would
+                // resume from the advanced marker, reach `drained == true` and stamp
+                // `hasDrainedFullReplay = true` over the hole; from that point neither
+                // disjunct in `applySpaceGate` can ever re-arm the replay
+                // (`markerMovedWhileGateShut` is false because the gate never shut, and
+                // `hasDrainedFullReplay` is true), so the entities this round dropped would be
+                // missing on this device until some peer touched them again — and the guard
+                // that reads `hasDrainedFullReplay` before publishing would be answering for a
+                // Space set this device never fully received.
+                //
+                // Dropping the marker restarts the replay from scratch instead. It is the
+                // self-healing direction: `drainInProgress` deliberately stays true, so no
+                // round in between may declare the drain complete, and the only cost of a
+                // false positive is re-reading pages this device has already seen.
+                if loadSpaceTable().drainInProgress {
+                    AppLogWarn("[phi-sync] a drain of data type \(PhiSyncEntity.dataTypeID) was interrupted; replaying it rather than resuming past the gap")
+                    storedMarker = nil
+                }
+            }
             return false
         }
 

@@ -150,4 +150,76 @@ final class PhiEntityProtoTests: XCTestCase {
         XCTAssertFalse(parsed.unknownFields.data.isEmpty, "unknown specifics must be preserved")
         XCTAssertEqual(try parsed.serializedData(), wire, "re-serialising must not lose them")
     }
+
+    // MARK: - M3-2 Space payload
+
+    private func lwwString(_ s: String, _ ts: Int64) -> Phi_PhiSettingValue {
+        var v = Phi_PhiSettingValue()
+        v.updatedAtMs = ts
+        v.stringValue = s
+        return v
+    }
+
+    private func lwwInt(_ i: Int64, _ ts: Int64) -> Phi_PhiSettingValue {
+        var v = Phi_PhiSettingValue()
+        v.updatedAtMs = ts
+        v.intValue = i
+        return v
+    }
+
+    private func sampleSpace() -> Phi_PhiSpaceEntity {
+        var space = Phi_PhiSpaceEntity()
+        space.spaceUuid = "1D2E3F40-0000-0000-0000-000000000001"
+        space.name = lwwString("Work", 1_700_000_000_001)
+        space.iconName = lwwString("emoji:1F4BC", 1_700_000_000_002)
+        space.colorHex = lwwString("#3A6FF8", 1_700_000_000_003)
+        space.rank = lwwString("V", 0)
+        space.profileUuid = lwwString("9d1f0c7a-1111-2222-3333-444455556666", 1_700_000_000_004)
+        space.themeID = lwwString("", 1_700_000_000_005)
+        space.overlayOpacityLight = lwwInt(820, 1_700_000_000_006)
+        space.overlayOpacityDark = lwwInt(-1, 1_700_000_000_007)
+        space.createdAtMs = 1_699_000_000_000
+        return space
+    }
+
+    func testSpaceEntityRoundTripsThroughPhiEntityKind() throws {
+        let space = sampleSpace()
+        var entity = Phi_PhiEntity()
+        entity.space = space
+
+        let decoded = try Phi_PhiEntity(serializedBytes: try entity.serializedData())
+        guard case .space(let back)? = decoded.kind else {
+            return XCTFail("kind did not decode as .space")
+        }
+        XCTAssertEqual(back, space)
+        XCTAssertEqual(back.themeID.stringValue, "")
+        XCTAssertEqual(back.overlayOpacityDark.intValue, -1)
+        XCTAssertEqual(back.rank.updatedAtMs, 0)
+    }
+
+    /// A settings entity must still decode as `.setting` after the oneof grew a
+    /// second case: the shipped M3-1 wire format is unchanged.
+    func testSettingEntityStillDecodesAfterTheOneofGrew() throws {
+        var setting = Phi_PhiSettingEntity()
+        setting.values["theme.dark"] = lwwString("dark", 42)
+        var entity = Phi_PhiEntity()
+        entity.setting = setting
+
+        let decoded = try Phi_PhiEntity(serializedBytes: try entity.serializedData())
+        guard case .setting(let back)? = decoded.kind else {
+            return XCTFail("kind did not decode as .setting")
+        }
+        XCTAssertEqual(back, setting)
+    }
+
+    /// An unknown kind (a future client's field 3) survives parse and
+    /// re-serialization untouched, so §5.2 step 4's "ignore just this entity"
+    /// never has to reconstruct anything.
+    func testUnknownKindSurvivesRoundTrip() throws {
+        // field 3, wire type 2, length 0 -> tag byte 0x1A, length byte 0x00
+        let foreign = Data([0x1A, 0x00])
+        let decoded = try Phi_PhiEntity(serializedBytes: foreign)
+        XCTAssertNil(decoded.kind)
+        XCTAssertEqual(try decoded.serializedData(), foreign)
+    }
 }

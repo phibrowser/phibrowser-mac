@@ -47,10 +47,21 @@ nonisolated struct Phi_PhiEntity: Sendable {
     set {kind = .setting(newValue)}
   }
 
+  /// M3-2
+  var space: Phi_PhiSpaceEntity {
+    get {
+      if case .space(let v)? = kind {return v}
+      return Phi_PhiSpaceEntity()
+    }
+    set {kind = .space(newValue)}
+  }
+
   var unknownFields = SwiftProtobuf.UnknownStorage()
 
   nonisolated enum OneOf_Kind: Equatable, Sendable {
     case setting(Phi_PhiSettingEntity)
+    /// M3-2
+    case space(Phi_PhiSpaceEntity)
 
   }
 
@@ -117,13 +128,156 @@ nonisolated struct Phi_PhiSettingValue: Sendable {
   init() {}
 }
 
+/// One Space. Entity identity is the client tag "phi-space:<space_uuid>";
+/// `space_uuid` is repeated inside the payload because client_tag_hash is a
+/// one-way SHA1 and the receiver cannot recover the uuid from it.
+///
+/// Every mutable field is a PhiSettingValue -- M3-1's "value + LWW timestamp"
+/// message, reused verbatim so the shared LWW rule (larger updated_at_ms wins;
+/// equal timestamps -> lexicographically greater serialized bytes) applies
+/// field by field with no new merge code. The name PhiSettingValue is
+/// historical; it is the generic LWW-stamped scalar.
+///
+/// Every field is ALWAYS emitted, never omitted-when-empty: an absent field
+/// cannot carry a timestamp, so "the user cleared it" and "an older client
+/// never knew about it" would be indistinguishable. Empty string / -1 are the
+/// explicit "cleared" encodings, documented per field.
+nonisolated struct Phi_PhiSpaceEntity: @unchecked Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  /// LocalStore SpaceModel.spaceId verbatim. Stable across every rename,
+  /// recolor, reorder and rebind; the literal "default-space" for the
+  /// account's single default Space (D1).
+  var spaceUuid: String {
+    get {_storage._spaceUuid}
+    set {_uniqueStorage()._spaceUuid = newValue}
+  }
+
+  /// string_value. No uniqueness rule (matches the local model).
+  var name: Phi_PhiSettingValue {
+    get {_storage._name ?? Phi_PhiSettingValue()}
+    set {_uniqueStorage()._name = newValue}
+  }
+  /// Returns true if `name` has been explicitly set.
+  var hasName: Bool {_storage._name != nil}
+  /// Clears the value of `name`. Subsequent reads from it will return its default value.
+  mutating func clearName() {_uniqueStorage()._name = nil}
+
+  /// string_value. Portable prefixed id: "phi:<catalog id>" or
+  /// "emoji:<codepoints>". Persisted verbatim even when the local catalog does
+  /// not know it -- IconPickerSelection.fromStorageValue returns nil and the UI
+  /// falls back at render time. Never normalized away on apply.
+  var iconName: Phi_PhiSettingValue {
+    get {_storage._iconName ?? Phi_PhiSettingValue()}
+    set {_uniqueStorage()._iconName = newValue}
+  }
+  /// Returns true if `iconName` has been explicitly set.
+  var hasIconName: Bool {_storage._iconName != nil}
+  /// Clears the value of `iconName`. Subsequent reads from it will return its default value.
+  mutating func clearIconName() {_uniqueStorage()._iconName = nil}
+
+  /// string_value, "#RRGGBB". Derived locally from the resolved theme, but
+  /// synced as an independent field: it is what the strip pill tints with, and
+  /// the receiver may not have the sender's theme. Applied verbatim.
+  var colorHex: Phi_PhiSettingValue {
+    get {_storage._colorHex ?? Phi_PhiSettingValue()}
+    set {_uniqueStorage()._colorHex = newValue}
+  }
+  /// Returns true if `colorHex` has been explicitly set.
+  var hasColorHex: Bool {_storage._colorHex != nil}
+  /// Clears the value of `colorHex`. Subsequent reads from it will return its default value.
+  mutating func clearColorHex() {_uniqueStorage()._colorHex = nil}
+
+  /// string_value. Fractional index over the alphabet
+  /// "0-9A-Za-z" (ASCII-ascending, so byte order == rank order); never ends in
+  /// '0'. Account-wide strip order (D4). Ties break on space_uuid.
+  var rank: Phi_PhiSettingValue {
+    get {_storage._rank ?? Phi_PhiSettingValue()}
+    set {_uniqueStorage()._rank = newValue}
+  }
+  /// Returns true if `rank` has been explicitly set.
+  var hasRank: Bool {_storage._rank != nil}
+  /// Clears the value of `rank`. Subsequent reads from it will return its default value.
+  mutating func clearRank() {_uniqueStorage()._rank = nil}
+
+  /// string_value: the account-global profile UUID from the M2 mapping
+  /// (AccountProfileSyncMappingStore "sync.profileGlobalUuids"), NEVER the
+  /// device-local Chromium basename. Not emitted, and ignored on arrival, for
+  /// space_uuid == "default-space" (D1). M1 §5: a rebind is exactly this one
+  /// field changing; no contained entity is rewritten on the wire.
+  var profileUuid: Phi_PhiSettingValue {
+    get {_storage._profileUuid ?? Phi_PhiSettingValue()}
+    set {_uniqueStorage()._profileUuid = newValue}
+  }
+  /// Returns true if `profileUuid` has been explicitly set.
+  var hasProfileUuid: Bool {_storage._profileUuid != nil}
+  /// Clears the value of `profileUuid`. Subsequent reads from it will return its default value.
+  mutating func clearProfileUuid() {_uniqueStorage()._profileUuid = nil}
+
+  /// string_value. Per-Space pinned theme id (AccountUserDefaults
+  /// "spaceThemeIds"). "" means "no pin, follow the global theme" -- the
+  /// explicit cleared encoding. Not emitted, and ignored on arrival, for
+  /// space_uuid == "default-space": that Space's theme IS the global theme,
+  /// already synced as the PhiCurrentThemeId setting in M3-1 (D1).
+  var themeID: Phi_PhiSettingValue {
+    get {_storage._themeID ?? Phi_PhiSettingValue()}
+    set {_uniqueStorage()._themeID = newValue}
+  }
+  /// Returns true if `themeID` has been explicitly set.
+  var hasThemeID: Bool {_storage._themeID != nil}
+  /// Clears the value of `themeID`. Subsequent reads from it will return its default value.
+  mutating func clearThemeID() {_uniqueStorage()._themeID = nil}
+
+  /// int_value: window-overlay alpha in milli-units (0...1000) for the light
+  /// appearance; -1 means "no custom opacity, use the resolved theme's own
+  /// alpha". Milli-integers rather than a new double case on PhiSettingValue:
+  /// it leaves the shipped M3-1 message untouched and is far below slider
+  /// resolution, so an applied value snapshots back identically (no echo).
+  var overlayOpacityLight: Phi_PhiSettingValue {
+    get {_storage._overlayOpacityLight ?? Phi_PhiSettingValue()}
+    set {_uniqueStorage()._overlayOpacityLight = newValue}
+  }
+  /// Returns true if `overlayOpacityLight` has been explicitly set.
+  var hasOverlayOpacityLight: Bool {_storage._overlayOpacityLight != nil}
+  /// Clears the value of `overlayOpacityLight`. Subsequent reads from it will return its default value.
+  mutating func clearOverlayOpacityLight() {_uniqueStorage()._overlayOpacityLight = nil}
+
+  /// int_value, same encoding, dark appearance.
+  var overlayOpacityDark: Phi_PhiSettingValue {
+    get {_storage._overlayOpacityDark ?? Phi_PhiSettingValue()}
+    set {_uniqueStorage()._overlayOpacityDark = newValue}
+  }
+  /// Returns true if `overlayOpacityDark` has been explicitly set.
+  var hasOverlayOpacityDark: Bool {_storage._overlayOpacityDark != nil}
+  /// Clears the value of `overlayOpacityDark`. Subsequent reads from it will return its default value.
+  mutating func clearOverlayOpacityDark() {_uniqueStorage()._overlayOpacityDark = nil}
+
+  /// NOT last-writer-wins: merged with min(). Epoch ms of
+  /// SpaceModel.createdDate on the device that created the Space. Its only
+  /// consumer is determinism -- it is the last tiebreak in
+  /// LocalStore.getAllSpaces, so without it two devices can order rank-tied
+  /// Spaces differently.
+  var createdAtMs: Int64 {
+    get {_storage._createdAtMs}
+    set {_uniqueStorage()._createdAtMs = newValue}
+  }
+
+  var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  init() {}
+
+  fileprivate var _storage = _StorageClass.defaultInstance
+}
+
 // MARK: - Code below here is support for the SwiftProtobuf runtime.
 
 fileprivate nonisolated let _protobuf_package = "phi"
 
 nonisolated extension Phi_PhiEntity: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   static let protoMessageName: String = _protobuf_package + ".PhiEntity"
-  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}setting\0")
+  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}setting\0\u{1}space\0")
 
   mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -144,6 +298,19 @@ nonisolated extension Phi_PhiEntity: SwiftProtobuf.Message, SwiftProtobuf._Messa
           self.kind = .setting(v)
         }
       }()
+      case 2: try {
+        var v: Phi_PhiSpaceEntity?
+        var hadOneofValue = false
+        if let current = self.kind {
+          hadOneofValue = true
+          if case .space(let m) = current {v = m}
+        }
+        try decoder.decodeSingularMessageField(value: &v)
+        if let v = v {
+          if hadOneofValue {try decoder.handleConflictingOneOf()}
+          self.kind = .space(v)
+        }
+      }()
       default: break
       }
     }
@@ -154,9 +321,17 @@ nonisolated extension Phi_PhiEntity: SwiftProtobuf.Message, SwiftProtobuf._Messa
     // allocates stack space for every if/case branch local when no optimizations
     // are enabled. https://github.com/apple/swift-protobuf/issues/1034 and
     // https://github.com/apple/swift-protobuf/issues/1182
-    try { if case .setting(let v)? = self.kind {
+    switch self.kind {
+    case .setting?: try {
+      guard case .setting(let v)? = self.kind else { preconditionFailure() }
       try visitor.visitSingularMessageField(value: v, fieldNumber: 1)
-    } }()
+    }()
+    case .space?: try {
+      guard case .space(let v)? = self.kind else { preconditionFailure() }
+      try visitor.visitSingularMessageField(value: v, fieldNumber: 2)
+    }()
+    case nil: break
+    }
     try unknownFields.traverse(visitor: &visitor)
   }
 
@@ -266,6 +441,139 @@ nonisolated extension Phi_PhiSettingValue: SwiftProtobuf.Message, SwiftProtobuf.
   static func ==(lhs: Phi_PhiSettingValue, rhs: Phi_PhiSettingValue) -> Bool {
     if lhs.updatedAtMs != rhs.updatedAtMs {return false}
     if lhs.v != rhs.v {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+nonisolated extension Phi_PhiSpaceEntity: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  static let protoMessageName: String = _protobuf_package + ".PhiSpaceEntity"
+  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}space_uuid\0\u{1}name\0\u{3}icon_name\0\u{3}color_hex\0\u{1}rank\0\u{3}profile_uuid\0\u{3}theme_id\0\u{3}overlay_opacity_light\0\u{3}overlay_opacity_dark\0\u{3}created_at_ms\0")
+
+  fileprivate class _StorageClass {
+    var _spaceUuid: String = String()
+    var _name: Phi_PhiSettingValue? = nil
+    var _iconName: Phi_PhiSettingValue? = nil
+    var _colorHex: Phi_PhiSettingValue? = nil
+    var _rank: Phi_PhiSettingValue? = nil
+    var _profileUuid: Phi_PhiSettingValue? = nil
+    var _themeID: Phi_PhiSettingValue? = nil
+    var _overlayOpacityLight: Phi_PhiSettingValue? = nil
+    var _overlayOpacityDark: Phi_PhiSettingValue? = nil
+    var _createdAtMs: Int64 = 0
+
+      // This property is used as the initial default value for new instances of the type.
+      // The type itself is protecting the reference to its storage via CoW semantics.
+      // This will force a copy to be made of this reference when the first mutation occurs;
+      // hence, it is safe to mark this as `nonisolated(unsafe)`.
+      static nonisolated(unsafe) let defaultInstance = _StorageClass()
+
+    private init() {}
+
+    init(copying source: _StorageClass) {
+      _spaceUuid = source._spaceUuid
+      _name = source._name
+      _iconName = source._iconName
+      _colorHex = source._colorHex
+      _rank = source._rank
+      _profileUuid = source._profileUuid
+      _themeID = source._themeID
+      _overlayOpacityLight = source._overlayOpacityLight
+      _overlayOpacityDark = source._overlayOpacityDark
+      _createdAtMs = source._createdAtMs
+    }
+  }
+
+  fileprivate mutating func _uniqueStorage() -> _StorageClass {
+    if !isKnownUniquelyReferenced(&_storage) {
+      _storage = _StorageClass(copying: _storage)
+    }
+    return _storage
+  }
+
+  mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    _ = _uniqueStorage()
+    try withExtendedLifetime(_storage) { (_storage: _StorageClass) in
+      while let fieldNumber = try decoder.nextFieldNumber() {
+        // The use of inline closures is to circumvent an issue where the compiler
+        // allocates stack space for every case branch when no optimizations are
+        // enabled. https://github.com/apple/swift-protobuf/issues/1034
+        switch fieldNumber {
+        case 1: try { try decoder.decodeSingularStringField(value: &_storage._spaceUuid) }()
+        case 2: try { try decoder.decodeSingularMessageField(value: &_storage._name) }()
+        case 3: try { try decoder.decodeSingularMessageField(value: &_storage._iconName) }()
+        case 4: try { try decoder.decodeSingularMessageField(value: &_storage._colorHex) }()
+        case 5: try { try decoder.decodeSingularMessageField(value: &_storage._rank) }()
+        case 6: try { try decoder.decodeSingularMessageField(value: &_storage._profileUuid) }()
+        case 7: try { try decoder.decodeSingularMessageField(value: &_storage._themeID) }()
+        case 8: try { try decoder.decodeSingularMessageField(value: &_storage._overlayOpacityLight) }()
+        case 9: try { try decoder.decodeSingularMessageField(value: &_storage._overlayOpacityDark) }()
+        case 10: try { try decoder.decodeSingularInt64Field(value: &_storage._createdAtMs) }()
+        default: break
+        }
+      }
+    }
+  }
+
+  func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    try withExtendedLifetime(_storage) { (_storage: _StorageClass) in
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every if/case branch local when no optimizations
+      // are enabled. https://github.com/apple/swift-protobuf/issues/1034 and
+      // https://github.com/apple/swift-protobuf/issues/1182
+      if !_storage._spaceUuid.isEmpty {
+        try visitor.visitSingularStringField(value: _storage._spaceUuid, fieldNumber: 1)
+      }
+      try { if let v = _storage._name {
+        try visitor.visitSingularMessageField(value: v, fieldNumber: 2)
+      } }()
+      try { if let v = _storage._iconName {
+        try visitor.visitSingularMessageField(value: v, fieldNumber: 3)
+      } }()
+      try { if let v = _storage._colorHex {
+        try visitor.visitSingularMessageField(value: v, fieldNumber: 4)
+      } }()
+      try { if let v = _storage._rank {
+        try visitor.visitSingularMessageField(value: v, fieldNumber: 5)
+      } }()
+      try { if let v = _storage._profileUuid {
+        try visitor.visitSingularMessageField(value: v, fieldNumber: 6)
+      } }()
+      try { if let v = _storage._themeID {
+        try visitor.visitSingularMessageField(value: v, fieldNumber: 7)
+      } }()
+      try { if let v = _storage._overlayOpacityLight {
+        try visitor.visitSingularMessageField(value: v, fieldNumber: 8)
+      } }()
+      try { if let v = _storage._overlayOpacityDark {
+        try visitor.visitSingularMessageField(value: v, fieldNumber: 9)
+      } }()
+      if _storage._createdAtMs != 0 {
+        try visitor.visitSingularInt64Field(value: _storage._createdAtMs, fieldNumber: 10)
+      }
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  static func ==(lhs: Phi_PhiSpaceEntity, rhs: Phi_PhiSpaceEntity) -> Bool {
+    if lhs._storage !== rhs._storage {
+      let storagesAreEqual: Bool = withExtendedLifetime((lhs._storage, rhs._storage)) { (_args: (_StorageClass, _StorageClass)) in
+        let _storage = _args.0
+        let rhs_storage = _args.1
+        if _storage._spaceUuid != rhs_storage._spaceUuid {return false}
+        if _storage._name != rhs_storage._name {return false}
+        if _storage._iconName != rhs_storage._iconName {return false}
+        if _storage._colorHex != rhs_storage._colorHex {return false}
+        if _storage._rank != rhs_storage._rank {return false}
+        if _storage._profileUuid != rhs_storage._profileUuid {return false}
+        if _storage._themeID != rhs_storage._themeID {return false}
+        if _storage._overlayOpacityLight != rhs_storage._overlayOpacityLight {return false}
+        if _storage._overlayOpacityDark != rhs_storage._overlayOpacityDark {return false}
+        if _storage._createdAtMs != rhs_storage._createdAtMs {return false}
+        return true
+      }
+      if !storagesAreEqual {return false}
+    }
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }

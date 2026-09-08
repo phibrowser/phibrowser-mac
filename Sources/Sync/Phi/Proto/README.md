@@ -185,11 +185,24 @@ Only three of `SyncEnums`' fourteen enums are kept; every value keeps its upstre
 | Message | Field | Number | Type |
 | --- | --- | --- | --- |
 | `PhiEntity` | `kind.setting` | 1 | `PhiSettingEntity` (oneof `kind`) |
+| `PhiEntity` | `kind.space` | 2 | `PhiSpaceEntity` (oneof `kind`, M3-2) |
+| `PhiSpaceEntity` | `space_uuid` | 1 | `string` |
+| `PhiSpaceEntity` | `name` | 2 | `PhiSettingValue` |
+| `PhiSpaceEntity` | `icon_name` | 3 | `PhiSettingValue` |
+| `PhiSpaceEntity` | `color_hex` | 4 | `PhiSettingValue` |
+| `PhiSpaceEntity` | `rank` | 5 | `PhiSettingValue` |
+| `PhiSpaceEntity` | `profile_uuid` | 6 | `PhiSettingValue` |
+| `PhiSpaceEntity` | `theme_id` | 7 | `PhiSettingValue` |
+| `PhiSpaceEntity` | `overlay_opacity_light` | 8 | `PhiSettingValue` (int, milli-units) |
+| `PhiSpaceEntity` | `overlay_opacity_dark` | 9 | `PhiSettingValue` (int, milli-units) |
+| `PhiSpaceEntity` | `created_at_ms` | 10 | `int64` (merged with `min()`, not LWW) |
 | `PhiSettingEntity` | `values` | 1 | `map<string, PhiSettingValue>` |
 | `PhiSettingValue` | `updated_at_ms` | 1 | `int64` |
 | `PhiSettingValue` | `v.bool_value` | 2 | `bool` (oneof `v`) |
 | `PhiSettingValue` | `v.string_value` | 3 | `string` (oneof `v`) |
 | `PhiSettingValue` | `v.int_value` | 4 | `int64` (oneof `v`) |
+
+Fields 11-14 of `PhiSpaceEntity` are reserved for M3-3 / M3-4; do not reuse.
 
 ## Keeping this in sync
 

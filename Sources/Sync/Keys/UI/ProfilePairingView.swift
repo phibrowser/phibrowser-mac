@@ -8,14 +8,29 @@ enum ProfilePairingContext {
     case settings
 }
 
-/// Lets the user resolve an ambiguous local-profile <-> remote-profile mapping
-/// by hand: one row per local profile with a picker over the unclaimed remote
-/// profiles (or "Register as new"), plus a row per remote nobody claimed with a
-/// mandatory "create here / assign to a local profile" choice. Nothing is
-/// applied until the user confirms — `KeyLayerViewModel.startPairing` only loads
-/// candidates, it never preselects a decision automatically.
-struct ProfilePairingView: View {
-    private enum Choice: Hashable {
+/// The pure decision core behind `ProfilePairingView`: everything the rows and
+/// the enable predicate derive from the view's two `@State` dictionaries, with
+/// no SwiftUI in it.
+///
+/// It is a separate type because the invariants the app-modal gate depends on
+/// are not view rendering, they are logic that must hold on every input:
+///
+/// - **At most ONE decision per local profile.** Two decisions for the same
+///   local (its own row's `.registerNew` plus a remote row's `.adopt`) apply in
+///   order in `submitPairing`, so the register mints an account profile that the
+///   adopt then abandons. Nothing claims it, `needsPairing` stays true forever,
+///   and the gate's `guard !isPresented` keeps the browser blocked behind a
+///   modal that can never be closed.
+/// - **No row may offer a choice that is not honoured.** A remote whose envelope
+///   will not open (`name == nil`) is offered by NO picker, local or remote:
+///   both of its decisions throw inside `adoptRemoteProfile` ->
+///   `openProfilePayload`, so offering one is a button that always fails.
+/// - **No local may be claimed twice.** A local is offered by at most one remote
+///   row at a time, and a choice whose target local has since gone elsewhere
+///   reads back as UNDECIDED instead of surviving invisibly.
+struct ProfilePairingModel {
+    /// One local row's decision.
+    enum Choice: Hashable {
         case remote(String)
         case registerNew
     }
@@ -28,6 +43,179 @@ struct ProfilePairingView: View {
         case createLocal
         case adopt(localProfileId: String)
     }
+
+    let locals: [PairingLocal]
+    let remotes: [RemoteProfile]
+    let selections: [String: Choice]
+    let remoteChoices: [String: RemoteChoice]
+
+    /// Default preselection: a remote whose decrypted name matches the local's
+    /// display name, each remote claimed at most once. This is only a starting
+    /// point — the user still has to hit Confirm.
+    static func initialSelections(locals: [PairingLocal], remotes: [RemoteProfile]) -> [String: Choice] {
+        var initial: [String: Choice] = [:]
+        var claimed: Set<String> = []
+        for local in locals {
+            if let match = remotes.first(where: { $0.name == local.displayName && !claimed.contains($0.uuid) }) {
+                initial[local.profileId] = .remote(match.uuid)
+                claimed.insert(match.uuid)
+            } else {
+                initial[local.profileId] = .registerNew
+            }
+        }
+        return initial
+    }
+
+    func selection(for local: PairingLocal) -> Choice {
+        selections[local.profileId] ?? .registerNew
+    }
+
+    /// Remote uuids claimed by a local row's own picker.
+    var claimedByLocalSelections: Set<String> {
+        Set(locals.compactMap { local -> String? in
+            if case .remote(let uuid) = selection(for: local) { return uuid }
+            return nil
+        })
+    }
+
+    /// Remotes selectable in `local`'s picker: decryptable, and not already
+    /// claimed by a *different* local's current selection (so `local`'s own
+    /// selection always stays in its own list, even in the states the UI cannot
+    /// otherwise produce — a Picker whose selected tag is missing renders blank).
+    func remoteOptions(for local: PairingLocal) -> [RemoteProfile] {
+        let own: String? = {
+            if case .remote(let uuid) = selection(for: local) { return uuid }
+            return nil
+        }()
+        let claimedByOthers = Set(locals.filter { $0.profileId != local.profileId }.compactMap { other -> String? in
+            if case .remote(let uuid) = selection(for: other) { return uuid }
+            return nil
+        })
+        return remotes.filter { remote in
+            if remote.uuid == own { return true }
+            return remote.name != nil && !claimedByOthers.contains(remote.uuid)
+        }
+    }
+
+    /// Remotes not claimed by any local's current selection — these are the rows
+    /// that carry the mandatory "create here / assign to" choice.
+    var unclaimedRemotes: [RemoteProfile] {
+        let claimed = claimedByLocalSelections
+        return remotes.filter { !claimed.contains($0.uuid) }
+    }
+
+    /// Locals `remote`'s row may be assigned to: still `registerNew` in their
+    /// own picker, and not already claimed by a DIFFERENT remote row. Without
+    /// the second half the same local can be assigned twice, and the second
+    /// `adoptRemoteProfile` simply overwrites the first mapping — leaving the
+    /// first remote unclaimed and the gate open.
+    func assignableLocals(for remote: RemoteProfile) -> [PairingLocal] {
+        let claimedByOtherRows = Set(remoteChoices.compactMap { uuid, choice -> String? in
+            guard uuid != remote.uuid, case .adopt(let localProfileId) = choice else { return nil }
+            return localProfileId
+        })
+        return locals.filter { local in
+            guard case .registerNew = selection(for: local) else { return false }
+            return !claimedByOtherRows.contains(local.profileId)
+        }
+    }
+
+    /// This remote row's LIVE choice. A stored choice reads back as UNDECIDED
+    /// when the row no longer offers it — the remote became claimed by a local
+    /// row, its envelope does not open, or its target local left
+    /// `assignableLocals`. Otherwise `allDecided` would report "decided" for a
+    /// row whose picker shows blank, and `decisions()` would emit it.
+    func choice(for remote: RemoteProfile) -> RemoteChoice? {
+        guard remote.name != nil, !claimedByLocalSelections.contains(remote.uuid),
+              let choice = remoteChoices[remote.uuid] else { return nil }
+        if case .adopt(let localProfileId) = choice,
+           !assignableLocals(for: remote).contains(where: { $0.profileId == localProfileId }) {
+            return nil
+        }
+        return choice
+    }
+
+    /// Remote uuids some row has taken responsibility for: a local's own picker,
+    /// or a remote row's "指派给 X".
+    var claimedRemoteUuids: Set<String> {
+        claimedByLocalSelections.union(remotes.compactMap { remote -> String? in
+            if case .adopt = choice(for: remote) { return remote.uuid }
+            return nil
+        })
+    }
+
+    /// Remote uuids whose row chose "在这台 Mac 上创建".
+    var createLocalUuids: Set<String> {
+        Set(remotes.compactMap { remote -> String? in
+            choice(for: remote) == .createLocal ? remote.uuid : nil
+        })
+    }
+
+    /// The local profile a decision acts on, if any (`.createLocal` creates its
+    /// local afterwards, so it names none yet).
+    static func localProfileId(of decision: PairingDecision) -> String? {
+        switch decision {
+        case .adopt(let localProfileId, _): return localProfileId
+        case .registerNew(let localProfileId, _): return localProfileId
+        case .createLocal: return nil
+        }
+    }
+
+    func decisions() -> [PairingDecision] {
+        let liveChoices: [(remote: RemoteProfile, choice: RemoteChoice)] = remotes.compactMap { remote in
+            guard let choice = choice(for: remote) else { return nil }
+            return (remote, choice)
+        }
+        // Locals a remote row already claimed with "指派给 X". Their own row
+        // must NOT also emit a decision: the `.registerNew` would mint an
+        // account profile that the row's `.adopt` then abandons, and an
+        // unclaimed account profile pins `needsPairing` true forever.
+        let adoptedLocals = Set(liveChoices.compactMap { pair -> String? in
+            if case .adopt(let localProfileId) = pair.choice { return localProfileId }
+            return nil
+        })
+
+        var decisions: [PairingDecision] = []
+        for local in locals where !adoptedLocals.contains(local.profileId) {
+            switch selection(for: local) {
+            case .remote(let uuid):
+                decisions.append(.adopt(localProfileId: local.profileId, remoteUuid: uuid))
+            case .registerNew:
+                decisions.append(.registerNew(localProfileId: local.profileId, displayName: local.displayName))
+            }
+        }
+        for pair in liveChoices {
+            // `.createLocal`'s displayName is the DECRYPTED name, never
+            // `remoteLabel(remote)`: the latter falls back to
+            // "Unnamed profile (xxxxxxxx)" for a row that will not open, and
+            // §3.6's precheck would take that string for a real profile name.
+            guard let name = pair.remote.name else { continue }   // read-only row
+            switch pair.choice {
+            case .createLocal:
+                decisions.append(.createLocal(remoteUuid: pair.remote.uuid, displayName: name))
+            case .adopt(let localProfileId):
+                decisions.append(.adopt(localProfileId: localProfileId, remoteUuid: pair.remote.uuid))
+            }
+        }
+
+        let named = decisions.compactMap(Self.localProfileId(of:))
+        assert(Set(named).count == named.count,
+               "two decisions for one local profile mint an orphan account profile and pin the gate open")
+        return decisions
+    }
+}
+
+/// Lets the user resolve an ambiguous local-profile <-> remote-profile mapping
+/// by hand: one row per local profile with a picker over the unclaimed remote
+/// profiles (or "Register as new"), plus a row per remote nobody claimed with a
+/// mandatory "create here / assign to a local profile" choice. Nothing is
+/// applied until the user confirms — `KeyLayerViewModel.startPairing` only loads
+/// candidates, it never preselects a decision automatically.
+///
+/// All row logic lives in `ProfilePairingModel`; this type is the SwiftUI shell.
+struct ProfilePairingView: View {
+    typealias Choice = ProfilePairingModel.Choice
+    typealias RemoteChoice = ProfilePairingModel.RemoteChoice
 
     @ObservedObject var viewModel: KeyLayerViewModel
     let locals: [PairingLocal]
@@ -53,21 +241,13 @@ struct ProfilePairingView: View {
         self.locals = locals
         self.remotes = remotes
         self.onSubmit = onSubmit
+        self._selections = State(initialValue: ProfilePairingModel.initialSelections(locals: locals, remotes: remotes))
+    }
 
-        // Default preselection: a remote whose decrypted name matches the
-        // local's display name, each remote claimed at most once. This is
-        // only a starting point — the user still has to hit Confirm.
-        var initial: [String: Choice] = [:]
-        var claimed: Set<String> = []
-        for local in locals {
-            if let match = remotes.first(where: { $0.name == local.displayName && !claimed.contains($0.uuid) }) {
-                initial[local.profileId] = .remote(match.uuid)
-                claimed.insert(match.uuid)
-            } else {
-                initial[local.profileId] = .registerNew
-            }
-        }
-        self._selections = State(initialValue: initial)
+    /// The row logic, rebuilt from the current `@State` on every evaluation.
+    private var model: ProfilePairingModel {
+        ProfilePairingModel(locals: locals, remotes: remotes,
+                            selections: selections, remoteChoices: remoteChoices)
     }
 
     private var titleText: String {
@@ -112,11 +292,11 @@ struct ProfilePairingView: View {
                     localRow(local)
                 }
 
-                if !unclaimedRemotes.isEmpty {
+                if !model.unclaimedRemotes.isEmpty {
                     Text(NSLocalizedString("Unclaimed account profiles", comment: "Profile pairing - unclaimed remotes header"))
                         .font(.headline)
                         .themedForeground(.textPrimaryStrong)
-                    ForEach(unclaimedRemotes, id: \.uuid) { remote in
+                    ForEach(model.unclaimedRemotes, id: \.uuid) { remote in
                         remoteRow(remote)
                     }
                 }
@@ -128,7 +308,7 @@ struct ProfilePairingView: View {
                 }
 
                 HStack(spacing: 12) {
-                    Button(primaryTitle) { onSubmit(buildDecisions()) }
+                    Button(primaryTitle) { onSubmit(model.decisions()) }
                         .buttonStyle(.borderedProminent)
                         .disabled(viewModel.phase == .working || !allDecided)
                     if let secondaryButton {
@@ -150,7 +330,7 @@ struct ProfilePairingView: View {
                 .themedForeground(.textPrimaryStrong)
             Spacer()
             Picker("", selection: binding(for: local)) {
-                ForEach(remoteChoices(excluding: local), id: \.uuid) { remote in
+                ForEach(model.remoteOptions(for: local), id: \.uuid) { remote in
                     Text(remoteLabel(remote)).tag(Choice.remote(remote.uuid))
                 }
                 Text(NSLocalizedString("Register as new", comment: "Profile pairing - register as new option"))
@@ -188,7 +368,7 @@ struct ProfilePairingView: View {
                     Text(NSLocalizedString("在这台 Mac 上创建",
                                            comment: "Profile pairing - create locally option"))
                         .tag(RemoteChoice?.some(.createLocal))
-                    ForEach(unmappedLocals, id: \.profileId) { local in
+                    ForEach(model.assignableLocals(for: remote), id: \.profileId) { local in
                         Text(String(format: NSLocalizedString("指派给 %@",
                                     comment: "Profile pairing - assign to a local profile"),
                                     local.displayName))
@@ -204,104 +384,62 @@ struct ProfilePairingView: View {
         .cornerRadius(8)
     }
 
+    /// Reads through `model.choice(for:)` so a stale entry shows as "请选择"
+    /// instead of a blank Picker, and prunes the state on write.
     private func remoteChoiceBinding(for remote: RemoteProfile) -> Binding<RemoteChoice?> {
         Binding(
-            get: { remoteChoices[remote.uuid] },
-            set: { remoteChoices[remote.uuid] = $0 }
+            get: { model.choice(for: remote) },
+            set: { newValue in
+                var updated = remoteChoices
+                updated[remote.uuid] = newValue
+                remoteChoices = pruned(updated, usingSelections: selections)
+            }
         )
-    }
-
-    /// Locals whose own picker is still `registerNew`, i.e. the ones a remote
-    /// row may legally be assigned to.
-    private var unmappedLocals: [PairingLocal] {
-        locals.filter {
-            if case .registerNew = selections[$0.profileId] ?? .registerNew { return true }
-            return false
-        }
     }
 
     private func binding(for local: PairingLocal) -> Binding<Choice> {
         Binding(
-            get: { selections[local.profileId] ?? .registerNew },
-            set: { selections[local.profileId] = $0 }
+            get: { model.selection(for: local) },
+            set: { newValue in
+                var updated = selections
+                updated[local.profileId] = newValue
+                selections = updated
+                // A local that just left `registerNew` (or took a remote a row
+                // was assigning elsewhere) invalidates that row's choice.
+                remoteChoices = pruned(remoteChoices, usingSelections: updated)
+            }
         )
     }
 
-    /// Remotes selectable for `local`'s picker: every remote not already
-    /// claimed by a *different* local's current selection (so `local`'s own
-    /// selection, if any, always stays in its own list).
-    private func remoteChoices(excluding local: PairingLocal) -> [RemoteProfile] {
-        let claimedByOthers = Set(locals.filter { $0.profileId != local.profileId }.compactMap { other -> String? in
-            if case .remote(let uuid) = selections[other.profileId] ?? .registerNew { return uuid }
-            return nil
-        })
-        return remotes.filter { !claimedByOthers.contains($0.uuid) }
-    }
-
-    /// Remotes not claimed by any local's current selection — these are the rows
-    /// that carry the mandatory "create here / assign to" choice.
-    private var unclaimedRemotes: [RemoteProfile] {
-        let claimed = Set(locals.compactMap { local -> String? in
-            if case .remote(let uuid) = selections[local.profileId] ?? .registerNew { return uuid }
-            return nil
-        })
-        return remotes.filter { !claimed.contains($0.uuid) }
+    /// Drops remote-row choices their row no longer offers, so the stored state
+    /// matches what the user can see. `ProfilePairingModel.choice(for:)` already
+    /// ignores them; this keeps `@State` from carrying a decision nothing will
+    /// honour. Both inputs are passed in rather than read back from `@State`,
+    /// which is not guaranteed to reflect a write made in the same update.
+    private func pruned(_ choices: [String: RemoteChoice],
+                        usingSelections newSelections: [String: Choice]) -> [String: RemoteChoice] {
+        let live = ProfilePairingModel(locals: locals, remotes: remotes,
+                                       selections: newSelections, remoteChoices: choices)
+        var kept: [String: RemoteChoice] = [:]
+        for remote in remotes {
+            if let choice = live.choice(for: remote) { kept[remote.uuid] = choice }
+        }
+        return kept
     }
 
     /// The single enable predicate, shared by both contexts. Undecidable rows
     /// (`name == nil`) are excluded by `allRowsDecided` itself.
     private var allDecided: Bool {
-        let claimed = Set(locals.compactMap { local -> String? in
-            if case .remote(let uuid) = selections[local.profileId] ?? .registerNew { return uuid }
-            return nil
-        }).union(remoteChoices.compactMap { uuid, choice -> String? in
-            if case .adopt = choice { return uuid }
-            return nil
-        })
-        let createLocals = Set(remoteChoices.compactMap { uuid, choice -> String? in
-            choice == .createLocal ? uuid : nil
-        })
+        let live = model
         return viewModel.allRowsDecided(remotes: remotes,
-                                        claimedRemoteUuids: claimed,
-                                        createLocalUuids: createLocals)
+                                        claimedRemoteUuids: live.claimedRemoteUuids,
+                                        createLocalUuids: live.createLocalUuids)
     }
 
     private func remoteLabel(_ remote: RemoteProfile) -> String {
         remote.name ?? String(format: NSLocalizedString(
             "Unnamed profile (%@)", comment: "Profile pairing - remote profile whose name couldn’t be decrypted"),
             String(remote.uuid.prefix(8)))
-    }
-
-    private func buildDecisions() -> [PairingDecision] {
-        var decisions: [PairingDecision] = []
-        for local in locals {
-            switch selections[local.profileId] ?? .registerNew {
-            case .remote(let uuid):
-                decisions.append(.adopt(localProfileId: local.profileId, remoteUuid: uuid))
-            case .registerNew:
-                decisions.append(.registerNew(localProfileId: local.profileId, displayName: local.displayName))
-            }
-        }
-        let claimedByLocals = Set(decisions.compactMap { decision -> String? in
-            if case .adopt(_, let uuid) = decision { return uuid }
-            return nil
-        })
-        for remote in remotes where !claimedByLocals.contains(remote.uuid) {
-            // `.createLocal`'s displayName is the DECRYPTED name, never
-            // `remoteLabel(remote)`: the latter falls back to
-            // "Unnamed profile (xxxxxxxx)" for a row that will not open, and
-            // §3.6's precheck would take that string for a real profile name.
-            guard let name = remote.name else { continue }   // read-only row
-            switch remoteChoices[remote.uuid] {
-            case .createLocal:
-                decisions.append(.createLocal(remoteUuid: remote.uuid, displayName: name))
-            case .adopt(let localProfileId):
-                decisions.append(.adopt(localProfileId: localProfileId, remoteUuid: remote.uuid))
-            case nil:
-                continue   // unreachable while `allDecided` gates the button
-            }
-        }
-        return decisions
     }
 }
 

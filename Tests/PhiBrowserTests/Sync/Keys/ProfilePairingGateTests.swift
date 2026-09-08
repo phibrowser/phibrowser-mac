@@ -70,7 +70,7 @@ final class ProfilePairingGateTests: XCTestCase {
         XCTAssertEqual(host.presentCount, 0)
     }
 
-    func testClearResolvedFlippingNeedsPairingFalseClosesTheModal() {
+    func testFalsePredicatesCloseTheModal() {
         let host = FakeModalHost()
         let gate = makeGate(host: host)
         gate.joinPairingPendingOverride = true
@@ -78,6 +78,37 @@ final class ProfilePairingGateTests: XCTestCase {
         gate.handleMappingsDidResolve(needsPairing: true, needsPairingActionable: true)
         gate.handleMappingsDidResolve(needsPairing: false, needsPairingActionable: false)
         XCTAssertEqual(host.dismissCount, 1)
+    }
+
+    /// The lock / sign-out exit, driven through a REAL controller rather than by
+    /// calling the handler by hand: `clearResolved()` is the one writer that
+    /// flips both predicates false with no `resolveMappings()` pass behind it
+    /// (`silentUnlockAndResolve` returns immediately after it), so if it does not
+    /// announce, the app-modal window stays up against a controller that has
+    /// nothing left to pair.
+    func testClearResolvedClosesTheModal() async throws {
+        let api = FakeAPI()
+        let provider = FakeDeviceKeyProvider()
+        let mgr = AccountKeyManager(api: api, deviceKeyProvider: provider)
+        let controller = SyncKeyController(
+            manager: mgr,
+            approvals: DeviceApprovalService(api: api, keyManager: mgr, deviceKeyProvider: provider),
+            profileKeys: ProfileKeyManager(api: api, keyManager: mgr, mappingStore: MemoryMappingStore()),
+            localProfilesProvider: { [] },
+            notifyChromium: {})
+
+        let host = FakeModalHost()
+        let gate = makeGate(host: host)
+        gate.joinPairingPendingOverride = true
+        gate.start(controller: controller)
+        defer { gate.stop() }
+        gate.handleMappingsDidResolve(needsPairing: true, needsPairingActionable: true)
+        XCTAssertEqual(host.presentCount, 1)
+
+        controller.clearResolved()   // ARK locked / signed out mid-join
+        XCTAssertEqual(host.dismissCount, 1,
+                       "clearResolved must announce, or the gate never learns there is nothing left to pair")
+        XCTAssertFalse(gate.joinPairingPendingOverride!, "and the join is over")
     }
 
     func testAPendingJoinFlagSurvivesARelaunchAndRepresents() {

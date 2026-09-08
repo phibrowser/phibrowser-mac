@@ -177,27 +177,64 @@ struct ProfilePairingGateView: View {
                 locals: locals,
                 remotes: remotes,
                 context: .gate,
-                secondaryButton: onRemoveDevice.map { action in
-                    (title: NSLocalizedString("从同步中移除本设备…",
-                                              comment: "Pairing gate - remove this device"),
-                     action: action)
-                },
+                secondaryButton: secondaryButton,
                 onSubmit: { decisions in
                     Task { await viewModel.submitPairing(decisions, controller: controller) }
                 })
         case .error(let message):
-            VStack(spacing: 12) {
-                Text(NSLocalizedString("完成 Profile 配对", comment: "Pairing gate - title"))
-                    .font(.title2.bold())
-                Text(message).font(.callout)
-            }
-            .padding(32)
-            .frame(minWidth: 420)
+            // `startPairing` lands here whenever `accountProfiles()` throws --
+            // the likeliest outcome right after a join if the network drops or
+            // the ARK is not up yet. This window is app modal and its only
+            // automatic dismissal needs `needsPairingActionable` to go false,
+            // which it will not while the account really does need pairing, so a
+            // branch with no button is a browser locked behind an error string.
+            statusView(message: message, retryEnabled: true)
         default:
-            ProgressView()
-                .padding(32)
-                .frame(minWidth: 420, minHeight: 200)
+            // `.working` while `startPairing` loads, `.done` for the moment
+            // between a successful submit and the gate's dismissal. Both are
+            // meant to be transient, but the same "no exit" reasoning applies if
+            // one of them ever sticks, so they carry the exits too.
+            statusView(message: nil, retryEnabled: viewModel.phase != .working)
         }
+    }
+
+    /// The "remove this device" slot, offered in EVERY branch: the gate is app
+    /// modal, so a branch without it is a window with no exit at all. nil here
+    /// this task (Task 12 supplies the action) hides the button.
+    private var secondaryButton: (title: String, action: () -> Void)? {
+        onRemoveDevice.map { action in
+            (title: NSLocalizedString("从同步中移除本设备…",
+                                      comment: "Pairing gate - remove this device"),
+             action: action)
+        }
+    }
+
+    /// Non-pairing phases: title, optional message, and the two exits (reload
+    /// the candidates, or leave sync from this device).
+    @ViewBuilder
+    private func statusView(message: String?, retryEnabled: Bool) -> some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text(NSLocalizedString("完成 Profile 配对", comment: "Pairing gate - title"))
+                .font(.title2.bold())
+            if let message {
+                Text(message).font(.callout)
+            } else {
+                ProgressView()
+            }
+            HStack(spacing: 12) {
+                Button(NSLocalizedString("重试", comment: "Pairing gate - retry")) {
+                    Task { await viewModel.startPairing(controller: controller) }
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(!retryEnabled)
+                if let secondaryButton {
+                    Button(secondaryButton.title, action: secondaryButton.action)
+                        .buttonStyle(.bordered)
+                }
+            }
+        }
+        .padding(32)
+        .frame(minWidth: 420, alignment: .leading)
     }
 }
 

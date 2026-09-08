@@ -164,23 +164,16 @@ final class AccountPhiSpaceAccess: PhiSpaceLocalAccess {
         controller?.profileKeys.mappedGlobalUuid(forProfileId: profileId)
     }
 
-    /// Placeholder until Task 5 adds the reverse lookup
-    /// (`SyncKeyController.localProfileId(forGlobalUuid:)` over
-    /// `ProfileSyncMappingStore.allMappings()`). Returning nil is the safe
-    /// direction: §6.2 treats "no local profile for this uuid" as an unmapped
-    /// entity, which is retried next round rather than mis-landed.
     func localProfileId(forGlobalUuid uuid: String) -> String? {
-        nil
+        controller?.localProfileId(forGlobalUuid: uuid)
     }
 
     func isKnownLocalProfile(_ profileId: String) -> Bool {
         ProfileManager.shared.userAssignableProfiles.contains { $0.profileId == profileId }
     }
 
-    /// Placeholder until Task 5 adds `SyncKeyController.removeMapping(forProfileId:)`
-    /// (and the `ProfileSyncMappingStore` deletion op behind it). Until then the
-    /// §6.2 A0 self-heal simply does not fire; nothing else depends on it.
     func dropMapping(forProfileId profileId: String) {
+        controller?.removeMapping(forProfileId: profileId)
     }
 
     func isImporting(intoSpaceId spaceId: String) -> Bool {

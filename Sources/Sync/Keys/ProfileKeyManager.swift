@@ -25,6 +25,13 @@ protocol ProfileSyncMappingStore {
     func globalUuid(forProfileId profileId: String) -> String?
     func setGlobalUuid(_ uuid: String, forProfileId profileId: String)
     func allMappings() -> [String: String]
+    /// Drops ONE dead entry: the local profile behind it was deleted, so the
+    /// reverse lookup would otherwise hand the sync layer a profileId that no
+    /// longer exists and every landing would throw forever (§6.2 A0).
+    func removeMapping(forProfileId profileId: String)
+    /// Wipes the whole table: self-revoke (§3.3). Never a partial write, and
+    /// never done by writing `AccountUserDefaults` behind the store's back.
+    func removeAllMappings()
 }
 
 /// Manages per-profile Chromium keys under the ARK: generates and escrows a
@@ -135,5 +142,59 @@ final class ProfileKeyManager {
             }
         }
         return out
+    }
+
+    /// Inbound translation for the sync layer: which LOCAL profile carries this
+    /// account-global uuid. Built on the PERSISTED mapping, deliberately not on
+    /// `SyncKeyController.resolved` -- that one holds live passphrase material,
+    /// only covers profiles whose envelope opens right now, and is wiped whole
+    /// by `clearResolved()` on lock / sign-out, which would cost the Space
+    /// engine every binding the instant the ARK goes away.
+    ///
+    /// Two locals on one uuid is a state M2 does not intend to produce; when it
+    /// happens the smallest profileId wins so every device resolves it the same
+    /// way, and it is logged.
+    func localProfileId(forGlobalUuid uuid: String) -> String? {
+        let matches = mappingStore.allMappings()
+            .filter { $0.value == uuid }
+            .keys
+            .sorted()
+        if matches.count > 1 {
+            AppLogWarn("[phi-sync] \(matches.count) local profiles map to one account profile; taking the lexicographically smallest")
+        }
+        return matches.first
+    }
+
+    /// The account's profile uuids, and nothing else. `accountProfiles()` pays
+    /// one envelope GET per uuid to decrypt display names; the callers that only
+    /// need the SET of uuids (`resolveMappings()`, §3.6's per-round refresh) run
+    /// every 60 s and never read a name, so they use this instead.
+    ///
+    /// The ARK guard belongs HERE, not at the call sites: `listProfiles` is a
+    /// plain bearer-token call that never touches the ARK, so without it a
+    /// locked device would get a successful list and then fail on every single
+    /// envelope, turning "skipped because locked" into "ran and changed
+    /// nothing".
+    func accountProfileUuids() async throws -> Set<String> {
+        guard keyManager.currentARK != nil else { throw ProfileKeyManagerError.notUnlocked }
+        return Set(try await api.listProfiles().map(\.profileUuid))
+    }
+
+    /// One account profile with its registered display name, or `name == nil`
+    /// when the envelope does not open under the current ARK. Same decoding as
+    /// `accountProfiles()`, for one uuid.
+    func remoteProfile(uuid: String) async throws -> RemoteProfile {
+        guard let ark = keyManager.currentARK else { throw ProfileKeyManagerError.notUnlocked }
+        guard let dto = try await api.getProfileKey(uuid: uuid) else {
+            return RemoteProfile(uuid: uuid, name: nil)
+        }
+        guard let (_, name) = try? Self.openProfilePayload(dto.profileKeyEnvelope, ark: ark) else {
+            return RemoteProfile(uuid: uuid, name: nil)
+        }
+        return RemoteProfile(uuid: uuid, name: name)
+    }
+
+    func removeMapping(forProfileId profileId: String) {
+        mappingStore.removeMapping(forProfileId: profileId)
     }
 }

@@ -72,14 +72,18 @@ final class AccountKeyManagerTests: XCTestCase {
         /// `SyncKeyController.resolveMappings()`.
         var profileEndpointError: Error?
         var listProfilesError: Error?
+        private(set) var listProfilesCalls = 0
+        private(set) var getProfileKeyCalls = 0
 
         func listProfiles() async throws -> [ProfileSummaryDTO] {
+            listProfilesCalls += 1
             if let listProfilesError { throw listProfilesError }
             return profileEnvelopes.keys.sorted().map {
                 ProfileSummaryDTO(profileUuid: $0, hasEnvelope: true, createdAt: Self.profileCreatedAt)
             }
         }
         func getProfileKey(uuid: String) async throws -> ProfileKeyDTO? {
+            getProfileKeyCalls += 1
             if let profileEndpointError { throw profileEndpointError }
             guard let e = profileEnvelopes[uuid] else { return nil }
             return ProfileKeyDTO(profileUuid: uuid, profileKeyEnvelope: e, createdAt: Self.profileCreatedAt)

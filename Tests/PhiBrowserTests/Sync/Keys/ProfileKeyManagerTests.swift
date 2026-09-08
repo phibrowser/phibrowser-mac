@@ -11,6 +11,8 @@ final class ProfileKeyManagerTests: XCTestCase {
         func globalUuid(forProfileId id: String) -> String? { map[id] }
         func setGlobalUuid(_ uuid: String, forProfileId id: String) { map[id] = uuid }
         func allMappings() -> [String: String] { map }
+        func removeMapping(forProfileId id: String) { map.removeValue(forKey: id) }
+        func removeAllMappings() { map = [:] }
     }
 
     private func unlockedStack() async throws -> (FakeAPI, AccountKeyManager, ProfileKeyManager, MemoryMappingStore) {
@@ -88,5 +90,64 @@ final class ProfileKeyManagerTests: XCTestCase {
         let remotes = try await pkm.accountProfiles()
         XCTAssertEqual(remotes.count, 1)
         XCTAssertEqual(remotes[0].name, "Work")
+    }
+
+    func testReverseLookupFindsTheLocalProfileForAGlobalUuid() async throws {
+        let (_, _, pkm, store) = try await unlockedStack()
+        store.map = ["Default": "uuid-a", "Profile 1": "uuid-b"]
+        XCTAssertEqual(pkm.localProfileId(forGlobalUuid: "uuid-b"), "Profile 1")
+        XCTAssertNil(pkm.localProfileId(forGlobalUuid: "uuid-z"))
+    }
+
+    /// Two locals on one uuid is a state M2 does not intend to produce, but the
+    /// resolution has to be identical on every device or two machines land the
+    /// same Space on different profiles.
+    func testReverseLookupBreaksDuplicateMappingsDeterministically() async throws {
+        let (_, _, pkm, store) = try await unlockedStack()
+        store.map = ["Profile 9": "uuid-a", "Profile 2": "uuid-a"]
+        XCTAssertEqual(pkm.localProfileId(forGlobalUuid: "uuid-a"), "Profile 2")
+    }
+
+    func testAccountProfileUuidsSendsOneListAndNoEnvelopeFetches() async throws {
+        let (api, _, pkm, _) = try await unlockedStack()
+        _ = try await pkm.registerLocalProfile(profileId: "Default", displayName: "Work")
+        _ = try await pkm.registerLocalProfile(profileId: "Profile 1", displayName: "Home")
+        let before = api.getProfileKeyCalls
+        let uuids = try await pkm.accountProfileUuids()
+        XCTAssertEqual(uuids.count, 2)
+        XCTAssertEqual(api.getProfileKeyCalls, before, "accountProfileUuids must not pay 1+N")
+    }
+
+    func testAccountProfileUuidsThrowsWhenLockedWithoutAnyNetworkCall() async throws {
+        let api = FakeAPI()
+        let locked = AccountKeyManager(api: api, deviceKeyProvider: FakeDeviceKeyProvider())
+        let pkm = ProfileKeyManager(api: api, keyManager: locked, mappingStore: MemoryMappingStore())
+        do {
+            _ = try await pkm.accountProfileUuids()
+            XCTFail("expected notUnlocked")
+        } catch ProfileKeyManagerError.notUnlocked {
+            XCTAssertEqual(api.listProfilesCalls, 0, "the ARK guard must precede the request")
+        }
+    }
+
+    func testRemoteProfileDecryptsTheRegisteredNameAndReportsUndecryptable() async throws {
+        let (api, _, pkm, _) = try await unlockedStack()
+        let rec = try await pkm.registerLocalProfile(profileId: "Default", displayName: "Work")
+        let mine = try await pkm.remoteProfile(uuid: rec.uuid)
+        XCTAssertEqual(mine.name, "Work")
+
+        api.profileEnvelopes["garbage-uuid"] = Data([0x00, 0x01, 0x02])
+        let broken = try await pkm.remoteProfile(uuid: "garbage-uuid")
+        XCTAssertEqual(broken.uuid, "garbage-uuid")
+        XCTAssertNil(broken.name)
+    }
+
+    func testRemoveMappingDropsOnlyThatEntry() async throws {
+        let (_, _, _, store) = try await unlockedStack()
+        store.map = ["Default": "uuid-a", "Profile 1": "uuid-b"]
+        store.removeMapping(forProfileId: "Default")
+        XCTAssertEqual(store.map, ["Profile 1": "uuid-b"])
+        store.removeAllMappings()
+        XCTAssertTrue(store.map.isEmpty)
     }
 }

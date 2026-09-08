@@ -74,8 +74,10 @@ enum SyncableSettings {
     static func valueKey(for key: String) -> String { key + valueSuffix }
 
     /// The comparable identity of a value: its bytes with `updatedAtMs` zeroed,
-    /// so "did this change locally?" is answered on the value alone.
-    private static func signature(of value: Phi_PhiSettingValue) -> Data {
+    /// so "did this change locally?" is answered on the value alone. Shared with
+    /// `SyncableSpaces` (R4 single implementation): two copies would eventually
+    /// disagree, and change detection and the LWW byte tie-break are built on it.
+    static func signature(of value: Phi_PhiSettingValue) -> Data {
         var stripped = value
         stripped.updatedAtMs = 0
         return (try? stripped.serializedData()) ?? Data()
@@ -299,12 +301,16 @@ enum SyncableSettings {
                 merged.values[key] = remoteValue
                 continue
             }
-            merged.values[key] = winner(localValue, remoteValue)
+            merged.values[key] = SyncableSettings.lwwWinner(localValue, remoteValue)
         }
         return merged
     }
 
-    private static func winner(
+    /// Field-level last-writer-wins for one value. Shared with `SyncableSpaces`
+    /// (R4 single implementation): larger `updatedAtMs` wins; on equal
+    /// timestamps the lexicographically greater serialized bytes win, which is
+    /// device-independent and symmetric.
+    static func lwwWinner(
         _ lhs: Phi_PhiSettingValue,
         _ rhs: Phi_PhiSettingValue
     ) -> Phi_PhiSettingValue {

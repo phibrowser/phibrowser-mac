@@ -21,6 +21,20 @@ final class ProfilePairingGateTests: XCTestCase {
         func dismiss() { dismissCount += 1 }
     }
 
+    /// A real, never-unlocked controller: enough to post the two announcement
+    /// variants through `NotificationCenter` without a key stack.
+    private func makeController() -> SyncKeyController {
+        let api = FakeAPI()
+        let provider = FakeDeviceKeyProvider()
+        let mgr = AccountKeyManager(api: api, deviceKeyProvider: provider)
+        return SyncKeyController(
+            manager: mgr,
+            approvals: DeviceApprovalService(api: api, keyManager: mgr, deviceKeyProvider: provider),
+            profileKeys: ProfileKeyManager(api: api, keyManager: mgr, mappingStore: MemoryMappingStore()),
+            localProfilesProvider: { [] },
+            notifyChromium: {})
+    }
+
     private func makeGate(host: FakeModalHost) -> ProfilePairingGate {
         let gate = ProfilePairingGate()
         gate.modalHost = host
@@ -80,23 +94,17 @@ final class ProfilePairingGateTests: XCTestCase {
         XCTAssertEqual(host.dismissCount, 1)
     }
 
-    /// The lock / sign-out exit, driven through a REAL controller rather than by
+    /// The lock / teardown exit, driven through a REAL controller rather than by
     /// calling the handler by hand: `clearResolved()` is the one writer that
     /// flips both predicates false with no `resolveMappings()` pass behind it
     /// (`silentUnlockAndResolve` returns immediately after it), so if it does not
-    /// announce, the app-modal window stays up against a controller that has
-    /// nothing left to pair.
-    func testClearResolvedClosesTheModal() async throws {
-        let api = FakeAPI()
-        let provider = FakeDeviceKeyProvider()
-        let mgr = AccountKeyManager(api: api, deviceKeyProvider: provider)
-        let controller = SyncKeyController(
-            manager: mgr,
-            approvals: DeviceApprovalService(api: api, keyManager: mgr, deviceKeyProvider: provider),
-            profileKeys: ProfileKeyManager(api: api, keyManager: mgr, mappingStore: MemoryMappingStore()),
-            localProfilesProvider: { [] },
-            notifyChromium: {})
-
+    /// announce, the app-modal window stays up against a controller whose key
+    /// layer is gone.
+    ///
+    /// The window closes; the JOIN does not end. Those false predicates mean
+    /// "unknown", and the pairing this join still owes is unchanged by a lock.
+    func testClearResolvedClosesTheModalButKeepsTheJoinPending() async throws {
+        let controller = makeController()
         let host = FakeModalHost()
         let gate = makeGate(host: host)
         gate.joinPairingPendingOverride = true
@@ -105,10 +113,50 @@ final class ProfilePairingGateTests: XCTestCase {
         gate.handleMappingsDidResolve(needsPairing: true, needsPairingActionable: true)
         XCTAssertEqual(host.presentCount, 1)
 
-        controller.clearResolved()   // ARK locked / signed out mid-join
+        controller.clearResolved()   // ARK locked / controller torn down mid-join
         XCTAssertEqual(host.dismissCount, 1,
-                       "clearResolved must announce, or the gate never learns there is nothing left to pair")
-        XCTAssertFalse(gate.joinPairingPendingOverride!, "and the join is over")
+                       "clearResolved must announce, or the window stays up over a dead key layer")
+        XCTAssertTrue(gate.joinPairingPendingOverride!,
+                      "a lock is not a finished join -- only a real pass may retire the flag")
+    }
+
+    /// The offline-relaunch case, which is the one that silently disarms the gate
+    /// forever if a cleared announcement is read as a resolution: the join set
+    /// `sync.joinPairingPending`, the app relaunches, `unlockAtStartup()` throws
+    /// because the machine is still offline, and `silentUnlockAndResolve()` calls
+    /// `clearResolved()` before any pass has ever run. Nothing is presented, so
+    /// there is no window to dismiss -- the only thing at stake is the flag.
+    func testAClearedAnnouncementKeepsTheFlagAndALaterResolveStillPresents() async throws {
+        let controller = makeController()
+        let host = FakeModalHost()
+        let gate = makeGate(host: host)
+        gate.joinPairingPendingOverride = true
+        gate.start(controller: controller)
+        defer { gate.stop() }
+
+        controller.clearResolved()   // offline seconds after launch
+        XCTAssertEqual(host.presentCount, 0)
+        XCTAssertEqual(host.dismissCount, 0, "nothing was presented, so nothing to dismiss")
+        XCTAssertTrue(gate.joinPairingPendingOverride!,
+                      "an unknown pairing picture must not retire sync.joinPairingPending")
+
+        // Network back, ARK unlocked, and the pre-existing profiles on both sides
+        // are still unmatched: the modal has to appear now or never.
+        gate.handleMappingsDidResolve(needsPairing: true, needsPairingActionable: true)
+        XCTAssertEqual(host.presentCount, 1)
+    }
+
+    /// The other half of the same distinction: a REAL pass that finds nothing left
+    /// to pair still ends the join, so the modal does not come back next launch.
+    func testARealResolveWithNothingLeftToPairRetiresTheFlag() {
+        let host = FakeModalHost()
+        let gate = makeGate(host: host)
+        gate.joinPairingPendingOverride = true
+        gate.start(controller: nil)
+        defer { gate.stop() }
+        gate.handleMappingsDidResolve(needsPairing: false, needsPairingActionable: false)
+        XCTAssertFalse(gate.joinPairingPendingOverride!)
+        XCTAssertEqual(host.presentCount, 0)
     }
 
     func testAPendingJoinFlagSurvivesARelaunchAndRepresents() {

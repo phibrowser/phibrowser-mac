@@ -200,6 +200,7 @@ extension AppController {
             "proactive_suggestions_enabled": PhiPreferences.AISettings.enableProactiveSuggestionsOnNTP.loadValue(),
             "automatically_add_context_enabled": PhiPreferences.AISettings.enableChatWithTabs.loadValue(),
             "peek_view_enabled": PhiPreferences.GeneralSettings.peekViewEnabled.loadValue(),
+            "short_highlight_links_enabled": PhiPreferences.GeneralSettings.shortHighlightLinksEnabled.loadValue(),
             "open_external_links_in_kiosk": PhiPreferences.GeneralSettings.openExternalLinksInKiosk.loadValue(),
             "open_kiosk_on_command_option_click": PhiPreferences.GeneralSettings.openKioskOnCommandOptionClick.loadValue()
         ])

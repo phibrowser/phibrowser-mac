@@ -5,6 +5,7 @@
 
 import Cocoa
 import Foundation
+import PostHog
 import SwiftUI
 @objc class PhiChromiumCoordinator: NSObject {
     @objc static var shared = PhiChromiumCoordinator()
@@ -1577,6 +1578,12 @@ extension PhiChromiumCoordinator: PhiChromiumBridgeDelegate {
                 .controller(for: Int(windowId)) else { return }
             // Chromium already wrote the clipboard, including long-link fallback.
             OverlayToastCenter.shared.showHighlightLinkCopyConfirmation(url: copiedURL, in: controller.browserState)
+        }
+        
+        if PhiPreferences.GeneralSettings.shortHighlightLinksEnabled.loadValue() {
+            PostHogSDK.shared.capture("highlight_link_copied", properties: [
+                "is_short_link": isShortLink
+            ])
         }
     }
 

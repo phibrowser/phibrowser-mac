@@ -197,4 +197,13 @@ final class ProfileKeyManager {
     func removeMapping(forProfileId profileId: String) {
         mappingStore.removeMapping(forProfileId: profileId)
     }
+
+    /// The whole persisted table, local profile id -> account uuid. §3.6 reads it
+    /// to tell an unmapped local profile (adoptable) from a mapped one.
+    func allMappings() -> [String: String] { mappingStore.allMappings() }
+
+    /// The account uuids this device has already claimed. §3.6's "missing" set is
+    /// the account's uuids minus these — deliberately built from the PERSISTED
+    /// mapping, not from the live local profile list.
+    func allMappedGlobalUuids() -> [String] { Array(mappingStore.allMappings().values) }
 }

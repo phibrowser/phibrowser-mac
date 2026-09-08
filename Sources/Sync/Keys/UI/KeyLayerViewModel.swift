@@ -239,19 +239,22 @@ final class KeyLayerViewModel: ObservableObject {
                     _ = try await controller.profileKeys.registerLocalProfile(
                         profileId: localProfileId, displayName: displayName)
                 case .createLocal(let remoteUuid, let displayName):
-                    let newProfileId = await withCheckedContinuation { (continuation: CheckedContinuation<String?, Never>) in
-                        ProfileManager.shared.createProfile(displayName: displayName) { profileId in
-                            continuation.resume(returning: profileId)
-                        }
-                    }
-                    guard let newProfileId else {
+                    // One shared implementation with §3.6's auto-create
+                    // (`createLocalProfileAndAdopt`); only the `phase` /
+                    // `pairingError` state machine stays here, and the direct
+                    // `ProfileManager` dependency moves back into the key layer.
+                    do {
+                        _ = try await controller.createLocalProfileAndAdopt(
+                            uuid: remoteUuid, displayName: displayName)
+                    } catch ProfileKeyManagerError.badEnvelope {
+                        // The one throw that means "the bridge did not make a
+                        // profile"; the generic catch below would render it as
+                        // raw enum text in the modal.
                         pairingError = String(format: NSLocalizedString(
                             "Couldn’t create a profile named “%@” on this Mac.",
                             comment: "Pairing - local profile creation failed"), displayName)
                         continue
                     }
-                    _ = try await controller.profileKeys.adoptRemoteProfile(
-                        uuid: remoteUuid, forLocalProfile: newProfileId)
                 }
             } catch {
                 pairingError = "\(error)"

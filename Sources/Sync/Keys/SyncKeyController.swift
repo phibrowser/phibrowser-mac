@@ -21,10 +21,13 @@ extension Notification.Name {
     static let phiProfileMappingsDidResolve = Notification.Name("phiProfileMappingsDidResolve")
 
     /// Posted by `ensureLocalProfilesForAccount()` immediately before EVERY
-    /// return, `.failed` included. userInfo:
-    ///   outcome:      "unchanged" | "changed" | "failed"
+    /// return, `.failed` and `.skipped` included. userInfo:
+    ///   outcome:      "unchanged" | "changed" | "skipped" | "failed"
     ///   created:      Int   // profiles actually created + adopted this round
     ///   skippedUuids: Int   // account uuids left unclaimed this round
+    /// `"skipped"` means the round deliberately did not run at all -- the join
+    /// pairing gate was shut -- and is NOT a failure: nothing was attempted, so
+    /// there is nothing to retry and no error to report.
     /// `ProfilePairingGate`'s hysteresis counter advances on THIS and nothing else.
     static let phiProfileAutoCreateDidRun = Notification.Name("phiProfileAutoCreateDidRun")
 }
@@ -37,6 +40,16 @@ enum PairingDecision: Equatable {
     case adopt(localProfileId: String, remoteUuid: String)
     case registerNew(localProfileId: String, displayName: String)
     case createLocal(remoteUuid: String, displayName: String)
+}
+
+/// The bits of `ProfileManager` the key layer needs to create a local Chromium
+/// profile. Injected so the auto-create can be unit tested with no bridge -- and
+/// so `ProfileManager` stops being a direct dependency of the pairing UI.
+@MainActor
+protocol LocalProfileCreating: AnyObject {
+    var userAssignableProfileIds: [(profileId: String, displayName: String)] { get }
+    func displayNameExists(_ name: String) -> Bool
+    func createProfile(displayName: String) async -> String?
 }
 
 /// App-scoped owner of the sync key layer: silently unlocks the ARK at
@@ -53,6 +66,7 @@ final class SyncKeyController {
 
     private let localProfilesProvider: () -> [(profileId: String, displayName: String)]
     private let notifyChromium: () -> Void
+    private let profileCreator: any LocalProfileCreating
 
     /// What an announcement says about the two pairing predicates it arrives
     /// with. `false, false` is produced by all three cases and means something
@@ -114,12 +128,14 @@ final class SyncKeyController {
 
     init(manager: AccountKeyManager, approvals: DeviceApprovalService, profileKeys: ProfileKeyManager,
          localProfilesProvider: @escaping () -> [(profileId: String, displayName: String)],
-         notifyChromium: @escaping () -> Void) {
+         notifyChromium: @escaping () -> Void,
+         profileCreator: any LocalProfileCreating = ProfileManager.shared) {
         self.manager = manager
         self.approvals = approvals
         self.profileKeys = profileKeys
         self.localProfilesProvider = localProfilesProvider
         self.notifyChromium = notifyChromium
+        self.profileCreator = profileCreator
     }
 
     /// Hot path: the bridge delegate calls this on every Chromium pull.
@@ -333,6 +349,163 @@ final class SyncKeyController {
         NotificationCenter.default.post(
             name: .phiProfileMappingsDidResolve, object: self,
             userInfo: [Self.mappingsOutcomeKey: outcome.rawValue])
+    }
+
+    // MARK: - §3.6 Runtime profile auto-create
+
+    static let maxAutoCreatesPerRound = 3
+
+    /// Profiles created by the most recent refresh, for §11's `profiles_created`
+    /// counter. Read through `PhiSpaceLocalAccess.profilesCreatedInLastRefresh()`.
+    private(set) var lastRefreshCreatedCount = 0
+
+    /// Create a local Chromium profile for an account profile and claim it. The
+    /// ONE implementation, shared by the pairing modal's `.createLocal` and by
+    /// §3.6's auto-create -- two copies would diverge immediately (the automatic
+    /// side has to pre-check the name, refuse an unopenable envelope and run a
+    /// wrap-up resolve).
+    ///
+    /// Ordering is load-bearing: create -> fetch and OPEN the envelope under the
+    /// ARK -> only then write the mapping (`adoptRemoteProfile`,
+    /// ProfileKeyManager.swift:115-118). An envelope that will not open therefore
+    /// leaves NO mapping behind, which is exactly what makes the "adopt the
+    /// same-named unmapped profile" retry work next round.
+    func createLocalProfileAndAdopt(uuid: String, displayName: String) async throws -> String {
+        let name = uniqueDisplayName(basedOn: displayName)
+        guard let profileId = await profileCreator.createProfile(displayName: name) else {
+            throw ProfileKeyManagerError.badEnvelope
+        }
+        // The create is this round's only suspension, and `$profiles` runs a
+        // `resolveMappings()` pass inside it whose 1:1 branch may have claimed
+        // this very uuid onto another local. Adopting anyway would leave two
+        // locals on one uuid.
+        if profileKeys.localProfileId(forGlobalUuid: uuid) != nil {
+            AppLogInfo("[phi-sync] uuid was claimed while the profile was being created; leaving the new profile for the next round")
+            return profileId
+        }
+        _ = try await profileKeys.adoptRemoteProfile(uuid: uuid, forLocalProfile: profileId)
+        return profileId
+    }
+
+    /// The suffix is decided by a PRE-CHECK, never by probing the return value:
+    /// `createProfile` returns nil for three different reasons (empty or
+    /// duplicate name, no bridge, bridge-side failure), so "nil means duplicate,
+    /// try the next suffix" turns a missing bridge into unbounded probing.
+    private func uniqueDisplayName(basedOn raw: String) -> String {
+        let base = raw.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            ? NSLocalizedString("Profile", comment: "Fallback name for an account profile registered with no name")
+            : raw
+        guard profileCreator.displayNameExists(base) else { return base }
+        for suffix in 2...50 {
+            let candidate = "\(base) (\(suffix))"
+            if !profileCreator.displayNameExists(candidate) { return candidate }
+        }
+        return "\(base) (\(UUID().uuidString.prefix(4)))"
+    }
+
+    /// Once per pull round: compare the account's profile list against this
+    /// device's PERSISTED mapping and create whatever is missing. No prompt, no
+    /// UI. Never runs while the Space gate is shut -- during a join, "the account
+    /// has a profile this Mac does not" is exactly the ambiguity the modal exists
+    /// to resolve, and auto-claiming would take the choice away from the user.
+    func ensureLocalProfilesForAccount() async -> ProfileRefreshOutcome {
+        // Same gate as the Space section (§3.5), and deliberately NOT "is the
+        // modal on screen": setting the flag and presenting the modal are two
+        // events with a window between them, and a relaunch mid-pairing has
+        // another one.
+        //
+        // `.skipped`, not `.failed`: §11 defines a gate-shut round as
+        // `profile_refresh=skipped` and says in so many words that it is 不是失败.
+        // Folding it into `.failed` would misreport the counter AND make the
+        // engine treat a deliberate no-op as a retryable error.
+        guard !ProfilePairingGate.joinPairingPending else {
+            return await finishRefresh(.skipped, created: 0, skipped: 0)
+        }
+        let accountUuids: Set<String>
+        do {
+            accountUuids = try await profileKeys.accountProfileUuids()
+        } catch {
+            AppLogWarn("[phi-sync] account profile refresh failed (\(PhiSyncLog.describe(error)))")
+            return await finishRefresh(.failed, created: 0, skipped: 0)
+        }
+        // The LEFT side is the persisted mapping, not the local profile list: a
+        // profile the user deleted keeps its mapping entry, so it is not
+        // "missing" and never grows back (§3.6). The one exception is §6.2 A0's
+        // dead-mapping cleanup, which removes the entry first.
+        let mapped = Set(profileKeys.allMappedGlobalUuids())
+        let missing = accountUuids.subtracting(mapped).sorted()   // uuid order: device-independent
+        guard !missing.isEmpty else { return await finishRefresh(.unchanged, created: 0, skipped: 0) }
+
+        var created = 0
+        var skipped = 0
+        for uuid in missing {
+            guard created < Self.maxAutoCreatesPerRound else { skipped += 1; continue }
+            let remote: RemoteProfile
+            do { remote = try await profileKeys.remoteProfile(uuid: uuid) } catch {
+                skipped += 1; continue
+            }
+            guard let name = remote.name else {
+                // No per-profile key means a profile that could not sync anything
+                // and a mystery entry in the user's list. Skip, record, retry.
+                noteUndecryptableRemote(uuid)
+                AppLogInfo("[phi-sync] account profile envelope will not open uuid=\(String(uuid.prefix(8)))")
+                skipped += 1
+                continue
+            }
+            noteDecryptableRemote(uuid)
+
+            // Claim an existing same-named UNMAPPED local first. This covers both
+            // "last round created it but the adopt failed" and the plain
+            // coincidence of two devices having made the same name. The
+            // enumeration source is `userAssignableProfileIds`, never the whole
+            // `ProfileManager.profiles`: the agent fallback profile is in the
+            // latter and must never be handed to the account.
+            let mappedIds = Set(profileKeys.allMappings().keys)
+            if let twin = profileCreator.userAssignableProfileIds.first(where: {
+                !mappedIds.contains($0.profileId)
+                && $0.displayName.caseInsensitiveCompare(name) == .orderedSame
+            }) {
+                if (try? await profileKeys.adoptRemoteProfile(uuid: uuid, forLocalProfile: twin.profileId)) != nil {
+                    created += 1
+                } else { skipped += 1 }
+                continue
+            }
+            do {
+                _ = try await createLocalProfileAndAdopt(uuid: uuid, displayName: name)
+                created += 1
+            } catch {
+                AppLogInfo("[phi-sync] auto-create failed uuid=\(String(uuid.prefix(8))) (\(PhiSyncLog.describe(error)))")
+                skipped += 1
+            }
+        }
+        return await finishRefresh(created > 0 ? .changed : .unchanged, created: created, skipped: skipped)
+    }
+
+    private func finishRefresh(_ outcome: ProfileRefreshOutcome,
+                               created: Int, skipped: Int) async -> ProfileRefreshOutcome {
+        lastRefreshCreatedCount = created
+        if outcome == .changed {
+            // Not optional bookkeeping: the new profile's passphrase reaches
+            // `resolved` (and Chromium) ONLY here. `$profiles` cannot do it -- its
+            // pass runs before `adoptRemoteProfile` writes the mapping -- and it
+            // never self-heals, because next round the mapping exists and the uuid
+            // is no longer missing.
+            await resolveMappings()
+        }
+        let label: String
+        switch outcome {
+        case .changed: label = "changed"
+        case .failed: label = "failed"
+        // The gate-shut round is not a stall the hysteresis should count, and it
+        // is not a failure either -- `ProfilePairingGate` treats it exactly like
+        // `.failed`: reset nothing, advance nothing.
+        case .skipped: label = "skipped"
+        case .unchanged: label = "unchanged"
+        }
+        NotificationCenter.default.post(
+            name: .phiProfileAutoCreateDidRun, object: self,
+            userInfo: ["outcome": label, "created": created, "skippedUuids": skipped])
+        return outcome
     }
 
     /// Temporary M2-5 diagnostic (issue ②, Needs-passphrase): records which key

@@ -122,7 +122,11 @@ final class ProfileManager: ObservableObject {
                        completion: @escaping (String?) -> Void) {
         refresh()
         let trimmed = displayName.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty, !displayNameExists(trimmed) else {
+        // `excluding:` spelled out, not defaulted: the one-argument
+        // `LocalProfileCreating` witness below is `@MainActor` (it witnesses a
+        // `@MainActor` requirement), so a bare `displayNameExists(trimmed)` binds
+        // to that overload instead and this nonisolated method stops compiling.
+        guard !trimmed.isEmpty, !displayNameExists(trimmed, excluding: nil) else {
             completion(nil)
             return
         }
@@ -313,5 +317,30 @@ final class ProfileManager: ObservableObject {
         let keyword = dict["keyword"] as? String ?? ""
         let isDefault = (dict["isDefault"] as? NSNumber)?.boolValue ?? false
         return SearchEngineInfo(id: id, name: name, keyword: keyword, isDefault: isDefault)
+    }
+}
+
+/// §3.6's injection point into the key layer: `SyncKeyController` creates local
+/// Chromium profiles for account profiles that have no counterpart on this Mac,
+/// and reaches the bridge only through these three members.
+extension ProfileManager: LocalProfileCreating {
+    /// Never the whole `profiles` list: the agent fallback profile is in that one
+    /// and must never be handed to the account.
+    var userAssignableProfileIds: [(profileId: String, displayName: String)] {
+        userAssignableProfiles.map { ($0.profileId, $0.displayName) }
+    }
+
+    /// The key layer only ever asks the unqualified question; `excluding:` is the
+    /// rename prompt's parameter and has no meaning here.
+    func displayNameExists(_ name: String) -> Bool {
+        displayNameExists(name, excluding: nil)
+    }
+
+    /// `createProfile`'s completion, as an `await`. The completion fires on the
+    /// main queue after `refresh()`, so the published list is already current.
+    func createProfile(displayName: String) async -> String? {
+        await withCheckedContinuation { continuation in
+            createProfile(displayName: displayName) { continuation.resume(returning: $0) }
+        }
     }
 }

@@ -173,6 +173,68 @@ final class ProfileAutoCreateTests: XCTestCase {
         XCTAssertEqual(creator.createCalls, ["Work (2)"])
     }
 
+    /// The leak the same-named twin search cannot cover. `adoptRemoteProfile`
+    /// writes the mapping only after the envelope opens, so a blip inside it
+    /// leaves the just-created profile unmapped -- and because the name collided,
+    /// that profile is called "Work (2)" while the twin search looks for "Work".
+    /// Without the pending-create record every failed round would leave one more
+    /// empty profile behind, and `resolveMappings()` would eventually push each
+    /// of them to the account as a brand-new profile.
+    func testAFailedAdoptReusesTheProfileItAlreadyCreatedInsteadOfLeakingIt() async throws {
+        struct Offline: Error {}
+        let creator = FakeProfileCreator()
+        creator.profiles = [(profileId: "P1", displayName: "Work")]
+        creator.createResults = ["P9"]
+        let (api, mgr, controller, store) = try await stack(creator: creator)
+        store.map = ["P1": "uuid-existing"]
+        try seedRemoteProfile(api, mgr, uuid: "uuid-existing", name: "Work")
+        try seedRemoteProfile(api, mgr, uuid: "uuid-other", name: "Work")
+
+        // The failure lands in `adoptRemoteProfile`'s GET, not in the
+        // `remoteProfile(uuid:)` that precedes the create -- arming it inside the
+        // create's suspension is the only way to hit exactly that window.
+        creator.duringCreate = { api.profileEndpointError = Offline() }
+        let first = await controller.ensureLocalProfilesForAccount()
+        XCTAssertEqual(first, .unchanged)
+        XCTAssertEqual(creator.createCalls, ["Work (2)"])
+        XCTAssertFalse(store.map.values.contains("uuid-other"), "the adopt threw, so no mapping")
+
+        creator.duringCreate = nil
+        api.profileEndpointError = nil
+        let second = await controller.ensureLocalProfilesForAccount()
+        XCTAssertEqual(second, .changed)
+        XCTAssertEqual(creator.createCalls, ["Work (2)"],
+                       "the second round must re-adopt onto P9, never create a third profile")
+        XCTAssertEqual(store.map["P9"], "uuid-other")
+    }
+
+    /// The pending record is a hint, not a promise: a profile the user deleted
+    /// while the adopt was failing must not be adopted, and the round has to fall
+    /// back to creating a fresh one.
+    func testAPendingProfileDeletedBeforeTheRetryIsNotAdopted() async throws {
+        struct Offline: Error {}
+        let creator = FakeProfileCreator()
+        creator.profiles = [(profileId: "P1", displayName: "Work")]
+        creator.createResults = ["P9", "P10"]
+        let (api, mgr, controller, store) = try await stack(creator: creator)
+        store.map = ["P1": "uuid-existing"]
+        try seedRemoteProfile(api, mgr, uuid: "uuid-existing", name: "Work")
+        try seedRemoteProfile(api, mgr, uuid: "uuid-other", name: "Work")
+
+        creator.duringCreate = { api.profileEndpointError = Offline() }
+        _ = await controller.ensureLocalProfilesForAccount()
+        XCTAssertEqual(creator.createCalls, ["Work (2)"])
+
+        creator.duringCreate = nil
+        api.profileEndpointError = nil
+        creator.profiles.removeAll { $0.profileId == "P9" }
+        let second = await controller.ensureLocalProfilesForAccount()
+        XCTAssertEqual(second, .changed)
+        XCTAssertEqual(creator.createCalls, ["Work (2)", "Work (2)"],
+                       "P9 is gone, so its name is free again and a fresh create is correct")
+        XCTAssertEqual(store.map["P10"], "uuid-other")
+    }
+
     func testThrottleCapsCreationsPerRound() async throws {
         let creator = FakeProfileCreator()
         let (api, mgr, controller, _) = try await stack(creator: creator)

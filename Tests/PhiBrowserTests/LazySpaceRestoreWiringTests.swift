@@ -291,6 +291,159 @@ final class LazySpaceRestoreWiringTests: XCTestCase {
             profiles: ["space-a": "Default"]).isEmpty)
     }
 
+    // MARK: - What the pull that lands before the account binds answers
+
+    /// A snapshot entry in its in-memory shape, encoded below the way the
+    /// writer stores it so the decoders are on the path too. `spaceProfileIds`
+    /// nil models a record written by a build that did not know the field.
+    private struct SnapshotEntry {
+        var activeSpaceId: String?
+        var windowMap: [Int: String]
+        var spaceProfileIds: [String: String]?
+        var isLandingEntry = false
+        var isParkedOnlyEntry = false
+    }
+
+    private static func earlyHead(
+        _ entries: [SnapshotEntry], lazy: Bool = true
+    ) -> [String]? {
+        SpaceManager.earlyColdStartPreferredProfiles(
+            snapshot: entries.map { entry in
+                var dict: [String: Any] = [
+                    "windowMap": SpaceManager.encodedWindowMap(entry.windowMap),
+                    "isLandingEntry": entry.isLandingEntry,
+                    "isParkedOnlyEntry": entry.isParkedOnlyEntry,
+                ]
+                if let activeSpaceId = entry.activeSpaceId {
+                    dict["activeSpaceId"] = activeSpaceId
+                }
+                if let spaceProfileIds = entry.spaceProfileIds {
+                    dict[SpaceManager.snapshotSpaceProfileIdsKey] = spaceProfileIds
+                }
+                return dict
+            },
+            isLazySpaceRestoreEnabled: lazy)
+    }
+
+    private static let twoOwners = ["space-a": "Default", "space-b": "Profile 2"]
+
+    func testEarlyHeadNamesTheOnScreenSpacesOwnerNotTheParkedSiblings() {
+        // The reported shape: one group holding two Spaces, one on screen and
+        // one ordered out, quit as it stands. The ordered-out Space's owner
+        // parks its only window and must not lead.
+        XCTAssertEqual(
+            Self.earlyHead([SnapshotEntry(
+                activeSpaceId: "space-a", windowMap: [1: "space-a", 2: "space-b"],
+                spaceProfileIds: Self.twoOwners, isLandingEntry: true)]),
+            ["Default"])
+    }
+
+    func testEarlyHeadPutsTheLandingEntrysOwnerFirst() {
+        XCTAssertEqual(
+            Self.earlyHead([
+                SnapshotEntry(activeSpaceId: "space-b", windowMap: [2: "space-b"],
+                              spaceProfileIds: Self.twoOwners),
+                SnapshotEntry(activeSpaceId: "space-a", windowMap: [1: "space-a"],
+                              spaceProfileIds: Self.twoOwners, isLandingEntry: true),
+            ]),
+            ["Default", "Profile 2"])
+    }
+
+    func testEarlyHeadNamesEachProfileOnce() {
+        XCTAssertEqual(
+            Self.earlyHead([
+                SnapshotEntry(activeSpaceId: "space-a", windowMap: [1: "space-a"],
+                              spaceProfileIds: ["space-a": "Default"], isLandingEntry: true),
+                SnapshotEntry(activeSpaceId: "space-c", windowMap: [3: "space-c"],
+                              spaceProfileIds: ["space-c": "Default"]),
+            ]),
+            ["Default"])
+    }
+
+    func testEarlyHeadFollowsAnAmendedActiveSpaceThroughTheMap() {
+        // An amend (a build without the field included) rewrites only
+        // `activeSpaceId`; the map still resolves the promoted sibling.
+        XCTAssertEqual(
+            Self.earlyHead([SnapshotEntry(
+                activeSpaceId: "space-b", windowMap: [1: "space-a", 2: "space-b"],
+                spaceProfileIds: Self.twoOwners, isLandingEntry: true)]),
+            ["Profile 2"])
+    }
+
+    func testEarlyHeadIgnoresAClosedGroup() {
+        // A closed group lands nothing at a cold start, so its owner hands no
+        // window back and must not lead.
+        XCTAssertNil(Self.earlyHead([SnapshotEntry(
+            activeSpaceId: "space-a", windowMap: [1: "space-a"],
+            spaceProfileIds: Self.twoOwners, isParkedOnlyEntry: true)]))
+    }
+
+    func testEarlyHeadIgnoresAnEntryWhoseActiveSpaceHasNoWindow() {
+        // Nothing is promoted in the landing Space's place, so nothing eager
+        // means no owner.
+        XCTAssertNil(Self.earlyHead([SnapshotEntry(
+            activeSpaceId: "space-a", windowMap: [2: "space-b"],
+            spaceProfileIds: Self.twoOwners, isLandingEntry: true)]))
+    }
+
+    func testEarlyHeadSkipsASpaceTheMapDoesNotResolve() {
+        XCTAssertEqual(
+            Self.earlyHead([
+                SnapshotEntry(activeSpaceId: "space-a", windowMap: [1: "space-a"],
+                              spaceProfileIds: [:], isLandingEntry: true),
+                SnapshotEntry(activeSpaceId: "space-b", windowMap: [2: "space-b"],
+                              spaceProfileIds: Self.twoOwners),
+            ]),
+            ["Profile 2"])
+    }
+
+    func testEarlyHeadIsNilForARecordWrittenWithoutTheField() {
+        // A full rewrite by a build without the field drops it: nil keeps the
+        // stored replay order, which is that build's behaviour anyway.
+        XCTAssertNil(Self.earlyHead([SnapshotEntry(
+            activeSpaceId: "space-a", windowMap: [1: "space-a"],
+            spaceProfileIds: nil, isLandingEntry: true)]))
+    }
+
+    func testEarlyHeadIsNilForAnEmptyRecord() {
+        XCTAssertNil(Self.earlyHead([]))
+    }
+
+    func testEarlyHeadIsNilWithTheSwitchOff() {
+        // Nothing parks with lazy Space restore off, so no reorder is owed.
+        XCTAssertNil(Self.earlyHead([SnapshotEntry(
+            activeSpaceId: "space-a", windowMap: [1: "space-a"],
+            spaceProfileIds: Self.twoOwners, isLandingEntry: true)], lazy: false))
+    }
+
+    // MARK: - What the writer records as each Space's owner
+
+    private static func owners(
+        _ windowMap: [Int: String], agents: Set<String> = [],
+        profiles: [String: String] = twoOwners
+    ) -> [String: String] {
+        SpaceManager.encodedSpaceProfileIds(
+            windowMap: windowMap, agentSpaceIds: agents,
+            profileIdForSpaceId: { profiles[$0] })
+    }
+
+    func testOwnersCoverEverySpaceOfTheWindowMap() {
+        XCTAssertEqual(Self.owners([1: "space-a", 2: "space-b"]), Self.twoOwners)
+    }
+
+    func testOwnersOmitAgentSpaces() {
+        // The launch that reads this excludes agent Spaces from the eager set,
+        // so naming their owner would name a profile that hands nothing back.
+        XCTAssertEqual(Self.owners([1: "space-a", 2: "space-b"], agents: ["space-b"]),
+                       ["space-a": "Default"])
+    }
+
+    func testOwnersOmitASpaceWithNoBoundProfile() {
+        XCTAssertEqual(
+            Self.owners([1: "space-a", 2: "space-b"], profiles: ["space-a": "Default"]),
+            ["space-a": "Default"])
+    }
+
     // MARK: - Adoption (which live slots a landed write gives a saved entry)
 
     func testAdoptionPlanSkipsSlotsWithASavedEntry() {

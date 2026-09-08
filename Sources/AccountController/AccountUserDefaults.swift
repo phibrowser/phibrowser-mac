@@ -14,10 +14,7 @@ final class AccountUserDefaults {
     
     init(account: Account, storeURL overrideStoreURL: URL? = nil) {
         self.account = account
-        let fileURL = overrideStoreURL
-            ?? account.userDataStorage
-                .appendingPathComponent("defaults", isDirectory: true)
-                .appendingPathComponent("account_defaults.plist")
+        let fileURL = overrideStoreURL ?? Self.storeURL(for: account)
         let defaultsDir = fileURL.deletingLastPathComponent()
         self.storeURL = fileURL
         self.queue = DispatchQueue(label: "com.phibrowser.accountDefaults.\(account.userID)")
@@ -143,6 +140,21 @@ final class AccountUserDefaults {
     }
     
     // MARK: - Helpers
+    /// Where `account`'s defaults plist lives.
+    static func storeURL(for account: Account) -> URL {
+        account.userDataStorage
+            .appendingPathComponent("defaults", isDirectory: true)
+            .appendingPathComponent("account_defaults.plist")
+    }
+
+    /// One value straight off the plist of the account with `userID`, without
+    /// opening a store: no directory is created and nothing is retained. For
+    /// the launch-time read that runs before any account is bound
+    /// (`SpaceManager.coldStartPreferredProfiles`).
+    static func storedObject(forKey key: DefaultsKey, ofAccountWithUserID userID: String) -> Any? {
+        loadStore(from: storeURL(for: Account(userID: userID)))[key.rawValue]
+    }
+
     private static func loadStore(from url: URL) -> [String: Any] {
         guard FileManager.default.fileExists(atPath: url.path) else { return [:] }
         do {

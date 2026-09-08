@@ -11,7 +11,7 @@ struct ShortcutsSettingsView: View {
     @State private var searchText: String = ""
     @FocusState private var isSearchFieldFocused: Bool
     
-    private var filteredSections: [(category: String, items: [ShortcutItem])] {
+    private var filteredSections: [(category: String, subtitle: String?, items: [ShortcutItem])] {
         guard !searchText.isEmpty else {
             return viewModel.sections
         }
@@ -24,7 +24,7 @@ struct ShortcutsSettingsView: View {
                 item.searchKeywords.contains(where: { $0.contains(query) })
             }
             
-            return filteredItems.isEmpty ? nil : (category: section.category, items: filteredItems)
+            return filteredItems.isEmpty ? nil : (category: section.category, subtitle: section.subtitle, items: filteredItems)
         }
     }
     
@@ -83,11 +83,18 @@ struct ShortcutsSettingsView: View {
                         List {
                             ForEach(sections, id: \.category) { section in
                                 VStack(alignment: .leading, spacing: 0) {
-                                    Text(section.category)
-                                        .font(.system(size: 12, weight: .semibold))
-                                        .foregroundColor(.secondary)
-                                        .frame(height: 35)
-                                        .padding(.vertical, 8)
+                                    VStack(alignment: .leading, spacing: 4) {
+                                        Text(section.category)
+                                            .font(.system(size: 12, weight: .semibold))
+                                        if let subtitle = section.subtitle {
+                                            Text(subtitle)
+                                                .font(.system(size: 11))
+                                                .fixedSize(horizontal: false, vertical: true)
+                                        }
+                                    }
+                                    .foregroundColor(.secondary)
+                                    .frame(minHeight: 35)
+                                    .padding(.vertical, 8)
                                     
                                     Rectangle()
                                         .fill(Color(.separatorColor))

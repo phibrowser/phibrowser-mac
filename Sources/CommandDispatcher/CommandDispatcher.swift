@@ -320,6 +320,14 @@ struct CommandDispatcher {
             return true
         }
 
+        // Kiosk Space actions have independent keys and take precedence over
+        // the ordinary window's menu equivalents only inside Kiosk windows.
+        if let kiosk = MainBrowserWindowControllersManager.shared
+                .findControllerWith(window: window) as? KioskBrowserWindowController,
+           let command = interceptedKioskCommand(for: event) {
+            return kiosk.handleCommand(command)
+        }
+
         // PHI-only commands: intercepted before Chromium sees the event.
         if let phiCommand = interceptedPhiCommand(for: event) {
             return dispatchCommand(phiCommand, to: window)
@@ -334,6 +342,20 @@ struct CommandDispatcher {
         }
 
         return false
+    }
+
+    static func interceptedKioskCommand(
+        for event: NSEvent,
+        inputSourceIdentifier: String? = nil
+    ) -> CommandWrapper? {
+        Shortcuts.Group.kiosk.commands.first { command in
+            guard let key = Shortcuts.key(for: command) else { return false }
+            return matchedPhiCommand(
+                for: event,
+                shortcutMap: [key: command],
+                inputSourceIdentifier: inputSourceIdentifier
+            ) != nil
+        }
     }
 
     static func interceptedPhiCommand(

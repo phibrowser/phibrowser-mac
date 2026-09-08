@@ -65,6 +65,10 @@ final class KioskBrowserContentViewController: NSViewController {
         )
     }
 
+    func showSpaceSelectionMenu() {
+        toolbarView.showSpaceSelectionMenu()
+    }
+
     func handlePreviousTabReadyForCleanup(tabId: Int) {
         guard state.focusingTab?.guid != tabId else { return }
         mountFocusedTab()

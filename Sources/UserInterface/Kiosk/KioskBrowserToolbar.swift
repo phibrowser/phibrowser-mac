@@ -76,6 +76,7 @@ final class KioskBrowserToolbar: NSVisualEffectView {
     private var addressBarLeadingConstraint: Constraint?
     private var isAddressBarHovered = false
     private var canGoBack = false
+    private weak var spaceMenuAnchor: KioskSpaceMenuAnchorView?
 
     private var onProfileSelection: ((String) -> Void)?
     private var onSpaceSelection: ((String) -> Void)?
@@ -115,6 +116,12 @@ final class KioskBrowserToolbar: NSVisualEffectView {
     private lazy var spaceHostingView = NSHostingView(
         rootView: KioskSpaceMenu(
             state: browserState,
+            onResolveMenuAnchor: { [weak self] anchor in
+                self?.spaceMenuAnchor = anchor
+            },
+            onShowMenu: { [weak self] in
+                self?.showSpaceSelectionMenu()
+            },
             onSelect: { [weak self] spaceId in
                 self?.onSpaceSelection?(spaceId)
             }
@@ -148,6 +155,14 @@ final class KioskBrowserToolbar: NSVisualEffectView {
 
     func updateAddress(with url: String?) {
         addressField.stringValue = displayAddressText(for: url)
+    }
+
+    func showSpaceSelectionMenu() {
+        guard !browserState.isIncognito,
+              PhiPreferences.GeneralSettings.spacesFeatureEnabled.loadValue() else {
+            return
+        }
+        spaceMenuAnchor?.showMenu()
     }
 
     func updateCanGoBack(_ canGoBack: Bool) {
@@ -532,15 +547,21 @@ private struct KioskSpaceMenu: View {
     @State private var isSpaceListHovered = false
     @State private var preferredSpaceId: String?
     let state: KioskBrowserState
+    let onResolveMenuAnchor: (KioskSpaceMenuAnchorView) -> Void
+    let onShowMenu: () -> Void
     let onSelect: (String) -> Void
 
     init(
         spaceManager: SpaceManager = .shared,
         state: KioskBrowserState,
+        onResolveMenuAnchor: @escaping (KioskSpaceMenuAnchorView) -> Void,
+        onShowMenu: @escaping () -> Void,
         onSelect: @escaping (String) -> Void
     ) {
         self.spaceManager = spaceManager
         self.state = state
+        self.onResolveMenuAnchor = onResolveMenuAnchor
+        self.onShowMenu = onShowMenu
         _preferredSpaceId = State(initialValue: state.preferredSpaceId)
         self.onSelect = onSelect
     }
@@ -621,38 +642,14 @@ private struct KioskSpaceMenu: View {
             .customTooltip {
                 CommandShortcutTooltipContent(
                     title: primaryActionTooltipTitle,
-                    command: .IDC_OPEN_FILE
+                    command: .PHI_KIOSK_OPEN_IN_SPACE
                 )
             }
 
             Divider()
                 .frame(height: 18)
 
-            Menu {
-                ForEach(availableSpaces, id: \.spaceId) { space in
-                    Button {
-                        select(space)
-                    } label: {
-                        HStack {
-                            Label {
-                                Text(verbatim: space.name)
-                            } icon: {
-                                // The native Menu bridge can treat an emoji
-                                // SpaceIconView's Text as the item title.
-                                if let image = SpaceIconView.menuImage(
-                                    for: space.iconName,
-                                    size: Layout.iconSize
-                                ) {
-                                    Image(nsImage: image)
-                                }
-                            }
-                            if space.spaceId == primarySpace?.spaceId {
-                                Image(systemName: "checkmark")
-                            }
-                        }
-                    }
-                }
-            } label: {
+            Button(action: onShowMenu) {
                 Image(systemName: "chevron.down")
                     .font(.system(size: 10, weight: .semibold))
                     .foregroundStyle(.secondary)
@@ -662,8 +659,6 @@ private struct KioskSpaceMenu: View {
                     )
                     .contentShape(Rectangle())
             }
-            .menuStyle(.borderlessButton)
-            .menuIndicator(.hidden)
             .buttonStyle(
                 KioskSpaceMenuSegmentButtonStyle(
                     isHovered: isSpaceListHovered
@@ -671,8 +666,21 @@ private struct KioskSpaceMenu: View {
             )
             .disabled(availableSpaces.isEmpty)
             .accessibilityLabel(spaceListTitle)
-            .help(spaceListTitle)
+            .customTooltip {
+                CommandShortcutTooltipContent(
+                    title: spaceListTitle,
+                    command: .PHI_KIOSK_CHOOSE_SPACE
+                )
+            }
             .onHover { isSpaceListHovered = $0 }
+            .background {
+                KioskSpaceMenuAnchor(
+                    spaces: availableSpaces,
+                    primarySpaceId: primarySpace?.spaceId,
+                    onSelect: onSelect,
+                    onResolve: onResolveMenuAnchor
+                )
+            }
         }
         .frame(height: Layout.height)
         .background {
@@ -699,6 +707,62 @@ private struct KioskSpaceMenu: View {
 
     private func select(_ space: SpaceModel) {
         onSelect(space.spaceId)
+    }
+}
+
+/// Shares the dropdown's native anchor between mouse and keyboard opening.
+private struct KioskSpaceMenuAnchor: NSViewRepresentable {
+    let spaces: [SpaceModel]
+    let primarySpaceId: String?
+    let onSelect: (String) -> Void
+    let onResolve: (KioskSpaceMenuAnchorView) -> Void
+
+    func makeNSView(context: Context) -> KioskSpaceMenuAnchorView {
+        let view = KioskSpaceMenuAnchorView()
+        onResolve(view)
+        return view
+    }
+
+    func updateNSView(_ view: KioskSpaceMenuAnchorView, context: Context) {
+        view.spaces = spaces
+        view.primarySpaceId = primarySpaceId
+        view.onSelect = onSelect
+    }
+}
+
+private final class KioskSpaceMenuAnchorView: NSView {
+    var spaces: [SpaceModel] = []
+    var primarySpaceId: String?
+    var onSelect: ((String) -> Void)?
+    private var isShowingMenu = false
+
+    func showMenu() {
+        guard window != nil, !spaces.isEmpty, !isShowingMenu else { return }
+        let menu = NSMenu()
+        for space in spaces {
+            let item = NSMenuItem(
+                title: space.name,
+                action: #selector(selectSpace(_:)),
+                keyEquivalent: ""
+            )
+            item.target = self
+            item.representedObject = space.spaceId
+            item.image = SpaceIconView.menuImage(for: space.iconName, size: 12)
+            item.state = space.spaceId == primarySpaceId ? .on : .off
+            menu.addItem(item)
+        }
+        isShowingMenu = true
+        defer { isShowingMenu = false }
+        let bottomLeading = NSPoint(
+            x: bounds.minX,
+            y: isFlipped ? bounds.maxY : bounds.minY
+        )
+        menu.popUp(positioning: nil, at: bottomLeading, in: self)
+    }
+
+    @objc private func selectSpace(_ sender: NSMenuItem) {
+        guard let spaceId = sender.representedObject as? String else { return }
+        onSelect?(spaceId)
     }
 }
 

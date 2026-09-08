@@ -131,6 +131,8 @@ enum CommandWrapper: Int, Equatable {
     case PHI_NEW_KIOSK_WINDOW        = 90022
     case PHI_NEW_INCOGNITO_SPACE     = 90023
     case PHI_SHARE_PAGE              = 90024
+    case PHI_KIOSK_OPEN_IN_SPACE     = 90025
+    case PHI_KIOSK_CHOOSE_SPACE      = 90026
 
     // System Preserved
     case IDS_HIDE_OTHERS_MAC         = 110
@@ -601,6 +603,8 @@ extension Shortcuts {
         .PHI_NEW_KIOSK_WINDOW: .init(characters: "n", modifiers: [.command, .option]),
         .PHI_NEW_INCOGNITO_SPACE: .init(characters: "n", modifiers: [.control, .shift]),
         .PHI_SHARE_PAGE: .init(characters: "s", modifiers: [.control, .option]),
+        .PHI_KIOSK_OPEN_IN_SPACE: .init(characters: "o", modifiers: .command),
+        .PHI_KIOSK_CHOOSE_SPACE: .init(characters: "o", modifiers: [.command, .shift]),
 
         // System Preserved Shortcuts
         .IDS_HIDE_OTHERS_MAC: .init(characters: "h", modifiers: [.command, .option]),

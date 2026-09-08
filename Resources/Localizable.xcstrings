@@ -4060,22 +4060,28 @@
       "comment" : "Agent control pill - expand the collapsed pill",
       "extractionState" : "extracted_with_value",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Erweitern"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "new",
             "value" : "Expand"
           }
         },
-        "zh-Hans" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "展开"
+            "value" : "Expandir"
           }
         },
-        "zh-Hant" : {
+        "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "展開"
+            "value" : "Développer"
           }
         },
         "ja" : {
@@ -4090,28 +4096,22 @@
             "value" : "펼치기"
           }
         },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Développer"
-          }
-        },
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Erweitern"
-          }
-        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Vouw uit"
           }
         },
-        "es" : {
+        "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Expandir"
+            "value" : "展开"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "展開"
           }
         }
       }
@@ -4120,22 +4120,28 @@
       "comment" : "Agent control pill - collapse the pill into the corner",
       "extractionState" : "extracted_with_value",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Minimieren"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "new",
             "value" : "Minimise"
           }
         },
-        "zh-Hans" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "收起"
+            "value" : "Minimizar"
           }
         },
-        "zh-Hant" : {
+        "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "收合"
+            "value" : "Réduire"
           }
         },
         "ja" : {
@@ -4150,28 +4156,22 @@
             "value" : "접기"
           }
         },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Réduire"
-          }
-        },
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Minimieren"
-          }
-        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Minimaliseer"
           }
         },
-        "es" : {
+        "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Minimizar"
+            "value" : "收起"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "收合"
           }
         }
       }
@@ -40551,22 +40551,28 @@
       "comment" : "Bookmark folder - Wrapper created at the Space root to hold the bookmarks imported from Dia; its title must match the one the browser side writes",
       "extractionState" : "extracted_with_value",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aus Dia importiert"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "new",
             "value" : "Imported From Dia"
           }
         },
-        "zh-Hans" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "从 Dia 导入"
+            "value" : "Importado desde Dia"
           }
         },
-        "zh-Hant" : {
+        "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "從 Dia 匯入"
+            "value" : "Importés depuis Dia"
           }
         },
         "ja" : {
@@ -40581,28 +40587,22 @@
             "value" : "Dia에서 가져옴"
           }
         },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Importés depuis Dia"
-          }
-        },
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Aus Dia importiert"
-          }
-        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Geïmporteerd uit Dia"
           }
         },
-        "es" : {
+        "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Importado desde Dia"
+            "value" : "从 Dia 导入"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "從 Dia 匯入"
           }
         }
       }
@@ -43371,22 +43371,28 @@
       "comment" : "Browser data importer - Status message while importing Dia browser data",
       "extractionState" : "extracted_with_value",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dia-Daten werden importiert…"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "new",
             "value" : "Importing Dia data..."
           }
         },
-        "zh-Hans" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "正在导入 Dia 数据…"
+            "value" : "Importando los datos de Dia…"
           }
         },
-        "zh-Hant" : {
+        "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "正在匯入 Dia 資料…"
+            "value" : "Importation des données Dia…"
           }
         },
         "ja" : {
@@ -43401,28 +43407,22 @@
             "value" : "Dia 데이터 가져오는 중…"
           }
         },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Importation des données Dia…"
-          }
-        },
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Dia-Daten werden importiert…"
-          }
-        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Dia-gegevens worden geïmporteerd…"
           }
         },
-        "es" : {
+        "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Importando los datos de Dia…"
+            "value" : "正在导入 Dia 数据…"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在匯入 Dia 資料…"
           }
         }
       }
@@ -43731,22 +43731,28 @@
       "comment" : "Import browser data page - Option label to import data from Dia browser",
       "extractionState" : "extracted_with_value",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aus Dia"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "new",
             "value" : "From Dia"
           }
         },
-        "zh-Hans" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "从 Dia 导入"
+            "value" : "Desde Dia"
           }
         },
-        "zh-Hant" : {
+        "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "從 Dia"
+            "value" : "Depuis Dia"
           }
         },
         "ja" : {
@@ -43761,28 +43767,22 @@
             "value" : "Dia에서"
           }
         },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Depuis Dia"
-          }
-        },
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Aus Dia"
-          }
-        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Uit Dia"
           }
         },
-        "es" : {
+        "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Desde Dia"
+            "value" : "从 Dia 导入"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "從 Dia"
           }
         }
       }
@@ -62475,22 +62475,28 @@
       "comment" : "Navigations settings - Explanation of the automatic Peek View toggle for pinned tabs and bookmarks",
       "extractionState" : "extracted_with_value",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Links, die die Website eines angehefteten Tabs oder Lesezeichens verlassen, öffnen sich in einem Peek-Panel statt in einem neuen Tab."
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "new",
             "value" : "Links that leave a pinned tab’s or bookmark’s site open in a Peek panel instead of a new tab."
           }
         },
-        "zh-Hans" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "离开固定的标签页或书签所在网站的链接，会在 Peek 面板中打开，而不是新标签页。"
+            "value" : "Los enlaces que salen del sitio de una pestaña fijada o de un marcador se abren en un panel Peek en lugar de en una pestaña nueva."
           }
         },
-        "zh-Hant" : {
+        "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "離開釘選分頁或書籤所在網站的連結，會在 Peek 面板中開啟，而非新分頁。"
+            "value" : "Les liens qui quittent le site d'un onglet épinglé ou d'un favori s'ouvrent dans un panneau Peek au lieu d'un nouvel onglet."
           }
         },
         "ja" : {
@@ -62505,28 +62511,22 @@
             "value" : "고정된 탭이나 북마크의 사이트를 벗어나는 링크는 새 탭 대신 Peek 패널에서 열려요."
           }
         },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Les liens qui quittent le site d'un onglet épinglé ou d'un favori s'ouvrent dans un panneau Peek au lieu d'un nouvel onglet."
-          }
-        },
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Links, die die Website eines angehefteten Tabs oder Lesezeichens verlassen, öffnen sich in einem Peek-Panel statt in einem neuen Tab."
-          }
-        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Links die de site van een vastgezet tabblad of bladwijzer verlaten, worden in een Peek-paneel geopend in plaats van in een nieuw tabblad."
           }
         },
-        "es" : {
+        "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Los enlaces que salen del sitio de una pestaña fijada o de un marcador se abren en un panel Peek en lugar de en una pestaña nueva."
+            "value" : "离开固定的标签页或书签所在网站的链接，会在 Peek 面板中打开，而不是新标签页。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "離開釘選分頁或書籤所在網站的連結，會在 Peek 面板中開啟，而非新分頁。"
           }
         }
       }
@@ -62535,22 +62535,28 @@
       "comment" : "Navigations settings - Toggle title for automatically opening cross-site links from pinned tabs and bookmarks in Peek View",
       "extractionState" : "extracted_with_value",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Links aus angehefteten Tabs und Lesezeichen automatisch in der Peek-Ansicht öffnen"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "new",
             "value" : "Automatically peek from pinned tabs and bookmarks"
           }
         },
-        "zh-Hans" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "自动在 Peek 视图中打开固定的标签页和书签中的链接"
+            "value" : "Abrir automáticamente en vista Peek desde pestañas fijadas y marcadores"
           }
         },
-        "zh-Hant" : {
+        "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "自動以 Peek 開啟釘選分頁與書籤中的連結"
+            "value" : "Ouvrir automatiquement la vue Peek depuis les onglets épinglés et les favoris"
           }
         },
         "ja" : {
@@ -62565,28 +62571,22 @@
             "value" : "고정된 탭과 북마크의 링크를 자동으로 Peek 뷰에서 열기"
           }
         },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Ouvrir automatiquement la vue Peek depuis les onglets épinglés et les favoris"
-          }
-        },
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Links aus angehefteten Tabs und Lesezeichen automatisch in der Peek-Ansicht öffnen"
-          }
-        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Open automatisch in Peek vanuit vastgezette tabbladen en bladwijzers"
           }
         },
-        "es" : {
+        "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Abrir automáticamente en vista Peek desde pestañas fijadas y marcadores"
+            "value" : "自动在 Peek 视图中打开固定的标签页和书签中的链接"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "自動以 Peek 開啟釘選分頁與書籤中的連結"
           }
         }
       }
@@ -68590,6 +68590,30 @@
         }
       }
     },
+    "settings.shortcuts.command.kioskChooseSpace" : {
+      "comment" : "Shortcuts settings - Show the Open in menu for selecting a destination Space in a Kiosk window",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Show \"Open in\" Menu"
+          }
+        }
+      }
+    },
+    "settings.shortcuts.command.kioskOpenInSpace" : {
+      "comment" : "Shortcuts settings - Open the Kiosk page in the Space shown by the toolbar's primary action",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Open in Current Space"
+          }
+        }
+      }
+    },
     "settings.shortcuts.command.manageExtensions" : {
       "comment" : "Shortcuts settings - Command title for managing browser extensions",
       "extractionState" : "extracted_with_value",
@@ -71118,6 +71142,30 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "歷史記錄"
+          }
+        }
+      }
+    },
+    "settings.shortcuts.group.kiosk" : {
+      "comment" : "Shortcuts settings - Section title for commands available only in Kiosk windows",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Kiosk"
+          }
+        }
+      }
+    },
+    "settings.shortcuts.group.kiosk.subtitle" : {
+      "comment" : "Shortcuts settings - Subtitle explaining that this group's shortcuts only work in Kiosk windows",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Only work in Kiosk windows."
           }
         }
       }

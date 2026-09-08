@@ -6,7 +6,7 @@
 import Foundation
 import Combine
 class ShortcutsViewModel: ObservableObject {
-    @Published var sections: [(category: String, items: [ShortcutItem])] = []
+    @Published var sections: [(category: String, subtitle: String?, items: [ShortcutItem])] = []
     @Published var editingCommand: CommandWrapper?
     @Published var hiddenGroups: Set<Shortcuts.Group> = [.help, .bookmarks]
     private var cancellables = Set<AnyCancellable>()
@@ -22,7 +22,7 @@ class ShortcutsViewModel: ObservableObject {
     }
     
     func rebuildSections() {
-        var newSections: [(category: String, items: [ShortcutItem])] = []
+        var newSections: [(category: String, subtitle: String?, items: [ShortcutItem])] = []
         
         Shortcuts.Group.allCases
             .filter { !hiddenGroups.contains($0) }
@@ -45,7 +45,7 @@ class ShortcutsViewModel: ObservableObject {
                 }
                 
                 if !items.isEmpty {
-                    newSections.append((category: group.title, items: items))
+                    newSections.append((category: group.title, subtitle: group.subtitle, items: items))
                 }
             }
         
@@ -94,6 +94,12 @@ class ShortcutsViewModel: ObservableObject {
         Shortcuts.DefaultShortcuts.keys.forEach { otherCommand in
             guard otherCommand != command else { return }
             guard shouldShow(otherCommand) else { return }
+            if (Shortcuts.Group.kiosk.commands.contains(command)
+                && otherCommand.isUnavailableInKiosk)
+                || (command.isUnavailableInKiosk
+                    && Shortcuts.Group.kiosk.commands.contains(otherCommand)) {
+                return
+            }
             if let otherKey = Shortcuts.key(for: otherCommand),
                otherKey.menuKeyEquivalent == currentKey.menuKeyEquivalent {
                 conflicts.append(otherCommand)
@@ -173,6 +179,10 @@ private extension CommandWrapper {
             return NSLocalizedString("app.fileMenu.createNewIncognitoSpace", value: "New Incognito Space", comment: "File menu and Shortcuts settings - Command title for creating a new Incognito Space")
         case .PHI_NEW_KIOSK_WINDOW:
             return NSLocalizedString("settings.shortcuts.command.newKioskWindow", value: "New Kiosk Window", comment: "Shortcuts settings - Command title for opening a new Kiosk window")
+        case .PHI_KIOSK_OPEN_IN_SPACE:
+            return NSLocalizedString("settings.shortcuts.command.kioskOpenInSpace", value: "Open in Current Space", comment: "Shortcuts settings - Open the Kiosk page in the Space shown by the toolbar's primary action")
+        case .PHI_KIOSK_CHOOSE_SPACE:
+            return NSLocalizedString("settings.shortcuts.command.kioskChooseSpace", value: "Show \"Open in\" Menu", comment: "Shortcuts settings - Show the Open in menu for selecting a destination Space in a Kiosk window")
         case .IDC_RESTORE_TAB:
             return NSLocalizedString("settings.shortcuts.command.reopenClosedTab", value: "Reopen Closed Tab", comment: "Shortcuts settings - Command title for reopening the most recently closed tab")
         case .IDC_FOCUS_LOCATION:

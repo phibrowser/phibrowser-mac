@@ -2824,6 +2824,7 @@ extension AppController {
             let state = MainBrowserWindowControllersManager.shared.getActiveWindowState()
             guard phiAIEnabled,
                   let state,
+                  !state.isKioskWindow,
                   !state.isIncognito,
                   state.groupOverviewState == nil,
                   state.focusingTab?.aiChatEnabled == true,

@@ -92,8 +92,10 @@ final class ProfilePairingGate {
         ) { [weak self] note in
             MainActor.assumeIsolated {
                 guard let self, let c = note.object as? SyncKeyController ?? self.controller else { return }
+                let cleared = note.userInfo?[SyncKeyController.mappingsClearedKey] as? Bool ?? false
                 self.handleMappingsDidResolve(needsPairing: c.needsPairing,
-                                              needsPairingActionable: c.needsPairingActionable)
+                                              needsPairingActionable: c.needsPairingActionable,
+                                              cleared: cleared)
             }
         })
         observers.append(NotificationCenter.default.addObserver(
@@ -112,7 +114,30 @@ final class ProfilePairingGate {
     /// Presentation predicate (§3.2): `joinPairingPending && needsPairingActionable`.
     /// NOT "needsPairing is true" -- after the second revision that flips true for
     /// a moment every time §3.6 creates a profile.
-    func handleMappingsDidResolve(needsPairing: Bool, needsPairingActionable: Bool) {
+    ///
+    /// `cleared` marks the announcement `SyncKeyController.clearResolved()` posts
+    /// (`SyncKeyController.mappingsClearedKey`). Its false predicates mean UNKNOWN
+    /// -- locked ARK, an `unlockAtStartup()` that threw because the machine is
+    /// still offline, sign-out, teardown -- so this gate takes its window down but
+    /// leaves `pending` exactly as it found it. Retiring the flag there would end
+    /// a join that never happened: a device joins, quits, relaunches offline, and
+    /// the pre-existing profiles on both sides -- the one situation only this
+    /// modal can resolve -- would never be offered again.
+    func handleMappingsDidResolve(needsPairing: Bool, needsPairingActionable: Bool,
+                                  cleared: Bool = false) {
+        if cleared {
+            // Nothing is known about the pairing picture any more, so the
+            // hysteresis net is reset too rather than left holding a stale
+            // `actionable` that would present a modal against a controller that
+            // has already been dropped.
+            lastPredicates = (false, false)
+            idleRounds = 0
+            if isPresented {
+                isPresented = false
+                modalHost?.dismiss()
+            }
+            return
+        }
         lastPredicates = (needsPairing, needsPairingActionable)
         if pending, needsPairingActionable {
             guard !isPresented else { return }

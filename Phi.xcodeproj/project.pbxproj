@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		C0D3F1082026090800000001 /* SidebarFileDropView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0D3F1082026090800000002 /* SidebarFileDropView.swift */; };
 		04FE4637EFE3A1396687DD63 /* AISettingsConnectorViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = D8FCAEAE328C802016D87943 /* AISettingsConnectorViewModel.swift */; };
 		15B618E574463D94C98AEA5F /* AISettingHostingViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1B584F695BF7833FAA99558 /* AISettingHostingViewController.swift */; };
 		2ABF91DB68C2445BAA58C9BA /* GroupTabsTableView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 457F461C0F164136A46FF641 /* GroupTabsTableView.swift */; };
@@ -689,6 +690,7 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		C0D3F1082026090800000002 /* SidebarFileDropView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SidebarFileDropView.swift; sourceTree = "<group>"; };
 		11E8BEE1510290AB35D5C5AD /* SentinelBackupCoordination.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SentinelBackupCoordination.swift; sourceTree = "<group>"; };
 		19B477B37CF44BC48335A032 /* AccountDeletedEventAuthentication.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccountDeletedEventAuthentication.swift; sourceTree = "<group>"; };
 		3703C88B2F68F78500E7CF6D /* AISettingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AISettingView.swift; sourceTree = "<group>"; };
@@ -2312,6 +2314,7 @@
 		CC288A652E4F121E004A6C1C /* Sidebar */ = {
 			isa = PBXGroup;
 			children = (
+				C0D3F1082026090800000002 /* SidebarFileDropView.swift */,
 				CC288A662E4F12CB004A6C1C /* SidebarViewController.swift */,
 				CC98F8A72E8BEB4F00DAD237 /* SidebarViewController+UpdateReminder.swift */,
 				CC27089A2E7965FE00B65AB8 /* Header */,
@@ -3335,6 +3338,7 @@
 				C0D1D0022FEA000000000002 /* SidebarTabListViewController+MultiSelectionDragPreview.swift in Sources */,
 				CCBF8F592E656DC000B9A99E /* TabModel+Sidebar.swift in Sources */,
 				37C1B2F52EE287E700DD4496 /* OverlayToastContainer.swift in Sources */,
+				C0D3F1082026090800000001 /* SidebarFileDropView.swift in Sources */,
 				CC288A692E4F12CB004A6C1C /* SidebarViewController.swift in Sources */,
 				CCCD5E362EB1C36300E78FC1 /* DefaultExtensionManifestWriter.swift in Sources */,
 				8E9E96AC2F0F6E64002D0D21 /* TabItemView.swift in Sources */,

@@ -150,4 +150,159 @@ final class ProfileKeyManagerTests: XCTestCase {
         store.removeAllMappings()
         XCTAssertTrue(store.map.isEmpty)
     }
+
+    // MARK: - Concurrent envelope fetches (task 20)
+
+    /// A `KeyEnvelopeAPI` whose PROFILE endpoints are safe to drive from several
+    /// tasks at once. `accountProfiles()` fetches its envelopes concurrently
+    /// now, and `FakeAPI` synchronises nothing — its `getProfileKeyCalls += 1`
+    /// and its `profileEnvelopes` lookup would be a genuine data race under a
+    /// task group. The account/device/join endpoints keep forwarding to a plain
+    /// `FakeAPI`: they are only ever driven serially, by `bootstrap()`, before
+    /// any of this concurrency starts.
+    final class ConcurrentProfileAPI: KeyEnvelopeAPI {
+        let inner = FakeAPI()
+
+        private let lock = NSLock()
+        private var envelopes: [String: Data] = [:]
+        private var failingUuids: Set<String> = []
+        private var _getProfileKeyCalls = 0
+
+        /// Registers an envelope under `uuid`; the listing is its sorted key set.
+        func seed(uuid: String, envelope: Data) {
+            withLock { $0.envelopes[uuid] = envelope }
+        }
+
+        /// Makes this uuid's envelope GET fail on the wire (not a decode failure).
+        func failEnvelope(uuid: String) {
+            withLock { _ = $0.failingUuids.insert(uuid) }
+        }
+
+        var getProfileKeyCalls: Int { withLock { $0._getProfileKeyCalls } }
+
+        /// Every critical section goes through here, and every caller of it is
+        /// SYNCHRONOUS: `NSLock.lock()` is unavailable from an async context, so
+        /// the async endpoints below take their snapshot in one of these first.
+        private func withLock<T>(_ body: (ConcurrentProfileAPI) -> T) -> T {
+            lock.lock(); defer { lock.unlock() }; return body(self)
+        }
+
+        private func listedUuids() -> [String] { withLock { $0.envelopes.keys.sorted() } }
+
+        private func envelopeLookup(uuid: String) -> (shouldFail: Bool, envelope: Data?) {
+            withLock {
+                $0._getProfileKeyCalls += 1
+                return ($0.failingUuids.contains(uuid), $0.envelopes[uuid])
+            }
+        }
+
+        private func storeEnvelope(uuid: String, envelope: Data) -> Bool {
+            withLock {
+                if $0.envelopes[uuid] != nil { return false }
+                $0.envelopes[uuid] = envelope
+                return true
+            }
+        }
+
+        func listProfiles() async throws -> [ProfileSummaryDTO] {
+            listedUuids().map {
+                ProfileSummaryDTO(profileUuid: $0, hasEnvelope: true, createdAt: FakeAPI.profileCreatedAt)
+            }
+        }
+
+        func getProfileKey(uuid: String) async throws -> ProfileKeyDTO? {
+            let (shouldFail, envelope) = envelopeLookup(uuid: uuid)
+            if shouldFail { throw KeyAPIError.http(503, "") }
+            guard let envelope else { return nil }
+            return ProfileKeyDTO(profileUuid: uuid, profileKeyEnvelope: envelope,
+                                 createdAt: FakeAPI.profileCreatedAt)
+        }
+
+        func putProfileKey(uuid: String, envelope: Data) async throws -> Bool {
+            storeEnvelope(uuid: uuid, envelope: envelope)
+        }
+
+        // Serial-only endpoints: straight through to the shared fake.
+        func putAccount(salt: Data, kdfVersion: String, kdfParams: Data, recoveryEnvelope: Data) async throws -> Bool {
+            try await inner.putAccount(salt: salt, kdfVersion: kdfVersion,
+                                       kdfParams: kdfParams, recoveryEnvelope: recoveryEnvelope)
+        }
+        func getAccount() async throws -> AccountKeyStateDTO? { try await inner.getAccount() }
+        func postDevice(deviceKeyId: String, publicKey: Data, name: String, platform: String, arkEnvelope: Data?) async throws {
+            try await inner.postDevice(deviceKeyId: deviceKeyId, publicKey: publicKey,
+                                       name: name, platform: platform, arkEnvelope: arkEnvelope)
+        }
+        func getDeviceEnvelope(deviceKeyId: String) async throws -> Data? {
+            try await inner.getDeviceEnvelope(deviceKeyId: deviceKeyId)
+        }
+        func revokeDevice(deviceKeyId: String) async throws {
+            try await inner.revokeDevice(deviceKeyId: deviceKeyId)
+        }
+        func postJoinRequest(publicKey: Data, name: String, platform: String) async throws -> String {
+            try await inner.postJoinRequest(publicKey: publicKey, name: name, platform: platform)
+        }
+        func listPendingJoinRequests() async throws -> [JoinRequestSummaryDTO] {
+            try await inner.listPendingJoinRequests()
+        }
+        func getJoinRequest(id: String) async throws -> JoinRequestDTO {
+            try await inner.getJoinRequest(id: id)
+        }
+        func approveJoinRequest(id: String, grantedArkEnvelope: Data, resolvedByDeviceKeyId: String) async throws {
+            try await inner.approveJoinRequest(id: id, grantedArkEnvelope: grantedArkEnvelope,
+                                               resolvedByDeviceKeyId: resolvedByDeviceKeyId)
+        }
+        func denyJoinRequest(id: String) async throws { try await inner.denyJoinRequest(id: id) }
+        func getDomainKey(domain: String) async throws -> Data? { try await inner.getDomainKey(domain: domain) }
+        func putDomainKey(domain: String, envelope: Data) async throws -> Bool {
+            try await inner.putDomainKey(domain: domain, envelope: envelope)
+        }
+    }
+
+    private func concurrentStack() async throws -> (ConcurrentProfileAPI, AccountKeyManager, ProfileKeyManager) {
+        let api = ConcurrentProfileAPI()
+        let mgr = AccountKeyManager(api: api, deviceKeyProvider: FakeDeviceKeyProvider())
+        _ = try await mgr.bootstrap()
+        return (api, mgr, ProfileKeyManager(api: api, keyManager: mgr, mappingStore: MemoryMappingStore()))
+    }
+
+    /// The envelope GETs run concurrently now — five strictly serial round trips
+    /// on a session with a 60 s timeout was minutes of spinner in front of a
+    /// freshly joined device — so the order of the returned array can no longer
+    /// come from the order the answers happen to arrive in. It must still be the
+    /// listing's order, and an envelope that will not open must still occupy its
+    /// row with `name == nil` rather than throwing or being dropped.
+    func testAccountProfilesKeepsTheListingOrderWhenFetchedConcurrently() async throws {
+        let (api, mgr, pkm) = try await concurrentStack()
+        let ark = mgr.currentARK!
+        for (uuid, name) in [("uuid-a", "A"), ("uuid-b", "B"), ("uuid-c", "C"), ("uuid-d", "D")] {
+            api.seed(uuid: uuid, envelope: try ProfileKeyManager.sealProfilePayload(
+                key: Data(repeating: 0x11, count: 32), name: name, ark: ark))
+        }
+        api.seed(uuid: "uuid-e", envelope: Data([0x00, 0x01, 0x02]))   // opens under no ARK
+
+        let remotes = try await pkm.accountProfiles()
+        XCTAssertEqual(remotes.map(\.uuid), ["uuid-a", "uuid-b", "uuid-c", "uuid-d", "uuid-e"])
+        XCTAssertEqual(remotes.map(\.name), ["A", "B", "C", "D", nil])
+        XCTAssertEqual(api.getProfileKeyCalls, 5, "one envelope GET per listed profile, no more")
+    }
+
+    /// A transport failure on ONE envelope still fails the whole call, exactly as
+    /// the serial loop did. Nothing here asserts on how many requests a mid-list
+    /// failure produces: that is the one thing concurrency really changes (the
+    /// group has already issued them all), and no shipped behaviour depends on it.
+    func testAccountProfilesStillThrowsWhenOneEnvelopeFetchFails() async throws {
+        let (api, mgr, pkm) = try await concurrentStack()
+        let ark = mgr.currentARK!
+        api.seed(uuid: "uuid-a", envelope: try ProfileKeyManager.sealProfilePayload(
+            key: Data(repeating: 0x11, count: 32), name: "A", ark: ark))
+        api.seed(uuid: "uuid-b", envelope: Data([0x00]))
+        api.failEnvelope(uuid: "uuid-b")
+
+        do {
+            _ = try await pkm.accountProfiles()
+            XCTFail("a transport failure on one envelope must still fail the whole call")
+        } catch {
+            // The specific error is the transport's; only "it throws" is the contract.
+        }
+    }
 }

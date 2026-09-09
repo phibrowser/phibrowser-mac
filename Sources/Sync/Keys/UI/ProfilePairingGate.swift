@@ -167,13 +167,27 @@ final class ProfilePairingGate {
             modalHost?.present(controller: controller)
             return
         }
-        if pending, !needsPairing {
-            // Nothing left to pair: this join is finished.
+        // Past the branch above, `pending` implies `!needsPairingActionable`, so
+        // this covers both terminal shapes at once:
+        //
+        //  - nothing left to pair at all (`!needsPairing`): the join is finished;
+        //  - something is left, but nothing the user could decide -- an account
+        //    profile whose envelope will not open under this ARK. §3.2 is
+        //    explicit that this class never presents a modal, so a join left
+        //    pending on it can never be finished by one either.
+        //
+        // The second case is not hypothetical: `KeyLayerViewModel.submitPairing`
+        // sets the flag unconditionally, the Devices pane included, and an
+        // undecryptable remote keeps `needsPairing` true forever. Retiring only
+        // on `!needsPairing` (or only while a window happened to be up) wedged
+        // `sync.joinPairingPending` true for good, and with it §3.5's Space gate:
+        // no Space pull, no Space publish, `ensureLocalProfilesForAccount`
+        // skipped every round, and no UI anywhere to say why.
+        if pending, !needsPairingActionable {
             pending = false
         }
         if isPresented, !needsPairingActionable {
             isPresented = false
-            pending = false
             modalHost?.dismiss()
         }
     }
@@ -339,6 +353,10 @@ struct ProfilePairingGateView: View {
 /// through `NSApp.runModal(for:)`. The modal session is what makes the browser
 /// unusable: it stops UI EVENT DELIVERY, not the main queue, so the engine's
 /// main-thread hops keep running and settings sync keeps converging.
+///
+/// That promise (§3.2 "模态期间引擎照常跑", pinned by §12.2 step 1) holds only
+/// because the modal session is entered on a LATER main-actor turn -- see
+/// `present`.
 @MainActor
 final class AppModalPairingHost: ProfilePairingModalHost {
     private var window: NSWindow?
@@ -367,13 +385,37 @@ final class AppModalPairingHost: ProfilePairingModalHost {
         NSApp.activate(ignoringOtherApps: true)
         window.makeKeyAndOrderFront(nil)
         Task { @MainActor in await viewModel.startPairing(controller: controller) }
-        NSApp.runModal(for: window)
+        // The modal SESSION starts on a later main-actor turn; everything above
+        // stays synchronous so `window` / `isPresented` are already correct for a
+        // `dismiss()` that arrives immediately.
+        //
+        // `NSApp.runModal(for:)` does not return until `stopModal()`, i.e. until
+        // the user finishes pairing or removes this device. The hysteresis safety
+        // net reaches here from INSIDE an engine round: `PhiSyncEngine.pull()`
+        // awaits `refreshAccountProfiles()` -> `SyncKeyController.finishRefresh`,
+        // which posts `.phiProfileAutoCreateDidRun` synchronously, and the gate
+        // observes that notification with `queue: nil`. Running the modal on that
+        // stack parks the round's continuation for the modal's whole life, and
+        // with it the serial `roundQueue` -- no settings pull, no settings push,
+        // one more Task piled on every 60 s tick. Exactly what §3.2 promises will
+        // NOT happen. Deferring lets the poster's stack unwind first; the nested
+        // run loop then drains the main queue, so the suspended round resumes
+        // inside it and finishes while the window is up.
+        //
+        // The identity check makes a `dismiss()` that lands before this task runs
+        // a no-op rather than a `stopModal()` that precedes its own session.
+        Task { @MainActor [weak self, weak window] in
+            guard let self, let window, self.window === window else { return }
+            NSApp.runModal(for: window)
+        }
     }
 
     func dismiss() {
         guard let window else { return }
+        // Harmless if the session has not started yet: `window` is cleared first,
+        // so the deferred `runModal` above bails on its identity check.
+        self.window = nil
         NSApp.stopModal()
         window.close()
-        self.window = nil
     }
 }

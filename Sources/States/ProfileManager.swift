@@ -116,11 +116,15 @@ final class ProfileManager: ObservableObject {
     /// agent fallback profile, the `agentSpace.profiles.create` extension message,
     /// user-data import repair, and the sync layer's per-round account profile
     /// auto-create), so two same-name creates CAN interleave through this window.
-    /// The consequence is a DUPLICATE DISPLAY NAME and nothing worse: a Profile's
-    /// identity is its account-global uuid, not its name, so no binding is
-    /// affected and the suffixing callers do is best-effort disambiguation, not a
-    /// uniqueness guarantee. Guaranteeing it would need a pending-name
-    /// reservation here or Chromium-side enforcement.
+    /// The consequence is a DUPLICATE DISPLAY NAME: a Profile's identity is its
+    /// account-global uuid, not its name, so an EXISTING mapping is never
+    /// corrupted. It is not free, though: `SyncKeyController`'s same-named twin
+    /// search (SyncKeyController.swift:604-609) adopts an account uuid onto the
+    /// first unmapped local whose display name matches, so two same-named
+    /// unmapped locals make that choice arbitrary. What the suffixing callers do
+    /// (`uniqueDisplayName`) is best-effort disambiguation, not a uniqueness
+    /// guarantee; guaranteeing it would need a pending-name reservation here or
+    /// Chromium-side enforcement.
     func createProfile(displayName: String,
                        completion: @escaping (String?) -> Void) {
         refresh()

@@ -138,10 +138,14 @@ struct DevicesSettingView: View {
                         Text("\(item.name) · \(item.platform)")
                             .font(.body.bold())
                             .themedForeground(.textPrimaryStrong)
+                        // Deliberately not selectable (no `.textSelection`
+                        // modifier): it installs an NSTextView, and the
+                        // 3-second poll that refreshes `viewModel.pending` can
+                        // remove this row while AppKit's mouse-tracking loop is
+                        // live, orphaning the loop and hanging the main thread.
                         Text(NSLocalizedString("Verify this code matches the other device: ", comment: "Devices - verify prefix") + item.verificationCode)
                             .font(.system(.callout, design: .monospaced))
                             .themedForeground(.textPrimary)
-                            .textSelection(.enabled)
                     }
                     Spacer()
                     Button(NSLocalizedString("Approve", comment: "Devices - approve")) {

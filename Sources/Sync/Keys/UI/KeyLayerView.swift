@@ -46,7 +46,14 @@ struct KeyLayerView: View {
                             retry: false)
                 }
             case .done:
-                Color.clear.onAppear { onFinish() }
+                Color.clear.onAppear {
+                    // `.default` mode does not run while the run loop is in
+                    // `.eventTracking`, so this cannot close the window out
+                    // from under an AppKit mouse-tracking loop.
+                    RunLoop.main.perform(inModes: [.default]) {
+                        MainActor.assumeIsolated { onFinish() }
+                    }
+                }
             }
         }
         .frame(minWidth: 420, minHeight: 320)

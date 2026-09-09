@@ -22,9 +22,13 @@ struct WaitingForApprovalView: View {
                 .themedForeground(.textPrimary)
                 .multilineTextAlignment(.center)
 
+            // Deliberately not selectable (no `.textSelection` modifier): it
+            // installs an NSTextView whose mouse-tracking loop is orphaned when the polled
+            // phase change tears this view (and its window) down mid-drag,
+            // hanging the main thread. The code is compared by eye, so there is
+            // nothing to copy.
             Text(code)
                 .font(.system(.title, design: .monospaced))
-                .textSelection(.enabled)
                 .padding()
                 .frame(maxWidth: .infinity)
                 .background(Color(nsColor: .textBackgroundColor))

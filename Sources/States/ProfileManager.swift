@@ -112,12 +112,15 @@ final class ProfileManager: ObservableObject {
     ///
     /// Limitation: this is a check-then-act guard, not an authoritative
     /// cross-flight uniqueness constraint — the pending name isn't reserved
-    /// during the async bridge create, so two *concurrent* same-name creates (or
-    /// a create racing a rename) could both pass it and leave indistinguishable
-    /// profiles. Today every create/rename goes through an app-modal prompt,
-    /// which serializes user operations and makes that unreachable; a future
-    /// non-modal path would need a pending-name reservation here or uniqueness
-    /// enforced Chromium-side.
+    /// during the async bridge create. Several non-modal callers exist today (the
+    /// agent fallback profile, the `agentSpace.profiles.create` extension message,
+    /// user-data import repair, and the sync layer's per-round account profile
+    /// auto-create), so two same-name creates CAN interleave through this window.
+    /// The consequence is a DUPLICATE DISPLAY NAME and nothing worse: a Profile's
+    /// identity is its account-global uuid, not its name, so no binding is
+    /// affected and the suffixing callers do is best-effort disambiguation, not a
+    /// uniqueness guarantee. Guaranteeing it would need a pending-name
+    /// reservation here or Chromium-side enforcement.
     func createProfile(displayName: String,
                        completion: @escaping (String?) -> Void) {
         refresh()

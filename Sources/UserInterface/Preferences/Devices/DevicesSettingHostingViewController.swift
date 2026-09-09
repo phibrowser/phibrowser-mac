@@ -32,6 +32,9 @@ final class DevicesSettingHostingViewController: NSViewController, NSWindowDeleg
         return made
     }
     private lazy var viewModel = DevicesSettingViewModel(manager: syncStack.manager, approvals: syncStack.approvals)
+    /// Rebuilt alongside `viewModel` whenever the pane rebinds, so a removal
+    /// state left over from a previous account never shows up under a new one.
+    private lazy var removeModel = makeRemoveDeviceModel()
     /// The `AccountKeyManager` the current `viewModel` was built against, used
     /// to detect that the pane is showing a stack from a previous account.
     private weak var boundManager: AccountKeyManager?
@@ -63,13 +66,48 @@ final class DevicesSettingHostingViewController: NSViewController, NSWindowDeleg
         hostingController?.removeFromParent()
         hostingController = nil
         viewModel = DevicesSettingViewModel(manager: syncStack.manager, approvals: syncStack.approvals)
+        removeModel = makeRemoveDeviceModel()
         installHostingController()
         Task { @MainActor in await viewModel.loadAll() }
+    }
+
+    /// The runtime "remove this device from sync" entry point.
+    ///
+    /// The teardown is bound to the coordinator-owned `syncKeyController` and to
+    /// nothing else: that is the only instance with `retirePhiSync` /
+    /// `deviceKeyRotator` / `engineDefaults` / `spaceStateStore` injected, so a
+    /// removal run on any other one would revoke this device server-side and then
+    /// leave the engine running, the device key unrotated and the Space cursors
+    /// in place. The pane's `fallbackSyncStack` cannot be reached from here by
+    /// construction — `SyncKeyStack.make(accountId:)` yields a
+    /// `(manager, approvals)` pair, never a controller — and that fallback only
+    /// exists while signed out, where `unlockState` is `.notSignedIn` and the
+    /// button is not rendered at all.
+    private func makeRemoveDeviceModel() -> DevicesRemoveDeviceModel {
+        DevicesRemoveDeviceModel(remove: { [weak self] in
+            guard let controller = self?.syncKeyController else {
+                // Unreachable while the button is on screen (unlocked implies an
+                // account, and the coordinator builds a controller for any
+                // account), so this is a guard rather than a user-facing error.
+                AppLogWarn("[phi-sync] remove this device: no shared sync key controller")
+                return
+            }
+            try await controller.removeThisDeviceFromSync()
+        }, onRemoved: { [weak self] in
+            // `unlockState` lives on `DevicesSettingViewModel` and only moves when
+            // `loadAll()` runs, so the pane is refreshed by hand here: the poll is
+            // stopped first (it would otherwise keep asking the account this
+            // device just left for pending approvals), then the reload drops the
+            // pane to `.needsJoin` and "Set up sync on this device" comes back.
+            await self?.viewModel.stopPolling()
+            await self?.viewModel.loadAll()
+        })
     }
 
     private func installHostingController() {
         boundManager = syncStack.manager
         let host = ThemedHostingController(rootView: DevicesSettingView(viewModel: viewModel,
+            removeModel: removeModel,
             onJoinThisDevice: { [weak self] in self?.presentKeyLayer() },
             onResolvePairing: { [weak self] in self?.presentKeyLayer(startPairing: true) },
             needsPairingCheck: { [weak self] in self?.syncKeyController?.needsPairing ?? false }))

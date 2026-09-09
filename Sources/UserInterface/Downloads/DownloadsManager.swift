@@ -314,9 +314,16 @@ class DownloadsManager: ObservableObject {
         }
         
         let wrappers = bridge.getAllDownloadItems(withWindowId: windowId)
-        
+        applyDownloadSnapshot(wrappers)
+    }
+
+    func applyDownloadSnapshot(_ wrappers: [DownloadItemWrapper]) {
         var newDownloads: [DownloadItem] = []
         for wrapper in wrappers {
+            guard !Self.shouldHideDownload(wrapper) else {
+                hideDownload(wrapper.guid)
+                continue
+            }
             if let existing = downloads.first(where: { $0.id == wrapper.guid }) {
                 existing.update(from: wrapper)
                 newDownloads.append(existing)
@@ -345,6 +352,23 @@ class DownloadsManager: ObservableObject {
         
         // Check if completed files still exist on disk
         checkCompletedFilesExistence()
+    }
+
+    private static func shouldHideDownload(_ wrapper: DownloadItemWrapper) -> Bool {
+        // Local file navigations can become downloads and cancel before a save
+        // target exists (for example, when the target is the source itself).
+        // Defer their initial presentation so these attempts never flash in UI.
+        URL(string: wrapper.url)?.isFileURL == true
+            && wrapper.targetFilePath.isEmpty
+            && (wrapper.state == DownloadState.inProgress.rawValue
+                || wrapper.state == DownloadState.cancelled.rawValue)
+    }
+
+    private func hideDownload(_ guid: String) {
+        guard let existing = downloads.first(where: { $0.id == guid }) else { return }
+        downloads.removeAll { $0.id == guid }
+        updateTotalProgress()
+        downloadEventPublisher.send(DownloadEvent(eventType: .removed, downloadItem: existing))
     }
     
     /// Asynchronously check if completed download files still exist on disk
@@ -376,29 +400,30 @@ class DownloadsManager: ObservableObject {
     func handleDownloadEvent(eventType: DownloadEventType, guid: String, wrapper: DownloadItemWrapper?) {
         DispatchQueue.main.async { [weak self] in
             guard let self = self else { return }
+
+            if let wrapper, Self.shouldHideDownload(wrapper) {
+                self.hideDownload(guid)
+                return
+            }
             
             var affectedItem: DownloadItem?
+            var publishedEventType = eventType
             
             switch eventType {
-            case .created:
-                if let wrapper = wrapper {
+            case .created, .updated, .completed, .paused, .resumed, .cancelled, .interrupted:
+                if let wrapper,
+                   let existing = self.downloads.first(where: { $0.id == guid }) {
+                    existing.update(from: wrapper)
+                    affectedItem = existing
+                } else if let wrapper,
+                          eventType == .created || URL(string: wrapper.url)?.isFileURL == true {
+                    // A local download may first become visible on an update or
+                    // completion. Publish its first visible state as creation so
+                    // the floating download UI receives it as well.
                     let newItem = DownloadItem(from: wrapper)
                     self.downloads.insert(newItem, at: 0)
                     affectedItem = newItem
-                }
-
-            case .updated, .completed, .paused, .resumed:
-                if let wrapper = wrapper,
-                   let existing = self.downloads.first(where: { $0.id == guid }) {
-                    existing.update(from: wrapper)
-                    affectedItem = existing
-                }
-
-            case .cancelled, .interrupted:
-                if let wrapper = wrapper,
-                   let existing = self.downloads.first(where: { $0.id == guid }) {
-                    existing.update(from: wrapper)
-                    affectedItem = existing
+                    publishedEventType = .created
                 }
                 
             case .removed, .destroyed:
@@ -417,7 +442,7 @@ class DownloadsManager: ObservableObject {
             self.updateTotalProgress()
             
             // Publish event for observers (LivingDownloadsManager, etc.)
-            let event = DownloadEvent(eventType: eventType, downloadItem: affectedItem)
+            let event = DownloadEvent(eventType: publishedEventType, downloadItem: affectedItem)
             self.downloadEventPublisher.send(event)
         }
     }

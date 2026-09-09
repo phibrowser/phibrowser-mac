@@ -414,7 +414,14 @@ class SidebarViewController: NSViewController {
     // MARK: - Lifecycle
     
     override func loadView() {
-        let view = ColoredVisualEffectView()
+        let view = SidebarFileDropView()
+        view.onOpenFiles = { [weak self] urls in
+            guard let self else { return false }
+            for (index, url) in urls.enumerated() {
+                self.state.createTab(url.absoluteString, focusAfterCreate: index == 0)
+            }
+            return true
+        }
         view.themedBackgroundColor = .windowOverlayBackground
         view.material = .fullScreenUI
         self.view = view

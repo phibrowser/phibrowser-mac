@@ -14,12 +14,14 @@ final class ProfilePairingGateTests: XCTestCase {
     final class FakeModalHost: ProfilePairingModalHost {
         private(set) var presentCount = 0
         private(set) var dismissCount = 0
+        private(set) var reloadCount = 0
         private(set) var lastPresentedController: SyncKeyController?
         func present(controller: SyncKeyController?) {
             presentCount += 1
             lastPresentedController = controller
         }
         func dismiss() { dismissCount += 1 }
+        func reloadPresented() { reloadCount += 1 }
     }
 
     /// A real, never-unlocked controller: enough to post the announcement
@@ -394,5 +396,57 @@ final class ProfilePairingGateTests: XCTestCase {
                        "the safety net writes sync.joinPairingPending, so the gate must shut")
         XCTAssertEqual(announcements.value, 0,
                        "and it announces nothing, so a mappings-only driver never re-evaluates")
+    }
+
+    // MARK: - Re-driving an already-presented modal (task 20)
+
+    /// The modal used to get exactly one load attempt for its whole life: every
+    /// later `.measured` announcement returned at the `isPresented` short
+    /// circuit. On device B that meant a window whose load hung for minutes
+    /// behind five serial round trips, with nothing able to restart it.
+    ///
+    /// A second announcement must now RE-DRIVE the window instead. The
+    /// present-only-once invariant is unchanged: `presentCount` stays 1.
+    func testASecondMeasuredPassRedrivesThePresentedModalInsteadOfPresentingAgain() {
+        let host = FakeModalHost()
+        let gate = makeGate(host: host)
+        gate.joinPairingPendingOverride = true
+        gate.start(controller: nil)
+        defer { gate.stop() }
+
+        gate.handleMappingsDidResolve(needsPairing: true, needsPairingActionable: true)
+        XCTAssertEqual(host.presentCount, 1)
+        XCTAssertEqual(host.reloadCount, 0, "the first pass presents; it does not reload")
+
+        gate.handleMappingsDidResolve(needsPairing: true, needsPairingActionable: true)
+        XCTAssertEqual(host.presentCount, 1, "one modal per session, still")
+        XCTAssertEqual(host.reloadCount, 1, "the live window has to be re-driven, not ignored")
+    }
+
+    /// And the terminal shape is untouched by that: a pass with nothing
+    /// actionable left still retires the join and takes the window down rather
+    /// than reloading it.
+    func testAnUnactionablePassStillClosesThePresentedModalWithoutReloading() {
+        let host = FakeModalHost()
+        let gate = makeGate(host: host)
+        gate.joinPairingPendingOverride = true
+        gate.start(controller: nil)
+        defer { gate.stop() }
+
+        gate.handleMappingsDidResolve(needsPairing: true, needsPairingActionable: true)
+        gate.handleMappingsDidResolve(needsPairing: false, needsPairingActionable: false)
+        XCTAssertEqual(host.dismissCount, 1)
+        XCTAssertEqual(host.reloadCount, 0)
+        XCTAssertFalse(gate.joinPairingPendingOverride!)
+    }
+
+    /// Retry is the modal's only way out of a stuck load, and the app-modal
+    /// window has no close button, so it must never be disabled -- least of all
+    /// in `.working`, which is exactly the phase a stalled load sits in.
+    func testRetryIsOfferedInEveryPhaseTheStatusViewCanRender() {
+        for phase in [KeyLayerPhase.working, .idle, .done, .error("boom")] {
+            XCTAssertTrue(ProfilePairingGateView.retryEnabled(for: phase),
+                          "retry must stay pressable in \(phase)")
+        }
     }
 }

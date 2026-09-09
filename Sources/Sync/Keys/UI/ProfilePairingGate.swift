@@ -18,6 +18,19 @@ import SwiftUI
 protocol ProfilePairingModalHost: AnyObject {
     func present(controller: SyncKeyController?)
     func dismiss()
+    /// Re-drives the load behind a modal that is ALREADY up.
+    ///
+    /// Without it the window got exactly one load attempt for its whole life:
+    /// `present` starts one, and every later announcement returned at the
+    /// `isPresented` short circuit. A load that hangs -- the device-B case this
+    /// exists for -- then leaves a spinner nothing can restart but the user.
+    func reloadPresented()
+}
+
+extension ProfilePairingModalHost {
+    /// Defaulted so a host that has nothing to re-drive (a test double, or any
+    /// future non-window host) is not forced to implement it.
+    func reloadPresented() {}
 }
 
 /// The blocking, always-on-top pairing modal of the DEVICE JOIN flow, plus the
@@ -161,7 +174,14 @@ final class ProfilePairingGate {
         }
         lastPredicates = (needsPairing, needsPairingActionable)
         if pending, needsPairingActionable {
-            guard !isPresented else { return }
+            if isPresented {
+                // One modal per session (`presentCount` stays 1), but not one
+                // LOAD per session: a window already up gets re-driven, so a
+                // load that hung has a second chance without the user having to
+                // find the retry button.
+                modalHost?.reloadPresented()
+                return
+            }
             isPresented = true
             idleRounds = 0
             modalHost?.present(controller: controller)
@@ -261,15 +281,32 @@ struct ProfilePairingGateView: View {
             // automatic dismissal needs `needsPairingActionable` to go false,
             // which it will not while the account really does need pairing, so a
             // branch with no button is a browser locked behind an error string.
-            statusView(message: message, retryEnabled: true)
+            statusView(message: message, retryEnabled: Self.retryEnabled(for: viewModel.phase))
         default:
             // `.working` while `startPairing` loads, `.done` for the moment
             // between a successful submit and the gate's dismissal. Both are
             // meant to be transient, but the same "no exit" reasoning applies if
             // one of them ever sticks, so they carry the exits too.
-            statusView(message: nil, retryEnabled: viewModel.phase != .working)
+            statusView(message: nil, retryEnabled: Self.retryEnabled(for: viewModel.phase))
         }
     }
+
+    /// Whether the modal's retry button is pressable. It always is.
+    ///
+    /// It used to be disabled in `.working`, which is precisely the phase a
+    /// stalled load sits in: on device B the pairing load hung behind five
+    /// strictly serial round trips on a 60 s-timeout session, and the one
+    /// control that could have restarted it was greyed out for the whole of
+    /// those minutes, in an app-modal window with no close button.
+    ///
+    /// Pressing it during a load is safe by construction: `startPairing`
+    /// cancels the in-flight load and replaces it rather than stacking a
+    /// second one behind it.
+    ///
+    /// Written total over `KeyLayerPhase` on purpose -- this is the predicate
+    /// for every phase the `default` arm above can render, which is every case
+    /// except `.pairingProfiles` and `.error`, and both of those reach it too.
+    static func retryEnabled(for phase: KeyLayerPhase) -> Bool { true }
 
     /// The "remove this device" slot, offered in EVERY branch: the gate is app
     /// modal, so a branch without it is a window with no exit at all.
@@ -346,6 +383,16 @@ struct ProfilePairingGateView: View {
 @MainActor
 final class AppModalPairingHost: ProfilePairingModalHost {
     private var window: NSWindow?
+    /// The live modal's view model and the controller it was presented for, so
+    /// `reloadPresented()` has both halves of `startPairing(controller:)`.
+    ///
+    /// Weak on purpose, and safe for as long as the window is up: the view model
+    /// is retained by `ProfilePairingGateView`'s `@ObservedObject` inside the
+    /// hosting controller `window` holds, and the controller is owned by the key
+    /// layer (the gate itself only holds it weakly). Both are cleared in
+    /// `dismiss()` alongside `window`.
+    private weak var viewModel: KeyLayerViewModel?
+    private weak var presentedController: SyncKeyController?
 
     func present(controller: SyncKeyController?) {
         // No controller means the key layer has already been torn down (sign-out
@@ -368,6 +415,8 @@ final class AppModalPairingHost: ProfilePairingModalHost {
         window.isReleasedWhenClosed = false
         window.center()
         self.window = window
+        self.viewModel = viewModel
+        self.presentedController = controller
         NSApp.activate(ignoringOtherApps: true)
         window.makeKeyAndOrderFront(nil)
         Task { @MainActor in await viewModel.startPairing(controller: controller) }
@@ -396,11 +445,21 @@ final class AppModalPairingHost: ProfilePairingModalHost {
         }
     }
 
+    /// Restarts the load behind the window that is already up. `startPairing`
+    /// cancels whatever is still in flight and replaces it, so this cannot pile
+    /// loads on top of one another however often the gate calls it.
+    func reloadPresented() {
+        guard let viewModel, let presentedController else { return }
+        Task { @MainActor in await viewModel.startPairing(controller: presentedController) }
+    }
+
     func dismiss() {
         guard let window else { return }
         // Harmless if the session has not started yet: `window` is cleared first,
         // so the deferred `runModal` above bails on its identity check.
         self.window = nil
+        self.viewModel = nil
+        self.presentedController = nil
         NSApp.stopModal()
         window.close()
     }

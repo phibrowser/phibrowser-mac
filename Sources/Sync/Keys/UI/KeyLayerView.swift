@@ -19,7 +19,7 @@ struct KeyLayerView: View {
     /// waiting for a mouse-up its window can no longer deliver).
     ///
     /// `.modalPanel` is deliberately present: the profile-pairing gate parks the
-    /// main run loop in `NSApp.runModal(for:)` (`ProfilePairingGate.present`), and
+    /// main run loop in `NSApp.runModal(for:)` (`AppModalPairingHost.present`), and
     /// on a second-device join that session is typically already up by the time
     /// `.done` renders — `resolveMappings()` posts `.phiProfileMappingsDidResolve`,
     /// which the gate observes, before `phase = .done` is assigned. A `.default`-only

@@ -6,6 +6,7 @@ final class ProfilePairingGateTests: XCTestCase {
     typealias FakeAPI = AccountKeyManagerTests.FakeAPI
     typealias FakeDeviceKeyProvider = AccountKeyManagerTests.FakeDeviceKeyProvider
     typealias MemoryMappingStore = ProfileKeyManagerTests.MemoryMappingStore
+    typealias Box = ProfileAutoCreateTests.Box
 
     /// Records the modal lifecycle so the gate can be asserted without AppKit.
     /// The controller is optional, which is what lets every case below run
@@ -332,5 +333,46 @@ final class ProfilePairingGateTests: XCTestCase {
         gate.handleMappingsDidResolve(needsPairing: true, needsPairingActionable: false)
         for _ in 0..<10 { autoCreateNotification(outcome: "unchanged", created: 0, skipped: 1) }
         XCTAssertEqual(host.presentCount, 0)
+    }
+
+    /// The safety net is the one writer of `sync.joinPairingPending` that announces NOTHING:
+    /// it raises the flag and presents the modal from inside `.phiProfileAutoCreateDidRun`
+    /// by calling `handleMappingsDidResolve` directly, so `.phiProfileMappingsDidResolve` is
+    /// never posted on this path.
+    ///
+    /// That is exactly why `PhiChromiumCoordinator.refreshSpaceSyncGate()` has a FOURTH
+    /// driver hung on `.phiProfileAutoCreateDidRun`: the mappings-driven ones cannot see this
+    /// edge, and the Space section (data type 2000) would otherwise keep pulling, applying and
+    /// publishing for the whole of a safety-net modal — unbounded in time, since only the
+    /// user's pairing submission ends it — while the profile mapping picture is as ambiguous
+    /// as it is during a join.
+    func testTheSafetyNetRaisesThePendingFlagWithoutAnnouncingMappings() {
+        let host = FakeModalHost()
+        let gate = makeGate(host: host)
+        gate.joinPairingPendingOverride = false
+        gate.start(controller: nil)
+        defer { gate.stop() }
+        gate.handleMappingsDidResolve(needsPairing: true, needsPairingActionable: true)
+        XCTAssertEqual(gate.joinPairingPendingOverride, false, "no join is outstanding yet")
+
+        let announcements = Box(0)
+        let token = NotificationCenter.default.addObserver(
+            forName: .phiProfileMappingsDidResolve, object: nil,
+            queue: nil) { _ in announcements.value += 1 }
+        defer { NotificationCenter.default.removeObserver(token) }
+
+        for _ in 0..<ProfilePairingGate.pairingStuckRounds {
+            autoCreateNotification(outcome: "unchanged", created: 0, skipped: 0)
+        }
+
+        XCTAssertEqual(host.presentCount, 1, "the safety net presents on the third idle round")
+        // True the moment the third post returns: the gate observes with `queue: nil` and
+        // sets `pending` before it presents. So an observer that hops through the main queue
+        // — which is how the coordinator's gate drivers are registered, because the
+        // production modal blocks inside `NSApp.runModal(for:)` right here — reads it too.
+        XCTAssertEqual(gate.joinPairingPendingOverride, true,
+                       "the safety net writes sync.joinPairingPending, so the gate must shut")
+        XCTAssertEqual(announcements.value, 0,
+                       "and it announces nothing, so a mappings-only driver never re-evaluates")
     }
 }

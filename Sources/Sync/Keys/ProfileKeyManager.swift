@@ -130,18 +130,44 @@ final class ProfileKeyManager {
 
     /// All profiles registered on the account, names decrypted where possible
     /// (pairing UI input).
+    ///
+    /// The envelope GETs run CONCURRENTLY. Serially they were one listing plus
+    /// one round trip per profile, on `URLSession.shared`'s default 60 s
+    /// timeout: a device that has just joined a four-profile account paid five
+    /// strictly serial round trips, i.e. up to five minutes of spinner in the
+    /// pairing modal before anything could even fail.
+    ///
+    /// Two things the serial loop guaranteed are preserved deliberately:
+    ///  - the returned array is in the LISTING's order, not the order the
+    ///    answers arrive in, so callers (and their tests) see the same array
+    ///    they always did -- hence the index carried through the group;
+    ///  - a transport failure on any single envelope still fails the whole
+    ///    call, while an envelope that merely will not DECODE (or a nil DTO)
+    ///    still yields `RemoteProfile(uuid:, name: nil)` in place.
+    ///
+    /// What does change is that a mid-list failure no longer abandons the
+    /// requests behind it -- by then the group has issued them all. Nothing
+    /// depends on that count.
     func accountProfiles() async throws -> [RemoteProfile] {
         guard let ark = keyManager.currentARK else { throw ProfileKeyManagerError.notUnlocked }
-        var out: [RemoteProfile] = []
-        for summary in try await api.listProfiles() {
-            if let dto = try await api.getProfileKey(uuid: summary.profileUuid),
-               let (_, name) = try? Self.openProfilePayload(dto.profileKeyEnvelope, ark: ark) {
-                out.append(RemoteProfile(uuid: summary.profileUuid, name: name))
-            } else {
-                out.append(RemoteProfile(uuid: summary.profileUuid, name: nil))
+        let summaries = try await api.listProfiles()
+        guard !summaries.isEmpty else { return [] }
+        let api = self.api
+        return try await withThrowingTaskGroup(of: (Int, RemoteProfile).self) { group in
+            for (index, summary) in summaries.enumerated() {
+                let uuid = summary.profileUuid
+                group.addTask {
+                    if let dto = try await api.getProfileKey(uuid: uuid),
+                       let (_, name) = try? Self.openProfilePayload(dto.profileKeyEnvelope, ark: ark) {
+                        return (index, RemoteProfile(uuid: uuid, name: name))
+                    }
+                    return (index, RemoteProfile(uuid: uuid, name: nil))
+                }
             }
+            var out = [RemoteProfile?](repeating: nil, count: summaries.count)
+            for try await (index, profile) in group { out[index] = profile }
+            return out.compactMap { $0 }
         }
-        return out
     }
 
     /// Inbound translation for the sync layer: which LOCAL profile carries this

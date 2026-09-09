@@ -86,11 +86,14 @@ final class DevicesSettingHostingViewController: NSViewController, NSWindowDeleg
     private func makeRemoveDeviceModel() -> DevicesRemoveDeviceModel {
         DevicesRemoveDeviceModel(remove: { [weak self] in
             guard let controller = self?.syncKeyController else {
-                // Unreachable while the button is on screen (unlocked implies an
-                // account, and the coordinator builds a controller for any
-                // account), so this is a guard rather than a user-facing error.
+                // All but unreachable while the button is on screen (unlocked
+                // implies an account, and the coordinator builds a controller for
+                // any account) — but a sign-out in another window can empty it
+                // under a pane still showing a stale `.unlocked`. Throwing keeps
+                // the model out of `.done`: a removal that never reached the
+                // server must not be reported as one that did.
                 AppLogWarn("[phi-sync] remove this device: no shared sync key controller")
-                return
+                throw DevicesRemoveDeviceError.syncControllerUnavailable
             }
             try await controller.removeThisDeviceFromSync()
         }, onRemoved: { [weak self] in

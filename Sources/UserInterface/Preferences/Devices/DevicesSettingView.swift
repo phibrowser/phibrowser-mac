@@ -98,7 +98,13 @@ struct DevicesSettingView: View {
                 }
             }
             if let note = removeModel.note {
-                Text(note).font(.callout).foregroundColor(.secondary)
+                // `note` carries two different kinds of line: the standing
+                // `last_device` explanation (informational) and a transient
+                // failure the user has to notice and retry. The latter is
+                // coloured like every other error on this pane.
+                Text(note)
+                    .font(.callout)
+                    .foregroundColor(removeModel.noteIsError ? .red : .secondary)
             }
         }
     }

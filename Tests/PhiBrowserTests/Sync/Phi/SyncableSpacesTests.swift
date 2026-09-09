@@ -439,6 +439,49 @@ final class SyncableSpacesTests: XCTestCase {
         XCTAssertEqual(ab.spaceUuid, "u1")
     }
 
+    /// §6.2's stated reason for merging against `server` at all: "与 server 合并
+    /// 而不是裸发 snapshot，是为了保住更新版客户端写在预留字段 11-14 上的内容".
+    /// That only holds if the unknown bytes ride through the merge, which they do
+    /// only because it starts from `remote`. Building a fresh entity instead
+    /// stripped them on every round trip -- and, because `cursor.server` keeps
+    /// them while the merged entity would not, `toSend != server` would fire a
+    /// commit that strips them again every single round.
+    func testMergeKeepsAnUnknownReservedFieldWrittenByANewerClient() throws {
+        var newer = Phi_PhiSpaceEntity()
+        newer.spaceUuid = "u1"
+        newer.name = lww("Remote", 10)
+        newer.createdAtMs = 1_000
+        // Field 11 (reserved for M3-3 / M3-4), varint 42: what a newer client
+        // puts on the wire and this build cannot name.
+        let bytes = try newer.serializedData() + Data([0x58, 0x2A])
+        let remote = try Phi_PhiSpaceEntity(serializedBytes: bytes)
+        XCTAssertFalse(remote.unknownFields.data.isEmpty, "fixture must carry an unknown field")
+
+        var local = Phi_PhiSpaceEntity()
+        local.spaceUuid = "u1"
+        local.name = lww("Local", 20)
+        local.createdAtMs = 1_000
+
+        let merged = SyncableSpaces.merge(local: local, remote: remote)
+        XCTAssertEqual(merged.name.stringValue, "Local", "the LWW winner is unchanged")
+        XCTAssertEqual(merged.unknownFields, remote.unknownFields)
+        // The bytes `spaceCommitEntries` actually sends, decoded again.
+        let reencoded = try Phi_PhiSpaceEntity(serializedBytes: try merged.serializedData())
+        XCTAssertEqual(reencoded.unknownFields, remote.unknownFields)
+    }
+
+    /// The ping-pong half of the same bug: with the peer's field preserved, a
+    /// round whose local snapshot says nothing new compares equal to `server`
+    /// and publishes nothing.
+    func testMergingASnapshotAgainstAServerCopyWithUnknownFieldsPublishesNothing() throws {
+        var base = Phi_PhiSpaceEntity()
+        base.spaceUuid = "u1"
+        base.name = lww("Work", 10)
+        base.createdAtMs = 1_000
+        let server = try Phi_PhiSpaceEntity(serializedBytes: try base.serializedData() + Data([0x58, 0x2A]))
+        XCTAssertEqual(SyncableSpaces.merge(local: base, remote: server), server)
+    }
+
     private func lww(_ s: String, _ ts: Int64) -> Phi_PhiSettingValue {
         var v = Phi_PhiSettingValue(); v.updatedAtMs = ts; v.stringValue = s; return v
     }

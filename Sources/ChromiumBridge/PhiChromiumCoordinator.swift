@@ -89,6 +89,25 @@ import SwiftUI
     /// beside `phiSyncUnlockObserver` and removed with it: a surviving observer would keep
     /// re-opening the gate after sign-out, and a rebuild would register a second copy.
     private var phiSpaceGateObserver: NSObjectProtocol?
+    /// `.phiProfileAutoCreateDidRun` token, the gate's fourth driver, registered and removed
+    /// with the one above.
+    ///
+    /// `ProfilePairingGate`'s hysteresis safety net is a fifth writer of
+    /// `sync.joinPairingPending` that the other three drivers cannot see: after three idle
+    /// auto-create rounds it sets `pending = true` and raises the blocking pairing modal by
+    /// calling `handleMappingsDidResolve` DIRECTLY, so no `.phiProfileMappingsDidResolve` is
+    /// posted (`ProfilePairingGate.handleAutoCreateDidRun`). Without this observer the Space
+    /// section would stay live for the whole of that modal — unbounded in time, since only the
+    /// user's pairing submission ends it — while `ensureLocalProfilesForAccount()` is skipping
+    /// and the profile mapping picture is exactly as ambiguous as during a join. That is the
+    /// state the gate exists to prevent.
+    private var phiSpacePairingObserver: NSObjectProtocol?
+    /// The last value handed to `PhiSyncEngine.setSpaceSyncEnabled` for the CURRENT engine, or
+    /// nil when nothing has been handed to it yet. The observer above fires once per refresh
+    /// round forever, and a redundant `setSpaceSyncEnabled` still queues a `.spaceGate` round
+    /// behind whatever is in flight — the engine asks to be driven on real state changes only
+    /// (`PhiSyncEngine.setSpaceSyncEnabled`). Reset with the engine at both ends of its life.
+    private var lastSpaceGateEnabled: Bool?
     /// Debounced local Space edits -> push (§5.4). The SwiftData publisher merged with the
     /// theme/opacity notification, because those two maps live in the account plist where
     /// SwiftData cannot see them.
@@ -249,6 +268,10 @@ import SwiftUI
         // table is the opposite — account-scoped, so it goes to `account.userDefaults`
         // through `spaceStateStore`.
         let spaceAccess = AccountPhiSpaceAccess(account: account, controller: syncKeyController)
+        // A new engine starts from its own persisted `spaceSectionEnabled`, so the memo
+        // describes an engine that no longer exists. (`stopPhiSync()` clears it too; this is
+        // the belt to that braces, because nothing forces the two to be paired.)
+        lastSpaceGateEnabled = nil
         phiSyncEngine = PhiSyncEngine(domainKeys: domainKeys, client: client,
                                       defaults: defaults, deviceKeyId: deviceKeyId,
                                       spaceAccess: spaceAccess, spaceStore: spaceStateStore)
@@ -300,6 +323,27 @@ import SwiftUI
         ) { [weak self] _ in
             MainActor.assumeIsolated { self?.refreshSpaceSyncGate() }
         }
+
+        // The gate's fourth driver, and the only one that can see the hysteresis safety net:
+        // that path raises `sync.joinPairingPending` and presents the pairing modal from
+        // inside `ProfilePairingGate.handleAutoCreateDidRun`, without announcing mappings at
+        // all, so the three drivers above never re-evaluate and the Space section would stay
+        // live for the modal's whole (user-bounded) lifetime.
+        //
+        // `queue: .main` for the same reason as the observer above, and here it is doubly
+        // load-bearing: the gate observes THIS notification with `queue: nil` and blocks
+        // inside `NSApp.runModal(for:)` from within its own handler, so a synchronous
+        // observer behind it would not run until the pairing window closed. The main queue
+        // keeps draining in a modal run loop, and the flag is already `true` by then — the
+        // gate sets `pending` before it presents.
+        //
+        // This fires once per refresh round, idle or not; `refreshSpaceSyncGate()` memoizes
+        // so a round that changes nothing costs nothing.
+        phiSpacePairingObserver = NotificationCenter.default.addObserver(
+            forName: .phiProfileAutoCreateDidRun, object: nil, queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated { self?.refreshSpaceSyncGate() }
+        }
     }
 
     /// The Space section's gate (§3.5). Hung on `sync.joinPairingPending`, NOT on
@@ -307,11 +351,11 @@ import SwiftUI
     /// time the account gains a profile, and each shut->open edge costs a dropped
     /// marker and a full replay of data type 2000.
     ///
-    /// Driven from three places (the two observers above and the `$profiles` sink), never
+    /// Driven from four places (the three observers above and the `$profiles` sink), never
     /// from `startPhiSyncIfReady()` — that one early-returns as soon as the pull timer
     /// exists, so it would open the gate at most once per process.
     ///
-    /// All three of those can fire BEFORE the first `pullOnce()`, which is fine:
+    /// All four of those can fire BEFORE the first `pullOnce()`, which is fine:
     /// `setSpaceSyncEnabled(true)` drops the marker and arms the drain on the FIRST opening,
     /// without needing a shut-gate pull to have happened first. That is what lets a machine
     /// upgrading from M3-1 start syncing Spaces at all.
@@ -321,6 +365,15 @@ import SwiftUI
         let enabled = syncKeyController?.manager.currentARK != nil
             && AccountController.shared.account != nil
             && !ProfilePairingGate.joinPairingPending
+        // Real state changes only. The engine's own edge check sits BEHIND its round queue,
+        // so a redundant call is not free: it queues a `.spaceGate` round behind whatever is
+        // in flight. `.phiProfileAutoCreateDidRun` fires once per refresh round for the life
+        // of the process, so without this memo an idle account would queue one such round a
+        // minute forever. Safe as a mirror because `applySpaceGate` is the only writer of the
+        // engine's `spaceSectionEnabled` once the engine exists, and the memo is cleared with
+        // the engine at both ends of its life.
+        guard lastSpaceGateEnabled != enabled else { return }
+        lastSpaceGateEnabled = enabled
         Task { await engine.setSpaceSyncEnabled(enabled) }
     }
 
@@ -560,6 +613,13 @@ import SwiftUI
             NotificationCenter.default.removeObserver(observer)
             phiSpaceGateObserver = nil
         }
+        if let observer = phiSpacePairingObserver {
+            NotificationCenter.default.removeObserver(observer)
+            phiSpacePairingObserver = nil
+        }
+        // The memo describes the engine being dropped below; the next one loads its own
+        // persisted gate state and must be told again.
+        lastSpaceGateEnabled = nil
         if let observer = phiSpaceFirstSyncObserver {
             NotificationCenter.default.removeObserver(observer)
             phiSpaceFirstSyncObserver = nil

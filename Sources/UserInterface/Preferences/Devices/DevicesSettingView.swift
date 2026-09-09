@@ -4,6 +4,11 @@ import SwiftUI
 /// it isn't joined, and the list of pending device-join requests to approve or deny.
 struct DevicesSettingView: View {
     @ObservedObject var viewModel: DevicesSettingViewModel
+    /// The runtime "remove this device from sync" entry point. Separate from
+    /// `viewModel` because that object is built from an `AccountKeyManager`
+    /// pair, while the removal has to run on the coordinator-owned
+    /// `SyncKeyController` (see `DevicesRemoveDeviceModel`).
+    @ObservedObject var removeModel: DevicesRemoveDeviceModel
     var onJoinThisDevice: () -> Void = {}
     var onResolvePairing: () -> Void = {}
     /// Polled from the shared `SyncKeyController` rather than threaded through
@@ -49,6 +54,10 @@ struct DevicesSettingView: View {
                 if let err = viewModel.actionError {
                     Text(err).font(.callout).foregroundColor(.red)
                 }
+
+                if removeModel.isVisible(unlockState: viewModel.unlockState) {
+                    removeDeviceSection
+                }
             }
             .padding(24)
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -68,6 +77,30 @@ struct DevicesSettingView: View {
             }
         }
         .onDisappear { Task { await viewModel.stopPolling() } }
+    }
+
+    /// The pane's only destructive action, at the bottom and in the secondary
+    /// style the pane already uses for "Deny". The confirmation, its copy and the
+    /// `last_device` note all come from `SelfRevokeStrings`, shared with the
+    /// pairing gate's exit of the same name.
+    @ViewBuilder
+    private var removeDeviceSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 10) {
+                Button(NSLocalizedString("Remove this device from sync…",
+                                         comment: "Devices - remove this device from sync")) {
+                    Task { await removeModel.requestRemoval(confirm: SelfRevokeStrings.confirmRemoval) }
+                }
+                .buttonStyle(.bordered)
+                .disabled(!removeModel.canRequestRemoval)
+                if removeModel.isRemoving {
+                    ProgressView().controlSize(.small)
+                }
+            }
+            if let note = removeModel.note {
+                Text(note).font(.callout).foregroundColor(.secondary)
+            }
+        }
     }
 
     @ViewBuilder

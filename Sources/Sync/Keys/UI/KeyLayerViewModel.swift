@@ -42,6 +42,27 @@ final class KeyLayerViewModel: ObservableObject {
     /// `submitPairing` call.
     @Published private(set) var pairingError: String?
 
+    /// True for the whole of `submitPairing`, from the first decision to the last.
+    ///
+    /// `.working` is not only the pairing load's phase: a submit holds it too,
+    /// across every `adoptRemoteProfile` / `registerLocalProfile` /
+    /// `createLocalProfileAndAdopt` await, while mutating the very mapping table
+    /// a load reads to decide which locals are still unmapped. So the two flows
+    /// are made MUTUALLY EXCLUSIVE, not merely load-versus-load: `startPairing`
+    /// refuses while this is set, and the gate modal greys its retry button on it.
+    ///
+    /// Without that, the load's `.pairingProfiles` write would land on top of a
+    /// submit -- offering "Register as new" for a local the submit is in the
+    /// middle of adopting (whose next submit then throws `alreadyMapped`), or
+    /// reverting a finished modal to a stale candidate list. And it needs no
+    /// user at all to happen: the gate re-drives a presented modal on every
+    /// `.measured` announcement, and a `.createLocal` decision provokes one
+    /// itself by creating a profile.
+    ///
+    /// `@Published` because the modal's retry button reads it: a plain stored
+    /// property would leave the button greyed until the next `phase` change.
+    @Published private(set) var isSubmitting = false
+
     private let manager: AccountKeyManager
     private var currentRequestId: String?
     private var pollTimer: Timer?
@@ -223,7 +244,18 @@ final class KeyLayerViewModel: ObservableObject {
     /// has finished, because every caller -- `submitPairing`'s failure reload,
     /// the retry button, the modal host, the Devices pane -- reads `phase`
     /// straight after awaiting it.
+    ///
+    /// A load started while `submitPairing` is applying decisions would not be a
+    /// replacement but a SECOND writer of `phase` and a reader of a half-written
+    /// mapping table, so that one case is turned away instead (see
+    /// `isSubmitting`). The submit's own reload is not affected: it clears the
+    /// flag before reloading, because that reload is its continuation.
     func startPairing(controller: SyncKeyController) async {
+        guard !isSubmitting else {
+            // Metadata only (R12).
+            AppLogInfo("[phi-sync] pairing load skipped; a submit is still applying decisions")
+            return
+        }
         pairingLoad?.cancel()
         phase = .working
         let task = Task<Void, Never> { [weak self] in
@@ -313,7 +345,16 @@ final class KeyLayerViewModel: ObservableObject {
     /// bridge) and adopts the remote onto the resulting profileId; if that
     /// creation fails, the decision is skipped and its error is surfaced
     /// while staying on `.pairingProfiles` rather than moving to `.done`.
+    ///
+    /// For the whole of it, this is the ONLY writer of `phase`: `isSubmitting`
+    /// turns away any load `startPairing` is asked for meanwhile, and the load
+    /// already in flight (the gate re-drives a presented modal roughly once a
+    /// minute, so there may well be one) is cancelled here, which forbids it
+    /// from writing `phase` on its way out.
     func submitPairing(_ decisions: [PairingDecision], controller: SyncKeyController) async {
+        isSubmitting = true
+        defer { isSubmitting = false }
+        pairingLoad?.cancel()
         phase = .working
         pairingError = nil
         for decision in decisions {
@@ -350,6 +391,10 @@ final class KeyLayerViewModel: ObservableObject {
         guard pairingError == nil else {
             // Reload so the view reflects whatever succeeded before the
             // failure, and stay in .pairingProfiles for another attempt.
+            // Clear the flag FIRST: this reload is the submit's own tail, not a
+            // competing load, and `startPairing` would otherwise turn it away
+            // and leave the modal parked in `.working` for good.
+            isSubmitting = false
             await startPairing(controller: controller)
             return
         }

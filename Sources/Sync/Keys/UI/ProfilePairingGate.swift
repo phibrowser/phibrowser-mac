@@ -281,13 +281,17 @@ struct ProfilePairingGateView: View {
             // automatic dismissal needs `needsPairingActionable` to go false,
             // which it will not while the account really does need pairing, so a
             // branch with no button is a browser locked behind an error string.
-            statusView(message: message, retryEnabled: Self.retryEnabled(for: viewModel.phase))
+            statusView(message: message,
+                       retryEnabled: Self.retryEnabled(for: viewModel.phase,
+                                                       isSubmitting: viewModel.isSubmitting))
         default:
             // `.working` while `startPairing` loads, `.done` for the moment
             // between a successful submit and the gate's dismissal. Both are
             // meant to be transient, but the same "no exit" reasoning applies if
             // one of them ever sticks, so they carry the exits too.
-            statusView(message: nil, retryEnabled: Self.retryEnabled(for: viewModel.phase))
+            statusView(message: nil,
+                       retryEnabled: Self.retryEnabled(for: viewModel.phase,
+                                                       isSubmitting: viewModel.isSubmitting))
         }
     }
 
@@ -299,15 +303,22 @@ struct ProfilePairingGateView: View {
     /// control that could have restarted it was greyed out for the whole of
     /// those minutes, in an app-modal window with no close button.
     ///
-    /// Pressing it during a load is safe by construction: `startPairing`
+    /// Pressing it during a LOAD is safe by construction: `startPairing`
     /// cancels the in-flight load and replaces it rather than stacking a
     /// second one behind it.
     ///
-    /// Takes the phase and ignores it rather than being a bare constant: it is
-    /// the one place that decides this, it is total over all eleven
-    /// `KeyLayerPhase` cases by construction, and the next person to want a
-    /// phase-dependent answer has somewhere obvious to put it.
-    static func retryEnabled(for phase: KeyLayerPhase) -> Bool { true }
+    /// A SUBMIT is the one case that is not, and it is what `isSubmitting`
+    /// carries: `submitPairing` also holds `.working`, across every decision it
+    /// applies, while rewriting the mapping table a load reads -- so a load
+    /// started on top of it would be a second, uncoordinated writer of `phase`.
+    /// That window, and only that window, greys the button; a stalled load stays
+    /// restartable in every phase, which is the defect this task exists to fix.
+    ///
+    /// Takes the phase and ignores it rather than reading `isSubmitting` alone
+    /// at the call sites: it is the one place that decides this, it is total
+    /// over all eleven `KeyLayerPhase` cases by construction, and the next
+    /// person to want a phase-dependent answer has somewhere obvious to put it.
+    static func retryEnabled(for phase: KeyLayerPhase, isSubmitting: Bool) -> Bool { !isSubmitting }
 
     /// The "remove this device" slot, offered in EVERY branch: the gate is app
     /// modal, so a branch without it is a window with no exit at all.

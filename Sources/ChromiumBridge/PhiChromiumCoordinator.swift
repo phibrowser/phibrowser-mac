@@ -1577,7 +1577,12 @@ extension PhiChromiumCoordinator: PhiChromiumBridgeDelegate {
             guard let controller = MainBrowserWindowControllersManager.shared
                 .controller(for: Int(windowId)) else { return }
             // Chromium already wrote the clipboard, including long-link fallback.
-            OverlayToastCenter.shared.showHighlightLinkCopyConfirmation(url: copiedURL, in: controller.browserState)
+            if controller.browserState.peekState.peekTab(withId: Int(tabId)) != nil {
+                controller.peekPanelControllerIfLoaded?
+                    .showHighlightLinkCopyConfirmation(url: copiedURL, tabId: Int(tabId))
+            } else {
+                OverlayToastCenter.shared.showHighlightLinkCopyConfirmation(url: copiedURL, in: controller.browserState)
+            }
         }
         
         if PhiPreferences.GeneralSettings.shortHighlightLinksEnabled.loadValue() {

@@ -254,6 +254,9 @@ final class PeekPanelController {
     private let containerView = PeekContainerView()
     private let controlColumn = PeekControlColumnView()
     private let webHostView = NSView()
+    // Peek shares its parent's window ID but owns its visible toast lifecycle.
+    private let toastCenter = OverlayToastCenter()
+    private let toastViewController: OverlayToastViewController
     private weak var hostedTab: Tab?
     private var eventMonitor: Any?
     private var parentResizeObserver: NSObjectProtocol?
@@ -290,6 +293,8 @@ final class PeekPanelController {
         self.anchorView = anchorView
         self.cardViewProvider = cardViewProvider
         self.originTracker = originTracker
+        toastViewController = OverlayToastViewController(
+            state: browserState, toastCenter: toastCenter, isPanel: true)
         anchorView.postsFrameChangedNotifications = true
 
         panel = PeekPanel(
@@ -326,6 +331,11 @@ final class PeekPanelController {
         webHostView.layer?.masksToBounds = true
         containerView.addSubview(webHostView)
         webHostView.snp.makeConstraints { make in
+            make.edges.equalToSuperview()
+        }
+
+        containerView.addSubview(toastViewController.view)
+        toastViewController.view.snp.makeConstraints { make in
             make.edges.equalToSuperview()
         }
     }
@@ -374,6 +384,7 @@ final class PeekPanelController {
     /// Temporarily hides the panel while the opener tab is not focused. The
     /// hosted content and bindings stay alive; `present(tab:)` reveals again.
     func hide() {
+        toastCenter.clearWindow(windowId: toastViewController.state.windowId)
         guard panel.isVisible else { return }
         landAppearFlight()
         removeEventMonitor()
@@ -467,6 +478,11 @@ final class PeekPanelController {
         detachHostedContent()
     }
 
+    func showHighlightLinkCopyConfirmation(url: URL, tabId: Int) {
+        guard panel.isVisible, hostedTab?.guid == tabId else { return }
+        toastCenter.showHighlightLinkCopyConfirmation(url: url, in: toastViewController.state)
+    }
+
     // MARK: - Actions
 
     @objc private func closeButtonClicked(_ sender: Any?) {
@@ -543,6 +559,7 @@ final class PeekPanelController {
     }
 
     private func detachHostedContent() {
+        toastCenter.clearWindow(windowId: toastViewController.state.windowId)
         landAppearFlight()
         webHostView.subviews.forEach { $0.removeFromSuperview() }
         hostedTab = nil

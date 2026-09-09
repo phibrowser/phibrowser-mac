@@ -8,6 +8,7 @@ import SwiftUI
 
 struct OverlayToastView: View {
     let toast: OverlayToastItem
+    var toastCenter: OverlayToastCenter = .shared
 
     private let cornerRadius: CGFloat = 10
     private let maxWidth: CGFloat = 360
@@ -36,7 +37,7 @@ struct OverlayToastView: View {
         HStack(alignment: .center, spacing: 12) {
             toastText
             if let url = toast.shareURL {
-                OverlayToastShareButton(url: url, toastID: toast.id)
+                OverlayToastShareButton(url: url, toastID: toast.id, toastCenter: toastCenter)
                     .fixedSize()
             }
 
@@ -139,9 +140,10 @@ private struct OverlayToastNaturalWidthKey: PreferenceKey {
 private struct OverlayToastShareButton: NSViewRepresentable {
     let url: URL
     let toastID: UUID
+    let toastCenter: OverlayToastCenter
 
     func makeCoordinator() -> Coordinator {
-        Coordinator(url: url, toastID: toastID)
+        Coordinator(url: url, toastID: toastID, toastCenter: toastCenter)
     }
 
     func makeNSView(context: Context) -> NSButton {
@@ -168,17 +170,19 @@ private struct OverlayToastShareButton: NSViewRepresentable {
     final class Coordinator: NSObject {
         var url: URL
         var toastID: UUID
+        let toastCenter: OverlayToastCenter
 
-        init(url: URL, toastID: UUID) {
+        init(url: URL, toastID: UUID, toastCenter: OverlayToastCenter) {
             self.url = url
             self.toastID = toastID
+            self.toastCenter = toastCenter
         }
 
         @MainActor @objc func share(_ sender: NSButton) {
             guard sender.window != nil else { return }
             let id = toastID
-            OverlayToastCenter.shared.pauseDismissal(id: id)
-            defer { OverlayToastCenter.shared.dismiss(id: id) }
+            toastCenter.pauseDismissal(id: id)
+            defer { toastCenter.dismiss(id: id) }
 
             let menu = PageSharingPresenter.shareMenu(for: url)
             let point = NSPoint(x: sender.bounds.minX, y: sender.isFlipped ? sender.bounds.maxY : sender.bounds.minY)

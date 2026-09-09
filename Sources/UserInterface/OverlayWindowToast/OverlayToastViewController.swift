@@ -7,7 +7,7 @@ import Cocoa
 import SwiftUI
 class OverlayToastViewController: NSViewController {
     private lazy var viewModel: OverlayToastViewModel = {
-        return OverlayToastViewModel(browserState: state)
+        return OverlayToastViewModel(browserState: state, toastCenter: toastCenter, isPanel: isPanel)
     }()
     
     private lazy var toastContainerViewController: ThemedHostingController<OverlayToastContainer> = {
@@ -15,9 +15,13 @@ class OverlayToastViewController: NSViewController {
     }()
     
     let state: BrowserState
+    private let toastCenter: OverlayToastCenter
+    private let isPanel: Bool
     
-    init(state: BrowserState) {
+    init(state: BrowserState, toastCenter: OverlayToastCenter = .shared, isPanel: Bool = false) {
         self.state = state
+        self.toastCenter = toastCenter
+        self.isPanel = isPanel
         super.init(nibName: nil, bundle: nil)
     }
     

@@ -11,7 +11,8 @@ import Combine
 
 class OverlayToastViewModel: ObservableObject {
     let browserState: BrowserState
-    private let toastCenter: OverlayToastCenter
+    let toastCenter: OverlayToastCenter
+    let isPanel: Bool
     
     // MARK: - Toast Components
     
@@ -50,10 +51,12 @@ class OverlayToastViewModel: ObservableObject {
     init(
         browserState: BrowserState,
         notificationCardManager: NotificationCardManager = .shared,
-        toastCenter: OverlayToastCenter = .shared
+        toastCenter: OverlayToastCenter = .shared,
+        isPanel: Bool = false
     ) {
         self.browserState = browserState
         self.toastCenter = toastCenter
+        self.isPanel = isPanel
         self.livingDownloadsManager = LivingDownloadsManager(downloadsManager: browserState.downloadsManager)
         self.notificationCardManager = notificationCardManager
         self.layoutMode = browserState.layoutMode
@@ -70,6 +73,8 @@ class OverlayToastViewModel: ObservableObject {
         toastCenter.visibleToastsPublisher(for: browserState.windowId)
             .receive(on: DispatchQueue.main)
             .assign(to: &$genericToasts)
+
+        guard !isPanel else { return }
 
         // Show immediately when items appear, hide after a short delay when the list empties.
         livingDownloadsManager.$livingItems
@@ -134,7 +139,7 @@ class OverlayToastViewModel: ObservableObject {
     }
 
     var genericToastTopOffset: CGFloat {
-        Self.genericToastTopOffset(for: layoutMode)
+        isPanel ? 16 : Self.genericToastTopOffset(for: layoutMode)
     }
 
     static func genericToastTopOffset(for layoutMode: LayoutMode) -> CGFloat {

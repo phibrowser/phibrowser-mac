@@ -587,4 +587,27 @@ final class ProfilePairingGateTests: XCTestCase {
         XCTAssertFalse(modes.contains(.common),
                        "`.common` would pull `.eventTracking` back in")
     }
+
+    // MARK: - A re-drive must not throw away a form the user is filling in
+
+    /// The gate re-drives a presented modal on EVERY `.measured` pass, and
+    /// `resolveMappings()` runs about once a minute, so a modal left open gets
+    /// a fresh load roughly that often. In `.pairingProfiles` that would swap
+    /// the list out from under the user and reset `ProfilePairingView`'s
+    /// `@State` selections mid-decision -- a re-drive is a rescue for a load
+    /// that stalled, not a refresh of a form.
+    func testARedriveNeverDiscardsAPairingFormTheUserIsFillingIn() {
+        XCTAssertFalse(
+            AppModalPairingHost.reloadAllowed(for: .pairingProfiles(locals: [], remotes: [])),
+            "re-driving a form the user is filling in would discard their selections")
+    }
+
+    /// Every other phase this modal can be in is either a stalled load or a
+    /// terminal screen, so a re-drive can only help.
+    func testARedriveStillRescuesEveryPhaseWithNothingToLose() {
+        for phase in [KeyLayerPhase.working, .idle, .done, .error("boom")] {
+            XCTAssertTrue(AppModalPairingHost.reloadAllowed(for: phase),
+                          "a stalled modal in \(phase) has to be re-drivable")
+        }
+    }
 }

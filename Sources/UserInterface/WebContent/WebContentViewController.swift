@@ -176,11 +176,16 @@ class WebContentViewController: NSViewController {
     private var splitLoginRequiredViews: [Int: LoginRequiredOverlayView] = [:]
 
     var addressBarAnchorView: NSView? { headerView.addressBarAnchorView }
-    var headerPageColorPresentation: WebContentHeaderPageColorPresentation {
-        headerView.pageColorPresentation
+    var tabStripPageColorPresentation: WebContentHeaderPageColorPresentation {
+        aiChatSplitViewItem?.isCollapsed == false ? .inherited : headerView.pageColorPresentation
     }
-    var headerPageColorPresentationPublisher: AnyPublisher<WebContentHeaderPageColorPresentation, Never> {
-        headerView.pageColorPresentationPublisher
+    var tabStripPageColorPresentationPublisher: AnyPublisher<WebContentHeaderPageColorPresentation, Never> {
+        guard let aiChatSplitViewItem else { return headerView.pageColorPresentationPublisher }
+        return headerView.pageColorPresentationPublisher
+            .combineLatest(aiChatSplitViewItem.publisher(for: \.isCollapsed))
+            .map { presentation, isCollapsed in isCollapsed ? presentation : .inherited }
+            .removeDuplicates()
+            .eraseToAnyPublisher()
     }
 
     /// Size of the web-content host area — the panel a page actually renders

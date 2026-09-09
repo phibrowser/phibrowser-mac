@@ -35,6 +35,50 @@ final class WebContentHeaderPageColorTests: XCTestCase {
         XCTAssertEqual(state.themeContext.currentTheme.id, Theme.pure.id)
     }
 
+    func testTabStripInheritsWhileChatIsExpandedAndRestoresLatestPageColor() throws {
+        let key = PhiPreferences.GeneralSettings.layoutModeKey
+        let originalMode = UserDefaults.standard.object(forKey: key)
+        UserDefaults.standard.set(LayoutMode.comfortable.rawValue, forKey: key)
+        defer { UserDefaults.standard.set(originalMode, forKey: key) }
+
+        let state = try makeState()
+        let (tab, wrapper) = makeTab(color: .black)
+        let controller = WebContentViewController(state: state, tab: tab)
+        controller.view.frame = NSRect(x: 0, y: 0, width: 1000, height: 700)
+        let header = try XCTUnwrap(controller.leftContainerViewForTesting.subviews
+            .compactMap { $0 as? WebContentHeader }.first)
+        header.currentTab = tab
+        let split = try XCTUnwrap(controller.children.compactMap { $0 as? NSSplitViewController }.first)
+        let chat = try XCTUnwrap(split.splitViewItems.last)
+        XCTAssertEqual(split.splitViewItems.count, 2)
+
+        var presentation = WebContentHeaderPageColorPresentation.inherited
+        let subscription = controller.tabStripPageColorPresentationPublisher.sink { presentation = $0 }
+        defer { subscription.cancel() }
+        XCTAssertEqual(presentation, header.pageColorPresentation)
+        XCTAssertEqual(presentation.appearance, .dark)
+
+        chat.isCollapsed = false
+        XCTAssertEqual(presentation, .inherited)
+        XCTAssertEqual(controller.tabStripPageColorPresentation, .inherited)
+        assertBackground(header, .black)
+
+        wrapper.pageColor = .white
+        drainPageColorUpdates()
+        XCTAssertEqual(presentation, .inherited)
+        assertBackground(header, .white)
+        var restoredPresentation: WebContentHeaderPageColorPresentation?
+        let restoredSubscription = controller.tabStripPageColorPresentationPublisher
+            .sink { restoredPresentation = $0 }
+        defer { restoredSubscription.cancel() }
+        XCTAssertEqual(restoredPresentation, .inherited)
+
+        chat.isCollapsed = true
+        XCTAssertEqual(presentation, header.pageColorPresentation)
+        XCTAssertEqual(controller.tabStripPageColorPresentation, presentation)
+        XCTAssertEqual(presentation.appearance, .light)
+    }
+
     func testLightPageOverridesDarkWindowAndNilRestoresInheritance() throws {
         let state = try makeState()
         state.themeContext.setUserAppearanceChoice(.dark)

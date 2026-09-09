@@ -517,7 +517,7 @@ class WebContentContainerViewController: NSViewController {
 
         let barController = TabStripBarController(browserState: state)
         tabStripBarController = barController
-        let pageColorPresentation = currentWebContentController?.headerPageColorPresentation
+        let pageColorPresentation = currentWebContentController?.tabStripPageColorPresentation
             ?? .inherited
         barController.setActivePageStyle(
             backgroundColor: pageColorPresentation.backgroundColor,
@@ -547,8 +547,8 @@ class WebContentContainerViewController: NSViewController {
     }
 
     /// The visible address bar owns page-color eligibility, compositing,
-    /// contrast, and fallback. The horizontal tab strip only mirrors that
-    /// resolved presentation so its selected tab cannot drift to a second policy.
+    /// contrast, and fallback. The horizontal tab strip mirrors that resolved
+    /// presentation unless AI Chat separates the page into its own card.
     private func bindCurrentHeaderPageColorPresentation() {
         currentHeaderPageColorCancellable = nil
         guard let controller = currentWebContentController else {
@@ -556,12 +556,12 @@ class WebContentContainerViewController: NSViewController {
             return
         }
 
-        let pageColorPresentation = controller.headerPageColorPresentation
+        let pageColorPresentation = controller.tabStripPageColorPresentation
         tabStripBarController?.setActivePageStyle(
             backgroundColor: pageColorPresentation.backgroundColor,
             appearance: pageColorPresentation.appearance
         )
-        currentHeaderPageColorCancellable = controller.headerPageColorPresentationPublisher
+        currentHeaderPageColorCancellable = controller.tabStripPageColorPresentationPublisher
             .receive(on: DispatchQueue.main)
             .sink { [weak self, weak controller] presentation in
                 guard let self, let controller,

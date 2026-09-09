@@ -254,6 +254,10 @@ final class TabStripBarController: NSViewController {
         tabStrip.setActive(active)
     }
 
+    func setActivePageStyle(backgroundColor: NSColor?, appearance: Appearance?) {
+        tabStrip.setActivePageStyle(backgroundColor: backgroundColor, appearance: appearance)
+    }
+
     /// Forwards to the underlying tab strip — used by the content border
     /// outline coordinator to find where to carve the gap for a specific tab.
     func tabFrame(for tab: Tab?, in coordView: NSView) -> CGRect? {

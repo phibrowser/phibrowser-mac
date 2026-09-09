@@ -174,6 +174,154 @@ final class PhiBrowserTests: XCTestCase {
         )
     }
 
+    func testKioskSpaceShortcutsIgnoreOrdinaryWindowOverrides() throws {
+        let previousOverrides = Shortcuts.overridedShortcuts
+        defer {
+            Shortcuts.overridedShortcuts = previousOverrides
+            CommandDispatcher.reloadPhiShortcutMap()
+        }
+        Shortcuts.overridedShortcuts = [:]
+        CommandDispatcher.reloadPhiShortcutMap()
+        Shortcuts.overridedShortcuts[.IDC_OPEN_FILE] = ShortcutsKey(
+            characters: "p", modifiers: [.command, .shift]
+        )
+        Shortcuts.overridedShortcuts[.PHI_TOGGLE_SIDEBAR] = .some(nil)
+
+        for (character, modifiers, command) in [
+            ("o", NSEvent.ModifierFlags.command, CommandWrapper.PHI_KIOSK_OPEN_IN_SPACE),
+            ("O", NSEvent.ModifierFlags([.command, .shift]), CommandWrapper.PHI_KIOSK_CHOOSE_SPACE),
+        ] {
+            let event = try makeShortcutKeyEvent(
+                characters: character,
+                charactersIgnoringModifiers: character,
+                modifiers: modifiers,
+                keyCode: UInt16(kVK_ANSI_O)
+            )
+            XCTAssertEqual(
+                CommandDispatcher.interceptedKioskCommand(
+                    for: event, inputSourceIdentifier: InputSource.us
+                ),
+                command
+            )
+            XCTAssertNil(CommandDispatcher.interceptedPhiCommand(
+                for: event, inputSourceIdentifier: InputSource.us
+            ))
+        }
+    }
+
+    func testKioskSpaceShortcutsSupportRebindingDisablingAndRestoring() throws {
+        let previousOverrides = Shortcuts.overridedShortcuts
+        defer { Shortcuts.overridedShortcuts = previousOverrides }
+        Shortcuts.overridedShortcuts = [:]
+        for (character, modifiers, command) in [
+            ("o", NSEvent.ModifierFlags.command, CommandWrapper.PHI_KIOSK_OPEN_IN_SPACE),
+            ("O", NSEvent.ModifierFlags([.command, .shift]), CommandWrapper.PHI_KIOSK_CHOOSE_SPACE),
+        ] {
+            let originalEvent = try makeShortcutKeyEvent(
+                characters: character, charactersIgnoringModifiers: character,
+                modifiers: modifiers, keyCode: UInt16(kVK_ANSI_O)
+            )
+            let customEvent = try makeShortcutKeyEvent(
+                characters: "o", charactersIgnoringModifiers: "o",
+                modifiers: [.command, .control], keyCode: UInt16(kVK_ANSI_O)
+            )
+            Shortcuts.overridedShortcuts[command] = ShortcutsKey(
+                characters: "o", modifiers: [.command, .control]
+            )
+            XCTAssertNil(CommandDispatcher.interceptedKioskCommand(
+                for: originalEvent, inputSourceIdentifier: InputSource.us
+            ))
+            XCTAssertEqual(CommandDispatcher.interceptedKioskCommand(
+                for: customEvent, inputSourceIdentifier: InputSource.us
+            ), command)
+
+            Shortcuts.overridedShortcuts[command] = .some(nil)
+            XCTAssertNil(CommandDispatcher.interceptedKioskCommand(
+                for: customEvent, inputSourceIdentifier: InputSource.us
+            ))
+            XCTAssertNil(CommandDispatcher.interceptedKioskCommand(
+                for: originalEvent, inputSourceIdentifier: InputSource.us
+            ))
+            Shortcuts.overridedShortcuts.removeValue(forKey: command)
+            XCTAssertEqual(CommandDispatcher.interceptedKioskCommand(
+                for: originalEvent, inputSourceIdentifier: InputSource.us
+            ), command)
+        }
+        XCTAssertEqual(Shortcuts.key(for: .PHI_TOGGLE_SIDEBAR),
+                       Shortcuts.DefaultShortcuts[.PHI_TOGGLE_SIDEBAR])
+        XCTAssertEqual(Shortcuts.key(for: .IDC_OPEN_FILE),
+                       Shortcuts.DefaultShortcuts[.IDC_OPEN_FILE])
+    }
+
+    @MainActor
+    func testKioskShortcutSettingsIgnoreCommandsUnavailableInKiosk() throws {
+        let previousOverrides = Shortcuts.overridedShortcuts
+        defer { Shortcuts.overridedShortcuts = previousOverrides }
+        Shortcuts.overridedShortcuts = [:]
+        let viewModel = ShortcutsViewModel()
+
+        for command in [
+            CommandWrapper.PHI_NEW_CONVERSATION, .PHI_TOGGLE_CHATBAR,
+            .IDC_TAB_SEARCH, .IDC_DEV_TOOLS,
+        ] {
+            Shortcuts.overridedShortcuts[.PHI_KIOSK_CHOOSE_SPACE] =
+                try XCTUnwrap(Shortcuts.key(for: command))
+            viewModel.rebuildSections()
+            let items = viewModel.sections.flatMap(\.items)
+            let picker = try XCTUnwrap(items.first {
+                $0.command == .PHI_KIOSK_CHOOSE_SPACE
+            })
+            let other = try XCTUnwrap(items.first { $0.command == command })
+            XCTAssertFalse(picker.hasConflict, "Unexpected conflict with \(command)")
+            XCTAssertFalse(other.conflictingCommandNames.contains(picker.name))
+        }
+
+        Shortcuts.overridedShortcuts[.PHI_KIOSK_CHOOSE_SPACE] =
+            Shortcuts.key(for: .PHI_NEW_CONVERSATION)
+        let event = try makeShortcutKeyEvent(
+            characters: "O", charactersIgnoringModifiers: "O",
+            modifiers: [.command, .shift], keyCode: UInt16(kVK_ANSI_O)
+        )
+        XCTAssertEqual(CommandDispatcher.interceptedKioskCommand(
+            for: event, inputSourceIdentifier: InputSource.us
+        ), .PHI_KIOSK_CHOOSE_SPACE)
+    }
+
+    @MainActor
+    func testKioskShortcutSettingsSeparateWindowContextsButReportSharedConflicts() throws {
+        let previousOverrides = Shortcuts.overridedShortcuts
+        defer { Shortcuts.overridedShortcuts = previousOverrides }
+        Shortcuts.overridedShortcuts = [:]
+        let viewModel = ShortcutsViewModel()
+        let section = try XCTUnwrap(viewModel.sections.first {
+            $0.category == Shortcuts.Group.kiosk.title
+        })
+        XCTAssertEqual(section.items.map(\.command), Shortcuts.Group.kiosk.commands)
+        XCTAssertTrue(section.items.allSatisfy { !$0.hasConflict })
+
+        Shortcuts.overridedShortcuts[.PHI_KIOSK_CHOOSE_SPACE] =
+            Shortcuts.key(for: .PHI_COPY_URL)
+        viewModel.rebuildSections()
+        let items = viewModel.sections.flatMap(\.items)
+        XCTAssertTrue(try XCTUnwrap(items.first {
+            $0.command == .PHI_KIOSK_CHOOSE_SPACE
+        }).hasConflict)
+        XCTAssertTrue(try XCTUnwrap(items.first {
+            $0.command == .PHI_COPY_URL
+        }).hasConflict)
+        XCTAssertFalse(try XCTUnwrap(items.first {
+            $0.command == .PHI_TOGGLE_SIDEBAR
+        }).hasConflict)
+
+        Shortcuts.overridedShortcuts[.PHI_KIOSK_CHOOSE_SPACE] =
+            Shortcuts.key(for: .PHI_KIOSK_OPEN_IN_SPACE)
+        viewModel.rebuildSections()
+        let kioskItems = try XCTUnwrap(viewModel.sections.first {
+            $0.category == Shortcuts.Group.kiosk.title
+        }).items
+        XCTAssertTrue(kioskItems.allSatisfy(\.hasConflict))
+    }
+
     func testNewKioskWindowShortcutInterceptsChromiumNewSplitTabShortcut() throws {
         let previousOverrides = Shortcuts.overridedShortcuts
         defer {

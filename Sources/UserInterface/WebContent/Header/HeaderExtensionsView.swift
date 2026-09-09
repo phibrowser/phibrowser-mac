@@ -244,6 +244,7 @@ private struct OverflowBadgeDot: View {
 }
 
 struct HeaderExtensionMenuButton: View {
+    @Environment(\.colorScheme) private var colorScheme
     let extensionManager: ExtensionManager?
     let browserState: BrowserState?
     @Binding var isPopoverShown: Bool
@@ -291,6 +292,7 @@ struct HeaderExtensionMenuButton: View {
                     onRequestDismiss: { isPopoverShown = false },
                     triggerAnchorView: anchorView
                 )
+                .preferredColorScheme(colorScheme)
             }
         }
     }

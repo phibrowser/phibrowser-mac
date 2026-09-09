@@ -22,7 +22,7 @@ class PinnedSplitItem: NSCollectionViewItem, NSMenuDelegate {
     private var leftIconView: NSImageView!
     private var rightIconView: NSImageView!
     private var backgroundView: HoverableView!
-    private var stateBorderView: PinnedTabStateBorderView!
+    private var openIndicatorHost: TabDecorativeHostingView!
     private var statusBadgeHost: TabDecorativeHostingView!
     private let leftStatusModel = TabStatusModel()
     private let rightStatusModel = TabStatusModel()
@@ -31,8 +31,6 @@ class PinnedSplitItem: NSCollectionViewItem, NSMenuDelegate {
     private var cancellables = Set<AnyCancellable>()
     private var leftFaviconHandle: ProfileScopedFaviconLoadHandle?
     private var rightFaviconHandle: ProfileScopedFaviconLoadHandle?
-    private weak var themeProvider: ThemeStateProvider?
-    private var themeSubscription: AnyObject?
     private let splitTabPreviewRegistration = SplitTabPreviewRegistration()
     private var showsSplitTabPreview = false
 
@@ -55,8 +53,6 @@ class PinnedSplitItem: NSCollectionViewItem, NSMenuDelegate {
     override func prepareForReuse() {
         super.prepareForReuse()
         cancellables.removeAll()
-        themeSubscription = nil
-        themeProvider = nil
         leftFaviconHandle?.cancel()
         leftFaviconHandle = nil
         rightFaviconHandle?.cancel()
@@ -67,7 +63,8 @@ class PinnedSplitItem: NSCollectionViewItem, NSMenuDelegate {
         rightIconView.alphaValue = 1
         leftStatusModel.prepareForReuse()
         rightStatusModel.prepareForReuse()
-        stateBorderView.update(style: .none, color: .clear)
+        openIndicatorHost.isHidden = true
+        openIndicatorHost.alphaValue = 1
         splitTabPreviewRegistration.invalidate()
         leftTab = nil
         rightTab = nil
@@ -110,8 +107,9 @@ class PinnedSplitItem: NSCollectionViewItem, NSMenuDelegate {
         backgroundView.addSubview(leftIconView)
         backgroundView.addSubview(rightIconView)
 
-        stateBorderView = PinnedTabStateBorderView()
-        backgroundView.addSubview(stateBorderView)
+        openIndicatorHost = TabDecorativeHostingView(rootView: TabOpenIndicatorView())
+        openIndicatorHost.isHidden = true
+        backgroundView.addSubview(openIndicatorHost)
 
         backgroundView.snp.makeConstraints { make in
             make.edges.equalToSuperview()
@@ -134,8 +132,14 @@ class PinnedSplitItem: NSCollectionViewItem, NSMenuDelegate {
             ))
         }
 
-        stateBorderView.snp.makeConstraints { make in
-            make.edges.equalToSuperview()
+        openIndicatorHost.snp.makeConstraints { make in
+            make.centerX.equalToSuperview()
+            make.top.equalTo(leftIconView.snp.bottom)
+                .offset(TabOpenIndicatorMetrics.pinnedSpacing)
+            make.size.equalTo(CGSize(
+                width: TabOpenIndicatorMetrics.diameter,
+                height: TabOpenIndicatorMetrics.diameter
+            ))
         }
 
         statusBadgeHost = TabDecorativeHostingView(
@@ -171,13 +175,11 @@ class PinnedSplitItem: NSCollectionViewItem, NSMenuDelegate {
         leftTab: Tab,
         rightTab: Tab,
         browserState: BrowserState? = nil,
-        themeProvider: ThemeStateProvider
+        themeProvider _: ThemeStateProvider
     ) {
         self.leftTab = leftTab
         self.rightTab = rightTab
-        self.themeProvider = themeProvider
         cancellables.removeAll()
-        themeSubscription = nil
         leftFaviconHandle?.cancel()
         leftFaviconHandle = nil
         rightFaviconHandle?.cancel()
@@ -185,25 +187,8 @@ class PinnedSplitItem: NSCollectionViewItem, NSMenuDelegate {
         leftStatusModel.configure(with: leftTab, in: browserState)
         rightStatusModel.configure(with: rightTab, in: browserState)
 
-        Publishers.CombineLatest(
-            Publishers.CombineLatest3(
-                leftTab.$hasWebContent,
-                leftTab.$isDiscarded,
-                leftTab.$isUnloaded
-            ),
-            Publishers.CombineLatest3(
-                rightTab.$hasWebContent,
-                rightTab.$isDiscarded,
-                rightTab.$isUnloaded
-            )
-        )
-        .map { left, right in
-            TabStateBorderStyle.resolve(
-                isOpened: left.0 || right.0,
-                isDiscarded: left.1 || right.1,
-                isUnloaded: left.2 || right.2
-            )
-        }
+        Publishers.CombineLatest(leftTab.$hasWebContent, rightTab.$hasWebContent)
+        .map { $0 || $1 }
         .removeDuplicates()
         .receive(on: DispatchQueue.main)
         .sink { [weak self] _ in
@@ -213,6 +198,9 @@ class PinnedSplitItem: NSCollectionViewItem, NSMenuDelegate {
 
         refreshFavicon(for: leftTab)
         refreshFavicon(for: rightTab)
+        updateFaviconOpacity(for: leftTab)
+        updateFaviconOpacity(for: rightTab)
+        updateOpenIndicatorOpacity()
         if let browserState,
            let target = SplitTabPreviewTarget.make(representing: leftTab, in: browserState) {
             splitTabPreviewRegistration.configure(
@@ -252,37 +240,21 @@ class PinnedSplitItem: NSCollectionViewItem, NSMenuDelegate {
             }
             .store(in: &cancellables)
 
-        rebindThemeSubscription()
     }
 
     override var isSelected: Bool {
         didSet { updateSelectedState() }
     }
 
-    private func rebindThemeSubscription() {
-        themeSubscription = nil
-        let provider = themeProvider ?? ThemeManager.shared
-        themeSubscription = provider.subscribe { [weak self] _, _ in
-            self?.updateSelectedState()
-        }
-    }
-
     private func updateSelectedState() {
         backgroundView.isSelected = isSelected
         backgroundView.layer?.borderWidth = 0
         backgroundView.layer?.borderColor = NSColor.clear.cgColor
-
-        let borderStyle = isSelected ? TabStateBorderStyle.none : TabStateBorderStyle.resolve(
+        let showsOpenIndicator = TabFaviconPresentation.showsOpenIndicator(
             isOpened: leftTab?.hasWebContent == true || rightTab?.hasWebContent == true,
-            isDiscarded: leftTab?.isDiscarded == true || rightTab?.isDiscarded == true,
-            isUnloaded: leftTab?.isUnloaded == true || rightTab?.isUnloaded == true
+            isActive: isSelected
         )
-        let provider = themeProvider ?? ThemeManager.shared
-        let borderColor = ThemedColor.border.resolve(
-            theme: provider.currentTheme,
-            appearance: provider.currentAppearance
-        )
-        stateBorderView.update(style: borderStyle, color: borderColor)
+        openIndicatorHost.isHidden = !showsOpenIndicator
     }
 
     /// Choose which pane a click should focus: the one currently active in
@@ -298,6 +270,22 @@ class PinnedSplitItem: NSCollectionViewItem, NSMenuDelegate {
     }
 
     private func subscribeFaviconUpdates(for tab: Tab) {
+        Publishers.CombineLatest(tab.$isDiscarded, tab.$isUnloaded)
+            .map { isDiscarded, isUnloaded in
+                TabFaviconPresentation.opacity(
+                    isDiscarded: isDiscarded,
+                    isUnloaded: isUnloaded
+                )
+            }
+            .removeDuplicates()
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self, weak tab] _ in
+                guard let self, let tab else { return }
+                self.updateFaviconOpacity(for: tab)
+                self.updateOpenIndicatorOpacity()
+            }
+            .store(in: &cancellables)
+
         tab.$liveFaviconData
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in self?.refreshFavicon(for: tab) }
@@ -330,6 +318,25 @@ class PinnedSplitItem: NSCollectionViewItem, NSMenuDelegate {
         } else if tab === rightTab {
             setupFavicon(for: tab, into: rightIconView, handle: &rightFaviconHandle)
         }
+    }
+
+    private func updateFaviconOpacity(for tab: Tab) {
+        let opacity = TabFaviconPresentation.opacity(
+            isDiscarded: tab.isDiscarded,
+            isUnloaded: tab.isUnloaded
+        )
+        if tab === leftTab {
+            leftIconView.alphaValue = opacity
+        } else if tab === rightTab {
+            rightIconView.alphaValue = opacity
+        }
+    }
+
+    private func updateOpenIndicatorOpacity() {
+        openIndicatorHost.alphaValue = TabFaviconPresentation.opacity(
+            isDiscarded: leftTab?.isDiscarded == true || rightTab?.isDiscarded == true,
+            isUnloaded: leftTab?.isUnloaded == true || rightTab?.isUnloaded == true
+        )
     }
 
     private func setupFavicon(for tab: Tab,

@@ -4060,22 +4060,28 @@
       "comment" : "Agent control pill - expand the collapsed pill",
       "extractionState" : "extracted_with_value",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Erweitern"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "new",
             "value" : "Expand"
           }
         },
-        "zh-Hans" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "展开"
+            "value" : "Expandir"
           }
         },
-        "zh-Hant" : {
+        "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "展開"
+            "value" : "Développer"
           }
         },
         "ja" : {
@@ -4090,28 +4096,22 @@
             "value" : "펼치기"
           }
         },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Développer"
-          }
-        },
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Erweitern"
-          }
-        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Vouw uit"
           }
         },
-        "es" : {
+        "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Expandir"
+            "value" : "展开"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "展開"
           }
         }
       }
@@ -4120,22 +4120,28 @@
       "comment" : "Agent control pill - collapse the pill into the corner",
       "extractionState" : "extracted_with_value",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Minimieren"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "new",
             "value" : "Minimise"
           }
         },
-        "zh-Hans" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "收起"
+            "value" : "Minimizar"
           }
         },
-        "zh-Hant" : {
+        "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "收合"
+            "value" : "Réduire"
           }
         },
         "ja" : {
@@ -4150,28 +4156,22 @@
             "value" : "접기"
           }
         },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Réduire"
-          }
-        },
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Minimieren"
-          }
-        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Minimaliseer"
           }
         },
-        "es" : {
+        "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Minimizar"
+            "value" : "收起"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "收合"
           }
         }
       }
@@ -14386,10 +14386,58 @@
       "comment" : "File menu - Share the current page via the macOS share picker",
       "extractionState" : "extracted_with_value",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Teilen…"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "new",
             "value" : "Share…"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Compartir…"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Partager…"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "共有…"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "공유…"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Deel…"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "共享…"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "分享…"
           }
         }
       }
@@ -25063,6 +25111,126 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "瀏覽器記憶"
+          }
+        }
+      }
+    },
+    "browser.highlightLink.copied" : {
+      "comment" : "Toast shown after copying a link to highlighted text, including when a short link is unavailable",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Link zum markierten Text kopiert"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Link copied to highlight"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Enlace copiado al texto destacado"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lien vers le texte en surbrillance copié"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "選択箇所へのリンクをコピーしました"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "하이라이트 링크가 복사됐어요"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Link naar markering gekopieerd"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已复制指向突出显示的内容的链接"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已複製醒目顯示文字的連結"
+          }
+        }
+      }
+    },
+    "browser.highlightLink.shareButton" : {
+      "comment" : "Highlight link copy confirmation - Button that opens the system sharing menu for the copied link",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Teilen"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Share"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Compartir"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Partager"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "共有"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "공유"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Deel"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "分享"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "分享"
           }
         }
       }
@@ -40523,6 +40691,66 @@
         }
       }
     },
+    "localData.bookmarks.importedFromDiaFolderTitle" : {
+      "comment" : "Bookmark folder - Wrapper created at the Space root to hold the bookmarks imported from Dia; its title must match the one the browser side writes",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aus Dia importiert"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Imported From Dia"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Importado desde Dia"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Importés depuis Dia"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Diaからの読み込み"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dia에서 가져옴"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Geïmporteerd uit Dia"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "从 Dia 导入"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "從 Dia 匯入"
+          }
+        }
+      }
+    },
     "localData.bookmarks.importedFromGuestFolderTitle" : {
       "comment" : "Bookmark folder - Container created when Guest bookmarks are moved into a signed-in account",
       "extractionState" : "extracted_with_value",
@@ -43283,6 +43511,66 @@
         }
       }
     },
+    "oobe.importBrowserData.progress.importingDia" : {
+      "comment" : "Browser data importer - Status message while importing Dia browser data",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dia-Daten werden importiert…"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Importing Dia data..."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Importando los datos de Dia…"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Importation des données Dia…"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Diaのデータを読み込んでいます…"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dia 데이터 가져오는 중…"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dia-gegevens worden geïmporteerd…"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在导入 Dia 数据…"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在匯入 Dia 資料…"
+          }
+        }
+      }
+    },
     "oobe.importBrowserData.progress.importingFile" : {
       "comment" : "Browser data importer - Status message while importing data from a file",
       "extractionState" : "extracted_with_value",
@@ -43579,6 +43867,66 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "從 Chrome"
+          }
+        }
+      }
+    },
+    "oobe.importBrowserData.source.diaOption" : {
+      "comment" : "Import browser data page - Option label to import data from Dia browser",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aus Dia"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "From Dia"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Desde Dia"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Depuis Dia"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Diaから"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dia에서"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Uit Dia"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "从 Dia 导入"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "從 Dia"
           }
         }
       }
@@ -58583,8 +58931,8 @@
         }
       }
     },
-    "settings.general.additionalBrowserSettings.title" : {
-      "comment" : "General settings - Title for always more settings",
+    "settings.advanced.additionalBrowserSettings.title" : {
+      "comment" : "Advanced settings - Title for always more settings",
       "extractionState" : "extracted_with_value",
       "localizations" : {
         "de" : {
@@ -58643,8 +58991,8 @@
         }
       }
     },
-    "settings.general.addressBar.showFullURLToggle" : {
-      "comment" : "General settings - Toggle title for always showing full URL in address bar",
+    "settings.advanced.addressBar.showFullURLToggle" : {
+      "comment" : "Advanced settings - Toggle title for always showing full URL in address bar",
       "extractionState" : "extracted_with_value",
       "localizations" : {
         "de" : {
@@ -58883,8 +59231,8 @@
         }
       }
     },
-    "settings.general.developerMode.disabledHint" : {
-      "comment" : "General settings - Hint under the developer mode toggle explaining the kill-switch behavior, the revoked approvals, and that an agent may request it back",
+    "settings.advanced.developerMode.disabledHint" : {
+      "comment" : "Advanced settings - Hint under the developer mode toggle explaining the kill-switch behavior, the revoked approvals, and that an agent may request it back",
       "extractionState" : "extracted_with_value",
       "localizations" : {
         "de" : {
@@ -58943,8 +59291,8 @@
         }
       }
     },
-    "settings.general.developerMode.enabledHint" : {
-      "comment" : "General settings - Hint under the developer mode toggle pointing at the Developer settings pane",
+    "settings.advanced.developerMode.enabledHint" : {
+      "comment" : "Advanced settings - Hint under the developer mode toggle pointing at the Developer settings pane",
       "extractionState" : "extracted_with_value",
       "localizations" : {
         "de" : {
@@ -59003,8 +59351,8 @@
         }
       }
     },
-    "settings.general.developerMode.enableToggle" : {
-      "comment" : "General settings - Toggle title for developer mode; turning it off also disables agent access and the agent password manager",
+    "settings.advanced.developerMode.enableToggle" : {
+      "comment" : "Advanced settings - Toggle title for developer mode; turning it off also disables agent access and the agent password manager",
       "extractionState" : "extracted_with_value",
       "localizations" : {
         "de" : {
@@ -59064,8 +59412,8 @@
       }
     },
     "settings.general.developerMode.sectionTitle" : {
-      "comment" : "General settings - Developer section title",
-      "extractionState" : "extracted_with_value",
+      "comment" : "Advanced settings - Developer section title",
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -59119,6 +59467,126 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "開發者"
+          }
+        }
+      }
+    },
+    "settings.advanced.highlightLinks.shortLinksDescription" : {
+      "comment" : "Advanced settings - Explains where the short-link toggle applies and that disabling it copies the full link to the selected text",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Gilt für „Link zum markierten Text kopieren“ im Kontextmenü. Deaktiviere die Option, um den vollständigen Link zu kopieren."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Applies to “Copy Link to Highlight” in the right-click menu. Turn off to copy the full link."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Se aplica a “Copiar enlace al texto destacado” del menú contextual. Desactiva esta opción para copiar el enlace completo."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "S'applique à « Copier le lien vers le texte en surbrillance » dans le menu contextuel. Désactivez cette option pour copier le lien complet."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "右クリックメニューの「選択箇所へのリンクをコピー」に適用されます。オフにすると、完全なリンクがコピーされます。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "오른쪽 클릭 메뉴의 “하이라이트 링크 복사”에 적용돼요. 끄면 전체 링크가 복사돼요."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Geldt voor “Link naar markering kopiëren” in het contextmenu. Zet dit uit om de volledige link te kopiëren."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "适用于右键菜单中的「复制指向突出显示的内容的链接」。关闭后将复制完整链接。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "適用於右鍵選單中的「複製醒目顯示文字的連結」。關閉後會複製完整連結。"
+          }
+        }
+      }
+    },
+    "settings.advanced.highlightLinks.useShortLinksToggle" : {
+      "comment" : "Advanced settings - Toggle that controls whether Copy Link to Highlight generates a short link",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Links zum markierten Text kürzen"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Shorten links to selected text"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Acortar enlaces al texto seleccionado"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Raccourcir les liens vers le texte sélectionné"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "選択したテキストへのリンクを短縮する"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "선택한 텍스트로 연결되는 링크 줄이기"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Verkort links naar geselecteerde tekst"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "缩短指向所选文本的链接"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "縮短指向所選文字的連結"
           }
         }
       }
@@ -60143,8 +60611,128 @@
         }
       }
     },
-    "settings.general.pictureInPicture.normalDescription" : {
-      "comment" : "General settings - Hint for the Normal auto picture-in-picture mode",
+    "settings.advanced.openTabIndicators.description" : {
+      "comment" : "Advanced settings - Explains which tabs and bookmarks display the open-state dot",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Show a dot on inactive pinned tabs and bookmarks that are currently open."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在当前已打开但非活动的固定标签页和书签上显示圆点。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在目前已開啟但非使用中的釘選分頁與書籤上顯示小圓點。"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "現在開いている非アクティブな固定タブとブックマークにドットを表示します。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "현재 열려 있지만 활성 상태가 아닌 고정된 탭과 북마크에 점을 표시해요."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Affiche un point sur les onglets épinglés inactifs et les favoris actuellement ouverts."
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Zeigt einen Punkt auf inaktiven angehefteten Tabs und Lesezeichen an, die gerade geöffnet sind."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Toon een stip op inactieve vastgezette tabbladen en bladwijzers die momenteel geopend zijn."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Muestra un punto en las pestañas fijadas inactivas y en los marcadores que están abiertos actualmente."
+          }
+        }
+      }
+    },
+    "settings.advanced.openTabIndicators.showToggle" : {
+      "comment" : "Advanced settings - Toggle title for showing dots on inactive open pinned tabs and bookmarks",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Show open tab indicators"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "为打开的标签页显示指示灯"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "為開啟的分頁顯示指示燈"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "開いているタブのインジケーターを表示"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "열린 탭 표시기 보기"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Afficher les indicateurs d'onglets ouverts"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Indikatoren für offene Tabs anzeigen"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Toon indicatoren voor geopende tabbladen"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mostrar indicadores de pestañas abiertas"
+          }
+        }
+      }
+    },
+    "settings.advanced.pictureInPicture.normalDescription" : {
+      "comment" : "Advanced settings - Hint for the Normal auto picture-in-picture mode",
       "extractionState" : "extracted_with_value",
       "localizations" : {
         "de" : {
@@ -60203,7 +60791,7 @@
         }
       }
     },
-    "settings.general.pictureInPicture.normalOption" : {
+    "settings.advanced.pictureInPicture.normalOption" : {
       "comment" : "Auto picture-in-picture option - pop out and stay in place",
       "extractionState" : "extracted_with_value",
       "localizations" : {
@@ -60263,8 +60851,8 @@
         }
       }
     },
-    "settings.general.pictureInPicture.offDescription" : {
-      "comment" : "General settings - Hint for the Off auto picture-in-picture mode",
+    "settings.advanced.pictureInPicture.offDescription" : {
+      "comment" : "Advanced settings - Hint for the Off auto picture-in-picture mode",
       "extractionState" : "extracted_with_value",
       "localizations" : {
         "de" : {
@@ -60323,7 +60911,7 @@
         }
       }
     },
-    "settings.general.pictureInPicture.offOption" : {
+    "settings.advanced.pictureInPicture.offOption" : {
       "comment" : "Auto picture-in-picture option - never pop out automatically; manual picture-in-picture is unaffected",
       "extractionState" : "extracted_with_value",
       "localizations" : {
@@ -60383,8 +60971,8 @@
         }
       }
     },
-    "settings.general.pictureInPicture.parkAtEdgeDescription" : {
-      "comment" : "General settings - Hint for the Park at edge auto picture-in-picture mode",
+    "settings.advanced.pictureInPicture.parkAtEdgeDescription" : {
+      "comment" : "Advanced settings - Hint for the Park at edge auto picture-in-picture mode",
       "extractionState" : "extracted_with_value",
       "localizations" : {
         "de" : {
@@ -60443,7 +61031,7 @@
         }
       }
     },
-    "settings.general.pictureInPicture.parkAtEdgeOption" : {
+    "settings.advanced.pictureInPicture.parkAtEdgeOption" : {
       "comment" : "Auto picture-in-picture option - pop out, then park at the screen edge until clicked",
       "extractionState" : "extracted_with_value",
       "localizations" : {
@@ -60503,8 +61091,8 @@
         }
       }
     },
-    "settings.general.pictureInPicture.title" : {
-      "comment" : "General settings - Row title for the three-state auto picture-in-picture mode",
+    "settings.advanced.pictureInPicture.title" : {
+      "comment" : "Advanced settings - Row title for the three-state auto picture-in-picture mode",
       "extractionState" : "extracted_with_value",
       "localizations" : {
         "de" : {
@@ -60803,8 +61391,8 @@
         }
       }
     },
-    "settings.general.restoreLastSession.disabledHint" : {
-      "comment" : "General settings - Hint shown when restore-last-session is off, noting session cookies may be cleared when a window closes",
+    "settings.advanced.restoreLastSession.disabledHint" : {
+      "comment" : "Advanced settings - Hint shown when restore-last-session is off, noting session cookies may be cleared when a window closes",
       "extractionState" : "extracted_with_value",
       "localizations" : {
         "de" : {
@@ -60863,8 +61451,8 @@
         }
       }
     },
-    "settings.general.restoreLastSession.enabledHint" : {
-      "comment" : "General settings - Hint shown when restore-last-session is on",
+    "settings.advanced.restoreLastSession.enabledHint" : {
+      "comment" : "Advanced settings - Hint shown when restore-last-session is on",
       "extractionState" : "extracted_with_value",
       "localizations" : {
         "de" : {
@@ -60923,8 +61511,8 @@
         }
       }
     },
-    "settings.general.restoreLastSession.toggle" : {
-      "comment" : "General settings - Row title for the app-level restore-previous-session toggle",
+    "settings.advanced.restoreLastSession.toggle" : {
+      "comment" : "Advanced settings - Row title for the app-level restore-previous-session toggle",
       "extractionState" : "extracted_with_value",
       "localizations" : {
         "de" : {
@@ -60983,8 +61571,8 @@
         }
       }
     },
-    "settings.general.tabPreview.showToggle" : {
-      "comment" : "General settings - Toggle title for showing custom preview cards when hovering over open tabs",
+    "settings.advanced.tabPreview.showToggle" : {
+      "comment" : "Advanced settings - Toggle title for showing custom preview cards when hovering over open tabs",
       "extractionState" : "extracted_with_value",
       "localizations" : {
         "de" : {
@@ -61339,6 +61927,66 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "將主題套用到網頁上的文字選取範圍"
+          }
+        }
+      }
+    },
+    "settings.navigation.advancedTitle" : {
+      "comment" : "Settings - Tab title for advanced settings",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Advanced"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "高级"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "進階"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "詳細"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "고급"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Avancés"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Erweitert"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Geavanceerd"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Avanzado"
           }
         }
       }
@@ -62247,22 +62895,28 @@
       "comment" : "Navigations settings - Explanation of the automatic Peek View toggle for pinned tabs and bookmarks",
       "extractionState" : "extracted_with_value",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Links, die die Website eines angehefteten Tabs oder Lesezeichens verlassen, öffnen sich in einem Peek-Panel statt in einem neuen Tab."
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "new",
             "value" : "Links that leave a pinned tab’s or bookmark’s site open in a Peek panel instead of a new tab."
           }
         },
-        "zh-Hans" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "离开固定的标签页或书签所在网站的链接，会在 Peek 面板中打开，而不是新标签页。"
+            "value" : "Los enlaces que salen del sitio de una pestaña fijada o de un marcador se abren en un panel Peek en lugar de en una pestaña nueva."
           }
         },
-        "zh-Hant" : {
+        "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "離開釘選分頁或書籤所在網站的連結，會在 Peek 面板中開啟，而非新分頁。"
+            "value" : "Les liens qui quittent le site d'un onglet épinglé ou d'un favori s'ouvrent dans un panneau Peek au lieu d'un nouvel onglet."
           }
         },
         "ja" : {
@@ -62277,28 +62931,22 @@
             "value" : "고정된 탭이나 북마크의 사이트를 벗어나는 링크는 새 탭 대신 Peek 패널에서 열려요."
           }
         },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Les liens qui quittent le site d'un onglet épinglé ou d'un favori s'ouvrent dans un panneau Peek au lieu d'un nouvel onglet."
-          }
-        },
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Links, die die Website eines angehefteten Tabs oder Lesezeichens verlassen, öffnen sich in einem Peek-Panel statt in einem neuen Tab."
-          }
-        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Links die de site van een vastgezet tabblad of bladwijzer verlaten, worden in een Peek-paneel geopend in plaats van in een nieuw tabblad."
           }
         },
-        "es" : {
+        "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Los enlaces que salen del sitio de una pestaña fijada o de un marcador se abren en un panel Peek en lugar de en una pestaña nueva."
+            "value" : "离开固定的标签页或书签所在网站的链接，会在 Peek 面板中打开，而不是新标签页。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "離開釘選分頁或書籤所在網站的連結，會在 Peek 面板中開啟，而非新分頁。"
           }
         }
       }
@@ -62307,22 +62955,28 @@
       "comment" : "Navigations settings - Toggle title for automatically opening cross-site links from pinned tabs and bookmarks in Peek View",
       "extractionState" : "extracted_with_value",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Links aus angehefteten Tabs und Lesezeichen automatisch in der Peek-Ansicht öffnen"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "new",
             "value" : "Automatically peek from pinned tabs and bookmarks"
           }
         },
-        "zh-Hans" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "自动在 Peek 视图中打开固定的标签页和书签中的链接"
+            "value" : "Abrir automáticamente en vista Peek desde pestañas fijadas y marcadores"
           }
         },
-        "zh-Hant" : {
+        "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "自動以 Peek 開啟釘選分頁與書籤中的連結"
+            "value" : "Ouvrir automatiquement la vue Peek depuis les onglets épinglés et les favoris"
           }
         },
         "ja" : {
@@ -62337,28 +62991,22 @@
             "value" : "고정된 탭과 북마크의 링크를 자동으로 Peek 뷰에서 열기"
           }
         },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Ouvrir automatiquement la vue Peek depuis les onglets épinglés et les favoris"
-          }
-        },
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Links aus angehefteten Tabs und Lesezeichen automatisch in der Peek-Ansicht öffnen"
-          }
-        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Open automatisch in Peek vanuit vastgezette tabbladen en bladwijzers"
           }
         },
-        "es" : {
+        "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Abrir automáticamente en vista Peek desde pestañas fijadas y marcadores"
+            "value" : "自动在 Peek 视图中打开固定的标签页和书签中的链接"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "自動以 Peek 開啟釘選分頁與書籤中的連結"
           }
         }
       }
@@ -68362,6 +69010,126 @@
         }
       }
     },
+    "settings.shortcuts.command.kioskChooseSpace" : {
+      "comment" : "Shortcuts settings - Show the Open in menu for selecting a destination Space in a Kiosk window",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kiosk-Menü „Öffnen in“ anzeigen"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Show Kiosk \"Open in\" Menu"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mostrar el menú “Abrir en” de Kiosk"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Afficher le menu « Ouvrir dans » de Kiosk"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kioskの「開く」メニューを表示"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kiosk “열기 위치” 메뉴 표시"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Toon het “Openen in”-menu van Kiosk"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "显示 Kiosk 的「打开到」菜单"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "顯示 Kiosk 的「開啟於」選單"
+          }
+        }
+      }
+    },
+    "settings.shortcuts.command.kioskOpenInSpace" : {
+      "comment" : "Shortcuts settings - Open the Kiosk page in the toolbar's target Space or expand Peek into a regular tab in the current Space",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kiosk oder Peek im aktuellen Space öffnen"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Open Kiosk or Peek in current Space"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Abrir Kiosk o Peek en el Espacio actual"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ouvrir Kiosk ou Peek dans l'Espace actuel"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "KioskまたはPeekを現在のスペースで開く"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kiosk 또는 Peek을 현재 스페이스에서 열기"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Open Kiosk of Peek in de huidige Space"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在当前空间中打开 Kiosk 或 Peek"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在目前空間開啟 Kiosk 或 Peek"
+          }
+        }
+      }
+    },
     "settings.shortcuts.command.manageExtensions" : {
       "comment" : "Shortcuts settings - Command title for managing browser extensions",
       "extractionState" : "extracted_with_value",
@@ -69806,10 +70574,58 @@
       "comment" : "Shortcuts settings - Command title for sharing the current page via the macOS share picker",
       "extractionState" : "extracted_with_value",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Seite teilen"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "new",
             "value" : "Share Page"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Compartir página"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Partager la page"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ページを共有"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "페이지 공유"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Deel pagina"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "共享页面"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "分享頁面"
           }
         }
       }
@@ -70890,6 +71706,126 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "歷史記錄"
+          }
+        }
+      }
+    },
+    "settings.shortcuts.group.kiosk" : {
+      "comment" : "Shortcuts settings - Section title for Kiosk and Peek commands",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kiosk & Peek"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Kiosk & Peek"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kiosk y Peek"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kiosk et Peek"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "KioskとPeek"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kiosk 및 Peek"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kiosk en Peek"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kiosk 与 Peek"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kiosk 與 Peek"
+          }
+        }
+      }
+    },
+    "settings.shortcuts.group.kiosk.subtitle" : {
+      "comment" : "Shortcuts settings - Subtitle explaining that this group's shortcuts apply to Peek or Kiosk windows",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Funktionieren nur in Peek- oder Kiosk-Fenstern."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Only work in Peek or Kiosk windows."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Solo funcionan en ventanas de Peek o Kiosk."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ces raccourcis fonctionnent uniquement dans les fenêtres Peek ou Kiosk."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "PeekまたはKioskのウインドウでのみ動作します。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Peek 또는 Kiosk 윈도우에서만 작동해요."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Deze toetscombinaties werken alleen in Peek- of Kiosk-vensters."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "仅在 Peek 或 Kiosk 窗口中有效。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "僅適用於 Peek 或 Kiosk 視窗。"
           }
         }
       }

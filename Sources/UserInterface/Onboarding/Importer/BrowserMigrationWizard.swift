@@ -516,7 +516,7 @@ private extension View {
 }
 
 struct BrowserMigrationWizardView: View {
-    /// Fixed, and larger than the import window's 500x700. The window takes its
+    /// Fixed, and wider than the import window's 500x760. The window takes its
     /// size from here rather than the other way round: a hosting controller
     /// sizes its window from the view's fitting size, so a view that asks to
     /// fill grows the window instead of being bounded by it.

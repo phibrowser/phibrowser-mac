@@ -506,8 +506,6 @@ class SidebarSplitPairCellView: SidebarCellView, TabPreviewInteractionCancelling
     private let rightPane = HoverableView()
     private let leftIconView = NSImageView()
     private let rightIconView = NSImageView()
-    private var leftDiscardedOutlineHost: TabDecorativeHostingView!
-    private var rightDiscardedOutlineHost: TabDecorativeHostingView!
     private var statusBadgeHost: TabDecorativeHostingView!
     private let leftStatusModel = TabStatusModel()
     private let rightStatusModel = TabStatusModel()
@@ -653,24 +651,8 @@ class SidebarSplitPairCellView: SidebarCellView, TabPreviewInteractionCancelling
         leftRecordingHost.isHidden = true
         rightRecordingHost.isHidden = true
 
-        leftDiscardedOutlineHost = TabDecorativeHostingView(
-            rootView: TabDiscardedFaviconOutline(
-                model: leftStatusModel,
-                faviconSize: Self.faviconSize,
-                faviconCornerRadius: Self.faviconCornerRadius
-            )
-        )
-        rightDiscardedOutlineHost = TabDecorativeHostingView(
-            rootView: TabDiscardedFaviconOutline(
-                model: rightStatusModel,
-                faviconSize: Self.faviconSize,
-                faviconCornerRadius: Self.faviconCornerRadius
-            )
-        )
-
         leftMuteWidth = configurePane(leftPane,
                                       icon: leftIconView,
-                                      discardedOutline: leftDiscardedOutlineHost,
                                       iconLeadingSpacing: Self.leftIconLeadingSpacing,
                                       title: leftTitleLabel,
                                       mute: leftMuteHost,
@@ -680,7 +662,6 @@ class SidebarSplitPairCellView: SidebarCellView, TabPreviewInteractionCancelling
                                       closeTrailing: &leftTitleCloseTrailing)
         rightMuteWidth = configurePane(rightPane,
                                        icon: rightIconView,
-                                       discardedOutline: rightDiscardedOutlineHost,
                                        iconLeadingSpacing: Self.rightIconLeadingSpacing,
                                        title: rightTitleLabel,
                                        mute: rightMuteHost,
@@ -780,7 +761,6 @@ class SidebarSplitPairCellView: SidebarCellView, TabPreviewInteractionCancelling
     @discardableResult
     private func configurePane(_ pane: HoverableView,
                                icon: NSImageView,
-                               discardedOutline: NSView,
                                iconLeadingSpacing: CGFloat,
                                title: NSTextField,
                                mute: NSView,
@@ -812,21 +792,6 @@ class SidebarSplitPairCellView: SidebarCellView, TabPreviewInteractionCancelling
             make.size.equalTo(CGSize(
                 width: Self.faviconSize,
                 height: Self.faviconSize
-            ))
-        }
-
-        pane.addSubview(discardedOutline)
-        discardedOutline.snp.makeConstraints { make in
-            make.center.equalTo(icon)
-            make.size.equalTo(CGSize(
-                width: TabCornerBadgeMetrics.discardedOutlineSize(
-                    for: Self.faviconSize,
-                    cornerRadius: Self.faviconCornerRadius
-                ),
-                height: TabCornerBadgeMetrics.discardedOutlineSize(
-                    for: Self.faviconSize,
-                    cornerRadius: Self.faviconCornerRadius
-                )
             ))
         }
 
@@ -991,6 +956,8 @@ class SidebarSplitPairCellView: SidebarCellView, TabPreviewInteractionCancelling
 
         refreshFavicon(into: leftIconView, for: pair.leftTab, handle: &leftFaviconHandle)
         refreshFavicon(into: rightIconView, for: pair.rightTab, handle: &rightFaviconHandle)
+        updateFaviconOpacity(for: pair.leftTab)
+        updateFaviconOpacity(for: pair.rightTab)
         updatePaneTitles(leftTitle: pair.leftTab.title, rightTitle: pair.rightTab.title)
         updateSelected()
         updateHoverChrome()
@@ -1008,6 +975,21 @@ class SidebarSplitPairCellView: SidebarCellView, TabPreviewInteractionCancelling
         // mapping changes via `reresolvePairOrderIfNeeded` without re-creating
         // these subscriptions. Same pattern as the title binding above.
         for tab in [pair.leftTab, pair.rightTab] {
+            Publishers.CombineLatest(tab.$isDiscarded, tab.$isUnloaded)
+                .map { isDiscarded, isUnloaded in
+                    TabFaviconPresentation.opacity(
+                        isDiscarded: isDiscarded,
+                        isUnloaded: isUnloaded
+                    )
+                }
+                .removeDuplicates()
+                .receive(on: DispatchQueue.main)
+                .sink { [weak self, weak tab] _ in
+                    guard let self, let tab else { return }
+                    self.updateFaviconOpacity(for: tab)
+                }
+                .store(in: &cancellables)
+
             tab.$isCurrentlyAudible
                 .combineLatest(tab.$isAudioMuted)
                 .removeDuplicates { $0 == $1 }
@@ -1134,6 +1116,18 @@ class SidebarSplitPairCellView: SidebarCellView, TabPreviewInteractionCancelling
         }
     }
 
+    private func updateFaviconOpacity(for tab: Tab) {
+        let opacity = TabFaviconPresentation.opacity(
+            isDiscarded: tab.isDiscarded,
+            isUnloaded: tab.isUnloaded
+        )
+        if tab === configuredLeftTab {
+            leftIconView.alphaValue = opacity
+        } else if tab === configuredRightTab {
+            rightIconView.alphaValue = opacity
+        }
+    }
+
     private func refreshFavicon(into imageView: NSImageView,
                                 for tab: Tab,
                                 handle: inout ProfileScopedFaviconLoadHandle?) {
@@ -1194,7 +1188,7 @@ class SidebarSplitPairCellView: SidebarCellView, TabPreviewInteractionCancelling
         !(isLeft ? leftRecordingHost : rightRecordingHost).isHidden
     }
 
-    /// Test seam: current unloaded-state opacity for the given pane's favicon.
+    /// Test seam: current memory-reclaimed opacity for the given pane's favicon.
     func faviconOpacity(isLeft: Bool) -> CGFloat {
         (isLeft ? leftIconView : rightIconView).alphaValue
     }
@@ -1256,6 +1250,8 @@ class SidebarSplitPairCellView: SidebarCellView, TabPreviewInteractionCancelling
             updatePaneTitles(leftTitle: pair.leftTab.title, rightTitle: pair.rightTab.title)
             refreshFavicon(into: leftIconView, for: pair.leftTab, handle: &leftFaviconHandle)
             refreshFavicon(into: rightIconView, for: pair.rightTab, handle: &rightFaviconHandle)
+            updateFaviconOpacity(for: pair.leftTab)
+            updateFaviconOpacity(for: pair.rightTab)
             updateSelected()
             updateMute(isLeft: true,
                        audible: pair.leftTab.isCurrentlyAudible,

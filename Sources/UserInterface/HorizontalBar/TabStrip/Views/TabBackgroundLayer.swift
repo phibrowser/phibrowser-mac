@@ -32,16 +32,6 @@ final class TabBackgroundLayer: CAShapeLayer {
         }
     }
 
-    /// Mirrors the sidebar pinned-grid treatment: inactive open pinned cells
-    /// use a solid border, while discarded or unloaded cells use a dashed one.
-    var pinnedBorderStyle: TabStateBorderStyle = .none {
-        didSet {
-            if oldValue != pinnedBorderStyle {
-                updateAppearance()
-            }
-        }
-    }
-
     /// Position within a Chromium split pair, if any. Drives merged-bar shape.
     var splitPairPosition: SplitPairPosition? {
         didSet {
@@ -62,6 +52,17 @@ final class TabBackgroundLayer: CAShapeLayer {
         }
     }
 
+    /// Resolved by the visible address bar and mirrored into the active tab.
+    /// The active path contains both the tab body and its inverse corners, so
+    /// one fill color keeps the entire connected surface identical.
+    var activeFillColor: NSColor? {
+        didSet {
+            if oldValue != activeFillColor {
+                updateAppearance()
+            }
+        }
+    }
+
     override init() {
         super.init()
         setupLayer()
@@ -72,9 +73,9 @@ final class TabBackgroundLayer: CAShapeLayer {
         if let other = layer as? TabBackgroundLayer {
             self.tabState = other.tabState
             self.isPinned = other.isPinned
-            self.pinnedBorderStyle = other.pinnedBorderStyle
             self.splitPairPosition = other.splitPairPosition
             self.isSplitGroupActive = other.isSplitGroupActive
+            self.activeFillColor = other.activeFillColor
         }
     }
 
@@ -129,7 +130,8 @@ final class TabBackgroundLayer: CAShapeLayer {
         // single selected unit while the focused half visually stands out.
         if splitPairPosition != nil {
             if tabState == .active {
-                fillColor = ThemedColor.windowBackground.resolve(in: sourceView).cgColor
+                fillColor = (activeFillColor
+                    ?? ThemedColor.windowBackground.resolve(in: sourceView)).cgColor
                 strokeColor = NSColor.clear.cgColor
                 lineWidth = 0
             } else if isSplitGroupActive {
@@ -157,7 +159,8 @@ final class TabBackgroundLayer: CAShapeLayer {
 
         switch tabState {
             case .active:
-                fillColor = ThemedColor.windowBackground.resolve(in: sourceView).cgColor
+                fillColor = (activeFillColor
+                    ?? ThemedColor.windowBackground.resolve(in: sourceView)).cgColor
             case .subSelected:
                 fillColor = ThemedColor.tabSubSelectionBackground.resolve(in: sourceView).cgColor
             case .hovered:
@@ -167,16 +170,6 @@ final class TabBackgroundLayer: CAShapeLayer {
         }
         strokeColor = NSColor.clear.cgColor
         lineWidth = 0
-        if isPinned, tabState != .active, pinnedBorderStyle != .none {
-            strokeColor = ThemedColor.border.resolve(in: sourceView).cgColor
-            lineWidth = TabStateBorderMetrics.lineWidth
-            if pinnedBorderStyle == .dashed {
-                lineDashPattern = TabStateBorderMetrics.dashPattern.map {
-                    NSNumber(value: Double($0))
-                }
-            }
-        }
-
         CATransaction.commit()
     }
 

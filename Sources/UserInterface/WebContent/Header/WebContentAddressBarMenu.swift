@@ -175,6 +175,11 @@ final class WebContentAddressBarMenuPresenter {
             image: menuSymbol(named: "square.and.arrow.up")
         )
         MainActor.assumeIsolated {
+            #if compiler(>=6.4)
+            if #available(macOS 27.0, *) {
+                shareItem.preferredImageVisibility = .visible
+            }
+            #endif
             shareItem.submenu = PageSharingPresenter.shareSubmenu(for: resolvedTab)
         }
 
@@ -223,7 +228,9 @@ final class WebContentAddressBarMenuPresenter {
         }
 
         onPresentationChanged(true)
-        menu.popUp(positioning: nil, at: NSPoint(x: 0, y: -6), in: anchorView)
+        anchorView.effectiveAppearance.performAsCurrentDrawingAppearance {
+            menu.popUp(positioning: nil, at: NSPoint(x: 0, y: -6), in: anchorView)
+        }
         onPresentationChanged(false)
 
         _ = actionTargets

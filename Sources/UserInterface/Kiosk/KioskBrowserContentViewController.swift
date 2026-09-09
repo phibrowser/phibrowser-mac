@@ -17,6 +17,7 @@ final class KioskBrowserContentViewController: NSViewController {
     private let state: KioskBrowserState
     private let toolbarView: KioskBrowserToolbar
     private let webContentHost = NSView()
+    private lazy var toastViewController = OverlayToastViewController(state: state, isPanel: true)
     private var profileReplacementSnapshotView: NSImageView?
     private var profileReplacementSnapshotRemovalWorkItem: DispatchWorkItem?
     private var extensionSidePanelView: ExtensionSidePanelView?
@@ -50,6 +51,12 @@ final class KioskBrowserContentViewController: NSViewController {
         }
         remakeContentLayout()
 
+        addChild(toastViewController)
+        view.addSubview(toastViewController.view)
+        toastViewController.view.snp.makeConstraints { make in
+            make.edges.equalTo(webContentHost)
+        }
+
         bindState()
     }
 
@@ -63,6 +70,10 @@ final class KioskBrowserContentViewController: NSViewController {
             onSpaceSelection: onSpaceSelection,
             onOmniBoxRequest: onOmniBoxRequest
         )
+    }
+
+    func showSpaceSelectionMenu() {
+        toolbarView.showSpaceSelectionMenu()
     }
 
     func handlePreviousTabReadyForCleanup(tabId: Int) {

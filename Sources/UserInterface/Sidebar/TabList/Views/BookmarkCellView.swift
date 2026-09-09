@@ -916,22 +916,10 @@ private struct SidebarBookmarkCellContentView: View {
     }
 
     private var borderColor: Color {
-        if tabStateBorderStyle != .none {
-            return ThemedColor.border.swiftUIColor(theme: theme, appearance: appearance)
-        }
         if showsSelectionBorder && appearance == .dark {
             return .white.opacity(0.2)
         }
         return .clear
-    }
-
-    private var tabStateBorderStyle: TabStateBorderStyle {
-        guard !state.isFolder, !state.isActive else { return .none }
-        return TabStateBorderStyle.resolve(
-            isOpened: state.isOpened,
-            isDiscarded: primaryStatusModel.isDiscarded || secondaryStatusModel.isDiscarded,
-            isUnloaded: primaryStatusModel.isUnloaded || secondaryStatusModel.isUnloaded
-        )
     }
 
     private var showsSelectionBorder: Bool {
@@ -939,13 +927,23 @@ private struct SidebarBookmarkCellContentView: View {
     }
 
     private var borderStrokeStyle: StrokeStyle {
-        let resolvedStyle = tabStateBorderStyle == .none && showsSelectionBorder
-            ? TabStateBorderStyle.solid
-            : tabStateBorderStyle
         return StrokeStyle(
-            lineWidth: resolvedStyle == .none ? 0 : TabStateBorderMetrics.lineWidth,
-            lineCap: .round,
-            dash: resolvedStyle == .dashed ? TabStateBorderMetrics.dashPattern : []
+            lineWidth: showsSelectionBorder ? 1 : 0,
+            lineCap: .round
+        )
+    }
+
+    private var showsOpenIndicator: Bool {
+        !state.isFolder && TabFaviconPresentation.showsOpenIndicator(
+            isOpened: state.isOpened,
+            isActive: state.isActive
+        )
+    }
+
+    private var openIndicatorOpacity: CGFloat {
+        TabFaviconPresentation.opacity(
+            isDiscarded: primaryStatusModel.isDiscarded || secondaryStatusModel.isDiscarded,
+            isUnloaded: primaryStatusModel.isUnloaded || secondaryStatusModel.isUnloaded
         )
     }
 
@@ -984,6 +982,18 @@ private struct SidebarBookmarkCellContentView: View {
                 onReturnHoverChanged: { primaryFaviconHoverAction = $0 },
                 onSelectFolderIcon: onSelectFolderIcon
             )
+            .overlay(alignment: .leading) {
+                if !state.isFolder {
+                    // Keep the indicator decorative so selection changes do
+                    // not alter the row's measured width.
+                    TabOpenIndicatorView()
+                        .offset(x: -(
+                            TabOpenIndicatorMetrics.diameter
+                                + TabOpenIndicatorMetrics.bookmarkSpacing
+                        ))
+                        .opacity(showsOpenIndicator ? openIndicatorOpacity : 0)
+                }
+            }
 
             if !state.isEditing,
                state.primaryTabIsLive,
@@ -1280,10 +1290,7 @@ private struct BookmarkFaviconView: View {
     @ViewBuilder
     private var faviconContent: some View {
         if let liveTabViewModel {
-            UnifiedTabFaviconView(
-                viewModel: liveTabViewModel,
-                showsDiscardedOutline: false
-            )
+            UnifiedTabFaviconView(viewModel: liveTabViewModel)
         } else if let image {
             faviconImage(image)
         } else {

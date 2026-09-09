@@ -352,6 +352,7 @@ final class KioskBrowserWindowController: MainBrowserWindowController {
 
     @MainActor
     func handleCommand(_ command: CommandWrapper) -> Bool {
+        guard !command.isUnavailableInKiosk else { return true }
         switch command {
         case .IDC_BACK:
             browserState.focusingTab?.goBack()
@@ -371,8 +372,12 @@ final class KioskBrowserWindowController: MainBrowserWindowController {
         case .IDC_FOCUS_LOCATION:
             presentCurrentTabOmniBoxCentered()
             return true
-        case .IDC_OPEN_FILE:
+        case .PHI_KIOSK_OPEN_IN_SPACE:
             openFocusedTabInCurrentSpace()
+            return true
+        case .PHI_KIOSK_CHOOSE_SPACE:
+            (contentViewController as? KioskBrowserContentViewController)?
+                .showSpaceSelectionMenu()
             return true
         case .IDC_NEW_TAB, .IDC_NEW_TAB_TO_RIGHT, .IDC_FOCUS_SEARCH:
             presentOmniBoxCentered()
@@ -382,21 +387,6 @@ final class KioskBrowserWindowController: MainBrowserWindowController {
                 Int32(CommandWrapper.IDC_CLOSE_WINDOW.rawValue),
                 windowId: Int64(windowId)
             )
-            return true
-        case .IDC_TAB_SEARCH, .IDC_DUPLICATE_TAB, .IDC_WINDOW_PIN_TAB,
-             .IDC_DEV_TOOLS, .IDC_DEV_TOOLS_INSPECT,
-             .IDC_DEV_TOOLS_CONSOLE, .PHI_TOGGLE_SIDEBAR,
-             .PHI_TOGGLE_CHATBAR,
-             .IDC_SELECT_PREVIOUS_TAB, .IDC_SELECT_NEXT_TAB,
-             .IDC_SELECT_LAST_TAB, .PHI_TAB_SWITCHER_FORWARD,
-             .PHI_TAB_SWITCHER_BACKWARD, .PHI_SELECT_NEXT_SPACE,
-             .PHI_SELECT_PREVIOUS_SPACE:
-            return true
-        case let command where command.spaceSelectionIndex != nil:
-            return true
-        case let command
-            where command.rawValue >= CommandWrapper.IDC_SELECT_TAB_0.rawValue
-                && command.rawValue <= CommandWrapper.IDC_SELECT_TAB_7.rawValue:
             return true
         default:
             return false
@@ -523,6 +513,8 @@ final class KioskBrowserWindowController: MainBrowserWindowController {
         replacementWindow: NSWindow
     ) {
         shouldCaptureKioskOpened = false
+        (browserState as? KioskBrowserState)?.preferredSpaceId =
+            (source.browserState as? KioskBrowserState)?.preferredSpaceId
         profileReplacementSource = source
         profileReplacementSourceWindowId = source.windowId
         profileReplacementInheritedFrame = inheritedFrame
@@ -996,6 +988,7 @@ final class KioskBrowserWindowController: MainBrowserWindowController {
         let spaceManager = SpaceManager.shared
         guard let space = KioskSpaceMenuTargetResolver.primarySpace(
             in: spaceManager.spaces,
+            preferredSpaceId: (browserState as? KioskBrowserState)?.preferredSpaceId,
             activeSpaceId: spaceManager.activeSpaceId
         ) else { return }
         spaceManager.moveTab(tab, toSpaceId: space.spaceId)

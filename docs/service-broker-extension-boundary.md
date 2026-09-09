@@ -36,7 +36,7 @@ Replies use the request-scoped `sendMessageToApp` return value because the exist
 - A successful UDS connect is not proof of broker identity. Before sending a request, credential, or WebSocket handshake byte, the browser requires the peer uid to match its effective uid and validates the `LOCAL_PEERPID` process against the signed `service-broker` code requirement for Team ID `87DQ3HMK5G`. Failure is terminal and never falls back to another transport.
 - The browser enforces the broker's negotiated request, response, streaming, and WebSocket limits.
 - Chromium keeps the legacy 1 MiB native-message JSON limit for non-broker traffic. `broker.*` envelopes admit exactly `ceil(16 MiB / 3) * 4 + 64 KiB` bytes so a negotiated 16 MiB raw request plus bounded base64/JSON overhead reaches the browser protocol; the Mac layer remains the semantic and decoded-size enforcement point.
-- Each HTTP connect/write/response-head sequence, and each WebSocket handshake, send, and close, has one monotonic 30-second I/O budget. The WebSocket receive budget is 30 seconds since the last inbound frame of any kind — data, continuation, ping, or pong — and after 10 seconds of read silence the browser sends its own WebSocket ping, so an idle-but-alive channel stays open while a dead peer is still detected within 30 seconds. The Sentinel broker answers these bridge-side pings itself, so keepalive never depends on the upstream service. Streaming HTTP body reads have no per-read deadline, matching Chromium fetch semantics; they are bounded only by cancellation, EOF, and the channel idle timer. Swift task cancellation closes the UDS descriptor so a stalled peer cannot leave a detached poll/read/write running indefinitely.
+- Each HTTP connect/write/response-head sequence, and each WebSocket handshake, send, and close, has one monotonic 30-second I/O budget. The WebSocket receive budget is 30 seconds since the last inbound frame of any kind — data, continuation, ping, or pong — and after 10 seconds of read silence the browser sends its own WebSocket ping, so an idle-but-alive channel stays open while a dead peer is still detected within 30 seconds. The Sentinel broker answers these bridge-side pings itself, so keepalive never depends on the upstream service. Both the receive budget and the ping timer live inside one `receive()` call, so a channel paused by backpressure is not being timed and does not ping: it is by definition a channel whose peer is producing faster than the bridge drains, and the channel idle timer, not the receive budget, bounds how long it may stay paused. Streaming HTTP body reads have no per-read deadline, matching Chromium fetch semantics; they are bounded only by cancellation, EOF, and the channel idle timer. Swift task cancellation closes the UDS descriptor so a stalled peer cannot leave a detached poll/read/write running indefinitely.
 - `/broker` is reserved for broker-owned management routes. Only `broker.http.request` admits exact `GET /broker/healthz` with no body and maps it to broker service path `/healthz`. Query suffixes, encoded spellings, path variations, other methods, bodies, streaming attempts, `/broker/version`, and every other extension-supplied `/broker` path are rejected.
 - `broker.capabilities` is the explicit bridge handshake. After exact sender
   authorization and payload validation, the browser reads Sentinel's current
@@ -120,6 +120,17 @@ directly.
 
 Ordinary readiness and bounded HTTP calls use `broker.http.request`. Streaming HTTP and WebSocket calls use sender-owned opaque channels with one outstanding long-pull at a time. A pull waits for data, a terminal event, an error, or a bounded timeout; timeout keeps the channel alive and permits the next pull.
 
+A pull reply always carries an ordered `events` array, and a WebSocket pull fills
+it with as much of the channel queue as fits: at most **64 events** and at most
+**512 KiB** of frame payload, always at least one event, and never past a
+terminal event. One pull is a full round trip across the extension bridge, while
+phi-agent emits one frame per model delta, so a one-event-per-pull channel cannot
+keep up with a long streamed reply. Sequence numbers stay contiguous and in
+order across a batch, so the extension's per-frame sequence check is unchanged;
+the array shape is the shape it has always parsed. A pull that finds the queue
+empty still waits and returns the single event that ends the wait. HTTP stream
+pulls remain one chunk per pull — `bridgeChunkBytes` already batches there.
+
 Every generic request captures one nonempty immutable shared-auth snapshot before runtime resolution. The runtime account must match that snapshot, and channel ownership includes the exact extension ID, account ID, and opaque auth revision. After every asynchronous transport or channel operation, the protocol revalidates the complete snapshot before returning the request-scoped reply. Logout, account change, or same-account token rotation therefore rejects an in-flight result; a channel created by an older revision cannot be reused by the newer revision. The current Chromium sender API does not expose a distinct browser profile identity, so the owner profile field remains unset until that identity is carried across the bridge.
 
 End, close, failure, explicit cancel/close, idle expiry, UDS loss, and browser shutdown are terminal. Once the terminal event has been delivered, the channel is removed. Later pull, send, cancel, or close requests return `channel_not_found`; they cannot resurrect the channel.
@@ -128,6 +139,20 @@ Terminal HTTP and WebSocket events are not ordinary queued data: EOF, close,
 and failure remain enqueueable when the 128-event data window is full. This
 preserves the actual terminal reason instead of replacing it with a synthetic
 flow-control timeout.
+
+A WebSocket channel that fills its queue applies backpressure instead of dying.
+The high-water mark is 128 queued events or the negotiated
+`unacknowledged_window_bytes`, whichever comes first. On reaching it the browser
+stops reading the upstream socket — it does not close it, fail the channel, or
+drop the frame that crossed the mark, which was already read and is queued. The
+kernel socket buffer then fills and the broker, and through it phi-agent, feels
+the stall. Reads resume as soon as pulls bring the queue back to half of both
+marks. `flow_control_timeout` is therefore unreachable for `broker.ws.pull`; it
+stays in the stable error set and remains the HTTP-stream behaviour, where a
+producer that outruns its queue still fails the channel. The 60-second idle
+timer is the safety net for a paused channel: an extension that stops pulling
+still expires it, which tears down the upstream socket and releases the paused
+read loop.
 
 The exact stable extension error set is `unauthorized_sender`, `unsupported_message`, `invalid_payload`, `invalid_path`, `unsupported_method`, `invalid_base64`, `request_too_large`, `response_too_large`, `channel_not_found`, `owner_mismatch`, `pull_already_pending`, `flow_control_timeout`, `upstream_error`, and `protocol_error`. These codes are protocol failures, including transport failures normalized as `upstream_error` and malformed upstream/protocol state normalized as `protocol_error`. HTTP statuses such as `401` remain successful broker envelopes so Sidecar can perform its normal token refresh. Only the capability handshake may select legacy discovery. After protocol support is confirmed, a bridge or business error is terminal for transport selection and must never fall back to loopback TCP.
 
@@ -138,6 +163,45 @@ Standalone, build-time, and explicit test/debug overrides may use direct network
 Packet-capture verification must identify the Stable and Canary phi-agent ports separately. Traffic on Stable does not prove Canary Sidecar used the broker, and a Canary capture must show no Sidecar connection to Canary's loopback phi-agent port.
 
 ## Native image previews
+
+### Request acknowledgement
+
+As of 2026-09-07, `imagePreview` settles each request through
+`ExtensionMessaging` after main-actor presentation: `{}` confirms that the
+preview state was opened, not that image loading finished or the user dismissed
+it. Invalid payloads, empty image lists, and unavailable windows reject the
+request explicitly. Error replies do not echo image URLs, inline bytes, or raw
+payloads. No reply is broadcast.
+
+This fixes the missing acknowledgement behind Sidecar's image-preview
+`Request to app timed out` reports (SIDECAR-E): the router returned `nil` for an
+asynchronous reply, but the handler never sent one, even when presentation
+succeeded. The extension must not swallow all native timeouts or retry opening
+the preview, since a timeout does not prove that presentation failed.
+
+The wire payload, legacy object-form items, requested-window/active-window
+selection, preview-state index clamping, file authorization, and image loading
+remain unchanged. No Sidecar or Sentinel update is required for the reply fix;
+old browser builds still exhibit the missing acknowledgement until updated.
+The separate SIDECAR-E conversation-load timeout and SIDECAR-C Runner discovery
+failures are not resolved by this change.
+
+`ImagePreviewMessageHandlerTests` injects the existing messaging boundary and a
+presentation closure, so success/error routing can be tested without opening a
+browser window or touching authentication. Cover exactly one request-scoped
+reply after presentation, explicit failures, legacy items, and no broadcasts.
+Validation on 2026-09-07: Xcode 26.6 `build-for-testing` with
+`PhiBrowser-canary` and `CODE_SIGNING_ALLOWED=NO` passed, including the new
+XCTest file. All six tests also executed successfully in an isolated SwiftPM
+fixture reusing the actual source and test files, with browser window/messaging
+and broker-authorization dependencies stubbed. This verifies reply logic, not
+live bridge delivery or authorization. The normal application-hosted XCTest
+suite and native smoke test were not run, to avoid launching the user's browser.
+A subsequent approved native smoke test should confirm a real Sidecar preview
+opens and its promise settles without waiting for the bridge timeout; image
+loading failures must remain visible inside the native preview.
+
+### Image loading and authorization
 
 The Sidecar may send a normalized relative phi-agent file address, under `/api/v1/files/` or `/v1/files/`, to the existing native image-preview message. This address is privileged only when the message sender exactly matches the pinned Canary Sidecar ID.
 

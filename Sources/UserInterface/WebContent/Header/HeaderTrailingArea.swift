@@ -81,6 +81,7 @@ struct HeaderMoreButton: View {
 }
 
 struct HeaderTrailingArea: View {
+    @Environment(\.colorScheme) private var colorScheme
     let availableWidth: CGFloat
     let pinnedExtensions: [Extension]
     let showDownload: Bool
@@ -333,6 +334,7 @@ struct HeaderTrailingArea: View {
         if let manager = downloadViewModel.downloadsManager {
             DownloadsListView(downloadsManager: manager)
                 .frame(width: 340, height: 317)
+                .preferredColorScheme(colorScheme)
         }
     }
 

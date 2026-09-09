@@ -176,6 +176,17 @@ class WebContentViewController: NSViewController {
     private var splitLoginRequiredViews: [Int: LoginRequiredOverlayView] = [:]
 
     var addressBarAnchorView: NSView? { headerView.addressBarAnchorView }
+    var tabStripPageColorPresentation: WebContentHeaderPageColorPresentation {
+        aiChatSplitViewItem?.isCollapsed == false ? .inherited : headerView.pageColorPresentation
+    }
+    var tabStripPageColorPresentationPublisher: AnyPublisher<WebContentHeaderPageColorPresentation, Never> {
+        guard let aiChatSplitViewItem else { return headerView.pageColorPresentationPublisher }
+        return headerView.pageColorPresentationPublisher
+            .combineLatest(aiChatSplitViewItem.publisher(for: \.isCollapsed))
+            .map { presentation, isCollapsed in isCollapsed ? presentation : .inherited }
+            .removeDuplicates()
+            .eraseToAnyPublisher()
+    }
 
     /// Size of the web-content host area — the panel a page actually renders
     /// into (window minus sidebar, header, and bookmark bar), in points. Read
@@ -3075,11 +3086,18 @@ class WebContentViewController: NSViewController {
         // browser-reported drive carries no identity, so that falls back to the
         // roster's best guess.
         let named = AgentUserSpaceDriveRegistry.shared.record(forTabId: tabId)?.driverName
+        // A drive by the browser's own agent is not "some CDP client": the
+        // badge reads it as Phi and wears the product's mark. Taken from the
+        // roster's KEY-based answer rather than from the name above, which is
+        // whatever string the identity resolved to (see
+        // `soleRecentDriverIsFirstParty`).
+        let origin: AgentTaskOrigin =
+            AgentCDPDriverRoster.shared.soleRecentDriverIsFirstParty ? .phiAgent : .cdp
         return AgentTask(
             taskId: "user-space-drive-\(tabId)",
             spaceId: browserState?.spaceId ?? "",
             profileId: "",
-            origin: .cdp,
+            origin: origin,
             driverPrincipalId: nil,
             number: 0,
             windowId: browserState?.windowId ?? 0,

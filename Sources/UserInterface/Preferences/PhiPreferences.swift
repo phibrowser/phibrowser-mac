@@ -50,11 +50,11 @@ enum AutoPictureInPictureMode: String, CaseIterable, Identifiable {
     var displayName: String {
         switch self {
         case .off:
-            return NSLocalizedString("settings.general.pictureInPicture.offOption", value: "Off", comment: "Auto picture-in-picture option - never pop out automatically; manual picture-in-picture is unaffected")
+            return NSLocalizedString("settings.advanced.pictureInPicture.offOption", value: "Off", comment: "Auto picture-in-picture option - never pop out automatically; manual picture-in-picture is unaffected")
         case .normal:
-            return NSLocalizedString("settings.general.pictureInPicture.normalOption", value: "Normal", comment: "Auto picture-in-picture option - pop out and stay in place")
+            return NSLocalizedString("settings.advanced.pictureInPicture.normalOption", value: "Normal", comment: "Auto picture-in-picture option - pop out and stay in place")
         case .parked:
-            return NSLocalizedString("settings.general.pictureInPicture.parkAtEdgeOption", value: "Park at edge", comment: "Auto picture-in-picture option - pop out, then park at the screen edge until clicked")
+            return NSLocalizedString("settings.advanced.pictureInPicture.parkAtEdgeOption", value: "Park at edge", comment: "Auto picture-in-picture option - pop out, then park at the screen edge until clicked")
         }
     }
 }
@@ -83,6 +83,8 @@ extension PhiPreferences {
         case showBookmarkBarOnNewTabPage // In traditional layout, show bookmark bar on new tab page
         case alwaysShowURLPath // In address bar menu, always show full URL path
         case showTabPreviews // Whether open tabs use custom hover preview cards
+        case showOpenTabIndicators // Show dots on inactive open pinned tabs and bookmarks
+        case shortHighlightLinksEnabled // Use the sharing service for Copy Link to Highlight
         case spacesFeatureEnabled // Master gate for Spaces + profile management UI; defaults on, no user-facing toggle
         case suppressCloseIncognitoSpaceWarning // "Do not ask again" on the close-Incognito-Space confirmation
         case peekViewEnabled // Master gate for Peek View: the context-menu item and the automatic cross-site diversion
@@ -109,6 +111,10 @@ extension PhiPreferences {
             case .alwaysShowURLPath:
                 return false
             case .showTabPreviews:
+                return true
+            case .showOpenTabIndicators:
+                return false
+            case .shortHighlightLinksEnabled:
                 return true
             case .spacesFeatureEnabled:
                 return true
@@ -260,6 +266,7 @@ extension PhiPreferences {
         private static let cdpAgentAccessKey = "PhiCDPAgentAccessEnabled"
         private static let rememberedAgentGrantsKey = "PhiCDPRememberedAgentGrants"
         private static let allAgentsGrantKey = "PhiCDPAllAgentsGranted"
+        private static let agentIdentityLabelsKey = "PhiCDPAgentIdentityLabels"
         private static let agentDenialsKey = "PhiCDPAgentDenials"
         private static let autoViewKey = "PhiAgentSpaceAutoView"
         private static let userSpaceOperationsKey = "PhiAgentUserSpaceOperationsEnabled"
@@ -402,6 +409,22 @@ extension PhiPreferences {
                     UserDefaults.standard.removeObject(forKey: rememberedAgentGrantsKey)
                 } else {
                     UserDefaults.standard.set(Array(newValue), forKey: rememberedAgentGrantsKey)
+                }
+            }
+        }
+
+        /// The user-facing name each agent key was last seen with, keyed by
+        /// `AgentIdentity.key` ("Grok Bot" for DCNK4UB866:com.anysphere.sand).
+        /// A grant or denial remembers only the key, which for a modern app
+        /// build is an opaque signing id; this is how the Settings lists name
+        /// it after relaunch. See `AgentIdentityLabels`.
+        static var agentIdentityLabels: [String: String] {
+            get { UserDefaults.standard.dictionary(forKey: agentIdentityLabelsKey) as? [String: String] ?? [:] }
+            set {
+                if newValue.isEmpty {
+                    UserDefaults.standard.removeObject(forKey: agentIdentityLabelsKey)
+                } else {
+                    UserDefaults.standard.set(newValue, forKey: agentIdentityLabelsKey)
                 }
             }
         }

@@ -426,4 +426,22 @@ final class AgentCDPDriverRoster {
         guard recent.count == 1 else { return nil }
         return recent.first?.name
     }
+
+    /// Whether that single recent driver is the browser's own agent.
+    ///
+    /// Decided by the identity KEY, never by the display name. `firstPartyKey`
+    /// is minted only by `AgentPeerIdentity.firstPartyAgent`, which is the
+    /// verified check — Phi-signed peer, running the phi-agent bundle, and
+    /// descended from this bundle's `Phi Sentinel.app`. Every other identity
+    /// is keyed "teamId:signingId" or "unsigned:<path>", and a team identifier
+    /// is a 10-character Apple-issued string, so no outside agent can present
+    /// this key. A NAME could be worn by anything — an app or a directory that
+    /// calls itself "Phi Agent" — which is exactly why the pill must not
+    /// decide who is Phi from one.
+    var soleRecentDriverIsFirstParty: Bool {
+        let cutoff = Date().addingTimeInterval(-Self.window)
+        let recent = lastSeenByKey.filter { $0.value.at > cutoff }
+        guard recent.count == 1, let key = recent.first?.key else { return false }
+        return key == AgentPeerIdentity.firstPartyKey
+    }
 }

@@ -184,6 +184,7 @@ struct WebContentAddressBarView: View {
     private let loadingProgress: Double
     private let isLoading: Bool
     private let isProgressVisible: Bool
+    private let backgroundColor: Color?
     private let onOpenLocationBar: (NSView?) -> Void
 
     @StateObject private var viewModel: WebContentAddressBarViewModel
@@ -205,6 +206,7 @@ struct WebContentAddressBarView: View {
         loadingProgress: Double,
         isLoading: Bool,
         isProgressVisible: Bool = false,
+        backgroundColor: Color? = nil,
         onOpenLocationBar: @escaping (NSView?) -> Void,
         onAnchorResolved: ((NSView?) -> Void)? = nil
     ) {
@@ -214,6 +216,7 @@ struct WebContentAddressBarView: View {
         self.loadingProgress = loadingProgress
         self.isLoading = isLoading
         self.isProgressVisible = isProgressVisible
+        self.backgroundColor = backgroundColor
         self.onOpenLocationBar = onOpenLocationBar
         self.onAnchorResolved = onAnchorResolved
         _viewModel = StateObject(wrappedValue: WebContentAddressBarViewModel(
@@ -272,7 +275,7 @@ struct WebContentAddressBarView: View {
             isHovering = hovering
         }
         .background(widthReader)
-        .onChange(of: currentTab?.guid) { _, _ in
+        .onChange(of: currentTab.map(ObjectIdentifier.init)) { _, _ in
             viewModel.bind(currentTab: currentTab)
         }
         .clipShape(Capsule())
@@ -283,7 +286,9 @@ struct WebContentAddressBarView: View {
         // the address bar without hovering — it'd otherwise be a blank patch.
         let baseColor = (showBackgroundWhenInactive || viewModel.isInPlaceholderMode)
             ? Color(.sidebarTabHovered)
-            : ThemedColor.windowBackground.swiftUIColor(theme: theme, appearance: appearance)
+            : (backgroundColor == nil
+               ? ThemedColor.windowBackground.swiftUIColor(theme: theme, appearance: appearance)
+               : .clear)
         let hoverColor = Color(.sidebarTabHoveredColorEmphasized)
         let shouldHighlight = isHovering || isMenuShown
         return Capsule()
@@ -295,7 +300,10 @@ struct WebContentAddressBarView: View {
         GeometryReader { proxy in
             let totalWidth = proxy.size.width
             let clampedProgress = min(max(effectiveLoadingProgress, 0), 1)
-            let baseColor = ThemedColor.themeColor.swiftUIColor(theme: theme, appearance: appearance)
+            let baseColor = ThemedColor.themeColor.swiftUIColor(
+                theme: theme,
+                appearance: appearance
+            )
             let backgroundLead: CGFloat = 100
             let progressWidth = totalWidth * clampedProgress
             let backgroundWidth = min(totalWidth, progressWidth + backgroundLead)
@@ -566,8 +574,14 @@ private struct AddressBarProgressBarView: View {
             let height = geometry.size.height
             let clampedProgress = min(max(progress, 0), 1)
             let progressWidth = width * clampedProgress
-            let baseColor = ThemedColor.themeColor.swiftUIColor(theme: theme, appearance: appearance)
-            let backgroundColor = ThemedColor.windowBackground.swiftUIColor(theme: theme, appearance: appearance)
+            let baseColor = ThemedColor.themeColor.swiftUIColor(
+                theme: theme,
+                appearance: appearance
+            )
+            let backgroundColor = ThemedColor.windowBackground.swiftUIColor(
+                theme: theme,
+                appearance: appearance
+            )
             let fadeStart: Double = 0.3
             let fadeRange: Double = 0.2
             let gradientOpacity = max(0, min(1, (clampedProgress - fadeStart) / fadeRange))

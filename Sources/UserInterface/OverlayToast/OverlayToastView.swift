@@ -8,6 +8,7 @@ import SwiftUI
 
 struct OverlayToastView: View {
     let toast: OverlayToastItem
+    var toastCenter: OverlayToastCenter = .shared
 
     private let cornerRadius: CGFloat = 10
     private let maxWidth: CGFloat = 360
@@ -33,6 +34,16 @@ struct OverlayToastView: View {
     }
 
     private var toastContent: some View {
+        HStack(spacing: 12) {
+            toastText
+            if !toast.shareURLs.isEmpty {
+                OverlayToastShareButton(urls: toast.shareURLs, toastID: toast.id, toastCenter: toastCenter)
+                    .fixedSize()
+            }
+        }
+    }
+
+    private var toastText: some View {
         VStack(alignment: .leading, spacing: contentSpacing) {
             if let titleText {
                 Text(titleText)
@@ -110,6 +121,60 @@ private struct OverlayToastNaturalWidthKey: PreferenceKey {
 
     static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
         value = max(value, nextValue())
+    }
+}
+
+private struct OverlayToastShareButton: NSViewRepresentable {
+    let urls: [URL]
+    let toastID: UUID
+    let toastCenter: OverlayToastCenter
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(urls: urls, toastID: toastID, toastCenter: toastCenter)
+    }
+
+    func makeNSView(context: Context) -> NSButton {
+        let button = NSButton(
+            title: NSLocalizedString(
+                "browser.highlightLink.shareButton",
+                value: "Share",
+                comment: "Highlight link copy confirmation - Button that opens the system sharing menu for the copied link"
+            ),
+            target: context.coordinator,
+            action: #selector(Coordinator.share(_:))
+        )
+        button.bezelStyle = .rounded
+        button.controlSize = .small
+        button.setAccessibilityIdentifier("overlayToast.shareButton")
+        return button
+    }
+
+    func updateNSView(_ nsView: NSButton, context: Context) {
+        context.coordinator.urls = urls
+        context.coordinator.toastID = toastID
+    }
+
+    final class Coordinator: NSObject {
+        var urls: [URL]
+        var toastID: UUID
+        let toastCenter: OverlayToastCenter
+
+        init(urls: [URL], toastID: UUID, toastCenter: OverlayToastCenter) {
+            self.urls = urls
+            self.toastID = toastID
+            self.toastCenter = toastCenter
+        }
+
+        @MainActor @objc func share(_ sender: NSButton) {
+            guard sender.window != nil else { return }
+            let id = toastID
+            toastCenter.pauseDismissal(id: id)
+            defer { toastCenter.dismiss(id: id) }
+
+            let menu = PageSharingPresenter.shareMenu(for: urls)
+            let point = NSPoint(x: sender.bounds.minX, y: sender.isFlipped ? sender.bounds.maxY : sender.bounds.minY)
+            menu.popUp(positioning: nil, at: point, in: sender)
+        }
     }
 }
 

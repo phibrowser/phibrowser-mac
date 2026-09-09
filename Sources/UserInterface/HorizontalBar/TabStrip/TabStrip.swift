@@ -216,6 +216,8 @@ final class TabStrip: NSView, TitlebarAwareHitTestable {
     private let dragController = TabStripDragController()
     private let groupDragController = TabGroupDragController()
     private var isActive = false
+    private var activePageBackgroundColor: NSColor?
+    private var activePageAppearance: Appearance?
 
     /// Local NSEvent monitor installed for the lifetime of a group
     /// drag — listens for the Esc key (keyCode 53) and cancels the
@@ -1355,6 +1357,34 @@ final class TabStrip: NSView, TitlebarAwareHitTestable {
         }
     }
 
+    func setActivePageStyle(backgroundColor: NSColor?, appearance: Appearance?) {
+        guard activePageBackgroundColor != backgroundColor
+                || activePageAppearance != appearance else { return }
+        activePageBackgroundColor = backgroundColor
+        activePageAppearance = appearance
+
+        for view in pinnedTabViews.values {
+            view.setActivePageStyle(backgroundColor: backgroundColor, appearance: appearance)
+        }
+        for view in normalTabViews.values {
+            view.setActivePageStyle(backgroundColor: backgroundColor, appearance: appearance)
+        }
+        draggingProxyView?.setActivePageStyle(
+            backgroundColor: backgroundColor,
+            appearance: appearance
+        )
+        draggingSiblingProxyView?.setActivePageStyle(
+            backgroundColor: backgroundColor,
+            appearance: appearance
+        )
+        for companion in draggingCompanionProxyViews {
+            companion.view.setActivePageStyle(
+                backgroundColor: backgroundColor,
+                appearance: appearance
+            )
+        }
+    }
+
     private func activate() {
         guard isActive == false else {
             syncVisibleState()
@@ -2010,6 +2040,10 @@ final class TabStrip: NSView, TitlebarAwareHitTestable {
                 sourceTab: tab
             )
             view.configure(with: renderData, browserState: browserState)
+            view.setActivePageStyle(
+                backgroundColor: activePageBackgroundColor,
+                appearance: activePageAppearance
+            )
 
             let isDraggingSourceView = dragController.context.map {
                 tabId(for: $0.draggingTab) == id
@@ -4159,6 +4193,10 @@ final class TabStrip: NSView, TitlebarAwareHitTestable {
 
             let proxy = TabItemView()
             proxy.configure(with: renderData, browserState: browserState)
+            proxy.setActivePageStyle(
+                backgroundColor: activePageBackgroundColor,
+                appearance: activePageAppearance
+            )
             if !renderData.isActive {
                 proxy.setDragHighlighted(true)
             }
@@ -4221,6 +4259,10 @@ final class TabStrip: NSView, TitlebarAwareHitTestable {
                 )
                 let siblingProxy = TabItemView()
                 siblingProxy.configure(with: siblingRenderData, browserState: browserState)
+                siblingProxy.setActivePageStyle(
+                    backgroundColor: activePageBackgroundColor,
+                    appearance: activePageAppearance
+                )
                 if !siblingRenderData.isActive {
                     siblingProxy.setDragHighlighted(true)
                 }
@@ -4308,6 +4350,10 @@ final class TabStrip: NSView, TitlebarAwareHitTestable {
                                             partner: unit.partner,
                                             isPinned: isPinned)
             companion.configure(with: renderData, browserState: browserState)
+            companion.setActivePageStyle(
+                backgroundColor: activePageBackgroundColor,
+                appearance: activePageAppearance
+            )
             if !renderData.isActive {
                 companion.setDragHighlighted(true)
             }
@@ -5282,12 +5328,20 @@ extension TabStrip: TabStripDragDelegate {
             sourceTab: tab
         )
         draggingView.configure(with: renderData, browserState: browserState)
+        draggingView.setActivePageStyle(
+            backgroundColor: activePageBackgroundColor,
+            appearance: activePageAppearance
+        )
         draggingView.layoutSubtreeIfNeeded()
         for companion in draggingCompanionProxyViews {
             let companionRenderData = dragRenderData(for: companion.tab,
                                                      partner: companion.partner,
                                                      isPinned: zone == .pinned)
             companion.view.configure(with: companionRenderData, browserState: browserState)
+            companion.view.setActivePageStyle(
+                backgroundColor: activePageBackgroundColor,
+                appearance: activePageAppearance
+            )
             companion.view.layoutSubtreeIfNeeded()
         }
         cachedTabDragImage = draggingView.createDraggingSnapshot(cornerRadius: TabStripMetrics.Tab.cornerRadius)

@@ -3,6 +3,7 @@
 // Use of this source code is governed by an Apache license that can be
 // found in the LICENSE file.
 
+import AppKit
 import SwiftUI
 
 /// How long a refusal should stand, as picked in the agent access alert.
@@ -292,10 +293,40 @@ struct AgentAccessApprovalAlert: View {
 
     // MARK: - Summary card
 
-    /// Wide enough for the longest label the card can show, which is the
-    /// "Answer for" a retargeted row swaps in — the values stay aligned across
-    /// every row and every state rather than stepping sideways when it does.
-    private static let labelColumnWidth: CGFloat = 66
+    /// The labels the card's first column can show, and the font all of them
+    /// are drawn in. Kept together because the column is measured from them:
+    /// a label added here that is read from anywhere else would size the
+    /// column to the wrong list and truncate on the language that needs it.
+    private static let columnLabelFont = NSFont.systemFont(ofSize: 12)
+
+    static let agentLabelText = NSLocalizedString("agentControl.connectionApproval.agentLabel", value: "Agent", comment: "CDP consent - agent row label")
+    static let subjectLabelText = NSLocalizedString("agentControl.connectionApproval.subjectLabel", value: "Answer for", comment: "CDP consent - label of the top summary row once the answer has been retargeted onto a process that launched the agent, replacing the \"Agent\" label")
+    static let identityLabelText = NSLocalizedString("agentControl.connectionApproval.identityLabel", value: "Identity", comment: "CDP consent - code signing identity row label")
+    static let detailsLabelText = NSLocalizedString("agentControl.connectionApproval.details.label", value: "Details", comment: "CDP consent - label of the row that expands the agent's command and process tree")
+
+    /// Wide enough for the longest label the card can show — measured, because
+    /// which label that is depends on the language. English's longest is the
+    /// "Answer for" a retargeted row swaps in, and 66 was drawn to it; but
+    /// Spanish ("Respuesta para"), Dutch and French all run past that, and
+    /// Japanese's plain "Agent" — the label on every prompt, not just a
+    /// retargeted one — already does. A fixed 66 clipped all four.
+    ///
+    /// Still one width for every row and every state rather than a per-row
+    /// fit: the values must stay aligned across the card instead of stepping
+    /// sideways when the top label swaps under a retarget.
+    ///
+    /// Floored at that 66 so no language draws the column narrower than the
+    /// design, and capped so a long translation borrows room from the value
+    /// rather than crowding it out.
+    private static let labelColumnWidth: CGFloat = {
+        let widest = [agentLabelText, subjectLabelText, identityLabelText, detailsLabelText]
+            .map { ($0 as NSString).size(withAttributes: [.font: columnLabelFont]).width }
+            .max() ?? 0
+        // Two points of slack: this measures with AppKit but the label is drawn
+        // by SwiftUI, and a column even a fraction of a point short truncates
+        // just as visibly as one short by ten.
+        return min(max(66, (widest + 2).rounded(.up)), 110)
+    }()
 
     /// Describes the SUBJECT, not the asking agent — the two are the same
     /// until the user retargets the answer in Details, and after that the card
@@ -352,14 +383,12 @@ struct AgentAccessApprovalAlert: View {
     /// actually become — leaving it reading "Agent" over the name of a
     /// terminal would be the one piece of this alert that lies.
     private var subjectRowLabel: String {
-        isRetargeted
-            ? NSLocalizedString("agentControl.connectionApproval.subjectLabel", value: "Answer for", comment: "CDP consent - label of the top summary row once the answer has been retargeted onto a process that launched the agent, replacing the \"Agent\" label")
-            : NSLocalizedString("agentControl.connectionApproval.agentLabel", value: "Agent", comment: "CDP consent - agent row label")
+        isRetargeted ? Self.subjectLabelText : Self.agentLabelText
     }
 
     private var identityRow: some View {
         summaryRow(
-            label: NSLocalizedString("agentControl.connectionApproval.identityLabel", value: "Identity", comment: "CDP consent - code signing identity row label"),
+            label: Self.identityLabelText,
             value: subject.detail,
             valueColor: Self.trustColor(verified: subject.verified)
         ) {
@@ -433,7 +462,7 @@ struct AgentAccessApprovalAlert: View {
                     .font(.system(size: 12, weight: .medium))
                     .themedForeground(.textSecondary)
                     .frame(width: 16)
-                Text(NSLocalizedString("agentControl.connectionApproval.details.label", value: "Details", comment: "CDP consent - label of the row that expands the agent's command and process tree"))
+                Text(Self.detailsLabelText)
                     .font(.system(size: 12))
                     .themedForeground(.textSecondary)
                     .lineLimit(1)

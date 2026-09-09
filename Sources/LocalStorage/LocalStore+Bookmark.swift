@@ -15,6 +15,9 @@ extension LocalStore {
     private static let importedFromArcFolderTitle = NSLocalizedString("localData.bookmarks.importedFromArcFolderTitle", value: "Imported From Arc",
         comment: "Arc bookmarks import folder title"
     )
+    private static let importedFromDiaFolderTitle = NSLocalizedString("localData.bookmarks.importedFromDiaFolderTitle", value: "Imported From Dia",
+        comment: "Bookmark folder - Wrapper created at the Space root to hold the bookmarks imported from Dia; its title must match the one the browser side writes"
+    )
     
     /// Creates a bookmark node, attaching it to the root when `parentId` is nil.
     /// `secondaryUrl` is set only for split-view bookmarks; clicking such a
@@ -1579,18 +1582,24 @@ private extension LocalStore {
         }
 
         switch importedBrowserFolderRank(for: title, source: inheritedSource) {
-        case 0:
+        case 0:  // Chrome
             return 1
-        case 2:
+        case 3:  // Safari
             return 2
         default:
             return inheritedSource == 0 ? 1 : inheritedSource
         }
     }
 
+    /// Where an imported-browser folder sorts among its kind at the Space root:
+    /// Chrome 0, Arc 1, Dia 2, Safari 3 — the order of the import window's
+    /// rows. Nil for any other folder.
     static func importedBrowserFolderRank(for title: String, source: Int) -> Int? {
         if source == 3 || title == importedFromArcFolderTitle {
             return 1
+        }
+        if title == importedFromDiaFolderTitle {
+            return 2
         }
 
         let lowercasedTitle = title.lowercased()
@@ -1598,7 +1607,7 @@ private extension LocalStore {
             return 0
         }
         if lowercasedTitle.contains("safari") {
-            return 2
+            return 3
         }
         return nil
     }

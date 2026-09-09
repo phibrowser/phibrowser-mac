@@ -33,7 +33,7 @@ enum ImportDataType: String, CaseIterable {
         switch browser {
         case .safari:
             return [.bookmarks, .history]
-        case .chrome, .arc:
+        case .chrome, .arc, .dia:
             return [.bookmarks, .history, .cookies, .extensions]
         case .file:
             // File import exposes no per-type toggles; the file row uses a picker

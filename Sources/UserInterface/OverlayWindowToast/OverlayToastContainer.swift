@@ -111,8 +111,10 @@ struct OverlayToastContainer: View {
     var body: some View {
         GeometryReader { containerGeometry in
             ZStack {
-                livingDownloadsArea
-                notificationCardArea
+                if !viewModel.isPanel {
+                    livingDownloadsArea
+                    notificationCardArea
+                }
                 topCenterToastArea
                 topTrailingToastArea
             }
@@ -159,7 +161,7 @@ struct OverlayToastContainer: View {
     private var topCenterToastArea: some View {
         VStack(spacing: 8) {
             ForEach(viewModel.genericToasts(for: .topCenter)) { toast in
-                OverlayToastView(toast: toast)
+                OverlayToastView(toast: toast, toastCenter: viewModel.toastCenter)
                     .overlayHitTestable(in: coordinateSpaceName)
                     .transition(genericToastTransition)
             }
@@ -216,7 +218,7 @@ struct OverlayToastContainer: View {
     private var topTrailingToastArea: some View {
         VStack(alignment: .trailing, spacing: 8) {
             ForEach(viewModel.genericToasts(for: .topTrailing)) { toast in
-                OverlayToastView(toast: toast)
+                OverlayToastView(toast: toast, toastCenter: viewModel.toastCenter)
                     .overlayHitTestable(in: coordinateSpaceName)
                     .transition(genericToastTransition)
             }

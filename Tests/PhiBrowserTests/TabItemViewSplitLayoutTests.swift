@@ -62,6 +62,69 @@ final class TabItemViewSplitLayoutTests: XCTestCase {
         XCTAssertEqual(frames[1], CGRect(x: 51, y: 8, width: faviconSize.width, height: faviconSize.height))
     }
 
+    func test_openPinnedSplitPlacesIndicatorBelowCenteredFaviconPair() throws {
+        let primaryWrapper = BookmarkLayoutTestWebContentWrapper(
+            urlString: "https://primary.example"
+        )
+        let partnerWrapper = BookmarkLayoutTestWebContentWrapper(
+            urlString: "https://partner.example"
+        )
+        partnerWrapper.isDiscarded = true
+        let primary = Tab(
+            guid: 1,
+            url: primaryWrapper.urlString,
+            isActive: false,
+            index: 0,
+            webContentView: primaryWrapper
+        )
+        let partner = Tab(
+            guid: 2,
+            url: partnerWrapper.urlString,
+            isActive: false,
+            index: 1,
+            webContentView: partnerWrapper
+        )
+        let view = TabItemView()
+        view.configure(with: TabRenderData(
+            id: "tab-1",
+            title: "Primary",
+            url: primary.url ?? "",
+            isActive: false,
+            isPinned: true,
+            isSplitGroupActive: false,
+            pinnedSplitPartner: partner,
+            sourceTab: primary
+        ))
+        view.frame = CGRect(x: 0, y: 0, width: 100, height: TabStripMetrics.Strip.tabHeight)
+        view.layout()
+
+        let faviconSize = TabStripMetrics.Content.faviconSize
+        let faviconFrames = view.subviews
+            .filter { !$0.isHidden && $0.frame.size == faviconSize }
+            .map(\.frame)
+            .sorted { $0.minX < $1.minX }
+        let indicator = try XCTUnwrap(view.subviews.first {
+            !$0.isHidden
+                && $0.frame.size == CGSize(
+                    width: TabOpenIndicatorMetrics.diameter,
+                    height: TabOpenIndicatorMetrics.diameter
+                )
+        })
+
+        XCTAssertEqual(faviconFrames, [
+            CGRect(x: 33, y: 8, width: faviconSize.width, height: faviconSize.height),
+            CGRect(x: 51, y: 8, width: faviconSize.width, height: faviconSize.height),
+        ])
+        XCTAssertEqual(indicator.frame.midX, view.bounds.midX)
+        XCTAssertEqual(indicator.alphaValue, TabFaviconPresentation.reclaimedOpacity)
+        let expectedIndicatorY = view.isFlipped
+            ? faviconFrames[0].maxY + TabOpenIndicatorMetrics.comfortablePinnedSpacing
+            : faviconFrames[0].minY
+                - TabOpenIndicatorMetrics.comfortablePinnedSpacing
+                - TabOpenIndicatorMetrics.diameter
+        XCTAssertEqual(indicator.frame.minY, expectedIndicatorY)
+    }
+
     func test_mergedSplitCellAboveSplitThresholdRendersPerPaneLayout() {
         let partner = Tab(guid: 2, url: "https://partner.example", isActive: false, index: 1)
         let view = makeMergedSplitView(width: 140, partner: partner)

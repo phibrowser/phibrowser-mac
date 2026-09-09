@@ -24,8 +24,9 @@
 - `Shortcuts+Custom.swift` owns effective-key lookup, overrides, persistence,
   change notification, and menu rebuild requests. It does not normalize events.
 - `ShortcutsViewModel` owns settings presentation and conflict reporting.
-- `CommandDispatcher` owns pre-Chromium interception for the commands listed in
-  `phiInterceptedCommands`. Other commands continue through Chromium.
+- `CommandDispatcher` owns pre-Chromium interception for Kiosk-only commands
+  and the commands listed in `phiInterceptedCommands`. Other commands continue
+  through Chromium.
 
 ## Event Normalization and Input Sources
 
@@ -131,6 +132,71 @@ of the execution paths cannot reproduce.
   different keys can execute as the same AppKit shortcut.
 - Select Previous/Next Tab use command-specific labels for their shifted bracket
   defaults while conflict detection continues to use `{` and `}`.
+
+## Kiosk Shortcuts
+
+Kiosk has an independent set of command bindings, exposed in the Kiosk settings
+group (`Shortcuts.Group.kiosk`). It shares the existing `ShortcutsKey`
+normalization, `CustomShortcuts.json` persistence, recording UI, and override
+mechanism. Each Kiosk command can be rebound, disabled, or restored independently
+of ordinary-window commands that use the same default key.
+
+| Command | Default | Action |
+| --- | --- | --- |
+| `PHI_KIOSK_OPEN_IN_SPACE` | Cmd-O | Open the Kiosk page in the Space shown by the toolbar's primary action. |
+| `PHI_KIOSK_CHOOSE_SPACE` | Shift-Cmd-O | Show the toolbar's "Open in" Space selection menu. |
+
+Peek also uses `PHI_KIOSK_OPEN_IN_SPACE` for "Open as Tab" while its panel is
+visible in the active window and is not eclipsed by an in-window overlay.
+The binding is read from the same configuration, including overrides and
+disabling, and invokes the existing Peek expansion action.
+
+For example, changing or disabling `IDC_OPEN_FILE` does not change Kiosk's
+Cmd-O binding. The destination Space uses the existing toolbar target resolver,
+including the preferred Space supplied by an external URL Rule. Mouse and
+keyboard opening of the selection menu share `KioskSpaceMenuAnchorView` and
+the same Space selection callback.
+
+### Window Scope and Dispatch Priority
+
+After the guest-transition guard, `CommandDispatcher.handleKeyEquivalent`
+checks whether the receiving window belongs to a `KioskBrowserWindowController`.
+Only then does `interceptedKioskCommand` read the effective Kiosk keys through
+`Shortcuts.key(for:)` and match them using the existing `matchedPhiCommand` path.
+A match goes directly to `KioskBrowserWindowController.handleCommand`, before
+the general Phi interceptor or Chromium's menu and accelerator lookup.
+
+Ordinary windows skip this Kiosk lookup. Disabling or rebinding a Kiosk shortcut
+removes its old interception; subsequent handling still depends on the remaining
+bindings and command availability. Kiosk commands are not added to the general
+`phiInterceptedCommands` map.
+
+### Context-Aware Conflict Reporting
+
+`ShortcutsViewModel.findConflictingCommands` still compares effective
+`menuKeyEquivalent` values, with one symmetric exception: a Kiosk-group command
+does not conflict with a command whose `isUnavailableInKiosk` is true. This
+allows Cmd-O to coexist with Open File, and Shift-Cmd-O with New Conversation,
+because those ordinary-window actions are unavailable in Kiosk. Other examples
+include sidebar toggles, DevTools, and tab or Space navigation.
+
+`CommandWrapper.isUnavailableInKiosk` is the shared source for this exception
+and the controller's command-swallowing guard. When changing availability, keep
+native menu validation consistent as well; selector-based menu actions can
+bypass the command dispatcher.
+
+Conflicts between two Kiosk commands, or between a Kiosk command and a command
+outside that unavailable set, remain visible on both sides. Conflict reporting
+does not reject the binding or automatically reassign another command. If both
+Kiosk commands share a key, the first matching command in `Group.kiosk.commands`
+wins. For events reaching the native interceptor, Kiosk matches precede general
+Phi matches.
+
+`PHI_NEW_KIOSK_WINDOW` is a separate application command, not part of this
+Kiosk-only group. When its global-shortcut preference is enabled,
+`KioskGlobalShortcutRegistrar` registers its effective key with Carbon. That
+system-wide hotkey can take precedence before window interception, so assigning
+the same key to a Kiosk-only command still constitutes a conflict.
 
 ## Chromium Shortcut and Command Dispatch Overview
 
@@ -258,6 +324,11 @@ verify the normalization and identity rules, but do not replace live testing of
 every macOS input source,
 real `NSMenuItem` tracking, Chromium hidden accelerators, settings UI rendering,
 or legacy JSON compatibility.
+
+Kiosk shortcut tests cover independent bindings, rebinding, disabling,
+restoration, and conflict reporting across window contexts. They exercise
+matching helpers and settings data, not real window dispatch, Space menu
+tracking, or Carbon hotkey precedence; those require runtime verification.
 
 ## Notes
 

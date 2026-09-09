@@ -132,15 +132,18 @@ public final class BrowserThemeContext: NSObject, ThemeStateProvider {
     /// the Space's own variant.
     public var spaceThemeResolver: (() -> Theme?)?
 
+    /// A fixed palette for surfaces such as Kiosk; appearance can still follow the app.
+    private let fixedTheme: Theme?
     private var cancellables = Set<AnyCancellable>()
 
     @MainActor
-    public init(configuration: BrowserThemeConfiguration) {
+    public init(configuration: BrowserThemeConfiguration, fixedTheme: Theme? = nil) {
+        self.fixedTheme = fixedTheme
         self.currentTheme = ThemeColorAdjustment.applyingStandardAlpha(
-            to: configuration.currentTheme
+            to: fixedTheme ?? configuration.currentTheme
         )
         self.userAppearanceChoice = configuration.userAppearanceChoice
-        self.mirrorsSharedTheme = configuration.mirrorsSharedTheme
+        self.mirrorsSharedTheme = fixedTheme == nil && configuration.mirrorsSharedTheme
         self.mirrorsSharedAppearance = configuration.mirrorsSharedAppearance
         super.init()
         bindSharedTheme()
@@ -170,6 +173,7 @@ public final class BrowserThemeContext: NSObject, ThemeStateProvider {
     }
     
     public func setTheme(_ theme: Theme) {
+        guard fixedTheme == nil else { return }
         currentTheme = ThemeColorAdjustment.applyingStandardAlpha(to: theme)
     }
     
@@ -188,7 +192,7 @@ public final class BrowserThemeContext: NSObject, ThemeStateProvider {
         manager.themePublisher
             .receive(on: DispatchQueue.main)
             .sink { [weak self] theme in
-                guard let self else { return }
+                guard let self, self.fixedTheme == nil else { return }
                 if self.mirrorsSharedTheme {
                     self.currentTheme = ThemeColorAdjustment.applyingStandardAlpha(to: theme)
                 } else if let resolved = self.spaceThemeResolver?() {
@@ -226,7 +230,9 @@ public final class BrowserThemeContext: NSObject, ThemeStateProvider {
 
 public extension NSWindow {
     var browserThemeContext: BrowserThemeContext? {
+        // Overlays such as the omnibox live in child panels without a browser controller.
         (windowController as? MainBrowserWindowController)?.browserState.themeContext
+            ?? parent?.browserThemeContext
     }
     
     var themeStateProvider: ThemeStateProvider {

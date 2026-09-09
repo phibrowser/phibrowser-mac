@@ -5,6 +5,7 @@
 
 import Cocoa
 import Foundation
+import PostHog
 import SwiftUI
 @objc class PhiChromiumCoordinator: NSObject {
     @objc static var shared = PhiChromiumCoordinator()
@@ -139,6 +140,11 @@ extension PhiChromiumCoordinator: PhiChromiumBridgeDelegate {
 
     func shouldAutoInstallICloudPasswords() -> Bool {
         PhiPreferences.PasswordManagerSettings.autoInstallICloudPasswords.loadValue()
+    }
+
+    @objc(isShortHighlightLinkEnabled)
+    func isShortHighlightLinkEnabled() -> Bool {
+        PhiPreferences.GeneralSettings.shortHighlightLinksEnabled.loadValue()
     }
 
     func isAutoPictureInPictureEnabled() -> Bool {
@@ -661,6 +667,10 @@ extension PhiChromiumCoordinator: PhiChromiumBridgeDelegate {
                 || browserType == .agentSpace || browserType == .kiosk
                 || browserType == .kioskIncognito else {
             AppLogInfo("🌐 [Chromium] Ignoring unsupported window type: \(browserType.rawValue)")
+            // The framework keeps routing tab and extension events for this
+            // window (e.g. the Phi Chat web-app window); let EventBus drop them
+            // quietly instead of logging a missing window for each one.
+            MainBrowserWindowControllersManager.shared.registerUnmanagedWindow(window, windowId: Int(windowId))
             return
         }
 
@@ -1558,6 +1568,42 @@ extension PhiChromiumCoordinator: PhiChromiumBridgeDelegate {
     func tabLeftGroup(_ windowId: Int64, tabId: Int64, tokenHex: String) {
         dispatchGroupAction(.tabLeftGroup(tabId: tabId.intValue, token: tokenHex),
                             windowId: windowId)
+    }
+
+    @objc(linkCopied:windowId:url:)
+    func linkCopied(_ tabId: Int64, windowId: Int64, url: String) {
+        guard !url.isEmpty, let copiedURL = URL(string: url) else { return }
+        DispatchQueue.main.async {
+            guard let controller = MainBrowserWindowControllersManager.shared
+                .controller(for: Int(windowId)) else { return }
+            if controller.browserState.peekState.peekTab(withId: Int(tabId)) != nil {
+                controller.peekPanelControllerIfLoaded?.showURLCopyConfirmation(url: copiedURL, tabId: Int(tabId))
+            } else {
+                OverlayToastCenter.shared.showURLCopyConfirmation(copiedURLs: [copiedURL.absoluteString], in: controller.browserState)
+            }
+        }
+    }
+
+    @objc(linkToHighlightCopied:windowId:url:isShortLink:)
+    func link(toHighlightCopied tabId: Int64, windowId: Int64, url: String, isShortLink: Bool) {
+        guard !url.isEmpty, let copiedURL = URL(string: url) else { return }
+        DispatchQueue.main.async {
+            guard let controller = MainBrowserWindowControllersManager.shared
+                .controller(for: Int(windowId)) else { return }
+            // Chromium already wrote the clipboard, including long-link fallback.
+            if controller.browserState.peekState.peekTab(withId: Int(tabId)) != nil {
+                controller.peekPanelControllerIfLoaded?
+                    .showHighlightLinkCopyConfirmation(url: copiedURL, tabId: Int(tabId))
+            } else {
+                OverlayToastCenter.shared.showHighlightLinkCopyConfirmation(url: copiedURL, in: controller.browserState)
+            }
+        }
+        
+        if PhiPreferences.GeneralSettings.shortHighlightLinksEnabled.loadValue() {
+            PostHogSDK.shared.capture("highlight_link_copied", properties: [
+                "is_short_link": isShortLink
+            ])
+        }
     }
 
     func targetURLChanged(_ tabId: Int64, windowId: Int64, url: String) {

@@ -1,6 +1,6 @@
 # Analytics
 
-Last updated: 2026-08-31
+Last updated: 2026-09-08
 
 Phi Browser emits product analytics to both [Countly](https://phi-browser-eaade70cfd902.flex.countly.com) (legacy) and [PostHog](https://us.posthog.com/project/385742) (current). Both pipelines run side-by-side; PostHog is the forward-looking source of truth.
 
@@ -146,8 +146,14 @@ are out of scope.
 | `feature_entry_tapped` | A visible Chat, Memory, Download, or Organize Tabs entry accepts a tap; `button` is `chat`, `memory`, `download`, or `organize_tabs`, and `surface` is `sidebar` or `web_content_header` | `Sidebar/SidebarViewController.swift`, `Sidebar/TabList/Views/SidebarCellViews.swift`, `WebContent/FloatingSidebar/FloatingSidebarViewController.swift`, `WebContent/Header/WebContentHeader.swift`, `HorizontalBar/TabStrip/TabStripRightButtons.swift` |
 | `bookmark_manager_opened` | A native Bookmark Manager page session starts | `WebContent/BookmarkManager/BookmarkManagerViewController.swift` |
 | `bookmark_manager_edited` | A Bookmark Manager page session ends after the user performed at least one edit; the event carries no bookmark or edit details | `WebContent/BookmarkManager/BookmarkManagerViewController.swift` |
-| `user_defaults_snapshot` | Launch-time snapshot of new-tab behavior, layout mode, active process language (`app_language`), appearance, default browser, proactive suggestions, automatic current-tab context, and Peek/Kiosk preferences | `Application/AppControlle+LaunchInfo.swift` |
+| `highlight_link_copied` | A highlight link is copied while `shortHighlightLinksEnabled` is enabled at callback time; includes only `is_short_link` (bool), covering short-link success and long-link fallback | `ChromiumBridge/PhiChromiumCoordinator.swift` |
+| `user_defaults_snapshot` | Launch-time snapshot of new-tab behavior, layout mode, active process language (`app_language`), appearance, default browser, proactive suggestions, automatic current-tab context, short highlight links (`short_highlight_links_enabled`), and Peek/Kiosk preferences | `Application/AppControlle+LaunchInfo.swift` |
 | *Chromium-originated events* | Captured in the browser core through `phi_analytics::Capture()`, not by Mac code; inventoried in the Chromium-side registry — see [Chromium-originated events](#chromium-originated-events) below | Chromium repo, `chrome/browser/phinomenon/analytics/README.md` |
+
+For `highlight_link_copied`, the fraction of events with `is_short_link = true`
+measures short-link success within Chromium's one-second deadline among completed
+copies. Canceled copies and clipboard-policy replacements do not produce this
+callback. The event contains no URL or selected text.
 
 Import analytics never include source paths, browser profile names, Arc Space
 names, file names, or imported item counts. The Migration event holds the

@@ -9,7 +9,7 @@ import AppKit
 /// Shares a tab's page URL through the system sharing services. Single owner
 /// for every share entry point — the File menu item and keyboard shortcut show
 /// the `NSSharingServicePicker`, and the address bar menu lists the same
-/// services in a Share submenu.
+/// services in a Share submenu or a toast's popup menu.
 @MainActor
 final class PageSharingPresenter: NSObject {
     /// Menu item target that also travels as the item's `representedObject`,
@@ -71,16 +71,26 @@ final class PageSharingPresenter: NSObject {
     /// panel rather than listing services inline, so the services are
     /// enumerated directly here.
     static func shareSubmenu(for tab: Tab?) -> NSMenu {
+        shareMenu(for: shareableURL(for: tab))
+    }
+
+    /// Lists sharing services directly for an already resolved URL, including
+    /// copied highlight links that differ from the current page URL.
+    static func shareMenu(for url: URL?) -> NSMenu {
+        shareMenu(for: url.map { [$0] } ?? [])
+    }
+
+    static func shareMenu(for urls: [URL]) -> NSMenu {
         let submenu = NSMenu(title: NSLocalizedString("browser.addressBarMenu.shareSubmenu.title", value: "Share", comment: "Address bar menu - Share submenu title"))
 
-        guard let url = shareableURL(for: tab) else {
+        guard !urls.isEmpty else {
             submenu.addItem(placeholderItem(
                 title: NSLocalizedString("browser.addressBarMenu.shareSubmenu.invalidURLPlaceholder", value: "No share actions available", comment: "Address bar menu - Placeholder when the current URL cannot be shared")
             ))
             return submenu
         }
 
-        let items: [Any] = [url]
+        let items: [Any] = urls
         let services = NSSharingService.sharingServices(forItems: items)
             .filter { !isReadingList($0) }
         guard !services.isEmpty else {
@@ -98,6 +108,11 @@ final class PageSharingPresenter: NSObject {
                 keyEquivalent: ""
             )
             item.image = service.image
+            #if compiler(>=6.4)
+            if #available(macOS 27.0, *) {
+                item.preferredImageVisibility = .visible
+            }
+            #endif
             item.target = target
             item.representedObject = target
             submenu.addItem(item)

@@ -109,11 +109,36 @@ struct AgentDriverBadge {
     /// canvas — matches the neighbors.
     static let assetInkRatio: CGFloat = 42.0 / 54.0
 
+    /// The browser's own mark, worn by the built-in agent. The other entries
+    /// here badge an OUTSIDE product driving Phi; this one is Phi driving
+    /// itself, so it shows the product's own glyph rather than a third-party
+    /// brand or a generic terminal. Normalized to `assetInkRatio` like the
+    /// rest, so it sits at the same optical size beside them.
+    static let phiBrandAssetName = "agent-phi"
+
     static func make(agentName: String, origin: AgentTaskOrigin) -> AgentDriverBadge {
         if origin == .phiAgent {
-            return AgentDriverBadge(assetName: nil, symbol: "sparkles", label: "Phi")
+            return AgentDriverBadge(assetName: phiBrandAssetName,
+                                    symbol: "sparkles", label: "Phi")
         }
         let lower = agentName.lowercased()
+        // The same agent reached by NAME rather than by origin. `origin` is
+        // `.phiAgent` only where the app already knows — a task it opened
+        // itself, or a drive the verified first-party pass decided. A drive
+        // the browser reports on its own arrives named after whatever the
+        // ancestry walk resolved, which for this component is its script:
+        // "phi-agent.bundle". Left to fall through, `friendlyName` keeps only
+        // the text after the last dot and the pill reads "bundle".
+        //
+        // This is a LABEL, not a permission: nothing here decides access, and
+        // Phi-signed code that fails the first-party checks is refused before
+        // it can drive anything (see AgentIdentity.unresolvedOwnCode). The
+        // consent prompt, which is where trust is actually placed, keeps
+        // showing the real command and signature.
+        if Self.namesPhiAgent(lower) {
+            return AgentDriverBadge(assetName: phiBrandAssetName,
+                                    symbol: "sparkles", label: "Phi")
+        }
         if lower.contains("claude") {
             return AgentDriverBadge(assetName: "agent-claude",
                                     symbol: "chevron.left.forwardslash.chevron.right",
@@ -142,6 +167,26 @@ struct AgentDriverBadge {
                                     symbol: "chevron.left.forwardslash.chevron.right",
                                     label: "Cursor")
         }
+        // Skill-only agents (no session mirror) still get their mark. Two
+        // Grok products, two marks, two signatures: Grok Bot is the desktop
+        // app (bundle name "Grok Bot", signed com.anysphere.sand, its own
+        // ball icon) and Grok Build the CLI (a bare binary named by its
+        // signing id, "xai-grok-pager", xAI's mark). Order matters — "grok
+        // bot" contains "grok".
+        let skillOnly: [(needle: String, asset: String, label: String)] = [
+            ("grok bot", "agent-grokbot", "Grok Bot"),
+            ("grok", "agent-grok", "Grok Build"),
+            ("antigravity", "agent-antigravity", "Antigravity"),
+            ("copilot", "agent-copilot", "GitHub Copilot"),
+            ("opencode", "agent-opencode", "OpenCode"),
+            ("qwen", "agent-qwen", "Qwen Code"),
+            ("codebuddy", "agent-codebuddy", "CodeBuddy"),
+        ]
+        if let hit = skillOnly.first(where: { lower.contains($0.needle) }) {
+            return AgentDriverBadge(assetName: hit.asset,
+                                    symbol: "chevron.left.forwardslash.chevron.right",
+                                    label: hit.label)
+        }
         // "pi" is a short token — match it precisely so it doesn't collide with
         // unrelated identities (api, raspberry, …).
         if lower == "pi" || lower.hasPrefix("pi.") || lower.hasPrefix("pi-")
@@ -157,6 +202,21 @@ struct AgentDriverBadge {
             assetName: nil,
             symbol: "terminal",
             label: friendly.isEmpty ? "Code agent" : friendly)
+    }
+
+    /// Whether a resolved driver name is the browser's own agent: the product
+    /// name itself, or the phi-agent component as a whole dot-separated
+    /// segment — "phi-agent", and "phi-agent.bundle" as the ancestry walk
+    /// derives it from the script. Compared by SEGMENT rather than by
+    /// substring, so a name that merely contains the text ("not-phi-agentx")
+    /// is not mistaken for it, and so the sibling "pi-agent" — a different
+    /// product, and an outside agent here — keeps its own badge below.
+    private static func namesPhiAgent(_ lowercasedName: String) -> Bool {
+        if lowercasedName == AgentPeerIdentity.firstPartyDisplayName.lowercased() {
+            return true
+        }
+        return lowercasedName.split(separator: ".")
+            .contains(Substring(AgentPeerIdentity.phiAgentComponentName))
     }
 
     /// Telemetry-safe agent label: the canonical product name when the

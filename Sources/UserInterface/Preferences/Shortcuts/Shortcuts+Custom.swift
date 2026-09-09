@@ -43,6 +43,7 @@ extension Shortcuts {
         case window = "Window"
         case tab = "Tab"
         case spaces = "Spaces"
+        case kiosk = "Kiosk"
         case help = "Help"
         
         var title: String {
@@ -65,11 +66,18 @@ extension Shortcuts {
                 return NSLocalizedString("settings.shortcuts.group.tab", value: "Tab", comment: "Shortcuts settings - Section title for tab commands")
             case .spaces:
                 return NSLocalizedString("settings.shortcuts.group.spaces", value: "Spaces", comment: "Shortcuts settings - Section title for Space commands")
+            case .kiosk:
+                return NSLocalizedString("settings.shortcuts.group.kiosk", value: "Kiosk & Peek", comment: "Shortcuts settings - Section title for Kiosk and Peek commands")
             case .help:
                 return NSLocalizedString("settings.shortcuts.group.help", value: "Help", comment: "Shortcuts settings - Section title for help commands")
             }
         }
         
+        var subtitle: String? {
+            guard self == .kiosk else { return nil }
+            return NSLocalizedString("settings.shortcuts.group.kiosk.subtitle", value: "Only work in Peek or Kiosk windows.", comment: "Shortcuts settings - Subtitle explaining that this group's shortcuts apply to Peek or Kiosk windows")
+        }
+
         var commands: [CommandWrapper] {
             switch self {
             case .app:
@@ -145,6 +153,8 @@ extension Shortcuts {
             case .spaces:
                 return [.PHI_SELECT_NEXT_SPACE,
                         .PHI_SELECT_PREVIOUS_SPACE] + CommandWrapper.spaceSelectionCommands
+            case .kiosk:
+                return [.PHI_KIOSK_OPEN_IN_SPACE, .PHI_KIOSK_CHOOSE_SPACE]
 //            case .help:
 //                return [.IDC_FEEDBACK,
 //                        .IDC_HELP_PAGE_VIA_MENU]
@@ -331,6 +341,28 @@ extension ShortcutsKey {
 }
 
 extension CommandWrapper {
+    /// Commands without an action in a Kiosk window. Shared by dispatch and
+    /// shortcut conflict detection so inactive commands do not reserve keys.
+    var isUnavailableInKiosk: Bool {
+        if spaceSelectionIndex != nil { return true }
+        switch self {
+        case .IDC_OPEN_FILE, .PHI_TOGGLE_SIDEBAR,
+             .IDC_TAB_SEARCH, .IDC_DUPLICATE_TAB, .IDC_WINDOW_PIN_TAB,
+             .IDC_DEV_TOOLS, .IDC_DEV_TOOLS_INSPECT, .IDC_DEV_TOOLS_CONSOLE,
+             .PHI_TOGGLE_CHATBAR, .PHI_NEW_CONVERSATION,
+             .IDC_SELECT_PREVIOUS_TAB, .IDC_SELECT_NEXT_TAB,
+             .IDC_SELECT_LAST_TAB, .PHI_TAB_SWITCHER_FORWARD,
+             .PHI_TAB_SWITCHER_BACKWARD, .PHI_SELECT_NEXT_SPACE,
+             .PHI_SELECT_PREVIOUS_SPACE,
+             .IDC_SELECT_TAB_0, .IDC_SELECT_TAB_1, .IDC_SELECT_TAB_2,
+             .IDC_SELECT_TAB_3, .IDC_SELECT_TAB_4, .IDC_SELECT_TAB_5,
+             .IDC_SELECT_TAB_6, .IDC_SELECT_TAB_7:
+            return true
+        default:
+            return false
+        }
+    }
+
     struct Presentation {
         let title: String
         let keywords: [String]
@@ -385,6 +417,8 @@ extension CommandWrapper {
         .PHI_NEW_KIOSK_WINDOW: .init(title: "New Kiosk Window", keywords: ["new kiosk window", "kiosk", "window"]),
         .PHI_NEW_INCOGNITO_SPACE: .init(title: "New Incognito Space", keywords: ["new incognito space", "incognito", "private", "space"]),
         .PHI_SHARE_PAGE: .init(title: "Share Page", keywords: ["share", "share page", "share link", "airdrop", "send"]),
+        .PHI_KIOSK_OPEN_IN_SPACE: .init(title: "Open Kiosk or Peek in current Space", keywords: ["kiosk", "peek", "open as tab", "open in space", "current space", "move"]),
+        .PHI_KIOSK_CHOOSE_SPACE: .init(title: "Show Kiosk \"Open in\" Menu", keywords: ["kiosk", "choose space", "open in", "menu"]),
         .PHI_SELECT_NEXT_SPACE: .init(title: "Next Space", keywords: ["space", "next space", "forward"]),
         .PHI_SELECT_PREVIOUS_SPACE: .init(title: "Previous Space", keywords: ["space", "previous space", "backward"]),
         .PHI_SELECT_SPACE_0: .init(title: "Go to Space 1", keywords: ["space", "space1"]),

@@ -334,6 +334,13 @@ private struct AgentControlSectionView: View {
         if name.contains("hermes") { return "agent-hermes" }
         if name.contains("openclaw") { return "agent-openclaw" }
         if name == "pi" { return "agent-pi" }
+        if name.contains("grok bot") { return "agent-grokbot" }
+        if name.contains("grok") { return "agent-grok" }
+        if name.contains("antigravity") { return "agent-antigravity" }
+        if name.contains("copilot") { return "agent-copilot" }
+        if name.contains("opencode") { return "agent-opencode" }
+        if name.contains("qwen") { return "agent-qwen" }
+        if name.contains("codebuddy") { return "agent-codebuddy" }
         return nil
     }
 
@@ -566,16 +573,17 @@ private struct SkillInstallRowView: View {
     private struct SkillTarget: Identifiable {
         let id: String
         let name: String
-        /// Bundled brand icon (imageset under Assets ▸ agents). Rendering
-        /// follows the asset's own intent: the monochrome brand glyphs are
-        /// template, Hermes's favicon artwork renders in original color.
-        let iconAsset: String
+        /// Bundled brand icon (imageset under Assets ▸ agents), or nil for an
+        /// agent without artwork yet (shown with a generic terminal glyph).
+        /// Rendering follows the asset's own intent: the monochrome brand
+        /// glyphs are template, Hermes's favicon artwork renders in color.
+        let iconAsset: String?
         let skillsDirectory: URL
         /// Pi alone exposes a supported in-process message API. Its companion
         /// extension wakes idle sessions when Agent Transcript receives input.
         let companionExtensionDirectory: URL?
 
-        init(id: String, name: String, iconAsset: String, skillsDirectory: URL,
+        init(id: String, name: String, iconAsset: String?, skillsDirectory: URL,
              companionExtensionDirectory: URL? = nil) {
             self.id = id
             self.name = name
@@ -594,6 +602,14 @@ private struct SkillInstallRowView: View {
         }
     }
 
+    /// Every agent the skill can be linked into. The first six are also the
+    /// agents whose driving session the skill mirrors into Agent Transcript
+    /// (see `scripts/lib/mirror-*.mjs`); the agents after Pi only DRIVE Phi.
+    /// Under them the transcript shows the browser steps and `say()` prose
+    /// but never the agent's own conversation — the skill's session
+    /// discovery is gated on positive evidence of a known host, so adding an
+    /// agent here never enrolls it in the mirror. Paths follow each agent's
+    /// documented user-level skills folder (agentskills.io convention).
     private static let skillTargets: [SkillTarget] = {
         let home = FileManager.default.homeDirectoryForCurrentUser
         return [
@@ -612,6 +628,35 @@ private struct SkillInstallRowView: View {
                 skillsDirectory: home.appendingPathComponent(".pi/agent/skills", isDirectory: true),
                 companionExtensionDirectory: home.appendingPathComponent(
                     ".pi/agent/extensions", isDirectory: true)),
+            // Skill-only agents: no session mirror, no companion extension.
+            // Grok Build is the xAI CLI. Grok Bot, the desktop app, has no
+            // folder of its own — it reads this one plus Cursor's, Claude
+            // Code's, Codex's, and the common folder — so its row links the
+            // same folder: one link serves both, and both rows tick together.
+            SkillTarget(id: "grok", name: "Grok Build", iconAsset: "agent-grok",
+                        skillsDirectory: home.appendingPathComponent(".grok/skills", isDirectory: true)),
+            SkillTarget(id: "grokbot", name: "Grok Bot", iconAsset: "agent-grokbot",
+                        skillsDirectory: home.appendingPathComponent(".grok/skills", isDirectory: true)),
+            // Antigravity's "shared" skills folder, which Gemini CLI reads too;
+            // its CLI-only global folder is ~/.gemini/antigravity-cli/skills.
+            SkillTarget(id: "antigravity", name: "Antigravity", iconAsset: "agent-antigravity",
+                        skillsDirectory: home.appendingPathComponent(".gemini/skills", isDirectory: true)),
+            SkillTarget(id: "copilot", name: "GitHub Copilot", iconAsset: "agent-copilot",
+                        skillsDirectory: home.appendingPathComponent(".copilot/skills", isDirectory: true)),
+            SkillTarget(id: "opencode", name: "OpenCode", iconAsset: "agent-opencode",
+                        skillsDirectory: home.appendingPathComponent(".config/opencode/skills", isDirectory: true)),
+            SkillTarget(id: "qwen", name: "Qwen Code", iconAsset: "agent-qwen",
+                        skillsDirectory: home.appendingPathComponent(".qwen/skills", isDirectory: true)),
+            SkillTarget(id: "codebuddy", name: "CodeBuddy", iconAsset: "agent-codebuddy",
+                        skillsDirectory: home.appendingPathComponent(".codebuddy/skills", isDirectory: true)),
+            // The cross-agent folder of the agentskills.io convention, read by
+            // Deep Code, Kimi Code, Cline, DeepSeek Harness, and others; no
+            // single brand owns it, so it takes the generic terminal glyph —
+            // a bitmap cut to the same 14/18 ink fill as the brand marks,
+            // because a symbol image in a menu label ignores font sizing —
+            // and closes the list.
+            SkillTarget(id: "agents", name: "Common agents", iconAsset: "agent-generic",
+                        skillsDirectory: home.appendingPathComponent(".agents/skills", isDirectory: true)),
         ]
     }()
 
@@ -659,10 +704,16 @@ private struct SkillInstallRowView: View {
                             Text("\(target.name)  \(Self.displayPath(target.skillsDirectory))"
                                  + (installedTargets.contains(target.id) ? "  ✓" : ""))
                         } icon: {
-                            Image(target.iconAsset)
-                                .resizable()
-                                .scaledToFit()
-                                .frame(width: 15, height: 15)
+                            if let asset = target.iconAsset {
+                                Image(asset)
+                                    .resizable()
+                                    .scaledToFit()
+                                    .frame(width: 15, height: 15)
+                            } else {
+                                Image(systemName: "terminal.fill")
+                                    .font(.system(size: 12, weight: .semibold))
+                                    .frame(width: 15, height: 15)
+                            }
                         }
                     }
                 }

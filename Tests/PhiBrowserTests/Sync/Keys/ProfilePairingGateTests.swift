@@ -92,6 +92,26 @@ final class ProfilePairingGateTests: XCTestCase {
         XCTAssertEqual(host.presentCount, 0)
     }
 
+    /// The same pass, one step further: it must also RETIRE the join, with no
+    /// window ever up. `submitPairing` sets `sync.joinPairingPending`
+    /// unconditionally -- the Devices pane included -- and an account profile
+    /// whose envelope will not open keeps `needsPairing` true forever while
+    /// `needsPairingActionable` stays false. §3.2 says that class never presents
+    /// a modal, so the flag would have no other way out: §3.5's Space gate reads
+    /// it, and it would stay shut for good (no Space pull, no Space publish,
+    /// `ensureLocalProfilesForAccount` skipped every round) with no UI to say why.
+    func testAnUnactionablePairingRetiresTheJoinWithNoWindowUp() {
+        let host = FakeModalHost()
+        let gate = makeGate(host: host)
+        gate.joinPairingPendingOverride = true
+        gate.start(controller: nil)
+        defer { gate.stop() }
+        gate.handleMappingsDidResolve(needsPairing: true, needsPairingActionable: false)
+        XCTAssertEqual(host.presentCount, 0, "this class of remote must never present")
+        XCTAssertFalse(gate.joinPairingPendingOverride!,
+                       "an unactionable pairing must not wedge the Space gate shut")
+    }
+
     func testFalsePredicatesCloseTheModal() {
         let host = FakeModalHost()
         let gate = makeGate(host: host)

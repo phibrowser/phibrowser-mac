@@ -345,8 +345,19 @@ extension SyncableSpaces {
 
     /// Field-by-field LWW through the SHARED winner (R4), `min()` for
     /// `created_at_ms`, identity for `space_uuid`.
+    ///
+    /// Starts from `remote`, and that is the whole point of merging at all
+    /// (§6.2: "与 server 合并而不是裸发 snapshot，是为了保住更新版客户端写在预留
+    /// 字段 11-14 上的内容"). A fresh `Phi_PhiSpaceEntity()` would carry no
+    /// `unknownFields`, so every reserved field a newer client wrote would be
+    /// stripped on the way through this build -- and worse than once: after a
+    /// pull, `cursor.server` holds the unknown bytes while the merged entity does
+    /// not, so `toSend != server` fires a commit that strips them again on EVERY
+    /// round. Both call sites pass the authoritative peer/server bytes as
+    /// `remote`, and every one of the ten known fields is assigned below, so the
+    /// only thing inherited is the part this build cannot name.
     static func merge(local: Phi_PhiSpaceEntity, remote: Phi_PhiSpaceEntity) -> Phi_PhiSpaceEntity {
-        var merged = Phi_PhiSpaceEntity()
+        var merged = remote
         merged.spaceUuid = local.spaceUuid.isEmpty ? remote.spaceUuid : local.spaceUuid
         merged.name = SyncableSettings.lwwWinner(local.name, remote.name)
         merged.iconName = SyncableSettings.lwwWinner(local.iconName, remote.iconName)

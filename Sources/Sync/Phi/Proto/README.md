@@ -204,6 +204,14 @@ Only three of `SyncEnums`' fourteen enums are kept; every value keeps its upstre
 
 Fields 11-14 of `PhiSpaceEntity` are reserved for M3-3 / M3-4; do not reuse.
 
+**Reserved-field preservation is a contract, not a side effect.** A build that does not know
+fields 11-14 must still hand them back untouched, or two clients of different versions strip
+each other's content on every round. `SwiftProtobuf` parks them in `unknownFields`, so the rule
+for any code that rebuilds a `PhiSpaceEntity` is: start from the message that carries the
+authoritative bytes and overwrite the known fields, never from a fresh `Phi_PhiSpaceEntity()`.
+`SyncableSpaces.merge(local:remote:)` starts from `remote` for exactly this reason, and
+`SyncableSpacesTests.testMergeKeepsAnUnknownReservedFieldWrittenByANewerClient` pins it.
+
 ## Keeping this in sync
 
 If the server-side protos change (a new field on `PhiSpecifics`, a new `SyncEnums.ErrorType`,

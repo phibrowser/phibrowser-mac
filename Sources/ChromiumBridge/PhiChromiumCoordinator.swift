@@ -313,12 +313,13 @@ import SwiftUI
         // `queue: .main` rather than the gate's own `queue: nil`, so this hop never runs on
         // the poster's stack. `ProfilePairingGate`'s observer of the same notification is
         // registered ahead of this one and presents the pairing modal from inside its
-        // handler; the modal session itself is deliberately entered on a LATER main-actor
-        // turn (`AppModalPairingHost.present`) precisely so nothing behind it is parked for
-        // the window's lifetime, and this queue hop is the same guarantee from the other
-        // side. `MainActor.assumeIsolated` is valid because `OperationQueue.main` is the
-        // main thread, and the main queue keeps draining in a modal run loop, so the gate
-        // re-evaluates while the window is up.
+        // handler; the modal session itself is deliberately entered from a RUN-LOOP-NATIVE
+        // callout (`AppModalPairingHost.present`) precisely so the main dispatch queue is
+        // idle when the nested loop starts and keeps draining underneath it, and this queue
+        // hop is the same guarantee from the other side. `MainActor.assumeIsolated` is valid
+        // because `OperationQueue.main` is the main thread, and the main queue keeps draining
+        // in a modal run loop entered that way, so the gate re-evaluates while the window is
+        // up.
         phiSpaceGateObserver = NotificationCenter.default.addObserver(
             forName: .phiProfileMappingsDidResolve, object: nil, queue: .main
         ) { [weak self] _ in
@@ -334,9 +335,9 @@ import SwiftUI
         // `queue: .main` for the same reason as the observer above. It matters most here:
         // the poster is `SyncKeyController.finishRefresh`, which runs on an ENGINE ROUND's
         // main-actor hop, and the gate observes this notification with `queue: nil` from
-        // within its own handler. Nothing on that stack may block — see
-        // `AppModalPairingHost.present` — and this hop keeps the coordinator off it either
-        // way. The flag is already `true` by the time the hop runs: the gate sets `pending`
+        // within its own handler. Nothing on that stack may block, and nothing on it may
+        // enter a nested run loop — see `AppModalPairingHost.present` — and this hop keeps
+        // the coordinator off it either way. The flag is already `true` by the time the hop runs: the gate sets `pending`
         // before it presents.
         //
         // This fires once per refresh round, idle or not; `refreshSpaceSyncGate()` memoizes

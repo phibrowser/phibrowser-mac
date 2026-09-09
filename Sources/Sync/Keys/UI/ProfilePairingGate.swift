@@ -389,11 +389,62 @@ struct ProfilePairingGateView: View {
 /// unusable: it stops UI EVENT DELIVERY, not the main queue, so the engine's
 /// main-thread hops keep running and settings sync keeps converging.
 ///
-/// That promise (§3.2 "模态期间引擎照常跑", pinned by §12.2 step 1) holds only
-/// because the modal session is entered on a LATER main-actor turn -- see
-/// `present`.
+/// THE INVARIANT THAT PROMISE RESTS ON: a nested modal run loop must be entered
+/// from a RUN-LOOP-NATIVE callout -- `RunLoop.main.perform(inModes:)`, i.e.
+/// `CFRunLoopPerformBlock` -- and NEVER from inside a main-actor task or a
+/// `DispatchQueue.main.async` block.
+///
+/// The main dispatch queue is serial and non-reentrant. A nested run loop
+/// started from inside one of its blocks does not drain that queue again while
+/// the outer block is still on the stack, so every main-actor continuation the
+/// modal depends on -- its own load finishing, the engine's `@MainActor` hops,
+/// any `Task.sleep` deadline -- is starved until `runModal` returns, and
+/// `runModal` is waiting on exactly those continuations. That is a deadlock,
+/// and it is what device B hit: `sample` caught the main thread in
+/// `completeTaskWithClosure` -> `-[NSApplication runModalForWindow:]` ->
+/// `nextEventMatchingMask` -> `mach_msg`, with the log silent from the moment
+/// the window appeared. Deferring to "the next main-actor turn" does not help:
+/// the next turn is another main-queue block.
+///
+/// Entered from the run loop itself, the main queue is idle when the nested
+/// loop starts, so the loop drains it and §3.2's "the engine keeps running
+/// while the modal is up" (pinned by §12.2 step 1) is true again.
 @MainActor
 final class AppModalPairingHost: ProfilePairingModalHost {
+    /// Run-loop modes the modal session may be ENTERED in.
+    ///
+    /// The same set, for the same reason, as `KeyLayerView.finishDeliveryModes`:
+    ///
+    ///  * `.eventTracking` is deliberately absent. Entering `runModal` from
+    ///    inside an AppKit mouse-tracking loop parks that loop underneath the
+    ///    modal for the modal's whole user-bounded life, and the mouse-up that
+    ///    would have ended tracking goes to the modal session instead -- the
+    ///    T17 step 0 hang, one step worse.
+    ///  * `.modalPanel` is deliberately present: `present` is reachable while
+    ///    the Devices pane's key-layer window already has the run loop spinning
+    ///    there, and a `.default`-only block would then wait for that window to
+    ///    go away before the gate could ever open.
+    ///  * `.common` is not used: it would pull `.eventTracking` back in.
+    static let presentationModes: [RunLoop.Mode] = [.default, .modalPanel]
+
+    /// Hands a block to the run loop. Injected so a test can assert that the
+    /// session is SCHEDULED rather than entered on the caller's stack -- the
+    /// one property this whole class exists to get right.
+    private let scheduler: @MainActor (@escaping () -> Void) -> Void
+    /// `NSApp.runModal(for:)` and `NSApp.stopModal()` in production; inert
+    /// closures in tests, which must never park the test process in a modal
+    /// loop nothing is left to stop.
+    private let runModal: @MainActor (NSWindow) -> Void
+    private let stopModal: @MainActor () -> Void
+
+    /// True for exactly as long as THIS host's `runModal` call is on the stack.
+    ///
+    /// `NSApp.stopModal()` is process-wide: it ends whatever modal session is
+    /// running, which need not be ours. Between `present` and the run loop's
+    /// callout there is no session of ours at all, so a `dismiss()` landing in
+    /// that window must not call it.
+    private var sessionActive = false
+
     private var window: NSWindow?
     /// The live modal's view model and the controller it was presented for, so
     /// `reloadPresented()` has both halves of `startPairing(controller:)`.
@@ -405,6 +456,18 @@ final class AppModalPairingHost: ProfilePairingModalHost {
     /// `dismiss()` alongside `window`.
     private weak var viewModel: KeyLayerViewModel?
     private weak var presentedController: SyncKeyController?
+
+    /// Every seam carries its production default, so `AppModalPairingHost()`
+    /// stays the one call the app makes (`PhiChromiumCoordinator`).
+    init(scheduler: @escaping @MainActor (@escaping () -> Void) -> Void = { block in
+             RunLoop.main.perform(inModes: AppModalPairingHost.presentationModes) { block() }
+         },
+         runModal: @escaping @MainActor (NSWindow) -> Void = { NSApp.runModal(for: $0) },
+         stopModal: @escaping @MainActor () -> Void = { NSApp.stopModal() }) {
+        self.scheduler = scheduler
+        self.runModal = runModal
+        self.stopModal = stopModal
+    }
 
     func present(controller: SyncKeyController?) {
         // No controller means the key layer has already been torn down (sign-out
@@ -432,28 +495,41 @@ final class AppModalPairingHost: ProfilePairingModalHost {
         NSApp.activate(ignoringOtherApps: true)
         window.makeKeyAndOrderFront(nil)
         Task { @MainActor in await viewModel.startPairing(controller: controller) }
-        // The modal SESSION starts on a later main-actor turn; everything above
-        // stays synchronous so `window` / `isPresented` are already correct for a
-        // `dismiss()` that arrives immediately.
+        // ONLY the modal session is deferred; everything above stays
+        // synchronous. `dismiss()`, `reloadPresented()` and the `window == nil`
+        // re-entrancy guard all read state this method just wrote, so deferring
+        // the window build too would let a `dismiss()` arriving in between
+        // return early and leave the session to open an app-modal window with
+        // nothing alive to close it.
         //
         // `NSApp.runModal(for:)` does not return until `stopModal()`, i.e. until
         // the user finishes pairing or removes this device. The hysteresis safety
         // net reaches here from INSIDE an engine round: `PhiSyncEngine.pull()`
         // awaits `refreshAccountProfiles()` -> `SyncKeyController.finishRefresh`,
         // which posts `.phiProfileAutoCreateDidRun` synchronously, and the gate
-        // observes that notification with `queue: nil`. Running the modal on that
-        // stack parks the round's continuation for the modal's whole life, and
-        // with it the serial `roundQueue` -- no settings pull, no settings push,
-        // one more Task piled on every 60 s tick. Exactly what §3.2 promises will
-        // NOT happen. Deferring lets the poster's stack unwind first; the nested
-        // run loop then drains the main queue, so the suspended round resumes
-        // inside it and finishes while the window is up.
+        // observes that notification with `queue: nil`. So this line runs on a
+        // main-actor stack, i.e. inside a main-queue block -- and a nested run
+        // loop entered from there never drains that queue again (see the class
+        // comment). `scheduler` hands the session to the run loop itself
+        // instead, which runs it once the poster's block has returned and the
+        // main queue is idle; the nested loop then drains the queue, so the
+        // round's suspended continuation, the load's own continuations and the
+        // engine's later hops all resume WHILE the window is up.
         //
-        // The identity check makes a `dismiss()` that lands before this task runs
-        // a no-op rather than a `stopModal()` that precedes its own session.
-        Task { @MainActor [weak self, weak window] in
-            guard let self, let window, self.window === window else { return }
-            NSApp.runModal(for: window)
+        // The identity check makes a `dismiss()` that lands before the callout
+        // a no-op rather than a session started after its own dismissal.
+        scheduler { [weak self, weak window] in
+            MainActor.assumeIsolated {
+                guard let self, let window, self.window === window else { return }
+                // Metadata only (R12). If the "ends" line never follows on a
+                // device that closed the modal, the main actor was starved
+                // under the session and this invariant has been broken again.
+                AppLogInfo("[phi-sync] pairing modal session begins")
+                self.sessionActive = true
+                self.runModal(window)
+                self.sessionActive = false
+                AppLogInfo("[phi-sync] pairing modal session ends")
+            }
         }
     }
 
@@ -467,12 +543,18 @@ final class AppModalPairingHost: ProfilePairingModalHost {
 
     func dismiss() {
         guard let window else { return }
-        // Harmless if the session has not started yet: `window` is cleared first,
-        // so the deferred `runModal` above bails on its identity check.
+        // `window` is cleared first, so a session that has been scheduled but
+        // not yet entered bails on the identity check in `present`.
         self.window = nil
         self.viewModel = nil
         self.presentedController = nil
-        NSApp.stopModal()
+        // And `sessionActive` is what keeps a dismissal that arrives BEFORE the
+        // run loop's callout from calling a process-wide `stopModal()` that
+        // would end some other component's modal session instead of ours.
+        if sessionActive {
+            sessionActive = false
+            stopModal()
+        }
         window.close()
     }
 }

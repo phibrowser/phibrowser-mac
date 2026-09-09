@@ -1,3 +1,4 @@
+import AppKit
 import XCTest
 @testable import Phi
 
@@ -461,5 +462,129 @@ final class ProfilePairingGateTests: XCTestCase {
             XCTAssertFalse(ProfilePairingGateView.retryEnabled(for: phase, isSubmitting: true),
                            "retry must not start a load on top of a submit in \(phase)")
         }
+    }
+
+    // MARK: - The modal session must be entered from the run loop (task 21)
+
+    /// Stands in for AppKit's modal machinery so a case can assert on HOW the
+    /// session is entered. A real `NSApp.runModal(for:)` here would park the
+    /// test process in a modal loop with nothing left to stop it.
+    @MainActor
+    final class ModalSessionRecorder {
+        /// What the host handed to its scheduler instead of running inline.
+        private(set) var scheduled: [() -> Void] = []
+        private(set) var runModalCount = 0
+        private(set) var stopModalCount = 0
+        /// Run from INSIDE the fake session, which is where every real
+        /// `dismiss()` comes from: the only UI that can close this window lives
+        /// in the window itself and is driven by the nested run loop.
+        var whileModalIsUp: (@MainActor () -> Void)?
+
+        func schedule(_ block: @escaping () -> Void) { scheduled.append(block) }
+
+        func runModal(_ window: NSWindow) {
+            runModalCount += 1
+            whileModalIsUp?()
+        }
+
+        func stopModal() { stopModalCount += 1 }
+
+        /// Drains what the run loop would have called out to on its next turn.
+        func runScheduled() {
+            let blocks = scheduled
+            scheduled.removeAll()
+            blocks.forEach { $0() }
+        }
+    }
+
+    private func makeHost(_ recorder: ModalSessionRecorder) -> AppModalPairingHost {
+        AppModalPairingHost(scheduler: { recorder.schedule($0) },
+                            runModal: { recorder.runModal($0) },
+                            stopModal: { recorder.stopModal() })
+    }
+
+    /// The device-B deadlock in one assertion. `present` is reached from a
+    /// main-actor task (the gate observes `.phiProfileMappingsDidResolve` with
+    /// `queue: nil`, on the poster's stack), and the main dispatch queue is
+    /// serial and non-reentrant: a nested run loop started from inside one of
+    /// its blocks never drains it again, so every main-actor continuation the
+    /// modal is waiting for -- its own load, the engine's hops, `Task.sleep` --
+    /// starves until the modal returns, and the modal is waiting on them.
+    /// Handing the session to the run loop is what breaks that cycle.
+    func testTheModalSessionIsScheduledOnTheRunLoopInsteadOfEnteredInline() {
+        let recorder = ModalSessionRecorder()
+        let host = makeHost(recorder)
+        host.present(controller: makeController())
+
+        XCTAssertEqual(recorder.runModalCount, 0,
+                       "the session must not be entered on the caller's stack")
+        XCTAssertEqual(recorder.scheduled.count, 1,
+                       "it has to be handed to the run loop instead")
+
+        recorder.runScheduled()
+        XCTAssertEqual(recorder.runModalCount, 1,
+                       "and the run loop's own callout is what enters it")
+        host.dismiss()
+    }
+
+    /// Only the SESSION is deferred. The window, the view model and the
+    /// controller are still set synchronously, so a `dismiss()` that lands in
+    /// between finds them -- and the deferred session then finds its window
+    /// gone and bails, rather than opening an app-modal window with nothing
+    /// left alive to close it.
+    func testAnImmediateDismissCancelsTheSessionThatHasNotStartedYet() {
+        let recorder = ModalSessionRecorder()
+        let host = makeHost(recorder)
+        host.present(controller: makeController())
+        host.dismiss()
+
+        XCTAssertEqual(recorder.stopModalCount, 0,
+                       "stopping a session this host never started would stop somebody else's")
+        recorder.runScheduled()
+        XCTAssertEqual(recorder.runModalCount, 0,
+                       "the deferred session must not open a window that was already dismissed")
+    }
+
+    /// `stopModal()` is process-wide: it ends whatever modal session is on the
+    /// stack, which need not be this host's. So it is gated on this host's own
+    /// session actually being up.
+    func testDismissStopsTheSessionOnlyWhileItIsUp() {
+        let recorder = ModalSessionRecorder()
+        var host: AppModalPairingHost?
+        recorder.whileModalIsUp = { host?.dismiss() }
+        host = makeHost(recorder)
+        host?.present(controller: makeController())
+        recorder.runScheduled()
+
+        XCTAssertEqual(recorder.runModalCount, 1)
+        XCTAssertEqual(recorder.stopModalCount, 1,
+                       "a dismissal from inside the modal has to end the session")
+
+        host?.dismiss()
+        XCTAssertEqual(recorder.stopModalCount, 1,
+                       "a second dismissal has no session of its own left to stop")
+    }
+
+    func testAHostThatNeverPresentedNeverStopsAModal() {
+        let recorder = ModalSessionRecorder()
+        makeHost(recorder).dismiss()
+        XCTAssertEqual(recorder.stopModalCount, 0)
+    }
+
+    /// The other half of the fix, and the same rule `KeyLayerView` already
+    /// pins: a nested modal loop must never be entered from inside an AppKit
+    /// mouse-tracking loop, which would be parked underneath it for the
+    /// modal's whole user-bounded life.
+    func testTheModalSessionIsNeverEnteredFromAMouseTrackingLoop() {
+        let modes = AppModalPairingHost.presentationModes
+        XCTAssertTrue(modes.contains(.default),
+                      "the session must start on a normal run-loop pass")
+        XCTAssertTrue(modes.contains(.modalPanel),
+                      "`present` is reachable while the Devices pane's key-layer window "
+                      + "already has the run loop spinning in `.modalPanel`")
+        XCTAssertFalse(modes.contains(.eventTracking),
+                       "a modal session must never be entered from a mouse-tracking loop")
+        XCTAssertFalse(modes.contains(.common),
+                       "`.common` would pull `.eventTracking` back in")
     }
 }

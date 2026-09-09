@@ -377,7 +377,7 @@ final class BrowserStateMultiSelectionTests: XCTestCase {
         NSPasteboard.general.clearContents()
 
         XCTAssertEqual(state.selectedTabCountForURLCopy, 1)
-        XCTAssertTrue(state.copySelectedTabURLs())
+        XCTAssertEqual(state.copySelectedTabURLs(), ["phi://settings"])
 
         XCTAssertEqual(NSPasteboard.general.string(forType: .string), "phi://settings")
         XCTAssertFalse(state.multiSelection.isActive)
@@ -391,7 +391,13 @@ final class BrowserStateMultiSelectionTests: XCTestCase {
         NSPasteboard.general.clearContents()
 
         XCTAssertEqual(state.selectedTabCountForURLCopy, 2)
-        XCTAssertTrue(state.copySelectedTabURLs())
+        let copiedURLs = try XCTUnwrap(state.copySelectedTabURLs())
+        XCTAssertEqual(copiedURLs, ["https://e1.example", "https://e2.example"])
+        defer { OverlayToastCenter.shared.clearWindow(windowId: state.windowId) }
+        OverlayToastCenter.shared.showURLCopyConfirmation(copiedURLs: copiedURLs, in: state)
+        state.focuseTab(state.tabs[2])
+        XCTAssertEqual(OverlayToastCenter.shared.visibleToasts(for: state.windowId).first?.shareURLs,
+                       copiedURLs.compactMap(URL.init(string:)))
 
         XCTAssertEqual(NSPasteboard.general.string(forType: .string),
                        "https://e1.example\nhttps://e2.example")

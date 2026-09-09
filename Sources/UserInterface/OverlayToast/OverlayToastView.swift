@@ -36,8 +36,8 @@ struct OverlayToastView: View {
     private var toastContent: some View {
         HStack(alignment: .center, spacing: 12) {
             toastText
-            if let url = toast.shareURL {
-                OverlayToastShareButton(url: url, toastID: toast.id, toastCenter: toastCenter)
+            if !toast.shareURLs.isEmpty {
+                OverlayToastShareButton(urls: toast.shareURLs, toastID: toast.id, toastCenter: toastCenter)
                     .fixedSize()
             }
 
@@ -138,12 +138,12 @@ private struct OverlayToastNaturalWidthKey: PreferenceKey {
 }
 
 private struct OverlayToastShareButton: NSViewRepresentable {
-    let url: URL
+    let urls: [URL]
     let toastID: UUID
     let toastCenter: OverlayToastCenter
 
     func makeCoordinator() -> Coordinator {
-        Coordinator(url: url, toastID: toastID, toastCenter: toastCenter)
+        Coordinator(urls: urls, toastID: toastID, toastCenter: toastCenter)
     }
 
     func makeNSView(context: Context) -> NSButton {
@@ -163,17 +163,17 @@ private struct OverlayToastShareButton: NSViewRepresentable {
     }
 
     func updateNSView(_ nsView: NSButton, context: Context) {
-        context.coordinator.url = url
+        context.coordinator.urls = urls
         context.coordinator.toastID = toastID
     }
 
     final class Coordinator: NSObject {
-        var url: URL
+        var urls: [URL]
         var toastID: UUID
         let toastCenter: OverlayToastCenter
 
-        init(url: URL, toastID: UUID, toastCenter: OverlayToastCenter) {
-            self.url = url
+        init(urls: [URL], toastID: UUID, toastCenter: OverlayToastCenter) {
+            self.urls = urls
             self.toastID = toastID
             self.toastCenter = toastCenter
         }
@@ -184,7 +184,7 @@ private struct OverlayToastShareButton: NSViewRepresentable {
             toastCenter.pauseDismissal(id: id)
             defer { toastCenter.dismiss(id: id) }
 
-            let menu = PageSharingPresenter.shareMenu(for: url)
+            let menu = PageSharingPresenter.shareMenu(for: urls)
             let point = NSPoint(x: sender.bounds.minX, y: sender.isFlipped ? sender.bounds.maxY : sender.bounds.minY)
             menu.popUp(positioning: nil, at: point, in: sender)
         }

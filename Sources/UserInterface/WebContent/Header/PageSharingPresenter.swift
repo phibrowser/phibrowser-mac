@@ -77,16 +77,20 @@ final class PageSharingPresenter: NSObject {
     /// Lists sharing services directly for an already resolved URL, including
     /// copied highlight links that differ from the current page URL.
     static func shareMenu(for url: URL?) -> NSMenu {
+        shareMenu(for: url.map { [$0] } ?? [])
+    }
+
+    static func shareMenu(for urls: [URL]) -> NSMenu {
         let submenu = NSMenu(title: NSLocalizedString("browser.addressBarMenu.shareSubmenu.title", value: "Share", comment: "Address bar menu - Share submenu title"))
 
-        guard let url else {
+        guard !urls.isEmpty else {
             submenu.addItem(placeholderItem(
                 title: NSLocalizedString("browser.addressBarMenu.shareSubmenu.invalidURLPlaceholder", value: "No share actions available", comment: "Address bar menu - Placeholder when the current URL cannot be shared")
             ))
             return submenu
         }
 
-        let items: [Any] = [url]
+        let items: [Any] = urls
         let services = NSSharingService.sharingServices(forItems: items)
             .filter { !isReadingList($0) }
         guard !services.isEmpty else {

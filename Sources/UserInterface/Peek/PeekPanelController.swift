@@ -478,6 +478,11 @@ final class PeekPanelController {
         detachHostedContent()
     }
 
+    func showURLCopyConfirmation(url: URL, tabId: Int) {
+        guard panel.isVisible, hostedTab?.guid == tabId else { return }
+        toastCenter.showURLCopyConfirmation(copiedURLs: [url.absoluteString], in: toastViewController.state)
+    }
+
     func showHighlightLinkCopyConfirmation(url: URL, tabId: Int) {
         guard panel.isVisible, hostedTab?.guid == tabId else { return }
         toastCenter.showHighlightLinkCopyConfirmation(url: url, in: toastViewController.state)

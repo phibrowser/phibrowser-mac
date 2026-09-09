@@ -1143,11 +1143,10 @@ extension AppController {
         guard let state = MainBrowserWindowControllersManager.shared.activeWindowController?.browserState else {
             return
         }
-        let copiedURLCount = state.selectedTabCountForURLCopy
-        guard state.copySelectedTabURLs() else {
+        guard let copiedURLs = state.copySelectedTabURLs() else {
             return
         }
-        OverlayToastCenter.shared.showURLCopyConfirmation(copiedURLCount: copiedURLCount, in: state)
+        OverlayToastCenter.shared.showURLCopyConfirmation(copiedURLs: copiedURLs, in: state)
     }
 
     @MainActor

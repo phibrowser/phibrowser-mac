@@ -29,7 +29,7 @@ struct OverlayToastItem: Identifiable, Equatable {
     let message: String?
     let duration: TimeInterval
     let placement: OverlayToastPlacement
-    var shareURL: URL? = nil
+    var shareURLs: [URL] = []
     var action: OverlayToastAction?
 
     static func == (lhs: OverlayToastItem, rhs: OverlayToastItem) -> Bool {
@@ -38,7 +38,7 @@ struct OverlayToastItem: Identifiable, Equatable {
             && lhs.message == rhs.message
             && lhs.duration == rhs.duration
             && lhs.placement == rhs.placement
-            && lhs.shareURL == rhs.shareURL
+            && lhs.shareURLs == rhs.shareURLs
             && (lhs.action == nil) == (rhs.action == nil)
     }
 }

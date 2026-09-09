@@ -210,9 +210,8 @@ struct CommandDispatcher {
             return true
         case .PHI_COPY_URL:
             let state = windowController.browserState
-            let copiedURLCount = state.selectedTabCountForURLCopy
-            guard state.copySelectedTabURLs() else { return false }
-            OverlayToastCenter.shared.showURLCopyConfirmation(copiedURLCount: copiedURLCount, in: state)
+            guard let copiedURLs = state.copySelectedTabURLs() else { return false }
+            OverlayToastCenter.shared.showURLCopyConfirmation(copiedURLs: copiedURLs, in: state)
             return true
         case .PHI_SHARE_PAGE:
             guard PageSharingPresenter.canShare(tab: windowController.browserState.focusingTab) else {

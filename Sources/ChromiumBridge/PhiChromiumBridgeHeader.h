@@ -472,6 +472,13 @@ typedef NS_ENUM(NSInteger, PhiGhostMaterializeOutcome) {
 /// Changes apply to the next copy. Clients omitting this selector default to YES.
 - (BOOL)isShortHighlightLinkEnabled;
 
+/// Copy Link Address completed. Called after the clipboard write with the
+/// source tab's Phi-stable id and owning window id. Present native confirmation
+/// without writing the clipboard again. Chromium's toast is suppressed in Phi.
+/// `url` is the context-menu link target, used by the native Share action.
+/// Older clients may omit this callback.
+- (void)linkCopied:(int64_t)tabId windowId:(int64_t)windowId url:(NSString *)url;
+
 /// Copy Link to Highlight completed, including the existing-highlight action.
 /// Called on the browser UI thread after the clipboard write. `url` is the
 /// nonempty URL actually copied: a short URL when `isShortLink` is YES, otherwise

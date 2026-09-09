@@ -27,6 +27,11 @@ enum KeyLayerPhase: Equatable {
     case pairingProfiles(locals: [PairingLocal], remotes: [RemoteProfile])
 }
 
+/// Thrown when the pairing load runs past its deadline. Deliberately private
+/// and deliberately NOT an `Error` any caller can catch by type: the only thing
+/// downstream of it is `runPairingLoad`'s own mapping to a localized `.error`.
+private struct PairingLoadTimedOut: Error {}
+
 /// Drives the recovery-code UI: owns all state transitions and error mapping
 /// so the SwiftUI views underneath it stay purely presentational.
 @MainActor
@@ -49,8 +54,21 @@ final class KeyLayerViewModel: ObservableObject {
     /// a sign-out/sign-in controller rebuild; nil in tests and when signed out.
     private var flowController: SyncKeyController?
 
-    init(manager: AccountKeyManager) {
+    /// The pairing load currently in flight, so a second `startPairing` can
+    /// CANCEL AND REPLACE it instead of running two loads at once. A cancelled
+    /// load is forbidden to write `phase`, so only the newest one ever lands.
+    private var pairingLoad: Task<Void, Never>?
+
+    /// How long `startPairing` waits for the account's profiles before giving
+    /// up. `URLSession.shared`'s default timeout is 60 s PER REQUEST, so an
+    /// unbounded load could sit in `.working` for minutes; the modal needs an
+    /// answer -- even a failure -- well inside a user's patience. Injectable so
+    /// tests do not have to wait for it.
+    private let loadDeadline: Duration
+
+    init(manager: AccountKeyManager, loadDeadline: Duration = .seconds(45)) {
         self.manager = manager
+        self.loadDeadline = loadDeadline
     }
 
     /// Entry point when opening the key-layer window: unlock if possible, otherwise route to
@@ -196,18 +214,49 @@ final class KeyLayerViewModel: ObservableObject {
     /// envelope. Excluding the remotes those locals already claim likewise
     /// keeps the "create on this Mac" toggle from duplicating a profile that
     /// is in fact already present.
+    ///
+    /// Pressing "retry" while a load is still in flight CANCELS AND REPLACES it:
+    /// the modal's retry button is pressable in every phase now (it used to be
+    /// disabled in exactly the `.working` phase a stalled load sits in), and the
+    /// gate re-drives an already-presented modal, so this can be called again at
+    /// any moment. The method still does not return until the load it installed
+    /// has finished, because every caller -- `submitPairing`'s failure reload,
+    /// the retry button, the modal host, the Devices pane -- reads `phase`
+    /// straight after awaiting it.
     func startPairing(controller: SyncKeyController) async {
+        pairingLoad?.cancel()
         phase = .working
+        let task = Task<Void, Never> { [weak self] in
+            guard let self else { return }
+            await self.runPairingLoad(controller: controller)
+        }
+        pairingLoad = task
+        await task.value
+    }
+
+    /// One pairing load, bounded by `loadDeadline` and safe to cancel.
+    ///
+    /// EVERY write of `phase` here is guarded by a cancellation check taken in
+    /// the same synchronous stretch: a load that has been replaced must not
+    /// land its (stale, or merely cancelled) result on top of its replacement's.
+    private func runPairingLoad(controller: SyncKeyController) async {
+        guard !Task.isCancelled else { return }
+        let allLocals = controller.localProfiles()
+        let claimedUuids = Set(allLocals.compactMap {
+            controller.profileKeys.mappedGlobalUuid(forProfileId: $0.profileId)
+        })
+        let locals = allLocals
+            .filter { controller.profileKeys.mappedGlobalUuid(forProfileId: $0.profileId) == nil }
+            .map { PairingLocal(profileId: $0.profileId, displayName: $0.displayName) }
+        // Metadata only (R12): counts, never a uuid, a display name or an
+        // envelope.
+        AppLogInfo("[phi-sync] pairing load starting; \(locals.count) unmapped local profiles")
+        let profileKeys = controller.profileKeys
         do {
-            let allLocals = controller.localProfiles()
-            let claimedUuids = Set(allLocals.compactMap {
-                controller.profileKeys.mappedGlobalUuid(forProfileId: $0.profileId)
-            })
-            let locals = allLocals
-                .filter { controller.profileKeys.mappedGlobalUuid(forProfileId: $0.profileId) == nil }
-                .map { PairingLocal(profileId: $0.profileId, displayName: $0.displayName) }
-            let remotes = try await controller.profileKeys.accountProfiles()
-                .filter { !claimedUuids.contains($0.uuid) }
+            let remotes = try await withDeadline(loadDeadline) {
+                try await profileKeys.accountProfiles()
+            }.filter { !claimedUuids.contains($0.uuid) }
+            guard !Task.isCancelled else { return }
             // The modal is the second writer of the undecryptable set (§3.6's
             // per-round refresh is the first): a row whose envelope did not open
             // here is read-only and must not make the gate think there is
@@ -218,9 +267,43 @@ final class KeyLayerViewModel: ObservableObject {
             for remote in remotes where remote.name != nil {
                 controller.noteDecryptableRemote(remote.uuid)
             }
+            AppLogInfo("[phi-sync] pairing load finished; \(locals.count) local, \(remotes.count) remote candidates")
             phase = .pairingProfiles(locals: locals, remotes: remotes)
+        } catch is PairingLoadTimedOut {
+            guard !Task.isCancelled else { return }
+            AppLogWarn("[phi-sync] pairing load exceeded its \(loadDeadline) deadline")
+            phase = .error(NSLocalizedString(
+                "Couldn’t load the account’s profiles in time. Check your connection and retry.",
+                comment: "Pairing - load timeout"))
         } catch {
+            guard !Task.isCancelled else { return }
+            AppLogWarn("[phi-sync] pairing load failed: \(PhiSyncLog.describe(error))")
             phase = .error("\(error)")
+        }
+    }
+
+    /// Races `body` against `deadline`. The loser is cancelled either way, so a
+    /// deadline that lands really does take the in-flight request down with it
+    /// rather than leaving it running behind an error screen.
+    private func withDeadline<T: Sendable>(
+        _ deadline: Duration,
+        _ body: @escaping @Sendable () async throws -> T
+    ) async throws -> T {
+        try await withThrowingTaskGroup(of: T?.self) { group in
+            group.addTask { try await body() }
+            group.addTask {
+                try await Task.sleep(for: deadline)
+                return nil   // the deadline landed first
+            }
+            // The first child to finish decides; `next()` rethrows a real
+            // failure from `body` unchanged, which is what keeps every existing
+            // error path (`notUnlocked`, transport, HTTP) reading as it did.
+            while let result = try await group.next() {
+                group.cancelAll()
+                guard let result else { throw PairingLoadTimedOut() }
+                return result
+            }
+            throw PairingLoadTimedOut()
         }
     }
 

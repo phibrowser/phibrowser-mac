@@ -303,9 +303,10 @@ struct ProfilePairingGateView: View {
     /// cancels the in-flight load and replaces it rather than stacking a
     /// second one behind it.
     ///
-    /// Written total over `KeyLayerPhase` on purpose -- this is the predicate
-    /// for every phase the `default` arm above can render, which is every case
-    /// except `.pairingProfiles` and `.error`, and both of those reach it too.
+    /// Takes the phase and ignores it rather than being a bare constant: it is
+    /// the one place that decides this, it is total over all eleven
+    /// `KeyLayerPhase` cases by construction, and the next person to want a
+    /// phase-dependent answer has somewhere obvious to put it.
     static func retryEnabled(for phase: KeyLayerPhase) -> Bool { true }
 
     /// The "remove this device" slot, offered in EVERY branch: the gate is app

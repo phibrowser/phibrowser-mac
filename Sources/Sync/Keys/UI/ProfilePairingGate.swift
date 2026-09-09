@@ -533,11 +533,37 @@ final class AppModalPairingHost: ProfilePairingModalHost {
         }
     }
 
+    /// Whether a re-drive may replace what the modal is currently showing.
+    ///
+    /// A re-drive is a RESCUE for a load that stalled, not a refresh. In
+    /// `.pairingProfiles` the user is reading a list and ticking boxes, and a
+    /// fresh load would swap the list out from under them and reset
+    /// `ProfilePairingView`'s `@State` selections -- while the gate re-drives on
+    /// every `.measured` pass, i.e. roughly once a minute for as long as the
+    /// window is open. So that one phase is excluded and every other phase this
+    /// modal can reach -- `.idle` before the first load, `.working` during it
+    /// (the stalled case this exists for), `.error`, `.done` -- is allowed.
+    static func reloadAllowed(for phase: KeyLayerPhase) -> Bool {
+        switch phase {
+        case .idle, .working, .done, .error: return true
+        // Unreachable in this window (its view model is built here and driven
+        // only by `startPairing` / `submitPairing`), and excluded for the same
+        // reason as `.pairingProfiles` if it ever becomes reachable: nothing
+        // says a re-drive would not be discarding user input.
+        default: return false
+        }
+    }
+
     /// Restarts the load behind the window that is already up. `startPairing`
     /// cancels whatever is still in flight and replaces it, so this cannot pile
     /// loads on top of one another however often the gate calls it.
     func reloadPresented() {
         guard let viewModel, let presentedController else { return }
+        guard Self.reloadAllowed(for: viewModel.phase) else {
+            // Metadata only (R12).
+            AppLogInfo("[phi-sync] pairing modal re-drive skipped; the user is choosing pairings")
+            return
+        }
         Task { @MainActor in await viewModel.startPairing(controller: presentedController) }
     }
 

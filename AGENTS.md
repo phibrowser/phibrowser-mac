@@ -133,6 +133,14 @@ Clear separation between these layers is critical.
 - AppKit-based macOS UI
 - Owns presentation and user interaction only
 - Must not contain Chromium internal logic
+- Never enter a nested modal run loop (`NSApp.runModal`, `beginModalSession`) from
+  inside a main-actor task or a `DispatchQueue.main.async` block. The main dispatch
+  queue is serial and non-reentrant, so a nested loop started from inside one of its
+  blocks never drains it again and every main-actor continuation the modal is waiting
+  for is starved until the modal returns. Schedule the session with
+  `RunLoop.main.perform(inModes:)` instead — see `AppModalPairingHost` in
+  `Sources/Sync/Keys/UI/ProfilePairingGate.swift`. A synchronous `NSAlert.runModal()`
+  that awaits nothing while it is up is exempt.
 
 ## Chromium Integration Layer
 - Interacts with Phi Framework.framework

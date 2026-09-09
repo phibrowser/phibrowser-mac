@@ -310,14 +310,15 @@ import SwiftUI
         // The gate's other driver: every mapping pass reports whether a join still has
         // pairing outstanding, which is exactly what `refreshSpaceSyncGate()` reads.
         //
-        // `queue: .main` rather than the gate's own `queue: nil`: `ProfilePairingGate`'s
-        // observer of the same notification blocks inside `NSApp.runModal(for:)` while the
-        // pairing window is up. A synchronous observer registered behind it would not run
-        // until that window closed — i.e. the Space section would stay live for the whole of
-        // the pairing modal, which is the one thing the gate exists to prevent. The main
-        // queue keeps draining in a modal run loop, so this hop runs while the window is up,
-        // and `MainActor.assumeIsolated` is valid because `OperationQueue.main` is the main
-        // thread.
+        // `queue: .main` rather than the gate's own `queue: nil`, so this hop never runs on
+        // the poster's stack. `ProfilePairingGate`'s observer of the same notification is
+        // registered ahead of this one and presents the pairing modal from inside its
+        // handler; the modal session itself is deliberately entered on a LATER main-actor
+        // turn (`AppModalPairingHost.present`) precisely so nothing behind it is parked for
+        // the window's lifetime, and this queue hop is the same guarantee from the other
+        // side. `MainActor.assumeIsolated` is valid because `OperationQueue.main` is the
+        // main thread, and the main queue keeps draining in a modal run loop, so the gate
+        // re-evaluates while the window is up.
         phiSpaceGateObserver = NotificationCenter.default.addObserver(
             forName: .phiProfileMappingsDidResolve, object: nil, queue: .main
         ) { [weak self] _ in
@@ -330,12 +331,13 @@ import SwiftUI
         // all, so the three drivers above never re-evaluate and the Space section would stay
         // live for the modal's whole (user-bounded) lifetime.
         //
-        // `queue: .main` for the same reason as the observer above, and here it is doubly
-        // load-bearing: the gate observes THIS notification with `queue: nil` and blocks
-        // inside `NSApp.runModal(for:)` from within its own handler, so a synchronous
-        // observer behind it would not run until the pairing window closed. The main queue
-        // keeps draining in a modal run loop, and the flag is already `true` by then — the
-        // gate sets `pending` before it presents.
+        // `queue: .main` for the same reason as the observer above. It matters most here:
+        // the poster is `SyncKeyController.finishRefresh`, which runs on an ENGINE ROUND's
+        // main-actor hop, and the gate observes this notification with `queue: nil` from
+        // within its own handler. Nothing on that stack may block — see
+        // `AppModalPairingHost.present` — and this hop keeps the coordinator off it either
+        // way. The flag is already `true` by the time the hop runs: the gate sets `pending`
+        // before it presents.
         //
         // This fires once per refresh round, idle or not; `refreshSpaceSyncGate()` memoizes
         // so a round that changes nothing costs nothing.

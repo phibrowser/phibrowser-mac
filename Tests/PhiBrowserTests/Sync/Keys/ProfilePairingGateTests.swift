@@ -388,8 +388,8 @@ final class ProfilePairingGateTests: XCTestCase {
         XCTAssertEqual(host.presentCount, 1, "the safety net presents on the third idle round")
         // True the moment the third post returns: the gate observes with `queue: nil` and
         // sets `pending` before it presents. So an observer that hops through the main queue
-        // — which is how the coordinator's gate drivers are registered, because the
-        // production modal blocks inside `NSApp.runModal(for:)` right here — reads it too.
+        // — which is how the coordinator's gate drivers are registered, to stay off the
+        // poster's stack (this poster is an engine round's main-actor hop) — reads it too.
         XCTAssertEqual(gate.joinPairingPendingOverride, true,
                        "the safety net writes sync.joinPairingPending, so the gate must shut")
         XCTAssertEqual(announcements.value, 0,

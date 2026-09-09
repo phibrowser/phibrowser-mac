@@ -445,8 +445,21 @@ final class ProfilePairingGateTests: XCTestCase {
     /// in `.working`, which is exactly the phase a stalled load sits in.
     func testRetryIsOfferedInEveryPhaseTheStatusViewCanRender() {
         for phase in [KeyLayerPhase.working, .idle, .done, .error("boom")] {
-            XCTAssertTrue(ProfilePairingGateView.retryEnabled(for: phase),
+            XCTAssertTrue(ProfilePairingGateView.retryEnabled(for: phase, isSubmitting: false),
                           "retry must stay pressable in \(phase)")
+        }
+    }
+
+    /// The one exception, and it is not about the phase at all: while
+    /// `submitPairing` is applying decisions it owns `.working` and is mutating
+    /// the mapping table a fresh load would read, so pressing retry would start
+    /// a second, uncoordinated writer of the same state. The button greys for
+    /// that window only -- a stalled LOAD is still restartable, which is the
+    /// defect this task exists to fix.
+    func testRetryIsWithheldOnlyWhileASubmitIsInFlight() {
+        for phase in [KeyLayerPhase.working, .idle, .done, .error("boom")] {
+            XCTAssertFalse(ProfilePairingGateView.retryEnabled(for: phase, isSubmitting: true),
+                           "retry must not start a load on top of a submit in \(phase)")
         }
     }
 }

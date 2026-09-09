@@ -184,11 +184,25 @@ final class KeyLayerViewModelTests: XCTestCase {
         private let lock = NSLock()
         private var _startedCalls = 0
         private var _cancelledCalls = 0
+        private var _putStarts = 0
+        private var _listingsHeld = true
+        private var _putsHeld = false
 
         /// How many listing calls have suspended.
         var startedCalls: Int { withLock { $0._startedCalls } }
         /// How many of them were cancelled rather than answered.
         var cancelledCalls: Int { withLock { $0._cancelledCalls } }
+        /// How many envelope PUTs have reached the hold point. The submit-in-flight
+        /// case waits on this instead of guessing at a sleep.
+        var putStarts: Int { withLock { $0._putStarts } }
+
+        /// Lets a held listing finish, so a case that has made its assertions can
+        /// drain the flow it parked instead of leaving a task suspended for an hour.
+        func releaseListings() { withLock { $0._listingsHeld = false } }
+        /// Parks `putProfileKey` -- i.e. `registerLocalProfile`, i.e. a `submitPairing`
+        /// that is halfway through its decisions -- until released.
+        func holdProfileKeyPuts() { withLock { $0._putsHeld = true } }
+        func releaseProfileKeyPuts() { withLock { $0._putsHeld = false } }
 
         /// `NSLock.lock()` is unavailable from an async context, so every
         /// critical section is entered from a synchronous helper.
@@ -197,17 +211,20 @@ final class KeyLayerViewModelTests: XCTestCase {
         }
         private func noteStarted() { withLock { $0._startedCalls += 1 } }
         private func noteCancelled() { withLock { $0._cancelledCalls += 1 } }
+        private var listingsHeld: Bool { withLock { $0._listingsHeld } }
+        private var putsHeld: Bool { withLock { $0._putsHeld } }
 
         func listProfiles() async throws -> [ProfileSummaryDTO] {
             noteStarted()
             try await withTaskCancellationHandler {
                 // Far past any deadline these cases set: the only way out is
-                // cancellation, which is exactly what is under test.
-                try await Task.sleep(for: .seconds(3600))
+                // cancellation (which is exactly what is under test) or an
+                // explicit `releaseListings()`.
+                while listingsHeld { try await Task.sleep(for: .milliseconds(5)) }
             } onCancel: {
                 self.noteCancelled()
             }
-            return []
+            return try await inner.listProfiles()
         }
 
         func putAccount(salt: Data, kdfVersion: String, kdfParams: Data, recoveryEnvelope: Data) async throws -> Bool {
@@ -243,7 +260,9 @@ final class KeyLayerViewModelTests: XCTestCase {
             try await inner.getProfileKey(uuid: uuid)
         }
         func putProfileKey(uuid: String, envelope: Data) async throws -> Bool {
-            try await inner.putProfileKey(uuid: uuid, envelope: envelope)
+            withLock { $0._putStarts += 1 }
+            while putsHeld { try await Task.sleep(for: .milliseconds(5)) }
+            return try await inner.putProfileKey(uuid: uuid, envelope: envelope)
         }
         func getDomainKey(domain: String) async throws -> Data? { try await inner.getDomainKey(domain: domain) }
         func putDomainKey(domain: String, envelope: Data) async throws -> Bool {
@@ -305,5 +324,76 @@ final class KeyLayerViewModelTests: XCTestCase {
         XCTAssertEqual(api.cancelledCalls, 2,
                        "the replaced load is cancelled, and the replacement hits its deadline")
         guard case .error = vm.phase else { return XCTFail("expected the surviving load's error") }
+    }
+
+    /// Cancel-and-replace only coordinates one LOAD against another. `.working`
+    /// is also `submitPairing`'s phase, held across every adopt / register /
+    /// create await -- so a load started mid-submit would be a second,
+    /// uncoordinated writer of `phase` AND a reader of the mapping table the
+    /// submit is halfway through mutating. Now that retry is pressable in
+    /// `.working` and the gate re-drives a presented modal on every `.measured`
+    /// pass, that interleaving is reachable without the user doing anything, so
+    /// the submit window has to turn the load away.
+    func testStartPairingIsIgnoredWhileASubmitIsInFlight() async throws {
+        let (api, controller, vm) = try await hangingStack(loadDeadline: .milliseconds(50))
+        api.holdProfileKeyPuts()
+
+        let submit = Task {
+            await vm.submitPairing([.registerNew(localProfileId: "Default", displayName: "Default")],
+                                   controller: controller)
+        }
+        // Wait for the submit to park inside the held PUT rather than guessing.
+        var waited = 0
+        while api.putStarts == 0, waited < 400 {
+            try await Task.sleep(for: .milliseconds(5))
+            waited += 1
+        }
+        XCTAssertEqual(api.putStarts, 1, "the submit must be in flight for this case to mean anything")
+        XCTAssertTrue(vm.isSubmitting)
+
+        // Exactly what `AppModalPairingHost.reloadPresented()` does on the next
+        // `.measured` announcement, and what the retry button would do too.
+        await vm.startPairing(controller: controller)
+
+        XCTAssertEqual(api.startedCalls, 0, "no pairing load may run while a submit owns the phase")
+        XCTAssertEqual(vm.phase, .working, "the submit's phase must survive the ignored re-drive")
+
+        api.releaseProfileKeyPuts()
+        api.releaseListings()
+        await submit.value
+        XCTAssertFalse(vm.isSubmitting, "the window closes when the submit finishes")
+    }
+
+    /// The other side of that guard: `submitPairing`'s OWN reload after a failed
+    /// decision is not a competing load, so it must still run. If the guard
+    /// turned it away, a failure would leave the modal parked in `.working` --
+    /// the exact stuck-spinner shape task 20 exists to remove.
+    func testAFailedSubmitStillReloadsTheCandidatesInsteadOfParkingInWorking() async throws {
+        let api = AccountKeyManagerTests.FakeAPI()
+        let provider = AccountKeyManagerTests.FakeDeviceKeyProvider()
+        let mgr = AccountKeyManager(api: api, deviceKeyProvider: provider)
+        _ = try await mgr.bootstrap()
+        let pkm = ProfileKeyManager(api: api, keyManager: mgr,
+                                    mappingStore: ProfileKeyManagerTests.MemoryMappingStore())
+        // "Default" is already mapped, so registering it again is refused with
+        // `alreadyMapped` -- a decision that fails without any network flakiness.
+        _ = try await pkm.registerLocalProfile(profileId: "Default", displayName: "Default")
+        let controller = SyncKeyController(
+            manager: mgr,
+            approvals: DeviceApprovalService(api: api, keyManager: mgr, deviceKeyProvider: provider),
+            profileKeys: pkm,
+            localProfilesProvider: { [("Default", "Default"), ("Profile 1", "Home")] },
+            notifyChromium: {})
+        let vm = KeyLayerViewModel(manager: mgr)
+
+        await vm.submitPairing([.registerNew(localProfileId: "Default", displayName: "Default")],
+                               controller: controller)
+
+        XCTAssertNotNil(vm.pairingError)
+        guard case .pairingProfiles(let locals, _) = vm.phase else {
+            return XCTFail("a failed submit must reload the candidates, not stay in .working")
+        }
+        XCTAssertEqual(locals.map(\.profileId), ["Profile 1"])
+        XCTAssertFalse(vm.isSubmitting)
     }
 }

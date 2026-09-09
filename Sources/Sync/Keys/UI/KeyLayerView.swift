@@ -11,6 +11,25 @@ struct KeyLayerView: View {
     var controller: SyncKeyController? = nil
     var onFinish: () -> Void = {}
 
+    /// Run-loop modes the deferred `onFinish()` may be delivered in.
+    ///
+    /// `.eventTracking` is deliberately absent: `onFinish()` closes the hosting
+    /// window, and doing that from inside an AppKit mouse-tracking loop orphans
+    /// that loop (the T17 step 0 hang — the tracking loop then spins forever
+    /// waiting for a mouse-up its window can no longer deliver).
+    ///
+    /// `.modalPanel` is deliberately present: the profile-pairing gate parks the
+    /// main run loop in `NSApp.runModal(for:)` (`ProfilePairingGate.present`), and
+    /// on a second-device join that session is typically already up by the time
+    /// `.done` renders — `resolveMappings()` posts `.phiProfileMappingsDidResolve`,
+    /// which the gate observes, before `phase = .done` is assigned. A `.default`-only
+    /// block would then wait for the whole modal session, leaving an empty "Set up
+    /// sync" window on screen next to the gate. `.modalPanel` is not
+    /// `.eventTracking`, so admitting it does not weaken the guarantee above.
+    ///
+    /// `.common` is not used: it would pull `.eventTracking` back in.
+    static var finishDeliveryModes: [RunLoop.Mode] { [.default, .modalPanel] }
+
     var body: some View {
         Group {
             switch viewModel.phase {
@@ -47,10 +66,12 @@ struct KeyLayerView: View {
                 }
             case .done:
                 Color.clear.onAppear {
-                    // `.default` mode does not run while the run loop is in
-                    // `.eventTracking`, so this cannot close the window out
-                    // from under an AppKit mouse-tracking loop.
-                    RunLoop.main.perform(inModes: [.default]) {
+                    // Deferred by one run-loop pass, and kept out of
+                    // `.eventTracking` specifically: delivering there would close
+                    // the hosting window out from under an AppKit mouse-tracking
+                    // loop. Every other mode the window can plausibly be closed
+                    // in is allowed — see `finishDeliveryModes`.
+                    RunLoop.main.perform(inModes: Self.finishDeliveryModes) {
                         MainActor.assumeIsolated { onFinish() }
                     }
                 }

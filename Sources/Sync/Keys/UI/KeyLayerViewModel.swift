@@ -154,6 +154,10 @@ final class KeyLayerViewModel: ObservableObject {
     /// Confirms the user saved the displayed recovery code, completing bootstrap.
     func confirmSaved() async {
         guard case .showingRecoveryCode = phase else { return }
+        // Leave the recovery-code screen *before* the network round trip: it
+        // must not stay interactive while `resolveMappings()` is in flight, or
+        // the phase change can land on a view the user is still touching.
+        phase = .working
         // The join is under way: from here until the pairing wraps up, the gate
         // may present. Always through the port, never a direct defaults write.
         ProfilePairingGate.joinPairingPending = true

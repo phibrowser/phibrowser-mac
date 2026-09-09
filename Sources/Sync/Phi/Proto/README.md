@@ -210,3 +210,9 @@ If the server-side protos change (a new field on `PhiSpecifics`, a new `SyncEnum
 …), copy the change here with the same number/type/label, re-run `generate.sh`, and update the
 table above. Re-vendoring Chromium in sync-service does **not** automatically affect this
 directory.
+
+`PhiEntity.kind` is an open oneof. Adding a kind means: a new field NUMBER that
+is never reused (M3-2 took 2; `PhiSpaceEntity` reserves 11-14 for M3-3 / M3-4), a
+re-run of `generate.sh`, one table row per field above, and a receiver that
+IGNORES ONLY the unknown entity -- never one that rewinds the shared progress
+marker, because both kinds share a single marker for data type 2000.

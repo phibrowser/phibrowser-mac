@@ -134,6 +134,45 @@ final class DevicesSettingRemoveDeviceTests: XCTestCase {
         XCTAssertEqual(removals.calls, 2)
     }
 
+    /// The production closure throws when the coordinator-owned controller has
+    /// gone (a sign-out in another window between the button rendering and the
+    /// click). A teardown that never reached the server must not read as one
+    /// that did: the model lands in `.failed`, not `.done`.
+    func testMissingSharedControllerFailsInsteadOfReportingSuccess() async {
+        let reloads = Counter()
+        let model = DevicesRemoveDeviceModel(remove: {
+            throw DevicesRemoveDeviceError.syncControllerUnavailable
+        }, onRemoved: { reloads.calls += 1 })
+        await model.requestRemoval(confirm: { true })
+
+        guard case .failed(let message) = model.state else {
+            return XCTFail("expected .failed, got \(model.state)")
+        }
+        XCTAssertEqual(message, SelfRevokeStrings.removalUnavailable)
+        XCTAssertEqual(reloads.calls, 0, "nothing was revoked, so the pane must not run its success reload")
+        XCTAssertTrue(model.canRequestRemoval, "the button stays live so the user can retry")
+        XCTAssertTrue(model.isVisible(unlockState: .unlocked))
+        XCTAssertTrue(model.noteIsError)
+    }
+
+    /// The note under the button carries two different kinds of string; only the
+    /// failure one is an error, and only that one is coloured like the pane's
+    /// other errors.
+    func testNoteIsErrorOnlyForTransientFailures() async {
+        let blocked = DevicesRemoveDeviceModel(remove: { throw KeyAPIError.lastActiveDevice })
+        await blocked.requestRemoval(confirm: { true })
+        XCTAssertEqual(blocked.state, .lastDevice)
+        XCTAssertFalse(blocked.noteIsError, "the last-device note is informational, not an error")
+
+        let failed = DevicesRemoveDeviceModel(remove: { throw KeyAPIError.http(503, "body") })
+        await failed.requestRemoval(confirm: { true })
+        XCTAssertTrue(failed.noteIsError)
+
+        let idle = DevicesRemoveDeviceModel(remove: {})
+        XCTAssertNil(idle.note)
+        XCTAssertFalse(idle.noteIsError, "no note, nothing to colour")
+    }
+
     /// Cancelling the confirmation leaves the model exactly where it was and
     /// never reaches the server.
     func testCancellingTheConfirmationDoesNothing() async {

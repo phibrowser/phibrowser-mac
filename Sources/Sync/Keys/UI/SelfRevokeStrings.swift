@@ -56,17 +56,33 @@ enum SelfRevokeStrings {
             + "device first, then try again.",
         comment: "Self-revoke - last active device")
 
+    /// Shown in place of a removal that never reached the server: the shared
+    /// `SyncKeyController` was gone by the time the button was clicked (a
+    /// sign-out in another window, say). Retrying is the fix, so this reads as a
+    /// transient failure rather than a refusal.
+    static let removalUnavailable = NSLocalizedString(
+        "Sync isn’t available right now, so this device wasn’t removed. Check that you’re still "
+            + "signed in, then try again.",
+        comment: "Self-revoke - no sync controller")
+
     /// The shared second confirmation. `NSAlert` is the Preferences family's only
     /// confirmation idiom (`confirmationDialog` appears nowhere in this app), and
     /// the destructive button goes first so it is the one `.alertFirstButtonReturn`
     /// identifies — the same order the pairing gate has always used.
+    ///
+    /// `.warning` + `hasDestructiveAction` on that first button are what make the
+    /// irreversibility visible rather than merely stated: the confirm button is
+    /// drawn in the destructive tint, as the pane family's other teardown
+    /// confirmations are (`SpacesSettingsView.deleteSpace` / `changeSpaceProfile`).
     @MainActor
     static func confirmRemoval() -> Bool {
         let alert = NSAlert()
+        alert.alertStyle = .warning
         alert.messageText = confirmTitle
         alert.informativeText = confirmBody
         alert.addButton(withTitle: confirmAction)
         alert.addButton(withTitle: cancel)
+        alert.buttons.first?.hasDestructiveAction = true
         return alert.runModal() == .alertFirstButtonReturn
     }
 }

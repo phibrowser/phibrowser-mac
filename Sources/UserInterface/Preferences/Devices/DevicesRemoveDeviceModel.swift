@@ -14,6 +14,18 @@ import Foundation
 /// key unrotated and the cursors in place. `DevicesSettingHostingViewController`
 /// binds the closure to `PhiChromiumCoordinator.shared.syncKeyControllerCreatingIfNeeded()`
 /// and to nothing else.
+/// Why a removal could not even be attempted.
+///
+/// `DevicesSettingHostingViewController` throws this when the coordinator-owned
+/// `SyncKeyController` is gone at click time (a sign-out in another window
+/// between the button rendering and the click). It has to be an error rather
+/// than a quiet return: a closure that returns normally is the model's proof
+/// that the device left the account, and reporting `.done` for a teardown that
+/// never reached the server would hide the failure behind a success state.
+enum DevicesRemoveDeviceError: Error {
+    case syncControllerUnavailable
+}
+
 @MainActor
 final class DevicesRemoveDeviceModel: ObservableObject {
     /// `confirming` is a real state rather than a transient: the confirmation is
@@ -81,6 +93,15 @@ final class DevicesRemoveDeviceModel: ObservableObject {
         }
     }
 
+    /// Whether `note` is an error the user must act on (`failed` — retry) rather
+    /// than the standing `last_device` explanation. The pane colours the two
+    /// differently: every other error on that pane is red, and the one the user
+    /// has to notice must not be the exception.
+    var noteIsError: Bool {
+        if case .failed = state { return true }
+        return false
+    }
+
     /// Confirm, then run the teardown. `confirm` is injected so the pane can pass
     /// the shared app-modal `NSAlert` while tests pass a plain answer.
     func requestRemoval(confirm: @MainActor () -> Bool) async {
@@ -102,6 +123,12 @@ final class DevicesRemoveDeviceModel: ObservableObject {
         } catch KeyAPIError.lastActiveDevice {
             AppLogInfo("[phi-sync] remove this device refused: last active device")
             state = .lastDevice
+        } catch DevicesRemoveDeviceError.syncControllerUnavailable {
+            // Nothing was sent, so this is a plain retryable failure; the message
+            // is a user-facing one because the error carries no server metadata
+            // worth rendering.
+            AppLogWarn("[phi-sync] remove this device failed: no shared sync key controller")
+            state = .failed(SelfRevokeStrings.removalUnavailable)
         } catch {
             let described = PhiSyncLog.describe(error)
             AppLogWarn("[phi-sync] remove this device failed (\(described))")

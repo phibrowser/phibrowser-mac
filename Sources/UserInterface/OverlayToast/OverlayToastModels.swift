@@ -21,5 +21,5 @@ struct OverlayToastItem: Identifiable, Equatable {
     let message: String?
     let duration: TimeInterval
     let placement: OverlayToastPlacement
-    var shareURL: URL? = nil
+    var shareURLs: [URL] = []
 }

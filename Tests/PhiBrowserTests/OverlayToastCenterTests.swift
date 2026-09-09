@@ -55,9 +55,15 @@ final class OverlayToastCenterTests: XCTestCase {
         OverlayToastCenter.shared.showHighlightLinkCopyConfirmation(url: url, in: state)
         drainUpdates()
         kiosk.view.layoutSubtreeIfNeeded()
-        XCTAssertEqual(kioskModel.genericToasts.first?.shareURL, url)
+        XCTAssertEqual(kioskModel.genericToasts.first?.shareURLs, [url])
         XCTAssertEqual(kioskModel.genericToastTopOffset, 16)
         XCTAssertTrue(kioskOverlay.window === window)
+        XCTAssertNotNil(shareButton(in: kioskOverlay))
+
+        OverlayToastCenter.shared.showURLCopyConfirmation(copiedURLs: [url.absoluteString], in: state)
+        drainUpdates()
+        kiosk.view.layoutSubtreeIfNeeded()
+        XCTAssertEqual(kioskModel.genericToasts.first?.shareURLs, [url])
         XCTAssertNotNil(shareButton(in: kioskOverlay))
 
         let peek = PeekPanelController(
@@ -76,7 +82,7 @@ final class OverlayToastCenterTests: XCTestCase {
         drainUpdates()
         peekWindow.contentView?.layoutSubtreeIfNeeded()
         let originalID = try XCTUnwrap(peekModel.genericToasts.first?.id)
-        XCTAssertEqual(peekModel.genericToasts.first?.shareURL, url)
+        XCTAssertEqual(peekModel.genericToasts.first?.shareURLs, [url])
         XCTAssertNotNil(shareButton(in: peekOverlay))
         peek.showHighlightLinkCopyConfirmation(url: url, tabId: 999)
         XCTAssertEqual(peekModel.toastCenter.visibleToasts(for: state.windowId).first?.id, originalID)
@@ -88,7 +94,19 @@ final class OverlayToastCenterTests: XCTestCase {
         XCTAssertTrue(peekModel.toastCenter.visibleToasts(for: state.windowId).isEmpty)
         peek.showHighlightLinkCopyConfirmation(url: url, tabId: nextTab.guid)
         XCTAssertEqual(peekModel.toastCenter.visibleToasts(for: state.windowId).count, 1)
+        peekModel.toastCenter.clearWindow(windowId: state.windowId)
+        peek.showURLCopyConfirmation(url: url, tabId: tab.guid)
+        XCTAssertTrue(peekModel.toastCenter.visibleToasts(for: state.windowId).isEmpty)
+        peek.showURLCopyConfirmation(url: url, tabId: nextTab.guid)
+        let linkToast = try XCTUnwrap(peekModel.toastCenter.visibleToasts(for: state.windowId).first)
+        XCTAssertEqual(linkToast.placement, .topTrailing)
+        XCTAssertEqual(linkToast.shareURLs, [url])
+        drainUpdates()
+        peekWindow.contentView?.layoutSubtreeIfNeeded()
+        XCTAssertNotNil(shareButton(in: peekOverlay))
         peek.hide()
+        peek.showURLCopyConfirmation(url: url, tabId: nextTab.guid)
+        XCTAssertTrue(peekModel.toastCenter.visibleToasts(for: state.windowId).isEmpty)
         peek.showHighlightLinkCopyConfirmation(url: url, tabId: nextTab.guid)
         XCTAssertTrue(peekModel.toastCenter.visibleToasts(for: state.windowId).isEmpty)
         XCTAssertEqual(OverlayToastCenter.shared.visibleToasts(for: state.windowId).count, 1)
@@ -128,6 +146,11 @@ final class OverlayToastCenterTests: XCTestCase {
         }
     }
 
+    func testLinkCopiedCallbackIsExposedToObjectiveC() {
+        XCTAssertTrue(PhiChromiumCoordinator.shared.responds(
+            to: NSSelectorFromString("linkCopied:windowId:url:")))
+    }
+
     func testHighlightLinkCallbackIsExposedToObjectiveC() {
         // Chromium uses respondsToSelector before delivering this optional event.
         XCTAssertTrue(PhiChromiumCoordinator.shared.responds(
@@ -151,7 +174,7 @@ final class OverlayToastCenterTests: XCTestCase {
         window.contentView?.addSubview(root)
         let toast = OverlayToastItem(
             id: UUID(), title: "Link copied", message: nil, duration: 3,
-            placement: .topCenter, shareURL: URL(string: "https://example.com/s/highlight")
+            placement: .topCenter, shareURLs: [URL(string: "https://example.com/s/highlight")!]
         )
         let hostingView = NSHostingView(rootView: OverlayToastView(toast: toast))
         hostingView.frame = NSRect(x: 20, y: 120, width: 350, height: 60)
@@ -201,17 +224,17 @@ final class OverlayToastCenterTests: XCTestCase {
         let shortURL = try XCTUnwrap(URL(string: "https://example.com/s/highlight"))
         let fallbackURL = try XCTUnwrap(URL(string: "https://example.com/article#:~:text=Highlighted%20text"))
 
-        center.show(title: "First link", shareURL: shortURL, in: .windowId(1))
-        center.show(title: "Other window", shareURL: shortURL, in: .windowId(2))
-        center.show(title: "Replacement link", shareURL: fallbackURL, in: .windowId(1))
+        center.show(title: "First link", shareURLs: [shortURL], in: .windowId(1))
+        center.show(title: "Other window", shareURLs: [shortURL], in: .windowId(2))
+        center.show(title: "Replacement link", shareURLs: [fallbackURL], in: .windowId(1))
 
-        XCTAssertEqual(center.visibleToasts(for: 1).first?.shareURL, fallbackURL)
-        XCTAssertEqual(center.visibleToasts(for: 2).first?.shareURL, shortURL)
+        XCTAssertEqual(center.visibleToasts(for: 1).first?.shareURLs, [fallbackURL])
+        XCTAssertEqual(center.visibleToasts(for: 2).first?.shareURLs, [shortURL])
 
         center.show(title: "Plain confirmation", in: .windowId(1))
 
-        XCTAssertNil(center.visibleToasts(for: 1).first?.shareURL)
-        XCTAssertEqual(center.visibleToasts(for: 2).first?.shareURL, shortURL)
+        XCTAssertEqual(center.visibleToasts(for: 1).first?.shareURLs, [])
+        XCTAssertEqual(center.visibleToasts(for: 2).first?.shareURLs, [shortURL])
     }
 
     func testMenuPausesOnlyItsToastAndDismissesImmediatelyAfterClosing() throws {

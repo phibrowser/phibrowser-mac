@@ -1677,13 +1677,13 @@ class BrowserState {
     }
 
     @discardableResult
-    func copySelectedTabURLs() -> Bool {
+    func copySelectedTabURLs() -> [String]? {
         let shouldClearMultiSelection = multiSelection.isActive
         let urls = urlsForCopyingSelectedURLs
         if shouldClearMultiSelection {
             clearMultiSelection()
         }
-        return copyURLsToPasteboard(urls)
+        return copyURLsToPasteboard(urls) ? urls : nil
     }
 
     @MainActor

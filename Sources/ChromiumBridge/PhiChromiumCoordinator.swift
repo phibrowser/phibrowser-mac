@@ -1570,6 +1570,20 @@ extension PhiChromiumCoordinator: PhiChromiumBridgeDelegate {
                             windowId: windowId)
     }
 
+    @objc(linkCopied:windowId:url:)
+    func linkCopied(_ tabId: Int64, windowId: Int64, url: String) {
+        guard !url.isEmpty, let copiedURL = URL(string: url) else { return }
+        DispatchQueue.main.async {
+            guard let controller = MainBrowserWindowControllersManager.shared
+                .controller(for: Int(windowId)) else { return }
+            if controller.browserState.peekState.peekTab(withId: Int(tabId)) != nil {
+                controller.peekPanelControllerIfLoaded?.showURLCopyConfirmation(url: copiedURL, tabId: Int(tabId))
+            } else {
+                OverlayToastCenter.shared.showURLCopyConfirmation(copiedURLs: [copiedURL.absoluteString], in: controller.browserState)
+            }
+        }
+    }
+
     @objc(linkToHighlightCopied:windowId:url:isShortLink:)
     func link(toHighlightCopied tabId: Int64, windowId: Int64, url: String, isShortLink: Bool) {
         guard !url.isEmpty, let copiedURL = URL(string: url) else { return }

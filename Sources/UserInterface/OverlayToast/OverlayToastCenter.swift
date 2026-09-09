@@ -66,7 +66,7 @@ final class OverlayToastCenter: ObservableObject {
         message: String? = nil,
         duration: TimeInterval = OverlayToastCenter.defaultDuration,
         placement: OverlayToastPlacement = .topCenter,
-        shareURL: URL? = nil,
+        shareURLs: [URL] = [],
         in target: OverlayToastTarget = .activeWindow
     ) -> UUID? {
         performOnMainQueue {
@@ -75,7 +75,7 @@ final class OverlayToastCenter: ObservableObject {
                 message: message,
                 duration: duration,
                 placement: placement,
-                shareURL: shareURL,
+                shareURLs: shareURLs,
                 in: target
             )
         }
@@ -87,7 +87,7 @@ final class OverlayToastCenter: ObservableObject {
         message: String? = nil,
         duration: TimeInterval = OverlayToastCenter.defaultDuration,
         placement: OverlayToastPlacement = .topCenter,
-        shareURL: URL? = nil,
+        shareURLs: [URL] = [],
         in browserState: BrowserState
     ) -> UUID? {
         performOnMainQueue {
@@ -96,7 +96,7 @@ final class OverlayToastCenter: ObservableObject {
                 message: message,
                 duration: duration,
                 placement: placement,
-                shareURL: shareURL,
+                shareURLs: shareURLs,
                 in: .windowId(browserState.windowId)
             )
         }
@@ -127,7 +127,7 @@ final class OverlayToastCenter: ObservableObject {
         message: String?,
         duration: TimeInterval,
         placement: OverlayToastPlacement,
-        shareURL: URL?,
+        shareURLs: [URL],
         in target: OverlayToastTarget
     ) -> UUID? {
         guard let windowId = targetResolver(target) else {
@@ -141,7 +141,7 @@ final class OverlayToastCenter: ObservableObject {
             message: message,
             duration: duration > 0 ? duration : Self.defaultDuration,
             placement: placement,
-            shareURL: shareURL
+            shareURLs: shareURLs
         )
         enqueueOnMainQueue(toast, for: windowId)
         return toast.id
@@ -282,14 +282,14 @@ extension OverlayToastCenter {
             "browser.highlightLink.copied",
             value: "Link copied to highlight",
             comment: "Toast shown after copying a link to highlighted text, including when a short link is unavailable")
-        return show(title: title, placement: .topTrailing, shareURL: url, in: browserState)
+        return show(title: title, placement: .topTrailing, shareURLs: [url], in: browserState)
     }
 
     @discardableResult
-    func showURLCopyConfirmation(copiedURLCount: Int, in browserState: BrowserState) -> UUID? {
-        let title = copiedURLCount > 1
+    func showURLCopyConfirmation(copiedURLs: [String], in browserState: BrowserState) -> UUID? {
+        let title = copiedURLs.count > 1
             ? NSLocalizedString("app.copyTabURLsToast.multiple", value: "URLs Copied", comment: "Toast shown after copying selected tab URLs to the clipboard")
             : NSLocalizedString("app.copyTabURLsToast.single", value: "URL Copied", comment: "Toast shown after copying the selected tab URL to the clipboard")
-        return show(title: title, placement: .topTrailing, in: browserState)
+        return show(title: title, placement: .topTrailing, shareURLs: copiedURLs.compactMap(URL.init(string:)), in: browserState)
     }
 }

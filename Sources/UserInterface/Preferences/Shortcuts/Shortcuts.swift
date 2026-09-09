@@ -12,7 +12,9 @@ struct Shortcuts {
     let key: ShortcutsKey
 }
 
-// chrome/app/chrome_command_ids.h
+// chrome/app/chrome_command_ids.h. The IDC_* raw values are transcribed by
+// hand and upstream renumbers commands between Chromium majors; verify them
+// with scripts/check_command_ids.py after every version bump.
 enum CommandWrapper: Int, Equatable {
     // App
     case IDC_OPTIONS                 = 40015

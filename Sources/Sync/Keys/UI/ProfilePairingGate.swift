@@ -285,30 +285,16 @@ struct ProfilePairingGateView: View {
     /// NOT pre-probe the account's device count (there is no listing endpoint on
     /// this client): it asks, and greys the button in place if the server refuses.
     private func confirmAndRemoveThisDevice() {
-        let alert = NSAlert()
-        alert.messageText = NSLocalizedString("把这台 Mac 移出账户同步？",
-                                              comment: "Self-revoke confirmation - title")
-        alert.informativeText = NSLocalizedString(
-            "这台 Mac 会退出账户同步。本机已有的浏览数据（Space、书签、历史、Pin Tab）全部保留，只是不再与其他设备同步。之后可以在「设置 → 设备」里重新加入。",
-            comment: "Self-revoke confirmation - body")
-        alert.addButton(withTitle: NSLocalizedString("移除本设备",
-                                                     comment: "Self-revoke confirmation - confirm"))
-        alert.addButton(withTitle: NSLocalizedString("取消",
-                                                     comment: "Self-revoke confirmation - cancel"))
-        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        // Copy and alert both come from `SelfRevokeStrings`, shared with the
+        // Settings → Devices entry point: two surfaces, one promise.
+        guard SelfRevokeStrings.confirmRemoval() else { return }
         removeErrorNote = nil
         Task { @MainActor in
             do {
                 try await controller.removeThisDeviceFromSync()
                 onDismiss()
             } catch KeyAPIError.lastActiveDevice {
-                // The parenthetical is not politeness: an account profile whose
-                // envelope will not open under this ARK is read-only and does not
-                // count towards the actionable predicate, so "finish the pairing"
-                // really is reachable in such an account.
-                removeBlockedNote = NSLocalizedString(
-                    "这是账户里最后一台设备，无法移除；请完成配对（无法读取的 Profile 不影响完成）。",
-                    comment: "Self-revoke - last active device")
+                removeBlockedNote = SelfRevokeStrings.lastDeviceNote
             } catch {
                 removeErrorNote = PhiSyncLog.describe(error)
             }

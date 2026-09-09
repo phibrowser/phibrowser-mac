@@ -19,6 +19,7 @@
 		2617E7C43A0DFE05B416E8F5 /* JoinMethodChoiceView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6819EF093F955DAFACDC4C94 /* JoinMethodChoiceView.swift */; };
 		2850A45D3A2F2C11AF0F8F3B /* PhiSpaceSyncState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 14B6CA15BC9C435794FC131A /* PhiSpaceSyncState.swift */; };
 		2ABF91DB68C2445BAA58C9BA /* GroupTabsTableView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 457F461C0F164136A46FF641 /* GroupTabsTableView.swift */; };
+		2E8585334902CCDAB2A5FC60 /* SelfRevokeStrings.swift in Sources */ = {isa = PBXBuildFile; fileRef = 01794B7EA4882E10EFB8D56C /* SelfRevokeStrings.swift */; };
 		2F3F30219641EDD78FE06E96 /* RecoveryCode.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6EE9BDB8D95B7A16A1E96582 /* RecoveryCode.swift */; };
 		3703C88C2F68F78500E7CF6D /* AISettingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3703C88B2F68F78500E7CF6D /* AISettingView.swift */; };
 		3703C9822F69558C00E7CF6D /* BrowserState+ToggleAI.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3703C9812F69558C00E7CF6D /* BrowserState+ToggleAI.swift */; };
@@ -215,6 +216,7 @@
 		5F1A5A11AC1D000000000005 /* SplitTabDropContainer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5F1A5A11AC1D000000000006 /* SplitTabDropContainer.swift */; };
 		686A8B97FDFABB61BB2539FD /* ProfilePairingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7218F862C1F92C027CE8E979 /* ProfilePairingView.swift */; };
 		6CA74AE48DC58F4968B8DD4E /* DeviceKeyStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = E2201CD37819E22BC9A5F2FC /* DeviceKeyStore.swift */; };
+		78BE8ECE731672FAB99F191D /* DevicesRemoveDeviceModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6659B55999DDEAA24DB5AC0D /* DevicesRemoveDeviceModel.swift */; };
 		793C1DDEA1022CC850FEFFF9 /* SentinelWatchdog.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6A44C5FF60DF6F7860A061D4 /* SentinelWatchdog.swift */; };
 		7A5B00A02EF0000000000001 /* MemoryButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A5B00A02EF0000000000002 /* MemoryButton.swift */; };
 		7B00AAAA000000050000A5B5 /* PostHogEnv.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7B00AAAA000000040000A4B4 /* PostHogEnv.swift */; };
@@ -564,6 +566,7 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		01794B7EA4882E10EFB8D56C /* SelfRevokeStrings.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = SelfRevokeStrings.swift; path = UI/SelfRevokeStrings.swift; sourceTree = "<group>"; };
 		0BC93AB5984C221F1F3BC595 /* PhiDomainKeyManager.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = PhiDomainKeyManager.swift; sourceTree = "<group>"; };
 		14B6CA15BC9C435794FC131A /* PhiSpaceSyncState.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = PhiSpaceSyncState.swift; sourceTree = "<group>"; };
 		1BEC0EBA18BE1C83C17B3D73 /* ProfileKeyManager.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ProfileKeyManager.swift; sourceTree = "<group>"; };
@@ -772,6 +775,7 @@
 		5F1A5A11AC1D000000000004 /* SplitPaneHostView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SplitPaneHostView.swift; sourceTree = "<group>"; };
 		5F1A5A11AC1D000000000006 /* SplitTabDropContainer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SplitTabDropContainer.swift; sourceTree = "<group>"; };
 		60DCF1852E526BF755BF3397 /* phi_entity.pb.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = phi_entity.pb.swift; sourceTree = "<group>"; };
+		6659B55999DDEAA24DB5AC0D /* DevicesRemoveDeviceModel.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = DevicesRemoveDeviceModel.swift; sourceTree = "<group>"; };
 		6819EF093F955DAFACDC4C94 /* JoinMethodChoiceView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = JoinMethodChoiceView.swift; path = UI/JoinMethodChoiceView.swift; sourceTree = "<group>"; };
 		6A44C5FF60DF6F7860A061D4 /* SentinelWatchdog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SentinelWatchdog.swift; sourceTree = "<group>"; };
 		6EE9BDB8D95B7A16A1E96582 /* RecoveryCode.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = RecoveryCode.swift; sourceTree = "<group>"; };
@@ -1134,6 +1138,7 @@
 				23216985BAC98CA63F9CB2AC /* WaitingForApprovalView.swift */,
 				7218F862C1F92C027CE8E979 /* ProfilePairingView.swift */,
 				4DE17EACA1FF4716231886E7 /* ProfilePairingGate.swift */,
+				01794B7EA4882E10EFB8D56C /* SelfRevokeStrings.swift */,
 			);
 			name = UI;
 			sourceTree = "<group>";
@@ -2422,6 +2427,7 @@
 				F5D71320854F15DA33B8D7BA /* DevicesSettingView.swift */,
 				500D8A44ACCDE44A010C744F /* DevicesSettingHostingViewController.swift */,
 				EDF82DF0F474098FBD4C76D0 /* DevicesSettingViewController.swift */,
+				6659B55999DDEAA24DB5AC0D /* DevicesRemoveDeviceModel.swift */,
 			);
 			path = Devices;
 			sourceTree = "<group>";
@@ -3081,6 +3087,8 @@
 				130D33EF1674ABCCC6614434 /* PhiSpaceLocalAccess.swift in Sources */,
 				B7AAEAE10DB72C8730D754F2 /* ProfilePairingGate.swift in Sources */,
 				55B5D6051DF17222A76A124A /* PhiSpaceFirstSyncSheet.swift in Sources */,
+				2E8585334902CCDAB2A5FC60 /* SelfRevokeStrings.swift in Sources */,
+				78BE8ECE731672FAB99F191D /* DevicesRemoveDeviceModel.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

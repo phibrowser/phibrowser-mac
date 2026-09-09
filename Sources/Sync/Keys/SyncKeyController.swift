@@ -337,8 +337,11 @@ final class SyncKeyController {
                     // A non-nil priorMapping here means the local is mapped to a UUID
                     // whose server envelope is gone (404) — the stale-mapping wedge that
                     // then trips `alreadyMapped` on re-register. Surface it explicitly.
+                    // R12: an account-global `profile_uuid` never goes into the
+                    // file log in full -- 8 characters are enough to correlate
+                    // two lines within one bundle.
                     let priorMapping = profileKeys.mappedGlobalUuid(forProfileId: local.profileId)
-                    AppLogInfo("[phi-sync-probe] unmapped profile=\(local.profileId) priorMapping=\(priorMapping ?? "none")")
+                    AppLogInfo("[phi-sync-probe] unmapped profile=\(local.profileId) priorMapping=\(priorMapping.map { String($0.prefix(8)) } ?? "none")")
                     unmappedLocals.append(local)
                 }
             } catch {
@@ -654,9 +657,14 @@ final class SyncKeyController {
     /// compared across sessions — a changed hash for the same uuid is the
     /// envelope/keybag key desync we're hunting. Logs only a short SHA-256
     /// prefix, never the passphrase itself. Remove once ② is root-caused.
+    ///
+    /// R12: the account-global uuid is truncated to 8 characters, like every
+    /// other uuid / tag hash this milestone logs. `AppLogInfo` goes to the
+    /// CocoaLumberjack FILE logger, which is the artifact support asks users to
+    /// upload, and "永不记录 profile_uuid 全串" is a constraint on that file.
     private func probeResolve(_ source: String, profileId: String, uuid: String, passphrase: String) {
         let ppHash = SHA256.hash(data: Data(passphrase.utf8)).prefix(6)
             .map { String(format: "%02x", $0) }.joined()
-        AppLogInfo("[phi-sync-probe] resolve source=\(source) profile=\(profileId) uuid=\(uuid) ppHash=\(ppHash)")
+        AppLogInfo("[phi-sync-probe] resolve source=\(source) profile=\(profileId) uuid=\(String(uuid.prefix(8))) ppHash=\(ppHash)")
     }
 }

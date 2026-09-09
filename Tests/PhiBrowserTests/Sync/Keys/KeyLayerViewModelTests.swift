@@ -162,4 +162,148 @@ final class KeyLayerViewModelTests: XCTestCase {
         XCTAssertNotNil(controller.profileSyncInfo(forProfileId: "Profile 1"))
         XCTAssertFalse(controller.needsPairing)
     }
+
+    // MARK: - The pairing load is bounded, cancellable and replaceable (task 20)
+
+    /// A `KeyEnvelopeAPI` whose profile LISTING never comes back on its own.
+    ///
+    /// This is the device-B stall the deadline exists for: the listing plus one
+    /// envelope GET per profile, strictly serially, on `URLSession.shared`'s
+    /// default 60 s timeout -- minutes of spinner in an app-modal window whose
+    /// retry button was disabled for the whole of it.
+    ///
+    /// Composition rather than subclassing, because `AccountKeyManagerTests.FakeAPI`
+    /// is `final`. Everything except `listProfiles()` forwards to a real one, so
+    /// `bootstrap()` puts a real ARK up: `accountProfiles()` checks the ARK
+    /// BEFORE any request, and a fake that failed that guard would land the load
+    /// in `.error` instantly, passing the test without ever reaching the deadline.
+    final class HangingListProfilesAPI: KeyEnvelopeAPI {
+        let inner = AccountKeyManagerTests.FakeAPI()
+
+        // Touched from the load's task-group children, i.e. off the main actor.
+        private let lock = NSLock()
+        private var _startedCalls = 0
+        private var _cancelledCalls = 0
+
+        /// How many listing calls have suspended.
+        var startedCalls: Int { withLock { $0._startedCalls } }
+        /// How many of them were cancelled rather than answered.
+        var cancelledCalls: Int { withLock { $0._cancelledCalls } }
+
+        /// `NSLock.lock()` is unavailable from an async context, so every
+        /// critical section is entered from a synchronous helper.
+        private func withLock<T>(_ body: (HangingListProfilesAPI) -> T) -> T {
+            lock.lock(); defer { lock.unlock() }; return body(self)
+        }
+        private func noteStarted() { withLock { $0._startedCalls += 1 } }
+        private func noteCancelled() { withLock { $0._cancelledCalls += 1 } }
+
+        func listProfiles() async throws -> [ProfileSummaryDTO] {
+            noteStarted()
+            try await withTaskCancellationHandler {
+                // Far past any deadline these cases set: the only way out is
+                // cancellation, which is exactly what is under test.
+                try await Task.sleep(for: .seconds(3600))
+            } onCancel: {
+                self.noteCancelled()
+            }
+            return []
+        }
+
+        func putAccount(salt: Data, kdfVersion: String, kdfParams: Data, recoveryEnvelope: Data) async throws -> Bool {
+            try await inner.putAccount(salt: salt, kdfVersion: kdfVersion,
+                                       kdfParams: kdfParams, recoveryEnvelope: recoveryEnvelope)
+        }
+        func getAccount() async throws -> AccountKeyStateDTO? { try await inner.getAccount() }
+        func postDevice(deviceKeyId: String, publicKey: Data, name: String, platform: String, arkEnvelope: Data?) async throws {
+            try await inner.postDevice(deviceKeyId: deviceKeyId, publicKey: publicKey,
+                                       name: name, platform: platform, arkEnvelope: arkEnvelope)
+        }
+        func getDeviceEnvelope(deviceKeyId: String) async throws -> Data? {
+            try await inner.getDeviceEnvelope(deviceKeyId: deviceKeyId)
+        }
+        func revokeDevice(deviceKeyId: String) async throws {
+            try await inner.revokeDevice(deviceKeyId: deviceKeyId)
+        }
+        func postJoinRequest(publicKey: Data, name: String, platform: String) async throws -> String {
+            try await inner.postJoinRequest(publicKey: publicKey, name: name, platform: platform)
+        }
+        func listPendingJoinRequests() async throws -> [JoinRequestSummaryDTO] {
+            try await inner.listPendingJoinRequests()
+        }
+        func getJoinRequest(id: String) async throws -> JoinRequestDTO {
+            try await inner.getJoinRequest(id: id)
+        }
+        func approveJoinRequest(id: String, grantedArkEnvelope: Data, resolvedByDeviceKeyId: String) async throws {
+            try await inner.approveJoinRequest(id: id, grantedArkEnvelope: grantedArkEnvelope,
+                                               resolvedByDeviceKeyId: resolvedByDeviceKeyId)
+        }
+        func denyJoinRequest(id: String) async throws { try await inner.denyJoinRequest(id: id) }
+        func getProfileKey(uuid: String) async throws -> ProfileKeyDTO? {
+            try await inner.getProfileKey(uuid: uuid)
+        }
+        func putProfileKey(uuid: String, envelope: Data) async throws -> Bool {
+            try await inner.putProfileKey(uuid: uuid, envelope: envelope)
+        }
+        func getDomainKey(domain: String) async throws -> Data? { try await inner.getDomainKey(domain: domain) }
+        func putDomainKey(domain: String, envelope: Data) async throws -> Bool {
+            try await inner.putDomainKey(domain: domain, envelope: envelope)
+        }
+    }
+
+    /// A key stack whose account listing hangs forever, with the ARK unlocked so
+    /// the load really does reach the network step.
+    private func hangingStack(loadDeadline: Duration) async throws
+        -> (HangingListProfilesAPI, SyncKeyController, KeyLayerViewModel) {
+        let api = HangingListProfilesAPI()
+        let provider = AccountKeyManagerTests.FakeDeviceKeyProvider()
+        let mgr = AccountKeyManager(api: api, deviceKeyProvider: provider)
+        _ = try await mgr.bootstrap()
+        let pkm = ProfileKeyManager(api: api, keyManager: mgr,
+                                    mappingStore: ProfileKeyManagerTests.MemoryMappingStore())
+        let controller = SyncKeyController(
+            manager: mgr,
+            approvals: DeviceApprovalService(api: api, keyManager: mgr, deviceKeyProvider: provider),
+            profileKeys: pkm,
+            localProfilesProvider: { [("Default", "Default")] },
+            notifyChromium: {})
+        return (api, controller, KeyLayerViewModel(manager: mgr, loadDeadline: loadDeadline))
+    }
+
+    /// The load must be BOUNDED. Before this, a hung listing left the modal in
+    /// `.working` for as long as the transport took to give up -- up to five
+    /// serial 60 s round trips -- and `.working` was the one phase with retry
+    /// disabled. The deadline has to land in `.error`, which does carry the
+    /// exits, and it has to cancel the request it gave up on.
+    func testStartPairingGivesUpOnAHungLoadAndLandsInError() async throws {
+        let (api, controller, vm) = try await hangingStack(loadDeadline: .milliseconds(50))
+
+        await vm.startPairing(controller: controller)
+
+        guard case .error = vm.phase else {
+            return XCTFail("a load past its deadline must land in .error, not stay in .working")
+        }
+        XCTAssertEqual(api.startedCalls, 1)
+        XCTAssertEqual(api.cancelledCalls, 1, "the deadline must cancel the request it abandoned")
+    }
+
+    /// Retry is pressable during a load now, so pressing it must REPLACE the
+    /// in-flight load rather than stack a second one behind it -- and the
+    /// replaced load must not write `phase` on its way out.
+    func testASecondStartPairingCancelsTheFirstLoadInsteadOfStackingIt() async throws {
+        let (api, controller, vm) = try await hangingStack(loadDeadline: .milliseconds(300))
+
+        let first = Task { await vm.startPairing(controller: controller) }
+        // Let the first load reach the (hanging) listing before replacing it.
+        try await Task.sleep(for: .milliseconds(30))
+        XCTAssertEqual(api.startedCalls, 1)
+
+        await vm.startPairing(controller: controller)
+        await first.value
+
+        XCTAssertEqual(api.startedCalls, 2, "each press starts exactly one load")
+        XCTAssertEqual(api.cancelledCalls, 2,
+                       "the replaced load is cancelled, and the replacement hits its deadline")
+        guard case .error = vm.phase else { return XCTFail("expected the surviving load's error") }
+    }
 }

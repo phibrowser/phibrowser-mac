@@ -254,11 +254,19 @@ actor PhiSyncEngine {
         /// applied in place, so it can never land *inside* a round that is parked in
         /// `getUpdates` — see `setSpaceSyncEnabled`.
         case spaceGate(Bool)
-        /// §5.3: the two Space intents that CONTAIN suspension points get the
-        /// same exclusivity as any other round. The purely synchronous ones go
-        /// through their own in-place mutation instead.
+        /// §5.3: EVERY Space intent the main-thread facade delivers is a round.
+        /// Running one "in place on the engine actor" is not exclusion — the
+        /// engine is a reentrant actor, and the two long Space writers
+        /// (`pull`'s apply section and `pushSpaces`) each hold one table copy
+        /// across a main-actor hop or a whole network round trip and blind-write
+        /// it back. An intent that lands inside either window is silently
+        /// overwritten, which for `recordLocalDeletion` means the tombstone is
+        /// never committed and the Space is later resurrected from a peer's
+        /// entity. The queue is the only thing that makes the single writer real.
         case firstSyncDecision(PhiSpaceFirstSyncDecision)
         case retentionSweep
+        case recordLocalDeletion(String)
+        case joinAccountSync(String)
     }
 
     init(domainKeys: any PhiDomainKeyProviding,
@@ -407,18 +415,37 @@ actor PhiSyncEngine {
         writeSpaceTable(table)
     }
 
-    /// Delivered by `PhiSpaceSyncState.shared` and executed on the engine actor --
-    /// the table has exactly one writer (§5.3). A main-thread read-modify-write
-    /// racing the engine's own would drop the delete intent and the tombstone
-    /// would never go out.
+    /// Delivered by `PhiSpaceSyncState.shared` and executed as a QUEUED ROUND --
+    /// the table has exactly one writer (§5.3: "全部 async, 全部排进同一条
+    /// roundQueue").
+    ///
+    /// Running the read-modify-write "on the engine actor" is not enough, and
+    /// the failure is the one §5.3 names: a round reads the table, the user
+    /// deletes a Space during one of that round's suspensions, and the round
+    /// then writes its pre-delete copy back. `pushSpaces` holds its copy across
+    /// `client.commit` (a full network round trip) and `pull`'s apply section
+    /// holds one across every landing's main-actor hop, so the window is wide
+    /// and ordinary. The lost `pendingDelete` is permanent and silent: the uuid
+    /// never enters `spaceCommitEntries`' union again, no tombstone is ever
+    /// committed, and with no `deletedAtMs` on the cursor the anti-resurrection
+    /// guard cannot fire either -- the next delivery of that entity re-creates
+    /// the Space the user deleted.
+    ///
+    /// Must be called from *outside* a round, like `setSpaceSyncEnabled`.
     func recordLocalDeletion(spaceId: String) async {
-        runSpaceIntent { table in table.recordLocalDeletion(spaceId: spaceId) }
+        await serialized(.recordLocalDeletion(spaceId))
     }
 
+    /// §8.3's "join account sync". Queued for the same reason as the delete
+    /// above -- an in-flight round's write-back would take the `hidden` bit
+    /// straight back and the button would silently do nothing.
+    ///
+    /// The publish runs INSIDE the same round rather than as a second
+    /// `serialized(.push)`: the round is the only place that can see whether the
+    /// intent changed anything, and handing that answer back across the queue
+    /// would race a second `joinAccountSync` for another Space.
     func joinAccountSync(spaceId: String) async {
-        let changed = runSpaceIntent { table in table.joinAccountSync(spaceId: spaceId) }
-        // It was never published, so this is an ordinary create -- no special path.
-        if changed { await serialized(.push) }
+        await serialized(.joinAccountSync(spaceId))
     }
 
     func runRetentionSweep() async {
@@ -527,6 +554,15 @@ actor PhiSyncEngine {
             await applyFirstSyncDecision(decision)
         case .retentionSweep:
             await applyRetentionSweep()
+        case .recordLocalDeletion(let spaceId):
+            runSpaceIntent { table in table.recordLocalDeletion(spaceId: spaceId) }
+        case .joinAccountSync(let spaceId):
+            // It was never published, so this is an ordinary create -- no special
+            // path. Same work as a `.push` round, run here so the un-hide and the
+            // publish cannot be separated by another round.
+            if runSpaceIntent({ table in table.joinAccountSync(spaceId: spaceId) }) {
+                await push(retryOnConflict: true, allowInitialPull: true)
+            }
         }
         logSpaceRound()
     }
@@ -870,10 +906,10 @@ actor PhiSyncEngine {
             // `mutateSpaceTable` delta: `applySpaces` hops to the main actor on
             // every landing, so its table copy necessarily spans suspension
             // points. One load / apply / write is safe *here* and only here —
-            // rounds are serialized (`serialized(_:)` chains them, and the gate
-            // edge is itself a round), and this is the last Space work of the
-            // round, so nothing can touch the table between the load and the
-            // write.
+            // rounds are serialized (`serialized(_:)` chains them; the gate edge
+            // and BOTH main-thread Space intents are themselves rounds), and
+            // this is the last Space work of the round, so nothing can touch the
+            // table between the load and the write.
             //
             // It MUST sit after `flushSpaceObservations(batch)` and after the
             // block above, and both orderings are load-bearing:
@@ -1660,8 +1696,10 @@ actor PhiSyncEngine {
         // The one Space read-modify-write that is not a `mutateSpaceTable` delta,
         // for the same reason as the apply path's: per-entry outcomes have to be
         // carried across the batch loop's suspension points. Safe here because
-        // rounds are serialized and `pushSpaces` is the last Space work of the
-        // round -- `applySpaces` has already written by the time this loads.
+        // EVERY writer of this table is a round (`recordLocalDeletion` and
+        // `joinAccountSync` included) and rounds are serialized, and because
+        // `pushSpaces` is the last Space work of the round -- `applySpaces` has
+        // already written by the time this loads.
         var table = loadSpaceTable()
         // Guard 1: not one commit -- tombstones included -- until a full replay
         // has finished, or a device that has not seen the account's Spaces yet can
@@ -1889,10 +1927,12 @@ actor PhiSyncEngine {
     /// caller can decide to queue a push (`joinAccountSync`) instead of the
     /// engine guessing from a `!=` comparison.
     ///
-    /// For intents whose body is PURELY synchronous. `body` may not suspend --
-    /// that is what makes the read-modify-write atomic on the engine actor. An
-    /// intent that has to await something goes through `Round` instead
-    /// (`.firstSyncDecision`, `.retentionSweep`).
+    /// `body` may not suspend, so the read-modify-write itself cannot be torn.
+    /// That is NOT what makes the intent safe, though: exclusion against the
+    /// rounds that hold a table copy across their own suspensions comes from the
+    /// queue, and every caller of this helper is already a `Round` body
+    /// (`.recordLocalDeletion`, `.joinAccountSync`). Never call it from a public
+    /// entry point.
     @discardableResult
     private func runSpaceIntent(_ body: (inout PhiSpaceSyncTable) -> Bool) -> Bool {
         // Redundant with `writeSpaceTable`'s own `guard let spaceStore`, but it

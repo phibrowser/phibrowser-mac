@@ -1589,11 +1589,8 @@ final class PhiSyncEngineSpaceTests: XCTestCase {
     /// The single-writer rule (§5.3): the facade delivers an INTENT that runs on
     /// the engine's serial queue rather than writing the table from the main
     /// thread, so the delete is still there when the next round assembles its
-    /// batch. It deliberately does NOT claim immunity from a round already in
-    /// flight -- `pushSpaces` holds one table copy across its whole batch loop,
-    /// so an intent landing inside that window is still overwritten by its tail
-    /// (see the corrections file's D9). The ordering below is the one §5.3
-    /// actually promises: intent first, then the round that must honour it.
+    /// batch. The interleaved case -- an intent raised while a round is parked
+    /// inside `client.commit` -- is pinned separately, below.
     func testADeletionIntentSurvivesAConcurrentSnapshot() async throws {
         let access = FakePhiSpaceAccess()
         access.uuidByProfileId = ["Default": "uuid-a"]
@@ -1612,6 +1609,63 @@ final class PhiSyncEngineSpaceTests: XCTestCase {
         await engine.handleLocalSpacesChange()
         XCTAssertTrue(store.table.cursors["u1"]!.pendingDelete
                       || store.table.cursors["u1"]!.deletedAtMs != nil)
+    }
+
+    /// §5.3's single writer, in the shape the spec names verbatim: "一轮 snapshot
+    /// 读表 → 用户删除一个 Space → 引擎用手里的旧快照 writeSpaceTable"。
+    ///
+    /// `pushSpaces` loads the table before its batch loop and writes it back
+    /// after `client.commit`, so a delete that ran *inside* that window on the
+    /// reentrant actor would be erased by the tail write -- permanently and
+    /// silently: no `pendingDelete` means the uuid never enters
+    /// `spaceCommitEntries`' union again, so no tombstone is ever sent and, with
+    /// no `deletedAtMs` either, the next delivery of that entity re-creates the
+    /// Space the user deleted. Routing the intent through `roundQueue` is what
+    /// makes that impossible, and both assertions below are about the queue: the
+    /// intent must not have landed while the round is parked, and it must have
+    /// landed once the round is done.
+    func testADeleteRaisedWhileACommitIsInFlightIsNotOverwrittenByTheRoundsTail() async throws {
+        let access = FakePhiSpaceAccess()
+        access.uuidByProfileId = ["Default": "uuid-a"]
+        access.profileIdByUuid = ["uuid-a": "Default"]
+        access.spaces = [localSpace("u1", "Work", order: 1)]
+        let store = MemorySpaceStore()
+        store.table.hasDrainedFullReplay = true
+        store.table.firstSyncDecision = "keepBoth"
+        let client = FakePhiSyncClient()
+        client.seed(tagHash: spaceHash("u1"),
+                    ciphertext: try ciphertext(spaceEntity("u1")), version: 3)
+        let engine = makeEngine(access: access, store: store, client: client)
+        await engine.setSpaceSyncEnabled(true)
+        // One ordinary round first, so `u1` owns a published cursor (entityId +
+        // version + baselines) rather than a hand-built one.
+        await engine.pullOnce()
+        let published = try XCTUnwrap(store.table.cursors["u1"])
+        XCTAssertNotNil(published.entityId)
+        XCTAssertFalse(published.pendingDelete)
+
+        // A local rename gives the next round something to commit, which is what
+        // opens the suspension window this test needs.
+        access.spaces = [localSpace("u1", "Renamed", order: 1)]
+        let arrived = Gate()
+        let release = Gate()
+        client.gatedCommitTagHash = spaceHash("u1")
+        client.arrivedInCommit = arrived
+        client.commitGate = release
+
+        let round = Task { await engine.handleLocalSpacesChange() }
+        await arrived.wait()          // the push is parked inside commit, table copy in hand
+
+        let deletion = Task { await engine.recordLocalDeletion(spaceId: "u1") }
+        for _ in 0..<32 { await Task.yield() }
+        XCTAssertFalse(store.table.cursors["u1"]!.pendingDelete,
+                       "the intent must queue behind the round, not run inside its table window")
+
+        await release.open()
+        await round.value
+        await deletion.value
+        XCTAssertTrue(store.table.cursors["u1"]!.pendingDelete,
+                      "the delete must survive the round's writeSpaceTable and ship a tombstone")
     }
 
     /// §9.2's landing is TERMINAL for that uuid: a local delete queued a moment

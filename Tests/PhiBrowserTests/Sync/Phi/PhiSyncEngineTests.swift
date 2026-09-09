@@ -141,6 +141,16 @@ final class PhiSyncEngineTests: XCTestCase {
         /// is answered CONFLICT, the hash is removed and the store is left
         /// untouched, so the scoped retry that follows it succeeds.
         var conflictOnceForTagHashes: Set<String> = []
+        /// M3-2: the commit-side twin of `arrivedInGetUpdates` / `getUpdatesGate`,
+        /// narrowed to one tag so the settings entity riding the same batch list
+        /// cannot trip it. A batch containing this hash opens `arrivedInCommit`
+        /// and then waits on `commitGate` BEFORE it answers anything, which is
+        /// what parks a Space push inside its own table window
+        /// (`pushSpaces` loads the table before the batch loop and writes it
+        /// back after).
+        var gatedCommitTagHash: String?
+        var arrivedInCommit: Gate?
+        var commitGate: Gate?
 
         func seed(ciphertext: Data, version: Int64, entityId: String = "srv-seed", deleted: Bool = false) {
             stored[PhiSyncEntity.settingsClientTagHash] = Stored(entityId: entityId, version: version,
@@ -220,6 +230,10 @@ final class PhiSyncEngineTests: XCTestCase {
         /// its own index. A *throw* still abandons the whole batch, which for the single-entry
         /// settings path is exactly today's behaviour.
         func commit(entries: [PhiCommitEntry], storeBirthday: String) async throws -> [PhiCommitOutcome] {
+            if let hash = gatedCommitTagHash, entries.contains(where: { $0.clientTagHash == hash }) {
+                if let arrivedInCommit { await arrivedInCommit.open() }
+                if let commitGate { await commitGate.wait() }
+            }
             var outcomes: [PhiCommitOutcome] = []
             for entry in entries {
                 let clientTagHash = entry.clientTagHash

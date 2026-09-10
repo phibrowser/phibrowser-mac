@@ -83,8 +83,10 @@ final class PeekPanelController {
             let isDark = effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
             let cardShadow = NSShadow()
             cardShadow.shadowColor = NSColor.black.withAlphaComponent(isDark ? 0.6 : 0.44)
-            cardShadow.shadowBlurRadius = 20
-            cardShadow.shadowOffset = NSSize(width: 0, height: -6)
+            // Leave room for the blur to fade within shadowMargin, including
+            // the downward offset, before the panel clips it.
+            cardShadow.shadowBlurRadius = 8
+            cardShadow.shadowOffset = NSSize(width: 0, height: -3)
             shadow = cardShadow
         }
 
@@ -226,7 +228,7 @@ final class PeekPanelController {
     /// inset (`paneVerticalInset` is the tightest side), never added to the
     /// window's reach: the panel still stops at the page card's edges. Must
     /// stay ≤ `paneVerticalInset` and ≤ `minPaneInset` for that to hold, and
-    /// large enough for the card shadow's ~20pt blur to fade out inside it.
+    /// large enough for the card shadow's blur and offset to fade out inside it.
     private static let shadowMargin: CGFloat = 24
 
     /// Width of the card the panel grows out of — link-sized, so the flight

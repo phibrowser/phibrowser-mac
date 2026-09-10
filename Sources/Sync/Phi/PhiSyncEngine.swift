@@ -1185,7 +1185,20 @@ actor PhiSyncEngine {
             // A0: resolve the binding. From Task 11 on the mapping is refreshed
             // earlier in the SAME round (§5.2), so a Space bound to a profile the
             // peer just created lands without waiting for the next one.
-            let isDefault = item.uuid == LocalStore.defaultSpaceId
+            let isDefault = item.uuid == SyncableSpaces.defaultSpaceUuid
+            // D6：把线上 uuid 翻成本机的行 id。解析不到 = 账户里有、本机没有，
+            // 落地时新建一行并回写映射（R-D6-7）。
+            var localSpaceId = await spaceAccess.localSpaceId(forSyncUuid: item.uuid)
+            // 默认 Space 的身份是 resolver 里的常量分支（SpaceSyncMappingManager.swift:53-60），
+            // 没有映射行可丢；对它跑自愈只会把它当成新 Space 重铸一个本地 id。
+            if !isDefault, let resolved = localSpaceId, await !spaceAccess.isKnownLocalSpace(resolved) {
+                // 死映射：反查命中，但本地那一行已经没了（用户删了 Space 而清理路径
+                // 被打断）。就地丢掉并按「无映射」处理，下一轮当作新 Space 落地。
+                // 形状与 profile 侧的 A0 逐字对应。
+                AppLogInfo("[phi-sync] dropping a dead space mapping; the entity will land as a new Space")
+                await spaceAccess.dropSpaceMapping(forSpaceId: resolved)
+                localSpaceId = nil
+            }
             var profileId: String?
             if !isDefault {
                 let remoteUuid = item.entity.profileUuid.stringValue
@@ -1227,7 +1240,7 @@ actor PhiSyncEngine {
                     // it: a later LOCAL rebind must be publishable (§3.5).
                     cursor.heldProfileUuid = remoteUuid
                     cursor.heldForLocalProfileId =
-                        await spaceAccess.currentSpaces().first { $0.spaceId == item.uuid }?.profileId
+                        await spaceAccess.currentSpaces().first { $0.spaceId == localSpaceId }?.profileId
                 } else {
                     // The binding resolves: any hold is obsolete. Clearing it here
                     // is the other half of §3.5 -- a stale hold would keep winning
@@ -1240,7 +1253,7 @@ actor PhiSyncEngine {
             // A1: no baseline -> adopt wholesale. A device with no timestamp
             // history that merged field by field would stamp its factory defaults
             // `now` and push them over the account's real values.
-            let existing = await spaceAccess.currentSpaces().first { $0.spaceId == item.uuid }
+            let existing = await spaceAccess.currentSpaces().first { $0.spaceId == localSpaceId }
             let merged: Phi_PhiSpaceEntity
             if let bytes = cursor.reconciled,
                let baseline = try? Phi_PhiSpaceEntity(serializedBytes: bytes) {
@@ -1252,9 +1265,11 @@ actor PhiSyncEngine {
             // A2 + A3: land in order, await every step, and only THEN write the
             // baselines. The reverse order leaves the shadow ahead of the row and
             // the next snapshot stamps the stale value `now` for the whole account.
+            let landed: String
             do {
-                try await SyncableSpaces.land(merged, existing: existing,
-                                              profileId: profileId, access: spaceAccess)
+                landed = try await SyncableSpaces.land(merged, existing: existing,
+                                                       localSpaceId: localSpaceId,
+                                                       profileId: profileId, access: spaceAccess)
             } catch {
                 AppLogWarn("[phi-sync] space landing failed tag=\(String(tag.prefix(8))) (\(PhiSyncLog.describe(error)))")
                 // A re-parked baseline is deliberately NOT written to
@@ -1269,6 +1284,21 @@ actor PhiSyncEngine {
                 continue
             }
             guard !isStopped else { return }
+            // **落地成功之后、写基线之前**才写映射（§5.6 同一条规则）：`create` 抛错
+            // 时既不写基线也不写映射，下一轮从 `pendingApply` 重试，重试会再次走
+            // create 分支——因为没有映射行，不会撞上一个半成品。
+            if localSpaceId == nil {
+                do {
+                    try await spaceAccess.mapSpace(landed, toSyncUuid: item.uuid)
+                } catch {
+                    AppLogWarn("[phi-sync] could not map a landed space tag=\(String(tag.prefix(8))) (\(PhiSyncLog.describe(error)))")
+                    if item.fromServer {
+                        cursor.pendingApply = try? item.entity.serializedData()
+                        table.cursors[item.uuid] = cursor
+                    }
+                    continue
+                }
+            }
 
             // §5.6 again, for the one write that can report success without
             // having happened: `SpaceManager.applyRemoteRebind` optional-chains
@@ -1280,7 +1310,7 @@ actor PhiSyncEngine {
             // refusal path rather than trusting the return, and park otherwise.
             if !isDefault, let profileId, let existing, existing.profileId != profileId,
                await spaceAccess.currentSpaces().first(
-                   where: { $0.spaceId == item.uuid })?.profileId != profileId {
+                   where: { $0.spaceId == landed })?.profileId != profileId {
                 AppLogWarn("[phi-sync] space rebind did not take effect tag=\(String(tag.prefix(8))); parking the entity")
                 if item.fromServer {   // same reason as the landing-failure park above
                     cursor.pendingApply = try? item.entity.serializedData()
@@ -1721,8 +1751,19 @@ actor PhiSyncEngine {
                 uuidByProfile[space.profileId] = await spaceAccess.globalUuid(forProfileId: space.profileId)
             }
         }
+        // R-D6-7 的懒铸造。`currentSpaces()` 已经在源头排除 incognito / 两种 agent
+        // 特征 / profile 未映射的 Space，所以这里铸的每一个 uuid 都属于一个该发布的
+        // Space。铸造失败（`alreadyMapped` 不可能，`defaultSpaceIsImplicit` 由
+        // resolver 的常量分支吸收）只会让该 Space 本轮不发布，下一轮重试——这就是
+        // 「至多一轮无映射」。
+        var syncUuidBySpaceId: [String: String] = [:]
+        for space in spaces {
+            syncUuidBySpaceId[space.spaceId] = try? await spaceAccess.ensureMapped(spaceId: space.spaceId)
+        }
+        guard !isStopped else { return }
         let outgoing = SyncableSpaces.snapshot(spaces: spaces, table: table,
                                                globalUuid: { uuidByProfile[$0] ?? nil },
+                                               syncUuid: { syncUuidBySpaceId[$0] ?? nil },
                                                now: now())
         var work = spaceCommitEntries(from: table, outgoing: outgoing)
         if let onlyUuids { work = work.filter { onlyUuids.contains($0.uuid) } }

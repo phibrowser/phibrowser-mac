@@ -5,6 +5,17 @@
 
 import Foundation
 
+/// `land` 里唯一一条「什么都没做」的路径的显式编码（§3.4）。
+///
+/// **必须是抛出而不是返回 optional**：非 Void 返回让裸 `return` 直接编译不过，而
+/// 调用方的 `catch` 已经把实体停回 `pendingApply`，那正是这一支想要的行为；改成
+/// 返回 `String?` 会把「什么都没落地」和「落地了但没拿到 id」压成同一个值，而引擎
+/// 正是拿返回值去写映射的。理论上这一支到不了（无基线且 profile 未解析的实体在
+/// §3.5 兜底 B 就已经停放）。
+enum SyncableSpacesError: Error, Equatable {
+    case unresolvedProfile
+}
+
 /// Space-side snapshot / merge / apply plus the rank primitives behind D4's
 /// "one drag rewrites one entity". Everything here is a pure function: the
 /// engine owns all persistence (§6.2 -- `snapshot` writes nothing).
@@ -190,25 +201,34 @@ extension SyncableSpaces {
 
     // MARK: - Snapshot (§6.2 S1-S4)
 
-    /// The outgoing entity for every sync-eligible Space, keyed by uuid.
+    /// The outgoing entity for every sync-eligible Space, keyed by **syncUuid**.
     ///
     /// PURE: unlike M3-1's `SyncableSettings.snapshot`, this writes nothing at
-    /// all. Baselines move only at the five write points in §6.2, i.e. after a
-    /// landing or an accepted commit, never at snapshot time.
+    /// all. Baselines move only at the five write points in §6.2.
+    ///
+    /// D6：`syncUuid` 是本地 spaceId -> 账户级同步 uuid 的 resolver。**没有映射的
+    /// Space 整条跳过**——与下面「profile 没有映射就 `continue`」是同一条规则的第二
+    /// 个实例：本地 id 绝不上线。返回值因此整体在 syncUuid 空间里，下游
+    /// （`spaceCommitEntries`、冲突重试集合）一字不改。
     static func snapshot(spaces: [PhiLocalSpace],
                          table: PhiSpaceSyncTable,
                          globalUuid: (String) -> String?,
+                         syncUuid: (String) -> String?,
                          now: Int64) -> [String: Phi_PhiSpaceEntity] {
         // §6.5 exclusions are applied at the source (`currentSpaces()`); what is
-        // left out here is the cursor-driven half.
-        let eligible = spaces.filter { space in
-            guard let cursor = table.cursors[space.spaceId] else { return true }
-            return !cursor.hidden && cursor.deletedAtMs == nil && cursor.refusedAtMs == nil
+        // left out here is the mapping half and the cursor-driven half.
+        let eligible: [(space: PhiLocalSpace, uuid: String)] = spaces.compactMap { space in
+            guard let uuid = syncUuid(space.spaceId) else { return nil }
+            guard let cursor = table.cursors[uuid] else { return (space, uuid) }
+            guard !cursor.hidden, cursor.deletedAtMs == nil, cursor.refusedAtMs == nil else {
+                return nil
+            }
+            return (space, uuid)
         }
-        let baselines = eligible.reduce(into: [String: Phi_PhiSpaceEntity]()) { out, space in
-            guard let bytes = table.cursors[space.spaceId]?.reconciled,
+        let baselines = eligible.reduce(into: [String: Phi_PhiSpaceEntity]()) { out, item in
+            guard let bytes = table.cursors[item.uuid]?.reconciled,
                   let entity = try? Phi_PhiSpaceEntity(serializedBytes: bytes) else { return }
-            out[space.spaceId] = entity
+            out[item.uuid] = entity
         }
         // The single decode boundary for the rank channel. A baseline is peer
         // bytes: `rank` is an optional message field, so one that never carried
@@ -223,18 +243,18 @@ extension SyncableSpaces {
             guard let rank = baselines[uuid]?.rank.stringValue, isLegalRank(rank) else { return nil }
             return rank
         }
-        // Rank channel: one pass over the CURRENT local order (§7).
+        // Rank channel: one pass over the CURRENT local order (§7)，整条在 syncUuid 空间。
         let newRanks = assignRanks(order: eligible.map {
-            (uuid: $0.spaceId, rank: baselineRank($0.spaceId))
+            (uuid: $0.uuid, rank: baselineRank($0.uuid))
         })
 
         var out: [String: Phi_PhiSpaceEntity] = [:]
-        for space in eligible {
-            let baseline = baselines[space.spaceId]
-            let isDefault = space.spaceId == defaultSpaceUuid
+        for (space, uuid) in eligible {
+            let baseline = baselines[uuid]
+            let isDefault = uuid == defaultSpaceUuid
 
             var entity = Phi_PhiSpaceEntity()
-            entity.spaceUuid = space.spaceId
+            entity.spaceUuid = uuid
             entity.name = stamped(string(space.name), baseline?.name, now)
             entity.iconName = stamped(string(space.iconName), baseline?.iconName, now)
             entity.colorHex = stamped(string(space.colorHex), baseline?.colorHex, now)
@@ -242,11 +262,11 @@ extension SyncableSpaces {
             // §6.2 S3's rank exception: with no baseline the rank is DERIVED
             // from this device's local order, and derived order must never beat
             // a real drag anywhere in the account -- so it carries timestamp 0.
-            let rankValue = newRanks[space.spaceId] ?? baselineRank(space.spaceId) ?? "V"
+            let rankValue = newRanks[uuid] ?? baselineRank(uuid) ?? "V"
             var rank = string(rankValue)
             if baseline == nil {
                 rank.updatedAtMs = 0
-            } else if newRanks[space.spaceId] != nil {
+            } else if newRanks[uuid] != nil {
                 rank.updatedAtMs = now
             } else {
                 rank.updatedAtMs = baseline?.rank.updatedAtMs ?? 0
@@ -265,16 +285,17 @@ extension SyncableSpaces {
                 // binding is a normal field write and gets stamped `now`. Without
                 // the `heldForLocalProfileId` check the held branch would win
                 // forever and this device could never publish a binding for that
-                // Space again.
-                let cursor = table.cursors[space.spaceId]
+                // Space again. `heldForLocalProfileId` 比的仍是 **本地** profile
+                // id，与身份翻译无关。
+                let cursor = table.cursors[uuid]
                 let heldAgainst: String? = cursor?.heldForLocalProfileId
                 let holdStillApplies = heldAgainst == space.profileId
                 if holdStillApplies, let held = cursor?.heldProfileUuid, let baseline {
                     var binding = string(held)
                     binding.updatedAtMs = baseline.profileUuid.updatedAtMs
                     entity.profileUuid = binding
-                } else if let uuid = globalUuid(space.profileId) {
-                    entity.profileUuid = stamped(string(uuid), baseline?.profileUuid, now)
+                } else if let profileUuid = globalUuid(space.profileId) {
+                    entity.profileUuid = stamped(string(profileUuid), baseline?.profileUuid, now)
                 } else {
                     // No mapping: skip the whole Space this round rather than
                     // put a device-local Chromium basename on the wire.
@@ -288,7 +309,7 @@ extension SyncableSpaces {
             entity.overlayOpacityDark =
                 stamped(milli(space.opacityDark), baseline?.overlayOpacityDark, now)
             entity.createdAtMs = Int64(space.createdDate.timeIntervalSince1970 * 1000)
-            out[space.spaceId] = entity
+            out[uuid] = entity
         }
         return out
     }
@@ -320,12 +341,20 @@ extension SyncableSpaces {
         return v
     }
 
+    /// 千分单位编码，**一份实现两个调用方**：出站的 `milli(_:)` 与 D7 覆盖确认页的
+    /// 差异（§5.7）。下一次改精度只改这一处。
+    /// `-1` = 「没有自定义透明度」，而读回那一侧判的是 `< 0`（`opacity(_:)`），所以
+    /// **任何负数**都被当成「清掉自定义透明度」。
+    static func opacityMilliUnits(_ value: Double?) -> Int64 {
+        value.map { Int64(($0 * 1000).rounded()) } ?? -1
+    }
+
     /// Milli-units, `-1` for "no custom opacity". Integers rather than a new
     /// double case keep the shipped M3-1 message untouched, and the resolution
     /// is far below the slider's, so an applied value snapshots back identically.
     private static func milli(_ value: Double?) -> Phi_PhiSettingValue {
         var v = Phi_PhiSettingValue()
-        v.intValue = value.map { Int64(($0 * 1000).rounded()) } ?? -1
+        v.intValue = opacityMilliUnits(value)
         return v
     }
 
@@ -390,8 +419,13 @@ extension SyncableSpaces {
     /// receiver's own agent sweep would then delete and tombstone back.
     /// Refusing is NOT a claim that the account should not hold it, so nothing
     /// here ever pushes a tombstone (§9.2).
+    ///
+    /// D6：**不再看 `space_uuid`**。线上 uuid 是随机 syncUuid，incognito 前缀这条
+    /// 判据永远不会为真，留着是误导（读者会以为 incognito 有一条线上防线）。本机的
+    /// incognito / agent Space 在源头就拿不到映射行（`AccountPhiSpaceAccess` 的排除
+    /// 表，`currentSpaces()` / `pairableSpaces()` 共用），所以它们**从不进入
+    /// snapshot，也从不产生 syncUuid**。
     static func refuses(_ entity: Phi_PhiSpaceEntity) -> Bool {
-        if SpaceManager.isIncognitoSpaceId(entity.spaceUuid) { return true }
         let name = entity.name.stringValue
         let icon = entity.iconName.stringValue
         let color = entity.colorHex.stringValue
@@ -410,10 +444,15 @@ extension SyncableSpaces {
     ///
     /// Every step is awaited and may throw; the caller writes NO baseline until
     /// this returns without throwing (§5.6).
+    ///
+    /// D6：`localSpaceId` 是已经解析好的本地行 id，`nil` = 本机没有这条。返回值是
+    /// **落地用的本地 spaceId**，引擎拿它去写映射（§3.4）。
+    @discardableResult
     static func land(_ merged: Phi_PhiSpaceEntity,
                      existing: PhiLocalSpace?,
+                     localSpaceId: String?,
                      profileId: String?,
-                     access: any PhiSpaceLocalAccess) async throws {
+                     access: any PhiSpaceLocalAccess) async throws -> String {
         let uuid = merged.spaceUuid
         let isDefault = uuid == defaultSpaceUuid
         let createdDate = merged.createdAtMs > 0
@@ -424,9 +463,12 @@ extension SyncableSpaces {
             // Create. The default Space always exists locally, so this branch is
             // only ever a genuinely new Space; its profile must resolve or the
             // caller parked it (§3.5 fallback B) before getting here.
-            guard let profileId else { return }
+            guard let profileId else { throw SyncableSpacesError.unresolvedProfile }
+            // **绝不是 `merged.spaceUuid`**（§2.4）：本地行 id 与 syncUuid 是两个
+            // 空间，而 `SpaceModel.spaceId` 是 `@Attribute(.unique)`。
+            let newId = localSpaceId ?? UUID().uuidString
             try await access.create(PhiLocalSpace(
-                spaceId: uuid, profileId: profileId,
+                spaceId: newId, profileId: profileId,
                 name: merged.name.stringValue, colorHex: merged.colorHex.stringValue,
                 iconName: merged.iconName.stringValue, sortOrder: Int.max,
                 createdDate: createdDate,
@@ -434,18 +476,25 @@ extension SyncableSpaces {
                 opacityLight: opacity(merged.overlayOpacityLight),
                 opacityDark: opacity(merged.overlayOpacityDark)))
             if !isDefault {
+                // 这一支正是 `localSpaceId == nil` 的常态路径（账户里有、本机没有的
+                // Space，R-D6-7 的主新增路径），所以这里收的必须是 `newId`。
                 try await access.applyThemeState(
-                    spaceId: uuid, themeId: themeId(merged),
+                    spaceId: newId, themeId: themeId(merged),
                     opacityLight: opacity(merged.overlayOpacityLight),
                     opacityDark: opacity(merged.overlayOpacityDark))
             }
-            return
+            return newId
         }
+
+        // `existing` 本身就是从 `localSpaceId` 查出来的，所以两者必然一致；写成 `??`
+        // 而不是 `localSpaceId!` 是因为这条路径挂在一个 App 级阻断流程上，一次强解包
+        // 换不来任何东西。
+        let localId = localSpaceId ?? existing.spaceId
 
         if !isDefault || opacity(merged.overlayOpacityLight) != existing.opacityLight
             || opacity(merged.overlayOpacityDark) != existing.opacityDark {
             try await access.applyThemeState(
-                spaceId: uuid,
+                spaceId: localId,
                 themeId: isDefault ? existing.themeId : themeId(merged),
                 opacityLight: opacity(merged.overlayOpacityLight),
                 opacityDark: opacity(merged.overlayOpacityDark))
@@ -455,7 +504,7 @@ extension SyncableSpaces {
         // LOCAL re-stamping of the Space's bookmark rows is a denormalization
         // `SpaceManager.applyRemoteRebind` performs, never a bookmark edit.
         if !isDefault, let profileId, profileId != existing.profileId {
-            try await access.rebind(spaceId: uuid, toProfileId: profileId)
+            try await access.rebind(spaceId: localId, toProfileId: profileId)
         }
 
         let newName = merged.name.stringValue
@@ -467,12 +516,13 @@ extension SyncableSpaces {
         if newName != existing.name || newColor != existing.colorHex
             || newIcon != existing.iconName || newCreated != nil {
             try await access.update(
-                spaceId: uuid,
+                spaceId: localId,
                 name: newName == existing.name ? nil : newName,
                 colorHex: newColor == existing.colorHex ? nil : newColor,
                 iconName: newIcon == existing.iconName ? nil : newIcon,
                 createdDate: newCreated)
         }
+        return localId
     }
 
     private static func themeId(_ entity: Phi_PhiSpaceEntity) -> String? {
@@ -499,6 +549,10 @@ extension SyncableSpaces {
     /// view and every agent Space and every Space on an unmapped profile keeps
     /// a stale value while the synced ones are renumbered 0..n-1 -- which is
     /// the opposite of the promise in the paragraph above.
+    ///
+    /// **`syncedRanks` 按本地 spaceId 键**（D6）。半翻译在这里是**静默失效**：每次
+    /// 查表都是 nil，账户级重排整体变成 no-op，没有任何错误。翻译点在引擎里
+    /// （`applySpaces` 的 ranks 组装，§3.4）。
     static func plannedOrder(localOrder: [PhiLocalSpace],
                              syncedRanks: [String: String]) -> [String] {
         let syncedSlots = localOrder.enumerated()

@@ -180,7 +180,7 @@ final class SyncableSpacesTests: XCTestCase {
     func testSnapshotStampsEveryFieldNowForANewSpaceExceptRank() {
         let out = SyncableSpaces.snapshot(
             spaces: [local("u1")], table: PhiSpaceSyncTable(),
-            globalUuid: uuidMap(["Default": "uuid-a"]), now: 9_000)
+            globalUuid: uuidMap(["Default": "uuid-a"]), syncUuid: { $0 }, now: 9_000)
         let entity = try! XCTUnwrap(out["u1"])
         XCTAssertEqual(entity.name.updatedAtMs, 9_000)
         XCTAssertEqual(entity.iconName.updatedAtMs, 9_000)
@@ -197,7 +197,7 @@ final class SyncableSpacesTests: XCTestCase {
     func testSnapshotReusesBaselineTimestampsForUnchangedFields() throws {
         var first = SyncableSpaces.snapshot(
             spaces: [local("u1")], table: PhiSpaceSyncTable(),
-            globalUuid: uuidMap(["Default": "uuid-a"]), now: 9_000)["u1"]!
+            globalUuid: uuidMap(["Default": "uuid-a"]), syncUuid: { $0 }, now: 9_000)["u1"]!
         var table = PhiSpaceSyncTable()
         var cursor = PhiSpaceCursor()
         cursor.reconciled = try first.serializedData()
@@ -205,7 +205,7 @@ final class SyncableSpacesTests: XCTestCase {
 
         let second = SyncableSpaces.snapshot(
             spaces: [local("u1")], table: table,
-            globalUuid: uuidMap(["Default": "uuid-a"]), now: 50_000)["u1"]!
+            globalUuid: uuidMap(["Default": "uuid-a"]), syncUuid: { $0 }, now: 50_000)["u1"]!
         XCTAssertEqual(second, first)   // zero stamps: this is the echo suppression
         first.name.updatedAtMs = 9_000  // silence the unused-mutation warning
     }
@@ -213,7 +213,7 @@ final class SyncableSpacesTests: XCTestCase {
     func testSnapshotStampsOnlyTheChangedField() throws {
         let base = SyncableSpaces.snapshot(
             spaces: [local("u1", name: "Work")], table: PhiSpaceSyncTable(),
-            globalUuid: uuidMap(["Default": "uuid-a"]), now: 9_000)["u1"]!
+            globalUuid: uuidMap(["Default": "uuid-a"]), syncUuid: { $0 }, now: 9_000)["u1"]!
         var table = PhiSpaceSyncTable()
         var cursor = PhiSpaceCursor()
         cursor.reconciled = try base.serializedData()
@@ -221,7 +221,7 @@ final class SyncableSpacesTests: XCTestCase {
 
         let renamed = SyncableSpaces.snapshot(
             spaces: [local("u1", name: "Work2")], table: table,
-            globalUuid: uuidMap(["Default": "uuid-a"]), now: 50_000)["u1"]!
+            globalUuid: uuidMap(["Default": "uuid-a"]), syncUuid: { $0 }, now: 50_000)["u1"]!
         XCTAssertEqual(renamed.name.updatedAtMs, 50_000)
         XCTAssertEqual(renamed.iconName.updatedAtMs, base.iconName.updatedAtMs)
         XCTAssertEqual(renamed.rank.updatedAtMs, base.rank.updatedAtMs)
@@ -256,7 +256,7 @@ final class SyncableSpacesTests: XCTestCase {
 
         let out = SyncableSpaces.snapshot(
             spaces: [local("u1"), local("u2")], table: table,
-            globalUuid: uuidMap(["Default": "uuid-a"]), now: 9_000)
+            globalUuid: uuidMap(["Default": "uuid-a"]), syncUuid: { $0 }, now: 9_000)
         let first = try XCTUnwrap(out["u1"])
         let second = try XCTUnwrap(out["u2"])
         XCTAssertEqual(first.rank.stringValue, "M", "a real rank is kept, not rewritten")
@@ -299,7 +299,7 @@ final class SyncableSpacesTests: XCTestCase {
 
             let out = SyncableSpaces.snapshot(
                 spaces: [local("u1"), local("u2")], table: table,
-                globalUuid: uuidMap(["Default": "uuid-a"]), now: 9_000)
+                globalUuid: uuidMap(["Default": "uuid-a"]), syncUuid: { $0 }, now: 9_000)
             let low = try XCTUnwrap(out["u1"]).rank
             let high = try XCTUnwrap(out["u2"]).rank
             for published in [low.stringValue, high.stringValue] {
@@ -321,7 +321,7 @@ final class SyncableSpacesTests: XCTestCase {
         let entity = SyncableSpaces.snapshot(
             spaces: [local(LocalStore.defaultSpaceId, theme: "midnight")],
             table: PhiSpaceSyncTable(),
-            globalUuid: uuidMap(["Default": "uuid-a"]), now: 9_000)[LocalStore.defaultSpaceId]!
+            globalUuid: uuidMap(["Default": "uuid-a"]), syncUuid: { $0 }, now: 9_000)[LocalStore.defaultSpaceId]!
         XCTAssertFalse(entity.hasProfileUuid)
         XCTAssertFalse(entity.hasThemeID)
     }
@@ -329,7 +329,7 @@ final class SyncableSpacesTests: XCTestCase {
     func testSnapshotSkipsASpaceWhoseProfileHasNoMapping() {
         let out = SyncableSpaces.snapshot(
             spaces: [local("u1", profile: "Profile 9")], table: PhiSpaceSyncTable(),
-            globalUuid: uuidMap([:]), now: 9_000)
+            globalUuid: uuidMap([:]), syncUuid: { $0 }, now: 9_000)
         XCTAssertTrue(out.isEmpty, "never put a Chromium basename on the wire")
     }
 
@@ -341,7 +341,7 @@ final class SyncableSpacesTests: XCTestCase {
         table.cursors = ["h": hidden, "r": refused, "d": deleted]
         let out = SyncableSpaces.snapshot(
             spaces: [local("h"), local("r"), local("d"), local("ok")], table: table,
-            globalUuid: uuidMap(["Default": "uuid-a"]), now: 9_000)
+            globalUuid: uuidMap(["Default": "uuid-a"]), syncUuid: { $0 }, now: 9_000)
         XCTAssertEqual(Set(out.keys), ["ok"])
     }
 
@@ -365,7 +365,7 @@ final class SyncableSpacesTests: XCTestCase {
 
         let entity = SyncableSpaces.snapshot(
             spaces: [local("u1")], table: table,
-            globalUuid: uuidMap(["Default": "uuid-a"]), now: 900_000)["u1"]!
+            globalUuid: uuidMap(["Default": "uuid-a"]), syncUuid: { $0 }, now: 900_000)["u1"]!
         XCTAssertEqual(entity.profileUuid.stringValue, "uuid-远端")
         XCTAssertEqual(entity.profileUuid.updatedAtMs, 4_242)
     }
@@ -393,6 +393,7 @@ final class SyncableSpacesTests: XCTestCase {
         let entity = SyncableSpaces.snapshot(
             spaces: [local("u1", profile: "Profile 3")], table: table,
             globalUuid: uuidMap(["Default": "uuid-a", "Profile 3": "uuid-c"]),
+            syncUuid: { $0 },
             now: 900_000)["u1"]!
         XCTAssertEqual(entity.profileUuid.stringValue, "uuid-c")
         XCTAssertEqual(entity.profileUuid.updatedAtMs, 900_000,
@@ -402,7 +403,7 @@ final class SyncableSpacesTests: XCTestCase {
     func testSnapshotQuantizesOpacityToMilliUnitsWithNoEcho() throws {
         let first = SyncableSpaces.snapshot(
             spaces: [local("u1", light: 0.82, dark: 0.5)], table: PhiSpaceSyncTable(),
-            globalUuid: uuidMap(["Default": "uuid-a"]), now: 9_000)["u1"]!
+            globalUuid: uuidMap(["Default": "uuid-a"]), syncUuid: { $0 }, now: 9_000)["u1"]!
         XCTAssertEqual(first.overlayOpacityLight.intValue, 820)
         XCTAssertEqual(first.overlayOpacityDark.intValue, 500)
 
@@ -412,8 +413,90 @@ final class SyncableSpacesTests: XCTestCase {
         table.cursors["u1"] = cursor
         let second = SyncableSpaces.snapshot(
             spaces: [local("u1", light: 0.82, dark: 0.5)], table: table,
-            globalUuid: uuidMap(["Default": "uuid-a"]), now: 90_000)["u1"]!
+            globalUuid: uuidMap(["Default": "uuid-a"]), syncUuid: { $0 }, now: 90_000)["u1"]!
         XCTAssertEqual(second, first)
+    }
+
+    // MARK: - D6：出站翻译（§3.2）
+
+    /// 本地 id 与 syncUuid 取成两个**不同**字符串，然后断言结果里任何地方都不出现
+    /// 本地 id。这是整条出站通道的总闸。
+    func testSnapshotPutsSyncUuidsOnTheWireAndNeverTheLocalSpaceId() throws {
+        let local = PhiLocalSpace(spaceId: "LOCAL-1", profileId: "Default", name: "Work",
+                                  colorHex: "#3A6FF8", iconName: "phi:x", sortOrder: 0,
+                                  createdDate: Date(timeIntervalSince1970: 1),
+                                  themeId: nil, opacityLight: nil, opacityDark: nil)
+        let out = SyncableSpaces.snapshot(spaces: [local], table: PhiSpaceSyncTable(),
+                                          globalUuid: { _ in "uuid-a" },
+                                          syncUuid: { $0 == "LOCAL-1" ? "sync-1" : nil },
+                                          now: 100)
+        XCTAssertEqual(Set(out.keys), ["sync-1"])
+        let entity = try XCTUnwrap(out["sync-1"])
+        XCTAssertEqual(entity.spaceUuid, "sync-1")
+        let bytes = try entity.serializedData()
+        XCTAssertFalse(String(decoding: bytes, as: UTF8.self).contains("LOCAL-1"),
+                       "本地 spaceId 绝不上线")
+    }
+
+    /// 「无映射就跳过」与「profile 没有映射就 continue」是同一条规则的两个实例。
+    func testSnapshotSkipsASpaceWithNoMappingEntirely() {
+        let mapped = PhiLocalSpace(spaceId: "LOCAL-1", profileId: "Default", name: "Work",
+                                   colorHex: "#3A6FF8", iconName: "phi:x", sortOrder: 0,
+                                   createdDate: Date(timeIntervalSince1970: 1),
+                                   themeId: nil, opacityLight: nil, opacityDark: nil)
+        var unmapped = mapped
+        unmapped.spaceId = "LOCAL-2"
+        let out = SyncableSpaces.snapshot(spaces: [mapped, unmapped], table: PhiSpaceSyncTable(),
+                                          globalUuid: { _ in "uuid-a" },
+                                          syncUuid: { $0 == "LOCAL-1" ? "sync-1" : nil },
+                                          now: 100)
+        XCTAssertEqual(Set(out.keys), ["sync-1"])
+    }
+
+    /// 游标、基线与 rank 通道整条在 syncUuid 空间里：一张按 syncUuid 键的表里
+    /// `hidden` 的那一条不出现在结果里，基线的时间戳被沿用（没有被重新盖 `now`）。
+    func testSnapshotReadsCursorsAndBaselinesBySyncUuid() throws {
+        let local = PhiLocalSpace(spaceId: "LOCAL-1", profileId: "Default", name: "Work",
+                                  colorHex: "#3A6FF8", iconName: "phi:x", sortOrder: 0,
+                                  createdDate: Date(timeIntervalSince1970: 1),
+                                  themeId: nil, opacityLight: nil, opacityDark: nil)
+        var baseline = Phi_PhiSpaceEntity()
+        baseline.spaceUuid = "sync-1"
+        var name = Phi_PhiSettingValue(); name.updatedAtMs = 42; name.stringValue = "Work"
+        baseline.name = name
+        var cursor = PhiSpaceCursor()
+        cursor.entityId = "srv-1"
+        cursor.reconciled = try baseline.serializedData()
+        var table = PhiSpaceSyncTable()
+        table.cursors["sync-1"] = cursor
+
+        let out = SyncableSpaces.snapshot(spaces: [local], table: table,
+                                          globalUuid: { _ in "uuid-a" },
+                                          syncUuid: { _ in "sync-1" }, now: 900)
+        XCTAssertEqual(out["sync-1"]?.name.updatedAtMs, 42, "基线按 syncUuid 命中，没有被重新盖 now")
+
+        var hidden = cursor
+        hidden.hidden = true
+        hidden.deletedAtMs = 5
+        table.cursors["sync-1"] = hidden
+        XCTAssertTrue(SyncableSpaces.snapshot(spaces: [local], table: table,
+                                              globalUuid: { _ in "uuid-a" },
+                                              syncUuid: { _ in "sync-1" }, now: 900).isEmpty)
+    }
+
+    /// 默认 Space：本地 id 与 syncUuid 都是 `"default-space"`，`isDefault` 判据仍成立。
+    func testTheDefaultSpaceStillSuppressesProfileAndTheme() throws {
+        let def = PhiLocalSpace(spaceId: LocalStore.defaultSpaceId, profileId: "Default",
+                                name: "Default", colorHex: "#3A6FF8", iconName: "phi:x",
+                                sortOrder: 0, createdDate: Date(timeIntervalSince1970: 1),
+                                themeId: "coral", opacityLight: nil, opacityDark: nil)
+        let out = SyncableSpaces.snapshot(spaces: [def], table: PhiSpaceSyncTable(),
+                                          globalUuid: { _ in "uuid-a" },
+                                          syncUuid: { _ in SyncableSpaces.defaultSpaceUuid },
+                                          now: 100)
+        let entity = try XCTUnwrap(out[SyncableSpaces.defaultSpaceUuid])
+        XCTAssertFalse(entity.hasProfileUuid)
+        XCTAssertFalse(entity.hasThemeID)
     }
 
     // MARK: - merge
@@ -486,12 +569,17 @@ final class SyncableSpacesTests: XCTestCase {
         var v = Phi_PhiSettingValue(); v.updatedAtMs = ts; v.stringValue = s; return v
     }
 
-    // MARK: - refusal (§6.5)
+    // MARK: - `refuses` 不再对线上 uuid 做 incognito 判据（§3.4）
 
-    func testApplyRefusesIncognitoAndBothAgentSignatures() {
-        var incognito = Phi_PhiSpaceEntity()
-        incognito.spaceUuid = "space.incognito.7"
-        XCTAssertTrue(SyncableSpaces.refuses(incognito))
+    /// D6 之后线上 uuid 是随机 syncUuid，这条判据永远不会为真，留着是误导（读者会
+    /// 以为 incognito 有线上防线）。本机的 incognito Space 在源头（`currentSpaces()` /
+    /// `pairableSpaces()` 的排除表）就拿不到映射行，从不产生 syncUuid。
+    /// **两条 agent 特征仍被拒**——那条判据看的是名称/图标/颜色的形状，与 uuid 无关。
+    func testRefusesNoLongerLooksAtTheUuidButStillRefusesBothAgentShapes() {
+        var incognitoShaped = Phi_PhiSpaceEntity()
+        incognitoShaped.spaceUuid = "space.incognito.7"
+        XCTAssertFalse(SyncableSpaces.refuses(incognitoShaped),
+                       "D6：`refuses` 不再看 `space_uuid`")
 
         var ephemeral = Phi_PhiSpaceEntity()
         ephemeral.spaceUuid = "u-agent"
@@ -532,6 +620,7 @@ final class SyncableSpacesTests: XCTestCase {
         merged.createdAtMs = 500
 
         try await SyncableSpaces.land(merged, existing: access.spaces[0],
+                                      localSpaceId: access.spaces[0].spaceId,
                                       profileId: "Profile 2", access: access)
         XCTAssertEqual(access.calls, [.themeState("u1"),
                                       .rebind(spaceId: "u1", toProfileId: "Profile 2"),
@@ -548,10 +637,76 @@ final class SyncableSpacesTests: XCTestCase {
         merged.colorHex = lww("#222222", 10)
         merged.iconName = lww("phi:y", 10)
         merged.createdAtMs = 700
-        try await SyncableSpaces.land(merged, existing: nil, profileId: "Default", access: access)
-        XCTAssertEqual(access.calls.first, .create("u2"))
+        // D6：`localSpaceId: nil` 走 create 分支，本地行 id 是新铸的，**不是**
+        // `merged.spaceUuid`，所以断言的是返回值而不是 `"u2"`。
+        let landed = try await SyncableSpaces.land(merged, existing: nil, localSpaceId: nil,
+                                                   profileId: "Default", access: access)
+        XCTAssertEqual(access.calls.first, .create(landed))
         XCTAssertEqual(access.currentSpaces().first?.createdDate,
                        Date(timeIntervalSince1970: 0.7))
+    }
+
+    // MARK: - D6：落地（§3.4）
+
+    /// 账户里有、本机没有的 Space —— R-D6-7 的主新增路径。
+    @MainActor
+    func testLandingANewSpaceMintsAFreshLocalIdAndNeverUsesTheWireUuid() async throws {
+        let access = FakePhiSpaceAccess()
+        var entity = Phi_PhiSpaceEntity()
+        entity.spaceUuid = "sync-new"
+        var v = Phi_PhiSettingValue(); v.stringValue = "Reading"; v.updatedAtMs = 1
+        entity.name = v
+        var theme = Phi_PhiSettingValue(); theme.stringValue = "coral"; theme.updatedAtMs = 1
+        entity.themeID = theme
+
+        let landed = try await SyncableSpaces.land(entity, existing: nil, localSpaceId: nil,
+                                                   profileId: "Default", access: access)
+        XCTAssertNotEqual(landed, "sync-new", "线上 uuid 绝不当本地行 id 用")
+        XCTAssertNotNil(UUID(uuidString: landed), "新铸的是一个本地 UUID")
+        XCTAssertEqual(access.calls, [.create(landed), .themeState(landed)],
+                       "create 分支内部的 applyThemeState 收到的也是新铸的本地 id，不是 localSpaceId!")
+        XCTAssertEqual(access.spaces.first?.spaceId, landed)
+    }
+
+    /// 非 Void 返回让裸 `return` 编译不过；调用方的 catch 会把实体停回 `pendingApply`。
+    @MainActor
+    func testLandingWithNoProfileThrowsAndWritesNothing() async {
+        let access = FakePhiSpaceAccess()
+        var entity = Phi_PhiSpaceEntity()
+        entity.spaceUuid = "sync-new"
+        do {
+            _ = try await SyncableSpaces.land(entity, existing: nil, localSpaceId: nil,
+                                              profileId: nil, access: access)
+            XCTFail("expected unresolvedProfile")
+        } catch {
+            XCTAssertEqual(error as? SyncableSpacesError, .unresolvedProfile)
+        }
+        XCTAssertTrue(access.calls.isEmpty)
+    }
+
+    /// update 分支：三处写方法收到的都是**本地** id，一次都没收到 `merged.spaceUuid`。
+    @MainActor
+    func testLandingAnExistingSpaceOnlyEverWritesTheLocalId() async throws {
+        let access = FakePhiSpaceAccess()
+        let existing = PhiLocalSpace(spaceId: "LOCAL-1", profileId: "Default", name: "Old",
+                                     colorHex: "#000000", iconName: "phi:x", sortOrder: 0,
+                                     createdDate: Date(timeIntervalSince1970: 1),
+                                     themeId: nil, opacityLight: nil, opacityDark: nil)
+        access.spaces = [existing]
+        var entity = Phi_PhiSpaceEntity()
+        entity.spaceUuid = "sync-1"
+        var name = Phi_PhiSettingValue(); name.stringValue = "New"; name.updatedAtMs = 9
+        entity.name = name
+        var profile = Phi_PhiSettingValue(); profile.stringValue = "uuid-b"; profile.updatedAtMs = 9
+        entity.profileUuid = profile
+
+        let landed = try await SyncableSpaces.land(entity, existing: existing,
+                                                   localSpaceId: "LOCAL-1",
+                                                   profileId: "Profile 1", access: access)
+        XCTAssertEqual(landed, "LOCAL-1")
+        XCTAssertEqual(access.calls, [.themeState("LOCAL-1"),
+                                      .rebind(spaceId: "LOCAL-1", toProfileId: "Profile 1"),
+                                      .update("LOCAL-1")])
     }
 
     // MARK: - order projection (§7)
@@ -577,5 +732,34 @@ final class SyncableSpacesTests: XCTestCase {
             syncedRanks: ["s1": "A", "s2": "B"])
         XCTAssertEqual(order, ["s1", "agent", "s2", "unmapped"])
         XCTAssertEqual(order.count, 4, "every local Space must be renumbered in one write")
+    }
+
+    // MARK: - `plannedOrder` 的键空间（§3.4 的静默失效回归）
+
+    /// `syncedRanks` 按**本地** spaceId 键。半翻译在这里没有任何错误信号：每次查表
+    /// 都是 nil，账户级重排整体变成 no-op。
+    func testPlannedOrderIsASilentNoOpWhenHandedSyncUuidKeys() {
+        let locals = ["LOCAL-1", "LOCAL-2", "LOCAL-3"].enumerated().map { index, id in
+            PhiLocalSpace(spaceId: id, profileId: "Default", name: id, colorHex: "#000000",
+                          iconName: "phi:x", sortOrder: index,
+                          createdDate: Date(timeIntervalSince1970: 1),
+                          themeId: nil, opacityLight: nil, opacityDark: nil)
+        }
+        let byLocalId = ["LOCAL-1": "V", "LOCAL-2": "F", "LOCAL-3": "k"]
+        XCTAssertEqual(SyncableSpaces.plannedOrder(localOrder: locals, syncedRanks: byLocalId),
+                       ["LOCAL-2", "LOCAL-1", "LOCAL-3"])
+        let bySyncUuid = ["sync-1": "V", "sync-2": "F", "sync-3": "k"]
+        XCTAssertEqual(SyncableSpaces.plannedOrder(localOrder: locals, syncedRanks: bySyncUuid),
+                       ["LOCAL-1", "LOCAL-2", "LOCAL-3"],
+                       "半翻译 = 静默 no-op：翻译点必须留在引擎里")
+    }
+
+    // MARK: - 千分单位编码只有一份（§5.7）
+
+    func testOpacityMilliUnitsIsTheOneEncodingBothSidesUse() {
+        XCTAssertEqual(SyncableSpaces.opacityMilliUnits(nil), -1)
+        XCTAssertEqual(SyncableSpaces.opacityMilliUnits(0.85), 850)
+        XCTAssertEqual(SyncableSpaces.opacityMilliUnits(0.4489), 449)
+        XCTAssertEqual(SyncableSpaces.opacityMilliUnits(0.8555), 856)
     }
 }

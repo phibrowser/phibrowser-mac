@@ -78,6 +78,38 @@ protocol PhiSpaceLocalAccess: AnyObject {
     /// round's refresh lists that uuid as missing and rebuilds the profile.
     func dropMapping(forProfileId profileId: String)
 
+    // MARK: - Space identity mapping (M3-2b §3.4)
+    //
+    // 翻译 seam 就在这个协议的**上方**，不在它下方：写方法（`create` / `update` /
+    // `rebind` / `applyThemeState` / `applyOrder` / `hide` / `purge`）的参数
+    // **一律仍是本地 id**。把任何一个改成收 syncUuid，都是把翻译责任推给
+    // `LocalStore`，那正是 §2.4 的不变量禁止的事。
+
+    func syncUuid(forSpaceId spaceId: String) -> String?
+    func localSpaceId(forSyncUuid uuid: String) -> String?
+    /// 首次 snapshot 前的懒铸造（R-D6-7）。
+    func ensureMapped(spaceId: String) throws -> String
+    /// 落地一个账户里有、本机没有的 Space 之后回写映射（§3.4）。
+    func mapSpace(_ spaceId: String, toSyncUuid uuid: String) throws
+    /// 死映射自愈：反查命中、但 `getAllSpaces()` 里已经没有那一行。
+    func dropSpaceMapping(forSpaceId spaceId: String)
+    /// `getAllSpaces()` 里还有没有这一行。`syncUuid(forSpaceId:)` 回答不了——它读回
+    /// 的正是反查解析 FROM 的那张表，永远说有（与 `isKnownLocalProfile` 同款理由）。
+    func isKnownLocalSpace(_ spaceId: String) -> Bool
+    /// tag 索引的第二个种子（§3.4）：一个刚被向导映射、还没 commit 过的 Space 没有
+    /// 游标，而账户里那条实体的 tombstone 随时可能先到。
+    func allSpaceMappings() -> [String: String]
+
+    /// 配对向导第 2 步的左列（§5.4）。只应用 §6.5 的**身份类**排除 —— incognito
+    /// 与两种 agent 特征 —— 而**不**应用 `currentSpaces()` 的「该 Space 的 profile
+    /// 已有映射」判据。含默认 Space。
+    ///
+    /// 这不是口味问题，是向导能否工作的前提：profile-映射那一条是一条**发布**前置
+    /// 条件，而按 R-D6-3，第 1 步的 Profile 决定要到 Finish 才应用——向导开着的时候
+    /// 正在被配对的那些 Profile 按定义还没有映射，用 `currentSpaces()` 取左列等于把
+    /// 它们下面的 Space 全部藏掉，左列只剩那条只读的默认行。
+    func pairableSpaces() -> [PhiLocalSpace]
+
     func isImporting(intoSpaceId spaceId: String) -> Bool
 
     /// Account Profile-list refresh + auto-create (§3.6). Called by the engine
@@ -118,10 +150,14 @@ final class AccountPhiSpaceAccess: PhiSpaceLocalAccess {
 
     // MARK: - Reads
 
-    /// Only sync-eligible Spaces (§6.5's exclusion list applied AT THE SOURCE,
-    /// not as an afterthought filter): incognito, both agent signatures, and any
-    /// Space on the agent fallback profile never reach the sync layer at all.
-    func currentSpaces() -> [PhiLocalSpace] {
+    /// §6.5 的排除清单，一份实现两个入口。`requireMappedProfile` 是**发布**前置
+    /// 条件（agent fallback profile 结构上永远不会被注册，所以绑在它上面的 Space
+    /// 不能发布）；配对向导要看的是**身份**，所以它传 false（§3.4 末）。
+    ///
+    /// §6.5's exclusion list applied AT THE SOURCE, not as an afterthought
+    /// filter: incognito and both agent signatures never reach the sync layer
+    /// at all.
+    private func localSpaces(requireMappedProfile: Bool) -> [PhiLocalSpace] {
         let pins = account.userDefaults.spaceThemeIds()
         let opacities = account.userDefaults.spaceOverlayOpacities()
         return account.localStorage.getAllSpaces().compactMap { model in
@@ -131,10 +167,12 @@ final class AccountPhiSpaceAccess: PhiSpaceLocalAccess {
                                                        colorHex: model.colorHex) else { return nil }
             guard !AgentSpaceManager.isPersistentAgentSpaceModel(iconName: model.iconName,
                                                                  colorHex: model.colorHex) else { return nil }
-            // The agent fallback profile is structurally never registered, so it
-            // never has a mapping; a Space bound to it must not be published.
-            guard globalUuid(forProfileId: model.profileId) != nil
-                    || model.spaceId == LocalStore.defaultSpaceId else { return nil }
+            if requireMappedProfile {
+                // The agent fallback profile is structurally never registered, so it
+                // never has a mapping; a Space bound to it must not be published.
+                guard self.globalUuid(forProfileId: model.profileId) != nil
+                        || model.spaceId == LocalStore.defaultSpaceId else { return nil }
+            }
             let entry = opacities[model.spaceId] ?? [:]
             return PhiLocalSpace(
                 spaceId: model.spaceId, profileId: model.profileId, name: model.name,
@@ -143,6 +181,10 @@ final class AccountPhiSpaceAccess: PhiSpaceLocalAccess {
                 opacityLight: entry["light"], opacityDark: entry["dark"])
         }
     }
+
+    func currentSpaces() -> [PhiLocalSpace] { localSpaces(requireMappedProfile: true) }
+
+    func pairableSpaces() -> [PhiLocalSpace] { localSpaces(requireMappedProfile: false) }
 
     /// Everything the strip can order: the store's own list minus incognito.
     /// §6.5's exclusions are deliberately NOT applied here -- see the protocol.
@@ -174,6 +216,38 @@ final class AccountPhiSpaceAccess: PhiSpaceLocalAccess {
 
     func dropMapping(forProfileId profileId: String) {
         controller?.removeMapping(forProfileId: profileId)
+    }
+
+    // MARK: - Space identity mapping
+
+    func syncUuid(forSpaceId spaceId: String) -> String? {
+        controller?.syncUuid(forSpaceId: spaceId)
+    }
+
+    func localSpaceId(forSyncUuid uuid: String) -> String? {
+        controller?.localSpaceId(forSyncUuid: uuid)
+    }
+
+    func ensureMapped(spaceId: String) throws -> String {
+        guard let controller else { throw SpaceSyncMappingError.mappingLayerUnavailable }
+        return try controller.ensureSpaceMapped(spaceId: spaceId)
+    }
+
+    func mapSpace(_ spaceId: String, toSyncUuid uuid: String) throws {
+        guard let controller else { throw SpaceSyncMappingError.mappingLayerUnavailable }
+        try controller.mapSpace(spaceId, toSyncUuid: uuid)
+    }
+
+    func dropSpaceMapping(forSpaceId spaceId: String) {
+        controller?.removeSpaceMapping(forSpaceId: spaceId)
+    }
+
+    func isKnownLocalSpace(_ spaceId: String) -> Bool {
+        account.localStorage.getAllSpaces().contains { $0.spaceId == spaceId }
+    }
+
+    func allSpaceMappings() -> [String: String] {
+        controller?.allSpaceMappings() ?? [:]
     }
 
     func isImporting(intoSpaceId spaceId: String) -> Bool {

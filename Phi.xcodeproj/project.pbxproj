@@ -280,12 +280,14 @@
 		91EBBA3B9E637B630495B980 /* PhiDomainKeyManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0BC93AB5984C221F1F3BC595 /* PhiDomainKeyManager.swift */; };
 		957735A9AD184AC362A69E70 /* SyncKeyStack.swift in Sources */ = {isa = PBXBuildFile; fileRef = A55D7E5143F932DF1031B744 /* SyncKeyStack.swift */; };
 		968126DBA688716A15DFAC27 /* KeyLayerViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1EAE9BC2177CD71475820E2A /* KeyLayerViewModel.swift */; };
+		994F2A0CF6946B003A894F2C /* SpaceSyncMappingManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6F042DF5490BA419ACD24DA7 /* SpaceSyncMappingManager.swift */; };
 		9D3E693D86E067E0F7015678 /* get_updates_caller_info.pb.swift in Sources */ = {isa = PBXBuildFile; fileRef = 772B9268E7C8EC28D42DD213 /* get_updates_caller_info.pb.swift */; };
 		9DA3DAC2E9DE1CCA0D831C9A /* PhiEntityCodec.swift in Sources */ = {isa = PBXBuildFile; fileRef = A61CA1F7F5E9903A5A5624D6 /* PhiEntityCodec.swift */; };
 		A1B2C3D4E5F60718293A4B56 /* SharedAuthTokenStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F60718293A4B55 /* SharedAuthTokenStore.swift */; };
 		A708002022E87F3806A09FDA /* phi_entity.pb.swift in Sources */ = {isa = PBXBuildFile; fileRef = 60DCF1852E526BF755BF3397 /* phi_entity.pb.swift */; };
 		A71E00000000000000000002 /* PhiAlert.swift in Sources */ = {isa = PBXBuildFile; fileRef = A71E00000000000000000001 /* PhiAlert.swift */; };
 		A7C021022FFD000000000002 /* ContextMenuEvent.swift in Sources */ = {isa = PBXBuildFile; fileRef = A7C021012FFD000000000001 /* ContextMenuEvent.swift */; };
+		A8D093553F519F8E1E7A8233 /* AccountSpaceSyncMappingStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1712FF7D13CEB2498B026081 /* AccountSpaceSyncMappingStore.swift */; };
 		AA10000000000000000000B1 /* TabSwitchMetrics.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA10000000000000000000F1 /* TabSwitchMetrics.swift */; };
 		AA10000000000000000000B2 /* TabSwitchItem.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA10000000000000000000F2 /* TabSwitchItem.swift */; };
 		AA10000000000000000000B3 /* TabSwitchCellView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA10000000000000000000F3 /* TabSwitchCellView.swift */; };
@@ -569,6 +571,7 @@
 		01794B7EA4882E10EFB8D56C /* SelfRevokeStrings.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = SelfRevokeStrings.swift; path = UI/SelfRevokeStrings.swift; sourceTree = "<group>"; };
 		0BC93AB5984C221F1F3BC595 /* PhiDomainKeyManager.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = PhiDomainKeyManager.swift; sourceTree = "<group>"; };
 		14B6CA15BC9C435794FC131A /* PhiSpaceSyncState.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = PhiSpaceSyncState.swift; sourceTree = "<group>"; };
+		1712FF7D13CEB2498B026081 /* AccountSpaceSyncMappingStore.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = AccountSpaceSyncMappingStore.swift; sourceTree = "<group>"; };
 		1BEC0EBA18BE1C83C17B3D73 /* ProfileKeyManager.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ProfileKeyManager.swift; sourceTree = "<group>"; };
 		1EAE9BC2177CD71475820E2A /* KeyLayerViewModel.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = KeyLayerViewModel.swift; path = UI/KeyLayerViewModel.swift; sourceTree = "<group>"; };
 		23216985BAC98CA63F9CB2AC /* WaitingForApprovalView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = WaitingForApprovalView.swift; path = UI/WaitingForApprovalView.swift; sourceTree = "<group>"; };
@@ -779,6 +782,7 @@
 		6819EF093F955DAFACDC4C94 /* JoinMethodChoiceView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = JoinMethodChoiceView.swift; path = UI/JoinMethodChoiceView.swift; sourceTree = "<group>"; };
 		6A44C5FF60DF6F7860A061D4 /* SentinelWatchdog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SentinelWatchdog.swift; sourceTree = "<group>"; };
 		6EE9BDB8D95B7A16A1E96582 /* RecoveryCode.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = RecoveryCode.swift; sourceTree = "<group>"; };
+		6F042DF5490BA419ACD24DA7 /* SpaceSyncMappingManager.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = SpaceSyncMappingManager.swift; sourceTree = "<group>"; };
 		7218F862C1F92C027CE8E979 /* ProfilePairingView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ProfilePairingView.swift; path = UI/ProfilePairingView.swift; sourceTree = "<group>"; };
 		772B9268E7C8EC28D42DD213 /* get_updates_caller_info.pb.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = get_updates_caller_info.pb.swift; sourceTree = "<group>"; };
 		7A5B00A02EF0000000000002 /* MemoryButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MemoryButton.swift; sourceTree = "<group>"; };
@@ -1607,6 +1611,8 @@
 				1BEC0EBA18BE1C83C17B3D73 /* ProfileKeyManager.swift */,
 				35EE13005B45461A584F7F1C /* SyncKeyController.swift */,
 				8ED3785F123750CD029A126E /* AccountProfileSyncMappingStore.swift */,
+				1712FF7D13CEB2498B026081 /* AccountSpaceSyncMappingStore.swift */,
+				6F042DF5490BA419ACD24DA7 /* SpaceSyncMappingManager.swift */,
 			);
 			name = Keys;
 			path = Keys;
@@ -3089,6 +3095,8 @@
 				55B5D6051DF17222A76A124A /* PhiSpaceFirstSyncSheet.swift in Sources */,
 				2E8585334902CCDAB2A5FC60 /* SelfRevokeStrings.swift in Sources */,
 				78BE8ECE731672FAB99F191D /* DevicesRemoveDeviceModel.swift in Sources */,
+				A8D093553F519F8E1E7A8233 /* AccountSpaceSyncMappingStore.swift in Sources */,
+				994F2A0CF6946B003A894F2C /* SpaceSyncMappingManager.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

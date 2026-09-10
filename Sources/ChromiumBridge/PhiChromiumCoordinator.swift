@@ -164,8 +164,11 @@ import SwiftUI
         let mappingStore = AccountProfileSyncMappingStore(defaults: account.userDefaults)
         let profileKeys = ProfileKeyManager(api: stack.api, keyManager: stack.manager, mappingStore: mappingStore)
         let spaceStateStore = AccountPhiSpaceSyncStateStore(defaults: account.userDefaults)
+        let spaceMappingStore = AccountSpaceSyncMappingStore(defaults: account.userDefaults)
+        let spaceKeys = SpaceSyncMappingManager(store: spaceMappingStore)
         syncKeyController = SyncKeyController(
             manager: stack.manager, approvals: stack.approvals, profileKeys: profileKeys,
+            spaceKeys: spaceKeys,
             localProfilesProvider: {
                 ProfileManager.shared.userAssignableProfiles.map { ($0.profileId, $0.displayName) }
             },
@@ -196,6 +199,12 @@ import SwiftUI
         PhiSpaceSyncState.shared.directStore = spaceStateStore
         PhiSpaceSyncState.shared.globalUuidLookup = { [weak self] profileId in
             self?.syncKeyController?.profileKeys.mappedGlobalUuid(forProfileId: profileId)
+        }
+        PhiSpaceSyncState.shared.localSpaceIdLookup = { [weak self] uuid in
+            self?.syncKeyController?.localSpaceId(forSyncUuid: uuid)
+        }
+        PhiSpaceSyncState.shared.syncUuidLookup = { [weak self] spaceId in
+            self?.syncKeyController?.syncUuid(forSpaceId: spaceId)
         }
         PhiSpaceSyncState.shared.localSpaceProfileIds = {
             account.localStorage.getAllSpaces().map { ($0.spaceId, $0.profileId) }
@@ -515,6 +524,16 @@ import SwiftUI
         window.close()
     }
 
+    /// 配对向导第 2 步的左列（§3.4 末）。就地新建一个 `AccountPhiSpaceAccess` 而不是
+    /// 去引擎里借：它是无状态的（两个 `let` 加一个 `weak`），`pairableSpaces()` 是
+    /// 纯读，借引擎的那一个反而要给引擎加一条只为 UI 存在的出口。
+    @MainActor
+    func pairableLocalSpaces() -> [PhiLocalSpace] {
+        guard let account = AccountController.shared.account else { return [] }
+        return AccountPhiSpaceAccess(account: account,
+                                     controller: syncKeyController).pairableSpaces()
+    }
+
     /// Build-only entry point for consumers (the Devices pane) that just need
     /// the shared controller instance and will drive their own unlock/UI flow.
     /// Returns nil while signed out.
@@ -569,6 +588,8 @@ import SwiftUI
         // fallback alive (§5.3's one exception), and only this one owns the account switch.
         PhiSpaceSyncState.shared.directStore = nil
         PhiSpaceSyncState.shared.globalUuidLookup = nil
+        PhiSpaceSyncState.shared.localSpaceIdLookup = nil
+        PhiSpaceSyncState.shared.syncUuidLookup = nil
         PhiSpaceSyncState.shared.localSpaceProfileIds = nil
         PhiSpaceSyncState.shared.refreshCaches(from: PhiSpaceSyncTable())
         ChromiumLauncher.sharedInstance().bridge?.notifyPhiSyncKeysChanged?()

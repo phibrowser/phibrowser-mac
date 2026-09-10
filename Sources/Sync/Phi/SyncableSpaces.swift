@@ -182,8 +182,11 @@ enum SyncableSpaces {
 
 extension SyncableSpaces {
 
-    /// D1: the one uuid that necessarily collides across devices.
-    static let defaultSpaceUuid = LocalStore.defaultSpaceId
+    /// D1：账户级同步 uuid。它与 `LocalStore.defaultSpaceId` 取值相同**纯属约定**，
+    /// 不是同一个命名空间——D6 之后本地 id 与 syncUuid 是两个空间，不要把它写回
+    /// `= LocalStore.defaultSpaceId`：那等于在定义处把两个空间又焊回去。两者取值
+    /// 相等由 `SpaceSyncMappingManagerTests` 的一条断言钉住。
+    static let defaultSpaceUuid = "default-space"
 
     // MARK: - Snapshot (§6.2 S1-S4)
 

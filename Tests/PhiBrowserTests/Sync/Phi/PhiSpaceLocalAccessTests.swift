@@ -18,6 +18,9 @@ final class FakePhiSpaceAccess: PhiSpaceLocalAccess {
         case purge(String)
         case refreshProfiles
         case dropMapping(String)
+        case ensureMapped(String)
+        case mapSpace(spaceId: String, syncUuid: String)
+        case dropSpaceMapping(String)
     }
 
     var spaces: [PhiLocalSpace] = []
@@ -38,6 +41,14 @@ final class FakePhiSpaceAccess: PhiSpaceLocalAccess {
     /// Runs inside `refreshAccountProfiles()`, the way §3.6's auto-create does.
     var onRefresh: (() -> Void)?
     var errorOnNextWrite: Error?
+    /// M3-2b: 本地 spaceId -> syncUuid。测试直接预置它来表达「这台机器已经配过对」。
+    var spaceMappings: [String: String] = [:]
+    /// `getAllSpaces()` 里还有没有这一行；nil = 「`spaces` 里有就算有」。
+    var knownLocalSpaceIds: Set<String>?
+    /// 第 2 步左列；nil = 与 `spaces` 相同。
+    var pairableSpacesOverride: [PhiLocalSpace]?
+    /// 下一次 `ensureMapped` / `mapSpace` 抛这个错，然后清空。
+    var errorOnNextMapping: Error?
     private(set) var calls: [Call] = []
     private(set) var droppedMappings: [String] = []
 
@@ -57,6 +68,43 @@ final class FakePhiSpaceAccess: PhiSpaceLocalAccess {
             profileIdByUuid.removeValue(forKey: uuid)
         }
     }
+    func syncUuid(forSpaceId spaceId: String) -> String? {
+        if spaceId == LocalStore.defaultSpaceId { return SyncableSpaces.defaultSpaceUuid }
+        return spaceMappings[spaceId]
+    }
+    func localSpaceId(forSyncUuid uuid: String) -> String? {
+        if uuid == SyncableSpaces.defaultSpaceUuid { return LocalStore.defaultSpaceId }
+        return spaceMappings.filter { $0.value == uuid }.keys.sorted().first
+    }
+    /// 铸出来的 uuid 是确定的（`sync-<localId>`），所以断言不必猜一个随机 UUID。
+    func ensureMapped(spaceId: String) throws -> String {
+        if let uuid = syncUuid(forSpaceId: spaceId) { return uuid }
+        if let error = errorOnNextMapping { errorOnNextMapping = nil; throw error }
+        let uuid = "sync-\(spaceId)"
+        spaceMappings[spaceId] = uuid
+        calls.append(.ensureMapped(spaceId))
+        return uuid
+    }
+    func mapSpace(_ spaceId: String, toSyncUuid uuid: String) throws {
+        if let error = errorOnNextMapping { errorOnNextMapping = nil; throw error }
+        guard spaceMappings[spaceId] == nil else { throw SpaceSyncMappingError.alreadyMapped }
+        guard !spaceMappings.values.contains(uuid) else {
+            throw SpaceSyncMappingError.syncUuidAlreadyClaimed
+        }
+        spaceMappings[spaceId] = uuid
+        calls.append(.mapSpace(spaceId: spaceId, syncUuid: uuid))
+    }
+    func dropSpaceMapping(forSpaceId spaceId: String) {
+        spaceMappings.removeValue(forKey: spaceId)
+        calls.append(.dropSpaceMapping(spaceId))
+    }
+    func isKnownLocalSpace(_ spaceId: String) -> Bool {
+        if let knownLocalSpaceIds { return knownLocalSpaceIds.contains(spaceId) }
+        return spaces.contains { $0.spaceId == spaceId }
+    }
+    func allSpaceMappings() -> [String: String] { spaceMappings }
+    func pairableSpaces() -> [PhiLocalSpace] { pairableSpacesOverride ?? spaces }
+
     func isImporting(intoSpaceId spaceId: String) -> Bool { importingSpaceIds.contains(spaceId) }
 
     func refreshAccountProfiles() async -> ProfileRefreshOutcome {

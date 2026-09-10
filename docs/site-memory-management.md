@@ -12,8 +12,12 @@ There is no fallback to the active window or another profile.
 Settings live in `users/<account>/defaults/site_memory.json` under the browser's
 account storage root. The JSON maps profile IDs to arrays of disabled hosts.
 Missing hosts default to enabled. Enabling a host removes its override.
-Hostname matching is exact: disabling `example.com` does not disable
-`www.example.com`. Bare ASCII/punycode hosts are lowercased and a trailing dot
+Hostname matching is exact except that a registrable domain and its `www.`
+version share one entry: `v2ex.com` and `www.v2ex.com` use `v2ex.com`.
+Other subdomains remain independent: `www.163.com`, `gov.163.com`, and
+`www.gov.163.com` do not share settings. Legacy disabled entries under either
+spelling are honored; updating the pair removes both spellings and stores at
+most one override. Bare ASCII/punycode hosts are lowercased and a trailing dot
 is removed. URLs, wildcard prefixes, ports and paths are rejected.
 
 A shared concurrent dispatch queue is the in-process read/write lock across
@@ -56,14 +60,21 @@ mismatched response host fail. Successful responses return the backend's
 observation, browser-memory, ingest-event, summary and galaxy deletion/update
 counts. Removal includes subdomains and does not alter collection settings.
 
-Native menu deletion resolves the page host to its registrable domain using
-Chromium's same-site comparison, including private registry boundaries. Both
-`www.163.com` and `gov.163.com` therefore send `163.com` for removal;
-`news.example.co.uk` sends `example.co.uk`, while `alice.github.io` stays scoped
-to that tenant. IPv4 addresses and single-label hosts remain unchanged. Older
-frameworks without the comparison API keep the exact host instead of guessing.
-Collection settings and the service's explicit-host API retain exact-host input;
-only the shared native menu deletion action expands its scope.
+Native menu deletion requires confirmation. Its checkbox starts unchecked,
+so the request retains the captured page host, including any `www.` prefix.
+Checking it expands removal to the registrable domain and all its subdomains:
+`gov.163.com` sends `163.com`, and `news.example.co.uk` sends `example.co.uk`.
+The dialog shows both the page host and the broader domain. Cancel sends no
+request. The backend always includes descendants of the submitted host.
+
+Collection aliases and optional deletion expansion share the Swift helper
+`SiteMemorySettingsStore.registrableDomain(for:)`. It matches the bundled
+`Resources/PublicSuffixes.dat`, including private registries, wildcard rules,
+and exceptions: `alice.github.io` stays scoped to that tenant. The data is a
+snapshot of the Public Suffix List; refresh it from publicsuffix.org when
+updating domain rules. IPv4 addresses and single-label hosts remain unchanged.
+If the resource is unavailable, hosts retain exact matching and deletion scope.
+The service's explicit-host deletion API does not expand its input.
 
 ## Integration boundary
 

@@ -4,7 +4,6 @@
 // found in the LICENSE file.
 
 import AppKit
-import Network
 
 /// A page-scoped snapshot shared by the native menu and extension popover.
 @MainActor
@@ -59,21 +58,22 @@ struct SiteMemoryMenuActions {
         collectionEnabled = try? service?.collectionEnabled(for: host, profileID: profileID)
     }
 
-    static func removalHost(for host: String) -> String {
-        guard IPv4Address(host) == nil,
-              let bridge = ChromiumLauncher.sharedInstance().bridge,
-              bridge.responds(to: #selector(PhiChromiumBridgeProtocol.isSameSite(forURL:url:))) else {
-            return host
-        }
-        // Chromium's public/private suffix rules keep co.uk and github.io tenants separate.
-        // Older frameworks retain the exact host rather than guessing a broader scope.
-        var labels = host.split(separator: ".")
-        while labels.count > 2 {
-            let parent = labels.dropFirst().joined(separator: ".")
-            guard bridge.isSameSite(forURL: "https://\(host)", url: "https://\(parent)") else { break }
-            labels.removeFirst()
-        }
-        return labels.joined(separator: ".")
+    static func removalHost(for host: String, includeSubdomains: Bool) -> String {
+        includeSubdomains ? SiteMemorySettingsStore.registrableDomain(for: host) ?? host : host
+    }
+
+    func makeRemovalConfirmation() -> NSAlert {
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = NSLocalizedString("browser.addressBarMenu.memory.removalConfirmation.title", value: "Remove Site Memories?", comment: "Website memory deletion - Confirmation dialog title")
+        alert.informativeText = String(format: NSLocalizedString("browser.addressBarMenu.memory.removalConfirmation.message", value: "Saved memories for %@ will be removed from this browser profile. This can’t be undone.", comment: "Website memory deletion - Confirmation message; %@ is the current page host"), host)
+        alert.addButton(withTitle: NSLocalizedString("browser.addressBarMenu.memory.removalConfirmation.removeButton", value: "Remove", comment: "Website memory deletion - Confirm removal button"))
+        alert.buttons.first?.hasDestructiveAction = true
+        alert.addButton(withTitle: NSLocalizedString("browser.addressBarMenu.memory.removalConfirmation.cancelButton", value: "Cancel", comment: "Website memory deletion - Cancel removal button"))
+        alert.showsSuppressionButton = true
+        alert.suppressionButton?.title = String(format: NSLocalizedString("browser.addressBarMenu.memory.removalConfirmation.includeSubdomains", value: "Also include %@ and all its subdomains", comment: "Website memory deletion - Checkbox that expands removal to the parent site; %@ is its registrable domain"), Self.removalHost(for: host, includeSubdomains: true))
+        alert.suppressionButton?.state = .off
+        return alert
     }
 
     func perform(_ action: Action, window: NSWindow?) {
@@ -86,7 +86,17 @@ struct SiteMemoryMenuActions {
                     guard let collectionEnabled else { return }
                     try service.setCollectionEnabled(!collectionEnabled, for: host, profileID: profileID)
                 case .removeMemories:
-                    _ = try await service.removeMemories(for: Self.removalHost(for: host), profileID: profileID)
+                    let alert = makeRemovalConfirmation()
+                    let response: NSApplication.ModalResponse
+                    if let window {
+                        response = await alert.beginSheetModal(for: window)
+                    } else {
+                        response = alert.runModal()
+                    }
+                    guard response == .alertFirstButtonReturn else { return }
+                    let removalHost = Self.removalHost(
+                        for: host, includeSubdomains: alert.suppressionButton?.state == .on)
+                    _ = try await service.removeMemories(for: removalHost, profileID: profileID)
                 }
             } catch {
                 let title: String

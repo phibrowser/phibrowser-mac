@@ -24143,6 +24143,66 @@
         }
       }
     },
+    "browser.addressBarMenu.memory.removalConfirmation.cancelButton" : {
+      "comment" : "Website memory deletion - Cancel removal button",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Cancel"
+          }
+        }
+      }
+    },
+    "browser.addressBarMenu.memory.removalConfirmation.includeSubdomains" : {
+      "comment" : "Website memory deletion - Checkbox that expands removal to the parent site; %@ is its registrable domain",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Also include %@ and all its subdomains"
+          }
+        }
+      }
+    },
+    "browser.addressBarMenu.memory.removalConfirmation.message" : {
+      "comment" : "Website memory deletion - Confirmation message; %@ is the current page host",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Saved memories for %@ will be removed from this browser profile. This can’t be undone."
+          }
+        }
+      }
+    },
+    "browser.addressBarMenu.memory.removalConfirmation.removeButton" : {
+      "comment" : "Website memory deletion - Confirm removal button",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Remove"
+          }
+        }
+      }
+    },
+    "browser.addressBarMenu.memory.removalConfirmation.title" : {
+      "comment" : "Website memory deletion - Confirmation dialog title",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Remove Site Memories?"
+          }
+        }
+      }
+    },
     "browser.addressBarMenu.memory.removeAction" : {
       "comment" : "Website menus - Delete saved memories for the current website and its subdomains in this browser profile",
       "extractionState" : "extracted_with_value",
@@ -26687,18 +26747,6 @@
         }
       }
     },
-    "browser.webContentAddressBar.manageSiteMemoriesTooltip" : {
-      "comment" : "Address bar - Button tooltip for opening memory controls for the current website",
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "Manage Site Memories"
-          }
-        }
-      }
-    },
     "browser.webContentAddressBar.copyURLTooltip" : {
       "comment" : "Copy URL shortcut tooltip title",
       "extractionState" : "extracted_with_value",
@@ -26815,6 +26863,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "搜尋或輸入網址"
+          }
+        }
+      }
+    },
+    "browser.webContentAddressBar.manageSiteMemoriesTooltip" : {
+      "comment" : "Address bar - Button tooltip for opening memory controls for the current website",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Manage Site Memories"
           }
         }
       }

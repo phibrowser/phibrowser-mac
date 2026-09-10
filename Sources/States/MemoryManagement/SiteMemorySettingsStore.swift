@@ -4,6 +4,7 @@
 // found in the LICENSE file.
 
 import Foundation
+import Network
 
 enum SiteMemoryError: Error {
     case invalidHost
@@ -22,20 +23,23 @@ struct SiteMemorySettingsStore: Sendable {
     let fileURL: URL
 
     func collectionEnabled(for host: String, profileID: String) throws -> Bool {
-        let host = try Self.normalizedHost(host)
+        let hosts = try Self.collectionHosts(for: host)
         try Self.validateProfileID(profileID)
         return try Self.queue.sync {
-            !(try load()[profileID] ?? []).contains(host)
+            let disabled = try load()[profileID] ?? []
+            return !hosts.contains(where: disabled.contains)
         }
     }
 
     func setCollectionEnabled(_ enabled: Bool, for host: String, profileID: String) throws {
-        let host = try Self.normalizedHost(host)
+        let hosts = try Self.collectionHosts(for: host)
         try Self.validateProfileID(profileID)
         try Self.queue.sync(flags: .barrier) {
             var profiles = try load()
             var disabled = Set(profiles[profileID] ?? [])
-            if enabled { disabled.remove(host) } else { disabled.insert(host) }
+            // Remove either legacy spelling and persist one entry for the pair.
+            disabled.subtract(hosts)
+            if !enabled { disabled.insert(hosts[0]) }
             if disabled.isEmpty { profiles.removeValue(forKey: profileID) }
             else { profiles[profileID] = disabled.sorted() }
             let data = try JSONEncoder().encode(profiles)
@@ -51,6 +55,48 @@ struct SiteMemorySettingsStore: Sendable {
         } catch CocoaError.fileReadNoSuchFile {
             return [:]
         }
+    }
+
+    private static func collectionHosts(for input: String) throws -> [String] {
+        let host = try normalizedHost(input)
+        guard let domain = registrableDomain(for: host),
+              host == domain || host == "www.\(domain)" else { return [host] }
+        return [domain, "www.\(domain)"]
+    }
+
+    private static let publicSuffixRules: Set<String>? = {
+        guard let url = Bundle.main.url(forResource: "PublicSuffixes", withExtension: "dat"),
+              let contents = try? String(contentsOf: url, encoding: .utf8) else { return nil }
+        var rules = Set<String>()
+        for line in contents.split(whereSeparator: \.isNewline) {
+            let rule = line.trimmingCharacters(in: .whitespaces)
+            guard !rule.isEmpty, !rule.hasPrefix("//") else { continue }
+            let prefix = rule.hasPrefix("!") ? "!" : rule.hasPrefix("*.") ? "*." : ""
+            guard let host = URL(string: "https://\(rule.dropFirst(prefix.count))")?.host else { return nil }
+            rules.insert(prefix + host.lowercased())
+        }
+        return rules.isEmpty ? nil : rules
+    }()
+
+    /// Matches the bundled public suffix rules, including wildcards and exceptions.
+    static func registrableDomain(for input: String) -> String? {
+        guard let host = try? normalizedHost(input), IPv4Address(host) == nil,
+              let rules = publicSuffixRules else { return nil }
+        let labels = host.split(separator: ".")
+        var suffixCount = 1
+        for index in labels.indices {
+            let suffix = labels[index...].joined(separator: ".")
+            if rules.contains("!" + suffix) {
+                suffixCount = labels.count - index - 1
+                break
+            }
+            let wildcard = "*." + labels.dropFirst(index + 1).joined(separator: ".")
+            if rules.contains(suffix) || rules.contains(wildcard) {
+                suffixCount = max(suffixCount, labels.count - index)
+            }
+        }
+        guard labels.count > suffixCount else { return nil }
+        return labels.suffix(suffixCount + 1).joined(separator: ".")
     }
 
     // Accept a bare hostname only. Match the backend's lowercase/trailing-dot

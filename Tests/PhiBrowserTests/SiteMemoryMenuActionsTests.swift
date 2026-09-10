@@ -66,7 +66,8 @@ final class SiteMemoryMenuActionsTests: XCTestCase {
         XCTAssertEqual(snapshot.collectionState, .off)
         XCTAssertTrue(snapshot.canRemoveMemories)
         XCTAssertEqual(actions(profileID: "Default", service: service)?.collectionState, .on)
-        XCTAssertEqual(actions(url: "https://www.example.com", service: service)?.collectionState, .on)
+        XCTAssertEqual(actions(url: "https://www.example.com", service: service)?.collectionState, .off)
+        XCTAssertEqual(actions(url: "https://gov.example.com", service: service)?.collectionState, .on)
         XCTAssertEqual(actions(service: temporaryService())?.collectionState, .on)
     }
 
@@ -94,7 +95,7 @@ final class SiteMemoryMenuActionsTests: XCTestCase {
         XCTAssertEqual(first.collectionState, .on)
     }
 
-    func testRemovalUsesRegistrableDomainWhileCollectionKeepsExactHost() throws {
+    func testRemovalExpandsToRegistrableDomainOnlyWhenCheckboxIsSelected() throws {
         for (host, expected) in [
             ("www.163.com", "163.com"),
             ("gov.163.com", "163.com"),
@@ -106,7 +107,8 @@ final class SiteMemoryMenuActionsTests: XCTestCase {
             ("127.0.0.1", "127.0.0.1"),
             ("0.0.0.1", "0.0.0.1")
         ] {
-            XCTAssertEqual(SiteMemoryMenuActions.removalHost(for: host), expected, host)
+            XCTAssertEqual(SiteMemoryMenuActions.removalHost(for: host, includeSubdomains: false), host)
+            XCTAssertEqual(SiteMemoryMenuActions.removalHost(for: host, includeSubdomains: true), expected, host)
         }
 
         let service = temporaryService()
@@ -114,6 +116,21 @@ final class SiteMemoryMenuActionsTests: XCTestCase {
         let snapshot = try XCTUnwrap(actions(url: "https://www.163.com", service: service))
         XCTAssertEqual(snapshot.host, "www.163.com")
         XCTAssertEqual(snapshot.collectionEnabled, false)
+        XCTAssertEqual(actions(url: "https://163.com", service: service)?.collectionEnabled, false)
         XCTAssertEqual(actions(url: "https://gov.163.com", service: service)?.collectionEnabled, true)
+    }
+
+    func testRemovalConfirmationShowsBothScopesAndStartsUnchecked() throws {
+        let snapshot = try XCTUnwrap(actions(url: "https://gov.163.com", service: temporaryService()))
+        let alert = snapshot.makeRemovalConfirmation()
+        XCTAssertEqual(alert.alertStyle, .warning)
+        XCTAssertEqual(alert.buttons.count, 2)
+        XCTAssertTrue(alert.buttons[0].hasDestructiveAction)
+        XCTAssertTrue(alert.informativeText.contains("gov.163.com"))
+        XCTAssertTrue(alert.showsSuppressionButton)
+        let checkbox = try XCTUnwrap(alert.suppressionButton)
+        XCTAssertEqual(checkbox.state, .off)
+        XCTAssertTrue(checkbox.title.contains("163.com"))
+        XCTAssertFalse(checkbox.title.contains("gov.163.com"))
     }
 }

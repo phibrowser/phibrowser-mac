@@ -1629,7 +1629,21 @@ final class ServiceBrokerExtensionProtocolTests: XCTestCase {
         )
     }
 
-    private static let siteRemovalBody = Data(#"{"ok":true,"host":"example.com","deleted":{"observations":2,"browserMemoryEntries":3,"ingestEvents":1,"tabSummaries":1,"galaxyNodes":1,"galaxyEdges":2},"updated":{"galaxyNodes":1,"galaxyEdges":0}}"#.utf8)
+    private static let siteRemovalBody = Data(#"""
+    {
+        "ok": true, "dryRun": false, "scope": {"kind": "host", "host": "example.com"},
+        "deleted": {
+            "observations": 2, "browserMemoryEntries": 3, "agentMemoryEntries": 4,
+            "ingestEvents": 1, "galaxyNodes": 1, "galaxyEdges": 2,
+            "journeyEvents": 5, "journeySessions": 6, "journeyIntents": 7,
+            "turnLinks": 8, "profiles": 0
+        },
+        "updated": {
+            "galaxyNodes": 1, "galaxyEdges": 0, "journeySessions": 2,
+            "journeyIntents": 3, "turnLinks": 4, "agentMemoryEntries": 5
+        }
+    }
+    """#.utf8)
     private static let siteMemoryExportsJSON = #"{"phi-memory":{"api_base":"http://127.0.0.1:28792/"},"phi-agent":{"api_base":"http://127.0.0.1:28788"}}"#
 
     func testNativeSiteRemovalUsesLegacyHTTPWithoutBrokerRuntime() async throws {
@@ -1640,14 +1654,17 @@ final class ServiceBrokerExtensionProtocolTests: XCTestCase {
             siteMemoryLoopbackExecutor: { request, exportsJSON in
                 await loopback.record(request)
                 let http = try APIClient.siteMemoryLoopbackRequest(request, exportsJSON: exportsJSON)
-                XCTAssertEqual(http.url?.absoluteString, "http://127.0.0.1:28792/v1/clear/host")
+                XCTAssertEqual(http.url?.absoluteString, "http://127.0.0.1:28792/v1/cleanup")
                 XCTAssertEqual(http.httpMethod, "POST")
                 XCTAssertEqual(http.value(forHTTPHeaderField: "Authorization"), "Bearer test-access-token")
                 XCTAssertEqual(http.value(forHTTPHeaderField: "x-profile-id"), "Profile 2")
                 XCTAssertEqual(http.value(forHTTPHeaderField: "Content-Type"), "application/json")
                 XCTAssertNil(http.value(forHTTPHeaderField: "X-Phi-Extension-ID"))
-                XCTAssertEqual(try JSONDecoder().decode([String: String].self, from: XCTUnwrap(http.httpBody)),
-                               ["host": "example.com"])
+                XCTAssertNil(http.value(forHTTPHeaderField: "x-memory-scope"))
+                let body = try XCTUnwrap(JSONSerialization.jsonObject(with: XCTUnwrap(http.httpBody)) as? [String: Any])
+                XCTAssertEqual(Set(body.keys), ["scope", "dryRun"])
+                XCTAssertEqual(body["scope"] as? [String: String], ["kind": "host", "host": "example.com"])
+                XCTAssertEqual(body["dryRun"] as? Bool, false)
                 return BrokerHTTPResponse(statusCode: 200, headers: [], body: Self.siteRemovalBody)
             })
 
@@ -1804,11 +1821,11 @@ final class ServiceBrokerExtensionProtocolTests: XCTestCase {
     }
 
     func testSiteMemoryLoopbackRequestRequiresLocalMemoryExport() throws {
-        let request = BrokerHTTPRequest(service: .phiMemory, path: "/v1/clear/host", method: "POST")
+        let request = BrokerHTTPRequest(service: .phiMemory, path: "/v1/cleanup", method: "POST")
         for baseURL in ["http://127.0.0.1:28792", "http://localhost:28792/", "http://[::1]:28792/"] {
             let exports = try JSONSerialization.data(withJSONObject: ["phi-memory": ["api_base": baseURL]])
             let http = try APIClient.siteMemoryLoopbackRequest(request, exportsJSON: String(decoding: exports, as: UTF8.self))
-            XCTAssertEqual(http.url?.path, "/v1/clear/host")
+            XCTAssertEqual(http.url?.path, "/v1/cleanup")
             XCTAssertEqual(http.url?.port, 28792)
         }
         for exportsJSON in [
@@ -1834,13 +1851,94 @@ final class ServiceBrokerExtensionProtocolTests: XCTestCase {
         let recorded = await recorder.lastRequest()
         let request = try XCTUnwrap(recorded)
         XCTAssertEqual(request.service, .phiMemory)
-        XCTAssertEqual(request.path, "/v1/clear/host")
+        XCTAssertEqual(request.path, "/v1/cleanup")
         XCTAssertEqual(request.method, "POST")
         XCTAssertEqual(request.headers["x-profile-id"], "Profile 2")
         XCTAssertEqual(request.headers["Authorization"], "Bearer test-access-token")
         XCTAssertNil(request.headers["X-Phi-Extension-ID"])
         let body = try XCTUnwrap(request.body)
-        XCTAssertEqual(try JSONDecoder().decode([String: String].self, from: body), ["host": "example.com"])
+        let payload = try XCTUnwrap(JSONSerialization.jsonObject(with: body) as? [String: Any])
+        XCTAssertEqual(Set(payload.keys), ["scope", "dryRun"])
+        XCTAssertEqual(payload["scope"] as? [String: String], ["kind": "host", "host": "example.com"])
+        XCTAssertEqual(payload["dryRun"] as? Bool, false)
+        XCTAssertNil(request.headers["x-memory-scope"])
+    }
+
+    func testNativeSiteRemovalUsesSiteScopeForSubdomainsOverBothTransports() async throws {
+        let expectedScope = ["kind": "site", "site": "example.com"]
+        var responseBody = try XCTUnwrap(JSONSerialization.jsonObject(with: Self.siteRemovalBody) as? [String: Any])
+        responseBody["scope"] = expectedScope
+        let body = try JSONSerialization.data(withJSONObject: responseBody)
+
+        for mode in [SentinelTransportMode.uds, .legacy] {
+            let recorder = BrokerRequestRecorder()
+            let handler = makeHandler(
+                response: BrokerHTTPResponse(statusCode: 200, headers: [], body: body),
+                recorder: recorder, transportMode: mode)
+            let result = try await handler.removeSiteMemories(
+                host: "EXAMPLE.COM.", profileID: "Profile 2", accountID: "auth0|test-account",
+                includeSubdomains: true)
+
+            let recorded = await recorder.lastRequest()
+            let request = try XCTUnwrap(recorded)
+            let payload = try XCTUnwrap(JSONSerialization.jsonObject(with: XCTUnwrap(request.body)) as? [String: Any])
+            XCTAssertEqual(request.path, "/v1/cleanup")
+            XCTAssertEqual(request.method, "POST")
+            XCTAssertEqual(request.headers["x-profile-id"], "Profile 2")
+            XCTAssertNil(request.headers["x-memory-scope"])
+            XCTAssertEqual(Set(payload.keys), ["scope", "dryRun"])
+            XCTAssertEqual(payload["scope"] as? [String: String], expectedScope)
+            XCTAssertEqual(payload["dryRun"] as? Bool, false)
+            XCTAssertEqual(result.scope.kind, .site)
+            XCTAssertEqual(result.scope.site, "example.com")
+            XCTAssertFalse(result.dryRun)
+            XCTAssertEqual(result.deleted.agentMemoryEntries, 4)
+            XCTAssertEqual(result.deleted.journeyEvents, 5)
+            XCTAssertEqual(result.deleted.journeySessions, 6)
+            XCTAssertEqual(result.deleted.journeyIntents, 7)
+            XCTAssertEqual(result.deleted.turnLinks, 8)
+            XCTAssertEqual(result.deleted.profiles, 0)
+            XCTAssertEqual(result.updated.journeySessions, 2)
+            XCTAssertEqual(result.updated.journeyIntents, 3)
+            XCTAssertEqual(result.updated.turnLinks, 4)
+            XCTAssertEqual(result.updated.agentMemoryEntries, 5)
+        }
+    }
+
+    func testNativeSiteRemovalRejectsDryRunsAndMismatchedScopes() async throws {
+        for mode in [SentinelTransportMode.uds, .legacy] {
+            for includeSubdomains in [false, true] {
+                let scope = includeSubdomains
+                    ? ["kind": "site", "site": "example.com"]
+                    : ["kind": "host", "host": "example.com"]
+                let otherScope = includeSubdomains
+                    ? ["kind": "host", "host": "example.com"]
+                    : ["kind": "site", "site": "example.com"]
+                let overrides: [[String: Any]] = [
+                    ["dryRun": true],
+                    ["dryRun": NSNull()],
+                    ["scope": otherScope],
+                    ["scope": ["kind": "user"]],
+                    ["scope": ["kind": scope["kind"]!]],
+                    ["scope": ["kind": scope["kind"]!, "host": "example.com", "site": "example.com"]]
+                ]
+                for override in overrides {
+                    var responseBody = try XCTUnwrap(JSONSerialization.jsonObject(with: Self.siteRemovalBody) as? [String: Any])
+                    responseBody["scope"] = scope
+                    responseBody.merge(override) { _, new in new }
+                    let body = try JSONSerialization.data(withJSONObject: responseBody)
+                    let handler = makeHandler(
+                        response: BrokerHTTPResponse(statusCode: 200, headers: [], body: body),
+                        transportMode: mode)
+                    do {
+                        _ = try await handler.removeSiteMemories(
+                            host: "example.com", profileID: "Default", accountID: "auth0|test-account",
+                            includeSubdomains: includeSubdomains)
+                        XCTFail("Dry runs and mismatched cleanup scopes must not report a successful deletion")
+                    } catch { }
+                }
+            }
+        }
     }
 
     func testNativeSiteRemovalRejectsWrongAccountMissingAuthAndInvalidScopeBeforeSending() async {

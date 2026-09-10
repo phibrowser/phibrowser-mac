@@ -94,9 +94,11 @@ struct SiteMemoryMenuActions {
                         response = alert.runModal()
                     }
                     guard response == .alertFirstButtonReturn else { return }
+                    let includeSubdomains = alert.suppressionButton?.state == .on
                     let removalHost = Self.removalHost(
-                        for: host, includeSubdomains: alert.suppressionButton?.state == .on)
-                    _ = try await service.removeMemories(for: removalHost, profileID: profileID)
+                        for: host, includeSubdomains: includeSubdomains)
+                    _ = try await service.removeMemories(
+                        for: removalHost, profileID: profileID, includeSubdomains: includeSubdomains)
                 }
             } catch {
                 let title: String

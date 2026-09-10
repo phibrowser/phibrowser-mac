@@ -109,6 +109,13 @@ final class SiteMemoryMenuActionsTests: XCTestCase {
         ] {
             XCTAssertEqual(SiteMemoryMenuActions.removalHost(for: host, includeSubdomains: false), host)
             XCTAssertEqual(SiteMemoryMenuActions.removalHost(for: host, includeSubdomains: true), expected, host)
+            for includeSubdomains in [false, true] {
+                let target = SiteMemoryMenuActions.removalHost(for: host, includeSubdomains: includeSubdomains)
+                let scope = SiteMemoryRemovalScope(host: target, includeSubdomains: includeSubdomains)
+                XCTAssertEqual(scope.kind, includeSubdomains ? .site : .host)
+                XCTAssertEqual(scope.host, includeSubdomains ? nil : host)
+                XCTAssertEqual(scope.site, includeSubdomains ? expected : nil)
+            }
         }
 
         let service = temporaryService()

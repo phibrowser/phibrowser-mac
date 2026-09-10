@@ -450,9 +450,10 @@ actor ServiceBrokerExtensionProtocol {
 
     /// Native-only entry point; never attributes an app action to an extension.
     func removeSiteMemories(
-        host: String, profileID: String, accountID: String
+        host: String, profileID: String, accountID: String, includeSubdomains: Bool = false
     ) async throws -> SiteMemoryRemovalResult {
         let host = try SiteMemorySettingsStore.normalizedHost(host)
+        let scope = SiteMemoryRemovalScope(host: host, includeSubdomains: includeSubdomains)
         try SiteMemorySettingsStore.validateProfileID(profileID)
         let auth = try requireAuthenticatedSnapshot()
         guard auth.scope.accountID == accountID else { throw SiteMemoryError.accountUnavailable }
@@ -465,14 +466,14 @@ actor ServiceBrokerExtensionProtocol {
         try Task.checkCancellation()
         let request = BrokerHTTPRequest(
             service: .phiMemory,
-            path: "/v1/clear/host",
+            path: "/v1/cleanup",
             method: "POST",
             headers: [
                 "Authorization": "Bearer \(auth.accessToken)",
                 "Content-Type": "application/json",
                 "x-profile-id": profileID
             ],
-            body: try JSONEncoder().encode(["host": host])
+            body: try JSONEncoder().encode(SiteMemoryRemovalRequest(scope: scope))
         )
         let response: BrokerHTTPResponse
         let responseLimit: Int
@@ -494,7 +495,7 @@ actor ServiceBrokerExtensionProtocol {
             throw SiteMemoryError.invalidResponse
         }
         let result = try JSONDecoder().decode(SiteMemoryRemovalResult.self, from: response.body)
-        guard result.ok, result.host == host else { throw SiteMemoryError.invalidResponse }
+        guard result.ok, !result.dryRun, result.scope == scope else { throw SiteMemoryError.invalidResponse }
         return result
     }
 

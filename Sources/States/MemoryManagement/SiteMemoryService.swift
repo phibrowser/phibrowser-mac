@@ -5,21 +5,53 @@
 
 import Foundation
 
+struct SiteMemoryRemovalScope: Codable, Equatable, Sendable {
+    enum Kind: String, Codable, Sendable {
+        case host
+        case site
+    }
+
+    let kind: Kind
+    let host: String?
+    let site: String?
+
+    init(host: String, includeSubdomains: Bool) {
+        kind = includeSubdomains ? .site : .host
+        self.host = includeSubdomains ? nil : host
+        site = includeSubdomains ? host : nil
+    }
+}
+
+struct SiteMemoryRemovalRequest: Encodable, Sendable {
+    let scope: SiteMemoryRemovalScope
+    let dryRun = false
+}
+
 struct SiteMemoryRemovalResult: Decodable, Sendable {
     struct Deleted: Decodable, Sendable {
         let observations: Int
         let browserMemoryEntries: Int
+        let agentMemoryEntries: Int
         let ingestEvents: Int
-        let tabSummaries: Int
         let galaxyNodes: Int
         let galaxyEdges: Int
+        let journeyEvents: Int
+        let journeySessions: Int
+        let journeyIntents: Int
+        let turnLinks: Int
+        let profiles: Int
     }
     struct Updated: Decodable, Sendable {
         let galaxyNodes: Int
         let galaxyEdges: Int
+        let journeySessions: Int
+        let journeyIntents: Int
+        let turnLinks: Int
+        let agentMemoryEntries: Int
     }
     let ok: Bool
-    let host: String
+    let dryRun: Bool
+    let scope: SiteMemoryRemovalScope
     let deleted: Deleted
     let updated: Updated
 }
@@ -49,8 +81,10 @@ struct SiteMemoryService: Sendable {
     /// Deletes server memory only. The capture owner must fence its pending
     /// events before calling this and invalidate its read cache after success.
     /// Uses UDS unless Sentinel explicitly selects legacy local HTTP.
-    func removeMemories(for host: String, profileID: String) async throws -> SiteMemoryRemovalResult {
+    func removeMemories(
+        for host: String, profileID: String, includeSubdomains: Bool = false
+    ) async throws -> SiteMemoryRemovalResult {
         try await ServiceBrokerExtensionProtocol.shared.removeSiteMemories(
-            host: host, profileID: profileID, accountID: accountID)
+            host: host, profileID: profileID, accountID: accountID, includeSubdomains: includeSubdomains)
     }
 }

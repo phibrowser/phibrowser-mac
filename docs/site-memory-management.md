@@ -3,7 +3,7 @@
 `SiteMemoryService.currentAccount()` creates an account-bound native service.
 It exposes `collectionEnabled(for:profileID:)`,
 `setCollectionEnabled(_:for:profileID:)`, and async
-`removeMemories(for:profileID:)`. Callers supply the Chromium profile basename
+`removeMemories(for:profileID:includeSubdomains:)`. Callers supply the Chromium profile basename
 (e.g. `Default` or `Profile 2`), never a Space ID or a profile display name.
 There is no fallback to the active window or another profile.
 
@@ -61,20 +61,26 @@ IPC to observe cancellation; late lookup results are discarded. A failed UDS
 request is not retried over HTTP.
 
 Both routes use the shared-auth snapshot and send
-`POST /v1/clear/host` to `phi-memory`, with `{ "host": "example.com" }`,
-`x-profile-id`, and the current bearer. It does not impersonate an extension.
+`POST /v1/cleanup` to `phi-memory`, with `x-profile-id` and the current bearer.
+The body contains `dryRun: false` and a scope: by default,
+`{ "kind": "host", "host": "example.com" }` selects exactly one hostname;
+`includeSubdomains: true` uses `{ "kind": "site", "site": "example.com" }`
+to include its descendants. No `x-memory-scope: user` header is sent, so deletion
+stays within the captured profile. It does not impersonate an extension.
 The account must match the service's captured account and auth must remain
 unchanged across suspension. HTTP errors, malformed/negative responses and a
-mismatched response host fail. Successful responses return the backend's
-observation, browser-memory, ingest-event, summary and galaxy deletion/update
-counts. Removal includes subdomains and does not alter collection settings.
+mismatched response scope fail. A response with `dryRun: true` is not a successful
+deletion. Successful responses return the backend's observation, browser-memory,
+agent-memory, ingest-event, galaxy, journey, turn-link and profile deletion/update
+counts. Removal does not alter collection settings.
 
 Native menu deletion requires confirmation. Its checkbox starts unchecked,
-so the request retains the captured page host, including any `www.` prefix.
-Checking it expands removal to the registrable domain and all its subdomains:
-`gov.163.com` sends `163.com`, and `news.example.co.uk` sends `example.co.uk`.
+so the request uses `host` scope for the captured page host, including any `www.`
+prefix. Checking it switches to `site` scope and expands removal to the registrable
+domain and all its subdomains: `gov.163.com` sends `163.com`, and
+`news.example.co.uk` sends `example.co.uk`.
 The dialog shows both the page host and the broader domain. Cancel sends no
-request. The backend always includes descendants of the submitted host.
+request. Descendants are included only when the checkbox is selected.
 
 Collection aliases and optional deletion expansion share the Swift helper
 `SiteMemorySettingsStore.registrableDomain(for:)`. It matches the bundled

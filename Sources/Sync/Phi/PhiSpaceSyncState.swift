@@ -122,6 +122,11 @@ struct PhiSpaceSyncTable: Codable, Equatable {
     /// a cursor": agent / incognito entities refused by §6.5 own a cursor with
     /// only `refusedAtMs`, D2-hidden Spaces own one with only `hidden`.
     /// Returns whether anything changed.
+    ///
+    /// D6：**参数是 syncUuid**（表按 syncUuid 键）。本地 id 在两条边界上翻译，
+    /// 两条都在这个文件之外：引擎的 `PhiSyncEngine.run(_:)` 的 `.recordLocalDeletion`
+    /// 分支，以及无引擎回退路径 `PhiSpaceSyncState.deliver(_:)`。翻不出来就是
+    /// 「从来没发布过」，两条边界都直接返回，不会走到这里。
     @discardableResult
     mutating func recordLocalDeletion(spaceId: String) -> Bool {
         guard var cursor = cursors[spaceId],
@@ -286,9 +291,10 @@ final class PhiSpaceSyncState {
     /// syncUuid -> 本地 spaceId。`refreshCaches` 把 `hiddenSyncUuids` 翻回本地 id
     /// 的唯一入口（§3.5）。
     var localSpaceIdLookup: ((String) -> String?)?
-    /// 本地 spaceId -> syncUuid。**反方向**，只有一个消费者：`blocksProfileDeletion`
+    /// 本地 spaceId -> syncUuid。**反方向**，两个消费者：`blocksProfileDeletion`
     /// 的第三条判据——它跑在主 actor 上、手里没有表，`localSpaceIdLookup` 方向反了，
-    /// 用不上（§2.2 / §3.5）。
+    /// 用不上（§2.2 / §3.5）；以及 `deliver` 的无引擎回退路径，它要在写进按 syncUuid
+    /// 键的表之前把本地 id 翻过去（与引擎边界同一条规则，§3.4）。
     var syncUuidLookup: ((String) -> String?)?
     /// Every LOCAL Space row with its profile, unfiltered by §6.6's funnel --
     /// `account.localStorage.getAllSpaces()` in production. Needed for §9.4's
@@ -361,7 +367,11 @@ final class PhiSpaceSyncState {
         guard let directStore else { return }
         var table = directStore.load()
         switch intent {
-        case .recordLocalDeletion(let spaceId): table.recordLocalDeletion(spaceId: spaceId)
+        case .recordLocalDeletion(let spaceId):
+            // 与引擎边界同一件事（§3.4）：表按 syncUuid 键，来的是本地 id。没有
+            // resolver 或翻不出来 = 从来没发布过 = 无 tombstone 可发。
+            guard let uuid = syncUuidLookup?(spaceId) else { return }
+            table.recordLocalDeletion(spaceId: uuid)
         case .joinAccountSync(let spaceId): table.joinAccountSync(spaceId: spaceId)
         case .runRetentionSweep:
             // Data cascade needs SpaceManager, which the no-engine path has no

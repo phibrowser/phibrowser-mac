@@ -223,6 +223,13 @@ final class PhiSpaceSyncState {
     var directStore: PhiSpaceSyncStateStore?
     /// localProfileId -> account-global uuid (`ProfileKeyManager` mapping).
     var globalUuidLookup: ((String) -> String?)?
+    /// syncUuid -> 本地 spaceId。`refreshCaches` 把 `hiddenSyncUuids` 翻回本地 id
+    /// 的唯一入口（§3.5）。
+    var localSpaceIdLookup: ((String) -> String?)?
+    /// 本地 spaceId -> syncUuid。**反方向**，只有一个消费者：`blocksProfileDeletion`
+    /// 的第三条判据——它跑在主 actor 上、手里没有表，`localSpaceIdLookup` 方向反了，
+    /// 用不上（§2.2 / §3.5）。
+    var syncUuidLookup: ((String) -> String?)?
     /// Every LOCAL Space row with its profile, unfiltered by §6.6's funnel --
     /// `account.localStorage.getAllSpaces()` in production. Needed for §9.4's
     /// third criterion (hidden local Spaces have no cursor `profile_uuid`).

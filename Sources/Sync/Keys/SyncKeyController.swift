@@ -63,6 +63,12 @@ final class SyncKeyController {
     let manager: AccountKeyManager
     let approvals: DeviceApprovalService
     let profileKeys: ProfileKeyManager
+    /// D6 §2.2：本地 spaceId <-> 账户 syncUuid 的映射层。`nil` 与 `spaceStateStore`
+    /// 同款含义——「这个 controller 没有 Space 段」（单元测试，以及任何还没接线的
+    /// 构造点）。**绝不给它一个内存默认值**：一个静默的进程内映射表会让每次启动重铸
+    /// 一遍 syncUuid，账户里于是每台机器每次启动都多出一份重复 Space；`nil` 的失败
+    /// 方向是「一条都不发布」，由 §9.3 的 `unmapped=<n>` 计数暴露。
+    let spaceKeys: SpaceSyncMappingManager?
 
     private let localProfilesProvider: () -> [(profileId: String, displayName: String)]
     private let notifyChromium: () -> Void
@@ -134,6 +140,7 @@ final class SyncKeyController {
     func noteDecryptableRemote(_ uuid: String) { undecryptableRemoteUuids.remove(uuid) }
 
     init(manager: AccountKeyManager, approvals: DeviceApprovalService, profileKeys: ProfileKeyManager,
+         spaceKeys: SpaceSyncMappingManager? = nil,
          localProfilesProvider: @escaping () -> [(profileId: String, displayName: String)],
          notifyChromium: @escaping () -> Void,
          profileCreator: any LocalProfileCreating = ProfileManager.shared,
@@ -144,6 +151,7 @@ final class SyncKeyController {
         self.manager = manager
         self.approvals = approvals
         self.profileKeys = profileKeys
+        self.spaceKeys = spaceKeys
         self.localProfilesProvider = localProfilesProvider
         self.notifyChromium = notifyChromium
         self.profileCreator = profileCreator
@@ -181,6 +189,38 @@ final class SyncKeyController {
         profileKeys.removeMapping(forProfileId: profileId)
     }
 
+    // MARK: - Space sync identity (M3-2b §2.2)
+
+    /// 主 actor 门面，形状照 `localProfileId(forGlobalUuid:)`（上面那两个）：
+    /// `AccountPhiSpaceAccess` 经既有的 `controller` 引用读写 Space 映射，
+    /// 引擎只经 `PhiSpaceLocalAccess` 碰到这里，不新增任何依赖。
+    func syncUuid(forSpaceId spaceId: String) -> String? {
+        spaceKeys?.syncUuid(forSpaceId: spaceId)
+    }
+
+    func localSpaceId(forSyncUuid uuid: String) -> String? {
+        spaceKeys?.localSpaceId(forSyncUuid: uuid)
+    }
+
+    @discardableResult
+    func ensureSpaceMapped(spaceId: String) throws -> String {
+        guard let spaceKeys else { throw SpaceSyncMappingError.mappingLayerUnavailable }
+        return try spaceKeys.ensureMapped(spaceId: spaceId)
+    }
+
+    func mapSpace(_ spaceId: String, toSyncUuid uuid: String) throws {
+        guard let spaceKeys else { throw SpaceSyncMappingError.mappingLayerUnavailable }
+        try spaceKeys.map(spaceId: spaceId, toSyncUuid: uuid)
+    }
+
+    func removeSpaceMapping(forSpaceId spaceId: String) {
+        spaceKeys?.removeMapping(forSpaceId: spaceId)
+    }
+
+    func allSpaceMappings() -> [String: String] {
+        spaceKeys?.allMappings() ?? [:]
+    }
+
     /// The pairing modal's only other exit. Order is a HARD requirement, not
     /// prudence (§3.3 step 2.0): a round parked in `getUpdates` still holds the
     /// domain key it fetched before the suspension, and the server does not check
@@ -214,6 +254,11 @@ final class SyncKeyController {
 
         // 3. Mappings, through the store -- never a direct AccountUserDefaults write.
         profileKeys.removeAllMappings()
+        // D6 §2.3: the Space identity table goes with it. Order matters only in
+        // one direction -- both tables must be gone before step 4 wipes the
+        // cursor table, or a round that somehow survived would resolve a uuid
+        // whose cursor no longer exists.
+        spaceKeys?.removeAllMappings()
 
         // 4. Engine state. `phi.sync.cursorAccount` is deliberately kept: it is
         //    not a cursor, and dropping it would make the next build report a

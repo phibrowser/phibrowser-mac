@@ -987,12 +987,16 @@ struct SpacesStripView: View {
     /// Pips in drag order: the local `stripOrderedIds` snapshot (rearranged live
     /// while a drag hovers across pips), with any Space the snapshot doesn't know
     /// yet appended in the manager's order. Mirrors SpacePickerPopup.orderedSpaces.
+    /// Drawn from `slot.presentedSpaces`, not `manager.spaces`: an agent Space
+    /// is offered only by the window hosting it, so this strip skips the agent
+    /// pips that belong to other windows (`SpaceWindowSlot.presents`).
     private var stripOrderedSpaces: [SpaceModel] {
-        guard !stripOrderedIds.isEmpty else { return manager.spaces }
-        let byId = Dictionary(uniqueKeysWithValues: manager.spaces.map { ($0.spaceId, $0) })
+        let presented = slot.presentedSpaces
+        guard !stripOrderedIds.isEmpty else { return presented }
+        let byId = Dictionary(uniqueKeysWithValues: presented.map { ($0.spaceId, $0) })
         var result = stripOrderedIds.compactMap { byId[$0] }
         let known = Set(stripOrderedIds)
-        result.append(contentsOf: manager.spaces.filter { !known.contains($0.spaceId) })
+        result.append(contentsOf: presented.filter { !known.contains($0.spaceId) })
         return result
     }
 
@@ -1662,16 +1666,19 @@ private struct SpacePickerPopup: View {
 
     /// Rows in drag order: the local `orderedIds` snapshot (rearranged live
     /// while a drag hovers across rows), with any Space the snapshot doesn't
-    /// know yet appended in strip order.
+    /// know yet appended in strip order. Drawn from `slot.presentedSpaces` for
+    /// the same reason as the strip: agent Spaces hosted by other windows are
+    /// not offered here.
     private var orderedSpaces: [SpaceModel] {
+        let presented = slot.presentedSpaces
         let ordered: [SpaceModel]
         if orderedIds.isEmpty {
-            ordered = manager.spaces
+            ordered = presented
         } else {
-            let byId = Dictionary(uniqueKeysWithValues: manager.spaces.map { ($0.spaceId, $0) })
+            let byId = Dictionary(uniqueKeysWithValues: presented.map { ($0.spaceId, $0) })
             var result = orderedIds.compactMap { byId[$0] }
             let known = Set(orderedIds)
-            result.append(contentsOf: manager.spaces.filter { !known.contains($0.spaceId) })
+            result.append(contentsOf: presented.filter { !known.contains($0.spaceId) })
             ordered = result
         }
         guard !excludedSpaceIds.isEmpty else { return ordered }

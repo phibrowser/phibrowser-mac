@@ -1949,7 +1949,7 @@ extension AppController {
         menu.removeAllItems()
         let activeSpaceId = currentActiveSpace()?.spaceId
 
-        for (index, space) in SpaceManager.shared.spaces.enumerated() {
+        for (index, space) in currentPresentedSpaces().enumerated() {
             let item = NSMenuItem(
                 title: space.name,
                 action: #selector(activateSpaceFromMenu(_:)),
@@ -2148,7 +2148,7 @@ extension AppController {
         prevItem.target = self
         menu.addItem(prevItem)
 
-        let spaces = SpaceManager.shared.spaces
+        let spaces = currentPresentedSpaces()
         if !spaces.isEmpty {
             menu.addItem(.separator())
             for (index, space) in spaces.enumerated() {
@@ -2243,6 +2243,14 @@ extension AppController {
         return SpaceManager.shared.spaces.first(where: { $0.spaceId == id })
     }
 
+    /// The Spaces the menus offer for the targeted slot — its own list, so
+    /// an agent Space hosted by another window is neither listed nor cycled
+    /// through from here (`SpaceWindowSlot.presents`). The full list stands in
+    /// when no slot resolves, matching `currentActiveSpace`'s fallback.
+    fileprivate func currentPresentedSpaces() -> [SpaceModel] {
+        currentSpacesSlot()?.presentedSpaces ?? SpaceManager.shared.spaces
+    }
+
     /// True when the focused window is showing an agent Space that the agent
     /// currently controls (not handed off to the user). While the agent holds
     /// control, its workspace must not be mutated from the menus: New Tab and
@@ -2282,8 +2290,9 @@ extension AppController {
     }
 
     private func cycleActiveSpace(by step: Int) {
-        let spaces = SpaceManager.shared.spaces
-        guard !spaces.isEmpty, let slot = currentSpacesSlot() else { return }
+        guard let slot = currentSpacesSlot() else { return }
+        let spaces = slot.presentedSpaces
+        guard !spaces.isEmpty else { return }
         guard let currentId = slot.activeSpaceId,
               let currentIdx = spaces.firstIndex(where: { $0.spaceId == currentId }) else {
             slot.activate(spaceId: spaces[0].spaceId, userInitiated: true)
@@ -3163,7 +3172,7 @@ extension AppController {
                 // the window between the change and the rebuild.
                 guard let menuItem = item as? NSMenuItem,
                       let spaceId = menuItem.representedObject as? String,
-                      SpaceManager.shared.spaces
+                      currentPresentedSpaces()
                           .contains(where: { $0.spaceId == spaceId }) else {
                     return false
                 }

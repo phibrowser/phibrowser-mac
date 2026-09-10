@@ -198,6 +198,13 @@ import PostHog
                                                selector: #selector(spaceListDidChange),
                                                name: .spaceListDidChange,
                                                object: nil)
+        // The Spaces menu lists the focused window's own Spaces (an agent
+        // Space is listed only by the window hosting it), so its position →
+        // Space mapping has to follow the focused window, not just the list.
+        NotificationCenter.default.addObserver(self,
+                                               selector: #selector(spaceListDidChange),
+                                               name: .activeBrowserWindowDidChange,
+                                               object: nil)
         NotificationCenter.default.addObserver(self,
                                                selector: #selector(refreshBookmarksMenuVisibility),
                                                name: .activeBrowserWindowDidChange,

@@ -458,6 +458,60 @@ final class SpaceManager: ObservableObject {
     /// restore can run (`PhiAttemptSessionRestore`).
     fileprivate(set) var hasEverHostedSlotWindow = false
 
+    /// Bumped whenever any slot's window map changes (`registerWindow`,
+    /// `unregisterWindow`, `evictWindow`). Which slot hosts an agent Space's
+    /// window decides which window's switchers offer that Space
+    /// (`SpaceWindowSlot.presents`), and a strip observes only its OWN slot
+    /// and this manager — so another slot's map change has to reach it
+    /// through here. The value is never read; the publish is the signal.
+    /// The menu-bar Spaces menu is AppKit, not an observer: it caches a
+    /// position → Space mapping per rebuild, and that mapping is now per
+    /// window, so the same change also posts `spaceListDidChange`.
+    @Published private(set) var slotWindowsVersion = 0
+
+    fileprivate func noteSlotWindowsDidChange() {
+        slotWindowsVersion &+= 1
+        NotificationCenter.default.post(name: .spaceListDidChange, object: self)
+    }
+
+    /// The slot whose window map holds `spaceId`'s window, or whose spawn of
+    /// it is still in flight — nil when no slot does. An agent Space's window
+    /// lives in exactly one slot (the one its task spawned into), so for an
+    /// agent Space this names the window that presents it.
+    func slotHostingWindow(for spaceId: String) -> SpaceWindowSlot? {
+        slots.first { $0.hostsWindow(for: spaceId) }
+    }
+
+    /// Where a switch to an agent Space lands, asked from one slot.
+    enum AgentSpaceSwitchRoute: Equatable {
+        /// This slot presents the Space: it hosts the window (or is spawning
+        /// it), or no slot does — a persistent agent Space between tasks
+        /// spawns into whichever slot activates it.
+        case local
+        /// Another slot hosts the window: surface the Space there. The window
+        /// never moves between slots.
+        case surfaceInHost
+        /// Another slot is still spawning the window: nothing to surface yet,
+        /// and spawning a second window here would double the Space.
+        case dropWhileSpawning
+    }
+
+    /// The agent operates one window, and only that window shows its Space:
+    /// this is the rule behind both what a slot's switchers offer
+    /// (`SpaceWindowSlot.presents` — offered iff `.local`) and what a switch
+    /// resolved against the wrong slot does. Pure and static so the table is
+    /// pinned by `AgentSpaceSwitchRouteTests`.
+    static func agentSpaceSwitchRoute(
+        hostsWindowHere: Bool,
+        anotherSlotHostsWindow: Bool,
+        anotherSlotIsSpawning: Bool
+    ) -> AgentSpaceSwitchRoute {
+        if hostsWindowHere { return .local }
+        if anotherSlotHostsWindow { return .surfaceInHost }
+        if anotherSlotIsSpawning { return .dropWhileSpawning }
+        return .local
+    }
+
     /// The slot whose window was most recently key. Used as the default
     /// destination for Chromium-initiated windows (Cmd+N from the menu bar)
     /// and for any caller that historically asked the singleton "what's
@@ -5300,7 +5354,15 @@ final class SpaceManager: ObservableObject {
             slot = sourceSlot
             mintedSlot = false
         } else if sourceState.isKioskWindow {
-            if let existing = keySlot
+            // An agent Space's window lives in one slot and never moves (see
+            // the agent pre-hook in `SpaceWindowSlot.activate`): a Kiosk
+            // hand-off into one has to land in that slot, or the activate
+            // below is redirected there while `onSwapSettled` looks the target
+            // window up in the slot this side picked.
+            let agentHost = targetSpace.isAnyAgentSpace
+                ? slotHostingWindow(for: targetSpaceId) : nil
+            if let existing = agentHost
+                ?? keySlot
                 ?? slots.first(where: {
                     $0.windowController(for: targetSpaceId) != nil
                 })
@@ -8266,30 +8328,53 @@ final class SpaceWindowSlot: ObservableObject {
         // `activeSpaceAdoptedFromKeyEvent`). Below the guard above because an
         // activation that names a Space this side does not know changes no
         // active Space, and so supersedes nothing.
+        // Agent Space pre-hook. An agent Space's window is spawned hidden into
+        // ONE slot — the window that was key when its task started — and that
+        // slot alone presents the Space (`presents`): the other windows' strips,
+        // menus and ⌃-cycling skip it. A switch can still land here from
+        // another slot through the paths that resolve against the key slot —
+        // the handoff prompt, autoview, a CDP / AppleScript activate — and
+        // those surface the Space where it lives instead of moving its window.
+        // The window used to be evicted from the hosting slot and re-registered
+        // here; when the user had already surfaced the agent Space over there,
+        // that ripped the hosting slot's on-screen window out from under it —
+        // its own Space window was ordered out and never brought back — and
+        // the stale slot back-pointer and native tab-group membership the move
+        // left behind broke the next switch. Decided by table:
+        // `SpaceManager.agentSpaceSwitchRoute`. Above the flags below so a
+        // redirected or dropped switch changes nothing in this slot. Runs on
+        // the main thread (all activation is UI-driven), so the main-actor
+        // manager is reachable synchronously.
+        if MainActor.assumeIsolated({ AgentSpaceManager.shared.isAgentSpace(spaceId) }) {
+            switch agentSpaceSwitchRoute(for: spaceId) {
+            case .local:
+                // Mark the surface so the agent overlay mounts in watch mode.
+                MainActor.assumeIsolated {
+                    AgentSpaceManager.shared.userDidSurface(spaceId: spaceId)
+                }
+            case .surfaceInHost:
+                guard let host = manager.slotHostingWindow(for: spaceId) else {
+                    onActivationFailed?()
+                    return
+                }
+                AppLogInfo("[SpaceWindowSlot] activate(\(spaceId)): agent Space lives in another slot — surfacing it there")
+                host.activate(
+                    spaceId: spaceId,
+                    animated: animated,
+                    userInitiated: userInitiated,
+                    onActivationFailed: onActivationFailed,
+                    onSwapSettled: onSwapSettled
+                )
+                return
+            case .dropWhileSpawning:
+                AppLogInfo("[SpaceWindowSlot] activate(\(spaceId)): agent window still spawning in another slot, ignoring")
+                onActivationFailed?()
+                return
+            }
+        }
         activeSpaceAdoptedFromKeyEvent = false
         isPerformingActivate = true
         defer { isPerformingActivate = false }
-
-        // Agent Space pre-hook. An agent Space's hidden window is spawned into a
-        // single slot; if the user switches to it from a DIFFERENT slot, adopt
-        // the existing hidden window here instead of spawning a second one (a
-        // Space maps 1:1 to a Chromium window). Then mark the surface so the
-        // agent overlay mounts in watch mode. `windowsBySpaceId` is per-slot, so
-        // only adopt when another slot currently owns it. Runs on the main
-        // thread (all activation is UI-driven), so the main-actor manager is
-        // reachable synchronously.
-        MainActor.assumeIsolated {
-            guard AgentSpaceManager.shared.isAgentSpace(spaceId) else { return }
-            if windowsBySpaceId[spaceId] == nil {
-                for other in manager.slots where other !== self {
-                    if let adopted = other.evictWindow(for: spaceId) {
-                        registerWindow(adopted, for: spaceId)
-                        break
-                    }
-                }
-            }
-            AgentSpaceManager.shared.userDidSurface(spaceId: spaceId)
-        }
 
         let previousSpaceId = activeSpaceId
 
@@ -9199,11 +9284,10 @@ final class SpaceWindowSlot: ObservableObject {
             // suppresses restore around the spawn call itself), so there is no
             // burst to defer past. The old 0.6s defer only delayed the runtime
             // — and its slot-local `windowsBySpaceId` re-check silently skipped
-            // the seed whenever the user surfaced the Space from ANOTHER slot
-            // inside that window (the adopt path in `activate` evicts the
-            // controller over there). Chromium does not activate hidden
-            // windows on tab creation (TabsProxy::NewQuickLookupTab), so this
-            // cannot front the window either.
+            // the seed whenever the map had changed underneath it in the
+            // meantime. Chromium does not activate hidden windows on tab
+            // creation (TabsProxy::NewQuickLookupTab), so this cannot front the
+            // window either.
             bridge.createQuickLookupTab(withWindowId: windowIdNumber.int64Value,
                                         customGuid: nil)
             completion(id)
@@ -11265,6 +11349,7 @@ final class SpaceWindowSlot: ObservableObject {
             pendingCloseOnReplacementBySpaceId[spaceId] = existing
         }
         windowsBySpaceId[spaceId] = controller
+        manager?.noteSlotWindowsDidChange()
         // Chromium records its "recently closed" stack inside its own close
         // handshake, before AppKit reports the close, so it needs this pairing
         // up front to stamp the Space into the restore entry — that is what
@@ -11671,6 +11756,7 @@ final class SpaceWindowSlot: ObservableObject {
         // change pending rather than dropping it.
         manager?.flushPendingSlotsSnapshotPersist()
         windowsBySpaceId.removeValue(forKey: spaceId)
+        manager?.noteSlotWindowsDidChange()
         defer { manager?.pushSpaceStateToChromium() }
         // Drain the marker unconditionally so a stale entry can't poison
         // a later re-spawn of the same Space in this slot. Honor it only
@@ -12029,6 +12115,7 @@ final class SpaceWindowSlot: ObservableObject {
             NotificationCenter.default.removeObserver(token)
         }
         tabBarAccessoryObservationsByWindowId.removeValue(forKey: controller.windowId)?.invalidate()
+        manager?.noteSlotWindowsDidChange()
         manager?.pushSpaceStateToChromium()
         manager?.persistSlotsSnapshot()
         if removeSlotIfEmpty, windowsBySpaceId.isEmpty {
@@ -12191,6 +12278,51 @@ final class SpaceWindowSlot: ObservableObject {
     /// nil. Used by theme application across slots.
     func windowController(for spaceId: String) -> MainBrowserWindowController? {
         windowsBySpaceId[spaceId]
+    }
+
+    /// Whether this slot owns `spaceId`'s window — registered, or spawning
+    /// and about to register (`pendingSpawnSpaceIds`). The in-flight half is
+    /// what keeps an agent Space from being offered elsewhere during its spawn
+    /// gap, and a switch resolved against another slot in that gap from
+    /// spawning a second window for it.
+    func hostsWindow(for spaceId: String) -> Bool {
+        windowsBySpaceId[spaceId] != nil || pendingSpawnSpaceIds.contains(spaceId)
+    }
+
+    /// The route a switch to agent Space `spaceId` takes from this slot — see
+    /// `SpaceManager.agentSpaceSwitchRoute` for the rule. `slotHostingWindow`
+    /// names at most one slot: a window registers into exactly one map, and
+    /// nothing moves it between slots any more.
+    private func agentSpaceSwitchRoute(for spaceId: String) -> SpaceManager.AgentSpaceSwitchRoute {
+        guard let manager else { return .local }
+        let host = manager.slotHostingWindow(for: spaceId)
+        let hostedElsewhere = host.map { $0 !== self } ?? false
+        return SpaceManager.agentSpaceSwitchRoute(
+            hostsWindowHere: host === self,
+            anotherSlotHostsWindow: hostedElsewhere && host?.windowsBySpaceId[spaceId] != nil,
+            anotherSlotIsSpawning: hostedElsewhere && host?.windowsBySpaceId[spaceId] == nil
+        )
+    }
+
+    /// Whether this slot's switchers — the Spaces strip, the horizontal
+    /// picker, the Spaces menu, ⌃-number and next/previous cycling — offer
+    /// `space`. Every user Space is offered everywhere. An agent Space is
+    /// offered only by the slot hosting its window: the agent operates one
+    /// window, and only that window shows its Space. With no host at all (a
+    /// persistent agent Space between tasks) it is offered everywhere and
+    /// spawns into whichever slot activates it, as before. Views re-evaluate
+    /// this through `SpaceManager.slotWindowsVersion` when any slot's map
+    /// changes; the spawn gap itself publishes nothing, so a strip can offer a
+    /// brand-new agent pip for the ~100ms until its window registers — the
+    /// switch route drops such a click rather than acting on it.
+    func presents(_ space: SpaceModel) -> Bool {
+        guard space.isAnyAgentSpace else { return true }
+        return agentSpaceSwitchRoute(for: space.spaceId) == .local
+    }
+
+    /// `manager.spaces` — strip order — reduced to what this slot presents.
+    var presentedSpaces: [SpaceModel] {
+        manager?.spaces.filter { presents($0) } ?? []
     }
 
     /// The Spaces this slot currently hosts a window for. Read by
@@ -12956,8 +13088,11 @@ extension Notification.Name {
 
     /// Posted by `SpaceManager` (as the notification object) whenever the
     /// ORDER of `spaces` changes — a Space created, deleted, reordered, or an
-    /// agent Space appearing or ending. Not posted for in-place edits (rename,
-    /// icon, theme): only the position → Space mapping is at stake here.
+    /// agent Space appearing or ending — and whenever a slot's window map
+    /// changes, since which slot hosts an agent Space's window decides which
+    /// window lists it (`SpaceWindowSlot.presents`). Not posted for in-place
+    /// edits (rename, icon, theme): only the position → Space mapping is at
+    /// stake here.
     static let spaceListDidChange =
         Notification.Name("PhiSpaceListDidChange")
 }

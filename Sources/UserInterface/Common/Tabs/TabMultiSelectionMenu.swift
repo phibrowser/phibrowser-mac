@@ -230,10 +230,14 @@ enum TabMultiSelectionMenu {
             return
         }
 
-        let moveTargets = SpaceManager.shared.spaces.filter {
+        // This window's own list: an agent Space hosted by another window is
+        // not a destination offered here (`SpaceWindowSlot.presents`).
+        let offered = SpaceManager.shared.slot(forWindowId: browserState.windowId)?.presentedSpaces
+            ?? SpaceManager.shared.spaces
+        let moveTargets = offered.filter {
             browserState.canMoveMultiSelection(toSpaceId: $0.spaceId)
         }
-        let cloneTargets = SpaceManager.shared.spaces.filter {
+        let cloneTargets = offered.filter {
             browserState.canCloneMultiSelection(toSpaceId: $0.spaceId)
         }
         guard !moveTargets.isEmpty || !cloneTargets.isEmpty else { return }

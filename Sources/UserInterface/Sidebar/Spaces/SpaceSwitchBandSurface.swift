@@ -170,9 +170,11 @@ extension SpaceSwitchBandSurface {
         guard !PhiPreferences.GeneralSettings.loadLayoutMode().isTraditional,
               PhiPreferences.GeneralSettings.spacesFeatureEnabled.loadValue(),
               state.participatesInSpaces else { return }
-        let spaces = SpaceManager.shared.spaces
-        guard let slot = state.windowController?.slot ?? SpaceManager.shared.keySlot,
-              let currentId = slot.activeSpaceId,
+        guard let slot = state.windowController?.slot ?? SpaceManager.shared.keySlot else { return }
+        // The slot's own list: agent Spaces hosted by other windows are not
+        // swiped through here (`SpaceWindowSlot.presents`).
+        let spaces = slot.presentedSpaces
+        guard let currentId = slot.activeSpaceId,
               let currentIdx = spaces.firstIndex(where: { $0.spaceId == currentId }) else { return }
         let targetIdx = currentIdx + step
         guard spaces.indices.contains(targetIdx) else {

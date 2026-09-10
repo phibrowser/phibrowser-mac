@@ -742,7 +742,11 @@ extension Tab: ContextMenuRepresentable {
         guard let sourceState, !sourceState.isIncognito,
               !isBookmarkBackedTab(state: sourceState) else { return }
 
-        let targets = SpaceManager.shared.spaces.filter { $0.spaceId != sourceState.spaceId }
+        // This window's own list: an agent Space hosted by another window is
+        // not a destination offered here (`SpaceWindowSlot.presents`).
+        let offered = SpaceManager.shared.slot(forWindowId: windowId)?.presentedSpaces
+            ?? SpaceManager.shared.spaces
+        let targets = offered.filter { $0.spaceId != sourceState.spaceId }
         guard !targets.isEmpty else { return }
 
         let parent = NSMenuItem(

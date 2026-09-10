@@ -50,8 +50,17 @@ failed query as permission to collect.
 
 ## Server deletion
 
-Native deletion uses the existing Service Broker runtime, protocol negotiation,
-shared-auth snapshot, and account-specific UDS. It sends
+Native deletion reads Sentinel's component exports for each removal. The default
+route uses the existing Service Broker runtime, protocol negotiation, and
+account-specific UDS. An explicit `transport_mode: "legacy"` instead uses local
+HTTP through `APIClient` at `phi-memory.api_base`, including Sentinel's assigned
+port. The export must be a valid loopback HTTP base URL; missing or invalid
+legacy endpoints fail. Missing/unknown modes, failed IPC, or an exports lookup
+exceeding the 500 ms budget retain UDS. The deadline does not wait for blocked
+IPC to observe cancellation; late lookup results are discarded. A failed UDS
+request is not retried over HTTP.
+
+Both routes use the shared-auth snapshot and send
 `POST /v1/clear/host` to `phi-memory`, with `{ "host": "example.com" }`,
 `x-profile-id`, and the current bearer. It does not impersonate an extension.
 The account must match the service's captured account and auth must remain

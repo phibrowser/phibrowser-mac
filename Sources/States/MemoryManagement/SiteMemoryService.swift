@@ -48,6 +48,7 @@ struct SiteMemoryService: Sendable {
 
     /// Deletes server memory only. The capture owner must fence its pending
     /// events before calling this and invalidate its read cache after success.
+    /// Uses UDS unless Sentinel explicitly selects legacy local HTTP.
     func removeMemories(for host: String, profileID: String) async throws -> SiteMemoryRemovalResult {
         try await ServiceBrokerExtensionProtocol.shared.removeSiteMemories(
             host: host, profileID: profileID, accountID: accountID)

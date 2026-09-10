@@ -144,12 +144,19 @@ actor ServiceBrokerExtensionProtocol {
     private let socketPathProvider: @Sendable (String) throws -> String
     private let authSnapshotProvider: @Sendable () -> SharedAuthTokenSnapshot?
     private let transportModeReader: TransportModeReader
+    private let siteMemoryExportsProvider: @Sendable () async throws -> SentinelComponentExports
+    private let siteMemoryExportsBudgetNanoseconds: UInt64
+    private let siteMemoryLoopbackExecutor: @Sendable (BrokerHTTPRequest, String) async throws -> BrokerHTTPResponse
     private var productionRuntime: Runtime?
 
     private init() {
         injectedRuntime = nil
         socketPathProvider = Self.currentSocketPath
         authSnapshotProvider = { SharedAuthTokenStore.shared.authenticatedSnapshot() }
+        siteMemoryExportsProvider = { try await SentinelIPCClient.shared.getComponentExports() }
+        siteMemoryExportsBudgetNanoseconds = Self.nanoseconds(
+            fromMilliseconds: Self.transportModeLookupBudgetMilliseconds)
+        siteMemoryLoopbackExecutor = { try await APIClient.sendSiteMemoryLoopbackRequest($0, exportsJSON: $1) }
         transportModeReader = TransportModeReader(
             provider: { try await SentinelIPCClient.shared.getComponentExports().transportMode },
             budgetNanoseconds: Self.nanoseconds(
@@ -173,7 +180,13 @@ actor ServiceBrokerExtensionProtocol {
         transportModeBudgetMilliseconds: Int =
             ServiceBrokerExtensionProtocol.transportModeLookupBudgetMilliseconds,
         transportModeCoolDownMilliseconds: Int =
-            ServiceBrokerExtensionProtocol.transportModeLookupCoolDownMilliseconds
+            ServiceBrokerExtensionProtocol.transportModeLookupCoolDownMilliseconds,
+        siteMemoryExportsProvider: @escaping @Sendable () async throws -> SentinelComponentExports = {
+            SentinelComponentExports(exportsJSON: "{}", transportMode: .fallback)
+        },
+        siteMemoryLoopbackExecutor: @escaping @Sendable (BrokerHTTPRequest, String) async throws -> BrokerHTTPResponse = {
+            try await APIClient.sendSiteMemoryLoopbackRequest($0, exportsJSON: $1)
+        }
     ) {
         injectedRuntime = Runtime(
             accountID: runtimeAccountID,
@@ -187,6 +200,9 @@ actor ServiceBrokerExtensionProtocol {
             message: "The service broker socket is unavailable."
         ) }
         self.authSnapshotProvider = authSnapshotProvider
+        self.siteMemoryExportsProvider = siteMemoryExportsProvider
+        siteMemoryExportsBudgetNanoseconds = Self.nanoseconds(fromMilliseconds: transportModeBudgetMilliseconds)
+        self.siteMemoryLoopbackExecutor = siteMemoryLoopbackExecutor
         transportModeReader = TransportModeReader(
             provider: transportModeProvider,
             budgetNanoseconds: Self.nanoseconds(fromMilliseconds: transportModeBudgetMilliseconds),
@@ -440,10 +456,14 @@ actor ServiceBrokerExtensionProtocol {
         try SiteMemorySettingsStore.validateProfileID(profileID)
         let auth = try requireAuthenticatedSnapshot()
         guard auth.scope.accountID == accountID else { throw SiteMemoryError.accountUnavailable }
-        let runtime = try await resolveRuntime(expectedAccountID: accountID)
+        // Only an explicit legacy rollout selects HTTP. Missing, failed or timed-out
+        // exports retain UDS, matching SentinelTransportMode.fallback.
+        let exports = await TransportModeReader.race(
+            provider: siteMemoryExportsProvider,
+            budgetNanoseconds: siteMemoryExportsBudgetNanoseconds)
         try requireUnchangedAuth(auth)
         try Task.checkCancellation()
-        let response = try await runtime.requestExecutor(BrokerHTTPRequest(
+        let request = BrokerHTTPRequest(
             service: .phiMemory,
             path: "/v1/clear/host",
             method: "POST",
@@ -453,12 +473,24 @@ actor ServiceBrokerExtensionProtocol {
                 "x-profile-id": profileID
             ],
             body: try JSONEncoder().encode(["host": host])
-        ))
+        )
+        let response: BrokerHTTPResponse
+        let responseLimit: Int
+        if case .value(let exports) = exports, exports.transportMode == .legacy {
+            responseLimit = 16 * 1024 * 1024
+            response = try await siteMemoryLoopbackExecutor(request, exports.exportsJSON)
+        } else {
+            let runtime = try await resolveRuntime(expectedAccountID: accountID)
+            try requireUnchangedAuth(auth)
+            try Task.checkCancellation()
+            responseLimit = runtime.limits.nonStreamingResponseBytes
+            response = try await runtime.requestExecutor(request)
+        }
         try requireUnchangedAuth(auth)
         guard (200..<300).contains(response.statusCode) else {
             throw SiteMemoryError.serviceRejected(response.statusCode)
         }
-        guard response.body.count <= runtime.limits.nonStreamingResponseBytes else {
+        guard response.body.count <= responseLimit else {
             throw SiteMemoryError.invalidResponse
         }
         let result = try JSONDecoder().decode(SiteMemoryRemovalResult.self, from: response.body)
@@ -988,9 +1020,9 @@ actor ServiceBrokerExtensionProtocol {
     }
 }
 
-/// The three ways a bounded transport-mode read can end.
-private enum TransportModeLookupOutcome: Sendable {
-    case mode(SentinelTransportMode)
+/// The three ways a bounded Sentinel lookup can end.
+private enum SentinelLookupOutcome<Value: Sendable>: Sendable {
+    case value(Value)
     case failed(String)
     case timedOut
 }
@@ -1021,7 +1053,7 @@ private actor TransportModeReader {
     private let provider: ServiceBrokerExtensionProtocol.TransportModeProvider
     private let budgetNanoseconds: UInt64
     private let coolDownNanoseconds: UInt64
-    private var inFlight: Task<TransportModeLookupOutcome, Never>?
+    private var inFlight: Task<SentinelLookupOutcome<SentinelTransportMode>, Never>?
     private var coolDownExpiry: UInt64?
     private var lastReportedMode: SentinelTransportMode?
 
@@ -1039,7 +1071,7 @@ private actor TransportModeReader {
         guard !isCoolingDown() else { return .fallback }
 
         let lookup = inFlight ?? startLookup()
-        guard case .mode(let mode) = await lookup.value else { return .fallback }
+        guard case .value(let mode) = await lookup.value else { return .fallback }
         return mode
     }
 
@@ -1052,10 +1084,10 @@ private actor TransportModeReader {
         return true
     }
 
-    private func startLookup() -> Task<TransportModeLookupOutcome, Never> {
+    private func startLookup() -> Task<SentinelLookupOutcome<SentinelTransportMode>, Never> {
         let provider = self.provider
         let budgetNanoseconds = self.budgetNanoseconds
-        let task = Task { [self] () -> TransportModeLookupOutcome in
+        let task = Task { [self] () -> SentinelLookupOutcome<SentinelTransportMode> in
             let outcome = await Self.race(provider: provider, budgetNanoseconds: budgetNanoseconds)
             // Runs before `value` resolves for any waiter, so a completed
             // lookup is never handed to a later handshake.
@@ -1069,10 +1101,10 @@ private actor TransportModeReader {
     /// Clears the in-flight slot and does this lookup's logging — once per
     /// lookup rather than once per handshake, so the log volume is bounded by
     /// the single-flight window and the cool-down.
-    private func settle(_ outcome: TransportModeLookupOutcome) {
+    private func settle(_ outcome: SentinelLookupOutcome<SentinelTransportMode>) {
         inFlight = nil
         switch outcome {
-        case .mode(let mode):
+        case .value(let mode):
             guard mode != lastReportedMode else { return }
             lastReportedMode = mode
             AppLogDebug("[ServiceBroker] Sentinel transport mode is now \(mode.rawValue)")
@@ -1100,17 +1132,17 @@ private actor TransportModeReader {
     /// not observe task cancellation, and a task group would await that stuck
     /// child before returning — defeating the deadline. The loser is cancelled
     /// and its late answer dropped by the one-shot guard.
-    private static func race(
-        provider: @escaping ServiceBrokerExtensionProtocol.TransportModeProvider,
+    static func race<Value: Sendable>(
+        provider: @escaping @Sendable () async throws -> Value,
         budgetNanoseconds: UInt64
-    ) async -> TransportModeLookupOutcome {
+    ) async -> SentinelLookupOutcome<Value> {
         await withCheckedContinuation { (
-            continuation: CheckedContinuation<TransportModeLookupOutcome, Never>
+            continuation: CheckedContinuation<SentinelLookupOutcome<Value>, Never>
         ) in
-            let race = TransportModeLookupRace(continuation)
+            let race = SentinelLookupRace(continuation)
             let lookup = Task {
                 do {
-                    race.resume(with: .mode(try await provider()))
+                    race.resume(with: .value(try await provider()))
                 } catch {
                     race.resume(with: .failed(error.localizedDescription))
                 }
@@ -1128,17 +1160,17 @@ private actor TransportModeReader {
     }
 }
 
-/// One-shot resumption guard for the transport-mode race: whichever racer
+/// One-shot resumption guard for Sentinel lookups: whichever racer
 /// finishes first resumes the continuation and cancels the other; the loser's
 /// late call is dropped. Mirrors `OneShotResume` in
 /// `AccountDeletionLocalDataRemoval.swift`, which guards the same idiom there.
-private final class TransportModeLookupRace: @unchecked Sendable {
+private final class SentinelLookupRace<Value: Sendable>: @unchecked Sendable {
     private let lock = NSLock()
-    private var continuation: CheckedContinuation<TransportModeLookupOutcome, Never>?
+    private var continuation: CheckedContinuation<SentinelLookupOutcome<Value>, Never>?
     private var racers: [Task<Void, Never>] = []
     private var isSettled = false
 
-    init(_ continuation: CheckedContinuation<TransportModeLookupOutcome, Never>) {
+    init(_ continuation: CheckedContinuation<SentinelLookupOutcome<Value>, Never>) {
         self.continuation = continuation
     }
 
@@ -1156,7 +1188,7 @@ private final class TransportModeLookupRace: @unchecked Sendable {
         lock.unlock()
     }
 
-    func resume(with outcome: TransportModeLookupOutcome) {
+    func resume(with outcome: SentinelLookupOutcome<Value>) {
         lock.lock()
         guard !isSettled else {
             lock.unlock()

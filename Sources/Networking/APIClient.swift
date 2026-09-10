@@ -273,6 +273,41 @@ class APIClient {
         ))
     }
 
+    /// Direct local HTTP for users Sentinel has kept on the legacy transport.
+    /// Credentials and deletion scope are supplied by the native memory service.
+    static func sendSiteMemoryLoopbackRequest(
+        _ request: BrokerHTTPRequest, exportsJSON: String
+    ) async throws -> BrokerHTTPResponse {
+        let urlRequest = try siteMemoryLoopbackRequest(request, exportsJSON: exportsJSON)
+        let (data, response) = try await URLSession.shared.data(for: urlRequest)
+        guard let response = response as? HTTPURLResponse else {
+            throw SiteMemoryError.invalidResponse
+        }
+        return BrokerHTTPResponse(statusCode: response.statusCode, headers: [], body: data)
+    }
+
+    static func siteMemoryLoopbackRequest(
+        _ request: BrokerHTTPRequest, exportsJSON: String
+    ) throws -> URLRequest {
+        guard let exports = try JSONSerialization.jsonObject(with: Data(exportsJSON.utf8)) as? [String: Any],
+              let memory = exports["phi-memory"] as? [String: Any],
+              let baseURL = memory["api_base"] as? String,
+              var url = URLComponents(string: baseURL.trimmingCharacters(in: .whitespacesAndNewlines)),
+              url.scheme == "http",
+              ["127.0.0.1", "localhost", "[::1]"].contains(url.host),
+              url.user == nil, url.password == nil, url.query == nil, url.fragment == nil,
+              url.path.isEmpty || url.path == "/" else {
+            throw SiteMemoryError.invalidResponse
+        }
+        url.path = request.path
+        guard let endpoint = url.url else { throw SiteMemoryError.invalidResponse }
+        var result = URLRequest(url: endpoint)
+        result.httpMethod = request.method
+        result.allHTTPHeaderFields = request.headers
+        result.httpBody = request.body
+        return result
+    }
+
     // MARK: - Save for Later (video gist)
 
     /// Generation runs minutes of video through the backend model; the

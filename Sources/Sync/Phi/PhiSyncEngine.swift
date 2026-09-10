@@ -480,7 +480,25 @@ actor PhiSyncEngine {
         // Phase 2: cascade the data. No table copy is held across these awaits.
         for uuid in expired {
             guard !isStopped else { return }
-            try? await spaceAccess.purge(spaceId: uuid)
+            // D6：`purgeExpired` 返回的是 syncUuid，`purge` 收的是本地 id。解析不到
+            // ⇒ 无事可做（本机本来就没有这条），游标留下的 tombstone 已经在 Phase 1
+            // 写好了。
+            guard let local = await spaceAccess.localSpaceId(forSyncUuid: uuid) else { continue }
+            do {
+                try await spaceAccess.purge(spaceId: local)
+                // **purge 成功之后**才删映射行；游标留下（它是永久 tombstone 记录，
+                // 这一点只有在按 syncUuid 键时才自洽）。
+                await spaceAccess.dropSpaceMapping(forSpaceId: local)
+            } catch {
+                // 级联失败 ⇒ **映射必须留着**（R12：只记 describe 出来的那一串）。
+                // 无条件删掉是一条复活路径：`currentSpaces()` 直读本地行、不经
+                // `hiddenSpaceIds` 过滤，那条还在盘上的行会进下一趟 `pushSpaces`，
+                // 懒铸造给它铸一个**全新的** syncUuid，账户里因此多出一条谁也合不掉
+                // 的 Space；而 Phase 1 已经盖上 `purgedAtMs`，清理不会再来第二次。
+                // 留着映射就留住了「syncUuid → 已 tombstone 的游标」这条链，
+                // `snapshot` 的 eligible 过滤照旧把它排除在外。
+                AppLogWarn("[phi-sync] retention purge failed; keeping the mapping so the row cannot be republished (\(PhiSyncLog.describe(error)))")
+            }
         }
     }
 
@@ -554,8 +572,17 @@ actor PhiSyncEngine {
             await applyFirstSyncDecision(decision)
         case .retentionSweep:
             await applyRetentionSweep()
-        case .recordLocalDeletion(let spaceId):
-            runSpaceIntent { table in table.recordLocalDeletion(spaceId: spaceId) }
+        case .recordLocalDeletion(let localSpaceId):
+            // 边界翻译（§3.4）：`SpaceManager` 交来的是**本地** id，游标按 syncUuid
+            // 键。解析不到 = 从来没发布过 = 无 tombstone 可发，这与
+            // `PhiSpaceSyncTable.recordLocalDeletion` 既有的 `entityId != nil` 判据
+            // 是同一件事的两个说法。门面 `PhiSpaceSyncState.recordLocalDeletion(spaceId:)`
+            // 的签名与语义**不变**，仍收本地 id。
+            if let uuid = await spaceAccess?.syncUuid(forSpaceId: localSpaceId) {
+                runSpaceIntent { table in table.recordLocalDeletion(spaceId: uuid) }
+            } else {
+                AppLogInfo("[phi-sync] a local Space delete has no account identity; nothing to tombstone")
+            }
         case .joinAccountSync(let spaceId):
             // It was never published, so this is an ordinary create -- no special
             // path. Same work as a `.push` round, run here so the un-hide and the
@@ -564,7 +591,7 @@ actor PhiSyncEngine {
                 await push(retryOnConflict: true, allowInitialPull: true)
             }
         }
-        logSpaceRound()
+        await logSpaceRound()
     }
 
     // MARK: - §11 round counters
@@ -592,7 +619,7 @@ actor PhiSyncEngine {
     private var spaceCounters = SpaceRoundCounters()
 
     /// One info line per round, at the end of the round.
-    private func logSpaceRound() {
+    private func logSpaceRound() async {
         guard spaceSectionEnabled, spaceStore != nil else { return }
         let table = loadSpaceTable()
         let held = table.cursors.values.filter { $0.heldProfileUuid != nil }.count
@@ -602,6 +629,21 @@ actor PhiSyncEngine {
         let parked = table.firstSyncDecision == nil
             ? 0
             : table.cursors.values.filter { $0.pendingApply != nil }.count
+        // §9.3：`mapped` 是映射表的行数（不含默认 Space 的隐式常量）；`unmapped` 是
+        // 「本机同步合格、但还没有映射」的条数。**稳态应为 0**——长期非零 = 懒铸造
+        // 一直失败，这是唯一能把「这台 Mac 的某个 Space 从来没上过账户」暴露出来的
+        // 信号（D2 时代那个设置段落没了，这就是它的替代物：一个计数器，不是一个界面）。
+        // R12：两个都是计数，不是 uuid 列表。
+        // `filter` 的闭包里不能 `await`，所以映射表一次读完再在本地比。
+        var mapped = 0
+        var unmapped = 0
+        if let spaceAccess {
+            let mappings = await spaceAccess.allSpaceMappings()
+            mapped = mappings.count
+            unmapped = await spaceAccess.currentSpaces().filter {
+                $0.spaceId != LocalStore.defaultSpaceId && mappings[$0.spaceId] == nil
+            }.count
+        }
         AppLogInfo("""
             [phi-sync] spaces pulled=\(spaceCounters.pulled) applied=\(spaceCounters.applied) \
             held=\(held) parked=\(parked) refused=\(spaceCounters.refused) \
@@ -609,7 +651,8 @@ actor PhiSyncEngine {
             tombstones=\(spaceCounters.tombstones) conflicts=\(spaceCounters.conflicts) \
             drained=\(table.hasDrainedFullReplay) drain_in_progress=\(table.drainInProgress) \
             profiles_created=\(spaceCounters.profilesCreated) \
-            profile_refresh=\(spaceCounters.profileRefresh)
+            profile_refresh=\(spaceCounters.profileRefresh) \
+            mapped=\(mapped) unmapped=\(unmapped)
             """)
     }
 
@@ -1042,13 +1085,17 @@ actor PhiSyncEngine {
     /// `client_tag_hash -> space_uuid`, rebuilt once per pull. A tombstone carries no
     /// ciphertext and no `space_uuid`, and SHA1 is one-way, so a remote delete can only be
     /// identified by looking its hash up in a table this device builds from the uuids it
-    /// already knows: every cursor key, every sync-eligible local Space, and the literal
-    /// default Space (§5.2).
+    /// already knows.
+    ///
+    /// D6：种子是**游标键 ∪ 映射表的值 ∪ 常量 `"default-space"`**。映射值那一项是
+    /// 必须的：一个刚被向导映射、还没 commit 过的 Space 没有游标，而账户里那条实体
+    /// 的 tombstone 随时可能先到。**本地 Space 列表不再进种子**——D6 之后它塞进去的
+    /// 是永远不会出现在线上的本地 id，只会让索引变大且误导读者。
     private func spaceTagIndex(table: PhiSpaceSyncTable) async -> [String: String] {
         var uuids = Set(table.cursors.keys)
-        uuids.insert(LocalStore.defaultSpaceId)
+        uuids.insert(SyncableSpaces.defaultSpaceUuid)
         if let spaceAccess {
-            for space in await spaceAccess.currentSpaces() { uuids.insert(space.spaceId) }
+            for uuid in await spaceAccess.allSpaceMappings().values { uuids.insert(uuid) }
         }
         var index: [String: String] = [:]
         for uuid in uuids {
@@ -1337,12 +1384,16 @@ actor PhiSyncEngine {
 
         // One account-wide reorder after every entity landed (§7).
         if landedAny {
+            // D6 的翻译点在这里，不在 `plannedOrder` 里：`ranks` 由游标键构建
+            // （syncUuid），而 `plannedOrder` 拿 `syncedRanks[spaceId]` 与**本地** id
+            // 比。半翻译是静默失效——每次查表都是 nil，账户级重排整体变成 no-op。
             var ranks: [String: String] = [:]
             for (uuid, cursor) in table.cursors {
                 guard cursor.hidden == false, cursor.deletedAtMs == nil,
                       let bytes = cursor.reconciled,
                       let entity = try? Phi_PhiSpaceEntity(serializedBytes: bytes) else { continue }
-                ranks[uuid] = entity.rank.stringValue
+                guard let local = await spaceAccess.localSpaceId(forSyncUuid: uuid) else { continue }
+                ranks[local] = entity.rank.stringValue
             }
             // `allSpacesForOrdering()`, NOT `currentSpaces()`: the result goes
             // straight to `LocalStore.reorderSpaces`, which renumbers exactly the
@@ -1379,8 +1430,9 @@ actor PhiSyncEngine {
             guard !isStopped else { return }
             // D1: the default Space cannot be deleted locally (`deleteSpace`
             // refuses at SpaceManager.swift:1362) and by definition cannot be
-            // deleted remotely either.
-            guard item.uuid != LocalStore.defaultSpaceId else {
+            // deleted remotely either. `item.uuid` is a syncUuid, so the constant
+            // it is compared against is the syncUuid-space one (§2.4).
+            guard item.uuid != SyncableSpaces.defaultSpaceUuid else {
                 AppLogInfo("[phi-sync] ignoring a tombstone for the default Space")
                 continue
             }
@@ -1397,21 +1449,30 @@ actor PhiSyncEngine {
                 continue
             }
 
-            if await spaceAccess.isImporting(intoSpaceId: item.uuid) {
-                // No modal: nobody is there to see it. Persist the intent instead.
-                cursor.pendingTombstone = true
-                table.cursors[item.uuid] = cursor
-                continue
+            // D6：先把线上 uuid 翻成本机的行 id。**解析不到就跳过导入锁检查与
+            // hide**，直接走游标收尾——账户里那条确实被删了，这台机器只是本来就没有
+            // 它，游标必须记住，否则同一条实体的 create 重放会把它复活。
+            let localSpaceId = await spaceAccess.localSpaceId(forSyncUuid: item.uuid)
+            if let localSpaceId {
+                if await spaceAccess.isImporting(intoSpaceId: localSpaceId) {
+                    // No modal: nobody is there to see it. Persist the intent instead.
+                    cursor.pendingTombstone = true
+                    table.cursors[item.uuid] = cursor
+                    continue
+                }
+                do {
+                    // Windows first, so a window parked on this Space retreats along
+                    // the existing fallback path instead of vanishing under the user.
+                    try await spaceAccess.hide(spaceId: localSpaceId)
+                } catch {
+                    cursor.pendingTombstone = true
+                    table.cursors[item.uuid] = cursor
+                    continue
+                }
             }
-            do {
-                // Windows first, so a window parked on this Space retreats along
-                // the existing fallback path instead of vanishing under the user.
-                try await spaceAccess.hide(spaceId: item.uuid)
-            } catch {
-                cursor.pendingTombstone = true
-                table.cursors[item.uuid] = cursor
-                continue
-            }
+            // R-D6-10：**这里不删映射行**。远端软删保留映射——它是那 30 天里「这一行
+            // 属于账户的哪条实体」的唯一记录，也是 `snapshot` 的 eligible 过滤能把这
+            // 一行排除在外的唯一依据；30 天清理成功之后才删（`applyRetentionSweep`）。
             cursor.hidden = true
             cursor.deletedAtMs = now()
             cursor.pendingTombstone = false
@@ -1780,6 +1841,10 @@ actor PhiSyncEngine {
         guard !work.isEmpty else { writeSpaceTable(table); return }
 
         var conflicted: Set<String> = []
+        // R-D6-10：这一轮被账户接受的自发 tombstone。收集在
+        // `applySpaceCommitOutcome` 里，删映射在批处理循环之后——那个方法是同步的，
+        // 而映射写在主 actor 上。
+        var tombstonedThisRound: Set<String> = []
         var encryptionFailed = false
         while !work.isEmpty {
             let slice = Array(work.prefix(Self.maxCommitEntriesPerBatch))
@@ -1825,8 +1890,18 @@ actor PhiSyncEngine {
             }
             guard !isStopped else { return }
             for (item, outcome) in zip(payloads, outcomes) {
-                applySpaceCommitOutcome(outcome, for: item, table: &table, conflicted: &conflicted)
+                applySpaceCommitOutcome(outcome, for: item, table: &table,
+                                        conflicted: &conflicted,
+                                        tombstoned: &tombstonedThisRound)
             }
+        }
+        // R-D6-10：这一轮被账户接受的自发 tombstone，映射行随之删除（本地行已经没
+        // 了，映射留着只会让下一次反查交出一个不存在的 spaceId）。游标留下：它是永久
+        // tombstone 记录。收集在 `applySpaceCommitOutcome` 里，删除在这里——那个方法
+        // 是同步的，而映射写在主 actor 上。
+        for uuid in tombstonedThisRound {
+            guard let local = await spaceAccess.localSpaceId(forSyncUuid: uuid) else { continue }
+            await spaceAccess.dropSpaceMapping(forSpaceId: local)
         }
         writeSpaceTable(table)
 
@@ -1841,11 +1916,17 @@ actor PhiSyncEngine {
     }
 
     /// The five baseline write points of §6.2, in one place.
+    ///
+    /// `tombstoned` collects the uuids whose OWN tombstone the account accepted this
+    /// round (R-D6-10). It is an out-parameter for the same reason `conflicted` is:
+    /// this method is synchronous, and dropping the mapping row is a main-actor hop
+    /// the caller makes after the batch loop.
     private func applySpaceCommitOutcome(
         _ outcome: PhiCommitOutcome,
         for item: (uuid: String, entry: PhiCommitEntry, outgoing: Phi_PhiSpaceEntity?),
         table: inout PhiSpaceSyncTable,
-        conflicted: inout Set<String>
+        conflicted: inout Set<String>,
+        tombstoned: inout Set<String>
     ) {
         var cursor = table.cursors[item.uuid] ?? PhiSpaceCursor()
         let isTombstone = item.entry.deleted
@@ -1862,6 +1943,7 @@ actor PhiSyncEngine {
                 cursor.deletedAtMs = now()
                 cursor.hidden = true
                 spaceCounters.tombstones += 1
+                tombstoned.insert(item.uuid)
             } else if let outgoing = item.outgoing {
                 // BOTH baselines: updating only `server` would let the next
                 // snapshot decide the field still differs from `reconciled`,

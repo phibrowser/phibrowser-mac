@@ -68,6 +68,14 @@ final class PhiSyncEngineSpaceTests: XCTestCase {
         return entity
     }
 
+    private func rankedEntity(_ uuid: String, name: String = "Work",
+                              rank: String) -> Phi_PhiSpaceEntity {
+        var entity = spaceEntity(uuid, name: name)
+        var value = Phi_PhiSettingValue(); value.updatedAtMs = 0; value.stringValue = rank
+        entity.rank = value
+        return entity
+    }
+
     private func ciphertext(_ entity: Phi_PhiSpaceEntity) throws -> Data {
         var wrapper = Phi_PhiEntity()
         wrapper.space = entity
@@ -76,6 +84,25 @@ final class PhiSyncEngineSpaceTests: XCTestCase {
 
     private func spaceHash(_ uuid: String) -> String {
         PhiSyncEntity.clientTagHash(for: PhiSyncEntity.spaceClientTag(uuid))
+    }
+
+    /// M3-2b：游标按 syncUuid 键，本地行按本地 spaceId 键，两者由 `access` 上的
+    /// 映射表连起来。凡是带「身份」的 fixture 一律经这个辅助建，于是「这条 fixture
+    /// 到底用的哪个空间」在每一个用例里都是显式的。
+    ///
+    /// 两个位是写死的，所以**断言这两个位的反面**的 fixture 不经这里，仍手写
+    /// `PhiSpaceSyncTable()`：drain / marker 用例断言
+    /// `hasDrainedFullReplay == false`，D2 用例断言 `firstSyncDecision == nil`。
+    private func makeSpaceTable(mappings: [String: String] = [:],
+                                access: FakePhiSpaceAccess? = nil) -> PhiSpaceSyncTable {
+        access?.spaceMappings = mappings
+        var table = PhiSpaceSyncTable()
+        table.hasDrainedFullReplay = true
+        // D2 仍在（Task 9 才删）：`pushSpaces` 在 `firstSyncDecision == nil` 上直接
+        // 返回，而 pull 会把整批实体停到 `pendingApply` 并跳过 `applySpaces` /
+        // `applySpaceTombstones`。既有用例一律手写这一行，helper 收编它。
+        table.firstSyncDecision = "keepBoth"
+        return table
     }
 
     /// `settings: []` is NOT cosmetic. Without it the engine builds against the
@@ -328,13 +355,12 @@ final class PhiSyncEngineSpaceTests: XCTestCase {
     func testNotMyBirthdayClearsServerTriplesAndGuardsButKeepsReconciled() async throws {
         let access = FakePhiSpaceAccess()
         let store = MemorySpaceStore()
+        store.table = makeSpaceTable(access: access)
         var cursor = PhiSpaceCursor()
         cursor.entityId = "srv-1"; cursor.version = 9
         cursor.reconciled = Data([0x01]); cursor.server = Data([0x02])
         cursor.deleteRejectRounds = 2
-        store.table.cursors["u1"] = cursor
-        store.table.firstSyncDecision = "keepBoth"
-        store.table.hasDrainedFullReplay = true
+        store.table.cursors["sync-1"] = cursor
         store.table.unreadableTagHashes["h"] = 1
 
         let client = FakePhiSyncClient()
@@ -343,7 +369,7 @@ final class PhiSyncEngineSpaceTests: XCTestCase {
         await engine.setSpaceSyncEnabled(true)
         await engine.pullOnce()
 
-        let after = try XCTUnwrap(store.table.cursors["u1"])
+        let after = try XCTUnwrap(store.table.cursors["sync-1"])
         XCTAssertNil(after.entityId)
         XCTAssertEqual(after.version, 0)
         XCTAssertNil(after.server)
@@ -363,17 +389,17 @@ final class PhiSyncEngineSpaceTests: XCTestCase {
     func testHandleLocalSpacesChangeRunsAPushRound() async throws {
         let access = FakePhiSpaceAccess()
         access.uuidByProfileId = ["Default": "uuid-a"]
-        access.spaces = [PhiLocalSpace(spaceId: "u1", profileId: "Default", name: "Work",
+        access.spaces = [PhiLocalSpace(spaceId: "LOCAL-1", profileId: "Default", name: "Work",
                                        colorHex: "#3A6FF8", iconName: "emoji:1F4BC", sortOrder: 0,
                                        createdDate: Date(timeIntervalSince1970: 1),
                                        themeId: nil, opacityLight: nil, opacityDark: nil)]
         let store = MemorySpaceStore()
-        store.table.hasDrainedFullReplay = true
         // `pushSpaces` refuses to publish anything until D2 has been answered
         // (§8). Task 13 is what sets this automatically ("no local-only Spaces"
         // or "empty account" -> keepBoth); until then every push-side fixture
-        // seeds it explicitly, or it asserts commits that can never happen.
-        store.table.firstSyncDecision = "keepBoth"
+        // seeds it through `makeSpaceTable`, or it asserts commits that can
+        // never happen.
+        store.table = makeSpaceTable(mappings: ["LOCAL-1": "sync-1"], access: access)
         let client = FakePhiSyncClient()
         let engine = makeEngine(access: access, store: store, client: client)
         await engine.setSpaceSyncEnabled(true)
@@ -383,8 +409,9 @@ final class PhiSyncEngineSpaceTests: XCTestCase {
         XCTAssertFalse(client.getUpdatesCalls.isEmpty)
         // ...and with Task 9 Step 4.0/4.1 in place the trigger now reaches
         // `pushSpaces`: `push` runs the settings half and then the Space half
-        // unconditionally, so the one local Space is published this round.
-        XCTAssertEqual(spaceCommits(client).count, 1)
+        // unconditionally, so the one local Space is published this round --
+        // under its mapped syncUuid, never under the local row id.
+        XCTAssertEqual(spaceCommits(client).map(\.clientTagHash), [spaceHash("sync-1")])
     }
 
     // MARK: - Durability of the Space-side state (fix round 1)
@@ -557,26 +584,26 @@ final class PhiSyncEngineSpaceTests: XCTestCase {
     func testARemoteRebindGoesThroughRebindAndNotARawFieldWrite() async throws {
         let access = FakePhiSpaceAccess()
         access.profileIdByUuid = ["uuid-b": "Profile 3"]
-        access.spaces = [PhiLocalSpace(spaceId: "u1", profileId: "Default", name: "Work",
+        access.spaces = [PhiLocalSpace(spaceId: "LOCAL-1", profileId: "Default", name: "Work",
                                        colorHex: "#3A6FF8", iconName: "emoji:1F4BC", sortOrder: 0,
                                        createdDate: Date(timeIntervalSince1970: 1),
                                        themeId: nil, opacityLight: nil, opacityDark: nil)]
         let store = MemorySpaceStore()
+        store.table = makeSpaceTable(mappings: ["LOCAL-1": "sync-1"], access: access)
         var seeded = PhiSpaceCursor()
         seeded.entityId = "srv-1"; seeded.version = 3
-        seeded.reconciled = try spaceEntity("u1").serializedData()
+        seeded.reconciled = try spaceEntity("sync-1").serializedData()
         seeded.server = seeded.reconciled
-        store.table.cursors["u1"] = seeded
-        store.table.hasDrainedFullReplay = true
+        store.table.cursors["sync-1"] = seeded
 
         let client = FakePhiSyncClient()
-        var rebound = spaceEntity("u1", profileUuid: "uuid-b")
+        var rebound = spaceEntity("sync-1", profileUuid: "uuid-b")
         rebound.profileUuid.updatedAtMs = 500
-        client.seed(tagHash: spaceHash("u1"), ciphertext: try ciphertext(rebound), version: 8)
+        client.seed(tagHash: spaceHash("sync-1"), ciphertext: try ciphertext(rebound), version: 8)
         let engine = makeEngine(access: access, store: store, client: client)
         await engine.setSpaceSyncEnabled(true)
         await engine.pullOnce()
-        XCTAssertTrue(access.calls.contains(.rebind(spaceId: "u1", toProfileId: "Profile 3")))
+        XCTAssertTrue(access.calls.contains(.rebind(spaceId: "LOCAL-1", toProfileId: "Profile 3")))
     }
 
     /// §6.2 A0 / §3.6's "唯一的例外, 也是死映射的唯一自愈路径". The reverse
@@ -597,7 +624,11 @@ final class PhiSyncEngineSpaceTests: XCTestCase {
 
         XCTAssertEqual(access.droppedMappings, ["P-deleted"],
                        "removeMapping(forProfileId:) must fire exactly once")
-        XCTAssertTrue(access.calls.filter { $0 == .create("u1") }.isEmpty)
+        // D6: the local row id is minted by `land`, so naming one here would be
+        // an assertion that can never fail. Ask for "no create at all" instead.
+        XCTAssertTrue(access.calls.filter {
+            if case .create = $0 { return true } else { return false }
+        }.isEmpty)
         XCTAssertTrue(access.calls.filter {
             if case .rebind = $0 { return true } else { return false }
         }.isEmpty)
@@ -625,28 +656,27 @@ final class PhiSyncEngineSpaceTests: XCTestCase {
         access.uuidByProfileId = ["Default": "uuid-a"]
         access.profileIdByUuid = ["uuid-a": "Default"]
         access.knownLocalProfileIds = ["Default"]
-        access.spaces = [PhiLocalSpace(spaceId: "u1", profileId: "Default", name: "Work",
+        access.spaces = [PhiLocalSpace(spaceId: "LOCAL-1", profileId: "Default", name: "Work",
                                        colorHex: "#3A6FF8", iconName: "emoji:1F4BC", sortOrder: 0,
                                        createdDate: Date(timeIntervalSince1970: 1),
                                        themeId: nil, opacityLight: nil, opacityDark: nil)]
         let store = MemorySpaceStore()
+        store.table = makeSpaceTable(mappings: ["LOCAL-1": "sync-1"], access: access)
         var seeded = PhiSpaceCursor()
         seeded.entityId = "srv-1"; seeded.version = 3
-        seeded.reconciled = try spaceEntity("u1").serializedData()
+        seeded.reconciled = try spaceEntity("sync-1").serializedData()
         seeded.server = seeded.reconciled
-        store.table.cursors["u1"] = seeded
-        store.table.hasDrainedFullReplay = true
-        store.table.firstSyncDecision = "keepBoth"
+        store.table.cursors["sync-1"] = seeded
 
         let client = FakePhiSyncClient()
-        var rebound = spaceEntity("u1", profileUuid: "uuid-新")
+        var rebound = spaceEntity("sync-1", profileUuid: "uuid-新")
         rebound.profileUuid.updatedAtMs = 500
-        client.seed(tagHash: spaceHash("u1"), ciphertext: try ciphertext(rebound), version: 8)
+        client.seed(tagHash: spaceHash("sync-1"), ciphertext: try ciphertext(rebound), version: 8)
         let engine = makeEngine(access: access, store: store, client: client)
         await engine.setSpaceSyncEnabled(true)
         await engine.pullOnce()
-        XCTAssertEqual(store.table.cursors["u1"]?.heldProfileUuid, "uuid-新")
-        XCTAssertEqual(store.table.cursors["u1"]?.heldForLocalProfileId, "Default")
+        XCTAssertEqual(store.table.cursors["sync-1"]?.heldProfileUuid, "uuid-新")
+        XCTAssertEqual(store.table.cursors["sync-1"]?.heldForLocalProfileId, "Default")
         XCTAssertTrue(spaceCommits(client).isEmpty, "a held binding never produces a commit")
 
         // §3.6 creates the profile on the next round. Driven directly here for
@@ -655,9 +685,9 @@ final class PhiSyncEngineSpaceTests: XCTestCase {
         access.uuidByProfileId["P-new"] = "uuid-新"
         access.knownLocalProfileIds = ["Default", "P-new"]
         await engine.pullOnce()
-        XCTAssertTrue(access.calls.contains(.rebind(spaceId: "u1", toProfileId: "P-new")))
-        XCTAssertNil(store.table.cursors["u1"]?.heldProfileUuid)
-        XCTAssertNil(store.table.cursors["u1"]?.heldForLocalProfileId)
+        XCTAssertTrue(access.calls.contains(.rebind(spaceId: "LOCAL-1", toProfileId: "P-new")))
+        XCTAssertNil(store.table.cursors["sync-1"]?.heldProfileUuid)
+        XCTAssertNil(store.table.cursors["sync-1"]?.heldForLocalProfileId)
         XCTAssertTrue(spaceCommits(client).isEmpty,
                       "landing the held value is convergence, not a new local edit")
     }
@@ -677,6 +707,15 @@ final class PhiSyncEngineSpaceTests: XCTestCase {
                                        colorHex: "#3A6FF8", iconName: "emoji:1F4BC", sortOrder: 0,
                                        createdDate: Date(timeIntervalSince1970: 1),
                                        themeId: nil, opacityLight: nil, opacityDark: nil)]
+        // D6：这一条 fixture 里本地行 id 与 syncUuid **故意**是同一个串，映射行显式
+        // 写出来。理由不是省事：本用例要的是「D2 未答」这一个状态（下面那段注释），
+        // 而 D2 的 `localOnly` 仍用**本地** id 去索引按 syncUuid 键的表
+        // （`pull` 里那段 `spaceTable.cursors[$0.spaceId]`，Task 9 的删除清单）。
+        // 两个键空间一旦分开，那半句
+        // 就把这一行算成 local-only、整批实体被停到 `pendingApply`，`applySpaces`
+        // 根本不会跑，本用例测的 held 再入路径就没了。Task 9 删掉 D2 之后这里可以
+        // 换成正常的 `LOCAL-1` / `sync-1`。
+        access.spaceMappings = ["u1": "u1"]
         let store = MemorySpaceStore()
         // This device holds the account's rename and has not published it yet.
         var baseline = spaceEntity("u1", name: "Work2")
@@ -768,34 +807,33 @@ final class PhiSyncEngineSpaceTests: XCTestCase {
         let access = FakePhiSpaceAccess()
         access.uuidByProfileId = ["Default": "uuid-a", "Profile 3": "uuid-b"]
         access.profileIdByUuid = ["uuid-a": "Default", "uuid-b": "Profile 3"]
-        access.spaces = [PhiLocalSpace(spaceId: "u1", profileId: "Default", name: "Work2",
+        access.spaces = [PhiLocalSpace(spaceId: "LOCAL-1", profileId: "Default", name: "Work2",
                                        colorHex: "#3A6FF8", iconName: "emoji:1F4BC", sortOrder: 0,
                                        createdDate: Date(timeIntervalSince1970: 1),
                                        themeId: nil, opacityLight: nil, opacityDark: nil)]
         let store = MemorySpaceStore()
+        store.table = makeSpaceTable(mappings: ["LOCAL-1": "sync-1"], access: access)
         // This account renamed the Space to "Work2" and this device has the
         // rename in its baseline; the row on the server is still the older one.
-        var baseline = spaceEntity("u1", name: "Work2")
+        var baseline = spaceEntity("sync-1", name: "Work2")
         baseline.name.updatedAtMs = 800
         var seeded = PhiSpaceCursor()
         seeded.entityId = "srv-1"; seeded.version = 3
         seeded.reconciled = try baseline.serializedData()
-        seeded.server = try spaceEntity("u1", name: "Work").serializedData()
-        store.table.cursors["u1"] = seeded
-        store.table.hasDrainedFullReplay = true
-        store.table.firstSyncDecision = "keepBoth"   // Task 13 sets this automatically
+        seeded.server = try spaceEntity("sync-1", name: "Work").serializedData()
+        store.table.cursors["sync-1"] = seeded
 
         let client = FakePhiSyncClient()
         // A peer that has not seen the rename rebinds the Space: its own `name`
         // is still "Work" at the older timestamp, so the merge keeps "Work2".
-        var rebound = spaceEntity("u1", name: "Work", profileUuid: "uuid-b")
+        var rebound = spaceEntity("sync-1", name: "Work", profileUuid: "uuid-b")
         rebound.profileUuid.updatedAtMs = 900
-        client.seed(tagHash: spaceHash("u1"), ciphertext: try ciphertext(rebound), version: 9)
+        client.seed(tagHash: spaceHash("sync-1"), ciphertext: try ciphertext(rebound), version: 9)
         let engine = makeEngine(access: access, store: store, client: client)
         await engine.setSpaceSyncEnabled(true)
         await engine.pullOnce()
 
-        XCTAssertEqual(store.table.cursors["u1"]!.server,
+        XCTAssertEqual(store.table.cursors["sync-1"]!.server,
                        try rebound.serializedData(),
                        "server must be the entity we pulled, not the merge result")
         let commits = spaceCommits(client)
@@ -814,13 +852,12 @@ final class PhiSyncEngineSpaceTests: XCTestCase {
     func testAnUnreadableSettingsEntityDoesNotStopSpaceCommits() async throws {
         let access = FakePhiSpaceAccess()
         access.uuidByProfileId = ["Default": "uuid-a"]
-        access.spaces = [PhiLocalSpace(spaceId: "u1", profileId: "Default", name: "Work",
+        access.spaces = [PhiLocalSpace(spaceId: "LOCAL-1", profileId: "Default", name: "Work",
                                        colorHex: "#3A6FF8", iconName: "emoji:1F4BC", sortOrder: 0,
                                        createdDate: Date(timeIntervalSince1970: 1),
                                        themeId: nil, opacityLight: nil, opacityDark: nil)]
         let store = MemorySpaceStore()
-        store.table.hasDrainedFullReplay = true
-        store.table.firstSyncDecision = "keepBoth"
+        store.table = makeSpaceTable(mappings: ["LOCAL-1": "sync-1"], access: access)
         let client = FakePhiSyncClient()
         // A settings entity this build cannot open: the pull records the id but
         // no baseline, so `maySettingsPublish` goes false and `pushSettings`
@@ -845,13 +882,12 @@ final class PhiSyncEngineSpaceTests: XCTestCase {
     func testARoundWithNoSettingsChangeStillCommitsARenamedSpace() async throws {
         let access = FakePhiSpaceAccess()
         access.uuidByProfileId = ["Default": "uuid-a"]
-        access.spaces = [PhiLocalSpace(spaceId: "u1", profileId: "Default", name: "Work",
+        access.spaces = [PhiLocalSpace(spaceId: "LOCAL-1", profileId: "Default", name: "Work",
                                        colorHex: "#3A6FF8", iconName: "emoji:1F4BC", sortOrder: 0,
                                        createdDate: Date(timeIntervalSince1970: 1),
                                        themeId: nil, opacityLight: nil, opacityDark: nil)]
         let store = MemorySpaceStore()
-        store.table.hasDrainedFullReplay = true
-        store.table.firstSyncDecision = "keepBoth"
+        store.table = makeSpaceTable(mappings: ["LOCAL-1": "sync-1"], access: access)
         let client = FakePhiSyncClient()
         let engine = makeEngine(access: access, store: store, client: client)
         await engine.setSpaceSyncEnabled(true)
@@ -878,11 +914,14 @@ final class PhiSyncEngineSpaceTests: XCTestCase {
                           colorHex: "#3A6FF8", iconName: "phi:x", sortOrder: 0,
                           createdDate: Date(timeIntervalSince1970: 1),
                           themeId: nil, opacityLight: nil, opacityDark: nil),
-            PhiLocalSpace(spaceId: "u2", profileId: "Default", name: "Reading",
+            PhiLocalSpace(spaceId: "LOCAL-2", profileId: "Default", name: "Reading",
                           colorHex: "#111111", iconName: "phi:y", sortOrder: 1,
                           createdDate: Date(timeIntervalSince1970: 2),
                           themeId: nil, opacityLight: nil, opacityDark: nil),
         ]
+        // Not `makeSpaceTable`: the drain assertion below is only worth
+        // anything while `hasDrainedFullReplay` starts false.
+        access.spaceMappings = ["LOCAL-2": "sync-2"]
         let store = MemorySpaceStore()
         store.table.firstSyncDecision = "keepBoth"   // Task 13 sets this automatically
         let client = FakePhiSyncClient()
@@ -896,7 +935,7 @@ final class PhiSyncEngineSpaceTests: XCTestCase {
         let hashes = Set(spaceCommits(client).map(\.clientTagHash))
         XCTAssertFalse(hashes.contains(defaultHash),
                        "a version-0 create here takes the server's ON CONFLICT DO UPDATE path and destroys the account's row")
-        XCTAssertTrue(hashes.contains(spaceHash("u2")), "the readable Spaces still sync")
+        XCTAssertTrue(hashes.contains(spaceHash("sync-2")), "the readable Spaces still sync")
 
         // Once the entity becomes readable again the refusal lifts by itself.
         client.reseed(tagHash: defaultHash,
@@ -910,21 +949,20 @@ final class PhiSyncEngineSpaceTests: XCTestCase {
     func testALocalDeleteEmitsOneTombstoneAndFinalizesOnSuccess() async throws {
         let access = FakePhiSpaceAccess()
         let store = MemorySpaceStore()
+        store.table = makeSpaceTable(access: access)
         var cursor = PhiSpaceCursor()
         cursor.entityId = "srv-1"; cursor.version = 6
-        cursor.reconciled = try spaceEntity("u1").serializedData()
+        cursor.reconciled = try spaceEntity("sync-1").serializedData()
         cursor.server = cursor.reconciled
         cursor.pendingDelete = true
-        store.table.cursors["u1"] = cursor
-        store.table.hasDrainedFullReplay = true
-        store.table.firstSyncDecision = "keepBoth"   // Task 13 sets this automatically
+        store.table.cursors["sync-1"] = cursor
         let client = FakePhiSyncClient()
         // The row the cursor points at, already tombstoned: the fake's update
         // path THROWS on a missing row, which would abandon the whole batch
         // before any outcome was applied. Seeding it as a tombstone also keeps
         // the pull that precedes the push free of side effects — a deleted
         // entity is routed to `batch.tombstones`, whose apply path is Task 14.
-        client.seed(tagHash: spaceHash("u1"), ciphertext: Data(),
+        client.seed(tagHash: spaceHash("sync-1"), ciphertext: Data(),
                     version: 6, entityId: "srv-1", deleted: true)
         let engine = makeEngine(access: access, store: store, client: client)
         await engine.setSpaceSyncEnabled(true)
@@ -935,7 +973,7 @@ final class PhiSyncEngineSpaceTests: XCTestCase {
         XCTAssertTrue(commits[0].deleted)
         XCTAssertNil(commits[0].ciphertext)
         XCTAssertEqual(commits[0].name, PhiSyncEntity.spaceEntityName)
-        let after = try XCTUnwrap(store.table.cursors["u1"])
+        let after = try XCTUnwrap(store.table.cursors["sync-1"])
         XCTAssertFalse(after.pendingDelete)
         XCTAssertNotNil(after.deletedAtMs)
         XCTAssertNil(after.reconciled)
@@ -946,23 +984,22 @@ final class PhiSyncEngineSpaceTests: XCTestCase {
     func testARejectedTombstoneIsResentUnchangedAndOnlyGivesUpAfterThree() async throws {
         let access = FakePhiSpaceAccess()
         let store = MemorySpaceStore()
+        store.table = makeSpaceTable(access: access)
         var cursor = PhiSpaceCursor()
         cursor.entityId = "srv-1"; cursor.version = 6
-        cursor.reconciled = try spaceEntity("u1").serializedData()
+        cursor.reconciled = try spaceEntity("sync-1").serializedData()
         cursor.server = cursor.reconciled
         cursor.pendingDelete = true
-        store.table.cursors["u1"] = cursor
-        store.table.hasDrainedFullReplay = true
-        store.table.firstSyncDecision = "keepBoth"   // Task 13 sets this automatically
+        store.table.cursors["sync-1"] = cursor
         let client = FakePhiSyncClient()
-        client.seed(tagHash: spaceHash("u1"), ciphertext: Data(),
+        client.seed(tagHash: spaceHash("sync-1"), ciphertext: Data(),
                     version: 6, entityId: "srv-1", deleted: true)
         client.forceInvalidMessage = true
         let engine = makeEngine(access: access, store: store, client: client)
         await engine.setSpaceSyncEnabled(true)
 
         await engine.pushLocalSettings()
-        var after = try XCTUnwrap(store.table.cursors["u1"])
+        var after = try XCTUnwrap(store.table.cursors["sync-1"])
         XCTAssertTrue(after.pendingDelete, "INVALID_MESSAGE does not prove the row is gone")
         XCTAssertEqual(after.deleteRejectRounds, 1)
         XCTAssertNil(after.deletedAtMs)
@@ -970,7 +1007,7 @@ final class PhiSyncEngineSpaceTests: XCTestCase {
 
         client.forceInvalidMessage = false
         await engine.pushLocalSettings()
-        after = try XCTUnwrap(store.table.cursors["u1"])
+        after = try XCTUnwrap(store.table.cursors["sync-1"])
         XCTAssertFalse(after.pendingDelete)
         XCTAssertEqual(after.deleteRejectRounds, 0)
         XCTAssertNotNil(after.deletedAtMs)
@@ -982,19 +1019,18 @@ final class PhiSyncEngineSpaceTests: XCTestCase {
     func testThreeRejectionsFinalizeTheDeleteAndStopResending() async throws {
         let access = FakePhiSpaceAccess()
         let store = MemorySpaceStore()
+        store.table = makeSpaceTable(access: access)
         var cursor = PhiSpaceCursor()
         cursor.entityId = "srv-1"; cursor.version = 6
         cursor.pendingDelete = true
-        store.table.cursors["u1"] = cursor
-        store.table.hasDrainedFullReplay = true
-        store.table.firstSyncDecision = "keepBoth"   // Task 13 sets this automatically
+        store.table.cursors["sync-1"] = cursor
         let client = FakePhiSyncClient()
         client.forceInvalidMessage = true
         let engine = makeEngine(access: access, store: store, client: client)
         await engine.setSpaceSyncEnabled(true)
         for _ in 0..<3 { await engine.pushLocalSettings() }
-        XCTAssertFalse(store.table.cursors["u1"]!.pendingDelete)
-        XCTAssertNotNil(store.table.cursors["u1"]!.deletedAtMs)
+        XCTAssertFalse(store.table.cursors["sync-1"]!.pendingDelete)
+        XCTAssertNotNil(store.table.cursors["sync-1"]!.deletedAtMs)
         let sent = spaceCommits(client).count
         await engine.pushLocalSettings()
         XCTAssertEqual(spaceCommits(client).count, sent, "no per-round resend loop")
@@ -1003,11 +1039,10 @@ final class PhiSyncEngineSpaceTests: XCTestCase {
     func testAPendingDeleteWithNoEntityIdIsDroppedBeforeItIsSent() async throws {
         let access = FakePhiSpaceAccess()
         let store = MemorySpaceStore()
+        store.table = makeSpaceTable(access: access)
         var cursor = PhiSpaceCursor()
         cursor.pendingDelete = true      // never published: no entityId, version 0
         store.table.cursors["ghost"] = cursor
-        store.table.hasDrainedFullReplay = true
-        store.table.firstSyncDecision = "keepBoth"   // Task 13 sets this automatically
         let client = FakePhiSyncClient()
         let engine = makeEngine(access: access, store: store, client: client)
         await engine.setSpaceSyncEnabled(true)
@@ -1023,27 +1058,27 @@ final class PhiSyncEngineSpaceTests: XCTestCase {
         let access = FakePhiSpaceAccess()
         access.uuidByProfileId = ["Default": "uuid-a"]
         access.spaces = (1...3).map { i in
-            PhiLocalSpace(spaceId: "u\(i)", profileId: "Default", name: "S\(i)",
+            PhiLocalSpace(spaceId: "LOCAL-\(i)", profileId: "Default", name: "S\(i)",
                           colorHex: "#3A6FF8", iconName: "phi:x", sortOrder: i,
                           createdDate: Date(timeIntervalSince1970: TimeInterval(i)),
                           themeId: nil, opacityLight: nil, opacityDark: nil)
         }
         let store = MemorySpaceStore()
-        store.table.hasDrainedFullReplay = true
-        store.table.firstSyncDecision = "keepBoth"   // Task 13 sets this automatically
+        store.table = makeSpaceTable(mappings: ["LOCAL-1": "sync-1", "LOCAL-2": "sync-2",
+                                                "LOCAL-3": "sync-3"], access: access)
         let client = FakePhiSyncClient()
-        client.conflictOnceForTagHashes = [spaceHash("u2")]
+        client.conflictOnceForTagHashes = [spaceHash("sync-2")]
         let engine = makeEngine(access: access, store: store, client: client)
         await engine.setSpaceSyncEnabled(true)
         await engine.pushLocalSettings()
 
-        XCTAssertNotNil(store.table.cursors["u1"]?.server)
-        XCTAssertNotNil(store.table.cursors["u3"]?.server)
-        XCTAssertNotNil(store.table.cursors["u2"]?.server, "the conflicting one is retried, not dropped")
+        XCTAssertNotNil(store.table.cursors["sync-1"]?.server)
+        XCTAssertNotNil(store.table.cursors["sync-3"]?.server)
+        XCTAssertNotNil(store.table.cursors["sync-2"]?.server, "the conflicting one is retried, not dropped")
         // The retry is SCOPED: only the conflicting uuid goes back through the
         // wire, not the whole batch recomputed from scratch.
-        XCTAssertEqual(spaceCommits(client).filter { $0.clientTagHash == spaceHash("u2") }.count, 2)
-        for uuid in ["u1", "u3"] {
+        XCTAssertEqual(spaceCommits(client).filter { $0.clientTagHash == spaceHash("sync-2") }.count, 2)
+        for uuid in ["sync-1", "sync-3"] {
             XCTAssertEqual(spaceCommits(client).filter { $0.clientTagHash == spaceHash(uuid) }.count, 1,
                            "\(uuid) already succeeded and must not be re-sent")
         }
@@ -1060,10 +1095,10 @@ final class PhiSyncEngineSpaceTests: XCTestCase {
         // of the comparison below are 0 whatever the apply path wrote — the test
         // would pass over re-stamped fields, wrong baselines and a push on every
         // round alike.
-        store.table.firstSyncDecision = "keepBoth"   // Task 13 sets this automatically
+        store.table = makeSpaceTable(access: access)
         let client = FakePhiSyncClient()
-        client.seed(tagHash: spaceHash("u1"),
-                    ciphertext: try ciphertext(spaceEntity("u1")), version: 7)
+        client.seed(tagHash: spaceHash("sync-1"),
+                    ciphertext: try ciphertext(spaceEntity("sync-1")), version: 7)
         let engine = makeEngine(access: access, store: store, client: client)
         await engine.setSpaceSyncEnabled(true)
         await engine.pullOnce()
@@ -1087,14 +1122,17 @@ final class PhiSyncEngineSpaceTests: XCTestCase {
         access.uuidByProfileId = ["Default": "uuid-a"]
         access.profileIdByUuid = ["uuid-a": "Default"]
         let store = MemorySpaceStore()
-        store.table.firstSyncDecision = "keepBoth"
+        store.table = makeSpaceTable(access: access)
         let client = FakePhiSyncClient()
-        client.seed(tagHash: spaceHash("u1"),
-                    ciphertext: try ciphertext(spaceEntity("u1")), version: 7)
+        client.seed(tagHash: spaceHash("sync-1"),
+                    ciphertext: try ciphertext(spaceEntity("sync-1")), version: 7)
         let engine = makeEngine(access: access, store: store, client: client)
         await engine.setSpaceSyncEnabled(true)
         await engine.pullOnce()
-        XCTAssertTrue(access.calls.contains(.create("u1")), "the apply is what arms the echo")
+        // D6: the created row's id is minted by `land`, so the assertion asks for
+        // "a create happened", not for a particular id.
+        XCTAssertTrue(access.calls.contains { if case .create = $0 { return true } else { return false } },
+                      "the apply is what arms the echo")
 
         let callsAfterApply = access.calls.count
         // Twice: the debounce coalesces a burst into one round, but a second burst (a theme
@@ -1203,7 +1241,8 @@ final class PhiSyncEngineSpaceTests: XCTestCase {
     func testAFailedRefreshParksTheUnknownBindingAndLandsItNextRound() async throws {
         let access = FakePhiSpaceAccess()
         let store = MemorySpaceStore()
-        store.table.firstSyncDecision = "keepBoth"   // otherwise the push guard hides the point
+        // otherwise the push guard hides the point
+        store.table = makeSpaceTable(access: access)
         let client = FakePhiSyncClient()
         access.refreshOutcome = .failed
         client.seed(tagHash: PhiSyncEntity.clientTagHash(for: PhiSyncEntity.spaceClientTag("u1")),
@@ -1211,7 +1250,9 @@ final class PhiSyncEngineSpaceTests: XCTestCase {
         let engine = makeEngine(access: access, store: store, client: client)
         await engine.setSpaceSyncEnabled(true)
         await engine.pullOnce()
-        XCTAssertTrue(access.calls.filter { $0 == .create("u1") }.isEmpty)
+        XCTAssertTrue(access.calls.filter {
+            if case .create = $0 { return true } else { return false }
+        }.isEmpty)
         XCTAssertNil(store.table.cursors["u1"]?.reconciled)
         XCTAssertNotNil(store.table.cursors["u1"]?.pendingApply)
         XCTAssertTrue(spaceCommits(client).isEmpty,
@@ -1316,6 +1357,10 @@ final class PhiSyncEngineSpaceTests: XCTestCase {
                       "M3-2 does not sync bookmarks; deleting here would destroy the only copy")
         XCTAssertTrue(access.currentSpaces().contains { $0.spaceId == "mine" })
         XCTAssertTrue(access.calls.contains(.hide("mine")))
+        // D2 residue: `applyFirstSyncDecision` still keys its hidden set by LOCAL
+        // spaceId (PhiSyncEngine.swift, Task 9's deletion list), so this assertion
+        // names the local id. It is the one D2 path Task 4 deliberately leaves
+        // untranslated.
         XCTAssertFalse(client.commits.contains {
             $0.clientTagHash == PhiSyncEntity.clientTagHash(for: PhiSyncEntity.spaceClientTag("mine"))
         })
@@ -1335,8 +1380,11 @@ final class PhiSyncEngineSpaceTests: XCTestCase {
         await engine.setSpaceSyncEnabled(true)
         await engine.pullOnce()
         await engine.submitFirstSyncDecision(.keepBoth)
+        // R-D6-7's lazy mint: the local-only Space reaches the account under the
+        // syncUuid `ensureMapped` minted for it, never under its local row id.
+        XCTAssertEqual(access.spaceMappings["mine"], "sync-mine")
         XCTAssertTrue(client.commits.contains {
-            $0.clientTagHash == PhiSyncEntity.clientTagHash(for: PhiSyncEntity.spaceClientTag("mine"))
+            $0.clientTagHash == PhiSyncEntity.clientTagHash(for: PhiSyncEntity.spaceClientTag("sync-mine"))
         })
         XCTAssertNil(store.table.cursors["theirs"]?.pendingApply, "the parked entity lands on the answer")
     }
@@ -1367,7 +1415,8 @@ final class PhiSyncEngineSpaceTests: XCTestCase {
         access.spaces.append(localSpace("later", "Client", order: 2))
         await engine.handleLocalSpacesChange()
         XCTAssertTrue(client.commits.contains {
-            $0.clientTagHash == PhiSyncEntity.clientTagHash(for: PhiSyncEntity.spaceClientTag("later"))
+            $0.clientTagHash == PhiSyncEntity.clientTagHash(
+                for: PhiSyncEntity.spaceClientTag("sync-later"))
         })
     }
 
@@ -1400,27 +1449,26 @@ final class PhiSyncEngineSpaceTests: XCTestCase {
 
     func testARemoteTombstoneSoftDeletesAndKeepsEveryRowOnDisk() async throws {
         let access = FakePhiSpaceAccess()
-        access.spaces = [localSpace("u1", "Work", order: 1)]
+        access.spaces = [localSpace("LOCAL-1", "Work", order: 1)]
         let store = MemorySpaceStore()
+        store.table = makeSpaceTable(mappings: ["LOCAL-1": "sync-1"], access: access)
         var cursor = PhiSpaceCursor()
         cursor.entityId = "srv-1"; cursor.version = 4
-        cursor.reconciled = try spaceEntity("u1").serializedData()
+        cursor.reconciled = try spaceEntity("sync-1").serializedData()
         cursor.server = cursor.reconciled
-        store.table.cursors["u1"] = cursor
-        store.table.hasDrainedFullReplay = true
-        store.table.firstSyncDecision = "keepBoth"
+        store.table.cursors["sync-1"] = cursor
 
         let client = FakePhiSyncClient()
-        client.seed(tagHash: spaceHash("u1"), ciphertext: Data(), version: 9,
+        client.seed(tagHash: spaceHash("sync-1"), ciphertext: Data(), version: 9,
                     entityId: "srv-1", deleted: true)
         let engine = makeEngine(access: access, store: store, client: client)
         await engine.setSpaceSyncEnabled(true)
         await engine.pullOnce()
 
-        XCTAssertTrue(store.table.cursors["u1"]!.hidden)
-        XCTAssertNotNil(store.table.cursors["u1"]!.deletedAtMs)
-        XCTAssertTrue(access.calls.contains(.hide("u1")))
-        XCTAssertTrue(access.currentSpaces().contains { $0.spaceId == "u1" },
+        XCTAssertTrue(store.table.cursors["sync-1"]!.hidden)
+        XCTAssertNotNil(store.table.cursors["sync-1"]!.deletedAtMs)
+        XCTAssertTrue(access.calls.contains(.hide("LOCAL-1")))
+        XCTAssertTrue(access.currentSpaces().contains { $0.spaceId == "LOCAL-1" },
                       "the 30-day window is only real if the data is still here")
         XCTAssertTrue(access.calls.filter { if case .purge = $0 { return true } else { return false } }.isEmpty)
     }
@@ -1430,14 +1478,13 @@ final class PhiSyncEngineSpaceTests: XCTestCase {
     /// marker has already moved past that page, loses it permanently.
     func testATombstoneIsNeverTreatedAsADecryptFailure() async throws {
         let access = FakePhiSpaceAccess()
-        access.spaces = [localSpace("u1", "Work", order: 1)]
+        access.spaces = [localSpace("LOCAL-1", "Work", order: 1)]
         let store = MemorySpaceStore()
+        store.table = makeSpaceTable(mappings: ["LOCAL-1": "sync-1"], access: access)
         var cursor = PhiSpaceCursor(); cursor.entityId = "srv-1"; cursor.version = 4
-        store.table.cursors["u1"] = cursor
-        store.table.hasDrainedFullReplay = true
-        store.table.firstSyncDecision = "keepBoth"
+        store.table.cursors["sync-1"] = cursor
         let client = FakePhiSyncClient()
-        client.seed(tagHash: spaceHash("u1"), ciphertext: Data(), version: 9,
+        client.seed(tagHash: spaceHash("sync-1"), ciphertext: Data(), version: 9,
                     entityId: "srv-1", deleted: true)
         let engine = makeEngine(access: access, store: store, client: client)
         await engine.setSpaceSyncEnabled(true)
@@ -1449,8 +1496,7 @@ final class PhiSyncEngineSpaceTests: XCTestCase {
     func testATombstoneForAnUnknownHashIsIgnoredWithoutCreatingACursor() async throws {
         let access = FakePhiSpaceAccess()
         let store = MemorySpaceStore()
-        store.table.hasDrainedFullReplay = true
-        store.table.firstSyncDecision = "keepBoth"
+        store.table = makeSpaceTable(access: access)
         let client = FakePhiSyncClient()
         client.seed(tagHash: "hash-nobody-knows", ciphertext: Data(), version: 3,
                     entityId: "srv-9", deleted: true)
@@ -1464,87 +1510,130 @@ final class PhiSyncEngineSpaceTests: XCTestCase {
         let access = FakePhiSpaceAccess()
         access.spaces = [localSpace(LocalStore.defaultSpaceId, "Default", order: 0)]
         let store = MemorySpaceStore()
-        store.table.hasDrainedFullReplay = true
-        store.table.firstSyncDecision = "keepBoth"
+        store.table = makeSpaceTable(access: access)
         let client = FakePhiSyncClient()
-        client.seed(tagHash: spaceHash(LocalStore.defaultSpaceId), ciphertext: Data(), version: 3,
+        client.seed(tagHash: spaceHash(SyncableSpaces.defaultSpaceUuid), ciphertext: Data(), version: 3,
                     entityId: "srv-d", deleted: true)
         let engine = makeEngine(access: access, store: store, client: client)
         await engine.setSpaceSyncEnabled(true)
         await engine.pullOnce()
-        XCTAssertNil(store.table.cursors[LocalStore.defaultSpaceId]?.deletedAtMs)
+        XCTAssertNil(store.table.cursors[SyncableSpaces.defaultSpaceUuid]?.deletedAtMs)
         XCTAssertTrue(access.calls.filter { $0 == .hide(LocalStore.defaultSpaceId) }.isEmpty)
     }
 
     func testAnImportLockDefersTheTombstoneAndPersistsTheIntent() async throws {
         let access = FakePhiSpaceAccess()
-        access.spaces = [localSpace("u1", "Work", order: 1)]
-        access.importingSpaceIds = ["u1"]
+        access.spaces = [localSpace("LOCAL-1", "Work", order: 1)]
+        // The import lock is asked about the LOCAL row, so the tombstone has to be
+        // translated before the question can even be posed.
+        access.importingSpaceIds = ["LOCAL-1"]
         let store = MemorySpaceStore()
+        store.table = makeSpaceTable(mappings: ["LOCAL-1": "sync-1"], access: access)
         var cursor = PhiSpaceCursor(); cursor.entityId = "srv-1"; cursor.version = 4
-        store.table.cursors["u1"] = cursor
-        store.table.hasDrainedFullReplay = true
-        store.table.firstSyncDecision = "keepBoth"
+        store.table.cursors["sync-1"] = cursor
         let client = FakePhiSyncClient()
-        client.seed(tagHash: spaceHash("u1"), ciphertext: Data(), version: 9,
+        client.seed(tagHash: spaceHash("sync-1"), ciphertext: Data(), version: 9,
                     entityId: "srv-1", deleted: true)
         let engine = makeEngine(access: access, store: store, client: client)
         await engine.setSpaceSyncEnabled(true)
         await engine.pullOnce()
 
-        XCTAssertTrue(store.table.cursors["u1"]!.pendingTombstone,
+        XCTAssertTrue(store.table.cursors["sync-1"]!.pendingTombstone,
                       "the shared marker has moved past it; the intent must survive here or it is lost")
-        XCTAssertFalse(store.table.cursors["u1"]!.hidden)
+        XCTAssertFalse(store.table.cursors["sync-1"]!.hidden)
 
         access.importingSpaceIds = []
         await engine.pullOnce()   // the tombstone is NOT redelivered
-        XCTAssertTrue(store.table.cursors["u1"]!.hidden)
-        XCTAssertFalse(store.table.cursors["u1"]!.pendingTombstone)
+        XCTAssertTrue(store.table.cursors["sync-1"]!.hidden)
+        XCTAssertFalse(store.table.cursors["sync-1"]!.pendingTombstone)
     }
 
     func testASoftDeletedSpaceIsNeverResurrectedBySnapshotOrByAReplayedTombstone() async throws {
         let access = FakePhiSpaceAccess()
         access.uuidByProfileId = ["Default": "uuid-a"]
-        access.spaces = [localSpace("u1", "Work", order: 1)]
+        access.spaces = [localSpace("LOCAL-1", "Work", order: 1)]
         let store = MemorySpaceStore()
+        store.table = makeSpaceTable(mappings: ["LOCAL-1": "sync-1"], access: access)
         var cursor = PhiSpaceCursor()
         cursor.entityId = "srv-1"; cursor.version = 9
         cursor.hidden = true; cursor.deletedAtMs = 5_000
-        store.table.cursors["u1"] = cursor
-        store.table.hasDrainedFullReplay = true
-        store.table.firstSyncDecision = "keepBoth"
+        store.table.cursors["sync-1"] = cursor
         let client = FakePhiSyncClient()
-        client.seed(tagHash: spaceHash("u1"), ciphertext: Data(), version: 9,
+        client.seed(tagHash: spaceHash("sync-1"), ciphertext: Data(), version: 9,
                     entityId: "srv-1", deleted: true)
         let engine = makeEngine(access: access, store: store, client: client)
         await engine.setSpaceSyncEnabled(true)
         await engine.pullOnce()
         XCTAssertTrue(spaceCommits(client).isEmpty)
-        XCTAssertEqual(store.table.cursors["u1"]!.deletedAtMs, 5_000)
+        XCTAssertEqual(store.table.cursors["sync-1"]!.deletedAtMs, 5_000)
     }
 
     // MARK: - Retention sweep (§9.2)
 
-    func testTheSweepCascadesTheDataAndKeepsThePermanentTombstone() async throws {
+    /// 7b. 30 天清理：`purge` 收到**本地** id、映射行被删、游标仍在且带 `purgedAtMs`。
+    /// （这条就是原来的 `testTheSweepCascadesTheDataAndKeepsThePermanentTombstone`，
+    /// 改键之后连同映射生命周期一起断言；`reconciled` 那一条原样保留。）
+    func testTheRetentionPurgeUsesTheLocalIdThenDropsTheMappingAndKeepsTheCursor() async throws {
+        let clock = Clock()
         let access = FakePhiSpaceAccess()
-        access.spaces = [localSpace("u1", "Work", order: 1)]
+        access.spaces = [localSpace("LOCAL-1", "Work", order: 0)]
         let store = MemorySpaceStore()
-        var cursor = PhiSpaceCursor()
-        cursor.entityId = "srv-1"; cursor.version = 9
-        cursor.hidden = true; cursor.deletedAtMs = 1
-        cursor.reconciled = Data([0x01])
-        store.table.cursors["u1"] = cursor
-        let client = FakePhiSyncClient()
-        let engine = makeEngine(access: access, store: store, client: client)
+        store.table = makeSpaceTable(mappings: ["LOCAL-1": "sync-1"], access: access)
+        var softDeleted = PhiSpaceCursor()
+        softDeleted.entityId = "srv-1"
+        softDeleted.version = 4
+        softDeleted.hidden = true
+        softDeleted.deletedAtMs = clock.nowMs
+        softDeleted.reconciled = Data([0x01])
+        store.table.cursors["sync-1"] = softDeleted
+        let engine = makeEngine(access: access, store: store,
+                                client: FakePhiSyncClient(), clock: clock)
         await engine.setSpaceSyncEnabled(true)
+
+        clock.nowMs += PhiSpaceSyncState.retentionMs + 1
         await engine.runRetentionSweep()
 
-        XCTAssertTrue(access.calls.contains(.purge("u1")))
-        XCTAssertFalse(access.currentSpaces().contains { $0.spaceId == "u1" })
-        let tombstone = try XCTUnwrap(store.table.cursors["u1"])
-        XCTAssertNotNil(tombstone.purgedAtMs)
-        XCTAssertNotNil(tombstone.deletedAtMs)
-        XCTAssertNil(tombstone.reconciled)
+        XCTAssertTrue(access.calls.contains(.purge("LOCAL-1")))
+        XCTAssertFalse(access.currentSpaces().contains { $0.spaceId == "LOCAL-1" })
+        XCTAssertNil(access.spaceMappings["LOCAL-1"])
+        let cursor = try XCTUnwrap(store.table.cursors["sync-1"], "游标是永久 tombstone 记录")
+        XCTAssertNotNil(cursor.purgedAtMs)
+        XCTAssertNotNil(cursor.deletedAtMs)
+        XCTAssertNil(cursor.reconciled, "`purgeExpired` 一并清掉基线")
+    }
+
+    /// 7d. 级联失败 ⇒ 映射**不许**被删。删了就等于让下一趟 `pushSpaces` 拿这条还在
+    /// 盘上的本地行走懒铸造（`ensureMapped`）铸一个**新** syncUuid，把一条刚被清理掉
+    /// 的 Space 以新身份重新发布出去；而 Phase 1 已经盖上 `purgedAtMs`，清理不会再来
+    /// 第二次，复活是永久的。D6 之前同一处 `try?` 无害：游标那时按本地 id 键，
+    /// `snapshot` 的 `cursor.deletedAtMs == nil` 过滤永远排除它。
+    func testAFailedRetentionPurgeKeepsTheMappingSoTheRowCannotComeBack() async throws {
+        struct Boom: Error {}
+        let clock = Clock()
+        let access = FakePhiSpaceAccess()
+        access.spaces = [localSpace("LOCAL-1", "Work", order: 0)]
+        access.uuidByProfileId = ["Default": "uuid-a"]
+        let store = MemorySpaceStore()
+        store.table = makeSpaceTable(mappings: ["LOCAL-1": "sync-1"], access: access)
+        var softDeleted = PhiSpaceCursor()
+        softDeleted.entityId = "srv-1"
+        softDeleted.version = 4
+        softDeleted.hidden = true
+        softDeleted.deletedAtMs = clock.nowMs
+        store.table.cursors["sync-1"] = softDeleted
+        let client = FakePhiSyncClient()
+        let engine = makeEngine(access: access, store: store, client: client, clock: clock)
+        await engine.setSpaceSyncEnabled(true)
+
+        clock.nowMs += PhiSpaceSyncState.retentionMs + 1
+        access.errorOnNextWrite = Boom()
+        await engine.runRetentionSweep()
+
+        XCTAssertEqual(access.spaceMappings["LOCAL-1"], "sync-1",
+                       "purge 失败 ⇒ 映射留着，syncUuid 仍指向那条带 deletedAtMs 的游标")
+        await engine.pushLocalSettings()   // 引擎里唯一的公开 push 入口
+        XCTAssertTrue(spaceCommits(client).isEmpty,
+                      "那条还在盘上的本地行不许以任何身份被重新发布")
     }
 
     // MARK: - Join account sync (§8.3, moved here from Task 13's batch because
@@ -1557,6 +1646,11 @@ final class PhiSyncEngineSpaceTests: XCTestCase {
         let store = MemorySpaceStore()
         store.table.firstSyncDecision = "accountWins"
         store.table.hasDrainedFullReplay = true
+        // D2 residue, untranslated on purpose: the `.joinAccountSync` intent still
+        // reaches `PhiSpaceSyncTable.joinAccountSync(spaceId:)` with a LOCAL id
+        // (PhiSyncEngine.swift's `.joinAccountSync` branch), so its cursor is keyed
+        // by the local id here. Only `.recordLocalDeletion` is translated in Task 4;
+        // this whole path is on Task 9's deletion list.
         var hidden = PhiSpaceCursor(); hidden.hidden = true
         store.table.cursors["mine"] = hidden
         let client = FakePhiSyncClient()
@@ -1564,7 +1658,8 @@ final class PhiSyncEngineSpaceTests: XCTestCase {
         await engine.setSpaceSyncEnabled(true)
         await engine.joinAccountSync(spaceId: "mine")
         XCTAssertFalse(store.table.cursors["mine"]!.hidden)
-        XCTAssertTrue(spaceCommits(client).contains { $0.clientTagHash == spaceHash("mine") })
+        // The publish itself goes out under the lazily minted syncUuid.
+        XCTAssertTrue(spaceCommits(client).contains { $0.clientTagHash == spaceHash("sync-mine") })
     }
 
     // MARK: - Delete origin (§9.1)
@@ -1572,18 +1667,22 @@ final class PhiSyncEngineSpaceTests: XCTestCase {
     func testRecordLocalDeletionOnlyMarksAPublishedSpace() async throws {
         let access = FakePhiSpaceAccess()
         let store = MemorySpaceStore()
+        store.table = makeSpaceTable(mappings: ["LOCAL-P": "sync-published",
+                                                "LOCAL-A": "sync-agent"], access: access)
         var published = PhiSpaceCursor(); published.entityId = "srv-1"; published.version = 3
         var refused = PhiSpaceCursor(); refused.refusedAtMs = 1
-        store.table.cursors = ["published": published, "agent": refused]
+        store.table.cursors = ["sync-published": published, "sync-agent": refused]
         let client = FakePhiSyncClient()
         let engine = makeEngine(access: access, store: store, client: client)
         await engine.setSpaceSyncEnabled(true)
-        await engine.recordLocalDeletion(spaceId: "published")
-        await engine.recordLocalDeletion(spaceId: "agent")
-        await engine.recordLocalDeletion(spaceId: "never-seen")
-        XCTAssertTrue(store.table.cursors["published"]!.pendingDelete)
-        XCTAssertFalse(store.table.cursors["agent"]!.pendingDelete)
-        XCTAssertNil(store.table.cursors["never-seen"])
+        // The facade's parameter is a LOCAL spaceId in all three calls (§3.4).
+        await engine.recordLocalDeletion(spaceId: "LOCAL-P")
+        await engine.recordLocalDeletion(spaceId: "LOCAL-A")
+        await engine.recordLocalDeletion(spaceId: "LOCAL-NEVER")
+        XCTAssertTrue(store.table.cursors["sync-published"]!.pendingDelete)
+        XCTAssertFalse(store.table.cursors["sync-agent"]!.pendingDelete)
+        XCTAssertEqual(store.table.cursors.count, 2,
+                       "an unmapped local id is not a tombstone; it must not mint a cursor")
     }
 
     /// The single-writer rule (§5.3): the facade delivers an INTENT that runs on
@@ -1594,21 +1693,20 @@ final class PhiSyncEngineSpaceTests: XCTestCase {
     func testADeletionIntentSurvivesAConcurrentSnapshot() async throws {
         let access = FakePhiSpaceAccess()
         access.uuidByProfileId = ["Default": "uuid-a"]
-        access.spaces = [localSpace("u1", "Work", order: 1)]
+        access.spaces = [localSpace("LOCAL-1", "Work", order: 1)]
         let store = MemorySpaceStore()
+        store.table = makeSpaceTable(mappings: ["LOCAL-1": "sync-1"], access: access)
         var cursor = PhiSpaceCursor(); cursor.entityId = "srv-1"; cursor.version = 3
-        cursor.reconciled = try spaceEntity("u1").serializedData()
+        cursor.reconciled = try spaceEntity("sync-1").serializedData()
         cursor.server = cursor.reconciled
-        store.table.cursors["u1"] = cursor
-        store.table.hasDrainedFullReplay = true
-        store.table.firstSyncDecision = "keepBoth"
+        store.table.cursors["sync-1"] = cursor
         let client = FakePhiSyncClient()
         let engine = makeEngine(access: access, store: store, client: client)
         await engine.setSpaceSyncEnabled(true)
-        await engine.recordLocalDeletion(spaceId: "u1")
+        await engine.recordLocalDeletion(spaceId: "LOCAL-1")
         await engine.handleLocalSpacesChange()
-        XCTAssertTrue(store.table.cursors["u1"]!.pendingDelete
-                      || store.table.cursors["u1"]!.deletedAtMs != nil)
+        XCTAssertTrue(store.table.cursors["sync-1"]!.pendingDelete
+                      || store.table.cursors["sync-1"]!.deletedAtMs != nil)
     }
 
     /// §5.3's single writer, in the shape the spec names verbatim: "一轮 snapshot
@@ -1628,43 +1726,42 @@ final class PhiSyncEngineSpaceTests: XCTestCase {
         let access = FakePhiSpaceAccess()
         access.uuidByProfileId = ["Default": "uuid-a"]
         access.profileIdByUuid = ["uuid-a": "Default"]
-        access.spaces = [localSpace("u1", "Work", order: 1)]
+        access.spaces = [localSpace("LOCAL-1", "Work", order: 1)]
         let store = MemorySpaceStore()
-        store.table.hasDrainedFullReplay = true
-        store.table.firstSyncDecision = "keepBoth"
+        store.table = makeSpaceTable(mappings: ["LOCAL-1": "sync-1"], access: access)
         let client = FakePhiSyncClient()
-        client.seed(tagHash: spaceHash("u1"),
-                    ciphertext: try ciphertext(spaceEntity("u1")), version: 3)
+        client.seed(tagHash: spaceHash("sync-1"),
+                    ciphertext: try ciphertext(spaceEntity("sync-1")), version: 3)
         let engine = makeEngine(access: access, store: store, client: client)
         await engine.setSpaceSyncEnabled(true)
-        // One ordinary round first, so `u1` owns a published cursor (entityId +
+        // One ordinary round first, so `sync-1` owns a published cursor (entityId +
         // version + baselines) rather than a hand-built one.
         await engine.pullOnce()
-        let published = try XCTUnwrap(store.table.cursors["u1"])
+        let published = try XCTUnwrap(store.table.cursors["sync-1"])
         XCTAssertNotNil(published.entityId)
         XCTAssertFalse(published.pendingDelete)
 
         // A local rename gives the next round something to commit, which is what
         // opens the suspension window this test needs.
-        access.spaces = [localSpace("u1", "Renamed", order: 1)]
+        access.spaces = [localSpace("LOCAL-1", "Renamed", order: 1)]
         let arrived = Gate()
         let release = Gate()
-        client.gatedCommitTagHash = spaceHash("u1")
+        client.gatedCommitTagHash = spaceHash("sync-1")
         client.arrivedInCommit = arrived
         client.commitGate = release
 
         let round = Task { await engine.handleLocalSpacesChange() }
         await arrived.wait()          // the push is parked inside commit, table copy in hand
 
-        let deletion = Task { await engine.recordLocalDeletion(spaceId: "u1") }
+        let deletion = Task { await engine.recordLocalDeletion(spaceId: "LOCAL-1") }
         for _ in 0..<32 { await Task.yield() }
-        XCTAssertFalse(store.table.cursors["u1"]!.pendingDelete,
+        XCTAssertFalse(store.table.cursors["sync-1"]!.pendingDelete,
                        "the intent must queue behind the round, not run inside its table window")
 
         await release.open()
         await round.value
         await deletion.value
-        XCTAssertTrue(store.table.cursors["u1"]!.pendingDelete,
+        XCTAssertTrue(store.table.cursors["sync-1"]!.pendingDelete,
                       "the delete must survive the round's writeSpaceTable and ship a tombstone")
     }
 
@@ -1678,28 +1775,27 @@ final class PhiSyncEngineSpaceTests: XCTestCase {
     func testARemoteTombstoneCancelsAQueuedLocalDeleteInsteadOfEchoingIt() async throws {
         let access = FakePhiSpaceAccess()
         access.uuidByProfileId = ["Default": "uuid-a"]
-        access.spaces = [localSpace("u1", "Work", order: 1)]
+        access.spaces = [localSpace("LOCAL-1", "Work", order: 1)]
         let store = MemorySpaceStore()
+        store.table = makeSpaceTable(mappings: ["LOCAL-1": "sync-1"], access: access)
         var cursor = PhiSpaceCursor()
         cursor.entityId = "srv-1"; cursor.version = 4
-        cursor.reconciled = try spaceEntity("u1").serializedData()
+        cursor.reconciled = try spaceEntity("sync-1").serializedData()
         cursor.server = cursor.reconciled
         // The local delete is already queued when the peer's tombstone arrives,
         // and it has been rejected twice, so the streak must be reset too.
         cursor.pendingDelete = true
         cursor.deleteRejectRounds = 2
-        store.table.cursors["u1"] = cursor
-        store.table.hasDrainedFullReplay = true
-        store.table.firstSyncDecision = "keepBoth"
+        store.table.cursors["sync-1"] = cursor
         let client = FakePhiSyncClient()
-        client.seed(tagHash: spaceHash("u1"), ciphertext: Data(), version: 9,
+        client.seed(tagHash: spaceHash("sync-1"), ciphertext: Data(), version: 9,
                     entityId: "srv-1", deleted: true)
         let clock = Clock()
         let engine = makeEngine(access: access, store: store, client: client, clock: clock)
         await engine.setSpaceSyncEnabled(true)
         await engine.pullOnce()
 
-        let landed = try XCTUnwrap(store.table.cursors["u1"])
+        let landed = try XCTUnwrap(store.table.cursors["sync-1"])
         XCTAssertFalse(landed.pendingDelete)
         XCTAssertEqual(landed.deleteRejectRounds, 0)
         XCTAssertTrue(spaceCommits(client).isEmpty,
@@ -1721,36 +1817,405 @@ final class PhiSyncEngineSpaceTests: XCTestCase {
         access.spaces = [localSpace(LocalStore.defaultSpaceId, "Default", order: 0),
                          localSpace("mine", "Work", order: 1),
                          localSpace("gone", "Reading", order: 2)]
+        // Not `makeSpaceTable`: this fixture needs `firstSyncDecision == nil`.
+        access.spaceMappings = ["gone": "sync-gone"]
         let store = MemorySpaceStore()
         // "gone" is already in the account and "mine" is local-only: both halves
         // non-empty is what makes the first-sync question fire at all.
         var published = PhiSpaceCursor()
         published.entityId = "srv-1"; published.version = 4
-        published.reconciled = try spaceEntity("gone", name: "Reading").serializedData()
+        published.reconciled = try spaceEntity("sync-gone", name: "Reading").serializedData()
         published.server = published.reconciled
-        store.table.cursors["gone"] = published
+        store.table.cursors["sync-gone"] = published
         store.table.hasDrainedFullReplay = true
         let client = FakePhiSyncClient()
-        client.seed(tagHash: spaceHash("gone"), ciphertext: Data(), version: 9,
+        client.seed(tagHash: spaceHash("sync-gone"), ciphertext: Data(), version: 9,
                     entityId: "srv-1", deleted: true)
         let engine = makeEngine(access: access, store: store, client: client)
         await engine.setSpaceSyncEnabled(true)
         await engine.pullOnce()
 
         XCTAssertNil(store.table.firstSyncDecision, "the sheet is still open")
-        XCTAssertTrue(store.table.cursors["gone"]!.pendingTombstone,
+        XCTAssertTrue(store.table.cursors["sync-gone"]!.pendingTombstone,
                       "the marker has moved past this page; the intent survives here or it is lost")
-        XCTAssertFalse(store.table.cursors["gone"]!.hidden,
+        XCTAssertFalse(store.table.cursors["sync-gone"]!.hidden,
                        "hiding a Space is not part of the question the user was asked")
         XCTAssertTrue(access.calls.filter { $0 == .hide("gone") }.isEmpty)
 
         // The answer's trailing pull receives nothing (the fake filters by the
         // version watermark), so only the parked intent can make the delete land.
         await engine.submitFirstSyncDecision(.keepBoth)
-        let landed = try XCTUnwrap(store.table.cursors["gone"])
+        let landed = try XCTUnwrap(store.table.cursors["sync-gone"])
         XCTAssertTrue(landed.hidden)
         XCTAssertNotNil(landed.deletedAtMs)
         XCTAssertFalse(landed.pendingTombstone)
         XCTAssertTrue(access.calls.contains(.hide("gone")))
+    }
+
+    // MARK: - D6：入站身份翻译（§3.4）
+
+    /// 1. 账户里有、本机没有的 Space：新建一行本地 id，落地成功之后才写映射。
+    func testAnAccountSpaceWithNoLocalRowLandsUnderAFreshLocalIdAndThenMaps() async throws {
+        let access = FakePhiSpaceAccess()
+        access.uuidByProfileId = ["Default": "uuid-a"]
+        access.profileIdByUuid = ["uuid-a": "Default"]
+        let store = MemorySpaceStore()
+        store.table = makeSpaceTable(access: access)
+        let client = FakePhiSyncClient()
+        client.seed(tagHash: spaceHash("sync-new"),
+                    ciphertext: try ciphertext(spaceEntity("sync-new", name: "Reading")), version: 3)
+        let engine = makeEngine(access: access, store: store, client: client)
+        await engine.setSpaceSyncEnabled(true)
+        await engine.pullOnce()
+
+        let created = try XCTUnwrap(access.spaces.first)
+        XCTAssertNotEqual(created.spaceId, "sync-new", "线上 uuid 绝不当本地行 id 用")
+        XCTAssertEqual(access.spaceMappings[created.spaceId], "sync-new")
+        XCTAssertNotNil(store.table.cursors["sync-new"]?.reconciled)
+    }
+
+    /// 1b. `create` 抛错的那一版：映射**没有**被写、基线**没有**被写、实体留在
+    /// `pendingApply`。重试会再次走 create 分支，因为没有映射行、不会撞上半成品。
+    func testAFailedCreateWritesNeitherAMappingNorABaseline() async throws {
+        let access = FakePhiSpaceAccess()
+        access.uuidByProfileId = ["Default": "uuid-a"]
+        access.profileIdByUuid = ["uuid-a": "Default"]
+        access.errorOnNextWrite = NSError(domain: "test", code: 1)
+        let store = MemorySpaceStore()
+        store.table = makeSpaceTable(access: access)
+        let client = FakePhiSyncClient()
+        client.seed(tagHash: spaceHash("sync-new"),
+                    ciphertext: try ciphertext(spaceEntity("sync-new")), version: 3)
+        let engine = makeEngine(access: access, store: store, client: client)
+        await engine.setSpaceSyncEnabled(true)
+        await engine.pullOnce()
+
+        XCTAssertTrue(access.spaceMappings.isEmpty)
+        XCTAssertNil(store.table.cursors["sync-new"]?.reconciled)
+        XCTAssertNotNil(store.table.cursors["sync-new"]?.pendingApply)
+    }
+
+    /// 2. 已映射的 Space：`create` 零调用，三个写方法收到的都是**本地** id。
+    func testAMappedSpaceUpdatesTheLocalRowAndNeverCreates() async throws {
+        let access = FakePhiSpaceAccess()
+        access.uuidByProfileId = ["Default": "uuid-a"]
+        access.profileIdByUuid = ["uuid-a": "Default"]
+        access.spaces = [localSpace("LOCAL-1", "Old", order: 0)]
+        let store = MemorySpaceStore()
+        store.table = makeSpaceTable(mappings: ["LOCAL-1": "sync-1"], access: access)
+        let client = FakePhiSyncClient()
+        client.seed(tagHash: spaceHash("sync-1"),
+                    ciphertext: try ciphertext(spaceEntity("sync-1", name: "New")), version: 3)
+        let engine = makeEngine(access: access, store: store, client: client)
+        await engine.setSpaceSyncEnabled(true)
+        await engine.pullOnce()
+
+        XCTAssertFalse(access.calls.contains { if case .create = $0 { return true }; return false })
+        XCTAssertTrue(access.calls.contains(.update("LOCAL-1")))
+        XCTAssertEqual(access.spaces.first?.name, "New")
+    }
+
+    /// 3. 反查落空 ⇒ 新建而不是复活：本机有一个同名 Space（无映射）时，引擎**不**去
+    /// 认领它——认领是向导的职责，引擎不猜。
+    func testAnUnmappedSameNamedLocalSpaceIsNeverAdoptedByTheEngine() async throws {
+        let access = FakePhiSpaceAccess()
+        access.uuidByProfileId = ["Default": "uuid-a"]
+        access.profileIdByUuid = ["uuid-a": "Default"]
+        access.spaces = [localSpace("LOCAL-1", "Work", order: 0)]
+        let store = MemorySpaceStore()
+        store.table = makeSpaceTable(access: access)
+        let client = FakePhiSyncClient()
+        client.seed(tagHash: spaceHash("sync-x"),
+                    ciphertext: try ciphertext(spaceEntity("sync-x", name: "Work")), version: 3)
+        let engine = makeEngine(access: access, store: store, client: client)
+        await engine.setSpaceSyncEnabled(true)
+        await engine.pullOnce()
+
+        XCTAssertEqual(access.spaces.count, 2, "同名不是身份")
+        // 本轮尾部的 push 会给这条从未上过账户的本地行**懒铸**一个自己的 uuid
+        // （R-D6-7），所以判据是「它没有被账户里那条实体认领」，不是「它没有映射」。
+        XCTAssertNotEqual(access.spaceMappings["LOCAL-1"], "sync-x")
+    }
+
+    /// 4. 两个本地 Space 永远不会映射到同一个 syncUuid：预置一条，再落地同一个 uuid。
+    func testLandingAnAlreadyMappedUuidTakesTheUpdatePathAndAddsNoSecondMapping() async throws {
+        let access = FakePhiSpaceAccess()
+        access.uuidByProfileId = ["Default": "uuid-a"]
+        access.profileIdByUuid = ["uuid-a": "Default"]
+        access.spaces = [localSpace("LOCAL-1", "Work", order: 0)]
+        let store = MemorySpaceStore()
+        store.table = makeSpaceTable(mappings: ["LOCAL-1": "sync-1"], access: access)
+        let client = FakePhiSyncClient()
+        client.seed(tagHash: spaceHash("sync-1"),
+                    ciphertext: try ciphertext(spaceEntity("sync-1", name: "Renamed")), version: 3)
+        let engine = makeEngine(access: access, store: store, client: client)
+        await engine.setSpaceSyncEnabled(true)
+        await engine.pullOnce()
+
+        XCTAssertEqual(access.spaceMappings, ["LOCAL-1": "sync-1"])
+        XCTAssertEqual(access.spaces.count, 1)
+    }
+
+    /// 4b. 死映射自愈：反查命中但本地行不在 ⇒ 丢映射、按无映射处理、当新 Space 落地。
+    func testADeadSpaceMappingIsDroppedAndTheEntityLandsAsANewSpace() async throws {
+        let access = FakePhiSpaceAccess()
+        access.uuidByProfileId = ["Default": "uuid-a"]
+        access.profileIdByUuid = ["uuid-a": "Default"]
+        access.spaces = []                       // 本地行没了
+        access.knownLocalSpaceIds = []           // `getAllSpaces()` 里也没有
+        let store = MemorySpaceStore()
+        store.table = makeSpaceTable(mappings: ["LOCAL-GONE": "sync-1"], access: access)
+        let client = FakePhiSyncClient()
+        client.seed(tagHash: spaceHash("sync-1"),
+                    ciphertext: try ciphertext(spaceEntity("sync-1")), version: 3)
+        let engine = makeEngine(access: access, store: store, client: client)
+        await engine.setSpaceSyncEnabled(true)
+        await engine.pullOnce()
+
+        XCTAssertTrue(access.calls.contains(.dropSpaceMapping("LOCAL-GONE")))
+        let created = try XCTUnwrap(access.spaces.first)
+        XCTAssertEqual(access.spaceMappings[created.spaceId], "sync-1")
+        XCTAssertNil(access.spaceMappings["LOCAL-GONE"])
+    }
+
+    /// 5. ranks 的边界翻译：`applyOrder` 收到的必须是一串**本地** id。
+    ///    把翻译去掉的那一版是**静默 no-op**，所以这条用例的反证在
+    ///    `SyncableSpacesTests.testPlannedOrderIsASilentNoOpWhenHandedSyncUuidKeys`。
+    func testTheAccountWideReorderIsAppliedWithLocalIds() async throws {
+        let access = FakePhiSpaceAccess()
+        access.uuidByProfileId = ["Default": "uuid-a"]
+        access.profileIdByUuid = ["uuid-a": "Default"]
+        access.spaces = [localSpace("LOCAL-1", "A", order: 0), localSpace("LOCAL-2", "B", order: 1)]
+        let store = MemorySpaceStore()
+        store.table = makeSpaceTable(mappings: ["LOCAL-1": "sync-1", "LOCAL-2": "sync-2"],
+                                     access: access)
+        let client = FakePhiSyncClient()
+        // "F" < "V"：账户里 sync-2 排在 sync-1 前面。
+        client.seed(tagHash: spaceHash("sync-1"),
+                    ciphertext: try ciphertext(spaceEntity("sync-1", name: "A")), version: 3)
+        client.seed(tagHash: spaceHash("sync-2"),
+                    ciphertext: try ciphertext(rankedEntity("sync-2", name: "B", rank: "F")), version: 3)
+        let engine = makeEngine(access: access, store: store, client: client)
+        await engine.setSpaceSyncEnabled(true)
+        await engine.pullOnce()
+
+        let order = access.calls.compactMap { if case .order(let ids) = $0 { return ids }; return nil }.last
+        XCTAssertEqual(order, ["LOCAL-2", "LOCAL-1"])
+    }
+
+    /// 6a. tombstone：syncUuid 有本地行 ⇒ `hide` 收到**本地** id。
+    func testARemoteTombstoneHidesTheLocalRowWhenOneExists() async throws {
+        let access = FakePhiSpaceAccess()
+        access.uuidByProfileId = ["Default": "uuid-a"]
+        access.profileIdByUuid = ["uuid-a": "Default"]
+        access.spaces = [localSpace("LOCAL-1", "Work", order: 0)]
+        let store = MemorySpaceStore()
+        store.table = makeSpaceTable(mappings: ["LOCAL-1": "sync-1"], access: access)
+        var published = PhiSpaceCursor()
+        published.entityId = "srv-1"
+        published.version = 4
+        published.reconciled = try spaceEntity("sync-1").serializedData()
+        published.server = published.reconciled
+        store.table.cursors["sync-1"] = published
+        let client = FakePhiSyncClient()
+        client.seed(tagHash: spaceHash("sync-1"), ciphertext: Data(), version: 9,
+                    entityId: "srv-1", deleted: true)
+        let engine = makeEngine(access: access, store: store, client: client)
+        await engine.setSpaceSyncEnabled(true)
+        await engine.pullOnce()
+
+        XCTAssertTrue(access.calls.contains(.hide("LOCAL-1")))
+        let cursor = try XCTUnwrap(store.table.cursors["sync-1"])
+        XCTAssertTrue(cursor.hidden)
+        XCTAssertNotNil(cursor.deletedAtMs)
+        XCTAssertEqual(access.spaceMappings["LOCAL-1"], "sync-1",
+                       "远端软删**保留**映射：它是 30 天里「这一行属于账户的哪条实体」的唯一记录")
+    }
+
+    /// 6b. syncUuid **没有**本地行 ⇒ `hide` 零调用，游标**照样**写 `hidden` +
+    ///     `deletedAtMs`：账户里那条确实被删了，这台机器只是本来就没有它，游标必须
+    ///     记住，否则同一条实体的 create 重放会把它复活。
+    func testARemoteTombstoneWithNoLocalRowStillWritesTheCursorGuard() async throws {
+        let access = FakePhiSpaceAccess()
+        access.uuidByProfileId = ["Default": "uuid-a"]
+        access.profileIdByUuid = ["uuid-a": "Default"]
+        let store = MemorySpaceStore()
+        store.table = makeSpaceTable(access: access)
+        var published = PhiSpaceCursor()
+        published.entityId = "srv-1"
+        published.version = 4
+        store.table.cursors["sync-orphan"] = published
+        let client = FakePhiSyncClient()
+        client.seed(tagHash: spaceHash("sync-orphan"), ciphertext: Data(), version: 9,
+                    entityId: "srv-1", deleted: true)
+        let engine = makeEngine(access: access, store: store, client: client)
+        await engine.setSpaceSyncEnabled(true)
+        await engine.pullOnce()
+
+        XCTAssertTrue(access.calls.filter { if case .hide = $0 { return true }; return false }.isEmpty)
+        let cursor = try XCTUnwrap(store.table.cursors["sync-orphan"])
+        XCTAssertTrue(cursor.hidden)
+        XCTAssertNotNil(cursor.deletedAtMs, "防复活守卫读的就是它")
+    }
+
+    func testTheTagIndexIsSeededFromTheMappingTableSoAnUncommittedSpaceCanBeTombstoned() async throws {
+        // 一个刚被向导映射、还没 commit 过的 Space（有映射行、没有游标）的 tombstone
+        // 必须能被识别。
+        let access = FakePhiSpaceAccess()
+        access.spaces = [localSpace("LOCAL-1", "Work", order: 0)]
+        access.uuidByProfileId = ["Default": "uuid-a"]
+        access.profileIdByUuid = ["uuid-a": "Default"]
+        let store = MemorySpaceStore()
+        store.table = makeSpaceTable(mappings: ["LOCAL-1": "sync-1"], access: access)
+        let client = FakePhiSyncClient()
+        client.seed(tagHash: spaceHash("sync-1"), ciphertext: Data(), version: 9,
+                    entityId: "srv-1", deleted: true)
+        let engine = makeEngine(access: access, store: store, client: client)
+        await engine.setSpaceSyncEnabled(true)
+        await engine.pullOnce()
+
+        XCTAssertTrue(access.calls.contains(.hide("LOCAL-1")))
+        XCTAssertNotNil(store.table.cursors["sync-1"]?.deletedAtMs)
+    }
+
+    /// 7a. 本地删除 → tombstone `.applied` ⇒ **映射行被删、游标留下**（R-D6-10）。
+    func testALocalDeleteDropsTheMappingWhenItsTombstoneIsAccepted() async throws {
+        let access = FakePhiSpaceAccess()
+        access.uuidByProfileId = ["Default": "uuid-a"]
+        access.profileIdByUuid = ["uuid-a": "Default"]
+        access.spaces = [localSpace("LOCAL-1", "Work", order: 0)]
+        // 本地行下面会从 `spaces` 里删掉，但映射不是死映射：否则 Task 3 的自愈
+        // （`applySpaces` 的 `isKnownLocalSpace` 分支）会抢先删掉映射，本用例就
+        // 测不到 Step 4 的那一段。
+        access.knownLocalSpaceIds = ["LOCAL-1"]
+        let store = MemorySpaceStore()
+        store.table = makeSpaceTable(mappings: ["LOCAL-1": "sync-1"], access: access)
+        var published = PhiSpaceCursor()
+        published.entityId = "srv-1"
+        published.version = 4
+        published.reconciled = try spaceEntity("sync-1").serializedData()
+        published.server = published.reconciled
+        store.table.cursors["sync-1"] = published
+        let client = FakePhiSyncClient()
+        client.seed(tagHash: spaceHash("sync-1"),
+                    ciphertext: try ciphertext(spaceEntity("sync-1")), version: 4, entityId: "srv-1")
+        let engine = makeEngine(access: access, store: store, client: client)
+        await engine.setSpaceSyncEnabled(true)
+        // 先跑一轮，让共享 marker 越过这条实体：下一轮 push 的初始 pull 就不会把它
+        // 重放回来，本地行也不会被重新落地。
+        await engine.pullOnce()
+
+        access.spaces = []                                   // 本地行已经删了
+        await engine.recordLocalDeletion(spaceId: "LOCAL-1") // 门面收的是**本地** id
+        await engine.handleLocalSpacesChange()               // 一轮 push：tombstone 发出并被接受
+
+        XCTAssertTrue(spaceCommits(client).contains { $0.deleted })
+        XCTAssertTrue(access.calls.filter { if case .create = $0 { return true }; return false }.isEmpty,
+                      "映射是被 `.applied` 的 tombstone 删掉的，不是被死映射自愈顺手删掉的")
+        XCTAssertNil(access.spaceMappings["LOCAL-1"], "映射行随 `.applied` 一起删")
+        let cursor = try XCTUnwrap(store.table.cursors["sync-1"])
+        XCTAssertNotNil(cursor.deletedAtMs, "游标留下：永久 tombstone 记录")
+        XCTAssertFalse(cursor.pendingDelete)
+    }
+
+    /// 7c. 清理之后重放同一条 tombstone 是 no-op，snapshot 也不复活该 uuid。
+    func testAPurgedUuidIsNeverResurrected() async throws {
+        let clock = Clock()
+        let access = FakePhiSpaceAccess()
+        access.uuidByProfileId = ["Default": "uuid-a"]
+        access.profileIdByUuid = ["uuid-a": "Default"]
+        let store = MemorySpaceStore()
+        store.table = makeSpaceTable(access: access)
+        var purged = PhiSpaceCursor()
+        purged.entityId = "srv-1"
+        purged.version = 4
+        purged.hidden = true
+        purged.deletedAtMs = clock.nowMs
+        purged.purgedAtMs = clock.nowMs
+        store.table.cursors["sync-1"] = purged
+        let client = FakePhiSyncClient()
+        client.seed(tagHash: spaceHash("sync-1"),
+                    ciphertext: try ciphertext(spaceEntity("sync-1")), version: 9)
+        let engine = makeEngine(access: access, store: store, client: client, clock: clock)
+        await engine.setSpaceSyncEnabled(true)
+        await engine.pullOnce()
+
+        XCTAssertTrue(access.spaces.isEmpty, "软删过的 uuid 不会被一次 create 重放复活")
+        XCTAssertTrue(spaceCommits(client).isEmpty)
+    }
+
+    /// 8. `recordLocalDeletion` 的边界翻译：门面传本地 id；无映射 ⇒ **no-op**
+    ///    （不建游标、不发 commit）。
+    func testRecordLocalDeletionTranslatesTheLocalIdAndNoOpsWithNoMapping() async throws {
+        let access = FakePhiSpaceAccess()
+        access.spaces = [localSpace("LOCAL-1", "Work", order: 0),
+                         localSpace("LOCAL-2", "Reading", order: 1)]
+        let store = MemorySpaceStore()
+        store.table = makeSpaceTable(mappings: ["LOCAL-1": "sync-1"], access: access)
+        var published = PhiSpaceCursor()
+        published.entityId = "srv-1"
+        published.version = 4
+        store.table.cursors["sync-1"] = published
+        let engine = makeEngine(access: access, store: store, client: FakePhiSyncClient())
+        await engine.setSpaceSyncEnabled(true)
+
+        await engine.recordLocalDeletion(spaceId: "LOCAL-1")
+        XCTAssertTrue(store.table.cursors["sync-1"]!.pendingDelete)
+
+        await engine.recordLocalDeletion(spaceId: "LOCAL-2")   // 从来没发布过
+        XCTAssertEqual(store.table.cursors.count, 1, "无映射 = 无 tombstone 可发，不建游标")
+    }
+
+    /// 9. 懒铸造（R-D6-7）：向导之后本机新建的 Space 恰好铸一次，第二轮不再铸。
+    func testANewLocalSpaceIsMintedExactlyOnceAndThenPublished() async throws {
+        let access = FakePhiSpaceAccess()
+        access.uuidByProfileId = ["Default": "uuid-a"]
+        access.profileIdByUuid = ["uuid-a": "Default"]
+        access.spaces = [localSpace("LOCAL-NEW", "Work", order: 0)]
+        let store = MemorySpaceStore()
+        store.table = makeSpaceTable(access: access)
+        let client = FakePhiSyncClient()
+        let engine = makeEngine(access: access, store: store, client: client)
+        await engine.setSpaceSyncEnabled(true)
+        await engine.pullOnce()
+
+        XCTAssertEqual(access.spaceMappings["LOCAL-NEW"], "sync-LOCAL-NEW")
+        XCTAssertEqual(access.calls.filter { $0 == .ensureMapped("LOCAL-NEW") }.count, 1)
+        XCTAssertEqual(spaceCommits(client).map(\.clientTagHash), [spaceHash("sync-LOCAL-NEW")])
+
+        await engine.pullOnce()
+        XCTAssertEqual(access.calls.filter { $0 == .ensureMapped("LOCAL-NEW") }.count, 1,
+                       "第二轮不再铸——`ensureMapped` 命中既有映射就直接返回")
+    }
+
+    /// 10. `formatVersion` 重置后的自愈（§3.6）：空表 + 非 nil marker ⇒ 门开边沿丢
+    ///     marker、重放整类型、`drainInProgress` 置真、回放收尾前一条 commit 都不发；
+    ///     `hadRecords == false` 所以保护② **不**同时触发（只回放一次，不是两次）。
+    func testAnEmptyTableAfterTheFormatCutReplaysExactlyOnce() async throws {
+        let access = FakePhiSpaceAccess()
+        access.uuidByProfileId = ["Default": "uuid-a"]
+        access.profileIdByUuid = ["uuid-a": "Default"]
+        access.spaces = [localSpace("LOCAL-1", "Work", order: 0)]
+        // 硬切之后的盘上状态：空表（`hadRecords == false`、`hasDrainedFullReplay ==
+        // false`）+ 一个上个版本留下的 marker。
+        defaults.set(Data([0xAB]), forKey: PhiSyncEngine.markerStateKey)
+        let store = MemorySpaceStore()
+        store.table = PhiSpaceSyncTable()
+        let client = FakePhiSyncClient()
+        client.seed(tagHash: spaceHash("sync-1"),
+                    ciphertext: try ciphertext(spaceEntity("sync-1")), version: 3)
+        let engine = makeEngine(access: access, store: store, client: client)
+
+        await engine.setSpaceSyncEnabled(true)
+        XCTAssertNil(defaults.data(forKey: PhiSyncEngine.markerStateKey),
+                     "门开边沿丢 marker 并重放整个 data type")
+        XCTAssertTrue(store.table.drainInProgress)
+        XCTAssertFalse(store.table.didReplayForEmptyTable,
+                       "`hadRecords == false` ⇒ 保护② 不参与，只回放一次")
+
+        await engine.pullOnce()
+        XCTAssertTrue(store.table.hasDrainedFullReplay)
+        XCTAssertFalse(store.table.didReplayForEmptyTable)
+        XCTAssertEqual(client.getUpdatesCalls.first?.marker, nil)
     }
 }

@@ -58,7 +58,21 @@ struct PhiSpaceCursor: Codable, Equatable {
     var purgedAtMs: Int64?
 }
 
+/// 每个 **syncUuid** 一张游标（M3-2b §3.1，R-D6-8）。**键是账户级同步 uuid，不是
+/// 本地 spaceId**，三条理由缺一不可：
+///  1. 游标本来就会为没有本地行的 uuid 存在（被 §6.5 拒绝的 agent 实体只带
+///     `refusedAtMs`；清理过的 tombstone 游标在本地数据级联删除后仍永久保留）；
+///  2. tag hash 从 syncUuid 派生（`PhiSyncEntity.spaceClientTag`），tombstone 的
+///     身份反查只有这一条路；
+///  3. 防复活守卫必须在映射行被删之后继续有效。
+///
+/// 整张表在账户 plist 的 `sync.phiSpaces` 下，所以它按账户隔离，不需要进
+/// `PhiSyncEngine.stateKeys`。
 struct PhiSpaceSyncTable: Codable, Equatable {
+    /// M3-2 未发布，所以**不写迁移代码**：低于这个版本的表整张丢掉（§3.6）。
+    static let currentFormatVersion = 2
+    var formatVersion: Int = currentFormatVersion
+    /// 按 **syncUuid** 键。
     var cursors: [String: PhiSpaceCursor] = [:]
     /// "keepBoth" | "accountWins" | nil = still pending (§8).
     var firstSyncDecision: String?
@@ -77,15 +91,25 @@ struct PhiSpaceSyncTable: Codable, Equatable {
 
     // MARK: - Derived sets
 
-    /// Both kinds of hidden: D2's "account wins" and remote soft deletes.
-    /// Drives §6.6's funnel filter and §9.4's over-conservative reference check.
-    var hiddenSpaceIds: Set<String> {
+    /// `cursor.hidden` 的全集，**按 syncUuid**。D6 之后 hidden 只剩一种含义：远端
+    /// 软删（`hidden ⇒ deletedAtMs != nil` 是不变量）。翻回本地 id 是
+    /// `PhiSpaceSyncState.refreshCaches` 的事（§3.5）。
+    var hiddenSyncUuids: Set<String> {
         Set(cursors.filter { $0.value.hidden }.keys)
+    }
+
+    /// 账户里**确实存在**这条实体的 syncUuid 全集（`entityId != nil`）。
+    /// `blocksProfileDeletion` 的第三条判据要的那半句（§3.5）：它跑在主 actor 上、
+    /// 手里没有表，所以这半句只能在这里算好推回去。
+    var publishedSyncUuids: Set<String> {
+        Set(cursors.filter { $0.value.entityId != nil }.keys)
     }
 
     /// ONLY the D2 kind (§8.3): a soft-deleted Space is hidden too, but it is
     /// not "a Space that only exists on this Mac", "join account sync" is a dud
     /// for it, and the 30-day sweep would cascade it away days later.
+    ///
+    /// D2 残留，随 §8 的删除清单一起走（Task 9）。
     var unsyncedSpaceIds: Set<String> {
         Set(cursors.filter { $0.value.hidden && $0.value.deletedAtMs == nil }.keys)
     }
@@ -168,6 +192,29 @@ struct PhiSpaceSyncTable: Codable, Equatable {
     func referencesProfileUuid(_ uuid: String) -> Bool {
         referencedProfileUuids().contains(uuid)
     }
+
+    /// `load()` 的版本闸。`nil`（键不存在，或 `codableValue` 解码失败）与低版本走
+    /// 同一条路：一张空表。
+    static func loaded(from decoded: PhiSpaceSyncTable?) -> PhiSpaceSyncTable {
+        guard let decoded, decoded.formatVersion >= currentFormatVersion else {
+            return PhiSpaceSyncTable()
+        }
+        return decoded
+    }
+
+    /// 判据定义在**原始值**上，不是在 `load()` 上。`AccountUserDefaults.codableValue`
+    /// 对「键不存在」与「解码失败」返回同一个 nil，而 `load()` 把两者一起塌成一张空
+    /// 表——于是「表是旧的」与「从来没有表」在 `load()` 之后不可区分，照那样实现会让
+    /// 每一台首次启动的机器都报「已丢弃」。
+    ///
+    /// **没有键 ⇒ false，什么都不写。**
+    static func isStaleFormat(rawData: Data?) -> Bool {
+        guard let rawData else { return false }
+        guard let decoded = try? JSONDecoder().decode(PhiSpaceSyncTable.self, from: rawData) else {
+            return true
+        }
+        return decoded.formatVersion < currentFormatVersion
+    }
 }
 
 protocol PhiSpaceSyncStateStore: AnyObject {
@@ -185,11 +232,24 @@ final class AccountPhiSpaceSyncStateStore: PhiSpaceSyncStateStore {
     init(defaults: AccountUserDefaults) { self.defaults = defaults }
 
     func load() -> PhiSpaceSyncTable {
-        defaults.codableValue(forKey: Self.defaultsKey) ?? PhiSpaceSyncTable()
+        PhiSpaceSyncTable.loaded(from: defaults.codableValue(forKey: Self.defaultsKey))
     }
 
     func save(_ table: PhiSpaceSyncTable) {
         defaults.set(table, forCodableKey: Self.defaultsKey)
+    }
+
+    /// true = 盘上确实有一张旧表、已被丢弃（§3.6）。**没有键**（从没同步过的机器、
+    /// 刚登录的机器、ARK 一直锁着的机器）返回 **false**，什么都不写。
+    /// 判据与写入分开在 `PhiSpaceSyncTable.isStaleFormat(rawData:)` 里，这里只有
+    /// 一次读、一个 guard 和一次写，没有自己的分支。
+    @discardableResult
+    func discardIfStaleFormat() -> Bool {
+        guard PhiSpaceSyncTable.isStaleFormat(rawData: defaults.data(forKey: Self.defaultsKey)) else {
+            return false
+        }
+        save(PhiSpaceSyncTable())
+        return true
     }
 }
 
@@ -235,8 +295,13 @@ final class PhiSpaceSyncState {
     /// third criterion (hidden local Spaces have no cursor `profile_uuid`).
     var localSpaceProfileIds: (() -> [(spaceId: String, profileId: String)])?
 
+    /// 一组**本地** spaceId（语义不变）：`SpaceManager.handleSpacesUpdate` 的漏斗
+    /// 过滤（SpaceManager.swift:2691-2692）读的就是它，那一处零改动。
     private(set) var hiddenSpaceIds: Set<String> = []
+    /// D2 残留（Task 9 随 §8 一起删）。
     private(set) var unsyncedSpaceIds: Set<String> = []
+    /// 账户里确实存在其实体的 syncUuid（§3.5）。**不参与** `changed` 比较。
+    private(set) var publishedSyncUuids: Set<String> = []
     private(set) var hasDrainedFullReplay = false
     private var referencedProfileUuids: Set<String> = []
 
@@ -244,13 +309,17 @@ final class PhiSpaceSyncState {
 
     /// Called by the engine after every table write, and by the fallback path.
     func refreshCaches(from table: PhiSpaceSyncTable) {
-        let hidden = table.hiddenSpaceIds
+        // 边界翻译（§3.5）：表按 syncUuid 键，而漏斗过滤要的是一组**本地** id。
+        // 解析不到的丢弃——那是没有本地行的软删／拒绝游标，本来也不该出现在过滤
+        // 集合里。
+        let hidden = Set(table.hiddenSyncUuids.compactMap { localSpaceIdLookup?($0) })
         let unsynced = table.unsyncedSpaceIds
         // One implementation of the reference rule, on the table (R4).
         let referenced = table.referencedProfileUuids()
         let changed = hidden != hiddenSpaceIds || unsynced != unsyncedSpaceIds
         hiddenSpaceIds = hidden
         unsyncedSpaceIds = unsynced
+        publishedSyncUuids = table.publishedSyncUuids
         referencedProfileUuids = referenced
         hasDrainedFullReplay = table.hasDrainedFullReplay
         if changed {
@@ -271,10 +340,17 @@ final class PhiSpaceSyncState {
         if let uuid = globalUuidLookup?(localProfileId), referencedProfileUuids.contains(uuid) {
             return true
         }
-        // Hidden local Spaces: filtered out of `spaceManager.spaces` by §6.6 and
-        // never published, so neither of the two checks above can see them.
+        // 第三条判据（R-D6-9）：**有映射且其实体已发布**的本地 Space。它必须走两件
+        // 新件——`publishedSyncUuids`（这半句只能在 `refreshCaches` 里算好推回来：
+        // 这个方法手上没有 `table`，也没有任何按游标键的视图）与 `syncUuidLookup`
+        // （`localSpaceIdLookup` 是 syncUuid -> 本地 id，方向反了）。
+        // D6 之前这里问的是「hidden 的本地 Space」，而 D2 是那一类行的唯一生产者。
         let rows = localSpaceProfileIds?() ?? []
-        return rows.contains { hiddenSpaceIds.contains($0.spaceId) && $0.profileId == localProfileId }
+        return rows.contains { row in
+            guard row.profileId == localProfileId,
+                  let uuid = syncUuidLookup?(row.spaceId) else { return false }
+            return publishedSyncUuids.contains(uuid)
+        }
     }
 
     private func deliver(_ intent: Intent) {

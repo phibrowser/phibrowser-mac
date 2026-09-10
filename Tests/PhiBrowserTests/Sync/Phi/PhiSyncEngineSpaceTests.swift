@@ -2230,4 +2230,147 @@ final class PhiSyncEngineSpaceTests: XCTestCase {
         XCTAssertFalse(store.table.didReplayForEmptyTable)
         XCTAssertEqual(client.getUpdatesCalls.first?.marker, nil)
     }
+
+    // MARK: - 预览（§4）
+
+    /// 11. 预览什么都不写。
+    func testThePreviewPersistsNothingAtAll() async throws {
+        let access = FakePhiSpaceAccess()
+        let store = MemorySpaceStore()
+        store.table = makeSpaceTable(access: access)
+        let client = FakePhiSyncClient()
+        client.seed(tagHash: spaceHash("sync-1"),
+                    ciphertext: try ciphertext(spaceEntity("sync-1", name: "Work")), version: 3)
+        let engine = makeEngine(access: access, store: store, client: client)
+        // 门**关着**：预览是唯一一条允许在门关着时执行的 Space 形状的读。
+        defaults.set(Data([0xAB]), forKey: PhiSyncEngine.markerStateKey)
+        let tableBefore = store.table
+
+        let result = await engine.previewAccountSpaces()
+        guard case .success(let summaries) = result else { return XCTFail("expected success") }
+        XCTAssertEqual(summaries.map(\.syncUuid), ["sync-1"])
+
+        XCTAssertEqual(defaults.data(forKey: PhiSyncEngine.markerStateKey), Data([0xAB]),
+                       "marker 一个字节都不动")
+        XCTAssertNil(defaults.string(forKey: PhiSyncEngine.entityIdStateKey))
+        XCTAssertNil(defaults.object(forKey: PhiSyncEngine.versionStateKey))
+        XCTAssertEqual(store.table, tableBefore, "Space 表 Equatable 意义上完全未变")
+        XCTAssertTrue(access.calls.isEmpty, "`PhiSpaceLocalAccess` 零调用")
+        XCTAssertTrue(client.commits.isEmpty, "零 commit")
+
+        // 紧接着一次正常 pull 仍从**原来的** marker 出发。
+        await engine.setSpaceSyncEnabled(false)
+        await engine.pullOnce()
+        XCTAssertEqual(client.getUpdatesCalls.last?.marker, Data([0xAB]))
+    }
+
+    /// 12. 预览排在同一条 round 队列上：一次设置 pull 停在 `getUpdates` 上时，预览的
+    ///     第一个 `getUpdates` 严格在那次 pull 完成之后才发出。
+    func testThePreviewRunsOnTheRoundQueueAndNeverInterleaves() async throws {
+        let access = FakePhiSpaceAccess()
+        let store = MemorySpaceStore()
+        store.table = makeSpaceTable(access: access)
+        let client = FakePhiSyncClient()
+        let arrived = Gate()
+        let release = Gate()
+        client.arrivedInGetUpdates = arrived
+        client.getUpdatesGate = release
+        let engine = makeEngine(access: access, store: store, client: client)
+
+        let pull = Task { await engine.pullOnce() }
+        await arrived.wait()                       // 一轮 pull 已经停在 getUpdates 里
+        let preview = Task { await engine.previewAccountSpaces() }
+        try await Task.sleep(nanoseconds: 50_000_000)
+        XCTAssertEqual(client.getUpdatesCalls.count, 1, "预览没有插进去")
+        await release.open()
+        _ = await pull.value
+        _ = await preview.value
+        XCTAssertGreaterThan(client.getUpdatesCalls.count, 1)
+    }
+
+    /// 13. 页预算用尽 ⇒ `.truncated`，**没有部分结果**。
+    func testAnExhaustedPageBudgetReturnsTruncatedWithNoPartialResult() async throws {
+        let access = FakePhiSpaceAccess()
+        let store = MemorySpaceStore()
+        store.table = makeSpaceTable(access: access)
+        let client = FakePhiSyncClient()
+        client.pageBudgetExhaustsAfter = 1_000     // 永远 changesRemaining == true
+        client.seed(tagHash: spaceHash("sync-1"),
+                    ciphertext: try ciphertext(spaceEntity("sync-1")), version: 3)
+        let engine = makeEngine(access: access, store: store, client: client)
+
+        let result = await engine.previewAccountSpaces()
+        guard case .failure(let error) = result else { return XCTFail("expected failure") }
+        XCTAssertEqual(error, .truncated)
+    }
+
+    /// 14. 过滤：设置实体 / tombstone / 解不开的实体 / 两种 agent 特征 /
+    ///     `spaceUuid == "default-space"` 各一条都不出现，`unreadableTagHashes` 未被写。
+    ///     **这里不断言 incognito**：§3.4 删掉了 `refuses` 里的 uuid 判据（Task 3），
+    ///     一条「incognito 形状」的载荷本来就过得去。
+    func testThePreviewFiltersSettingsTombstonesUnreadablesAgentsAndTheDefaultSpace() async throws {
+        let access = FakePhiSpaceAccess()
+        let store = MemorySpaceStore()
+        store.table = makeSpaceTable(access: access)
+        let client = FakePhiSyncClient()
+        client.seed(ciphertext: Data([0x01]), version: 2)                        // 设置实体
+        client.seed(tagHash: spaceHash("sync-dead"), ciphertext: Data(), version: 3,
+                    deleted: true)                                               // tombstone
+        client.seed(tagHash: "garbage-hash", ciphertext: Data([0x09]), version: 3) // 解不开
+        client.seed(tagHash: spaceHash(SyncableSpaces.defaultSpaceUuid),
+                    ciphertext: try ciphertext(spaceEntity(SyncableSpaces.defaultSpaceUuid)),
+                    version: 3)                                                  // 默认 Space
+        // 两条 agent 特征（值与 `SyncableSpacesTests` 里钉住的那对完全一致）。
+        func agentShaped(_ uuid: String, name: String, color: String) throws -> Data {
+            var entity = spaceEntity(uuid, name: name)
+            var icon = Phi_PhiSettingValue(); icon.updatedAtMs = 100; icon.stringValue = "emoji:1F916"
+            entity.iconName = icon
+            var hex = Phi_PhiSettingValue(); hex.updatedAtMs = 100; hex.stringValue = color
+            entity.colorHex = hex
+            return try ciphertext(entity)
+        }
+        client.seed(tagHash: spaceHash("sync-agent"),
+                    ciphertext: try agentShaped("sync-agent", name: "R3", color: "#8E8E93"),
+                    version: 3)                                              // ephemeral agent
+        client.seed(tagHash: spaceHash("sync-agent-p"),
+                    ciphertext: try agentShaped("sync-agent-p", name: "task-42", color: "#5856D6"),
+                    version: 3)                                              // persistent agent
+        client.seed(tagHash: spaceHash("sync-ok"),
+                    ciphertext: try ciphertext(spaceEntity("sync-ok", name: "Work")), version: 3)
+        let engine = makeEngine(access: access, store: store, client: client)
+
+        let result = await engine.previewAccountSpaces()
+        guard case .success(let summaries) = result else { return XCTFail("expected success") }
+        XCTAssertEqual(summaries.map(\.syncUuid), ["sync-ok"])
+        XCTAssertFalse(summaries.contains { $0.isDefault },
+                       "`isDefault` 在返回值里恒为 false —— 默认 Space 整条被丢掉（§4.3 第 6 条）")
+        XCTAssertTrue(store.table.unreadableTagHashes.isEmpty, "预览不写任何持久状态")
+    }
+
+    /// 15. D7 要的三个字段**逐字**搬运，不做任何归一化。一次错误的归一化在界面上表现
+    ///     为「什么差异都算不出来」，没有任何其它信号。
+    func testThePreviewCarriesTheThemeAndOpacityEncodingsVerbatim() async throws {
+        let access = FakePhiSpaceAccess()
+        let store = MemorySpaceStore()
+        store.table = makeSpaceTable(access: access)
+        var entity = spaceEntity("sync-1", name: "Work")
+        var theme = Phi_PhiSettingValue(); theme.updatedAtMs = 1; theme.stringValue = "coral"
+        entity.themeID = theme
+        var light = Phi_PhiSettingValue(); light.updatedAtMs = 1; light.intValue = 850
+        entity.overlayOpacityLight = light
+        var dark = Phi_PhiSettingValue(); dark.updatedAtMs = 1; dark.intValue = -1
+        entity.overlayOpacityDark = dark
+        let client = FakePhiSyncClient()
+        client.seed(tagHash: spaceHash("sync-1"), ciphertext: try ciphertext(entity), version: 3)
+        let engine = makeEngine(access: access, store: store, client: client)
+
+        let result = await engine.previewAccountSpaces()
+        guard case .success(let summaries) = result, let summary = summaries.first else {
+            return XCTFail("expected one summary")
+        }
+        XCTAssertEqual(summary.themeId, "coral")
+        XCTAssertEqual(summary.overlayOpacityLightMilli, 850)
+        XCTAssertEqual(summary.overlayOpacityDarkMilli, -1, "-1 哨兵原样带出，不换成 nil、不换成 0")
+        XCTAssertEqual(summary.profileUuid, "uuid-a")
+    }
 }

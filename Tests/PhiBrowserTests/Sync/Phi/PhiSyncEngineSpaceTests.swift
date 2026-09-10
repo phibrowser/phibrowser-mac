@@ -1357,13 +1357,25 @@ final class PhiSyncEngineSpaceTests: XCTestCase {
                       "M3-2 does not sync bookmarks; deleting here would destroy the only copy")
         XCTAssertTrue(access.currentSpaces().contains { $0.spaceId == "mine" })
         XCTAssertTrue(access.calls.contains(.hide("mine")))
-        // D2 residue: `applyFirstSyncDecision` still keys its hidden set by LOCAL
-        // spaceId (PhiSyncEngine.swift, Task 9's deletion list), so this assertion
-        // names the local id. It is the one D2 path Task 4 deliberately leaves
-        // untranslated.
-        XCTAssertFalse(client.commits.contains {
-            $0.clientTagHash == PhiSyncEntity.clientTagHash(for: PhiSyncEntity.spaceClientTag("mine"))
-        })
+        // KNOWN D2/D6 GAP (Task 9) -- the line below asserts what the code DOES,
+        // not what `accountWins` is supposed to mean.
+        //
+        // `applyFirstSyncDecision` writes its hidden set into `table.cursors`
+        // keyed by the LOCAL spaceId, while `SyncableSpaces.snapshot` resolves a
+        // Space's cursor by syncUuid. The lookup therefore misses: `pushSpaces`
+        // lazily mints `sync-mine` (R-D6-7), finds no cursor under it, treats the
+        // Space as eligible, and publishes exactly the Space the user asked to
+        // keep off the account. The local row really is hidden (the four
+        // assertions above), so only the publish half is wrong.
+        //
+        // The previous shape of this assertion -- "no commit carries
+        // `spaceClientTag("mine")`" -- became unfalsifiable once Task 3 made the
+        // mint lazy: a LOCAL row id can never appear as a commit tag, so it
+        // passed for free and hid this gap instead of pinning it. Task 9 re-keys
+        // that hidden set by syncUuid; when it does, this assertion goes red and
+        // must be inverted to `XCTAssertFalse` -- that red is the tripwire.
+        XCTAssertTrue(spaceCommits(client).contains { $0.clientTagHash == spaceHash("sync-mine") },
+                      "accountWins hides the row locally but still publishes it -- see the note above")
     }
 
     func testKeepBothPublishesEveryLocalOnlySpaceUnderItsOwnUuid() async throws {

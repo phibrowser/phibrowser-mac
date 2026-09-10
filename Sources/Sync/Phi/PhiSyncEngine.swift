@@ -54,6 +54,39 @@ enum PhiSpaceFirstSyncDecision: String {
     case accountWins
 }
 
+/// 配对向导第 2 步 Account 列的一行（R-D6-1）。**这是一次性的、只给 UI 看的东西，
+/// 不是同步状态**。
+struct PhiAccountSpaceSummary: Equatable, Sendable {
+    let syncUuid: String
+    let name: String
+    let iconName: String
+    let colorHex: String
+    /// 账户级 profile uuid；默认 Space 为 `""`。
+    let profileUuid: String
+    /// 返回值里**恒为 false**：§4.3 第 6 条把账户里的默认 Space 整条丢掉了。保留这个
+    /// 字段只为让那个过滤点在类型上可读，并让测试能直接断言它。
+    let isDefault: Bool
+    // D7 / R-D7-1：覆盖确认页比较的字段集比第 2 步的两列表多三个。第 2 步不渲染它们，
+    // 确认页（§6.9）渲染由它们算出的账户侧值。一律保留**线上编码**，不在这里解释——
+    // 归一化与显示是 `SpaceOverwriteDiff` 与视图的事，否则「什么算默认」要在两个地方
+    // 各判一次。
+    /// 线上 `theme_id`，`""` = 无主题 pin。
+    let themeId: String
+    /// 线上千分单位；**负数** = 无自定义透明度（本 build 发 -1，但落地那侧判的是 `< 0`）。
+    let overlayOpacityLightMilli: Int64
+    let overlayOpacityDarkMilli: Int64
+}
+
+enum PhiSpacePreviewError: Error, Equatable {
+    /// 协调器手上没有引擎。
+    case engineUnavailable
+    case retired
+    /// 页预算用尽，账户视图不完整。**不返回部分结果**。
+    case truncated
+    /// `PhiSyncLog.describe` 之后的元数据字符串（R12：不含任何载荷）。
+    case transport(String)
+}
+
 extension Notification.Name {
     /// Engine -> UI. The engine never raises an `NSAlert` inside a round: the
     /// round queue is SHARED with settings sync, and parking it would stop that
@@ -243,6 +276,11 @@ actor PhiSyncEngine {
     /// Idempotent, and deliberately not reversible — a new sign-in builds a new engine.
     nonisolated func shutdown() { stopSignal.stop() }
 
+    /// 结果的一次性信箱（§4.3）。`final class` 而不是 `inout`：它要跨 `Task` 边界。
+    final class PreviewBox {
+        var result: Result<[PhiAccountSpaceSummary], PhiSpacePreviewError>?
+    }
+
     /// What one queued round does. An enum rather than a closure so the body stays
     /// actor-isolated and needs no `@Sendable` gymnastics.
     private enum Round {
@@ -267,6 +305,9 @@ actor PhiSyncEngine {
         case retentionSweep
         case recordLocalDeletion(String)
         case joinAccountSync(String)
+        /// 配对向导的只读账户预览（R-D6-1）。排同一条队列，所以它不可能与一轮设置
+        /// 同步交错。
+        case preview(PreviewBox)
     }
 
     init(domainKeys: any PhiDomainKeyProviding,
@@ -327,6 +368,28 @@ actor PhiSyncEngine {
     func setSpaceSyncEnabled(_ enabled: Bool) async {
         guard spaceStore != nil else { return }
         await serialized(.spaceGate(enabled))
+    }
+
+    /// 配对向导第 2 步的 Account 列（R-D6-1）。
+    ///
+    /// **它持久化的东西是：没有。** 不写 `storedMarker`、不写 `storedBirthday`、不建
+    /// 也不改任何游标、不写任何基线、不动 `unreadableTagHashes`、不动
+    /// `hasDrainedFullReplay` / `drainInProgress` / `hadRecords` /
+    /// `didReplayForEmptyTable`、不写映射、不 commit 任何东西。它不是 `push`，
+    /// `pushSpaces` 的四道守卫一处都没碰。`run(_:)` 的这一支还**提前返回**，所以
+    /// §11 的 `logSpaceRound()` 也不跑：预览不是一轮 Space，不该在计数行里留下一条
+    /// 全零记录，也不该为此多两次主 actor 往返。
+    ///
+    /// **它也不看 `spaceSectionEnabled`。** 这是唯一一条允许在门关着时执行的 Space
+    /// 形状的读，允许的理由恰恰是「它什么都不写」。
+    ///
+    /// 拿到的东西是一次性的、只给 UI 看的，**不是同步状态**：它从不推进共享 marker，
+    /// 所以门开边沿仍然会丢一次 marker 并重放整个 data type，账户里每一条 Space 都会
+    /// 在门开后再走一遍正式路径。
+    func previewAccountSpaces() async -> Result<[PhiAccountSpaceSummary], PhiSpacePreviewError> {
+        let box = PreviewBox()
+        await serialized(.preview(box))
+        return box.result ?? .failure(.retired)
     }
 
     /// The gate edge itself. Runs as a queued round; never call it directly.
@@ -590,8 +653,108 @@ actor PhiSyncEngine {
             if runSpaceIntent({ table in table.joinAccountSync(spaceId: spaceId) }) {
                 await push(retryOnConflict: true, allowInitialPull: true)
             }
+        case .preview(let box):
+            await runPreview(into: box)
+            return          // 预览不是 Space 轮：不参与 §11 的计数行
         }
         await logSpaceRound()
+    }
+
+    // MARK: - 配对向导的只读账户预览（§4）
+
+    /// §4.3 的轮体。跑在引擎 actor 的同一条 round 队列上；never call it directly.
+    private func runPreview(into box: PreviewBox) async {
+        let startedAt = now()
+        guard !isStopped else { box.result = .failure(.retired); return }
+        let key: SymmetricKey
+        do {
+            key = try await domainKeys.domainKey()
+        } catch {
+            AppLogWarn("[phi-sync] space preview failed: domain key unavailable (\(PhiSyncLog.describe(error)))")
+            box.result = .failure(.transport("domain_key"))
+            return
+        }
+        guard !isStopped else { box.result = .failure(.retired); return }
+
+        var summaries: [String: (entity: Phi_PhiSpaceEntity, version: Int64)] = [:]
+        var pages = 0
+        var entities = 0
+        var refused = 0
+        var unreadable = 0
+        // **局部** marker：响应里的 marker 与 birthday 都不写回。首次加入时
+        // `storedBirthday` 可能还是 ""（设置同步的第一轮尚未收尾），这是正常输入——
+        // 服务端会回一个真的，预览照旧不写回。
+        var marker: Data?
+        var more = true
+        do {
+            while more, pages < Self.maxPullPages {
+                let response = try await client.getUpdates(marker: marker, storeBirthday: storedBirthday)
+                guard !isStopped else { box.result = .failure(.retired); return }
+                marker = response.newMarker
+                pages += 1
+                more = response.changesRemaining
+                for entity in response.entities {
+                    entities += 1
+                    // 设置实体不关它的事；tombstone 不需要（账户里已经删掉的 Space
+                    // 不该出现在配对列表里）。
+                    guard entity.clientTagHash != PhiSyncEntity.settingsClientTagHash,
+                          !entity.deleted else { continue }
+                    guard let decoded = try? PhiEntityCodec.decrypt(entity.ciphertext, key: key) else {
+                        unreadable += 1     // 只计数，**不**记进 `unreadableTagHashes`
+                        continue
+                    }
+                    guard case .space(let space)? = decoded.kind else { continue }
+                    let expected = PhiSyncEntity.clientTagHash(
+                        for: PhiSyncEntity.spaceClientTag(space.spaceUuid))
+                    guard expected == entity.clientTagHash else { unreadable += 1; continue }
+                    // 两条 agent 特征匹配的载荷绝不能出现在配对选项里；默认 Space 的
+                    // 身份由 D1 固定，绝不可在配对列表里被选中。
+                    guard !SyncableSpaces.refuses(space) else { refused += 1; continue }
+                    guard space.spaceUuid != SyncableSpaces.defaultSpaceUuid else { continue }
+                    // 一次全量重放里每个实体只出现一次；去重取 version 较大者是防御性的。
+                    if let seen = summaries[space.spaceUuid], seen.version >= entity.version { continue }
+                    summaries[space.spaceUuid] = (space, entity.version)
+                }
+            }
+        } catch PhiSyncProtocolError.notMyBirthday {
+            // 预览不做任何游标清理，那是正式 pull 的职责。**这不是死路**：设置同步照常
+            // 按 60 s 跑，它自己的 birthday 重试会把 `storedBirthday` 修好，下一次
+            // Retry 就能过。
+            AppLogWarn("[phi-sync] space preview: pages=\(pages) error=not_my_birthday")
+            box.result = .failure(.transport("not_my_birthday"))
+            return
+        } catch {
+            AppLogWarn("[phi-sync] space preview: pages=\(pages) error=\(PhiSyncLog.describe(error))")
+            box.result = .failure(.transport(PhiSyncLog.describe(error)))
+            return
+        }
+
+        guard !more else {
+            // **不返回部分结果**：Account 列缺一条，用户就可能把一个账户里已经存在的
+            // Space 选成「Add as new」，铸出第二条实体——而那正是这个向导要消灭的状态。
+            AppLogWarn("[phi-sync] space preview: pages=\(pages) error=truncated")
+            box.result = .failure(.truncated)
+            return
+        }
+
+        let out = summaries.values.map { item -> PhiAccountSpaceSummary in
+            let entity = item.entity
+            return PhiAccountSpaceSummary(
+                syncUuid: entity.spaceUuid,
+                name: entity.name.stringValue,
+                iconName: entity.iconName.stringValue,
+                colorHex: entity.colorHex.stringValue,
+                profileUuid: entity.profileUuid.stringValue,
+                isDefault: false,
+                themeId: entity.themeID.stringValue,
+                overlayOpacityLightMilli: entity.overlayOpacityLight.intValue,
+                overlayOpacityDarkMilli: entity.overlayOpacityDark.intValue)
+        }.sorted { $0.syncUuid < $1.syncUuid }   // 顺序确定，便于测试与两机对照
+        // §9.1 第一条。R12：只有计数。
+        AppLogInfo("[phi-sync] space preview: pages=\(pages) entities=\(entities) "
+                   + "spaces=\(out.count) refused=\(refused) unreadable=\(unreadable) "
+                   + "ms=\(now() - startedAt)")
+        box.result = .success(out)
     }
 
     // MARK: - §11 round counters

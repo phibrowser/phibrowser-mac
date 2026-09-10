@@ -545,6 +545,15 @@ import SwiftUI
                                      controller: syncKeyController).pairableSpaces()
     }
 
+    /// 配对向导的账户预览（§4.5）。向导不持有引擎。加入流程走到向导时引擎一定已经
+    /// 建好，`.engineUnavailable` 只覆盖登出 / 自撤销把引擎丢掉之后通知还在飞的窄
+    /// 窗口，界面按普通错误页处理。
+    @MainActor
+    func previewAccountSpaces() async -> Result<[PhiAccountSpaceSummary], PhiSpacePreviewError> {
+        guard let engine = phiSyncEngine else { return .failure(.engineUnavailable) }
+        return await engine.previewAccountSpaces()
+    }
+
     /// Build-only entry point for consumers (the Devices pane) that just need
     /// the shared controller instance and will drive their own unlock/UI flow.
     /// Returns nil while signed out.

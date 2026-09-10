@@ -125,6 +125,7 @@ struct ExtensionList<Manager: ExtensionManagerProtocol>: View {
                         onRequestDismiss?()
                     }
                     .padding(.horizontal, 8)
+
                 }
                 .padding(.bottom, shouldShowWebsiteSection ? 0 : 12)
             }

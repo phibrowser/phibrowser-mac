@@ -99,6 +99,11 @@ final class ExtensionMessageRouter {
             return nil
         }
 
+        register(type: SiteMemoryMessageRouter.queryType) { context in
+            SiteMemoryMessageRouter.handle(context)
+            return nil
+        }
+
         register(type: "getServiceExports") { context in
             Task {
                 do {

@@ -236,6 +236,52 @@ final class WebContentAddressBarMenuPresenter {
         _ = actionTargets
     }
 
+    @MainActor
+    static func presentMemoryMenu(
+        browserState: BrowserState?,
+        currentTab: Tab?,
+        anchorView: NSView?,
+        onPresentationChanged: (Bool) -> Void
+    ) {
+        guard let anchorView = anchorView ?? browserState?.windowController?.window?.contentView,
+              let actions = SiteMemoryMenuActions.current(
+                browserState: browserState,
+                urlString: (currentTab ?? browserState?.focusingTab)?.url ?? ""
+              ) else { return }
+
+        let menu = makeMemoryMenu(actions: actions, window: anchorView.window)
+        onPresentationChanged(true)
+        defer { onPresentationChanged(false) }
+        anchorView.effectiveAppearance.performAsCurrentDrawingAppearance {
+            menu.popUp(positioning: nil, at: NSPoint(x: 0, y: -6), in: anchorView)
+        }
+    }
+
+    @MainActor
+    static func makeMemoryMenu(actions: SiteMemoryMenuActions, window: NSWindow?) -> NSMenu {
+        let menu = NSMenu()
+        menu.autoenablesItems = false
+
+        func addItem(title: String, state: NSControl.StateValue = .off,
+                     isEnabled: Bool, image: NSImage? = nil, action: SiteMemoryMenuActions.Action) {
+            let item = NSMenuItem(title: title, action: nil, keyEquivalent: "")
+            item.state = state
+            item.isEnabled = isEnabled
+            item.image = image
+            let target = MenuActionTarget { actions.perform(action, window: window) }
+            item.representedObject = target
+            item.target = target
+            item.action = #selector(MenuActionTarget.performAction(_:))
+            menu.addItem(item)
+        }
+
+        addItem(title: SiteMemoryMenuActions.collectionTitle, state: actions.collectionState,
+                isEnabled: actions.collectionEnabled != nil, action: .toggleCollection)
+        addItem(title: SiteMemoryMenuActions.removalTitle, isEnabled: actions.canRemoveMemories,
+                image: menuSymbol(named: "trash"), action: .removeMemories)
+        return menu
+    }
+
     private static func securityStatusText(from info: TabSecurityInfo?) -> String {
         guard let info else {
             return NSLocalizedString("browser.addressBarMenu.security.unknownStatus", value: "Unknown", comment: "Address bar menu - Website security unknown")

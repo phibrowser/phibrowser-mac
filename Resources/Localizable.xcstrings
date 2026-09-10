@@ -24119,6 +24119,66 @@
         }
       }
     },
+    "browser.addressBarMenu.memory.collectionToggle" : {
+      "comment" : "Website menus - Toggle memory collection for the current website in this browser profile",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Collection Site Memories"
+          }
+        }
+      }
+    },
+    "browser.addressBarMenu.memory.errorDetail" : {
+      "comment" : "Website menus - Recovery suggestion after a website memory operation fails",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Please try again."
+          }
+        }
+      }
+    },
+    "browser.addressBarMenu.memory.removeAction" : {
+      "comment" : "Website menus - Delete saved memories for the current website and its subdomains in this browser profile",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Remove Site Memories"
+          }
+        }
+      }
+    },
+    "browser.addressBarMenu.memory.removeFailed" : {
+      "comment" : "Website menus - Error title when deleting the website memories fails",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Couldn’t Remove Site Memories"
+          }
+        }
+      }
+    },
+    "browser.addressBarMenu.memory.updateFailed" : {
+      "comment" : "Website menus - Error title when saving the website memory collection setting fails",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Couldn’t Change Memory Collection"
+          }
+        }
+      }
+    },
     "browser.addressBarMenu.openBrowserSettingsAction" : {
       "comment" : "Address bar menu - Settings submenu item to open settings page",
       "extractionState" : "extracted_with_value",
@@ -26623,6 +26683,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "關閉分頁"
+          }
+        }
+      }
+    },
+    "browser.webContentAddressBar.manageSiteMemoriesTooltip" : {
+      "comment" : "Address bar - Button tooltip for opening memory controls for the current website",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Manage Site Memories"
           }
         }
       }

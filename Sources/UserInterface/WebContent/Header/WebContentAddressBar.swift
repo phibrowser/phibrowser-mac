@@ -192,6 +192,9 @@ struct WebContentAddressBarView: View {
     @State private var anchorView: NSView?
     @State private var isMenuShown = false
     @State private var menuAnchorView: NSView?
+    @State private var memoryMenuAnchorView: NSView?
+    @State private var isMemoryMenuShown = false
+    @State private var isMemoryButtonHovering = false
     @State private var showCopyConfirmation = false
     @StateObject private var lottieState = LottieAnimationViewState()
     @Environment(\.phiTheme) private var theme
@@ -251,6 +254,7 @@ struct WebContentAddressBarView: View {
                 if !viewModel.isInPlaceholderMode {
                     HStack(spacing: 2) {
                         readerButton
+                        memoryMenuButton
                         copyURLButton
                         menuButton
                     }
@@ -399,6 +403,46 @@ struct WebContentAddressBarView: View {
     }
 
     @ViewBuilder
+    private var memoryMenuButton: some View {
+        if let browserState,
+           SiteMemoryMenuActions(
+            urlString: currentTab?.url ?? "", profileID: browserState.profileId,
+            isIncognito: browserState.isIncognito,
+            isPhiAIEnabled: PhiPreferences.AISettings.phiAIEnabled.loadValue(),
+            service: nil
+           ) != nil {
+            let title = NSLocalizedString("browser.webContentAddressBar.manageSiteMemoriesTooltip", value: "Manage Site Memories", comment: "Address bar - Button tooltip for opening memory controls for the current website")
+            Button {
+                anchorView?.window?.customTooltipController.dismissAll()
+                WebContentAddressBarMenuPresenter.presentMemoryMenu(
+                    browserState: browserState,
+                    currentTab: currentTab,
+                    anchorView: memoryMenuAnchorView
+                ) { isPresented in
+                    isMemoryMenuShown = isPresented
+                    isMenuShown = isPresented
+                }
+            } label: {
+                Image("memory-manage-icon")
+                    .renderingMode(.template)
+                    .resizable()
+                    .scaledToFit()
+                    .frame(width: 16, height: 16)
+                    .foregroundStyle(ThemedColor.textPrimary.swiftUIColor(theme: theme, appearance: appearance))
+                    .frame(width: 24, height: 24)
+                    .background(Circle().fill(Color(.sidebarTabHovered))
+                        .opacity(isMemoryButtonHovering || isMemoryMenuShown ? 1 : 0))
+            }
+            .buttonStyle(.plain)
+            .background(AddressBarAnchorView { memoryMenuAnchorView = $0 }.allowsHitTesting(false))
+            .onHover { isMemoryButtonHovering = $0 }
+            .opacity(isHovering || isMenuShown ? 1 : 0)
+            .animation(.easeInOut(duration: 0.15), value: isHovering || isMenuShown)
+            .accessibilityLabel(title)
+        }
+    }
+
+    @ViewBuilder
     private var copyURLButton: some View {
         CopyURLButtonView(
             currentTab: currentTab,
@@ -432,7 +476,7 @@ struct WebContentAddressBarView: View {
             Circle()
                 .fill(Color(.sidebarTabHovered))
                 .frame(width: 24, height: 24)
-                .opacity(isMenuShown ? 1 : 0)
+                .opacity(isMenuShown && !isMemoryMenuShown ? 1 : 0)
 
             LottieAnimationView(config: config, state: lottieState) {
                 presentAddressBarMenu()

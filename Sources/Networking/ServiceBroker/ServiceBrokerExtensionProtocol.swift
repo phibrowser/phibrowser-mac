@@ -432,6 +432,40 @@ actor ServiceBrokerExtensionProtocol {
         }
     }
 
+    /// Native-only entry point; never attributes an app action to an extension.
+    func removeSiteMemories(
+        host: String, profileID: String, accountID: String
+    ) async throws -> SiteMemoryRemovalResult {
+        let host = try SiteMemorySettingsStore.normalizedHost(host)
+        try SiteMemorySettingsStore.validateProfileID(profileID)
+        let auth = try requireAuthenticatedSnapshot()
+        guard auth.scope.accountID == accountID else { throw SiteMemoryError.accountUnavailable }
+        let runtime = try await resolveRuntime(expectedAccountID: accountID)
+        try requireUnchangedAuth(auth)
+        try Task.checkCancellation()
+        let response = try await runtime.requestExecutor(BrokerHTTPRequest(
+            service: .phiMemory,
+            path: "/v1/clear/host",
+            method: "POST",
+            headers: [
+                "Authorization": "Bearer \(auth.accessToken)",
+                "Content-Type": "application/json",
+                "x-profile-id": profileID
+            ],
+            body: try JSONEncoder().encode(["host": host])
+        ))
+        try requireUnchangedAuth(auth)
+        guard (200..<300).contains(response.statusCode) else {
+            throw SiteMemoryError.serviceRejected(response.statusCode)
+        }
+        guard response.body.count <= runtime.limits.nonStreamingResponseBytes else {
+            throw SiteMemoryError.invalidResponse
+        }
+        let result = try JSONDecoder().decode(SiteMemoryRemovalResult.self, from: response.body)
+        guard result.ok, result.host == host else { throw SiteMemoryError.invalidResponse }
+        return result
+    }
+
     func loadImagePreviewFile(
         path: String,
         senderID: String,

@@ -1629,6 +1629,85 @@ final class ServiceBrokerExtensionProtocolTests: XCTestCase {
         )
     }
 
+    private static let siteRemovalBody = Data(#"{"ok":true,"host":"example.com","deleted":{"observations":2,"browserMemoryEntries":3,"ingestEvents":1,"tabSummaries":1,"galaxyNodes":1,"galaxyEdges":2},"updated":{"galaxyNodes":1,"galaxyEdges":0}}"#.utf8)
+
+    func testNativeSiteRemovalUsesAuthenticatedProfileScopedBrokerRequest() async throws {
+        let recorder = BrokerRequestRecorder()
+        let handler = makeHandler(response: BrokerHTTPResponse(
+            statusCode: 200, headers: [], body: Self.siteRemovalBody), recorder: recorder)
+        let result = try await handler.removeSiteMemories(
+            host: "EXAMPLE.COM.", profileID: "Profile 2", accountID: "auth0|test-account")
+        XCTAssertEqual(result.deleted.observations, 2)
+        XCTAssertEqual(result.updated.galaxyNodes, 1)
+        let recorded = await recorder.lastRequest()
+        let request = try XCTUnwrap(recorded)
+        XCTAssertEqual(request.service, .phiMemory)
+        XCTAssertEqual(request.path, "/v1/clear/host")
+        XCTAssertEqual(request.method, "POST")
+        XCTAssertEqual(request.headers["x-profile-id"], "Profile 2")
+        XCTAssertEqual(request.headers["Authorization"], "Bearer test-access-token")
+        XCTAssertNil(request.headers["X-Phi-Extension-ID"])
+        let body = try XCTUnwrap(request.body)
+        XCTAssertEqual(try JSONDecoder().decode([String: String].self, from: body), ["host": "example.com"])
+    }
+
+    func testNativeSiteRemovalRejectsWrongAccountMissingAuthAndInvalidScopeBeforeSending() async {
+        let recorder = BrokerRequestRecorder()
+        let handler = makeHandler(recorder: recorder)
+        for (host, profile, account) in [
+            ("example.com", "Default", "another-account"),
+            ("*.example.com", "Default", "auth0|test-account"),
+            ("example.com", "", "auth0|test-account")
+        ] {
+            do {
+                _ = try await handler.removeSiteMemories(host: host, profileID: profile, accountID: account)
+                XCTFail("Invalid scope should not delete memory")
+            } catch { }
+        }
+        let unauthenticated = makeHandler(recorder: recorder, authSnapshot: nil)
+        do {
+            _ = try await unauthenticated.removeSiteMemories(
+                host: "example.com", profileID: "Default", accountID: "auth0|test-account")
+            XCTFail("Authentication is required")
+        } catch { }
+        let count = await recorder.count()
+        XCTAssertEqual(count, 0)
+    }
+
+    func testNativeSiteRemovalRejectsHTTPFailureFalseSuccessAndWrongHost() async {
+        for (status, body) in [
+            (503, Self.siteRemovalBody),
+            (200, Data("{}".utf8)),
+            (200, Data(String(decoding: Self.siteRemovalBody, as: UTF8.self)
+                .replacingOccurrences(of: "true", with: "false").utf8)),
+            (200, Data(String(decoding: Self.siteRemovalBody, as: UTF8.self)
+                .replacingOccurrences(of: "example.com", with: "other.test").utf8))
+        ] {
+            let handler = makeHandler(response: BrokerHTTPResponse(statusCode: status, headers: [], body: body))
+            do {
+                _ = try await handler.removeSiteMemories(
+                    host: "example.com", profileID: "Default", accountID: "auth0|test-account")
+                XCTFail("Invalid response must not report a successful deletion")
+            } catch { }
+        }
+    }
+
+    func testNativeSiteRemovalRejectsAuthChangeDuringRequest() async {
+        let snapshot = SharedAuthTokenSnapshot(
+            scope: SharedAuthScope(accountID: "auth0|test-account", revisionID: UUID()),
+            accessToken: "test-access-token")
+        let state = ImagePreviewAuthSnapshotBox(snapshot)
+        let handler = makeHandler(requestExecutor: { _ in
+            state.set(nil)
+            return BrokerHTTPResponse(statusCode: 200, headers: [], body: Self.siteRemovalBody)
+        }, authSnapshotProvider: { state.current() })
+        do {
+            _ = try await handler.removeSiteMemories(
+                host: "example.com", profileID: "Default", accountID: "auth0|test-account")
+            XCTFail("An account change must invalidate the result")
+        } catch { }
+    }
+
     private func makeHandler(
         limits: ServiceBrokerLimits? = nil,
         response: BrokerHTTPResponse = BrokerHTTPResponse(

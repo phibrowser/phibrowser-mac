@@ -329,6 +329,10 @@
 		AB1000000000000000000FA1 /* TabMultiSelection.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB1000000000000000000FA2 /* TabMultiSelection.swift */; };
 		AB1000000000000000000FB1 /* TabMultiSelectionMenu.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB1000000000000000000FB2 /* TabMultiSelectionMenu.swift */; };
 		AB1000000000000000000FC1 /* TabDragCountBadge.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB1000000000000000000FC2 /* TabDragCountBadge.swift */; };
+		AB7090710000000000000001 /* SiteMemorySettingsStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB7090700000000000000001 /* SiteMemorySettingsStore.swift */; };
+		AB7090710000000000000002 /* SiteMemoryService.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB7090700000000000000002 /* SiteMemoryService.swift */; };
+		AB7090710000000000000003 /* SiteMemoryMessageRouter.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB7090700000000000000003 /* SiteMemoryMessageRouter.swift */; };
+		AB7090710000000000000004 /* SiteMemoryMenuActions.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB7090700000000000000004 /* SiteMemoryMenuActions.swift */; };
 		ACDC00000000000000000B01 /* AgentCDPListener.swift in Sources */ = {isa = PBXBuildFile; fileRef = ACDC00000000000000000A01 /* AgentCDPListener.swift */; };
 		ACDC00000000000000000B02 /* AgentPeerIdentity.swift in Sources */ = {isa = PBXBuildFile; fileRef = ACDC00000000000000000A02 /* AgentPeerIdentity.swift */; };
 		ACDC00000000000000000B03 /* AgentDirectChannel.swift in Sources */ = {isa = PBXBuildFile; fileRef = ACDC00000000000000000A03 /* AgentDirectChannel.swift */; };
@@ -1012,6 +1016,10 @@
 		AB1000000000000000000FA2 /* TabMultiSelection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TabMultiSelection.swift; sourceTree = "<group>"; };
 		AB1000000000000000000FB2 /* TabMultiSelectionMenu.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TabMultiSelectionMenu.swift; sourceTree = "<group>"; };
 		AB1000000000000000000FC2 /* TabDragCountBadge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TabDragCountBadge.swift; sourceTree = "<group>"; };
+		AB7090700000000000000001 /* SiteMemorySettingsStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SiteMemorySettingsStore.swift; sourceTree = "<group>"; };
+		AB7090700000000000000002 /* SiteMemoryService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SiteMemoryService.swift; sourceTree = "<group>"; };
+		AB7090700000000000000003 /* SiteMemoryMessageRouter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SiteMemoryMessageRouter.swift; sourceTree = "<group>"; };
+		AB7090700000000000000004 /* SiteMemoryMenuActions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SiteMemoryMenuActions.swift; sourceTree = "<group>"; };
 		ACDC00000000000000000A01 /* AgentCDPListener.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentCDPListener.swift; sourceTree = "<group>"; };
 		ACDC00000000000000000A02 /* AgentPeerIdentity.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentPeerIdentity.swift; sourceTree = "<group>"; };
 		ACDC00000000000000000A03 /* AgentDirectChannel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentDirectChannel.swift; sourceTree = "<group>"; };
@@ -1405,6 +1413,7 @@
 				37EA25EE2F6D5A5A00D3C4A9 /* CommonMessageRouter.swift */,
 				376CE3FA2F2891670093D937 /* ExtensionMessageEnvelope.swift */,
 				376CE3FB2F2891670093D937 /* ExtensionMessageRouter.swift */,
+				AB7090700000000000000003 /* SiteMemoryMessageRouter.swift */,
 				376CE3FC2F2891670093D937 /* ExtensionMessaging.swift */,
 				376CE3FD2F2891670093D937 /* NotificationCardManager.swift */,
 				376CE3F92F2891670093D937 /* WindowThemeMessageRouter.swift */,
@@ -1753,6 +1762,7 @@
 				5B0000010000000000000011 /* ServiceBrokerTypes.swift */,
 				5B0000010000000000000012 /* ServiceBrokerSocketPath.swift */,
 				5B0000010000000000000013 /* ServiceBrokerClient.swift */,
+				AB7090700000000000000002 /* SiteMemoryService.swift */,
 				5B0000010000000000000014 /* ServiceBrokerHTTPConnection.swift */,
 				5B0000010000000000000015 /* ServiceBrokerChannelStore.swift */,
 				5B0000010000000000000016 /* ServiceBrokerWebSocket.swift */,
@@ -2290,6 +2300,7 @@
 			isa = PBXGroup;
 			children = (
 				CC2708A22E7A65E500B65AB8 /* LocalStore.swift */,
+				AB7090700000000000000001 /* SiteMemorySettingsStore.swift */,
 				6A4750023B12345600000001 /* GuestDataMigration.swift */,
 				6A4750023B12345600000101 /* BrowserMigrationPlanner.swift */,
 				6A4750023B12345600000401 /* BrowserMigrationSpaceIconResolver.swift */,
@@ -2537,6 +2548,7 @@
 				F7FD00000000000000000001 /* FullTitleDisplay.swift */,
 				A7C021012FFD000000000001 /* ContextMenuEvent.swift */,
 				6A4750013B12345600000001 /* LoginRequiredPresentation.swift */,
+				AB7090700000000000000004 /* SiteMemoryMenuActions.swift */,
 				A71E00000000000000000001 /* PhiAlert.swift */,
 				A71E00000000000000000003 /* CredentialApprovalAlert.swift */,
 				A71E00000000000000000005 /* AgentAccessApprovalAlert.swift */,
@@ -3047,6 +3059,7 @@
 				A11E00000000000000000001 /* PhiScriptingService.swift in Sources */,
 				A11E00000000000000000002 /* PhiScriptCommands.swift in Sources */,
 				6A4750013B12345600000002 /* LoginRequiredPresentation.swift in Sources */,
+				AB7090710000000000000004 /* SiteMemoryMenuActions.swift in Sources */,
 				A71E00000000000000000002 /* PhiAlert.swift in Sources */,
 				A71E00000000000000000004 /* CredentialApprovalAlert.swift in Sources */,
 				A71E00000000000000000006 /* AgentAccessApprovalAlert.swift in Sources */,
@@ -3112,6 +3125,7 @@
 				8EC70E182F0BC77E009FE2CD /* NSImageView+Favicon.swift in Sources */,
 				376CE4002F2891670093D937 /* ExtensionMessageEnvelope.swift in Sources */,
 				376CE4012F2891670093D937 /* ExtensionMessageRouter.swift in Sources */,
+				AB7090710000000000000003 /* SiteMemoryMessageRouter.swift in Sources */,
 				376CE4022F2891670093D937 /* ExtensionMessaging.swift in Sources */,
 				376CE4032F2891670093D937 /* NotificationCardManager.swift in Sources */,
 				376CE4042F2891670093D937 /* WindowThemeMessageRouter.swift in Sources */,
@@ -3297,6 +3311,7 @@
 				8E762CC62F16531A00631087 /* TabStripAnimation.swift in Sources */,
 				37C1B0DE2ED8081400DD4496 /* ShortcutsSettingsView.swift in Sources */,
 				CC2708A52E7A65E500B65AB8 /* LocalStore.swift in Sources */,
+				AB7090710000000000000001 /* SiteMemorySettingsStore.swift in Sources */,
 				6A4750023B12345600000002 /* GuestDataMigration.swift in Sources */,
 				6A4750023B12345600000102 /* BrowserMigrationPlanner.swift in Sources */,
 				6A4750023B12345600000402 /* BrowserMigrationSpaceIconResolver.swift in Sources */,
@@ -3533,6 +3548,7 @@
 				5B0000010000000000000001 /* ServiceBrokerTypes.swift in Sources */,
 				5B0000010000000000000002 /* ServiceBrokerSocketPath.swift in Sources */,
 				5B0000010000000000000003 /* ServiceBrokerClient.swift in Sources */,
+				AB7090710000000000000002 /* SiteMemoryService.swift in Sources */,
 				5B0000010000000000000004 /* ServiceBrokerHTTPConnection.swift in Sources */,
 				5B0000010000000000000005 /* ServiceBrokerChannelStore.swift in Sources */,
 				5B0000010000000000000006 /* ServiceBrokerWebSocket.swift in Sources */,

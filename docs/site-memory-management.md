@@ -1,0 +1,94 @@
+# Native site memory management
+
+`SiteMemoryService.currentAccount()` creates an account-bound native service.
+It exposes `collectionEnabled(for:profileID:)`,
+`setCollectionEnabled(_:for:profileID:)`, and async
+`removeMemories(for:profileID:)`. Callers supply the Chromium profile basename
+(e.g. `Default` or `Profile 2`), never a Space ID or a profile display name.
+There is no fallback to the active window or another profile.
+
+## Settings and locking
+
+Settings live in `users/<account>/defaults/site_memory.json` under the browser's
+account storage root. The JSON maps profile IDs to arrays of disabled hosts.
+Missing hosts default to enabled. Enabling a host removes its override.
+Hostname matching is exact: disabling `example.com` does not disable
+`www.example.com`. Bare ASCII/punycode hosts are lowercased and a trailing dot
+is removed. URLs, wildcard prefixes, ports and paths are rejected.
+
+A shared concurrent dispatch queue is the in-process read/write lock across
+all store instances. Reads use `sync`; complete read-modify-write operations
+use `sync(flags: .barrier)` and atomic file replacement. No network operation
+or async suspension holds the lock. A corrupt/unreadable store and failed
+writes throw; they must not be presented as successful changes or enabled
+collection. Account deletion removes this file with the account directory.
+
+## Lexington query contract
+
+Use the native message API, not `chrome.runtime.sendMessage`:
+
+```javascript
+const profile = await chrome.phinomenonPrivate.getProfileInfo();
+const raw = await chrome.phinomenonPrivate.sendMessageToApp(
+  "memory.getSiteCollectionEnabled",
+  { profileId: profile.id, host: "example.com" }
+);
+const { profileId, host, enabled } = JSON.parse(raw);
+```
+
+The response is request-scoped. Only the pinned Lexington extension ID is
+accepted; the private API supplies the authenticated sender ID. The trusted
+extension supplies its profile ID explicitly, as in the existing memory uplink;
+the bridge currently does not attach the sender's browser profile. Missing or
+invalid profile IDs fail, and no setting mutation is exposed to extensions.
+Failures reject the native message promise. The extension must not interpret a
+failed query as permission to collect.
+
+## Server deletion
+
+Native deletion uses the existing Service Broker runtime, protocol negotiation,
+shared-auth snapshot, and account-specific UDS. It sends
+`POST /v1/clear/host` to `phi-memory`, with `{ "host": "example.com" }`,
+`x-profile-id`, and the current bearer. It does not impersonate an extension.
+The account must match the service's captured account and auth must remain
+unchanged across suspension. HTTP errors, malformed/negative responses and a
+mismatched response host fail. Successful responses return the backend's
+observation, browser-memory, ingest-event, summary and galaxy deletion/update
+counts. Removal includes subdomains and does not alter collection settings.
+
+Native menu deletion resolves the page host to its registrable domain using
+Chromium's same-site comparison, including private registry boundaries. Both
+`www.163.com` and `gov.163.com` therefore send `163.com` for removal;
+`news.example.co.uk` sends `example.co.uk`, while `alice.github.io` stays scoped
+to that tenant. IPv4 addresses and single-label hosts remain unchanged. Older
+frameworks without the comparison API keep the exact host instead of guessing.
+Collection settings and the service's explicit-host API retain exact-host input;
+only the shared native menu deletion action expands its scope.
+
+## Integration boundary
+
+All layouts have a Manage Site Memories button to the left of Copy URL in the
+address bar (the sidebar address bar in Performance). Its standalone menu exposes
+collection and removal actions when Phi AI is enabled in a regular window on an
+HTTP(S) page with a supported host. Actions capture the page host and window's
+Chromium profile ID when the menu opens. The collection checkmark reads the
+account's settings store; unavailable settings disable the toggle instead of
+defaulting to enabled. Removal calls the native service without changing the
+collection setting. Failed mutations show an alert. Both address bars reuse the
+same native menu and `SiteMemoryMenuActions` for eligibility, labels, settings
+state, captured account/profile/host, and mutation/error handling. The extension
+popover no longer includes memory management.
+
+This integration does not change the Lexington observer or popup. Its current
+`observationDisabledHosts` storage is not imported
+or synchronized yet. The follow-up extension change must query native settings
+on startup/page activation and arrange change notification or re-query after a
+native update. No automatic enable/disable broadcast is added here.
+
+End-to-end removal still requires coordination with Lexington to pause matching
+capture, wait for uploads already on the wire, and discard queued old events;
+after server success invalidate the extension's memory cache and resume according
+to the persisted switch. This native API deletes server data only: it cannot
+clear the extension's IndexedDB outbox, and a successful server response alone
+does not guarantee old captures will never be uploaded again. No backend or
+extension data is deleted during tests; broker requests use injected executors.

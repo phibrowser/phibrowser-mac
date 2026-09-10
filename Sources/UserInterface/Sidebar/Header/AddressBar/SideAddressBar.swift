@@ -50,6 +50,33 @@ class SideAddressBar: NSView {
         return button
     }()
 
+    private lazy var memoryMenuButton: HoverableButtonNSView = {
+        let title = NSLocalizedString("browser.webContentAddressBar.manageSiteMemoriesTooltip", value: "Manage Site Memories", comment: "Address bar - Button tooltip for opening memory controls for the current website")
+        let config = HoverableButtonConfig(
+            image: NSImage(named: "memory-manage-icon"),
+            imageSize: .init(width: 16, height: 16),
+            hoverBackgroundColor: .hover,
+            imageTintColor: .textPrimary,
+            cornerRadius: 4
+        )
+        let button = HoverableButtonNSView(config: config) { [weak self] in
+            guard let self else { return }
+            self.window?.customTooltipController.dismissAll()
+            WebContentAddressBarMenuPresenter.presentMemoryMenu(
+                browserState: self.unsafeBrowserState,
+                currentTab: self.currentTab,
+                anchorView: self.memoryMenuButton,
+                onPresentationChanged: { _ in }
+            )
+        }
+        button.setAccessibilityLabel(title)
+        button.snp.makeConstraints { make in
+            make.size.equalTo(CGSize(width: 24, height: 24))
+        }
+        button.isHidden = true
+        return button
+    }()
+
     private lazy var readerButton: HoverableButtonNSView = {
         let config = HoverableButtonConfig(
             imageSize: .init(width: 12, height: 12),
@@ -88,6 +115,7 @@ class SideAddressBar: NSView {
     private var rightStackView: CustomStackView!
     private var extensionIconsStackView: ExtensionReorderStackView!
     @Published var currentTab: Tab?
+    @Published private var isMemoryButtonVisible = false
     
     private var cancellables = Set<AnyCancellable>()
     // The last (unfiltered) pinned set handed to updateExtensionIcons, so a
@@ -198,6 +226,31 @@ class SideAddressBar: NSView {
             }
             .store(in: &cancellables)
 
+        $currentTab
+            .map { tab -> AnyPublisher<String?, Never> in
+                tab?.$url.eraseToAnyPublisher() ?? Just(nil).eraseToAnyPublisher()
+            }
+            .switchToLatest()
+            .combineLatest(
+                browserState.$isInPlaceholderMode,
+                NotificationCenter.default.publisher(for: UserDefaults.didChangeNotification)
+                    .map { _ in PhiPreferences.AISettings.phiAIEnabled.loadValue() }
+                    .prepend(PhiPreferences.AISettings.phiAIEnabled.loadValue())
+                    .removeDuplicates()
+            )
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] url, isPlaceholder, isPhiAIEnabled in
+                guard let self else { return }
+                let visible = !isPlaceholder && SiteMemoryMenuActions(
+                    urlString: url ?? "", profileID: browserState.profileId,
+                    isIncognito: browserState.isIncognito,
+                    isPhiAIEnabled: isPhiAIEnabled, service: nil
+                ) != nil
+                self.memoryMenuButton.isHidden = !visible
+                self.isMemoryButtonVisible = visible
+            }
+            .store(in: &cancellables)
+
         let widthPublisher = NotificationCenter.default
             .publisher(for: NSView.frameDidChangeNotification, object: containerView)
             .map { [weak self] _ in self?.containerView.bounds.width ?? 0 }
@@ -206,13 +259,14 @@ class SideAddressBar: NSView {
             .eraseToAnyPublisher()
         
         browserState.extensionManager.$pinedExtensions
-            .combineLatest(widthPublisher, browserState.$layoutMode)
-            .map { [weak self] exts, width, layoutMode in
+            .combineLatest(widthPublisher, browserState.$layoutMode, $isMemoryButtonVisible.removeDuplicates())
+            .map { exts, width, layoutMode, isMemoryButtonVisible in
                 guard layoutMode == .performance else { return false }
-                return self?.shouldDisplayPinnedExtensionsWithinSidebar(
+                return Self.shouldDisplayPinnedExtensionsWithinSidebar(
                     pinnedExtensionCount: exts.count,
-                    containerWidth: width
-                ) ?? false
+                    containerWidth: width,
+                    isMemoryButtonVisible: isMemoryButtonVisible
+                )
             }
             .removeDuplicates()
             .receive(on: DispatchQueue.main)
@@ -315,9 +369,10 @@ class SideAddressBar: NSView {
         textField.stringValue = URLProcessor.displayName(for: displayURL)
     }
 
-    private func shouldDisplayPinnedExtensionsWithinSidebar(
+    static func shouldDisplayPinnedExtensionsWithinSidebar(
         pinnedExtensionCount: Int,
-        containerWidth: CGFloat
+        containerWidth: CGFloat,
+        isMemoryButtonVisible: Bool
     ) -> Bool {
         guard pinnedExtensionCount > 0 else { return false }
 
@@ -327,6 +382,7 @@ class SideAddressBar: NSView {
             + pinnedIconsSpacing
             + LayoutMetrics.rightStackSpacing
             + LayoutMetrics.extensionButtonWidth
+            + (isMemoryButtonVisible ? LayoutMetrics.extensionButtonWidth + LayoutMetrics.extensionButtonSpacing : 0)
         let reservedHorizontalInsets = LayoutMetrics.textFieldLeadingInset
             + LayoutMetrics.textFieldTrailingSpacing
             + LayoutMetrics.rightStackTrailingInset
@@ -529,6 +585,7 @@ class SideAddressBar: NSView {
         
         rightStackView.addArrangedSubview(extensionIconsStackView)
         rightStackView.addArrangedSubview(readerButton)
+        rightStackView.addArrangedSubview(memoryMenuButton)
         rightStackView.addArrangedSubview(copyURLButton)
         rightStackView.addArrangedSubview(extensionMenuHostingView)
         extensionMenuHostingView.snp.makeConstraints { make in

@@ -166,6 +166,17 @@ import SwiftUI
         let spaceStateStore = AccountPhiSpaceSyncStateStore(defaults: account.userDefaults)
         let spaceMappingStore = AccountSpaceSyncMappingStore(defaults: account.userDefaults)
         let spaceKeys = SpaceSyncMappingManager(store: spaceMappingStore)
+        // M3-2b §3.6：M3-2 未发布，所以不写迁移代码。盘上是一张 formatVersion < 2 的
+        // 表（或一坨解不开的字节）⇒ 整张丢掉，并让配对向导在这台升级过的开发机上跑
+        // 一次。这里正是 `PhiSpaceSyncState` 文档里「没有引擎时主线程可以直接碰
+        // store」那条例外（PhiSpaceSyncState.swift:256-262）：store 刚构造、引擎还
+        // 不存在、当前就在主 actor 上。空表之后的自愈是既有机制，不新增
+        // （`hasDrainedFullReplay == false` ⇒ 门开边沿丢 marker、重放整个 data type）。
+        // `joinPairingPending` 一律经 `ProfilePairingGate` 那个唯一读写口（P2）。
+        if spaceStateStore.discardIfStaleFormat() {
+            AppLogWarn("[phi-sync] space sync table discarded (format < \(PhiSpaceSyncTable.currentFormatVersion)); re-running the pairing wizard")
+            ProfilePairingGate.joinPairingPending = true
+        }
         syncKeyController = SyncKeyController(
             manager: stack.manager, approvals: stack.approvals, profileKeys: profileKeys,
             spaceKeys: spaceKeys,

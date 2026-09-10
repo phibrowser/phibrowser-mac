@@ -1577,18 +1577,38 @@ extension PhiChromiumCoordinator: PhiChromiumBridgeDelegate {
                             windowId: windowId)
     }
 
-    @objc(linkCopied:windowId:url:)
-    func linkCopied(_ tabId: Int64, windowId: Int64, url: String) {
-        guard !url.isEmpty, let copiedURL = URL(string: url) else { return }
-        DispatchQueue.main.async {
-            guard let controller = MainBrowserWindowControllersManager.shared
-                .controller(for: Int(windowId)) else { return }
-            if controller.browserState.peekState.peekTab(withId: Int(tabId)) != nil {
-                controller.peekPanelControllerIfLoaded?.showURLCopyConfirmation(url: copiedURL, tabId: Int(tabId))
-            } else {
-                OverlayToastCenter.shared.showURLCopyConfirmation(copiedURLs: [copiedURL.absoluteString], in: controller.browserState)
-            }
+    @objc(showToast:windowId:toastId:message:shareURL:duration:)
+    func showToast(_ tabId: Int64, windowId: Int64, toastId: String,
+                   message: String, shareURL: String, duration: TimeInterval) -> Bool {
+        // The synchronous result lets Chromium fall back when no native host exists.
+        guard Thread.isMainThread, !message.isEmpty,
+              let controller = MainBrowserWindowControllersManager.shared
+                .controller(for: Int(windowId)) else { return false }
+        let id: UUID
+        if toastId.isEmpty {
+            id = UUID()
+        } else if let parsedID = UUID(uuidString: toastId) {
+            id = parsedID
+        } else {
+            return false
         }
+        let shareURLs = shareURL.isEmpty ? [] : URL(string: shareURL).map { [$0] } ?? []
+        if controller.browserState.peekState.peekTab(withId: Int(tabId)) != nil {
+            return controller.peekPanelControllerIfLoaded?.showToast(
+                id: id, message: message, shareURLs: shareURLs,
+                duration: duration, tabId: Int(tabId)) ?? false
+        }
+        return OverlayToastCenter.shared.show(
+            title: message, duration: duration, placement: .topTrailing,
+            shareURLs: shareURLs, in: .windowId(Int(windowId)), id: id) != nil
+    }
+
+    @objc(dismissToast:windowId:)
+    func dismissToast(_ toastId: String, windowId: Int64) {
+        guard Thread.isMainThread, let id = UUID(uuidString: toastId) else { return }
+        OverlayToastCenter.shared.dismiss(id: id)
+        MainBrowserWindowControllersManager.shared.controller(for: Int(windowId))?
+            .peekPanelControllerIfLoaded?.dismissToast(id: id)
     }
 
     @objc(linkToHighlightCopied:windowId:url:isShortLink:)

@@ -472,12 +472,20 @@ typedef NS_ENUM(NSInteger, PhiGhostMaterializeOutcome) {
 /// Changes apply to the next copy. Clients omitting this selector default to YES.
 - (BOOL)isShortHighlightLinkEnabled;
 
-/// Copy Link Address completed. Called after the clipboard write with the
-/// source tab's Phi-stable id and owning window id. Present native confirmation
-/// without writing the clipboard again. Chromium's toast is suppressed in Phi.
-/// `url` is the context-menu link target, used by the native Share action.
-/// Older clients may omit this callback.
-- (void)linkCopied:(int64_t)tabId windowId:(int64_t)windowId url:(NSString *)url;
+/// Presents a native toast synchronously on the browser UI (main) thread.
+/// `message` is already localized and formatted. `tabId` identifies the source
+/// tab (0 for window-scoped notices); `shareURL` is empty unless sharing a link.
+/// `toastId` is a UUID used for lifecycle updates. An empty id lets Phi own the
+/// lifetime, including pausing while the Share menu is open. Duration is seconds.
+/// Return NO if the target cannot present it, so Chromium can use its own UI.
+- (BOOL)showToast:(int64_t)tabId
+         windowId:(int64_t)windowId
+          toastId:(NSString *)toastId
+          message:(NSString *)message
+         shareURL:(NSString *)shareURL
+         duration:(NSTimeInterval)duration;
+/// Dismiss only the matching toast, never a newer native confirmation.
+- (void)dismissToast:(NSString *)toastId windowId:(int64_t)windowId;
 
 /// Copy Link to Highlight completed, including the existing-highlight action.
 /// Called on the browser UI thread after the clipboard write. `url` is the

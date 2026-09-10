@@ -24959,6 +24959,234 @@
         }
       }
     },
+    "browser.folio.addNoteAction" : {
+      "comment" : "Folio - Button on the highlight toast that opens a small dialog to attach a note to the just-saved highlight",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Add Note"
+          }
+        }
+      }
+    },
+    "browser.folio.addNoteCancelButton" : {
+      "comment" : "Folio - Cancel button of the add-note dialog",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Cancel"
+          }
+        }
+      }
+    },
+    "browser.folio.addNoteConfirmButton" : {
+      "comment" : "Folio - Confirm button of the add-note dialog",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Save Note"
+          }
+        }
+      }
+    },
+    "browser.folio.addNoteMessage" : {
+      "comment" : "Folio - Explanatory text of the add-note dialog",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "The note is written into the saved markdown, under the highlight."
+          }
+        }
+      }
+    },
+    "browser.folio.addNotePlaceholder" : {
+      "comment" : "Folio - Placeholder of the add-note dialog's text field",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Your note"
+          }
+        }
+      }
+    },
+    "browser.folio.addNoteTitle" : {
+      "comment" : "Folio - Title of the dialog that attaches a note to a saved highlight",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Add Note"
+          }
+        }
+      }
+    },
+    "browser.folio.alreadySavedToast" : {
+      "comment" : "Folio - Toast shown when a page is saved again: the item it already has is kept rather than a second copy being written",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Already in Folio"
+          }
+        }
+      }
+    },
+    "browser.folio.failedToast" : {
+      "comment" : "Folio - Toast shown when nothing could be written to the destination folder",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Couldn't save this page"
+          }
+        }
+      }
+    },
+    "browser.folio.highlightSavedToast" : {
+      "comment" : "Folio - Toast shown when a selected passage was added to the page's saved item",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Highlight saved"
+          }
+        }
+      }
+    },
+    "browser.folio.noteLabel" : {
+      "comment" : "Folio - Bold lead-in word of a note line written under a highlight in the saved markdown",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Note"
+          }
+        }
+      }
+    },
+    "browser.folio.reasonFolderUnreadable" : {
+      "comment" : "Folio - Failure toast detail: the destination folder exists but could not be listed, so saving would risk overwriting an item already there",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "The Folio folder could not be read."
+          }
+        }
+      }
+    },
+    "browser.folio.reasonNotAWebPage" : {
+      "comment" : "Folio - Failure toast detail: the tab was not showing an ordinary web page",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Only web pages can be saved."
+          }
+        }
+      }
+    },
+    "browser.folio.reasonWriteFailed" : {
+      "comment" : "Folio - Failure toast detail: the destination folder could not be written to",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Nothing could be written to the Folio folder."
+          }
+        }
+      }
+    },
+    "browser.folio.savedPartialToast" : {
+      "comment" : "Folio - Toast shown when a page whose reader source did not answer was saved from the loaded page instead, so the item holds less than the whole page",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Saved only what had loaded"
+          }
+        }
+      }
+    },
+    "browser.folio.savedToast" : {
+      "comment" : "Folio - Toast shown when a page was saved as both a markdown article and a webpage copy",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Saved to Folio"
+          }
+        }
+      }
+    },
+    "browser.folio.savedWithoutArticleToast" : {
+      "comment" : "Folio - Toast shown when a video was saved but could not be turned into a written article",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Saved without video article"
+          }
+        }
+      }
+    },
+    "browser.folio.savedWithoutWebpageToast" : {
+      "comment" : "Folio - Toast shown when the article was saved but the copy of the original web page could not be captured",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Saved without webpage copy"
+          }
+        }
+      }
+    },
+    "browser.folio.staleExtensionToast" : {
+      "comment" : "Folio - Toast shown when the page-side extension is older than the app and can no longer save a highlight",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Folio needs a browser restart"
+          }
+        }
+      }
+    },
+    "browser.folio.undoAction" : {
+      "comment" : "Folio - Undo button on the toast after an automatic site-action save; moves the just-saved files to the Trash",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Undo"
+          }
+        }
+      }
+    },
     "browser.headerMoreMenu.downloadsAction" : {
       "comment" : "Header more menu - Downloads action",
       "extractionState" : "extracted_with_value",
@@ -25495,282 +25723,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "文章"
-          }
-        }
-      }
-    },
-    "browser.folio.addNoteAction" : {
-      "comment" : "Folio - Button on the highlight toast that opens a small dialog to attach a note to the just-saved highlight",
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "Add Note"
-          }
-        }
-      }
-    },
-    "browser.folio.addNoteCancelButton" : {
-      "comment" : "Folio - Cancel button of the add-note dialog",
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "Cancel"
-          }
-        }
-      }
-    },
-    "browser.folio.addNoteConfirmButton" : {
-      "comment" : "Folio - Confirm button of the add-note dialog",
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "Save Note"
-          }
-        }
-      }
-    },
-    "browser.folio.addNoteMessage" : {
-      "comment" : "Folio - Explanatory text of the add-note dialog",
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "The note is written into the saved markdown, under the highlight."
-          }
-        }
-      }
-    },
-    "browser.folio.addNotePlaceholder" : {
-      "comment" : "Folio - Placeholder of the add-note dialog's text field",
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "Your note"
-          }
-        }
-      }
-    },
-    "browser.folio.addNoteTitle" : {
-      "comment" : "Folio - Title of the dialog that attaches a note to a saved highlight",
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "Add Note"
-          }
-        }
-      }
-    },
-    "browser.folio.failedToast" : {
-      "comment" : "Folio - Toast shown when nothing could be written to the destination folder",
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "Couldn't save this page"
-          }
-        }
-      }
-    },
-    "browser.folio.highlightAttribution" : {
-      "comment" : "Folio - Link text under a saved highlight; the link reopens the page scrolled to the highlighted passage",
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "Highlighted"
-          }
-        }
-      }
-    },
-    "browser.folio.alreadySavedToast" : {
-      "comment" : "Folio - Toast shown when a page is saved again: the item it already has is kept rather than a second copy being written",
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "Already in Folio"
-          }
-        }
-      }
-    },
-    "browser.folio.highlightSavedToast" : {
-      "comment" : "Folio - Toast shown when a highlighted selection was written into the page's saved markdown",
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "Highlight saved"
-          }
-        }
-      }
-    },
-    "browser.folio.noArticleNote" : {
-      "comment" : "Folio - Note written into the markdown file when the page yielded no readable article",
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "No article could be extracted from this page. The saved webpage copy holds the full content."
-          }
-        }
-      }
-    },
-    "browser.folio.noteLabel" : {
-      "comment" : "Folio - Bold lead-in word of a note line written under a highlight in the saved markdown",
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "Note"
-          }
-        }
-      }
-    },
-    "browser.folio.reasonFolderUnreadable" : {
-      "comment" : "Folio - Failure toast detail: the destination folder exists but could not be listed, so saving would risk overwriting an item already there",
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "The Folio folder could not be read."
-          }
-        }
-      }
-    },
-    "browser.folio.reasonNotAWebPage" : {
-      "comment" : "Folio - Failure toast detail: the tab was not showing an ordinary web page",
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "Only web pages can be saved."
-          }
-        }
-      }
-    },
-    "browser.folio.reasonWriteFailed" : {
-      "comment" : "Folio - Failure toast detail: the destination folder could not be written to",
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "Nothing could be written to the Folio folder."
-          }
-        }
-      }
-    },
-    "browser.folio.savedToast" : {
-      "comment" : "Folio - Toast shown when a page was saved to the destination folder",
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "Saved to Folio"
-          }
-        }
-      }
-    },
-    "browser.folio.savedPartialToast" : {
-      "comment" : "Folio - Toast shown when a page whose reader source did not answer was saved from the loaded page instead, so the item holds less than the whole page",
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "Saved only what had loaded"
-          }
-        }
-      }
-    },
-    "browser.folio.savedWithoutArticleToast" : {
-      "comment" : "Folio - Toast shown when the video save wrote its files but the article could not be generated from the video",
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "Saved without video article"
-          }
-        }
-      }
-    },
-    "browser.folio.savedWithoutWebpageToast" : {
-      "comment" : "Folio - Toast shown when the markdown file was saved but capturing the full webpage copy failed",
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "Saved without webpage copy"
-          }
-        }
-      }
-    },
-    "browser.folio.undoAction" : {
-      "comment" : "Folio - Undo button on the toast after an automatic site-action save; moves the just-saved files to the Trash",
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "Undo"
-          }
-        }
-      }
-    },
-    "browser.folio.staleExtensionToast" : {
-      "comment" : "Folio - Toast shown when the page-side extension is older than the app and can no longer save a highlight",
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "Folio needs a browser restart"
-          }
-        }
-      }
-    },
-    "browser.folio.videoArticleFailedNote" : {
-      "comment" : "Folio - Note written into the markdown file when the video could not be converted into an article",
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "The video article could not be generated. The link above points to the original video."
-          }
-        }
-      }
-    },
-    "browser.folio.videoPendingNote" : {
-      "comment" : "Folio - Placeholder note inside the markdown file while the video-to-article generation is still running",
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "The video is being converted into an article\u2026"
           }
         }
       }
@@ -49631,6 +49583,1206 @@
         }
       }
     },
+    "settings.advanced.additionalBrowserSettings.title" : {
+      "comment" : "Advanced settings - Title for always more settings",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Weitere Browsereinstellungen"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Additional browser settings"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Configuración adicional del navegador"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Paramètres supplémentaires du navigateur"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "その他のブラウザ設定"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "추가 브라우저 설정"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aanvullende browserinstellingen"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "更多浏览器设置"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "其他瀏覽器設定"
+          }
+        }
+      }
+    },
+    "settings.advanced.addressBar.showFullURLToggle" : {
+      "comment" : "Advanced settings - Toggle title for always showing full URL in address bar",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Immer vollständige URL anzeigen"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Always show full URL"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mostrar siempre la URL completa"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Toujours afficher l'URL complète"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "常にURL全体を表示"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "항상 전체 URL 표시"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Altijd volledige URL tonen"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "始终显示完整网址"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "一律顯示完整網址"
+          }
+        }
+      }
+    },
+    "settings.advanced.developerMode.disabledHint" : {
+      "comment" : "Advanced settings - Hint under the developer mode toggle explaining the kill-switch behavior, the revoked approvals, and that an agent may request it back",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wenn du den Entwicklermodus ausschaltest, werden der Agentenzugriff und der Passwortmanager für Agenten ausgeschaltet und alle Freigaben für Agenten und Zugangsdaten widerrufen. Ein Agent, der sich später verbindet, kann dich bitten, ihn wieder einzuschalten."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Turning developer mode off turns off agent access and the agent password manager, and revokes every allowed agent and credential approval. An agent that connects later can ask you to turn it back on."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Al desactivar el modo de desarrollador se desactivan el acceso de los agentes y el gestor de contraseñas para agentes, y se revocan todos los agentes permitidos y las aprobaciones de credenciales. Un agente que se conecte más tarde puede pedirte que lo vuelvas a activar."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Désactiver le mode développeur désactive l'accès des agents et le gestionnaire de mots de passe des agents, et révoque tous les agents autorisés ainsi que toutes les approbations d'identifiants. Un agent qui se connecte par la suite peut vous demander de le réactiver."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "デベロッパーモードをオフにすると、エージェントのアクセスとエージェント用パスワードマネージャーがオフになり、許可済みのエージェントと認証情報の承認がすべて取り消されます。あとから接続したエージェントは、オンに戻すよう求めることができます。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "개발자 모드를 끄면 에이전트 접근과 에이전트용 비밀번호 관리자가 꺼지고, 허용된 모든 에이전트와 자격 증명 승인이 취소돼요. 이후에 연결하는 에이전트가 다시 켜 달라고 요청할 수 있어요."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Als je de ontwikkelaarsmodus uitschakelt, worden agenttoegang en de wachtwoordmanager voor agents uitgeschakeld en worden alle toegestane agents en goedkeuringen voor inloggegevens ingetrokken. Een agent die later verbinding maakt, kan je vragen om de modus weer in te schakelen."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "关闭开发者模式会同时关闭智能体访问和智能体密码管理器，并撤销所有已允许的智能体和凭据授权。之后连接的智能体可以请求你重新开启。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "關閉開發者模式時，也會一併關閉 AI 代理存取和 AI 代理密碼管理員，並撤銷所有已允許的 AI 代理與憑證核准。之後連線的 AI 代理可以要求你重新開啟。"
+          }
+        }
+      }
+    },
+    "settings.advanced.developerMode.enabledHint" : {
+      "comment" : "Advanced settings - Hint under the developer mode toggle pointing at the Developer settings pane",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Agentenzugriff, Berechtigungen und den Passwortmanager findest du im Tab „Entwickler“."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Agent access, permissions, and the password manager live in the Developer tab."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "El acceso de agentes, los permisos y el administrador de contraseñas están en la pestaña Desarrollador."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "L'accès des agents, les autorisations et le gestionnaire de mots de passe se trouvent dans l'onglet Développeur."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "エージェントのアクセス、権限、パスワードマネージャーは「開発者」タブにあります。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "에이전트 접근, 권한, 비밀번호 관리자는 개발자 탭에 있어요."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Agenttoegang, machtigingen en de wachtwoordmanager vind je op het tabblad Ontwikkelaar."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "智能体访问、权限和密码管理器都在「开发者」标签页中。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "AI 代理存取、權限與密碼管理員都在「開發者」分頁中。"
+          }
+        }
+      }
+    },
+    "settings.advanced.developerMode.enableToggle" : {
+      "comment" : "Advanced settings - Toggle title for developer mode; turning it off also disables agent access and the agent password manager",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Entwicklermodus"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Developer mode"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Modo de desarrollador"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mode développeur"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "開発者モード"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "개발자 모드"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ontwikkelaarsmodus"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "开发者模式"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "開發者模式"
+          }
+        }
+      }
+    },
+    "settings.advanced.highlightLinks.shortLinksDescription" : {
+      "comment" : "Advanced settings - Explains where the short-link toggle applies and that disabling it copies the full link to the selected text",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Gilt für „Link zum markierten Text kopieren“ im Kontextmenü. Deaktiviere die Option, um den vollständigen Link zu kopieren."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Applies to “Copy Link to Highlight” in the right-click menu. Turn off to copy the full link."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Se aplica a “Copiar enlace al texto destacado” del menú contextual. Desactiva esta opción para copiar el enlace completo."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "S'applique à « Copier le lien vers le texte en surbrillance » dans le menu contextuel. Désactivez cette option pour copier le lien complet."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "右クリックメニューの「選択箇所へのリンクをコピー」に適用されます。オフにすると、完全なリンクがコピーされます。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "오른쪽 클릭 메뉴의 “하이라이트 링크 복사”에 적용돼요. 끄면 전체 링크가 복사돼요."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Geldt voor “Link naar markering kopiëren” in het contextmenu. Zet dit uit om de volledige link te kopiëren."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "适用于右键菜单中的「复制指向突出显示的内容的链接」。关闭后将复制完整链接。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "適用於右鍵選單中的「複製醒目顯示文字的連結」。關閉後會複製完整連結。"
+          }
+        }
+      }
+    },
+    "settings.advanced.highlightLinks.useShortLinksToggle" : {
+      "comment" : "Advanced settings - Toggle that controls whether Copy Link to Highlight generates a short link",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Links zum markierten Text kürzen"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Shorten links to selected text"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Acortar enlaces al texto seleccionado"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Raccourcir les liens vers le texte sélectionné"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "選択したテキストへのリンクを短縮する"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "선택한 텍스트로 연결되는 링크 줄이기"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Verkort links naar geselecteerde tekst"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "缩短指向所选文本的链接"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "縮短指向所選文字的連結"
+          }
+        }
+      }
+    },
+    "settings.advanced.openTabIndicators.description" : {
+      "comment" : "Advanced settings - Explains which tabs and bookmarks display the open-state dot",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Zeigt einen Punkt auf inaktiven angehefteten Tabs und Lesezeichen an, die gerade geöffnet sind."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Show a dot on inactive pinned tabs and bookmarks that are currently open."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Muestra un punto en las pestañas fijadas inactivas y en los marcadores que están abiertos actualmente."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Affiche un point sur les onglets épinglés inactifs et les favoris actuellement ouverts."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "現在開いている非アクティブな固定タブとブックマークにドットを表示します。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "현재 열려 있지만 활성 상태가 아닌 고정된 탭과 북마크에 점을 표시해요."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Toon een stip op inactieve vastgezette tabbladen en bladwijzers die momenteel geopend zijn."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在当前已打开但非活动的固定标签页和书签上显示圆点。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在目前已開啟但非使用中的釘選分頁與書籤上顯示小圓點。"
+          }
+        }
+      }
+    },
+    "settings.advanced.openTabIndicators.showToggle" : {
+      "comment" : "Advanced settings - Toggle title for showing dots on inactive open pinned tabs and bookmarks",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Indikatoren für offene Tabs anzeigen"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Show open tab indicators"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mostrar indicadores de pestañas abiertas"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Afficher les indicateurs d'onglets ouverts"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "開いているタブのインジケーターを表示"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "열린 탭 표시기 보기"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Toon indicatoren voor geopende tabbladen"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "为打开的标签页显示指示灯"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "為開啟的分頁顯示指示燈"
+          }
+        }
+      }
+    },
+    "settings.advanced.pictureInPicture.normalDescription" : {
+      "comment" : "Advanced settings - Hint for the Normal auto picture-in-picture mode",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Laufendes Video als Bild-in-Bild öffnen, wenn du Tabs oder Apps wechselst"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Pop out playing video when you switch tabs or apps"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Muestra en una ventana flotante el contenido en reproducción cuando cambies de pestaña o de app"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Affiche la vidéo en cours de lecture en Image dans l'image lorsque vous changez d'onglet ou d'app"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "タブやアプリを切り替えたときに、再生中の動画をポップアウトします"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "탭이나 앱을 전환하면 재생 중인 동영상을 화면 속 화면으로 띄워요"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Start beeld in beeld voor spelende video als je van tabblad of app wisselt"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "切换标签页或应用时弹出正在播放的视频"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "切換分頁或 App 時，讓播放中的影片彈出"
+          }
+        }
+      }
+    },
+    "settings.advanced.pictureInPicture.normalOption" : {
+      "comment" : "Auto picture-in-picture option - pop out and stay in place",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Normal"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Normal"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Normal"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Normal"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "標準"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "일반"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Normaal"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "标准"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "一般"
+          }
+        }
+      }
+    },
+    "settings.advanced.pictureInPicture.offDescription" : {
+      "comment" : "Advanced settings - Hint for the Off auto picture-in-picture mode",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nie automatisch als Bild-in-Bild öffnen; manuelles Bild-in-Bild funktioniert weiterhin"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Never pop out automatically; manual picture-in-picture still works"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nunca se abre la ventana flotante automáticamente; la imagen en imagen manual sigue funcionando"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ne passe jamais automatiquement en Image dans l'image ; le mode Image dans l'image manuel reste disponible"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "自動ではポップアウトしません。手動のピクチャインピクチャは引き続き使えます"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "자동으로 화면 속 화면을 띄우지 않아요. 수동 화면 속 화면은 계속 사용할 수 있어요"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nooit automatisch beeld in beeld starten; handmatig beeld in beeld werkt nog steeds"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "永不自动弹出；手动画中画仍然可用"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "永不自動彈出；手動子母畫面仍可使用"
+          }
+        }
+      }
+    },
+    "settings.advanced.pictureInPicture.offOption" : {
+      "comment" : "Auto picture-in-picture option - never pop out automatically; manual picture-in-picture is unaffected",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aus"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Off"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Desactivado"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Désactivé"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "オフ"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "끔"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Uit"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "关闭"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "關閉"
+          }
+        }
+      }
+    },
+    "settings.advanced.pictureInPicture.parkAtEdgeDescription" : {
+      "comment" : "Advanced settings - Hint for the Park at edge auto picture-in-picture mode",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Laufendes Video als Bild-in-Bild öffnen und am Bildschirmrand parken, bis du es anklickst"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Pop out playing video, parked at the screen edge until you click it"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Muestra en una ventana flotante el contenido en reproducción y lo deja en el borde de la pantalla hasta que hagas clic en él"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Affiche la vidéo en cours de lecture en Image dans l'image, ancrée sur le bord de l'écran jusqu'à ce que vous cliquiez dessus"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "再生中の動画をポップアウトし、クリックするまで画面端に待機させます"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "재생 중인 동영상을 화면 속 화면으로 띄우고, 클릭할 때까지 화면 가장자리에 둬요"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Start beeld in beeld voor spelende video, geparkeerd aan de schermrand tot je erop klikt"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "弹出正在播放的视频，并停靠在屏幕边缘，直到你点击它"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "讓播放中的影片彈出，並停靠在螢幕邊緣，直到你按一下為止"
+          }
+        }
+      }
+    },
+    "settings.advanced.pictureInPicture.parkAtEdgeOption" : {
+      "comment" : "Auto picture-in-picture option - pop out, then park at the screen edge until clicked",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Am Rand parken"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Park at edge"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Acoplar al borde"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ancrer sur le bord"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "画面端に待機"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "가장자리에 두기"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aan de rand parkeren"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "停靠在边缘"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "停靠於邊緣"
+          }
+        }
+      }
+    },
+    "settings.advanced.pictureInPicture.title" : {
+      "comment" : "Advanced settings - Row title for the three-state auto picture-in-picture mode",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Automatisches Bild-in-Bild"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Auto picture-in-picture"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Imagen en imagen automática"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Image dans l'image automatique"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "自動ピクチャ・イン・ピクチャ"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "자동 화면 속 화면"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Automatisch beeld in beeld"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "自动画中画"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "自動子母畫面"
+          }
+        }
+      }
+    },
+    "settings.advanced.restoreLastSession.disabledHint" : {
+      "comment" : "Advanced settings - Hint shown when restore-last-session is off, noting session cookies may be cleared when a window closes",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Phi startet mit einem neuen Fenster. Wenn du ein Fenster schließt, wirst du auf manchen Websites möglicherweise abgemeldet."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Phi starts with a new window. Closing a window may sign you out of some sites."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Phi se abre con una ventana nueva. Al cerrar una ventana, es posible que se cierre tu sesión en algunos sitios."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Phi démarre avec une nouvelle fenêtre. La fermeture d'une fenêtre peut vous déconnecter de certains sites."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Phiは新しいウインドウで起動します。ウインドウを閉じると、一部のサイトからログアウトされる場合があります。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Phi가 새 윈도우로 시작해요. 윈도우를 닫으면 일부 사이트에서 로그아웃될 수 있어요."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Phi start met een nieuw venster. Als je een venster sluit, word je bij sommige sites mogelijk uitgelogd."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Phi 启动时打开新窗口。关闭窗口可能会让你在部分网站上退出登录。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Phi 會以新視窗啟動。關閉視窗可能會讓你從某些網站登出。"
+          }
+        }
+      }
+    },
+    "settings.advanced.restoreLastSession.enabledHint" : {
+      "comment" : "Advanced settings - Hint shown when restore-last-session is on",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Deine Fenster und Tabs werden beim nächsten Start von Phi wieder geöffnet."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Reopen your windows and tabs the next time you open Phi."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Se volverán a abrir tus ventanas y pestañas la próxima vez que abras Phi."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Rouvre vos fenêtres et vos onglets à la prochaine ouverture de Phi."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "次にPhiを起動したときに、ウインドウとタブを再度開きます。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "다음에 Phi를 열 때 윈도우와 탭을 다시 열어요."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Open je vensters en tabbladen opnieuw wanneer je Phi de volgende keer start."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "下次打开 Phi 时重新打开你的窗口和标签页。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "下次開啟 Phi 時，重新開啟你的視窗和分頁。"
+          }
+        }
+      }
+    },
+    "settings.advanced.restoreLastSession.toggle" : {
+      "comment" : "Advanced settings - Row title for the app-level restore-previous-session toggle",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Letzte Sitzung wiederherstellen"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Restore last session"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Restaurar la última sesión"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Restaurer la session précédente"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "前回のセッションを復元"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "마지막 세션 복원"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Laatste sessie herstellen"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "恢复上次会话"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "還原上次的工作階段"
+          }
+        }
+      }
+    },
+    "settings.advanced.tabPreview.showToggle" : {
+      "comment" : "Advanced settings - Toggle title for showing custom preview cards when hovering over open tabs",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vorschaukarte anzeigen, wenn du den Mauszeiger über einen Tab bewegst"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Show a preview card when hovering over a tab"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mostrar una tarjeta de vista previa al pasar el cursor sobre una pestaña"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Afficher une carte d'aperçu au survol d'un onglet"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "タブにポインタを合わせたときにプレビューカードを表示"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "탭 위에 마우스를 올리면 미리보기 카드 표시"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Toon een voorbeeldkaart wanneer je de aanwijzer op een tabblad houdt"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "鼠标悬停在标签页上时显示预览卡片"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "游標停留在分頁上時顯示預覽卡片"
+          }
+        }
+      }
+    },
     "settings.ai.browserMemory.manageButtonTitle" : {
       "comment" : "AI settings - Row title to open browser memory management",
       "extractionState" : "extracted_with_value",
@@ -59231,126 +60383,6 @@
         }
       }
     },
-    "settings.advanced.additionalBrowserSettings.title" : {
-      "comment" : "Advanced settings - Title for always more settings",
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Weitere Browsereinstellungen"
-          }
-        },
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "Additional browser settings"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Configuración adicional del navegador"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Paramètres supplémentaires du navigateur"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "その他のブラウザ設定"
-          }
-        },
-        "ko" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "추가 브라우저 설정"
-          }
-        },
-        "nl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Aanvullende browserinstellingen"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "更多浏览器设置"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "其他瀏覽器設定"
-          }
-        }
-      }
-    },
-    "settings.advanced.addressBar.showFullURLToggle" : {
-      "comment" : "Advanced settings - Toggle title for always showing full URL in address bar",
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Immer vollständige URL anzeigen"
-          }
-        },
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "Always show full URL"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Mostrar siempre la URL completa"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Toujours afficher l'URL complète"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "常にURL全体を表示"
-          }
-        },
-        "ko" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "항상 전체 URL 표시"
-          }
-        },
-        "nl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Altijd volledige URL tonen"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "始终显示完整网址"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "一律顯示完整網址"
-          }
-        }
-      }
-    },
     "settings.general.appearance.sectionTitle" : {
       "comment" : "General settings - Appearance section title",
       "extractionState" : "extracted_with_value",
@@ -59531,186 +60563,6 @@
         }
       }
     },
-    "settings.advanced.developerMode.disabledHint" : {
-      "comment" : "Advanced settings - Hint under the developer mode toggle explaining the kill-switch behavior, the revoked approvals, and that an agent may request it back",
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Wenn du den Entwicklermodus ausschaltest, werden der Agentenzugriff und der Passwortmanager für Agenten ausgeschaltet und alle Freigaben für Agenten und Zugangsdaten widerrufen. Ein Agent, der sich später verbindet, kann dich bitten, ihn wieder einzuschalten."
-          }
-        },
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "Turning developer mode off turns off agent access and the agent password manager, and revokes every allowed agent and credential approval. An agent that connects later can ask you to turn it back on."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Al desactivar el modo de desarrollador se desactivan el acceso de los agentes y el gestor de contraseñas para agentes, y se revocan todos los agentes permitidos y las aprobaciones de credenciales. Un agente que se conecte más tarde puede pedirte que lo vuelvas a activar."
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Désactiver le mode développeur désactive l'accès des agents et le gestionnaire de mots de passe des agents, et révoque tous les agents autorisés ainsi que toutes les approbations d'identifiants. Un agent qui se connecte par la suite peut vous demander de le réactiver."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "デベロッパーモードをオフにすると、エージェントのアクセスとエージェント用パスワードマネージャーがオフになり、許可済みのエージェントと認証情報の承認がすべて取り消されます。あとから接続したエージェントは、オンに戻すよう求めることができます。"
-          }
-        },
-        "ko" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "개발자 모드를 끄면 에이전트 접근과 에이전트용 비밀번호 관리자가 꺼지고, 허용된 모든 에이전트와 자격 증명 승인이 취소돼요. 이후에 연결하는 에이전트가 다시 켜 달라고 요청할 수 있어요."
-          }
-        },
-        "nl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Als je de ontwikkelaarsmodus uitschakelt, worden agenttoegang en de wachtwoordmanager voor agents uitgeschakeld en worden alle toegestane agents en goedkeuringen voor inloggegevens ingetrokken. Een agent die later verbinding maakt, kan je vragen om de modus weer in te schakelen."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "关闭开发者模式会同时关闭智能体访问和智能体密码管理器，并撤销所有已允许的智能体和凭据授权。之后连接的智能体可以请求你重新开启。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "關閉開發者模式時，也會一併關閉 AI 代理存取和 AI 代理密碼管理員，並撤銷所有已允許的 AI 代理與憑證核准。之後連線的 AI 代理可以要求你重新開啟。"
-          }
-        }
-      }
-    },
-    "settings.advanced.developerMode.enabledHint" : {
-      "comment" : "Advanced settings - Hint under the developer mode toggle pointing at the Developer settings pane",
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Agentenzugriff, Berechtigungen und den Passwortmanager findest du im Tab „Entwickler“."
-          }
-        },
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "Agent access, permissions, and the password manager live in the Developer tab."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "El acceso de agentes, los permisos y el administrador de contraseñas están en la pestaña Desarrollador."
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "L'accès des agents, les autorisations et le gestionnaire de mots de passe se trouvent dans l'onglet Développeur."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "エージェントのアクセス、権限、パスワードマネージャーは「開発者」タブにあります。"
-          }
-        },
-        "ko" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "에이전트 접근, 권한, 비밀번호 관리자는 개발자 탭에 있어요."
-          }
-        },
-        "nl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Agenttoegang, machtigingen en de wachtwoordmanager vind je op het tabblad Ontwikkelaar."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "智能体访问、权限和密码管理器都在「开发者」标签页中。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "AI 代理存取、權限與密碼管理員都在「開發者」分頁中。"
-          }
-        }
-      }
-    },
-    "settings.advanced.developerMode.enableToggle" : {
-      "comment" : "Advanced settings - Toggle title for developer mode; turning it off also disables agent access and the agent password manager",
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Entwicklermodus"
-          }
-        },
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "Developer mode"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Modo de desarrollador"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Mode développeur"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "開発者モード"
-          }
-        },
-        "ko" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "개발자 모드"
-          }
-        },
-        "nl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Ontwikkelaarsmodus"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "开发者模式"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "開發者模式"
-          }
-        }
-      }
-    },
     "settings.general.developerMode.sectionTitle" : {
       "comment" : "Advanced settings - Developer section title",
       "extractionState" : "stale",
@@ -59771,122 +60623,98 @@
         }
       }
     },
-    "settings.advanced.highlightLinks.shortLinksDescription" : {
-      "comment" : "Advanced settings - Explains where the short-link toggle applies and that disabling it copies the full link to the selected text",
+    "settings.general.folio.autoSaveHint" : {
+      "comment" : "General settings - Hint under the site-action auto-save toggle naming the supported sites and the local-only behavior",
       "extractionState" : "extracted_with_value",
       "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Gilt für „Link zum markierten Text kopieren“ im Kontextmenü. Deaktiviere die Option, um den vollständigen Link zu kopieren."
-          }
-        },
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Applies to “Copy Link to Highlight” in the right-click menu. Turn off to copy the full link."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Se aplica a “Copiar enlace al texto destacado” del menú contextual. Desactiva esta opción para copiar el enlace completo."
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "S'applique à « Copier le lien vers le texte en surbrillance » dans le menu contextuel. Désactivez cette option pour copier le lien complet."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "右クリックメニューの「選択箇所へのリンクをコピー」に適用されます。オフにすると、完全なリンクがコピーされます。"
-          }
-        },
-        "ko" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "오른쪽 클릭 메뉴의 “하이라이트 링크 복사”에 적용돼요. 끄면 전체 링크가 복사돼요."
-          }
-        },
-        "nl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Geldt voor “Link naar markering kopiëren” in het contextmenu. Zet dit uit om de volledige link te kopiëren."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "适用于右键菜单中的「复制指向突出显示的内容的链接」。关闭后将复制完整链接。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "適用於右鍵選單中的「複製醒目顯示文字的連結」。關閉後會複製完整連結。"
+            "value" : "Liking a YouTube video or bookmarking on X, Reddit, or Stack Overflow also saves that page here. Everything stays on this Mac."
           }
         }
       }
     },
-    "settings.advanced.highlightLinks.useShortLinksToggle" : {
-      "comment" : "Advanced settings - Toggle that controls whether Copy Link to Highlight generates a short link",
+    "settings.general.folio.autoSaveSites" : {
+      "comment" : "General settings - Button under the site-action auto-save toggle that opens the page listing each supported site with its own switch",
       "extractionState" : "extracted_with_value",
       "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Links zum markierten Text kürzen"
-          }
-        },
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Shorten links to selected text"
+            "value" : "Choose sites…"
           }
-        },
-        "es" : {
+        }
+      }
+    },
+    "settings.general.folio.autoSaveToggle" : {
+      "comment" : "General settings - Toggle title for the site-action auto-save: liking or bookmarking on supported sites also saves the page",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
           "stringUnit" : {
-            "state" : "translated",
-            "value" : "Acortar enlaces al texto seleccionado"
+            "state" : "new",
+            "value" : "Save when you like or bookmark on supported sites"
           }
-        },
-        "fr" : {
+        }
+      }
+    },
+    "settings.general.folio.chooseButton" : {
+      "comment" : "General settings - Folio folder picker confirm button",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
           "stringUnit" : {
-            "state" : "translated",
-            "value" : "Raccourcir les liens vers le texte sélectionné"
+            "state" : "new",
+            "value" : "Choose"
           }
-        },
-        "ja" : {
+        }
+      }
+    },
+    "settings.general.folio.folderHint" : {
+      "comment" : "General settings - Hint under the Folio folder row describing the saved file pair and the per-profile override",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
           "stringUnit" : {
-            "state" : "translated",
-            "value" : "選択したテキストへのリンクを短縮する"
+            "state" : "new",
+            "value" : "Each save writes a markdown article and a webpage copy side by side. Profiles can override this folder in their own settings."
           }
-        },
-        "ko" : {
+        }
+      }
+    },
+    "settings.general.folio.folderTitle" : {
+      "comment" : "General settings - Row title for the folder saved pages are written into",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
           "stringUnit" : {
-            "state" : "translated",
-            "value" : "선택한 텍스트로 연결되는 링크 줄이기"
+            "state" : "new",
+            "value" : "Save pages to"
           }
-        },
-        "nl" : {
+        }
+      }
+    },
+    "settings.general.folio.pickerMessage" : {
+      "comment" : "General settings - Folio folder picker message",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
           "stringUnit" : {
-            "state" : "translated",
-            "value" : "Verkort links naar geselecteerde tekst"
+            "state" : "new",
+            "value" : "Choose where saved pages are stored."
           }
-        },
-        "zh-Hans" : {
+        }
+      }
+    },
+    "settings.general.folio.sectionTitle" : {
+      "comment" : "General settings - Folio section title",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
           "stringUnit" : {
-            "state" : "translated",
-            "value" : "缩短指向所选文本的链接"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "縮短指向所選文字的連結"
+            "state" : "new",
+            "value" : "Folio"
           }
         }
       }
@@ -60911,546 +61739,6 @@
         }
       }
     },
-    "settings.advanced.openTabIndicators.description" : {
-      "comment" : "Advanced settings - Explains which tabs and bookmarks display the open-state dot",
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "Show a dot on inactive pinned tabs and bookmarks that are currently open."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "在当前已打开但非活动的固定标签页和书签上显示圆点。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "在目前已開啟但非使用中的釘選分頁與書籤上顯示小圓點。"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "現在開いている非アクティブな固定タブとブックマークにドットを表示します。"
-          }
-        },
-        "ko" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "현재 열려 있지만 활성 상태가 아닌 고정된 탭과 북마크에 점을 표시해요."
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Affiche un point sur les onglets épinglés inactifs et les favoris actuellement ouverts."
-          }
-        },
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Zeigt einen Punkt auf inaktiven angehefteten Tabs und Lesezeichen an, die gerade geöffnet sind."
-          }
-        },
-        "nl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Toon een stip op inactieve vastgezette tabbladen en bladwijzers die momenteel geopend zijn."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Muestra un punto en las pestañas fijadas inactivas y en los marcadores que están abiertos actualmente."
-          }
-        }
-      }
-    },
-    "settings.advanced.openTabIndicators.showToggle" : {
-      "comment" : "Advanced settings - Toggle title for showing dots on inactive open pinned tabs and bookmarks",
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "Show open tab indicators"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "为打开的标签页显示指示灯"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "為開啟的分頁顯示指示燈"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "開いているタブのインジケーターを表示"
-          }
-        },
-        "ko" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "열린 탭 표시기 보기"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Afficher les indicateurs d'onglets ouverts"
-          }
-        },
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Indikatoren für offene Tabs anzeigen"
-          }
-        },
-        "nl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Toon indicatoren voor geopende tabbladen"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Mostrar indicadores de pestañas abiertas"
-          }
-        }
-      }
-    },
-    "settings.advanced.pictureInPicture.normalDescription" : {
-      "comment" : "Advanced settings - Hint for the Normal auto picture-in-picture mode",
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Laufendes Video als Bild-in-Bild öffnen, wenn du Tabs oder Apps wechselst"
-          }
-        },
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "Pop out playing video when you switch tabs or apps"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Muestra en una ventana flotante el contenido en reproducción cuando cambies de pestaña o de app"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Affiche la vidéo en cours de lecture en Image dans l'image lorsque vous changez d'onglet ou d'app"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "タブやアプリを切り替えたときに、再生中の動画をポップアウトします"
-          }
-        },
-        "ko" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "탭이나 앱을 전환하면 재생 중인 동영상을 화면 속 화면으로 띄워요"
-          }
-        },
-        "nl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Start beeld in beeld voor spelende video als je van tabblad of app wisselt"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "切换标签页或应用时弹出正在播放的视频"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "切換分頁或 App 時，讓播放中的影片彈出"
-          }
-        }
-      }
-    },
-    "settings.advanced.pictureInPicture.normalOption" : {
-      "comment" : "Auto picture-in-picture option - pop out and stay in place",
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Normal"
-          }
-        },
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "Normal"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Normal"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Normal"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "標準"
-          }
-        },
-        "ko" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "일반"
-          }
-        },
-        "nl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Normaal"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "标准"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "一般"
-          }
-        }
-      }
-    },
-    "settings.advanced.pictureInPicture.offDescription" : {
-      "comment" : "Advanced settings - Hint for the Off auto picture-in-picture mode",
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Nie automatisch als Bild-in-Bild öffnen; manuelles Bild-in-Bild funktioniert weiterhin"
-          }
-        },
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "Never pop out automatically; manual picture-in-picture still works"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Nunca se abre la ventana flotante automáticamente; la imagen en imagen manual sigue funcionando"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Ne passe jamais automatiquement en Image dans l'image ; le mode Image dans l'image manuel reste disponible"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "自動ではポップアウトしません。手動のピクチャインピクチャは引き続き使えます"
-          }
-        },
-        "ko" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "자동으로 화면 속 화면을 띄우지 않아요. 수동 화면 속 화면은 계속 사용할 수 있어요"
-          }
-        },
-        "nl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Nooit automatisch beeld in beeld starten; handmatig beeld in beeld werkt nog steeds"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "永不自动弹出；手动画中画仍然可用"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "永不自動彈出；手動子母畫面仍可使用"
-          }
-        }
-      }
-    },
-    "settings.advanced.pictureInPicture.offOption" : {
-      "comment" : "Auto picture-in-picture option - never pop out automatically; manual picture-in-picture is unaffected",
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Aus"
-          }
-        },
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "Off"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Desactivado"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Désactivé"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "オフ"
-          }
-        },
-        "ko" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "끔"
-          }
-        },
-        "nl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Uit"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "关闭"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "關閉"
-          }
-        }
-      }
-    },
-    "settings.advanced.pictureInPicture.parkAtEdgeDescription" : {
-      "comment" : "Advanced settings - Hint for the Park at edge auto picture-in-picture mode",
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Laufendes Video als Bild-in-Bild öffnen und am Bildschirmrand parken, bis du es anklickst"
-          }
-        },
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "Pop out playing video, parked at the screen edge until you click it"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Muestra en una ventana flotante el contenido en reproducción y lo deja en el borde de la pantalla hasta que hagas clic en él"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Affiche la vidéo en cours de lecture en Image dans l'image, ancrée sur le bord de l'écran jusqu'à ce que vous cliquiez dessus"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "再生中の動画をポップアウトし、クリックするまで画面端に待機させます"
-          }
-        },
-        "ko" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "재생 중인 동영상을 화면 속 화면으로 띄우고, 클릭할 때까지 화면 가장자리에 둬요"
-          }
-        },
-        "nl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Start beeld in beeld voor spelende video, geparkeerd aan de schermrand tot je erop klikt"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "弹出正在播放的视频，并停靠在屏幕边缘，直到你点击它"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "讓播放中的影片彈出，並停靠在螢幕邊緣，直到你按一下為止"
-          }
-        }
-      }
-    },
-    "settings.advanced.pictureInPicture.parkAtEdgeOption" : {
-      "comment" : "Auto picture-in-picture option - pop out, then park at the screen edge until clicked",
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Am Rand parken"
-          }
-        },
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "Park at edge"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Acoplar al borde"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Ancrer sur le bord"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "画面端に待機"
-          }
-        },
-        "ko" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "가장자리에 두기"
-          }
-        },
-        "nl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Aan de rand parkeren"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "停靠在边缘"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "停靠於邊緣"
-          }
-        }
-      }
-    },
-    "settings.advanced.pictureInPicture.title" : {
-      "comment" : "Advanced settings - Row title for the three-state auto picture-in-picture mode",
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Automatisches Bild-in-Bild"
-          }
-        },
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "Auto picture-in-picture"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Imagen en imagen automática"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Image dans l'image automatique"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "自動ピクチャ・イン・ピクチャ"
-          }
-        },
-        "ko" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "자동 화면 속 화면"
-          }
-        },
-        "nl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Automatisch beeld in beeld"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "自动画中画"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "自動子母畫面"
-          }
-        }
-      }
-    },
     "settings.general.pinnedTabScope.openSpacesSettingsLink" : {
       "comment" : "General settings - Link that jumps to the Spaces settings pane",
       "extractionState" : "extracted_with_value",
@@ -61687,342 +61975,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "設定檔"
-          }
-        }
-      }
-    },
-    "settings.advanced.restoreLastSession.disabledHint" : {
-      "comment" : "Advanced settings - Hint shown when restore-last-session is off, noting session cookies may be cleared when a window closes",
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Phi startet mit einem neuen Fenster. Wenn du ein Fenster schließt, wirst du auf manchen Websites möglicherweise abgemeldet."
-          }
-        },
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "Phi starts with a new window. Closing a window may sign you out of some sites."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Phi se abre con una ventana nueva. Al cerrar una ventana, es posible que se cierre tu sesión en algunos sitios."
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Phi démarre avec une nouvelle fenêtre. La fermeture d'une fenêtre peut vous déconnecter de certains sites."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Phiは新しいウインドウで起動します。ウインドウを閉じると、一部のサイトからログアウトされる場合があります。"
-          }
-        },
-        "ko" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Phi가 새 윈도우로 시작해요. 윈도우를 닫으면 일부 사이트에서 로그아웃될 수 있어요."
-          }
-        },
-        "nl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Phi start met een nieuw venster. Als je een venster sluit, word je bij sommige sites mogelijk uitgelogd."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Phi 启动时打开新窗口。关闭窗口可能会让你在部分网站上退出登录。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Phi 會以新視窗啟動。關閉視窗可能會讓你從某些網站登出。"
-          }
-        }
-      }
-    },
-    "settings.advanced.restoreLastSession.enabledHint" : {
-      "comment" : "Advanced settings - Hint shown when restore-last-session is on",
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Deine Fenster und Tabs werden beim nächsten Start von Phi wieder geöffnet."
-          }
-        },
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "Reopen your windows and tabs the next time you open Phi."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Se volverán a abrir tus ventanas y pestañas la próxima vez que abras Phi."
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Rouvre vos fenêtres et vos onglets à la prochaine ouverture de Phi."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "次にPhiを起動したときに、ウインドウとタブを再度開きます。"
-          }
-        },
-        "ko" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "다음에 Phi를 열 때 윈도우와 탭을 다시 열어요."
-          }
-        },
-        "nl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Open je vensters en tabbladen opnieuw wanneer je Phi de volgende keer start."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "下次打开 Phi 时重新打开你的窗口和标签页。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "下次開啟 Phi 時，重新開啟你的視窗和分頁。"
-          }
-        }
-      }
-    },
-    "settings.advanced.restoreLastSession.toggle" : {
-      "comment" : "Advanced settings - Row title for the app-level restore-previous-session toggle",
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Letzte Sitzung wiederherstellen"
-          }
-        },
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "Restore last session"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Restaurar la última sesión"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Restaurer la session précédente"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "前回のセッションを復元"
-          }
-        },
-        "ko" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "마지막 세션 복원"
-          }
-        },
-        "nl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Laatste sessie herstellen"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "恢复上次会话"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "還原上次的工作階段"
-          }
-        }
-      }
-    },
-    "settings.advanced.tabPreview.showToggle" : {
-      "comment" : "Advanced settings - Toggle title for showing custom preview cards when hovering over open tabs",
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Vorschaukarte anzeigen, wenn du den Mauszeiger über einen Tab bewegst"
-          }
-        },
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "Show a preview card when hovering over a tab"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Mostrar una tarjeta de vista previa al pasar el cursor sobre una pestaña"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Afficher une carte d'aperçu au survol d'un onglet"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "タブにポインタを合わせたときにプレビューカードを表示"
-          }
-        },
-        "ko" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "탭 위에 마우스를 올리면 미리보기 카드 표시"
-          }
-        },
-        "nl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Toon een voorbeeldkaart wanneer je de aanwijzer op een tabblad houdt"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "鼠标悬停在标签页上时显示预览卡片"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "游標停留在分頁上時顯示預覽卡片"
-          }
-        }
-      }
-    },
-    "settings.general.folio.autoSaveHint" : {
-      "comment" : "General settings - Hint under the site-action auto-save toggle naming the supported sites and the local-only behavior",
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "Liking a YouTube video or bookmarking on X, Reddit, or Stack Overflow also saves that page here. Everything stays on this Mac."
-          }
-        }
-      }
-    },
-    "settings.general.folio.autoSaveSites" : {
-      "comment" : "General settings - Button under the site-action auto-save toggle that opens the page listing each supported site with its own switch",
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "Choose sites…"
-          }
-        }
-      }
-    },
-    "settings.general.folio.autoSaveToggle" : {
-      "comment" : "General settings - Toggle title for the site-action auto-save: liking or bookmarking on supported sites also saves the page",
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "Save when you like or bookmark on supported sites"
-          }
-        }
-      }
-    },
-    "settings.general.folio.chooseButton" : {
-      "comment" : "General settings - Folio folder picker confirm button",
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "Choose"
-          }
-        }
-      }
-    },
-    "settings.general.folio.folderHint" : {
-      "comment" : "General settings - Hint under the Folio folder row describing the saved file pair and the per-profile override",
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "Each save writes a markdown article and a webpage copy side by side. Profiles can override this folder in their own settings."
-          }
-        }
-      }
-    },
-    "settings.general.folio.folderTitle" : {
-      "comment" : "General settings - Row title for the folder saved pages are written into",
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "Save pages to"
-          }
-        }
-      }
-    },
-    "settings.general.folio.pickerMessage" : {
-      "comment" : "General settings - Folio folder picker message",
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "Choose where saved pages are stored."
-          }
-        }
-      }
-    },
-    "settings.general.folio.sectionTitle" : {
-      "comment" : "General settings - Folio section title",
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "Folio"
           }
         }
       }
@@ -62331,22 +62283,28 @@
       "comment" : "Settings - Tab title for advanced settings",
       "extractionState" : "extracted_with_value",
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Erweitert"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "new",
             "value" : "Advanced"
           }
         },
-        "zh-Hans" : {
+        "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "高级"
+            "value" : "Avanzado"
           }
         },
-        "zh-Hant" : {
+        "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "進階"
+            "value" : "Avancés"
           }
         },
         "ja" : {
@@ -62361,28 +62319,22 @@
             "value" : "고급"
           }
         },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Avancés"
-          }
-        },
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Erweitert"
-          }
-        },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Geavanceerd"
           }
         },
-        "es" : {
+        "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Avanzado"
+            "value" : "高级"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "進階"
           }
         }
       }
@@ -67858,6 +67810,54 @@
         }
       }
     },
+    "settings.profiles.folio.chooseButton" : {
+      "comment" : "Profiles settings - Folio folder picker confirm button",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Choose"
+          }
+        }
+      }
+    },
+    "settings.profiles.folio.clearOverrideHelp" : {
+      "comment" : "Profiles settings - help text on the control that removes this profile's Folio folder override",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Follow the General settings folder"
+          }
+        }
+      }
+    },
+    "settings.profiles.folio.pickerMessage" : {
+      "comment" : "Profiles settings - Folio folder picker message",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Choose where this profile's saved pages are stored."
+          }
+        }
+      }
+    },
+    "settings.profiles.folio.sameAsGeneral" : {
+      "comment" : "Profiles settings - Folio folder shown when the profile has no override and follows the General settings folder",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Same as General"
+          }
+        }
+      }
+    },
     "settings.profiles.listTitle" : {
       "comment" : "Profiles settings - list header",
       "extractionState" : "extracted_with_value",
@@ -68514,54 +68514,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "未知錯誤"
-          }
-        }
-      }
-    },
-    "settings.profiles.folio.chooseButton" : {
-      "comment" : "Profiles settings - Folio folder picker confirm button",
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "Choose"
-          }
-        }
-      }
-    },
-    "settings.profiles.folio.clearOverrideHelp" : {
-      "comment" : "Profiles settings - help text on the control that removes this profile's Folio folder override",
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "Follow the General settings folder"
-          }
-        }
-      }
-    },
-    "settings.profiles.folio.pickerMessage" : {
-      "comment" : "Profiles settings - Folio folder picker message",
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "Choose where this profile's saved pages are stored."
-          }
-        }
-      }
-    },
-    "settings.profiles.folio.sameAsGeneral" : {
-      "comment" : "Profiles settings - Folio folder shown when the profile has no override and follows the General settings folder",
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "Same as General"
           }
         }
       }

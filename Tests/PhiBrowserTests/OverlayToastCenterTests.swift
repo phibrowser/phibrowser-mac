@@ -95,17 +95,30 @@ final class OverlayToastCenterTests: XCTestCase {
         peek.showHighlightLinkCopyConfirmation(url: url, tabId: nextTab.guid)
         XCTAssertEqual(peekModel.toastCenter.visibleToasts(for: state.windowId).count, 1)
         peekModel.toastCenter.clearWindow(windowId: state.windowId)
-        peek.showURLCopyConfirmation(url: url, tabId: tab.guid)
+        peek.showToast(id: UUID(), message: "Link copied", shareURLs: [url], duration: 4, tabId: tab.guid)
         XCTAssertTrue(peekModel.toastCenter.visibleToasts(for: state.windowId).isEmpty)
-        peek.showURLCopyConfirmation(url: url, tabId: nextTab.guid)
+        peek.showToast(id: UUID(), message: "Link copied", shareURLs: [url], duration: 4, tabId: nextTab.guid)
         let linkToast = try XCTUnwrap(peekModel.toastCenter.visibleToasts(for: state.windowId).first)
         XCTAssertEqual(linkToast.placement, .topTrailing)
         XCTAssertEqual(linkToast.shareURLs, [url])
         drainUpdates()
         peekWindow.contentView?.layoutSubtreeIfNeeded()
         XCTAssertNotNil(shareButton(in: peekOverlay))
+        let noticeID = UUID()
+        XCTAssertTrue(peek.showToast(id: noticeID, message: "Image copied", shareURLs: [], duration: 4, tabId: nextTab.guid))
+        peek.dismissToast(id: linkToast.id)
+        XCTAssertEqual(peekModel.toastCenter.visibleToasts(for: state.windowId).first?.id, noticeID)
+        drainUpdates()
+        peekWindow.contentView?.layoutSubtreeIfNeeded()
+        XCTAssertEqual(peekModel.genericToasts.first?.title, "Image copied")
+        // The outgoing Share toast remains mounted until its removal animation finishes.
+        let shareButtonRemoved = XCTNSPredicateExpectation(
+            predicate: NSPredicate { _, _ in shareButton(in: peekOverlay) == nil }, object: nil)
+        wait(for: [shareButtonRemoved], timeout: 2)
+        peek.dismissToast(id: noticeID)
+        XCTAssertTrue(peekModel.toastCenter.visibleToasts(for: state.windowId).isEmpty)
         peek.hide()
-        peek.showURLCopyConfirmation(url: url, tabId: nextTab.guid)
+        peek.showToast(id: UUID(), message: "Link copied", shareURLs: [url], duration: 4, tabId: nextTab.guid)
         XCTAssertTrue(peekModel.toastCenter.visibleToasts(for: state.windowId).isEmpty)
         peek.showHighlightLinkCopyConfirmation(url: url, tabId: nextTab.guid)
         XCTAssertTrue(peekModel.toastCenter.visibleToasts(for: state.windowId).isEmpty)
@@ -146,9 +159,36 @@ final class OverlayToastCenterTests: XCTestCase {
         }
     }
 
-    func testLinkCopiedCallbackIsExposedToObjectiveC() {
+    func testToastCallbacksAreExposedToObjectiveC() {
         XCTAssertTrue(PhiChromiumCoordinator.shared.responds(
-            to: NSSelectorFromString("linkCopied:windowId:url:")))
+            to: NSSelectorFromString("showToast:windowId:toastId:message:shareURL:duration:")))
+        XCTAssertTrue(PhiChromiumCoordinator.shared.responds(
+            to: NSSelectorFromString("dismissToast:windowId:")))
+    }
+
+    func testExternalToastIDCannotDismissItsReplacement() throws {
+        let scheduler = ManualScheduler()
+        let center = makeCenter(scheduler: scheduler)
+        let id = UUID()
+        XCTAssertEqual(center.show(title: "Image copied", duration: 4, in: .windowId(1), id: id), id)
+        let toast = try XCTUnwrap(center.visibleToasts(for: 1).first)
+        XCTAssertEqual(toast.title, "Image copied")
+        XCTAssertEqual(toast.duration, 4)
+        XCTAssertTrue(toast.shareURLs.isEmpty)
+        XCTAssertNil(toast.action)
+        center.show(title: "New confirmation", in: .windowId(1))
+        XCTAssertFalse(center.dismiss(id: id))
+        XCTAssertEqual(center.visibleToasts(for: 1).first?.title, "New confirmation")
+        XCTAssertEqual(scheduler.pendingCount, 1)
+        scheduler.fireNext()
+        XCTAssertTrue(center.visibleToasts(for: 1).isEmpty)
+    }
+
+    @MainActor
+    func testToastBridgeDeclinesMissingWindow() {
+        XCTAssertFalse(PhiChromiumCoordinator.shared.showToast(
+            0, windowId: -987654321, toastId: UUID().uuidString,
+            message: "Image copied", shareURL: "", duration: 4))
     }
 
     func testHighlightLinkCallbackIsExposedToObjectiveC() {

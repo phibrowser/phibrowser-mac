@@ -240,156 +240,6 @@ final class ProfilePairingGate {
     }
 }
 
-/// The gate modal's root view: `ProfilePairingView` in its `.gate` context, plus
-/// the secondary "remove this device" slot -- the modal's only exit other than
-/// finishing the pairing. `onDismiss` takes the app-modal window down; the view
-/// owns the confirmation alert and the self-revoke call itself, because the 409
-/// `last_device` answer has to land back on THIS view (the button is greyed in
-/// place with the reason underneath) and an opaque `() -> Void` handed to the
-/// host could never carry it back.
-struct ProfilePairingGateView: View {
-    @ObservedObject var viewModel: KeyLayerViewModel
-    let controller: SyncKeyController
-    let onDismiss: () -> Void
-
-    /// Task 7 的过渡壳：`ProfilePairingView` 的两个 `@State` 已上提为 `@Binding`
-    /// （§5.3），而这个 view 在 Task 8 整体消失，所以它只需要能编译、能渲染。
-    @StateObject private var pairingSelections = ProfilePairingSelectionStore()
-
-    /// Non-nil once the server has refused: this account's last active device.
-    /// Deliberately sticky for the life of the window -- nothing the user can do
-    /// inside this modal adds a second device.
-    @State private var removeBlockedNote: String?
-
-    /// A transient failure of the same button (offline, 5xx, Keychain). Shown in
-    /// the same slot but deliberately does NOT disable: retrying is the fix.
-    /// Cleared at the start of every attempt.
-    @State private var removeErrorNote: String?
-
-    var body: some View {
-        switch viewModel.phase {
-        case .pairingProfiles(let locals, let remotes):
-            ProfilePairingView(
-                viewModel: viewModel,
-                locals: locals,
-                remotes: remotes,
-                selections: $pairingSelections.selections,
-                remoteChoices: $pairingSelections.remoteChoices,
-                context: .gate,
-                secondaryButton: secondaryButton,
-                onSubmit: { decisions in
-                    Task { await viewModel.submitPairing(decisions, controller: controller) }
-                })
-            .onAppear { pairingSelections.seed(locals: locals, remotes: remotes) }
-        case .error(let message):
-            // `startPairing` lands here whenever `accountProfiles()` throws --
-            // the likeliest outcome right after a join if the network drops or
-            // the ARK is not up yet. This window is app modal and its only
-            // automatic dismissal needs `needsPairingActionable` to go false,
-            // which it will not while the account really does need pairing, so a
-            // branch with no button is a browser locked behind an error string.
-            statusView(message: message,
-                       retryEnabled: Self.retryEnabled(for: viewModel.phase,
-                                                       isSubmitting: viewModel.isSubmitting))
-        default:
-            // `.working` while `startPairing` loads, `.done` for the moment
-            // between a successful submit and the gate's dismissal. Both are
-            // meant to be transient, but the same "no exit" reasoning applies if
-            // one of them ever sticks, so they carry the exits too.
-            statusView(message: nil,
-                       retryEnabled: Self.retryEnabled(for: viewModel.phase,
-                                                       isSubmitting: viewModel.isSubmitting))
-        }
-    }
-
-    /// Whether the modal's retry button is pressable. It always is.
-    ///
-    /// It used to be disabled in `.working`, which is precisely the phase a
-    /// stalled load sits in: on device B the pairing load hung behind five
-    /// strictly serial round trips on a 60 s-timeout session, and the one
-    /// control that could have restarted it was greyed out for the whole of
-    /// those minutes, in an app-modal window with no close button.
-    ///
-    /// Pressing it during a LOAD is safe by construction: `startPairing`
-    /// cancels the in-flight load and replaces it rather than stacking a
-    /// second one behind it.
-    ///
-    /// A SUBMIT is the one case that is not, and it is what `isSubmitting`
-    /// carries: `submitPairing` also holds `.working`, across every decision it
-    /// applies, while rewriting the mapping table a load reads -- so a load
-    /// started on top of it would be a second, uncoordinated writer of `phase`.
-    /// That window, and only that window, greys the button; a stalled load stays
-    /// restartable in every phase, which is the defect this task exists to fix.
-    ///
-    /// Takes the phase and ignores it rather than reading `isSubmitting` alone
-    /// at the call sites: it is the one place that decides this, it is total
-    /// over all eleven `KeyLayerPhase` cases by construction, and the next
-    /// person to want a phase-dependent answer has somewhere obvious to put it.
-    static func retryEnabled(for phase: KeyLayerPhase, isSubmitting: Bool) -> Bool { !isSubmitting }
-
-    /// The "remove this device" slot, offered in EVERY branch: the gate is app
-    /// modal, so a branch without it is a window with no exit at all.
-    private var secondaryButton: (title: String, enabled: Bool, note: String?, action: () -> Void)? {
-        (title: NSLocalizedString("从同步中移除本设备…",
-                                  comment: "Pairing gate - remove this device"),
-         enabled: removeBlockedNote == nil,
-         note: removeBlockedNote ?? removeErrorNote,
-         action: { confirmAndRemoveThisDevice() })
-    }
-
-    /// Second confirmation, then the retire-then-clean sequence. The client does
-    /// NOT pre-probe the account's device count (there is no listing endpoint on
-    /// this client): it asks, and greys the button in place if the server refuses.
-    private func confirmAndRemoveThisDevice() {
-        // Copy and alert both come from `SelfRevokeStrings`, shared with the
-        // Settings → Devices entry point: two surfaces, one promise.
-        guard SelfRevokeStrings.confirmRemoval() else { return }
-        removeErrorNote = nil
-        Task { @MainActor in
-            do {
-                try await controller.removeThisDeviceFromSync()
-                onDismiss()
-            } catch KeyAPIError.lastActiveDevice {
-                removeBlockedNote = SelfRevokeStrings.lastDeviceNote
-            } catch {
-                removeErrorNote = PhiSyncLog.describe(error)
-            }
-        }
-    }
-
-    /// Non-pairing phases: title, optional message, and the two exits (reload
-    /// the candidates, or leave sync from this device).
-    @ViewBuilder
-    private func statusView(message: String?, retryEnabled: Bool) -> some View {
-        VStack(alignment: .leading, spacing: 16) {
-            Text(NSLocalizedString("完成 Profile 配对", comment: "Pairing gate - title"))
-                .font(.title2.bold())
-            if let message {
-                Text(message).font(.callout)
-            } else {
-                ProgressView()
-            }
-            HStack(spacing: 12) {
-                Button(NSLocalizedString("重试", comment: "Pairing gate - retry")) {
-                    Task { await viewModel.startPairing(controller: controller) }
-                }
-                .buttonStyle(.borderedProminent)
-                .disabled(!retryEnabled)
-                if let secondaryButton {
-                    Button(secondaryButton.title, action: secondaryButton.action)
-                        .buttonStyle(.bordered)
-                        .disabled(!secondaryButton.enabled)
-                }
-            }
-            if let note = secondaryButton?.note {
-                Text(note).font(.callout).foregroundColor(.secondary)
-            }
-        }
-        .padding(32)
-        .frame(minWidth: 420, alignment: .leading)
-    }
-}
-
 /// Production host: a titled window WITHOUT `.closable` (the Devices pane's
 /// key-layer window is `[.titled, .closable]`), at `.modalPanel` level, driven
 /// through `NSApp.runModal(for:)`. The modal session is what makes the browser
@@ -443,6 +293,11 @@ final class AppModalPairingHost: ProfilePairingModalHost {
     /// loop nothing is left to stop.
     private let runModal: @MainActor (NSWindow) -> Void
     private let stopModal: @MainActor () -> Void
+    /// The wizard view model's three external dependencies, injected here so
+    /// `present()` never reaches for a singleton itself (see `init`).
+    private let previewAccountSpaces: () async -> Result<[PhiAccountSpaceSummary], PhiSpacePreviewError>
+    private let pairableLocalSpaces: () -> [PhiLocalSpace]
+    private let themeDisplayName: (String) -> String?
 
     /// True for exactly as long as THIS host's `runModal` call is on the stack.
     ///
@@ -454,26 +309,50 @@ final class AppModalPairingHost: ProfilePairingModalHost {
 
     private var window: NSWindow?
     /// The live modal's view model and the controller it was presented for, so
-    /// `reloadPresented()` has both halves of `startPairing(controller:)`.
+    /// `reloadPresented()` has both halves of `start(controller:)`.
     ///
     /// Weak on purpose, and safe for as long as the window is up: the view model
-    /// is retained by `ProfilePairingGateView`'s `@ObservedObject` inside the
-    /// hosting controller `window` holds, and the controller is owned by the key
-    /// layer (the gate itself only holds it weakly). Both are cleared in
-    /// `dismiss()` alongside `window`.
-    private weak var viewModel: KeyLayerViewModel?
+    /// is retained by `PairingWizardView`'s `@StateObject` inside the hosting
+    /// controller `window` holds (`StateObject(wrappedValue:)` captures it
+    /// strongly in the root view), and the controller is owned by the key layer
+    /// (the gate itself only holds it weakly). Both are cleared in `dismiss()`
+    /// alongside `window`.
+    ///
+    /// The setter stays private -- `present()` and `dismiss()` are still its
+    /// only two writers, and `private(set)` is what makes the compiler say so --
+    /// but the getter is internal so a test can drive the wizard the user drives
+    /// (§10.7 case 1 presses Continue for real).
+    private(set) weak var viewModel: PairingWizardViewModel?
     private weak var presentedController: SyncKeyController?
 
     /// Every seam carries its production default, so `AppModalPairingHost()`
     /// stays the one call the app makes (`PhiChromiumCoordinator`).
+    ///
+    /// 后三条是 M3-2b 新加的：向导 VM 的三条外部依赖。放在这里而不是
+    /// `present()` 体内，`ProfilePairingGateTests` 才不会在 `present()` 时把
+    /// `PhiChromiumCoordinator.shared` 与它背后的 `AccountController.shared` 拉起来
+    /// ——那正是向导 VM 收注入闭包想避免的耦合，直接写在 `present()` 里等于把单例
+    /// 从 VM 搬进了宿主。
     init(scheduler: @escaping @MainActor (@escaping () -> Void) -> Void = { block in
              RunLoop.main.perform(inModes: AppModalPairingHost.presentationModes) { block() }
          },
          runModal: @escaping @MainActor (NSWindow) -> Void = { NSApp.runModal(for: $0) },
-         stopModal: @escaping @MainActor () -> Void = { NSApp.stopModal() }) {
+         stopModal: @escaping @MainActor () -> Void = { NSApp.stopModal() },
+         previewAccountSpaces: @escaping () async -> Result<[PhiAccountSpaceSummary], PhiSpacePreviewError>
+             = { await PhiChromiumCoordinator.shared.previewAccountSpaces() },
+         // 非隔离闭包：`themeDisplayName` 要原样传给纯函数 `SpaceOverwriteDiff.diffs`
+         // （一个 `@MainActor` 闭包无法转换过去），两条都只会被 `@MainActor` 的向导 VM
+         // 调用，所以 `assumeIsolated` 成立。
+         pairableLocalSpaces: @escaping () -> [PhiLocalSpace]
+             = { MainActor.assumeIsolated { PhiChromiumCoordinator.shared.pairableLocalSpaces() } },
+         themeDisplayName: @escaping (String) -> String?
+             = { id in MainActor.assumeIsolated { ThemeManager.shared.registeredThemes[id]?.name } }) {
         self.scheduler = scheduler
         self.runModal = runModal
         self.stopModal = stopModal
+        self.previewAccountSpaces = previewAccountSpaces
+        self.pairableLocalSpaces = pairableLocalSpaces
+        self.themeDisplayName = themeDisplayName
     }
 
     func present(controller: SyncKeyController?) {
@@ -487,21 +366,30 @@ final class AppModalPairingHost: ProfilePairingModalHost {
             return
         }
         guard window == nil else { return }
-        let viewModel = KeyLayerViewModel(manager: controller.manager)
-        let root = ProfilePairingGateView(viewModel: viewModel, controller: controller,
-                                          onDismiss: { [weak self] in self?.dismiss() })
+        let viewModel = PairingWizardViewModel(
+            keyLayer: KeyLayerViewModel(manager: controller.manager),
+            previewAccountSpaces: previewAccountSpaces,
+            pairableLocalSpaces: pairableLocalSpaces,
+            themeDisplayName: themeDisplayName)
+        let root = PairingWizardView(viewModel: viewModel, controller: controller,
+                                     onDismiss: { [weak self] in self?.dismiss() })
         let window = NSWindow(contentViewController: ThemedHostingController(rootView: root))
-        window.styleMask = [.titled]
-        window.title = NSLocalizedString("完成 Profile 配对", comment: "Pairing gate window title")
+        // 仍然没有 `.closable`（与今天的理由一致）；`.resizable` 是新的：可放大、
+        // 不可缩到 720×560 以下。
+        window.styleMask = [.titled, .resizable]
+        window.title = NSLocalizedString("Finish setting up sync",
+                                         comment: "Pairing wizard - window title")
         window.level = .modalPanel
         window.isReleasedWhenClosed = false
+        window.setContentSize(NSSize(width: 720, height: 560))
+        window.contentMinSize = NSSize(width: 720, height: 560)
         window.center()
         self.window = window
         self.viewModel = viewModel
         self.presentedController = controller
         NSApp.activate(ignoringOtherApps: true)
         window.makeKeyAndOrderFront(nil)
-        Task { @MainActor in await viewModel.startPairing(controller: controller) }
+        Task { @MainActor in await viewModel.start(controller: controller) }
         // ONLY the modal session is deferred; everything above stays
         // synchronous. `dismiss()`, `reloadPresented()` and the `window == nil`
         // re-entrancy guard all read state this method just wrote, so deferring
@@ -540,30 +428,30 @@ final class AppModalPairingHost: ProfilePairingModalHost {
         }
     }
 
-    /// Whether a re-drive may replace what the modal is currently showing.
+    /// 一个 re-drive 是对**卡住的加载**的救援，不是刷新（R-D6-11）。
     ///
-    /// A re-drive is a RESCUE for a load that stalled, not a refresh. In
-    /// `.pairingProfiles` the user is reading a list and ticking boxes, and a
-    /// fresh load would swap the list out from under them and reset
-    /// `ProfilePairingView`'s `@State` selections -- while the gate re-drives on
-    /// every `.measured` pass, i.e. roughly once a minute for as long as the
-    /// window is open. So that one phase is excluded and every other phase this
-    /// modal can reach -- `.idle` before the first load, `.working` during it
-    /// (the stalled case this exists for), `.error`, `.done` -- is allowed.
-    static func reloadAllowed(for phase: KeyLayerPhase) -> Bool {
+    /// **只有 `.loading` 与 `.error(_, .reload)` 允许**；四个交互态
+    /// （`.profiles` / `.spaces` / `.confirmOverwrite` / `.submitting`）与 `.done`
+    /// 一律拒绝——gate 每一趟 `.measured` 都会对已呈现的模态调 `reloadPresented()`，
+    /// 大约一分钟一次。两处相对 `KeyLayerPhase` 时代新加的拒绝，理由各不相同：
+    ///  - **`.confirmOverwrite`**：确认页是交互态，一次重驱会把用户正在读的那页差异
+    ///    连同他的选择一起冲掉；
+    ///  - **`.error(_, .backToSpaces)`**：Space 侧应用失败停下来的那个 `.error`，
+    ///    背后是一份用户已经做完的第 2 步选择。`.error` 整类允许重驱是
+    ///    `KeyLayerPhase` 时代的口径（那时 `.error` 只可能是一次加载失败），在向导里
+    ///    照抄就会每分钟重跑一次 `start()`，把 `spacesInput` 与第 2 步的指派一起冲掉。
+    static func reloadAllowed(for phase: PairingWizardPhase) -> Bool {
         switch phase {
-        case .idle, .working, .done, .error: return true
-        // Unreachable in this window (its view model is built here and driven
-        // only by `startPairing` / `submitPairing`), and excluded for the same
-        // reason as `.pairingProfiles` if it ever becomes reachable: nothing
-        // says a re-drive would not be discarding user input.
-        default: return false
+        case .loading: return true
+        case .error(_, let resume): return resume == .reload
+        case .profiles, .spaces, .confirmOverwrite, .submitting, .done: return false
         }
     }
 
-    /// Restarts the load behind the window that is already up. `startPairing`
-    /// cancels whatever is still in flight and replaces it, so this cannot pile
-    /// loads on top of one another however often the gate calls it.
+    /// Restarts the load behind the window that is already up. `start()` (and
+    /// the `startPairing` underneath it) cancels whatever is still in flight and
+    /// replaces it, so this cannot pile loads on top of one another however
+    /// often the gate calls it.
     func reloadPresented() {
         guard let viewModel, let presentedController else { return }
         guard Self.reloadAllowed(for: viewModel.phase) else {
@@ -571,7 +459,7 @@ final class AppModalPairingHost: ProfilePairingModalHost {
             AppLogInfo("[phi-sync] pairing modal re-drive skipped; the user is choosing pairings")
             return
         }
-        Task { @MainActor in await viewModel.startPairing(controller: presentedController) }
+        Task { @MainActor in await viewModel.start(controller: presentedController) }
     }
 
     func dismiss() {

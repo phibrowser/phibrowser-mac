@@ -5,7 +5,7 @@ import AppKit
 ///
 /// Two surfaces offer this action and both drive the very same
 /// `SyncKeyController.removeThisDeviceFromSync()`: the blocking pairing modal
-/// (`ProfilePairingGateView`, where it is the only exit other than finishing the
+/// (`PairingWizardView`, where it is the only exit other than finishing the
 /// pairing) and the runtime entry point in Settings → Devices
 /// (`DevicesSettingView`). A second copy of the promise is how the two promises
 /// drift apart — what the alert says about the browsing data staying put is a

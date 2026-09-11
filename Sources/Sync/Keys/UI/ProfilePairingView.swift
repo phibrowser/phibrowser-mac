@@ -1,8 +1,11 @@
 import SwiftUI
 
-/// Where this view is being shown. The Devices pane keeps today's English copy
-/// and today's button title verbatim; the join gate uses the finalized Chinese
-/// copy and gets the secondary "remove this device" slot.
+/// Where this view is being shown. The Devices pane (`.settings`) keeps today's
+/// English copy, today's button title and today's row chrome verbatim; the
+/// pairing wizard's step 1 (`.gate`) renders the ROW LIST ALONE — title, body,
+/// primary button and the "remove this device" exit all live in
+/// `PairingWizardView`'s chrome (§5.3), and the rows take the wizard's card
+/// chrome (`RowChrome`).
 enum ProfilePairingContext {
     case gate
     case settings
@@ -237,12 +240,13 @@ struct ProfilePairingView: View {
     let locals: [PairingLocal]
     let remotes: [RemoteProfile]
     let context: ProfilePairingContext
-    /// Optional extra button next to the primary one (the gate passes
-    /// "从同步中移除本设备…"; the Devices pane passes nil).
+    /// Optional extra button next to the primary one. Rendered by the
+    /// `.settings` branch only — the wizard's footer owns its own exits — and
+    /// every caller in the tree passes nil today.
     ///
-    /// `enabled` / `note` exist for the gate's one degraded case: a 409
-    /// `last_device` is only knowable by trying, so the button is greyed IN PLACE
-    /// with the reason underneath rather than pre-probed away.
+    /// `enabled` / `note` exist for the one degraded case the self-revoke exit
+    /// has: a 409 `last_device` is only knowable by trying, so the button is
+    /// greyed IN PLACE with the reason underneath rather than pre-probed away.
     let secondaryButton: (title: String, enabled: Bool, note: String?, action: () -> Void)?
     var onSubmit: ([PairingDecision]) -> Void
 
@@ -273,80 +277,69 @@ struct ProfilePairingView: View {
                             selections: selections, remoteChoices: remoteChoices)
     }
 
-    private var titleText: String {
-        switch context {
-        case .gate: return NSLocalizedString("完成 Profile 配对", comment: "Pairing gate - title")
-        case .settings: return NSLocalizedString("Match your profiles", comment: "Profile pairing - title")
-        }
-    }
-
-    private var bodyText: String {
-        switch context {
-        case .gate:
-            return NSLocalizedString(
-                "这台 Mac 上的 Profile 需要与账户里的 Profile 一一对应，Phi 才能把 Space 和书签同步到正确的 Profile。完成配对前，浏览器暂时不可用。",
-                comment: "Pairing gate - explanation")
-        case .settings:
-            return NSLocalizedString(
-                "We found profiles on this Mac and on your account that we couldn’t match automatically. Pick which account profile each local profile belongs to.",
-                comment: "Profile pairing - explanation")
-        }
-    }
-
-    private var primaryTitle: String {
-        switch context {
-        case .gate: return NSLocalizedString("完成配对", comment: "Pairing gate - confirm button")
-        case .settings: return NSLocalizedString("Confirm", comment: "Profile pairing - confirm button")
-        }
-    }
+    /// `.gate` 上下文下这三样归向导 chrome（§5.3），所以这里只剩 `.settings` 一支。
+    ///
+    /// **internal `static`，不是 `private var`**：§10.7 第 5 条要求把 Devices pane 的
+    /// 文案「用一条显式断言钉住，而不是靠肉眼看 diff」，而 `private` 的计算属性在
+    /// `@testable import` 下也够不着。值与今天 `titleText` / `bodyText` /
+    /// `primaryTitle` 的 `.settings` 分支逐字相同。
+    static let settingsTitle = NSLocalizedString("Match your profiles",
+                                                 comment: "Profile pairing - title")
+    static let settingsBody = NSLocalizedString(
+        "We found profiles on this Mac and on your account that we couldn’t match automatically. Pick which account profile each local profile belongs to.",
+        comment: "Profile pairing - explanation")
+    static let settingsPrimaryTitle = NSLocalizedString("Confirm",
+                                                        comment: "Profile pairing - confirm button")
 
     var body: some View {
-        ScrollView(.vertical) {
+        switch context {
+        case .settings:
+            ScrollView(.vertical) {
+                VStack(alignment: .leading, spacing: 20) {
+                    Text(Self.settingsTitle).font(.title2.bold()).themedForeground(.textPrimaryStrong)
+                    Text(Self.settingsBody).font(.body).themedForeground(.textPrimary)
+                    rows
+                    if let pairingError = viewModel.pairingError {
+                        Text(pairingError).font(.callout).foregroundColor(.red)
+                    }
+                    HStack(spacing: 12) {
+                        Button(Self.settingsPrimaryTitle) { onSubmit(model.decisions()) }
+                            .buttonStyle(.borderedProminent)
+                            .disabled(viewModel.phase == .working || !allDecided)
+                        if let secondaryButton {
+                            Button(secondaryButton.title, action: secondaryButton.action)
+                                .buttonStyle(.bordered)
+                                .disabled(!secondaryButton.enabled)
+                        }
+                    }
+                    if let note = secondaryButton?.note {
+                        Text(note).font(.callout).foregroundColor(.secondary)
+                    }
+                }
+                .padding(32)
+            }
+            .frame(minWidth: 420)
+        case .gate:
             VStack(alignment: .leading, spacing: 20) {
-                Text(titleText)
-                    .font(.title2.bold())
-                    .themedForeground(.textPrimaryStrong)
-
-                Text(bodyText)
-                    .font(.body)
-                    .themedForeground(.textPrimary)
-
-                ForEach(locals) { local in
-                    localRow(local)
-                }
-
-                if !model.unclaimedRemotes.isEmpty {
-                    Text(NSLocalizedString("Unclaimed account profiles", comment: "Profile pairing - unclaimed remotes header"))
-                        .font(.headline)
-                        .themedForeground(.textPrimaryStrong)
-                    ForEach(model.unclaimedRemotes, id: \.uuid) { remote in
-                        remoteRow(remote)
-                    }
-                }
-
+                rows
                 if let pairingError = viewModel.pairingError {
-                    Text(pairingError)
-                        .font(.callout)
-                        .foregroundColor(.red)
-                }
-
-                HStack(spacing: 12) {
-                    Button(primaryTitle) { onSubmit(model.decisions()) }
-                        .buttonStyle(.borderedProminent)
-                        .disabled(viewModel.phase == .working || !allDecided)
-                    if let secondaryButton {
-                        Button(secondaryButton.title, action: secondaryButton.action)
-                            .buttonStyle(.bordered)
-                            .disabled(!secondaryButton.enabled)
-                    }
-                }
-                if let note = secondaryButton?.note {
-                    Text(note).font(.callout).foregroundColor(.secondary)
+                    Text(pairingError).font(.callout).foregroundColor(.red)
                 }
             }
-            .padding(32)
         }
-        .frame(minWidth: 420)
+    }
+
+    /// 两个上下文共享的行列表（`localRow` / `remoteRow` 与那条 header 一字不动）。
+    @ViewBuilder
+    private var rows: some View {
+        ForEach(locals) { local in localRow(local) }
+        if !model.unclaimedRemotes.isEmpty {
+            Text(NSLocalizedString("Unclaimed account profiles",
+                                   comment: "Profile pairing - unclaimed remotes header"))
+                .font(.headline)
+                .themedForeground(.textPrimaryStrong)
+            ForEach(model.unclaimedRemotes, id: \.uuid) { remote in remoteRow(remote) }
+        }
     }
 
     @ViewBuilder
@@ -367,8 +360,7 @@ struct ProfilePairingView: View {
             .frame(maxWidth: 220)
         }
         .padding(12)
-        .background(Color(nsColor: .textBackgroundColor))
-        .cornerRadius(8)
+        .modifier(RowChrome(context: context))
     }
 
     @ViewBuilder
@@ -407,8 +399,7 @@ struct ProfilePairingView: View {
             }
         }
         .padding(12)
-        .background(Color(nsColor: .textBackgroundColor))
-        .cornerRadius(8)
+        .modifier(RowChrome(context: context))
     }
 
     /// Reads through `model.choice(for:)` so a stale entry shows as "请选择"
@@ -470,6 +461,41 @@ struct ProfilePairingView: View {
     }
 }
 
+/// 行卡片的背景，**按上下文分叉**：`.gate` 走向导的 `settingsCardChrome()`，
+/// `.settings` **逐字保留今天那两句**。不能一刀切换掉：这两个行构造器与 Devices pane
+/// 的 `.settings` 表面是同一份代码，而 §5.3 / §6.8 / §11 都把 `.settings` 的渲染结果
+/// 钉成「逐字不变」。
+struct RowChrome: ViewModifier {
+    let context: ProfilePairingContext
+
+    /// 分叉判据抽成一个**纯**函数，视图与测试读同一个 switch。§10.7 第 5 条要的
+    /// 「显式断言」钉的就是它：`ViewModifier` 的求值结果没法在 XCTest 里比较，能钉住
+    /// 的是「`.settings` 走的仍然是今天那条腿」，而这正是唯一会退化的东西。
+    enum Kind: Equatable {
+        /// 向导的卡片 chrome（`settingsCardChrome()`）。
+        case wizardCard
+        /// **今天那两句，逐字**：`.background(Color(nsColor: .textBackgroundColor))`
+        /// + `.cornerRadius(8)`。Devices pane 只能是这一条。
+        case legacyTextBackground
+    }
+
+    static func kind(for context: ProfilePairingContext) -> Kind {
+        switch context {
+        case .gate: return .wizardCard
+        case .settings: return .legacyTextBackground
+        }
+    }
+
+    func body(content: Content) -> some View {
+        switch Self.kind(for: context) {
+        case .wizardCard:
+            content.settingsCardChrome()
+        case .legacyTextBackground:
+            content.background(Color(nsColor: .textBackgroundColor)).cornerRadius(8)
+        }
+    }
+}
+
 #if DEBUG
 /// 预览宿主：两个 `@Binding` 现在是必填参数，而 `.constant([:])` 写不回去（Picker 要
 /// 能写），所以预览自己持一个 `ProfilePairingSelectionStore` 并交出它的 binding。
@@ -498,16 +524,21 @@ private struct ProfilePairingPreviewHost: View {
         secondaryButton: nil)
 }
 
-/// The join gate's own shape: no local profile is still undecided, so every row
-/// is an unclaimed account profile. Pins §(5) — with `locals == []` the remote
-/// picker is left with "请选择 / 在这台 Mac 上创建" and the sheet is still
-/// decidable and still submittable.
+/// No local profile is still undecided, so every row is an unclaimed account
+/// profile. Pins §(5) — with `locals == []` the remote picker is left with
+/// "请选择 / 在这台 Mac 上创建" and the sheet is still decidable and still
+/// submittable.
+///
+/// `.settings`, not `.gate`: M3-2b's `.gate` branch renders the row list ALONE
+/// (title, body and buttons moved to the wizard's chrome), so a `.gate` preview
+/// would be a near-empty view that pins nothing. The gate-shaped preview now
+/// belongs to `PairingWizardView`.
 #Preview("Profile Pairing - remotes only") {
     ProfilePairingPreviewHost(
         locals: [],
         remotes: [RemoteProfile(uuid: "11111111-1111-1111-1111-111111111111", name: "Home"),
                   RemoteProfile(uuid: "22222222-2222-2222-2222-222222222222", name: nil)],
-        context: .gate,
-        secondaryButton: (title: "从同步中移除本设备…", enabled: true, note: nil, action: {}))
+        context: .settings,
+        secondaryButton: nil)
 }
 #endif

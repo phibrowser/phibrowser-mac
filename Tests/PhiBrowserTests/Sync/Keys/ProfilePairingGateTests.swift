@@ -27,8 +27,10 @@ final class ProfilePairingGateTests: XCTestCase {
 
     /// A real, never-unlocked controller: enough to post the announcement
     /// variants through `NotificationCenter` without a key stack.
-    private func makeController() -> SyncKeyController {
-        makeController(api: FakeAPI(), provider: FakeDeviceKeyProvider())
+    /// 第 1 条新用例要断言「Space 映射一条没写」，所以那条用例要能拿到映射 store。
+    /// 默认 `nil` = 今天的行为（`spaceKeys == nil`），既有调用点一个不改。
+    private func makeController(spaceStore: SpaceSyncMappingStore? = nil) -> SyncKeyController {
+        makeController(api: FakeAPI(), provider: FakeDeviceKeyProvider(), spaceStore: spaceStore)
     }
 
     /// A controller over a caller-supplied fake API (and, optionally, a seeded
@@ -36,12 +38,14 @@ final class ProfilePairingGateTests: XCTestCase {
     /// the bail-outs included -- instead of calling the handler by hand.
     private func makeController(api: FakeAPI, provider: FakeDeviceKeyProvider,
                                 locals: [(profileId: String, displayName: String)] = [],
-                                store: ProfileSyncMappingStore = MemoryMappingStore()) -> SyncKeyController {
+                                store: ProfileSyncMappingStore = MemoryMappingStore(),
+                                spaceStore: SpaceSyncMappingStore? = nil) -> SyncKeyController {
         let mgr = AccountKeyManager(api: api, deviceKeyProvider: provider)
         return SyncKeyController(
             manager: mgr,
             approvals: DeviceApprovalService(api: api, keyManager: mgr, deviceKeyProvider: provider),
             profileKeys: ProfileKeyManager(api: api, keyManager: mgr, mappingStore: store),
+            spaceKeys: spaceStore.map { SpaceSyncMappingManager(store: $0) },
             localProfilesProvider: { locals },
             notifyChromium: {})
     }
@@ -443,23 +447,25 @@ final class ProfilePairingGateTests: XCTestCase {
 
     /// Retry is the modal's only way out of a stuck load, and the app-modal
     /// window has no close button, so it must never be disabled -- least of all
-    /// in `.working`, which is exactly the phase a stalled load sits in.
+    /// in `.loading`, which is exactly the phase a stalled load sits in.
     func testRetryIsOfferedInEveryPhaseTheStatusViewCanRender() {
-        for phase in [KeyLayerPhase.working, .idle, .done, .error("boom")] {
-            XCTAssertTrue(ProfilePairingGateView.retryEnabled(for: phase, isSubmitting: false),
+        for phase in [PairingWizardPhase.loading, .submitting, .done,
+                      .error(message: "boom", resume: .reload)] {
+            XCTAssertTrue(PairingWizardView.retryEnabled(for: phase, isSubmitting: false),
                           "retry must stay pressable in \(phase)")
         }
     }
 
-    /// The one exception, and it is not about the phase at all: while
-    /// `submitPairing` is applying decisions it owns `.working` and is mutating
-    /// the mapping table a fresh load would read, so pressing retry would start
-    /// a second, uncoordinated writer of the same state. The button greys for
-    /// that window only -- a stalled LOAD is still restartable, which is the
-    /// defect this task exists to fix.
+    /// The one exception, and it is not about the phase at all: while the
+    /// wizard is applying decisions (`isApplying`) it is mutating the mapping
+    /// table a fresh load would read, so pressing retry would start a second,
+    /// uncoordinated writer of the same state. The button greys for that
+    /// window only -- a stalled LOAD is still restartable, which is the defect
+    /// this predicate exists to fix.
     func testRetryIsWithheldOnlyWhileASubmitIsInFlight() {
-        for phase in [KeyLayerPhase.working, .idle, .done, .error("boom")] {
-            XCTAssertFalse(ProfilePairingGateView.retryEnabled(for: phase, isSubmitting: true),
+        for phase in [PairingWizardPhase.loading, .submitting, .done,
+                      .error(message: "boom", resume: .reload)] {
+            XCTAssertFalse(PairingWizardView.retryEnabled(for: phase, isSubmitting: true),
                            "retry must not start a load on top of a submit in \(phase)")
         }
     }
@@ -497,10 +503,21 @@ final class ProfilePairingGateTests: XCTestCase {
         }
     }
 
-    private func makeHost(_ recorder: ModalSessionRecorder) -> AppModalPairingHost {
+    /// 三条新接缝（Step 7 的 (e)）在这里**必须**被打桩：不打的话每一次
+    /// `host.present(...)` 都会去拉 `PhiChromiumCoordinator.shared` 与它背后的
+    /// `AccountController.shared`——今天的 gate 测试一个单例都不碰，向导不该改变这一点。
+    private func makeHost(
+        _ recorder: ModalSessionRecorder,
+        previewAccountSpaces: @escaping () async -> Result<[PhiAccountSpaceSummary], PhiSpacePreviewError>
+            = { .success([]) },
+        pairableLocalSpaces: @escaping () -> [PhiLocalSpace] = { [] }
+    ) -> AppModalPairingHost {
         AppModalPairingHost(scheduler: { recorder.schedule($0) },
                             runModal: { recorder.runModal($0) },
-                            stopModal: { recorder.stopModal() })
+                            stopModal: { recorder.stopModal() },
+                            previewAccountSpaces: previewAccountSpaces,
+                            pairableLocalSpaces: pairableLocalSpaces,
+                            themeDisplayName: { _ in nil })
     }
 
     /// The device-B deadlock in one assertion. `present` is reached from a
@@ -592,22 +609,86 @@ final class ProfilePairingGateTests: XCTestCase {
 
     /// The gate re-drives a presented modal on EVERY `.measured` pass, and
     /// `resolveMappings()` runs about once a minute, so a modal left open gets
-    /// a fresh load roughly that often. In `.pairingProfiles` that would swap
-    /// the list out from under the user and reset `ProfilePairingView`'s
-    /// `@State` selections mid-decision -- a re-drive is a rescue for a load
-    /// that stalled, not a refresh of a form.
-    func testARedriveNeverDiscardsAPairingFormTheUserIsFillingIn() {
-        XCTAssertFalse(
-            AppModalPairingHost.reloadAllowed(for: .pairingProfiles(locals: [], remotes: [])),
-            "re-driving a form the user is filling in would discard their selections")
+    /// a fresh load roughly that often. In every INTERACTIVE phase that would
+    /// swap the list out from under the user and discard the selections they
+    /// have already made -- a re-drive is a rescue for a load that stalled, not
+    /// a refresh of a form.
+    ///
+    /// 2. `.measured` 重驱在**每一个交互态**被拒，只有 `.loading` 与
+    ///    `.error(_, .reload)` 允许。`.error` 的两个 `resume` 各一条：它们是同一个
+    ///    case、相反的期望，写一条会漏掉真正危险的那一支。
+    func testARedriveIsRefusedInEveryInteractivePhase() {
+        let input = SpacePairingModel.Input(locals: [], accountSpaces: [],
+                                            localProfileNames: [:], accountProfileNames: [:])
+        let interactive: [PairingWizardPhase] = [
+            .profiles(locals: [], remotes: []),
+            .spaces(input),
+            .confirmOverwrite([SpaceOverwriteDiff(localSpaceId: "A", spaceName: "Work",
+                                                  spaceIconName: "phi:a",
+                                                  changes: [.init(field: .name,
+                                                                  local: .text("Job"),
+                                                                  account: .text("Work"))])]),
+            .submitting,
+            .done,
+            .error(message: "boom", resume: .backToSpaces)
+        ]
+        for phase in interactive {
+            XCTAssertFalse(AppModalPairingHost.reloadAllowed(for: phase),
+                           "\(phase) 背后是用户已经做完的选择，一次重驱会把它冲掉")
+        }
+        XCTAssertTrue(AppModalPairingHost.reloadAllowed(for: .loading))
+        XCTAssertTrue(AppModalPairingHost.reloadAllowed(for: .error(message: "boom", resume: .reload)))
     }
 
-    /// Every other phase this modal can be in is either a stalled load or a
-    /// terminal screen, so a re-drive can only help.
-    func testARedriveStillRescuesEveryPhaseWithNothingToLose() {
-        for phase in [KeyLayerPhase.working, .idle, .done, .error("boom")] {
-            XCTAssertTrue(AppModalPairingHost.reloadAllowed(for: phase),
-                          "a stalled modal in \(phase) has to be re-drivable")
-        }
+    // MARK: - 向导（M3-2b §10.7）
+
+    /// 1. 窗口活过第 1 步：**真的按一次 Continue**，`stopModal` 零调用、窗口仍在。
+    ///    回归那条拆模态陷阱——在第 1 步就提交，模态会在两步之间被拆掉，而且更糟：
+    ///    `joinPairingPending` 一清，Space 段的门就开了，这台 Mac 会在用户还没作任何
+    ///    Space 决定之前开始发布。
+    ///
+    ///    **必须真的按下去**：一条只 `present()` 就断言 `stopModalCount == 0` 的用例，
+    ///    在缺陷被重新引入（Continue → `submitPairing` → 清 `joinPairingPending` →
+    ///    `resolveMappings()` → `dismiss()`）之后**照样绿**——它从来没走到那条路上。
+    ///    三条断言合起来才是「模态没有在两步之间被拆掉」：会话没被停、门还关着、
+    ///    Space 映射一条没写。
+    func testTheWindowSurvivesStepOne() async throws {
+        ProfilePairingGate.staticPendingOverride = true
+        defer { ProfilePairingGate.staticPendingOverride = nil }
+        let recorder = ModalSessionRecorder()
+        let spaceStore = PairingWizardViewModelTests.LedgerSpaceMappingStore()
+        let host = makeHost(recorder,
+                            previewAccountSpaces: { .success([]) },
+                            pairableLocalSpaces: { [] })
+        let controller = makeController(spaceStore: spaceStore)
+        host.present(controller: controller)
+        recorder.runScheduled()
+
+        // `present()` 把首次加载交给一个 `Task`。这里直接再驱一次 `start()`：它是
+        // 幂等的（`keyLayer.startPairing` 会取消在飞的那一趟），而且下面三条断言全是
+        // 「什么都没发生」型的，一次多余的重载动不了它们中的任何一条。
+        let wizard = try XCTUnwrap(host.viewModel)
+        await wizard.start(controller: controller)
+        wizard.continueToSpaces()
+
+        XCTAssertEqual(recorder.stopModalCount, 0, "第 1 步的 Continue 不经过宿主的任何出口")
+        XCTAssertTrue(ProfilePairingGate.joinPairingPending, "门必须还关着")
+        XCTAssertTrue(spaceStore.map.isEmpty, "Space 映射一条都还没写")
+
+        // 「窗口仍在」的可执行版本：宿主的 weak `viewModel` 只在 `dismiss()` 里被清掉。
+        XCTAssertNotNil(host.viewModel, "第 1 步之后窗口必须还在")
+        host.dismiss()
+        XCTAssertNil(host.viewModel)
+    }
+
+    /// 4. T21：`present()` 仍把 modal session 交给 scheduler，不在调用者栈上进入
+    ///    （既有断言，确认未被向导改动破坏）。
+    func testTheModalSessionIsStillScheduledAfterTheWizardLanded() {
+        let recorder = ModalSessionRecorder()
+        let host = makeHost(recorder)
+        host.present(controller: makeController())
+        XCTAssertEqual(recorder.runModalCount, 0)
+        recorder.runScheduled()
+        XCTAssertEqual(recorder.runModalCount, 1)
     }
 }

@@ -309,8 +309,10 @@ final class KeyLayerViewModel: ObservableObject {
                 comment: "Pairing - load timeout"))
         } catch {
             guard !Task.isCancelled else { return }
+            // R12：具体错误只进日志，界面上不出现插值出来的 Swift 错误文本（它在
+            // `Localizable.xcstrings` 里也根本没有 key）。
             AppLogWarn("[phi-sync] pairing load failed: \(PhiSyncLog.describe(error))")
-            phase = .error("\(error)")
+            phase = .error(PairingWizardStrings.profileLoadFailed)
         }
     }
 
@@ -339,19 +341,39 @@ final class KeyLayerViewModel: ObservableObject {
         }
     }
 
-    /// Applies the user's pairing decisions, then re-runs `resolveMappings()`
-    /// so the controller's resolved cache (and `needsPairing`) reflect the new
-    /// mappings. `.createLocal` creates the on-disk profile first (via the
-    /// bridge) and adopts the remote onto the resulting profileId; if that
-    /// creation fails, the decision is skipped and its error is surfaced
-    /// while staying on `.pairingProfiles` rather than moving to `.done`.
+    /// Applies the user's pairing decisions. Returns true on success; on failure
+    /// it sets `pairingError`, reloads the candidate list and returns false.
+    ///
+    /// 从 `submitPairing` 抽出来的**前半段**：`isSubmitting` 的互斥语义（:45-64）随之
+    /// 留在这里，因为它描述的正是「决定正在被应用」这段时间。
+    ///
+    /// `.createLocal` creates the on-disk profile first (via the bridge) and
+    /// adopts the remote onto the resulting profileId; if that creation fails,
+    /// the decision is skipped and its error is surfaced while staying on
+    /// `.pairingProfiles` rather than moving to `.done`.
     ///
     /// For the whole of it, this is the ONLY writer of `phase`: `isSubmitting`
     /// turns away any load `startPairing` is asked for meanwhile, and the load
     /// already in flight (the gate re-drives a presented modal roughly once a
     /// minute, so there may well be one) is cancelled here, which forbids it
     /// from writing `phase` on its way out.
-    func submitPairing(_ decisions: [PairingDecision], controller: SyncKeyController) async {
+    ///
+    /// **幂等（§5.1 / §10.6 第 4 条）：`ProfileKeyManagerError.alreadyMapped` 不是失败。**
+    /// 向导的 Retry 会拿着 Continue 那一刻冻结的**同一份** `profileDecisions` 重跑这个
+    /// 方法（Space 侧失败停在 `.error(_, .backToSpaces)`，Retry → `.spaces` → Finish →
+    /// 又进来一次）。`registerLocalProfile` 在本地 profile 已有映射时**一律**抛
+    /// `alreadyMapped`（ProfileKeyManager.swift:94-97），而 `initialSelections` 把每个
+    /// 没匹配上的本地 profile 都种成 `.registerNew`（ProfilePairingView.swift:55-67），
+    /// 所以「第一次 Finish 写成功、第二次 Finish 撞 alreadyMapped」是加入路径上的**常态**，
+    /// 不是异常。照抄旧循环体就会把用户从第 2 步的错误横幅弹回第 1 步，永远到不了
+    /// `.done`。这与 `PairingWizardViewModel.apply(_:controller:)` 对
+    /// `SpaceSyncMappingError.alreadyMapped` 的处理是同一条规则：**已经是想要的值 ⇒
+    /// 就算完成**。`adoptRemoteProfile`（:114-120）本来就是幂等的（直接覆写映射），
+    /// `createLocal` 的重入由 `createLocalProfileAndAdopt` 自己的判据管，两者都不需要
+    /// 这条 catch。
+    @discardableResult
+    func applyPairingDecisions(_ decisions: [PairingDecision],
+                               controller: SyncKeyController) async -> Bool {
         isSubmitting = true
         defer { isSubmitting = false }
         pairingLoad?.cancel()
@@ -384,8 +406,13 @@ final class KeyLayerViewModel: ObservableObject {
                         continue
                     }
                 }
+            } catch ProfileKeyManagerError.alreadyMapped {
+                // 唯一的新分支。R12：元数据，不记 profileId、不记 uuid。
+                AppLogInfo("[phi-sync] pairing decision already applied; treating as done")
+                continue
             } catch {
-                pairingError = "\(error)"
+                AppLogWarn("[phi-sync] a pairing decision failed: \(PhiSyncLog.describe(error))")
+                pairingError = PairingWizardStrings.profileDecisionFailed
             }
         }
         guard pairingError == nil else {
@@ -396,8 +423,30 @@ final class KeyLayerViewModel: ObservableObject {
             // and leave the modal parked in `.working` for good.
             isSubmitting = false
             await startPairing(controller: controller)
-            return
+            return false
         }
+        return true
+    }
+
+    /// 结构不变：`applyPairingDecisions` + 置 `joinPairingPending` +
+    /// `resolveMappings` + `.done`。Devices pane 那条路继续调它。
+    ///
+    /// **唯一的行为变化，有意为之**：上面那条 `alreadyMapped` 的 catch 也落在这条路上，
+    /// 于是 Devices pane 里的一次「重复提交」（拿着一张已经提交过的候选表再按一次
+    /// Confirm）从「报错并留在 `.pairingProfiles`」变成「幂等地成功」。渲染结果、文案、
+    /// 按钮启用判据、`ProfilePairingModel` 的输入与 `decisions()` 输出**全都没变**——
+    /// 变的只有这一条错误路径，而它在 Devices pane 的**产品路径**上本来就不可达
+    /// （`runPairingLoad` 会把已映射的本地 profile 过滤出 `locals`，:277-280）。
+    /// 它在**单测**里是可达的，所以
+    /// `KeyLayerViewModelTests.testAFailedSubmitStillReloadsTheCandidatesInsteadOfParkingInWorking`
+    /// 的失败源同批换成了一次性的 PUT 失败（见那条用例的注释）。
+    func submitPairing(_ decisions: [PairingDecision], controller: SyncKeyController) async {
+        guard await applyPairingDecisions(decisions, controller: controller) else { return }
+        // `applyPairingDecisions` 自己的 `defer` 已经把标志清掉了；下面这段尾巴仍然写
+        // `phase`、仍然改动 resolved 缓存，所以它需要与今天整条 `submitPairing` 相同的
+        // 互斥窗口（:349-353 那条不变量）。
+        isSubmitting = true
+        defer { isSubmitting = false }
         // The join is under way: from here until the pairing wraps up, the gate
         // may present. Always through the port, never a direct defaults write.
         // Redundant when this submit came from the `.settings` context — the

@@ -205,6 +205,22 @@ struct ProfilePairingModel {
     }
 }
 
+/// `.settings` 上下文（Devices pane）的状态壳。§5.3 把这两份状态上提到了向导 VM 上
+/// （页脚要读 `allRowsDecided` 与 `decisions()`，而它已经不在这个 view 里了），
+/// Devices pane 没有向导 VM，所以由这里持一个最小的壳。**渲染结果逐字不变**，
+/// 种子与今天 `init` 里那句 `State(initialValue: ProfilePairingModel.initialSelections(…))`
+/// 是同一句，只是搬到了外面。
+@MainActor
+final class ProfilePairingSelectionStore: ObservableObject {
+    @Published var selections: [String: ProfilePairingModel.Choice] = [:]
+    @Published var remoteChoices: [String: ProfilePairingModel.RemoteChoice] = [:]
+
+    func seed(locals: [PairingLocal], remotes: [RemoteProfile]) {
+        selections = ProfilePairingModel.initialSelections(locals: locals, remotes: remotes)
+        remoteChoices = [:]
+    }
+}
+
 /// Lets the user resolve an ambiguous local-profile <-> remote-profile mapping
 /// by hand: one row per local profile with a picker over the unclaimed remote
 /// profiles (or "Register as new"), plus a row per remote nobody claimed with a
@@ -230,12 +246,14 @@ struct ProfilePairingView: View {
     let secondaryButton: (title: String, enabled: Bool, note: String?, action: () -> Void)?
     var onSubmit: ([PairingDecision]) -> Void
 
-    @State private var selections: [String: Choice]
-    @State private var remoteChoices: [String: RemoteChoice] = [:]
+    @Binding var selections: [String: Choice]
+    @Binding var remoteChoices: [String: RemoteChoice]
 
     init(viewModel: KeyLayerViewModel,
          locals: [PairingLocal],
          remotes: [RemoteProfile],
+         selections: Binding<[String: Choice]>,
+         remoteChoices: Binding<[String: RemoteChoice]>,
          context: ProfilePairingContext = .settings,
          secondaryButton: (title: String, enabled: Bool, note: String?, action: () -> Void)? = nil,
          onSubmit: @escaping ([PairingDecision]) -> Void) {
@@ -245,10 +263,11 @@ struct ProfilePairingView: View {
         self.locals = locals
         self.remotes = remotes
         self.onSubmit = onSubmit
-        self._selections = State(initialValue: ProfilePairingModel.initialSelections(locals: locals, remotes: remotes))
+        self._selections = selections
+        self._remoteChoices = remoteChoices
     }
 
-    /// The row logic, rebuilt from the current `@State` on every evaluation.
+    /// The row logic, rebuilt from the current selection state on every evaluation.
     private var model: ProfilePairingModel {
         ProfilePairingModel(locals: locals, remotes: remotes,
                             selections: selections, remoteChoices: remoteChoices)
@@ -452,14 +471,31 @@ struct ProfilePairingView: View {
 }
 
 #if DEBUG
+/// 预览宿主：两个 `@Binding` 现在是必填参数，而 `.constant([:])` 写不回去（Picker 要
+/// 能写），所以预览自己持一个 `ProfilePairingSelectionStore` 并交出它的 binding。
+private struct ProfilePairingPreviewHost: View {
+    @StateObject private var store = ProfilePairingSelectionStore()
+    let locals: [PairingLocal]
+    let remotes: [RemoteProfile]
+    let context: ProfilePairingContext
+    let secondaryButton: (title: String, enabled: Bool, note: String?, action: () -> Void)?
+
+    var body: some View {
+        ProfilePairingView(viewModel: KeyLayerViewModel.preview(), locals: locals, remotes: remotes,
+                           selections: $store.selections, remoteChoices: $store.remoteChoices,
+                           context: context, secondaryButton: secondaryButton, onSubmit: { _ in })
+            .onAppear { store.seed(locals: locals, remotes: remotes) }
+    }
+}
+
 #Preview("Profile Pairing") {
-    ProfilePairingView(
-        viewModel: KeyLayerViewModel.preview(),
+    ProfilePairingPreviewHost(
         locals: [PairingLocal(profileId: "Default", displayName: "Default"),
                  PairingLocal(profileId: "Profile 1", displayName: "Home")],
         remotes: [RemoteProfile(uuid: "11111111-1111-1111-1111-111111111111", name: "Home"),
                   RemoteProfile(uuid: "22222222-2222-2222-2222-222222222222", name: nil)],
-        onSubmit: { _ in })
+        context: .settings,
+        secondaryButton: nil)
 }
 
 /// The join gate's own shape: no local profile is still undecided, so every row
@@ -467,13 +503,11 @@ struct ProfilePairingView: View {
 /// picker is left with "请选择 / 在这台 Mac 上创建" and the sheet is still
 /// decidable and still submittable.
 #Preview("Profile Pairing - remotes only") {
-    ProfilePairingView(
-        viewModel: KeyLayerViewModel.preview(),
+    ProfilePairingPreviewHost(
         locals: [],
         remotes: [RemoteProfile(uuid: "11111111-1111-1111-1111-111111111111", name: "Home"),
                   RemoteProfile(uuid: "22222222-2222-2222-2222-222222222222", name: nil)],
         context: .gate,
-        secondaryButton: (title: "从同步中移除本设备…", enabled: true, note: nil, action: {}),
-        onSubmit: { _ in })
+        secondaryButton: (title: "从同步中移除本设备…", enabled: true, note: nil, action: {}))
 }
 #endif

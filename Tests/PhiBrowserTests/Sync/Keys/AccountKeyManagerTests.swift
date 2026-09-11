@@ -78,6 +78,10 @@ final class AccountKeyManagerTests: XCTestCase {
         /// versa) — the two failures take different paths through
         /// `SyncKeyController.resolveMappings()`.
         var profileEndpointError: Error?
+        /// 只对**下一次** per-profile 调用生效，然后清空。`profileEndpointError` 是
+        /// 持久的，表达不了「这一次失败、下一次好了」——而那正是
+        /// `applyPairingDecisions` 失败后自己重载候选表的那条路径。
+        var profileEndpointErrorOnce: Error?
         var listProfilesError: Error?
         private(set) var listProfilesCalls = 0
         private(set) var getProfileKeyCalls = 0
@@ -91,11 +95,13 @@ final class AccountKeyManagerTests: XCTestCase {
         }
         func getProfileKey(uuid: String) async throws -> ProfileKeyDTO? {
             getProfileKeyCalls += 1
+            if let error = profileEndpointErrorOnce { profileEndpointErrorOnce = nil; throw error }
             if let profileEndpointError { throw profileEndpointError }
             guard let e = profileEnvelopes[uuid] else { return nil }
             return ProfileKeyDTO(profileUuid: uuid, profileKeyEnvelope: e, createdAt: Self.profileCreatedAt)
         }
         func putProfileKey(uuid: String, envelope: Data) async throws -> Bool {
+            if let error = profileEndpointErrorOnce { profileEndpointErrorOnce = nil; throw error }
             if let profileEndpointError { throw profileEndpointError }
             if profileEnvelopes[uuid] != nil { return false }
             profileEnvelopes[uuid] = envelope

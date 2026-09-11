@@ -186,7 +186,7 @@ Only three of `SyncEnums`' fourteen enums are kept; every value keeps its upstre
 | --- | --- | --- | --- |
 | `PhiEntity` | `kind.setting` | 1 | `PhiSettingEntity` (oneof `kind`) |
 | `PhiEntity` | `kind.space` | 2 | `PhiSpaceEntity` (oneof `kind`, M3-2) |
-| `PhiSpaceEntity` | `space_uuid` | 1 | `string` |
+| `PhiSpaceEntity` | `space_uuid` | 1 | `string` (account-level sync uuid, M3-2b) |
 | `PhiSpaceEntity` | `name` | 2 | `PhiSettingValue` |
 | `PhiSpaceEntity` | `icon_name` | 3 | `PhiSettingValue` |
 | `PhiSpaceEntity` | `color_hex` | 4 | `PhiSettingValue` |
@@ -201,6 +201,10 @@ Only three of `SyncEnums`' fourteen enums are kept; every value keeps its upstre
 | `PhiSettingValue` | `v.bool_value` | 2 | `bool` (oneof `v`) |
 | `PhiSettingValue` | `v.string_value` | 3 | `string` (oneof `v`) |
 | `PhiSettingValue` | `v.int_value` | 4 | `int64` (oneof `v`) |
+
+Since M3-2b, `space_uuid` is the **account-level** sync uuid resolved through the device's
+`sync.spaceGlobalUuids` mapping table, not the local `SpaceModel.spaceId`. Nothing else about
+the wire format changed.
 
 Fields 11-14 of `PhiSpaceEntity` are reserved for M3-3 / M3-4; do not reuse.
 

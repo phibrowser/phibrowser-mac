@@ -55,9 +55,11 @@ message PhiSettingValue {
 // never knew about it" would be indistinguishable. Empty string / -1 are the
 // explicit "cleared" encodings, documented per field.
 message PhiSpaceEntity {
-  // LocalStore SpaceModel.spaceId verbatim. Stable across every rename,
-  // recolor, reorder and rebind; the literal "default-space" for the
-  // account's single default Space (D1).
+  // The ACCOUNT-LEVEL sync uuid for this Space (M3-2b / D6), resolved through
+  // the device's `sync.spaceGlobalUuids` mapping table -- NOT the local
+  // `SpaceModel.spaceId`, which never leaves the device and is never rewritten.
+  // Stable across every rename, recolor, reorder and rebind; the literal
+  // "default-space" for the account's single default Space (D1).
   string space_uuid = 1;
 
   // string_value. No uniqueness rule (matches the local model).

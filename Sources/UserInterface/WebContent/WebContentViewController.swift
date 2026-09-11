@@ -177,13 +177,27 @@ class WebContentViewController: NSViewController {
 
     var addressBarAnchorView: NSView? { headerView.addressBarAnchorView }
     var tabStripPageColorPresentation: WebContentHeaderPageColorPresentation {
-        aiChatSplitViewItem?.isCollapsed == false ? .inherited : headerView.pageColorPresentation
+        if let state = browserState, let tab = state.focusingTab,
+           state.readerOverlayState.reader(forOrigin: tab.guid) != nil {
+            return .inherited
+        }
+        return aiChatSplitViewItem?.isCollapsed == false ? .inherited : headerView.pageColorPresentation
     }
     var tabStripPageColorPresentationPublisher: AnyPublisher<WebContentHeaderPageColorPresentation, Never> {
-        guard let aiChatSplitViewItem else { return headerView.pageColorPresentationPublisher }
-        return headerView.pageColorPresentationPublisher
-            .combineLatest(aiChatSplitViewItem.publisher(for: \.isCollapsed))
-            .map { presentation, isCollapsed in isCollapsed ? presentation : .inherited }
+        var presentation = headerView.pageColorPresentationPublisher
+        if let aiChatSplitViewItem {
+            presentation = presentation
+                .combineLatest(aiChatSplitViewItem.publisher(for: \.isCollapsed))
+                .map { presentation, isCollapsed in isCollapsed ? presentation : .inherited }
+                .eraseToAnyPublisher()
+        }
+        guard let state = browserState else { return presentation }
+        // Match the Reader panel's focused-origin selection, including tab switches.
+        return presentation
+            .combineLatest(state.readerOverlayState.$readersByOrigin, state.$focusingTab)
+            .map { presentation, readers, tab in
+                tab.flatMap { readers[$0.guid] } == nil ? presentation : .inherited
+            }
             .removeDuplicates()
             .eraseToAnyPublisher()
     }

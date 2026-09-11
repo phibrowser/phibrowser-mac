@@ -90,6 +90,62 @@ final class WebContentHeaderPageColorTests: XCTestCase {
         assertBackground(bookmarkBar, .white)
     }
 
+    func testTabStripInheritsWhileReaderIsPresentedAndRestoresLatestPageColor() throws {
+        let key = PhiPreferences.GeneralSettings.layoutModeKey
+        let originalMode = UserDefaults.standard.object(forKey: key)
+        UserDefaults.standard.set(LayoutMode.comfortable.rawValue, forKey: key)
+        defer { UserDefaults.standard.set(originalMode, forKey: key) }
+
+        let state = try makeState()
+        let (tab, wrapper) = makeTab(guid: 1, color: .black)
+        let (otherTab, _) = makeTab(guid: 2, color: .black)
+        let (reader, _) = makeTab(guid: 3, color: .white)
+        state.tabs = [tab, otherTab]
+        state.focusingTab = tab
+        let controller = WebContentViewController(state: state, tab: tab)
+        controller.view.frame = NSRect(x: 0, y: 0, width: 1000, height: 700)
+        let header = try XCTUnwrap(controller.leftContainerViewForTesting.subviews
+            .compactMap { $0 as? WebContentHeader }.first)
+        header.currentTab = tab
+
+        var presentation = WebContentHeaderPageColorPresentation.inherited
+        let subscription = controller.tabStripPageColorPresentationPublisher.sink { presentation = $0 }
+        defer { subscription.cancel() }
+        XCTAssertEqual(presentation, header.pageColorPresentation)
+
+        state.readerOverlayState.present(reader, originTabId: tab.guid)
+        XCTAssertEqual(presentation, .inherited)
+        XCTAssertEqual(controller.tabStripPageColorPresentation, .inherited)
+        assertBackground(header, .black)
+
+        // Switching between equally colored pages must still update Reader suppression.
+        state.focusingTab = otherTab
+        XCTAssertEqual(presentation, header.pageColorPresentation)
+        XCTAssertEqual(controller.tabStripPageColorPresentation, presentation)
+        state.focusingTab = tab
+        XCTAssertEqual(presentation, .inherited)
+
+        wrapper.pageColor = .white
+        drainPageColorUpdates()
+        XCTAssertEqual(presentation, .inherited)
+        assertBackground(header, .white)
+        var initialPresentation: WebContentHeaderPageColorPresentation?
+        let initialSubscription = controller.tabStripPageColorPresentationPublisher
+            .sink { initialPresentation = $0 }
+        defer { initialSubscription.cancel() }
+        XCTAssertEqual(initialPresentation, .inherited)
+
+        state.readerOverlayState.removeReader(forOrigin: tab.guid)
+        XCTAssertEqual(presentation, header.pageColorPresentation)
+        XCTAssertEqual(controller.tabStripPageColorPresentation, presentation)
+        XCTAssertEqual(presentation.appearance, .light)
+
+        // A background tab's reader must not suppress the focused page's color.
+        state.readerOverlayState.present(reader, originTabId: otherTab.guid)
+        XCTAssertEqual(presentation, header.pageColorPresentation)
+        XCTAssertEqual(controller.tabStripPageColorPresentation, presentation)
+    }
+
     func testSharedBookmarkBarSwitchesPageSubscriptionAndRestoresThemeFallback() throws {
         let layoutKey = PhiPreferences.GeneralSettings.layoutModeKey
         let bookmarkKey = PhiPreferences.GeneralSettings.alwaysShowBookmarkBar.rawValue

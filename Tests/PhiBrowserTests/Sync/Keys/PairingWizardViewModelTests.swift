@@ -31,6 +31,26 @@ final class PairingWizardViewModelTests: XCTestCase {
         func removeAllMappings() { map = [:] }
     }
 
+    /// 一个可以被用例**按住**的预览。`enter()` 只按住第 1 次调用，之后的调用直接放行，
+    /// 于是「第一趟加载还悬着、第二趟已经落地」这个交叠可以被确定性地摆出来。
+    actor PreviewHold {
+        private var waiters: [CheckedContinuation<Void, Never>] = []
+        private var released = false
+        private(set) var calls = 0
+
+        func enter() async {
+            calls += 1
+            guard calls == 1, !released else { return }
+            await withCheckedContinuation { waiters.append($0) }
+        }
+
+        func release() {
+            released = true
+            for waiter in waiters { waiter.resume() }
+            waiters = []
+        }
+    }
+
     private var resolveCount = 0
     private var observer: NSObjectProtocol?
 
@@ -190,6 +210,67 @@ final class PairingWizardViewModelTests: XCTestCase {
                        "Profile 侧同理：第二次 Finish 的 `alreadyMapped` 不是失败，也没有铸第二个信封")
     }
 
+    // MARK: - 4b. `.addAsNew` 的幂等判据
+
+    /// 一次部分应用之后**改选** `.addAsNew` 必须被拒绝，不许静默沿用旧映射。
+    ///
+    /// `ensureSpaceMapped` 只保证「不铸第二个」，对一个已经绑到账户 Space 的本地行会
+    /// 静默成功。于是：第一次 Finish 写下 `LOCAL-1 -> acct-1` 后在 `LOCAL-2` 上抛错；
+    /// 用户回到第 2 步，把 `LOCAL-1` 改成 Add as new——他要的正是保住本机的名字/图标/
+    /// 颜色；D7 的差异跳过 `.addAsNew` 行，确认页不出现；旧代码里 `apply` 是个空操作，
+    /// 映射原封不动，首次同步走 A1「无基线 ⇒ 整条采纳」，恰好覆盖掉他想保住的东西。
+    func testAnAddAsNewRowStillBoundToAnAccountSpaceIsRefusedRatherThanSilentlyKept() async throws {
+        let (wizard, controller, store, _) = try await makeWizard(
+            locals: [local("LOCAL-1", name: "Work"), local("LOCAL-2", name: "Reading")],
+            accountSpaces: [account("acct-1", name: "Work"), account("acct-2", name: "Reading")])
+        store.map["STALE"] = "acct-2"      // 第二条决定撞 `.syncUuidAlreadyClaimed`
+        await wizard.start(controller: controller)
+        wizard.continueToSpaces()
+        wizard.assign(.existing(syncUuid: "acct-1"), to: "LOCAL-1")
+        wizard.assign(.existing(syncUuid: "acct-2"), to: "LOCAL-2")
+
+        await wizard.finish(controller: controller)
+        guard case .error(_, .backToSpaces) = wizard.phase else { return XCTFail("expected .error") }
+        XCTAssertEqual(store.map["LOCAL-1"], "acct-1")
+
+        await wizard.retry(controller: controller)
+        wizard.assign(.addAsNew, to: "LOCAL-1")
+        await wizard.finish(controller: controller)
+
+        guard case .error(_, .backToSpaces) = wizard.phase else {
+            return XCTFail("一个已被撤销的决定绝不能被静默执行")
+        }
+        XCTAssertEqual(store.map["LOCAL-1"], "acct-1", "既没有铸新的，也没有悄悄沿用")
+        XCTAssertEqual(store.writes.filter { $0.spaceId == "LOCAL-1" }.count, 1)
+        XCTAssertTrue(ProfilePairingGate.joinPairingPending, "门必须还关着")
+    }
+
+    /// 另一半：映射是**本机自己早先铸的**（那个 uuid 不在账户列表里）⇒ 重放视为已完成，
+    /// 不铸第二个、也不报错。没有这一条，上面那条判据就会把正常的 Retry 变成死路。
+    func testAnAddAsNewRowBoundToThisDevicesOwnEarlierMintReplaysAsDone() async throws {
+        let (wizard, controller, store, _) = try await makeWizard(
+            locals: [local("LOCAL-1", name: "Work"), local("LOCAL-2", name: "Reading")],
+            accountSpaces: [account("acct-1", name: "Work"), account("acct-2", name: "Reading")])
+        store.map["STALE"] = "acct-2"
+        await wizard.start(controller: controller)
+        wizard.continueToSpaces()
+        wizard.assign(.addAsNew, to: "LOCAL-1")
+        wizard.assign(.existing(syncUuid: "acct-2"), to: "LOCAL-2")
+
+        await wizard.finish(controller: controller)
+        guard case .error(_, .backToSpaces) = wizard.phase else { return XCTFail("expected .error") }
+        let minted = try XCTUnwrap(store.map["LOCAL-1"])
+
+        store.map.removeValue(forKey: "STALE")
+        await wizard.retry(controller: controller)
+        await wizard.finish(controller: controller)
+
+        XCTAssertEqual(wizard.phase, .done)
+        XCTAssertEqual(store.map["LOCAL-1"], minted, "同一个 uuid，没有铸第二个")
+        XCTAssertEqual(store.writes.filter { $0.spaceId == "LOCAL-1" }.count, 1)
+        XCTAssertEqual(store.map["LOCAL-2"], "acct-2")
+    }
+
     // MARK: - 5. Finish 第 1 步失败
 
     /// 载荷断言的是**重读**而不是一份固定值：`applyPairingDecisions` 失败时自己调
@@ -321,6 +402,39 @@ final class PairingWizardViewModelTests: XCTestCase {
         }
         XCTAssertEqual(message, PairingWizardStrings.previewTimedOut)
         XCTAssertEqual(resume, .reload, "Retry 重跑 start()")
+    }
+
+    /// `reloadAllowed` 对 `.loading` **故意**放行，所以两趟 `start()` 交叠是设计内的
+    /// 常态。一趟被取代的加载落地时必须**什么都不写**：否则它要么把一个 `.error` 盖在
+    /// 一次其实没问题的加载上，要么把用户已经做完的两步选择连同 `step` 一起冲掉。
+    func testASupersededStartWritesNothingWhenItFinallyLands() async throws {
+        let hold = PreviewHold()
+        let spaces = [account("acct-1", name: "Work")]
+        let (wizard, controller, _, _) = try await makeWizard(
+            locals: [local("LOCAL-1", name: "Work")], accountSpaces: spaces,
+            preview: { await hold.enter(); return .success(spaces) })
+
+        // 第 1 趟：预览被按住。
+        let first = Task { await wizard.start(controller: controller) }
+        var spins = 0
+        while await hold.calls == 0, spins < 10_000 { spins += 1; await Task.yield() }
+        let calls = await hold.calls
+        XCTAssertEqual(calls, 1, "第 1 趟已经停在预览里")
+
+        // 第 2 趟（gate 的 re-drive 走的就是这条路）：它的预览直接放行并落地。
+        await wizard.start(controller: controller)
+        guard case .profiles = wizard.phase else { return XCTFail("expected .profiles") }
+        wizard.continueToSpaces()
+        wizard.assign(.existing(syncUuid: "acct-1"), to: "LOCAL-1")
+
+        // 第 1 趟这才回来。
+        await hold.release()
+        await first.value
+
+        XCTAssertEqual(wizard.step, .spaces, "被取代的那一趟不许把 step 拽回第 1 步")
+        XCTAssertEqual(wizard.spaceSelections["LOCAL-1"], .existing(syncUuid: "acct-1"),
+                       "也不许把第 2 步的指派清掉")
+        guard case .spaces = wizard.phase else { return XCTFail("phase 也不许被改写") }
     }
 
     // MARK: - 7. 不写 `KeyLayerPhase`

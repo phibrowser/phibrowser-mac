@@ -128,6 +128,21 @@ final class PairingWizardViewModel: ObservableObject {
     private let themeDisplayName: (String) -> String?
     private let loadDeadline: Duration
 
+    /// `start()` 的世代号。`AppModalPairingHost.reloadAllowed` 对 `.loading` **故意**
+    /// 放行（一次卡住的加载要有第二次机会），所以两趟 `start()` 交叠是设计内的常态，
+    /// 不是异常——`reloadPresented()` 直接调 `start()`，绕过 `retry()` 的
+    /// `guard case .error`。没有这个守卫，两种坏结果都可达：
+    ///  - 第二趟的 `keyLayer.startPairing` 取消掉第一趟的 profile 加载，于是第一趟
+    ///    提前醒来、看见 `keyLayer.phase` 还是 `.working`，把一个 `.error(_, .reload)`
+    ///    盖在一次其实没问题的加载上；
+    ///  - 第一趟先落地、用户已经在第 1/2 步做完选择，第二趟的预览随后回来，重跑同一段
+    ///    成功分支，把 `profileSelections` / `spaceSelections` 一起清掉并把 `step` 拽回
+    ///    `.profiles`——正是 `reloadAllowed` 拒绝那四个交互态要防的输入丢失。
+    ///
+    /// 形状与 `KeyLayerViewModel.runPairingLoad` 的 `Task.isCancelled` 守卫同源：
+    /// **两次 await 之后的每一次写，都要先确认自己还是最新的那一趟。**
+    private var loadGeneration = 0
+
     private var loadedLocals: [PairingLocal] = []
     private var loadedRemotes: [RemoteProfile] = []
     private var profileDecisions: [PairingDecision] = []
@@ -169,6 +184,8 @@ final class PairingWizardViewModel: ObservableObject {
     // MARK: - 宿主的唯一驱动入口
 
     func start(controller: SyncKeyController) async {
+        loadGeneration += 1
+        let generation = loadGeneration
         phase = .loading
         // 两次加载**并发发起**（互不依赖），但**必须都成功**才进 `.profiles`：第 2 步
         // 的 Account 列没有数据源就没法渲染，而在第 1 步之后才发现这件事，等于让用户
@@ -177,6 +194,13 @@ final class PairingWizardViewModel: ObservableObject {
         async let spaceLoad = loadAccountSpaces()
         await profileLoad
         let spaces = await spaceLoad
+
+        // 两次 await 之后的**第一件事**：确认自己还是最新的那一趟。往下一个字节都不写
+        // （见 `loadGeneration`）。
+        guard generation == loadGeneration else {
+            AppLogInfo("[phi-sync] pairing wizard: a superseded load finished; dropping its result")
+            return
+        }
 
         guard case .pairingProfiles(let locals, let remotes) = keyLayer.phase else {
             let message: String
@@ -275,6 +299,13 @@ final class PairingWizardViewModel: ObservableObject {
     /// R-D6-3 的提交序列，一字未变；两个入口（无差异的 Finish、确认页的 Apply）共用
     /// 它，**不许**出现第二条应用路径。
     private func applyDecisions(controller: SyncKeyController) async {
+        // 再入闸。两个入口（无差异的 Finish、确认页的 Apply）都是 `Task { await … }`，
+        // 一次双击就能让两趟提交交叠，而序列里的每一步都只在**顺序**重放下才是幂等的
+        // （`.createLocal` 会建出第二个空 profile，`.addAsNew` 会铸第二个 uuid）。
+        guard !isApplying else {
+            AppLogInfo("[phi-sync] pairing wizard: a submit is already applying; ignoring the second one")
+            return
+        }
         phase = .submitting
         isApplying = true
         defer { isApplying = false }
@@ -325,11 +356,14 @@ final class PairingWizardViewModel: ObservableObject {
         logApplied(spaceMaps: spaceMaps, spaceMints: spaceMints, ok: true)
     }
 
-    /// 返回 true 表示这一行是**铸**出来的（`.addAsNew`），false 表示它是一次认领。
+    /// 返回 true 表示**这一次**真的铸了一个新 uuid（`.addAsNew` 的首次应用），false 表示
+    /// 它是一次认领、或是一次「已经是想要的值」的重放。计数是元数据（§9.1），重放不该
+    /// 被算成第二次铸造。
     ///
     /// 幂等（§5.1）：已写下的映射撞 `.alreadyMapped` 时，**若既有映射等于这一行想写的
     /// 值，视为已完成**；不等则是硬错误（用户在两次尝试之间改了选择而第一次已经写下
-    /// ——不应该发生，但必须被看见）。
+    /// ——不应该发生，但必须被看见）。两支决定各有各的「等于想写的值」判据：`.existing`
+    /// 比的是选中的那个 uuid，`.addAsNew` 比的是「这个 uuid 是不是账户里的某一条」。
     private func apply(_ decision: (localSpaceId: String, assignment: SpacePairingModel.Assignment),
                        controller: SyncKeyController) throws -> Bool {
         switch decision.assignment {
@@ -345,7 +379,24 @@ final class PairingWizardViewModel: ObservableObject {
             }
             return false
         case .addAsNew:
-            // `ensureSpaceMapped` 本身就是幂等的：命中既有映射直接返回，不会铸第二个。
+            // `ensureSpaceMapped` 是「不铸第二个」意义上的幂等，**不是这一行想要的那种
+            // 幂等**：它对一个已经映射到**账户某条 Space** 的本地行会静默成功并保留原
+            // 值。于是一次部分应用之后，用户把那一行**改选**成 Add as new（他要的正是
+            // 保住本机的名字/图标/颜色）、Finish——D7 的差异跳过 `.addAsNew` 行，确认页
+            // 不出现，映射却原封不动，首次同步走 A1「无基线 ⇒ 整条采纳」，恰好覆盖掉他
+            // 想保住的那些字段。所以这一支要和 `.existing` 一样**显式**判：
+            //  - 没有映射 ⇒ 铸一个（真正的新身份）；
+            //  - 有映射，但那个 uuid 不在账户列表里 ⇒ 是本机自己早先铸的，视为已完成；
+            //  - 有映射，且那个 uuid 就是账户里的某条 ⇒ 硬错误，和 `.existing` 的
+            //    「expected != actual」同一条理由：绝不静默执行一个已被用户撤销的决定。
+            if let existing = controller.syncUuid(forSpaceId: decision.localSpaceId) {
+                guard !spacesInput.accountSpaces.contains(where: { $0.syncUuid == existing }) else {
+                    // R12：只记「这一行还绑在账户的某条 Space 上」这个事实，不记 uuid。
+                    AppLogError("[phi-sync] pairing wizard: an \"add as new\" row is still bound to an account Space (expected != actual)")
+                    throw SpaceSyncMappingError.alreadyMapped
+                }
+                return false            // 本机早先铸的那一个，没有新铸
+            }
             _ = try controller.ensureSpaceMapped(spaceId: decision.localSpaceId)
             return true
         }

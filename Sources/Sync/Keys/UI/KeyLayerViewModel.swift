@@ -369,8 +369,13 @@ final class KeyLayerViewModel: ObservableObject {
     /// `.done`。这与 `PairingWizardViewModel.apply(_:controller:)` 对
     /// `SpaceSyncMappingError.alreadyMapped` 的处理是同一条规则：**已经是想要的值 ⇒
     /// 就算完成**。`adoptRemoteProfile`（:114-120）本来就是幂等的（直接覆写映射），
-    /// `createLocal` 的重入由 `createLocalProfileAndAdopt` 自己的判据管，两者都不需要
-    /// 这条 catch。
+    /// 不需要这条 catch。
+    ///
+    /// **`.createLocal` 有它自己的那一条判据，写在分支里面**：它不抛 `alreadyMapped`，
+    /// 所以这条 catch 接不住它；`createLocalProfileAndAdopt` 的
+    /// `reusablePendingProfile(forUuid:)` 只覆盖「建好了但认领失败」那一种重入，认领
+    /// 成功之后那一项就被清掉了，重放会再建一个 "X (2)"。判据见下面 `.createLocal`
+    /// 分支的注释。
     @discardableResult
     func applyPairingDecisions(_ decisions: [PairingDecision],
                                controller: SyncKeyController) async -> Bool {
@@ -389,6 +394,27 @@ final class KeyLayerViewModel: ObservableObject {
                     _ = try await controller.profileKeys.registerLocalProfile(
                         profileId: localProfileId, displayName: displayName)
                 case .createLocal(let remoteUuid, let displayName):
+                    // 幂等（§5.1），与下面那条 `alreadyMapped` 是同一条规则的第二个
+                    // 实例：**这个 uuid 已经有本地 profile 了 ⇒ 就算完成**。Retry 会
+                    // 拿着 Continue 那一刻冻结的同一份 `profileDecisions` 重放（Space
+                    // 侧失败停在 `.error(_, .backToSpaces)`，Retry → `.spaces` →
+                    // Finish → 又进来一次），而 `createLocalProfileAndAdopt` 只认
+                    // `reusablePendingProfile(forUuid:)`——那一项在第一次**成功**认领
+                    // 之后就被清成了 nil，于是重放会走 `else` 分支、`uniqueDisplayName`
+                    // 给出 "X (2)"，在盘上建出第二个空 profile。映射表仍然正确（那个
+                    // 新 profile 撞上 :558 的「uuid 已被认领」提前返回），但那个多出来
+                    // 的 profile 是永久且用户可见的。
+                    //
+                    // 判据放在**决定这一层**、不放进 `createLocalProfileAndAdopt`：
+                    // §3.6 的自动创建按 `missing` 集合调用，那个集合的定义就是「账户里
+                    // 有、本机没有映射」，所以它永远不会带着一个已映射的 uuid 进来；把
+                    // 早退塞进共享实现只会让它多一条自动路径上不可达的分支，还会让
+                    // `created` 计数把一次没发生的创建算进去。
+                    if controller.localProfileId(forGlobalUuid: remoteUuid) != nil {
+                        // R12：元数据，不记 profileId、不记 uuid。
+                        AppLogInfo("[phi-sync] pairing decision already applied; treating as done")
+                        continue
+                    }
                     // One shared implementation with §3.6's auto-create
                     // (`createLocalProfileAndAdopt`); only the `phase` /
                     // `pairingError` state machine stays here, and the direct

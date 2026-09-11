@@ -114,6 +114,7 @@ final class TabItemView: NSView {
     // MARK: - State
 
     private var isActive = false
+    private var activePageBackgroundColor: NSColor?
     private var activePageAppearance: Appearance?
     private var isMultiSelected = false
     private var isPinned = false
@@ -698,7 +699,7 @@ final class TabItemView: NSView {
     // MARK: - Appearance
 
     private func updateAppearance() {
-        let pageAppearance = isActive ? activePageAppearance : nil
+        let pageAppearance = isActive && !isPinned ? activePageAppearance : nil
         if appearance?.phiAppearance != pageAppearance {
             appearance = pageAppearance?.nsAppearance
         }
@@ -707,6 +708,7 @@ final class TabItemView: NSView {
         }
 
         backgroundLayer.isPinned = isPinned
+        backgroundLayer.activeFillColor = isPinned ? nil : activePageBackgroundColor
 
         if isActive {
             backgroundLayer.tabState = .active
@@ -729,10 +731,10 @@ final class TabItemView: NSView {
     }
 
     func setActivePageStyle(backgroundColor: NSColor?, appearance: Appearance?) {
-        guard backgroundLayer.activeFillColor != backgroundColor
+        guard activePageBackgroundColor != backgroundColor
                 || activePageAppearance != appearance else { return }
+        activePageBackgroundColor = backgroundColor
         activePageAppearance = appearance
-        backgroundLayer.activeFillColor = backgroundColor
         updateAppearance()
     }
 

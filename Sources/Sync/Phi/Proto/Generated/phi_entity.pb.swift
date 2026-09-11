@@ -147,9 +147,11 @@ nonisolated struct Phi_PhiSpaceEntity: @unchecked Sendable {
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
   // methods supported on all messages.
 
-  /// LocalStore SpaceModel.spaceId verbatim. Stable across every rename,
-  /// recolor, reorder and rebind; the literal "default-space" for the
-  /// account's single default Space (D1).
+  /// The ACCOUNT-LEVEL sync uuid for this Space (M3-2b / D6), resolved through
+  /// the device's `sync.spaceGlobalUuids` mapping table -- NOT the local
+  /// `SpaceModel.spaceId`, which never leaves the device and is never rewritten.
+  /// Stable across every rename, recolor, reorder and rebind; the literal
+  /// "default-space" for the account's single default Space (D1).
   var spaceUuid: String {
     get {_storage._spaceUuid}
     set {_uniqueStorage()._spaceUuid = newValue}

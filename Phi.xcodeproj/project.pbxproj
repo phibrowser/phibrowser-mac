@@ -19,6 +19,7 @@
 		2617E7C43A0DFE05B416E8F5 /* JoinMethodChoiceView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6819EF093F955DAFACDC4C94 /* JoinMethodChoiceView.swift */; };
 		2850A45D3A2F2C11AF0F8F3B /* PhiSpaceSyncState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 14B6CA15BC9C435794FC131A /* PhiSpaceSyncState.swift */; };
 		2ABF91DB68C2445BAA58C9BA /* GroupTabsTableView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 457F461C0F164136A46FF641 /* GroupTabsTableView.swift */; };
+		2C44AE9342A096D69C2770E6 /* PairingStepBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3D65DDDE1F39C8D1E868E132 /* PairingStepBar.swift */; };
 		2E8585334902CCDAB2A5FC60 /* SelfRevokeStrings.swift in Sources */ = {isa = PBXBuildFile; fileRef = 01794B7EA4882E10EFB8D56C /* SelfRevokeStrings.swift */; };
 		2F3F30219641EDD78FE06E96 /* RecoveryCode.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6EE9BDB8D95B7A16A1E96582 /* RecoveryCode.swift */; };
 		3703C88C2F68F78500E7CF6D /* AISettingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3703C88B2F68F78500E7CF6D /* AISettingView.swift */; };
@@ -216,6 +217,7 @@
 		5F1A5A11AC1D000000000005 /* SplitTabDropContainer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5F1A5A11AC1D000000000006 /* SplitTabDropContainer.swift */; };
 		686A8B97FDFABB61BB2539FD /* ProfilePairingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7218F862C1F92C027CE8E979 /* ProfilePairingView.swift */; };
 		6CA74AE48DC58F4968B8DD4E /* DeviceKeyStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = E2201CD37819E22BC9A5F2FC /* DeviceKeyStore.swift */; };
+		72458E59165A0E8FA89654B5 /* PairingWizardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6FFFE1C0B7A7B38B0B896CF4 /* PairingWizardView.swift */; };
 		78BE8ECE731672FAB99F191D /* DevicesRemoveDeviceModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6659B55999DDEAA24DB5AC0D /* DevicesRemoveDeviceModel.swift */; };
 		793C1DDEA1022CC850FEFFF9 /* SentinelWatchdog.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6A44C5FF60DF6F7860A061D4 /* SentinelWatchdog.swift */; };
 		7A5B00A02EF0000000000001 /* MemoryButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A5B00A02EF0000000000002 /* MemoryButton.swift */; };
@@ -229,6 +231,7 @@
 		897C09F62F6BEDA000E5CA9B /* IMChannelsSettingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 897C09F02F6BEDA000E5CA9B /* IMChannelsSettingView.swift */; };
 		897C09F72F6BEDA000E5CA9B /* IMChannelsSettingHostingViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 897C09EF2F6BEDA000E5CA9B /* IMChannelsSettingHostingViewController.swift */; };
 		897C09F82F6BEDA000E5CA9B /* IMChannelsSettingViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 897C09F12F6BEDA000E5CA9B /* IMChannelsSettingViewController.swift */; };
+		89BE563BBDEAE08AC824F2B8 /* SpacePairingStepView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F76D53B8FBA539CA65167C9F /* SpacePairingStepView.swift */; };
 		8D2E1AF84824992526795C3F /* PairingWizardViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 72996560FA6510FB58EDDFFF /* PairingWizardViewModel.swift */; };
 		8E0A10052FEA000000000001 /* OverlayToastModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8E0A10012FEA000000000001 /* OverlayToastModels.swift */; };
 		8E0A10062FEA000000000001 /* OverlayToastCenter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8E0A10022FEA000000000001 /* OverlayToastCenter.swift */; };
@@ -728,6 +731,7 @@
 		37FA01142FDA000100000004 /* LocalStoreCompatibilityController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalStoreCompatibilityController.swift; sourceTree = "<group>"; };
 		37FC8C912F335942004675B8 /* WebContentProgressBarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WebContentProgressBarView.swift; sourceTree = "<group>"; };
 		37FC8DA92F39B2DE004675B8 /* LayoutModeSettingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LayoutModeSettingView.swift; sourceTree = "<group>"; };
+		3D65DDDE1F39C8D1E868E132 /* PairingStepBar.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = PairingStepBar.swift; path = UI/PairingStepBar.swift; sourceTree = "<group>"; };
 		3DBF9BA56BD068BB2E7DEDBE /* PhiSyncProtocolClient.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = PhiSyncProtocolClient.swift; sourceTree = "<group>"; };
 		40BAF44C72CFEA80E580CDF7 /* encryption.pb.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = encryption.pb.swift; sourceTree = "<group>"; };
 		4508A9352EEFF2EB007C94E2 /* AccountWebWindowController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccountWebWindowController.swift; sourceTree = "<group>"; };
@@ -786,6 +790,7 @@
 		6A44C5FF60DF6F7860A061D4 /* SentinelWatchdog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SentinelWatchdog.swift; sourceTree = "<group>"; };
 		6EE9BDB8D95B7A16A1E96582 /* RecoveryCode.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = RecoveryCode.swift; sourceTree = "<group>"; };
 		6F042DF5490BA419ACD24DA7 /* SpaceSyncMappingManager.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = SpaceSyncMappingManager.swift; sourceTree = "<group>"; };
+		6FFFE1C0B7A7B38B0B896CF4 /* PairingWizardView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = PairingWizardView.swift; path = UI/PairingWizardView.swift; sourceTree = "<group>"; };
 		7218F862C1F92C027CE8E979 /* ProfilePairingView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ProfilePairingView.swift; path = UI/ProfilePairingView.swift; sourceTree = "<group>"; };
 		72996560FA6510FB58EDDFFF /* PairingWizardViewModel.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = PairingWizardViewModel.swift; path = UI/PairingWizardViewModel.swift; sourceTree = "<group>"; };
 		772B9268E7C8EC28D42DD213 /* get_updates_caller_info.pb.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = get_updates_caller_info.pb.swift; sourceTree = "<group>"; };
@@ -1065,6 +1070,7 @@
 		F1C7683ECEB27E49DFDEFC3C /* SpaceOverwriteDiff.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = SpaceOverwriteDiff.swift; path = UI/SpaceOverwriteDiff.swift; sourceTree = "<group>"; };
 		F381BC900D7B1C92A256C6D4 /* sync_enums.pb.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = sync_enums.pb.swift; sourceTree = "<group>"; };
 		F5D71320854F15DA33B8D7BA /* DevicesSettingView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = DevicesSettingView.swift; sourceTree = "<group>"; };
+		F76D53B8FBA539CA65167C9F /* SpacePairingStepView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = SpacePairingStepView.swift; path = UI/SpacePairingStepView.swift; sourceTree = "<group>"; };
 		FBD200012FD0000000000002 /* FeedbackOutbox.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeedbackOutbox.swift; sourceTree = "<group>"; };
 		FBD200012FD0000000000004 /* FeedbackV2.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeedbackV2.swift; sourceTree = "<group>"; };
 		FED7DED52045A7D29820DB3B /* SyncableSettings.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = SyncableSettings.swift; sourceTree = "<group>"; };
@@ -1152,6 +1158,9 @@
 				D92A47594D8319F166F3A1C6 /* SpacePairingModel.swift */,
 				F1C7683ECEB27E49DFDEFC3C /* SpaceOverwriteDiff.swift */,
 				72996560FA6510FB58EDDFFF /* PairingWizardViewModel.swift */,
+				6FFFE1C0B7A7B38B0B896CF4 /* PairingWizardView.swift */,
+				3D65DDDE1F39C8D1E868E132 /* PairingStepBar.swift */,
+				F76D53B8FBA539CA65167C9F /* SpacePairingStepView.swift */,
 			);
 			name = UI;
 			sourceTree = "<group>";
@@ -3109,6 +3118,9 @@
 				DE5AF6336549677CE099C4B7 /* SpacePairingModel.swift in Sources */,
 				D37B98E344D6E556D8905064 /* SpaceOverwriteDiff.swift in Sources */,
 				8D2E1AF84824992526795C3F /* PairingWizardViewModel.swift in Sources */,
+				72458E59165A0E8FA89654B5 /* PairingWizardView.swift in Sources */,
+				2C44AE9342A096D69C2770E6 /* PairingStepBar.swift in Sources */,
+				89BE563BBDEAE08AC824F2B8 /* SpacePairingStepView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

@@ -67,7 +67,8 @@ final class PairingWizardViewModelTests: XCTestCase {
     private func makeWizard(
         locals: [PhiLocalSpace],
         accountSpaces: [PhiAccountSpaceSummary],
-        preview: (() async -> Result<[PhiAccountSpaceSummary], PhiSpacePreviewError>)? = nil
+        preview: (() async -> Result<[PhiAccountSpaceSummary], PhiSpacePreviewError>)? = nil,
+        loadDeadline: Duration = .seconds(45)
     ) async throws -> (PairingWizardViewModel, SyncKeyController, LedgerSpaceMappingStore, FakeAPI) {
         let api = FakeAPI()
         let manager = AccountKeyManager(api: api, deviceKeyProvider: FakeDeviceKeyProvider())
@@ -87,7 +88,8 @@ final class PairingWizardViewModelTests: XCTestCase {
             keyLayer: KeyLayerViewModel(manager: manager),
             previewAccountSpaces: preview ?? { .success(accountSpaces) },
             pairableLocalSpaces: { locals },
-            themeDisplayName: { _ in nil })
+            themeDisplayName: { _ in nil },
+            loadDeadline: loadDeadline)
         return (wizard, controller, spaceStore, api)
     }
 
@@ -288,6 +290,37 @@ final class PairingWizardViewModelTests: XCTestCase {
         guard case .error(_, let resume) = wizard.phase else { return XCTFail("expected .error") }
         XCTAssertEqual(resume, .reload)
         XCTAssertEqual(wizard.step, .profiles)
+    }
+
+    /// §4.5 的期限必须真的**让加载页停下来**，不是只改变报什么。
+    ///
+    /// 注入的预览刻意做成**取消不掉**的——一个非结构化 `Task` 加上
+    /// `await task.value`，正是 `PhiSyncEngine.serialized(_:)` 的形状。`withTaskGroup`
+    /// 在这种载荷下是个陷阱：它在返回前必然等待每一个子任务，`cancelAll()` 对这段工作
+    /// 是空操作，于是期限那一支永远走不到，模态就停在没有 Retry 按钮的 `.loading` 页
+    /// 上。所以断言的是**时间**，不只是 phase。
+    func testTheLoadDeadlineReturnsWhileAnUncancellablePreviewIsStillRunning() async throws {
+        let (wizard, controller, _, _) = try await makeWizard(
+            locals: [local("LOCAL-1", name: "Work")], accountSpaces: [],
+            preview: {
+                let work = Task { () -> Result<[PhiAccountSpaceSummary], PhiSpacePreviewError> in
+                    try? await Task.sleep(for: .seconds(2))
+                    return .success([])
+                }
+                return await work.value
+            },
+            loadDeadline: .milliseconds(50))
+
+        let startedAt = Date()
+        await wizard.start(controller: controller)
+        let elapsed = Date().timeIntervalSince(startedAt)
+
+        XCTAssertLessThan(elapsed, 1.0, "期限到了就得返回，不许等那个取消不掉的预览")
+        guard case .error(let message, let resume) = wizard.phase else {
+            return XCTFail("expected .error")
+        }
+        XCTAssertEqual(message, PairingWizardStrings.previewTimedOut)
+        XCTAssertEqual(resume, .reload, "Retry 重跑 start()")
     }
 
     // MARK: - 7. 不写 `KeyLayerPhase`

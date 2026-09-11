@@ -62,6 +62,39 @@ enum PairingWizardStrings {
 /// extension）。载荷仍然就是要渲染的那句话，只是套了一层。
 private struct PairingWizardLoadFailure: Error { let message: String }
 
+/// 预览与期限之间的一次性闸门：谁先到谁交卷，续体只能被恢复一次，第二个到达者是空
+/// 操作。
+///
+/// **为什么不是 `withTaskGroup`。** 任务组在返回之前**必然**等待每一个子任务，而预览
+/// 那个子任务取消不掉：`PhiSyncEngine.serialized(_:)` 把轮体放进一个**非结构化**
+/// `Task {}`（不继承取消），随后 `await task.value` 是个非 throwing 的 `Task`，调用方
+/// 被取消它也不会提前返回；`runPreview` 自己也只看 `isStopped`，从不看
+/// `Task.isCancelled`。于是 `group.cancelAll()` 对真正在跑的那段工作是空操作，期限只
+/// 改变**报什么**，改变不了**什么时候报**——加载页（`.loading` 没有 Retry 按钮，窗口
+/// 也没有关闭键）会一直停在那里。
+///
+/// 被放弃的那一轮预览留在引擎队列上跑完，无害：§4.3 保证它一个字节都不持久化；它自己
+/// 的预算（`PhiSyncEngine.previewDeadlineMs`）负责让它真的停下来。
+private final class PreviewRace: @unchecked Sendable {
+    typealias Outcome = Result<[PhiAccountSpaceSummary], PhiSpacePreviewError>?
+
+    private let lock = NSLock()
+    private var continuation: CheckedContinuation<Outcome, Never>?
+
+    init(_ continuation: CheckedContinuation<Outcome, Never>) {
+        self.continuation = continuation
+    }
+
+    /// `nil` = 期限先到。
+    func finish(_ outcome: Outcome) {
+        lock.lock()
+        let pending = continuation
+        continuation = nil
+        lock.unlock()
+        pending?.resume(returning: outcome)
+    }
+}
+
 /// 两步（外加 D7 的覆盖确认页）配对向导的状态机（§5.2 / §5.5）。
 ///
 /// **向导有自己的 phase 枚举，绝不写 `KeyLayerPhase`**（R-D6-11）：`phase` 的第二个
@@ -353,19 +386,25 @@ final class PairingWizardViewModel: ObservableObject {
 
     /// §4.5 的 45 s 期限 + §4.6 的错误映射，一处。`URLSession` 默认每请求 60 s，而
     /// 预览是一次**分页**拉取，不设期限就可能让加载页停几分钟。R12：具体错误只进日志。
+    ///
+    /// **期限一共两道，取值相同，职责不同**：这一道保证**界面**不卡（无论底下那一轮
+    /// 怎么样，到点就返回），`PhiSyncEngine.previewDeadlineMs` 那一道保证**工作**真的
+    /// 停下来（轮体自己不再往下翻页，round 队列随之让开）。少了任何一道都不够：这一道
+    /// 管不了引擎队列，那一道管不了单次请求的 60 s。
     private func loadAccountSpaces() async -> Result<[PhiAccountSpaceSummary], PairingWizardLoadFailure> {
         let preview = previewAccountSpaces
         let deadline = loadDeadline
+        // 两个赛跑者都是**非结构化**任务，交卷走一次性闸门（`PreviewRace` 的注释写了
+        // 为什么任务组在这里不成立）。于是期限那一支**立刻**返回，界面不会等在一个
+        // 取消不掉的子任务上。
         let outcome: Result<[PhiAccountSpaceSummary], PhiSpacePreviewError>? =
-            await withTaskGroup(of: Result<[PhiAccountSpaceSummary], PhiSpacePreviewError>?.self) { group in
-                group.addTask { await preview() }
-                group.addTask {
+            await withCheckedContinuation { continuation in
+                let race = PreviewRace(continuation)
+                Task { race.finish(await preview()) }
+                Task {
                     try? await Task.sleep(for: deadline)
-                    return nil          // 期限先到
+                    race.finish(nil)    // 期限先到
                 }
-                let first = await group.next() ?? nil
-                group.cancelAll()
-                return first
             }
         guard let outcome else {
             AppLogWarn("[phi-sync] pairing wizard: the account Space preview exceeded its deadline")
@@ -379,6 +418,10 @@ final class PairingWizardViewModel: ObservableObject {
             switch error {
             case .engineUnavailable, .retired:
                 return .failure(PairingWizardLoadFailure(message: PairingWizardStrings.previewUnavailable))
+            case .timedOut:
+                // 引擎那一侧的同一条期限（`PhiSyncEngine.previewDeadlineMs`）。文案与
+                // 向导自己的期限**同一句**：对用户来说两者是同一件事。
+                return .failure(PairingWizardLoadFailure(message: PairingWizardStrings.previewTimedOut))
             case .truncated:
                 return .failure(PairingWizardLoadFailure(message: PairingWizardStrings.previewTruncated))
             case .transport:
@@ -395,6 +438,7 @@ final class PairingWizardViewModel: ObservableObject {
         switch error {
         case .engineUnavailable: return "engine_unavailable"
         case .retired: return "retired"
+        case .timedOut: return "timed_out"
         case .truncated: return "truncated"
         case .transport(let detail): return "transport:\(detail)"
         }

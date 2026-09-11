@@ -448,10 +448,25 @@ final class AppModalPairingHost: ProfilePairingModalHost {
         }
     }
 
-    /// Restarts the load behind the window that is already up. `start()` (and
-    /// the `startPairing` underneath it) cancels whatever is still in flight and
-    /// replaces it, so this cannot pile loads on top of one another however
-    /// often the gate calls it.
+    /// Restarts the load behind the window that is already up.
+    ///
+    /// **What actually makes repeated re-drives safe, stated precisely, because
+    /// the obvious claim is false.** `keyLayer.startPairing` does cancel its own
+    /// in-flight profile load, but the Space preview underneath `start()` cannot
+    /// be cancelled at all: `PhiSyncEngine.serialized(_:)` runs the round in an
+    /// unstructured `Task {}`, which inherits neither cancellation nor its
+    /// caller's lifetime. So a re-drive CAN leave an earlier preview round still
+    /// running on the engine's serial queue. Two things keep that harmless:
+    ///
+    ///  - the abandoned round persists nothing (§4.3) and bounds itself
+    ///    (`PhiSyncEngine.previewDeadlineMs`), so it frees the queue on its own;
+    ///  - `PairingWizardViewModel.start()` carries a GENERATION token, so a
+    ///    superseded run writes nothing at all when it finally lands — it can
+    ///    neither flash a stale `.error` over a good page nor wipe selections the
+    ///    user has already made.
+    ///
+    /// In practice a second load is rare: the wizard's own deadline moves a stuck
+    /// load to `.error(_, .reload)` at 45 s, before the gate's ~60 s re-drive.
     func reloadPresented() {
         guard let viewModel, let presentedController else { return }
         guard Self.reloadAllowed(for: viewModel.phase) else {

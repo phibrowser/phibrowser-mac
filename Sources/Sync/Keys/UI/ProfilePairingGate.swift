@@ -252,6 +252,10 @@ struct ProfilePairingGateView: View {
     let controller: SyncKeyController
     let onDismiss: () -> Void
 
+    /// Task 7 的过渡壳：`ProfilePairingView` 的两个 `@State` 已上提为 `@Binding`
+    /// （§5.3），而这个 view 在 Task 8 整体消失，所以它只需要能编译、能渲染。
+    @StateObject private var pairingSelections = ProfilePairingSelectionStore()
+
     /// Non-nil once the server has refused: this account's last active device.
     /// Deliberately sticky for the life of the window -- nothing the user can do
     /// inside this modal adds a second device.
@@ -269,11 +273,14 @@ struct ProfilePairingGateView: View {
                 viewModel: viewModel,
                 locals: locals,
                 remotes: remotes,
+                selections: $pairingSelections.selections,
+                remoteChoices: $pairingSelections.remoteChoices,
                 context: .gate,
                 secondaryButton: secondaryButton,
                 onSubmit: { decisions in
                     Task { await viewModel.submitPairing(decisions, controller: controller) }
                 })
+            .onAppear { pairingSelections.seed(locals: locals, remotes: remotes) }
         case .error(let message):
             // `startPairing` lands here whenever `accountProfiles()` throws --
             // the likeliest outcome right after a join if the network drops or

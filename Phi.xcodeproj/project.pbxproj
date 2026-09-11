@@ -229,6 +229,7 @@
 		897C09F62F6BEDA000E5CA9B /* IMChannelsSettingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 897C09F02F6BEDA000E5CA9B /* IMChannelsSettingView.swift */; };
 		897C09F72F6BEDA000E5CA9B /* IMChannelsSettingHostingViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 897C09EF2F6BEDA000E5CA9B /* IMChannelsSettingHostingViewController.swift */; };
 		897C09F82F6BEDA000E5CA9B /* IMChannelsSettingViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 897C09F12F6BEDA000E5CA9B /* IMChannelsSettingViewController.swift */; };
+		8D2E1AF84824992526795C3F /* PairingWizardViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 72996560FA6510FB58EDDFFF /* PairingWizardViewModel.swift */; };
 		8E0A10052FEA000000000001 /* OverlayToastModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8E0A10012FEA000000000001 /* OverlayToastModels.swift */; };
 		8E0A10062FEA000000000001 /* OverlayToastCenter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8E0A10022FEA000000000001 /* OverlayToastCenter.swift */; };
 		8E0A10072FEA000000000001 /* OverlayToastView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8E0A10032FEA000000000001 /* OverlayToastView.swift */; };
@@ -786,6 +787,7 @@
 		6EE9BDB8D95B7A16A1E96582 /* RecoveryCode.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = RecoveryCode.swift; sourceTree = "<group>"; };
 		6F042DF5490BA419ACD24DA7 /* SpaceSyncMappingManager.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = SpaceSyncMappingManager.swift; sourceTree = "<group>"; };
 		7218F862C1F92C027CE8E979 /* ProfilePairingView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ProfilePairingView.swift; path = UI/ProfilePairingView.swift; sourceTree = "<group>"; };
+		72996560FA6510FB58EDDFFF /* PairingWizardViewModel.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = PairingWizardViewModel.swift; path = UI/PairingWizardViewModel.swift; sourceTree = "<group>"; };
 		772B9268E7C8EC28D42DD213 /* get_updates_caller_info.pb.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = get_updates_caller_info.pb.swift; sourceTree = "<group>"; };
 		7A5B00A02EF0000000000002 /* MemoryButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MemoryButton.swift; sourceTree = "<group>"; };
 		7B00AAAA000000040000A4B4 /* PostHogEnv.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PostHogEnv.swift; sourceTree = "<group>"; };
@@ -1149,6 +1151,7 @@
 				01794B7EA4882E10EFB8D56C /* SelfRevokeStrings.swift */,
 				D92A47594D8319F166F3A1C6 /* SpacePairingModel.swift */,
 				F1C7683ECEB27E49DFDEFC3C /* SpaceOverwriteDiff.swift */,
+				72996560FA6510FB58EDDFFF /* PairingWizardViewModel.swift */,
 			);
 			name = UI;
 			sourceTree = "<group>";
@@ -3105,6 +3108,7 @@
 				994F2A0CF6946B003A894F2C /* SpaceSyncMappingManager.swift in Sources */,
 				DE5AF6336549677CE099C4B7 /* SpacePairingModel.swift in Sources */,
 				D37B98E344D6E556D8905064 /* SpaceOverwriteDiff.swift in Sources */,
+				8D2E1AF84824992526795C3F /* PairingWizardViewModel.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

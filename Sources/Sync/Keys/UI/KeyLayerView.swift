@@ -11,6 +11,10 @@ struct KeyLayerView: View {
     var controller: SyncKeyController? = nil
     var onFinish: () -> Void = {}
 
+    /// `ProfilePairingView` 的两个 `@State` 已上提为 `@Binding`（§5.3），Devices pane
+    /// 没有向导 VM，所以这里持那个最小的壳。
+    @StateObject private var pairingSelections = ProfilePairingSelectionStore()
+
     /// Run-loop modes the deferred `onFinish()` may be delivered in.
     ///
     /// `.eventTracking` is deliberately absent: `onFinish()` closes the hosting
@@ -55,9 +59,19 @@ struct KeyLayerView: View {
                 message(NSLocalizedString("Something went wrong", comment: "Key layer error - title"), m, retry: false)
             case .pairingProfiles(let locals, let remotes):
                 if let controller {
-                    ProfilePairingView(viewModel: viewModel, locals: locals, remotes: remotes, onSubmit: { decisions in
+                    ProfilePairingView(viewModel: viewModel, locals: locals, remotes: remotes,
+                                       selections: $pairingSelections.selections,
+                                       remoteChoices: $pairingSelections.remoteChoices,
+                                       onSubmit: { decisions in
                         Task { await viewModel.submitPairing(decisions, controller: controller) }
                     })
+                    // 与今天 `ProfilePairingView.init` 的 `@State` 种子等价：那份种子在
+                    // view 第一次构造时算一次，这里在它出现时算一次，并在候选表被重载
+                    // （`applyPairingDecisions` 的失败路径）之后重新播种。
+                    .onAppear { pairingSelections.seed(locals: locals, remotes: remotes) }
+                    .onChange(of: locals.map(\.profileId)) { _ in
+                        pairingSelections.seed(locals: locals, remotes: remotes)
+                    }
                 } else {
                     message(NSLocalizedString("Something went wrong", comment: "Key layer error - title"),
                             NSLocalizedString("Pairing isn’t available right now.",

@@ -375,8 +375,10 @@ final class KeyLayerViewModelTests: XCTestCase {
         _ = try await mgr.bootstrap()
         let pkm = ProfileKeyManager(api: api, keyManager: mgr,
                                     mappingStore: ProfileKeyManagerTests.MemoryMappingStore())
-        // "Default" is already mapped, so registering it again is refused with
-        // `alreadyMapped` -- a decision that fails without any network flakiness.
+        // "Default" is already mapped, so the one decision left is "Profile 1"; a
+        // one-shot PUT failure makes it fail without touching the reload that
+        // follows. (It used to be `alreadyMapped` on "Default", but that is now a
+        // deliberate idempotent SUCCESS -- see `applyPairingDecisions`.)
         _ = try await pkm.registerLocalProfile(profileId: "Default", displayName: "Default")
         let controller = SyncKeyController(
             manager: mgr,
@@ -386,7 +388,8 @@ final class KeyLayerViewModelTests: XCTestCase {
             notifyChromium: {})
         let vm = KeyLayerViewModel(manager: mgr)
 
-        await vm.submitPairing([.registerNew(localProfileId: "Default", displayName: "Default")],
+        api.profileEndpointErrorOnce = KeyAPIError.http(500, "boom")
+        await vm.submitPairing([.registerNew(localProfileId: "Profile 1", displayName: "Home")],
                                controller: controller)
 
         XCTAssertNotNil(vm.pairingError)

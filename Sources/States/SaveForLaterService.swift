@@ -27,16 +27,39 @@ enum SaveForLaterService {
     /// The master Folio flag: the whole feature — menu rows, the shortcut's
     /// settings listing, the settings sections, the highlight context menu,
     /// site-action auto-save, and the library bridge — sits behind it, so
-    /// turning it off makes Folio disappear without a release. Release
-    /// builds ask PostHog; DEBUG builds default to on, with
+    /// turning it off makes Folio disappear without a release. Folio rides
+    /// the canary channel while it settles: DEBUG and canary builds default
+    /// on, stable defaults off. PostHog overrides either way, so the stable
+    /// rollout is a flag flip rather than a release. DEBUG builds take
     /// `-FolioFeatureFlag NO` to rehearse the disabled state.
+    ///
+    /// The channel split keys off `NIGHTLY_BUILD`, the marker the rest of
+    /// the client already channels on (`Sentry`, `APIClient`, `AuthManager`).
+    /// Note it is set for Release-Canary but NOT for Debug-Canary, whose
+    /// Swift conditions carry only `DEBUG` — harmless here because the DEBUG
+    /// branch defaults on regardless, but it is why the canary case cannot
+    /// be written as a bare `#if NIGHTLY_BUILD`.
     nonisolated static var featureEnabled: Bool {
         #if DEBUG
         if UserDefaults.standard.object(forKey: "FolioFeatureFlag") != nil {
             return UserDefaults.standard.bool(forKey: "FolioFeatureFlag")
         }
         return true
+        #elseif NIGHTLY_BUILD
+        // Canary defaults on. `isFeatureEnabled` cannot tell "PostHog said
+        // off" from "no answer yet" — it collapses both to false, which
+        // would blank Folio on any launch that reads it before flags load,
+        // offline, or while the key is absent from the project. Reading the
+        // raw flag keeps nil meaning "undecided", so only an explicit false
+        // disables it; a multivariate value counts as on, as it does for
+        // `isFeatureEnabled`.
+        guard let flag = PostHogSDK.shared.getFeatureFlag("folio") else {
+            return true
+        }
+        return (flag as? Bool) ?? true
         #else
+        // Stable defaults off: an undecided flag leaves Folio hidden, and
+        // only an explicit true from PostHog turns it on.
         return PostHogSDK.shared.isFeatureEnabled("folio")
         #endif
     }

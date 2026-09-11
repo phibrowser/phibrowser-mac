@@ -278,7 +278,7 @@ final class WebContentAddressBarMenuPresenter {
         addItem(title: SiteMemoryMenuActions.collectionTitle, state: actions.collectionState,
                 isEnabled: actions.collectionEnabled != nil, action: .toggleCollection)
         addItem(title: SiteMemoryMenuActions.removalTitle, isEnabled: actions.canRemoveMemories,
-                image: menuSymbol(named: "trash"), action: .removeMemories)
+                action: .removeMemories)
         return menu
     }
 

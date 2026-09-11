@@ -473,10 +473,12 @@
 		D1F600042FD6000000000004 /* DiffableOutlineDiffPlanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1F600032FD6000000000003 /* DiffableOutlineDiffPlanner.swift */; };
 		D1F600062FD6000000000006 /* DiffableOutlineView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1F600052FD6000000000005 /* DiffableOutlineView.swift */; };
 		D1F600082FD6000000000008 /* SidebarDiffableSnapshotBuilder.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1F600072FD6000000000007 /* SidebarDiffableSnapshotBuilder.swift */; };
+		D37B98E344D6E556D8905064 /* SpaceOverwriteDiff.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1C7683ECEB27E49DFDEFC3C /* SpaceOverwriteDiff.swift */; };
 		D5E902235143FB0E14F29182 /* WaitingForApprovalView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 23216985BAC98CA63F9CB2AC /* WaitingForApprovalView.swift */; };
 		DAE6C75EA01EF14F3B7A68E2 /* DevicesSettingHostingViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 500D8A44ACCDE44A010C744F /* DevicesSettingHostingViewController.swift */; };
 		DBF883F47FD63565A483F189 /* entity_specifics.pb.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2C7336AA246BCAF2A4BFD0F7 /* entity_specifics.pb.swift */; };
 		DDB903D2F1942C30466411C6 /* ProfileKeyManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1BEC0EBA18BE1C83C17B3D73 /* ProfileKeyManager.swift */; };
+		DE5AF6336549677CE099C4B7 /* SpacePairingModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = D92A47594D8319F166F3A1C6 /* SpacePairingModel.swift */; };
 		DEBE00000000000000000005 /* DeveloperSettingViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = DEBE00000000000000000002 /* DeveloperSettingViewController.swift */; };
 		DEBE00000000000000000006 /* DeveloperSettingHostingViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = DEBE00000000000000000003 /* DeveloperSettingHostingViewController.swift */; };
 		DEBE00000000000000000007 /* DeveloperSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DEBE00000000000000000004 /* DeveloperSettingsView.swift */; };
@@ -1047,6 +1049,7 @@
 		D1F600072FD6000000000007 /* SidebarDiffableSnapshotBuilder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SidebarDiffableSnapshotBuilder.swift; sourceTree = "<group>"; };
 		D6CCBCF92F493BE791DFAC3A /* PhiKeyCrypto.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = PhiKeyCrypto.swift; sourceTree = "<group>"; };
 		D8FCAEAE328C802016D87943 /* AISettingsConnectorViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AISettingsConnectorViewModel.swift; sourceTree = "<group>"; };
+		D92A47594D8319F166F3A1C6 /* SpacePairingModel.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = SpacePairingModel.swift; path = UI/SpacePairingModel.swift; sourceTree = "<group>"; };
 		DEBE00000000000000000002 /* DeveloperSettingViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeveloperSettingViewController.swift; sourceTree = "<group>"; };
 		DEBE00000000000000000003 /* DeveloperSettingHostingViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeveloperSettingHostingViewController.swift; sourceTree = "<group>"; };
 		DEBE00000000000000000004 /* DeveloperSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeveloperSettingsView.swift; sourceTree = "<group>"; };
@@ -1057,6 +1060,7 @@
 		EFA5278C000987D588D0197B /* phi_specifics.pb.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = phi_specifics.pb.swift; sourceTree = "<group>"; };
 		F01D3A000000000000000011 /* bookmark-folder-open.svg */ = {isa = PBXFileReference; lastKnownFileType = image.svg; path = "bookmark-folder-open.svg"; sourceTree = "<group>"; };
 		F01D3A000000000000000012 /* bookmark-folder-closed.svg */ = {isa = PBXFileReference; lastKnownFileType = image.svg; path = "bookmark-folder-closed.svg"; sourceTree = "<group>"; };
+		F1C7683ECEB27E49DFDEFC3C /* SpaceOverwriteDiff.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = SpaceOverwriteDiff.swift; path = UI/SpaceOverwriteDiff.swift; sourceTree = "<group>"; };
 		F381BC900D7B1C92A256C6D4 /* sync_enums.pb.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = sync_enums.pb.swift; sourceTree = "<group>"; };
 		F5D71320854F15DA33B8D7BA /* DevicesSettingView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = DevicesSettingView.swift; sourceTree = "<group>"; };
 		FBD200012FD0000000000002 /* FeedbackOutbox.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeedbackOutbox.swift; sourceTree = "<group>"; };
@@ -1143,6 +1147,8 @@
 				7218F862C1F92C027CE8E979 /* ProfilePairingView.swift */,
 				4DE17EACA1FF4716231886E7 /* ProfilePairingGate.swift */,
 				01794B7EA4882E10EFB8D56C /* SelfRevokeStrings.swift */,
+				D92A47594D8319F166F3A1C6 /* SpacePairingModel.swift */,
+				F1C7683ECEB27E49DFDEFC3C /* SpaceOverwriteDiff.swift */,
 			);
 			name = UI;
 			sourceTree = "<group>";
@@ -3097,6 +3103,8 @@
 				78BE8ECE731672FAB99F191D /* DevicesRemoveDeviceModel.swift in Sources */,
 				A8D093553F519F8E1E7A8233 /* AccountSpaceSyncMappingStore.swift in Sources */,
 				994F2A0CF6946B003A894F2C /* SpaceSyncMappingManager.swift in Sources */,
+				DE5AF6336549677CE099C4B7 /* SpacePairingModel.swift in Sources */,
+				D37B98E344D6E556D8905064 /* SpaceOverwriteDiff.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

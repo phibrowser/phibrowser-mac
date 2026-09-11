@@ -101,17 +101,22 @@ private struct TabCornerBadgeVisual: View {
         case .inputting:
             lottieBadge(named: "inputting", fallbackSystemName: "ellipsis")
         case .chat:
-            Image("chat-mini")
-                .renderingMode(.template)
-                .resizable()
-                .scaledToFit()
-                .frame(width: 10, height: 10)
-                .foregroundStyle(Color(nsColor: badgeColor))
+            lottieBadge(
+                named: "inputting",
+                fallbackSystemName: "ellipsis",
+                playbackMode: .paused(at: .progress(0))
+            )
         }
     }
 
     @ViewBuilder
-    private func lottieBadge(named name: String, fallbackSystemName: String) -> some View {
+    private func lottieBadge(
+        named name: String,
+        fallbackSystemName: String,
+        playbackMode: LottiePlaybackMode = .playing(
+            .fromProgress(0, toProgress: 1, loopMode: .loop)
+        )
+    ) -> some View {
         if let animation = LottieAnimation.named(
             name,
             bundle: .main,
@@ -119,9 +124,7 @@ private struct TabCornerBadgeVisual: View {
         ) {
             LottieView(animation: animation)
                 .configuration(LottieConfiguration(renderingEngine: .mainThread))
-                .playbackMode(.playing(
-                    .fromProgress(0, toProgress: 1, loopMode: .loop)
-                ))
+                .playbackMode(playbackMode)
                 .configure { animationView in
                     animationView.setValueProvider(
                         ColorValueProvider(badgeColor.lottieColor),

@@ -32,6 +32,7 @@ final class BookmarkManagerCellView: NSTableCellView, NSTextFieldDelegate {
     private var originalEditingValue = ""
     private var commitHandler: ((String) -> Bool)?
     private var isEditingValue = false
+    private var editingGeneration = 0
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
@@ -111,6 +112,7 @@ final class BookmarkManagerCellView: NSTableCellView, NSTextFieldDelegate {
             return
         }
 
+        editingGeneration += 1
         isEditingValue = true
         originalEditingValue = editableValue
         valueField.stringValue = editableValue
@@ -124,12 +126,11 @@ final class BookmarkManagerCellView: NSTableCellView, NSTextFieldDelegate {
         guard isEditingValue, notification.object as? NSTextField === valueField else {
             return
         }
-        if let movement = notification.userInfo?["NSTextMovement"] as? Int,
-           movement == NSTextMovement.cancel.rawValue {
-            cancelEditing()
-            return
-        }
-        commitEditing(valueField.stringValue)
+        let movement = notification.userInfo?["NSTextMovement"] as? Int
+        endEditing(
+            value: movement == NSTextMovement.cancel.rawValue ? nil : valueField.stringValue,
+            deferUntilResigned: true
+        )
     }
 
     func control(
@@ -139,11 +140,11 @@ final class BookmarkManagerCellView: NSTableCellView, NSTextFieldDelegate {
     ) -> Bool {
         guard control === valueField else { return false }
         if commandSelector == #selector(NSResponder.insertNewline(_:)) {
-            commitEditing(textView.string)
+            endEditing(value: textView.string)
             return true
         }
         if commandSelector == #selector(NSResponder.cancelOperation(_:)) {
-            cancelEditing()
+            endEditing(value: nil)
             return true
         }
         return false
@@ -380,48 +381,56 @@ final class BookmarkManagerCellView: NSTableCellView, NSTextFieldDelegate {
         secondaryFaviconHandle = nil
     }
 
-    private func commitEditing(_ value: String) {
+    private func endEditing(value: String?, deferUntilResigned: Bool = false) {
         guard isEditingValue else { return }
-        let trimmedValue = value.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmedValue.isEmpty else {
-            NSSound.beep()
-            finishEditing(displayedValue: originalEditingValue)
-            return
+        isEditingValue = false
+        let generation = editingGeneration
+        let originalValue = originalEditingValue
+        let handler = commitHandler
+
+        // Preserve the original commit even if removing the row reuses or releases this cell.
+        let finish = { [weak self] in
+            var displayedValue = originalValue
+            if let value {
+                let trimmedValue = value.trimmingCharacters(in: .whitespacesAndNewlines)
+                if !trimmedValue.isEmpty, handler?(trimmedValue) == true {
+                    displayedValue = trimmedValue
+                } else {
+                    NSSound.beep()
+                }
+            }
+
+            // A commit can synchronously reconfigure the cell or begin another edit.
+            guard let self, self.editingGeneration == generation else { return }
+            self.configuredEditableValue = displayedValue
+            self.finishEditing(displayedValue: displayedValue)
         }
 
-        guard commitHandler?(trimmedValue) == true else {
-            NSSound.beep()
-            finishEditing(displayedValue: originalEditingValue)
-            return
+        if deferUntilResigned {
+            // AppKit may be removing rows while delivering the end-editing notification.
+            // Changing isEditable here restarts its field editor and reenters row lookup.
+            DispatchQueue.main.async(execute: finish)
+        } else {
+            if valueField.currentEditor() != nil {
+                window?.makeFirstResponder(nil)
+            }
+            finish()
         }
-
-        configuredEditableValue = trimmedValue
-        finishEditing(displayedValue: trimmedValue)
-    }
-
-    private func cancelEditing() {
-        guard isEditingValue else { return }
-        finishEditing(displayedValue: originalEditingValue)
     }
 
     private func finishEditing(displayedValue: String) {
-        isEditingValue = false
         valueField.stringValue = displayedValue
         valueField.toolTip = displayedValue
         updateEditingAppearance(isEditing: false)
-        if valueField.currentEditor() != nil {
-            window?.makeFirstResponder(nil)
-        }
     }
 
     private func stopEditingWithoutCommit() {
-        guard isEditingValue else { return }
+        editingGeneration += 1
         isEditingValue = false
-        valueField.stringValue = originalEditingValue
-        updateEditingAppearance(isEditing: false)
         if valueField.currentEditor() != nil {
             window?.makeFirstResponder(nil)
         }
+        finishEditing(displayedValue: originalEditingValue)
     }
 
     private func updateEditingAppearance(isEditing: Bool) {

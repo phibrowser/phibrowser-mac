@@ -189,15 +189,34 @@ final class ProfileManager: ObservableObject {
     /// unguarded delete strands the bound Spaces on a nonexistent profile.
     /// The user-data backup rollback flow bypasses the guard deliberately —
     /// it deletes profiles wholesale while restoring a snapshot.
+    /// Successful deletion starts best-effort memory cleanup for the original
+    /// account. Completion reports Chromium deletion; cleanup failures are logged.
+    /// Import rollback disables cleanup to preserve existing account memory.
+    @MainActor
     func deleteProfile(_ profileId: String,
+                       removeMemories: Bool = true,
                        completion: @escaping (Bool, String?) -> Void) {
         guard let bridge = ChromiumLauncher.sharedInstance().bridge else {
             completion(false, "bridge unavailable")
             return
         }
+        let memoryService = removeMemories ? try? SiteMemoryService.currentAccount() : nil
         bridge.deleteProfile(profileId) { [weak self] success, error in
             DispatchQueue.main.async {
                 self?.refresh()
+                if success, removeMemories {
+                    if let memoryService {
+                        Task {
+                            do {
+                                _ = try await memoryService.removeProfileMemories(profileID: profileId)
+                            } catch {
+                                AppLogWarn("[ProfileManager] Failed to remove memory for deleted profile \(profileId): \(error)")
+                            }
+                        }
+                    } else {
+                        AppLogWarn("[ProfileManager] Skipped memory cleanup for deleted profile \(profileId): account unavailable")
+                    }
+                }
                 completion(success, error)
             }
         }

@@ -923,7 +923,7 @@ extension AppController {
         ProfileManager.shared.createProfile(displayName: name) { _ in }
     }
 
-    @objc func deleteSelectedProfile(_ sender: Any?) {
+    @MainActor @objc func deleteSelectedProfile(_ sender: Any?) {
         guard let menuItem = sender as? NSMenuItem,
               let profile = menuItem.representedObject as? PhiBrowserProfile else {
             return

@@ -1905,6 +1905,84 @@ final class ServiceBrokerExtensionProtocolTests: XCTestCase {
         }
     }
 
+    func testNativeProfileRemovalPurgesOnlyTheRequestedProfileOverBothTransports() async throws {
+        let scope: [String: Any] = ["kind": "profile", "profiles": ["Profile 2"], "purge": true]
+        var responseBody = try XCTUnwrap(JSONSerialization.jsonObject(with: Self.siteRemovalBody) as? [String: Any])
+        responseBody["scope"] = scope
+        let body = try JSONSerialization.data(withJSONObject: responseBody)
+
+        for mode in [SentinelTransportMode.uds, .legacy] {
+            let recorder = BrokerRequestRecorder()
+            let handler = makeHandler(
+                response: BrokerHTTPResponse(statusCode: 200, headers: [], body: body),
+                recorder: recorder, transportMode: mode)
+            let result = try await handler.removeProfileMemories(
+                profileID: "Profile 2", accountID: "auth0|test-account")
+
+            let recorded = await recorder.lastRequest()
+            let request = try XCTUnwrap(recorded)
+            XCTAssertEqual(request.service, .phiMemory)
+            XCTAssertEqual(request.path, "/v1/cleanup")
+            XCTAssertEqual(request.method, "POST")
+            XCTAssertEqual(request.headers["Authorization"], "Bearer test-access-token")
+            XCTAssertEqual(request.headers["x-profile-id"], "Profile 2")
+            XCTAssertNil(request.headers["x-memory-scope"])
+            XCTAssertNil(request.headers["X-Phi-Extension-ID"])
+            let payload = try XCTUnwrap(JSONSerialization.jsonObject(with: XCTUnwrap(request.body)) as? [String: Any])
+            XCTAssertEqual(Set(payload.keys), ["scope", "dryRun"])
+            XCTAssertEqual(payload["scope"] as? NSDictionary, scope as NSDictionary)
+            XCTAssertEqual(payload["dryRun"] as? Bool, false)
+            XCTAssertEqual(result.scope, SiteMemoryRemovalScope(profileID: "Profile 2"))
+        }
+    }
+
+    func testNativeProfileRemovalRejectsDryRunsAndWrongTargets() async throws {
+        let scope: [String: Any] = ["kind": "profile", "profiles": ["Profile 2"], "purge": true]
+        let overrides: [[String: Any]] = [
+            ["dryRun": true],
+            ["ok": false],
+            ["scope": ["kind": "profile", "profiles": ["Profile 3"], "purge": true]],
+            ["scope": ["kind": "profile", "profiles": ["Profile 2", "Profile 3"], "purge": true]],
+            ["scope": ["kind": "profile", "profiles": ["Profile 2"], "purge": false]],
+            ["scope": ["kind": "profile"]],
+            ["scope": ["kind": "user"]]
+        ]
+        for mode in [SentinelTransportMode.uds, .legacy] {
+            for override in overrides {
+                var responseBody = try XCTUnwrap(JSONSerialization.jsonObject(with: Self.siteRemovalBody) as? [String: Any])
+                responseBody["scope"] = scope
+                responseBody.merge(override) { _, new in new }
+                let handler = makeHandler(response: BrokerHTTPResponse(
+                    statusCode: 200, headers: [], body: try JSONSerialization.data(withJSONObject: responseBody)),
+                    transportMode: mode)
+                do {
+                    _ = try await handler.removeProfileMemories(profileID: "Profile 2", accountID: "auth0|test-account")
+                    XCTFail("A dry run or mismatched profile purge must not report success")
+                } catch { }
+            }
+        }
+    }
+
+    func testNativeProfileRemovalRejectsInvalidAccountAndProfileBeforeSending() async {
+        for mode in [SentinelTransportMode.uds, .legacy] {
+            let recorder = BrokerRequestRecorder()
+            let handler = makeHandler(recorder: recorder, transportMode: mode)
+            for (profileID, accountID) in [("Profile 2", "another-account"), ("", "auth0|test-account")] {
+                do {
+                    _ = try await handler.removeProfileMemories(profileID: profileID, accountID: accountID)
+                    XCTFail("Invalid account or profile must not delete memory")
+                } catch { }
+            }
+            let unauthenticated = makeHandler(recorder: recorder, authSnapshot: nil, transportMode: mode)
+            do {
+                _ = try await unauthenticated.removeProfileMemories(profileID: "Profile 2", accountID: "auth0|test-account")
+                XCTFail("Authentication is required")
+            } catch { }
+            let count = await recorder.count()
+            XCTAssertEqual(count, 0)
+        }
+    }
+
     func testNativeSiteRemovalRejectsDryRunsAndMismatchedScopes() async throws {
         for mode in [SentinelTransportMode.uds, .legacy] {
             for includeSubdomains in [false, true] {

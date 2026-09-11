@@ -454,6 +454,20 @@ actor ServiceBrokerExtensionProtocol {
     ) async throws -> SiteMemoryRemovalResult {
         let host = try SiteMemorySettingsStore.normalizedHost(host)
         let scope = SiteMemoryRemovalScope(host: host, includeSubdomains: includeSubdomains)
+        return try await removeMemories(scope: scope, profileID: profileID, accountID: accountID)
+    }
+
+    /// Native-only cleanup after a browser profile has been deleted.
+    func removeProfileMemories(
+        profileID: String, accountID: String
+    ) async throws -> SiteMemoryRemovalResult {
+        try await removeMemories(
+            scope: SiteMemoryRemovalScope(profileID: profileID), profileID: profileID, accountID: accountID)
+    }
+
+    private func removeMemories(
+        scope: SiteMemoryRemovalScope, profileID: String, accountID: String
+    ) async throws -> SiteMemoryRemovalResult {
         try SiteMemorySettingsStore.validateProfileID(profileID)
         let auth = try requireAuthenticatedSnapshot()
         guard auth.scope.accountID == accountID else { throw SiteMemoryError.accountUnavailable }

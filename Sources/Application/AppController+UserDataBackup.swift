@@ -1108,7 +1108,7 @@ extension AppController {
             }
 
             let profileId = rollbackProfileIds[index]
-            ProfileManager.shared.deleteProfile(profileId) { success, error in
+            ProfileManager.shared.deleteProfile(profileId, removeMemories: false) { success, error in
                 if success {
                     AppLogInfo("[Debug] Phi user data import profile repair rolled back Chromium profile \(profileId)")
                 } else {

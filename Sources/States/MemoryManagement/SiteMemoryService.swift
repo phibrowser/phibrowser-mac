@@ -9,16 +9,29 @@ struct SiteMemoryRemovalScope: Codable, Equatable, Sendable {
     enum Kind: String, Codable, Sendable {
         case host
         case site
+        case profile
     }
 
     let kind: Kind
     let host: String?
     let site: String?
+    let profiles: [String]?
+    let purge: Bool?
 
     init(host: String, includeSubdomains: Bool) {
         kind = includeSubdomains ? .site : .host
         self.host = includeSubdomains ? nil : host
         site = includeSubdomains ? host : nil
+        profiles = nil
+        purge = nil
+    }
+
+    init(profileID: String) {
+        kind = .profile
+        host = nil
+        site = nil
+        profiles = [profileID]
+        purge = true
     }
 }
 
@@ -86,5 +99,11 @@ struct SiteMemoryService: Sendable {
     ) async throws -> SiteMemoryRemovalResult {
         try await ServiceBrokerExtensionProtocol.shared.removeSiteMemories(
             host: host, profileID: profileID, accountID: accountID, includeSubdomains: includeSubdomains)
+    }
+
+    /// Purges a deleted browser profile's memory, state and partition row.
+    func removeProfileMemories(profileID: String) async throws -> SiteMemoryRemovalResult {
+        try await ServiceBrokerExtensionProtocol.shared.removeProfileMemories(
+            profileID: profileID, accountID: accountID)
     }
 }

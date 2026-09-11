@@ -73,6 +73,11 @@ enum PhiSpacePreviewError: Error, Equatable {
     case retired
     /// 页预算用尽，账户视图不完整。**不返回部分结果**。
     case truncated
+    /// §4.5 的期限到了（`PhiSyncEngine.previewDeadlineMs`）。**期限必须在轮体里判**：
+    /// 向导那一侧取消不掉这一轮（`serialized(_:)` 把它放进一个非结构化 `Task {}`），
+    /// 所以只在向导里赛跑一个 `Task.sleep` 只能改变「报什么」，改变不了「什么时候
+    /// 报」——分页拉取会一直跑下去，还继续占着 round 队列。
+    case timedOut
     /// `PhiSyncLog.describe` 之后的元数据字符串（R12：不含任何载荷）。
     case transport(String)
 }
@@ -373,6 +378,17 @@ actor PhiSyncEngine {
         return box.result ?? .failure(.retired)
     }
 
+    /// §4.5 的期限，**判在轮体里**（`runPreview` 的分页循环），不是只判在向导里。
+    ///
+    /// 向导那一侧的赛跑管不住这一轮：`serialized(_:)` 把轮体放进一个**非结构化**
+    /// `Task {}`，它既不继承取消，`await task.value`（非 throwing Task）也不会因为
+    /// 调用方被取消而提前返回。所以没有这个预算，一次抖动的网络会让预览按
+    /// 「64 页 × URLSession 每请求 60 s」跑下去，并且一直占着 round 队列，把设置
+    /// 同步一起拖住。向导侧仍然有自己的硬期限（见
+    /// `PairingWizardViewModel.loadAccountSpaces`），两者取值相同：那一条保证**界面**
+    /// 不卡，这一条保证**工作**真的停下来。
+    static let previewDeadlineMs: Int64 = 45_000
+
     /// The gate edge itself. Runs as a queued round; never call it directly.
     private func applySpaceGate(_ enabled: Bool) {
         guard enabled != spaceSectionEnabled else { return }
@@ -602,6 +618,14 @@ actor PhiSyncEngine {
         var more = true
         do {
             while more, pages < Self.maxPullPages {
+                // §4.5 的期限，判在**发下一页之前**。这是唯一能真正停下这次预览的地方
+                // （见 `previewDeadlineMs`）；判在页边界上，所以最坏还要等当前这一页的
+                // `URLSession` 超时，但分页不会再往下走，round 队列也随之让开。
+                guard now() - startedAt < Self.previewDeadlineMs else {
+                    AppLogWarn("[phi-sync] space preview: pages=\(pages) error=deadline")
+                    box.result = .failure(.timedOut)
+                    return
+                }
                 let response = try await client.getUpdates(marker: marker, storeBirthday: storedBirthday)
                 guard !isStopped else { box.result = .failure(.retired); return }
                 marker = response.newMarker

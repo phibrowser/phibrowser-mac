@@ -20,6 +20,15 @@ final class PhiSyncEngineSpaceTests: XCTestCase {
     /// instead of sleeping. `now:` is already an init parameter.
     final class Clock {
         var nowMs: Int64 = 1_700_000_000_000
+        /// 每读一次就推进这么多毫秒（默认 0 = 冻结，与之前逐字同义）。只有预览期限那条
+        /// 用例需要它：预览的预算判在页边界上，让时钟随每次读推进是表达「网络很慢」最
+        /// 省事、也最确定的办法。
+        var advancePerRead: Int64 = 0
+
+        func read() -> Int64 {
+            defer { nowMs += advancePerRead }
+            return nowMs
+        }
     }
 
     private var defaults: UserDefaults!
@@ -117,7 +126,7 @@ final class PhiSyncEngineSpaceTests: XCTestCase {
                       defaults: defaults, deviceKeyId: "devA",
                       settings: [],
                       spaceAccess: access, spaceStore: store,
-                      now: { clock.nowMs })
+                      now: { clock.read() })
     }
 
     /// Space-tagged commit entries only. The settings entity rides the same
@@ -2055,6 +2064,30 @@ final class PhiSyncEngineSpaceTests: XCTestCase {
         _ = await pull.value
         _ = await preview.value
         XCTAssertGreaterThan(client.getUpdatesCalls.count, 1)
+    }
+
+    /// §4.5 的期限判在**轮体里**，不是只判在向导里。向导那一侧取消不掉这一轮
+    /// （`serialized(_:)` 把它放进一个非结构化 `Task {}`），所以没有这条守卫，一次抖动
+    /// 的网络会让预览按「64 页 × 每请求 60 s」一直跑下去，并且一直占着 round 队列。
+    func testThePreviewStopsPagingOnceItsOwnDeadlineHasPassed() async throws {
+        let access = FakePhiSpaceAccess()
+        let store = MemorySpaceStore()
+        store.table = makeSpaceTable(access: access)
+        let client = FakePhiSyncClient()
+        client.pageBudgetExhaustsAfter = 1_000     // 永远 changesRemaining == true
+        client.seed(tagHash: spaceHash("sync-1"),
+                    ciphertext: try ciphertext(spaceEntity("sync-1")), version: 3)
+        let clock = Clock()
+        clock.advancePerRead = 20_000              // 每读一次推进 20 s
+        let engine = makeEngine(access: access, store: store, client: client, clock: clock)
+
+        let result = await engine.previewAccountSpaces()
+        guard case .failure(let error) = result else { return XCTFail("expected failure") }
+        XCTAssertEqual(error, .timedOut, "`.truncated` 是页预算用尽，期限是另一回事")
+        // 45 s / 20 s ⇒ 两页之后就超了；断言留一页余量，免得多一次 `now()` 读取就红。
+        XCTAssertGreaterThan(client.getUpdatesCalls.count, 0)
+        XCTAssertLessThanOrEqual(client.getUpdatesCalls.count, 3,
+                                 "期限必须远在 64 页预算之前把分页停下来")
     }
 
     /// 13. 页预算用尽 ⇒ `.truncated`，**没有部分结果**。

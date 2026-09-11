@@ -163,6 +163,46 @@ final class KeyLayerViewModelTests: XCTestCase {
         XCTAssertFalse(controller.needsPairing)
     }
 
+    /// §5.1 的幂等，`.createLocal` 这一支。
+    ///
+    /// 向导的原地重试是常态：Space 侧失败停在 `.error(_, .backToSpaces)`，Retry 回到
+    /// 第 2 步，下一次 Finish **重放同一份冻结的** `profileDecisions`。
+    /// `createLocalProfileAndAdopt` 自己的重入判据只覆盖「profile 建好了但认领失败」
+    /// （`reusablePendingProfile(forUuid:)`），而那一项在第一次认领**成功**之后就被清
+    /// 成了 nil。少了决定层的这条判据，重放会走 `uniqueDisplayName` 建出第二个
+    /// "Home (2)"——映射表仍然正确，但那个空 profile 是永久且用户可见的。
+    func testReplayingACreateLocalDecisionDoesNotCreateASecondProfile() async throws {
+        let api = AccountKeyManagerTests.FakeAPI()
+        let provider = AccountKeyManagerTests.FakeDeviceKeyProvider()
+        let mgr = AccountKeyManager(api: api, deviceKeyProvider: provider)
+        _ = try await mgr.bootstrap()
+        let creator = ProfileAutoCreateTests.FakeProfileCreator()
+        let pkm = ProfileKeyManager(api: api, keyManager: mgr,
+                                    mappingStore: ProfileKeyManagerTests.MemoryMappingStore())
+        let controller = SyncKeyController(
+            manager: mgr,
+            approvals: DeviceApprovalService(api: api, keyManager: mgr, deviceKeyProvider: provider),
+            profileKeys: pkm,
+            localProfilesProvider: { creator.userAssignableProfileIds },
+            notifyChromium: {}, profileCreator: creator)
+        api.profileEnvelopes["uuid-remote"] = try ProfileKeyManager.sealProfilePayload(
+            key: Data(count: 32), name: "Home", ark: try XCTUnwrap(mgr.currentARK))
+        let vm = KeyLayerViewModel(manager: mgr)
+        let decisions: [PairingDecision] = [.createLocal(remoteUuid: "uuid-remote",
+                                                         displayName: "Home")]
+
+        let firstApply = await vm.applyPairingDecisions(decisions, controller: controller)
+        XCTAssertTrue(firstApply)
+        XCTAssertEqual(creator.createCalls, ["Home"])
+        let created = try XCTUnwrap(controller.localProfileId(forGlobalUuid: "uuid-remote"))
+
+        // Retry 重放同一份决定。
+        let replay = await vm.applyPairingDecisions(decisions, controller: controller)
+        XCTAssertTrue(replay)
+        XCTAssertEqual(creator.createCalls, ["Home"], "重放不许再建一个 “Home (2)”")
+        XCTAssertEqual(controller.localProfileId(forGlobalUuid: "uuid-remote"), created)
+    }
+
     // MARK: - The pairing load is bounded, cancellable and replaceable (task 20)
 
     /// A `KeyEnvelopeAPI` whose profile LISTING never comes back on its own.

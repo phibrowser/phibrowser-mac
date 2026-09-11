@@ -255,4 +255,55 @@ final class SyncKeyControllerTests: XCTestCase {
         XCTAssertFalse(c.needsPairing)
         XCTAssertEqual(pings, 2, "dropping a populated cache must ping so the fork re-pulls")
     }
+
+    /// T17 run 4 (2026-09-11): the login unlock and the `$profiles` sink each
+    /// drove a pass, the two interleaved at their awaits, and BOTH registered
+    /// "Default" -- two account profiles named "Your Phi", one of them later
+    /// auto-created back as "Your Phi (2)". Passes are single-flight now: a
+    /// caller that arrives mid-pass gets exactly one follow-up pass, never a
+    /// concurrent one.
+    func testConcurrentPassesRegisterALocalOnce() async throws {
+        let api = FakeAPI()
+        let provider = FakeDeviceKeyProvider()
+        _ = try await AccountKeyManager(api: api, deviceKeyProvider: provider).bootstrap()
+        let store = MemoryMappingStore()
+        let (c, mgr) = makeController(api: api, provider: provider,
+                                      localsProvider: { [(profileId: "Default", displayName: "Your Phi")] },
+                                      store: store)
+        _ = try await mgr.unlockAtStartup()
+        // Suspend inside the registration so the second pass can start before
+        // the first has written its mapping -- the exact interleaving seen live.
+        api.beforePutProfileKey = { await Task.yield(); await Task.yield() }
+
+        async let first: Void = c.resolveMappings()
+        async let second: Void = c.resolveMappings()
+        _ = await (first, second)
+
+        XCTAssertEqual(api.profileEnvelopes.count, 1, "one local profile, one account profile")
+        XCTAssertEqual(c.resolved.count, 1)
+        XCTAssertEqual(store.globalUuid(forProfileId: "Default"), api.profileEnvelopes.keys.first)
+        XCTAssertFalse(c.needsPairing)
+    }
+
+    /// The coalescing must not swallow a caller's own state change: a pass that
+    /// starts while another is running re-reads the locals after the first
+    /// finishes, so a profile that appeared mid-pass is registered by the
+    /// follow-up pass rather than waiting for the next trigger.
+    func testACallerArrivingMidPassGetsAFollowUpPass() async throws {
+        let api = FakeAPI()
+        let provider = FakeDeviceKeyProvider()
+        _ = try await AccountKeyManager(api: api, deviceKeyProvider: provider).bootstrap()
+        var locals = [(profileId: "Default", displayName: "Your Phi")]
+        let (c, mgr) = makeController(api: api, provider: provider, localsProvider: { locals })
+        _ = try await mgr.unlockAtStartup()
+        api.beforePutProfileKey = { await Task.yield(); await Task.yield() }
+
+        async let first: Void = c.resolveMappings()
+        locals.append((profileId: "Profile 1", displayName: "Work"))
+        async let second: Void = c.resolveMappings()
+        _ = await (first, second)
+
+        XCTAssertEqual(c.resolved.count, 2, "the follow-up pass saw the profile added mid-pass")
+        XCTAssertEqual(api.profileEnvelopes.count, 2)
+    }
 }

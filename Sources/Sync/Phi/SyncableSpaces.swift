@@ -223,6 +223,36 @@ extension SyncableSpaces {
             guard !cursor.hidden, cursor.deletedAtMs == nil, cursor.refusedAtMs == nil else {
                 return nil
             }
+            // A PARKED uuid must not be published over. `pendingApply != nil`
+            // means the account holds an entity for this uuid that this device
+            // has not landed yet (§6.2's fallback B, a landing failure, a mapping
+            // write failure, a rebind that did not take effect). All four leave
+            // `reconciled == nil` on a first landing, so this Space would be
+            // snapshotted WITH NO BASELINE and every field -- name, icon, colour,
+            // theme, opacity and `profile_uuid` -- stamped `now`, then committed
+            // at the parked cursor's harvested `entityId` / `version`. That is
+            // the exact inversion of D7's promise ("the account's values replace
+            // what's on this Mac"): the account's Space would be replaced
+            // account-wide by this Mac's values, at a timestamp that also wins
+            // every peer's LWW.
+            //
+            // §5.6 already says "no baseline until it landed"; this is the same
+            // rule applied to the PUBLISH side, and the same reasoning as guard
+            // 3's `unreadableTagHashes` in `spaceCommitEntries` -- a row this
+            // build cannot yet reconcile is a row it must not overwrite.
+            //
+            // Pre-D6 this was structurally impossible: the cursor was keyed by
+            // the publisher's LOCAL spaceId, so a parked uuid could never appear
+            // in a snapshot that iterates local rows. D6's mapping layer is what
+            // lets a mapping exist before the entity has ever landed.
+            //
+            // The cost is that a permanently parked Space stops publishing local
+            // edits until its incoming entity lands. That is the correct
+            // direction, and §11's `parked` counter (steady state 0) is where it
+            // shows up. The held re-park path is unaffected: it requires
+            // `pendingApply == nil` to re-park, and a cursor that lands clears
+            // `pendingApply`.
+            guard cursor.pendingApply == nil else { return nil }
             return (space, uuid)
         }
         let baselines = eligible.reduce(into: [String: Phi_PhiSpaceEntity]()) { out, item in

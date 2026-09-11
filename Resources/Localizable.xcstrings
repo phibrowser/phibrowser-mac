@@ -50915,6 +50915,28 @@
         }
       }
     },
+    "settings.advanced.unloadedTabIcons.description" : {
+      "comment" : "Advanced settings - Explains icon dimming for tabs whose pages are unloaded from memory",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dim tab icons when their pages are unloaded from memory."
+          }
+        }
+      }
+    },
+    "settings.advanced.unloadedTabIcons.dimToggle" : {
+      "comment" : "Advanced settings - Toggle title for dimming icons of tabs whose pages are unloaded from memory",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dim unloaded tab icons"
+          }
+        }
+      }
+    },
     "settings.ai.browserMemory.manageButtonTitle" : {
       "comment" : "AI settings - Row title to open browser memory management",
       "extractionState" : "extracted_with_value",

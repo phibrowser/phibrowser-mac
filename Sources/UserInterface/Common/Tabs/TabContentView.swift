@@ -4,6 +4,7 @@
 // found in the LICENSE file.
 
 import SwiftUI
+import Combine
 import Lottie
 
 // MARK: - Atomic Components
@@ -16,8 +17,20 @@ enum TabCornerBadgeMetrics {
 enum TabFaviconPresentation {
     static let reclaimedOpacity: CGFloat = 0.3
 
-    static func opacity(isDiscarded: Bool, isUnloaded: Bool) -> CGFloat {
-        isDiscarded || isUnloaded ? reclaimedOpacity : 1
+    static var dimmingEnabledPublisher: AnyPublisher<Bool, Never> {
+        NotificationCenter.default.publisher(for: UserDefaults.didChangeNotification)
+            .map { _ in PhiPreferences.GeneralSettings.dimUnloadedTabIcons.loadValue() }
+            .prepend(PhiPreferences.GeneralSettings.dimUnloadedTabIcons.loadValue())
+            .removeDuplicates()
+            .eraseToAnyPublisher()
+    }
+
+    static func opacity(
+        isDiscarded: Bool,
+        isUnloaded: Bool,
+        dimmingEnabled: Bool = PhiPreferences.GeneralSettings.dimUnloadedTabIcons.loadValue()
+    ) -> CGFloat {
+        dimmingEnabled && (isDiscarded || isUnloaded) ? reclaimedOpacity : 1
     }
 
     static func showsOpenIndicator(isOpened: Bool, isActive: Bool) -> Bool {
@@ -308,6 +321,8 @@ private struct TabTitleShimmerMask: View {
 
 struct UnifiedTabFaviconView: View {
     let viewModel: TabViewModel
+    @AppStorage(PhiPreferences.GeneralSettings.dimUnloadedTabIcons.rawValue)
+    private var dimUnloadedTabIcons = PhiPreferences.GeneralSettings.dimUnloadedTabIcons.defaultValue
     @ObservedObject private var statusModel: TabStatusModel
     @Environment(\.phiAppearance) private var phiAppearance
 
@@ -338,7 +353,8 @@ struct UnifiedTabFaviconView: View {
         .clipShape(RoundedRectangle(cornerRadius: Self.faviconCornerRadius, style: .continuous))
         .opacity(TabFaviconPresentation.opacity(
             isDiscarded: statusModel.isDiscarded,
-            isUnloaded: statusModel.isUnloaded
+            isUnloaded: statusModel.isUnloaded,
+            dimmingEnabled: dimUnloadedTabIcons
         ))
         .overlay(alignment: .topTrailing) {
             if viewModel.isCapturingMedia {

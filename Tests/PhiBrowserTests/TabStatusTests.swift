@@ -94,19 +94,23 @@ final class TabStatusTests: XCTestCase {
     func testDiscardedAndUnloadedFaviconsUseThirtyPercentOpacity() {
         XCTAssertEqual(TabFaviconPresentation.opacity(
             isDiscarded: false,
-            isUnloaded: false
+            isUnloaded: false,
+            dimmingEnabled: true
         ), 1)
         XCTAssertEqual(TabFaviconPresentation.opacity(
             isDiscarded: true,
-            isUnloaded: false
+            isUnloaded: false,
+            dimmingEnabled: true
         ), 0.3)
         XCTAssertEqual(TabFaviconPresentation.opacity(
             isDiscarded: false,
-            isUnloaded: true
+            isUnloaded: true,
+            dimmingEnabled: true
         ), 0.3)
         XCTAssertEqual(TabFaviconPresentation.opacity(
             isDiscarded: true,
-            isUnloaded: true
+            isUnloaded: true,
+            dimmingEnabled: true
         ), 0.3)
     }
 

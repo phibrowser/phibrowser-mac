@@ -975,11 +975,16 @@ class SidebarSplitPairCellView: SidebarCellView, TabPreviewInteractionCancelling
         // mapping changes via `reresolvePairOrderIfNeeded` without re-creating
         // these subscriptions. Same pattern as the title binding above.
         for tab in [pair.leftTab, pair.rightTab] {
-            Publishers.CombineLatest(tab.$isDiscarded, tab.$isUnloaded)
-                .map { isDiscarded, isUnloaded in
+            Publishers.CombineLatest3(
+                tab.$isDiscarded,
+                tab.$isUnloaded,
+                TabFaviconPresentation.dimmingEnabledPublisher
+            )
+                .map { isDiscarded, isUnloaded, dimmingEnabled in
                     TabFaviconPresentation.opacity(
                         isDiscarded: isDiscarded,
-                        isUnloaded: isUnloaded
+                        isUnloaded: isUnloaded,
+                        dimmingEnabled: dimmingEnabled
                     )
                 }
                 .removeDuplicates()

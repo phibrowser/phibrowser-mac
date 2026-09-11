@@ -851,6 +851,13 @@ final class TabItemView: NSView {
 
     func configure(with data: TabRenderData, browserState: BrowserState? = nil) {
         cancellables.removeAll()
+        TabFaviconPresentation.dimmingEnabledPublisher
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in
+                self?.layoutContent()
+            }
+            .store(in: &cancellables)
+
         currentTabId = data.id
         isActive = data.isActive
         isMultiSelected = data.isMultiSelected

@@ -16,6 +16,9 @@ struct AdvancedSettingsView: View {
     @AppStorage(PhiPreferences.GeneralSettings.showOpenTabIndicators.rawValue)
     private var showOpenTabIndicators = PhiPreferences.GeneralSettings.showOpenTabIndicators.defaultValue
 
+    @AppStorage(PhiPreferences.GeneralSettings.dimUnloadedTabIcons.rawValue)
+    private var dimUnloadedTabIcons = PhiPreferences.GeneralSettings.dimUnloadedTabIcons.defaultValue
+
     @AppStorage(PhiPreferences.GeneralSettings.shortHighlightLinksEnabled.rawValue)
     private var shortHighlightLinksEnabled: Bool = PhiPreferences.GeneralSettings.shortHighlightLinksEnabled.defaultValue
 
@@ -95,6 +98,28 @@ struct AdvancedSettingsView: View {
                 }
                 Spacer(minLength: 12)
                 Toggle("", isOn: $showOpenTabIndicators)
+                    .labelsHidden()
+                    .toggleStyle(.switch)
+                    .controlSize(.mini)
+                    .themedTint(.themeColor)
+            }
+            .padding(.vertical, 12)
+            .frame(maxWidth: .infinity, alignment: .leading)
+
+            Divider()
+
+            HStack(alignment: .center, spacing: 12) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(NSLocalizedString("settings.advanced.unloadedTabIcons.dimToggle", value: "Dim unloaded tab icons", comment: "Advanced settings - Toggle title for dimming icons of tabs whose pages are unloaded from memory"))
+                        .font(.system(size: 13))
+                        .themedForeground(.textPrimary)
+                    Text(NSLocalizedString("settings.advanced.unloadedTabIcons.description", value: "Dim tab icons when their pages are unloaded from memory.", comment: "Advanced settings - Explains icon dimming for tabs whose pages are unloaded from memory"))
+                        .font(.system(size: 11))
+                        .themedForeground(.textTertiary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Spacer(minLength: 12)
+                Toggle("", isOn: $dimUnloadedTabIcons)
                     .labelsHidden()
                     .toggleStyle(.switch)
                     .controlSize(.mini)

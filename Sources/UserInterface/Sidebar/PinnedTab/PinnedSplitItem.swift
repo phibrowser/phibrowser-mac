@@ -270,11 +270,16 @@ class PinnedSplitItem: NSCollectionViewItem, NSMenuDelegate {
     }
 
     private func subscribeFaviconUpdates(for tab: Tab) {
-        Publishers.CombineLatest(tab.$isDiscarded, tab.$isUnloaded)
-            .map { isDiscarded, isUnloaded in
+        Publishers.CombineLatest3(
+            tab.$isDiscarded,
+            tab.$isUnloaded,
+            TabFaviconPresentation.dimmingEnabledPublisher
+        )
+            .map { isDiscarded, isUnloaded, dimmingEnabled in
                 TabFaviconPresentation.opacity(
                     isDiscarded: isDiscarded,
-                    isUnloaded: isUnloaded
+                    isUnloaded: isUnloaded,
+                    dimmingEnabled: dimmingEnabled
                 )
             }
             .removeDuplicates()

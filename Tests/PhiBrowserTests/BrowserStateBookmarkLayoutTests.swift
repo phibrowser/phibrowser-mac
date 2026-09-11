@@ -55,6 +55,15 @@ final class BrowserStateBookmarkLayoutTests: XCTestCase {
     }
 
     func testSidebarSplitPairTracksEachPanesMemoryReclaimedFaviconOpacity() {
+        let defaults = UserDefaults.standard
+        let key = PhiPreferences.GeneralSettings.dimUnloadedTabIcons.rawValue
+        let originalValue = defaults.object(forKey: key)
+        defaults.removeObject(forKey: key)
+        defer {
+            defaults.set(originalValue, forKey: key)
+            NotificationCenter.default.post(name: UserDefaults.didChangeNotification, object: defaults)
+        }
+
         let leftWrapper = BookmarkLayoutTestWebContentWrapper(urlString: "https://left.example")
         leftWrapper.isUnloaded = true
         let rightWrapper = BookmarkLayoutTestWebContentWrapper(urlString: "https://right.example")
@@ -83,9 +92,20 @@ final class BrowserStateBookmarkLayoutTests: XCTestCase {
         XCTAssertEqual(cell.faviconOpacity(isLeft: true), 0.3)
         XCTAssertEqual(cell.faviconOpacity(isLeft: false), 1)
 
+        defaults.set(false, forKey: key)
+        NotificationCenter.default.post(name: UserDefaults.didChangeNotification, object: defaults)
+        XCTAssertTrue(waitUntil {
+            cell.faviconOpacity(isLeft: true) == 1 && cell.faviconOpacity(isLeft: false) == 1
+        })
+
         leftWrapper.isUnloaded = false
         rightWrapper.isDiscarded = true
+        XCTAssertTrue(waitUntil { !leftTab.isUnloaded && rightTab.isDiscarded })
+        XCTAssertEqual(cell.faviconOpacity(isLeft: true), 1)
+        XCTAssertEqual(cell.faviconOpacity(isLeft: false), 1)
 
+        defaults.set(true, forKey: key)
+        NotificationCenter.default.post(name: UserDefaults.didChangeNotification, object: defaults)
         XCTAssertTrue(waitUntil {
             cell.faviconOpacity(isLeft: true) == 1 &&
                 cell.faviconOpacity(isLeft: false) == 0.3

@@ -63,6 +63,15 @@ final class TabItemViewSplitLayoutTests: XCTestCase {
     }
 
     func test_openPinnedSplitPlacesIndicatorBelowCenteredFaviconPair() throws {
+        let defaults = UserDefaults.standard
+        let key = PhiPreferences.GeneralSettings.dimUnloadedTabIcons.rawValue
+        let originalValue = defaults.object(forKey: key)
+        defaults.removeObject(forKey: key)
+        defer {
+            defaults.set(originalValue, forKey: key)
+            NotificationCenter.default.post(name: UserDefaults.didChangeNotification, object: defaults)
+        }
+
         let primaryWrapper = BookmarkLayoutTestWebContentWrapper(
             urlString: "https://primary.example"
         )
@@ -123,6 +132,22 @@ final class TabItemViewSplitLayoutTests: XCTestCase {
                 - TabOpenIndicatorMetrics.comfortablePinnedSpacing
                 - TabOpenIndicatorMetrics.diameter
         XCTAssertEqual(indicator.frame.minY, expectedIndicatorY)
+
+        defaults.set(false, forKey: key)
+        NotificationCenter.default.post(name: UserDefaults.didChangeNotification, object: defaults)
+        let undimmed = XCTNSPredicateExpectation(
+            predicate: NSPredicate { _, _ in indicator.alphaValue == 1 },
+            object: nil
+        )
+        wait(for: [undimmed], timeout: 2)
+
+        defaults.set(true, forKey: key)
+        NotificationCenter.default.post(name: UserDefaults.didChangeNotification, object: defaults)
+        let dimmed = XCTNSPredicateExpectation(
+            predicate: NSPredicate { _, _ in indicator.alphaValue == TabFaviconPresentation.reclaimedOpacity },
+            object: nil
+        )
+        wait(for: [dimmed], timeout: 2)
     }
 
     func test_mergedSplitCellAboveSplitThresholdRendersPerPaneLayout() {

@@ -42,6 +42,14 @@ import SwiftUI
     /// subscription closes that gap (and the mirror case: a profile created
     /// mid-session, which previously also needed a restart to register). Bound
     /// to the controller's lifetime; torn down in `invalidateSyncKeyController`.
+    ///
+    /// The subscription alone is not enough: `ProfileManager` has no load of its
+    /// own — its cache fills only when something calls `refresh()`, and on the
+    /// sync path nothing did. A launch where the user enables sync without ever
+    /// opening a profile-listing pane kept the cache empty for the whole session,
+    /// so the resolver saw zero locals, registered nothing, never notified
+    /// Chromium, and sync-internals stayed Disabled (T17, 2026-09-11). The
+    /// provider handed to the controller therefore refreshes before every read.
     private var profilesCancellable: AnyCancellable?
 
     // MARK: - Phi settings sync (M3-1)
@@ -176,7 +184,12 @@ import SwiftUI
             manager: stack.manager, approvals: stack.approvals, profileKeys: profileKeys,
             spaceKeys: spaceKeys,
             localProfilesProvider: {
-                ProfileManager.shared.userAssignableProfiles.map { ($0.profileId, $0.displayName) }
+                // Read the bridge, not the cache: see `profilesCancellable`. `refresh()` is a
+                // synchronous in-memory read on the Chromium side and a no-op before the
+                // bridge is up, and the publisher above dedups by id, so a refresh from
+                // inside a resolve cannot re-trigger one.
+                ProfileManager.shared.refresh()
+                return ProfileManager.shared.userAssignableProfiles.map { ($0.profileId, $0.displayName) }
             },
             notifyChromium: {
                 ChromiumLauncher.sharedInstance().bridge?.notifyPhiSyncKeysChanged?()

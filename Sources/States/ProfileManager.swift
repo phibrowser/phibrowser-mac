@@ -332,9 +332,14 @@ final class ProfileManager: ObservableObject {
 /// and reaches the bridge only through these three members.
 extension ProfileManager: LocalProfileCreating {
     /// Never the whole `profiles` list: the agent fallback profile is in that one
-    /// and must never be handed to the account.
+    /// and must never be handed to the account. Refreshed on every read for the
+    /// same reason as the key layer's `localProfilesProvider`: the cache fills
+    /// only through `refresh()`, and the twin search in §3.6 must not run against
+    /// a list that no UI has populated yet, or it creates a duplicate of a profile
+    /// this Mac already has.
     var userAssignableProfileIds: [(profileId: String, displayName: String)] {
-        userAssignableProfiles.map { ($0.profileId, $0.displayName) }
+        refresh()
+        return userAssignableProfiles.map { ($0.profileId, $0.displayName) }
     }
 
     /// The key layer only ever asks the unqualified question; `excluding:` is the

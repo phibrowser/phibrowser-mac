@@ -131,8 +131,9 @@ protocol PhiSpaceLocalAccess: AnyObject {
     func applyThemeState(spaceId: String, themeId: String?,
                          opacityLight: Double?, opacityDark: Double?) async throws
     func applyOrder(_ orderedSpaceIds: [String]) async throws
+    /// 远端软删（§9.2）。**单向**：D6 删掉 D2 的「加入账户同步」之后，`unhide` 没有
+    /// 任何可能的调用方，一条行一旦 hidden 就只会走 30 天窗口后的清理。
     func hide(spaceId: String) async throws
-    func unhide(spaceId: String) async throws
     func purge(spaceId: String) async throws
 }
 
@@ -299,10 +300,6 @@ final class AccountPhiSpaceAccess: PhiSpaceLocalAccess {
 
     func hide(spaceId: String) async throws {
         SpaceManager.shared.applyRemoteHidden(spaceId: spaceId, hidden: true)
-    }
-
-    func unhide(spaceId: String) async throws {
-        SpaceManager.shared.applyRemoteHidden(spaceId: spaceId, hidden: false)
     }
 
     func purge(spaceId: String) async throws {

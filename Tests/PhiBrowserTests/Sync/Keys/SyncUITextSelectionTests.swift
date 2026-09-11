@@ -15,7 +15,6 @@ import XCTest
 final class SyncUITextSelectionTests: XCTestCase {
     private static let scannedDirectories = [
         "Sources/Sync/Keys/UI",
-        "Sources/Sync/Phi/UI",
         "Sources/UserInterface/Preferences/Devices",
     ]
 

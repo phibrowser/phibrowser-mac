@@ -188,7 +188,6 @@
 		54A200072FE1000000000007 /* PhiTimeMachineInstaller in Copy Time Machine Helpers */ = {isa = PBXBuildFile; fileRef = 54A200122FE1000000000012 /* PhiTimeMachineInstaller */; settings = {ATTRIBUTES = (CodeSignOnCopy, ); }; };
 		54A200082FE1000000000008 /* TimeMachineCatalogStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 54A100142FE0000000000014 /* TimeMachineCatalogStore.swift */; };
 		5539D6819C400743DEF61B8D /* SyncableSpaces.swift in Sources */ = {isa = PBXBuildFile; fileRef = 35C9DFC9858BD91409670173 /* SyncableSpaces.swift */; };
-		55B5D6051DF17222A76A124A /* PhiSpaceFirstSyncSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8C43003786A5CE404EFADE78 /* PhiSpaceFirstSyncSheet.swift */; };
 		5A423BD20CC3D90DAA1ACC1F /* DevicesSettingViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = EDF82DF0F474098FBD4C76D0 /* DevicesSettingViewController.swift */; };
 		5ACE00000000000000000005 /* SpacesSettingViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5ACE00000000000000000002 /* SpacesSettingViewController.swift */; };
 		5ACE00000000000000000006 /* SpacesSettingHostingViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5ACE00000000000000000003 /* SpacesSettingHostingViewController.swift */; };
@@ -804,7 +803,6 @@
 		897C09F02F6BEDA000E5CA9B /* IMChannelsSettingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IMChannelsSettingView.swift; sourceTree = "<group>"; };
 		897C09F12F6BEDA000E5CA9B /* IMChannelsSettingViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IMChannelsSettingViewController.swift; sourceTree = "<group>"; };
 		897C09F22F6BEDA000E5CA9B /* IMChannelsViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IMChannelsViewModel.swift; sourceTree = "<group>"; };
-		8C43003786A5CE404EFADE78 /* PhiSpaceFirstSyncSheet.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = PhiSpaceFirstSyncSheet.swift; sourceTree = "<group>"; };
 		8E0A10012FEA000000000001 /* OverlayToastModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OverlayToastModels.swift; sourceTree = "<group>"; };
 		8E0A10022FEA000000000001 /* OverlayToastCenter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OverlayToastCenter.swift; sourceTree = "<group>"; };
 		8E0A10032FEA000000000001 /* OverlayToastView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OverlayToastView.swift; sourceTree = "<group>"; };
@@ -1168,7 +1166,6 @@
 		2E6E71945C1A7791A082C067 /* UI */ = {
 			isa = PBXGroup;
 			children = (
-				8C43003786A5CE404EFADE78 /* PhiSpaceFirstSyncSheet.swift */,
 			);
 			name = UI;
 			path = UI;
@@ -3110,7 +3107,6 @@
 				2850A45D3A2F2C11AF0F8F3B /* PhiSpaceSyncState.swift in Sources */,
 				130D33EF1674ABCCC6614434 /* PhiSpaceLocalAccess.swift in Sources */,
 				B7AAEAE10DB72C8730D754F2 /* ProfilePairingGate.swift in Sources */,
-				55B5D6051DF17222A76A124A /* PhiSpaceFirstSyncSheet.swift in Sources */,
 				2E8585334902CCDAB2A5FC60 /* SelfRevokeStrings.swift in Sources */,
 				78BE8ECE731672FAB99F191D /* DevicesRemoveDeviceModel.swift in Sources */,
 				A8D093553F519F8E1E7A8233 /* AccountSpaceSyncMappingStore.swift in Sources */,

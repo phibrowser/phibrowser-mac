@@ -44,16 +44,6 @@ enum PhiSyncLog {
     }
 }
 
-/// D2 (§8): what a joining Mac decided about the Spaces that only exist on it.
-///
-/// A `String` raw enum on purpose — it is persisted verbatim as
-/// `PhiSpaceSyncTable.firstSyncDecision`, and it crosses a `Task` boundary as
-/// the payload of a queued round.
-enum PhiSpaceFirstSyncDecision: String {
-    case keepBoth
-    case accountWins
-}
-
 /// 配对向导第 2 步 Account 列的一行（R-D6-1）。**这是一次性的、只给 UI 看的东西，
 /// 不是同步状态**。
 struct PhiAccountSpaceSummary: Equatable, Sendable {
@@ -85,13 +75,6 @@ enum PhiSpacePreviewError: Error, Equatable {
     case truncated
     /// `PhiSyncLog.describe` 之后的元数据字符串（R12：不含任何载荷）。
     case transport(String)
-}
-
-extension Notification.Name {
-    /// Engine -> UI. The engine never raises an `NSAlert` inside a round: the
-    /// round queue is SHARED with settings sync, and parking it would stop that
-    /// too. userInfo: `localNames: [String]`, `accountCount: Int`.
-    static let phiSpaceFirstSyncNeeded = Notification.Name("phiSpaceFirstSyncNeeded")
 }
 
 /// One round of Phi settings sync: pull (GetUpdates -> decrypt -> field-level LWW merge ->
@@ -301,10 +284,8 @@ actor PhiSyncEngine {
         /// overwritten, which for `recordLocalDeletion` means the tombstone is
         /// never committed and the Space is later resurrected from a peer's
         /// entity. The queue is the only thing that makes the single writer real.
-        case firstSyncDecision(PhiSpaceFirstSyncDecision)
         case retentionSweep
         case recordLocalDeletion(String)
-        case joinAccountSync(String)
         /// 配对向导的只读账户预览（R-D6-1）。排同一条队列，所以它不可能与一轮设置
         /// 同步交错。
         case preview(PreviewBox)
@@ -419,9 +400,9 @@ actor PhiSyncEngine {
                 table.hasDrainedFullReplay = false
                 table.drainInProgress = true
                 // Deliberately untouched: reconciled / server / entityId / version / hidden /
-                // deletedAtMs / purgedAtMs / firstSyncDecision. The ACCOUNT did not change;
-                // clearing them would re-arm the wholesale adopt and silently drop local edits
-                // that were just stamped.
+                // deletedAtMs / purgedAtMs. The ACCOUNT did not change; clearing them would
+                // re-arm the wholesale adopt and silently drop local edits that were just
+                // stamped.
             }
         }
     }
@@ -430,52 +411,6 @@ actor PhiSyncEngine {
     /// (§5.4). Same shape as `handleLocalDefaultsChange()`.
     func handleLocalSpacesChange() async {
         await serialized(.localSpaceChange)
-    }
-
-    /// The user's answer to D2 (§8). Writes the decision, applies `accountWins`'s
-    /// fixed hidden set, and queues a round immediately so the parked entities
-    /// land.
-    ///
-    /// The whole body runs as ONE round intent (§5.3: "全部排进同一条 roundQueue").
-    /// Written straight, it reads the table, `await`s `currentSpaces()` and
-    /// `hide()`, then writes the table back -- and a round that runs inside
-    /// either suspension does its own read-modify-write of the same table, so the
-    /// decision (and every hidden bit with it) is clobbered by whichever finishes
-    /// last. The two suspensions are why this needs the queue and a purely
-    /// synchronous Space intent does not.
-    func submitFirstSyncDecision(_ decision: PhiSpaceFirstSyncDecision) async {
-        await serialized(.firstSyncDecision(decision))
-        await serialized(.pull)
-    }
-
-    /// The decision itself. Runs as a queued round; never call it directly.
-    private func applyFirstSyncDecision(_ decision: PhiSpaceFirstSyncDecision) async {
-        guard spaceStore != nil, let spaceAccess else { return }
-        var table = loadSpaceTable()
-        guard table.firstSyncDecision == nil else { return }
-        table.firstSyncDecision = decision.rawValue
-        if decision == .accountWins {
-            // A FIXED SET, not a mode: Spaces created after this answer sync
-            // normally. Data is never deleted -- M3-2 does not sync bookmarks, so
-            // this Mac holds the only copy and there is no recovery UI.
-            //
-            // The local-only set is computed BEFORE the first `hide()`, and the
-            // table is re-read afterwards, so a `hide` that suspends cannot
-            // strand a stale copy on top of what another writer did meanwhile.
-            let localOnly = await spaceAccess.currentSpaces().filter {
-                $0.spaceId != LocalStore.defaultSpaceId && table.cursors[$0.spaceId] == nil
-            }
-            for space in localOnly { try? await spaceAccess.hide(spaceId: space.spaceId) }
-            guard !isStopped else { return }
-            table = loadSpaceTable()
-            table.firstSyncDecision = decision.rawValue
-            for space in localOnly where table.cursors[space.spaceId] == nil {
-                var cursor = PhiSpaceCursor()
-                cursor.hidden = true
-                table.cursors[space.spaceId] = cursor
-            }
-        }
-        writeSpaceTable(table)
     }
 
     /// Delivered by `PhiSpaceSyncState.shared` and executed as a QUEUED ROUND --
@@ -497,18 +432,6 @@ actor PhiSyncEngine {
     /// Must be called from *outside* a round, like `setSpaceSyncEnabled`.
     func recordLocalDeletion(spaceId: String) async {
         await serialized(.recordLocalDeletion(spaceId))
-    }
-
-    /// §8.3's "join account sync". Queued for the same reason as the delete
-    /// above -- an in-flight round's write-back would take the `hidden` bit
-    /// straight back and the button would silently do nothing.
-    ///
-    /// The publish runs INSIDE the same round rather than as a second
-    /// `serialized(.push)`: the round is the only place that can see whether the
-    /// intent changed anything, and handing that answer back across the queue
-    /// would race a second `joinAccountSync` for another Space.
-    func joinAccountSync(spaceId: String) async {
-        await serialized(.joinAccountSync(spaceId))
     }
 
     func runRetentionSweep() async {
@@ -631,8 +554,6 @@ actor PhiSyncEngine {
             await push(retryOnConflict: true, allowInitialPull: true)
         case .spaceGate(let enabled):
             applySpaceGate(enabled)
-        case .firstSyncDecision(let decision):
-            await applyFirstSyncDecision(decision)
         case .retentionSweep:
             await applyRetentionSweep()
         case .recordLocalDeletion(let localSpaceId):
@@ -645,13 +566,6 @@ actor PhiSyncEngine {
                 runSpaceIntent { table in table.recordLocalDeletion(spaceId: uuid) }
             } else {
                 AppLogInfo("[phi-sync] a local Space delete has no account identity; nothing to tombstone")
-            }
-        case .joinAccountSync(let spaceId):
-            // It was never published, so this is an ordinary create -- no special
-            // path. Same work as a `.push` round, run here so the un-hide and the
-            // publish cannot be separated by another round.
-            if runSpaceIntent({ table in table.joinAccountSync(spaceId: spaceId) }) {
-                await push(retryOnConflict: true, allowInitialPull: true)
             }
         case .preview(let box):
             await runPreview(into: box)
@@ -786,16 +700,11 @@ actor PhiSyncEngine {
         guard spaceSectionEnabled, spaceStore != nil else { return }
         let table = loadSpaceTable()
         let held = table.cursors.values.filter { $0.heldProfileUuid != nil }.count
-        // `parked` deliberately excludes the D2 wait: those cursors are parked
-        // on purpose until the user answers, while §11 says the steady-state
-        // value of this counter is 0.
-        let parked = table.firstSyncDecision == nil
-            ? 0
-            : table.cursors.values.filter { $0.pendingApply != nil }.count
+        let parked = table.cursors.values.filter { $0.pendingApply != nil }.count
         // §9.3：`mapped` 是映射表的行数（不含默认 Space 的隐式常量）；`unmapped` 是
         // 「本机同步合格、但还没有映射」的条数。**稳态应为 0**——长期非零 = 懒铸造
         // 一直失败，这是唯一能把「这台 Mac 的某个 Space 从来没上过账户」暴露出来的
-        // 信号（D2 时代那个设置段落没了，这就是它的替代物：一个计数器，不是一个界面）。
+        // 信号（D6 之前那个设置段落没了，这就是它的替代物：一个计数器，不是一个界面）。
         // R12：两个都是计数，不是 uuid 列表。
         // `filter` 的闭包里不能 `await`，所以映射表一次读完再在本地比。
         var mapped = 0
@@ -1042,10 +951,6 @@ actor PhiSyncEngine {
         }
 
         var maySettingsPublish = true
-        // D2 (§8): the Space half of this round stands down until the user
-        // answers. NOT a `return` — the trailing settings push is below, and a
-        // Mac that leaves the sheet open must keep converging settings.
-        var spaceQuestionPending = false
         switch view {
         case .usable(let remote):
             tombstoneRounds = 0
@@ -1131,64 +1036,8 @@ actor PhiSyncEngine {
             //     was populated and then lost.
             var spaceTable = loadSpaceTable()
             spaceCounters.pulled += batch.decoded.count + batch.tombstones.count
-            if spaceTable.firstSyncDecision == nil, spaceTable.hasDrainedFullReplay {
-                let localOnly = (await spaceAccess?.currentSpaces() ?? [])
-                    .filter { $0.spaceId != LocalStore.defaultSpaceId
-                              && spaceTable.cursors[$0.spaceId] == nil }
-                // Only entities this device could DECRYPT count: an unreadable one
-                // is already refused by guard 3, and every local-only uuid is a
-                // random UUID that cannot collide with anything in the account.
-                let accountCount = (batch.decoded.map(\.uuid)
-                                    + spaceTable.cursors.filter { $0.value.entityId != nil }.map(\.key))
-                    .filter { $0 != LocalStore.defaultSpaceId }
-                    .reduce(into: Set<String>()) { $0.insert($1) }.count
-                if localOnly.isEmpty || accountCount == 0 {
-                    spaceTable.firstSyncDecision = PhiSpaceFirstSyncDecision.keepBoth.rawValue
-                } else {
-                    // Park every decrypted entity in its own cursor and let the
-                    // marker advance: nothing is lost and nothing has to be
-                    // replayed once the user answers.
-                    for item in batch.decoded {
-                        var cursor = spaceTable.cursors[item.uuid] ?? PhiSpaceCursor()
-                        cursor.pendingApply = try? item.entity.serializedData()
-                        if !item.entityId.isEmpty { cursor.entityId = item.entityId }
-                        cursor.version = max(cursor.version, item.version)
-                        spaceTable.cursors[item.uuid] = cursor
-                    }
-                    // Tombstones are parked for exactly the same reason, and the
-                    // §9.2 import-lock note is the same hazard: the shared marker
-                    // has already moved past this page, so a tombstone dropped
-                    // here is never delivered again. The Space would then land
-                    // from its own parked entity once the user answers and stay
-                    // alive on this Mac forever, after every other device had
-                    // deleted it. `applySpaceTombstones` replays every
-                    // `pendingTombstone` cursor alongside the next round's
-                    // arrivals; nothing here hides anything, because hiding a
-                    // Space is not part of the question the user was asked.
-                    // Publishing cannot race the bumped version: `pushSpaces`
-                    // returns on `firstSyncDecision == nil`.
-                    for item in batch.tombstones where item.uuid != LocalStore.defaultSpaceId {
-                        var cursor = spaceTable.cursors[item.uuid] ?? PhiSpaceCursor()
-                        guard cursor.deletedAtMs == nil else { continue }
-                        cursor.pendingTombstone = true
-                        if !item.entityId.isEmpty { cursor.entityId = item.entityId }
-                        cursor.version = max(cursor.version, item.version)
-                        spaceTable.cursors[item.uuid] = cursor
-                    }
-                    let names = localOnly.map(\.name)
-                    NotificationCenter.default.post(
-                        name: .phiSpaceFirstSyncNeeded, object: nil,
-                        userInfo: ["localNames": names, "accountCount": accountCount])
-                    // NOT `return true`: the Space section stands down, the
-                    // settings half of this round carries on exactly as it does
-                    // today (see the note above this block).
-                    spaceQuestionPending = true
-                }
-            }
-            if !spaceQuestionPending {
-                await applySpaces(batch, table: &spaceTable)
-                await applySpaceTombstones(batch, table: &spaceTable)
-            }
+            await applySpaces(batch, table: &spaceTable)
+            await applySpaceTombstones(batch, table: &spaceTable)
             writeSpaceTable(spaceTable)
         }
         // The gated-off round's `markerMovedWhileGateShut` needs no write here: it was
@@ -1197,19 +1046,19 @@ actor PhiSyncEngine {
         // Publish whatever the merge left the server short of (a locally newer value, or a
         // registered key the remote entity did not carry). `push` decides by comparison, so a
         // pure remote apply commits nothing. Settings only: whether the Space section may
-        // publish is its own question (§5.5 guard 1 and §8's D2), and the two must not be able
-        // to silence each other — an unreadable settings entity says nothing about the Spaces.
+        // publish is its own question (§5.5 guard 1), and the two must not be able to silence
+        // each other — an unreadable settings entity says nothing about the Spaces.
         // So the two halves are called separately here rather than through the `push` wrapper:
         // `maySettingsPublish == false` means "the SETTINGS row on the server is bytes this
         // build cannot read", and letting it gate the Space section too is exactly the coupling
         // §5.2 改动三 forbids. `pushSpaces` carries every Space-side guard of its own (the gate,
-        // the drain, D2, guard 3), so calling it unconditionally is safe — on a settings-only
+        // the drain, guard 3), so calling it unconditionally is safe — on a settings-only
         // engine (`spaceStore == nil`) it returns on its first line.
         if thenPush {
             if maySettingsPublish {
                 await pushSettings(retryOnConflict: false, allowInitialPull: false)
             }
-            if !spaceQuestionPending { await pushSpaces(retryOnConflict: false) }
+            await pushSpaces(retryOnConflict: false)
         }
 
         if !drained, followUpRoundsUsed < Self.maxFollowUpRounds {
@@ -1950,10 +1799,10 @@ actor PhiSyncEngine {
         // The one Space read-modify-write that is not a `mutateSpaceTable` delta,
         // for the same reason as the apply path's: per-entry outcomes have to be
         // carried across the batch loop's suspension points. Safe here because
-        // EVERY writer of this table is a round (`recordLocalDeletion` and
-        // `joinAccountSync` included) and rounds are serialized, and because
-        // `pushSpaces` is the last Space work of the round -- `applySpaces` has
-        // already written by the time this loads.
+        // EVERY writer of this table is a round (`recordLocalDeletion` included)
+        // and rounds are serialized, and because `pushSpaces` is the last Space
+        // work of the round -- `applySpaces` has already written by the time
+        // this loads.
         var table = loadSpaceTable()
         // Guard 1: not one commit -- tombstones included -- until a full replay
         // has finished, or a device that has not seen the account's Spaces yet can
@@ -1964,8 +1813,6 @@ actor PhiSyncEngine {
             }
             return
         }
-        // §8: the D2 question must be answered before anything is published.
-        guard table.firstSyncDecision != nil else { return }
 
         let spaces = await spaceAccess.currentSpaces()
         guard !isStopped else { return }
@@ -2210,15 +2057,14 @@ actor PhiSyncEngine {
     /// `mutateSpaceTable`'s sibling for the §5.3 intents delivered by
     /// `PhiSpaceSyncState`: the same read-modify-write against `sync.phiSpaces`,
     /// except that the intent itself reports whether it changed anything, so the
-    /// caller can decide to queue a push (`joinAccountSync`) instead of the
-    /// engine guessing from a `!=` comparison.
+    /// caller can decide to queue a push instead of the engine guessing from a
+    /// `!=` comparison.
     ///
     /// `body` may not suspend, so the read-modify-write itself cannot be torn.
     /// That is NOT what makes the intent safe, though: exclusion against the
     /// rounds that hold a table copy across their own suspensions comes from the
     /// queue, and every caller of this helper is already a `Round` body
-    /// (`.recordLocalDeletion`, `.joinAccountSync`). Never call it from a public
-    /// entry point.
+    /// (`.recordLocalDeletion`). Never call it from a public entry point.
     @discardableResult
     private func runSpaceIntent(_ body: (inout PhiSpaceSyncTable) -> Bool) -> Bool {
         // Redundant with `writeSpaceTable`'s own `guard let spaceStore`, but it
@@ -2332,10 +2178,9 @@ actor PhiSyncEngine {
         tombstoneRounds = 0
         guard spaceStore != nil else { return }
         // The server holds a different data set now, so every server-side triple and every
-        // loss guard has to be re-armed. `reconciled` / `hidden` / `deletedAtMs` /
-        // `purgedAtMs` / `firstSyncDecision` survive: the ACCOUNT did not change, and clearing
-        // them would re-arm the wholesale adopt and silently drop edits this device has just
-        // stamped.
+        // loss guard has to be re-armed. `reconciled` / `hidden` / `deletedAtMs` / `purgedAtMs`
+        // survive: the ACCOUNT did not change, and clearing them would re-arm the wholesale
+        // adopt and silently drop edits this device has just stamped.
         mutateSpaceTable { table in
             for (uuid, var cursor) in table.cursors {
                 cursor.entityId = nil

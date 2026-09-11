@@ -38,7 +38,6 @@ final class PhiSpaceSyncStateTests: XCTestCase {
 
         var table = PhiSpaceSyncTable()
         table.cursors["sync-u1"] = cursor
-        table.firstSyncDecision = "keepBoth"
         table.drainInProgress = true
         table.hasDrainedFullReplay = true
         table.hadRecords = true
@@ -191,7 +190,7 @@ final class PhiSpaceSyncStateTests: XCTestCase {
         XCTAssertFalse(table.recordLocalDeletion(spaceId: "d"))
     }
 
-    // MARK: - hidden vs unsynced (§8.3)
+    // MARK: - hidden（§9.2）
 
     func testHiddenSyncUuidsCoverEveryHiddenCursor() {
         var table = PhiSpaceSyncTable()
@@ -201,29 +200,6 @@ final class PhiSpaceSyncStateTests: XCTestCase {
         softDeleted.deletedAtMs = 1_700_000_000_000
         table.cursors["sync-gone"] = softDeleted
         XCTAssertEqual(table.hiddenSyncUuids, ["sync-gone"])
-        // `unsyncedSpaceIds` 的那半边断言随 D2 在 Task 9 一起删；这里不再喂一个
-        // 「只有 hidden、没有 deletedAtMs」的 D2 游标，它违反新的不变量。
-    }
-
-    func testJoinAccountSyncIsANoOpForSoftDeletedOrAlreadyPublished() {
-        var table = PhiSpaceSyncTable()
-        var softDeleted = published("gone")
-        softDeleted.hidden = true
-        softDeleted.deletedAtMs = 1
-        table.cursors["gone"] = softDeleted
-        var published2 = published("pub")
-        published2.hidden = true
-        table.cursors["pub"] = published2
-        var d2 = PhiSpaceCursor()
-        d2.hidden = true
-        table.cursors["local"] = d2
-
-        XCTAssertFalse(table.joinAccountSync(spaceId: "gone"))
-        XCTAssertTrue(table.cursors["gone"]!.hidden)
-        XCTAssertFalse(table.joinAccountSync(spaceId: "pub"))
-        XCTAssertTrue(table.cursors["pub"]!.hidden)
-        XCTAssertTrue(table.joinAccountSync(spaceId: "local"))
-        XCTAssertFalse(table.cursors["local"]!.hidden)
     }
 
     // MARK: - hidden ⇒ deletedAtMs != nil（R-D6-9 的新不变量）
@@ -305,7 +281,7 @@ final class PhiSpaceSyncStateTests: XCTestCase {
         table.cursors["sync-pub"] = published
         state.refreshCaches(from: table)
         XCTAssertEqual(state.publishedSyncUuids, ["sync-pub"])
-        XCTAssertEqual(posts, 0, "`.phiSpaceHiddenSetDidChange` 的语义不变：只看 hidden/unsynced")
+        XCTAssertEqual(posts, 0, "`.phiSpaceHiddenSetDidChange` 的语义不变：只看 hidden")
     }
 
     // MARK: - 30-day sweep (§9.2)

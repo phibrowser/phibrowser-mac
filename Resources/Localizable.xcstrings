@@ -10,6 +10,9 @@
     " Telegram bot creation and customization process, follow the on-screen instructions and paste the Bot Token below" : {
       "comment" : "Phi Link - Custom bot guide suffix"
     },
+    "—" : {
+      "comment" : "Pairing wizard - a name that can’t be resolved (an unmapped profile, or an empty Space name on the confirmation page)"
+    },
     "・" : {
 
     },
@@ -182,6 +185,18 @@
     "%@ will be deleted." : {
       "comment" : "Bookmark multi-selection delete confirmation body for bookmarks\nBookmark multi-selection delete confirmation body for folders"
     },
+    "%1$.1f%%" : {
+      "comment" : "Overwrite confirmation - an overlay opacity as a percentage with one decimal"
+    },
+    "%1$@ (%2$@)" : {
+      "comment" : "Pairing wizard - an account Space named %1$@ in profile %2$@"
+    },
+    "%1$@ changes from %2$@ to %3$@" : {
+      "comment" : "Overwrite confirmation - accessibility label for one changed field"
+    },
+    "%1$d%%" : {
+      "comment" : "Overwrite confirmation - an overlay opacity as a whole percentage"
+    },
     "%d bookmark" : {
       "comment" : "Bookmark multi-selection delete confirmation phrase for bookmark"
     },
@@ -245,8 +260,20 @@
     "A profile with this name already exists." : {
       "comment" : "Validation shown when a new or renamed profile name duplicates an existing profile"
     },
+    "Account" : {
+      "comment" : "Pairing wizard - account column header"
+    },
+    "Account Space for “%@”" : {
+      "comment" : "Pairing wizard - accessibility label for the assignment picker"
+    },
     "Active" : {
       "comment" : "Search Tabs - Trailing label for the active tab result"
+    },
+    "Add all as new" : {
+      "comment" : "Pairing wizard - assign every undecided Space to \"Add as new\""
+    },
+    "Add as new" : {
+      "comment" : "Pairing wizard - add this Space to the account as a new one"
     },
     "Add Left Split" : {
       "comment" : "Drop-zone hint shown when dragging a tab over the left third of the page"
@@ -271,6 +298,9 @@
     },
     "Add Tabs to New Group" : {
       "comment" : "Tab multi-selection context menu - create a new tab group from selected tabs"
+    },
+    "Add this device to your account" : {
+      "comment" : "Join choice - title"
     },
     "Add to Bookmark" : {
       "comment" : "Tab context menu - Add current tab to root bookmark bar in sidebar\nTab multi-selection context menu - add selected tabs to the root bookmark location"
@@ -338,6 +368,9 @@
     "Allowed this session" : {
       "comment" : "Developer settings - session-only CDP grant"
     },
+    "Already in your account" : {
+      "comment" : "Pairing wizard - default Space row, account side"
+    },
     "Always Allow" : {
       "comment" : "CDP consent - allow and remember"
     },
@@ -374,8 +407,17 @@
     "AppKit" : {
 
     },
+    "Apply" : {
+      "comment" : "Overwrite confirmation - apply every decision and start syncing"
+    },
     "Apply theme to text selection on web pages" : {
       "comment" : "General settings - Toggle title for tinting ::selection on third-party pages with the window theme accent"
+    },
+    "Applying your choices…" : {
+      "comment" : "Pairing wizard - submitting page"
+    },
+    "Approve" : {
+      "comment" : "Devices - approve"
     },
     "Aqua" : {
       "comment" : "Aqua theme color name"
@@ -385,6 +427,9 @@
     },
     "Ask every time" : {
       "comment" : "Special target in the URL rule Space picker: prompt for a Space on each match"
+    },
+    "Assign to %@" : {
+      "comment" : "Profile pairing - assign to a local profile"
     },
     "Attach files" : {
       "comment" : "Feedback form - Label for file attachment section"
@@ -473,6 +518,9 @@
     "Browsing history" : {
       "comment" : "Import data type - Browsing history toggle label"
     },
+    "Can’t be read right now — Phi keeps retrying in the background" : {
+      "comment" : "Profile pairing - undecryptable remote row"
+    },
     "Can’t change this Space’s profile yet" : {
       "comment" : "Title shown when changing a Space's profile is blocked by an in-progress import"
     },
@@ -521,6 +569,9 @@
     "Change Theme" : {
       "comment" : "Active-Space menu: change current Space theme"
     },
+    "Changes to Space “%@”" : {
+      "comment" : "Overwrite confirmation - accessibility label for one Space's section"
+    },
     "Chat" : {
       "comment" : "Sidebar bottom chat button title"
     },
@@ -541,6 +592,9 @@
     },
     "Choose Files" : {
       "comment" : "Feedback form - Button to open file picker for attachments"
+    },
+    "Choose how to set up sync on this device." : {
+      "comment" : "Join choice - explanation"
     },
     "Choose which profiles agents may create their own Spaces in. Turning a profile off stops agents from opening any new Space bound to it; existing Spaces are unaffected." : {
       "comment" : "Developer settings - Explanation for the per-profile agent-Space allowlist"
@@ -650,8 +704,17 @@
     "Connector authorization failed." : {
       "comment" : "AI settings - OAuth authorization failure"
     },
+    "Continue" : {
+      "comment" : "Pairing wizard - finish step 1"
+    },
     "Cookies" : {
       "comment" : "Import data type - Cookies toggle label"
+    },
+    "Copied" : {
+      "comment" : "Recovery code display - copy button, just copied"
+    },
+    "Copy" : {
+      "comment" : "Recovery code display - copy button"
     },
     "Copy Left URL" : {
       "comment" : "Bookmark context menu - Copy the left (primary) URL of a split-view bookmark\nTab context menu - Copy the left pane's URL for a split"
@@ -686,11 +749,35 @@
     "Could Not Save Feedback" : {
       "comment" : "Feedback form - Alert title when local outbox save fails"
     },
+    "Couldn’t apply one of your profile choices. Check your connection and retry." : {
+      "comment" : "Pairing wizard - a profile decision failed"
+    },
+    "Couldn’t create a profile named “%@” on this Mac." : {
+      "comment" : "Pairing - local profile creation failed"
+    },
     "Couldn't delete profile" : {
       "comment" : "Title of the profile-delete error"
     },
+    "Couldn’t finish setting up sync. Nothing was lost — check your connection and retry." : {
+      "comment" : "Pairing wizard - applying the decisions failed"
+    },
     "Couldn’t install the skill" : {
       "comment" : "Developer settings - Skill install error title"
+    },
+    "Couldn’t load all of your account’s Spaces. Check your connection and retry." : {
+      "comment" : "Pairing wizard - Space preview truncated"
+    },
+    "Couldn’t load the account’s profiles in time. Check your connection and retry." : {
+      "comment" : "Pairing - load timeout"
+    },
+    "Couldn’t load your account’s profiles. Check your connection and retry." : {
+      "comment" : "Pairing wizard - profile load failed"
+    },
+    "Couldn’t load your account’s Spaces in time. Check your connection and retry." : {
+      "comment" : "Pairing wizard - Space preview timed out"
+    },
+    "Couldn’t load your account’s Spaces. Check your connection and retry." : {
+      "comment" : "Pairing wizard - Space preview failed"
     },
     "Couldn't rename profile" : {
       "comment" : "Title of the profile-rename error"
@@ -706,6 +793,9 @@
     },
     "Create a Space" : {
       "comment" : "Title of the create-Space panel"
+    },
+    "Create on this Mac" : {
+      "comment" : "Profile pairing - create locally option"
     },
     "Create Space" : {
       "comment" : "Confirm button in the create-Space panel"
@@ -727,6 +817,9 @@
     },
     "Dark" : {
       "comment" : "Appearance choice: always dark mode"
+    },
+    "Dark overlay opacity" : {
+      "comment" : "Overwrite confirmation - the dark-appearance overlay opacity field"
     },
     "Default" : {
       "comment" : "Settings - badge marking the default Space or Profile"
@@ -796,6 +889,9 @@
     },
     "Developer" : {
       "comment" : "Settings - Tab title for developer tooling"
+    },
+    "Devices" : {
+      "comment" : "Devices settings - header\nSettings - Tab title for device management"
     },
     "Discard" : {
       "comment" : "Download item row - Tooltip for discard button on blocked download\nDownload item row - Tooltip for discard button on safety warning\nTooltip for discard button on blocked download in living downloads toast\nTooltip for discard button on safety warning in living downloads toast"
@@ -926,6 +1022,15 @@
     "Enter a new name for this Space." : {
       "comment" : "Body of the rename-Space dialog"
     },
+    "Enter a recovery code" : {
+      "comment" : "Join choice - use recovery code"
+    },
+    "Enter the recovery code you saved when you set up sync on another device." : {
+      "comment" : "Recovery code entry - explanation"
+    },
+    "Enter your recovery code" : {
+      "comment" : "Recovery code entry - title"
+    },
     "Error" : {
       "comment" : "Phi Link - Custom bot generic error text"
     },
@@ -992,6 +1097,9 @@
     "Finish" : {
       "comment" : "Onboarding password manager - Finish button"
     },
+    "Finish setting up sync" : {
+      "comment" : "Pairing wizard - window title"
+    },
     "Folder" : {
       "comment" : "Bookmark editor - Label for the folder picker"
     },
@@ -1054,6 +1162,9 @@
     },
     "I'll setup my own" : {
       "comment" : "Onboarding password manager - Manual setup option"
+    },
+    "I've saved it" : {
+      "comment" : "Recovery code display - confirm button"
     },
     "iCloud Passwords" : {
       "comment" : "Onboarding password manager - iCloud Passwords option"
@@ -1124,6 +1235,9 @@
     "Invalid Input" : {
       "comment" : "Account settings - Alert title for invalid input"
     },
+    "Invalid recovery code. Please check it and try again." : {
+      "comment" : "Key layer recovery code entry - error shown when the entered code is rejected"
+    },
     "Invitation Code" : {
       "comment" : "Account settings - Label for invitation code field"
     },
@@ -1178,6 +1292,9 @@
     "Light" : {
       "comment" : "Appearance choice: always light mode"
     },
+    "Light overlay opacity" : {
+      "comment" : "Overwrite confirmation - the light-appearance overlay opacity field"
+    },
     "Link" : {
       "comment" : "Phi Link - Official bot link button"
     },
@@ -1199,6 +1316,9 @@
     "Loading release notes..." : {
       "comment" : "Sparkle update window - Release notes loading placeholder"
     },
+    "Loading your account…" : {
+      "comment" : "Pairing wizard - loading page"
+    },
     "Local browser data is unavailable." : {
       "comment" : "Pinned-tab scope migration error when the local store cannot be opened"
     },
@@ -1216,6 +1336,12 @@
     },
     "Manage User Data" : {
       "comment" : "Help menu - Parent menu item for exporting and importing Phi user data backup"
+    },
+    "Match your profiles" : {
+      "comment" : "Profile pairing - title"
+    },
+    "Match your Spaces" : {
+      "comment" : "Pairing wizard - step 2 title"
     },
     "Message the agent (→ %@)" : {
       "comment" : "Agent console - prompt placeholder naming the target task's Space"
@@ -1346,6 +1472,12 @@
     "No certificate available" : {
       "comment" : "No certificate tooltip"
     },
+    "No custom value" : {
+      "comment" : "Overwrite confirmation - a field with no value of its own (no theme pinned, no custom opacity); the app theme's own value is used instead"
+    },
+    "No devices are waiting for approval." : {
+      "comment" : "Devices - empty"
+    },
     "No Downloads" : {
       "comment" : "Downloads list - Empty state text when no downloads exist"
     },
@@ -1388,6 +1520,9 @@
     "Normal" : {
       "comment" : "Auto picture-in-picture option - pop out and stay in place"
     },
+    "Not assigned yet" : {
+      "comment" : "Pairing wizard - account column placeholder for an undecided row"
+    },
     "Not configured" : {
       "comment" : "Phi Link - Custom bot not configured status"
     },
@@ -1417,6 +1552,9 @@
     },
     "Omnibox" : {
       "comment" : "General settings - Option to open Omnibox search when pressing ⌘+T"
+    },
+    "On a device that’s already signed in, open Settings → Devices and approve this request. Make sure this code matches:" : {
+      "comment" : "Waiting - explanation"
     },
     "Opacity" : {
       "comment" : "General settings - Theme opacity row title for adjusting the selected theme overlay transparency\nSpaces settings - theme opacity row label for the per-Space window overlay transparency"
@@ -1453,6 +1591,9 @@
     },
     "Organize tabs with AI" : {
       "comment" : "Organize Tabs - Button tooltip and accessibility label\nside bar new tab row - organize tabs button tooltip"
+    },
+    "Pairing isn’t available right now." : {
+      "comment" : "Key layer - pairing phase reached with no controller to apply it"
     },
     "Park at edge" : {
       "comment" : "Auto picture-in-picture option - pop out, then park at the screen edge until clicked"
@@ -1493,6 +1634,9 @@
     "Phi needs Full Disk Access to import your data from Safari." : {
       "comment" : "Import browser data page - Description explaining why Full Disk Access permission is needed"
     },
+    "Phi needs one account profile for every profile on this Mac before it can sync Spaces and bookmarks to the right place. The browser stays unavailable until this is done." : {
+      "comment" : "Pairing wizard - step 1 explanation"
+    },
     "Phi Sentinel" : {
       "comment" : "AI settings - Section title for Phi Sentinel background helper"
     },
@@ -1507,6 +1651,9 @@
     },
     "Pick a target Space and enter a host like “github.com”." : {
       "comment" : "Empty state hint in the universal URL rules editor"
+    },
+    "Pick the account Space each Space on this Mac belongs to, or add it to your account as a new Space. Spaces in your account that aren’t on this Mac are added here automatically. Nothing on this Mac is deleted." : {
+      "comment" : "Pairing wizard - step 2 explanation"
     },
     "Pin" : {
       "comment" : "Tab context menu - Menu item to pin the selected tab"
@@ -1592,6 +1739,9 @@
     "Profiles agents can use" : {
       "comment" : "Developer settings - Title for the per-profile agent-Space allowlist"
     },
+    "Profiles need pairing" : {
+      "comment" : "Devices - pairing banner title"
+    },
     "Pure" : {
       "comment" : "Pure theme name"
     },
@@ -1616,6 +1766,9 @@
     "Recommended" : {
       "comment" : "Onboarding password manager - Recommended label for iCloud Passwords"
     },
+    "Recovery code" : {
+      "comment" : "Recovery code entry - text field placeholder"
+    },
     "Red" : {
       "comment" : "Tab Groups - color name shown in auto-named group title and color picker"
     },
@@ -1624,6 +1777,9 @@
     },
     "Refresh connector status" : {
       "comment" : "AI settings - Tooltip for refreshing connector status"
+    },
+    "Register as new" : {
+      "comment" : "Profile pairing - register as new option"
     },
     "Relink" : {
       "comment" : "Phi Link - Official bot relink action"
@@ -1651,6 +1807,15 @@
     },
     "Remove rule" : {
       "comment" : "Tooltip for remove-rule button"
+    },
+    "Remove This Device" : {
+      "comment" : "Self-revoke confirmation - confirm"
+    },
+    "Remove this device from sync…" : {
+      "comment" : "Devices - remove this device from sync\nPairing wizard - self-revoke exit"
+    },
+    "Remove this Mac from account sync?" : {
+      "comment" : "Self-revoke confirmation - title"
     },
     "Rename" : {
       "comment" : "Rename button\nRename folder or bookmark dialog title"
@@ -1700,6 +1865,18 @@
     "Replace Top" : {
       "comment" : "Drop-zone hint shown when dragging a tab over the top/primary pane of a horizontal split to replace it"
     },
+    "Request approval from another device" : {
+      "comment" : "Join choice - request approval"
+    },
+    "Request denied" : {
+      "comment" : "Join denied - title"
+    },
+    "Request expired" : {
+      "comment" : "Join expired - title"
+    },
+    "Resolve" : {
+      "comment" : "Devices - pairing banner button"
+    },
     "Restarting Phi..." : {
       "comment" : "Time Machine restore progress stage"
     },
@@ -1727,6 +1904,9 @@
     "Reverse Panes" : {
       "comment" : "Tab context menu - Swap the left/right (or top/bottom) panes of the split this tab belongs to"
     },
+    "Review what changes" : {
+      "comment" : "Overwrite confirmation - title"
+    },
     "Right Name" : {
       "comment" : "Bookmark editor - Label for the right (secondary) title input field on a split-view bookmark"
     },
@@ -1738,6 +1918,9 @@
     },
     "Save" : {
       "comment" : "Account settings - Save button in rename dialog\nDebug clear data - NSSavePanel confirm button title when saving Phi user data backup zip\nEditor - Save button title\nIM Channels - Custom bot save button\nSave button\nTab group rename alert - Confirm button"
+    },
+    "Save your recovery code" : {
+      "comment" : "Recovery code display - title"
     },
     "Scan the QR code with your phone camera or click on the button below to add Phi Link bot to your Telegram" : {
       "comment" : "Phi Link - Official bot QR hint"
@@ -1787,6 +1970,12 @@
     "Set as default" : {
       "comment" : "Account settings - Button to set Phi as default browser"
     },
+    "Set up sync" : {
+      "comment" : "Key layer window title"
+    },
+    "Set up sync on this device" : {
+      "comment" : "Devices - set up"
+    },
     "Setting" : {
       "comment" : "Extension list - Section title for extension settings"
     },
@@ -1823,6 +2012,9 @@
     "Sign in again to continue" : {
       "comment" : "Auth reauthentication - Alert title when the access token can no longer be renewed"
     },
+    "Sign in to manage devices." : {
+      "comment" : "Devices - signed out"
+    },
     "Site Settings" : {
       "comment" : "Address bar menu - Settings menu item\nAddress bar menu - Settings submenu title"
     },
@@ -1841,6 +2033,9 @@
     "Some account and system information may be sent to Phinomenon. We will use the information you give us to help address technical issues and to improve our services, subject to our Privacy Policy and Terms of Service." : {
       "comment" : "Feedback form - Legal disclaimer text explaining data usage, contains links to Privacy Policy and Terms of Service"
     },
+    "Something went wrong" : {
+      "comment" : "Key layer error - title"
+    },
     "Something went wrong when logging out" : {
       "comment" : "Account settings - Alert message when logout fails"
     },
@@ -1849,6 +2044,12 @@
     },
     "Space" : {
       "comment" : "Spaces settings - Space pinned-tab scope option"
+    },
+    "Space “%@” is the default Space and is already in your account" : {
+      "comment" : "Pairing wizard - accessibility label for the default Space row"
+    },
+    "Space “%1$@” on this Mac, in profile %2$@" : {
+      "comment" : "Pairing wizard - accessibility label for a local Space row"
     },
     "Space %d" : {
       "comment" : "Default name for a newly created Space"
@@ -1868,14 +2069,29 @@
     "Starting restore..." : {
       "comment" : "Time Machine restore progress stage"
     },
+    "Step %1$d of %2$d: %3$@" : {
+      "comment" : "Pairing wizard - step bar position, for VoiceOver"
+    },
     "Stop" : {
       "comment" : "Web content header - Accessibility description for stop loading button"
+    },
+    "Store this code somewhere safe. You will need it to add another device to your account." : {
+      "comment" : "Recovery code display - explanation"
+    },
+    "Submit" : {
+      "comment" : "Recovery code entry - submit button"
     },
     "SwiftUI" : {
 
     },
     "Switch to Agent Space" : {
       "comment" : "Agent handoff prompt - open the agent Space"
+    },
+    "Sync isn’t available right now, so this device wasn’t removed. Check that you’re still signed in, then try again." : {
+      "comment" : "Self-revoke - no sync controller"
+    },
+    "Sync isn’t available right now, so your account’s Spaces couldn’t be loaded." : {
+      "comment" : "Pairing wizard - no engine for the Space preview"
     },
     "System" : {
       "comment" : "Appearance choice: follow system setting"
@@ -1906,6 +2122,9 @@
     "Telegram ID" : {
       "comment" : "Phi Link - Official bot connected label"
     },
+    "That request already expired." : {
+      "comment" : "Devices - approve stale request"
+    },
     "The agent handed control back to you to finish a step — for example, signing in." : {
       "comment" : "Agent handoff prompt - default body"
     },
@@ -1921,6 +2140,9 @@
     "The local IM service is unavailable. Check whether Phi Sentinel started normally and the IM service is running." : {
       "comment" : "IM Channels - Message shown when im-server is not connected"
     },
+    "The other device denied this request." : {
+      "comment" : "Join denied - body"
+    },
     "The Phi user data folder was not found. Continuing will still remove other local application data and quit." : {
       "comment" : "Debug clear data - Alert body when Phi folder is missing; clearing will still proceed for other locations"
     },
@@ -1933,6 +2155,9 @@
     "Theme" : {
       "comment" : "General settings - Theme section title"
     },
+    "These Spaces already exist in your account. When sync starts, the account’s values replace what’s on this Mac. The Space may also move to the profile it has in your account. Your tabs, bookmarks, pinned tabs and URL rules aren’t touched. To keep this Mac’s values instead, go back and add that Space as a new one." : {
+      "comment" : "Overwrite confirmation - explanation"
+    },
     "This action cannot be undone." : {
       "comment" : "Bookmark multi-selection delete confirmation irreversible warning"
     },
@@ -1942,8 +2167,29 @@
     "This build doesn’t include the Pi companion extension. Rebuild Phi Browser and try again." : {
       "comment" : "Developer settings - Pi companion extension missing"
     },
+    "This device isn’t set up for sync yet." : {
+      "comment" : "Devices - needs join"
+    },
+    "This device isn’t unlocked yet." : {
+      "comment" : "Devices - approve blocked when locked"
+    },
+    "This is the last device on the account, so it can’t be removed. Finish pairing on this device (profiles that can’t be read don’t block it), or set up sync on another device first, then try again." : {
+      "comment" : "Self-revoke - last active device"
+    },
+    "This Mac" : {
+      "comment" : "Pairing wizard - local column header"
+    },
+    "This Mac hasn’t finished syncing the Spaces in your account yet. After you delete this profile, Spaces on your other devices that use it may not open." : {
+      "comment" : "Extra warning shown when the account's Spaces have not been synced yet"
+    },
     "This replaces the Phi user data folder with the archive and restarts Phi. Save your work first." : {
       "comment" : "Debug import user data - Confirmation alert body warning data replacement and relaunch"
+    },
+    "This request expires at " : {
+      "comment" : "Waiting - expiry prefix"
+    },
+    "This request timed out. You can try again." : {
+      "comment" : "Join expired - body"
     },
     "This Space's window will be reopened with the new profile and its open tabs will be reloaded there. Site logins won't carry over. Bookmarks and pinned tabs stay with the Space." : {
       "comment" : "Body of the change-Space-profile confirmation with Space-scoped pinned tabs"
@@ -1981,6 +2227,12 @@
     "Token verified successfully" : {
       "comment" : "IM Channels - Custom bot verify success"
     },
+    "Too many pending requests. Try again later or use a recovery code." : {
+      "comment" : "Key layer - too many pending join requests"
+    },
+    "Try another way" : {
+      "comment" : "Key layer - retry"
+    },
     "Turn Off" : {
       "comment" : "AI settings - Destructive button to confirm turning off AI features\nAI settings - Destructive button to confirm turning off connectors"
     },
@@ -1996,6 +2248,9 @@
     "Unavailable" : {
       "comment" : "Profiles settings - search engine list unavailable"
     },
+    "Unclaimed account profiles" : {
+      "comment" : "Profile pairing - unclaimed remotes header"
+    },
     "Ungroup" : {
       "comment" : "Tab group context menu - Dissolve the group, keeping the tabs"
     },
@@ -2007,6 +2262,12 @@
     },
     "Unlink" : {
       "comment" : "Phi Link - Official bot unlink button"
+    },
+    "Unmute" : {
+      "comment" : "Tab mute button tooltip - unmute"
+    },
+    "Unnamed profile (%@)" : {
+      "comment" : "Profile pairing - remote profile whose name couldn’t be decrypted"
     },
     "Unpin" : {
       "comment" : "Tab context menu - Menu item to unpin the selected tab"
@@ -2071,6 +2332,9 @@
     "Verify" : {
       "comment" : "IM Channels - Custom bot verify action\nIM Channels - Custom bot verify button"
     },
+    "Verify this code matches the other device: " : {
+      "comment" : "Devices - verify prefix"
+    },
     "Version %@ (%@)" : {
       "comment" : "About window - App version and build number label",
       "localizations" : {
@@ -2087,6 +2351,12 @@
     },
     "View Details" : {
       "comment" : "Account settings - Button to view invitation code details"
+    },
+    "Waiting for approval" : {
+      "comment" : "Waiting - title"
+    },
+    "We found profiles on this Mac and on your account that we couldn’t match automatically. Pick which account profile each local profile belongs to." : {
+      "comment" : "Profile pairing - explanation"
     },
     "We need to refresh your session before account features can keep working. Please sign in again." : {
       "comment" : "Auth reauthentication - Alert body explaining required authentication"
@@ -2129,6 +2399,9 @@
     },
     "You will be logged out and returned to the login screen. Are you sure?" : {
       "comment" : "Account settings - Logout confirmation dialog message"
+    },
+    "You’re not signed in." : {
+      "comment" : "Key layer - not signed in"
     },
     "Your current pinned tabs will be copied into each existing destination. The copies can then be changed independently." : {
       "comment" : "Spaces settings - confirmation body for narrowing pinned-tab scope"

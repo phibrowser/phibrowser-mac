@@ -112,11 +112,6 @@ import SwiftUI
     /// theme/opacity notification, because those two maps live in the account plist where
     /// SwiftData cannot see them.
     private var phiSpacesCancellable: AnyCancellable?
-    /// `.phiSpaceFirstSyncNeeded` token. The engine posts D2 from its own actor rather than
-    /// raising a sheet inside a round (the round queue is shared with settings sync).
-    private var phiSpaceFirstSyncObserver: NSObjectProtocol?
-    /// The D2 sheet while it is on screen, so the engine's per-round re-ask presents once.
-    private var phiSpaceFirstSyncWindow: NSWindow?
 
     /// Cadence of the periodic pull, per the M3-1 design §5.3 ("保守间隔,如 60s"). M3-1 has no
     /// invalidation, so this timer and the foreground pull are the only unattended triggers on
@@ -302,7 +297,6 @@ import SwiftUI
             Task { @MainActor in
                 switch intent {
                 case .recordLocalDeletion(let id): await engine.recordLocalDeletion(spaceId: id)
-                case .joinAccountSync(let id): await engine.joinAccountSync(spaceId: id)
                 case .runRetentionSweep: await engine.runRetentionSweep()
                 }
             }
@@ -460,79 +454,10 @@ import SwiftUI
                 }
         }
 
-        // `queue: .main` is load-bearing: the engine posts this from its own actor, i.e.
-        // off the main thread, and the block presents AppKit.
-        phiSpaceFirstSyncObserver = NotificationCenter.default.addObserver(
-            forName: .phiSpaceFirstSyncNeeded, object: nil, queue: .main
-        ) { [weak self] note in
-            MainActor.assumeIsolated { self?.presentFirstSyncSheet(note.userInfo) }
-        }
-
         AppLogInfo("[phi-sync] scheduling started interval=\(Int(Self.phiSyncPullInterval))s debounce=\(Int(Self.phiSyncPushDebounce))s")
         Task { await engine.pullOnce() }
         // The 30-day sweep runs once per engine start.
         Task { await engine.runRetentionSweep() }
-    }
-
-    /// Presents D2 (§8) on the front window: which of this Mac's Spaces join the account, or
-    /// does the account win. A sheet rather than a modal session — nothing this Mac owns is
-    /// published until the table records a decision, so an unanswered question costs delay,
-    /// not correctness, and the settings half of every round keeps converging behind it.
-    ///
-    /// Idempotent on purpose: the engine re-posts on EVERY pull round until the decision is
-    /// written, so without the window check the 60 s timer would stack one sheet a minute.
-    @MainActor
-    private func presentFirstSyncSheet(_ userInfo: [AnyHashable: Any]?) {
-        if let existing = phiSpaceFirstSyncWindow {
-            // Still on screen: this is the engine's per-round re-ask, not a new question.
-            guard !existing.isVisible else { return }
-            // The host window went away under it (its sheet went with it), so the question
-            // is unanswered and unpresented — drop the husk and ask again below.
-            dismissFirstSyncSheet()
-        }
-        let localNames = userInfo?["localNames"] as? [String] ?? []
-        let accountCount = userInfo?["accountCount"] as? Int ?? 0
-        // Both halves non-empty is the engine's own precondition for asking (§8); a payload
-        // that lost one of them would put a question with no options on screen.
-        guard !localNames.isEmpty, accountCount > 0 else { return }
-
-        let sheet = PhiSpaceFirstSyncSheet(localNames: localNames, accountCount: accountCount) {
-            [weak self] decision in
-            self?.dismissFirstSyncSheet()
-            Task { @MainActor in await self?.phiSyncEngine?.submitFirstSyncDecision(decision) }
-        }
-        let window = NSWindow(contentViewController: ThemedHostingController(rootView: sheet))
-        // No `.closable`: the sheet has no cancel by design, and a close button would offer a
-        // third outcome the engine has no case for.
-        window.styleMask = [.titled]
-        window.titleVisibility = .hidden
-        window.titlebarAppearsTransparent = true
-        window.isReleasedWhenClosed = false
-        phiSpaceFirstSyncWindow = window
-        // `keyWindow` / `mainWindow` are both nil while the app is in the BACKGROUND, and the
-        // pull that asks this question runs on a timer — so fall through to any visible
-        // window rather than to the standalone branch, which would otherwise be the common
-        // case. `sheets.isEmpty` because a window can only host one sheet at a time.
-        let host = NSApp.keyWindow ?? NSApp.mainWindow
-            ?? NSApp.windows.first { $0.isVisible && $0.canBecomeKey && $0.sheets.isEmpty }
-        if let host {
-            host.beginSheet(window) { _ in }
-        } else {
-            // No window to hang it on (every browser window closed, app still running).
-            // Deliberately NOT `NSApp.activate(ignoringOtherApps:)`: this can fire from a
-            // background pull, and the engine re-asks every round, so there is no need to
-            // pull the user out of another app to ask.
-            window.center()
-            window.makeKeyAndOrderFront(nil)
-        }
-    }
-
-    @MainActor
-    private func dismissFirstSyncSheet() {
-        guard let window = phiSpaceFirstSyncWindow else { return }
-        phiSpaceFirstSyncWindow = nil
-        window.sheetParent?.endSheet(window)
-        window.close()
     }
 
     /// 配对向导第 2 步的左列（§3.4 末）。就地新建一个 `AccountPhiSpaceAccess` 而不是
@@ -664,13 +589,6 @@ import SwiftUI
         // The memo describes the engine being dropped below; the next one loads its own
         // persisted gate state and must be told again.
         lastSpaceGateEnabled = nil
-        if let observer = phiSpaceFirstSyncObserver {
-            NotificationCenter.default.removeObserver(observer)
-            phiSpaceFirstSyncObserver = nil
-        }
-        // An unanswered question about an engine that no longer exists: the answer would
-        // reach `phiSyncEngine == nil` and be dropped, and the next engine re-asks by itself.
-        dismissFirstSyncSheet()
         // Back to the direct-store fallback: with no engine there is no second
         // writer, so the facade may touch the store itself (§5.3's one exception).
         PhiSpaceSyncState.shared.intentSink = nil

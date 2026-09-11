@@ -139,7 +139,7 @@ struct ProfilePairingModel {
     }
 
     /// Remote uuids some row has taken responsibility for: a local's own picker,
-    /// or a remote row's "指派给 X".
+    /// or a remote row's "Assign to X".
     var claimedRemoteUuids: Set<String> {
         claimedByLocalSelections.union(remotes.compactMap { remote -> String? in
             if case .adopt = choice(for: remote) { return remote.uuid }
@@ -147,7 +147,7 @@ struct ProfilePairingModel {
         })
     }
 
-    /// Remote uuids whose row chose "在这台 Mac 上创建".
+    /// Remote uuids whose row chose "Create on this Mac".
     var createLocalUuids: Set<String> {
         Set(remotes.compactMap { remote -> String? in
             choice(for: remote) == .createLocal ? remote.uuid : nil
@@ -169,7 +169,7 @@ struct ProfilePairingModel {
             guard let choice = choice(for: remote) else { return nil }
             return (remote, choice)
         }
-        // Locals a remote row already claimed with "指派给 X". Their own row
+        // Locals a remote row already claimed with "Assign to X". Their own row
         // must NOT also emit a decision: the `.registerNew` would mint an
         // account profile that the row's `.adopt` then abandons, and an
         // unclaimed account profile pins `needsPairing` true forever.
@@ -376,19 +376,20 @@ struct ProfilePairingView: View {
                 // an envelope that will not open under the current ARK. Offering
                 // them would leave a modal whose primary button can never
                 // succeed and whose other exit (`last_device`) may be closed too.
-                Text(NSLocalizedString("暂时无法读取，Phi 会在后台自动重试",
+                Text(NSLocalizedString("Can’t be read right now — Phi keeps retrying in the background",
                                        comment: "Profile pairing - undecryptable remote row"))
                     .font(.callout)
                     .themedForeground(.textSecondary)
             } else {
                 Picker("", selection: remoteChoiceBinding(for: remote)) {
-                    Text(NSLocalizedString("请选择", comment: "Profile pairing - undecided option"))
+                    Text(NSLocalizedString("Choose…",
+                                           comment: "Profiles settings - download location not set"))
                         .tag(RemoteChoice?.none)
-                    Text(NSLocalizedString("在这台 Mac 上创建",
+                    Text(NSLocalizedString("Create on this Mac",
                                            comment: "Profile pairing - create locally option"))
                         .tag(RemoteChoice?.some(.createLocal))
                     ForEach(model.assignableLocals(for: remote), id: \.profileId) { local in
-                        Text(String(format: NSLocalizedString("指派给 %@",
+                        Text(String(format: NSLocalizedString("Assign to %@",
                                     comment: "Profile pairing - assign to a local profile"),
                                     local.displayName))
                             .tag(RemoteChoice?.some(.adopt(localProfileId: local.profileId)))
@@ -402,7 +403,7 @@ struct ProfilePairingView: View {
         .modifier(RowChrome(context: context))
     }
 
-    /// Reads through `model.choice(for:)` so a stale entry shows as "请选择"
+    /// Reads through `model.choice(for:)` so a stale entry shows as "Choose…"
     /// instead of a blank Picker, and prunes the state on write.
     private func remoteChoiceBinding(for remote: RemoteProfile) -> Binding<RemoteChoice?> {
         Binding(
@@ -526,7 +527,7 @@ private struct ProfilePairingPreviewHost: View {
 
 /// No local profile is still undecided, so every row is an unclaimed account
 /// profile. Pins §(5) — with `locals == []` the remote picker is left with
-/// "请选择 / 在这台 Mac 上创建" and the sheet is still decidable and still
+/// "Choose… / Create on this Mac" and the sheet is still decidable and still
 /// submittable.
 ///
 /// `.settings`, not `.gate`: M3-2b's `.gate` branch renders the row list ALONE

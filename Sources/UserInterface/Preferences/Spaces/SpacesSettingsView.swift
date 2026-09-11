@@ -36,19 +36,6 @@ struct SpacesSettingsView: View {
     @State private var draggingSpaceId: String?
     @State private var orderedIds: [String] = []
 
-    /// §8.3's rows: the Spaces D2's 「以账户为准」 left on this Mac alone.
-    /// Re-read from the local store on every change signal rather than derived
-    /// from `spaceManager.spaces`, which §6.6 filters exactly these rows out of.
-    @State private var unsyncedSpaces: [SpaceModel] = []
-    /// §8.3's second refresh trigger: the LOCAL STORE's own Space feed, held for
-    /// the life of the pane. It cannot be `spaceManager.spaces` — §6.6 strips
-    /// every hidden Space out of that list (`SpaceManager.handleSpacesUpdate`),
-    /// and every row in this section is hidden by construction, so the row's own
-    /// 「删除…」 changes nothing there. `spacesPublisher()` allocates a fresh
-    /// subject *and* a fresh store observer on every call, so it is subscribed
-    /// exactly once here rather than rebuilt on each `body` evaluation.
-    @State private var storeSpacesCancellable: AnyCancellable?
-
     var body: some View {
         ScrollView(.vertical) {
             VStack(spacing: 16) {
@@ -69,12 +56,6 @@ struct SpacesSettingsView: View {
                 SettingsDetailCard {
                     urlRulesRow
                 }
-                // §8.3: only shown when D2 actually left something behind.
-                if !unsyncedSpaces.isEmpty {
-                    SettingsDetailCard {
-                        unsyncedSpacesSection
-                    }
-                }
             }
             .frame(maxWidth: .infinity, alignment: .top)
             .padding(20)
@@ -84,14 +65,6 @@ struct SpacesSettingsView: View {
             pinnedTabScope = AccountController.shared.account?.localStorage.pinnedTabScope() ?? .profile
             orderedIds = listedSpaces.map(\.spaceId)
             if selectedSpaceId == nil { selectInitialSpace() }
-            reloadUnsyncedSpaces()
-            subscribeToStoreSpaces()
-        }
-        .onDisappear {
-            // Releasing the subscription is what tears down the publisher's own
-            // store observer (`handleEvents(receiveCancel:)` in
-            // `spacesPublisher()`); `AnyCancellable.deinit` cancels for us.
-            storeSpacesCancellable = nil
         }
         // Re-sync the local order when Spaces change elsewhere (never mid-drag),
         // and keep the selection valid as Spaces are created/deleted.
@@ -112,13 +85,6 @@ struct SpacesSettingsView: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: .appearanceDidChange)) { _ in
             syncThemeControls()
-        }
-        // §8.3's first refresh trigger, posted after every Space-table write
-        // (join / hide / soft delete / purge). It covers the id set changing;
-        // the store subscription set up in `onAppear` covers the rows
-        // themselves changing (this section's own 「删除…」, above all).
-        .onReceive(NotificationCenter.default.publisher(for: .phiSpaceHiddenSetDidChange)) { _ in
-            reloadUnsyncedSpaces()
         }
     }
 
@@ -756,102 +722,6 @@ struct SpacesSettingsView: View {
         alert.addButton(withTitle: NSLocalizedString("Cancel", comment: "Cancel button"))
         guard alert.runModal() == .alertFirstButtonReturn else { return }
         spaceManager.changeProfile(spaceId: spaceId, toProfileId: profile.profileId)
-    }
-
-    // MARK: - §8.3: Spaces that are not in the account
-
-    /// The Spaces D2 kept off the account: hidden from the strip, complete on
-    /// disk. Rows are `account.localStorage.getAllSpaces()` ∩
-    /// `PhiSpaceSyncState.shared.unsyncedSpaceIds` -- never `spaceManager.spaces`
-    /// (§6.6 filters these very rows out) and never `hiddenSpaceIds`, which also
-    /// holds remotely soft-deleted Spaces: for those the header's "only on this
-    /// Mac" is false, "join account sync" is a dud (the engine refuses a cursor
-    /// that carries `deletedAtMs` or an `entityId`), and the 30-day sweep would
-    /// cascade the Space away days after the user "added it back".
-    private var unsyncedSpacesSection: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            VStack(alignment: .leading, spacing: 4) {
-                Text(String(
-                    format: NSLocalizedString("未同步到账户 (%d)",
-                                              comment: "Spaces settings - not-synced-to-account section header"),
-                    unsyncedSpaces.count
-                ))
-                .font(.system(size: 13))
-                .themedForeground(.textPrimary)
-
-                Text(NSLocalizedString(
-                    "这些 Space 只存在于这台 Mac，不会出现在你的其他设备上。",
-                    comment: "Spaces settings - not-synced-to-account section explanation"))
-                    .font(.system(size: 11))
-                    .themedForeground(.textSecondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            .padding(.vertical, 12)
-            .frame(maxWidth: .infinity, alignment: .leading)
-
-            ForEach(unsyncedSpaces, id: \.spaceId) { space in
-                SettingsRowDivider()
-                unsyncedSpaceRow(space)
-            }
-        }
-    }
-
-    private func unsyncedSpaceRow(_ space: SpaceModel) -> some View {
-        HStack(spacing: 8) {
-            Text(space.name)
-                .font(.system(size: 13))
-                .themedForeground(.textPrimary)
-                .lineLimit(1)
-
-            Spacer(minLength: 12)
-
-            Button(NSLocalizedString("加入账户同步",
-                                     comment: "Spaces settings - join account sync button")) {
-                PhiSpaceSyncState.shared.joinAccountSync(spaceId: space.spaceId)
-            }
-            .buttonStyle(.bordered)
-
-            Button(NSLocalizedString("删除\u{2026}",
-                                     comment: "Spaces settings - delete unsynced Space button")) {
-                deleteSpace(space)
-            }
-            .buttonStyle(.bordered)
-        }
-        .padding(.vertical, 8)
-        .frame(maxWidth: .infinity, alignment: .leading)
-    }
-
-    /// `getAllSpaces()` is the unfiltered local truth; the intersection with
-    /// `unsyncedSpaceIds` is what keeps remote soft deletes out of this list.
-    private func reloadUnsyncedSpaces() {
-        let unsynced = PhiSpaceSyncState.shared.unsyncedSpaceIds
-        guard !unsynced.isEmpty,
-              let storage = AccountController.shared.account?.localStorage else {
-            unsyncedSpaces = []
-            return
-        }
-        unsyncedSpaces = storage.getAllSpaces().filter { unsynced.contains($0.spaceId) }
-    }
-
-    /// Subscribes once to the store's unfiltered Space feed — the same feed
-    /// `SpaceManager` runs on (`SpaceManager.swift:2461`), taken here *before*
-    /// §6.6's hidden filter.
-    ///
-    /// Deleting a row from this section is the case that needs it, and neither
-    /// of the cheaper signals can carry it: the Space is hidden, so it is absent
-    /// from `spaceManager.spaces` both before and after; and nothing writes the
-    /// Space table (`recordLocalDeletion` refuses a cursor with no `entityId`),
-    /// so `.phiSpaceHiddenSetDidChange` never fires either. Re-reading straight
-    /// after `deleteSpace(_:)` would not work: `deleteSpaceCascade` yields the
-    /// delete onto the store's write actor (`LocalStore.swift:455`), so the row
-    /// is still there when the call returns. This publisher emits once the write
-    /// has actually landed.
-    private func subscribeToStoreSpaces() {
-        guard storeSpacesCancellable == nil,
-              let storage = AccountController.shared.account?.localStorage else { return }
-        storeSpacesCancellable = storage.spacesPublisher()
-            .receive(on: DispatchQueue.main)
-            .sink { _ in reloadUnsyncedSpaces() }
     }
 
     private func deleteSpace(_ space: SpaceModel) {

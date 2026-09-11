@@ -570,6 +570,47 @@ final class PhiBrowserTests: XCTestCase {
         )
     }
 
+    func testFileMenuKeepsTheCloseRowChromiumHidesWhileNoTabbedWindowIsKey() {
+        // The live File menu as Chromium lays it out while no tabbed browser
+        // window is key: the Shift-Cmd-W row is parked hidden with tag 0 and
+        // no action, and the Cmd-W row acts as Close Window. The hook re-runs
+        // on this menu (PostHog flags, the agent CDP switch); deleting the
+        // parked row leaves Chromium nothing to swap Close Tab back onto.
+        let menu = NSMenu(title: "File")
+        menu.addItem(.separator())
+        let parkedCloseItem = NSMenuItem(title: "Close Window", action: nil, keyEquivalent: "W")
+        parkedCloseItem.keyEquivalentModifierMask = .command
+        parkedCloseItem.isHidden = true
+        menu.addItem(parkedCloseItem)
+        let closeAllItem = NSMenuItem(
+            title: "Close All",
+            action: NSSelectorFromString("closeAll:"),
+            keyEquivalent: "W"
+        )
+        closeAllItem.keyEquivalentModifierMask = [.command, .option]
+        closeAllItem.isAlternate = true
+        menu.addItem(closeAllItem)
+        let cmdWItem = NSMenuItem(
+            title: "Close Window",
+            action: #selector(NSWindow.performClose(_:)),
+            keyEquivalent: "w"
+        )
+        cmdWItem.tag = CommandWrapper.IDC_CLOSE_WINDOW.rawValue
+        menu.addItem(cmdWItem)
+        menu.addItem(.separator())
+        let chromiumShareItem = NSMenuItem(title: "Share", action: nil, keyEquivalent: "")
+        menu.addItem(chromiumShareItem)
+        menu.addItem(.separator())
+        let printItem = NSMenuItem(title: "Print…", action: nil, keyEquivalent: "")
+        printItem.tag = CommandWrapper.IDC_PRINT.rawValue
+        menu.addItem(printItem)
+
+        AppController.installOrUpdateFileMenuItems(in: menu, target: nil)
+
+        XCTAssertTrue(menu.items.contains(parkedCloseItem))
+        XCTAssertFalse(menu.items.contains(chromiumShareItem))
+    }
+
     func testInputSourceIdentifierSelectionPrefersTextContextAndUsesSystemFallback() {
         var systemLookupCount = 0
         XCTAssertEqual(

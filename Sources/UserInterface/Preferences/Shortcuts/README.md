@@ -217,6 +217,10 @@ the same key to a Kiosk-only command still constitutes a conflict.
 - Cmd-W / Shift-Cmd-W switch behavior:
   - `PhiAppController::updateMenuItemKeyEquivalents` adjusts Close Tab / Close
     Window title, tag, and action before matching.
+  - While no tabbed browser window is key it parks the Shift-Cmd-W row hidden
+    with tag 0 and no action. The native main-menu hook re-runs on the live
+    menu, so it must never delete hidden rows: without a Shift-Cmd-W row the
+    swap stops and Cmd-W stays on Close Window for the rest of the session.
 
 ## Phi Integration Points
 

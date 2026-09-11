@@ -741,8 +741,13 @@ extension AppController {
         // themselves — so tag 0 + no action + not a separator is the row.
         // Removal (not isHidden) so a Chromium-side menu refresh cannot
         // resurface it without rebuilding the menu, which re-runs this hook.
+        // A row Chromium has hidden is not it: while no tabbed browser window
+        // is key, the Close Window/Close Tab swap (PhiAppController
+        // -updateMenuItemKeyEquivalents) parks the Shift-Cmd-W row hidden with
+        // tag 0 and no action. This hook also re-runs on the live menu, and
+        // deleting that row ends the swap: Cmd-W stays on Close Window.
         subMenu.items.removeAll { item in
-            !item.isSeparatorItem && item.tag == 0
+            !item.isSeparatorItem && !item.isHidden && item.tag == 0
                 && (item.action == nil || item.submenu != nil)
         }
 

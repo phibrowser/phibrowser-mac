@@ -7,9 +7,13 @@ import SwiftUI
 import AppKit
 
 /// Status URL display view (similar to Chromium's StatusBubble)
-/// Shows the target URL in the bottom-left corner when hovering over links
+/// Shows the target URL in a bottom corner when hovering over links
 struct StatusURLView: View {
     @ObservedObject var viewModel: StatusURLViewModel
+
+    private static let fontSize: CGFloat = 12
+    private static let horizontalPadding: CGFloat = 8
+    static let edgeInset: CGFloat = 12
 
     @State private var displayedURL: String = ""
     @State private var isVisible: Bool = false
@@ -19,9 +23,9 @@ struct StatusURLView: View {
 
     var body: some View {
         Text(displayedURL.isEmpty ? " " : displayedURL)
-            .font(.system(size: 12))
+            .font(.system(size: Self.fontSize))
             .themedForeground(.textPrimary)
-            .padding(.horizontal, 8)
+            .padding(.horizontal, Self.horizontalPadding)
             .padding(.vertical, 4)
             .background(
                 RoundedRectangle(cornerRadius: LiquidGlassCompatible.webContentContainerCornerRadius)
@@ -64,15 +68,57 @@ struct StatusURLView: View {
 // MARK: - AppKit Hosting
 
 extension StatusURLView {
-    static func makeHostingController(viewModel: StatusURLViewModel, themeSource: ThemeStateProvider? = nil) -> ThemedHostingController<StatusURLView> {
-        let hostingController = ThemedHostingController(rootView: StatusURLView(viewModel: viewModel), themeSource: themeSource)
-        let hostingView = hostingController.view
+    static func preferredWidth(for url: String) -> CGFloat {
+        ceil((url as NSString).size(withAttributes: [.font: NSFont.systemFont(ofSize: fontSize)]).width)
+            + horizontalPadding * 2
+    }
+
+    static func placement(
+        preferredWidth: CGFloat,
+        containerBounds: NSRect,
+        bubbleFrame: NSRect,
+        mouseLocation: NSPoint
+    ) -> (usesTrailingEdge: Bool, maximumWidth: CGFloat) {
+        let widthLimit = max(0, min(containerBounds.width * 0.5, containerBounds.width - edgeInset * 2))
+        // Use the full preferred width, not the currently compressed frame, so
+        // shrinking or moving the bubble cannot make it oscillate between sides.
+        let leadingFrame = NSRect(
+            x: containerBounds.minX + edgeInset,
+            y: bubbleFrame.minY,
+            width: min(preferredWidth, widthLimit),
+            height: bubbleFrame.height
+        )
+        let pointerClearance: CGFloat = 8
+        let usesTrailingEdge = leadingFrame.insetBy(dx: -pointerClearance, dy: -pointerClearance)
+            .contains(mouseLocation)
+        let availableWidth = containerBounds.maxX - edgeInset - mouseLocation.x - pointerClearance
+        return (usesTrailingEdge, usesTrailingEdge ? max(0, min(widthLimit, availableWidth)) : widthLimit)
+    }
+
+    static func makeHostingView(viewModel: StatusURLViewModel, themeSource: ThemeStateProvider? = nil) -> StatusURLHostingView {
+        let hostingView = StatusURLHostingView(rootView: StatusURLView(viewModel: viewModel), themeSource: themeSource)
         hostingView.translatesAutoresizingMaskIntoConstraints = false
 
         hostingView.wantsLayer = true
         hostingView.layer?.zPosition = 1000
 
-        return hostingController
+        return hostingView
+    }
+}
+
+final class StatusURLHostingView: ThemedHostingView {
+    var onLayout: (() -> Void)?
+
+    override func layout() {
+        super.layout()
+        // SwiftUI can change the bubble's size after the URL publisher fires.
+        onLayout?()
+    }
+
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        // The status display must never intercept the underlying page's input,
+        // including during its delayed fade-out.
+        nil
     }
 }
 

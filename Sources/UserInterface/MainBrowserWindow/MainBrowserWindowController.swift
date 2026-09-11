@@ -103,6 +103,8 @@ class MainBrowserWindowController: NSWindowController {
             }
         }
         guard let panel = omniBoxHostPanel else { return nil }
+        // Keep system text, selection, and caret colors aligned with the owning window.
+        panel.appearanceSource = window
         // Share the browser window's level so the pair moves through the
         // inter-app window order as one — the overlay must never outlive our
         // activation on top of another app's windows.

@@ -41,6 +41,7 @@ final class OmniBoxThemeTests: XCTestCase {
         context.mirrorsSharedAppearance = false
         context.setUserAppearanceChoice(.dark)
         context.setTheme(red)
+        drainThemeUpdates()
         defer {
             controller.omniBoxHostPanel?.orderOut(nil)
             window.close()
@@ -53,6 +54,7 @@ final class OmniBoxThemeTests: XCTestCase {
         let background = try XCTUnwrap(omnibox.view.subviews.first)
         XCTAssertTrue(panel.themeStateProvider === context)
         XCTAssertTrue(background.themeStateProvider === context)
+        XCTAssertEqual(panel.effectiveAppearance.phiAppearance, .dark)
         assertBackground(background, .red)
 
         // Updating the active Space's window context must refresh an already mounted overlay.
@@ -68,14 +70,63 @@ final class OmniBoxThemeTests: XCTestCase {
         drainThemeUpdates()
         XCTAssertTrue(controller.attachAndShowOmniBoxHostPanel() === panel)
         panel.contentView?.addSubview(omnibox.view)
+        XCTAssertEqual(panel.effectiveAppearance.phiAppearance, .dark)
         assertBackground(background, .red)
 
         context.setUserAppearanceChoice(.light)
         drainThemeUpdates()
+        XCTAssertEqual(panel.effectiveAppearance.phiAppearance, .light)
         assertBackground(background, .white)
         context.setUserAppearanceChoice(.dark)
         drainThemeUpdates()
+        XCTAssertEqual(panel.effectiveAppearance.phiAppearance, .dark)
         assertBackground(background, .red)
+    }
+
+    func testIncognitoOmniBoxUsesLightInputTextWhenAppAppearanceIsLight() throws {
+        let originalAppearance = NSApp.appearance
+        defer { NSApp.appearance = originalAppearance }
+        NSApp.appearance = NSAppearance(named: .aqua)
+
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        self.directory = directory
+        let store = LocalStore(account: Account(userID: UUID().uuidString), storeDirectoryURL: directory)
+        self.store = store
+        let state = BrowserState(windowId: UUID().hashValue, localStore: store,
+                                 profileId: "Default", isIncognito: true)
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 800, height: 600),
+                              styleMask: [.titled], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        let controller = MainBrowserWindowController(window: window, windowId: state.windowId,
+                                                     profileId: state.profileId, account: store.account,
+                                                     browserState: state)
+        defer {
+            controller.omniBoxHostPanel?.orderOut(nil)
+            window.close()
+            withExtendedLifetime(controller) {}
+        }
+
+        let panel = try XCTUnwrap(controller.attachAndShowOmniBoxHostPanel())
+        let omnibox = OmniBoxViewController(viewModel: .init(windowState: state), state: state)
+        panel.contentView?.addSubview(omnibox.view)
+        let background = try XCTUnwrap(omnibox.view.subviews.first)
+        let input = try XCTUnwrap(background.subviews.flatMap(\.subviews)
+            .compactMap { $0 as? OmniBoxTextField }.first)
+        input.updateDisplayText("google.com")
+        omnibox.focusTextField()
+        let editor = try XCTUnwrap(input.textFiled.currentEditor() as? NSTextView)
+
+        XCTAssertEqual(NSApp.effectiveAppearance.phiAppearance, .light)
+        XCTAssertEqual(window.effectiveAppearance.phiAppearance, .dark)
+        XCTAssertEqual(panel.effectiveAppearance.phiAppearance, .dark)
+        XCTAssertEqual(input.textFiled.effectiveAppearance.phiAppearance, .dark)
+        XCTAssertEqual(editor.effectiveAppearance.phiAppearance, .dark)
+        var textBrightness: CGFloat?
+        editor.effectiveAppearance.performAsCurrentDrawingAppearance {
+            textBrightness = editor.textColor?.usingColorSpace(.genericGray)?.whiteComponent
+        }
+        XCTAssertGreaterThan(try XCTUnwrap(textBrightness), 0.5)
     }
 
     func testUnownedPanelKeepsGlobalThemeFallback() {

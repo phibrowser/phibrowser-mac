@@ -369,6 +369,44 @@ final class SyncKeyController {
     /// `clearResolved()`'s. Only the branch that ASSIGNS the two predicates
     /// announces `.measured`.
     func resolveMappings() async {
+        resolvePending = true
+        if let running = resolveTask {
+            // One more pass after the current one, then return with every
+            // other waiter: a caller must never observe "my state change was
+            // not looked at" -- and must never run a second pass beside it.
+            await running.value
+            return
+        }
+        let task = Task { @MainActor [weak self] in
+            while let self, self.resolvePending {
+                self.resolvePending = false
+                await self.resolveMappingsOnce()
+            }
+            // No suspension between the loop's last check and this write, so a
+            // caller can only arrive before it (and be served by the loop) or
+            // after it (and start the next task).
+            self?.resolveTask = nil
+        }
+        resolveTask = task
+        await task.value
+    }
+
+    /// Single-flight state for `resolveMappings()`. The pass is re-entered from
+    /// several triggers at once on a fresh device -- the login unlock,
+    /// `.phiAccountKeyDidUnlock`, and the `$profiles` sink, which since T17 F1
+    /// fires INSIDE a pass (`localProfilesProvider` refreshes the Chromium list,
+    /// and the first population changes it). Two passes interleaving at their
+    /// awaits each saw "Default" unmapped over an empty account and each
+    /// registered it: the account got two profiles named "Your Phi", the second
+    /// pass overwrote the mapping, and §3.6 then created "Your Phi (2)" for the
+    /// orphaned first uuid (T17 run 4, 2026-09-11). `registerLocalProfile`'s
+    /// `alreadyMapped` refusal cannot catch this: both passes check it before
+    /// either has written. So: one pass at a time, later callers coalesce into
+    /// exactly one follow-up pass.
+    private var resolveTask: Task<Void, Never>?
+    private var resolvePending = false
+
+    private func resolveMappingsOnce() async {
         var next: [String: (uuid: String, passphrase: String)] = [:]
         let locals = localProfilesProvider()
         var unmappedLocals: [(profileId: String, displayName: String)] = []

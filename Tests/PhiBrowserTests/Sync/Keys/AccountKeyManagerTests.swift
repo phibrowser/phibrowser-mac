@@ -100,7 +100,12 @@ final class AccountKeyManagerTests: XCTestCase {
             guard let e = profileEnvelopes[uuid] else { return nil }
             return ProfileKeyDTO(profileUuid: uuid, profileKeyEnvelope: e, createdAt: Self.profileCreatedAt)
         }
+        /// Fired at the top of `putProfileKey`, before the store is touched: a
+        /// test can suspend here so a second `resolveMappings()` pass gets to
+        /// interleave inside the first one's registration.
+        var beforePutProfileKey: (() async -> Void)?
         func putProfileKey(uuid: String, envelope: Data) async throws -> Bool {
+            if let hook = beforePutProfileKey { await hook() }
             if let error = profileEndpointErrorOnce { profileEndpointErrorOnce = nil; throw error }
             if let profileEndpointError { throw profileEndpointError }
             if profileEnvelopes[uuid] != nil { return false }

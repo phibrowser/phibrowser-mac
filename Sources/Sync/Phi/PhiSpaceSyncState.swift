@@ -6,10 +6,10 @@
 import Foundation
 
 extension Notification.Name {
-    /// Posted whenever the engine pushes a new hidden / unsynced set back to
+    /// Posted whenever the engine pushes a new hidden set back to
     /// `PhiSpaceSyncState.shared`. `SpaceManager` re-runs `handleSpacesUpdate`
-    /// on its UNFILTERED `lastStoreSpaces` snapshot when it arrives, so
-    /// unhiding needs no SwiftData write at all (§6.6).
+    /// on its UNFILTERED `lastStoreSpaces` snapshot when it arrives, so a row
+    /// that leaves the hidden set needs no SwiftData write at all (§6.6).
     static let phiSpaceHiddenSetDidChange = Notification.Name("phiSpaceHiddenSetDidChange")
 }
 
@@ -26,8 +26,8 @@ struct PhiSpaceCursor: Codable, Equatable {
     /// `storedLastEntity`), which is what suppresses a redundant push. Never
     /// the merge result -- see §6.2's five baseline write points.
     var server: Data?
-    /// A decrypted entity parked while the D2 question is open, or while its
-    /// `profile_uuid` still resolves to no local profile (§3.5 fallback B).
+    /// A decrypted entity parked while its `profile_uuid` still resolves to no
+    /// local profile (§3.5 fallback B).
     var pendingApply: Data?
     /// Remote binding on an ALREADY-LANDED Space that resolves to no local
     /// profile (§3.5 fallback A). Echoed back with `reconciled`'s own
@@ -47,7 +47,8 @@ struct PhiSpaceCursor: Codable, Equatable {
     /// A remote tombstone identified by hash but not landed yet (import lock).
     var pendingTombstone = false
     var deletedAtMs: Int64?
-    /// Not in the strip: D2 "account wins", or a soft delete.
+    /// 远端软删（§9.2）。D6 之后只剩这一种含义，且 `hidden ⇒ deletedAtMs != nil`
+    /// 是不变量（Task 2 的测试钉住它）。
     var hidden = false
     /// Agent / incognito / excluded: recorded so it is not decrypted and
     /// refused again every round. Such a cursor has NO `entityId`, which is
@@ -74,8 +75,6 @@ struct PhiSpaceSyncTable: Codable, Equatable {
     var formatVersion: Int = currentFormatVersion
     /// 按 **syncUuid** 键。
     var cursors: [String: PhiSpaceCursor] = [:]
-    /// "keepBoth" | "accountWins" | nil = still pending (§8).
-    var firstSyncDecision: String?
     var drainInProgress = false
     var hasDrainedFullReplay = false
     var hadRecords = false
@@ -105,23 +104,13 @@ struct PhiSpaceSyncTable: Codable, Equatable {
         Set(cursors.filter { $0.value.entityId != nil }.keys)
     }
 
-    /// ONLY the D2 kind (§8.3): a soft-deleted Space is hidden too, but it is
-    /// not "a Space that only exists on this Mac", "join account sync" is a dud
-    /// for it, and the 30-day sweep would cascade it away days later.
-    ///
-    /// D2 残留，随 §8 的删除清单一起走（Task 9）。
-    var unsyncedSpaceIds: Set<String> {
-        Set(cursors.filter { $0.value.hidden && $0.value.deletedAtMs == nil }.keys)
-    }
-
     // MARK: - Mutations (the engine runs these on its round queue; the facade
     // runs the same code directly only when no engine exists -- §5.3)
 
     /// §9.1: mark ONLY a uuid that has actually been published to the account
     /// and still belongs to it. The criterion is `entityId`, NOT "the table has
     /// a cursor": agent / incognito entities refused by §6.5 own a cursor with
-    /// only `refusedAtMs`, D2-hidden Spaces own one with only `hidden`.
-    /// Returns whether anything changed.
+    /// only `refusedAtMs`. Returns whether anything changed.
     ///
     /// D6：**参数是 syncUuid**（表按 syncUuid 键）。本地 id 在两条边界上翻译，
     /// 两条都在这个文件之外：引擎的 `PhiSyncEngine.run(_:)` 的 `.recordLocalDeletion`
@@ -135,18 +124,6 @@ struct PhiSpaceSyncTable: Codable, Equatable {
               cursor.hidden == false,
               cursor.pendingDelete == false else { return false }
         cursor.pendingDelete = true
-        cursors[spaceId] = cursor
-        return true
-    }
-
-    /// §8.3's second gate: a soft-deleted Space must never be put back in the
-    /// strip, and a uuid that is already in the account never belonged in the
-    /// "not synced to the account" section in the first place.
-    @discardableResult
-    mutating func joinAccountSync(spaceId: String) -> Bool {
-        guard var cursor = cursors[spaceId], cursor.hidden,
-              cursor.deletedAtMs == nil, cursor.entityId == nil else { return false }
-        cursor.hidden = false
         cursors[spaceId] = cursor
         return true
     }
@@ -277,7 +254,6 @@ final class PhiSpaceSyncState {
 
     enum Intent {
         case recordLocalDeletion(String)
-        case joinAccountSync(String)
         case runRetentionSweep
     }
 
@@ -304,8 +280,6 @@ final class PhiSpaceSyncState {
     /// 一组**本地** spaceId（语义不变）：`SpaceManager.handleSpacesUpdate` 的漏斗
     /// 过滤（SpaceManager.swift:2691-2692）读的就是它，那一处零改动。
     private(set) var hiddenSpaceIds: Set<String> = []
-    /// D2 残留（Task 9 随 §8 一起删）。
-    private(set) var unsyncedSpaceIds: Set<String> = []
     /// 账户里确实存在其实体的 syncUuid（§3.5）。**不参与** `changed` 比较。
     private(set) var publishedSyncUuids: Set<String> = []
     private(set) var hasDrainedFullReplay = false
@@ -319,12 +293,10 @@ final class PhiSpaceSyncState {
         // 解析不到的丢弃——那是没有本地行的软删／拒绝游标，本来也不该出现在过滤
         // 集合里。
         let hidden = Set(table.hiddenSyncUuids.compactMap { localSpaceIdLookup?($0) })
-        let unsynced = table.unsyncedSpaceIds
         // One implementation of the reference rule, on the table (R4).
         let referenced = table.referencedProfileUuids()
-        let changed = hidden != hiddenSpaceIds || unsynced != unsyncedSpaceIds
+        let changed = hidden != hiddenSpaceIds
         hiddenSpaceIds = hidden
-        unsyncedSpaceIds = unsynced
         publishedSyncUuids = table.publishedSyncUuids
         referencedProfileUuids = referenced
         hasDrainedFullReplay = table.hasDrainedFullReplay
@@ -334,7 +306,6 @@ final class PhiSpaceSyncState {
     }
 
     func recordLocalDeletion(spaceId: String) { deliver(.recordLocalDeletion(spaceId)) }
-    func joinAccountSync(spaceId: String) { deliver(.joinAccountSync(spaceId)) }
     func runRetentionSweep() { deliver(.runRetentionSweep) }
 
     /// §9.4: "a Profile still referenced by a Space cannot be deleted", widened
@@ -350,7 +321,7 @@ final class PhiSpaceSyncState {
         // 新件——`publishedSyncUuids`（这半句只能在 `refreshCaches` 里算好推回来：
         // 这个方法手上没有 `table`，也没有任何按游标键的视图）与 `syncUuidLookup`
         // （`localSpaceIdLookup` 是 syncUuid -> 本地 id，方向反了）。
-        // D6 之前这里问的是「hidden 的本地 Space」，而 D2 是那一类行的唯一生产者。
+        // D6 之前这里问的是「hidden 的本地 Space」。
         let rows = localSpaceProfileIds?() ?? []
         return rows.contains { row in
             guard row.profileId == localProfileId,
@@ -372,7 +343,6 @@ final class PhiSpaceSyncState {
             // resolver 或翻不出来 = 从来没发布过 = 无 tombstone 可发。
             guard let uuid = syncUuidLookup?(spaceId) else { return }
             table.recordLocalDeletion(spaceId: uuid)
-        case .joinAccountSync(let spaceId): table.joinAccountSync(spaceId: spaceId)
         case .runRetentionSweep:
             // Data cascade needs SpaceManager, which the no-engine path has no
             // business driving; the sweep runs for real at the next engine start.

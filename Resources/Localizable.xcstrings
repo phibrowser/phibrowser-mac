@@ -1,6 +1,279 @@
 {
   "sourceLanguage" : "en",
   "strings" : {
+    "—" : {
+      "comment" : "Pairing wizard - a name that can’t be resolved (an unmapped profile, or an empty Space name on the confirmation page)"
+    },
+    "%1$.1f%%" : {
+      "comment" : "Overwrite confirmation - an overlay opacity as a percentage with one decimal"
+    },
+    "%1$@ (%2$@)" : {
+      "comment" : "Pairing wizard - an account Space named %1$@ in profile %2$@"
+    },
+    "%1$@ changes from %2$@ to %3$@" : {
+      "comment" : "Overwrite confirmation - accessibility label for one changed field"
+    },
+    "%1$d%%" : {
+      "comment" : "Overwrite confirmation - an overlay opacity as a whole percentage"
+    },
+    "Account" : {
+      "comment" : "Pairing wizard - account column header"
+    },
+    "Account Space for “%@”" : {
+      "comment" : "Pairing wizard - accessibility label for the assignment picker"
+    },
+    "Add all as new" : {
+      "comment" : "Pairing wizard - assign every undecided Space to \"Add as new\""
+    },
+    "Add as new" : {
+      "comment" : "Pairing wizard - add this Space to the account as a new one"
+    },
+    "Add this device to your account" : {
+      "comment" : "Join choice - title"
+    },
+    "Already in your account" : {
+      "comment" : "Pairing wizard - default Space row, account side"
+    },
+    "Apply" : {
+      "comment" : "Overwrite confirmation - apply every decision and start syncing"
+    },
+    "Applying your choices…" : {
+      "comment" : "Pairing wizard - submitting page"
+    },
+    "Approve" : {
+      "comment" : "Devices - approve"
+    },
+    "Assign to %@" : {
+      "comment" : "Profile pairing - assign to a local profile"
+    },
+    "Can’t be read right now — Phi keeps retrying in the background" : {
+      "comment" : "Profile pairing - undecryptable remote row"
+    },
+    "Changes to Space “%@”" : {
+      "comment" : "Overwrite confirmation - accessibility label for one Space's section"
+    },
+    "Choose how to set up sync on this device." : {
+      "comment" : "Join choice - explanation"
+    },
+    "Continue" : {
+      "comment" : "Pairing wizard - finish step 1"
+    },
+    "Copied" : {
+      "comment" : "Recovery code display - copy button, just copied"
+    },
+    "Copy" : {
+      "comment" : "Recovery code display - copy button"
+    },
+    "Couldn’t apply one of your profile choices. Check your connection and retry." : {
+      "comment" : "Pairing wizard - a profile decision failed"
+    },
+    "Couldn’t create a profile named “%@” on this Mac." : {
+      "comment" : "Pairing - local profile creation failed"
+    },
+    "Couldn’t finish setting up sync. Nothing was lost — check your connection and retry." : {
+      "comment" : "Pairing wizard - applying the decisions failed"
+    },
+    "Couldn’t load all of your account’s Spaces. Check your connection and retry." : {
+      "comment" : "Pairing wizard - Space preview truncated"
+    },
+    "Couldn’t load the account’s profiles in time. Check your connection and retry." : {
+      "comment" : "Pairing - load timeout"
+    },
+    "Couldn’t load your account’s profiles. Check your connection and retry." : {
+      "comment" : "Pairing wizard - profile load failed"
+    },
+    "Couldn’t load your account’s Spaces in time. Check your connection and retry." : {
+      "comment" : "Pairing wizard - Space preview timed out"
+    },
+    "Couldn’t load your account’s Spaces. Check your connection and retry." : {
+      "comment" : "Pairing wizard - Space preview failed"
+    },
+    "Create on this Mac" : {
+      "comment" : "Profile pairing - create locally option"
+    },
+    "Dark overlay opacity" : {
+      "comment" : "Overwrite confirmation - the dark-appearance overlay opacity field"
+    },
+    "Devices" : {
+      "comment" : "Devices settings - header\nSettings - Tab title for device management"
+    },
+    "Enter a recovery code" : {
+      "comment" : "Join choice - use recovery code"
+    },
+    "Enter the recovery code you saved when you set up sync on another device." : {
+      "comment" : "Recovery code entry - explanation"
+    },
+    "Enter your recovery code" : {
+      "comment" : "Recovery code entry - title"
+    },
+    "Finish setting up sync" : {
+      "comment" : "Pairing wizard - window title"
+    },
+    "I've saved it" : {
+      "comment" : "Recovery code display - confirm button"
+    },
+    "Invalid recovery code. Please check it and try again." : {
+      "comment" : "Key layer recovery code entry - error shown when the entered code is rejected"
+    },
+    "Light overlay opacity" : {
+      "comment" : "Overwrite confirmation - the light-appearance overlay opacity field"
+    },
+    "Loading your account…" : {
+      "comment" : "Pairing wizard - loading page"
+    },
+    "Match your profiles" : {
+      "comment" : "Profile pairing - title"
+    },
+    "Match your Spaces" : {
+      "comment" : "Pairing wizard - step 2 title"
+    },
+    "No custom value" : {
+      "comment" : "Overwrite confirmation - a field with no value of its own (no theme pinned, no custom opacity); the app theme's own value is used instead"
+    },
+    "No devices are waiting for approval." : {
+      "comment" : "Devices - empty"
+    },
+    "Not assigned yet" : {
+      "comment" : "Pairing wizard - account column placeholder for an undecided row"
+    },
+    "On a device that’s already signed in, open Settings → Devices and approve this request. Make sure this code matches:" : {
+      "comment" : "Waiting - explanation"
+    },
+    "Pairing isn’t available right now." : {
+      "comment" : "Key layer - pairing phase reached with no controller to apply it"
+    },
+    "Phi needs one account profile for every profile on this Mac before it can sync Spaces and bookmarks to the right place. The browser stays unavailable until this is done." : {
+      "comment" : "Pairing wizard - step 1 explanation"
+    },
+    "Pick the account Space each Space on this Mac belongs to, or add it to your account as a new Space. Spaces in your account that aren’t on this Mac are added here automatically. Nothing on this Mac is deleted." : {
+      "comment" : "Pairing wizard - step 2 explanation"
+    },
+    "Profiles need pairing" : {
+      "comment" : "Devices - pairing banner title"
+    },
+    "Recovery code" : {
+      "comment" : "Recovery code entry - text field placeholder"
+    },
+    "Register as new" : {
+      "comment" : "Profile pairing - register as new option"
+    },
+    "Remove This Device" : {
+      "comment" : "Self-revoke confirmation - confirm"
+    },
+    "Remove this device from sync…" : {
+      "comment" : "Devices - remove this device from sync\nPairing wizard - self-revoke exit"
+    },
+    "Remove this Mac from account sync?" : {
+      "comment" : "Self-revoke confirmation - title"
+    },
+    "Request approval from another device" : {
+      "comment" : "Join choice - request approval"
+    },
+    "Request denied" : {
+      "comment" : "Join denied - title"
+    },
+    "Request expired" : {
+      "comment" : "Join expired - title"
+    },
+    "Resolve" : {
+      "comment" : "Devices - pairing banner button"
+    },
+    "Review what changes" : {
+      "comment" : "Overwrite confirmation - title"
+    },
+    "Save your recovery code" : {
+      "comment" : "Recovery code display - title"
+    },
+    "Set up sync" : {
+      "comment" : "Key layer window title"
+    },
+    "Set up sync on this device" : {
+      "comment" : "Devices - set up"
+    },
+    "Sign in to manage devices." : {
+      "comment" : "Devices - signed out"
+    },
+    "Something went wrong" : {
+      "comment" : "Key layer error - title"
+    },
+    "Space “%@” is the default Space and is already in your account" : {
+      "comment" : "Pairing wizard - accessibility label for the default Space row"
+    },
+    "Space “%1$@” on this Mac, in profile %2$@" : {
+      "comment" : "Pairing wizard - accessibility label for a local Space row"
+    },
+    "Step %1$d of %2$d: %3$@" : {
+      "comment" : "Pairing wizard - step bar position, for VoiceOver"
+    },
+    "Store this code somewhere safe. You will need it to add another device to your account." : {
+      "comment" : "Recovery code display - explanation"
+    },
+    "Submit" : {
+      "comment" : "Recovery code entry - submit button"
+    },
+    "Sync isn’t available right now, so this device wasn’t removed. Check that you’re still signed in, then try again." : {
+      "comment" : "Self-revoke - no sync controller"
+    },
+    "Sync isn’t available right now, so your account’s Spaces couldn’t be loaded." : {
+      "comment" : "Pairing wizard - no engine for the Space preview"
+    },
+    "That request already expired." : {
+      "comment" : "Devices - approve stale request"
+    },
+    "The other device denied this request." : {
+      "comment" : "Join denied - body"
+    },
+    "These Spaces already exist in your account. When sync starts, the account’s values replace what’s on this Mac. The Space may also move to the profile it has in your account. Your tabs, bookmarks, pinned tabs and URL rules aren’t touched. To keep this Mac’s values instead, go back and add that Space as a new one." : {
+      "comment" : "Overwrite confirmation - explanation"
+    },
+    "This device isn’t set up for sync yet." : {
+      "comment" : "Devices - needs join"
+    },
+    "This device isn’t unlocked yet." : {
+      "comment" : "Devices - approve blocked when locked"
+    },
+    "This is the last device on the account, so it can’t be removed. Finish pairing on this device (profiles that can’t be read don’t block it), or set up sync on another device first, then try again." : {
+      "comment" : "Self-revoke - last active device"
+    },
+    "This Mac" : {
+      "comment" : "Pairing wizard - local column header"
+    },
+    "This Mac hasn’t finished syncing the Spaces in your account yet. After you delete this profile, Spaces on your other devices that use it may not open." : {
+      "comment" : "Extra warning shown when the account's Spaces have not been synced yet"
+    },
+    "This request expires at " : {
+      "comment" : "Waiting - expiry prefix"
+    },
+    "This request timed out. You can try again." : {
+      "comment" : "Join expired - body"
+    },
+    "Too many pending requests. Try again later or use a recovery code." : {
+      "comment" : "Key layer - too many pending join requests"
+    },
+    "Try another way" : {
+      "comment" : "Key layer - retry"
+    },
+    "Unclaimed account profiles" : {
+      "comment" : "Profile pairing - unclaimed remotes header"
+    },
+    "Unmute" : {
+      "comment" : "Tab mute button tooltip - unmute"
+    },
+    "Unnamed profile (%@)" : {
+      "comment" : "Profile pairing - remote profile whose name couldn’t be decrypted"
+    },
+    "Verify this code matches the other device: " : {
+      "comment" : "Devices - verify prefix"
+    },
+    "Waiting for approval" : {
+      "comment" : "Waiting - title"
+    },
+    "We found profiles on this Mac and on your account that we couldn’t match automatically. Pick which account profile each local profile belongs to." : {
+      "comment" : "Profile pairing - explanation"
+    },
+    "You’re not signed in." : {
+      "comment" : "Key layer - not signed in"
+    },
     "" : {
 
     },

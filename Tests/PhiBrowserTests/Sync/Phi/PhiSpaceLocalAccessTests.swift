@@ -14,7 +14,6 @@ final class FakePhiSpaceAccess: PhiSpaceLocalAccess {
         case themeState(String)
         case order([String])
         case hide(String)
-        case unhide(String)
         case purge(String)
         case refreshProfiles
         case dropMapping(String)
@@ -152,7 +151,6 @@ final class FakePhiSpaceAccess: PhiSpaceLocalAccess {
         }
     }
     func hide(spaceId: String) async throws { try failIfArmed(); calls.append(.hide(spaceId)) }
-    func unhide(spaceId: String) async throws { try failIfArmed(); calls.append(.unhide(spaceId)) }
     func purge(spaceId: String) async throws {
         try failIfArmed(); calls.append(.purge(spaceId))
         spaces.removeAll { $0.spaceId == spaceId }

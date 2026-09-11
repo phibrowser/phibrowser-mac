@@ -12,6 +12,7 @@ class BookmarkBar: NSView {
     private let state: BrowserState
     private var cancellables = Set<AnyCancellable>()
     private var isActive = false
+    private var pageColorPresentation = WebContentHeaderPageColorPresentation.inherited
 
     // Bookmarks currently rendered in the bar.
     private var bookmarks: [Bookmark] = []
@@ -78,7 +79,6 @@ class BookmarkBar: NSView {
     private lazy var separatorView: NSView = {
         let view = NSView()
         view.wantsLayer = true
-        view.phiLayer?.setBackgroundColor(.separator)
         view.isHidden = !showSeparator
         return view
     }()
@@ -166,8 +166,24 @@ class BookmarkBar: NSView {
     }
 
     private func applyThemeAppearance() {
-        phiLayer?.setBackgroundColor(ThemedColor.contentOverlayBackground)
+        let theme = state.themeContext.currentTheme
+        let pageAppearance = pageColorPresentation.appearance
+        let resolvedAppearance = pageAppearance ?? state.themeContext.currentAppearance
+        let background = pageColorPresentation.backgroundColor
+            ?? ThemedColor.contentOverlayBackground.resolve(theme: theme, appearance: resolvedAppearance)
+        layer?.backgroundColor = background.cgColor
+        separatorView.layer?.backgroundColor = ThemedColor.separator.resolve(
+            theme: theme, appearance: resolvedAppearance
+        ).cgColor
+        if appearance?.phiAppearance != pageAppearance {
+            appearance = pageAppearance?.nsAppearance
+        }
         updateDropIndicatorColor()
+    }
+
+    func setPageColorPresentation(_ presentation: WebContentHeaderPageColorPresentation) {
+        pageColorPresentation = presentation
+        applyThemeAppearance()
     }
 
     private func updateDropIndicatorColor() {

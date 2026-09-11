@@ -200,6 +200,7 @@ class WebContentViewController: NSViewController {
 
     private var bookmarkBarHeightConstraint: Constraint?
     private weak var attachedBookmarkBar: BookmarkBar?
+    private var bookmarkBarPageColorCancellable: AnyCancellable?
     private var isBookmarkBarVisible = false
     private var leftContainerInsetConstraint: Constraint?
     private var splitViewLeadingConstraint: Constraint?
@@ -2629,6 +2630,11 @@ class WebContentViewController: NSViewController {
 
         detachBookmarkBarIfAttached()
         attachedBookmarkBar = bookmarkBar
+        // The bar belongs to the page area, so Chat visibility does not suppress its color.
+        bookmarkBarPageColorCancellable = headerView.pageColorPresentationPublisher
+            .sink { [weak bookmarkBar] presentation in
+                bookmarkBar?.setPageColorPresentation(presentation)
+            }
 
         installAttachedBookmarkBarIfNeeded()
         updateHeaderVisibility()
@@ -2640,6 +2646,7 @@ class WebContentViewController: NSViewController {
     /// every tab switch would tear down and rebuild BookmarkItemViews and
     /// reload favicons, producing a visible flicker.
     func detachBookmarkBarIfAttached() {
+        bookmarkBarPageColorCancellable = nil
         guard let attachedBookmarkBar else {
             updateBookmarkBarVisibility(bookmarkCount: 0)
             return

@@ -345,6 +345,28 @@ final class SyncableSpacesTests: XCTestCase {
         XCTAssertEqual(Set(out.keys), ["ok"])
     }
 
+    /// A uuid holding an UNAPPLIED incoming entity must not be published over.
+    /// The four park sites (§6.2 fallback B, a landing failure, a mapping write
+    /// failure, a rebind that did not take effect) all leave `reconciled == nil`
+    /// on a first landing, so without this exclusion the Space is snapshotted
+    /// with NO baseline — every field stamped `now` — and committed at the
+    /// parked cursor's harvested id/version, replacing the account's Space with
+    /// this Mac's values. Pre-D6 the cursor was keyed by the publisher's local
+    /// spaceId, so a parked uuid could never reach a snapshot that iterates
+    /// local rows; the mapping layer is what opened it.
+    func testSnapshotSkipsAUuidWhoseIncomingEntityIsStillParked() {
+        var table = PhiSpaceSyncTable()
+        var parked = PhiSpaceCursor()
+        parked.entityId = "srv-1"
+        parked.version = 7
+        parked.pendingApply = Data([0x01])      // reconciled / server deliberately nil
+        table.cursors = ["p": parked]
+        let out = SyncableSpaces.snapshot(
+            spaces: [local("p"), local("ok")], table: table,
+            globalUuid: uuidMap(["Default": "uuid-a"]), syncUuid: { $0 }, now: 9_000)
+        XCTAssertEqual(Set(out.keys), ["ok"])
+    }
+
     /// §3.5 fallback A: a held binding is echoed back with the BASELINE's own
     /// timestamp, so this device neither wins the field nor commits for it.
     func testSnapshotEchoesAHeldBindingWithoutStampingNow() throws {

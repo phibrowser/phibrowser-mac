@@ -1248,6 +1248,48 @@ final class PhiSyncEngineSpaceTests: XCTestCase {
         XCTAssertNil(store.table.cursors["u1"]?.pendingApply)
     }
 
+    /// D6 opened a hole that §5.6 had closed on the APPLY side only: a mapping
+    /// can now exist before the account's entity for that uuid has ever landed,
+    /// so a parked uuid can reach `SyncableSpaces.snapshot` — which iterates
+    /// LOCAL rows — with no baseline at all.
+    ///
+    /// The headline path is the wizard's own: step 2 maps this Mac's Space onto
+    /// an account Space whose `profile_uuid` this ARK cannot resolve (§3.2
+    /// deliberately lets step 1 finish with exactly such an account profile), the
+    /// entity parks on fallback B, and the SAME round's `pushSpaces` would then
+    /// stamp name / icon / colour / theme / opacity AND `profile_uuid` `now` and
+    /// commit them at the parked cursor's harvested `entityId` / `version` — an
+    /// UPDATE the server accepts, replacing account-wide exactly the values the
+    /// user was just promised would replace *this Mac's* (D7).
+    ///
+    /// The existing fallback-B case seeds no local Space, so its `outgoing` is
+    /// empty and it cannot see this.
+    func testAParkedUuidIsNeverPublishedOverAlthoughTheLocalRowIsMapped() async throws {
+        let access = FakePhiSpaceAccess()
+        // The local row's own profile IS mapped, so nothing else in `snapshot`
+        // would skip this Space and the assertion really is about the park.
+        access.uuidByProfileId = ["Default": "uuid-local"]
+        access.profileIdByUuid = ["uuid-local": "Default"]
+        access.knownLocalProfileIds = ["Default"]
+        access.spaces = [localSpace("LOCAL-1", "Work", order: 0)]
+        let store = MemorySpaceStore()
+        store.table = makeSpaceTable(mappings: ["LOCAL-1": "sync-1"], access: access)
+        let client = FakePhiSyncClient()
+        client.seed(tagHash: spaceHash("sync-1"),
+                    ciphertext: try ciphertext(spaceEntity("sync-1", name: "Work",
+                                                           profileUuid: "uuid-unresolvable")),
+                    version: 7)
+        let engine = makeEngine(access: access, store: store, client: client)
+        await engine.setSpaceSyncEnabled(true)
+        await engine.pullOnce()
+
+        let cursor = try XCTUnwrap(store.table.cursors["sync-1"])
+        XCTAssertNotNil(cursor.pendingApply, "fallback B: parked, never landed")
+        XCTAssertNil(cursor.reconciled, "and therefore no baseline")
+        XCTAssertTrue(spaceCommits(client).isEmpty,
+                      "publishing with no baseline stamps `now` on every field and wins the whole account's LWW")
+    }
+
     /// The file-wide local-row fixture. Every case that needs a Space on disk
     /// builds it here, so a row's id, name and sort order are the only things
     /// a case has to spell out.

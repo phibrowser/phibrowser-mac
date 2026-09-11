@@ -24,11 +24,11 @@ struct SiteMemoryMenuActions {
     }
 
     static var collectionTitle: String {
-        NSLocalizedString("browser.addressBarMenu.memory.collectionToggle", value: "Collection Site Memories", comment: "Website menus - Toggle memory collection for the current website in this browser profile")
+        NSLocalizedString("browser.addressBarMenu.memory.collectionToggle", value: "Collect Site Memories", comment: "Website menus - Toggle memory collection for the current website in this browser profile")
     }
 
     static var removalTitle: String {
-        NSLocalizedString("browser.addressBarMenu.memory.removeAction", value: "Remove Site Memories", comment: "Website menus - Delete saved memories for the current website and its subdomains in this browser profile")
+        NSLocalizedString("browser.addressBarMenu.memory.removeAction", value: "Delete Site Memories…", comment: "Website menus - Delete saved memories for the current website and its subdomains in this browser profile")
     }
 
     static func current(browserState: BrowserState?, urlString: String) -> Self? {
@@ -65,9 +65,9 @@ struct SiteMemoryMenuActions {
     func makeRemovalConfirmation() -> NSAlert {
         let alert = NSAlert()
         alert.alertStyle = .warning
-        alert.messageText = NSLocalizedString("browser.addressBarMenu.memory.removalConfirmation.title", value: "Remove Site Memories?", comment: "Website memory deletion - Confirmation dialog title")
-        alert.informativeText = String(format: NSLocalizedString("browser.addressBarMenu.memory.removalConfirmation.message", value: "Saved memories for %@ will be removed from this browser profile. This can’t be undone.", comment: "Website memory deletion - Confirmation message; %@ is the current page host"), host)
-        alert.addButton(withTitle: NSLocalizedString("browser.addressBarMenu.memory.removalConfirmation.removeButton", value: "Remove", comment: "Website memory deletion - Confirm removal button"))
+        alert.messageText = NSLocalizedString("browser.addressBarMenu.memory.removalConfirmation.title", value: "Delete Site Memories?", comment: "Website memory deletion - Confirmation dialog title")
+        alert.informativeText = String(format: NSLocalizedString("browser.addressBarMenu.memory.removalConfirmation.message", value: "Saved memories for %@ will be deleted from this browser profile. This can’t be undone.", comment: "Website memory deletion - Confirmation message; %@ is the current page host"), host)
+        alert.addButton(withTitle: NSLocalizedString("browser.addressBarMenu.memory.removalConfirmation.removeButton", value: "Delete", comment: "Website memory deletion - Confirm removal button"))
         alert.buttons.first?.hasDestructiveAction = true
         alert.addButton(withTitle: NSLocalizedString("browser.addressBarMenu.memory.removalConfirmation.cancelButton", value: "Cancel", comment: "Website memory deletion - Cancel removal button"))
         alert.showsSuppressionButton = true
@@ -106,7 +106,7 @@ struct SiteMemoryMenuActions {
                 case .toggleCollection:
                     title = NSLocalizedString("browser.addressBarMenu.memory.updateFailed", value: "Couldn’t Change Memory Collection", comment: "Website menus - Error title when saving the website memory collection setting fails")
                 case .removeMemories:
-                    title = NSLocalizedString("browser.addressBarMenu.memory.removeFailed", value: "Couldn’t Remove Site Memories", comment: "Website menus - Error title when deleting the website memories fails")
+                    title = NSLocalizedString("browser.addressBarMenu.memory.removeFailed", value: "Couldn’t Delete Site Memories", comment: "Website menus - Error title when deleting the website memories fails")
                 }
                 let alert = NSAlert()
                 alert.alertStyle = .warning

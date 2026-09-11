@@ -24126,7 +24126,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Collection Site Memories"
+            "value" : "Collect Site Memories"
           }
         }
       }
@@ -24174,7 +24174,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Saved memories for %@ will be removed from this browser profile. This can’t be undone."
+            "value" : "Saved memories for %@ will be deleted from this browser profile. This can’t be undone."
           }
         }
       }
@@ -24186,7 +24186,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Remove"
+            "value" : "Delete"
           }
         }
       }
@@ -24198,7 +24198,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Remove Site Memories?"
+            "value" : "Delete Site Memories?"
           }
         }
       }
@@ -24210,7 +24210,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Remove Site Memories"
+            "value" : "Delete Site Memories…"
           }
         }
       }
@@ -24222,7 +24222,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Couldn’t Remove Site Memories"
+            "value" : "Couldn’t Delete Site Memories"
           }
         }
       }

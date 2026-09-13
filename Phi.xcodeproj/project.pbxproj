@@ -315,6 +315,7 @@
 		AE5ACE000000000000000015 /* AgentSpaceRouter+Capture.swift in Sources */ = {isa = PBXBuildFile; fileRef = AE5ACE000000000000000005 /* AgentSpaceRouter+Capture.swift */; };
 		AE5ACE000000000000000016 /* AgentTranscriptStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = AE5ACE000000000000000006 /* AgentTranscriptStore.swift */; };
 		AE5ACE000000000000000017 /* AgentTranscriptPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = AE5ACE000000000000000007 /* AgentTranscriptPanel.swift */; };
+		AE8E3290D9DF13FF422A4948 /* PinKind.swift in Sources */ = {isa = PBXBuildFile; fileRef = 69E9284FAF9F3D97D76D7072 /* PinKind.swift */; };
 		B001795A2E49CF84007B4635 /* PhiChromiumCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = B00179592E49CF84007B4635 /* PhiChromiumCoordinator.swift */; };
 		B02586F52E42FD97001B08FC /* ChromiumLauncher.m in Sources */ = {isa = PBXBuildFile; fileRef = B02586EE2E42FD97001B08FC /* ChromiumLauncher.m */; };
 		B02586F62E42FD97001B08FC /* AppController.swift in Sources */ = {isa = PBXBuildFile; fileRef = B02586F02E42FD97001B08FC /* AppController.swift */; };
@@ -795,6 +796,7 @@
 		6659B55999DDEAA24DB5AC0D /* DevicesRemoveDeviceModel.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = DevicesRemoveDeviceModel.swift; sourceTree = "<group>"; };
 		6819EF093F955DAFACDC4C94 /* JoinMethodChoiceView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = JoinMethodChoiceView.swift; path = UI/JoinMethodChoiceView.swift; sourceTree = "<group>"; };
 		69537E85565061483273F0A2 /* PhiOwnedItemState.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = PhiOwnedItemState.swift; sourceTree = "<group>"; };
+		69E9284FAF9F3D97D76D7072 /* PinKind.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = PinKind.swift; sourceTree = "<group>"; };
 		6A44C5FF60DF6F7860A061D4 /* SentinelWatchdog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SentinelWatchdog.swift; sourceTree = "<group>"; };
 		6EE9BDB8D95B7A16A1E96582 /* RecoveryCode.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = RecoveryCode.swift; sourceTree = "<group>"; };
 		6F042DF5490BA419ACD24DA7 /* SpaceSyncMappingManager.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = SpaceSyncMappingManager.swift; sourceTree = "<group>"; };
@@ -1613,6 +1615,7 @@
 				69537E85565061483273F0A2 /* PhiOwnedItemState.swift */,
 				34C88E2EA8AD746676A4B111 /* SyncableOwnedItems.swift */,
 				34F236AC381F208106EF9B34 /* BookmarkKind.swift */,
+				69E9284FAF9F3D97D76D7072 /* PinKind.swift */,
 			);
 			name = Phi;
 			path = Phi;
@@ -3141,6 +3144,7 @@
 				1F8484277AF6957257C01DBD /* PhiOwnedItemState.swift in Sources */,
 				117D0AFFE65E9EE5C11D90AA /* SyncableOwnedItems.swift in Sources */,
 				B8C1B3DE901D130723BDFF30 /* BookmarkKind.swift in Sources */,
+				AE8E3290D9DF13FF422A4948 /* PinKind.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

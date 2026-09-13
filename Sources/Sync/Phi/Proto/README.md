@@ -186,6 +186,8 @@ Only three of `SyncEnums`' fourteen enums are kept; every value keeps its upstre
 | --- | --- | --- | --- |
 | `PhiEntity` | `kind.setting` | 1 | `PhiSettingEntity` (oneof `kind`) |
 | `PhiEntity` | `kind.space` | 2 | `PhiSpaceEntity` (oneof `kind`, M3-2) |
+| `PhiEntity` | `kind.bookmark` | 3 | `PhiBookmarkEntity` (oneof `kind`, M3-3) |
+| `PhiEntity` | `kind.pin_tab` | 4 | `PhiPinTabEntity` (oneof `kind`, M3-3) |
 | `PhiSpaceEntity` | `space_uuid` | 1 | `string` (account-level sync uuid, M3-2b) |
 | `PhiSpaceEntity` | `name` | 2 | `PhiSettingValue` |
 | `PhiSpaceEntity` | `icon_name` | 3 | `PhiSettingValue` |
@@ -201,12 +203,41 @@ Only three of `SyncEnums`' fourteen enums are kept; every value keeps its upstre
 | `PhiSettingValue` | `v.bool_value` | 2 | `bool` (oneof `v`) |
 | `PhiSettingValue` | `v.string_value` | 3 | `string` (oneof `v`) |
 | `PhiSettingValue` | `v.int_value` | 4 | `int64` (oneof `v`) |
+| `PhiBookmarkEntity` | `bookmark_uuid` | 1 | `string` (lowercase, minted once; never the local `guid`) |
+| `PhiBookmarkEntity` | `space_uuid` | 2 | `PhiSettingValue` (account-level Space sync uuid; authoritative only at root level) |
+| `PhiBookmarkEntity` | `parent_uuid` | 3 | `PhiSettingValue` (`""` = directly under the Space's bookmark root) |
+| `PhiBookmarkEntity` | `rank` | 4 | `PhiSettingValue` (fractional index, own timestamp) |
+| `PhiBookmarkEntity` | `is_folder` | 5 | `bool` (INVARIANT, not LWW) |
+| `PhiBookmarkEntity` | `title` | 6 | `PhiSettingValue` |
+| `PhiBookmarkEntity` | `url` | 7 | `PhiSettingValue` |
+| `PhiBookmarkEntity` | `secondary_url` | 8 | `PhiSettingValue` (split-view right pane; `""` = not split) |
+| `PhiBookmarkEntity` | `secondary_title` | 9 | `PhiSettingValue` |
+| `PhiBookmarkEntity` | `source` | 10 | `int32` (`TabSource` raw value; written once, merged deterministically) |
+| `PhiBookmarkEntity` | `created_at_ms` | 11 | `int64` (merged with `min()`, not LWW) |
+| `PhiPinTabEntity` | `pin_uuid` | 1 | `string` (lowercase-normalized `pinLineageId`; not unique by itself) |
+| `PhiPinTabEntity` | `owner.space_uuid` | 2 | `string` (oneof `owner`, Space scope) |
+| `PhiPinTabEntity` | `owner.profile_uuid` | 3 | `string` (oneof `owner`, Profile scope) |
+| `PhiPinTabEntity` | `rank` | 4 | `PhiSettingValue` (plain LWW, per owner) |
+| `PhiPinTabEntity` | `title` | 5 | `PhiSettingValue` |
+| `PhiPinTabEntity` | `url` | 6 | `PhiSettingValue` |
+| `PhiPinTabEntity` | `split_partner_uuid` | 7 | `PhiSettingValue` (the PARTNER's `pin_uuid`; `""` = not split) |
+| `PhiPinTabEntity` | `source` | 8 | `int32` (same rule as `PhiBookmarkEntity.source`) |
+| `PhiPinTabEntity` | `created_at_ms` | 9 | `int64` (merged with `min()`, not LWW) |
 
 Since M3-2b, `space_uuid` is the **account-level** sync uuid resolved through the device's
 `sync.spaceGlobalUuids` mapping table, not the local `SpaceModel.spaceId`. Nothing else about
 the wire format changed.
 
-Fields 11-14 of `PhiSpaceEntity` are reserved for M3-3 / M3-4; do not reuse.
+Reserved ranges are **declared in the proto**, not just described here: `PhiSpaceEntity`
+reserves 11-14, `PhiBookmarkEntity` 12-15 and `PhiPinTabEntity` 10-13, all for M3-4 / M4.
+Until M3-3 these were comments only, which protoc does not enforce; with the declarations in
+place, reusing one of those numbers is a compile failure rather than a code-review catch. The
+declarations are wire-neutral (a reserved range emits no field), and the numbers are pinned by
+`PhiEntityGoldenBytesTests`, which also proves no known field claims one of them.
+
+`PhiPinTabEntity.owner` is the one field in this schema that is **not** always emitted: an
+absent `owner` IS the App scope, because absence here is one of three exhaustive values rather
+than "an older client never knew about it".
 
 **Reserved-field preservation is a contract, not a side effect.** A build that does not know
 fields 11-14 must still hand them back untouched, or two clients of different versions strip
@@ -216,6 +247,32 @@ authoritative bytes and overwrite the known fields, never from a fresh `Phi_PhiS
 `SyncableSpaces.merge(local:remote:)` starts from `remote` for exactly this reason, and
 `SyncableSpacesTests.testMergeKeepsAnUnknownReservedFieldWrittenByANewerClient` pins it.
 
+## Client tags
+
+The server assigns entity ids, so cross-device convergence runs entirely through
+`client_tag_hash` = `base64(SHA1(<serialized empty phi specifics> + client_tag))`. The prefix is
+per DATA TYPE (2000), so every kind shares it. The tags themselves live in
+`PhiSyncProtocolClient.swift` (`enum PhiSyncEntity`) and their hashes are pinned as literals by
+`PhiEntityGoldenBytesTests`.
+
+| Kind | Client tag | `SyncEntity.name` (plaintext on the server) |
+| --- | --- | --- |
+| `setting` | `phi-settings` (the single settings entity) | `phi-settings` |
+| `space` | `phi-space:<space_uuid>` | `phi-space` |
+| `bookmark` | `phi-bookmark:<bookmark_uuid>` | `phi-bookmark` |
+| `pin_tab` | `phi-pin:<lineage>:<ownerKey>` | `phi-pin` |
+
+`ownerKey` is the `space_uuid`, the `profile_uuid`, or the literal `app`; a pin's identity is
+the PAIR (lineage, owner), so one lineage living in N Spaces is N entities. The `<lineage>` put
+into the tag **must already be normalized to lowercase** by the same helper the local index and
+the landing matcher use -- an un-normalized lineage produces a self-consistent hash that no
+other device will ever compute.
+
+`name` is the only part of an entity the server stores in plaintext, so it is **a constant per
+kind**: never a title, a URL, or a tag carrying a uuid. The constant is also what makes the
+server's `ON CONFLICT ... WHERE entities.name IS DISTINCT FROM ...` check treat a repeated
+commit as a no-op.
+
 ## Keeping this in sync
 
 If the server-side protos change (a new field on `PhiSpecifics`, a new `SyncEnums.ErrorType`,
@@ -224,7 +281,8 @@ table above. Re-vendoring Chromium in sync-service does **not** automatically af
 directory.
 
 `PhiEntity.kind` is an open oneof. Adding a kind means: a new field NUMBER that
-is never reused (M3-2 took 2; `PhiSpaceEntity` reserves 11-14 for M3-3 / M3-4), a
-re-run of `generate.sh`, one table row per field above, and a receiver that
-IGNORES ONLY the unknown entity -- never one that rewinds the shared progress
-marker, because both kinds share a single marker for data type 2000.
+is never reused (M3-2 took 2; M3-3 took 3 and 4, and 5 / 6 are spoken for by
+M3-4's URL rules and profiles), a re-run of `generate.sh`, one table row per
+field above, a row in the client-tag table, and a receiver that IGNORES ONLY the
+unknown entity -- never one that rewinds the shared progress marker, because
+every kind shares a single marker for data type 2000.

@@ -16,9 +16,10 @@ package phi;
 // shapes without changing the sync data type.
 message PhiEntity {
   oneof kind {
-    PhiSettingEntity setting = 1;
-    PhiSpaceEntity   space   = 2;   // M3-2
-    // M3-3: PhiBookmarkEntity bookmark = 3; PhiPinTabEntity pin_tab = 4;
+    PhiSettingEntity  setting  = 1;
+    PhiSpaceEntity    space    = 2;   // M3-2
+    PhiBookmarkEntity bookmark = 3;   // M3-3
+    PhiPinTabEntity   pin_tab  = 4;   // M3-3
     // M3-4: PhiURLRuleEntity url_rule = 5; PhiProfileEntity profile = 6;
   }
 }
@@ -112,5 +113,172 @@ message PhiSpaceEntity {
   // Spaces differently.
   int64 created_at_ms = 10;
 
-  // 11-14 reserved for M3-3 / M3-4. Do not reuse.
+  reserved 11 to 14;  // M3-4 / M4. Do not reuse.
+}
+
+// One bookmark or bookmark folder. Entity identity is the client tag
+// "phi-bookmark:<bookmark_uuid>"; `bookmark_uuid` is repeated inside the
+// payload because client_tag_hash is a one-way SHA1 and the receiver cannot
+// recover the uuid from it.
+//
+// Same conventions as PhiSpaceEntity: every MUTABLE field is a PhiSettingValue
+// (M3-1's generic LWW-stamped scalar), always emitted, never omitted-when-empty
+// -- an absent field cannot carry a timestamp, so "the user cleared it" and "an
+// older client never knew it" would be indistinguishable. Immutable facts are
+// plain fields and take no part in LWW.
+//
+// NO favicon bytes (D9): PhiSettingValue has no bytes case and adding one would
+// touch the shipped M3-1 message. The receiver shows a placeholder and
+// back-fills the icon itself (design §8).
+message PhiBookmarkEntity {
+  // Lowercase uuid, minted on the device that first published this row, then
+  // stored verbatim in TabDataModel.syncId. NEVER the local `guid` (uppercase,
+  // per-device, re-minted by every clone) -- see design §3.1.
+  string bookmark_uuid = 1;
+
+  // AUTHORITATIVE ONLY FOR A ROOT-LEVEL ITEM (`parent_uuid == ""`), where it is
+  // one half of LOCATION and carries LOCATION's shared timestamp (design §4.3;
+  // `parent_uuid` carries the same value, `rank` has its own).
+  // For a DESCENDANT it is emitted for diagnostics and IGNORED
+  // on receipt: the owning Space of a descendant is whatever its parent's Space
+  // is, and a descendant's LOCATION is `parent_uuid` alone (`rank` still carries
+  // its own timestamp). Excluded from the
+  // change-detection signature for descendants, so a cross-Space folder move is
+  // ONE entity change (the folder's own group) while `moveBookmarks` retags the
+  // whole subtree locally with no baseline churn -- design §4.3 / R-M3-3-18.
+  //
+  // string_value: the ACCOUNT-LEVEL Space sync uuid (M3-2b / D6), resolved
+  // through `sync.spaceGlobalUuids`; the literal "default-space" for the
+  // account's default Space (D1). NEVER the local SpaceModel.spaceId.
+  //
+  // No profile_uuid field exists, by design (R-D6-14 item 1): the Profile is
+  // DERIVED from the resolved local Space's `profileId`, because `bookmarkRoot`
+  // is keyed on the PAIR (profileId, spaceId) and a second, independently
+  // merged profile field would disagree with the Space's own binding after a
+  // rebind, with no defined resolution.
+  PhiSettingValue space_uuid = 2;
+
+  // The other half of LOCATION (design §4.3): for a root-level item it shares
+  // `space_uuid`'s timestamp; for a descendant it IS the location and carries
+  // its own. Merged with LOCATION as a unit, never field by field.
+  // string_value: the parent folder's `bookmark_uuid`,
+  // or "" for "directly under this Space's bookmark root". The root itself is
+  // NEVER an entity: it is a local structural artifact (one hidden folder per
+  // (profileId, spaceId)) with no stable exported key, and the default Space's
+  // root is physically shared with ProfileModel.bookmarkRoot (R-D6-14 item 5).
+  PhiSettingValue parent_uuid = 3;
+
+  // Ordering inside one LOCATION, with its OWN timestamp -- a pure reorder
+  // restamps only this field, so it can no longer revert a concurrent move.
+  // Merged by LWW, except that whichever side wins LOCATION also supplies the
+  // rank (a rank is meaningless outside its location) -- design §4.3.
+  // string_value: fractional index over "0-9A-Za-z" (ASCII-ascending, so byte
+  // order == rank order); never ends in '0'. Ordering is PER PARENT -- two
+  // ranks are only comparable inside one parent_uuid. Ties break on
+  // bookmark_uuid.
+  PhiSettingValue rank = 4;
+
+  // INVARIANT, not LWW: a bookmark never becomes a folder or vice versa. A
+  // remote entity whose is_folder disagrees with an existing local row is
+  // refused, not applied (design §4.6).
+  bool is_folder = 5;
+
+  // string_value. Display title. A bookmark created with no title locally gets
+  // its URL string as the title (LocalStore+Bookmark.swift:1362), so "" on the
+  // wire means the peer really cleared it and is applied verbatim.
+  PhiSettingValue title = 6;
+
+  // string_value, absolute URL. For a folder this is the local placeholder
+  // "https://bookmark.phi/folder" (LocalStore+Bookmark.swift:12-14), emitted so
+  // the field is never absent; the receiver ignores it when is_folder is true.
+  PhiSettingValue url = 7;
+
+  // string_value. Split-view bookmark's right pane; "" = not a split bookmark
+  // (the explicit cleared encoding). A Phi-native concept with no Chromium
+  // analogue -- it goes on the wire as itself rather than being flattened into
+  // two bookmarks the way the HTML exporter does.
+  PhiSettingValue secondary_url = 8;
+
+  // string_value. Display name of the right pane; "" = none.
+  PhiSettingValue secondary_title = 9;
+
+  // NOT last-writer-wins: written once by the creating device and merged
+  // DETERMINISTICALLY on disagreement -- the non-zero side wins; if both are
+  // non-zero and differ, the smaller wins. TabSource raw value
+  // (0 phi / 1 chromium / 2 safari / 3 arc). approved §1 calls it "只写一次";
+  // the merge rule covers only the two-device-disagreement case.
+  int32 source = 10;
+
+  // NOT last-writer-wins: merged with min(). Epoch ms of TabDataModel
+  // .createdDate on the device that created the row. Its only consumer is
+  // determinism: `bookmarksPublisher`'s fetch sorts by createdDate, so without
+  // it two devices can order a rank-tied pair differently.
+  int64 created_at_ms = 11;
+
+  reserved 12 to 15;  // M3-4 / M4. Do not reuse.
+}
+
+// One pinned tab IN ONE OWNER. Entity identity is the client tag
+// "phi-pin:<pin_uuid>:<ownerKey>" -- the PAIR (lineage, owner), not the lineage
+// alone (design §3.2 / R-M3-3-15).
+//
+// Why the pair: `migratePinnedTabs` Profile->Space copies the profile's whole
+// pin collection into EVERY Space of that profile, one new physical row per
+// Space, all carrying the source's `pinLineageId`
+// (LocalStore+PinnedTabScope.swift:474-493, :620-655) -- documented local
+// behaviour ("Moving to a narrower scope copies each parent collection to its
+// existing children", :83-87). One lineage in N Spaces is therefore N entities,
+// not one entity with an arbitrary owner. Both devices derive the same entity
+// set from the same rows, so a scope migration converges by identity.
+message PhiPinTabEntity {
+  // Lowercase-normalized copy of the local `pinLineageId`
+  // (TabDataModelSchemaV9.swift:64-66). Not unique by itself -- see the header.
+  string pin_uuid = 1;
+
+  // Ownership, three-way, matching the ACCOUNT-LEVEL pinned-tab scope (D8).
+  // IMMUTABLE for the life of the entity: it is half of the identity and is
+  // part of the client tag, so it carries no timestamp and is never merged.
+  // Moving a pin to another owner is a TOMBSTONE under the old tag plus a
+  // CREATE under the new one, never a field change (design §7.2).
+  //
+  // An ABSENT oneof is the App scope -- the one place this schema does not
+  // follow "always emitted", because here absence IS one of three exhaustive
+  // values rather than "unknown". ownerKey in the client tag is the
+  // `space_uuid`, the `profile_uuid`, or the literal "app".
+  oneof owner {
+    string space_uuid   = 2;  // Space scope: the account-level Space sync uuid
+    string profile_uuid = 3;  // Profile scope: the account-global profile uuid
+                              //                (sync.profileGlobalUuids)
+  }
+
+  // PLAIN last-writer-wins (there is no pin position group -- owner is identity,
+  // not a mergeable field). string_value: fractional index over "0-9A-Za-z",
+  // per owner. Ties break on pin_uuid.
+  PhiSettingValue rank = 4;
+
+  // string_value.
+  PhiSettingValue title = 5;
+
+  // string_value, absolute URL.
+  PhiSettingValue url = 6;
+
+  // string_value: the PARTNER's pin_uuid (its lineage id), or "" for a pinned
+  // tab that is not half of a split. NEVER the partner's physical
+  // `splitPartnerGuid`, which is per-device and per-copy. The partner is always
+  // in the SAME owner, so the lineage alone identifies it.
+  //
+  // The two halves are two independent entities and may arrive in different
+  // batches. The LANDING links them, not the live-window self-heal: a half whose
+  // partner has not landed keeps `pendingPartnerLineage` on its cursor and its
+  // snapshot re-emits the baseline's value, never "" (design §7.4).
+  PhiSettingValue split_partner_uuid = 7;
+
+  // NOT last-writer-wins: written once, merged deterministically on
+  // disagreement -- same rule as PhiBookmarkEntity.source.
+  int32 source = 8;
+
+  // NOT last-writer-wins: merged with min().
+  int64 created_at_ms = 9;
+
+  reserved 10 to 13;  // M3-4 / M4. Do not reuse.
 }

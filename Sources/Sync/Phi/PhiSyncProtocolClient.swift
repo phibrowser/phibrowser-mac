@@ -51,6 +51,25 @@ enum PhiSyncEntity {
     /// and the server's `IS DISTINCT FROM` idempotence check still works.
     static let spaceEntityName = "phi-space"
 
+    /// 一条书签 / 文件夹 = 一条实体，tag `phi-bookmark:<bookmark_uuid>`。
+    /// SHA1 前缀（空 `EntitySpecifics{phi:{}}`）是按 DATA TYPE 的，三种 kind 共用。
+    static let bookmarkTagPrefix = "phi-bookmark:"
+    static func bookmarkClientTag(_ uuid: String) -> String { bookmarkTagPrefix + uuid }
+    /// 服务端明文落库的 `entities.name`，每 kind 一个常量（零知识 + 幂等判据）。
+    static let bookmarkEntityName = "phi-bookmark"
+
+    /// 一条 pin 的身份是 `(lineage, owner)` 这一对（R-M3-3-15），两者都进 tag：
+    /// 一条 lineage 在 N 个 Space 里就是 N 条实体。
+    ///
+    /// `lineage` **必须已经过 `PinKind.lineageKey(_:)` 归一（小写）**，与索引种子、
+    /// 落地匹配用的是同一个 helper；拿到未归一的大写 lineage 会算出一个线上永远对不上的
+    /// hash，于是每一条 pin 实体都被 §2.5 的接收端校验判成伪造载荷。
+    static let pinTagPrefix = "phi-pin:"
+    static func pinClientTag(_ lineage: String, ownerKey: String) -> String {
+        pinTagPrefix + lineage + ":" + ownerKey
+    }
+    static let pinEntityName = "phi-pin"
+
     /// Chromium's rule: `base64(SHA1(<serialized empty specifics for the type> + client_tag))`.
     /// The server treats it as an opaque uniqueness key, but keeping the Chromium derivation
     /// means a fork client computing it the standard way lands on the same entity.

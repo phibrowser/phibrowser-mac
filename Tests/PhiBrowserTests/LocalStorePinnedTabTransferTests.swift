@@ -246,6 +246,125 @@ final class LocalStorePinnedTabTransferTests: XCTestCase {
         XCTAssertEqual(target[1].splitPartnerGuid, target[0].guid)
     }
 
+    // MARK: - 作用域迁移的合并键（R-M3-3-16）
+
+    // CASE 2b.1 —— `contentSignature(for:)` 今天是 `(title, url, favicon)`，而
+    // `mergeCandidates` 只在签名相等时才合并同 lineage 的两份副本。D9 让 favicon 留在
+    // 设备本地并各自回填，所以两台机器对同一条 pin 合法地持有不同的 favicon 字节——于是
+    // 同一次账户级作用域变更在 A 上合出 1 行、在 B 上合出 2 行，两台机器的 pin 数量从此
+    // 不同，且各自都认为自己是对的。
+    func testScopeMigrationMergesLineageAcrossDifferingFaviconBytes() async throws {
+        let store = try makeStoreWithSpaces()
+        try await store.changePinnedTabScope(to: .space)
+        try insertPinned(
+            in: store,
+            guid: "p1",
+            profileId: "Default",
+            spaceId: "space-a",
+            title: "Shared",
+            url: "https://shared.example",
+            configure: { model in
+                model.pinLineageId = "L"
+                model.favicon = Data([0x1])
+            }
+        )
+        try insertPinned(
+            in: store,
+            guid: "p2",
+            profileId: "Default",
+            spaceId: "space-b",
+            title: "Shared",
+            url: "https://shared.example",
+            configure: { model in
+                model.pinLineageId = "L"
+                model.favicon = nil
+            }
+        )
+
+        try await store.changePinnedTabScope(
+            to: .profile,
+            preferredProfileId: "Default",
+            preferredSpaceId: "space-a"
+        )
+        drainMainQueue()
+
+        let merged = store.getAllPinnedTabs(for: "Default").filter { $0.pinLineageId == "L" }
+        XCTAssertEqual(merged.count, 1)
+    }
+
+    // MARK: - updateActivePinnedTabThrowing / removeActivePinnedTabThrowing
+
+    // CASE 2b.2 —— 「guid 不在当前作用域」是 fail-closed 的设计、不是 bug，但对同步层
+    // 必须可见：引擎会把一次没发生的写当成落地并写下基线。
+    func testUpdateActivePinnedTabThrowingRejectsARowOutsideTheActiveScope() async throws {
+        let store = try await makeStoreWithAnInactiveSpaceBPin()
+
+        await assertThrows(.rowNotInActiveScope) {
+            try await store.updateActivePinnedTabThrowing(
+                guid: "space-b-pin",
+                url: URL(string: "https://edited.example"),
+                title: "Edited"
+            )
+        }
+    }
+
+    // CASE 2b.3 —— 与 2b.2 是两个不同的入口，各测一次（§4.9 穷举的是「两个
+    // `…ActivePinnedTab` 各一条」）。
+    func testRemoveActivePinnedTabThrowingRejectsARowOutsideTheActiveScope() async throws {
+        let store = try await makeStoreWithAnInactiveSpaceBPin()
+
+        await assertThrows(.rowNotInActiveScope) {
+            try await store.removeActivePinnedTabThrowing(guid: "space-b-pin")
+        }
+    }
+
+    // CASE 2b.4
+    func testRemoveActivePinnedTabThrowingThrowsWhenTheRowIsMissing() async throws {
+        let store = try makeStoreWithSpaces()
+        try await store.changePinnedTabScope(to: .space)
+
+        await assertThrows(.rowNotFound) {
+            try await store.removeActivePinnedTabThrowing(guid: "no-such-guid")
+        }
+    }
+
+    // 一条属于 `space-b` 的 pin，在一次以 `space-a` 为 preferred 的作用域变更之后被留成
+    // 作用域外的备份行：`migratePinnedTabs` 保留源行、另建新的 Profile 形状物理行，所以
+    // 一个在这次交接期间排好队的 UI 动作仍然会带着旧 guid 打过来。
+    private func makeStoreWithAnInactiveSpaceBPin() async throws -> LocalStore {
+        let store = try makeStoreWithSpaces()
+        try await store.changePinnedTabScope(to: .space)
+        try insertPinned(
+            in: store,
+            guid: "space-b-pin",
+            profileId: "Default",
+            spaceId: "space-b",
+            title: "B",
+            url: "https://b.example"
+        )
+        try await store.changePinnedTabScope(
+            to: .profile,
+            preferredProfileId: "Default",
+            preferredSpaceId: "space-a"
+        )
+        drainMainQueue()
+        return store
+    }
+
+    private func assertThrows(_ expected: LocalStoreWriteError,
+                              file: StaticString = #filePath,
+                              line: UInt = #line,
+                              _ block: () async throws -> Void) async {
+        do {
+            try await block()
+            XCTFail("Expected \(expected) to be thrown.", file: file, line: line)
+        } catch let error as LocalStoreWriteError {
+            XCTAssertEqual(error, expected, file: file, line: line)
+        } catch {
+            XCTFail("Unexpected error: \(error)", file: file, line: line)
+        }
+    }
+
     private func makeStoreWithSpaces() throws -> LocalStore {
         let directory = URL(fileURLWithPath: NSTemporaryDirectory())
             .appendingPathComponent(UUID().uuidString, isDirectory: true)

@@ -1120,3 +1120,597 @@ extension SyncableOwnedItemsTests {
         XCTAssertEqual(dropped, 1)
     }
 }
+
+// MARK: - PinKind（Task 4b）
+
+/// `PinKind` 的模块级用例：与上面那一族同样**没有 SwiftData、没有引擎、没有持久化**。
+///
+/// 单独一个类而不是 `SyncableOwnedItemsTests` 的 extension：pin 的 `arrival` / `planned`
+/// / 行构造与书签同名不同型，同一个类里两套重载会让每一处调用都要写类型标注。
+///
+/// 类标 `@MainActor` 是因为 CASE 4b.2 要用 Task 0 那个 `@MainActor` 的 `FakePinAccess`
+/// 去钉 `allPins()` 的契约。
+@MainActor
+final class PinKindTests: XCTestCase {
+
+    private let resolve = OwnerResolver.fixture()
+
+    /// 把字面量 `"app"` 映射到**它自己**的解析器——引擎侧（Task 5b / Task 6）构造
+    /// `OwnerResolver` 时要做的正是这一件事。
+    ///
+    /// 为什么必须在解析器里做、而不是在 `tombstones` 里特判这个字符串：`tombstones`
+    /// 判「这条游标的归属还在不在」走的是 `localSpaceId` 与 `localProfileId`，两个都解析
+    /// 不出来就按**归属未映射**跳过（§4.2 第 1 条）。一条 App 作用域 pin 的 `ownerUuid`
+    /// 是字面量 `"app"`，于是那条游标永远不产出 tombstone——用户删掉的 App 作用域 pin
+    /// 在账户上不死，每台新设备加入都把它拉回来（CASE 4b.4b）。特判那个字符串则会给
+    /// 「归属未映射」这条规则在 pin 侧开一个例外，而那条规则正是 §4.7 用来防「一次映射
+    /// 抖动删掉整个 Space 的书签」的。
+    private let resolveWithApp = OwnerResolver.fixture(
+        profileUuids: ["Default": "pu-1", "app": "app"])
+
+    // MARK: - 小工具
+
+    /// 本机行的内容取值与 `pinPayload` 的默认值逐字段对齐（`createdDate` 1 秒 = 1000 ms
+    /// 正是 `pinPayload` 的 `createdAtMs` 默认值），于是「没有任何变化」的用例产出的字节
+    /// 真的等于基线。
+    private func pinRow(lineageId: String = "LX",
+                        guid: String = "p1",
+                        spaceId: String? = nil,
+                        profileId: String? = "Default",
+                        index: Int = 0,
+                        title: String = "T",
+                        url: URL = URL(string: "https://e.example")!,
+                        splitPartnerLineageId: String? = nil,
+                        contentUpdatedDate: Date? = nil,
+                        isDormant: Bool = false) -> PhiLocalPin {
+        PhiLocalPin.fixture(lineageId: lineageId, guid: guid, spaceId: spaceId,
+                            profileId: profileId, index: index, title: title, url: url,
+                            splitPartnerLineageId: splitPartnerLineageId,
+                            createdDate: Date(timeIntervalSince1970: 1),
+                            contentUpdatedDate: contentUpdatedDate, isDormant: isDormant)
+    }
+
+    private func snapshot(_ locals: [PhiLocalPin],
+                          table: PhiOwnedItemTable = PhiOwnedItemTable(),
+                          resolve: OwnerResolver? = nil,
+                          scope: PinnedTabScope? = .space,
+                          now: Int64 = 5_000) -> OwnedItemSnapshotResult<Phi_PhiPinTabEntity> {
+        SyncableOwnedItems.snapshot(PinKind.self, locals: locals, table: table,
+                                    resolve: resolve ?? self.resolve, scope: scope, now: now)
+    }
+
+    private func tombstones(_ locals: [PhiLocalPin],
+                            table: PhiOwnedItemTable,
+                            resolve: OwnerResolver? = nil,
+                            scope: PinnedTabScope? = .space,
+                            nowMs: Int64 = 5_000) -> OwnedItemTombstoneResult {
+        SyncableOwnedItems.tombstones(PinKind.self, locals: locals, table: table,
+                                      resolve: resolve ?? self.resolve, scope: scope,
+                                      nowMs: nowMs)
+    }
+
+    /// 一条**活**游标，带基线与归属。
+    private func landedCursor(_ payload: Phi_PhiPinTabEntity,
+                              entityId: String = "srv-1",
+                              version: Int64 = 1,
+                              ownerUuid: String? = "su-1") -> PhiOwnedItemCursor {
+        ownedCursor(reconciled: baselineBytes(payload), entityId: entityId,
+                    version: version, ownerUuid: ownerUuid)
+    }
+
+    // MARK: - CASE 4b.1
+
+    /// CASE 4b.1（spec 7c）— pin 没有 location：一条 lineage 在两个 owner 下就是两条实体，
+    /// 而 `rank` 走**普通 LWW**。
+    ///
+    /// 防的是什么：owner 是身份的一半（R-M3-3-15），把它当成一个可合并的字段、或者把一条
+    /// lineage 当成一条实体，会让两个 Space 里的同一条 pin 在字典里互相覆盖——账户上只剩
+    /// 一条，另一个 Space 里那一条既到不了别的机器、也无法被别的机器删除。`rank` 若套用
+    /// 书签那条「相干」规则，它要去问一个 pin 根本没有的 location，结果由一个恒相等的值
+    /// 决定。
+    func testOneLineageInTwoOwnersIsTwoEntitiesAndItsRankIsPlainLastWriterWins() {
+        let rows = [pinRow(guid: "p1", spaceId: "space-a"),
+                    pinRow(guid: "p2", spaceId: "space-b")]
+
+        let result = snapshot(rows, scope: .space)
+
+        let keys = Set(result.entities.keys)
+        XCTAssertEqual(keys, ["lx:su-1", "lx:su-2"])
+
+        // 同一身份的两条实体：戳大的 rank 赢，两个方向结果相同，没有 location 参与。
+        let older = pinPayload(lineage: "lx", ownerKey: "su-1", rank: "a", rankStamp: 100)
+        let newer = pinPayload(lineage: "lx", ownerKey: "su-1", rank: "b", rankStamp: 200)
+        let forward = PinKind.merge(local: older, remote: newer).rank.stringValue
+        let backward = PinKind.merge(local: newer, remote: older).rank.stringValue
+        XCTAssertEqual(forward, "b")
+        XCTAssertEqual(backward, "b")
+    }
+
+    // MARK: - CASE 4b.2 / 4b.3 / 4b.3b
+
+    /// CASE 4b.2（spec 8b 第一句）— 只剩休眠行的 lineage：不进快照，但**产出** tombstone。
+    ///
+    /// 防的是什么：v3 的 spec 在这里写反了（V12）。`allPins()` 的契约是「当前作用域内、
+    /// **非休眠**的全部行」，所以一条只剩休眠副本的 lineage 在差分眼里就是「本机没有这
+    /// 一行」，三条判据全中。写成「不产出」的实现会让一条用户已经收起来的 pin 永远赖在
+    /// 账户上，每台新设备加入都把它拉回来。
+    ///
+    /// 两个断言面各钉一半：假 access 的 `allPins()` 真的把休眠行滤掉（契约），而把那条
+    /// 休眠行**直接**喂给模块时 `PinKind` 自己也不发布它（`PhiLocalPin.isDormant` 的自述
+    /// 「休眠行不进快照，也不参与差分」在 kind 这一层也成立）。
+    func testALineageLeftWithOnlyADormantRowLeavesTheSnapshotButStillTombstones() {
+        let dormant = pinRow(guid: "p1", spaceId: "space-a", isDormant: true)
+        var table = PhiOwnedItemTable()
+        table.cursors["lx:su-1"] = landedCursor(pinPayload(lineage: "lx", ownerKey: "su-1"))
+        let access = FakePinAccess(scope: .space, account: .space, rows: [dormant])
+
+        let visible = access.allPins()
+        let published = snapshot([dormant], table: table).entities
+        let result = tombstones([dormant], table: table)
+
+        let visibleCount = visible.count
+        let publishedCount = published.count
+        let identities = result.identities
+        XCTAssertEqual(visibleCount, 0, "allPins() 的契约：非休眠的全部行")
+        XCTAssertEqual(publishedCount, 0)
+        XCTAssertEqual(identities, ["lx:su-1"])
+    }
+
+    /// CASE 4b.3（spec 8b 第三句）— 同 owner 下多条同 lineage 活动行，**全部**消失才产出。
+    ///
+    /// 防的是什么：按「找到一条就算在」写对；按「数量变了就算删」写错——后者会在用户关掉
+    /// 其中一个副本时，把整条 lineage 从账户上删掉。
+    func testALineageWithSeveralActiveRowsOnlyTombstonesWhenTheLastOneIsGone() {
+        let rows = [pinRow(guid: "p1", spaceId: "space-a", index: 0),
+                    pinRow(guid: "p2", spaceId: "space-a", index: 1)]
+        var table = PhiOwnedItemTable()
+        table.cursors["lx:su-1"] = landedCursor(pinPayload(lineage: "lx", ownerKey: "su-1"))
+
+        let withBoth = tombstones(rows, table: table).identities
+        let withOne = tombstones([rows[0]], table: table).identities
+        let withNone = tombstones([], table: table).identities
+
+        XCTAssertEqual(withBoth, [])
+        XCTAssertEqual(withOne, [])
+        XCTAssertEqual(withNone, ["lx:su-1"])
+    }
+
+    /// CASE 4b.3b（spec 8b 第二句 / V27）— 活动行与休眠备份并存：只投影活动行，不产出
+    /// tombstone。
+    ///
+    /// 防的是什么：把休眠副本也算进快照会让同一条身份有两个候选投影，两次运行挑中不同的
+    /// 那一条就产生一次假的字段变化；而把「存在休眠副本」当成「还在」的实现会与 CASE 4b.2
+    /// 直接冲突。
+    func testAnActiveRowBesideADormantBackupProjectsOnlyTheActiveOne() {
+        let active = pinRow(guid: "p1", spaceId: "space-a", index: 0, title: "活")
+        let dormant = pinRow(guid: "p2", spaceId: "space-a", index: 1, title: "休眠",
+                             isDormant: true)
+        var table = PhiOwnedItemTable()
+        table.cursors["lx:su-1"] = landedCursor(pinPayload(lineage: "lx", ownerKey: "su-1"))
+
+        let published = snapshot([active, dormant], table: table).entities
+        let identities = tombstones([active, dormant], table: table).identities
+
+        let keys = Set(published.keys)
+        let title = published["lx:su-1"]?.title.stringValue
+        XCTAssertEqual(keys, ["lx:su-1"])
+        XCTAssertEqual(title, "活")
+        XCTAssertEqual(identities, [])
+    }
+
+    // MARK: - CASE 4b.4 / 4b.4b / 4b.5
+
+    /// CASE 4b.4（spec 14）— owner 按 §7.2 的表推导：Space / Profile / App 各一条。
+    ///
+    /// 防的是什么：§7.2 把 App 作用域定义为「两者都为 nil」，而 `pinnedTab(_:belongsTo:)`
+    /// 保证一条行恰好属于一个 owner，所以判据是**先看 `spaceId` 再看 `profileId`**，不是
+    /// 「哪个非 nil 用哪个」——一条 Space 作用域的行两个字段都非 nil。
+    func testTheOwnerIsDerivedFromTheRowShapeForEachOfTheThreeScopes() {
+        let spaceScoped = pinRow(guid: "p1", spaceId: "space-a", profileId: nil)
+        let profileScoped = pinRow(guid: "p2", spaceId: nil, profileId: "Default")
+        let appScoped = pinRow(guid: "p3", spaceId: nil, profileId: nil)
+
+        let space = PinKind.eligibilityOwner(of: spaceScoped, resolve: resolve, scope: .space)
+        let profile = PinKind.eligibilityOwner(of: profileScoped, resolve: resolve, scope: .profile)
+        let app = PinKind.eligibilityOwner(of: appScoped, resolve: resolve, scope: .app)
+        XCTAssertEqual(space, "su-1")
+        XCTAssertEqual(profile, "pu-1")
+        XCTAssertEqual(app, "app")
+
+        // 一条 Space 作用域的真实行两个字段都非 nil（`PhiLocalPin.spaceId` 的自述）：
+        // 判据仍然先看 `spaceId`。
+        let bothSet = pinRow(guid: "p4", spaceId: "space-b", profileId: "Default")
+        let derived = PinKind.eligibilityOwner(of: bothSet, resolve: resolve, scope: .space)
+        XCTAssertEqual(derived, "su-2")
+    }
+
+    /// CASE 4b.4b — App 作用域的游标照常产出 tombstone。
+    ///
+    /// 防的是什么：`"app"` 两个解析器都不认，按「归属未映射」跳过的话这条游标永远不产出
+    /// tombstone——用户删掉的 App 作用域 pin 在账户上不死，每台新设备都把它拉回来。这条
+    /// 用例只有在 resolver 把 `"app"` 映射到自己之后才绿，所以它同时是 Task 5b / Task 6
+    /// 那一行注释的探测器。
+    func testAnAppScopedCursorStillTombstonesOnceTheResolverMapsTheLiteralToItself() {
+        var table = PhiOwnedItemTable()
+        table.cursors["lx:app"] = landedCursor(pinPayload(lineage: "lx", ownerKey: "app"),
+                                               ownerUuid: "app")
+
+        let mapped = tombstones([], table: table, resolve: resolveWithApp, scope: .app).identities
+        let unmapped = tombstones([], table: table, resolve: resolve, scope: .app).identities
+
+        XCTAssertEqual(mapped, ["lx:app"])
+        XCTAssertEqual(unmapped, [], "解析器不认 \"app\" 时它被当作归属未映射——这正是要修的")
+    }
+
+    /// CASE 4b.5 — 映射缺失 ⇒ 排除，**不退化成 `"app"`**。
+    ///
+    /// 防的是什么：退化成 `"app"` 会把一条 Space 作用域的 pin 发成账户全局的，对端按 App
+    /// 作用域落地之后它在**每一个** Space 里都出现。
+    func testARowWhoseSpaceHasNoMappingIsExcludedRatherThanFallingBackToTheAppScope() {
+        let orphan = pinRow(guid: "p1", spaceId: "space-z")
+
+        let owner = PinKind.eligibilityOwner(of: orphan, resolve: resolve, scope: .space)
+        let result = snapshot([orphan], scope: .space)
+
+        let produced = result.entities.count
+        let unmapped = result.skippedUnmappedOwner
+        XCTAssertNil(owner)
+        XCTAssertEqual(produced, 0)
+        XCTAssertEqual(unmapped, 1)
+    }
+
+    // MARK: - CASE 4b.6
+
+    /// CASE 4b.6 — `lineageKey` 归一并贯穿身份与 client tag。
+    ///
+    /// 防的是什么：`PhiSyncEntity.pinClientTag(_:ownerKey:)` 自己**不做**任何大小写归一
+    /// （有意如此，它是一个纯拼接函数），归一的责任全部落在 `lineageKey(_:)` 上。三处
+    /// 共用它——tag 的构造、§5.1 的索引种子、落地时的匹配——任何一处漏掉，算出的 hash 与
+    /// 线上那条永不相等，§2.5 的接收端校验会把**每一条** pin 实体都判成伪造载荷。
+    func testTheLineageKeyNormalizesOnceAndRunsThroughBothTheIdentityAndTheTag() {
+        let key = PinKind.lineageKey("LX-Abc")
+        let row = pinRow(lineageId: "LX-Abc", guid: "p1", profileId: "Default")
+
+        let identity = PinKind.identity(of: row, resolve: resolve, scope: .profile)
+        XCTAssertEqual(key, "lx-abc")
+        XCTAssertEqual(identity, "lx-abc:pu-1")
+
+        // 身份的后半段与 client tag 的后半段逐字一致。
+        let tag = identity.map { PinKind.tagPrefix + $0 }
+        let built = PhiSyncEntity.pinClientTag(key, ownerKey: "pu-1")
+        XCTAssertEqual(tag, built)
+    }
+
+    // MARK: - CASE 4b.7
+
+    /// CASE 4b.7（spec 14 后半）— 换 owner = 旧 tag 的 tombstone + 新 tag 的 create。
+    ///
+    /// 防的是什么：把它当成一次字段更新会在线上留下一条谁都不再持有、也永远不会被差分
+    /// 判成删除的孤儿实体。`PinApplyOp` 里因此**不存在** `rebind`。
+    func testMovingAPinToAnotherOwnerTombstonesTheOldTagAndCreatesTheNewOne() {
+        var table = PhiOwnedItemTable()
+        table.cursors["lx:su-1"] = landedCursor(pinPayload(lineage: "lx", ownerKey: "su-1"))
+        let moved = pinRow(guid: "p1", spaceId: "space-b")
+
+        let published = snapshot([moved], table: table).entities
+        let identities = tombstones([moved], table: table).identities
+
+        let keys = Array(published.keys)
+        XCTAssertEqual(keys, ["lx:su-2"])
+        XCTAssertEqual(identities, ["lx:su-1"])
+    }
+
+    // MARK: - CASE 4b.8
+
+    /// CASE 4b.8（spec 14b / A11）— 同 owner 下的同 lineage 变体重铸，落在 `PinApplyBatch` 里。
+    ///
+    /// 防的是什么：做成发布段 pre-pass 的旁路写，会在「重铸已提交、实体未发布」的中间态
+    /// 崩掉，而重铸不可逆（旧 lineage 已经不在任何行上）。按「一条实体、多个物理副本」写
+    /// 则会留下一整类**永远同步不了**的行：第二个副本没有自己的身份，既到不了别的机器，
+    /// 也无法被别的机器删除。
+    func testVariantsUnderOneOwnerAreRelineagedKeepingTheLowestIndexRow() {
+        let rows = [pinRow(guid: "p1", spaceId: "space-a", index: 0),
+                    pinRow(guid: "p2", spaceId: "space-a", index: 1)]
+
+        let batch = PinKind.normalizeVariants(locals: rows)
+
+        let ops = batch.ops
+        XCTAssertEqual(ops.count, 1)
+        guard case .relineage(let guid, let newLineageId)? = ops.first else {
+            return XCTFail("期待恰好一条 relineage")
+        }
+        XCTAssertEqual(guid, "p2", "index 最小的那一条保留原 lineage")
+        XCTAssertNotEqual(newLineageId, "LX")
+        XCTAssertNotEqual(PinKind.lineageKey(newLineageId), "lx")
+        XCTAssertFalse(newLineageId.isEmpty)
+    }
+
+    /// CASE 4b.8（后半）— 一个 owner 一组：不同 owner 下的同 lineage 行**不是**变体。
+    ///
+    /// 防的是什么：按 lineage 单独分组会把「一条 lineage 在 N 个 Space 里」这个**正常**
+    /// 形状（`migratePinnedTabs` Profile → Space 的扇出）判成 N-1 条要重铸的变体，于是
+    /// 一次作用域迁移之后两台机器各自重铸、各自造出一批只有自己有的 pin。
+    func testTheSameLineageInTwoOwnersIsNotAVariantAndIsNeverRelineaged() {
+        let rows = [pinRow(guid: "p1", spaceId: "space-a"),
+                    pinRow(guid: "p2", spaceId: "space-b")]
+
+        let ops = PinKind.normalizeVariants(locals: rows).ops
+
+        XCTAssertTrue(ops.isEmpty)
+    }
+
+    // MARK: - CASE 4b.9
+
+    /// CASE 4b.9（spec 14c / R-M3-3-23）— 作用域往返之后的复活沿用**旧游标**。
+    ///
+    /// 防的是什么：用 `entityId == ""` / `baseVersion == 0` 发 create 会被服务端按
+    /// `baseVersion` 不匹配拒掉，这条 pin 此后每一轮都重试同一个必然失败的提交。
+    ///
+    /// 断言落在「快照产出的身份就是那条游标的键」上：发布段的切片构造（Task 6 Step 5）读
+    /// 的正是 `table.cursors[身份]` 的 `entityId` 与 `version`，所以身份一旦漂掉（lineage
+    /// 没归一、owner 推导换了一种写法），它找到的就是「没有游标」，于是发 create。
+    /// **不断言「游标没被快照改动」**（V34）：`snapshot` 收的是 `table` 的值拷贝，那条断言
+    /// 对任何实现都恒真。
+    func testAResurrectedPinKeepsTheIdentityThatAlreadyCarriesTheServerTriple() {
+        var table = PhiOwnedItemTable()
+        var tombstoned = landedCursor(pinPayload(lineage: "lx", ownerKey: "pu-1"),
+                                      entityId: "e-lx", version: 42, ownerUuid: "pu-1")
+        tombstoned.deletedAtMs = 900
+        table.cursors["lx:pu-1"] = tombstoned
+        let revived = pinRow(guid: "p1", profileId: "Default")
+
+        let result = snapshot([revived], table: table, scope: .profile)
+
+        let keys = Set(result.entities.keys)
+        let cursor = table.cursors[keys.first ?? ""]
+        let entityId = cursor?.entityId
+        let version = cursor?.version
+        XCTAssertEqual(keys, ["lx:pu-1"], "复活的实体落在那条 tombstone 游标的键上")
+        XCTAssertEqual(entityId, "e-lx")
+        XCTAssertEqual(version, 42)
+    }
+}
+
+// MARK: - PinKind 的入站半边（CASE 4b.10 – 4b.15）
+
+extension PinKindTests {
+
+    private func arrival(_ payload: Phi_PhiPinTabEntity,
+                         entityId: String = "srv-1",
+                         version: Int64 = 1) -> OwnedItemArrival<Phi_PhiPinTabEntity> {
+        OwnedItemArrival(entity: payload, entityId: entityId, version: version)
+    }
+
+    private func planned(_ arrivals: [OwnedItemArrival<Phi_PhiPinTabEntity>],
+                         parked: [String: ParkedOwnedItem] = [:],
+                         table: PhiOwnedItemTable = PhiOwnedItemTable(),
+                         resolve: OwnerResolver? = nil,
+                         context: OwnedItemPlanContext = OwnedItemPlanContext()) -> OwnedItemPlan {
+        SyncableOwnedItems.plan(PinKind.self, arrivals: arrivals, parked: parked, table: table,
+                                resolve: resolve ?? OwnerResolver.fixture(), context: context)
+    }
+
+    private func pendingDeleteTable(_ identity: String,
+                                   decidedAtMs: Int64 = 1_000) -> PhiOwnedItemTable {
+        var table = PhiOwnedItemTable()
+        table.cursors[identity] = pendingDeleteCursor(decidedAtMs: decidedAtMs)
+        return table
+    }
+
+    // MARK: - CASE 4b.10
+
+    /// CASE 4b.10（spec 15 / R-M3-3-12）— 作用域不一致：零发布 + 入站**全部停放**，收敛
+    /// 之后的第一轮原样落地。
+    ///
+    /// 防的是什么（其一）：丢弃的话，共享 marker 已经逐页推过去了，服务端只按
+    /// `version > marker` 下发——那些实体**再也不会重发**，直到某个对端碰巧再编辑一次。
+    /// 而这一轮恰恰是最可能带着 pin 实体的那一轮：作用域是随设置通道落地的，对端正是在
+    /// 那一刻重新发布了它按新作用域派生出的 pin。
+    ///
+    /// 防的是什么（其二，V7）：`OwnedItemPlanContext` 不带 `localScope` / `accountScope`
+    /// 这两个成员时，这条 Expected **没有任何输入能产出**——`plan` 看不到作用域，就不可能
+    /// 因为作用域而把整批入站停放。
+    func testAScopeMismatchParksEveryArrivalAndTheNextAgreeingRoundLandsThem() {
+        var mismatched = OwnedItemPlanContext()
+        mismatched.localScope = .space
+        mismatched.accountScope = .profile
+
+        let parkedRound = planned([arrival(pinPayload(lineage: "lx", ownerKey: "pu-1"))],
+                                  context: mismatched)
+
+        let mismatchedSteps = parkedRound.steps
+        let parkedKeys = Set(parkedRound.parked.keys)
+        let waitingFor = parkedRound.parked["lx:pu-1"]?.pendingOwnerUuid
+        XCTAssertTrue(mismatched.scopeMismatch)
+        XCTAssertTrue(mismatchedSteps.isEmpty)
+        XCTAssertEqual(parkedKeys, ["lx:pu-1"], "入站的那条进 parked，不是被丢弃")
+        XCTAssertEqual(waitingFor, "pu-1")
+
+        // 作用域收敛之后的第一轮：把上一轮的 `parked` 原样传回去。
+        var agreed = OwnedItemPlanContext()
+        agreed.localScope = .profile
+        agreed.accountScope = .profile
+
+        let landedRound = planned([], parked: parkedRound.parked, context: agreed)
+
+        let landedIdentities = landedRound.steps.map(\.identity)
+        let landedKinds = landedRound.steps.map(\.kind)
+        let stillParked = Array(landedRound.parked.keys)
+        XCTAssertFalse(agreed.scopeMismatch)
+        XCTAssertEqual(landedIdentities, ["lx:pu-1"])
+        XCTAssertEqual(landedKinds, [.create])
+        XCTAssertTrue(stillParked.isEmpty)
+    }
+
+    // MARK: - CASE 4b.11 / 4b.11c
+
+    /// CASE 4b.11（spec 16 / §7.4）— 拆分对只到一条时，快照发**基线里**的 partner，不发
+    /// 空串。
+    ///
+    /// 防的是什么：本机行的 `splitPartnerGuid` 是 nil（伙伴还没落地），而基线里的
+    /// `split_partner_uuid` 是伙伴的 lineage。判出「这个字段变了」并把 `""` 盖上 `now`
+    /// 发出去，等于宣布「这条 pin 不再有拆分伙伴」——会在对端把一个完好的拆分对拆开，而
+    /// 这台机器只是接收了它。
+    func testAHalfLandedSplitPairReEmitsTheBaselinePartnerRatherThanClearingIt() {
+        let baseline = pinPayload(lineage: "lx", ownerKey: "pu-1", splitPartner: "lb")
+        var table = PhiOwnedItemTable()
+        table.cursors["lx:pu-1"] = ownedCursor(reconciled: baselineBytes(baseline),
+                                               entityId: "srv-1", version: 1,
+                                               ownerUuid: "pu-1")
+        let halfLanded = pinRow(guid: "p1", profileId: "Default", splitPartnerLineageId: nil)
+
+        let result = snapshot([halfLanded], table: table, scope: .profile)
+
+        let entity = result.entities["lx:pu-1"]
+        let partner = entity?.splitPartnerUuid.stringValue
+        let partnerStamp = entity?.splitPartnerUuid.updatedAtMs
+        XCTAssertEqual(partner, "lb")
+        XCTAssertEqual(partnerStamp, 100, "照抄基线那一份，连戳一起——它不是一次本机变化")
+    }
+
+    /// CASE 4b.11c（spec item 16 / V28）— 伙伴到达时产出的是一条**普通的字段更新**。
+    ///
+    /// 防的是什么：既有的 `reconcilePinnedSplitPartners()` 是给**本机**拆分操作用的启发式
+    /// 修复（它遍历活动窗口里的 `SplitGroup`，而一对由同步落地的拆分 pin 根本没有活动
+    /// group）。让同步落地去调它，等于把一个「猜哪两条该配对」的算法插进一条已经有确定
+    /// 答案（`split_partner_uuid` 字段）的路径。
+    ///
+    /// **本任务能观察到的是这条**：`plan` 为一次 partner 变化产出的是 `.update` 而不是
+    /// 别的相，于是落地段（Task 6b）拿到的是 `PinApplyOp.update` 这一条确定的写。假件的
+    /// `lastAppliedOps` 断言要等引擎接线之后才有被测对象（CASE 6b.12）。
+    func testAPartnerLinkArrivingIsAPlainFieldUpdate() {
+        let baseline = pinPayload(lineage: "lx", ownerKey: "pu-1", splitPartner: "")
+        var table = PhiOwnedItemTable()
+        table.cursors["lx:pu-1"] = ownedCursor(reconciled: baselineBytes(baseline),
+                                               entityId: "srv-1", version: 1,
+                                               ownerUuid: "pu-1")
+        let linked = pinPayload(lineage: "lx", ownerKey: "pu-1", splitPartner: "lb",
+                                contentStamp: 2_000)
+
+        let plan = planned([arrival(linked)], table: table)
+
+        let kinds = plan.steps.map(\.kind)
+        let identities = plan.steps.map(\.identity)
+        XCTAssertEqual(kinds, [.update], "partner 变化算进内容签名，且只算进内容签名")
+        XCTAssertEqual(identities, ["lx:pu-1"])
+    }
+
+    // MARK: - CASE 4b.12 / 4b.13
+
+    /// CASE 4b.12（spec 17a）— `pendingDelete` 遇一次普通更新 ⇒ 丢弃，本机的删除赢。
+    func testAnOrdinaryUpdateArrivingOnAPendingDeleteIsDiscarded() {
+        let table = pendingDeleteTable("lx:pu-1", decidedAtMs: 1_000)
+        // 只改了标题：内容戳 2000，而**位置戳**（pin 是 `rank` 的戳）还停在 100。
+        let edited = pinPayload(lineage: "lx", ownerKey: "pu-1", title: "新标题",
+                                rankStamp: 100, contentStamp: 2_000)
+
+        let plan = planned([arrival(edited)], table: table)
+
+        let steps = plan.steps
+        let superseded = plan.supersededByDelete
+        let cancelled = plan.cancelledDeletes
+        XCTAssertTrue(steps.isEmpty)
+        XCTAssertEqual(superseded, 1)
+        XCTAssertTrue(cancelled.isEmpty)
+    }
+
+    /// CASE 4b.13（spec 17b / A6）— 被丢弃的那一条**仍然**要收割 `entityId` / `version`。
+    ///
+    /// 防的是什么：接下来那条 tombstone 会用一个过期的 `baseVersion` 提交并被永久拒绝，
+    /// 在真机上表现为一个每 60 s 重来一次、删除永远落不了地的循环。这条用例只有在 `plan`
+    /// 收 `OwnedItemArrival`（带协议层三元组）而不是裸载荷时才可能成立——载荷里根本没有
+    /// 这两个字段。
+    func testTheDiscardedArrivalStillHarvestsItsServerTriple() {
+        let table = pendingDeleteTable("lx:pu-1", decidedAtMs: 1_000)
+        let edited = pinPayload(lineage: "lx", ownerKey: "pu-1", title: "新标题",
+                                rankStamp: 100, contentStamp: 2_000)
+
+        let plan = planned([arrival(edited, entityId: "e-server", version: 77)], table: table)
+
+        let harvested = plan.harvest["lx:pu-1"]
+        let entityId = harvested?.entityId
+        let version = harvested?.version
+        let superseded = plan.supersededByDelete
+        XCTAssertEqual(entityId, "e-server")
+        XCTAssertEqual(version, 77)
+        XCTAssertEqual(superseded, 1)
+    }
+
+    // MARK: - CASE 4b.14 / 4b.15
+
+    /// CASE 4b.14（spec 17c / A9）— 入站实体的**位置**比删除决定更新 ⇒ 取消删除。
+    ///
+    /// 触发者是**远端实体**，不是本机的又一次编辑：按「本机行在决定之后又被改过」实现的
+    /// 版本会在本地无关改动上取消删除，同时把真正的 A9 情形丢掉（§5.6 警告的正是这种
+    /// 错配）。
+    ///
+    /// 这条同时是 `PinKind.locationStamp(of:)` 的探测器：它返回 0 的实现会让第一个合取项
+    /// **恒假**，于是 pin 侧的取消删除永远不触发，这条用例必红。
+    func testARemotePositionNewerThanTheDeleteDecisionCancelsTheDelete() {
+        let table = pendingDeleteTable("lx:pu-1", decidedAtMs: 1_000)
+        let moved = pinPayload(lineage: "lx", ownerKey: "pu-1", rank: "b", rankStamp: 2_000)
+
+        let plan = planned([arrival(moved)], table: table)
+
+        let identities = plan.steps.map(\.identity)
+        let cancelled = plan.cancelledDeletes
+        let superseded = plan.supersededByDelete
+        XCTAssertEqual(identities, ["lx:pu-1"])
+        XCTAssertTrue(cancelled.contains("lx:pu-1"))
+        XCTAssertEqual(superseded, 0)
+    }
+
+    /// CASE 4b.15（spec 17d）— 同样一次更新的两个否定支：该项进了被删子树、或它的归属
+    /// 解析不出来 ⇒ **仍然**丢弃，绝不取消删除。
+    func testAMoveIntoTheDeletedSubtreeOrAnUnresolvableOwnerStillLosesToTheDelete() {
+        // ① 这条身份本身就在本轮被删的那一片里。
+        let doomedTable = pendingDeleteTable("lx:pu-1", decidedAtMs: 1_000)
+        var doomedContext = OwnedItemPlanContext()
+        doomedContext.deletedSubtree = ["lx:pu-1"]
+        let moved = pinPayload(lineage: "lx", ownerKey: "pu-1", rank: "b", rankStamp: 2_000)
+
+        let doomed = planned([arrival(moved)], table: doomedTable, context: doomedContext)
+
+        let doomedSteps = doomed.steps
+        let doomedCancelled = doomed.cancelledDeletes
+        let doomedSuperseded = doomed.supersededByDelete
+        XCTAssertTrue(doomedSteps.isEmpty)
+        XCTAssertTrue(doomedCancelled.isEmpty)
+        XCTAssertEqual(doomedSuperseded, 1)
+
+        // ② 归属解析不出来：这条实体连落地资格都没有，先被停放（**不是**取消删除，也
+        //    不是丢弃——归属落地之后它还要重来一次）。
+        let orphanTable = pendingDeleteTable("lx:pu-nowhere", decidedAtMs: 1_000)
+        let orphan = pinPayload(lineage: "lx", ownerKey: "pu-nowhere", rank: "b",
+                                rankStamp: 2_000)
+
+        let unresolved = planned([arrival(orphan)], table: orphanTable)
+
+        let orphanSteps = unresolved.steps
+        let orphanCancelled = unresolved.cancelledDeletes
+        let orphanParked = Set(unresolved.parked.keys)
+        XCTAssertTrue(orphanSteps.isEmpty)
+        XCTAssertTrue(orphanCancelled.isEmpty)
+        XCTAssertEqual(orphanParked, ["lx:pu-nowhere"])
+    }
+
+    // MARK: - 拒收（§4.6 的 pin 半边）
+
+    /// §4.6 的 pin 拒收表只有两行，两行都测；owner 与作用域不符**不在**表里（§7.3 停放，
+    /// 由 CASE 4b.10 覆盖）。
+    ///
+    /// 防的是什么：非法 `rank` 是 `rankBetween` 的解码边界（发布构建里 `precondition` 直接
+    /// trap）；未归一的大写 lineage 若被接受，同一条 pin 在账户上会有两个身份。
+    func testThePinRefusalTableIsTheTwoStructuralCriteria() {
+        let empty = PinKind.refuses(pinPayload(lineage: ""), baseline: nil)
+        let uppercase = PinKind.refuses(pinPayload(lineage: "LX"), baseline: nil)
+        let illegalRank = PinKind.refuses(pinPayload(lineage: "lx", rank: "V0"), baseline: nil)
+        let emptyRank = PinKind.refuses(pinPayload(lineage: "lx", rank: ""), baseline: nil)
+        let legal = PinKind.refuses(pinPayload(lineage: "lx", rank: "V"), baseline: nil)
+        XCTAssertEqual(empty, .invalidUuid)
+        XCTAssertEqual(uppercase, .invalidUuid)
+        XCTAssertEqual(illegalRank, .illegalRank)
+        XCTAssertEqual(emptyRank, .illegalRank)
+        XCTAssertNil(legal)
+    }
+}

@@ -170,6 +170,7 @@
 		392281252FC7DEB695D315D9 /* data_type_progress_marker.pb.swift in Sources */ = {isa = PBXBuildFile; fileRef = 562A69946E80AE3B680976E0 /* data_type_progress_marker.pb.swift */; };
 		3BCDDE6FBABE4BD8A51F0127 /* TabGroupCellView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE7E61A49E8A472DB330779E /* TabGroupCellView.swift */; };
 		43C532DAE84A4F0EAACC5F85 /* AdvancedSettingViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9A1D8147A6979F022AFEB5B /* AdvancedSettingViewController.swift */; };
+		3C86DD3C9BAE1F787AE0386A /* PhiBookmarkLocalAccess.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1F44B5AD0F29A6489A7E04E /* PhiBookmarkLocalAccess.swift */; };
 		4508A9362EEFF2EB007C94E2 /* AccountWebWindowController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4508A9352EEFF2EB007C94E2 /* AccountWebWindowController.swift */; };
 		49ECA05E0E0E374C6D2CA9C2 /* AdvancedSettingHostingViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6B568F1D10AE6DD4026219CF /* AdvancedSettingHostingViewController.swift */; };
 		4B4B00000000000000000001 /* KioskGlobalShortcutRegistrar.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4B4B00000000000000000002 /* KioskGlobalShortcutRegistrar.swift */; };
@@ -269,6 +270,7 @@
 		897C09F52F6BEDA000E5CA9B /* IMChannelAPIClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 897C09EE2F6BEDA000E5CA9B /* IMChannelAPIClient.swift */; };
 		897C09F62F6BEDA000E5CA9B /* IMChannelsSettingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 897C09F02F6BEDA000E5CA9B /* IMChannelsSettingView.swift */; };
 		89BE563BBDEAE08AC824F2B8 /* SpacePairingStepView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F76D53B8FBA539CA65167C9F /* SpacePairingStepView.swift */; };
+		8B99944F2625AD1C6C443405 /* PhiPinnedTabLocalAccess.swift in Sources */ = {isa = PBXBuildFile; fileRef = 73157ACF7005B3A5B2B3FA50 /* PhiPinnedTabLocalAccess.swift */; };
 		8D2E1AF84824992526795C3F /* PairingWizardViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 72996560FA6510FB58EDDFFF /* PairingWizardViewModel.swift */; };
 		8E0A10052FEA000000000001 /* OverlayToastModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8E0A10012FEA000000000001 /* OverlayToastModels.swift */; };
 		8E0A10062FEA000000000001 /* OverlayToastCenter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8E0A10022FEA000000000001 /* OverlayToastCenter.swift */; };
@@ -1009,6 +1011,7 @@
 		6FFFE1C0B7A7B38B0B896CF4 /* PairingWizardView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = PairingWizardView.swift; path = UI/PairingWizardView.swift; sourceTree = "<group>"; };
 		7218F862C1F92C027CE8E979 /* ProfilePairingView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ProfilePairingView.swift; path = UI/ProfilePairingView.swift; sourceTree = "<group>"; };
 		72996560FA6510FB58EDDFFF /* PairingWizardViewModel.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = PairingWizardViewModel.swift; path = UI/PairingWizardViewModel.swift; sourceTree = "<group>"; };
+		73157ACF7005B3A5B2B3FA50 /* PhiPinnedTabLocalAccess.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = PhiPinnedTabLocalAccess.swift; sourceTree = "<group>"; };
 		772B9268E7C8EC28D42DD213 /* get_updates_caller_info.pb.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = get_updates_caller_info.pb.swift; sourceTree = "<group>"; };
 		7A5B00A02EF0000000000002 /* MemoryButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MemoryButton.swift; sourceTree = "<group>"; };
 		7B00AAAA000000040000A4B4 /* PostHogEnv.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PostHogEnv.swift; sourceTree = "<group>"; };
@@ -1376,6 +1379,7 @@
 		F02B00140000000000000004 /* BookmarkFolderIcons */ = {isa = PBXFileReference; lastKnownFileType = folder; path = BookmarkFolderIcons; sourceTree = "<group>"; };
 		F7FD00000000000000000001 /* FullTitleDisplay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FullTitleDisplay.swift; sourceTree = "<group>"; };
 		F1C7683ECEB27E49DFDEFC3C /* SpaceOverwriteDiff.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = SpaceOverwriteDiff.swift; path = UI/SpaceOverwriteDiff.swift; sourceTree = "<group>"; };
+		F1F44B5AD0F29A6489A7E04E /* PhiBookmarkLocalAccess.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = PhiBookmarkLocalAccess.swift; sourceTree = "<group>"; };
 		F381BC900D7B1C92A256C6D4 /* sync_enums.pb.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = sync_enums.pb.swift; sourceTree = "<group>"; };
 		F5D71320854F15DA33B8D7BA /* DevicesSettingView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = DevicesSettingView.swift; sourceTree = "<group>"; };
 		F76D53B8FBA539CA65167C9F /* SpacePairingStepView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = SpacePairingStepView.swift; path = UI/SpacePairingStepView.swift; sourceTree = "<group>"; };
@@ -1973,6 +1977,8 @@
 				14B6CA15BC9C435794FC131A /* PhiSpaceSyncState.swift */,
 				9940A7139B932D02382460E3 /* PhiSpaceLocalAccess.swift */,
 				2E6E71945C1A7791A082C067 /* UI */,
+				F1F44B5AD0F29A6489A7E04E /* PhiBookmarkLocalAccess.swift */,
+				73157ACF7005B3A5B2B3FA50 /* PhiPinnedTabLocalAccess.swift */,
 			);
 			name = Phi;
 			path = Phi;
@@ -3864,6 +3870,8 @@
 				72458E59165A0E8FA89654B5 /* PairingWizardView.swift in Sources */,
 				2C44AE9342A096D69C2770E6 /* PairingStepBar.swift in Sources */,
 				89BE563BBDEAE08AC824F2B8 /* SpacePairingStepView.swift in Sources */,
+				3C86DD3C9BAE1F787AE0386A /* PhiBookmarkLocalAccess.swift in Sources */,
+				8B99944F2625AD1C6C443405 /* PhiPinnedTabLocalAccess.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

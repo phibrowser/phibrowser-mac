@@ -15,6 +15,7 @@
 		15B618E574463D94C98AEA5F /* AISettingHostingViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1B584F695BF7833FAA99558 /* AISettingHostingViewController.swift */; };
 		16733583CF857EA24EA6DE0D /* sync_entity.pb.swift in Sources */ = {isa = PBXBuildFile; fileRef = 57CD882BA97396ECFC85AAE6 /* sync_entity.pb.swift */; };
 		184EE3BE148F696C555481F0 /* SyncKeyController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 35EE13005B45461A584F7F1C /* SyncKeyController.swift */; };
+		1F8484277AF6957257C01DBD /* PhiOwnedItemState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 69537E85565061483273F0A2 /* PhiOwnedItemState.swift */; };
 		20ADEF5F77D82925F11B2966 /* RecoveryCodeEntryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A4A632200E83D8AF97F002EB /* RecoveryCodeEntryView.swift */; };
 		2617E7C43A0DFE05B416E8F5 /* JoinMethodChoiceView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6819EF093F955DAFACDC4C94 /* JoinMethodChoiceView.swift */; };
 		2850A45D3A2F2C11AF0F8F3B /* PhiSpaceSyncState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 14B6CA15BC9C435794FC131A /* PhiSpaceSyncState.swift */; };
@@ -789,6 +790,7 @@
 		60DCF1852E526BF755BF3397 /* phi_entity.pb.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = phi_entity.pb.swift; sourceTree = "<group>"; };
 		6659B55999DDEAA24DB5AC0D /* DevicesRemoveDeviceModel.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = DevicesRemoveDeviceModel.swift; sourceTree = "<group>"; };
 		6819EF093F955DAFACDC4C94 /* JoinMethodChoiceView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = JoinMethodChoiceView.swift; path = UI/JoinMethodChoiceView.swift; sourceTree = "<group>"; };
+		69537E85565061483273F0A2 /* PhiOwnedItemState.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = PhiOwnedItemState.swift; sourceTree = "<group>"; };
 		6A44C5FF60DF6F7860A061D4 /* SentinelWatchdog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SentinelWatchdog.swift; sourceTree = "<group>"; };
 		6EE9BDB8D95B7A16A1E96582 /* RecoveryCode.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = RecoveryCode.swift; sourceTree = "<group>"; };
 		6F042DF5490BA419ACD24DA7 /* SpaceSyncMappingManager.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = SpaceSyncMappingManager.swift; sourceTree = "<group>"; };
@@ -1604,6 +1606,7 @@
 				2E6E71945C1A7791A082C067 /* UI */,
 				F1F44B5AD0F29A6489A7E04E /* PhiBookmarkLocalAccess.swift */,
 				73157ACF7005B3A5B2B3FA50 /* PhiPinnedTabLocalAccess.swift */,
+				69537E85565061483273F0A2 /* PhiOwnedItemState.swift */,
 			);
 			name = Phi;
 			path = Phi;
@@ -3129,6 +3132,7 @@
 				3C86DD3C9BAE1F787AE0386A /* PhiBookmarkLocalAccess.swift in Sources */,
 				8B99944F2625AD1C6C443405 /* PhiPinnedTabLocalAccess.swift in Sources */,
 				49FFE933ACE83E9890AD08F7 /* TabDataModelSchemaV10.swift in Sources */,
+				1F8484277AF6957257C01DBD /* PhiOwnedItemState.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

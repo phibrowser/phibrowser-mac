@@ -75,6 +75,18 @@ struct PhiSpaceSyncTable: Codable, Equatable {
     var formatVersion: Int = currentFormatVersion
     /// 按 **syncUuid** 键。
     var cursors: [String: PhiSpaceCursor] = [:]
+
+    // MARK: - 共享 marker 派生状态（四种 kind 共用，单副本）
+    //
+    // 下面这一段字段描述的不是 Space，而是**这台机器与那一个共享 marker 的关系**。
+    // 一个 data type、一个 marker、一份 drain 状态：设置 / Space / 书签 / pin 四种 kind
+    // 骑在同一个 data type 上，所以任何一份 per-kind 的「我 drain 完了」都是谎言——drain
+    // 是整类型的。它们因此**只在这里有一份**，M3-4 加第五、第六种 kind 时仍然只有一份，
+    // 一条都不许复制进 per-kind 的游标文件（`PhiOwnedItemTable`，§3.5）里去。
+    //
+    // 集合是 12 个字段，spec §3.5 说的「十一项 marker 派生状态」不含 `spaceSectionEnabled`：
+    // 那一个是**门的持久化值**，不是从 marker 派生出来的。`PhiOwnedItemStateTests` 的
+    // CASE 3.12 按 12 个名字钉住整个集合——加第十三个字段的人必须先读完这一段。
     var drainInProgress = false
     var hasDrainedFullReplay = false
     var hadRecords = false
@@ -87,6 +99,35 @@ struct PhiSpaceSyncTable: Codable, Equatable {
     /// hash because a failed decrypt yields no `space_uuid`. Guard 3 refuses to
     /// commit any entry whose tag hash is in here (§5.5).
     var unreadableTagHashes: [String: Int64] = [:]
+
+    /// 这台机器**曾经**为该 kind 写下过一条带 `entityId` 的游标（§3.5，N2 / R-M3-3-13）。
+    /// 与 `hadRecords` 同一个角色，只是按 kind 分开；它们描述的仍然是这台机器与**共享
+    /// marker** 的关系，所以住在这张表里，per-kind 的文件里**没有**副本——「那个文件没了」
+    /// 这件事不可能由那个文件自己来记。
+    ///
+    /// 第一次为该 kind 写下 `entityId` 非空的游标时置真，**此后不再改**。它是该 kind 游标
+    /// 文件缺失 / 解不开 / 版本偏低 / 读回来是空表时「这是一次丢失，不是从来没发布过」的
+    /// 唯一判据。判据**不能**写成「该 kind 名下还有带 `syncId` 的本地行」：pin 没有 `syncId`
+    /// 这一列，那条判据对 pin 恒为假，于是丢掉 `pins-cursors.json` 什么都不触发，下一轮
+    /// push 就把账户里每一条 pin 用 `baseVersion == 0` 的 create 盲写覆盖。
+    var bookmarksHadRecords = false
+    var pinsHadRecords = false
+
+    /// 每个 kind 自己的一次性重放闸（A2）。**绝不复用上面那个 `didReplayForEmptyTable`**：
+    /// 那一个是永久闩，除了 `resetForNewStoreBirthday()` 之外任何东西都不重置它，而它的
+    /// 理由（一个所有实体都解不开的账户否则会每轮重放）与 kind 无关——Space 段先花掉它
+    /// 之后，书签或 pin 的第一次文件丢失就**一次重放都得不到**，而那正是 §3.5 这条规则要
+    /// 挡的灾难。
+    ///
+    /// 与 Space 侧不同的是它**可以重新武装**：文件丢失是一个有明确「我恢复了」边沿的事件，
+    /// 所以该 kind 的游标表重新拿到任何一条已发布游标时就复位，下一次文件丢失仍然有一次
+    /// 重放；Space 侧那个空表条件没有这种边沿，才必须永久闩住。
+    ///
+    /// 报损本身就是那道闸，不需要第二个标志（M2）：报损做的第一件事就是丢 marker、重新
+    /// 武装 `drainInProgress`、把 `hasDrainedFullReplay` 置假，而发布侧的 guard ① 读的正是
+    /// `hasDrainedFullReplay`。所以从报损那一刻起，该 kind 在重放收尾之前一条都发不出去。
+    var bookmarksReplayedForEmptyTable = false
+    var pinsReplayedForEmptyTable = false
 
     // MARK: - Derived sets
 

@@ -1247,13 +1247,13 @@ final class PinKindTests: XCTestCase {
     /// 两个断言面各钉一半：假 access 的 `allPins()` 真的把休眠行滤掉（契约），而把那条
     /// 休眠行**直接**喂给模块时 `PinKind` 自己也不发布它（`PhiLocalPin.isDormant` 的自述
     /// 「休眠行不进快照，也不参与差分」在 kind 这一层也成立）。
-    func testALineageLeftWithOnlyADormantRowLeavesTheSnapshotButStillTombstones() {
+    func testALineageLeftWithOnlyADormantRowLeavesTheSnapshotButStillTombstones() throws {
         let dormant = pinRow(guid: "p1", spaceId: "space-a", isDormant: true)
         var table = PhiOwnedItemTable()
         table.cursors["lx:su-1"] = landedCursor(pinPayload(lineage: "lx", ownerKey: "su-1"))
         let access = FakePinAccess(scope: .space, account: .space, rows: [dormant])
 
-        let visible = access.allPins()
+        let visible = try access.allPins()
         let published = snapshot([dormant], table: table).entities
         let result = tombstones([dormant], table: table)
 

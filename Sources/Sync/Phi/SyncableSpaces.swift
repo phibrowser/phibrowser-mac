@@ -51,6 +51,8 @@ enum SyncableSpaces {
     ///   the only room left is under the prefix. Trapping here is the same
     ///   honesty as the `a == b` case -- silently returning a value ABOVE the
     ///   bound would corrupt the account's order.
+    /// 第二个调用方是 `SyncableOwnedItems`（M3-3）：书签与 pin 的 rank 通道复用这一份
+    /// 实现，绝不另写一份（R4 单一实现）。
     static func rankBetween(_ a: String?, _ b: String?) -> String {
         if let a, let b { precondition(a < b, "rankBetween requires a < b") }
         precondition(b.map { !$0.isEmpty && !$0.hasSuffix("0") } ?? true,
@@ -94,6 +96,7 @@ enum SyncableSpaces {
     /// rank (brand new, or a device snapshotting an old Space for the first
     /// time) never join it, so they always land in the complement and get a
     /// rank from the interval rule. Patience sorting, O(n log n).
+    /// 第二个调用方是 `SyncableOwnedItems`（M3-3），逐字复用。
     static func longestIncreasingKeptSet(_ keys: [(rank: String?, uuid: String)]) -> Set<Int> {
         struct Key: Comparable {
             let rank: String
@@ -144,6 +147,8 @@ enum SyncableSpaces {
     /// Spaces with their shadow ranks. Elements inside the kept set are absent
     /// from the result: they are not rewritten, get no new timestamp and do not
     /// enter this round's commit batch.
+    /// 第二个调用方是 `SyncableOwnedItems`（M3-3）：书签按「同一个父」分组、pin 按 owner
+    /// 分组，各自把自己那一组的次序喂进来。
     static func assignRanks(order: [(uuid: String, rank: String?)]) -> [String: String] {
         let kept = longestIncreasingKeptSet(order.map { (rank: $0.rank, uuid: $0.uuid) })
         var keptFlags = [Bool](repeating: false, count: order.count)
@@ -361,7 +366,10 @@ extension SyncableSpaces {
     ///   reads an unknown character as the lowest digit, which breaks the
     ///   lexicographic == numeric equivalence the whole channel rests on -- the
     ///   "midpoint" it computes need not lie between the bounds it was given.
-    private static func isLegalRank(_ rank: String) -> Bool {
+    /// **internal 而不是 private**：第二个调用方是 `SyncableOwnedItems`（M3-3）。书签的
+    /// rank 只在同一个父下可比，一次非法 rank 能污染的是一整个文件夹，所以那一侧同样要
+    /// 拿这一个解码边界去挡 `rankBetween` 的 `precondition`。
+    static func isLegalRank(_ rank: String) -> Bool {
         !rank.isEmpty && !rank.hasSuffix("0") && rank.allSatisfy(rankCharacters.contains)
     }
 

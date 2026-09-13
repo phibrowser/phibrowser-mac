@@ -3,6 +3,7 @@
 // Use of this source code is governed by an Apache license that can be
 // found in the LICENSE file.
 
+import CryptoKit
 import Foundation
 
 // 固定标签页这一种 kind 的适配：编解码、字段 LWW 表、归属解析、盖戳。
@@ -69,8 +70,18 @@ enum PinKind: OwnedItemKind {
     /// 产不出的占位：`snapshot` 的排除计数（`excluded_unmapped_owner`）只在
     /// 「`identity` 非 nil ∧ `eligibilityOwner` 为 nil」这一支里 +1（`SyncableOwnedItems`
     /// 里那两个 `guard`），这里返回 nil 就会让 §4.2 第 1 条点名的那一整类排除在计数行上
-    /// **完全不可见**。占位值不会漏到线上：它的那一行既不合格也就永远不是快照候选，
-    /// 因此从不进入 tag、也从不进入 `identityByLocalId`。
+    /// **完全不可见**——而那正是告诉运维「有一个 Space 映射缺了」的唯一信号。
+    ///
+    /// **占位值的不变量，两条，缺一条它就会漏到线上：**
+    ///
+    /// 1. 占位后半段**只**出现在「同一个 resolver 与 scope 下 `eligibilityOwner(of:…)`
+    ///    返回 nil」的那些行上。它不是一个可以被别处复用的哨值。
+    /// 2. **任何调用方都不得直接从 `identity(of local:)` 派生 client tag、游标键、线上
+    ///    字节或日志字段**。这四样东西只能来自 `snapshot(...).entities.keys` 或
+    ///    `table.cursors` ——两者都以 `eligibilityOwner != nil` 为前提（模块里那两个
+    ///    `guard` 把不合格的行挡在 `candidates` 之外，`identityByLocalId` 也只收合格行）。
+    ///    `cursor.ownerUuid` 的每轮刷新（A12 / §3.5）同理走 `eligibilityOwner`，不许去截
+    ///    这个身份的后半段。
     static func identity(of local: PhiLocalPin, resolve: OwnerResolver,
                          scope: PinnedTabScope?) -> String? {
         guard !local.isDormant else { return nil }
@@ -193,8 +204,15 @@ enum PinKind: OwnedItemKind {
     ///
     /// 无基线那一支按 §4.2 第 5 条：`rank` 盖 **0**（本机派生出来的位置不该赢过对端任何
     /// 一次真实操作——书签那边 `location` 与 `rank` 都盖 0，pin 没有 location，剩下的就是
-    /// 这一个），内容字段盖 **`contentUpdatedDate ?? createdDate`**。内容字段绝不盖 `now`：
-    /// 一条几年前建的、从没人动过的 pin 若以 `now` 首发，它会赢下对端上周做的改名。
+    /// 这一个），**内容字段**（`title` / `url`）盖 **`contentUpdatedDate ?? createdDate`**，
+    /// **其余每个字段盖 `now`**（A13）。内容字段绝不盖 `now`：一条几年前建的、从没人动过的
+    /// pin 若以 `now` 首发，它会赢下对端上周做的改名。
+    ///
+    /// `split_partner_uuid` **属于「其余」那一类，盖 `now`**：§4.2 第 5 条点名的内容字段
+    /// 只有 `title` / `url` / `secondary_*`，而拆分链接不是用户「编辑内容」的产物——它由
+    /// 一次拆分操作产生，`contentUpdatedDate` 不为它而动，拿一个可能几年前的戳去发一条刚
+    /// 建立的链接，会让对端一条更早但戳更新的空值赢下它。（它仍然在 `contentSignature`
+    /// 里：那个函数判的是「要不要带一份字段补丁」，与盖哪个戳是两件事。）
     ///
     /// **`split_partner_uuid` 的半落地保护**（§7.4）：本机行的伙伴还没落地（本地链接是
     /// nil）而基线里有一个 lineage ⇒ **照抄基线那一份**，绝不发 `""`。发空串等于宣布
@@ -215,7 +233,7 @@ enum PinKind: OwnedItemKind {
             out.rank.updatedAtMs = 0
             out.title.updatedAtMs = contentStamp
             out.url.updatedAtMs = contentStamp
-            out.splitPartnerUuid.updatedAtMs = contentStamp
+            out.splitPartnerUuid.updatedAtMs = now
             return out
         }
         out.rank.updatedAtMs = restamped(out.rank, baseline.rank, now)
@@ -270,16 +288,21 @@ enum PinKind: OwnedItemKind {
     /// 成别的东西），而 owner 的分歧在 §2.5 的 tag 校验里就已经被挡住了。**签名仍然带着
     /// 它**——§4.6 那张表只该有一个实现形状。
     ///
-    /// **`url` 不在表里**（§4.6 把 URL 那一行标成「书签」）：pin 的落地类型
-    /// `PhiLocalPin.url` 是非可选的 `URL`，所以一条解析不出 URL 的 pin 实体由**落地段**
-    /// 处理（Task 6b），不是在这里拒收。
+    /// **`url` 解析不出 `URL` ⇒ 拒收**，与 `BookmarkKind.refuses` 同一条判据同一个理由：
+    /// 落地类型 `PhiLocalPin.url` 是**非可选**的 `URL`，所以落地段既 create 不了也 update
+    /// 不了这样一条行。§4.6 那张表把 URL 那一行标成「书签」，是因为它的措辞带着
+    /// `is_folder`；它背后的结构性事实对 pin 逐字成立（勘误见 ledger）。不拒收只剩两条坏路：
+    /// 静默丢弃（没有任何计数）或永久停放（等一个永远不会变得可解析的东西）。拒收给出的
+    /// 是 §4.6 本来的形状——计进 `refused`、不写游标、**每轮重判**，于是对端修好字节的下
+    /// 一个版本就被接受。
     ///
-    /// 「owner 的 oneof 与账户当前作用域不符」也不在这里：§4.6 明确说那**不是** refuse 也
+    /// 「owner 的 oneof 与账户当前作用域不符」不在这里：§4.6 明确说那**不是** refuse 也
     /// 不是丢弃，而是整条**停放**等作用域收敛（§7.3），由 `plan` 的 `scopeMismatch` 实现。
     static func refuses(_ entity: Phi_PhiPinTabEntity,
                         baseline: Phi_PhiPinTabEntity?) -> OwnedItemRefusal? {
         guard isNormalizedLineage(entity.pinUuid) else { return .invalidUuid }
         guard SyncableSpaces.isLegalRank(entity.rank.stringValue) else { return .illegalRank }
+        if URL(string: entity.url.stringValue) == nil { return .invalidURL }
         return nil
     }
 
@@ -299,8 +322,12 @@ enum PinKind: OwnedItemKind {
     ///
     /// 分组用的是**本机**的 owner id（`spaceId ?? profileId ?? "app"`），不需要 resolver：
     /// 本机 id → 账户 uuid 的映射在每一类归属内是一一的，所以两行属于同一个账户 owner
-    /// 当且仅当它们属于同一个本机 owner。休眠行不参与分组（它们是作用域迁移留下的本地
-    /// 备份，重铸它们会把那份备份与它的活动行永久拆开）。
+    /// 当且仅当它们属于同一个本机 owner。**前置条件**：`locals` 来自一次 `allPins()`，
+    /// 即全部属于**同一个作用域类**——混进另一个作用域的行会让这个等价关系不成立。
+    /// 休眠行不参与分组（它们是作用域迁移留下的本地备份，重铸它们会把那份备份与它的活动
+    /// 行永久拆开）。
+    ///
+    /// **新 lineage 是确定性的**，见 `mintedLineage(_:ordinal:)`。
     static func normalizeVariants(locals: [PhiLocalPin]) -> PinApplyBatch {
         var groups: [String: [PhiLocalPin]] = [:]
         for local in locals where !local.isDormant {
@@ -313,8 +340,11 @@ enum PinKind: OwnedItemKind {
             let members = (groups[key] ?? []).sorted {
                 $0.index == $1.index ? $0.guid < $1.guid : $0.index < $1.index
             }
-            for row in members.dropFirst() {
-                ops.append(.relineage(guid: row.guid, newLineageId: UUID().uuidString))
+            // ordinal 从 1 数：0 是保留原 lineage 的那一条（index 最小），它不产出 op。
+            for (ordinal, row) in members.enumerated() where ordinal > 0 {
+                ops.append(.relineage(guid: row.guid,
+                                      newLineageId: mintedLineage(lineageKey(row.lineageId),
+                                                                  ordinal: ordinal)))
             }
         }
         return PinApplyBatch(unordered: ops)
@@ -361,12 +391,54 @@ enum PinKind: OwnedItemKind {
         local.spaceId ?? local.profileId ?? appOwnerKey
     }
 
+    /// 变体重铸出来的新 lineage：`(原 lineage, ordinal)` 的 SHA-1 取前 16 字节，按
+    /// 8-4-4-4-12 排成一个小写 uuid 形状的串。
+    ///
+    /// **必须跨设备确定。** A11 针对的正是「两台机器跑同一次确定性迁移、面对同一对变体」
+    /// ——`migratePinnedTabs` 对 lineage 与 index 都是确定的（§3.2），所以两边看到的是同一
+    /// 个分组、同一个次序。用 `UUID()` 各铸一个的话，两边各自发布一条对方没有的实体、又
+    /// 各自落地对方那一条，而 §6.7 排除了 pin 的认领——没有任何东西会去重，用户**每个变体
+    /// 多出一个固定标签页**，两台机器都是。
+    ///
+    /// **ownerKey 不进哈希，这是有意的。** 本函数按签名只拿得到本机那一侧的 owner id，而
+    /// 本机 `spaceId` 是**按设备**铸的（`LocalStore+Space.swift:69` 用 `UUID().uuidString`），
+    /// 把它喂进哈希恰好会毁掉这里要的那个确定性；账户级 ownerKey 则要 resolver，而
+    /// `normalizeVariants(locals:)` 的签名里没有。省掉它不引入歧义：身份是
+    /// `(lineage, owner)` 这一对，所以同一个新 lineage 落在两个 owner 下就是两条实体——正是
+    /// Profile → Space 扇出本来就该有的形状（一条 lineage 在 N 个 Space 里是 N 条实体）；
+    /// 而同一个 owner 内 ordinal 互不相同，组内不会撞。
+    ///
+    /// 前缀是域分隔符：让这个派生不可能与别处任何一个「对某个 uuid 取哈希」的方案撞上。
+    /// 值**不是** RFC-4122 的 v4（没有版本位），只是 uuid 形状——本地那一列从来没有校验过
+    /// 形状，而线上要的只是「已归一」。
+    private static func mintedLineage(_ lineage: String, ordinal: Int) -> String {
+        let seed = "phi-pin-variant|" + lineage + "|" + String(ordinal)
+        let digest = Array(Insecure.SHA1.hash(data: Data(seed.utf8))).prefix(16)
+        let hex = digest.map { String(format: "%02x", $0) }.joined()
+        var out = ""
+        for (offset, character) in hex.enumerated() {
+            if offset == 8 || offset == 12 || offset == 16 || offset == 20 { out.append("-") }
+            out.append(character)
+        }
+        return out
+    }
+
     /// 一条**已归一**的 lineage 该有的形状。判的是「对端有没有走过 `lineageKey`」，不是
-    /// RFC-4122 合法性——严格校验会连带拒掉每一条形状合法但生成方式不同的对端实体。
+    /// RFC-4122 合法性——严格校验会连带拒掉每一条形状合法但生成方式不同的对端实体，而
+    /// `pinLineageId` 在本仓库里有五处回退成那一行的 `guid`（`LocalStore+PinnedTabScope.swift`
+    /// / `LocalStore+PinnedTabTransfer.swift`），那些 guid 未必是 uuid 形状。判据与
+    /// `BookmarkKind.isAccountUuid` 同源。
+    ///
+    /// **`:` 必须拒**：身份是 `lineage + ":" + ownerKey`，一条带冒号的 lineage 让这个拼接
+    /// 不再可逆——`("a:b", "c")` 与 `("a", "b:c")` 算出同一个身份，于是一条伪造载荷可以顶
+    /// 着另一条实体的身份去收割 `entityId` / `version`，而 client tag 也多出一段。
+    /// NUL 一并拒：`identity(of local:)` 的未映射占位用它，组键也用它。
     private static func isNormalizedLineage(_ lineage: String) -> Bool {
         !lineage.isEmpty
             && !lineage.contains(where: { $0.isUppercase })
             && !lineage.contains(where: { $0.isWhitespace || $0.isNewline })
+            && !lineage.contains(":")
+            && !lineage.unicodeScalars.contains("\u{0}")
     }
 
     /// 与基线同名字段的 signature 相同 ⇒ 沿用基线的时间戳；不同 ⇒ 盖 `now`。

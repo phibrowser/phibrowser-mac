@@ -218,7 +218,6 @@ final class AccountPhiBookmarkAccess: PhiBookmarkLocalAccess {
     private var cachedRows: [PhiLocalBookmark] = []
     private var cachedSiblings: [SiblingKey: [PhiLocalBookmark]] = [:]
     private var cachedIsFolder: [String: Bool] = [:]
-    private var cachedSpaceIdByGuid: [String: String] = [:]
     /// 这一轮还没读过。三个读者在这种情况下各自触发一次构建，**之后本轮不再 fetch**：
     /// 返回一份空快照会让差分把整棵树读成「本机已经没有这些行了」，那是会删掉账户数据的
     /// 错法（§4.7）。
@@ -270,116 +269,24 @@ final class AccountPhiBookmarkAccess: PhiBookmarkLocalAccess {
 
     /// 一整轮远端落地，**一个**事务（§4.5）。抛错 = 一条都没落，调用方不许写基线。
     ///
-    /// 三件事在这一个块里：
-    /// 1. **导入锁在写块内部再读一次**（§4.9 第 3 条）。轮首那次读只是优化——读完之后
-    ///    导入才开始的那个边沿，只有在事务里重读才能挡住。占用中就整批抛，引擎下一轮
-    ///    重试，等价于「该 Space 的书签本轮整体停放」。
-    /// 2. **按 `batch.ops` 的次序逐条落**。那个次序是 §4.4 的三相拓扑序，
-    ///    `BookmarkApplyBatch` 已经排好，这里一条都不重排。
-    /// 3. **连续的 create 攒成一次批量插入**。`insertBookmarksBulkBody` 把 index 预先
-    ///    算好、只在末尾对每个被触及的父跑一次 `normalizeIndexes`；逐条插会让 250 条落
-    ///    进同一个文件夹变成 250 次 fetch 加 250 次全量重排。相邻的 create 在三相排序里
-    ///    本来就是连着的，所以攒批不改变任何一条操作的相对次序。
+    /// 薄转发：事务、三相次序的执行、导入锁的块内重读与末尾的每父一次重排，全在
+    /// `LocalStore.applyBookmarkSyncBatchThrowing`（`LocalStore+Bookmark.swift`）里。
+    /// 那些活儿够不到这一层——`moveBookmarkBody` / `updateBookmarkBody` /
+    /// `deleteBookmarkBody` 与 `bookmarkNode` / `children` / `normalizeIndexes` 都是
+    /// `private`，而挨个调 throwing 兄弟是 N 个事务，部分成功就成立了（R-exec-2）。
     func apply(_ batch: BookmarkApplyBatch) async throws {
-        let ops = batch.ops
-        guard !ops.isEmpty else { return }
-        let spaceIds = touchedSpaceIds(ops)
-        let store = account.localStorage
-        try await store.performBackgroundWriteAndWaitThrowing { context in
-            for spaceId in spaceIds where ImportTargetLock.shared.isImporting(into: spaceId) {
-                throw LocalStoreWriteError.targetNotWritable
-            }
-
-            var pendingCreates: [LocalStore.BulkBookmarkInsert] = []
-            func flushCreates() throws {
-                guard !pendingCreates.isEmpty else { return }
-                try store.insertBookmarksBulkBody(pendingCreates, in: context)
-                pendingCreates.removeAll(keepingCapacity: true)
-            }
-
-            for op in ops {
-                switch op {
-                case .create(let row):
-                    pendingCreates.append(Self.bulkInsert(from: row))
-                case .claim(let guid, let syncId):
-                    try flushCreates()
-                    try store.claimBookmarkSyncIdBody(guid: guid, syncId: syncId, in: context)
-                case .move(let guid, let parentGuid, let spaceId, let index):
-                    try flushCreates()
-                    try store.moveBookmarkLandingBody(guid: guid,
-                                                      toParentGuid: parentGuid,
-                                                      inSpaceId: spaceId,
-                                                      index: index,
-                                                      in: context)
-                case .update(let guid, let fields):
-                    try flushCreates()
-                    // 外层「改不改」，内层「改成什么」。`title` 的内层 nil 是「清空」——
-                    // 远端真的可以有一条空标题的书签，所以 `allowsEmptyTitle` 显式传
-                    // `true`（§4.9 第 1 条：默认值会变，同步层每次都自己写出来）。
-                    // `url` 的内层 nil 是「不动」：一条书签丢不掉它的 URL。
-                    try store.updateBookmarkLandingBody(
-                        guid: guid,
-                        title: fields.title.map { $0 ?? "" },
-                        url: fields.url.flatMap { $0?.absoluteString },
-                        secondaryUrl: fields.secondaryUrl.map { $0?.absoluteString },
-                        secondaryTitle: fields.secondaryTitle,
-                        allowsEmptyTitle: true,
-                        in: context)
-                case .delete(let guid):
-                    try flushCreates()
-                    try store.deleteBookmarkLandingBody(guid: guid, in: context)
-                }
-            }
-            try flushCreates()
-        }
+        try await account.localStorage.applyBookmarkSyncBatchThrowing(batch.ops)
         // 落地改了行，本轮那份快照已经过期：下一个读者重建，而不是读着旧值往下算。
         invalidateCache()
     }
 
     /// 一次批量写（§9.2）。逐条一个事务在一棵上千条的树上是上千个事务。
     func clearAllSyncIds() async throws {
-        let store = account.localStorage
-        _ = try await store.performBackgroundWriteAndWaitThrowing { context in
-            try store.clearAllBookmarkSyncIdsBody(in: context)
-        }
+        try await account.localStorage.clearAllBookmarkSyncIdsThrowing()
         invalidateCache()
     }
 
     // MARK: - 私有
-
-    /// 本批次碰到的全部 Space。导入锁按 Space 判，而 `claim` / `update` / `delete` 三种
-    /// 操作身上只有 guid，所以它们的 Space 从本轮快照里查——那份缓存正是引擎建批次时读
-    /// 的同一份。
-    private func touchedSpaceIds(_ ops: [BookmarkApplyOp]) -> Set<String> {
-        ensureCache()
-        var out = Set<String>()
-        for op in ops {
-            switch op {
-            case .create(let row): out.insert(row.spaceId)
-            case .move(_, _, let spaceId, _): out.insert(spaceId)
-            case .claim(let guid, _), .update(let guid, _), .delete(let guid):
-                if let spaceId = cachedSpaceIdByGuid[guid] { out.insert(spaceId) }
-            }
-        }
-        return out
-    }
-
-    private static func bulkInsert(from row: PhiLocalBookmark) -> LocalStore.BulkBookmarkInsert {
-        LocalStore.BulkBookmarkInsert(guid: row.guid,
-                                      syncId: row.syncId,
-                                      title: row.title,
-                                      url: row.url,
-                                      index: row.index,
-                                      isFolder: row.isFolder,
-                                      parentGuid: row.parentGuid,
-                                      spaceId: row.spaceId,
-                                      profileId: row.profileId,
-                                      createdDate: row.createdDate,
-                                      contentUpdatedDate: row.contentUpdatedDate,
-                                      secondaryUrl: row.secondaryUrl,
-                                      secondaryTitle: row.secondaryTitle,
-                                      source: row.source)
-    }
 
     private func ensureCache() {
         guard !hasCache else { return }
@@ -455,17 +362,14 @@ final class AccountPhiBookmarkAccess: PhiBookmarkLocalAccess {
         // 三份索引与快照一起换上，中间没有任何一刻是「行在、索引不在」。
         var siblings: [SiblingKey: [PhiLocalBookmark]] = [:]
         var isFolder: [String: Bool] = [:]
-        var spaceIdByGuid: [String: String] = [:]
         for row in rows {
             siblings[SiblingKey(spaceId: row.spaceId, parentGuid: row.parentGuid),
                      default: []].append(row)
             isFolder[row.guid] = row.isFolder
-            spaceIdByGuid[row.guid] = row.spaceId
         }
         cachedRows = rows
         cachedSiblings = siblings
         cachedIsFolder = isFolder
-        cachedSpaceIdByGuid = spaceIdByGuid
         hasCache = true
     }
 

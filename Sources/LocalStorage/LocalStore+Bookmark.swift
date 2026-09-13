@@ -2262,96 +2262,197 @@ extension LocalStore {
     }
 }
 
-// MARK: - 一轮远端落地的 body 形态（同步层专用，§4.5）
+// MARK: - 一轮远端落地（同步层专用，§4.5 / R-exec-2）
 
 /// §4.5 要求一轮远端落地的**多条**行用**一个**事务：抛错 = 一条都没落，部分成功不存在。
+///
 /// 已有的 throwing 兄弟每一个都自己开一次 `performBackgroundWriteAndWaitThrowing`
-/// （`LocalStore.swift:466`），而那个入口把作业 yield 进串行写队列再等写 actor，所以把它们
-/// 套在一个写块里既不是一个事务、还会死锁。于是这里给同步层落地要用到的每一种写各补一个
-/// **收 `ModelContext`** 的 body 形态，事务由调用方持有一次。
+/// （`LocalStore.swift:466`），而那个入口把作业 yield 进串行写队列再等写 actor——把它们
+/// 挨个调是 N 个事务，套在一个写块里则直接死锁（嵌套的那次排在正等着它的块后面）。
 ///
 /// **必须写在本文件里**：`moveBookmarkBody` / `updateBookmarkBody` / `deleteBookmarkBody`
 /// 与 `bookmarkNode` / `children` / `normalizeIndexes` 全是 `private`，别的文件够不着。
 /// 与 Task 2b 的 pin 侧同一条理由。
 ///
-/// 每一个都只是既有 body 的薄包装：**没有第二份实现**，UI 路径与同步路径不可能漂移。
+/// **既有的 throwing 兄弟一个都不动**：它们继续服务单条落地，这里只是多一个批量入口，
+/// 且调的是同一批 body——没有第二份实现，UI 路径与同步路径不可能漂移。
 extension LocalStore {
-    /// 把一个账户级 uuid 认领到一条已存在的本机行上（§6.3）。只写 `syncId`，不碰任何
-    /// 内容字段——认领不是一次编辑，`contentUpdatedDate` 不为它而动。
-    func claimBookmarkSyncIdBody(guid: String,
-                                 syncId: String,
-                                 in context: ModelContext) throws {
-        guard let node = try bookmarkNode(with: guid, in: context) else {
-            throw LocalStoreWriteError.rowNotFound
+    /// 一整批已排好序的书签落地操作，**一个**事务。
+    ///
+    /// `ops` 必须已经按 §4.4 的三相拓扑序排好（`BookmarkApplyBatch` 负责），这里**一条都
+    /// 不重排**。
+    ///
+    /// 三件事在这一个块里：
+    /// 1. **导入锁在写块内部再读一次**（§4.9 第 3 条）。轮首那次读只是优化——「读完之后
+    ///    导入才开始」那个边沿只有在事务里重读才挡得住。占用中就整批抛
+    ///    `targetNotWritable`，事务回滚，引擎下一轮重试，等价于「该 Space 的书签本轮整体
+    ///    停放」。
+    /// 2. **连续的 create 攒成一次批量插入**。`insertBookmarksBulkBody` 把 index 预先算好、
+    ///    只在末尾对每个被触及的父跑一次 `normalizeIndexes`；逐条插会让 250 条落进同一个
+    ///    文件夹变成 250 次 fetch 加 250 次全量重排。相邻的 create 在三相排序里本来就是连着
+    ///    的，所以攒批**不改变任何一条操作的相对次序**。
+    /// 3. **末尾对每个被触及的父跑一次 `normalizeIndexes`**（§4.10）：一批操作可能反复动
+    ///    同一个父，每条各自那次重排只保证它自己那一刻是稠密的。
+    ///
+    /// 带 `contentUpdatedDate` 的远端 create 走批量插入那条路：两个单条 create 兄弟的参数表
+    /// 里没有这一列（Task 2a 第 3 条事实）。
+    func applyBookmarkSyncBatchThrowing(_ ops: [BookmarkApplyOp]) async throws {
+        guard !ops.isEmpty else { return }
+        try await performBackgroundWriteAndWaitThrowing { context in
+            try self.applyBookmarkSyncBatchBody(ops, in: context)
         }
-        node.syncId = syncId
     }
 
-    /// `moveBookmarkThrowing`（:603）的 body 形态，逐字同一段实现。
-    func moveBookmarkLandingBody(guid: String,
-                                 toParentGuid parentGuid: String?,
-                                 inSpaceId spaceId: String,
-                                 index: Int,
-                                 in context: ModelContext) throws {
-        // Profile 由目标 Space 决定（一个 Space 只属于一个 Profile）；目标 Space 行
-        // 还不在本地时退回这条行自己的 Profile。
-        let targetProfileId = try profileId(ofSpaceId: spaceId, in: context)
-            ?? bookmarkNodeProfileId(guid, in: context)
-            ?? Self.defaultProfileId
-        try moveBookmarkBody(guid,
-                             profileId: targetProfileId,
-                             toParentGuid: parentGuid,
-                             toSpaceId: spaceId,
-                             index: index,
-                             strictParent: true,
-                             in: context)
-    }
-
-    /// `updateBookmarkThrowing`（:1026）的 body 形态。`profileId` 由行自己给出：那个
-    /// 参数在 body 里不参与任何判据，传一个猜的值只会让读者以为它有意义。
-    func updateBookmarkLandingBody(guid: String,
-                                   title: String?,
-                                   url: String?,
-                                   secondaryUrl: String??,
-                                   secondaryTitle: String??,
-                                   allowsEmptyTitle: Bool,
-                                   in context: ModelContext) throws {
-        let rowProfileId = try bookmarkNodeProfileId(guid, in: context) ?? Self.defaultProfileId
-        try updateBookmarkBody(guid,
-                               profileId: rowProfileId,
-                               title: title,
-                               url: url,
-                               secondaryUrl: secondaryUrl,
-                               secondaryTitle: secondaryTitle,
-                               allowsEmptyTitle: allowsEmptyTitle,
-                               in: context)
-    }
-
-    /// `deleteBookmarkThrowing`（:1143）的 body 形态。
-    func deleteBookmarkLandingBody(guid: String, in context: ModelContext) throws {
-        let rowProfileId = try bookmarkNodeProfileId(guid, in: context) ?? Self.defaultProfileId
-        try deleteBookmarkBody(guid, profileId: rowProfileId, in: context)
-    }
-
-    /// 退出账户 / 重置同步状态时抹掉全部书签身份（§9.2）。**一次批量写**：逐条
-    /// `performBackgroundWriteAndWaitThrowing` 在一棵上千条的树上是上千个事务。
+    /// 退出账户 / 重置同步状态时抹掉全部书签身份（§9.2）。**一次批量写**：逐条一个事务
+    /// 在一棵上千条的树上是上千个事务。
     ///
     /// 只碰书签与文件夹行：`syncId` 这一列住在 `TabDataModel` 上，而 pin 的身份是
     /// `(pinLineageId, owner)`（§3.2），不走这一列。
-    ///
-    /// 返回被清掉的行数，给 §11 的计数用。
     @discardableResult
-    func clearAllBookmarkSyncIdsBody(in context: ModelContext) throws -> Int {
-        let bookmarkRaw = TabDataType.bookmark.rawValue
-        let folderRaw = TabDataType.bookmarkFolder.rawValue
-        let descriptor = FetchDescriptor<TabDataModel>(
-            predicate: #Predicate<TabDataModel> {
-                ($0.type == bookmarkRaw || $0.type == folderRaw) && $0.syncId != nil
+    func clearAllBookmarkSyncIdsThrowing() async throws -> Int {
+        try await performBackgroundWriteAndWaitThrowing { context in
+            let bookmarkRaw = TabDataType.bookmark.rawValue
+            let folderRaw = TabDataType.bookmarkFolder.rawValue
+            let descriptor = FetchDescriptor<TabDataModel>(
+                predicate: #Predicate<TabDataModel> {
+                    ($0.type == bookmarkRaw || $0.type == folderRaw) && $0.syncId != nil
+                }
+            )
+            let rows = try context.fetch(descriptor)
+            for row in rows { row.syncId = nil }
+            return rows.count
+        }
+    }
+
+    /// 事务体。分出来只为可读性，没有第二个调用方。
+    private func applyBookmarkSyncBatchBody(_ ops: [BookmarkApplyOp],
+                                            in context: ModelContext) throws {
+        try refuseIfImporting(ops, in: context)
+
+        // 被触及的父，末尾统一重排一次。**记 guid，不记 model**：同一批里子先于父被删，
+        // 一个攥在手上的 model 到事务末尾可能已经是条删掉的行，再读它的属性是未定义的。
+        var touchedParentGuids = Set<String>()
+        func remember(_ node: TabDataModel?) {
+            guard let node else { return }
+            touchedParentGuids.insert(node.guid)
+        }
+
+        var pendingCreates: [BulkBookmarkInsert] = []
+        func flushCreates() throws {
+            guard !pendingCreates.isEmpty else { return }
+            try insertBookmarksBulkBody(pendingCreates, in: context)
+            for row in pendingCreates {
+                guard let parentGuid = row.parentGuid else { continue }
+                touchedParentGuids.insert(parentGuid)
             }
-        )
-        let rows = try context.fetch(descriptor)
-        for row in rows { row.syncId = nil }
-        return rows.count
+            pendingCreates.removeAll(keepingCapacity: true)
+        }
+
+        for op in ops {
+            switch op {
+            case .create(let row):
+                pendingCreates.append(Self.bulkInsert(from: row))
+
+            case .claim(let guid, let syncId):
+                try flushCreates()
+                guard let node = try bookmarkNode(with: guid, in: context) else {
+                    throw LocalStoreWriteError.rowNotFound
+                }
+                // 认领不是一次编辑：只写身份，`contentUpdatedDate` 不为它而动。
+                node.syncId = syncId
+
+            case .move(let guid, let parentGuid, let spaceId, let index):
+                try flushCreates()
+                // 搬走之后旧父也要重排，所以先把它记下来。
+                remember(try bookmarkNode(with: guid, in: context)?.parent)
+                // Profile 由目标 Space 决定（一个 Space 只属于一个 Profile）；目标 Space
+                // 行还不在本地时退回这条行自己的 Profile。与 `moveBookmarkThrowing`
+                // （:603）逐字同一段。
+                let targetProfileId = try profileId(ofSpaceId: spaceId, in: context)
+                    ?? bookmarkNodeProfileId(guid, in: context)
+                    ?? Self.defaultProfileId
+                try moveBookmarkBody(guid,
+                                     profileId: targetProfileId,
+                                     toParentGuid: parentGuid,
+                                     toSpaceId: spaceId,
+                                     index: index,
+                                     strictParent: true,
+                                     in: context)
+                remember(try bookmarkNode(with: guid, in: context)?.parent)
+
+            case .update(let guid, let fields):
+                try flushCreates()
+                // 外层「改不改」，内层「改成什么」。`title` 的内层 nil 是「清空」——远端
+                // 真的可以有一条空标题的书签，所以 `allowsEmptyTitle` **显式**传 `true`
+                // （Task 2a 第 4 条事实：默认值会变，同步层每次自己写出来）。`url` 的内层
+                // nil 是「不动」：一条书签丢不掉它的 URL。
+                let rowProfileId = try bookmarkNodeProfileId(guid, in: context)
+                    ?? Self.defaultProfileId
+                try updateBookmarkBody(guid,
+                                       profileId: rowProfileId,
+                                       title: fields.title.map { $0 ?? "" },
+                                       url: fields.url.flatMap { $0?.absoluteString },
+                                       secondaryUrl: fields.secondaryUrl.map { $0?.absoluteString },
+                                       secondaryTitle: fields.secondaryTitle,
+                                       allowsEmptyTitle: true,
+                                       in: context)
+
+            case .delete(let guid):
+                try flushCreates()
+                remember(try bookmarkNode(with: guid, in: context)?.parent)
+                let rowProfileId = try bookmarkNodeProfileId(guid, in: context)
+                    ?? Self.defaultProfileId
+                try deleteBookmarkBody(guid, profileId: rowProfileId, in: context)
+            }
+        }
+        try flushCreates()
+
+        // §4.10：投影按父运行一次。本批次自己删掉的父在这里查不回来，跳过——它的孩子已经
+        // 随级联一起走了。
+        for parentGuid in touchedParentGuids {
+            guard let parent = try bookmarkNode(with: parentGuid, in: context) else { continue }
+            normalizeIndexes(for: try children(of: parent, in: context))
+        }
+    }
+
+    /// 本批次碰到的任何一个 Space 正在被导入 ⇒ 整批不落地。
+    ///
+    /// `claim` / `update` / `delete` 身上只有 guid，所以它们的 Space 在**事务内**按行查，
+    /// 而不是让调用方从一份轮首的快照里猜——那份快照到这一刻可能已经过期。
+    private func refuseIfImporting(_ ops: [BookmarkApplyOp], in context: ModelContext) throws {
+        var spaceIds = Set<String>()
+        for op in ops {
+            switch op {
+            case .create(let row):
+                spaceIds.insert(row.spaceId)
+            case .move(_, _, let spaceId, _):
+                spaceIds.insert(spaceId)
+            case .claim(let guid, _), .update(let guid, _), .delete(let guid):
+                if let spaceId = try bookmarkNode(with: guid, in: context)?.spaceId {
+                    spaceIds.insert(spaceId)
+                }
+            }
+        }
+        for spaceId in spaceIds where ImportTargetLock.shared.isImporting(into: spaceId) {
+            throw LocalStoreWriteError.targetNotWritable
+        }
+    }
+
+    private static func bulkInsert(from row: PhiLocalBookmark) -> BulkBookmarkInsert {
+        BulkBookmarkInsert(guid: row.guid,
+                           syncId: row.syncId,
+                           title: row.title,
+                           url: row.url,
+                           index: row.index,
+                           isFolder: row.isFolder,
+                           parentGuid: row.parentGuid,
+                           spaceId: row.spaceId,
+                           profileId: row.profileId,
+                           createdDate: row.createdDate,
+                           contentUpdatedDate: row.contentUpdatedDate,
+                           secondaryUrl: row.secondaryUrl,
+                           secondaryTitle: row.secondaryTitle,
+                           source: row.source)
     }
 }
 

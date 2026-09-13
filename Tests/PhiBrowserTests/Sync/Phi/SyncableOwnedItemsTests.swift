@@ -1208,14 +1208,23 @@ final class PinKindTests: XCTestCase {
     /// 一条，另一个 Space 里那一条既到不了别的机器、也无法被别的机器删除。`rank` 若套用
     /// 书签那条「相干」规则，它要去问一个 pin 根本没有的 location，结果由一个恒相等的值
     /// 决定。
-    func testOneLineageInTwoOwnersIsTwoEntitiesAndItsRankIsPlainLastWriterWins() {
+    func testOneLineageInThreeOwnersIsThreeEntitiesAndItsRankIsPlainLastWriterWins() {
+        // §12.1 item 7c：同一条 lineage 在**三个** Space 的行 ⇒ 三条实体，**没有任何一条
+        // 被字典覆盖掉**。两个的版本测不出「按 lineage 当键」这一族错法里最常见的那一个
+        // ——写成 `entities[lineage]` 的实现在两条时还剩一条，看上去像「少了一条」，三条时
+        // 才明显是「只剩最后写进去的那一条」。
         let rows = [pinRow(guid: "p1", spaceId: "space-a"),
-                    pinRow(guid: "p2", spaceId: "space-b")]
+                    pinRow(guid: "p2", spaceId: "space-b"),
+                    pinRow(guid: "p3", spaceId: "space-c")]
+        let threeSpaces = OwnerResolver.fixture(
+            spaceUuids: ["space-a": "su-1", "space-b": "su-2", "space-c": "su-3"])
 
-        let result = snapshot(rows, scope: .space)
+        let result = snapshot(rows, resolve: threeSpaces, scope: .space)
 
         let keys = Set(result.entities.keys)
-        XCTAssertEqual(keys, ["lx:su-1", "lx:su-2"])
+        let count = result.entities.count
+        XCTAssertEqual(keys, ["lx:su-1", "lx:su-2", "lx:su-3"])
+        XCTAssertEqual(count, 3)
 
         // 同一身份的两条实体：戳大的 rank 赢，两个方向结果相同，没有 location 参与。
         let older = pinPayload(lineage: "lx", ownerKey: "su-1", rank: "a", rankStamp: 100)
@@ -1423,6 +1432,52 @@ final class PinKindTests: XCTestCase {
         XCTAssertNotEqual(newLineageId, "LX")
         XCTAssertNotEqual(PinKind.lineageKey(newLineageId), "lx")
         XCTAssertFalse(newLineageId.isEmpty)
+        // 铸出来的值本身要能当一条线上 lineage 用：已归一、且不会被 §4.6 判成非法。
+        XCTAssertEqual(PinKind.lineageKey(newLineageId), newLineageId)
+    }
+
+    /// CASE 4b.8（4b-4）— 重铸出来的 lineage **跨设备确定**。
+    ///
+    /// 防的是什么：A11 的场景就是「两台机器跑同一次确定性迁移、面对同一对变体」。用
+    /// `UUID()` 各铸一个的话，两边各自发布一条对方没有的实体、又各自落地对方那一条，而
+    /// §6.7 排除了 pin 的认领——**没有任何东西会去重**，用户每个变体多出一个固定标签页，
+    /// 两台机器都是。随机实现在这条上必红。
+    func testTheRemintedLineageIsDeterministicAcrossDevices() {
+        // 同一批行在「另一台机器」上的样子：物理 guid 按设备重铸，lineage 与 index 由那次
+        // 确定性迁移决定，所以两边一致。
+        let deviceA = [pinRow(guid: "p1", spaceId: "space-a", index: 0),
+                       pinRow(guid: "p2", spaceId: "space-a", index: 1),
+                       pinRow(guid: "p3", spaceId: "space-a", index: 2)]
+        let deviceB = [pinRow(guid: "q1", spaceId: "space-a", index: 0),
+                       pinRow(guid: "q2", spaceId: "space-a", index: 1),
+                       pinRow(guid: "q3", spaceId: "space-a", index: 2)]
+
+        let first = mintedLineages(PinKind.normalizeVariants(locals: deviceA))
+        let again = mintedLineages(PinKind.normalizeVariants(locals: deviceA))
+        let other = mintedLineages(PinKind.normalizeVariants(locals: deviceB))
+
+        XCTAssertEqual(first.count, 2, "三条变体重铸两条，index 最小的那一条不动")
+        XCTAssertEqual(first, again, "同一批输入跑两次产出同一批 lineage")
+        XCTAssertEqual(first, other, "另一台设备的同一次迁移结果铸出同一批 lineage")
+        XCTAssertNotEqual(first[0], first[1], "ordinal 不同 ⇒ lineage 不同")
+
+        // index 最小的那一条一个 op 都没有。
+        let targets = relineageGuids(PinKind.normalizeVariants(locals: deviceA))
+        XCTAssertEqual(targets, ["p2", "p3"])
+    }
+
+    private func mintedLineages(_ batch: PinApplyBatch) -> [String] {
+        batch.ops.compactMap {
+            guard case .relineage(_, let newLineageId) = $0 else { return nil }
+            return newLineageId
+        }
+    }
+
+    private func relineageGuids(_ batch: PinApplyBatch) -> [String] {
+        batch.ops.compactMap {
+            guard case .relineage(let guid, _) = $0 else { return nil }
+            return guid
+        }
     }
 
     /// CASE 4b.8（后半）— 一个 owner 一组：不同 owner 下的同 lineage 行**不是**变体。
@@ -1696,21 +1751,67 @@ extension PinKindTests {
 
     // MARK: - 拒收（§4.6 的 pin 半边）
 
-    /// §4.6 的 pin 拒收表只有两行，两行都测；owner 与作用域不符**不在**表里（§7.3 停放，
-    /// 由 CASE 4b.10 覆盖）。
+    /// §4.6 的 pin 拒收表，每一行都测；owner 与作用域不符**不在**表里（§7.3 停放，由
+    /// CASE 4b.10 覆盖）。
     ///
     /// 防的是什么：非法 `rank` 是 `rankBetween` 的解码边界（发布构建里 `precondition` 直接
-    /// trap）；未归一的大写 lineage 若被接受，同一条 pin 在账户上会有两个身份。
-    func testThePinRefusalTableIsTheTwoStructuralCriteria() {
+    /// trap）；未归一的大写 lineage 若被接受，同一条 pin 在账户上会有两个身份；带 `:` 的
+    /// lineage 让 `lineage + ":" + ownerKey` 这个拼接不再可逆（`("a:b", "c")` 与
+    /// `("a", "b:c")` 算出同一个身份），于是一条伪造载荷可以顶着另一条实体的身份去收割
+    /// `entityId` / `version`；解析不出 `URL` 的那一条落地段既 create 不了也 update 不了
+    /// （`PhiLocalPin.url` 是非可选的 `URL`），不在这里拒收就只剩「静默丢弃」或「永久停放」
+    /// 两条坏路（4b-1）。
+    func testThePinRefusalTableIsTheStructuralCriteria() {
+        // 两个独立的探针，因为 `URL(string:)` 比它看上去宽松得多：这个工具链上
+        // `"not a url"`（带空格）、`"https://e.example/\u{0}"`、裸控制字符都**能**解析出
+        // 一个 URL。真正被拒的是「权威部分本身非法」这一类：未闭合的 IPv6 字面量，以及
+        // 空串。两条都断言，于是任何一条被将来的解析器放宽时这条用例仍然有牙。
+        let unparseable = "http://[::1"
+        XCTAssertNil(URL(string: unparseable), "fixture 前提：未闭合的 IPv6 字面量解析不出 URL")
+        XCTAssertNil(URL(string: ""), "fixture 前提：空串解析不出 URL")
+
         let empty = PinKind.refuses(pinPayload(lineage: ""), baseline: nil)
         let uppercase = PinKind.refuses(pinPayload(lineage: "LX"), baseline: nil)
+        let colon = PinKind.refuses(pinPayload(lineage: "lx:pu-1"), baseline: nil)
         let illegalRank = PinKind.refuses(pinPayload(lineage: "lx", rank: "V0"), baseline: nil)
         let emptyRank = PinKind.refuses(pinPayload(lineage: "lx", rank: ""), baseline: nil)
+        let badURL = PinKind.refuses(pinPayload(lineage: "lx", url: unparseable), baseline: nil)
+        let emptyURL = PinKind.refuses(pinPayload(lineage: "lx", url: ""), baseline: nil)
         let legal = PinKind.refuses(pinPayload(lineage: "lx", rank: "V"), baseline: nil)
         XCTAssertEqual(empty, .invalidUuid)
         XCTAssertEqual(uppercase, .invalidUuid)
+        XCTAssertEqual(colon, .invalidUuid)
         XCTAssertEqual(illegalRank, .illegalRank)
         XCTAssertEqual(emptyRank, .illegalRank)
+        XCTAssertEqual(badURL, .invalidURL)
+        XCTAssertEqual(emptyURL, .invalidURL)
         XCTAssertNil(legal)
+    }
+
+    /// 4b-6（§4.2 第 5 条 / A13）— 无基线那一行的三类戳：`rank` 盖 0、内容字段
+    /// （`title` / `url`）盖行自己的内容戳、**其余每个字段盖 `now`**。
+    ///
+    /// 防的是什么：把 `rank` 记成 `now` 会让一条被当作 create 重新发布的 pin 改写掉账户里
+    /// 的次序；把 `title` / `url` 记成 `now` 会让一条几年前建的、从没人动过的 pin 赢下对端
+    /// 上周做的改名。而 `split_partner_uuid` 记成内容戳则反过来：拆分链接不是「编辑内容」
+    /// 的产物，`contentUpdatedDate` 不为它而动，拿一个可能几年前的戳去发一条刚建立的链接，
+    /// 会让对端一条更早但戳更新的空值赢下它。
+    func testANoBaselineRowStampsRankZeroContentFromTheRowAndEverythingElseNow() {
+        let row = pinRow(guid: "p1", spaceId: "space-a", splitPartnerLineageId: "LB",
+                         contentUpdatedDate: Date(timeIntervalSince1970: 2))
+
+        let result = snapshot([row], scope: .space, now: 5_000)
+
+        let entity = result.entities["lx:su-1"]
+        let rankStamp = entity?.rank.updatedAtMs
+        let titleStamp = entity?.title.updatedAtMs
+        let urlStamp = entity?.url.updatedAtMs
+        let partnerStamp = entity?.splitPartnerUuid.updatedAtMs
+        let partner = entity?.splitPartnerUuid.stringValue
+        XCTAssertEqual(rankStamp, 0)
+        XCTAssertEqual(titleStamp, 2_000)
+        XCTAssertEqual(urlStamp, 2_000)
+        XCTAssertEqual(partnerStamp, 5_000)
+        XCTAssertEqual(partner, "lb", "伙伴 lineage 出门前也要过 lineageKey")
     }
 }

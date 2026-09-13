@@ -25,9 +25,12 @@ enum PinnedTabScope: String, CaseIterable, Identifiable {
 enum LocalStoreWriteError: LocalizedError, Equatable {
     case storeUnavailable
     case migrationInFlight
+    case rowNotFound, rowIsRoot, invalidURL, targetNotWritable, noCandidateSurvived, rowNotInActiveScope
 
     var errorDescription: String? {
         switch self {
+        case .rowNotFound, .rowIsRoot, .invalidURL, .targetNotWritable, .noCandidateSurvived, .rowNotInActiveScope:
+            return nil
         case .storeUnavailable:
             return NSLocalizedString("localData.pinnedTabScope.unavailableError", value: "Local browser data is unavailable.",
                 comment: "Pinned-tab scope migration error when the local store cannot be opened"

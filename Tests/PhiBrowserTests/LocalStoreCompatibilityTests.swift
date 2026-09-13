@@ -344,6 +344,119 @@ final class LocalStoreCompatibilityTests: XCTestCase {
         )
     }
 
+    // CASE 2a.24 —— schema V10 的升级按 Compatibility/README.md 规则 3 走
+    // `beforeSchemaUpgrade`：写一次 manifest、造一次备份，第二次打开不再造第二份。
+    func testUpgradeToStoreFormatTenCreatesManifestAndBackupExactlyOnce() throws {
+        let directory = try makeTemporaryStoreDirectory()
+        try writeStoreFiles(in: directory, contents: "v9")
+        try writeManifest(
+            LocalStoreCompatibilityManifest(activeStoreFormatVersion: 9, backups: []),
+            to: directory
+        )
+        let controller = makeController(
+            currentStoreFormatVersion: 10,
+            readableStoreFormatVersions: 1...10,
+            backupPolicy: .beforeSchemaUpgrade
+        )
+
+        let result = try controller.prepareStore(at: directory)
+
+        guard case .ready(let plan) = result else {
+            return XCTFail("Expected the version nine store to prepare for a version ten app.")
+        }
+        let createdBackup = try XCTUnwrap(plan.createdBackup)
+        XCTAssertEqual(createdBackup.storeFormatVersion, 9)
+        XCTAssertEqual(createdBackup.createdBeforeUpgradingToStoreFormatVersion, 10)
+        XCTAssertNil(plan.restoredBackup)
+        XCTAssertEqual(
+            try readText(directory.appendingPathComponent(createdBackup.directoryName).appendingPathComponent("LocalStore.sqlite")),
+            "v9-main"
+        )
+
+        try controller.markStoreOpenedSuccessfully(plan, at: directory)
+
+        let manifestAfterOpen = try readManifest(from: directory)
+        XCTAssertEqual(manifestAfterOpen.activeStoreFormatVersion, 10)
+        XCTAssertEqual(manifestAfterOpen.backups.map(\.storeFormatVersion), [9])
+
+        let secondResult = try controller.prepareStore(at: directory)
+
+        guard case .ready(let secondPlan) = secondResult else {
+            return XCTFail("Expected the already-upgraded store to prepare without a backup.")
+        }
+        XCTAssertNil(secondPlan.createdBackup)
+        XCTAssertEqual(try readManifest(from: directory).backups.map(\.storeFormatVersion), [9])
+    }
+
+    // CASE 2a.25 —— `readableStoreFormatVersions` 的上下界。
+    func testShippingReadableStoreFormatVersionBounds() throws {
+        XCTAssertEqual(LocalStore.compatibilityConfiguration.currentStoreFormatVersion, 10)
+        XCTAssertEqual(LocalStore.compatibilityConfiguration.readableStoreFormatVersions, 1...10)
+
+        let controller = makeController(
+            currentStoreFormatVersion: 10,
+            readableStoreFormatVersions: 1...10
+        )
+
+        let tooNewDirectory = try makeTemporaryStoreDirectory()
+        try writeStoreFiles(in: tooNewDirectory, contents: "v11")
+        try writeManifest(
+            LocalStoreCompatibilityManifest(activeStoreFormatVersion: 11, backups: []),
+            to: tooNewDirectory
+        )
+
+        guard case .requiresNewerApp(let issue) = try controller.prepareStore(at: tooNewDirectory) else {
+            return XCTFail("Expected a store format above the readable range to require a newer app.")
+        }
+        XCTAssertEqual(issue.activeStoreFormatVersion, 11)
+        XCTAssertEqual(issue.currentStoreFormatVersion, 10)
+
+        let oldestDirectory = try makeTemporaryStoreDirectory()
+        try writeStoreFiles(in: oldestDirectory, contents: "v1")
+        try writeManifest(
+            LocalStoreCompatibilityManifest(activeStoreFormatVersion: 1, backups: []),
+            to: oldestDirectory
+        )
+
+        guard case .ready(let plan) = try controller.prepareStore(at: oldestDirectory) else {
+            return XCTFail("Expected the lower bound of the readable range to open.")
+        }
+        XCTAssertEqual(plan.activeStoreFormatVersion, 1)
+    }
+
+    // CASE 2a.25b —— 降级路径：V10 的库被一个只认到 V9 的构建打开。用户在两个构建之间来回
+    // 切时，一次「打开即降级」会把 V10 写下的 `syncId` / `contentUpdatedDate` 两列丢掉，
+    // 而那等于本机所有行的账户身份全部消失——下一次再跑新构建时，差分把整张游标表判成
+    // 本机删除。所以按 README 规则 4 的降级语义：拒绝打开并保留那份库，不就地降级、不删除。
+    func testStoreFormatTenIsPreservedWhenOpenedByAnAppThatOnlyReadsNine() throws {
+        let directory = try makeTemporaryStoreDirectory()
+        try writeStoreFiles(in: directory, contents: "v10")
+        try writeManifest(
+            LocalStoreCompatibilityManifest(activeStoreFormatVersion: 10, backups: []),
+            to: directory
+        )
+        let olderBuildController = makeController(
+            currentStoreFormatVersion: 9,
+            readableStoreFormatVersions: 1...9,
+            backupPolicy: .beforeSchemaUpgrade
+        )
+
+        let result = try olderBuildController.prepareStore(at: directory)
+
+        guard case .requiresNewerApp(let issue) = result else {
+            return XCTFail("Expected a version ten store to be refused by a version nine app.")
+        }
+        XCTAssertEqual(issue.activeStoreFormatVersion, 10)
+        XCTAssertEqual(issue.currentStoreFormatVersion, 9)
+
+        XCTAssertEqual(try readText(directory.appendingPathComponent("LocalStore.sqlite")), "v10-main")
+        XCTAssertEqual(try readText(directory.appendingPathComponent("LocalStore.sqlite-wal")), "v10-wal")
+        XCTAssertEqual(try readText(directory.appendingPathComponent("LocalStore.sqlite-shm")), "v10-shm")
+        let manifest = try readManifest(from: directory)
+        XCTAssertEqual(manifest.activeStoreFormatVersion, 10)
+        XCTAssertTrue(manifest.backups.isEmpty)
+    }
+
     private func makeController(
         currentStoreFormatVersion: Int,
         readableStoreFormatVersions: ClosedRange<Int>? = nil,

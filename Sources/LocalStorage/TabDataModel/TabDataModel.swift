@@ -164,6 +164,10 @@ enum TabDataModelMigrationPlan: SchemaMigrationPlan {
 
     /// Additive: introduces the generic `icon` identifier. Existing rows use
     /// the model's `default` value and require no data movement.
+    /// Additive: introduces the two optional account-sync columns on
+    /// `TabDataModel` (`syncId`, `contentUpdatedDate`). No data movement —
+    /// existing rows start with nil on both, which reads as "never published to
+    /// the account" and "content never edited".
     static let migrateV9toV10 = MigrationStage.lightweight(
         fromVersion: TabDataModelSchemaV9.self,
         toVersion: TabDataModelSchemaV10.self

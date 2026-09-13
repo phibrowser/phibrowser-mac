@@ -11,6 +11,14 @@ import SwiftData
 ///   first, while the field remains available to other tab kinds later.
 /// - V10 stores the optional split layout for split bookmarks and pinned
 ///   split rows so stacked arrangements survive closing and reopening.
+/// - V10 adds the two account-sync columns bookmark sync needs on the row
+///   itself: `TabDataModel.syncId` (the account-level identity) and
+///   `TabDataModel.contentUpdatedDate` (the last user content edit). Both are
+///   optional, so the stage is lightweight and no data moves.
+///
+/// All five models are re-declared even though only `TabDataModel` changes: a
+/// `VersionedSchema` must list every model of the store, and copying only the
+/// changed one is the most common way this kind of migration goes wrong.
 enum TabDataModelSchemaV10: VersionedSchema {
     static var versionIdentifier = Schema.Version(10, 0, 0)
 
@@ -74,6 +82,39 @@ enum TabDataModelSchemaV10: VersionedSchema {
         /// Space. Unlike an ordinary inactive migration backup, this row still
         /// carries live data and must participate in the next scope migration.
         var isPinnedTabDormant = false
+        /// 账户级同步身份（M3-3）。nil = 这一行还没上过账户。小写 uuid；与本地 `guid`
+        /// （大写、每设备、克隆即重铸）是两个命名空间。
+        ///
+        /// **为什么住在行上而不是一张映射表里**（与 M3-2b 的 Space 侧有意分歧）：
+        /// 1. 规模。`AccountSpaceSyncMappingStore` 每铸一个 uuid 就重写整张字典，而
+        ///    `AccountUserDefaults.set` 每次都把整个 plist 重新序列化并原子落盘。Space
+        ///    一个账户几条到几十条，书签一棵树上千条——同一个机制在这里是 O(n) 次全
+        ///    plist 重写。
+        /// 2. 书签行本来就没有被外部按 id 引用：父子是 SwiftData `@Relationship`，不是
+        ///    按 guid 的外键；`SpaceModel.bookmarkRoot` 是关系指针不是 id。M3-2b 那条
+        ///    「本地 id 永不被改写」是为了保护被引用的 Space id，书签行没有这个约束，
+        ///    多一列不会波及任何既有读者。
+        /// 3. Space 的映射层继续只服务 Space。书签通过它做 `space_uuid` ↔ 本地
+        ///    `spaceId` 的翻译，不再造第二份反查。
+        ///
+        /// 结构性收益：`syncId` 与行本身在同一个事务里写入，落地路径没有第二次写可以
+        /// 失败——不会出现「建完行之后写身份失败、行成了孤儿、每次重试再插一条」。
+        var syncId: String?
+        /// 用户对内容的最后一次编辑（标题 / URL / 拆分字段）。nil = 从未改过内容，
+        /// 比较戳退回 `createdDate`。
+        ///
+        /// 只由共享的更新 body（书签的 `updateBookmarkBody`、pin 的编辑路径）在真的改了
+        /// 内容字段时写；**打开（`updateLastSeen`）、favicon 回填（`updateTabFavicon`）、
+        /// 稠密 index 重排（`normalizeIndexes`）、跨 Space 重打标签
+        /// （`retagBookmarkSubtree`）一律不碰它**。
+        ///
+        /// **为什么不复用 `updatedDate`**：那三条非编辑路径会把 `updatedDate` 往前推，而
+        /// 字段级合并要拿一个本机时间戳去和对端的编辑时间比。用 `updatedDate` 的话，一次
+        /// 「打开」就能让本机一个没人动过的旧标题赢下对端刚做的改名；更糟的是
+        /// `normalizeIndexes` 会在一次拖动里把整个文件夹的兄弟全部重新盖戳，于是加入期间
+        /// 的一次拖动就能把那个文件夹里所有标题与 URL 回退成本机的值。改掉那三条路径不是
+        /// 选项——`bookmarksPublisher` 与导出器都依赖 `updatedDate` 的现有语义。
+        var contentUpdatedDate: Date?
 
         @Relationship(inverse: \TabDataModel.children)
         var parent: TabDataModel?

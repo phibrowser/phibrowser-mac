@@ -365,19 +365,7 @@ extension LocalStore {
     func updateTabSplitPartner(_ guid: String, partnerGuid: String?) {
         performBackgroundWrite { context in
             do {
-                let predicate = #Predicate<TabDataModel> { $0.guid == guid }
-                let descriptor = FetchDescriptor<TabDataModel>(predicate: predicate)
-                if let tab = try context.fetch(descriptor).first {
-                    let layoutAlreadyCleared = partnerGuid != nil || tab.layout == nil
-                    if tab.splitPartnerGuid == partnerGuid, layoutAlreadyCleared {
-                        return
-                    }
-                    tab.splitPartnerGuid = partnerGuid
-                    if partnerGuid == nil {
-                        tab.layout = nil
-                    }
-                    tab.updatedDate = Date()
-                }
+                try self.updateTabSplitPartnerBody(guid, partnerGuid: partnerGuid, in: context)
             } catch {
                 AppLogError("[LocalStore] Failed to update split partner: \(error)")
             }
@@ -906,39 +894,15 @@ extension LocalStore {
         }
         performBackgroundWrite { context in
             do {
-                let scope = try self.pinnedTabScope(in: context)
-                var pinnedTabs = try self.pinnedTabs(
-                    profileId: profileId,
-                    spaceId: spaceId,
-                    scope: scope,
-                    in: context
-                )
-                let now = Date()
-                let model = TabDataModel(
-                    title: title,
-                    guid: guid,
-                    index: 0,
-                    url: parsedURL,
-                    favicon: nil,
-                    createdDate: now,
-                    updatedDate: now
-                )
-                model.dataType = .pinnedTab
-                model.isCreatedByChromium = false
-                model.pinLineageId = lineageId ?? guid
-                try self.applyCurrentPinnedTabOwner(
-                    profileId: profileId,
-                    spaceId: spaceId,
-                    to: model,
-                    in: context
-                )
-                context.insert(model)
-                let insertIndex = min(max(index ?? pinnedTabs.count, 0), pinnedTabs.count)
-                pinnedTabs.insert(model, at: insertIndex)
-                for (position, tabModel) in pinnedTabs.enumerated() {
-                    tabModel.index = position
-                    tabModel.updatedDate = now
-                }
+                try self.createPinnedTabBody(guid: guid,
+                                             url: parsedURL,
+                                             title: title,
+                                             profileId: profileId,
+                                             spaceId: spaceId,
+                                             index: index,
+                                             lineageId: lineageId,
+                                             createdDate: nil,
+                                             in: context)
             } catch {
                 AppLogError("[LocalStore] Failed to create pinned tab: \(error)")
             }
@@ -954,98 +918,20 @@ extension LocalStore {
         let tabGuid = tab.guidInLocalDB ?? UUID().uuidString
         let tabLineageId = tab.pinnedLineageId
         let tabTitle = tab.title
-        let tabURL = tab.url
+        // URL 的解析必须留在共享 body 的 create 分支里：提到这里会让「URL 非法但行已存在」
+        // 的那一次**移动**也失败，而今天它是成功的。这里只做一次无副作用的转换。
+        let tabURL = tab.url.flatMap { URL(string: $0) }
         performBackgroundWrite { context in
             do {
-                let scope = try self.pinnedTabScope(in: context)
-                var pinnedTabs = try self.pinnedTabs(
-                    profileId: profileId,
-                    spaceId: spaceId,
-                    scope: scope,
-                    in: context
-                )
-                let resolvedTabGuid = try self.activePinnedTab(
-                    resolving: tabGuid,
-                    profileId: profileId,
-                    spaceId: spaceId,
-                    in: context
-                )?.guid
-                let resolvedAfterGuid: String?
-                if let afterGuid {
-                    guard let activeAfterTab = try self.activePinnedTab(
-                        resolving: afterGuid,
-                        profileId: profileId,
-                        spaceId: spaceId,
-                        in: context
-                    ) else {
-                        AppLogWarn("[LocalStore] Active after tab not found: \(afterGuid)")
-                        return
-                    }
-                    resolvedAfterGuid = activeAfterTab.guid
-                } else {
-                    resolvedAfterGuid = nil
-                }
-                
-                var tabToMove: TabDataModel
-                let now = Date()
-                if let resolvedTabGuid,
-                   let tabToMoveIndex = pinnedTabs.firstIndex(where: { $0.guid == resolvedTabGuid }) {
-                    tabToMove = pinnedTabs.remove(at: tabToMoveIndex)
-                } else {
-                    guard tabLineageId == nil else {
-                        AppLogWarn("[LocalStore] Active pinned tab not found for move: \(tabGuid)")
-                        return
-                    }
-                    guard let urlStr = tabURL, let url = URL(string: urlStr) else {
-                        AppLogWarn("[LocalStore] Invalid URL for new tab: \(tabURL ?? "nil")")
-                        return
-                    }
-                    
-                    tabToMove = TabDataModel(
-                        title: tabTitle,
-                        guid: newGuid ?? UUID().uuidString,
-                        index: 0,
-                        url: url,
-                        favicon: nil,
-                        createdDate: now,
-                        updatedDate: now
-                    )
-                    tabToMove.dataType = .pinnedTab
-                    tabToMove.isCreatedByChromium = false
-                    tabToMove.pinLineageId = tabLineageId ?? tabToMove.guid
-                    context.insert(tabToMove)
-                    AppLogInfo("[LocalStore] Created new pinned tab with guid: \(tabGuid)")
-                }
-
-                if tabToMove.pinLineageId == nil {
-                    tabToMove.pinLineageId = tabToMove.guid
-                }
-                try self.applyCurrentPinnedTabOwner(
-                    profileId: profileId,
-                    spaceId: spaceId,
-                    to: tabToMove,
-                    in: context
-                )
-                
-                let insertIndex: Int
-                if let resolvedAfterGuid {
-                    if let afterIndex = pinnedTabs.firstIndex(where: { $0.guid == resolvedAfterGuid }) {
-                        insertIndex = afterIndex + 1
-                    } else {
-                        AppLogWarn("[LocalStore] After tab not found: \(resolvedAfterGuid)")
-                        return
-                    }
-                } else {
-                    insertIndex = 0
-                }
-                
-                pinnedTabs.insert(tabToMove, at: insertIndex)
-                
-                for (index, tabModel) in pinnedTabs.enumerated() {
-                    tabModel.index = index
-                    tabModel.updatedDate = now
-                }
-                
+                try self.moveOrCreatePinnedTabBody(guid: tabGuid,
+                                                   lineageId: tabLineageId,
+                                                   title: tabTitle,
+                                                   url: tabURL,
+                                                   after: afterGuid,
+                                                   profileId: profileId,
+                                                   spaceId: spaceId,
+                                                   newGuid: newGuid,
+                                                   in: context)
             } catch {
                 AppLogError("[LocalStore] Failed to move tab: \(error)")
             }

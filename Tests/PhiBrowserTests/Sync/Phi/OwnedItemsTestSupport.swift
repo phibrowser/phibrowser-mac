@@ -61,6 +61,12 @@ final class FakeBookmarkAccess: PhiBookmarkLocalAccess {
         rows.contains { $0.guid == guid }
     }
 
+    /// 生产实现从那一次 fetch 的分组缓存里读 `dataType`；这里读的是同一份 `rows`，
+    /// 于是假件与生产实现在「找不到 ⇒ nil」这一点上同形。
+    func localIsFolder(guid: String) -> Bool? {
+        rows.first { $0.guid == guid }?.isFolder
+    }
+
     func isImporting(intoSpaceId spaceId: String) -> Bool {
         importingSpaceIds.contains(spaceId)
     }

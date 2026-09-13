@@ -1815,3 +1815,89 @@ extension PinKindTests {
         XCTAssertEqual(partner, "lb", "伙伴 lineage 出门前也要过 lineageKey")
     }
 }
+
+// MARK: - Task 5a：落地 index 投影（§4.10）
+
+/// `BookmarkKind.rankToIndex(siblings:ranks:)` 的三条用例。模块级、纯函数：没有
+/// `LocalStore`、没有引擎、没有假件——投影本身是落地路径上唯一一处「线上次序 → 本机
+/// 稠密 index」的翻译，它错了整个文件夹的顺序就错了，所以它单独有用例。
+@MainActor
+final class BookmarkRankToIndexProjectionTests: XCTestCase {
+
+    /// 只写这条用例在乎的四个字段；其余走 fixture 的默认值。
+    private func sibling(guid: String,
+                         syncId: String?,
+                         index: Int) -> PhiLocalBookmark {
+        PhiLocalBookmark.fixture(guid: guid, syncId: syncId, index: index)
+    }
+
+    // MARK: - CASE 5a.1
+
+    /// CASE 5a.1 — rank → 稠密 index 的投影按 **rank 序**编号，不是按旧 `index` 序。
+    ///
+    /// 防的是什么：沿用旧 `index` 排序的实现在「本机顺序恰好等于 rank 顺序」的数据上
+    /// 也是绿的，只有在两者不一致时才露馅。这里刻意让旧 `index`（7 / 2 / 5）与 rank
+    /// 序（M < V < b）给出**三个都不同**的名次，于是任何一种按旧 index 编号的写法都
+    /// 得不到期望值。
+    func testTheProjectionNumbersSiblingsByRankOrderNotByTheirOldIndex() {
+        let siblings = [
+            sibling(guid: "g1", syncId: "b1", index: 7),
+            sibling(guid: "g2", syncId: "b2", index: 2),
+            sibling(guid: "g3", syncId: "b3", index: 5),
+        ]
+
+        let projected = BookmarkKind.rankToIndex(siblings: siblings,
+                                                 ranks: ["b1": "V", "b2": "M", "b3": "b"])
+
+        XCTAssertEqual(projected, ["g2": 0, "g1": 1, "g3": 2])
+    }
+
+    // MARK: - CASE 5a.2
+
+    /// CASE 5a.2 — rank 平手时按**身份 uuid** 定序。
+    ///
+    /// 防的是什么：不定序会让两台机器把同一批行写成不同的 index 顺序，各自再发回一轮
+    /// 无谓的 rank 更新，两边永远互相盖。
+    ///
+    /// 两条行的**本机 guid 次序与身份次序刻意相反**（`b-aaa` 住在 `g-zzz` 上）：按 guid
+    /// 平手的写法会把 `b-bbb` 排前，于是这条用例对「平手判据用错了字段」是有牙的，而
+    /// 不是两种写法都绿。
+    func testSiblingsWithTheSameRankAreOrderedByIdentityUuid() {
+        let siblings = [
+            sibling(guid: "g-aaa", syncId: "b-bbb", index: 0),
+            sibling(guid: "g-zzz", syncId: "b-aaa", index: 1),
+        ]
+
+        let projected = BookmarkKind.rankToIndex(siblings: siblings,
+                                                 ranks: ["b-aaa": "M", "b-bbb": "M"])
+
+        XCTAssertEqual(projected["g-zzz"], 0, "b-aaa 排前")
+        XCTAssertEqual(projected["g-aaa"], 1)
+    }
+
+    // MARK: - CASE 5a.3
+
+    /// CASE 5a.3 — 投影喂的是**未过滤**的兄弟列表：本轮不参与同步的那条也拿到一个
+    /// index，三个 index 互不相同。
+    ///
+    /// 防的是什么：只重排参与本轮的那几条，被排除的兄弟留着的旧 `index` 会与新写的
+    /// 撞上，同一个文件夹里出现两条 index 相同的行，此后顺序随 fetch 而变；下一轮的
+    /// 出站 pass 于是给其中一条算出新 rank 发出去，对端应用后顺序又翻回来——每轮两条
+    /// commit，永远（§4.10）。
+    func testTheProjectionCoversEverySiblingIncludingTheOnesNotInThisRound() {
+        let siblings = [
+            sibling(guid: "g1", syncId: "b1", index: 0),
+            // 还没发布过的本机行：本轮没有 rank，但它占着这个父下的一个槽位。
+            sibling(guid: "g2", syncId: nil, index: 1),
+            sibling(guid: "g3", syncId: "b3", index: 2),
+        ]
+
+        let projected = BookmarkKind.rankToIndex(siblings: siblings,
+                                                 ranks: ["b1": "V", "b3": "b"])
+
+        let indexes = Set(projected.values)
+        XCTAssertEqual(projected.count, 3, "未过滤：三条兄弟都要拿到 index")
+        XCTAssertEqual(indexes.count, 3, "三个 index 互不相同")
+        XCTAssertEqual(projected["g2"], 0, "没有 rank 的行排在最前，与 assignRanks 的补集规则同向")
+    }
+}

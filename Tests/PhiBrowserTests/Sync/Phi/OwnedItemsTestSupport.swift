@@ -28,6 +28,13 @@ final class FakeBookmarkAccess: PhiBookmarkLocalAccess {
     /// 本机有行、但**不在快照里**的那些身份：孤儿根 / 重复根下面的子树（R-exec-4）。
     /// `allBookmarks()` 看不见它们，`allSyncIds()` 必须看得见，否则差分把它们判成删除。
     var orphanedSyncIds: Set<String> = []
+    /// 本轮有没有一份可用的快照，**与生产实现同一条契约**：三个读者只在本轮最后一次成功的
+    /// `allBookmarks()` 或 `apply(_:)` 之后有意义，否则交出「不在」那个值；`allSyncIds()`
+    /// 在此之前抛。
+    ///
+    /// 假件必须模这一条，否则 Task 6 的引擎用例会在假件上跑过一种生产实现里根本不成立的
+    /// 用法——「落地之后直接复核」在假件上答对、在真机上每一条都答不在（G1 / G4）。
+    private(set) var snapshotIsLoaded = false
     /// 下一次 `apply` 抛 `LocalStoreWriteError.storeUnavailable`，然后清零。**一行都不改。**
     var failApplyOnce = false
     /// `apply` 不抛错、但一条行都不改——模拟 Task 2a 之前那族静默守卫。
@@ -47,9 +54,15 @@ final class FakeBookmarkAccess: PhiBookmarkLocalAccess {
     /// 的次序必须是生产实现真会产出的那个，否则后面断言提交顺序或 index 投影的用例会因为
     /// 一个与被测代码无关的理由变红或变绿。无父的行（`parentGuid == nil`）排在同 Space 的
     /// 有父行之前。
+    /// 开新一轮：把快照标成「没读过」。用例用它制造 R-exec-3 之后那三种无效状态。
+    func beginRound() {
+        snapshotIsLoaded = false
+    }
+
     func allBookmarks() throws -> [PhiLocalBookmark] {
         calls.append(.allBookmarks)
         if let readError { throw readError }
+        snapshotIsLoaded = true
         return rows.sorted {
             ($0.spaceId, $0.parentGuid ?? "", $0.index, $0.guid)
                 < ($1.spaceId, $1.parentGuid ?? "", $1.index, $1.guid)
@@ -60,6 +73,7 @@ final class FakeBookmarkAccess: PhiBookmarkLocalAccess {
     /// `.allBookmarks`，也**不**过滤（§4.10 的 index 投影要未过滤的兄弟列表）。
     func siblings(ofParent parentGuid: String?, inSpaceId spaceId: String) -> [PhiLocalBookmark] {
         calls.append(.siblings(parent: parentGuid, space: spaceId))
+        guard snapshotIsLoaded else { return [] }
         return rows
             .filter { $0.spaceId == spaceId && $0.parentGuid == parentGuid }
             .sorted { ($0.index, $0.guid) < ($1.index, $1.guid) }
@@ -70,17 +84,22 @@ final class FakeBookmarkAccess: PhiBookmarkLocalAccess {
     func allSyncIds() throws -> Set<String> {
         calls.append(.allSyncIds)
         if let readError { throw readError }
+        // 与生产实现同源：它读的是快照那一次 fetch 的未过滤结果，所以本轮没成功读过就抛，
+        // 绝不交出一个会让差分把整棵树判成删除的空集合。
+        guard snapshotIsLoaded else { throw LocalStoreWriteError.storeUnavailable }
         return Set(rows.compactMap(\.syncId)).union(orphanedSyncIds)
     }
 
     func isKnownLocalBookmark(_ guid: String) -> Bool {
-        rows.contains { $0.guid == guid }
+        guard snapshotIsLoaded else { return false }
+        return rows.contains { $0.guid == guid }
     }
 
     /// 生产实现从那一次 fetch 的分组缓存里读 `dataType`；这里读的是同一份 `rows`，
     /// 于是假件与生产实现在「找不到 ⇒ nil」这一点上同形。
     func localIsFolder(guid: String) -> Bool? {
-        rows.first { $0.guid == guid }?.isFolder
+        guard snapshotIsLoaded else { return nil }
+        return rows.first { $0.guid == guid }?.isFolder
     }
 
     func isImporting(intoSpaceId spaceId: String) -> Bool {
@@ -94,6 +113,9 @@ final class FakeBookmarkAccess: PhiBookmarkLocalAccess {
             failApplyOnce = false
             throw LocalStoreWriteError.storeUnavailable
         }
+        // 生产实现末尾会重读一次，于是 §4.5 的落地后复核在同一轮里就能做（G1）。抛错那一
+        // 支走不到这里：真实现里那次重读排在写之后，写抛了就不会发生，快照保持原样。
+        snapshotIsLoaded = true
         guard !applyLandsNothingSilently else { return }
         for op in batch.ops { land(op) }
     }

@@ -1414,26 +1414,6 @@ extension LocalStore {
         return try context.fetch(descriptor)
     }
 
-    /// 本机**所有**带账户级身份的书签 / 文件夹行的 `syncId`，**不做任何根过滤**。
-    ///
-    /// 与 `allBookmarkModels(in:)` 的关系正是 §4.7 与 §4.8 的分工：快照要的是「同步层认领
-    /// 哪些行」，所以它从 canonical root 往下走、把孤儿根整棵排除；而差分的 `locals` 要的是
-    /// 「这条身份在本机还有没有行」。两者混用会删掉账户数据——一条曾经发布过、后来它那个根
-    /// 不再是 Space 的 canonical root 的行（并发初始化正好造出这种状态，heal-on-read 就是
-    /// 为它存在的），会从快照里消失而游标还在，于是差分给它和它每一个后代发 tombstone。
-    ///
-    /// 「同步层不认领它」与「账户应该忘掉它」是两句不同的话（R-exec-4）。
-    func allBookmarkSyncIds(in context: ModelContext) throws -> Set<String> {
-        let bookmarkRaw = TabDataType.bookmark.rawValue
-        let folderRaw = TabDataType.bookmarkFolder.rawValue
-        let descriptor = FetchDescriptor<TabDataModel>(
-            predicate: #Predicate<TabDataModel> {
-                ($0.type == bookmarkRaw || $0.type == folderRaw) && $0.syncId != nil
-            }
-        )
-        return Set(try context.fetch(descriptor).compactMap(\.syncId))
-    }
-
     /// 每一对 (profileId, spaceId) 的 canonical root 的 guid。
     ///
     /// **绝不逐行调 `isBookmarkRoot(_:in:)`**：那个函数每次都 fetch 全部 `ProfileModel`
@@ -2264,8 +2244,15 @@ extension LocalStore {
                 // 本地独有、从没发布过的行：R-M3-3-17 要求引擎先把它们删掉或提到 Space
                 // root，漏一个就在这个事务里静默死掉，没有计数也没有日志。正常运行时这条
                 // 守卫永远不触发，触发就整批回滚重试，而不是销毁用户数据。
+                //
+                // `!$0.isDeleted` 不是多余的：这一批的 delete 相是**子先于父**，所以走到
+                // 父这一条时它的孩子已经在同一个块里被 `context.delete` 标过了。带待定变更
+                // 的 fetch 会不会把它们滤掉，取决于 SwiftData 那条没有在本里程碑里被跑过的
+                // 语义（本里程碑只编译、不跑测试），而 §4.4 有一句顺带的话说的正相反。赌错
+                // 的代价是**每一次远端删除一个非空文件夹都永远抛 `folderNotEmpty`**，文件夹
+                // 删除在任何设备上都再也落不了地。显式过滤在两种语义下都对。
                 if node.dataType == .bookmarkFolder,
-                   try !children(of: node, in: context).isEmpty {
+                   try children(of: node, in: context).contains(where: { !$0.isDeleted }) {
                     throw LocalStoreWriteError.folderNotEmpty
                 }
                 remember(node.parent)

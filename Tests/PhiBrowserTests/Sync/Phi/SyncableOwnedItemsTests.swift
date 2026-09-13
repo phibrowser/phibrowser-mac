@@ -1980,3 +1980,87 @@ final class BookmarkLocalAccessReadContractTests: XCTestCase {
                       "差分定义域只会比快照宽，不会窄")
     }
 }
+
+// MARK: - Task 5a fix round 2：快照的生命周期
+
+/// 三个读缓存的读者什么时候有意义（G1 / G4）。契约是：本轮**最后一次成功的**
+/// `allBookmarks()` 或 `apply(_:)` 之后。
+@MainActor
+final class BookmarkSnapshotLifetimeTests: XCTestCase {
+
+    private func access() -> FakeBookmarkAccess {
+        FakeBookmarkAccess(rows: [
+            PhiLocalBookmark.fixture(guid: "g-folder", syncId: "b-folder",
+                                     index: 0, isFolder: true),
+            PhiLocalBookmark.fixture(guid: "g1", syncId: "b1", parentGuid: "g-folder", index: 0),
+        ])
+    }
+
+    /// 本轮还没读过 ⇒ 三个读者交出「不在」，`allSyncIds()` 抛。
+    ///
+    /// 防的是什么：这三个值全都是**错的**，只是非抛出的签名里没有别的东西可交。生产实现在
+    /// DEBUG 下会在这里 `assertionFailure`，假件跟着模同一条契约，免得 Task 6 的引擎用例在
+    /// 假件上跑过一种真机上根本不成立的用法。
+    func testTheCacheBackedReadersReportAbsentBeforeAnySuccessfulSnapshot() {
+        let access = access()
+
+        let siblings = access.siblings(ofParent: "g-folder", inSpaceId: LocalStore.defaultSpaceId)
+        let known = access.isKnownLocalBookmark("g1")
+        let isFolder = access.localIsFolder(guid: "g-folder")
+        var identitiesThrew = false
+        do { _ = try access.allSyncIds() } catch { identitiesThrew = true }
+
+        XCTAssertTrue(siblings.isEmpty)
+        XCTAssertFalse(known)
+        XCTAssertNil(isFolder)
+        XCTAssertTrue(identitiesThrew, "空集合会让差分把整棵树判成删除，所以这里只能抛")
+    }
+
+    /// 一次成功的 `allBookmarks()` 之后三个读者才答得上话。
+    func testASuccessfulSnapshotMakesTheReadersAnswer() throws {
+        let access = access()
+
+        _ = try access.allBookmarks()
+
+        let siblings = access.siblings(ofParent: "g-folder", inSpaceId: LocalStore.defaultSpaceId)
+        let known = access.isKnownLocalBookmark("g1")
+        let isFolder = access.localIsFolder(guid: "g-folder")
+        XCTAssertEqual(siblings.map(\.guid), ["g1"])
+        XCTAssertTrue(known)
+        XCTAssertEqual(isFolder, true)
+    }
+
+    /// 一次成功的 `apply(_:)` 之后，三个读者仍然答得上话，而且答的是**落地之后**的形状。
+    ///
+    /// 防的是什么：§4.5 要求「落地之后、写基线之前，按计划复核一次」，而复核用的正是这三个
+    /// 读者。落地后把快照清空了事的话，它们对每一个 guid 都答「不在」——复核永远不通过、
+    /// 基线永远不写、同一批每轮重放；而 `isKnownLocalBookmark` 全答 false 更会让引擎把每条
+    /// 身份判成死映射，把整棵树当成新行重建一遍，用户看见的是一棵重复的树。
+    func testTheReadersStillAnswerRightAfterASuccessfulApply() async throws {
+        let access = access()
+        _ = try access.allBookmarks()
+
+        try await access.apply(BookmarkApplyBatch(unordered: [
+            .create(PhiLocalBookmark.fixture(guid: "g2", syncId: "b2",
+                                             parentGuid: "g-folder", index: 1)),
+        ]))
+
+        let siblings = access.siblings(ofParent: "g-folder", inSpaceId: LocalStore.defaultSpaceId)
+        let known = access.isKnownLocalBookmark("g2")
+        let identities = try access.allSyncIds()
+        XCTAssertEqual(siblings.map(\.guid), ["g1", "g2"], "复核读到的是落地之后的形状")
+        XCTAssertTrue(known, "落地的那条行必须认得出来，否则它会被当成死映射重建")
+        XCTAssertTrue(identities.contains("b2"))
+    }
+
+    /// 新一轮开始、还没读之前，读者回到「不在」。
+    func testBeginningANewRoundInvalidatesTheReaders() throws {
+        let access = access()
+        _ = try access.allBookmarks()
+
+        access.beginRound()
+
+        let known = access.isKnownLocalBookmark("g1")
+        XCTAssertFalse(known)
+    }
+}

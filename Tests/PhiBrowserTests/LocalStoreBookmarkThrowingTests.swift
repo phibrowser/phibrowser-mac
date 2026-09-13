@@ -523,6 +523,35 @@ final class LocalStoreBookmarkThrowingTests: XCTestCase {
         XCTAssertNil(deleted)
     }
 
+    // G3 —— 同一批里先删孩子再删父，必须成功。
+    //
+    // 防的是什么：`.folderNotEmpty` 那道守卫是在**这一批已经删过该文件夹的后代之后**才问
+    // 「它还有孩子吗」。它只有在「带待定变更的 fetch 会滤掉同一个块里刚 `context.delete`
+    // 标记过的行」这条语义成立时才对，而本里程碑只编译不跑测试，§4.4 还有一句顺带的话说得
+    // 正相反。赌错的代价是每一次远端删除非空文件夹都永远抛 `folderNotEmpty`，文件夹删除在
+    // 任何设备上都再也落不了地。这条用例把那个赌注变成一条断言。
+    func testDeletingAChildAndThenItsParentFolderInOneBatchSucceeds() async throws {
+        let store = try await makeStoreWithSpaces()
+        let folder = try await store.createDirectoryThrowing(title: "Folder",
+                                                             profileId: Self.profileId,
+                                                             parentId: nil)
+        let child = try await store.createBookmarkThrowing(url: Self.exampleURL,
+                                                           title: "Child",
+                                                           profileId: Self.profileId,
+                                                           parentId: folder)
+
+        // 三相排序里 delete 相是子先于父，这正是引擎会交出来的次序。
+        try await store.applyBookmarkSyncBatchThrowing([
+            .delete(guid: child),
+            .delete(guid: folder),
+        ])
+
+        let childRow = try row(child, in: store)
+        let folderRow = try row(folder, in: store)
+        XCTAssertNil(childRow)
+        XCTAssertNil(folderRow, "守卫不该把一次合法的整棵删除挡下来")
+    }
+
     // F3 —— 一条已经带着别的身份的行不许被重新认领。
     //
     // 防的是什么：覆盖写会让旧身份在本机瞬间失去对应行，而 §4.7 的差分对「没有本机行」的
@@ -584,7 +613,7 @@ final class LocalStoreBookmarkThrowingTests: XCTestCase {
         XCTAssertEqual(title, "A", "锁住时一个字节都不落")
     }
 
-    // MARK: - allBookmarkSyncIds（R-exec-4）
+    // MARK: - 差分定义域的那一次 fetch（R-exec-4）
 
     // F4 —— 孤儿根下面那条行不在快照的定义域里，但**在**差分的定义域里。
     //
@@ -608,9 +637,13 @@ final class LocalStoreBookmarkThrowingTests: XCTestCase {
         let rootGuid = try await rootGuid(in: store, spaceId: Self.otherSpaceId)
         try await store.detachBookmarkRootRelationshipForTesting(spaceId: Self.otherSpaceId)
 
+        // 生产实现从 `allBookmarkModels(in:)` 这一次**未经根过滤**的行里取身份，再对同一份
+        // 结果跑根递归产出快照（`AccountPhiBookmarkAccess.rebuildCache`），所以这里断言的
+        // 正是它读的那两样东西。
         let observed = try await store.performBackgroundWriteAndWaitThrowing { context -> ObservedDomain in
-            ObservedDomain(canonicalRoots: try store.canonicalRootGuids(in: context),
-                           identities: try store.allBookmarkSyncIds(in: context))
+            let models = try store.allBookmarkModels(in: context)
+            return ObservedDomain(canonicalRoots: try store.canonicalRootGuids(in: context),
+                                  identities: Set(models.compactMap(\.syncId)))
         }
 
         XCTAssertFalse(observed.canonicalRoots.contains(rootGuid),

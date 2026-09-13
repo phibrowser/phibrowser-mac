@@ -87,6 +87,12 @@ struct PhiSpaceSyncTable: Codable, Equatable {
     // 集合是 12 个字段，spec §3.5 说的「十一项 marker 派生状态」不含 `spaceSectionEnabled`：
     // 那一个是**门的持久化值**，不是从 marker 派生出来的。`PhiOwnedItemStateTests` 的
     // CASE 3.12 按 12 个名字钉住整个集合——加第十三个字段的人必须先读完这一段。
+    //
+    // **往这张表上加字段的硬规则：新字段必须在下面那个显式 `init(from:)` 里用
+    // `decodeIfPresent(…) ?? <默认值>` 解**。合成的 `Decodable` 对一个非可选存储属性发的是
+    // `decode(_:forKey:)`，**属性的默认值一概不参与**：键缺席就抛 `keyNotFound`，于是每一台
+    // 已经装过上一版的机器整张表解不出来、被当成损坏丢掉（连带 `isStaleFormat` 误报「格式
+    // 偏低」并把用户推回配对向导）。`formatVersion` 拦不住这件事——加字段不改格式版本。
     var drainInProgress = false
     var hasDrainedFullReplay = false
     var hadRecords = false
@@ -237,6 +243,44 @@ struct PhiSpaceSyncTable: Codable, Equatable {
             return true
         }
         return decoded.formatVersion < currentFormatVersion
+    }
+}
+
+// `init(from:)` 在**扩展**里而不是在 struct 体内：在体内声明任何 init 都会掐掉合成的
+// `PhiSpaceSyncTable()`，而那个无参 init 是全仓库建空表的唯一写法。`encode(to:)` 与
+// `CodingKeys` 仍然由编译器合成，所以新增字段自动进编码侧，只有解码侧要手写一行。
+extension PhiSpaceSyncTable {
+    /// **只为向后兼容而存在。** 合成的 `Decodable` 对非可选存储属性发的是 `decode(_:forKey:)`，
+    /// 属性默认值一概不参与：一张由上一版写下的表（`formatVersion` 仍是 2，只是没有后来新增
+    /// 的那几个键）会整张解不出来，被 `AccountUserDefaults.codableValue` 吞成 nil、被
+    /// `loaded(from:)` 换成空表，而 `isStaleFormat(rawData:)` 的 `try?` 还会把同一次失败读成
+    /// 「格式偏低」，于是覆盖掉盘上那份并把设备推回配对向导。
+    ///
+    /// 所以：**这一版新增的四个 per-kind 标志用 `decodeIfPresent(…) ?? false` 解**（`false`
+    /// 对一台从没发布过书签 / pin 的机器本来就是正确值，不需要任何迁移），其余字段逐字保持
+    /// 合成解码器今天的行为——它们从 `formatVersion` 2 起就一直在，缺席就是真损坏。
+    init(from decoder: Decoder) throws {
+        self.init()
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        formatVersion = try container.decode(Int.self, forKey: .formatVersion)
+        cursors = try container.decode([String: PhiSpaceCursor].self, forKey: .cursors)
+        drainInProgress = try container.decode(Bool.self, forKey: .drainInProgress)
+        hasDrainedFullReplay = try container.decode(Bool.self, forKey: .hasDrainedFullReplay)
+        hadRecords = try container.decode(Bool.self, forKey: .hadRecords)
+        spaceSectionEnabled = try container.decode(Bool.self, forKey: .spaceSectionEnabled)
+        markerMovedWhileGateShut = try container.decode(Bool.self, forKey: .markerMovedWhileGateShut)
+        didReplayForEmptyTable = try container.decode(Bool.self, forKey: .didReplayForEmptyTable)
+        lastDrainedBirthday = try container.decodeIfPresent(String.self, forKey: .lastDrainedBirthday)
+        unreadableTagHashes = try container.decode([String: Int64].self, forKey: .unreadableTagHashes)
+        // 本里程碑新增的四个：缺席 = 上一版写的表，不是损坏。
+        bookmarksHadRecords =
+            try container.decodeIfPresent(Bool.self, forKey: .bookmarksHadRecords) ?? false
+        pinsHadRecords =
+            try container.decodeIfPresent(Bool.self, forKey: .pinsHadRecords) ?? false
+        bookmarksReplayedForEmptyTable =
+            try container.decodeIfPresent(Bool.self, forKey: .bookmarksReplayedForEmptyTable) ?? false
+        pinsReplayedForEmptyTable =
+            try container.decodeIfPresent(Bool.self, forKey: .pinsReplayedForEmptyTable) ?? false
     }
 }
 

@@ -75,6 +75,32 @@ final class PhiOwnedItemStateTests: XCTestCase {
         XCTAssertEqual(roundTripped, table)
         XCTAssertEqual(roundTripped.cursors["bm-1"], cursor)
         XCTAssertFalse(reportedLoss, "读得出来就不是丢失")
+
+        // 同一条用例的第二半：**盘上的键名**。往返断言钉不住改名——合成的 `CodingKeys` 跟着
+        // 属性名走，改一个属性名就在同一个 `formatVersion` 下悄悄换掉盘上的键，那个字段的
+        // 每条游标都解成默认值。所以这里解一份写死键名的 JSON。`Data` 字段是
+        // `JSONEncoder` 默认的 base64。
+        let literal = Data("""
+        {
+          "entityId": "srv-1",
+          "version": 4,
+          "reconciled": "AQ==",
+          "server": "Ag==",
+          "ownerUuid": "su-1",
+          "pendingApply": "Aw==",
+          "pendingOwnerUuid": "su-2",
+          "pendingTombstone": true,
+          "pendingPartnerLineage": "LY",
+          "pendingDelete": true,
+          "deleteDecidedAtMs": 77,
+          "deleteRejectRounds": 2,
+          "deletedAtMs": 88
+        }
+        """.utf8)
+
+        let fromLiteral = try JSONDecoder().decode(PhiOwnedItemCursor.self, from: literal)
+
+        XCTAssertEqual(fromLiteral, cursor, "十三个盘上键名必须与这份字面量逐字一致")
     }
 
     // MARK: - CASE 3.2
@@ -142,6 +168,37 @@ final class PhiOwnedItemStateTests: XCTestCase {
         XCTAssertEqual(onDisk, staleBytes, "丢弃那一路不写回文件")
     }
 
+    /// CASE 3.4 的另一半：`formatVersion` **缺失**（§3.6 / §12.1 的「更小**或缺失**」）。
+    ///
+    /// 表里带着一条真游标，所以这条用例只可能因为「没有 `formatVersion` 这个键」而丢弃——
+    /// 而这正是 per-kind 表将来加字段时最可能踩的那个机制（合成的 `Decodable` 对缺席的键
+    /// 抛 `keyNotFound`，属性默认值不参与）。
+    func testATableWithNoFormatVersionKeyIsDroppedAndReported() throws {
+        var table = PhiOwnedItemTable()
+        table.cursors["bm-1"] = ownedCursor(reconciled: Data([0x01]),
+                                            entityId: "srv-1", version: 3)
+        let encoded = try JSONEncoder().encode(table)
+        var object = try XCTUnwrap(JSONSerialization.jsonObject(with: encoded) as? [String: Any])
+        object.removeValue(forKey: "formatVersion")
+        let bytes = try JSONSerialization.data(withJSONObject: object)
+        try FileManager.default.createDirectory(at: fileURL.deletingLastPathComponent(),
+                                                withIntermediateDirectories: true)
+        try bytes.write(to: fileURL, options: .atomic)
+        let store = makeStore()
+
+        let loud = store.load(hadRecords: true)
+        let quiet = store.load(hadRecords: false)
+
+        let loudTable = loud.table
+        let loudLoss = loud.reportedLoss
+        let quietLoss = quiet.reportedLoss
+        let onDisk = try Data(contentsOf: fileURL)
+        XCTAssertTrue(loudTable.cursors.isEmpty)
+        XCTAssertTrue(loudLoss)
+        XCTAssertFalse(quietLoss)
+        XCTAssertEqual(onDisk, bytes, "缺键那一路也不写回文件")
+    }
+
     // MARK: - CASE 3.5
 
     /// CASE 3.5 — 字节解不开 ⇒ 丢弃并报损。
@@ -183,6 +240,39 @@ final class PhiOwnedItemStateTests: XCTestCase {
         XCTAssertTrue(loudTable.cursors.isEmpty)
         XCTAssertTrue(loudLoss)
         XCTAssertFalse(quietLoss)
+    }
+
+    /// CASE 3.6 的假件对照：`MemoryOwnedItemStore` 在同一处必须给出同一个答案。
+    ///
+    /// 防的是什么：两边的报损判据一旦分家，一条拿着空表、`bookmarksHadRecords == true` 的
+    /// Task 6 / 9 用例会在「正常一轮、什么都没丢」上变绿，而线上代码在同一处报损并重放
+    /// 整个 data type——假件把真实行为盖住了，方向还正好是放过它。
+    func testTheMemoryStoreReportsTheSameLossAsTheFileStore() {
+        let store = MemoryOwnedItemStore()
+
+        let loud = store.load(hadRecords: true)
+        let quiet = store.load(hadRecords: false)
+
+        let loudTable = loud.table
+        let loudLoss = loud.reportedLoss
+        let quietLoss = quiet.reportedLoss
+        let seen = store.hadRecordsSeen
+        XCTAssertTrue(loudTable.cursors.isEmpty)
+        XCTAssertTrue(loudLoss)
+        XCTAssertFalse(quietLoss)
+        XCTAssertEqual(seen, [true, false])
+
+        // 非空表、没有脚本化的丢失 ⇒ 照常读回原表，一次报损都没有。
+        var table = PhiOwnedItemTable()
+        table.cursors["bm-1"] = ownedCursor(reconciled: Data([0x01]), entityId: "srv-1")
+        store.save(table)
+
+        let healthy = store.load(hadRecords: true)
+
+        let healthyTable = healthy.table
+        let healthyLoss = healthy.reportedLoss
+        XCTAssertEqual(healthyTable, table)
+        XCTAssertFalse(healthyLoss)
     }
 
     // MARK: - CASE 3.7

@@ -82,6 +82,178 @@ enum PhiSpacePreviewError: Error, Equatable {
     case transport(String)
 }
 
+// MARK: - 归属项（书签 / pin）的引擎接缝（M3-3 §5）
+//
+// 引擎对归属 kind 是**泛型**的：它按一张注册清单驱动一切，清单里有什么就跑什么。下面这
+// 一组类型就是那张清单的元素与它进出的值。**没有任何一处提到书签或 pin**，除了文件末尾
+// 那个把 `BookmarkKind` 绑上去的工厂。
+
+/// 轮首算好一次的身份翻译表。
+///
+/// 它是 `OwnerResolver` 的**数据**版本。`OwnerResolver` 装的是闭包，而这些值要交给跑在
+/// main actor 上的适配闭包，所以跨边界的那一份必须是纯值；两者的关系只有一条 `resolver`。
+/// 纯函数模块因此也不必自己去够 `PhiSpaceSyncTable` 或映射表（`SyncableOwnedItems.swift` 的
+/// 自述）。
+struct OwnedOwnerMaps {
+    var syncUuidBySpaceId: [String: String] = [:]
+    var localSpaceIdBySyncUuid: [String: String] = [:]
+    /// §4.2 规则 1 那三条判据的**合取**已经算好：在 `currentSpaces()` 里 ∧ 有 syncUuid ∧
+    /// 该 Space 的游标既不 `hidden` 也没有 `purgedAtMs`。
+    var eligibleSpaceUuids: Set<String> = []
+    var globalUuidByProfileId: [String: String] = [:]
+    var localProfileIdByGlobalUuid: [String: String] = [:]
+
+    var resolver: OwnerResolver {
+        let maps = self
+        return OwnerResolver(
+            syncUuid: { maps.syncUuidBySpaceId[$0] },
+            localSpaceId: { maps.localSpaceIdBySyncUuid[$0] },
+            isEligibleSpace: { maps.eligibleSpaceUuids.contains($0) },
+            globalUuid: { maps.globalUuidByProfileId[$0] },
+            localProfileId: { maps.localProfileIdByGlobalUuid[$0] })
+    }
+}
+
+/// 一轮出站快照的**类型擦除**形态：实体已经序列化成 `Phi_PhiEntity` 信封字节，所以这个
+/// 结构不带 kind 的泛型参数。变更检测就是拿这些字节与游标的 `reconciled` 比（§4.2）。
+struct OwnedSnapshotBytes {
+    var entities: [String: Data] = [:]
+    /// 身份 -> 这条本机行**当前所在的归属**（A12 / §3.5）。引擎每轮把它刷进游标的
+    /// `ownerUuid`，差分的归属判据与保留期级联都只读那一个字段。
+    var ownerUuids: [String: String] = [:]
+    /// 本轮在内存里**铸出**候选身份的那些行：身份 -> 本机行 id。真正写进本机行是在提交被
+    /// 接受之后（§6.4「铸造在提交那一刻」）。
+    var minted: [String: String] = [:]
+    var skippedUnmappedOwner = 0
+    var skippedIneligibleOwner = 0
+}
+
+/// `plan` 的入参，擦除了 kind：到达项是信封字节。
+struct OwnedPlanInput {
+    var arrivals: [(payload: Data, entityId: String, version: Int64)] = []
+    var parked: [String: ParkedOwnedItem] = [:]
+    var table = PhiOwnedItemTable()
+    var maps = OwnedOwnerMaps()
+    /// 本轮到达的 tombstone 身份 ∪ 表里还停着的 `pendingTombstone`。
+    var tombstoned: Set<String> = []
+}
+
+/// `plan` 的产出，外加只有适配层算得出的那几个计数。
+struct OwnedPlanOutput {
+    var plan = OwnedItemPlan(steps: [], parked: [:], refused: 0, lifted: 0,
+                             supersededByDelete: 0, cancelledDeletes: [], harvest: [:])
+    var adopted = 0
+    var unmatchedFolders = 0
+    var unmergeablePairs = 0
+    /// 认领的合并结果里本机赢了字段的那些身份：**必须重新发布**。
+    var mustRepublish: Set<String> = []
+    var scopeMismatch = false
+    /// 身份 -> 本轮**拉到的那一条远端实体**的信封字节。§4.5 的 `server = remote`，
+    /// **永远不是 merge 结果**。
+    var serverBytes: [String: Data] = [:]
+}
+
+struct OwnedLandingInput {
+    var steps: [OwnedItemApplyStep] = []
+    var table = PhiOwnedItemTable()
+    var maps = OwnedOwnerMaps()
+}
+
+/// 一次落地的结果。三条出路**方向相反**，所以它们是三个集合而不是一个笼统的失败位
+/// （CASE 6.10c-3）。
+struct OwnedLandingOutcome {
+    /// 真的落了地、并且通过了 §4.5 的落地后复核。只有这些身份可以写基线。
+    var landed: Set<String> = []
+    /// 归属被占（导入锁）或落地抛了别的错 ⇒ 停放，下一轮重试。
+    var parked: Set<String> = []
+    /// 这一批算错了（`.folderNotEmpty` / `.rowAlreadyMapped` / 物理行类型不符）⇒ 拒收，
+    /// **不停放、不建游标**。
+    var refused: Set<String> = []
+    /// 身份 -> 落地之后要写进 `reconciled` 的字节（合并结果）。
+    var reconciled: [String: Data] = [:]
+    /// 被删掉的身份（远端 tombstone 落地）。
+    var deleted: Set<String> = []
+}
+
+/// §11.2 的一行。**一个**结构体，引擎按注册项各持一份；每条 kind 只填它有的字段，
+/// 日志行也只印它有的字段。
+struct OwnedRoundCounters {
+    var pulled = 0
+    var applied = 0
+    var parked = 0
+    var pushed = 0
+    var tombstones = 0
+    var adopted = 0
+    var unmatchedFolders = 0
+    var unmergeablePairs = 0
+    var resurrected = 0
+    var pendingPublish = 0
+    var refused = 0
+    var supersededByDelete = 0
+    var rehomedCursors = 0
+    var unreadable = 0
+    var excludedUnmappedOwner = 0
+    var localReadFailed = 0
+    var relineaged = 0
+    var scopeMismatch = false
+}
+
+/// 一条归属 kind 的注册项。引擎只认这个：它不知道有几种 kind，也不知道是哪几种。
+///
+/// 存在类型包装（`OwnedItemKind` 是带两个 associatedtype 的泛型协议，
+/// `[any OwnedItemKind.Type]` 装不下它），实现上是一个**持闭包的 struct**：把 kind 的纯
+/// 函数与它那一侧的本地访问各自绑好。触本机的闭包一律 `@MainActor`——两个访问协议都是
+/// `@MainActor`，引擎照既有的 `spaceAccess` 一样 hop 过去。
+///
+/// **tag 索引不在这里**：注册项全是 `let`，装不下一张每轮都在长的表（随学随加，§5.1）。
+/// 那张表是引擎自己的可变状态 `ownedTagIndices`。
+struct OwnedKindRegistration {
+    /// 日志与计数行的行名，注册清单里的唯一键，也是查 `ownedTableForTesting(_:)` /
+    /// `lastOwnedRoundCountersForTesting` 的键。
+    let label: String
+    let tagPrefix: String
+    let entityName: String
+    let store: any PhiOwnedItemStateStore
+    /// 该 kind 的 `…HadRecords` / `…ReplayedForEmptyTable` 两个标志在 `PhiSpaceSyncTable`
+    /// 上的读写口（§3.5 的单副本裁定）。
+    let flags: OwnedKindFlags
+    /// 这条 kind 的计数行印不印认领那三项（`adopted` / `unmatched_folders` /
+    /// `unmergeable_pairs`）。§11.2：只有书签行有，pin 完全不走 §6。
+    let reportsAdoption: Bool
+    /// 这条 kind 的计数行印不印 `relineaged` / `scope_mismatch`。
+    let reportsScope: Bool
+
+    // MARK: 纯函数（不隔离）
+
+    /// 一份信封是不是本 kind 的载荷；是就交出它的身份，不是就 nil。
+    let identity: (Phi_PhiEntity) -> String?
+    /// 身份 -> client tag（`identity(of:)` 的逆），接收端 §2.5 校验与组批都用它。
+    let clientTag: (String) -> String
+    /// 一份信封字节里那条实体的归属引用（书签是父 / Space，pin 是 owner）。切片的拓扑序
+    /// 与 tombstone 的反拓扑序都从它算深度。
+    let owners: (Data) -> [String]
+    /// §7.4 的「本机主动解除拆分」：把基线字节里的拆分伙伴清空。nil = 这条 kind 没有这个
+    /// 概念（书签），调用方原样沿用基线。
+    let clearedSplitPartner: (Data) -> Data?
+
+    // MARK: 触本机的（main actor）
+
+    /// 轮首那一次读（`allBookmarks()` / `allPins()`）。**抛错 ⇒ R-exec-3**：本轮这条 kind
+    /// 的快照、差分与发布整段不跑，游标表一个字节都不写。
+    let beginRound: @MainActor () throws -> Void
+    /// 本轮已经读到的那些身份，用来给 tag 索引播种（§5.1）。
+    let localIdentities: @MainActor () -> Set<String>
+    let snapshot: @MainActor (PhiOwnedItemTable, OwnedOwnerMaps, Int64) -> OwnedSnapshotBytes
+    /// §4.7 的差分。**定义域问的是 `allSyncIds()` / `allPinIdentities()`**，不是快照
+    /// （R-exec-4）；本轮没成功读过时它抛。
+    let tombstones: @MainActor (PhiOwnedItemTable, OwnedOwnerMaps, Int64) throws
+        -> OwnedItemTombstoneResult
+    let plan: @MainActor (OwnedPlanInput) -> OwnedPlanOutput
+    let land: @MainActor (OwnedLandingInput) async -> OwnedLandingOutcome
+    /// §6.4：提交被接受之后才把铸出来的身份写进本机行。返回真的写下去了的那些身份。
+    let claimIdentities: @MainActor ([String: String]) async -> Set<String>
+}
+
 /// One round of Phi settings sync: pull (GetUpdates -> decrypt -> field-level LWW merge ->
 /// apply) and push (snapshot -> encrypt -> Commit), plus the conflict retry and the
 /// account-scoped cursor state both need.
@@ -185,6 +357,43 @@ actor PhiSyncEngine {
     /// Mirror of the table's `spaceSectionEnabled`, kept in memory so the shut -> open EDGE is
     /// detectable inside one process too.
     private var spaceSectionEnabled = false
+
+    /// 归属 kind 的注册清单（M3-3 §5）。空数组 = 这台机器 / 这个构建没有归属项同步，
+    /// 下面每一个归属分支都在它为空时整段跳过，所以 M3-1 / M3-2 的行为逐字节不变。
+    private let ownedKinds: [OwnedKindRegistration]
+
+    /// §5.8：配对预览的分页预算。它与拉取的 `maxPullPages` 分开，因为两种 kind 之后
+    /// 一次预览要走过整个账户的书签与 pin 才能数清账户里有几个 Space。
+    private let previewMaxPages: Int
+
+    /// label -> (`client_tag_hash` -> 身份)。**随学随加**：每当一条带密文的实体被解密并
+    /// 归位，它的身份立刻插进它那条 kind 的索引，同一次 drain 的后续页就能路由它的
+    /// tombstone。每轮开头从游标表与本机身份重建，轮内只增不减。
+    ///
+    /// 写成注册项上的一个字段是行不通的——那个 struct 全是 `let`，而这张表每页都在长。
+    private var ownedTagIndices: [String: [String: String]] = [:]
+
+    /// label -> 这一轮该 kind 的游标表。轮首从 store 读一次、apply 段写回，发布段再读一次
+    /// （CASE 6.26 的 `loseOnLoadNumber = 2` 数的就是这两次）。它同时是
+    /// `ownedTableForTesting(_:)` 的数据源，所以那个只读访问器不会多打一次 `load`。
+    private var ownedTables: [String: PhiOwnedItemTable] = [:]
+
+    /// 本轮轮首读本机行抛错的那些 kind（R-exec-3）。它们的快照、差分、发布与落地整段不跑。
+    private var ownedReadFailed: Set<String> = []
+
+    /// 本轮每条注册 kind 的计数（§11.2）。
+    private var ownedCounters: [String: OwnedRoundCounters] = [:]
+
+    /// 本轮已经跑过轮首的 kind。一轮至多一次 fetch（§5.7 第 2 条硬要求），而一轮里
+    /// `pull` 与 `push` 都可能第一个到达轮首。
+    private var ownedRoundStarted: Set<String> = []
+
+    /// 本轮那份身份翻译表，算一次用到底（它是几次主 actor 往返）。
+    private var ownedMapsThisRound: OwnedOwnerMaps?
+
+    /// 认领的合并结果里本机赢了字段的那些身份（`OwnedItemAdoptionResult.mustRepublish`）。
+    /// 本机赢了却不发布，对端永远停在旧值上，而两边都认为自己收敛了。
+    private var ownedMustRepublish: [String: Set<String>] = [:]
 
     /// §3.6's per-round account profile refresh. `GET /keys/v1/profiles` is small, but App
     /// activation can fire `pullOnce()` far more often than the 60 s timer.
@@ -291,6 +500,15 @@ actor PhiSyncEngine {
         /// entity. The queue is the only thing that makes the single writer real.
         case retentionSweep
         case recordLocalDeletion(String)
+        /// 一条归属 kind 的本地变化（M3-3 §5.7）。载荷是注册项的 `label`——**kind 是数据
+        /// 不是代码**，所以这里是一个 case 而不是每种 kind 一个。
+        ///
+        /// **归属项没有 `.recordLocal…Deletion`**（R-M3-3-5）：删除起源是 §4.7 的差分而不是
+        /// 钩子。M3-4 若真给书签或 pin 加一条删除钩子（例如让一次 `deleteSpaceCascade`
+        /// 立刻发 tombstone 而不必等下一轮差分），那个入口**必须**是一个排进 `roundQueue`
+        /// 的 Round，而不是一次普通的 actor 方法调用：一个在轮次挂起窗口里落地的意图会被
+        /// 盲写覆盖，`pendingDelete` 就此永久丢失（M3-2 §5.3 的整段论证）。
+        case localOwnedChange(String)
         /// 配对向导的只读账户预览（R-D6-1）。排同一条队列，所以它不可能与一轮设置
         /// 同步交错。
         case preview(PreviewBox)
@@ -303,6 +521,8 @@ actor PhiSyncEngine {
          settings: [SyncableSetting] = SyncableSettings.all,
          spaceAccess: (any PhiSpaceLocalAccess)? = nil,
          spaceStore: (any PhiSpaceSyncStateStore)? = nil,
+         ownedKinds: [OwnedKindRegistration] = [],
+         previewMaxPages: Int = 400,
          now: @escaping () -> Int64 = { Int64(Date().timeIntervalSince1970 * 1000) }) {
         self.domainKeys = domainKeys
         self.client = client
@@ -311,6 +531,8 @@ actor PhiSyncEngine {
         self.settings = settings
         self.spaceAccess = spaceAccess
         self.spaceStore = spaceStore
+        self.ownedKinds = ownedKinds
+        self.previewMaxPages = previewMaxPages
         self.now = now
         self.spaceSectionEnabled = spaceStore?.load().spaceSectionEnabled ?? false
     }
@@ -553,6 +775,15 @@ actor PhiSyncEngine {
         // NOT_MY_BIRTHDAY retry, the push's initial pull and a scoped conflict
         // retry, and `pushSpaces` runs after the pull's tail has already finished.
         spaceCounters = SpaceRoundCounters()
+        // 同上，同范围：归属 kind 的计数、轮首读的成功与否、以及随学随加的 tag 索引都是
+        // **每轮**的，不是每次 pull 的。
+        ownedCounters = [:]
+        ownedReadFailed = []
+        ownedTagIndices = [:]
+        ownedRoundStarted = []
+        ownedMapsThisRound = nil
+        ownedTables = [:]
+        ownedMustRepublish = [:]
         // Same reason, same scope: the NOT_MY_BIRTHDAY recursion (:608), the push's initial
         // pull (:1160 / :1456) and the CONFLICT retry (:1250) are all pulls inside ONE round,
         // and none of them re-lists the account's profiles.
@@ -583,11 +814,18 @@ actor PhiSyncEngine {
             } else {
                 AppLogInfo("[phi-sync] a local Space delete has no account identity; nothing to tombstone")
             }
+        case .localOwnedChange(let label):
+            // 回声抑制与 `.localSpaceChange` 逐字同款。`label` 只进日志：发布段按注册清单
+            // 跑完全部 kind，所以一条 kind 的本地变化就是一次普通的 push round。
+            guard !isApplyingRemote else { return }
+            AppLogInfo("[phi-sync] local change for owned kind=\(label)")
+            await push(retryOnConflict: true, allowInitialPull: true)
         case .preview(let box):
             await runPreview(into: box)
             return          // 预览不是 Space 轮：不参与 §11 的计数行
         }
         await logSpaceRound()
+        logOwnedRounds()
     }
 
     // MARK: - 配对向导的只读账户预览（§4）
@@ -843,6 +1081,12 @@ actor PhiSyncEngine {
                 spaceCounters.profilesCreated = await spaceAccess.profilesCreatedInLastRefresh()
             }
         }
+        // 归属 kind 的轮首：读本机行、载入该 kind 的游标表（报损就在这里被观察到，并在
+        // **分页之前**丢 marker，于是这一轮就是那次整类型重放）、按游标键 ∪ 本机身份建
+        // tag 索引。次序是固定的（§4.8 的契约）：轮首 `allBookmarks()` → 落地 → 复核 →
+        // 写基线 → 差分与发布。
+        if spaceLive { await beginOwnedRound() }
+        var ownedBatches: [String: OwnedPullBatch] = [:]
         var batch = SpacePullBatch()
         // A snapshot, used for the cursor keys it carries and never written back.
         let tagIndex = spaceLive ? await spaceTagIndex(table: spaceTableAtEntry) : [:]
@@ -879,7 +1123,36 @@ actor PhiSyncEngine {
                         // Not the settings entity. With two kinds live on data type 2000 the
                         // response is no longer "our row or noise": everything else is routed
                         // to the Space section, and only while the gate is open.
+                        //
+                        // §5.1 的真分发：按 tag hash 查索引，**绝不是「先解密再 switch」**
+                        // ——tombstone 没有密文，解密必然抛错，而 marker 已经推过那一页。
                         guard spaceLive else { continue }
+                        if tagIndex[entity.clientTagHash] != nil {
+                            routeSpaceEntity(entity, key: key, tagIndex: tagIndex, into: &batch)
+                            continue
+                        }
+                        // 按注册清单逐条试；索引是引擎自己的 `ownedTagIndices[label]`。
+                        if let registration = ownedKinds.first(where: {
+                            ownedTagIndices[$0.label]?[entity.clientTagHash] != nil
+                        }) {
+                            routeOwnedEntity(registration, entity, key: key,
+                                             decoded: nil, into: &ownedBatches)
+                            continue
+                        }
+                        // 都不认。**带密文的**实体还有一条路：解开之后按 `decoded.kind` 找
+                        // 注册项——一条 create 先于本机建立它的索引项到达就是这个形状。
+                        // tombstone、解不开的密文与仍然认不出的载荷一律交回 Space 段，于是
+                        // 「未知 tag」的处置与今天逐字相同（未知 tombstone 记 info、解不开
+                        // 的进隔离区、别的 kind 只忽略这一条）。
+                        if !entity.deleted, !ownedKinds.isEmpty,
+                           let decoded = try? PhiEntityCodec.decrypt(entity.ciphertext, key: key),
+                           let registration = ownedKinds.first(where: {
+                               $0.identity(decoded) != nil
+                           }) {
+                            routeOwnedEntity(registration, entity, key: key,
+                                             decoded: decoded, into: &ownedBatches)
+                            continue
+                        }
                         routeSpaceEntity(entity, key: key, tagIndex: tagIndex, into: &batch)
                         continue
                     }
@@ -948,6 +1221,7 @@ actor PhiSyncEngine {
             // learned about them has to outlive the failure.
             if spaceLive {
                 flushSpaceObservations(batch)
+                flushOwnedObservations(ownedBatches)
                 // ...and what it did NOT persist has to invalidate the drain. A round that
                 // threw mid-way consumed its pages — the marker moved past them — while
                 // everything the routing decoded from them (`batch.decoded` /
@@ -1021,6 +1295,7 @@ actor PhiSyncEngine {
 
         if spaceLive {
             flushSpaceObservations(batch)
+            flushOwnedObservations(ownedBatches)
             mutateSpaceTable { table in
                 // Guard 2, trigger 2: the account plist was lost or restored from a backup.
                 // Guarded by a ONE-SHOT flag, never by `hadRecords` / `hasDrainedFullReplay`:
@@ -1063,6 +1338,15 @@ actor PhiSyncEngine {
             await applySpaces(batch, table: &spaceTable)
             await applySpaceTombstones(batch, table: &spaceTable)
             writeSpaceTable(spaceTable)
+
+            // §5.2 的轮次顺序：设置 → Space → 归属 kind（注册清单的次序）。放在同一轮的
+            // 后段，账户里本机没有的 Space 与它下面的树因此**通常在一轮内**全部落地。
+            let ownedMaps = await ownedRoundMaps()
+            for registration in ownedKinds {
+                await applyOwnedKind(registration,
+                                     batch: ownedBatches[registration.label] ?? OwnedPullBatch(),
+                                     maps: ownedMaps)
+            }
         }
         // The gated-off round's `markerMovedWhileGateShut` needs no write here: it was
         // persisted by the page that observed it.
@@ -1083,6 +1367,9 @@ actor PhiSyncEngine {
                 await pushSettings(retryOnConflict: false, allowInitialPull: false)
             }
             await pushSpaces(retryOnConflict: false)
+            // 归属 kind 的发布段排在 Space 之后（§5.2）。它自己带全部守卫（门、drain、
+            // R-exec-3 的跳过），所以无条件调用是安全的；清单为空时第一行就返回。
+            await pushOwnedItems(retryOnConflict: true)
         }
 
         if !drained, followUpRoundsUsed < Self.maxFollowUpRounds {
@@ -1614,6 +1901,7 @@ actor PhiSyncEngine {
     private func push(retryOnConflict: Bool, allowInitialPull: Bool) async {
         await pushSettings(retryOnConflict: retryOnConflict, allowInitialPull: allowInitialPull)
         await pushSpaces(retryOnConflict: retryOnConflict)
+        await pushOwnedItems(retryOnConflict: retryOnConflict)
     }
 
     /// The settings half: M3-1's `push`, renamed and otherwise untouched.
@@ -2020,6 +2308,804 @@ actor PhiSyncEngine {
         table.cursors[item.uuid] = cursor
     }
 
+    // MARK: - 归属项：轮首、分发、落地、发布（M3-3 §5）
+
+    /// **每轮每种 kind 最多发布 250 条 = 10 批 × 25**（§5.3）。批大小沿用
+    /// `maxCommitEntriesPerBatch`，远低于服务端 500 的上限；250 条就是 10 次顺序 HTTP 往返，
+    /// 整个期间这一轮占着 `roundQueue`，所以上限存在的理由是让设置与 Space 每轮都能插进来。
+    private static let maxOwnedCommitsPerRound = 250
+
+    /// What one pull collected for ONE owned kind.
+    private struct OwnedPullBatch {
+        var arrivals: [(identity: String, payload: Data, entityId: String, version: Int64)] = []
+        var tombstones: [(identity: String, entityId: String, version: Int64)] = []
+        var unreadableHashes: [String] = []
+        var unreadable = 0
+    }
+
+    /// 轮首那份身份翻译表，算一次用到底。
+    private func ownedRoundMaps() async -> OwnedOwnerMaps {
+        if let ownedMapsThisRound { return ownedMapsThisRound }
+        var maps = OwnedOwnerMaps()
+        guard let spaceAccess else { ownedMapsThisRound = maps; return maps }
+        let table = loadSpaceTable()
+        for (localId, uuid) in await spaceAccess.allSpaceMappings() {
+            maps.syncUuidBySpaceId[localId] = uuid
+            maps.localSpaceIdBySyncUuid[uuid] = localId
+        }
+        // 默认 Space 的身份由 D1 固定成一个常量，映射表里没有它（R-D6-14 ⑥：翻译只走
+        // `PhiSpaceLocalAccess` 既有的那四个方法，这里是它们的值快照）。
+        maps.syncUuidBySpaceId[LocalStore.defaultSpaceId] = SyncableSpaces.defaultSpaceUuid
+        maps.localSpaceIdBySyncUuid[SyncableSpaces.defaultSpaceUuid] = LocalStore.defaultSpaceId
+        let spaces = await spaceAccess.currentSpaces()
+        for space in spaces {
+            // §4.2 规则 1 的三条判据的合取：在 `currentSpaces()` 里 ∧ 有 syncUuid ∧ 游标
+            // 既不 hidden 也没有 purgedAtMs。
+            if let uuid = maps.syncUuidBySpaceId[space.spaceId] {
+                let cursor = table.cursors[uuid]
+                if cursor?.hidden != true, cursor?.purgedAtMs == nil {
+                    maps.eligibleSpaceUuids.insert(uuid)
+                }
+            }
+            if maps.globalUuidByProfileId[space.profileId] == nil,
+               let uuid = await spaceAccess.globalUuid(forProfileId: space.profileId) {
+                maps.globalUuidByProfileId[space.profileId] = uuid
+                maps.localProfileIdByGlobalUuid[uuid] = space.profileId
+            }
+        }
+        ownedMapsThisRound = maps
+        return maps
+    }
+
+    /// 每条注册 kind 的轮首：**一次**本机读 + 一次游标表读 + 建 tag 索引。
+    ///
+    /// 一轮至多一次（§5.7 第 2 条硬要求）：`pull` 与 `push` 都可能第一个到达这里。
+    /// 读抛错 ⇒ R-exec-3：把这条 kind 标成本轮失效，它的快照、差分、发布与落地整段不跑，
+    /// 游标表一个字节都不写。**绝不把失败的读当成零行继续**——差分对空集合的回答是给账户上
+    /// 每一条已发布身份各发一条 tombstone。
+    private func beginOwnedRound() async {
+        guard !ownedKinds.isEmpty, spaceStore != nil else { return }
+        for registration in ownedKinds {
+            guard !ownedRoundStarted.contains(registration.label) else { continue }
+            ownedRoundStarted.insert(registration.label)
+            let table = loadOwnedTable(registration, armsReplayOnLoss: false).table
+            var identities: Set<String> = []
+            do {
+                try await registration.beginRound()
+                identities = await registration.localIdentities()
+            } catch {
+                ownedReadFailed.insert(registration.label)
+                var counters = ownedCounters[registration.label] ?? OwnedRoundCounters()
+                counters.localReadFailed += 1
+                ownedCounters[registration.label] = counters
+                AppLogError("[phi-sync] owned-item local read failed kind=\(registration.label) "
+                            + "(\(PhiSyncLog.describe(error)))")
+            }
+            // 种子 = 游标键 ∪ 本机身份（§5.1）。索引在轮内**只增不减**，随学随加。
+            var index: [String: String] = [:]
+            for identity in Set(table.cursors.keys).union(identities) where !identity.isEmpty {
+                index[PhiSyncEntity.clientTagHash(for: registration.clientTag(identity))] = identity
+            }
+            ownedTagIndices[registration.label] = index
+        }
+    }
+
+    /// 读一条 kind 的游标表，并按 R-M3-3-13 处理报损。
+    ///
+    /// `armsReplayOnLoss` 只在**发布段**那一次为真（CASE 6.26）：报损做的第一件事是丢
+    /// marker、重新武装 `drainInProgress`、把 `hasDrainedFullReplay` 置假，而发布侧的 guard ①
+    /// 读的正是 `hasDrainedFullReplay`——所以从报损那一刻起，该 kind 在重放收尾之前一条都
+    /// 发不出去，不需要第二个 `publishBlocked` 标志（M2 裁定）。
+    private func loadOwnedTable(_ registration: OwnedKindRegistration,
+                                armsReplayOnLoss: Bool)
+        -> (table: PhiOwnedItemTable, lost: Bool) {
+        let spaceTable = loadSpaceTable()
+        let (table, reportedLoss) = registration.store
+            .load(hadRecords: spaceTable[keyPath: registration.flags.hadRecords])
+        ownedTables[registration.label] = table
+        guard reportedLoss, armsReplayOnLoss else { return (table, false) }
+        // per-kind 的一次性闸（A2）。**绝不复用 Space 那个永久闩 `didReplayForEmptyTable`**：
+        // Space 段先花掉它之后，书签或 pin 的第一次文件丢失就一次重放都得不到。
+        guard !spaceTable[keyPath: registration.flags.replayedForEmptyTable] else {
+            return (table, true)
+        }
+        AppLogWarn("[phi-sync] owned-item cursor table lost kind=\(registration.label); "
+                   + "replaying data type \(PhiSyncEntity.dataTypeID) once")
+        mutateSpaceTable { updated in
+            updated[keyPath: registration.flags.replayedForEmptyTable] = true
+            updated.hasDrainedFullReplay = false
+            updated.drainInProgress = true
+        }
+        storedMarker = nil
+        return (table, true)
+    }
+
+    /// 落盘一条 kind 的游标表，顺带维护两个 per-kind 标志。
+    ///
+    /// `…HadRecords` 第一次写下 `entityId` 非空的游标时置真，此后不再改；
+    /// `…ReplayedForEmptyTable` 在该 kind 的表重新拿到任何一条已发布游标时**复位**——这是
+    /// per-kind 闸与 Space 那个永久闩**唯一**的行为差别（A2），丢了它「可重新武装」就只是
+    /// 一句注释。
+    private func writeOwnedTable(_ registration: OwnedKindRegistration,
+                                 _ table: PhiOwnedItemTable) {
+        guard !isStopped else { return }
+        ownedTables[registration.label] = table
+        registration.store.save(table)
+        let hasPublished = table.cursors.values.contains { !$0.entityId.isEmpty }
+        guard hasPublished else { return }
+        mutateSpaceTable { updated in
+            updated[keyPath: registration.flags.hadRecords] = true
+            updated[keyPath: registration.flags.replayedForEmptyTable] = false
+        }
+    }
+
+    /// §5.2 步骤 2-5，次序固定为 **路由 → 解密 → 反推 tag → 比对 → 落位**。
+    ///
+    /// `decoded` 非 nil = 分发的兜底支已经解过一次，别再解第二遍。
+    private func routeOwnedEntity(_ registration: OwnedKindRegistration,
+                                  _ entity: PhiRemoteEntity,
+                                  key: SymmetricKey,
+                                  decoded: Phi_PhiEntity?,
+                                  into batches: inout [String: OwnedPullBatch]) {
+        let shortHash = String(entity.clientTagHash.prefix(8))
+        var batch = batches[registration.label] ?? OwnedPullBatch()
+        defer { batches[registration.label] = batch }
+
+        // 2. tombstone FIRST，先于任何解密尝试。tombstone 没有密文，解密必然抛错；把它归进
+        // 「解不开」会让每一条远端删除**永久丢失**——marker 已经推过那一页，服务端再也不会
+        // 重发。分发循环里那个 `guard !entity.deleted` 是**设置分支**里的，路由路径上的这
+        // 一道必须自己带（V35）。
+        guard !entity.deleted else {
+            guard let identity = ownedTagIndices[registration.label]?[entity.clientTagHash] else {
+                AppLogInfo("[phi-sync] ignoring an owned-item tombstone for an unknown tag "
+                           + "hash=\(shortHash) kind=\(registration.label)")
+                return
+            }
+            batch.tombstones.append((identity: identity, entityId: entity.entityId,
+                                     version: entity.version))
+            return
+        }
+
+        // 3. 解密。
+        let payload: Phi_PhiEntity
+        if let decoded {
+            payload = decoded
+        } else {
+            do {
+                payload = try PhiEntityCodec.decrypt(entity.ciphertext, key: key)
+            } catch {
+                AppLogWarn("[phi-sync] cannot open an owned-item entity tag=\(shortHash) "
+                           + "kind=\(registration.label) ciphertext_bytes=\(entity.ciphertext.count) "
+                           + "(\(PhiSyncLog.describe(error)))")
+                batch.unreadableHashes.append(entity.clientTagHash)
+                batch.unreadable += 1
+                return
+            }
+        }
+
+        // 4. 不是本 kind 的载荷 ⇒ 只忽略这一条。
+        guard let identity = registration.identity(payload) else { return }
+
+        // 5. 载荷必须 hash 回它到达时用的那个 tag（§2.5）。校验只比**身份**，不比归属：
+        // 一次跨 Space 的移动是合法的，把归属一起比会把每一次移动都判成伪造载荷。
+        // **tombstone 不走这条校验**——它没有载荷可反推（上面已经 return 了）。
+        let expected = PhiSyncEntity.clientTagHash(for: registration.clientTag(identity))
+        guard expected == entity.clientTagHash else {
+            AppLogError("[phi-sync] an owned-item payload does not hash back to its "
+                        + "tag=\(shortHash) kind=\(registration.label)")
+            batch.unreadableHashes.append(entity.clientTagHash)
+            batch.unreadable += 1
+            return
+        }
+        guard let bytes = try? payload.serializedData() else { return }
+        batch.arrivals.append((identity: identity, payload: bytes,
+                               entityId: entity.entityId, version: entity.version))
+        // 随学随加：同一次 drain 的后续页就能路由这条身份的 tombstone。
+        ownedTagIndices[registration.label, default: [:]][entity.clientTagHash] = identity
+    }
+
+    /// 与 `flushSpaceObservations` 同一条理由：marker 推进是durable的，所以这一轮学到的
+    /// 「这条 tag 本机读不出来」必须跟着落盘，否则后面那次抛错会把它一起带走。
+    private func flushOwnedObservations(_ batches: [String: OwnedPullBatch]) {
+        let hashes = batches.values.flatMap(\.unreadableHashes)
+        guard !hashes.isEmpty else { return }
+        let seenAt = now()
+        mutateSpaceTable { table in
+            for hash in hashes { table.unreadableTagHashes[hash] = seenAt }
+        }
+    }
+
+    /// 一条 kind 的入站落地段。**apply → 基线，顺序即不变量**（§4.5）。
+    private func applyOwnedKind(_ registration: OwnedKindRegistration,
+                                batch: OwnedPullBatch, maps: OwnedOwnerMaps) async {
+        guard !isStopped else { return }
+        var counters = ownedCounters[registration.label] ?? OwnedRoundCounters()
+        counters.pulled += batch.arrivals.count + batch.tombstones.count
+        counters.unreadable += batch.unreadable
+        counters.tombstones += batch.tombstones.count
+        ownedCounters[registration.label] = counters
+        guard !ownedReadFailed.contains(registration.label) else { return }
+
+        var table = ownedTables[registration.label] ?? PhiOwnedItemTable()
+        // 工作集 = 本轮到达的 tombstone ∪ 表里全部 `pendingTombstone` 的游标（§5.6）。
+        // 重投是不存在的——共享 marker 早已推过那一页。
+        var tombstoned = Set(batch.tombstones.map(\.identity))
+        for (identity, cursor) in table.cursors where cursor.pendingTombstone {
+            tombstoned.insert(identity)
+        }
+        // A6：**每一条能走到游标的入站实体**都先收割服务端三元组，tombstone 也不例外。
+        for item in batch.tombstones {
+            guard var cursor = table.cursors[item.identity] else { continue }
+            if !item.entityId.isEmpty { cursor.entityId = item.entityId }
+            cursor.version = max(cursor.version, item.version)
+            table.cursors[item.identity] = cursor
+        }
+        var parked: [String: ParkedOwnedItem] = [:]
+        for (identity, cursor) in table.cursors {
+            guard let payload = cursor.pendingApply else { continue }
+            parked[identity] = ParkedOwnedItem(payload: payload,
+                                               pendingOwnerUuid: cursor.pendingOwnerUuid)
+        }
+        guard !batch.arrivals.isEmpty || !tombstoned.isEmpty || !parked.isEmpty else { return }
+
+        let output = await registration.plan(
+            OwnedPlanInput(arrivals: batch.arrivals.map {
+                               (payload: $0.payload, entityId: $0.entityId, version: $0.version)
+                           },
+                           parked: parked, table: table, maps: maps, tombstoned: tombstoned))
+        counters.adopted += output.adopted
+        counters.unmatchedFolders += output.unmatchedFolders
+        counters.unmergeablePairs += output.unmergeablePairs
+        counters.refused += output.plan.refused
+        counters.supersededByDelete += output.plan.supersededByDelete
+        counters.scopeMismatch = counters.scopeMismatch || output.scopeMismatch
+        ownedMustRepublish[registration.label] = output.mustRepublish
+
+        // **只更新已存在的游标**（P5）：`plan` 先收割再判 `refuses`，所以一条被拒的实体
+        // 照样在 `harvest` 里留一条记录，而它的身份可能根本没有对应游标。照着 harvest 建
+        // 游标，会让一个持续发畸形载荷的对端每一轮把本机的游标表撑大一圈。
+        for (identity, harvested) in output.plan.harvest {
+            guard var cursor = table.cursors[identity] else { continue }
+            if !harvested.entityId.isEmpty { cursor.entityId = harvested.entityId }
+            cursor.version = max(cursor.version, harvested.version)
+            table.cursors[identity] = cursor
+        }
+
+        let outcome = await registration.land(
+            OwnedLandingInput(steps: output.plan.steps, table: table, maps: maps))
+        guard !isStopped else { return }
+
+        var spaceTable = loadSpaceTable()
+        var spaceTableChanged = false
+        for identity in outcome.landed {
+            var cursor = table.cursors[identity] ?? PhiOwnedItemCursor()
+            if let harvested = output.plan.harvest[identity] {
+                if !harvested.entityId.isEmpty { cursor.entityId = harvested.entityId }
+                cursor.version = max(cursor.version, harvested.version)
+            }
+            if outcome.deleted.contains(identity) {
+                // §5.6 T1–T3：清三个待办位、写 `deletedAtMs`，于是同一轮的差分不可能把这次
+                // 远端删除改写成一次本机删除再发回去。
+                cursor.reconciled = nil
+                cursor.server = nil
+                cursor.deletedAtMs = now()
+                cursor.pendingDelete = false
+            } else {
+                if let bytes = outcome.reconciled[identity] { cursor.reconciled = bytes }
+                // §4.5：`server` **永远是 remote，不是 merged**。把合并结果写进去，下一轮
+                // 就会把一个服务端从没见过的字节当成服务端的现状。
+                if let server = output.serverBytes[identity] { cursor.server = server }
+            }
+            cursor.pendingApply = nil
+            cursor.pendingOwnerUuid = nil
+            cursor.pendingTombstone = false
+            table.cursors[identity] = cursor
+            // 一次成功的落地就是对这条 tag 的一次成功解读（§4.5 末条）：不清的话，一次
+            // **瞬时**解密失败会让这条实体在本机**永久**失去发布权。
+            let hash = PhiSyncEntity.clientTagHash(for: registration.clientTag(identity))
+            if spaceTable.unreadableTagHashes.removeValue(forKey: hash) != nil {
+                spaceTableChanged = true
+            }
+            counters.applied += 1
+        }
+        // §4.4 第 4 步的停放：归属还没落地。
+        for (identity, item) in output.plan.parked {
+            var cursor = table.cursors[identity] ?? PhiOwnedItemCursor()
+            cursor.pendingApply = item.payload
+            cursor.pendingOwnerUuid = item.pendingOwnerUuid
+            table.cursors[identity] = cursor
+        }
+        // 落地被导入锁挡住的那一组（§4.9 第 3 条 / §5.6 T4）。
+        for identity in outcome.parked {
+            var cursor = table.cursors[identity] ?? PhiOwnedItemCursor()
+            if let payload = output.plan.steps.first(where: { $0.identity == identity })?.payload {
+                cursor.pendingApply = payload
+            }
+            if tombstoned.contains(identity) { cursor.pendingTombstone = true }
+            table.cursors[identity] = cursor
+        }
+        // 拒收：**不落地、不停放、不建游标**（CASE 6.6b / 6.11b）。
+        counters.refused += outcome.refused.count
+        // A9 取消了本机那条待发删除。
+        for identity in output.plan.cancelledDeletes {
+            guard var cursor = table.cursors[identity] else { continue }
+            cursor.pendingDelete = false
+            cursor.deleteDecidedAtMs = 0
+            table.cursors[identity] = cursor
+        }
+        if spaceTableChanged { writeSpaceTable(spaceTable) }
+        ownedCounters[registration.label] = counters
+        writeOwnedTable(registration, table)
+    }
+
+    /// 归属项发布的门（PR6）。
+    ///
+    /// **只看 `spaceSectionEnabled` 与 `hasDrainedFullReplay`。** `sync.joinPairingPending`
+    /// 引擎取不到——它是 `@MainActor ProfilePairingGate` 上的静态属性，而这是一个非 MainActor
+    /// 的 actor；配对进行中协调器已经在调 `setSpaceSyncEnabled(false)`，那个值经 `.spaceGate`
+    /// 排队进来并存进 `spaceSectionEnabled`，所以归属项跟 Space 段走的是同一道门。
+    /// 第三条 `hasDrainedFullReplay` 是 Space 侧早就有、两种新 kind 绝不能漏掉的发布闸：
+    /// 漏掉它，一台刚加入、还没拉完账户树的机器会先把自己的整棵树发上去，同时把每一行都铸上
+    /// `syncId`，D10 的认领条件从此永假。
+    private var ownedItemsPublishAllowed: Bool {
+        guard spaceSectionEnabled, spaceStore != nil, !ownedKinds.isEmpty else { return false }
+        return loadSpaceTable().hasDrainedFullReplay
+    }
+
+    private func pushOwnedItems(retryOnConflict: Bool) async {
+        guard !isStopped, !ownedKinds.isEmpty, spaceStore != nil, spaceSectionEnabled else {
+            return
+        }
+        await beginOwnedRound()
+        let maps = await ownedRoundMaps()
+        for registration in ownedKinds {
+            await publishOwnedKind(registration, maps: maps, retryOnConflict: retryOnConflict)
+        }
+    }
+
+    /// 一条 kind 的发布段：快照 → 差分 → 两段切片 → 组批 → 写回。
+    ///
+    /// `onlyIdentities` 非 nil 时把这一批限定到那几条，这正是 `.conflict` 的限定重发传进来的
+    /// 东西——一条冲突的实体绝不该把同一轮其余两百多条再拖过一次线。
+    private func publishOwnedKind(_ registration: OwnedKindRegistration,
+                                  maps: OwnedOwnerMaps,
+                                  retryOnConflict: Bool,
+                                  onlyIdentities: Set<String>? = nil) async {
+        guard !isStopped else { return }
+        // R-exec-3：轮首读失败 ⇒ 快照、差分、发布**全部没跑**，不是「少发了几条」。
+        guard !ownedReadFailed.contains(registration.label) else { return }
+        guard ownedItemsPublishAllowed else { return }
+        let loaded = loadOwnedTable(registration, armsReplayOnLoss: true)
+        guard !loaded.lost else { return }
+        var table = loaded.table
+        var counters = ownedCounters[registration.label] ?? OwnedRoundCounters()
+
+        // 1. 快照。喂进去的是一份**篡改过的表副本**（§7.4 / P4）：凡是没有
+        // `pendingPartnerLineage` 的游标，其基线里的拆分伙伴被清空，于是一次真正的本机解除
+        // 拆分会如实发出去；确实在等伙伴的那些原样保留。**发布比较仍然用真表。**
+        let snapshot = await registration.snapshot(doctoredOwnedTable(registration, table),
+                                                   maps, now())
+        counters.excludedUnmappedOwner +=
+            snapshot.skippedUnmappedOwner + snapshot.skippedIneligibleOwner
+
+        // 2. A12：为表里每一条游标刷新 `ownerUuid`——包括本轮因为切片而排不上队的那些。
+        for (identity, owner) in snapshot.ownerUuids {
+            guard var cursor = table.cursors[identity], cursor.ownerUuid != owner else { continue }
+            cursor.ownerUuid = owner
+            table.cursors[identity] = cursor
+        }
+
+        // 3. 差分（§4.7）。它的第三条判据问的是 `allSyncIds()` / `allPinIdentities()`，
+        // **不是快照**（R-exec-4）：孤儿根下的行不发布，但永远不会被判成删除。
+        let diff: OwnedItemTombstoneResult
+        do {
+            diff = try await registration.tombstones(table, maps, now())
+        } catch {
+            counters.localReadFailed += 1
+            ownedReadFailed.insert(registration.label)
+            ownedCounters[registration.label] = counters
+            AppLogError("[phi-sync] owned-item diff domain unavailable kind=\(registration.label) "
+                        + "(\(PhiSyncLog.describe(error)))")
+            return          // 游标表一个字节都不写
+        }
+        for (identity, cursor) in diff.cursorUpdates { table.cursors[identity] = cursor }
+
+        // §9.1 第二道闸的记账半边：一条发不出去的 `pendingDelete`（没有 entityId / 版本 0）
+        // 就地收尾并写 `deletedAtMs`，而不是每轮重发一条服务端必判非法的条目。
+        for (identity, var cursor) in table.cursors where cursor.pendingDelete {
+            guard cursor.entityId.isEmpty || cursor.version == 0 else { continue }
+            cursor.pendingDelete = false
+            cursor.reconciled = nil
+            cursor.server = nil
+            cursor.deletedAtMs = now()
+            table.cursors[identity] = cursor
+        }
+
+        // 4. 两段切片，方向相反（§5.3）。
+        var budget = Self.maxOwnedCommitsPerRound
+        let deleteCandidates = table.cursors
+            .filter { $0.value.pendingDelete && $0.value.deletedAtMs == nil }
+            .keys.sorted()
+        let tombstoneSlice = ownedTombstoneSlice(registration, table: table,
+                                                 candidates: deleteCandidates, budget: &budget)
+        let republish = ownedMustRepublish[registration.label] ?? []
+        var liveCandidates: [String] = []
+        for (identity, bytes) in snapshot.entities {
+            guard table.cursors[identity]?.pendingDelete != true else { continue }
+            if bytes != table.cursors[identity]?.reconciled || republish.contains(identity) {
+                liveCandidates.append(identity)
+            }
+        }
+        let liveSlice = ownedLiveSlice(registration, snapshot: snapshot,
+                                       candidates: liveCandidates, budget: &budget)
+        counters.pendingPublish += (deleteCandidates.count - tombstoneSlice.count)
+            + (liveCandidates.count - liveSlice.count)
+
+        // 5. 组批。`unreadableTagHashes` 命中 ⇒ 该条目就地丢弃、不发送（§5.5）：服务端的
+        // `ON CONFLICT (client_tag_hash) DO UPDATE` **没有版本检查**，一次盲写就是整体覆盖。
+        let spaceTableNow = loadSpaceTable()
+        var work: [(identity: String, entry: PhiCommitEntry, payload: Data?)] = []
+        for identity in tombstoneSlice {
+            guard onlyIdentities?.contains(identity) ?? true else { continue }
+            guard let cursor = table.cursors[identity],
+                  !cursor.entityId.isEmpty, cursor.version > 0 else { continue }
+            let hash = PhiSyncEntity.clientTagHash(for: registration.clientTag(identity))
+            guard spaceTableNow.unreadableTagHashes[hash] == nil else {
+                AppLogWarn("[phi-sync] refusing to commit over an unreadable row "
+                           + "tag=\(String(hash.prefix(8)))")
+                continue
+            }
+            work.append((identity,
+                         PhiCommitEntry(entityId: cursor.entityId, clientTagHash: hash,
+                                        name: registration.entityName, ciphertext: nil,
+                                        deleted: true, baseVersion: cursor.version), nil))
+        }
+        for identity in liveSlice {
+            guard onlyIdentities?.contains(identity) ?? true else { continue }
+            guard let payload = snapshot.entities[identity] else { continue }
+            let cursor = table.cursors[identity]
+            let hash = PhiSyncEntity.clientTagHash(for: registration.clientTag(identity))
+            guard spaceTableNow.unreadableTagHashes[hash] == nil else {
+                AppLogWarn("[phi-sync] refusing to commit over an unreadable row "
+                           + "tag=\(String(hash.prefix(8)))")
+                continue
+            }
+            let entityId = (cursor?.entityId.isEmpty ?? true) ? nil : cursor?.entityId
+            work.append((identity,
+                         PhiCommitEntry(entityId: entityId, clientTagHash: hash,
+                                        name: registration.entityName, ciphertext: nil,
+                                        deleted: false, baseVersion: cursor?.version ?? 0),
+                         payload))
+        }
+        guard !work.isEmpty else {
+            ownedCounters[registration.label] = counters
+            writeOwnedTable(registration, table)
+            return
+        }
+
+        var conflicted: Set<String> = []
+        var appliedMinted: [String: String] = [:]
+        var encryptionFailed = false
+        var queue = work
+        while !queue.isEmpty {
+            let slice = Array(queue.prefix(Self.maxCommitEntriesPerBatch))
+            queue.removeFirst(slice.count)
+            var entries: [PhiCommitEntry] = []
+            var sent: [(identity: String, entry: PhiCommitEntry, payload: Data?)] = []
+            for item in slice {
+                guard let payload = item.payload else {
+                    entries.append(item.entry); sent.append(item); continue
+                }
+                guard let envelope = try? Phi_PhiEntity(serializedBytes: payload),
+                      let key = try? await domainKeys.domainKey(),
+                      let ciphertext = try? PhiEntityCodec.encrypt(envelope, key: key) else {
+                    // `break`，不是 `return`：这一轮前面切片已经写进 `table` 的 outcome
+                    // 必须照样落盘，否则一个已被服务端接受的提交的基线被静默扔掉，那些
+                    // 实体下一轮带着过期基线重新发布。
+                    encryptionFailed = true
+                    break
+                }
+                entries.append(PhiCommitEntry(entityId: item.entry.entityId,
+                                              clientTagHash: item.entry.clientTagHash,
+                                              name: item.entry.name, ciphertext: ciphertext,
+                                              deleted: false,
+                                              baseVersion: item.entry.baseVersion))
+                sent.append(item)
+            }
+            if encryptionFailed {
+                AppLogError("[phi-sync] owned-item commit aborted kind=\(registration.label): "
+                            + "the domain key or the seal failed")
+                break
+            }
+            guard !isStopped else { break }
+            let outcomes: [PhiCommitOutcome]
+            do {
+                outcomes = try await client.commit(entries: entries, storeBirthday: storedBirthday)
+            } catch PhiSyncProtocolError.notMyBirthday {
+                // reset 已经重写了每一条游标表，手上这一份是 reset **之前**的副本。
+                resetForNewStoreBirthday()
+                ownedCounters[registration.label] = counters
+                return
+            } catch {
+                AppLogError("[phi-sync] owned-item commit failed kind=\(registration.label) "
+                            + "(\(PhiSyncLog.describe(error)))")
+                break    // 留住前面切片已经产出的 outcome
+            }
+            guard !isStopped else { return }
+            for (item, outcome) in zip(sent, outcomes) {
+                applyOwnedCommitOutcome(outcome, for: item, registration: registration,
+                                        table: &table, counters: &counters,
+                                        conflicted: &conflicted)
+                if case .applied = outcome, item.payload != nil,
+                   let localId = snapshot.minted[item.identity] {
+                    appliedMinted[item.identity] = localId
+                }
+            }
+        }
+
+        // §6.4：铸造在提交那一刻。写不下去的那几条把游标也撤掉——游标在、本机行没有身份，
+        // 下一轮的差分会把它判成「本机没有这一行」而发一条 tombstone。
+        if !appliedMinted.isEmpty {
+            let persisted = await registration.claimIdentities(appliedMinted)
+            for identity in appliedMinted.keys where !persisted.contains(identity) {
+                table.cursors.removeValue(forKey: identity)
+            }
+        }
+        ownedCounters[registration.label] = counters
+        writeOwnedTable(registration, table)
+
+        // 一次 pull 加一次**限定到那几条**的重发；二次冲突就本轮放弃这几条（§5.3）。
+        if retryOnConflict, !conflicted.isEmpty {
+            _ = await pull(retryOnBirthday: true, thenPush: false)
+            await publishOwnedKind(registration, maps: maps, retryOnConflict: false,
+                                   onlyIdentities: conflicted)
+        }
+    }
+
+    /// 发布段的五个基线写入点，与 `applySpaceCommitOutcome` 同一个形状。
+    private func applyOwnedCommitOutcome(
+        _ outcome: PhiCommitOutcome,
+        for item: (identity: String, entry: PhiCommitEntry, payload: Data?),
+        registration: OwnedKindRegistration,
+        table: inout PhiOwnedItemTable,
+        counters: inout OwnedRoundCounters,
+        conflicted: inout Set<String>
+    ) {
+        var cursor = table.cursors[item.identity] ?? PhiOwnedItemCursor()
+        let isTombstone = item.entry.deleted
+        switch outcome {
+        case .applied(let entityId, let version, let storeBirthday):
+            if !entityId.isEmpty { cursor.entityId = entityId }
+            cursor.version = version
+            storedBirthday = storeBirthday
+            if isTombstone {
+                // R-M3-3-7：一条游标离开「活着」这个状态时，必定带上 `deletedAtMs`——
+                // §3.6 的 30 天丢弃扫描赖以工作的就是这条不变量。
+                cursor.pendingDelete = false
+                cursor.deleteRejectRounds = 0
+                cursor.reconciled = nil
+                cursor.server = nil
+                cursor.deletedAtMs = now()
+                counters.tombstones += 1
+            } else if let payload = item.payload {
+                // **只写 `reconciled`。** `server` 的语义是「服务端手上那一版是什么」，由
+                // 落地路径写成拉到的那条远端实体（§4.5 / CASE 6.17 ④）；发布段的变更检测
+                // 判据是 `reconciled`（§4.2），所以这里不需要、也不该动 `server`。
+                cursor.reconciled = payload
+                if cursor.deletedAtMs != nil {
+                    cursor.deletedAtMs = nil        // §4.2 规则 3b 的复活
+                    counters.resurrected += 1
+                }
+                cursor.deleteRejectRounds = 0
+                counters.pushed += 1
+            }
+        case .conflict:
+            // **不写任何基线**：当成 `.applied` 处理会记下一条服务端从未接受的基线并静默
+            // 丢掉本机的编辑。
+            conflicted.insert(item.identity)
+        case .invalidMessage:
+            guard isTombstone else {
+                cursor.entityId = ""
+                cursor.version = 0
+                cursor.server = nil
+                break
+            }
+            // 一条被拒的 tombstone 什么都不能证明：服务端在提交事务**之外**解析 tombstone 的
+            // data type，任何瞬时失败都返回同一个码。原样重发，三轮之后才就地收尾。
+            cursor.deleteRejectRounds += 1
+            if cursor.deleteRejectRounds >= Self.tombstoneRejectGiveUpRounds {
+                AppLogError("[phi-sync] giving up on an owned-item tombstone after "
+                            + "\(cursor.deleteRejectRounds) rejections "
+                            + "tag=\(String(item.entry.clientTagHash.prefix(8)))")
+                cursor.pendingDelete = false
+                cursor.reconciled = nil
+                cursor.server = nil
+                cursor.deletedAtMs = now()
+            }
+        case .rejected(let type):
+            AppLogError("[phi-sync] owned-item commit rejected response_type=\(type) "
+                        + "tag=\(String(item.entry.clientTagHash.prefix(8)))")
+        }
+        table.cursors[item.identity] = cursor
+    }
+
+    /// §7.4 的「本机主动解除拆分」。**只改喂给 `snapshot` 的那一份副本**。
+    private func doctoredOwnedTable(_ registration: OwnedKindRegistration,
+                                    _ table: PhiOwnedItemTable) -> PhiOwnedItemTable {
+        var doctored = table
+        for (identity, cursor) in table.cursors {
+            guard cursor.pendingPartnerLineage == nil, let bytes = cursor.reconciled,
+                  let cleared = registration.clearedSplitPartner(bytes) else { continue }
+            doctored.cursors[identity]?.reconciled = cleared
+        }
+        return doctored
+    }
+
+    /// 存活段：拓扑序 + **前缀闭包**（F2）。一条子项只在它的父也在这一片里、或父不在候选集里
+    /// 时才进片，片内父排在子之前——于是对端在任何切片边界上收到的都是一棵前缀闭合的树。
+    private func ownedLiveSlice(_ registration: OwnedKindRegistration,
+                                snapshot: OwnedSnapshotBytes,
+                                candidates: [String],
+                                budget: inout Int) -> [String] {
+        let candidateSet = Set(candidates)
+        var parentOf: [String: String] = [:]
+        for identity in candidates {
+            guard let bytes = snapshot.entities[identity] else { continue }
+            if let parent = registration.owners(bytes).first(where: { candidateSet.contains($0) }) {
+                parentOf[identity] = parent
+            }
+        }
+        let depths = Self.ownedDepths(of: candidates, parentOf: parentOf)
+        let ordered = candidates.sorted {
+            let left = depths[$0] ?? 0, right = depths[$1] ?? 0
+            return left == right ? $0 < $1 : left < right
+        }
+        var out: [String] = []
+        var admitted: Set<String> = []
+        for identity in ordered {
+            guard out.count < budget else { break }
+            if let parent = parentOf[identity], !admitted.contains(parent) { continue }
+            out.append(identity)
+            admitted.insert(identity)
+        }
+        budget -= out.count
+        return out
+    }
+
+    /// tombstone 段：反拓扑（子先于父）、**子树整取**、前置条件**只认 `.applied`**。
+    ///
+    /// 一个文件夹的 tombstone 推迟到它全部后代的 tombstone 已经被服务端接受之后才发
+    /// （R-M3-3-24）。「排在后面」不等于「已经被接受」：二次冲突会让那几条本轮放弃，而同一轮
+    /// 后面的批次照发——于是文件夹的 tombstone 带着一批没落地的后代出门，接收端回到那场提升
+    /// 风暴。判据绝不认 `deletedAtMs`：§5.6 有两条路径会在服务端**没有**接受的情况下写下它。
+    ///
+    /// **例外，且是有意的**（B8）：一条后代走完三轮被拒的放弃支之后不再会被接受，祖先不能
+    /// 因此永久卡住——此时祖先照常出门，并记一条 warning。
+    private func ownedTombstoneSlice(_ registration: OwnedKindRegistration,
+                                     table: PhiOwnedItemTable,
+                                     candidates: [String],
+                                     budget: inout Int) -> [String] {
+        guard !candidates.isEmpty else { return [] }
+        let candidateSet = Set(candidates)
+        // 父子关系只能从基线里解出来——tombstone 没有载荷。
+        var parentOf: [String: String] = [:]
+        for identity in candidates {
+            guard let bytes = table.cursors[identity]?.reconciled else { continue }
+            if let parent = registration.owners(bytes).first(where: {
+                candidateSet.contains($0) || table.cursors[$0] != nil
+            }) {
+                parentOf[identity] = parent
+            }
+        }
+        var childrenOf: [String: [String]] = [:]
+        for (child, parent) in parentOf { childrenOf[parent, default: []].append(child) }
+
+        // 后代还没被接受 ⇒ 祖先这一轮不出门。
+        var blocked: Set<String> = []
+        var gaveUp = 0
+        for identity in candidates {
+            var stack = childrenOf[identity] ?? []
+            while let child = stack.popLast() {
+                stack.append(contentsOf: childrenOf[child] ?? [])
+                guard let cursor = table.cursors[child] else { continue }
+                if cursor.deletedAtMs != nil { continue }
+                if cursor.deleteRejectRounds >= Self.tombstoneRejectGiveUpRounds {
+                    gaveUp += 1
+                    continue
+                }
+                blocked.insert(identity)
+            }
+        }
+        if gaveUp > 0 {
+            AppLogWarn("[phi-sync] an owned-item ancestor tombstone is going out over "
+                       + "\(gaveUp) descendant tombstone(s) the account kept rejecting "
+                       + "kind=\(registration.label)")
+        }
+
+        // 子树整取：按**顶层被删祖先**分组，组要么整组进片、要么一条都不发（V16）。拆开
+        // 之后，对端在两轮之间看到的是「一个文件夹里的一部分没了、另一部分还在」，而它同时
+        // 还会把那个仍然存在的文件夹当成活的。
+        var rootOf: [String: String] = [:]
+        for identity in candidates {
+            var cursor = identity
+            var hops = 0
+            while let parent = parentOf[cursor], hops <= candidates.count {
+                cursor = parent
+                hops += 1
+            }
+            rootOf[identity] = cursor
+        }
+        let depths = Self.ownedDepths(of: candidates, parentOf: parentOf)
+        var groups: [String: [String]] = [:]
+        for identity in candidates { groups[rootOf[identity] ?? identity, default: []].append(identity) }
+
+        var out: [String] = []
+        for root in groups.keys.sorted() {
+            let members = (groups[root] ?? []).filter { !blocked.contains($0) }.sorted {
+                let left = depths[$0] ?? 0, right = depths[$1] ?? 0
+                return left == right ? $0 < $1 : left > right        // 子先于父
+            }
+            guard !members.isEmpty else { continue }
+            // 单独一棵子树就超过整轮预算时照发不误：否则它每一轮都发不出去，删除永远落不
+            // 了地，而切片上界存在的理由是「别把一轮堵死」，不是「宁可永远不发」。
+            guard out.isEmpty || out.count + members.count <= budget else { continue }
+            out.append(contentsOf: members)
+        }
+        budget = max(0, budget - out.count)
+        return out
+    }
+
+    /// 从 `parentOf` 往上走到没有父为止，`parentOf.count` 当跳数上限（环被截断成一个有限
+    /// 深度，而不是把排序挂死）。
+    private static func ownedDepths(of identities: [String],
+                                    parentOf: [String: String]) -> [String: Int] {
+        var out: [String: Int] = [:]
+        let limit = parentOf.count
+        for identity in identities where out[identity] == nil {
+            var hops = 0
+            var cursor = parentOf[identity]
+            while let parent = cursor, hops < limit {
+                hops += 1
+                cursor = parentOf[parent]
+            }
+            out[identity] = hops
+        }
+        return out
+    }
+
+    /// §11.2：每条注册 kind **一行**，行名就是 `label`。字段顺序即输出顺序。
+    private func logOwnedRounds() {
+        guard spaceSectionEnabled, spaceStore != nil else { return }
+        for registration in ownedKinds {
+            var counters = ownedCounters[registration.label] ?? OwnedRoundCounters()
+            let table = ownedTables[registration.label] ?? PhiOwnedItemTable()
+            // `parked` 是**表的状态**，不是一个轮内增量（§11.2），所以它在这里从最终的
+            // 那张表上数一次，并写回计数结构——测试面读到的与日志行印出来的是同一个数。
+            let parked = table.cursors.values
+                .filter { $0.pendingApply != nil || $0.pendingTombstone }.count
+            counters.parked = parked
+            ownedCounters[registration.label] = counters
+            let unreadable = counters.unreadable
+            var line = "[phi-sync] \(registration.label) pulled=\(counters.pulled) "
+                + "applied=\(counters.applied) parked=\(parked) pushed=\(counters.pushed) "
+                + "tombstones=\(counters.tombstones) "
+            if registration.reportsAdoption {
+                line += "adopted=\(counters.adopted) "
+                    + "unmatched_folders=\(counters.unmatchedFolders) "
+                    + "unmergeable_pairs=\(counters.unmergeablePairs) "
+            }
+            if registration.reportsScope { line += "relineaged=\(counters.relineaged) " }
+            line += "resurrected=\(counters.resurrected) "
+                + "pending_publish=\(counters.pendingPublish) refused=\(counters.refused) "
+                + "superseded_by_delete=\(counters.supersededByDelete) "
+                + "rehomed_cursors=\(counters.rehomedCursors) unreadable=\(unreadable) "
+                + "excluded_unmapped_owner=\(counters.excludedUnmappedOwner) "
+                + "local_read_failed=\(counters.localReadFailed)"
+            if registration.reportsScope { line += " scope_mismatch=\(counters.scopeMismatch)" }
+            AppLogInfo(line)
+        }
+    }
+
     // MARK: - Guarded writes
     //
     // Everything this engine writes into the shared `UserDefaults` goes through one of the
@@ -2219,6 +3305,24 @@ actor PhiSyncEngine {
             table.didReplayForEmptyTable = false
             table.lastDrainedBirthday = nil
             table.unreadableTagHashes = [:]
+            table.bookmarksReplayedForEmptyTable = false
+            table.pinsReplayedForEmptyTable = false
+        }
+        // 归属 kind 的游标表同理，逐字同一条界线：**服务端那一侧的三元组归零，本机对
+        // 「我上次与账户对齐到什么」的记忆原样保留**。清表或删文件会毁掉每一份 `reconciled`
+        // 基线，而 §3.5 说那正是触发账户级盲写覆盖的状态。
+        for registration in ownedKinds {
+            var table = ownedTables[registration.label] ?? registration.store
+                .load(hadRecords: loadSpaceTable()[keyPath: registration.flags.hadRecords]).table
+            for (identity, var cursor) in table.cursors {
+                cursor.entityId = ""
+                cursor.version = 0
+                cursor.server = nil
+                cursor.deleteRejectRounds = 0
+                table.cursors[identity] = cursor
+            }
+            ownedTables[registration.label] = table
+            registration.store.save(table)
         }
     }
 
@@ -2267,6 +3371,498 @@ actor PhiSyncEngine {
     }
 }
 
+// MARK: - 书签那一条注册项
+//
+// **这是整个引擎里唯一知道「书签」这个词的地方。** 上面的引擎代码一条 kind 分支都没有：
+// 它按注册清单驱动一切，清单里有什么就跑什么。pin 那一条由 Task 5b-2 以同样的形状追加。
+
+/// 书签适配的轮内可变状态。
+///
+/// 它存在的理由与 `AccountPhiBookmarkAccess` 那份缓存一样：轮首那一次 fetch 的结果要交给
+/// 快照、差分、index 投影与落地四个消费者复用（§5.7 第 2 条硬要求）。
+@MainActor
+final class BookmarkSyncRoundState {
+    private(set) var locals: [PhiLocalBookmark] = []
+    private(set) var identityToGuid: [String: String] = [:]
+    private(set) var rowByGuid: [String: PhiLocalBookmark] = [:]
+    /// 本轮 §6 的认领配对：实体身份 -> 本机 guid。
+    var pairs: [String: String] = [:]
+
+    func reload(_ rows: [PhiLocalBookmark]) {
+        locals = rows
+        identityToGuid = [:]
+        rowByGuid = [:]
+        for row in rows {
+            rowByGuid[row.guid] = row
+            if let syncId = row.syncId { identityToGuid[syncId] = row.guid }
+        }
+        pairs = [:]
+    }
+}
+
+/// 同级分组的键。`parentGuid == nil` = 直接挂在这个 Space 的 canonical root 下。
+private struct BookmarkSiblingGroup: Hashable {
+    var spaceId: String
+    var parentGuid: String?
+}
+
+private extension PhiLocalBookmark {
+    /// 差分只问 `identity(of local:)`（书签就是 `syncId`），所以 §4.7 的定义域可以用一组
+    /// 只带身份的壳表达——它来自 `allSyncIds()`，**不是**快照（R-exec-4）。
+    static func identityOnly(_ syncId: String) -> PhiLocalBookmark {
+        PhiLocalBookmark(syncId: syncId, guid: syncId, spaceId: "", profileId: "",
+                         parentGuid: nil, index: 0, isFolder: false, title: "",
+                         url: URL(string: "https://bookmark.phi/folder")!,
+                         secondaryUrl: nil, secondaryTitle: nil, source: 0,
+                         createdDate: Date(timeIntervalSince1970: 0), contentUpdatedDate: nil)
+    }
+}
+
+extension OwnedKindRegistration {
+    /// `BookmarkKind` 那一条注册项。
+    @MainActor
+    static func bookmarks(access: any PhiBookmarkLocalAccess,
+                          store: any PhiOwnedItemStateStore) -> OwnedKindRegistration {
+        let state = BookmarkSyncRoundState()
+        return OwnedKindRegistration(
+            label: "bookmarks",
+            tagPrefix: PhiSyncEntity.bookmarkTagPrefix,
+            entityName: PhiSyncEntity.bookmarkEntityName,
+            store: store,
+            flags: .bookmarks,
+            reportsAdoption: true,
+            reportsScope: false,
+            identity: { envelope in
+                guard let entity = BookmarkKind.entity(from: envelope) else { return nil }
+                let identity = BookmarkKind.identity(of: entity)
+                return identity.isEmpty ? nil : identity
+            },
+            clientTag: PhiSyncEntity.bookmarkClientTag,
+            owners: { bytes in
+                guard let envelope = try? Phi_PhiEntity(serializedBytes: bytes),
+                      let entity = BookmarkKind.entity(from: envelope) else { return [] }
+                return BookmarkKind.ownerUuids(of: entity)
+            },
+            // 书签没有拆分伙伴这个概念，§7.4 的表副本对它是恒等变换。
+            clearedSplitPartner: { _ in nil },
+            beginRound: { state.reload(try access.allBookmarks()) },
+            // §5.1 的索引种子：游标键 ∪ **本机全部非 nil 的 `syncId`**——问的是
+            // `allSyncIds()` 而不是快照，于是孤儿根下面那些行的 tombstone 也路由得到。
+            // 轮首那次读失败时它落回快照里的身份（此时快照也是空的）。
+            localIdentities: {
+                (try? access.allSyncIds()) ?? Set(state.locals.compactMap(\.syncId))
+            },
+            snapshot: { table, maps, now in
+                bookmarkSnapshot(table: table, maps: maps, now: now, state: state)
+            },
+            tombstones: { table, maps, now in
+                // R-exec-4：定义域问 `allSyncIds()`，**不问快照**。两者的差集是孤儿根 /
+                // 重复根下面的整棵子树——那些行在库里、`syncId` 也在，但快照按契约把它们整棵
+                // 排除。用快照当判据，它们会被逐条判成「本机没有」而各发一条 tombstone，
+                // 把账户上一整棵真实存在的子树删掉，而本机那些行还在原地。
+                let live = try access.allSyncIds()
+                return SyncableOwnedItems.tombstones(
+                    BookmarkKind.self, locals: live.map(PhiLocalBookmark.identityOnly),
+                    table: table, resolve: maps.resolver, scope: nil, nowMs: now)
+            },
+            plan: { input in bookmarkPlan(input, state: state) },
+            land: { input in await landBookmarks(input, access: access, state: state) },
+            claimIdentities: { minted in
+                // §6.4：铸造在提交那一刻。逐条一个事务在一棵上千条的树上是上千个事务，
+                // 所以整批一次。
+                let ops = minted.sorted { $0.key < $1.key }
+                    .map { BookmarkApplyOp.claim(guid: $0.value, syncId: $0.key) }
+                guard !ops.isEmpty else { return [] }
+                do {
+                    try await access.apply(BookmarkApplyBatch(unordered: ops))
+                    return Set(minted.keys)
+                } catch {
+                    AppLogError("[phi-sync] minted bookmark identities could not be written "
+                                + "back count=\(ops.count) (\(PhiSyncLog.describe(error)))")
+                    return []
+                }
+            })
+    }
+}
+
+/// §4.2 的出站快照 + §6.4 的候选身份铸造（**只在内存里**）。
+@MainActor
+private func bookmarkSnapshot(table: PhiOwnedItemTable, maps: OwnedOwnerMaps, now: Int64,
+                              state: BookmarkSyncRoundState) -> OwnedSnapshotBytes {
+    var out = OwnedSnapshotBytes()
+    let resolve = maps.resolver
+    // §4.2 第 2 条：未同步行的候选身份在内存里填进 `syncId`，真正写回本机行要等提交被
+    // 接受（§6.4）。铸在这里而不是在提交那一刻算，是因为同一份候选身份既要进快照的
+    // `bookmark_uuid`，又要进它孩子的 `parent_uuid`。
+    var locals = state.locals
+    for index in locals.indices where locals[index].syncId == nil {
+        let identity = UUID().uuidString.lowercased()
+        locals[index].syncId = identity
+        out.minted[identity] = locals[index].guid
+    }
+    let result = SyncableOwnedItems.snapshot(BookmarkKind.self, locals: locals, table: table,
+                                             resolve: resolve, scope: nil, now: now)
+    out.skippedUnmappedOwner = result.skippedUnmappedOwner
+    out.skippedIneligibleOwner = result.skippedIneligibleOwner
+    for (identity, entity) in result.entities {
+        guard let bytes = try? BookmarkKind.envelope(entity).serializedData() else { continue }
+        out.entities[identity] = bytes
+    }
+    // A12 / §3.5：身份 -> 这一行**当前所在的归属**，引擎每轮刷进游标的 `ownerUuid`。
+    for row in locals {
+        guard let identity = row.syncId,
+              let owner = BookmarkKind.eligibilityOwner(of: row, resolve: resolve, scope: nil)
+        else { continue }
+        out.ownerUuids[identity] = owner
+    }
+    // 铸出来却没进快照的身份（归属不合格、或祖先链不合格）不留铸造记录：那一条这一轮不会
+    // 提交，下一轮重铸。留着会让一次 `.applied` 之外的路径把身份写回本机行。
+    out.minted = out.minted.filter { out.entities[$0.key] != nil }
+    return out
+}
+
+/// §4.4 的入站计划 + §6 的认领。
+@MainActor
+private func bookmarkPlan(_ input: OwnedPlanInput,
+                          state: BookmarkSyncRoundState) -> OwnedPlanOutput {
+    var out = OwnedPlanOutput()
+    let resolve = input.maps.resolver
+    var arrivals: [OwnedItemArrival<Phi_PhiBookmarkEntity>] = []
+    for item in input.arrivals {
+        guard let envelope = try? Phi_PhiEntity(serializedBytes: item.payload),
+              let entity = BookmarkKind.entity(from: envelope) else { continue }
+        arrivals.append(OwnedItemArrival(entity: entity, entityId: item.entityId,
+                                         version: item.version))
+        out.serverBytes[BookmarkKind.identity(of: entity)] = item.payload
+    }
+    // D10 的规则 (i)。它**从不删除任何东西**，也不会让任何入站实体被丢掉。
+    let adoption = SyncableOwnedItems.adopt(arrivals: arrivals.map(\.entity),
+                                            locals: state.locals, resolve: resolve)
+    var context = OwnedItemPlanContext()
+    context.pairs = adoption.pairs
+    context.adoptedMerges = adoption.merges
+    context.adoptedFieldWrites = adoption.fieldWrites
+    context.tombstonedIdentities = input.tombstoned
+    context.liveLocalParents = Set(state.locals.filter(\.isFolder).compactMap(\.syncId))
+    context.deletedSubtree = bookmarkDeletedSubtree(input.tombstoned, state: state)
+    out.plan = SyncableOwnedItems.plan(BookmarkKind.self, arrivals: arrivals,
+                                       parked: input.parked, table: input.table,
+                                       resolve: resolve, context: context)
+    state.pairs = adoption.pairs
+    out.adopted = adoption.adopted
+    out.unmatchedFolders = adoption.unmatchedFolders
+    out.unmergeablePairs = adoption.unmergeablePairs
+    out.mustRepublish = adoption.mustRepublish
+    return out
+}
+
+/// A9 的第三个合取项：本轮因为一条远端文件夹 tombstone 而要消失的身份。
+@MainActor
+private func bookmarkDeletedSubtree(_ tombstoned: Set<String>,
+                                    state: BookmarkSyncRoundState) -> Set<String> {
+    var childrenOf: [String: [PhiLocalBookmark]] = [:]
+    for row in state.locals {
+        guard let parent = row.parentGuid else { continue }
+        childrenOf[parent, default: []].append(row)
+    }
+    var out: Set<String> = []
+    var stack = tombstoned.compactMap { state.identityToGuid[$0] }
+    var hops = 0
+    let limit = state.locals.count * 2 + 1
+    while let guid = stack.popLast(), hops < limit {
+        hops += 1
+        for child in childrenOf[guid] ?? [] {
+            if let identity = child.syncId { out.insert(identity) }
+            stack.append(child.guid)
+        }
+    }
+    return out
+}
+
+/// §4.4 / §4.5 的落地：按 Space 切开、rank → index 投影、三相批次、落地后复核。
+@MainActor
+private func landBookmarks(_ input: OwnedLandingInput,
+                           access: any PhiBookmarkLocalAccess,
+                           state: BookmarkSyncRoundState) async -> OwnedLandingOutcome {
+    var outcome = OwnedLandingOutcome()
+    guard !input.steps.isEmpty else { return outcome }
+    let resolve = input.maps.resolver
+
+    struct Planned {
+        var step: OwnedItemApplyStep
+        var entity: Phi_PhiBookmarkEntity?
+    }
+    var planned: [Planned] = []
+    for step in input.steps {
+        let entity = step.payload.flatMap { bytes -> Phi_PhiBookmarkEntity? in
+            guard let envelope = try? Phi_PhiEntity(serializedBytes: bytes) else { return nil }
+            return BookmarkKind.entity(from: envelope)
+        }
+        planned.append(Planned(step: step, entity: entity))
+    }
+
+    // 身份 -> 本轮要用的本机 guid。
+    var guidOf: [String: String] = [:]
+    for item in planned {
+        if let guid = state.pairs[item.step.identity] ?? state.identityToGuid[item.step.identity] {
+            guidOf[item.step.identity] = guid
+        }
+    }
+
+    // §4.6 的**物理行**判据（`refuses(_:baseline:)` 够不着它——那一个比的是游标基线，而这条
+    // 身份本机可能根本没有基线）。落地会把一条书签行原地变成文件夹，它的 URL 随即失去意义；
+    // 反方向则让一个文件夹变成书签，**它的孩子当场失去父**。
+    var work: [Planned] = []
+    for item in planned {
+        if let entity = item.entity, let guid = guidOf[item.step.identity],
+           let isFolder = access.localIsFolder(guid: guid), isFolder != entity.isFolder {
+            outcome.refused.insert(item.step.identity)
+            continue
+        }
+        work.append(item)
+    }
+    // 排在前面的 create 先铸 guid，后面的孩子才解析得到父。
+    for item in work where item.step.kind == .create && guidOf[item.step.identity] == nil {
+        guidOf[item.step.identity] = UUID().uuidString
+    }
+    guard !work.isEmpty else { return outcome }
+
+    let deletedIdentities = Set(work.filter { $0.step.kind == .delete }.map(\.step.identity))
+    let deletedGuids = Set(deletedIdentities.compactMap { guidOf[$0] })
+
+    // 本轮的落地投影：从轮首那份快照起手，逐条把位置改成计划里的位置。它同时是「父在哪个
+    // Space」这个问题的答案来源——一条行的父必定与它同 Space。
+    var projected = state.rowByGuid
+    var rankOf: [String: String] = [:]
+    for (identity, cursor) in input.table.cursors {
+        guard let bytes = cursor.reconciled,
+              let envelope = try? Phi_PhiEntity(serializedBytes: bytes),
+              let entity = BookmarkKind.entity(from: envelope) else { continue }
+        rankOf[identity] = BookmarkKind.rank(of: entity)
+    }
+
+    var placed: [(item: Planned, guid: String, group: BookmarkSiblingGroup)] = []
+    var touched: Set<BookmarkSiblingGroup> = []
+    var parentOf: [String: String] = [:]
+    var payloadOf: [String: Data] = [:]
+
+    for item in work {
+        let identity = item.step.identity
+        guard let guid = guidOf[identity] else { continue }
+        if let payload = item.step.payload { payloadOf[identity] = payload }
+        if let rank = item.step.newRank { rankOf[identity] = rank }
+
+        if item.step.kind == .update || item.step.kind == .delete {
+            guard let row = projected[guid] else {
+                // §5.6 T3：反查到身份、本机没有行 ⇒ 什么都不删，但游标照样写 `deletedAtMs`。
+                if item.step.kind == .delete {
+                    outcome.landed.insert(identity)
+                    outcome.deleted.insert(identity)
+                }
+                continue
+            }
+            placed.append((item, guid, BookmarkSiblingGroup(spaceId: row.spaceId,
+                                                            parentGuid: row.parentGuid)))
+            continue
+        }
+
+        guard let entity = item.entity else { continue }
+        // `newParentUuid == nil` **不是「挂到 Space 根」**，而是「按载荷自己的 `parent_uuid`
+        // 落」。它只在模块替你决定了父的时候非 nil：提升到根（值是 `""`）、或父就在同一批里。
+        let parentIdentity = item.step.newParentUuid ?? entity.parentUuid.stringValue
+        var group: BookmarkSiblingGroup
+        if parentIdentity.isEmpty {
+            guard let spaceId = resolve.localSpaceId(entity.spaceUuid.stringValue) else {
+                outcome.parked.insert(identity)
+                continue
+            }
+            group = BookmarkSiblingGroup(spaceId: spaceId, parentGuid: nil)
+        } else {
+            guard let parentGuid = guidOf[parentIdentity] ?? state.identityToGuid[parentIdentity],
+                  let parentRow = projected[parentGuid] else {
+                outcome.parked.insert(identity)
+                continue
+            }
+            group = BookmarkSiblingGroup(spaceId: parentRow.spaceId, parentGuid: parentGuid)
+            parentOf[guid] = parentGuid
+        }
+
+        if var row = projected[guid] {
+            // §4.5：**先按 `syncId` 找本机行，找不到才 create**。R-M3-3-13 的重放路径、D10
+            // 的认领路径与普通的更新路径全部依赖这一条——照着计划里的 `.create` 建一遍，会
+            // 让本机每一条书签在一次重放之后变成两条，而两条都带身份、都不会被差分判成删除。
+            row.syncId = identity
+            row.spaceId = group.spaceId
+            row.parentGuid = group.parentGuid
+            projected[guid] = row
+        } else {
+            projected[guid] = PhiLocalBookmark(
+                syncId: identity, guid: guid, spaceId: group.spaceId,
+                profileId: state.locals.first { $0.spaceId == group.spaceId }?.profileId
+                    ?? LocalStore.defaultProfileId,
+                parentGuid: group.parentGuid, index: 0, isFolder: entity.isFolder,
+                title: entity.title.stringValue,
+                url: URL(string: entity.url.stringValue)
+                    ?? URL(string: "https://bookmark.phi/folder")!,
+                secondaryUrl: URL(string: entity.secondaryURL.stringValue),
+                secondaryTitle: entity.secondaryTitle.stringValue.isEmpty
+                    ? nil : entity.secondaryTitle.stringValue,
+                source: Int(entity.source),
+                createdDate: Date(timeIntervalSince1970: Double(entity.createdAtMs) / 1000),
+                contentUpdatedDate: nil)
+        }
+        touched.insert(group)
+        placed.append((item, guid, group))
+    }
+
+    // R-M3-3-17 的三步，第 2 步在空集合上必须是**零操作**（CASE 6.10c）。
+    var childrenOf: [String: [String]] = [:]
+    for (guid, row) in projected {
+        guard let parent = row.parentGuid else { continue }
+        childrenOf[parent, default: []].append(guid)
+    }
+    for guid in deletedGuids where projected[guid]?.isFolder == true {
+        var stack = childrenOf[guid] ?? []
+        var hops = 0
+        while let child = stack.popLast(), hops <= projected.count {
+            hops += 1
+            stack.append(contentsOf: childrenOf[child] ?? [])
+            guard !deletedGuids.contains(child), var row = projected[child] else { continue }
+            // 其余每一个后代**先提升到该 Space 的根**；文件夹行本身排在第 3 相删掉。
+            row.parentGuid = nil
+            projected[child] = row
+            parentOf.removeValue(forKey: child)
+            touched.insert(BookmarkSiblingGroup(spaceId: row.spaceId, parentGuid: nil))
+        }
+    }
+    for guid in deletedGuids { projected.removeValue(forKey: guid) }
+
+    // §4.10 的 rank → index 投影，**跑在这里而不是 access 里**（R-exec-2）：它要拿整批入站
+    // 实体的 rank 一起算，而 access 只看得见本机行。`.move` 发出的是**整组的完整置换**——
+    // 批次入口写的是裸 index，它不会替你把兄弟们往后挪，只发被移动的那一条会让它与某个没被
+    // 碰的兄弟撞上同一个 index。
+    var indexOf: [String: Int] = [:]
+    for group in touched {
+        var members = access.siblings(ofParent: group.parentGuid, inSpaceId: group.spaceId)
+            .compactMap { projected[$0.guid] }
+            .filter { $0.spaceId == group.spaceId && $0.parentGuid == group.parentGuid }
+        for (guid, row) in projected where row.spaceId == group.spaceId
+            && row.parentGuid == group.parentGuid
+            && !members.contains(where: { $0.guid == guid }) {
+            members.append(row)
+        }
+        for (guid, index) in BookmarkKind.rankToIndex(siblings: members, ranks: rankOf) {
+            indexOf[guid] = index
+        }
+    }
+
+    var opsBySpace: [String: [BookmarkApplyOp]] = [:]
+    var identitiesBySpace: [String: Set<String>] = [:]
+    func emit(_ op: BookmarkApplyOp, in spaceId: String) {
+        opsBySpace[spaceId, default: []].append(op)
+    }
+
+    for entry in placed {
+        let identity = entry.item.step.identity
+        identitiesBySpace[entry.group.spaceId, default: []].insert(identity)
+        switch entry.item.step.kind {
+        case .claim:
+            emit(.claim(guid: entry.guid, syncId: identity), in: entry.group.spaceId)
+        case .create:
+            if state.identityToGuid[identity] != nil || state.pairs[identity] != nil {
+                // 本机已经有这条身份的行：一次重放 / 一次认领，不是一次新建。
+                emit(.move(guid: entry.guid, toParentGuid: entry.group.parentGuid,
+                           inSpaceId: entry.group.spaceId, index: indexOf[entry.guid] ?? 0),
+                     in: entry.group.spaceId)
+                if let entity = entry.item.entity {
+                    emit(.update(guid: entry.guid, fields: bookmarkPatch(entity)),
+                         in: entry.group.spaceId)
+                }
+            } else if var row = projected[entry.guid] {
+                row.index = indexOf[entry.guid] ?? 0
+                emit(.create(row), in: entry.group.spaceId)
+            }
+        case .move:
+            emit(.move(guid: entry.guid, toParentGuid: entry.group.parentGuid,
+                       inSpaceId: entry.group.spaceId, index: indexOf[entry.guid] ?? 0),
+                 in: entry.group.spaceId)
+        case .update:
+            if let entity = entry.item.entity {
+                emit(.update(guid: entry.guid, fields: bookmarkPatch(entity)),
+                     in: entry.group.spaceId)
+            }
+        case .delete:
+            emit(.delete(guid: entry.guid), in: entry.group.spaceId)
+        }
+    }
+    // 组内的其余兄弟：**组内按目标 index 升序发**，于是顺序在任何一次 fetch 之后都一样。
+    let emitted = Set(placed.map(\.guid))
+    for group in touched {
+        let movers = projected.values
+            .filter { $0.spaceId == group.spaceId && $0.parentGuid == group.parentGuid
+                && !emitted.contains($0.guid) && state.rowByGuid[$0.guid] != nil }
+            .sorted { (indexOf[$0.guid] ?? 0, $0.guid) < (indexOf[$1.guid] ?? 0, $1.guid) }
+        for row in movers {
+            emit(.move(guid: row.guid, toParentGuid: group.parentGuid,
+                       inSpaceId: group.spaceId, index: indexOf[row.guid] ?? row.index),
+                 in: group.spaceId)
+        }
+    }
+
+    // **一次 `apply(_:)` 是一个事务，而导入锁是 fail-closed 的**：一批横跨两个 Space、其中
+    // 一个正在被导入的落地会把另一个 Space 的行也一起回滚——那些行本来没有任何理由等。
+    // 所以调用之前先按 Space 把批次切开，每个被触及的 Space 一次调用。跨 Space 的父子关系
+    // 不受影响：一条行的父必定与它同 Space。
+    for spaceId in opsBySpace.keys.sorted() {
+        let ops = opsBySpace[spaceId] ?? []
+        guard !ops.isEmpty else { continue }
+        let identities = identitiesBySpace[spaceId] ?? []
+        do {
+            try await access.apply(BookmarkApplyBatch(unordered: ops, parentOf: parentOf))
+        } catch LocalStoreWriteError.folderNotEmpty, LocalStoreWriteError.rowAlreadyMapped {
+            // 这一批**算错了**：拒收。它们不是在等什么，停放会让同一批每轮原样重试、永远
+            // 不会好，而 `pendingApply` 里堆着一批永远落不了地的实体。
+            outcome.refused.formUnion(identities)
+            continue
+        } catch {
+            // 导入锁（`.spaceImporting`）与其余一切瞬时失败：**停放**，下一轮重试。
+            outcome.parked.formUnion(identities)
+            continue
+        }
+        // §4.5：落地之后、写基线之前，按计划复核一次。复核读的是**落地后**的行——`apply`
+        // 收尾会自己重建一次缓存，所以这三个读者此刻答的是新世界。没有这次复核，任何残留的
+        // 静默拒绝都会被记成一次成功落地。
+        for identity in identities {
+            guard let guid = guidOf[identity] else { continue }
+            let known = access.isKnownLocalBookmark(guid)
+            if deletedIdentities.contains(identity) {
+                if known { outcome.parked.insert(identity) } else {
+                    outcome.landed.insert(identity)
+                    outcome.deleted.insert(identity)
+                }
+                continue
+            }
+            guard known else { outcome.parked.insert(identity); continue }
+            outcome.landed.insert(identity)
+            if let payload = payloadOf[identity] { outcome.reconciled[identity] = payload }
+        }
+    }
+    outcome.parked.subtract(outcome.landed)
+    outcome.refused.subtract(outcome.landed)
+    return outcome
+}
+
+/// 一条实体的四个内容字段 → 一次字段更新。
+@MainActor
+private func bookmarkPatch(_ entity: Phi_PhiBookmarkEntity) -> BookmarkFieldPatch {
+    BookmarkFieldPatch(
+        title: .some(entity.title.stringValue),
+        url: .some(URL(string: entity.url.stringValue)),
+        secondaryUrl: .some(URL(string: entity.secondaryURL.stringValue)),
+        secondaryTitle: .some(entity.secondaryTitle.stringValue.isEmpty
+                              ? nil : entity.secondaryTitle.stringValue))
+}
+
 #if DEBUG
 extension PhiSyncEngine {
     /// 只读测试面。**没有任何新的驱动入口**：测试照旧用 `pullOnce()` /
@@ -2278,5 +3874,15 @@ extension PhiSyncEngine {
     ///
     /// 游标表与计数器的访问器由 Task 6 追加进这一段（那时引擎才持有它们）。
     var spaceTableForTesting: PhiSpaceSyncTable { loadSpaceTable() }
+
+    /// 一条注册 kind 本轮那张游标表，按 `label` 取。读的是引擎手上那一份**内存镜像**，
+    /// 不是 store——否则一次断言就会多打一次 `load`，把 `MemoryOwnedItemStore` 的
+    /// `loseOnLoadNumber` / `hadRecordsSeen` 这两条脚本化语义搅乱。
+    func ownedTableForTesting(_ label: String) -> PhiOwnedItemTable {
+        ownedTables[label] ?? PhiOwnedItemTable()
+    }
+
+    /// 最近一轮每条注册 kind 的计数行（§11.2），按 `label` 索引。
+    var lastOwnedRoundCountersForTesting: [String: OwnedRoundCounters] { ownedCounters }
 }
 #endif

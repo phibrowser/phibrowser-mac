@@ -101,7 +101,9 @@ struct PhiRemoteEntity {
 struct PhiCommitEntry {
     let entityId: String?      // nil on create
     let clientTagHash: String
-    let name: String           // "phi-settings", or the constant "phi-space"
+    /// 服务端明文落库的 `entities.name`，每 kind 一个常量：`"phi-settings"`、`"phi-space"`、
+    /// `"phi-bookmark"`、`"phi-pin"`。
+    let name: String
     let ciphertext: Data?      // nil for a tombstone
     let deleted: Bool
     let baseVersion: Int64     // 0 on create

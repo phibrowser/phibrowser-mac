@@ -159,9 +159,12 @@ final class PhiSyncEngineSpaceTests: XCTestCase {
         let access = FakePhiSpaceAccess()
         let store = MemorySpaceStore()
         let client = FakePhiSyncClient()
-        // field 3 of the oneof: a future client's payload.
+        // An UNASSIGNED oneof field: a future client's payload. Field 7 (0x3A = 7 << 3 | 2,
+        // then a zero length), deliberately above everything `PhiEntity.kind` names today --
+        // M3-3 took field 3 for the bookmark kind and field 4 for pinned tabs, so the
+        // original seed here stopped being an unknown kind the moment those landed.
         client.seed(tagHash: "future-hash",
-                    ciphertext: try PhiKeyCrypto.sealWithSymmetric(Data([0x1A, 0x00]), key: key),
+                    ciphertext: try PhiKeyCrypto.sealWithSymmetric(Data([0x3A, 0x00]), key: key),
                     version: 2)
         let engine = makeEngine(access: access, store: store, client: client)
         await engine.setSpaceSyncEnabled(true)

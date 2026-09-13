@@ -149,7 +149,14 @@ enum SyncableSpaces {
     /// enter this round's commit batch.
     /// 第二个调用方是 `SyncableOwnedItems`（M3-3）：书签按「同一个父」分组、pin 按 owner
     /// 分组，各自把自己那一组的次序喂进来。
-    static func assignRanks(order: [(uuid: String, rank: String?)]) -> [String: String] {
+    ///
+    /// `rankBetween` 是**带默认值的注入点**，默认就是本类型那一个，所以本文件的既有调用方
+    /// 与行为逐字不变。它存在的唯一理由是让 `SyncableOwnedItems` 的 rank 生成经过自己那个
+    /// 转发器，于是 `RankProbe` 数得到真实的调用次数——一个数不到任何东西的探针会让
+    /// 「非法 rank 永不到达 `precondition`」那条断言恒真。
+    static func assignRanks(order: [(uuid: String, rank: String?)],
+                            rankBetween: (String?, String?) -> String
+                                = SyncableSpaces.rankBetween) -> [String: String] {
         let kept = longestIncreasingKeptSet(order.map { (rank: $0.rank, uuid: $0.uuid) })
         var keptFlags = [Bool](repeating: false, count: order.count)
         for i in kept { keptFlags[i] = true }

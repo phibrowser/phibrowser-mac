@@ -677,3 +677,28 @@ final class OwnedItemsTestSupportTests: XCTestCase {
         XCTAssertNil(profileId)
     }
 }
+
+// MARK: - 归属解析器 fixture
+
+extension OwnerResolver {
+    /// 本里程碑全部归属项用例的公共解析器：`space-a → su-1`、`space-b → su-2`、
+    /// `Default → pu-1`，反向映射由正向表现算，两个方向**永远一致**——手写两张表迟早
+    /// 会漂，而一条只在单方向存在的映射会让「归属解析不到」这一支在本该绿的用例上变红。
+    ///
+    /// `ineligible` 里的 syncUuid 让 `isEligibleSpace` 返回 false（模拟 hidden / purged）。
+    /// 它对**不在表里**的 uuid 返回 true：`isEligibleSpace` 的判据只对 Space 归属有意义，
+    /// pin 的 profile / app 归属走的是另外两个成员，被它一刀切掉会让整类 pin 停止发布。
+    static func fixture(spaceUuids: [String: String] = ["space-a": "su-1", "space-b": "su-2"],
+                        profileUuids: [String: String] = ["Default": "pu-1"],
+                        ineligible: Set<String> = []) -> OwnerResolver {
+        var spacesByUuid: [String: String] = [:]
+        for (localId, uuid) in spaceUuids { spacesByUuid[uuid] = localId }
+        var profilesByUuid: [String: String] = [:]
+        for (localId, uuid) in profileUuids { profilesByUuid[uuid] = localId }
+        return OwnerResolver(syncUuid: { spaceUuids[$0] },
+                             localSpaceId: { spacesByUuid[$0] },
+                             isEligibleSpace: { !ineligible.contains($0) },
+                             globalUuid: { profileUuids[$0] },
+                             localProfileId: { profilesByUuid[$0] })
+    }
+}

@@ -162,6 +162,7 @@ final class FakeBookmarkAccess: PhiBookmarkLocalAccess {
 final class FakePinAccess: PhiPinnedTabLocalAccess {
     enum Call: Equatable {
         case allPins
+        case allPinIdentities
         case apply(opCount: Int)
         case changeScope(PinnedTabScope)
     }
@@ -169,6 +170,17 @@ final class FakePinAccess: PhiPinnedTabLocalAccess {
     var scope: PinnedTabScope
     var account: PinnedTabScope?
     var rows: [PhiLocalPin]
+    /// 让两个读方法抛（R-exec-3）。**每次都抛，不自动清零**：一轮读失败的引擎行为是整段
+    /// 跳过，用例要断言的正是「跳过了」，一次性的失败会让第二次读悄悄成功。
+    var readError: Error?
+    /// 本机有行、但**不在快照里**的那些 lineage：作用域迁移原地留下的、当前作用域之外的
+    /// 备份行（R-exec-4）。`allPins()` 看不见它们，`allPinIdentities()` 必须看得见，否则
+    /// 差分把它们判成删除。
+    var outOfScopeLineageIds: Set<String> = []
+    /// 本轮有没有一份可用的快照，**与生产实现同一条契约**：`isKnownLocalPin` 只在本轮最后
+    /// 一次成功的 `allPins()` 或 `apply(_:)` 之后有意义，否则交出「不在」那个值；
+    /// `allPinIdentities()` 在此之前抛。
+    private(set) var snapshotIsLoaded = false
     /// 下一次 `apply` 抛 `LocalStoreWriteError.storeUnavailable`，然后清零。**一行都不改。**
     var failApplyOnce = false
     private(set) var calls: [Call] = []
@@ -184,16 +196,40 @@ final class FakePinAccess: PhiPinnedTabLocalAccess {
 
     func accountScope() -> PinnedTabScope? { account }
 
+    /// 开新一轮：把快照标成「没读过」。用例用它制造 R-exec-3 之后那三种无效状态。
+    func beginRound() {
+        snapshotIsLoaded = false
+    }
+
     /// 非休眠的**全部**行，按 `(ownerKey, index, guid)` 有序。**不挑代表。**
-    func allPins() -> [PhiLocalPin] {
+    func allPins() throws -> [PhiLocalPin] {
         calls.append(.allPins)
+        if let readError { throw readError }
+        snapshotIsLoaded = true
         return rows
             .filter { !$0.isDormant }
             .sorted { (Self.ownerKey($0), $0.index, $0.guid) < (Self.ownerKey($1), $1.index, $1.guid) }
     }
 
+    /// 快照里的 lineage 加上作用域之外那些。生产实现是同一次 fetch 里未经作用域过滤的行；
+    /// 这里用一个显式的 `outOfScopeLineageIds` 表达同一件事，因为假件的 `rows` 本身没有
+    /// 「另一个作用域」的概念。
+    func allPinIdentities() throws -> Set<String> {
+        calls.append(.allPinIdentities)
+        if let readError { throw readError }
+        // 与生产实现同源：本轮没成功读过就抛，绝不交出一个会让差分把整批 pin 判成删除的
+        // 空集合。
+        guard snapshotIsLoaded else { throw LocalStoreWriteError.storeUnavailable }
+        return Set(rows.filter { !$0.isDormant }.map { PinKind.lineageKey($0.lineageId) })
+            .union(outOfScopeLineageIds.map(PinKind.lineageKey))
+    }
+
+    /// **两边都过 `PinKind.lineageKey`**（P11），与生产实现同形：传进来的是线上归一过的小写
+    /// lineage，而 `rows` 里那一列可能是大写。
     func isKnownLocalPin(_ lineageId: String) -> Bool {
-        rows.contains { $0.lineageId == lineageId }
+        guard snapshotIsLoaded else { return false }
+        let wanted = PinKind.lineageKey(lineageId)
+        return rows.contains { PinKind.lineageKey($0.lineageId) == wanted }
     }
 
     func apply(_ batch: PinApplyBatch) async throws {
@@ -203,6 +239,9 @@ final class FakePinAccess: PhiPinnedTabLocalAccess {
             failApplyOnce = false
             throw LocalStoreWriteError.storeUnavailable
         }
+        // 生产实现末尾会重读一次，于是 §4.5 的落地后复核在同一轮里就能做。抛错那一支走不
+        // 到这里：真实现里那次重读排在写之后，写抛了就不会发生，快照保持原样。
+        snapshotIsLoaded = true
         for op in batch.ops { land(op) }
     }
 
@@ -211,6 +250,9 @@ final class FakePinAccess: PhiPinnedTabLocalAccess {
                      preferredSpaceId: String?) async throws {
         calls.append(.changeScope(scope))
         self.scope = scope
+        // 迁移重建了整批物理行，本轮那份快照与它已经没有关系了——生产实现在这里也只清不
+        // 重读。
+        snapshotIsLoaded = false
     }
 
     /// `phi-pin:<lineage>:<ownerKey>` 里那个 ownerKey 的本机侧对应物：Space 作用域是

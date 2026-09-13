@@ -292,6 +292,155 @@ final class LocalStorePinnedTabTransferTests: XCTestCase {
         XCTAssertEqual(merged.count, 1)
     }
 
+    // CASE 5b.5 —— R-M3-3-16 的双 fixture 回归：**两台机器**的 favicon 不同，同一次作用域
+    // 迁移的结果逐行相同。
+    //
+    // 防的是什么：CASE 2b.1 只测了「同一台机器上两份变体合成一条」，那是必要条件不是充分
+    // 条件。真正的故障形状是**两台机器合出不同的结果**，而那要两份 fixture 才看得见。D9 让
+    // favicon 留在本地并各自回填，所以「同一条 pin 在两台机器上有不同的 favicon」是**常态**；
+    // 合并键一旦沾上它，两台机器的 pin 数量会从此不同，且各自都认为自己是对的。
+    func testTwoDevicesWithDifferentFaviconBytesMigrateToIdenticalRows() async throws {
+        // A：每一条都有图。B：每一条都是 nil。其余字段（lineage / title / url / index）逐字
+        // 相同——两台机器本来就该在这里一致。
+        let deviceA = try await makeMigrationFixtureStore(favicons: [Data([0x1]), Data([0x2])])
+        let deviceB = try await makeMigrationFixtureStore(favicons: [nil, nil])
+
+        for store in [deviceA, deviceB] {
+            try await store.changePinnedTabScope(
+                to: .profile,
+                preferredProfileId: "Default",
+                preferredSpaceId: "space-a"
+            )
+        }
+        drainMainQueue()
+
+        let rowsA = migratedRows(in: deviceA)
+        let rowsB = migratedRows(in: deviceB)
+        XCTAssertEqual(rowsA.count, rowsB.count, "两台机器合出的条数必须相同")
+        XCTAssertEqual(rowsA.map(\.lineage), rowsB.map(\.lineage))
+        XCTAssertEqual(rowsA.map(\.index), rowsB.map(\.index))
+        XCTAssertEqual(rowsA.map(\.title), rowsB.map(\.title))
+        XCTAssertEqual(rowsA.map(\.url), rowsB.map(\.url))
+    }
+
+    // MARK: - applyPinSyncBatchThrowing（Task 5b）
+
+    // CASE 5b.4b ③ 的 store 级对应物 —— 整批一个事务：中途一条 op 失败，前面那些也回滚。
+    //
+    // 防的是什么：那五个 throwing 兄弟各自开一个写块，挨个调就是 N 个事务、部分成功于是
+    // 成立，而引擎会为一批只落了一半的操作写下基线（R-exec-2）。
+    func testAFailingOpRollsBackEveryEarlierOpInTheSameBatch() async throws {
+        let store = try makeStoreWithSpaces()
+        try insertPinned(in: store, guid: "p-a", profileId: "Default", spaceId: nil,
+                         title: "A", url: "https://a.example", index: 0)
+
+        await assertThrows(.rowNotFound) {
+            try await store.applyPinSyncBatchThrowing([
+                .update(guid: "p-a", fields: PinFieldPatch(title: "Renamed")),
+                .delete(guid: "no-such-guid"),
+            ])
+        }
+
+        let title = try pinRow("p-a", in: store)?.title
+        XCTAssertEqual(title, "A", "部分成功不存在")
+    }
+
+    // 末尾按被触及的每个 **owner** 跑一次 index 重排（pin 按 owner 分组，不是按父）。
+    //
+    // 防的是什么：一批操作可能反复动同一个 owner，每条各自那次重排只保证它自己那一刻是
+    // 稠密的。留下的空位会让下一轮的 rank → index 投影算出与对端不同的次序，两台机器的 pin
+    // 顺序就此分歧。
+    func testTheBatchLeavesEveryTouchedOwnerDenselyNumbered() async throws {
+        let store = try makeStoreWithSpaces()
+        for (index, guid) in ["p-0", "p-1", "p-2"].enumerated() {
+            try insertPinned(in: store, guid: guid, profileId: "Default", spaceId: nil,
+                             title: guid, url: "https://\(guid).example", index: index)
+        }
+
+        // 中间那条被删掉，于是 0 / 2 之间留下一个空位，收尾那次重排要把它补上。
+        try await store.applyPinSyncBatchThrowing([.delete(guid: "p-1")])
+        drainMainQueue()
+
+        let remaining = store.getAllPinnedTabs(for: "Default")
+            .sorted { ($0.index, $0.guid) < ($1.index, $1.guid) }
+        XCTAssertEqual(remaining.map(\.guid), ["p-0", "p-2"])
+        XCTAssertEqual(remaining.map(\.index), [0, 1], "空位被补上")
+    }
+
+    // 导入中的 Space 抛的是那个**专属**的 case，不是 `targetNotWritable`，而且一个字节都不落。
+    //
+    // 防的是什么：`targetNotWritable` 的含义是「Space 被删了或换了 Profile」，那是结构性
+    // 失败；导入是瞬时状态，引擎该按停放处理、下一轮重试。两者混用之后 §11.2 的 `parked`
+    // 计数分不清一次该重试的停放与一次不该重试的失败。
+    func testABatchTargetingAnImportingSpaceThrowsTheDedicatedCase() async throws {
+        let store = try makeStoreWithSpaces()
+        try await store.changePinnedTabScope(to: .space)
+        try insertPinned(in: store, guid: "p-a", profileId: "Default", spaceId: "space-a",
+                         title: "A", url: "https://a.example")
+        ImportTargetLock.shared.begin(into: "space-a")
+        defer { ImportTargetLock.shared.end(into: "space-a") }
+
+        await assertThrows(.spaceImporting(spaceId: "space-a")) {
+            try await store.applyPinSyncBatchThrowing([
+                .update(guid: "p-a", fields: PinFieldPatch(title: "Renamed")),
+            ])
+        }
+
+        let title = try pinRow("p-a", in: store)?.title
+        XCTAssertEqual(title, "A", "锁住时一个字节都不落")
+    }
+
+    // `.create` 的 `source` 一路落到物理行上（Step 2）。
+    //
+    // 防的是什么：`PhiPinTabEntity` 的字段 8 就是 `source`，`PinKind.merge` 按「取非零一侧」
+    // 合并它。缺这个参数，一条远端 pin 落地时它只能落成默认值 0，下一轮的快照把 0 当成本机
+    // 的值发回去，把对端记录的导入来源抹掉。
+    func testCreateCarriesSourceAndLineageAndCreatedDateOntoTheRow() async throws {
+        let store = try makeStoreWithSpaces()
+        let born = Date(timeIntervalSince1970: 7_777)
+
+        try await store.createPinnedTabThrowing(
+            guid: "p-new",
+            url: try XCTUnwrap(URL(string: "https://new.example")),
+            title: "New",
+            profileId: "Default",
+            lineageId: "l-remote",
+            createdDate: born,
+            source: TabSource.safari.rawValue
+        )
+        drainMainQueue()
+
+        let landed = try XCTUnwrap(try pinRow("p-new", in: store))
+        XCTAssertEqual(landed.source, TabSource.safari.rawValue)
+        XCTAssertEqual(landed.pinLineageId, "l-remote", "线上身份原样写回，不重铸")
+        XCTAssertEqual(landed.createdDate, born)
+    }
+
+    // 一条拆分补丁把**两个**方向写在同一个事务里（§7.4 / I11），伙伴按归一后的 lineage 解析。
+    //
+    // 防的是什么：`reconcilePinnedSplitPartners()` 遍历的是活动窗口里的 `SplitGroup`，而一对
+    // 由同步落地的拆分 pin 没有任何活动 group——只写一个方向的话，另一半永远不知道自己被
+    // 配了对。本机那一列可能是大写，直接比恒为假，于是每一次链接都抛 `rowNotFound`。
+    func testASplitPartnerPatchLinksBothDirectionsThroughTheNormalisedLineage() async throws {
+        let store = try makeStoreWithSpaces()
+        try insertPinned(in: store, guid: "p-left", profileId: "Default", spaceId: nil,
+                         title: "Left", url: "https://left.example", index: 0,
+                         configure: { $0.pinLineageId = "L-LEFT" })
+        try insertPinned(in: store, guid: "p-right", profileId: "Default", spaceId: nil,
+                         title: "Right", url: "https://right.example", index: 1,
+                         configure: { $0.pinLineageId = "L-RIGHT" })
+
+        // 补丁带的是线上归一过的小写 lineage，而本机那一列是大写。
+        try await store.applyPinSyncBatchThrowing([
+            .update(guid: "p-left", fields: PinFieldPatch(splitPartnerLineageId: "l-right")),
+        ])
+        drainMainQueue()
+
+        XCTAssertEqual(try pinRow("p-left", in: store)?.splitPartnerGuid, "p-right")
+        XCTAssertEqual(try pinRow("p-right", in: store)?.splitPartnerGuid, "p-left",
+                       "反向也在同一个事务里写了")
+    }
+
     // MARK: - updateActivePinnedTabThrowing / removeActivePinnedTabThrowing
 
     // CASE 2b.2 —— 「guid 不在当前作用域」是 fail-closed 的设计、不是 bug，但对同步层
@@ -363,6 +512,48 @@ final class LocalStorePinnedTabTransferTests: XCTestCase {
         } catch {
             XCTFail("Unexpected error: \(error)", file: file, line: line)
         }
+    }
+
+    /// 一台机器的迁移 fixture：Space 作用域，`space-a` / `space-b` 各一条同 lineage、同
+    /// title、同 url、同 index 的 pin，**唯一差别是 favicon 字节**。
+    private func makeMigrationFixtureStore(favicons: [Data?]) async throws -> LocalStore {
+        let store = try makeStoreWithSpaces()
+        try await store.changePinnedTabScope(to: .space)
+        for (offset, spaceId) in ["space-a", "space-b"].enumerated() {
+            try insertPinned(
+                in: store,
+                guid: "pin-\(spaceId)",
+                profileId: "Default",
+                spaceId: spaceId,
+                title: "Shared",
+                url: "https://shared.example",
+                configure: { model in
+                    model.pinLineageId = "shared-lineage"
+                    model.favicon = favicons[offset]
+                }
+            )
+        }
+        return store
+    }
+
+    /// 迁移之后那个 Profile 集合的逐行取值，按 `(index, guid)` 有序。**只取参与身份与顺序
+    /// 的字段**：favicon 按 D9 本来就该在两台机器上不同。
+    private func migratedRows(in store: LocalStore)
+        -> [(lineage: String, index: Int, title: String, url: String)] {
+        store.getAllPinnedTabs(for: "Default")
+            .sorted { ($0.index, $0.guid) < ($1.index, $1.guid) }
+            .map { (lineage: $0.pinLineageId ?? $0.guid,
+                    index: $0.index,
+                    title: $0.title,
+                    url: $0.url.absoluteString) }
+    }
+
+    private func pinRow(_ guid: String, in store: LocalStore) throws -> TabDataModel? {
+        let context = try XCTUnwrap(store.getMainContext())
+        let pinnedRaw = TabDataType.pinnedTab.rawValue
+        return try context.fetch(FetchDescriptor<TabDataModel>(
+            predicate: #Predicate { $0.guid == guid && $0.type == pinnedRaw }
+        )).first
     }
 
     private func makeStoreWithSpaces() throws -> LocalStore {

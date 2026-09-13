@@ -690,6 +690,9 @@ extension LocalStore {
                                              index: index,
                                              lineageId: nil,
                                              createdDate: nil,
+                                             // 与今天逐字相同：`TabDataModel.source` 的
+                                             // 默认值就是 0，这条路径从不设它。
+                                             source: 0,
                                              in: context)
             } catch {
                 AppLogError("[LocalStore] Failed to create pinned tab: \(error)")

@@ -296,13 +296,22 @@ import SwiftUI
         // table is the opposite — account-scoped, so it goes to `account.userDefaults`
         // through `spaceStateStore`.
         let spaceAccess = AccountPhiSpaceAccess(account: account, controller: syncKeyController)
+        // M3-3：归属项（书签 / pin）的注册清单。每种 kind 一张表、一个文件，落在账户目录下
+        // （`<App Support>/Phi/users/<userID>/sync/`），所以切账户与账户重置零清理，也不必
+        // 进 `PhiSyncEngine.stateKeys`。清单此时只有书签那一条。
+        let bookmarkAccess = AccountPhiBookmarkAccess(account: account)
+        let bookmarkStore = FileOwnedItemStateStore(
+            fileURL: account.userDataStorage.appendingPathComponent("sync/bookmarks-cursors.json"))
+        let ownedKinds = [OwnedKindRegistration.bookmarks(access: bookmarkAccess,
+                                                          store: bookmarkStore)]
         // A new engine starts from its own persisted `spaceSectionEnabled`, so the memo
         // describes an engine that no longer exists. (`stopPhiSync()` clears it too; this is
         // the belt to that braces, because nothing forces the two to be paired.)
         lastSpaceGateEnabled = nil
         phiSyncEngine = PhiSyncEngine(domainKeys: domainKeys, client: client,
                                       defaults: defaults, deviceKeyId: deviceKeyId,
-                                      spaceAccess: spaceAccess, spaceStore: spaceStateStore)
+                                      spaceAccess: spaceAccess, spaceStore: spaceStateStore,
+                                      ownedKinds: ownedKinds)
         // With an engine present, every mutating call on the facade becomes an
         // intent executed on the engine (§5.3 single writer).
         PhiSpaceSyncState.shared.intentSink = { [weak self] intent in

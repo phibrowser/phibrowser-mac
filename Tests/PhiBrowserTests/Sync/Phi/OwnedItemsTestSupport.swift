@@ -37,6 +37,10 @@ final class FakeBookmarkAccess: PhiBookmarkLocalAccess {
     private(set) var snapshotIsLoaded = false
     /// 下一次 `apply` 抛 `LocalStoreWriteError.storeUnavailable`，然后清零。**一行都不改。**
     var failApplyOnce = false
+    /// 下一次 `apply` 抛这个错，然后清零。**一行都不改。** `failApplyOnce` 只表达得了
+    /// `.storeUnavailable` 一种，而 §4.5 的三种落地失败（导入锁 / `.folderNotEmpty` /
+    /// `.rowAlreadyMapped`）的**正确反应方向相反**，用例必须能逐种注入。
+    var applyErrorOnce: Error?
     /// `apply` 不抛错、但一条行都不改——模拟 Task 2a 之前那族静默守卫。
     var applyLandsNothingSilently = false
     /// `clearAllSyncIds()` 抛错（Task 9a 的次序用例）。
@@ -113,6 +117,16 @@ final class FakeBookmarkAccess: PhiBookmarkLocalAccess {
             failApplyOnce = false
             throw LocalStoreWriteError.storeUnavailable
         }
+        if let applyErrorOnce {
+            self.applyErrorOnce = nil
+            throw applyErrorOnce
+        }
+        // 导入锁是 **fail-closed** 的，与生产实现的 `refuseIfImporting`
+        // （`LocalStore+Bookmark.swift`）同形：扫一遍这批 ops 涉及的全部 `spaceId`，只要有
+        // 一个正在被导入就拒掉整批。假件不模这一条，CASE 6.10c-2 就测不到「按 Space 切开」。
+        if let locked = batch.ops.compactMap(spaceId(of:)).first(where: importingSpaceIds.contains) {
+            throw LocalStoreWriteError.spaceImporting(spaceId: locked)
+        }
         // 生产实现末尾会重读一次，于是 §4.5 的落地后复核在同一轮里就能做（G1）。抛错那一
         // 支走不到这里：真实现里那次重读排在写之后，写抛了就不会发生，快照保持原样。
         snapshotIsLoaded = true
@@ -124,6 +138,17 @@ final class FakeBookmarkAccess: PhiBookmarkLocalAccess {
         calls.append(.clearAllSyncIds)
         if failClearSyncIds { throw LocalStoreWriteError.storeUnavailable }
         for index in rows.indices { rows[index].syncId = nil }
+    }
+
+    /// 一个操作落在哪个 Space 上。`.create` / `.move` 自己带目标 Space，其余按被点名的那条
+    /// 行现在坐在哪里。
+    private func spaceId(of op: BookmarkApplyOp) -> String? {
+        switch op {
+        case .create(let row): return row.spaceId
+        case .move(_, _, let spaceId, _): return spaceId
+        case .claim(let guid, _), .update(let guid, _), .delete(let guid):
+            return rows.first { $0.guid == guid }?.spaceId
+        }
     }
 
     /// `.delete` 只移除被点名的那一行，**不**级联到后代：`BookmarkApplyBatch` 已经把整棵

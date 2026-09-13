@@ -151,6 +151,27 @@ final class PhiSyncEngineTests: XCTestCase {
         var gatedCommitTagHash: String?
         var arrivedInCommit: Gate?
         var commitGate: Gate?
+        /// M3-3: entries whose `client_tag_hash` is in here are answered
+        /// INVALID_MESSAGE **for good** and the store is left untouched — the shape
+        /// a tombstone the account keeps rejecting has. Unlike `forceInvalidMessage`
+        /// it is scoped to a tag, so one refused entry can sit next to twenty-four
+        /// accepted ones in the same batch, which is what §5.3's "an ancestor waits
+        /// for its descendants to be `.applied`" needs to be observable at all.
+        var refuseCommitsForTagHashes: Set<String> = []
+        /// M3-3: every `getUpdates` answers `changes_remaining = true` without
+        /// spending a supply, so a drain never finishes. `pageBudgetExhaustsAfter`
+        /// cannot express it — it is a countdown, and the engine's follow-up rounds
+        /// outlive any fixed number a test would pick.
+        var keepReportingChangesRemaining = false
+
+        /// M3-3: a client whose drain never ends, for the guard ① cases. The key is
+        /// taken so a caller can seed readable rows into it afterwards.
+        static func alwaysMorePages(key: SymmetricKey) -> FakePhiSyncClient {
+            _ = key
+            let client = FakePhiSyncClient()
+            client.keepReportingChangesRemaining = true
+            return client
+        }
 
         func seed(ciphertext: Data, version: Int64, entityId: String = "srv-seed", deleted: Bool = false) {
             stored[PhiSyncEntity.settingsClientTagHash] = Stored(entityId: entityId, version: version,
@@ -207,7 +228,8 @@ final class PhiSyncEngineTests: XCTestCase {
             }
             if !scriptedPages.isEmpty {
                 let page = scriptedPages.removeFirst()
-                return (page.entities, page.newMarker, self.storeBirthday, page.changesRemaining)
+                return (page.entities, page.newMarker, self.storeBirthday,
+                        page.changesRemaining || keepReportingChangesRemaining)
             }
             let from = Self.watermark(marker)
             let fresh = stored.compactMap { hash, row -> PhiRemoteEntity? in
@@ -222,7 +244,7 @@ final class PhiSyncEngineTests: XCTestCase {
                 pageBudgetExhaustsAfter = budget - 1
                 return (fresh, newMarker, storeBirthday, true)
             }
-            return (fresh, newMarker, storeBirthday, false)
+            return (fresh, newMarker, storeBirthday, keepReportingChangesRemaining)
         }
 
         /// One store write per entry, outcomes paired to `entries` by index — like the real
@@ -250,7 +272,7 @@ final class PhiSyncEngineTests: XCTestCase {
                     commitErrorOnce = nil
                     throw error
                 }
-                if forceInvalidMessage {
+                if forceInvalidMessage || refuseCommitsForTagHashes.contains(clientTagHash) {
                     outcomes.append(.invalidMessage)
                     continue
                 }

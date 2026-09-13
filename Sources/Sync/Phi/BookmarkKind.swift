@@ -49,6 +49,16 @@ enum BookmarkKind: OwnedItemKind {
         (id: local.guid, parentId: local.parentGuid)
     }
 
+    /// 这一行**坐在哪个 Space 里**，翻成账户级 syncUuid。nil = 那个 Space 没有映射。
+    ///
+    /// 与 `ownerUuids(of:)` 是两件事：后者对一条子孙返回的是它的**父**，拿那个去问
+    /// `isEligibleSpace` 永远为真，于是一个账户已软删、本机还留着 30 天的 Space 底下每一条
+    /// 非根行都会继续发布，30 天后被 purge 级联静默删掉。
+    static func eligibilityOwner(of local: PhiLocalBookmark, resolve: OwnerResolver,
+                                 scope: PinnedTabScope?) -> String? {
+        resolve.syncUuid(local.spaceId)
+    }
+
     // MARK: - 归属
 
     /// 落地之前必须已经解析出来的那一个归属引用。
@@ -92,6 +102,20 @@ enum BookmarkKind: OwnedItemKind {
     }
 
     static func rank(of entity: Phi_PhiBookmarkEntity) -> String { entity.rank.stringValue }
+
+    /// 四个内容字段的**取值**字节（时间戳清零），与 `SyncableSettings.signature(of:)` 同义。
+    ///
+    /// 位置与 `rank` 不在里面：它们由 `.move` 承载，混进来会让每一次纯搬家都额外产出一条
+    /// 空的字段补丁；而比整条实体又会把对端一次纯重盖戳也算成一次内容变化。
+    static func contentSignature(of entity: Phi_PhiBookmarkEntity) -> Data {
+        var out = Data()
+        for value in [entity.title, entity.url, entity.secondaryURL, entity.secondaryTitle] {
+            out.append(SyncableSettings.signature(of: value))
+            out.append(0)
+        }
+        out.append(entity.isFolder ? 1 : 0)
+        return out
+    }
 
     /// 位置合并的载体戳：根级项取 `space_uuid` 的戳，子孙取 `parent_uuid` 的戳。
     ///
@@ -183,10 +207,11 @@ enum BookmarkKind: OwnedItemKind {
             ? SyncableSettings.lwwWinner(local.rank, remote.rank)
             : winner.rank
 
-        // INVARIANT, not LWW：一条行不会在书签与文件夹之间变形，两侧不符的那条实体在落地
-        // 处被 §4.6 拒收。这里取并是为了**对称**（合并结果与调用顺序无关），同时让一个
-        // 文件夹永远不会因为一次分歧退化成书签——退化会让它的孩子在落地时无处可挂。
-        merged.isFolder = local.isFolder || remote.isFolder
+        // INVARIANT, not LWW：一条行不会在书签与文件夹之间变形。**合并绝不解决这个分歧**
+        // ——不符的那条实体在 `refuses` 就被拒收了（`.isFolderMismatch`），所以走到这里的
+        // 两侧必然一致，`merged` 从 `remote` 继承的那一个就是对的。早先那句「取并」把一条
+        // 被 §4.6 判为非法的载荷合并成了一次合法的更新。
+        merged.isFolder = remote.isFolder
 
         merged.title = SyncableSettings.lwwWinner(local.title, remote.title)
         merged.url = SyncableSettings.lwwWinner(local.url, remote.url)
@@ -209,14 +234,19 @@ enum BookmarkKind: OwnedItemKind {
     /// 直接 trap，而对端字节是不可信输入。书签让这件事更严重：rank 只在同一个父下可比，
     /// 一次非法 rank 能污染的是一整个文件夹。
     ///
-    /// `.isFolderMismatch` 与 `.cycle` 不在这里判——前者要本机那一行、后者要整个工作集，
-    /// 两者都由调用方（落地路径与 `plan`）产出。
-    static func refuses(_ entity: Phi_PhiBookmarkEntity) -> OwnedItemRefusal? {
+    /// `is_folder` 与本机已有的那一条不符 ⇒ **拒收**，不是合并：一条行不会在书签与文件夹
+    /// 之间变形。`baseline` 是本机手上那条已落地的实体（`plan` 交进来）；落地路径上还要拿
+    /// 本机**物理行**的 `dataType` 再判一次同样的东西（那一份数据本模块看不到）。
+    ///
+    /// `.cycle` 不在这里判——它要整个工作集，由 `plan` 产出。
+    static func refuses(_ entity: Phi_PhiBookmarkEntity,
+                        baseline: Phi_PhiBookmarkEntity?) -> OwnedItemRefusal? {
         let uuid = entity.bookmarkUuid
         guard isAccountUuid(uuid) else { return .invalidUuid }
         guard SyncableSpaces.isLegalRank(entity.rank.stringValue) else { return .illegalRank }
         if entity.parentUuid.stringValue == uuid { return .selfReference }
         if !entity.isFolder, URL(string: entity.url.stringValue) == nil { return .invalidURL }
+        if let baseline, baseline.isFolder != entity.isFolder { return .isFolderMismatch }
         return nil
     }
 

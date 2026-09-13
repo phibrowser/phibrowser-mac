@@ -48,6 +48,10 @@ struct OwnedItemArrival<Entity> {
 struct OwnedItemPlanContext {
     /// `adopt` 的配对表：实体身份 -> 本机 guid。
     var pairs: [String: String] = [:]
+    /// `adopt` 按 §6.2 算好的**字段级合并结果**（身份 -> `Phi_PhiEntity` 信封字节），即
+    /// `OwnedItemAdoptionResult.merges`。`plan` 用它替换这些身份的入站实体，于是落地的是
+    /// 合并结果而不是「整体采纳远端」。字节而不是实体，是为了让这个结构保持非泛型。
+    var adoptedMerges: [String: Data] = [:]
     /// 本轮同时到达的 tombstone 身份集合（提升只在父被**证实死亡**时发生）。
     var tombstonedIdentities: Set<String> = []
     /// 本轮因一条远端文件夹 tombstone 而要消失的身份（A9 的第三个合取项）。
@@ -141,6 +145,13 @@ struct OwnedItemAdoptionResult {
     var pairs: [String: String]        // 实体身份 -> 本机 guid
     var adopted: Int
     var unmatchedFolders: Int
+    /// §6.2 的字段级合并结果（身份 -> `Phi_PhiEntity` 信封字节）：本机内容字段带着
+    /// `contentUpdatedDate ?? createdDate` 的戳与远端各自的戳按 LWW 定胜负，位置**取远端**
+    /// （本机那一行没有基线，它的位置纯属本机派生）。喂给 `plan` 的 `context.adoptedMerges`。
+    var merges: [String: Data] = [:]
+    /// 合并结果里有本机字段赢了的那些身份 —— **必须重新发布**，走正常的快照与切片。
+    /// 本机赢了却不发布，对端永远停在旧值上，而两边都认为自己收敛了。
+    var mustRepublish: Set<String> = []
 }
 
 #if DEBUG
@@ -193,7 +204,12 @@ protocol OwnedItemKind {
     /// 字段级 LWW 合并。**必须从 `remote` 起手**（保留未知字段，`Proto/README.md`）。
     static func merge(local: Entity, remote: Entity) -> Entity
     /// 内容拒收（结构非法的载荷），nil = 接受。
-    static func refuses(_ entity: Entity) -> OwnedItemRefusal?
+    ///
+    /// `baseline` 是本机手上那条已落地的实体（没有就是 nil），**§4.6 的 `is_folder` 判据
+    /// 要它**：一条行不会在书签与文件夹之间变形，两侧不符的那条实体要被**拒收**而不是被
+    /// 合并掉。把这一条放进 `refuses` 而不是新开一个成员，是为了让 §4.6 那张表只有一个
+    /// 实现点。
+    static func refuses(_ entity: Entity, baseline: Entity?) -> OwnedItemRefusal?
     /// 这条实体落地**之前必须已经解析出来**的归属引用。
     ///
     /// **复数**（spec §4.1）：一条实体可以有不止一个归属引用，§4.4 第 4 步要为其中任一个
@@ -203,11 +219,29 @@ protocol OwnedItemKind {
     /// **永久**停放在每一台新设备上。
     static func ownerUuids(of entity: Entity) -> [String]
 
+    /// 这条本机行**当前所在的归属**：书签是它那个 Space 的 syncUuid，pin 是推导出来的
+    /// ownerKey。nil = 归属没有映射。
+    ///
+    /// **与 `ownerUuids(of:)` 是两件事，不能合并**：后者是「落地之前必须已经解析出来的
+    /// 引用」，对一条子孙书签而言那是它的**父**；而 hidden / purged 的排除判据问的是「这一
+    /// 行坐在哪个 Space 里」。用 `ownerUuids` 去判，`resolve.localSpaceId(<一个书签 uuid>)`
+    /// 恒为 nil，于是一个账户已软删、本机还留着 30 天的 Space 底下**每一条非根行**都继续
+    /// 发布，30 天后被 purge 级联静默删掉，而整段时间里每一个计数器都是健康值。
+    ///
+    /// 这同时是引擎每轮要刷进每条游标 `ownerUuid` 的那个值（A12 / §3.5），所以它只该有一个
+    /// 实现点。
+    static func eligibilityOwner(of local: Local, resolve: OwnerResolver,
+                                 scope: PinnedTabScope?) -> String?
+
     static func localEdge(of local: Local) -> (id: String, parentId: String?)
     static func rank(of entity: Entity) -> String
     static func locationStamp(of entity: Entity) -> Int64
     static func stamp(_ projected: Entity, baseline: Entity?, local: Local,
                       rank: String, now: Int64) -> Entity
+    /// 这条实体**内容字段**的取值字节（时间戳清零），与 `SyncableSettings.signature(of:)`
+    /// 同义、同理由：判「要不要带一份字段补丁」只能看取值，看整条实体会把对端一次纯重盖戳
+    /// 也算成一次内容变化，产出一条空补丁。位置与 rank **不在里面**——它们由 `.move` 承载。
+    static func contentSignature(of entity: Entity) -> Data
 }
 
 /// 一条归属引用在本轮里的状态（`plan` 第 3 步）。文件作用域而不是函数内的局部类型：
@@ -227,8 +261,11 @@ enum SyncableOwnedItems {
 
     // MARK: - rank 原语的转发
 
-    /// 转发到 `SyncableSpaces.rankBetween`，**顺带过一次探针**。本模块的每一次 rank 生成
-    /// 都走这里，于是 CASE 4a.8 能断言「入站路径一次都没碰过它」。
+    /// 转发到 `SyncableSpaces.rankBetween`，**顺带过一次探针**。
+    ///
+    /// 本模块**唯一**的 rank 生成路径是 `snapshot` 里那次 `assignRanks`，它把这个转发器作为
+    /// 注入点传了进去，所以探针数到的就是真实次数。入站路径（`plan`）一条都不该有：
+    /// `rankBetween` 在发布构建里用 `precondition` 直接 trap，而对端字节是不可信输入。
     static func rankBetween(_ a: String?, _ b: String?) -> String {
         #if DEBUG
         RankProbe.note()
@@ -243,6 +280,11 @@ enum SyncableOwnedItems {
     /// PURE：什么都不写。`locals` 是引擎交进来的那一份（未同步行的候选身份已经在内存里
     /// 填进了 `syncId`，§4.2 第 2 条），归属过滤**在这个函数里面做**——差分要看到被过滤掉
     /// 的那些行，所以调用方不许先把它们筛掉（§4.7）。
+    ///
+    /// - Precondition: `locals` 已按**同级次序**排好（书签是
+    ///   `(spaceId, parentGuid, index, guid)`，`PhiBookmarkLocalAccess.allBookmarks()` 的契约）。
+    ///   rank 通道把它当成「当前本机次序」直接喂给 `assignRanks`；换成任何别的次序，每一轮
+    ///   都会重排一批本来不该动的 rank。
     static func snapshot<K: OwnedItemKind>(_ kind: K.Type, locals: [K.Local],
                                            table: PhiOwnedItemTable, resolve: OwnerResolver,
                                            scope: PinnedTabScope?, now: Int64)
@@ -250,36 +292,79 @@ enum SyncableOwnedItems {
         var skippedUnmappedOwner = 0
         var skippedIneligibleOwner = 0
 
-        // 本地 id -> 账户身份。子行的 `parent_uuid` 填的是**父行的身份**。
-        var identityByLocalId: [String: String] = [:]
-        for local in locals {
-            guard let identity = K.identity(of: local, resolve: resolve, scope: scope) else { continue }
-            identityByLocalId[K.localEdge(of: local).id] = identity
-        }
-
-        var candidates: [(identity: String, local: K.Local, entity: K.Entity, group: String)] = []
-        for local in locals {
-            guard let identity = K.identity(of: local, resolve: resolve, scope: scope) else { continue }
+        // 第一遍：逐行判「它**自己**是不是本轮的同步合格行」（§4.2 第 1 / 3 条）。
+        //
+        // 归属判据读的是 `eligibilityOwner`——**这一行坐在哪个 Space 里**，不是它的绑定
+        // 引用。对一条子孙书签来说绑定引用是它的父，拿那个去问 `isEligibleSpace` 永远为真，
+        // 于是一个账户已软删的 Space 底下每一条非根行都会继续发布。
+        var indexByLocalId: [String: Int] = [:]
+        var identityOf: [String?] = []
+        var selfEligible: [Bool] = []
+        for (offset, local) in locals.enumerated() {
+            indexByLocalId[K.localEdge(of: local).id] = offset
+            guard let identity = K.identity(of: local, resolve: resolve, scope: scope) else {
+                identityOf.append(nil)
+                selfEligible.append(false)
+                continue
+            }
+            identityOf.append(identity)
+            guard let owner = K.eligibilityOwner(of: local, resolve: resolve, scope: scope) else {
+                skippedUnmappedOwner += 1
+                selfEligible.append(false)
+                continue
+            }
+            if resolve.localSpaceId(owner) != nil, !resolve.isEligibleSpace(owner) {
+                skippedIneligibleOwner += 1
+                selfEligible.append(false)
+                continue
+            }
             // §4.2 第 3 条：停放中 / 待发 tombstone / 待发删除的游标一律不进快照。一个停放中
             // 的实体若被快照，每个字段会盖上 `now` 再按停放游标的 entityId/version 当 update
             // 提交，把账户上那条整体覆盖成本机的值。
             if let cursor = table.cursors[identity] {
                 guard cursor.pendingApply == nil, !cursor.pendingTombstone,
-                      !cursor.pendingDelete else { continue }
+                      !cursor.pendingDelete else {
+                    selfEligible.append(false)
+                    continue
+                }
             }
+            selfEligible.append(true)
+        }
+
+        // §4.2 第 2 条：**父行不是本轮的同步合格行 ⇒ 该行本轮跳过**（整条祖先链都要合格）。
+        // 不计任何计数——它不是「归属没映射」，把它算进 `excluded_unmapped_owner` 会让那个
+        // 计数混进另一种现象。一条子书签若在父的实体即将被 tombstone / 停放 / 过期时照发，
+        // 账户上会留下一条指着一个不该存在的父的实体。
+        func chainEligible(_ offset: Int) -> Bool {
+            guard selfEligible[offset] else { return false }
+            var hops = 0
+            var parentId = K.localEdge(of: locals[offset]).parentId
+            while let id = parentId, hops <= locals.count {
+                guard let parentOffset = indexByLocalId[id], selfEligible[parentOffset] else {
+                    return false
+                }
+                parentId = K.localEdge(of: locals[parentOffset]).parentId
+                hops += 1
+            }
+            return true
+        }
+
+        // 本地 id -> 账户身份，**只收合格行**：子行的 `parent_uuid` 只能填一个合格父的身份。
+        var identityByLocalId: [String: String] = [:]
+        for (offset, local) in locals.enumerated() where selfEligible[offset] {
+            identityByLocalId[K.localEdge(of: local).id] = identityOf[offset]
+        }
+
+        var candidates: [(identity: String, local: K.Local, entity: K.Entity, group: String)] = []
+        for (offset, local) in locals.enumerated() {
+            guard chainEligible(offset), let identity = identityOf[offset] else { continue }
             let parentIdentity = K.localEdge(of: local).parentId.flatMap { identityByLocalId[$0] }
+            // 归属已经在第一遍判过，所以这一支是防御性的：投影再失败就静默跳过，绝不
+            // 二次计进任何一个排除计数。
             guard let entity = K.project(local, resolve: resolve, scope: scope,
-                                         parentIdentity: parentIdentity) else {
-                skippedUnmappedOwner += 1
-                continue
-            }
-            let owners = K.ownerUuids(of: entity)
-            // 归属映射得到、但那个 Space 已经 hidden / purged。
-            if owners.contains(where: { resolve.localSpaceId($0) != nil && !resolve.isEligibleSpace($0) }) {
-                skippedIneligibleOwner += 1
-                continue
-            }
-            candidates.append((identity, local, entity, owners.joined(separator: "\u{0}")))
+                                         parentIdentity: parentIdentity) else { continue }
+            candidates.append((identity, local, entity,
+                               K.ownerUuids(of: entity).joined(separator: "\u{0}")))
         }
 
         // 基线：变更检测与 rank 通道的共同输入。
@@ -311,7 +396,8 @@ enum SyncableOwnedItems {
             let members = groups[key] ?? []
             let order = members.map { (uuid: candidates[$0].identity,
                                        rank: baselineRank(candidates[$0].identity)) }
-            for (identity, rank) in SyncableSpaces.assignRanks(order: order) {
+            for (identity, rank) in SyncableSpaces.assignRanks(order: order,
+                                                              rankBetween: rankBetween) {
                 assigned[identity] = rank
             }
         }
@@ -362,25 +448,29 @@ enum SyncableOwnedItems {
             guard cursor.reconciled != nil else { continue }
             guard cursor.deletedAtMs == nil else { continue }
             guard !liveIdentities.contains(identity) else { continue }
-            if let owner = cursor.ownerUuid {
-                // 归属未映射。**pin 的 App 作用域 ownerKey 是字面量**，它不需要映射：
-                // Task 4b 接入时由 `PinKind` 保证那条游标的 `ownerUuid` 不写字面量，或者
-                // 由引擎的 resolver 把它映成自身。
-                let mapped = resolve.localSpaceId(owner) != nil || resolve.localProfileId(owner) != nil
-                guard mapped else { continue }
-                // 归属不合格（hidden / purged）。
-                guard resolve.localSpaceId(owner) == nil || resolve.isEligibleSpace(owner) else { continue }
-            }
+            // **`ownerUuid == nil` 按「归属未知」处理，不放行**：引擎每轮要为表里的每一条
+            // 游标刷新这个字段（A12 / §3.5），所以 nil 说明那条前置条件没成立，而本模块
+            // 检查不了。方向只能是保守的——发不出 tombstone 最多留一条本机已经没有的实体，
+            // 放行则可能删掉账户上一整个 Space 的书签。
+            guard let owner = cursor.ownerUuid else { continue }
+            // 归属未映射。**pin 的 App 作用域 ownerKey 是字面量**，它不需要映射：
+            // Task 4b 接入时由 `PinKind` 保证那条游标的 `ownerUuid` 不写字面量，或者
+            // 由引擎的 resolver 把它映成自身。
+            let mapped = resolve.localSpaceId(owner) != nil || resolve.localProfileId(owner) != nil
+            guard mapped else { continue }
+            // 归属不合格（hidden / purged）。
+            guard resolve.localSpaceId(owner) == nil || resolve.isEligibleSpace(owner) else { continue }
             identities.append(identity)
-            // 已经在待发集合里的，游标一个字节都不改：重写 `deleteDecidedAtMs` 会把 A9 那条
-            // 「入站位置比删除决定更新」的比较基准往后推，一次并发移动就再也取消不了删除。
-            if cursor.pendingDelete, cursor.pendingApply == nil { continue }
             var updated = cursor
             updated.pendingApply = nil
             updated.pendingOwnerUuid = nil
             updated.pendingDelete = true
-            updated.deleteDecidedAtMs = nowMs
-            cursorUpdates[identity] = updated
+            // **删除决定的时刻只写一次。** 一条已经待删、同时还停着一条入站更新的游标是
+            // 可达的（`plan` 会在走到 `pendingDelete` 那一支之前先把被挡住的实体停放下来），
+            // 重写这个戳会把 A9 那条「入站位置比删除决定更新」的比较基准一路往后推，于是
+            // 一次并发移动永远取消不了删除。
+            if !cursor.pendingDelete { updated.deleteDecidedAtMs = nowMs }
+            if updated != cursor { cursorUpdates[identity] = updated }
         }
 
         // §5.3 的反拓扑序：子先于父。父子关系从基线里解出来——tombstone 没有载荷，这是
@@ -459,9 +549,12 @@ enum SyncableOwnedItems {
             slotOf[identity] = working.count
             working.append((identity, entity))
         }
+        var refused = 0
         for item in arrivals {
             let identity = K.identity(of: item.entity)
-            guard !identity.isEmpty else { continue }
+            // §4.6 的第一条判据：uuid 为空 ⇒ 拒收。丢掉而不计数会让一个每轮都在发空 uuid 的
+            // 对端在计数行上完全不可见。
+            guard !identity.isEmpty else { refused += 1; continue }
             if let slot = slotOf[identity] {
                 working[slot] = (identity, item.entity)
             } else {
@@ -472,11 +565,21 @@ enum SyncableOwnedItems {
 
         // 2. 拒收与 tombstone 覆盖。孩子自己也带 tombstone 时**不提升**——那才是「这条也
         //    该消失」，所以它的活实体在这里就被它自己的 tombstone 盖掉。
-        var refused = 0
+        func baselineOf(_ identity: String) -> K.Entity? {
+            guard let bytes = table.cursors[identity]?.reconciled,
+                  let envelope = try? Phi_PhiEntity(serializedBytes: bytes) else { return nil }
+            return K.entity(from: envelope)
+        }
+
         var survivors: [(identity: String, entity: K.Entity)] = []
         for item in working {
             if context.tombstonedIdentities.contains(item.identity) { continue }
-            if K.refuses(item.entity) != nil { refused += 1; continue }
+            // 基线一并交给 `refuses`：§4.6 的 `is_folder` 判据比的就是「与本机已有的那一条
+            // 不符」。合并掉这个分歧（取并 / 取一侧）是错的——它是 INVARIANT 不是 LWW。
+            if K.refuses(item.entity, baseline: baselineOf(item.identity)) != nil {
+                refused += 1
+                continue
+            }
             survivors.append(item)
         }
         let survivorIdentities = Set(survivors.map(\.identity))
@@ -564,11 +667,18 @@ enum SyncableOwnedItems {
             }
 
             let cursor = table.cursors[identity]
-            let baseline: K.Entity? = cursor?.reconciled.flatMap {
+            let baseline = baselineOf(identity)
+            // 认领的身份走 §6.2 的**字段级**合并，结果由 `adopt` 算好、经 `context` 传进来。
+            // 一条被认领的本机行没有基线，所以下面那条「与基线合并」的通路对它退化成
+            // 「整体采纳远端」——而那正是 §6.2 点名禁止的东西（用户在一次二十分钟的首同步
+            // 期间改的标题会静默消失，没有 commit 也没有计数）。
+            let adopted: K.Entity? = context.adoptedMerges[identity].flatMap {
                 guard let envelope = try? Phi_PhiEntity(serializedBytes: $0) else { return nil }
                 return K.entity(from: envelope)
             }
-            let merged = baseline.map { K.merge(local: $0, remote: item.entity) } ?? item.entity
+            let merged = adopted
+                ?? baseline.map { K.merge(local: $0, remote: item.entity) }
+                ?? item.entity
 
             // §5.6 的 L1 支：游标带 `pendingDelete` 时到达的**存活**实体。
             if cursor?.pendingDelete == true {
@@ -615,7 +725,13 @@ enum SyncableOwnedItems {
                                                 newParentUuid: landingParent, newRank: rank,
                                                 payload: payload))
             }
-            if merged != baseline && !moved {
+            // **移动与内容改动是两条步骤，不是二选一。** 落地的 move 操作
+            // （`BookmarkApplyOp.move`）不带字段补丁，内容只走 update；一条既搬了家又被改了
+            // 名的实体若只产出 move，那次改名永远到不了本机行，而下一轮的快照会拿本机的旧
+            // 标题盖回账户——对端的编辑被销毁，且没有任何计数动一下。
+            //
+            // 判据是**内容签名**而不是整条实体：对端一次纯重盖戳不该产出一条空补丁。
+            if K.contentSignature(of: merged) != K.contentSignature(of: baseline) {
                 steps.append(OwnedItemApplyStep(identity: identity, kind: .update,
                                                 newParentUuid: nil, newRank: nil, payload: payload))
             }
@@ -677,6 +793,8 @@ enum SyncableOwnedItems {
                       resolve: OwnerResolver) -> OwnedItemAdoptionResult {
         var pairs: [String: String] = [:]
         var unmatchedFolders = 0
+        var merges: [String: Data] = [:]
+        var mustRepublish: Set<String> = []
 
         var localByGuid: [String: PhiLocalBookmark] = [:]
         var localGuidByIdentity: [String: String] = [:]
@@ -695,6 +813,30 @@ enum SyncableOwnedItems {
             let key = remoteParent + "\u{0}" + (localParentGuid ?? "") + "\u{0}" + localSpaceId
             guard visited.insert(key).inserted else { return }
             queue.append((remoteParent, localParentGuid, localSpaceId))
+        }
+
+        /// §6.2 的字段级合并，**不是「整体采纳远端」**。
+        ///
+        /// 本机那一侧是「这条行投影出来、按无基线规则盖过戳」的实体：内容字段带
+        /// `contentUpdatedDate ?? createdDate`，位置与 rank 带 0。于是内容按 LWW 各自定胜负，
+        /// 位置必然取远端（0 输给任何真实的戳）——正是 §6.2 那张表。
+        ///
+        /// 本机戳**必须是 `contentUpdatedDate`**：`updatedDate` 被 `updateLastSeen` /
+        /// `updateTabFavicon` / `normalizeIndexes` 三条**非编辑**路径往前推，而「往前推」正是
+        /// 让一个没人动过的本机旧值赢下对端刚做的编辑的那个方向。
+        func recordMerge(_ entity: Phi_PhiBookmarkEntity, _ row: PhiLocalBookmark) {
+            let parentIdentity = entity.parentUuid.stringValue
+            guard var projected = BookmarkKind.project(row, resolve: resolve, scope: nil,
+                                                       parentIdentity: parentIdentity.isEmpty
+                                                           ? nil : parentIdentity) else { return }
+            projected = BookmarkKind.stamp(projected, baseline: nil, local: row,
+                                           rank: "", now: 0)
+            // 那一行还没有身份，所以投影出来的 uuid 是空串；合并之后它接过远端这一个。
+            let merged = BookmarkKind.merge(local: projected, remote: entity)
+            guard let bytes = try? BookmarkKind.envelope(merged).serializedData() else { return }
+            merges[entity.bookmarkUuid] = bytes
+            // 合并结果与账户手上那一份不同 ⇒ 本机赢了至少一个字段 ⇒ 必须重新发布。
+            if merged != entity { mustRepublish.insert(entity.bookmarkUuid) }
         }
 
         // 起点 ①：每一个有映射的 Space 的根。
@@ -749,6 +891,7 @@ enum SyncableOwnedItems {
                 remoteKey: { $0.title.stringValue },
                 localKey: { $0.title }) { entity, row in
                     pairs[entity.bookmarkUuid] = row.guid
+                    recordMerge(entity, row)
                     enqueue(entity.bookmarkUuid, row.guid, row.spaceId)
                 }
             // 书签按 URL 分组。
@@ -758,10 +901,12 @@ enum SyncableOwnedItems {
                 remoteKey: { $0.url.stringValue },
                 localKey: { $0.url.absoluteString }) { entity, row in
                     pairs[entity.bookmarkUuid] = row.guid
+                    recordMerge(entity, row)
                 }
         }
         return OwnedItemAdoptionResult(pairs: pairs, adopted: pairs.count,
-                                       unmatchedFolders: unmatchedFolders)
+                                       unmatchedFolders: unmatchedFolders,
+                                       merges: merges, mustRepublish: mustRepublish)
     }
 
     /// 一层之内的一对一配对：**先按完整键分组，再**在组内按位配（本地 `index` 序 × 远端

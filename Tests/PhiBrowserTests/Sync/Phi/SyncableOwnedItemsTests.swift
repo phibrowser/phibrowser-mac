@@ -1901,3 +1901,82 @@ final class BookmarkRankToIndexProjectionTests: XCTestCase {
         XCTAssertEqual(projected["g2"], 0, "没有 rank 的行排在最前，与 assignRanks 的补集规则同向")
     }
 }
+
+// MARK: - Task 5a fix round：读失败与差分定义域
+
+/// `PhiBookmarkLocalAccess` 两条读契约的用例（R-exec-3 / R-exec-4）。走假件，因为要断言的
+/// 是**协议的形状**——读失败能不能被调用方看见、差分的定义域是不是比快照宽——而不是
+/// SwiftData 的行为。
+@MainActor
+final class BookmarkLocalAccessReadContractTests: XCTestCase {
+
+    private struct StoreDown: Error {}
+
+    // MARK: - R-exec-3
+
+    /// 读失败必须抛，**绝不**变成一个空数组。
+    ///
+    /// 防的是什么：一次读不出来与「这个账户一条书签都没有」在值上是同一个 `[]`。§4.7 的
+    /// 差分对空集合的回答是给每一条游标发 tombstone，所以把失败读成空集合会删掉账户上整棵
+    /// 树，而且每台设备同步之后都跟着删。进程刚起来那一轮最危险：本机还没有任何快照可回落，
+    /// 游标表却已经从磁盘上读满了。
+    func testAFailingStoreMakesTheSnapshotThrowRatherThanReportNoBookmarks() async {
+        let access = FakeBookmarkAccess(rows: [
+            PhiLocalBookmark.fixture(guid: "g1", syncId: "b1"),
+            PhiLocalBookmark.fixture(guid: "g2", syncId: "b2"),
+        ])
+        access.readError = StoreDown()
+
+        var thrown: Error?
+        var returned: [PhiLocalBookmark]?
+        do {
+            returned = try access.allBookmarks()
+        } catch {
+            thrown = error
+        }
+
+        XCTAssertNil(returned, "读失败不许交出任何一份行列表，空数组也不行")
+        XCTAssertTrue(thrown is StoreDown, "原样上抛，调用方才分得清这是读失败")
+    }
+
+    /// 差分定义域那一个读口同样要抛：它才是 §4.7 判「本机还有没有这一行」的那一份数据。
+    func testAFailingStoreMakesTheIdentityReadThrowToo() async {
+        let access = FakeBookmarkAccess(rows: [PhiLocalBookmark.fixture(guid: "g1", syncId: "b1")])
+        access.readError = StoreDown()
+
+        var thrown: Error?
+        var returned: Set<String>?
+        do {
+            returned = try access.allSyncIds()
+        } catch {
+            thrown = error
+        }
+
+        XCTAssertNil(returned)
+        XCTAssertTrue(thrown is StoreDown)
+    }
+
+    // MARK: - R-exec-4
+
+    /// 孤儿根下面那条行**不在快照里**（它不发布），但**在身份集合里**（它没有被删）。
+    ///
+    /// 防的是什么：快照回答的是「同步层认领哪些行」，差分要问的是「这条身份在本机还有没有
+    /// 行」。拿快照当差分的定义域，一条曾经发布过、后来它那个根不再是 Space 的 canonical
+    /// root 的行（并发初始化正好造出这种状态）会连同整棵子树被判成删除，账户上那一片就没
+    /// 了——而本机其实一行都没少。
+    func testAnOrphanRootRowIsOutOfTheSnapshotButStillCountsAsPresentForTheDiff() throws {
+        let access = FakeBookmarkAccess(rows: [
+            PhiLocalBookmark.fixture(guid: "g1", syncId: "b1"),
+        ])
+        // 本机有这一行，但它挂在一个已经不是 canonical root 的根下面。
+        access.orphanedSyncIds = ["b-orphan"]
+
+        let snapshotIdentities = Set(try access.allBookmarks().compactMap(\.syncId))
+        let diffDomain = try access.allSyncIds()
+
+        XCTAssertEqual(snapshotIdentities, ["b1"], "孤儿根那棵不进快照，它不发布")
+        XCTAssertEqual(diffDomain, ["b1", "b-orphan"], "但它绝不能被差分判成「本机没有了」")
+        XCTAssertTrue(diffDomain.isSuperset(of: snapshotIdentities),
+                      "差分定义域只会比快照宽，不会窄")
+    }
+}

@@ -169,13 +169,31 @@ protocol PhiBookmarkLocalAccess: AnyObject {
     ///
     /// root 行**从不是快照行**：它们的直接孩子投影出 `parentGuid == nil`；不在 canonical
     /// root 集合里的无父 `bookmarkFolder`（并发初始化留下的孤儿根）**整棵排除**。
-    func allBookmarks() -> [PhiLocalBookmark]
+    ///
+    /// **读失败一律抛，绝不返回空数组**（R-exec-3）。一次读不出来与「这个账户一条书签都
+    /// 没有」在值上是同一个 `[]`，而 §4.7 的差分对空集合的回答是**给每一条游标发
+    /// tombstone**——一次失败的 fetch 会删掉账户上整棵树，且此后每台设备都跟着删。返回一份
+    /// 悄悄过期的旧快照是同一类 bug 的另一种写法，所以也不做。
+    func allBookmarks() throws -> [PhiLocalBookmark]
+
+    /// 本机**所有**带账户级身份的行的 `syncId`，**不做任何根过滤**（R-exec-4）。
+    ///
+    /// §4.7 的差分定义域用它，不用 `allBookmarks()`：那一个回答的是「同步层认领哪些行」，
+    /// 这一个回答的是「这条身份在本机还有没有行」。孤儿根下面的行继续**不发布**（它们不在
+    /// 快照里），但**永远不会被判成删除**——「同步层不认领它」与「账户应该忘掉它」是两句
+    /// 不同的话。
+    func allSyncIds() throws -> Set<String>
 
     /// **不是第二次 fetch**，是 `allBookmarks()` 那一次结果按 `(spaceId, parentGuid)`
     /// 在内存里的分组。
     ///
     /// 且**不过滤**——§4.10 的 index 投影必须喂未过滤的兄弟列表，否则被排除的兄弟留着的
     /// 旧 `index` 会与新写的撞上。
+    ///
+    /// **契约**：它与 `isKnownLocalBookmark(_:)` / `localIsFolder(guid:)` 三个都只在本轮
+    /// `allBookmarks()` **成功返回之后**有意义，读的就是那一次的结果。`allBookmarks()` 抛了
+    /// （或本轮还没调）时它们返回空 / nil，而**不是**自己再去 fetch 一次——非抛出的签名表达
+    /// 不了「我这次没读到」，悄悄补一次读只会把 R-exec-3 挡掉的那个洞搬到这里。
     func siblings(ofParent parentGuid: String?, inSpaceId spaceId: String) -> [PhiLocalBookmark]
 
     /// 本机还有没有这条物理行。与 `PhiSpaceLocalAccess.isKnownLocalSpace` 同款理由：
@@ -218,10 +236,6 @@ final class AccountPhiBookmarkAccess: PhiBookmarkLocalAccess {
     private var cachedRows: [PhiLocalBookmark] = []
     private var cachedSiblings: [SiblingKey: [PhiLocalBookmark]] = [:]
     private var cachedIsFolder: [String: Bool] = [:]
-    /// 这一轮还没读过。三个读者在这种情况下各自触发一次构建，**之后本轮不再 fetch**：
-    /// 返回一份空快照会让差分把整棵树读成「本机已经没有这些行了」，那是会删掉账户数据的
-    /// 错法（§4.7）。
-    private var hasCache = false
 
     init(account: Account) {
         self.account = account
@@ -236,29 +250,39 @@ final class AccountPhiBookmarkAccess: PhiBookmarkLocalAccess {
     /// 从不治愈（`LocalStore+Bookmark.swift:1389`），所以关系断掉的孤儿根不在 canonical
     /// 集合里，减法会把那一棵整个留在快照里——于是同步层认领了一棵 UI 根本看不见的树，
     /// 而 heal-on-read 随时会把它并进主根或删掉。递归天然把它排除在外（§4.8 / R-M3-3-19）。
-    func allBookmarks() -> [PhiLocalBookmark] {
-        rebuildCache()
+    /// 读不出来就抛（R-exec-3）。缓存在这条路径上已经被清空，所以不存在「抛了之后还有人
+    /// 读到一份旧值」。
+    func allBookmarks() throws -> [PhiLocalBookmark] {
+        try rebuildCache()
         return cachedRows
+    }
+
+    /// 一次 fetch，**不走 canonical root 的递归**：差分要的是「这条身份在本机还有没有行」，
+    /// 孤儿根下面那些行照样算数（R-exec-4）。
+    func allSyncIds() throws -> Set<String> {
+        let store = account.localStorage
+        guard let context = store.getMainContext() else {
+            AppLogError("[phi-sync] bookmark identities failed: no main context")
+            throw LocalStoreWriteError.storeUnavailable
+        }
+        return try store.allBookmarkSyncIds(in: context)
     }
 
     /// 分组缓存的读取，**不再 fetch**、**不过滤**（§4.10 的 index 投影要未过滤的兄弟）。
     func siblings(ofParent parentGuid: String?, inSpaceId spaceId: String) -> [PhiLocalBookmark] {
-        ensureCache()
-        return cachedSiblings[SiblingKey(spaceId: spaceId, parentGuid: parentGuid)] ?? []
+        cachedSiblings[SiblingKey(spaceId: spaceId, parentGuid: parentGuid)] ?? []
     }
 
     /// 判据是「在本轮那份快照里」，不是「库里还有没有这个 guid」。两者只在被整棵排除的
     /// 孤儿根子树上有分歧，而对同步层来说那些行按定义不存在——差分的定义域、index 投影
     /// 的兄弟列表、快照都读同一份缓存，这个谓词跟着它们才不会自相矛盾。
     func isKnownLocalBookmark(_ guid: String) -> Bool {
-        ensureCache()
-        return cachedIsFolder[guid] != nil
+        cachedIsFolder[guid] != nil
     }
 
     /// 从那一次 fetch 的缓存里读物理类型，**不额外 fetch**。找不到 ⇒ nil。
     func localIsFolder(guid: String) -> Bool? {
-        ensureCache()
-        return cachedIsFolder[guid]
+        cachedIsFolder[guid]
     }
 
     func isImporting(intoSpaceId spaceId: String) -> Bool {
@@ -288,28 +312,29 @@ final class AccountPhiBookmarkAccess: PhiBookmarkLocalAccess {
 
     // MARK: - 私有
 
-    private func ensureCache() {
-        guard !hasCache else { return }
-        rebuildCache()
-    }
-
+    /// 落地改了行，本轮那份快照已经过期。**清空而不是留着**：留着就等于让
+    /// `siblings` / `localIsFolder` 继续回答落地**之前**的形状，而调用方看不出区别。
     private func invalidateCache() {
-        hasCache = false
+        cachedRows = []
+        cachedSiblings = [:]
+        cachedIsFolder = [:]
     }
 
-    /// **失败不落成一份空快照**：读不出来的时候既不清掉上一轮那份、也不把缓存标成有效，
-    /// 下一个读者重试。一份假的空快照在差分那边的含义是「本机这些行全没了」，而差分对
-    /// 「没了」的反应是给每一条发 tombstone（§4.7）——一次 fetch 失败会删掉账户上整棵树。
+    /// **失败一律抛，而且先把缓存清干净**（R-exec-3）。
     ///
-    /// 这挡不住**进程起来后第一轮就读失败**那一种：那时没有上一轮可留，返回的仍是空数组，
-    /// 而游标表是跨启动持久化的。协议签名是非抛出的（`allBookmarks() -> [PhiLocalBookmark]`），
-    /// 这一层表达不了「读失败」与「真的没有书签」的区别，所以那道闸必须由引擎侧来把
-    /// （Task 6）。
-    private func rebuildCache() {
+    /// 早先这里是「记一条日志，把上一轮那份留着」。两种静默模式都得走：一份假的空快照在
+    /// 差分那边的含义是「本机这些行全没了」，而差分对「没了」的回答是给每一条游标发
+    /// tombstone（§4.7）——一次 fetch 失败删掉账户上整棵树；留着上一轮那份则更隐蔽，一次
+    /// 成功的 `apply` 之后再读失败，调用方拿到的是**落地之前**的形状，而它以为那是刚读的。
+    ///
+    /// 引擎侧那一半（本轮该 kind 的 snapshot / 差分 / 发布整段跳过，计 `local_read_failed`）
+    /// 是 Task 6 的事。
+    private func rebuildCache() throws {
+        invalidateCache()
         let store = account.localStorage
         guard let context = store.getMainContext() else {
-            AppLogError("[PhiSync] bookmark snapshot skipped: no main context")
-            return
+            AppLogError("[phi-sync] bookmark snapshot failed: no main context")
+            throw LocalStoreWriteError.storeUnavailable
         }
         let models: [TabDataModel]
         let roots: Set<String>
@@ -318,8 +343,8 @@ final class AccountPhiBookmarkAccess: PhiBookmarkLocalAccess {
             roots = try store.canonicalRootGuids(in: context)
         } catch {
             // R12：只记类型与 domain/code，不记任何行内容。
-            AppLogError("[PhiSync] bookmark snapshot fetch failed: \(PhiSyncLog.describe(error))")
-            return
+            AppLogError("[phi-sync] bookmark snapshot fetch failed: \(PhiSyncLog.describe(error))")
+            throw error
         }
 
         // 一次 fetch 的结果在内存里连成父子表，于是「从 canonical root 往下走」不需要
@@ -370,7 +395,6 @@ final class AccountPhiBookmarkAccess: PhiBookmarkLocalAccess {
         cachedRows = rows
         cachedSiblings = siblings
         cachedIsFolder = isFolder
-        hasCache = true
     }
 
     /// 取值快照，绝不是 model 对象：SwiftData 就地刷新同一批实例，按对象比较的去重会吞

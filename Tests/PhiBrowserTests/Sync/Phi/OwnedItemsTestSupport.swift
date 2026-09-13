@@ -14,6 +14,7 @@ import XCTest
 final class FakeBookmarkAccess: PhiBookmarkLocalAccess {
     enum Call: Equatable {
         case allBookmarks
+        case allSyncIds
         case siblings(parent: String?, space: String)
         case apply(opCount: Int)
         case clearAllSyncIds
@@ -21,6 +22,12 @@ final class FakeBookmarkAccess: PhiBookmarkLocalAccess {
 
     var rows: [PhiLocalBookmark]
     var importingSpaceIds: Set<String> = []
+    /// 让两个读方法抛（R-exec-3）。**每次都抛，不自动清零**：一轮读失败的引擎行为是整段
+    /// 跳过，用例要断言的正是「跳过了」，一次性的失败会让第二次读悄悄成功。
+    var readError: Error?
+    /// 本机有行、但**不在快照里**的那些身份：孤儿根 / 重复根下面的子树（R-exec-4）。
+    /// `allBookmarks()` 看不见它们，`allSyncIds()` 必须看得见，否则差分把它们判成删除。
+    var orphanedSyncIds: Set<String> = []
     /// 下一次 `apply` 抛 `LocalStoreWriteError.storeUnavailable`，然后清零。**一行都不改。**
     var failApplyOnce = false
     /// `apply` 不抛错、但一条行都不改——模拟 Task 2a 之前那族静默守卫。
@@ -40,8 +47,9 @@ final class FakeBookmarkAccess: PhiBookmarkLocalAccess {
     /// 的次序必须是生产实现真会产出的那个，否则后面断言提交顺序或 index 投影的用例会因为
     /// 一个与被测代码无关的理由变红或变绿。无父的行（`parentGuid == nil`）排在同 Space 的
     /// 有父行之前。
-    func allBookmarks() -> [PhiLocalBookmark] {
+    func allBookmarks() throws -> [PhiLocalBookmark] {
         calls.append(.allBookmarks)
+        if let readError { throw readError }
         return rows.sorted {
             ($0.spaceId, $0.parentGuid ?? "", $0.index, $0.guid)
                 < ($1.spaceId, $1.parentGuid ?? "", $1.index, $1.guid)
@@ -55,6 +63,14 @@ final class FakeBookmarkAccess: PhiBookmarkLocalAccess {
         return rows
             .filter { $0.spaceId == spaceId && $0.parentGuid == parentGuid }
             .sorted { ($0.index, $0.guid) < ($1.index, $1.guid) }
+    }
+
+    /// 快照里的身份加上被排除的那些。生产实现是一次不做根过滤的 fetch；这里用一个显式的
+    /// `orphanedSyncIds` 表达同一件事，因为假件的 `rows` 本身没有根的概念。
+    func allSyncIds() throws -> Set<String> {
+        calls.append(.allSyncIds)
+        if let readError { throw readError }
+        return Set(rows.compactMap(\.syncId)).union(orphanedSyncIds)
     }
 
     func isKnownLocalBookmark(_ guid: String) -> Bool {
@@ -644,7 +660,7 @@ final class OwnedItemsTestSupportTests: XCTestCase {
     func testFakeBookmarkAccessRecordsCallsAsEnumCases() async throws {
         let fake = FakeBookmarkAccess(rows: [.fixture(guid: "g1")])
 
-        _ = fake.allBookmarks()
+        _ = try fake.allBookmarks()
         try await fake.apply(BookmarkApplyBatch(unordered: [.delete(guid: "g1")]))
 
         let calls = fake.calls
@@ -655,13 +671,13 @@ final class OwnedItemsTestSupportTests: XCTestCase {
     ///
     /// 防的是什么：把 `siblings` 实现成第二次 fetch，一棵上千行的树每轮要扫好几遍，而且
     /// 两次之间用户可能改过行。
-    func testSiblingsIsAnInMemoryGroupingRatherThanASecondFetch() {
+    func testSiblingsIsAnInMemoryGroupingRatherThanASecondFetch() throws {
         let fake = FakeBookmarkAccess(rows: [
             .fixture(guid: "a", parentGuid: "p", index: 0),
             .fixture(guid: "b", parentGuid: "p", index: 1),
         ])
 
-        _ = fake.allBookmarks()
+        _ = try fake.allBookmarks()
         let siblings = fake.siblings(ofParent: "p", inSpaceId: LocalStore.defaultSpaceId)
 
         let siblingCount = siblings.count

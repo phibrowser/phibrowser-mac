@@ -1414,6 +1414,26 @@ extension LocalStore {
         return try context.fetch(descriptor)
     }
 
+    /// 本机**所有**带账户级身份的书签 / 文件夹行的 `syncId`，**不做任何根过滤**。
+    ///
+    /// 与 `allBookmarkModels(in:)` 的关系正是 §4.7 与 §4.8 的分工：快照要的是「同步层认领
+    /// 哪些行」，所以它从 canonical root 往下走、把孤儿根整棵排除；而差分的 `locals` 要的是
+    /// 「这条身份在本机还有没有行」。两者混用会删掉账户数据——一条曾经发布过、后来它那个根
+    /// 不再是 Space 的 canonical root 的行（并发初始化正好造出这种状态，heal-on-read 就是
+    /// 为它存在的），会从快照里消失而游标还在，于是差分给它和它每一个后代发 tombstone。
+    ///
+    /// 「同步层不认领它」与「账户应该忘掉它」是两句不同的话（R-exec-4）。
+    func allBookmarkSyncIds(in context: ModelContext) throws -> Set<String> {
+        let bookmarkRaw = TabDataType.bookmark.rawValue
+        let folderRaw = TabDataType.bookmarkFolder.rawValue
+        let descriptor = FetchDescriptor<TabDataModel>(
+            predicate: #Predicate<TabDataModel> {
+                ($0.type == bookmarkRaw || $0.type == folderRaw) && $0.syncId != nil
+            }
+        )
+        return Set(try context.fetch(descriptor).compactMap(\.syncId))
+    }
+
     /// 每一对 (profileId, spaceId) 的 canonical root 的 guid。
     ///
     /// **绝不逐行调 `isBookmarkRoot(_:in:)`**：那个函数每次都 fetch 全部 `ProfileModel`
@@ -2177,6 +2197,19 @@ extension LocalStore {
                 guard let node = try bookmarkNode(with: guid, in: context) else {
                     throw LocalStoreWriteError.rowNotFound
                 }
+                // `bookmarkNode(with:)` 按 guid 匹配**任何** `TabDataModel`，包括 tab 与
+                // pin 行。往一条非书签行上写书签身份，下一轮快照读不到它、差分判成「本机
+                // 没有这一行」，于是给对端那条实体发 tombstone。
+                guard node.dataType == .bookmark || node.dataType == .bookmarkFolder else {
+                    throw LocalStoreWriteError.rowNotFound
+                }
+                // 一条行的身份只认领一次（§6.1）。重复认领同一个 uuid 是幂等的，换一个
+                // uuid 则是 fail-closed：旧身份会在本机瞬间失去对应行，而差分对此的回答是
+                // 删掉对端那条实体。今天这条不变量由协议之上的规划器守着，这里是
+                // R-M3-3-14 要求的那道「静默结果必须变成抛错」的闸。
+                guard node.syncId == nil || node.syncId == syncId else {
+                    throw LocalStoreWriteError.rowAlreadyMapped
+                }
                 // 认领不是一次编辑：只写身份，`contentUpdatedDate` 不为它而动。
                 node.syncId = syncId
 
@@ -2205,10 +2238,11 @@ extension LocalStore {
                 // 真的可以有一条空标题的书签，所以 `allowsEmptyTitle` **显式**传 `true`
                 // （Task 2a 第 4 条事实：默认值会变，同步层每次自己写出来）。`url` 的内层
                 // nil 是「不动」：一条书签丢不掉它的 URL。
-                let rowProfileId = try bookmarkNodeProfileId(guid, in: context)
-                    ?? Self.defaultProfileId
+                // `updateBookmarkBody` 的 `profileId` 形参在它的实现里一次都没有被读到，
+                // 所以这里不再为了算一个没人看的实参多跑一次 `bookmarkNode` fetch——一批
+                // 250 条 update 就是 250 次可以省掉的查询。
                 try updateBookmarkBody(guid,
-                                       profileId: rowProfileId,
+                                       profileId: Self.defaultProfileId,
                                        title: fields.title.map { $0 ?? "" },
                                        url: fields.url.flatMap { $0?.absoluteString },
                                        secondaryUrl: fields.secondaryUrl.map { $0?.absoluteString },
@@ -2218,10 +2252,25 @@ extension LocalStore {
 
             case .delete(let guid):
                 try flushCreates()
-                remember(try bookmarkNode(with: guid, in: context)?.parent)
-                let rowProfileId = try bookmarkNodeProfileId(guid, in: context)
-                    ?? Self.defaultProfileId
-                try deleteBookmarkBody(guid, profileId: rowProfileId, in: context)
+                guard let node = try bookmarkNode(with: guid, in: context) else {
+                    throw LocalStoreWriteError.rowNotFound
+                }
+                // `deleteBookmarkBody` 就是一句 `context.delete(node)`，而
+                // `TabDataModel.children` 带 `@Relationship(deleteRule: .cascade)`
+                // （`TabDataModelSchemaV10.swift:112`）——一次删除会把整棵子树无声地带走。
+                //
+                // 这一批自己点名的后代是安全的：三相排序里 delete 相子先于父，而被「提走」
+                // 的孩子在第一相就已经改挂到别处。**挡的是这一批从没提过的后代**，尤其是
+                // 本地独有、从没发布过的行：R-M3-3-17 要求引擎先把它们删掉或提到 Space
+                // root，漏一个就在这个事务里静默死掉，没有计数也没有日志。正常运行时这条
+                // 守卫永远不触发，触发就整批回滚重试，而不是销毁用户数据。
+                if node.dataType == .bookmarkFolder,
+                   try !children(of: node, in: context).isEmpty {
+                    throw LocalStoreWriteError.folderNotEmpty
+                }
+                remember(node.parent)
+                try deleteBookmarkBody(guid, profileId: node.profileId ?? Self.defaultProfileId,
+                                       in: context)
             }
         }
         try flushCreates()
@@ -2252,8 +2301,11 @@ extension LocalStore {
                 }
             }
         }
-        for spaceId in spaceIds where ImportTargetLock.shared.isImporting(into: spaceId) {
-            throw LocalStoreWriteError.targetNotWritable
+        for spaceId in spaceIds.sorted() where ImportTargetLock.shared.isImporting(into: spaceId) {
+            // 与 `targetNotWritable` 分开：导入是**瞬时**状态，引擎该停放重试，而不是把它
+            // 当成一次结构性失败。`sorted()` 只为让多个 Space 同时在导入时报出去的是同一
+            // 个，不随 Set 的迭代顺序变。
+            throw LocalStoreWriteError.spaceImporting(spaceId: spaceId)
         }
     }
 

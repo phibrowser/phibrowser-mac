@@ -32,9 +32,11 @@ enum PinnedTabScope: String, CaseIterable, Identifiable {
 // 元数据日志），从不显示给用户；给它们做本地化字符串等于往 xcstrings 里加六条永远不会
 // 被渲染的 key，而每加一条都要走那条纯增量手工合并流程。
 //
-// **六个新 case 一律无载荷**：这个枚举今天没有显式 `: Equatable`，能 `==` 全靠所有
-// case 无载荷（Swift 为无载荷枚举自动合成 `Equatable`）。
-enum LocalStoreWriteError: LocalizedError {
+// 早先这里写着「一律无载荷，靠 Swift 给无载荷枚举自动合成 `Equatable`」。M3-3 的书签
+// 落地需要 `spaceImporting` 带上是哪个 Space（引擎按 Space 停放），而带载荷的 case 会让
+// 那条自动合成失效、连带打断既有用例里的每一次 `XCTAssertEqual`。因此**显式声明
+// `: Equatable`**：行为与今天逐字相同（`String` 本身可比），只是不再依赖那条隐式规则。
+enum LocalStoreWriteError: LocalizedError, Equatable {
     /// 本地库根本没打开（兼容性预检拒绝了它，或者 `ModelContainer` 建失败）。
     case storeUnavailable
     /// 按 guid 定位的那条物理行不存在（或者要求的父不存在 / 不是文件夹）。
@@ -50,6 +52,24 @@ enum LocalStoreWriteError: LocalizedError {
     case noCandidateSurvived
     /// 目标 guid 不在当前作用域里（pin 侧使用）。
     case rowNotInActiveScope
+    /// 要删的那条文件夹底下还有这一批从没点名过的孩子（§4.5 / R-M3-3-17）。
+    ///
+    /// `TabDataModel.children` 带 `@Relationship(deleteRule: .cascade)`，所以一次
+    /// `context.delete` 会把整棵子树无声地带走。R-M3-3-17 要求引擎先把每一个不该死的后代
+    /// 删掉或提到 Space root；这条守卫把「引擎漏了一个」从**静默销毁用户数据**变成一次
+    /// 整批回滚。本地独有、从没发布过的行（`syncId == nil`）正是最容易被漏掉的那一类。
+    case folderNotEmpty
+    /// 这条本机行已经带着**另一个**账户级身份了（§6.1 / §12.1 13d）。
+    ///
+    /// 覆盖写会让旧身份在本机瞬间失去对应行，而下一轮差分对「没有本机行」的回答是发一条
+    /// tombstone——把对端那条实体删掉。一条行的身份只认领一次。
+    case rowAlreadyMapped
+    /// 这个 Space 正在被导入，本轮整批不落地（§4.9 第 3 条）。
+    ///
+    /// **与 `targetNotWritable` 分开**：那一个的含义是「Space 被删了或换了 Profile」，是结构
+    /// 性失败；这一个是**瞬时**的，引擎该按停放处理、下一轮重试，两者混用会让 §11.2 的
+    /// `parked` 计数说不清话。
+    case spaceImporting(spaceId: String)
 
     var errorDescription: String? {
         switch self {
@@ -59,7 +79,8 @@ enum LocalStoreWriteError: LocalizedError {
                 comment: "Pinned-tab scope migration error when the local store cannot be opened"
             )
         case .rowNotFound, .rowIsRoot, .invalidURL, .targetNotWritable,
-             .noCandidateSurvived, .rowNotInActiveScope:
+             .noCandidateSurvived, .rowNotInActiveScope, .folderNotEmpty,
+             .rowAlreadyMapped, .spaceImporting:
             // 同步层内部错误，从不上屏。
             return nil
         }

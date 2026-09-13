@@ -468,7 +468,163 @@ final class LocalStoreBookmarkThrowingTests: XCTestCase {
         XCTAssertEqual(observed.countBefore, observed.countAfter)
     }
 
+    // MARK: - applyBookmarkSyncBatchThrowing（Task 5a fix round）
+
+    // F2 —— 要删的文件夹底下还有这一批从没点名过的孩子 ⇒ 整批回滚。
+    //
+    // 防的是什么：`deleteBookmarkBody` 就是一句 `context.delete(node)`，而
+    // `TabDataModel.children` 带 `@Relationship(deleteRule: .cascade)`，所以一次删除会把
+    // 整棵子树无声地带走。R-M3-3-17 要求引擎先把每一个不该死的后代删掉或提到 Space root，
+    // 而最容易漏的正是本地独有、从没发布过的行（`syncId == nil`）——它们不在游标表里，
+    // 按游标建提升清单的实现根本看不见它们。漏一个就在这个事务里静默死掉，没有计数也没有
+    // 日志，用户只看见书签少了。
+    func testDeletingAFolderThatStillHasUnnamedChildrenRollsTheWholeBatchBack() async throws {
+        let store = try await makeStoreWithSpaces()
+        let folder = try await store.createDirectoryThrowing(title: "Folder",
+                                                             profileId: Self.profileId,
+                                                             parentId: nil)
+        // 本机独有的一条：没有 syncId，所以任何按游标算出来的提升清单都不会包含它。
+        let localOnly = try await store.createBookmarkThrowing(url: Self.exampleURL,
+                                                               title: "Local only",
+                                                               profileId: Self.profileId,
+                                                               parentId: folder)
+        let sibling = try await store.createBookmarkThrowing(url: Self.exampleURL,
+                                                             title: "Sibling",
+                                                             profileId: Self.profileId,
+                                                             parentId: nil,
+                                                             syncId: "b-sibling")
+
+        await assertThrows(.folderNotEmpty) {
+            try await store.applyBookmarkSyncBatchThrowing([
+                .update(guid: sibling, fields: BookmarkFieldPatch(title: "Renamed")),
+                .delete(guid: folder),
+            ])
+        }
+
+        // 整批回滚：那条本机独有的行还在，而同一批里排在 delete 之前的 update 也没落。
+        let survivor = try row(localOnly, in: store)
+        let folderRow = try row(folder, in: store)
+        let siblingTitle = try row(sibling, in: store)?.title
+        XCTAssertNotNil(survivor, "级联没有把这条从没发布过的行带走")
+        XCTAssertNotNil(folderRow)
+        XCTAssertEqual(siblingTitle, "Sibling", "部分成功不存在：同批的 update 也回滚了")
+    }
+
+    // F2 的另一半 —— 空文件夹照删，守卫不挡正常路径。
+    func testDeletingAnEmptyFolderStillSucceeds() async throws {
+        let store = try await makeStoreWithSpaces()
+        let folder = try await store.createDirectoryThrowing(title: "Folder",
+                                                             profileId: Self.profileId,
+                                                             parentId: nil)
+
+        try await store.applyBookmarkSyncBatchThrowing([.delete(guid: folder)])
+
+        let deleted = try row(folder, in: store)
+        XCTAssertNil(deleted)
+    }
+
+    // F3 —— 一条已经带着别的身份的行不许被重新认领。
+    //
+    // 防的是什么：覆盖写会让旧身份在本机瞬间失去对应行，而 §4.7 的差分对「没有本机行」的
+    // 回答是发一条 tombstone——把对端那条实体删掉。一条行的身份只认领一次（§6.1 / 13d）。
+    func testClaimingARowThatAlreadyCarriesADifferentIdentityRollsTheBatchBack() async throws {
+        let store = try await makeStoreWithSpaces()
+        let guid = try await store.createBookmarkThrowing(url: Self.exampleURL,
+                                                          title: "A",
+                                                          profileId: Self.profileId,
+                                                          parentId: nil,
+                                                          syncId: "b-first")
+
+        await assertThrows(.rowAlreadyMapped) {
+            try await store.applyBookmarkSyncBatchThrowing([
+                .claim(guid: guid, syncId: "b-second"),
+            ])
+        }
+
+        let identity = try row(guid, in: store)?.syncId
+        XCTAssertEqual(identity, "b-first", "旧身份原封不动")
+    }
+
+    // F3 —— 认领一条还没有身份的行是正常路径；重复认领同一个 uuid 是幂等的。
+    func testClaimingIsIdempotentForTheSameIdentityAndWritesAnUnclaimedRow() async throws {
+        let store = try await makeStoreWithSpaces()
+        let guid = try await store.createBookmarkThrowing(url: Self.exampleURL,
+                                                          title: "A",
+                                                          profileId: Self.profileId,
+                                                          parentId: nil)
+
+        try await store.applyBookmarkSyncBatchThrowing([.claim(guid: guid, syncId: "b1")])
+        try await store.applyBookmarkSyncBatchThrowing([.claim(guid: guid, syncId: "b1")])
+
+        let identity = try row(guid, in: store)?.syncId
+        XCTAssertEqual(identity, "b1")
+    }
+
+    // F7 —— 导入中的 Space 抛的是一个**专属**的 case，不是 `targetNotWritable`。
+    //
+    // 防的是什么：`targetNotWritable` 的含义是「Space 被删了或换了 Profile」，那是结构性
+    // 失败；导入是瞬时状态，引擎该按停放处理、下一轮重试。两者混用之后 §11.2 的 `parked`
+    // 计数分不清一次该重试的停放与一次不该重试的失败。
+    func testABatchTargetingAnImportingSpaceThrowsTheDedicatedCase() async throws {
+        let store = try await makeStoreWithSpaces()
+        let guid = try await store.createBookmarkThrowing(url: Self.exampleURL,
+                                                          title: "A",
+                                                          profileId: Self.profileId,
+                                                          parentId: nil)
+        ImportTargetLock.shared.begin(into: LocalStore.defaultSpaceId)
+        defer { ImportTargetLock.shared.end(into: LocalStore.defaultSpaceId) }
+
+        await assertThrows(.spaceImporting(spaceId: LocalStore.defaultSpaceId)) {
+            try await store.applyBookmarkSyncBatchThrowing([
+                .update(guid: guid, fields: BookmarkFieldPatch(title: "Renamed")),
+            ])
+        }
+
+        let title = try row(guid, in: store)?.title
+        XCTAssertEqual(title, "A", "锁住时一个字节都不落")
+    }
+
+    // MARK: - allBookmarkSyncIds（R-exec-4）
+
+    // F4 —— 孤儿根下面那条行不在快照的定义域里，但**在**差分的定义域里。
+    //
+    // 防的是什么：`allBookmarkModels` + `canonicalRootGuids` 的递归把孤儿根整棵排除（那是
+    // 对的，它不该发布），可 §4.7 的 `locals` 要回答的是另一个问题——「这条身份在本机还有
+    // 没有行」。拿快照当差分的定义域，这条行连同整棵子树会被判成删除，账户上那一片就没了，
+    // 而本机其实一行都没少。
+    func testIdentitiesUnderAnOrphanRootStayInTheDiffDomainAfterTheRootIsDetached() async throws {
+        let store = try await makeStoreWithSpaces()
+        let folder = try await store.createDirectoryThrowing(title: "Folder",
+                                                             profileId: Self.profileId,
+                                                             parentId: nil,
+                                                             spaceId: Self.otherSpaceId,
+                                                             syncId: "b-folder")
+        _ = try await store.createBookmarkThrowing(url: Self.exampleURL,
+                                                   title: "Child",
+                                                   profileId: Self.profileId,
+                                                   parentId: folder,
+                                                   spaceId: Self.otherSpaceId,
+                                                   syncId: "b-child")
+        let rootGuid = try await rootGuid(in: store, spaceId: Self.otherSpaceId)
+        try await store.detachBookmarkRootRelationshipForTesting(spaceId: Self.otherSpaceId)
+
+        let observed = try await store.performBackgroundWriteAndWaitThrowing { context -> ObservedDomain in
+            ObservedDomain(canonicalRoots: try store.canonicalRootGuids(in: context),
+                           identities: try store.allBookmarkSyncIds(in: context))
+        }
+
+        XCTAssertFalse(observed.canonicalRoots.contains(rootGuid),
+                       "根的关系断了，递归再也够不到这棵子树")
+        XCTAssertTrue(observed.identities.isSuperset(of: ["b-folder", "b-child"]),
+                      "但这两条身份在本机还有行，绝不能被差分判成删除")
+    }
+
     // MARK: - Fixtures
+
+    private struct ObservedDomain: Sendable {
+        let canonicalRoots: Set<String>
+        let identities: Set<String>
+    }
 
     private struct ObservedRead: Sendable {
         let hasChanges: Bool

@@ -476,6 +476,87 @@ func committedPinIdentity(_ call: PhiSyncEngineTests.FakePhiSyncClient.CommitCal
     return payload.pinUuid
 }
 
+// MARK: - 游标 fixture 与内存 store
+
+/// 一条**活**游标：没有 `deletedAtMs`，也没有任何待办位。参数只开了用例真正会挑的那几个
+/// 字段，其余走 `PhiOwnedItemCursor` 自己的默认值——一条用例写出来的字段就是它在乎的字段。
+func ownedCursor(reconciled: Data? = nil, server: Data? = nil,
+                 entityId: String = "", version: Int64 = 0,
+                 ownerUuid: String? = nil) -> PhiOwnedItemCursor {
+    var cursor = PhiOwnedItemCursor()
+    cursor.entityId = entityId
+    cursor.version = version
+    cursor.reconciled = reconciled
+    cursor.server = server
+    cursor.ownerUuid = ownerUuid
+    return cursor
+}
+
+/// 一条**待发 tombstone** 的游标：`pendingDelete` 已经置起，`deleteDecidedAtMs` 是差分作出
+/// 那个删除决定的时刻（§5.6 的 L1 支拿它与入站实体的 `location` 时间戳比）。
+/// `deletedAtMs` 仍是 nil——删除还没被服务端接受，还没定案。
+func pendingDeleteCursor(decidedAtMs: Int64, entityId: String = "srv-1",
+                         version: Int64 = 1, rejectRounds: Int = 0,
+                         reconciled: Data? = nil) -> PhiOwnedItemCursor {
+    var cursor = ownedCursor(reconciled: reconciled, entityId: entityId, version: version)
+    cursor.pendingDelete = true
+    cursor.deleteDecidedAtMs = decidedAtMs
+    cursor.deleteRejectRounds = rejectRounds
+    return cursor
+}
+
+/// 一条**已清理**的 Space 游标，保留期级联（§9.3）用：形状照 `PhiSpaceSyncTable.purgeExpired`
+/// 留下的那个 tombstone——`entityId` / `version` 保留，`hidden` 与 `deletedAtMs` 在
+/// （`hidden ⇒ deletedAtMs != nil` 是 Space 侧的不变量），再盖上 `purgedAtMs`。
+func purgedSpaceCursor(purgedAtMs: Int64 = 1) -> PhiSpaceCursor {
+    var cursor = PhiSpaceCursor()
+    cursor.entityId = "srv-space"
+    cursor.version = 1
+    cursor.hidden = true
+    cursor.deletedAtMs = purgedAtMs
+    cursor.purgedAtMs = purgedAtMs
+    return cursor
+}
+
+/// 内存版 `PhiOwnedItemStateStore`。`: AnyObject` 是协议要求的，也是这个假件的前提：
+/// 测试改了 `table`，引擎下一次 `load` 就该看得到。
+final class MemoryOwnedItemStore: PhiOwnedItemStateStore {
+    var table: PhiOwnedItemTable
+    /// 每次 `load` 都报损（= 那个文件没了）。
+    var forcedLoss = false
+    /// 只在第 N 次 `load` 报损（N 从 1 数）——「apply 段读到旧表、发布段才发现丢失」这一类
+    /// 用例要的就是这个：两次 `load` 之间的那一半轮次必须照常跑完。
+    var loseOnLoadNumber: Int?
+    private(set) var deleted = false
+    /// 每一次 `load` 收到的 `hadRecords`，按调用序。报损判据只随它变，断言它就是断言引擎
+    /// 把哪一条 per-kind 标志喂了进来。
+    private(set) var hadRecordsSeen: [Bool] = []
+
+    init(table: PhiOwnedItemTable = PhiOwnedItemTable()) {
+        self.table = table
+    }
+
+    /// 报损那一路**与真 store 逐字同形**：返回一张空表，`reportedLoss` 取 `hadRecords`
+    /// （`forcedLoss` 说的是「文件没了」，不是「无条件报真」——`hadRecords == false` 时
+    /// 文件本来就不该存在，那不是丢失）。`table` 本身不动，好让用例还能断言「引擎后来写
+    /// 回去的是什么」。
+    func load(hadRecords: Bool) -> (table: PhiOwnedItemTable, reportedLoss: Bool) {
+        hadRecordsSeen.append(hadRecords)
+        let loses = forcedLoss || loseOnLoadNumber == hadRecordsSeen.count
+        guard loses else { return (table, false) }
+        return (PhiOwnedItemTable(), hadRecords)
+    }
+
+    func save(_ table: PhiOwnedItemTable) {
+        self.table = table
+    }
+
+    func deleteFile() {
+        deleted = true
+        table = PhiOwnedItemTable()
+    }
+}
+
 // MARK: - CASE 0.1 – 0.5
 
 /// 本文件既是 M3-3「自有条目」（书签 + pin）全部测试的共享脚手架，也是 Task 0 自己那

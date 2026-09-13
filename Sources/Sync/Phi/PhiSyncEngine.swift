@@ -2266,3 +2266,17 @@ actor PhiSyncEngine {
         set { writeState(newValue.flatMap { try? $0.serializedData() }, forKey: Self.lastEntityStateKey) }
     }
 }
+
+#if DEBUG
+extension PhiSyncEngine {
+    /// 只读测试面。**没有任何新的驱动入口**：测试照旧用 `pullOnce()` /
+    /// `setSpaceSyncEnabled(_:)` / `previewAccountSpaces()` 等既有入口驱动引擎，
+    /// 这里暴露的只是它们跑完之后的状态。
+    ///
+    /// 每一个都是 actor 隔离的，调用方必须 `await` 并**先取值再断言**（`XCTAssert*`
+    /// 的参数是 autoclosure，直接把 `await` 表达式塞进去取不到值）。
+    ///
+    /// 游标表与计数器的访问器由 Task 6 追加进这一段（那时引擎才持有它们）。
+    var spaceTableForTesting: PhiSpaceSyncTable { loadSpaceTable() }
+}
+#endif

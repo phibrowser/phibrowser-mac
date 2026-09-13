@@ -901,10 +901,15 @@ extension LocalStore {
         performBackgroundWrite { [weak self] context in
             guard let self else { return }
             do {
+                // `readOnlyTargetRoot: false` 保留今天的 root 解析，**包括 heal-on-read**：
+                // 关系断了但孤儿根还在时，`bookmarkRoot` 会把那个孤儿根认领回来、把重复
+                // 根的孩子并过去再删掉重复根，然后这次拖动照常完成。改成纯读会让这一状态
+                // 下的用户手势被静默丢弃，而书签就躺在那个孤儿根里。
                 try self.moveBookmarksBody(guids,
                                            sourceProfileId: sourceProfileId,
                                            toSpaceId: targetSpaceId,
                                            targetProfileId: targetProfileId,
+                                           readOnlyTargetRoot: false,
                                            in: context)
             } catch {
                 AppLogError("Failed to move bookmarks to Space: \(error)")
@@ -922,6 +927,7 @@ extension LocalStore {
                                        sourceProfileId: profileId,
                                        toSpaceId: targetSpaceId,
                                        targetProfileId: profileId,
+                                       readOnlyTargetRoot: true,
                                        in: context)
         }
     }
@@ -931,6 +937,7 @@ extension LocalStore {
                                    sourceProfileId: String,
                                    toSpaceId targetSpaceId: String,
                                    targetProfileId: String,
+                                   readOnlyTargetRoot: Bool,
                                    in context: ModelContext) throws {
         // 空清单是调用方的 bug，不是一次成功的空操作。
         guard !guids.isEmpty else {
@@ -947,15 +954,17 @@ extension LocalStore {
         guard targetSpaceIsWritable else {
             throw LocalStoreWriteError.targetNotWritable
         }
-        // 纯读的 root 解析（R16）。今天这里用 `createIfNeeded: true`，删掉 root 之后会
-        // 重新建一个并返回非 nil，于是下面那条守卫不可达；而「重建一个空 root 再搬进去」
-        // 本来就是同步层不想要的副作用。
+        // 同步层（`readOnlyTargetRoot: true`）走纯读：`bookmarkRoot(createIfNeeded: true)`
+        // 会在每轮都跑的路径上重建一个空 root、认领孤儿根、删重复根，那些都是同步层不想
+        // 要的副作用，而且重建之后下面那条守卫永远不可达。UI 路径传 `false`，行为一字
+        // 不变——heal-on-read 正是它在孤儿根状态下还能完成拖动的原因。
         guard let targetProfile = try profile(with: targetProfileId,
                                               in: context,
                                               createIfNeeded: true),
-              let targetRoot = try existingBookmarkRoot(profileId: targetProfileId,
-                                                        spaceId: targetSpaceId,
-                                                        in: context) else {
+              let targetRoot = try targetBookmarkRoot(profileId: targetProfileId,
+                                                      spaceId: targetSpaceId,
+                                                      readOnly: readOnlyTargetRoot,
+                                                      in: context) else {
             throw LocalStoreWriteError.rowNotFound
         }
 
@@ -1985,6 +1994,29 @@ private extension LocalStore {
                                 spaceId: spaceId,
                                 in: context,
                                 createIfNeeded: createIfNeeded)
+    }
+
+    /// `moveBookmarksBody` 的目标 root 解析。
+    ///
+    /// `readOnly: false`（UI 拖放路径）是今天的行为，一字不变：`bookmarkRoot` 在
+    /// `guard createIfNeeded` **之前**还会做 heal-on-read——把一个「关系断了但还在」的
+    /// 孤儿根认领回来、把重复根的孩子并到主根上再删掉重复根。那正是这条路径在并发
+    /// 初始化留下孤儿根之后仍能完成拖动的原因，换成纯读会让用户的手势被静默丢弃。
+    ///
+    /// `readOnly: true`（同步层）走 `existingBookmarkRoot`：那些治愈动作会在每轮都跑的
+    /// 路径上写主 context，而且「重建一个空 root 再搬进去」之后「目标 root 缺失」这条
+    /// 守卫永远不可达。
+    func targetBookmarkRoot(profileId: String,
+                            spaceId: String,
+                            readOnly: Bool,
+                            in context: ModelContext) throws -> TabDataModel? {
+        if readOnly {
+            return try existingBookmarkRoot(profileId: profileId, spaceId: spaceId, in: context)
+        }
+        return try bookmarkRoot(profileId: profileId,
+                                spaceId: spaceId,
+                                in: context,
+                                createIfNeeded: true)
     }
 
     /// 这条行自己的 `profileId`，不存在就返回 nil。

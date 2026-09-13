@@ -56,12 +56,34 @@ nonisolated struct Phi_PhiEntity: Sendable {
     set {kind = .space(newValue)}
   }
 
+  /// M3-3
+  var bookmark: Phi_PhiBookmarkEntity {
+    get {
+      if case .bookmark(let v)? = kind {return v}
+      return Phi_PhiBookmarkEntity()
+    }
+    set {kind = .bookmark(newValue)}
+  }
+
+  /// M3-3
+  var pinTab: Phi_PhiPinTabEntity {
+    get {
+      if case .pinTab(let v)? = kind {return v}
+      return Phi_PhiPinTabEntity()
+    }
+    set {kind = .pinTab(newValue)}
+  }
+
   var unknownFields = SwiftProtobuf.UnknownStorage()
 
   nonisolated enum OneOf_Kind: Equatable, Sendable {
     case setting(Phi_PhiSettingEntity)
     /// M3-2
     case space(Phi_PhiSpaceEntity)
+    /// M3-3
+    case bookmark(Phi_PhiBookmarkEntity)
+    /// M3-3
+    case pinTab(Phi_PhiPinTabEntity)
 
   }
 
@@ -273,13 +295,320 @@ nonisolated struct Phi_PhiSpaceEntity: @unchecked Sendable {
   fileprivate var _storage = _StorageClass.defaultInstance
 }
 
+/// One bookmark or bookmark folder. Entity identity is the client tag
+/// "phi-bookmark:<bookmark_uuid>"; `bookmark_uuid` is repeated inside the
+/// payload because client_tag_hash is a one-way SHA1 and the receiver cannot
+/// recover the uuid from it.
+///
+/// Same conventions as PhiSpaceEntity: every MUTABLE field is a PhiSettingValue
+/// (M3-1's generic LWW-stamped scalar), always emitted, never omitted-when-empty
+/// -- an absent field cannot carry a timestamp, so "the user cleared it" and "an
+/// older client never knew it" would be indistinguishable. Immutable facts are
+/// plain fields and take no part in LWW.
+///
+/// NO favicon bytes (D9): PhiSettingValue has no bytes case and adding one would
+/// touch the shipped M3-1 message. The receiver shows a placeholder and
+/// back-fills the icon itself (design §8).
+nonisolated struct Phi_PhiBookmarkEntity: @unchecked Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  /// Lowercase uuid, minted on the device that first published this row, then
+  /// stored verbatim in TabDataModel.syncId. NEVER the local `guid` (uppercase,
+  /// per-device, re-minted by every clone) -- see design §3.1.
+  var bookmarkUuid: String {
+    get {_storage._bookmarkUuid}
+    set {_uniqueStorage()._bookmarkUuid = newValue}
+  }
+
+  /// AUTHORITATIVE ONLY FOR A ROOT-LEVEL ITEM (`parent_uuid == ""`), where it is
+  /// one half of LOCATION and carries LOCATION's shared timestamp (design §4.3;
+  /// `parent_uuid` carries the same value, `rank` has its own).
+  /// For a DESCENDANT it is emitted for diagnostics and IGNORED
+  /// on receipt: the owning Space of a descendant is whatever its parent's Space
+  /// is, and a descendant's LOCATION is `parent_uuid` alone (`rank` still carries
+  /// its own timestamp). Excluded from the
+  /// change-detection signature for descendants, so a cross-Space folder move is
+  /// ONE entity change (the folder's own group) while `moveBookmarks` retags the
+  /// whole subtree locally with no baseline churn -- design §4.3 / R-M3-3-18.
+  ///
+  /// string_value: the ACCOUNT-LEVEL Space sync uuid (M3-2b / D6), resolved
+  /// through `sync.spaceGlobalUuids`; the literal "default-space" for the
+  /// account's default Space (D1). NEVER the local SpaceModel.spaceId.
+  ///
+  /// No profile_uuid field exists, by design (R-D6-14 item 1): the Profile is
+  /// DERIVED from the resolved local Space's `profileId`, because `bookmarkRoot`
+  /// is keyed on the PAIR (profileId, spaceId) and a second, independently
+  /// merged profile field would disagree with the Space's own binding after a
+  /// rebind, with no defined resolution.
+  var spaceUuid: Phi_PhiSettingValue {
+    get {_storage._spaceUuid ?? Phi_PhiSettingValue()}
+    set {_uniqueStorage()._spaceUuid = newValue}
+  }
+  /// Returns true if `spaceUuid` has been explicitly set.
+  var hasSpaceUuid: Bool {_storage._spaceUuid != nil}
+  /// Clears the value of `spaceUuid`. Subsequent reads from it will return its default value.
+  mutating func clearSpaceUuid() {_uniqueStorage()._spaceUuid = nil}
+
+  /// The other half of LOCATION (design §4.3): for a root-level item it shares
+  /// `space_uuid`'s timestamp; for a descendant it IS the location and carries
+  /// its own. Merged with LOCATION as a unit, never field by field.
+  /// string_value: the parent folder's `bookmark_uuid`,
+  /// or "" for "directly under this Space's bookmark root". The root itself is
+  /// NEVER an entity: it is a local structural artifact (one hidden folder per
+  /// (profileId, spaceId)) with no stable exported key, and the default Space's
+  /// root is physically shared with ProfileModel.bookmarkRoot (R-D6-14 item 5).
+  var parentUuid: Phi_PhiSettingValue {
+    get {_storage._parentUuid ?? Phi_PhiSettingValue()}
+    set {_uniqueStorage()._parentUuid = newValue}
+  }
+  /// Returns true if `parentUuid` has been explicitly set.
+  var hasParentUuid: Bool {_storage._parentUuid != nil}
+  /// Clears the value of `parentUuid`. Subsequent reads from it will return its default value.
+  mutating func clearParentUuid() {_uniqueStorage()._parentUuid = nil}
+
+  /// Ordering inside one LOCATION, with its OWN timestamp -- a pure reorder
+  /// restamps only this field, so it can no longer revert a concurrent move.
+  /// Merged by LWW, except that whichever side wins LOCATION also supplies the
+  /// rank (a rank is meaningless outside its location) -- design §4.3.
+  /// string_value: fractional index over "0-9A-Za-z" (ASCII-ascending, so byte
+  /// order == rank order); never ends in '0'. Ordering is PER PARENT -- two
+  /// ranks are only comparable inside one parent_uuid. Ties break on
+  /// bookmark_uuid.
+  var rank: Phi_PhiSettingValue {
+    get {_storage._rank ?? Phi_PhiSettingValue()}
+    set {_uniqueStorage()._rank = newValue}
+  }
+  /// Returns true if `rank` has been explicitly set.
+  var hasRank: Bool {_storage._rank != nil}
+  /// Clears the value of `rank`. Subsequent reads from it will return its default value.
+  mutating func clearRank() {_uniqueStorage()._rank = nil}
+
+  /// INVARIANT, not LWW: a bookmark never becomes a folder or vice versa. A
+  /// remote entity whose is_folder disagrees with an existing local row is
+  /// refused, not applied (design §4.6).
+  var isFolder: Bool {
+    get {_storage._isFolder}
+    set {_uniqueStorage()._isFolder = newValue}
+  }
+
+  /// string_value. Display title. A bookmark created with no title locally gets
+  /// its URL string as the title (LocalStore+Bookmark.swift:1362), so "" on the
+  /// wire means the peer really cleared it and is applied verbatim.
+  var title: Phi_PhiSettingValue {
+    get {_storage._title ?? Phi_PhiSettingValue()}
+    set {_uniqueStorage()._title = newValue}
+  }
+  /// Returns true if `title` has been explicitly set.
+  var hasTitle: Bool {_storage._title != nil}
+  /// Clears the value of `title`. Subsequent reads from it will return its default value.
+  mutating func clearTitle() {_uniqueStorage()._title = nil}
+
+  /// string_value, absolute URL. For a folder this is the local placeholder
+  /// "https://bookmark.phi/folder" (LocalStore+Bookmark.swift:12-14), emitted so
+  /// the field is never absent; the receiver ignores it when is_folder is true.
+  var url: Phi_PhiSettingValue {
+    get {_storage._url ?? Phi_PhiSettingValue()}
+    set {_uniqueStorage()._url = newValue}
+  }
+  /// Returns true if `url` has been explicitly set.
+  var hasURL: Bool {_storage._url != nil}
+  /// Clears the value of `url`. Subsequent reads from it will return its default value.
+  mutating func clearURL() {_uniqueStorage()._url = nil}
+
+  /// string_value. Split-view bookmark's right pane; "" = not a split bookmark
+  /// (the explicit cleared encoding). A Phi-native concept with no Chromium
+  /// analogue -- it goes on the wire as itself rather than being flattened into
+  /// two bookmarks the way the HTML exporter does.
+  var secondaryURL: Phi_PhiSettingValue {
+    get {_storage._secondaryURL ?? Phi_PhiSettingValue()}
+    set {_uniqueStorage()._secondaryURL = newValue}
+  }
+  /// Returns true if `secondaryURL` has been explicitly set.
+  var hasSecondaryURL: Bool {_storage._secondaryURL != nil}
+  /// Clears the value of `secondaryURL`. Subsequent reads from it will return its default value.
+  mutating func clearSecondaryURL() {_uniqueStorage()._secondaryURL = nil}
+
+  /// string_value. Display name of the right pane; "" = none.
+  var secondaryTitle: Phi_PhiSettingValue {
+    get {_storage._secondaryTitle ?? Phi_PhiSettingValue()}
+    set {_uniqueStorage()._secondaryTitle = newValue}
+  }
+  /// Returns true if `secondaryTitle` has been explicitly set.
+  var hasSecondaryTitle: Bool {_storage._secondaryTitle != nil}
+  /// Clears the value of `secondaryTitle`. Subsequent reads from it will return its default value.
+  mutating func clearSecondaryTitle() {_uniqueStorage()._secondaryTitle = nil}
+
+  /// NOT last-writer-wins: written once by the creating device and merged
+  /// DETERMINISTICALLY on disagreement -- the non-zero side wins; if both are
+  /// non-zero and differ, the smaller wins. TabSource raw value
+  /// (0 phi / 1 chromium / 2 safari / 3 arc). approved §1 calls it "只写一次";
+  /// the merge rule covers only the two-device-disagreement case.
+  var source: Int32 {
+    get {_storage._source}
+    set {_uniqueStorage()._source = newValue}
+  }
+
+  /// NOT last-writer-wins: merged with min(). Epoch ms of TabDataModel
+  /// .createdDate on the device that created the row. Its only consumer is
+  /// determinism: `bookmarksPublisher`'s fetch sorts by createdDate, so without
+  /// it two devices can order a rank-tied pair differently.
+  var createdAtMs: Int64 {
+    get {_storage._createdAtMs}
+    set {_uniqueStorage()._createdAtMs = newValue}
+  }
+
+  var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  init() {}
+
+  fileprivate var _storage = _StorageClass.defaultInstance
+}
+
+/// One pinned tab IN ONE OWNER. Entity identity is the client tag
+/// "phi-pin:<pin_uuid>:<ownerKey>" -- the PAIR (lineage, owner), not the lineage
+/// alone (design §3.2 / R-M3-3-15).
+///
+/// Why the pair: `migratePinnedTabs` Profile->Space copies the profile's whole
+/// pin collection into EVERY Space of that profile, one new physical row per
+/// Space, all carrying the source's `pinLineageId`
+/// (LocalStore+PinnedTabScope.swift:474-493, :620-655) -- documented local
+/// behaviour ("Moving to a narrower scope copies each parent collection to its
+/// existing children", :83-87). One lineage in N Spaces is therefore N entities,
+/// not one entity with an arbitrary owner. Both devices derive the same entity
+/// set from the same rows, so a scope migration converges by identity.
+nonisolated struct Phi_PhiPinTabEntity: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  /// Lowercase-normalized copy of the local `pinLineageId`
+  /// (TabDataModelSchemaV9.swift:64-66). Not unique by itself -- see the header.
+  var pinUuid: String = String()
+
+  /// Ownership, three-way, matching the ACCOUNT-LEVEL pinned-tab scope (D8).
+  /// IMMUTABLE for the life of the entity: it is half of the identity and is
+  /// part of the client tag, so it carries no timestamp and is never merged.
+  /// Moving a pin to another owner is a TOMBSTONE under the old tag plus a
+  /// CREATE under the new one, never a field change (design §7.2).
+  ///
+  /// An ABSENT oneof is the App scope -- the one place this schema does not
+  /// follow "always emitted", because here absence IS one of three exhaustive
+  /// values rather than "unknown". ownerKey in the client tag is the
+  /// `space_uuid`, the `profile_uuid`, or the literal "app".
+  var owner: Phi_PhiPinTabEntity.OneOf_Owner? = nil
+
+  /// Space scope: the account-level Space sync uuid
+  var spaceUuid: String {
+    get {
+      if case .spaceUuid(let v)? = owner {return v}
+      return String()
+    }
+    set {owner = .spaceUuid(newValue)}
+  }
+
+  /// Profile scope: the account-global profile uuid
+  var profileUuid: String {
+    get {
+      if case .profileUuid(let v)? = owner {return v}
+      return String()
+    }
+    set {owner = .profileUuid(newValue)}
+  }
+
+  /// PLAIN last-writer-wins (there is no pin position group -- owner is identity,
+  /// not a mergeable field). string_value: fractional index over "0-9A-Za-z",
+  /// per owner. Ties break on pin_uuid.
+  var rank: Phi_PhiSettingValue {
+    get {_rank ?? Phi_PhiSettingValue()}
+    set {_rank = newValue}
+  }
+  /// Returns true if `rank` has been explicitly set.
+  var hasRank: Bool {self._rank != nil}
+  /// Clears the value of `rank`. Subsequent reads from it will return its default value.
+  mutating func clearRank() {self._rank = nil}
+
+  /// string_value.
+  var title: Phi_PhiSettingValue {
+    get {_title ?? Phi_PhiSettingValue()}
+    set {_title = newValue}
+  }
+  /// Returns true if `title` has been explicitly set.
+  var hasTitle: Bool {self._title != nil}
+  /// Clears the value of `title`. Subsequent reads from it will return its default value.
+  mutating func clearTitle() {self._title = nil}
+
+  /// string_value, absolute URL.
+  var url: Phi_PhiSettingValue {
+    get {_url ?? Phi_PhiSettingValue()}
+    set {_url = newValue}
+  }
+  /// Returns true if `url` has been explicitly set.
+  var hasURL: Bool {self._url != nil}
+  /// Clears the value of `url`. Subsequent reads from it will return its default value.
+  mutating func clearURL() {self._url = nil}
+
+  /// string_value: the PARTNER's pin_uuid (its lineage id), or "" for a pinned
+  /// tab that is not half of a split. NEVER the partner's physical
+  /// `splitPartnerGuid`, which is per-device and per-copy. The partner is always
+  /// in the SAME owner, so the lineage alone identifies it.
+  ///
+  /// The two halves are two independent entities and may arrive in different
+  /// batches. The LANDING links them, not the live-window self-heal: a half whose
+  /// partner has not landed keeps `pendingPartnerLineage` on its cursor and its
+  /// snapshot re-emits the baseline's value, never "" (design §7.4).
+  var splitPartnerUuid: Phi_PhiSettingValue {
+    get {_splitPartnerUuid ?? Phi_PhiSettingValue()}
+    set {_splitPartnerUuid = newValue}
+  }
+  /// Returns true if `splitPartnerUuid` has been explicitly set.
+  var hasSplitPartnerUuid: Bool {self._splitPartnerUuid != nil}
+  /// Clears the value of `splitPartnerUuid`. Subsequent reads from it will return its default value.
+  mutating func clearSplitPartnerUuid() {self._splitPartnerUuid = nil}
+
+  /// NOT last-writer-wins: written once, merged deterministically on
+  /// disagreement -- same rule as PhiBookmarkEntity.source.
+  var source: Int32 = 0
+
+  /// NOT last-writer-wins: merged with min().
+  var createdAtMs: Int64 = 0
+
+  var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  /// Ownership, three-way, matching the ACCOUNT-LEVEL pinned-tab scope (D8).
+  /// IMMUTABLE for the life of the entity: it is half of the identity and is
+  /// part of the client tag, so it carries no timestamp and is never merged.
+  /// Moving a pin to another owner is a TOMBSTONE under the old tag plus a
+  /// CREATE under the new one, never a field change (design §7.2).
+  ///
+  /// An ABSENT oneof is the App scope -- the one place this schema does not
+  /// follow "always emitted", because here absence IS one of three exhaustive
+  /// values rather than "unknown". ownerKey in the client tag is the
+  /// `space_uuid`, the `profile_uuid`, or the literal "app".
+  nonisolated enum OneOf_Owner: Equatable, Sendable {
+    /// Space scope: the account-level Space sync uuid
+    case spaceUuid(String)
+    /// Profile scope: the account-global profile uuid
+    case profileUuid(String)
+
+  }
+
+  init() {}
+
+  fileprivate var _rank: Phi_PhiSettingValue? = nil
+  fileprivate var _title: Phi_PhiSettingValue? = nil
+  fileprivate var _url: Phi_PhiSettingValue? = nil
+  fileprivate var _splitPartnerUuid: Phi_PhiSettingValue? = nil
+}
+
 // MARK: - Code below here is support for the SwiftProtobuf runtime.
 
 fileprivate nonisolated let _protobuf_package = "phi"
 
 nonisolated extension Phi_PhiEntity: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   static let protoMessageName: String = _protobuf_package + ".PhiEntity"
-  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}setting\0\u{1}space\0")
+  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}setting\0\u{1}space\0\u{1}bookmark\0\u{3}pin_tab\0")
 
   mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -313,6 +642,32 @@ nonisolated extension Phi_PhiEntity: SwiftProtobuf.Message, SwiftProtobuf._Messa
           self.kind = .space(v)
         }
       }()
+      case 3: try {
+        var v: Phi_PhiBookmarkEntity?
+        var hadOneofValue = false
+        if let current = self.kind {
+          hadOneofValue = true
+          if case .bookmark(let m) = current {v = m}
+        }
+        try decoder.decodeSingularMessageField(value: &v)
+        if let v = v {
+          if hadOneofValue {try decoder.handleConflictingOneOf()}
+          self.kind = .bookmark(v)
+        }
+      }()
+      case 4: try {
+        var v: Phi_PhiPinTabEntity?
+        var hadOneofValue = false
+        if let current = self.kind {
+          hadOneofValue = true
+          if case .pinTab(let m) = current {v = m}
+        }
+        try decoder.decodeSingularMessageField(value: &v)
+        if let v = v {
+          if hadOneofValue {try decoder.handleConflictingOneOf()}
+          self.kind = .pinTab(v)
+        }
+      }()
       default: break
       }
     }
@@ -331,6 +686,14 @@ nonisolated extension Phi_PhiEntity: SwiftProtobuf.Message, SwiftProtobuf._Messa
     case .space?: try {
       guard case .space(let v)? = self.kind else { preconditionFailure() }
       try visitor.visitSingularMessageField(value: v, fieldNumber: 2)
+    }()
+    case .bookmark?: try {
+      guard case .bookmark(let v)? = self.kind else { preconditionFailure() }
+      try visitor.visitSingularMessageField(value: v, fieldNumber: 3)
+    }()
+    case .pinTab?: try {
+      guard case .pinTab(let v)? = self.kind else { preconditionFailure() }
+      try visitor.visitSingularMessageField(value: v, fieldNumber: 4)
     }()
     case nil: break
     }
@@ -450,7 +813,7 @@ nonisolated extension Phi_PhiSettingValue: SwiftProtobuf.Message, SwiftProtobuf.
 
 nonisolated extension Phi_PhiSpaceEntity: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   static let protoMessageName: String = _protobuf_package + ".PhiSpaceEntity"
-  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}space_uuid\0\u{1}name\0\u{3}icon_name\0\u{3}color_hex\0\u{1}rank\0\u{3}profile_uuid\0\u{3}theme_id\0\u{3}overlay_opacity_light\0\u{3}overlay_opacity_dark\0\u{3}created_at_ms\0")
+  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}space_uuid\0\u{1}name\0\u{3}icon_name\0\u{3}color_hex\0\u{1}rank\0\u{3}profile_uuid\0\u{3}theme_id\0\u{3}overlay_opacity_light\0\u{3}overlay_opacity_dark\0\u{3}created_at_ms\0\u{c}\u{b}\u{4}")
 
   fileprivate class _StorageClass {
     var _spaceUuid: String = String()
@@ -576,6 +939,238 @@ nonisolated extension Phi_PhiSpaceEntity: SwiftProtobuf.Message, SwiftProtobuf._
       }
       if !storagesAreEqual {return false}
     }
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+nonisolated extension Phi_PhiBookmarkEntity: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  static let protoMessageName: String = _protobuf_package + ".PhiBookmarkEntity"
+  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}bookmark_uuid\0\u{3}space_uuid\0\u{3}parent_uuid\0\u{1}rank\0\u{3}is_folder\0\u{1}title\0\u{1}url\0\u{3}secondary_url\0\u{3}secondary_title\0\u{1}source\0\u{3}created_at_ms\0\u{c}\u{c}\u{4}")
+
+  fileprivate class _StorageClass {
+    var _bookmarkUuid: String = String()
+    var _spaceUuid: Phi_PhiSettingValue? = nil
+    var _parentUuid: Phi_PhiSettingValue? = nil
+    var _rank: Phi_PhiSettingValue? = nil
+    var _isFolder: Bool = false
+    var _title: Phi_PhiSettingValue? = nil
+    var _url: Phi_PhiSettingValue? = nil
+    var _secondaryURL: Phi_PhiSettingValue? = nil
+    var _secondaryTitle: Phi_PhiSettingValue? = nil
+    var _source: Int32 = 0
+    var _createdAtMs: Int64 = 0
+
+      // This property is used as the initial default value for new instances of the type.
+      // The type itself is protecting the reference to its storage via CoW semantics.
+      // This will force a copy to be made of this reference when the first mutation occurs;
+      // hence, it is safe to mark this as `nonisolated(unsafe)`.
+      static nonisolated(unsafe) let defaultInstance = _StorageClass()
+
+    private init() {}
+
+    init(copying source: _StorageClass) {
+      _bookmarkUuid = source._bookmarkUuid
+      _spaceUuid = source._spaceUuid
+      _parentUuid = source._parentUuid
+      _rank = source._rank
+      _isFolder = source._isFolder
+      _title = source._title
+      _url = source._url
+      _secondaryURL = source._secondaryURL
+      _secondaryTitle = source._secondaryTitle
+      _source = source._source
+      _createdAtMs = source._createdAtMs
+    }
+  }
+
+  fileprivate mutating func _uniqueStorage() -> _StorageClass {
+    if !isKnownUniquelyReferenced(&_storage) {
+      _storage = _StorageClass(copying: _storage)
+    }
+    return _storage
+  }
+
+  mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    _ = _uniqueStorage()
+    try withExtendedLifetime(_storage) { (_storage: _StorageClass) in
+      while let fieldNumber = try decoder.nextFieldNumber() {
+        // The use of inline closures is to circumvent an issue where the compiler
+        // allocates stack space for every case branch when no optimizations are
+        // enabled. https://github.com/apple/swift-protobuf/issues/1034
+        switch fieldNumber {
+        case 1: try { try decoder.decodeSingularStringField(value: &_storage._bookmarkUuid) }()
+        case 2: try { try decoder.decodeSingularMessageField(value: &_storage._spaceUuid) }()
+        case 3: try { try decoder.decodeSingularMessageField(value: &_storage._parentUuid) }()
+        case 4: try { try decoder.decodeSingularMessageField(value: &_storage._rank) }()
+        case 5: try { try decoder.decodeSingularBoolField(value: &_storage._isFolder) }()
+        case 6: try { try decoder.decodeSingularMessageField(value: &_storage._title) }()
+        case 7: try { try decoder.decodeSingularMessageField(value: &_storage._url) }()
+        case 8: try { try decoder.decodeSingularMessageField(value: &_storage._secondaryURL) }()
+        case 9: try { try decoder.decodeSingularMessageField(value: &_storage._secondaryTitle) }()
+        case 10: try { try decoder.decodeSingularInt32Field(value: &_storage._source) }()
+        case 11: try { try decoder.decodeSingularInt64Field(value: &_storage._createdAtMs) }()
+        default: break
+        }
+      }
+    }
+  }
+
+  func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    try withExtendedLifetime(_storage) { (_storage: _StorageClass) in
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every if/case branch local when no optimizations
+      // are enabled. https://github.com/apple/swift-protobuf/issues/1034 and
+      // https://github.com/apple/swift-protobuf/issues/1182
+      if !_storage._bookmarkUuid.isEmpty {
+        try visitor.visitSingularStringField(value: _storage._bookmarkUuid, fieldNumber: 1)
+      }
+      try { if let v = _storage._spaceUuid {
+        try visitor.visitSingularMessageField(value: v, fieldNumber: 2)
+      } }()
+      try { if let v = _storage._parentUuid {
+        try visitor.visitSingularMessageField(value: v, fieldNumber: 3)
+      } }()
+      try { if let v = _storage._rank {
+        try visitor.visitSingularMessageField(value: v, fieldNumber: 4)
+      } }()
+      if _storage._isFolder != false {
+        try visitor.visitSingularBoolField(value: _storage._isFolder, fieldNumber: 5)
+      }
+      try { if let v = _storage._title {
+        try visitor.visitSingularMessageField(value: v, fieldNumber: 6)
+      } }()
+      try { if let v = _storage._url {
+        try visitor.visitSingularMessageField(value: v, fieldNumber: 7)
+      } }()
+      try { if let v = _storage._secondaryURL {
+        try visitor.visitSingularMessageField(value: v, fieldNumber: 8)
+      } }()
+      try { if let v = _storage._secondaryTitle {
+        try visitor.visitSingularMessageField(value: v, fieldNumber: 9)
+      } }()
+      if _storage._source != 0 {
+        try visitor.visitSingularInt32Field(value: _storage._source, fieldNumber: 10)
+      }
+      if _storage._createdAtMs != 0 {
+        try visitor.visitSingularInt64Field(value: _storage._createdAtMs, fieldNumber: 11)
+      }
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  static func ==(lhs: Phi_PhiBookmarkEntity, rhs: Phi_PhiBookmarkEntity) -> Bool {
+    if lhs._storage !== rhs._storage {
+      let storagesAreEqual: Bool = withExtendedLifetime((lhs._storage, rhs._storage)) { (_args: (_StorageClass, _StorageClass)) in
+        let _storage = _args.0
+        let rhs_storage = _args.1
+        if _storage._bookmarkUuid != rhs_storage._bookmarkUuid {return false}
+        if _storage._spaceUuid != rhs_storage._spaceUuid {return false}
+        if _storage._parentUuid != rhs_storage._parentUuid {return false}
+        if _storage._rank != rhs_storage._rank {return false}
+        if _storage._isFolder != rhs_storage._isFolder {return false}
+        if _storage._title != rhs_storage._title {return false}
+        if _storage._url != rhs_storage._url {return false}
+        if _storage._secondaryURL != rhs_storage._secondaryURL {return false}
+        if _storage._secondaryTitle != rhs_storage._secondaryTitle {return false}
+        if _storage._source != rhs_storage._source {return false}
+        if _storage._createdAtMs != rhs_storage._createdAtMs {return false}
+        return true
+      }
+      if !storagesAreEqual {return false}
+    }
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+nonisolated extension Phi_PhiPinTabEntity: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  static let protoMessageName: String = _protobuf_package + ".PhiPinTabEntity"
+  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}pin_uuid\0\u{3}space_uuid\0\u{3}profile_uuid\0\u{1}rank\0\u{1}title\0\u{1}url\0\u{3}split_partner_uuid\0\u{1}source\0\u{3}created_at_ms\0\u{c}\u{a}\u{4}")
+
+  mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularStringField(value: &self.pinUuid) }()
+      case 2: try {
+        var v: String?
+        try decoder.decodeSingularStringField(value: &v)
+        if let v = v {
+          if self.owner != nil {try decoder.handleConflictingOneOf()}
+          self.owner = .spaceUuid(v)
+        }
+      }()
+      case 3: try {
+        var v: String?
+        try decoder.decodeSingularStringField(value: &v)
+        if let v = v {
+          if self.owner != nil {try decoder.handleConflictingOneOf()}
+          self.owner = .profileUuid(v)
+        }
+      }()
+      case 4: try { try decoder.decodeSingularMessageField(value: &self._rank) }()
+      case 5: try { try decoder.decodeSingularMessageField(value: &self._title) }()
+      case 6: try { try decoder.decodeSingularMessageField(value: &self._url) }()
+      case 7: try { try decoder.decodeSingularMessageField(value: &self._splitPartnerUuid) }()
+      case 8: try { try decoder.decodeSingularInt32Field(value: &self.source) }()
+      case 9: try { try decoder.decodeSingularInt64Field(value: &self.createdAtMs) }()
+      default: break
+      }
+    }
+  }
+
+  func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    // The use of inline closures is to circumvent an issue where the compiler
+    // allocates stack space for every if/case branch local when no optimizations
+    // are enabled. https://github.com/apple/swift-protobuf/issues/1034 and
+    // https://github.com/apple/swift-protobuf/issues/1182
+    if !self.pinUuid.isEmpty {
+      try visitor.visitSingularStringField(value: self.pinUuid, fieldNumber: 1)
+    }
+    switch self.owner {
+    case .spaceUuid?: try {
+      guard case .spaceUuid(let v)? = self.owner else { preconditionFailure() }
+      try visitor.visitSingularStringField(value: v, fieldNumber: 2)
+    }()
+    case .profileUuid?: try {
+      guard case .profileUuid(let v)? = self.owner else { preconditionFailure() }
+      try visitor.visitSingularStringField(value: v, fieldNumber: 3)
+    }()
+    case nil: break
+    }
+    try { if let v = self._rank {
+      try visitor.visitSingularMessageField(value: v, fieldNumber: 4)
+    } }()
+    try { if let v = self._title {
+      try visitor.visitSingularMessageField(value: v, fieldNumber: 5)
+    } }()
+    try { if let v = self._url {
+      try visitor.visitSingularMessageField(value: v, fieldNumber: 6)
+    } }()
+    try { if let v = self._splitPartnerUuid {
+      try visitor.visitSingularMessageField(value: v, fieldNumber: 7)
+    } }()
+    if self.source != 0 {
+      try visitor.visitSingularInt32Field(value: self.source, fieldNumber: 8)
+    }
+    if self.createdAtMs != 0 {
+      try visitor.visitSingularInt64Field(value: self.createdAtMs, fieldNumber: 9)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  static func ==(lhs: Phi_PhiPinTabEntity, rhs: Phi_PhiPinTabEntity) -> Bool {
+    if lhs.pinUuid != rhs.pinUuid {return false}
+    if lhs.owner != rhs.owner {return false}
+    if lhs._rank != rhs._rank {return false}
+    if lhs._title != rhs._title {return false}
+    if lhs._url != rhs._url {return false}
+    if lhs._splitPartnerUuid != rhs._splitPartnerUuid {return false}
+    if lhs.source != rhs.source {return false}
+    if lhs.createdAtMs != rhs.createdAtMs {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }

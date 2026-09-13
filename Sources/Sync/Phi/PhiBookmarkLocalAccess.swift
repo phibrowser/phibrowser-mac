@@ -163,6 +163,10 @@ protocol PhiBookmarkLocalAccess: AnyObject {
     /// **一次** fetch 带关系预取，**每轮至多算一次**，结果交给快照 / 差分 / index 投影
     /// 三个消费者复用。
     ///
+    /// 返回值按 `(spaceId, parentGuid, index, guid)` 有序（§4.8），无父的行排在同 Space 的
+    /// 有父行之前。三个消费者都依赖这个次序：`siblings(ofParent:inSpaceId:)` 是它的分组，
+    /// 差分按它产出提交序列，index 投影按它编号。
+    ///
     /// root 行**从不是快照行**：它们的直接孩子投影出 `parentGuid == nil`；不在 canonical
     /// root 集合里的无父 `bookmarkFolder`（并发初始化留下的孤儿根）**整棵排除**。
     func allBookmarks() -> [PhiLocalBookmark]

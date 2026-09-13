@@ -14,9 +14,14 @@ struct PhiLocalPin: Equatable, Sendable {
     var lineageId: String
     /// 本机物理行的 id。落地的每一个操作都按它定位。
     var guid: String
-    /// Space 作用域下非 nil。
+    /// 三个作用域，两个字段，按 §7.2 的表：
+    /// **Space 作用域 = `spaceId` 与 `profileId` 都非 nil**（一条 Space 作用域的行既知道
+    /// 自己在哪个 Space，也知道那个 Space 绑在哪个 profile 上）；Profile 作用域 =
+    /// `spaceId` 为 nil、`profileId` 非 nil；App 作用域 = 两者都为 nil。
+    ///
+    /// 于是 owner 的判据是**先看 `spaceId` 再看 `profileId`**，不是「哪个非 nil 用哪个」。
     var spaceId: String?
-    /// Profile 作用域下非 nil；**App 作用域下 `spaceId` 与 `profileId` 都为 nil**。
+    /// 见 `spaceId` 上那张表：Space 与 Profile 两个作用域下都非 nil，只有 App 作用域为 nil。
     var profileId: String?
     var index: Int
     var title: String

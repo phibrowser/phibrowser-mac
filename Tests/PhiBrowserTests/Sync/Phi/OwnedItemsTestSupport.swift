@@ -36,9 +36,16 @@ final class FakeBookmarkAccess: PhiBookmarkLocalAccess {
         self.rows = rows
     }
 
+    /// 按 `(spaceId, parentGuid, index, guid)` 有序（§4.8），与 `allPins()` 对称：喂给引擎
+    /// 的次序必须是生产实现真会产出的那个，否则后面断言提交顺序或 index 投影的用例会因为
+    /// 一个与被测代码无关的理由变红或变绿。无父的行（`parentGuid == nil`）排在同 Space 的
+    /// 有父行之前。
     func allBookmarks() -> [PhiLocalBookmark] {
         calls.append(.allBookmarks)
-        return rows
+        return rows.sorted {
+            ($0.spaceId, $0.parentGuid ?? "", $0.index, $0.guid)
+                < ($1.spaceId, $1.parentGuid ?? "", $1.index, $1.guid)
+        }
     }
 
     /// 契约是「那一次 fetch 结果在内存里的分组」，所以这里读的也是 `rows`，**不**再记一次

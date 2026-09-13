@@ -2081,6 +2081,99 @@ extension LocalStore {
     }
 }
 
+// MARK: - 一轮远端落地的 body 形态（同步层专用，§4.5）
+
+/// §4.5 要求一轮远端落地的**多条**行用**一个**事务：抛错 = 一条都没落，部分成功不存在。
+/// 已有的 throwing 兄弟每一个都自己开一次 `performBackgroundWriteAndWaitThrowing`
+/// （`LocalStore.swift:466`），而那个入口把作业 yield 进串行写队列再等写 actor，所以把它们
+/// 套在一个写块里既不是一个事务、还会死锁。于是这里给同步层落地要用到的每一种写各补一个
+/// **收 `ModelContext`** 的 body 形态，事务由调用方持有一次。
+///
+/// **必须写在本文件里**：`moveBookmarkBody` / `updateBookmarkBody` / `deleteBookmarkBody`
+/// 与 `bookmarkNode` / `children` / `normalizeIndexes` 全是 `private`，别的文件够不着。
+/// 与 Task 2b 的 pin 侧同一条理由。
+///
+/// 每一个都只是既有 body 的薄包装：**没有第二份实现**，UI 路径与同步路径不可能漂移。
+extension LocalStore {
+    /// 把一个账户级 uuid 认领到一条已存在的本机行上（§6.3）。只写 `syncId`，不碰任何
+    /// 内容字段——认领不是一次编辑，`contentUpdatedDate` 不为它而动。
+    func claimBookmarkSyncIdBody(guid: String,
+                                 syncId: String,
+                                 in context: ModelContext) throws {
+        guard let node = try bookmarkNode(with: guid, in: context) else {
+            throw LocalStoreWriteError.rowNotFound
+        }
+        node.syncId = syncId
+    }
+
+    /// `moveBookmarkThrowing`（:603）的 body 形态，逐字同一段实现。
+    func moveBookmarkLandingBody(guid: String,
+                                 toParentGuid parentGuid: String?,
+                                 inSpaceId spaceId: String,
+                                 index: Int,
+                                 in context: ModelContext) throws {
+        // Profile 由目标 Space 决定（一个 Space 只属于一个 Profile）；目标 Space 行
+        // 还不在本地时退回这条行自己的 Profile。
+        let targetProfileId = try profileId(ofSpaceId: spaceId, in: context)
+            ?? bookmarkNodeProfileId(guid, in: context)
+            ?? Self.defaultProfileId
+        try moveBookmarkBody(guid,
+                             profileId: targetProfileId,
+                             toParentGuid: parentGuid,
+                             toSpaceId: spaceId,
+                             index: index,
+                             strictParent: true,
+                             in: context)
+    }
+
+    /// `updateBookmarkThrowing`（:1026）的 body 形态。`profileId` 由行自己给出：那个
+    /// 参数在 body 里不参与任何判据，传一个猜的值只会让读者以为它有意义。
+    func updateBookmarkLandingBody(guid: String,
+                                   title: String?,
+                                   url: String?,
+                                   secondaryUrl: String??,
+                                   secondaryTitle: String??,
+                                   allowsEmptyTitle: Bool,
+                                   in context: ModelContext) throws {
+        let rowProfileId = try bookmarkNodeProfileId(guid, in: context) ?? Self.defaultProfileId
+        try updateBookmarkBody(guid,
+                               profileId: rowProfileId,
+                               title: title,
+                               url: url,
+                               secondaryUrl: secondaryUrl,
+                               secondaryTitle: secondaryTitle,
+                               allowsEmptyTitle: allowsEmptyTitle,
+                               in: context)
+    }
+
+    /// `deleteBookmarkThrowing`（:1143）的 body 形态。
+    func deleteBookmarkLandingBody(guid: String, in context: ModelContext) throws {
+        let rowProfileId = try bookmarkNodeProfileId(guid, in: context) ?? Self.defaultProfileId
+        try deleteBookmarkBody(guid, profileId: rowProfileId, in: context)
+    }
+
+    /// 退出账户 / 重置同步状态时抹掉全部书签身份（§9.2）。**一次批量写**：逐条
+    /// `performBackgroundWriteAndWaitThrowing` 在一棵上千条的树上是上千个事务。
+    ///
+    /// 只碰书签与文件夹行：`syncId` 这一列住在 `TabDataModel` 上，而 pin 的身份是
+    /// `(pinLineageId, owner)`（§3.2），不走这一列。
+    ///
+    /// 返回被清掉的行数，给 §11 的计数用。
+    @discardableResult
+    func clearAllBookmarkSyncIdsBody(in context: ModelContext) throws -> Int {
+        let bookmarkRaw = TabDataType.bookmark.rawValue
+        let folderRaw = TabDataType.bookmarkFolder.rawValue
+        let descriptor = FetchDescriptor<TabDataModel>(
+            predicate: #Predicate<TabDataModel> {
+                ($0.type == bookmarkRaw || $0.type == folderRaw) && $0.syncId != nil
+            }
+        )
+        let rows = try context.fetch(descriptor)
+        for row in rows { row.syncId = nil }
+        return rows.count
+    }
+}
+
 #if DEBUG
 // MARK: - 测试钩子
 

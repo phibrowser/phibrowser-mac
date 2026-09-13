@@ -1014,3 +1014,109 @@ extension SyncableOwnedItemsTests {
         XCTAssertTrue(steps.isEmpty)
     }
 }
+
+// MARK: - 修复轮 2 回归（review F1 / F2）
+
+extension SyncableOwnedItemsTests {
+
+    /// `plan` 的某一条 step 里那份载荷解回实体。
+    private func stepEntity(_ plan: OwnedItemPlan, _ identity: String,
+                            _ kind: StepKind) -> Phi_PhiBookmarkEntity? {
+        guard let payload = plan.steps.first(where: { $0.identity == identity && $0.kind == kind })?
+                .payload,
+              let envelope = try? Phi_PhiEntity(serializedBytes: payload) else { return nil }
+        return BookmarkKind.entity(from: envelope)
+    }
+
+    /// 把一次认领的产出接进 `plan` 的入参，与引擎将来要做的接法逐字一致。
+    private func adoptionContext(_ result: OwnedItemAdoptionResult) -> OwnedItemPlanContext {
+        var context = OwnedItemPlanContext()
+        context.pairs = result.pairs
+        context.adoptedMerges = result.merges
+        context.adoptedFieldWrites = result.fieldWrites
+        return context
+    }
+
+    /// F1 (a) — 认领的身份落地的是**合并结果**，不是远端那一份。
+    ///
+    /// 防的是什么：一个忽略 `context.adoptedMerges`、直接落远端的实现——正是 §6.2 点名禁止
+    /// 的「整体采纳远端」——会让 `.claim` 那条 step 的载荷带着「远端标题」，于是下面那条
+    /// `XCTAssertEqual(claimedTitle, "本机标题")` 立刻红。它同时钉住 `.claim` + `.update`
+    /// 这一对：落地的 claim 操作只写 `syncId`，内容只走 update，只产出一条就把那次合并丢了。
+    func testAClaimedIdentityLandsTheMergedEntityRatherThanTheRemoteWholesale() {
+        // 本机的标题更新（`contentUpdatedDate` 更晚），而 `secondary_title` 这一侧远端更新：
+        // 于是合并结果两边各赢一个字段，既要重新发布，又确实要写字段。
+        let local = markRow(identity: nil, guid: "g1", url: "https://e.example",
+                            title: "本机标题", contentUpdatedDate: Date(timeIntervalSince1970: 900))
+        var remote = bookmarkPayload(uuid: "b1", spaceUuid: "su-1", rank: "k", title: "远端标题",
+                                     locationStamp: 100, rankStamp: 100, contentStamp: 100)
+        remote.secondaryTitle = stamped("远端副标题", at: 1_000_000)
+
+        let adoption = SyncableOwnedItems.adopt(arrivals: [remote], locals: [local],
+                                                resolve: resolve)
+        let plan = planned([arrival(remote)], context: adoptionContext(adoption))
+
+        let kinds = plan.steps.filter { $0.identity == "b1" }.map(\.kind)
+        let claimed = stepEntity(plan, "b1", .claim)
+        let patched = stepEntity(plan, "b1", .update)
+        let claimedTitle = claimed?.title.stringValue
+        let claimedSecondary = claimed?.secondaryTitle.stringValue
+        let claimedRank = claimed?.rank.stringValue
+        let claimedLocation = claimed.map(BookmarkKind.locationStamp(of:))
+        let republishes = adoption.mustRepublish.contains("b1")
+        XCTAssertEqual(kinds, [.claim, .update])
+        XCTAssertEqual(claimedTitle, "本机标题", "本机赢下的内容字段")
+        XCTAssertEqual(claimedSecondary, "远端副标题", "远端赢下的内容字段")
+        XCTAssertEqual(claimedRank, "k", "位置取远端")
+        XCTAssertEqual(claimedLocation, 100, "位置取远端")
+        XCTAssertEqual(patched, claimed, "两条 step 带的是同一份合并结果")
+        XCTAssertTrue(republishes)
+    }
+
+    /// F1 (b) — 本机行与远端逐字相同 ⇒ 只有 `.claim`，零重新发布。
+    ///
+    /// 防的是什么：无条件产出 `.update` 会为每一条认领的行发一条空补丁，而首次同步里
+    /// 认领的行可能有上千条。
+    func testAClaimedRowIdenticalToTheRemoteNeedsNoFieldWriteAndNoRepublish() {
+        let local = PhiLocalBookmark.fixture(guid: "g1", spaceId: "space-a", title: "T",
+                                             createdDate: Date(timeIntervalSince1970: 0.05))
+        let remote = bookmarkPayload(uuid: "b1", createdAtMs: 50)
+
+        let adoption = SyncableOwnedItems.adopt(arrivals: [remote], locals: [local],
+                                                resolve: resolve)
+        let plan = planned([arrival(remote)], context: adoptionContext(adoption))
+
+        let kinds = plan.steps.filter { $0.identity == "b1" }.map(\.kind)
+        let republishes = adoption.mustRepublish.contains("b1")
+        let writes = adoption.fieldWrites.contains("b1")
+        XCTAssertEqual(kinds, [.claim])
+        XCTAssertFalse(republishes)
+        XCTAssertFalse(writes)
+    }
+
+    /// F2 — 合并算不出来 ⇒ 那一对不成立，绝不退回「整体采纳远端」。
+    ///
+    /// 防的是什么：投影失败时静默按远端落地，会在一次归属解析抖动里吃掉用户在加入期间做的
+    /// 编辑。构造一个正向与反向不一致的解析器（`localSpaceId` 认得 `su-1`，`syncUuid` 却
+    /// 认不得 `space-a`），投影因此拿不到 Space 的 syncUuid。
+    func testAPairWhoseMergeCannotBeComputedIsDroppedRatherThanTakenWholesale() {
+        let brokenResolve = OwnerResolver(syncUuid: { _ in nil },
+                                          localSpaceId: { $0 == "su-1" ? "space-a" : nil },
+                                          isEligibleSpace: { _ in true },
+                                          globalUuid: { _ in nil },
+                                          localProfileId: { _ in nil })
+        let local = markRow(identity: nil, guid: "g1", url: "https://e.example")
+
+        let result = SyncableOwnedItems.adopt(arrivals: [bookmarkPayload(uuid: "b1")],
+                                              locals: [local], resolve: brokenResolve)
+
+        let adopted = result.adopted
+        let pairedGuid = result.pairs["b1"]
+        let merged = result.merges["b1"]
+        let dropped = result.unmergeablePairs
+        XCTAssertEqual(adopted, 0)
+        XCTAssertNil(pairedGuid)
+        XCTAssertNil(merged)
+        XCTAssertEqual(dropped, 1)
+    }
+}

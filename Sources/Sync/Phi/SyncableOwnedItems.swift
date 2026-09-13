@@ -52,6 +52,9 @@ struct OwnedItemPlanContext {
     /// `OwnedItemAdoptionResult.merges`。`plan` 用它替换这些身份的入站实体，于是落地的是
     /// 合并结果而不是「整体采纳远端」。字节而不是实体，是为了让这个结构保持非泛型。
     var adoptedMerges: [String: Data] = [:]
+    /// `OwnedItemAdoptionResult.fieldWrites`：认领之后还要写字段的那些身份。不在里面的
+    /// 身份只产出一条 `.claim`——那一行的内容已经等于合并结果，再发一条空补丁没有意义。
+    var adoptedFieldWrites: Set<String> = []
     /// 本轮同时到达的 tombstone 身份集合（提升只在父被**证实死亡**时发生）。
     var tombstonedIdentities: Set<String> = []
     /// 本轮因一条远端文件夹 tombstone 而要消失的身份（A9 的第三个合取项）。
@@ -152,6 +155,18 @@ struct OwnedItemAdoptionResult {
     /// 合并结果里有本机字段赢了的那些身份 —— **必须重新发布**，走正常的快照与切片。
     /// 本机赢了却不发布，对端永远停在旧值上，而两边都认为自己收敛了。
     var mustRepublish: Set<String> = []
+    /// 落地时**确实要写字段**的那些身份：合并结果的内容与那条本机行现在的内容不同。
+    ///
+    /// 与 `mustRepublish` 是相反的两个方向，都要有：本机赢了一个字段 ⇒ 那一行已经是对的、
+    /// 账户不是（`mustRepublish`）；远端赢了一个字段 ⇒ 账户是对的、那一行要被改写（这个
+    /// 集合）。只认领而不写字段，一条被远端改过名的行会永远停在本机的旧标题上，而
+    /// `reconciled` 说的是新标题——下一轮的快照于是拿那个旧标题去发布，两台机器永久分歧。
+    var fieldWrites: Set<String> = []
+    /// 配上了、但**合并算不出来**（投影失败）而被丢掉的配对数。
+    ///
+    /// 丢掉而不是「退回整体采纳远端」：那条路会在一次归属解析抖动里静默吃掉用户的本机编辑。
+    /// 丢掉的代价只是那一行这一轮保持未同步，下一轮重来。
+    var unmergeablePairs: Int = 0
 }
 
 #if DEBUG
@@ -704,12 +719,16 @@ enum SyncableOwnedItems {
             let rank = K.rank(of: merged)
 
             if context.pairs[identity] != nil {
-                // §6.3：① 把账户身份写到那条本机行上，② 再按三相把字段落下去。
+                // §6.3：① 把账户身份写到那条本机行上，② 再按三相把字段落下去。两条 step
+                // 是因为落地的 claim 操作只写 `syncId`，内容只走 update。
                 steps.append(OwnedItemApplyStep(identity: identity, kind: .claim,
                                                 newParentUuid: landingParent, newRank: rank,
                                                 payload: payload))
-                steps.append(OwnedItemApplyStep(identity: identity, kind: .update,
-                                                newParentUuid: nil, newRank: nil, payload: payload))
+                if context.adoptedFieldWrites.contains(identity) {
+                    steps.append(OwnedItemApplyStep(identity: identity, kind: .update,
+                                                    newParentUuid: nil, newRank: nil,
+                                                    payload: payload))
+                }
                 continue
             }
             guard let baseline else {
@@ -795,6 +814,8 @@ enum SyncableOwnedItems {
         var unmatchedFolders = 0
         var merges: [String: Data] = [:]
         var mustRepublish: Set<String> = []
+        var fieldWrites: Set<String> = []
+        var unmergeablePairs = 0
 
         var localByGuid: [String: PhiLocalBookmark] = [:]
         var localGuidByIdentity: [String: String] = [:]
@@ -824,19 +845,34 @@ enum SyncableOwnedItems {
         /// 本机戳**必须是 `contentUpdatedDate`**：`updatedDate` 被 `updateLastSeen` /
         /// `updateTabFavicon` / `normalizeIndexes` 三条**非编辑**路径往前推，而「往前推」正是
         /// 让一个没人动过的本机旧值赢下对端刚做的编辑的那个方向。
-        func recordMerge(_ entity: Phi_PhiBookmarkEntity, _ row: PhiLocalBookmark) {
+        /// 算得出合并就记下来并返回 true；**算不出就返回 false，那一对不成立**。
+        ///
+        /// 绝不「算不出就退回整体采纳远端」：那条路会在一次归属解析抖动里静默吃掉用户在
+        /// 加入期间做的编辑，而那正是 §6.2 花整节篇幅禁止的东西。不配对的代价只是那一行
+        /// 这一轮保持未同步、下一轮重来，而入站实体照常建一条新行。
+        func recordMerge(_ entity: Phi_PhiBookmarkEntity, _ row: PhiLocalBookmark) -> Bool {
             let parentIdentity = entity.parentUuid.stringValue
             guard var projected = BookmarkKind.project(row, resolve: resolve, scope: nil,
                                                        parentIdentity: parentIdentity.isEmpty
-                                                           ? nil : parentIdentity) else { return }
+                                                           ? nil : parentIdentity) else {
+                return false
+            }
             projected = BookmarkKind.stamp(projected, baseline: nil, local: row,
                                            rank: "", now: 0)
             // 那一行还没有身份，所以投影出来的 uuid 是空串；合并之后它接过远端这一个。
             let merged = BookmarkKind.merge(local: projected, remote: entity)
-            guard let bytes = try? BookmarkKind.envelope(merged).serializedData() else { return }
+            guard let bytes = try? BookmarkKind.envelope(merged).serializedData() else {
+                return false
+            }
             merges[entity.bookmarkUuid] = bytes
             // 合并结果与账户手上那一份不同 ⇒ 本机赢了至少一个字段 ⇒ 必须重新发布。
             if merged != entity { mustRepublish.insert(entity.bookmarkUuid) }
+            // 合并结果的内容与那一行现在的内容不同 ⇒ 落地时要写字段。
+            if BookmarkKind.contentSignature(of: merged)
+                != BookmarkKind.contentSignature(of: projected) {
+                fieldWrites.insert(entity.bookmarkUuid)
+            }
+            return true
         }
 
         // 起点 ①：每一个有映射的 Space 的根。
@@ -890,8 +926,8 @@ enum SyncableOwnedItems {
                 local: localChildren.filter(\.isFolder),
                 remoteKey: { $0.title.stringValue },
                 localKey: { $0.title }) { entity, row in
+                    guard recordMerge(entity, row) else { unmergeablePairs += 1; return }
                     pairs[entity.bookmarkUuid] = row.guid
-                    recordMerge(entity, row)
                     enqueue(entity.bookmarkUuid, row.guid, row.spaceId)
                 }
             // 书签按 URL 分组。
@@ -900,13 +936,15 @@ enum SyncableOwnedItems {
                 local: localChildren.filter { !$0.isFolder },
                 remoteKey: { $0.url.stringValue },
                 localKey: { $0.url.absoluteString }) { entity, row in
+                    guard recordMerge(entity, row) else { unmergeablePairs += 1; return }
                     pairs[entity.bookmarkUuid] = row.guid
-                    recordMerge(entity, row)
                 }
         }
         return OwnedItemAdoptionResult(pairs: pairs, adopted: pairs.count,
                                        unmatchedFolders: unmatchedFolders,
-                                       merges: merges, mustRepublish: mustRepublish)
+                                       merges: merges, mustRepublish: mustRepublish,
+                                       fieldWrites: fieldWrites,
+                                       unmergeablePairs: unmergeablePairs)
     }
 
     /// 一层之内的一对一配对：**先按完整键分组，再**在组内按位配（本地 `index` 序 × 远端

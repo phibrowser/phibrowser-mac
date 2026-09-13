@@ -56,6 +56,52 @@ final class PhiSpaceSyncStateTests: XCTestCase {
         XCTAssertEqual(back.cursors["sync-u1"], cursor)
     }
 
+    /// 上一版写下的表——`formatVersion` 仍是 2，但没有 M3-3 新增的那四个 per-kind 标志键
+    /// ——必须照常解出来，四个标志读作 false。
+    ///
+    /// 防的是什么：合成的 `Decodable` 对非可选存储属性发的是 `decode(_:forKey:)`，**属性的
+    /// 默认值一概不参与**。四个新字段一旦按合成解码走，每一台已装机的设备整张表都解不出来：
+    /// `AccountUserDefaults.codableValue` 把失败吞成 nil、`loaded(from:)` 换成一张空表（游标、
+    /// 两份基线、`hadRecords`、`lastDrainedBirthday`、`unreadableTagHashes` 全没了），而
+    /// `isStaleFormat(rawData:)` 的 `try?` 还把同一次失败读成「格式偏低」，覆盖掉盘上那份并把
+    /// 设备推回配对向导。`formatVersion` 拦不住它——加字段不改格式版本。
+    func testATableWrittenBeforeThePerKindFlagsStillDecodes() throws {
+        var cursor = PhiSpaceCursor()
+        cursor.entityId = "srv-1"
+        cursor.version = 7
+        cursor.reconciled = Data([0x01])
+        var table = PhiSpaceSyncTable()
+        table.cursors["sync-u1"] = cursor
+        table.hadRecords = true
+        table.hasDrainedFullReplay = true
+        table.spaceSectionEnabled = true
+        table.lastDrainedBirthday = "b-1"
+        table.unreadableTagHashes["abcd1234"] = 99
+        let encoded = try JSONEncoder().encode(table)
+        var object = try XCTUnwrap(JSONSerialization.jsonObject(with: encoded) as? [String: Any])
+        for key in ["bookmarksHadRecords", "pinsHadRecords",
+                    "bookmarksReplayedForEmptyTable", "pinsReplayedForEmptyTable"] {
+            XCTAssertNotNil(object.removeValue(forKey: key), "\(key) 本该出现在编码里")
+        }
+        let legacy = try JSONSerialization.data(withJSONObject: object)
+
+        let decoded = try JSONDecoder().decode(PhiSpaceSyncTable.self, from: legacy)
+
+        XCTAssertEqual(decoded.formatVersion, PhiSpaceSyncTable.currentFormatVersion)
+        XCTAssertEqual(decoded.cursors["sync-u1"], cursor)
+        XCTAssertTrue(decoded.hadRecords)
+        XCTAssertTrue(decoded.hasDrainedFullReplay)
+        XCTAssertTrue(decoded.spaceSectionEnabled)
+        XCTAssertEqual(decoded.lastDrainedBirthday, "b-1")
+        XCTAssertEqual(decoded.unreadableTagHashes, ["abcd1234": 99])
+        XCTAssertFalse(decoded.bookmarksHadRecords)
+        XCTAssertFalse(decoded.pinsHadRecords)
+        XCTAssertFalse(decoded.bookmarksReplayedForEmptyTable)
+        XCTAssertFalse(decoded.pinsReplayedForEmptyTable)
+        // 第二条受害路径：同一份字节不许被读成「格式偏低」而触发一次丢弃 + 配对向导。
+        XCTAssertFalse(PhiSpaceSyncTable.isStaleFormat(rawData: legacy))
+    }
+
     // MARK: - formatVersion 硬切（§3.6）
 
     func testAnOlderFormatIsDiscardedIntoAnEmptyTable() throws {

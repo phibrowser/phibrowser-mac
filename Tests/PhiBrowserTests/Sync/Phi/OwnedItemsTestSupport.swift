@@ -536,13 +536,18 @@ final class MemoryOwnedItemStore: PhiOwnedItemStateStore {
         self.table = table
     }
 
-    /// 报损那一路**与真 store 逐字同形**：返回一张空表，`reportedLoss` 取 `hadRecords`
-    /// （`forcedLoss` 说的是「文件没了」，不是「无条件报真」——`hadRecords == false` 时
-    /// 文件本来就不该存在，那不是丢失）。`table` 本身不动，好让用例还能断言「引擎后来写
-    /// 回去的是什么」。
+    /// 报损那一路**与真 store 逐字同形**，四种情形一个不少：`forcedLoss` 与
+    /// `loseOnLoadNumber` 是「文件没了 / 解不开 / 版本偏低」的脚本化对应物，**而「表里一条
+    /// 游标都没有」这一条必须自己成立**——`FileOwnedItemStateStore` 对空表照样报损（CASE
+    /// 3.6），少了它，一个拿着空表的假件会让 Task 6 / 9 的用例在「正常一轮、什么都没丢」上
+    /// 变绿，而线上代码在同一处报损并重放整个 data type。
+    ///
+    /// `reportedLoss` 一律取 `hadRecords`（`forcedLoss` 说的是「文件没了」，不是「无条件报
+    /// 真」——`hadRecords == false` 时文件本来就不该存在，那不是丢失）。`table` 本身不动，
+    /// 好让用例还能断言「引擎后来写回去的是什么」。
     func load(hadRecords: Bool) -> (table: PhiOwnedItemTable, reportedLoss: Bool) {
         hadRecordsSeen.append(hadRecords)
-        let loses = forcedLoss || loseOnLoadNumber == hadRecordsSeen.count
+        let loses = forcedLoss || loseOnLoadNumber == hadRecordsSeen.count || table.cursors.isEmpty
         guard loses else { return (table, false) }
         return (PhiOwnedItemTable(), hadRecords)
     }

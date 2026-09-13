@@ -193,7 +193,7 @@ final class FileOwnedItemStateStore: PhiOwnedItemStateStore {
                                                     withIntermediateDirectories: true)
             try JSONEncoder().encode(table).write(to: fileURL, options: .atomic)
         } catch {
-            AppLogWarn("[phi-sync] owned-item cursor save failed cursors=\(table.cursors.count) "
+            AppLogError("[phi-sync] owned-item cursor save failed cursors=\(table.cursors.count) "
                 + "(\(PhiSyncLog.describe(error)))")
         }
     }

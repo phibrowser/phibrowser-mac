@@ -22,18 +22,31 @@ enum PinnedTabScope: String, CaseIterable, Identifiable {
     }
 }
 
-enum LocalStoreWriteError: LocalizedError {
+// 同步层内部流转的写入失败原因。**没有文案**：引擎接住之后按 §4.5 停放并记一条元数据
+// 日志，这些错误从不显示给用户；给它们做本地化字符串等于往 xcstrings 里加永远不会被
+// 渲染的 key，而每加一条都要走那条纯增量手工合并流程。`.storeUnavailable` 原先那段
+// `errorDescription` 全仓库没有任何消费者（唯一抛出点是
+// `performBackgroundWriteAndWaitThrowing`，没有一处读它的 `localizedDescription`），
+// 所以连同 `: LocalizedError` 一起去掉。
+//
+// **六个新 case 一律无载荷**：这个枚举今天没有显式 `: Equatable`，能 `==` 全靠所有
+// case 无载荷（Swift 为无载荷枚举自动合成 `Equatable`）。
+enum LocalStoreWriteError: Error {
+    /// 本地库根本没打开（兼容性预检拒绝了它，或者 `ModelContainer` 建失败）。
     case storeUnavailable
-
-    var errorDescription: String? {
-        switch self {
-        case .storeUnavailable:
-            return NSLocalizedString(
-                "Local browser data is unavailable.",
-                comment: "Pinned-tab scope migration error when the local store cannot be opened"
-            )
-        }
-    }
+    /// 按 guid 定位的那条物理行不存在（或者要求的父不存在 / 不是文件夹）。
+    case rowNotFound
+    /// 目标是某个 Profile / Space 的隐藏根文件夹，搬它或删它都会让书签树失去根。
+    case rowIsRoot
+    /// URL 归一化失败。
+    case invalidURL
+    /// 目标 Space 不可写：它被删了，或者中途换了 Profile。
+    case targetNotWritable
+    /// 一批候选行被逐条跳过之后一条都没剩下——空清单也算。调用方的 bug，不是一次成功
+    /// 的空操作。
+    case noCandidateSurvived
+    /// 目标 guid 不在当前作用域里（pin 侧使用）。
+    case rowNotInActiveScope
 }
 
 private struct PinnedTabOwner: Hashable {

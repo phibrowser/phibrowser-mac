@@ -36,8 +36,8 @@ actor LocalStoreActor {
 class LocalStore {
     static let defaultProfileId = "Default"
     static let compatibilityConfiguration = LocalStoreCompatibilityConfiguration(
-        currentStoreFormatVersion: 9,
-        readableStoreFormatVersions: 1...9,
+        currentStoreFormatVersion: 10,
+        readableStoreFormatVersions: 1...10,
         storeFilename: "LocalStore.sqlite"
     )
 

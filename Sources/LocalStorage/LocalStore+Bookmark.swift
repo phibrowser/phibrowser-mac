@@ -32,8 +32,10 @@ extension LocalStore {
                         secondaryUrl: String? = nil,
                         secondaryTitle: String? = nil,
                         favicon: Data? = nil) {
-        guard let normalizedURL = normalizedURL(from: url),
-        let bookmarkURL = URL(string: URLProcessor.processUserInput( normalizedURL.absoluteString)) else {
+        let bookmarkURL: URL
+        do {
+            bookmarkURL = try userInputBookmarkURL(from: url)
+        } catch {
             AppLogError("Invalid bookmark url: \(url ?? "nil")")
             return
         }
@@ -42,12 +44,12 @@ extension LocalStore {
         // turn the bookmark into a single-URL one.
         let normalizedSecondary: URL?
         if let raw = secondaryUrl {
-            guard let normalized = self.normalizedURL(from: raw),
-                  let processed = URL(string: URLProcessor.processUserInput(normalized.absoluteString)) else {
+            do {
+                normalizedSecondary = try userInputBookmarkURL(from: raw)
+            } catch {
                 AppLogError("Invalid bookmark secondary url: \(raw)")
                 return
             }
-            normalizedSecondary = processed
         } else {
             normalizedSecondary = nil
         }
@@ -55,29 +57,111 @@ extension LocalStore {
         performBackgroundWrite { [weak self] context in
             guard let self else { return }
             do {
-                guard let parent = try self.resolveParent(for: parentId, profileId: profileId, spaceId: spaceId, in: context) else {
-                    AppLogError("Parent folder not found when creating bookmark")
-                    return
-                }
-                let now = Date()
-                _ = try self.insertBookmarkNode(title: title,
+                _ = try self.createBookmarkBody(url: bookmarkURL,
+                                                title: title,
                                                 profileId: profileId,
-                                                url: bookmarkURL,
-                                                parent: parent,
+                                                parentId: parentId,
                                                 index: index,
                                                 guid: guid,
                                                 spaceId: spaceId,
                                                 secondaryUrl: normalizedSecondary,
                                                 secondaryTitle: secondaryTitle,
                                                 favicon: favicon,
-                                                now: now,
+                                                syncId: nil,
+                                                createdDate: nil,
+                                                allowsEmptyTitle: false,
+                                                strictParent: false,
                                                 in: context)
             } catch {
                 AppLogError("Failed to create bookmark: \(error)")
             }
         }
     }
-    
+
+    /// Throwing sibling used ONLY by the sync layer: `PhiSyncEngine` may write
+    /// the `reconciled` / `server` baselines only after the row landed, and the
+    /// fire-and-forget original swallows its own failure (§4.9).
+    ///
+    /// 三处与 UI 入口的有意差异：① 收 `URL` 而不是 `String?`，所以不经过
+    /// `URLProcessor.processUserInput`（那是给用户输入准备的，会把不像 URL 的东西变成
+    /// 搜索，而线上来的 URL 已经是绝对 URL）；② `allowsEmptyTitle` 默认 `true`，一条
+    /// 远端 `title == ""` 的 create 必须原样落成空标题；③ 父解析是严格的，解析不到就抛，
+    /// 绝不静默落回 Space root。
+    @discardableResult
+    func createBookmarkThrowing(url: URL,
+                                title: String?,
+                                profileId: String,
+                                parentId: String?,
+                                index: Int? = nil,
+                                guid: String? = nil,
+                                spaceId: String = LocalStore.defaultSpaceId,
+                                secondaryUrl: URL? = nil,
+                                secondaryTitle: String? = nil,
+                                favicon: Data? = nil,
+                                syncId: String? = nil,
+                                createdDate: Date? = nil,
+                                allowsEmptyTitle: Bool = true) async throws -> String {
+        try await performBackgroundWriteAndWaitThrowing { context in
+            try self.createBookmarkBody(url: url,
+                                        title: title,
+                                        profileId: profileId,
+                                        parentId: parentId,
+                                        index: index,
+                                        guid: guid,
+                                        spaceId: spaceId,
+                                        secondaryUrl: secondaryUrl,
+                                        secondaryTitle: secondaryTitle,
+                                        favicon: favicon,
+                                        syncId: syncId,
+                                        createdDate: createdDate,
+                                        allowsEmptyTitle: allowsEmptyTitle,
+                                        strictParent: true,
+                                        in: context).guid
+        }
+    }
+
+    /// Single implementation shared by both entry points.
+    private func createBookmarkBody(url: URL,
+                                    title: String?,
+                                    profileId: String,
+                                    parentId: String?,
+                                    index: Int?,
+                                    guid: String?,
+                                    spaceId: String,
+                                    secondaryUrl: URL?,
+                                    secondaryTitle: String?,
+                                    favicon: Data?,
+                                    syncId: String?,
+                                    createdDate: Date?,
+                                    allowsEmptyTitle: Bool,
+                                    strictParent: Bool,
+                                    in context: ModelContext) throws -> TabDataModel {
+        guard let parent = try resolveParent(for: parentId,
+                                             profileId: profileId,
+                                             spaceId: spaceId,
+                                             in: context,
+                                             strict: strictParent) else {
+            throw LocalStoreWriteError.rowNotFound
+        }
+        let now = createdDate ?? Date()
+        let node = try insertBookmarkNode(title: title,
+                                          profileId: profileId,
+                                          url: url,
+                                          parent: parent,
+                                          index: index,
+                                          guid: guid,
+                                          spaceId: spaceId,
+                                          secondaryUrl: secondaryUrl,
+                                          secondaryTitle: secondaryTitle,
+                                          favicon: favicon,
+                                          allowsEmptyTitle: allowsEmptyTitle,
+                                          now: now,
+                                          in: context)
+        // 身份与行在同一个事务里写，落地路径没有第二次写可以失败。
+        node.syncId = syncId
+        return node
+    }
+
     /// Creates a bookmark folder node.
     func createDirectory(title: String,
                          profileId: String,
@@ -88,23 +172,76 @@ extension LocalStore {
         performBackgroundWrite { [weak self] context in
             guard let self else { return }
             do {
-                guard let parent = try self.resolveParent(for: parentId, profileId: profileId, spaceId: spaceId, in: context) else {
-                    AppLogError("Parent folder not found when creating directory")
-                    return
-                }
-                let now = Date()
-                _ = try self.insertDirectoryNode(title: title,
+                _ = try self.createDirectoryBody(title: title,
                                                  profileId: profileId,
-                                                 parent: parent,
+                                                 parentId: parentId,
                                                  index: index,
                                                  guid: guid,
                                                  spaceId: spaceId,
-                                                 now: now,
+                                                 syncId: nil,
+                                                 createdDate: nil,
+                                                 strictParent: false,
                                                  in: context)
             } catch {
                 AppLogError("Failed to create directory: \(error)")
             }
         }
+    }
+
+    /// Throwing sibling used ONLY by the sync layer (§4.9). 文件夹不受
+    /// `allowsEmptyTitle` 影响：`insertDirectoryNode` 逐字写标题。
+    @discardableResult
+    func createDirectoryThrowing(title: String,
+                                 profileId: String,
+                                 parentId: String?,
+                                 index: Int? = nil,
+                                 guid: String? = nil,
+                                 spaceId: String = LocalStore.defaultSpaceId,
+                                 syncId: String? = nil,
+                                 createdDate: Date? = nil) async throws -> String {
+        try await performBackgroundWriteAndWaitThrowing { context in
+            try self.createDirectoryBody(title: title,
+                                         profileId: profileId,
+                                         parentId: parentId,
+                                         index: index,
+                                         guid: guid,
+                                         spaceId: spaceId,
+                                         syncId: syncId,
+                                         createdDate: createdDate,
+                                         strictParent: true,
+                                         in: context).guid
+        }
+    }
+
+    /// Single implementation shared by both entry points.
+    private func createDirectoryBody(title: String,
+                                     profileId: String,
+                                     parentId: String?,
+                                     index: Int?,
+                                     guid: String?,
+                                     spaceId: String,
+                                     syncId: String?,
+                                     createdDate: Date?,
+                                     strictParent: Bool,
+                                     in context: ModelContext) throws -> TabDataModel {
+        guard let parent = try resolveParent(for: parentId,
+                                             profileId: profileId,
+                                             spaceId: spaceId,
+                                             in: context,
+                                             strict: strictParent) else {
+            throw LocalStoreWriteError.rowNotFound
+        }
+        let now = createdDate ?? Date()
+        let folder = try insertDirectoryNode(title: title,
+                                             profileId: profileId,
+                                             parent: parent,
+                                             index: index,
+                                             guid: guid,
+                                             spaceId: spaceId,
+                                             now: now,
+                                             in: context)
+        folder.syncId = syncId
+        return folder
     }
 
     /// Creates a folder and its initial bookmark in the same write transaction.
@@ -440,39 +577,101 @@ extension LocalStore {
         performBackgroundWrite { [weak self] context in
             guard let self else { return }
             do {
-                guard let node = try self.bookmarkNode(with: guid, in: context) else {
-                    AppLogError("Bookmark \(guid) not found for move")
-                    return
-                }
-                guard try !self.isBookmarkRoot(node, in: context) else {
-                    AppLogError("Attempted to move bookmark root")
-                    return
-                }
-                // Use the source node's own spaceId so a missing/nil parentId
-                // falls back to the right Space's root (cross-Space moves are
-                // not supported via this API today).
-                let resolveSpaceId = node.spaceId ?? Self.defaultSpaceId
-                guard let parent = try self.resolveParent(for: parentId, profileId: profileId, spaceId: resolveSpaceId, in: context) else {
-                    AppLogError("Target parent not found for move")
-                    return
-                }
-                
-                let originalParent = node.parent
-                node.parent = parent
-                
-                if let originalParent, originalParent.guid != parent.guid {
-                    let originalSiblings = try self.children(of: originalParent, in: context)
-                    self.normalizeIndexes(for: originalSiblings)
-                }
-                
-                var siblings = try self.children(of: parent, in: context).filter { $0.guid != node.guid }
-                let targetIndex = Self.clamp(index: newIndex, upperBound: siblings.count)
-                siblings.insert(node, at: targetIndex)
-                self.normalizeIndexes(for: siblings)
-                node.updatedDate = Date()
+                // `toSpaceId: nil` 保留今天的语义：从行自己身上取 Space，于是一个
+                // 缺失 / nil 的 parentId 落回那个 Space 的 root，且不重打任何标签。
+                try self.moveBookmarkBody(guid,
+                                          profileId: profileId,
+                                          toParentGuid: parentId,
+                                          toSpaceId: nil,
+                                          index: newIndex,
+                                          strictParent: false,
+                                          in: context)
             } catch {
                 AppLogError("Failed to move bookmark: \(error)")
             }
+        }
+    }
+
+    /// 新原语：**一次调用**同时做「重打整棵子树的 Space / Profile 标签」与「重挂到任意
+    /// 文件夹」，而且是一次字段变化，不是删+建——子行的 `guid` 一个都不换。
+    ///
+    /// 既有的两个原语都表达不了这件事：`moveBookmark` 从行自己身上取 Space 并自述「本
+    /// API 今天不支持跨 Space 移动」；`moveBookmarks` 永远落到目标 Space 的 root，从不
+    /// 落到某个文件夹。
+    ///
+    /// `toParentGuid == nil` 表示「直接挂在这个 Space 的 canonical root 下」。
+    func moveBookmarkThrowing(guid: String,
+                              toParentGuid parentGuid: String?,
+                              inSpaceId spaceId: String,
+                              index: Int) async throws {
+        try await performBackgroundWriteAndWaitThrowing { context in
+            // Profile 由目标 Space 决定（一个 Space 只属于一个 Profile）；目标 Space 行
+            // 还不在本地时退回这条行自己的 Profile。
+            let targetProfileId = try self.profileId(ofSpaceId: spaceId, in: context)
+                ?? self.bookmarkNodeProfileId(guid, in: context)
+                ?? Self.defaultProfileId
+            try self.moveBookmarkBody(guid,
+                                      profileId: targetProfileId,
+                                      toParentGuid: parentGuid,
+                                      toSpaceId: spaceId,
+                                      index: index,
+                                      strictParent: true,
+                                      in: context)
+        }
+    }
+
+    /// Single implementation shared by both entry points.
+    private func moveBookmarkBody(_ guid: String,
+                                  profileId: String,
+                                  toParentGuid parentId: String?,
+                                  toSpaceId requestedSpaceId: String?,
+                                  index newIndex: Int?,
+                                  strictParent: Bool,
+                                  in context: ModelContext) throws {
+        guard let node = try bookmarkNode(with: guid, in: context) else {
+            throw LocalStoreWriteError.rowNotFound
+        }
+        guard try !isBookmarkRoot(node, in: context) else {
+            throw LocalStoreWriteError.rowIsRoot
+        }
+        let targetSpaceId = requestedSpaceId ?? node.spaceId ?? Self.defaultSpaceId
+        guard let parent = try resolveParent(for: parentId,
+                                             profileId: profileId,
+                                             spaceId: targetSpaceId,
+                                             in: context,
+                                             strict: strictParent) else {
+            throw LocalStoreWriteError.rowNotFound
+        }
+
+        let originalParent = node.parent
+        node.parent = parent
+
+        if let originalParent, originalParent.guid != parent.guid {
+            let originalSiblings = try children(of: originalParent, in: context)
+            normalizeIndexes(for: originalSiblings)
+        }
+
+        var siblings = try children(of: parent, in: context).filter { $0.guid != node.guid }
+        let targetIndex = Self.clamp(index: newIndex, upperBound: siblings.count)
+        siblings.insert(node, at: targetIndex)
+        normalizeIndexes(for: siblings)
+
+        let now = Date()
+        // 只有显式指定了目标 Space 的调用（也就是同步层）才会重打标签；UI 入口传 nil，
+        // 走的还是今天那一行 `node.updatedDate = Date()`。
+        if let requestedSpaceId,
+           node.spaceId != requestedSpaceId || node.profileId != profileId {
+            guard let targetProfile = try profile(with: profileId, in: context, createIfNeeded: true) else {
+                throw LocalStoreWriteError.rowNotFound
+            }
+            try retagBookmarkSubtree(node,
+                                     profileId: profileId,
+                                     profile: targetProfile,
+                                     spaceId: requestedSpaceId,
+                                     updatedDate: now,
+                                     in: context)
+        } else {
+            node.updatedDate = now
         }
     }
 
@@ -592,87 +791,121 @@ extension LocalStore {
         performBackgroundWrite { [weak self] context in
             guard let self else { return }
             do {
-                guard !guids.isEmpty else { return }
-                let targetSpaceIsWritable: Bool
-                if targetSpaceId == Self.defaultSpaceId {
-                    targetSpaceIsWritable = true
-                } else {
-                    targetSpaceIsWritable = try self.importTargetSpaceIsWritable(profileId: targetProfileId,
-                                                                                 spaceId: targetSpaceId,
-                                                                                 in: context)
-                }
-                guard targetSpaceIsWritable else {
-                    AppLogError("Target Space not found when moving bookmarks")
-                    return
-                }
-                guard let targetProfile = try self.profile(with: targetProfileId,
-                                                           in: context,
-                                                           createIfNeeded: true),
-                      let targetRoot = try self.bookmarkRoot(profileId: targetProfileId,
-                                                             spaceId: targetSpaceId,
-                                                             in: context,
-                                                             createIfNeeded: true) else {
-                    AppLogError("Target bookmark root not found when moving bookmarks")
-                    return
-                }
-
-                let requestedGuids = Set(guids)
-                var sourceParentsByGuid: [String: TabDataModel] = [:]
-                var movedNodes: [TabDataModel] = []
-                var movedGuids = Set<String>()
-                let now = Date()
-
-                for guid in guids {
-                    guard let node = try self.bookmarkNode(with: guid, in: context),
-                          node.profileId == sourceProfileId,
-                          try !self.isBookmarkRoot(node, in: context),
-                          !self.hasAncestor(of: node, in: requestedGuids) else {
-                        continue
-                    }
-                    if node.spaceId == targetSpaceId && node.profileId == targetProfileId {
-                        continue
-                    }
-
-                    if let parent = node.parent {
-                        sourceParentsByGuid[parent.guid] = parent
-                    }
-                    node.parent = targetRoot
-                    try self.retagBookmarkSubtree(node,
-                                                  profileId: targetProfileId,
-                                                  profile: targetProfile,
-                                                  spaceId: targetSpaceId,
-                                                  updatedDate: now,
-                                                  in: context)
-                    movedNodes.append(node)
-                    movedGuids.insert(node.guid)
-                }
-
-                guard !movedNodes.isEmpty else { return }
-                for parent in sourceParentsByGuid.values where parent.guid != targetRoot.guid {
-                    let siblings = try self.children(of: parent, in: context)
-                    self.normalizeIndexes(for: siblings)
-                }
-
-                var targetSiblings = try self.children(of: targetRoot, in: context)
-                    .filter { !movedGuids.contains($0.guid) }
-                targetSiblings.append(contentsOf: movedNodes)
-                self.normalizeIndexes(for: targetSiblings)
-
-                for node in movedNodes where node.dataType == .bookmarkFolder {
-                    if try self.hasSelectedDescendant(of: node,
-                                                      selectedGuids: requestedGuids,
-                                                      in: context) {
-                        try self.liftUnselectedChildren(from: node,
-                                                        selectedGuids: requestedGuids,
-                                                        updatedDate: now,
-                                                        in: context)
-                    }
-                }
-                targetRoot.updatedDate = now
+                try self.moveBookmarksBody(guids,
+                                           sourceProfileId: sourceProfileId,
+                                           toSpaceId: targetSpaceId,
+                                           targetProfileId: targetProfileId,
+                                           in: context)
             } catch {
                 AppLogError("Failed to move bookmarks to Space: \(error)")
             }
         }
+    }
+
+    /// Throwing sibling used ONLY by the sync layer (§4.9). 源与目标是同一个 Profile：
+    /// 账户里的一条行不会在两个 Chromium profile 之间搬。
+    func moveBookmarksThrowing(guids: [String],
+                               toSpaceId targetSpaceId: String,
+                               profileId: String) async throws {
+        try await performBackgroundWriteAndWaitThrowing { context in
+            try self.moveBookmarksBody(guids,
+                                       sourceProfileId: profileId,
+                                       toSpaceId: targetSpaceId,
+                                       targetProfileId: profileId,
+                                       in: context)
+        }
+    }
+
+    /// Single implementation shared by both entry points.
+    private func moveBookmarksBody(_ guids: [String],
+                                   sourceProfileId: String,
+                                   toSpaceId targetSpaceId: String,
+                                   targetProfileId: String,
+                                   in context: ModelContext) throws {
+        // 空清单是调用方的 bug，不是一次成功的空操作。
+        guard !guids.isEmpty else {
+            throw LocalStoreWriteError.noCandidateSurvived
+        }
+        let targetSpaceIsWritable: Bool
+        if targetSpaceId == Self.defaultSpaceId {
+            targetSpaceIsWritable = true
+        } else {
+            targetSpaceIsWritable = try importTargetSpaceIsWritable(profileId: targetProfileId,
+                                                                    spaceId: targetSpaceId,
+                                                                    in: context)
+        }
+        guard targetSpaceIsWritable else {
+            throw LocalStoreWriteError.targetNotWritable
+        }
+        // 纯读的 root 解析（R16）。今天这里用 `createIfNeeded: true`，删掉 root 之后会
+        // 重新建一个并返回非 nil，于是下面那条守卫不可达；而「重建一个空 root 再搬进去」
+        // 本来就是同步层不想要的副作用。
+        guard let targetProfile = try profile(with: targetProfileId,
+                                              in: context,
+                                              createIfNeeded: true),
+              let targetRoot = try existingBookmarkRoot(profileId: targetProfileId,
+                                                        spaceId: targetSpaceId,
+                                                        in: context) else {
+            throw LocalStoreWriteError.rowNotFound
+        }
+
+        let requestedGuids = Set(guids)
+        var sourceParentsByGuid: [String: TabDataModel] = [:]
+        var movedNodes: [TabDataModel] = []
+        var movedGuids = Set<String>()
+        let now = Date()
+
+        for guid in guids {
+            guard let node = try bookmarkNode(with: guid, in: context),
+                  node.profileId == sourceProfileId,
+                  try !isBookmarkRoot(node, in: context),
+                  !hasAncestor(of: node, in: requestedGuids) else {
+                continue
+            }
+            if node.spaceId == targetSpaceId && node.profileId == targetProfileId {
+                continue
+            }
+
+            if let parent = node.parent {
+                sourceParentsByGuid[parent.guid] = parent
+            }
+            node.parent = targetRoot
+            try retagBookmarkSubtree(node,
+                                     profileId: targetProfileId,
+                                     profile: targetProfile,
+                                     spaceId: targetSpaceId,
+                                     updatedDate: now,
+                                     in: context)
+            movedNodes.append(node)
+            movedGuids.insert(node.guid)
+        }
+
+        // 上面两处 `continue` 今天完全静默，整批被跳过时旧代码「成功」返回，同步层据此
+        // 写下一条永远修不好的基线。
+        guard !movedNodes.isEmpty else {
+            throw LocalStoreWriteError.noCandidateSurvived
+        }
+        for parent in sourceParentsByGuid.values where parent.guid != targetRoot.guid {
+            let siblings = try children(of: parent, in: context)
+            normalizeIndexes(for: siblings)
+        }
+
+        var targetSiblings = try children(of: targetRoot, in: context)
+            .filter { !movedGuids.contains($0.guid) }
+        targetSiblings.append(contentsOf: movedNodes)
+        normalizeIndexes(for: targetSiblings)
+
+        for node in movedNodes where node.dataType == .bookmarkFolder {
+            if try hasSelectedDescendant(of: node,
+                                         selectedGuids: requestedGuids,
+                                         in: context) {
+                try liftUnselectedChildren(from: node,
+                                           selectedGuids: requestedGuids,
+                                           updatedDate: now,
+                                           in: context)
+            }
+        }
+        targetRoot.updatedDate = now
     }
 
     /// Clones an explicit bookmark selection into another Space's bookmark
@@ -754,78 +987,173 @@ extension LocalStore {
                         url: String?,
                         secondaryUrl: String?? = nil,
                         secondaryTitle: String?? = nil) {
+        // UI 路径今天静默丢弃空标题（`if let title, !title.isEmpty`）。共享 body 里
+        // 「空标题 + `allowsEmptyTitle == false`」的语义是「替换成 URL 字符串」，与
+        // create 路径同一条规则，所以这里在入口就把空标题折成「这次不改标题」——UI 的
+        // 行为因此一字不变。
+        let titleUpdate = (title?.isEmpty == false) ? title : nil
         performBackgroundWrite { [weak self] context in
             guard let self else { return }
             do {
-                guard let node = try self.bookmarkNode(with: guid, in: context) else {
-                    AppLogError("Bookmark \(guid) not found for update")
-                    return
-                }
-                if let title, !title.isEmpty {
-                    node.title = title
-                }
-                if let urlString = url {
-                    guard let newURL = self.normalizedURL(from: urlString) else {
-                        AppLogError("Invalid URL while updating bookmark: \(urlString)")
-                        return
-                    }
-                    node.url = newURL
-                }
-                var secondaryUrlClearedInThisUpdate = false
-                if let secondaryUrlOpt = secondaryUrl {
-                    if let raw = secondaryUrlOpt, !raw.isEmpty {
-                        // Mirror the primary-URL behavior: a non-empty
-                        // secondary URL that fails to parse aborts the whole
-                        // update so the user sees the error and the bookmark
-                        // does not silently keep its old state mixed with
-                        // partially-applied changes.
-                        guard let normalized = self.normalizedURL(from: raw) else {
-                            AppLogError("Invalid secondary URL while updating bookmark: \(raw)")
-                            return
-                        }
-                        node.secondaryUrl = normalized
-                    } else {
-                        node.secondaryUrl = nil
-                        secondaryUrlClearedInThisUpdate = true
-                    }
-                }
-                if secondaryUrlClearedInThisUpdate {
-                    node.secondaryTitle = nil
-                } else if let secondaryTitleOpt = secondaryTitle {
-                    if let raw = secondaryTitleOpt, !raw.isEmpty {
-                        node.secondaryTitle = raw
-                    } else {
-                        node.secondaryTitle = nil
-                    }
-                }
-                node.updatedDate = Date()
+                try self.updateBookmarkBody(guid,
+                                            profileId: profileId,
+                                            title: titleUpdate,
+                                            url: url,
+                                            secondaryUrl: secondaryUrl,
+                                            secondaryTitle: secondaryTitle,
+                                            allowsEmptyTitle: false,
+                                            in: context)
             } catch {
                 AppLogError("Failed to update bookmark: \(error)")
             }
         }
     }
-    
+
+    /// Throwing sibling used ONLY by the sync layer (§4.9).
+    ///
+    /// `title == nil` 表示这次不改标题；`title == ""` 配 `allowsEmptyTitle: true` 表示
+    /// 把标题清空（远端真的可以有一条空标题的书签）。内容字段真的变了才写
+    /// `contentUpdatedDate`。
+    func updateBookmarkThrowing(_ guid: String,
+                                profileId: String,
+                                title: String?,
+                                url: String?,
+                                secondaryUrl: String?? = nil,
+                                secondaryTitle: String?? = nil,
+                                allowsEmptyTitle: Bool = true) async throws {
+        try await performBackgroundWriteAndWaitThrowing { context in
+            try self.updateBookmarkBody(guid,
+                                        profileId: profileId,
+                                        title: title,
+                                        url: url,
+                                        secondaryUrl: secondaryUrl,
+                                        secondaryTitle: secondaryTitle,
+                                        allowsEmptyTitle: allowsEmptyTitle,
+                                        in: context)
+        }
+    }
+
+    /// Single implementation shared by both entry points.
+    ///
+    /// **先把全部 URL 解析完再写任何字段**：今天的实现把标题写进 model 之后才校验 URL，
+    /// 一次「改标题 + 改成一个非法 URL」于是留下一个半应用状态——标题变了，URL 没变，
+    /// 调用方却看不出失败。
+    private func updateBookmarkBody(_ guid: String,
+                                    profileId: String,
+                                    title: String?,
+                                    url: String?,
+                                    secondaryUrl: String??,
+                                    secondaryTitle: String??,
+                                    allowsEmptyTitle: Bool,
+                                    in context: ModelContext) throws {
+        guard let node = try bookmarkNode(with: guid, in: context) else {
+            throw LocalStoreWriteError.rowNotFound
+        }
+
+        var resolvedURL: URL?
+        if let urlString = url {
+            guard let newURL = normalizedURL(from: urlString) else {
+                throw LocalStoreWriteError.invalidURL
+            }
+            resolvedURL = newURL
+        }
+        // 外层「改不改」，内层「改成什么，nil = 清空」。
+        var resolvedSecondaryURL: URL??
+        if let secondaryUrlOpt = secondaryUrl {
+            if let raw = secondaryUrlOpt, !raw.isEmpty {
+                // Mirror the primary-URL behavior: a non-empty secondary URL
+                // that fails to parse aborts the whole update so the user sees
+                // the error and the bookmark does not silently keep its old
+                // state mixed with partially-applied changes.
+                guard let normalized = normalizedURL(from: raw) else {
+                    throw LocalStoreWriteError.invalidURL
+                }
+                resolvedSecondaryURL = .some(normalized)
+            } else {
+                resolvedSecondaryURL = .some(nil)
+            }
+        }
+
+        var contentDidChange = false
+        if let resolvedURL, node.url != resolvedURL {
+            node.url = resolvedURL
+            contentDidChange = true
+        }
+        if let title {
+            // 空标题在 `allowsEmptyTitle == false` 时替换成 URL 字符串，与
+            // `insertBookmarkNode` 是同一条规则。
+            let effectiveTitle = (title.isEmpty && !allowsEmptyTitle) ? node.url.absoluteString : title
+            if node.title != effectiveTitle {
+                node.title = effectiveTitle
+                contentDidChange = true
+            }
+        }
+        var secondaryUrlClearedInThisUpdate = false
+        if let resolvedSecondaryURL {
+            if node.secondaryUrl != resolvedSecondaryURL {
+                node.secondaryUrl = resolvedSecondaryURL
+                contentDidChange = true
+            }
+            secondaryUrlClearedInThisUpdate = resolvedSecondaryURL == nil
+        }
+        if secondaryUrlClearedInThisUpdate {
+            if node.secondaryTitle != nil {
+                node.secondaryTitle = nil
+                contentDidChange = true
+            }
+        } else if let secondaryTitleOpt = secondaryTitle {
+            let newSecondaryTitle = (secondaryTitleOpt?.isEmpty == false) ? secondaryTitleOpt : nil
+            if node.secondaryTitle != newSecondaryTitle {
+                node.secondaryTitle = newSecondaryTitle
+                contentDidChange = true
+            }
+        }
+
+        let now = Date()
+        // 只在内容字段真的变化时写：把标题改成同样文字的一次保存，不该让这一行赢下对端
+        // 的编辑。
+        if contentDidChange {
+            node.contentUpdatedDate = now
+        }
+        node.updatedDate = now
+    }
+
     /// Deletes a bookmark or folder and compacts sibling indexes.
     func deleteBookmark(_ guid: String, profileId: String) {
         performBackgroundWrite { [weak self] context in
             guard let self else { return }
             do {
-                guard let node = try self.bookmarkNode(with: guid, in: context) else { return }
-                guard try !self.isBookmarkRoot(node, in: context) else {
-                    AppLogError("Attempted to delete bookmark root")
-                    return
-                }
-                
-                let parent = node.parent
-                context.delete(node)
-                
-                if let parent {
-                    let siblings = try self.children(of: parent, in: context)
-                    self.normalizeIndexes(for: siblings)
-                }
+                try self.deleteBookmarkBody(guid, profileId: profileId, in: context)
             } catch {
                 AppLogError("Failed to delete bookmark: \(error)")
             }
+        }
+    }
+
+    /// Throwing sibling used ONLY by the sync layer (§4.9).
+    func deleteBookmarkThrowing(_ guid: String, profileId: String) async throws {
+        try await performBackgroundWriteAndWaitThrowing { context in
+            try self.deleteBookmarkBody(guid, profileId: profileId, in: context)
+        }
+    }
+
+    /// Single implementation shared by both entry points.
+    private func deleteBookmarkBody(_ guid: String,
+                                    profileId: String,
+                                    in context: ModelContext) throws {
+        guard let node = try bookmarkNode(with: guid, in: context) else {
+            throw LocalStoreWriteError.rowNotFound
+        }
+        guard try !isBookmarkRoot(node, in: context) else {
+            throw LocalStoreWriteError.rowIsRoot
+        }
+
+        let parent = node.parent
+        context.delete(node)
+
+        if let parent {
+            let siblings = try children(of: parent, in: context)
+            normalizeIndexes(for: siblings)
         }
     }
     
@@ -1038,6 +1366,69 @@ extension LocalStore {
         }
         return root
     }
+
+    /// 纯读版的 root 解析：按 `SpaceModel.bookmarkRoot` 关系取，取不到返回 nil，
+    /// **一个字节都不写**。
+    ///
+    /// 为什么不能在同步轮的读路径上用 `bookmarkRoot(…)`：它在 `guard createIfNeeded`
+    /// **之前**就有 heal-on-read——`space?.bookmarkRoot = primary` 与
+    /// `context.delete(duplicate)`。放进每轮都跑的读路径等于每轮都可能在主 context 上
+    /// 删行。治愈逻辑原样留在 `bookmarkRoot` 里，由 UI 路径继续触发。
+    ///
+    /// 默认 Space 的那条回落是读，不是写：默认 Space 的 root 物理上就是 legacy 的
+    /// `ProfileModel.bookmarkRoot`，同一棵树有两个指针。这里只读第二个指针，不回链。
+    func existingBookmarkRoot(profileId: String,
+                              spaceId: String,
+                              in context: ModelContext) throws -> TabDataModel? {
+        let spaceDescriptor = FetchDescriptor<SpaceModel>(
+            predicate: #Predicate<SpaceModel> { $0.spaceId == spaceId && $0.profileId == profileId }
+        )
+        if let linked = try context.fetch(spaceDescriptor).first?.bookmarkRoot {
+            return linked
+        }
+        guard spaceId == Self.defaultSpaceId else { return nil }
+        return try profile(with: profileId, in: context, createIfNeeded: false)?.bookmarkRoot
+    }
+
+    /// 全部书签与文件夹行，**一次** fetch 带关系预取，给快照 / 差分 / index 投影三个
+    /// 消费者复用。
+    ///
+    /// 谓词把 raw value 先提成局部 `let`：`TabDataModel.type` 是裸 `Int`，`dataType`
+    /// 是 extension 上的计算属性，`#Predicate` 看不见它。
+    func allBookmarkModels(in context: ModelContext) throws -> [TabDataModel] {
+        let bookmarkRaw = TabDataType.bookmark.rawValue
+        let folderRaw = TabDataType.bookmarkFolder.rawValue
+        var descriptor = FetchDescriptor<TabDataModel>(
+            predicate: #Predicate<TabDataModel> { $0.type == bookmarkRaw || $0.type == folderRaw }
+        )
+        descriptor.relationshipKeyPathsForPrefetching = [\.parent, \.profile]
+        return try context.fetch(descriptor)
+    }
+
+    /// 每一对 (profileId, spaceId) 的 canonical root 的 guid。
+    ///
+    /// **绝不逐行调 `isBookmarkRoot(_:in:)`**：那个函数每次都 fetch 全部 `ProfileModel`
+    /// 与全部 `SpaceModel`，在一棵上千条的树上是平方级。这里每对 Space 只解析一次。
+    func canonicalRootGuids(in context: ModelContext) throws -> Set<String> {
+        var pairs: [(profileId: String, spaceId: String)] = []
+        for space in try context.fetch(FetchDescriptor<SpaceModel>()) {
+            pairs.append((space.profileId, space.spaceId))
+        }
+        for profile in try context.fetch(FetchDescriptor<ProfileModel>()) {
+            pairs.append((profile.profileId, Self.defaultSpaceId))
+        }
+        var guids = Set<String>()
+        var seen = Set<String>()
+        for pair in pairs {
+            guard seen.insert("\(pair.profileId)\u{0}\(pair.spaceId)").inserted else { continue }
+            if let root = try existingBookmarkRoot(profileId: pair.profileId,
+                                                   spaceId: pair.spaceId,
+                                                   in: context) {
+                guids.insert(root.guid)
+            }
+        }
+        return guids
+    }
 }
 
 // MARK: - Helpers
@@ -1060,7 +1451,12 @@ private extension LocalStore {
             $0.parent?.guid == parentGuid
         }
 
-        let sortBy: [SortDescriptor<TabDataModel>] = [SortDescriptor(\.index)]
+        // 次键 `\.guid` 与 `pinnedTabs(...)` 一致。没有它的时候，一条被排除的兄弟
+        // （停放 / 待删 / 还没身份）留着的过期 `index` 会与新写的撞上，撞上的两行顺序
+        // 随 fetch 而变，于是出站 pass 每轮给其中一条算出新 rank 发出去，对端应用后顺序
+        // 又翻回来——每轮两条无谓的 commit，永远。有了次键，index 撞车最坏只是「不对」，
+        // 而不是「不确定」。
+        let sortBy: [SortDescriptor<TabDataModel>] = [SortDescriptor(\.index), SortDescriptor(\.guid)]
         let descriptor = FetchDescriptor<TabDataModel>(predicate: predicate, sortBy: sortBy)
         return try context.fetch(descriptor)
     }
@@ -1357,9 +1753,20 @@ private extension LocalStore {
                             secondaryUrl: URL? = nil,
                             secondaryTitle: String? = nil,
                             favicon: Data? = nil,
+                            allowsEmptyTitle: Bool = false,
                             now: Date,
                             in context: ModelContext) throws -> TabDataModel {
-        let bookmark = TabDataModel(title: (title?.isEmpty == false ? title! : url.absoluteString),
+        // 默认（UI 路径）行为一字不变：空标题替换成 URL 字符串。同步层传 `true`，因为
+        // 一条 `title == ""` 的远端 create 若落成 URL 字符串，刚写下的 `reconciled` 就与
+        // 行对不上，下一轮快照判成本机改了标题、盖 `now`、把 URL 当标题发回去盖掉对端刚
+        // 清空的值。
+        let resolvedTitle: String
+        if let title, !title.isEmpty || allowsEmptyTitle {
+            resolvedTitle = title
+        } else {
+            resolvedTitle = url.absoluteString
+        }
+        let bookmark = TabDataModel(title: resolvedTitle,
                                     guid: guid ?? UUID().uuidString,
                                     index: 0,
                                     url: url,
@@ -1378,20 +1785,54 @@ private extension LocalStore {
         return bookmark
     }
     
+    /// `strict: false` 是今天的行为：一个解析不到 / 不是文件夹的父**无日志地**落回
+    /// Space root。对 UI 这是善意容错。
+    ///
+    /// `strict: true` 只给同步层：落回 root 在那边意味着「把一条书签建到了账户没要求的
+    /// 位置」，而下一轮差分会把这个位置当成本机意图发回去，覆盖对端正确的
+    /// `parent_uuid`。
     func resolveParent(for parentId: String?,
                        profileId: String,
                        spaceId: String = LocalStore.defaultSpaceId,
                        in context: ModelContext,
-                       createIfNeeded: Bool = true) throws -> TabDataModel? {
-        if let parentId,
-           let node = try bookmarkNode(with: parentId, in: context),
-           node.dataType == .bookmarkFolder {
-            return node
+                       createIfNeeded: Bool = true,
+                       strict: Bool = false) throws -> TabDataModel? {
+        if let parentId {
+            if let node = try bookmarkNode(with: parentId, in: context),
+               node.dataType == .bookmarkFolder {
+                return node
+            }
+            if strict {
+                throw LocalStoreWriteError.rowNotFound
+            }
         }
         return try bookmarkRoot(profileId: profileId,
                                 spaceId: spaceId,
                                 in: context,
                                 createIfNeeded: createIfNeeded)
+    }
+
+    /// 这条行自己的 `profileId`，不存在就返回 nil。
+    func bookmarkNodeProfileId(_ guid: String, in context: ModelContext) throws -> String? {
+        try bookmarkNode(with: guid, in: context)?.profileId
+    }
+
+    /// 一个 Space 只属于一个 Profile。Space 行还不在本地时返回 nil。
+    func profileId(ofSpaceId spaceId: String, in context: ModelContext) throws -> String? {
+        let descriptor = FetchDescriptor<SpaceModel>(
+            predicate: #Predicate<SpaceModel> { $0.spaceId == spaceId }
+        )
+        return try context.fetch(descriptor).first?.profileId
+    }
+
+    /// 用户输入的 URL 归一化。`URLProcessor.processUserInput` 会把不像 URL 的东西变成
+    /// 搜索，所以它**只在 UI 路径上**跑；同步层的 throwing 兄弟直接收 `URL`。
+    func userInputBookmarkURL(from raw: String?) throws -> URL {
+        guard let normalized = normalizedURL(from: raw),
+              let processed = URL(string: URLProcessor.processUserInput(normalized.absoluteString)) else {
+            throw LocalStoreWriteError.invalidURL
+        }
+        return processed
     }
 
     /// Returns true if `node` is the hidden top-level folder for any Profile
@@ -1463,3 +1904,214 @@ extension LocalStore {
         return URL(string: "https://\(raw)")
     }
 }
+
+// MARK: - 批量插入（同步层落地专用）
+
+extension LocalStore {
+    /// 一条待批量插入的书签 / 文件夹行。`index` 由调用方按 §4.10 的 rank 投影预先算好。
+    struct BulkBookmarkInsert {
+        var guid: String
+        /// 账户级同步身份。与行在同一个事务里写下，落地路径没有第二次写可以失败。
+        var syncId: String?
+        var title: String
+        /// 文件夹带占位 URL。
+        var url: URL
+        var index: Int
+        var isFolder: Bool
+        /// nil = 直接挂在这个 Space 的 canonical root 下。
+        var parentGuid: String?
+        var spaceId: String
+        var profileId: String
+        var createdDate: Date
+        var contentUpdatedDate: Date?
+        var secondaryUrl: URL?
+        var secondaryTitle: String?
+        /// `TabSource` 的 raw value。
+        var source: Int
+
+        init(guid: String,
+             syncId: String? = nil,
+             title: String,
+             url: URL,
+             index: Int,
+             isFolder: Bool,
+             parentGuid: String?,
+             spaceId: String,
+             profileId: String,
+             createdDate: Date,
+             contentUpdatedDate: Date? = nil,
+             secondaryUrl: URL? = nil,
+             secondaryTitle: String? = nil,
+             source: Int = 0) {
+            self.guid = guid
+            self.syncId = syncId
+            self.title = title
+            self.url = url
+            self.index = index
+            self.isFolder = isFolder
+            self.parentGuid = parentGuid
+            self.spaceId = spaceId
+            self.profileId = profileId
+            self.createdDate = createdDate
+            self.contentUpdatedDate = contentUpdatedDate
+            self.secondaryUrl = secondaryUrl
+            self.secondaryTitle = secondaryTitle
+            self.source = source
+        }
+    }
+
+    /// 一次写 N 条兄弟，**index 预先算好、不走 `insert(node:to:at:in:)`**，被触及的父
+    /// 收集起来，**在事务末尾对每个父跑一次** `normalizeIndexes`。
+    ///
+    /// 既有的 `insertBookmarkNode` / `insertDirectoryNode` 都以 `insert(node:to:at:in:)`
+    /// 收尾，而它每插一行就 fetch 一次该父的孩子并对整个兄弟列表跑一次
+    /// `normalizeIndexes`——250 条落进同一个文件夹是 250 次 fetch 加 250 次全量重排，在
+    /// 一个文件夹里是平方级，而且全在 §4.5 要求的那一个事务里、整轮都放不掉。UI 路径
+    /// 继续用 `insert(node:to:at:in:)`。
+    func insertBookmarksBulkThrowing(_ rows: [BulkBookmarkInsert]) async throws {
+        _ = try await performBackgroundWriteAndWaitThrowing { context in
+            try self.insertBookmarksBulkBody(rows, in: context)
+        }
+    }
+
+    /// 返回值是**被重排过的父的个数**，也就是 `normalizeIndexes` 被调用的次数。
+    @discardableResult
+    func insertBookmarksBulkBody(_ rows: [BulkBookmarkInsert],
+                                 in context: ModelContext) throws -> Int {
+        guard !rows.isEmpty else { return 0 }
+        var profilesById: [String: ProfileModel] = [:]
+        var insertedByGuid: [String: TabDataModel] = [:]
+        var touchedParents: [String: TabDataModel] = [:]
+
+        for row in rows {
+            let profile: ProfileModel
+            if let cached = profilesById[row.profileId] {
+                profile = cached
+            } else {
+                guard let resolved = try self.profile(with: row.profileId,
+                                                      in: context,
+                                                      createIfNeeded: true) else {
+                    throw LocalStoreWriteError.rowNotFound
+                }
+                profilesById[row.profileId] = resolved
+                profile = resolved
+            }
+
+            // 同一批里父可以排在子前面（§4.4 的拓扑顺序保证了这一点），所以先查本批已插
+            // 入的行，再查库里已有的行。
+            let parent: TabDataModel
+            if let parentGuid = row.parentGuid {
+                if let pending = insertedByGuid[parentGuid] {
+                    parent = pending
+                } else if let existing = try bookmarkNode(with: parentGuid, in: context),
+                          existing.dataType == .bookmarkFolder {
+                    parent = existing
+                } else {
+                    throw LocalStoreWriteError.rowNotFound
+                }
+            } else {
+                guard let root = try existingBookmarkRoot(profileId: row.profileId,
+                                                          spaceId: row.spaceId,
+                                                          in: context) else {
+                    throw LocalStoreWriteError.rowNotFound
+                }
+                parent = root
+            }
+
+            let node = TabDataModel(title: row.title,
+                                    guid: row.guid,
+                                    index: row.index,
+                                    url: row.url,
+                                    favicon: nil as Data?,
+                                    createdDate: row.createdDate,
+                                    updatedDate: row.createdDate)
+            node.dataType = row.isFolder ? TabDataType.bookmarkFolder : TabDataType.bookmark
+            node.spaceId = row.spaceId
+            node.profileId = row.profileId
+            node.profile = profile
+            node.isCreatedByChromium = false
+            node.secondaryUrl = row.secondaryUrl
+            node.secondaryTitle = row.secondaryTitle
+            node.source = row.source
+            node.syncId = row.syncId
+            node.contentUpdatedDate = row.contentUpdatedDate
+            context.insert(node)
+            node.parent = parent
+
+            insertedByGuid[row.guid] = node
+            touchedParents[parent.guid] = parent
+        }
+
+        for parent in touchedParents.values {
+            normalizeIndexes(for: try children(of: parent, in: context))
+        }
+        return touchedParents.count
+    }
+}
+
+#if DEBUG
+// MARK: - 测试钩子
+
+extension LocalStore {
+    /// 建一个 Space 并立刻物化它的书签根，省得每个用例自己拼 `SpaceModel` 的六个字段。
+    func createSpaceForTesting(spaceId: String, profileId: String) async throws {
+        try await createSpaceThrowing(profileId: profileId,
+                                      name: spaceId,
+                                      colorHex: "#000000",
+                                      iconName: "star",
+                                      spaceId: spaceId,
+                                      createdDate: nil)
+    }
+
+    /// 按给定 `index` 插一条书签并**跳过重排**，用来制造「两条兄弟 index 撞车」的前提。
+    func insertBookmarkWithIndexForTesting(guid: String,
+                                           parentGuid: String,
+                                           index: Int) async throws {
+        _ = try await performBackgroundWriteAndWaitThrowing { context -> Bool in
+            guard let parent = try self.bookmarkNode(with: parentGuid, in: context) else {
+                throw LocalStoreWriteError.rowNotFound
+            }
+            let now = Date()
+            let node = TabDataModel(title: guid,
+                                    guid: guid,
+                                    index: index,
+                                    url: URL(string: "https://example.com/\(guid)")!,
+                                    favicon: nil as Data?,
+                                    createdDate: now,
+                                    updatedDate: now)
+            node.dataType = TabDataType.bookmark
+            node.spaceId = parent.spaceId
+            node.profileId = parent.profileId
+            node.profile = parent.profile
+            node.isCreatedByChromium = false
+            context.insert(node)
+            node.parent = parent
+            return true
+        }
+    }
+
+    /// 断开 `SpaceModel.bookmarkRoot` 关系但把那条根行留在库里，制造「关系断了但孤儿根
+    /// 还在」的状态。
+    func detachBookmarkRootRelationshipForTesting(spaceId: String) async throws {
+        _ = try await performBackgroundWriteAndWaitThrowing { context -> Bool in
+            let descriptor = FetchDescriptor<SpaceModel>(
+                predicate: #Predicate<SpaceModel> { $0.spaceId == spaceId }
+            )
+            guard let space = try context.fetch(descriptor).first else {
+                throw LocalStoreWriteError.rowNotFound
+            }
+            space.bookmarkRoot = nil
+            return true
+        }
+    }
+
+    /// 与 `insertBookmarksBulkThrowing` 同一个 body，额外把重排次数交回给用例。
+    func insertBookmarksBulkThrowingCountingNormalizations(
+        _ rows: [BulkBookmarkInsert]
+    ) async throws -> Int {
+        try await performBackgroundWriteAndWaitThrowing { context in
+            try self.insertBookmarksBulkBody(rows, in: context)
+        }
+    }
+}
+#endif

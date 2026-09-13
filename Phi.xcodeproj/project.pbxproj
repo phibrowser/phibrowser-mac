@@ -162,6 +162,7 @@
 		3BCDDE6FBABE4BD8A51F0127 /* TabGroupCellView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE7E61A49E8A472DB330779E /* TabGroupCellView.swift */; };
 		3C86DD3C9BAE1F787AE0386A /* PhiBookmarkLocalAccess.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1F44B5AD0F29A6489A7E04E /* PhiBookmarkLocalAccess.swift */; };
 		4508A9362EEFF2EB007C94E2 /* AccountWebWindowController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4508A9352EEFF2EB007C94E2 /* AccountWebWindowController.swift */; };
+		49FFE933ACE83E9890AD08F7 /* TabDataModelSchemaV10.swift in Sources */ = {isa = PBXBuildFile; fileRef = 79EAC38D7D0DEEE2A1E0CEC3 /* TabDataModelSchemaV10.swift */; };
 		4A1F8A4E3847DE0E10062837 /* sync_enums.pb.swift in Sources */ = {isa = PBXBuildFile; fileRef = F381BC900D7B1C92A256C6D4 /* sync_enums.pb.swift */; };
 		4D454D4F5259000000000001 /* MemoryUsageModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4D454D4F5259000000000002 /* MemoryUsageModels.swift */; };
 		4D454D4F5259000000000004 /* MemoryUsageMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4D454D4F5259000000000005 /* MemoryUsageMonitor.swift */; };
@@ -796,6 +797,7 @@
 		72996560FA6510FB58EDDFFF /* PairingWizardViewModel.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = PairingWizardViewModel.swift; path = UI/PairingWizardViewModel.swift; sourceTree = "<group>"; };
 		73157ACF7005B3A5B2B3FA50 /* PhiPinnedTabLocalAccess.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = PhiPinnedTabLocalAccess.swift; sourceTree = "<group>"; };
 		772B9268E7C8EC28D42DD213 /* get_updates_caller_info.pb.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = get_updates_caller_info.pb.swift; sourceTree = "<group>"; };
+		79EAC38D7D0DEEE2A1E0CEC3 /* TabDataModelSchemaV10.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = TabDataModelSchemaV10.swift; sourceTree = "<group>"; };
 		7A5B00A02EF0000000000002 /* MemoryButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MemoryButton.swift; sourceTree = "<group>"; };
 		7B00AAAA000000040000A4B4 /* PostHogEnv.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PostHogEnv.swift; sourceTree = "<group>"; };
 		7B00AAAA000000060000A6B6 /* PostHogConfig.generated.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PostHogConfig.generated.swift; sourceTree = "<group>"; };
@@ -1475,6 +1477,7 @@
 				CCAA00062F00010000000002 /* TabDataModelSchemaV7.swift */,
 				CCAA00082F00010000000002 /* TabDataModelSchemaV8.swift */,
 				CCAA000A2F00010000000002 /* TabDataModelSchemaV9.swift */,
+				79EAC38D7D0DEEE2A1E0CEC3 /* TabDataModelSchemaV10.swift */,
 			);
 			path = TabDataModel;
 			sourceTree = "<group>";
@@ -3125,6 +3128,7 @@
 				89BE563BBDEAE08AC824F2B8 /* SpacePairingStepView.swift in Sources */,
 				3C86DD3C9BAE1F787AE0386A /* PhiBookmarkLocalAccess.swift in Sources */,
 				8B99944F2625AD1C6C443405 /* PhiPinnedTabLocalAccess.swift in Sources */,
+				49FFE933ACE83E9890AD08F7 /* TabDataModelSchemaV10.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

@@ -451,6 +451,116 @@ final class LocalStorePinnedTabTransferTests: XCTestCase {
                        "反向也在同一个事务里写了")
     }
 
+    // I1 —— 伙伴还没落地时，那一半照样落地，本地链接留 nil（spec §7.4 落地规则 3）。
+    //
+    // 防的是什么：整个批次是一个事务，所以在这里抛错会把同一轮里其余每一条 pin 操作一起
+    // 回滚——而「一对拆分 pin 只到了一半」正是 §7.4 视为**常态**的情形。基线于是永不写下、
+    // 同一批每轮重放，pin 段就此停摆。补偿是引擎在游标上记 `pendingPartnerLineage`，伙伴
+    // 落地的那一轮再把两个方向补齐。
+    func testAHalfWhoseSplitPartnerHasNotLandedStillLandsWithANilLink() async throws {
+        let store = try makeStoreWithSpaces()
+        try insertPinned(in: store, guid: "p-left", profileId: "Default", spaceId: nil,
+                         title: "Left", url: "https://left.example", index: 0,
+                         configure: { $0.pinLineageId = "L-LEFT" })
+
+        // 第一轮：只到了左边这一半，而补丁里带着右边那一半的 lineage。
+        try await store.applyPinSyncBatchThrowing([
+            .update(guid: "p-left", fields: PinFieldPatch(title: "Renamed",
+                                                          splitPartnerLineageId: "l-right")),
+        ])
+        drainMainQueue()
+
+        XCTAssertNil(try pinRow("p-left", in: store)?.splitPartnerGuid, "链接留 nil")
+        XCTAssertEqual(try pinRow("p-left", in: store)?.title, "Renamed",
+                       "同批的其余操作没有被一次「伙伴还没到」回滚")
+
+        // 第二轮：伙伴落地，两个方向一起补齐。
+        try await store.applyPinSyncBatchThrowing([
+            .create(PhiLocalPin.fixture(lineageId: "l-right",
+                                        guid: "p-right",
+                                        profileId: "Default",
+                                        index: 1,
+                                        title: "Right",
+                                        url: try XCTUnwrap(URL(string: "https://right.example")))),
+            .update(guid: "p-left", fields: PinFieldPatch(splitPartnerLineageId: "l-right")),
+        ])
+        drainMainQueue()
+
+        XCTAssertEqual(try pinRow("p-left", in: store)?.splitPartnerGuid, "p-right")
+        XCTAssertEqual(try pinRow("p-right", in: store)?.splitPartnerGuid, "p-left")
+    }
+
+    // M4 —— 一条什么都不改的补丁抛错，而不是悄悄成功。
+    //
+    // 防的是什么：这是批次里唯一一处「不抛错」曾经不等于「真的落地了」的地方，而 §4.9 的
+    // 整套保证就建立在那句等价上——引擎会为一次根本没发生的写落下基线。
+    func testAPatchThatChangesNothingThrowsInsteadOfSilentlySucceeding() async throws {
+        let store = try makeStoreWithSpaces()
+        try insertPinned(in: store, guid: "p-a", profileId: "Default", spaceId: nil,
+                         title: "A", url: "https://a.example")
+
+        await assertThrows(.noCandidateSurvived) {
+            try await store.applyPinSyncBatchThrowing([
+                .update(guid: "p-a", fields: PinFieldPatch()),
+            ])
+        }
+
+        // `url` 的外层 some、内层 nil 表达的是「不动」，所以只带它的一条补丁同样什么都不改。
+        await assertThrows(.noCandidateSurvived) {
+            try await store.applyPinSyncBatchThrowing([
+                .update(guid: "p-a", fields: PinFieldPatch(url: .some(nil))),
+            ])
+        }
+    }
+
+    // M6 —— 删掉一半，幸存的那一半在**同一个事务**里断掉反向链接。
+    //
+    // 防的是什么：UI 路径从来配不出这一幕——它删一对拆分 pin 时两条一起删——但引擎会按
+    // §7.2 只删一条（对端取消固定了其中一半）。留着那条链接，幸存的行就指着一条不存在的
+    // guid：作用域迁移的变体签名拿不到伙伴、把它当成一条普通 pin 合并，而 UI 的合并单元格
+    // 会去渲染一个查不到的对半。
+    func testDeletingOneHalfOfASplitPairClearsTheSurvivorsLink() async throws {
+        let store = try makeStoreWithSpaces()
+        try insertPinned(in: store, guid: "p-left", profileId: "Default", spaceId: nil,
+                         title: "Left", url: "https://left.example", index: 0,
+                         configure: { $0.splitPartnerGuid = "p-right" })
+        try insertPinned(in: store, guid: "p-right", profileId: "Default", spaceId: nil,
+                         title: "Right", url: "https://right.example", index: 1,
+                         configure: { $0.splitPartnerGuid = "p-left" })
+
+        try await store.applyPinSyncBatchThrowing([.delete(guid: "p-left")])
+        drainMainQueue()
+
+        XCTAssertNil(try pinRow("p-left", in: store))
+        XCTAssertNil(try pinRow("p-right", in: store)?.splitPartnerGuid,
+                     "幸存的一半不再指着一条不存在的行")
+    }
+
+    // M6 的另一半 —— 只在伙伴**确实**回指本行时才断。
+    //
+    // 防的是什么：一条单向的陈旧链接（本行指着它、它已经改配给别人）不该被这次删除顺手
+    // 改掉，那会把另一对正常的拆分拆散。
+    func testDeletingAHalfLeavesAPartnerThatPointsSomewhereElseAlone() async throws {
+        let store = try makeStoreWithSpaces()
+        try insertPinned(in: store, guid: "p-left", profileId: "Default", spaceId: nil,
+                         title: "Left", url: "https://left.example", index: 0,
+                         configure: { $0.splitPartnerGuid = "p-right" })
+        // 右边这一条已经和 `p-other` 配成了一对，它不回指 `p-left`。
+        try insertPinned(in: store, guid: "p-right", profileId: "Default", spaceId: nil,
+                         title: "Right", url: "https://right.example", index: 1,
+                         configure: { $0.splitPartnerGuid = "p-other" })
+        try insertPinned(in: store, guid: "p-other", profileId: "Default", spaceId: nil,
+                         title: "Other", url: "https://other.example", index: 2,
+                         configure: { $0.splitPartnerGuid = "p-right" })
+
+        try await store.applyPinSyncBatchThrowing([.delete(guid: "p-left")])
+        drainMainQueue()
+
+        XCTAssertEqual(try pinRow("p-right", in: store)?.splitPartnerGuid, "p-other",
+                       "另一对正常的拆分没有被波及")
+        XCTAssertEqual(try pinRow("p-other", in: store)?.splitPartnerGuid, "p-right")
+    }
+
     // MARK: - updateActivePinnedTabThrowing / removeActivePinnedTabThrowing
 
     // CASE 2b.2 —— 「guid 不在当前作用域」是 fail-closed 的设计、不是 bug，但对同步层

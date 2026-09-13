@@ -1098,10 +1098,19 @@ extension LocalStore {
     /// Single implementation shared by both entry points.
     ///
     /// 「值已经是它了」不是失败：行的状态与请求一致，基线照写是正确的。「行不存在」才是。
+    ///
+    /// 定位**只**认 pin 行（M5）。原先它按 guid 匹配任何一条 `TabDataModel` 并取一个无序
+    /// fetch 的 `.first`，而 `pinnedTabRow(with:)` 的注释已经说明一条普通 tab 与一条 pin 可以
+    /// 共享 guid 空间。落地批次是这个 body 的新调用方，把一条普通 tab 的 `splitPartnerGuid`
+    /// 改写会让它在下一轮的 pin 快照里凭空出现。**UI 行为逐字不变**：`updateTabSplitPartner`
+    /// 的每一个既有调用点（`BrowserState+Split.swift:309-310, 852-853, 900-904`、
+    /// `BrowserState.swift:3217, 5906-5907`）的 guid 都是从 `pinnedTabs` 里取的，本来就只会是
+    /// pin 行。
     func updateTabSplitPartnerBody(_ guid: String,
                                    partnerGuid: String?,
                                    in context: ModelContext) throws {
-        let predicate = #Predicate<TabDataModel> { $0.guid == guid }
+        let pinnedRaw = TabDataType.pinnedTab.rawValue
+        let predicate = #Predicate<TabDataModel> { $0.guid == guid && $0.type == pinnedRaw }
         let descriptor = FetchDescriptor<TabDataModel>(predicate: predicate)
         guard let tab = try context.fetch(descriptor).first else {
             throw LocalStoreWriteError.rowNotFound
@@ -1198,6 +1207,15 @@ extension LocalStore {
                 // 它的 URL。
                 let title = fields.title.map { $0 ?? "" }
                 let url = fields.url.flatMap { $0 }
+                let changesSplitPartner = fields.splitPartnerLineageId != nil
+                // 一条什么都不改的补丁是调用方的 bug，不是一次成功的空写（M4）。判据是
+                // **生效之后的**三个值，不是三个外层可选：`url` 的外层 some、内层 nil 表达
+                // 的是「不动」，所以只带它的一条补丁同样什么都不改。这是批次里唯一一处
+                // 「不抛错」曾经不等于「真的落地了」的地方，而 §4.9 的整套保证就建立在那
+                // 句等价上。
+                guard title != nil || url != nil || changesSplitPartner else {
+                    throw LocalStoreWriteError.noCandidateSurvived
+                }
                 if title != nil || url != nil {
                     // 两个字段都没给时**不调**：共享 body 把那当成调用方的 bug 并抛
                     // `noCandidateSurvived`，而这里它只是「这一条补丁只动了拆分伙伴」。
@@ -1215,6 +1233,12 @@ extension LocalStore {
                 }
                 // 先记归属再删：删掉之后这条 model 的属性读起来是未定义的。
                 touchedOwners.insert(owner(of: tab, at: scope))
+                // 对半的反向链接在**同一个事务**里断掉（M6）。UI 路径从来配不出这一幕——它
+                // 删一对拆分 pin 时两条一起删——但引擎会按 §7.2 只删一条（对端取消固定了
+                // 其中一半）。留着那条链接，幸存的那一行就指着一条不存在的 guid：
+                // `pinnedTabVariantSignature` 拿不到伙伴、作用域迁移把它当成一条普通 pin
+                // 合并，而 UI 的合并单元格会去渲染一个查不到的对半。
+                try clearSplitPartnerBackReferenceBody(of: tab, in: context)
                 try removeActivePinnedTabBody(guid: guid, in: context)
             }
         }
@@ -1272,13 +1296,19 @@ extension LocalStore {
         }
     }
 
-    /// 落地一条 `split_partner_uuid` 的**两个**方向，同一个事务（§7.4 / I11）。
+    /// 落地一条 `split_partner_uuid`：解析得出就把**两个**方向写在同一个事务里（§7.4 / I11）。
+    ///
+    /// **伙伴解析不出来不是失败**（§7.4 落地规则 3）：本地链接留 nil，由引擎在游标上记
+    /// `pendingPartnerLineage`，伙伴落地的那一轮再把两个方向补齐。在这里抛错是错的——整个
+    /// 批次是一个事务，于是「一对拆分 pin 只到了一半」这个 §7.4 视为**常态**的情形会把同一
+    /// 轮里其余每一条 pin 操作一起回滚；基线永不写下、同一批每轮重放，pin 段就此停摆。
+    ///
+    /// 「伙伴行存在、但坐在另一个 owner 里」按同一条处理：§7.4 说一对拆分必然同 owner，所以
+    /// 那是一条畸形载荷，该由 §4.6 去拒收或停放，而不是由一次本机写失败来表达。跨 owner 匹配
+    /// 更会把两个 Space 里两条同 lineage 的 pin 链成一对。
     ///
     /// `reconcilePinnedSplitPartners()` 帮不上忙：它遍历的是活动窗口里的 `SplitGroup`，而
     /// 一对由同步落地的拆分 pin 没有任何活动 group。
-    ///
-    /// 伙伴按**同一个 owner 内**的归一 lineage 解析。跨 owner 匹配会把两个 Space 里两条同
-    /// lineage 的 pin 链成一对，而一条拆分对按定义住在同一个集合里。
     private func applyPinSplitPartnerBody(guid: String,
                                           partnerLineageId: String?,
                                           in context: ModelContext) throws {
@@ -1300,14 +1330,11 @@ extension LocalStore {
                 in: context
             )
             // **一律过 `lineageKey`**：本机那一列存的可能是 `UUID().uuidString`（大写）或
-            // 一条回落成 guid 的旧值，而补丁里的 lineage 是线上归一过的小写。直接比恒为
-            // 假，于是每一次拆分链接都抛 `rowNotFound`，整批回滚、每轮重放。
-            guard let partner = siblings.first(where: {
+            // 一条回落成 guid 的旧值，而补丁里的 lineage 是线上归一过的小写。直接比恒为假，
+            // 于是每一条拆分 pin 都永远链不上、永远停在「等伙伴」那一格。
+            resolvedPartnerGuid = siblings.first {
                 $0.guid != guid && PinKind.lineageKey($0.pinLineageId ?? $0.guid) == wanted
-            }) else {
-                throw LocalStoreWriteError.rowNotFound
-            }
-            resolvedPartnerGuid = partner.guid
+            }?.guid
         }
 
         // 旧伙伴的反向链接先断，否则它会一直指着一条已经改配的行。只在它**确实**回指本行
@@ -1322,6 +1349,20 @@ extension LocalStore {
         if let resolvedPartnerGuid {
             try updateTabSplitPartnerBody(resolvedPartnerGuid, partnerGuid: guid, in: context)
         }
+    }
+
+    /// 断掉**回指**这一行的那条链接，同一个事务。`.delete` 在移除一条拆分 pin 之前调它。
+    ///
+    /// 只在伙伴**确实**回指本行时才写：一条单向的陈旧链接（对端已经改配给别人）不该被这次
+    /// 删除顺手改掉，那会把另一对正常的拆分拆散。
+    private func clearSplitPartnerBackReferenceBody(of tab: TabDataModel,
+                                                    in context: ModelContext) throws {
+        guard let partnerGuid = tab.splitPartnerGuid, partnerGuid != tab.guid,
+              let partner = try pinnedTabRow(with: partnerGuid, in: context),
+              partner.splitPartnerGuid == tab.guid else {
+            return
+        }
+        try updateTabSplitPartnerBody(partnerGuid, partnerGuid: nil, in: context)
     }
 
     /// 按 guid 定位一条 **pin** 行。`bookmarkNode(with:)` 那种「匹配任何 `TabDataModel`」

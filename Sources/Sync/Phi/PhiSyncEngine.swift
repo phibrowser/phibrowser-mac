@@ -146,6 +146,10 @@ struct OwnedSnapshotBytes {
     var minted: [String: String] = [:]
     var skippedUnmappedOwner = 0
     var skippedIneligibleOwner = 0
+    /// 这份空快照是不是 §7.3 的「作用域不一致 ⇒ 发布半边整段跳过」的产物。**只有 pin 会置
+    /// 它**（书签没有作用域这个概念）。它是那种轮次里唯一的诊断：一次纯 push 轮不跑 `plan`，
+    /// 于是计数行上的 `scope_mismatch` 只能从这里来。
+    var scopeMismatch = false
 }
 
 /// `plan` 的入参，擦除了 kind：到达项是信封字节。
@@ -271,9 +275,16 @@ struct OwnedKindRegistration {
     /// 一份信封字节里那条实体的归属引用（书签是父 / Space，pin 是 owner）。切片的拓扑序
     /// 与 tombstone 的反拓扑序都从它算深度。
     let owners: (Data) -> [String]
-    /// §7.4 的「本机主动解除拆分」：把基线字节里的拆分伙伴清空。nil = 这条 kind 没有这个
-    /// 概念（书签），调用方原样沿用基线。
-    let clearedSplitPartner: (Data) -> Data?
+    /// §7.4 的「本机主动解除拆分」：把基线字节里的拆分伙伴清空，并**给清空后的那个值盖上
+    /// 本轮的 `now`**（第二个参数）。nil = 这条 kind 没有这个概念（书签），调用方原样沿用
+    /// 基线。
+    ///
+    /// **时间戳必须在这里盖。** 盖戳函数（`PinKind.stamp`）分不出「表副本刚刚抹掉了一个真实
+    /// 的伙伴」与「这条 pin 从来就没有伙伴」——两种情形到它手上都是「空投影对空基线」，于是
+    /// 它按签名相等沿用基线的戳。发出去的 `("", t_基线)` 与对端手上的 `("<伙伴>", t_基线)`
+    /// 戳相同，LWW 按字节序破平手，空串**输**，对端于是永远保留那条链接：用户每解除一次、
+    /// 每同步一次又被拼回去，正是 §7.4 要防的那件事。
+    let clearedSplitPartner: (Data, Int64) -> Data?
 
     // MARK: 触本机的（main actor）
 
@@ -2814,12 +2825,21 @@ actor PhiSyncEngine {
         var counters = ownedCounters[registration.label] ?? OwnedRoundCounters()
 
         // 1. 快照。喂进去的是一份**篡改过的表副本**（§7.4 / P4）：凡是没有
-        // `pendingPartnerLineage` 的游标，其基线里的拆分伙伴被清空，于是一次真正的本机解除
-        // 拆分会如实发出去；确实在等伙伴的那些原样保留。**发布比较仍然用真表。**
-        let snapshot = await registration.snapshot(doctoredOwnedTable(registration, table),
-                                                   maps, now())
+        // `pendingPartnerLineage` 的游标，其基线里的拆分伙伴被清空**并盖上本轮的 `now`**，
+        // 于是一次真正的本机解除拆分会如实发出去、并且赢得下那次 LWW；确实在等伙伴的那些
+        // 原样保留。**发布比较仍然用真表。**
+        //
+        // 时钟只读一次：`now()` 在测试里可以按读推进，两次读会让表副本的戳与快照的戳不同，
+        // 而这两个值必须是同一个时刻。
+        let roundNow = now()
+        let snapshot = await registration.snapshot(
+            doctoredOwnedTable(registration, table, now: roundNow), maps, roundNow)
         counters.excludedUnmappedOwner +=
             snapshot.skippedUnmappedOwner + snapshot.skippedIneligibleOwner
+        // §7.3 / §11.2：作用域不一致时发布半边整段跳过，而那个跳过在**每一种轮次**里都会
+        // 发生——包括没有任何入站、因此 `plan` 根本不跑的那一种。计数只从 `plan` 那边取的话，
+        // 恰恰是唯一没有别的信号的那种轮次缺了诊断。
+        counters.scopeMismatch = counters.scopeMismatch || snapshot.scopeMismatch
 
         // 2. A12：为表里每一条游标刷新 `ownerUuid`——包括本轮因为切片而排不上队的那些。
         for (identity, owner) in snapshot.ownerUuids {
@@ -3100,12 +3120,16 @@ actor PhiSyncEngine {
     }
 
     /// §7.4 的「本机主动解除拆分」。**只改喂给 `snapshot` 的那一份副本**。
+    ///
+    /// `now` 是**本轮那一个**时刻，与喂给 `snapshot` 的是同一个值：清空后的那个值就盖它，
+    /// 于是一次真正的解除以「现在」出门并赢下对端手上那条链接（见 `clearedSplitPartner`）。
     private func doctoredOwnedTable(_ registration: OwnedKindRegistration,
-                                    _ table: PhiOwnedItemTable) -> PhiOwnedItemTable {
+                                    _ table: PhiOwnedItemTable,
+                                    now: Int64) -> PhiOwnedItemTable {
         var doctored = table
         for (identity, cursor) in table.cursors {
             guard cursor.pendingPartnerLineage == nil, let bytes = cursor.reconciled,
-                  let cleared = registration.clearedSplitPartner(bytes) else { continue }
+                  let cleared = registration.clearedSplitPartner(bytes, now) else { continue }
             doctored.cursors[identity]?.reconciled = cleared
         }
         return doctored
@@ -3637,7 +3661,7 @@ extension OwnedKindRegistration {
                 return BookmarkKind.ownerUuids(of: entity)
             },
             // 书签没有拆分伙伴这个概念，§7.4 的表副本对它是恒等变换。
-            clearedSplitPartner: { _ in nil },
+            clearedSplitPartner: { _, _ in nil },
             beginRound: { state.reload(try access.allBookmarks()) },
             // §5.1 的索引种子：游标键 ∪ **本机全部非 nil 的 `syncId`**——问的是
             // `allSyncIds()` 而不是快照，于是孤儿根下面那些行的 tombstone 也路由得到。
@@ -4203,15 +4227,26 @@ func pinClientTag(for identity: String) -> String {
 
 /// §7.4：把一份基线字节里的拆分伙伴清空，交给 `doctoredOwnedTable` 当表副本用。
 ///
-/// **只清取值，时间戳原样留着**：`PinKind.stamp` 的重盖判据是字段的**签名**（取值，不含
-/// 时间戳），动时间戳改变不了任何一条重盖决定，只会让发出去的那一条带一个更早的戳。
+/// **取值清空、时间戳盖本轮的 `now`**。`PinKind.stamp` 的重盖判据是字段的**签名**（取值，
+/// 不含时间戳），而清空之后投影值与基线值都是空串、签名相等——于是它沿用基线的戳。那条
+/// `("", t_基线)` 与对端手上的 `("<伙伴>", t_基线)` 戳相同，`SyncableSettings.lwwWinner`
+/// 按序列化字节破平手，而 proto3 省略空字符串字段，空串是对方的前缀、排在前面、**输掉**
+/// 平手——对端于是永远保留那条链接，用户每解除一次、每同步一次又被拼回去。盖上 `now` 之后
+/// 这条解除以「现在」出门，正常赢下对端那一版。
 ///
-/// nil = 这份字节不是一条 pin、或者它本来就没有伙伴——两种情形下调用方都原样沿用基线。
-func clearedPinSplitPartner(_ bytes: Data) -> Data? {
+/// 盖戳只能在这里做：`stamp` 分不出「表副本刚抹掉一个真实的伙伴」与「这条 pin 从来没有
+/// 伙伴」——两者到它手上都是空投影对空基线。
+///
+/// nil = 这份字节不是一条 pin、或者它本来就没有伙伴——两种情形下调用方都原样沿用基线，
+/// 于是「从来没有伙伴」的那一类一个字节都不会被动。
+func clearedPinSplitPartner(_ bytes: Data, now: Int64) -> Data? {
     guard let envelope = try? Phi_PhiEntity(serializedBytes: bytes),
           var entity = PinKind.entity(from: envelope),
           !entity.splitPartnerUuid.stringValue.isEmpty else { return nil }
-    entity.splitPartnerUuid.stringValue = ""
+    var cleared = Phi_PhiSettingValue()
+    cleared.stringValue = ""
+    cleared.updatedAtMs = now
+    entity.splitPartnerUuid = cleared
     return try? PinKind.envelope(entity).serializedData()
 }
 
@@ -4272,7 +4307,7 @@ extension OwnedKindRegistration {
                       let entity = PinKind.entity(from: envelope) else { return [] }
                 return PinKind.ownerUuids(of: entity)
             },
-            clearedSplitPartner: clearedPinSplitPartner(_:),
+            clearedSplitPartner: clearedPinSplitPartner(_:now:),
             beginRound: {
                 state.reload(try access.allPins(),
                              localScope: access.currentScope(),
@@ -4313,7 +4348,13 @@ private func pinSnapshot(table: PhiOwnedItemTable, maps: OwnedOwnerMaps, now: In
     var out = OwnedSnapshotBytes()
     // §7.3：作用域不一致 ⇒ 发布半边**整段**跳过——不铸造、不快照、不发任何 commit。
     // 一份空快照就是「这一轮没有任何 pin 要发布」；入站那一半由 `plan` 全部停放。
-    guard !state.scopeMismatch else { return out }
+    //
+    // 跳过的同时把 §11.2 的 `scope_mismatch` 带回去：这个跳过在**每一种轮次**里都发生，
+    // 而 `plan` 只在有入站的轮次里跑，光靠它那一路，一次纯 push 轮会悄无声息地不发布。
+    guard !state.scopeMismatch else {
+        out.scopeMismatch = true
+        return out
+    }
     let resolve = maps.resolver
     let scope = state.localScope
     let result = SyncableOwnedItems.snapshot(PinKind.self, locals: state.locals, table: table,
@@ -4419,7 +4460,9 @@ private func landPins(_ input: OwnedLandingInput,
     // `pinLineageId`。它是一次**本地写**，所以它在这一轮的 `PinApplyBatch` 里、与落地同一个
     // 事务（W14），**不在**发布段那个只读的 pre-pass 里。
     var ops = PinKind.normalizeVariants(locals: state.locals).ops
-    outcome.relineaged = ops.count
+    // **条数在批次提交之后才记**（见下面那次 `apply` 的后面）：批次是一个事务，被拒或被
+    // 停放时一行都没改，此刻就计数会让计数行报出一批没有发生过的重铸。
+    let relineaged = ops.count
     guard !input.steps.isEmpty || !ops.isEmpty else { return outcome }
 
     // 身份 -> 本机行。pin 没有 `syncId` 那一列，身份是**算出来**的。
@@ -4520,8 +4563,13 @@ private func landPins(_ input: OwnedLandingInput,
                 // R-exec-5：内容戳照实体的内容戳落，**不是 nil、也不是落地时刻**。留 nil
                 // 的话下一轮的本机比较戳回落到 `createdDate` = 落地那一刻，这条刚从对端拿
                 // 来的 pin 会在下一次字段冲突里凭一个假的「我更新」赢掉对端的真实编辑。
+                //
+                // **两个内容字段取较大的那个戳**：`PinKind.stamp` 的无基线支拿这一个值同时
+                // 盖 `title` 与 `url`（§4.2 第 5 条），只取标题的话，一次「先改标题、后改
+                // 网址」的对端编辑在这台机器上会以标题那个更早的时刻重新发布。
                 contentUpdatedDate: Date(timeIntervalSince1970:
-                                            Double(entity.title.updatedAtMs) / 1000),
+                                            Double(max(entity.title.updatedAtMs,
+                                                       entity.url.updatedAtMs)) / 1000),
                 isDormant: false)
         }
     }
@@ -4646,6 +4694,8 @@ private func landPins(_ input: OwnedLandingInput,
         outcome.pendingPartnerLineages = [:]
         return outcome
     }
+    // 事务提交了，重铸这才真的发生过。
+    outcome.relineaged = relineaged
 
     // §4.5：落地之后、写基线之前，按计划复核一次。复核读的是**落地后**的行——`apply` 收尾
     // 会自己重建一次缓存，所以这个读者此刻答的是新世界。

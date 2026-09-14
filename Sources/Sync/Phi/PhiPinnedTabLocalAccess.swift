@@ -130,6 +130,16 @@ protocol PhiPinnedTabLocalAccess: PhiFaviconWriting {
     /// 一个空集合——空集合正是 R-exec-4 要防的那个形状。
     func allPinIdentities() throws -> Set<String>
 
+    /// **本轮最后一次成功的 `allPins()` 或 `apply(_:)` 留下的那份行快照**，**不再 fetch**
+    /// （§5.7 第 2 条硬要求）。次序、作用域过滤与休眠过滤都与 `allPins()` 交出的那一份相同。
+    ///
+    /// 理由与 `PhiBookmarkLocalAccess.cachedBookmarks()` 逐字相同：一次落地改了行之后，
+    /// 同一轮的出站快照必须看见落地后的那份投影，否则旧值配上一个新鲜的 `now` 被发回账户，
+    /// 把对端刚做的编辑原地撤销。
+    ///
+    /// **`nil` = 本轮没有一份可用的快照**，调用方原样留着轮内那份投影，绝不清空。
+    func cachedPins() -> [PhiLocalPin]?
+
     /// 本机还有没有这条 lineage。理由同 `isKnownLocalBookmark`。
     ///
     /// **收到的是线上归一过的小写 lineage**（P11）：实现必须把本机那一列也过一遍
@@ -230,6 +240,16 @@ final class AccountPhiPinnedTabAccess: PhiPinnedTabLocalAccess {
             throw LocalStoreWriteError.storeUnavailable
         }
         return cachedIdentityKeys
+    }
+
+    /// 那一次 fetch 的行快照本身，**不再 fetch**。`apply(_:)` 收尾已经重建过它，所以落地
+    /// 之后同一轮的出站快照拿它就能看见落地后的世界。
+    ///
+    /// **本轮没读到就交 nil，不交 `[]`**：调用方拿它去换掉轮内那份本机投影，一个空数组会
+    /// 让整轮的出站快照变空（见协议上的契约）。
+    func cachedPins() -> [PhiLocalPin]? {
+        guard snapshotIsLoaded else { return nil }
+        return cachedRows
     }
 
     /// **两边都过 `PinKind.lineageKey`**（P11）：传进来的是线上归一过的小写 lineage，而本机

@@ -345,7 +345,7 @@ struct OwnedKindRegistration {
     /// 本轮已经读到的那些身份，用来给 tag 索引播种（§5.1）。
     let localIdentities: @MainActor () -> Set<String>
     let snapshot: @MainActor (PhiOwnedItemTable, OwnedOwnerMaps, Int64) -> OwnedSnapshotBytes
-    /// §4.7 的差分。**定义域问的是 `allSyncIds()` / `allPinIdentities()`**，不是快照
+    /// §4.7 的差分。**定义域问的是 `allSyncIds()` / `allPinRows()`**，不是快照
     /// （R-exec-4）；本轮没成功读过时它抛。
     let tombstones: @MainActor (PhiOwnedItemTable, OwnedOwnerMaps, Int64) throws
         -> OwnedItemTombstoneResult
@@ -371,7 +371,7 @@ struct OwnedKindRegistration {
     /// **抛 ⇒ 这条 kind 的级联整段不跑**（R-exec-3 同一条）：一次读不出来与「本机一条行都
     /// 没有了」在值上同形，而后者的回答是删掉命中 (a) 的每一条游标。
     ///
-    /// 判据 (b) 的定义域是 `allSyncIds()` / `allPinIdentities()`（**整库**那一次读），不是
+    /// 判据 (b) 的定义域是 `allSyncIds()` / `allPinRows()`（**整库**那一次读），不是
     /// 快照（R-exec-4 / R-exec-8）：孤儿根下面的行、作用域迁移原地留下的备份行都不发布，但
     /// 它们是**活的本地行**，「同步层这一轮不认领它」与「账户应该忘掉它」是两句不同的话。
     let liveOwners: @MainActor (Set<String>, OwnedOwnerMaps) throws -> OwnedLiveRows
@@ -3232,7 +3232,7 @@ actor PhiSyncEngine {
             table.cursors[identity] = cursor
         }
 
-        // 3. 差分（§4.7）。它的第三条判据问的是 `allSyncIds()` / `allPinIdentities()`，
+        // 3. 差分（§4.7）。它的第三条判据问的是 `allSyncIds()` / `allPinRows()`，
         // **不是快照**（R-exec-4）：孤儿根下的行不发布，但永远不会被判成删除。
         let diff: OwnedItemTombstoneResult
         do {
@@ -4873,36 +4873,6 @@ func clearedPinSplitPartner(_ bytes: Data, now: Int64, maps: OwnedOwnerMaps,
     return try? PinKind.envelope(entity).serializedData()
 }
 
-private extension PhiLocalPin {
-    /// §4.7 的定义域用的壳：只要 `PinKind.identity(of local:)` 算得出那一条身份，别的字段
-    /// 都不参与（同 `PhiLocalBookmark.identityOnly`）。
-    ///
-    /// owner 的那一半按 §7.2 的表**反推回本机形状**：Space 归属填 `spaceId`，profile 与
-    /// App 归属填 `profileId`（字面量 `"app"` 由解析器映射回它自己）。归属反推不出来 ⇒ nil，
-    /// 那条游标本来就轮不到差分处理（`tombstones` 在归属未映射上保守地跳过）。
-    static func identityOnly(lineage: String, ownerKey: String,
-                             resolve: OwnerResolver) -> PhiLocalPin? {
-        var spaceId: String?
-        var profileId: String?
-        if let localSpaceId = resolve.localSpaceId(ownerKey) {
-            spaceId = localSpaceId
-            // Space 作用域的行两个字段都非 nil（`PhiLocalPin.spaceId` 上那张表），而
-            // `PinKind` 的推导先看 `spaceId`，所以这里填哪个 profile 不影响身份。
-            profileId = LocalStore.defaultProfileId
-        } else if let localProfileId = resolve.localProfileId(ownerKey) {
-            profileId = localProfileId
-        } else {
-            return nil
-        }
-        return PhiLocalPin(lineageId: lineage, guid: lineage, spaceId: spaceId,
-                           profileId: profileId, index: 0, title: "",
-                           url: URL(string: "https://pin.phi/placeholder")!,
-                           splitPartnerLineageId: nil, source: 0,
-                           createdDate: Date(timeIntervalSince1970: 0),
-                           contentUpdatedDate: nil, isDormant: false)
-    }
-}
-
 extension OwnedKindRegistration {
     /// `PinKind` 那一条注册项。
     @MainActor
@@ -4942,8 +4912,9 @@ extension OwnedKindRegistration {
             //
             // 本机那一半交不出来：身份的后半段是**账户级** ownerKey，要由本轮的解析器从
             // `spaceId` / `profileId` 翻出来，而这个闭包按接缝的形状拿不到那份映射表；
-            // `allPinIdentities()` 交的又是**裸 lineage**，直接拿去拼 tag 会往索引里塞一批
-            // 线上永不存在的 hash。交空集合是保守的那一侧：索引少一条种子只会让一条
+            // 这个闭包也拿不到 `allPinRows()` 那份行（它不抛、也不在轮内状态里），直接拿
+            // 裸 lineage 拼 tag 会往索引里塞一批线上永不存在的 hash。交空集合是保守的那一
+            // 侧：索引少一条种子只会让一条
             // **游标已经丢失**的身份的远端 tombstone 被当成「不认识的 hash」忽略掉，而那条
             // 路径本来就要靠 R-M3-3-13 的整类型重放兜底。
             localIdentities: { [] },
@@ -4966,9 +4937,9 @@ extension OwnedKindRegistration {
             // lineage——域的构造与 `pinTombstones` 逐字同源，同样两个来源：
             //
             // 1. 当前作用域内的行交出**完整身份**（`PinKind.identity(of local:)`）；
-            // 2. `allPins()` 一条都看不见、但 `allPinIdentities()` 还认得的那些 lineage 补一
-            //    条只认领、不带归属的记录——作用域迁移原地留下的备份行属于这一类，本机确实
-            //    还有物理行，只是这一轮的快照算不出它们的 owner（R-exec-4）。
+            // 2. `allPins()` 一条都看不见、但 `allPinRows()` 还交得出来的那些行，各自按
+            //    **自己那条身份**只认领、不改写归属——作用域迁移原地留下的备份行属于这一
+            //    类，本机确实还有物理行，只是这一轮的快照不认领它们（R-exec-4 / R-exec-11）。
             //
             // **按裸 lineage 判是错的**（T9a-2）：一条 lineage 在 N 个 owner 下是 N 条身份，
             // 于是一条 owner 已被清理的游标会被**另一个 owner 下**的行保护住——它既不会被删
@@ -4978,7 +4949,7 @@ extension OwnedKindRegistration {
             liveOwners: { candidates, maps in
                 let resolve = maps.resolver
                 let scope = state.localScope
-                let lineages = try access.allPinIdentities()
+                let fullStoreRows = try access.allPinRows()
                 // 读的是 `eligibilityOwner`，**不是**身份的后半段：`identity(of local:)` 在
                 // 归属解析不出来时交的是一个占位后半段，截它等于把占位值写进游标。
                 var ownerByIdentity: [String: String] = [:]
@@ -4989,7 +4960,15 @@ extension OwnedKindRegistration {
                     else { continue }
                     ownerByIdentity[identity] = owner
                 }
-                let inScope = Set(state.locals.map { PinKind.lineageKey($0.lineageId) })
+                // 来源 2 的定义域，同 `pinTombstones` 逐字同源：轮内投影没覆盖到的那些
+                // 全库行，**各自贡献自己那条身份**（R-exec-11）。
+                let claimedGuids = Set(state.locals.map(\.guid))
+                var outOfScopeIdentities: Set<String> = []
+                for row in fullStoreRows where !claimedGuids.contains(row.guid) {
+                    guard let identity = PinKind.identity(of: row, resolve: resolve, scope: scope)
+                    else { continue }
+                    outOfScopeIdentities.insert(identity)
+                }
                 var out = OwnedLiveRows()
                 for identity in candidates {
                     if let owner = ownerByIdentity[identity] {
@@ -4997,12 +4976,11 @@ extension OwnedKindRegistration {
                         out.owners[identity] = owner
                         continue
                     }
-                    // 来源 2。**只补 `allPins()` 里一条都没有的 lineage**：当前作用域下还有
-                    // 行的那些 lineage 已经由来源 1 按身份各自表过态，再按 lineage 兜一次
-                    // 就把上面那条论证撤销了。归属交不出来 ⇒ 只认领、不改写，保留上一次
-                    // 已知的归属。
-                    guard !inScope.contains(pinIdentityHalves(identity).lineage),
-                          lineages.contains(pinIdentityHalves(identity).lineage) else { continue }
+                    // 来源 2。**按完整身份匹配**：当前作用域下还有行的那些身份已经由来源 1
+                    // 各自表过态，而作用域之外的备份行只认领**它自己**那一条。按裸 lineage
+                    // 兜一次就把上面那条论证撤销了。归属这里不改写 ⇒ 保留上一次已知的归属
+                    // （来源 1 才是唯一的 `ownerUuid` 写入方）。
+                    guard outOfScopeIdentities.contains(identity) else { continue }
                     out.claimed.insert(identity)
                 }
                 return out
@@ -5058,28 +5036,25 @@ private func pinTombstones(table: PhiOwnedItemTable, maps: OwnedOwnerMaps, now: 
     }
     let resolve = maps.resolver
     let scope = state.localScope
-    // R-exec-4：定义域问 `allPinIdentities()`，**不问快照**。本轮没成功读过时它抛，于是
-    // 这一条 kind 的发布段整段不跑——空集合的回答是给账户上每一条已发布身份发 tombstone。
-    let lineages = try access.allPinIdentities()
-    var domain = state.locals
-    // **两边的形状不同**：`allSyncIds()` 交的是完整身份，`allPinIdentities()` 交的是**裸
-    // lineage**。直接拿后者与游标身份比会把每一条游标判成死的，所以这里为「本机确实还有
-    // 行、但这一轮的 `allPins()` 看不见」的那些 lineage 补一条只带归属的壳——作用域迁移
-    // 原地留下的备份行属于这一类，「同步层这一轮不认领它」与「账户应该忘掉它」是两句不同
-    // 的话。
+    // R-exec-4：定义域问 `allPinRows()`（**全库**那一次读），**不问快照**。本轮没成功读过时
+    // 它抛，于是这一条 kind 的发布段整段不跑——空集合的回答是给账户上每一条已发布身份发
+    // tombstone。
+    let fullStoreRows = try access.allPinRows()
+    // 定义域 = 轮内那份本机投影（当前作用域内的行，已按本轮落地刷新过）+ 全库里**它没有
+    // 覆盖到**的那些行，也就是作用域迁移原地留下的备份行。两段按 `guid` 去重，轮内那一份
+    // 优先——它才是落地之后的样子。
     //
-    // **只补 `allPins()` 里一条都没有的 lineage**：当前作用域下还有行的那些 lineage，行
-    // 自己已经贡献了**它那个 owner 下**的身份；别的 owner 下的同 lineage 游标正是换 owner
-    // 之后该发 tombstone 的那一类（§7.2「换 owner = tombstone + create」，R-M3-3-23 的
-    // 中间那一程也走这条）。
-    let inScope = Set(state.locals.map { PinKind.lineageKey($0.lineageId) })
-    for identity in table.cursors.keys {
-        let halves = pinIdentityHalves(identity)
-        guard !inScope.contains(halves.lineage), lineages.contains(halves.lineage),
-              let shell = PhiLocalPin.identityOnly(lineage: halves.lineage,
-                                                   ownerKey: halves.ownerKey, resolve: resolve)
-        else { continue }
-        domain.append(shell)
+    // **每一条行各自贡献自己那条 `(lineage, owner)` 身份**（R-exec-11），身份由
+    // `SyncableOwnedItems.tombstones` 按 `PinKind.identity(of local:)` 算，与出站快照逐字
+    // 同一条推导。于是一条 profile 形状的备份行保护的是 `(L, profileUuid)` 这一条，**挡不
+    // 住** `(L, spaceX)` 被判成删除——换 owner 按 §7.2 就是「旧身份 tombstone + 新身份
+    // create」。旧口径在这里补的是一批**只按裸 lineage 匹配**的壳，一条 lineage 只要还剩
+    // 任何一行就把它名下全部 owner 的游标一起保护住；Mac B 2026-09-14 被吞掉的那次
+    // default-space 取消固定就是这么永远发不出去的。
+    var domain = state.locals
+    let claimedGuids = Set(state.locals.map(\.guid))
+    for row in fullStoreRows where !claimedGuids.contains(row.guid) {
+        domain.append(row)
     }
     // R-exec-9 的豁免集合对 pin 恒空：没有认领就没有「配上了但还没写回」这个中间态。
     return SyncableOwnedItems.tombstones(PinKind.self, locals: domain, table: table,
@@ -5415,11 +5390,18 @@ private func landPins(_ input: OwnedLandingInput,
     // §4.5：落地之后、写基线之前，按计划复核一次。复核读的是**落地后**的行——`apply` 收尾
     // 会自己重建一次缓存，所以这个读者此刻答的是新世界。
     for identity in identities {
-        let lineage = pinIdentityHalves(identity).lineage
-        let known = access.isKnownLocalPin(lineage)
+        let halves = pinIdentityHalves(identity)
+        // **问的是完整身份，不是裸 lineage**（R-M3-3-15）。`isKnownLocalPin` 收的是**本机
+        // 那一侧**的 ownerKey，而身份后半段是账户级 uuid，中间必须过 `localOwner` 的反查
+        // ——直接把 uuid 传下去，本机那一列永不相等，于是每一条都被判成「不在」。反查不出
+        // 本机形状 ⇒ nil ⇒ 本机不可能有这条身份的行。
+        let localOwnerKey = localOwner(halves.ownerKey)
+            .map { $0.spaceId ?? $0.profileId ?? OwnedOwnerMaps.appOwnerKey }
+        let known = access.isKnownLocalPin(halves.lineage, ownerKey: localOwnerKey)
         if deletedIdentities.contains(identity) {
-            // 同一条 lineage 在别的 owner 下还有行时 `isKnownLocalPin` 仍然答「在」，于是
-            // 这一条会被保守地停放、下一轮重试；那比把一次没落地的删除记成成功安全。
+            // 只按 lineage 问的旧判据在「同一条 lineage 在别的 owner 下还有行」时答「在」，
+            // 于是这条删除被无限期停放——账户上那条实体永远死不掉，而本机那一行早就没了。
+            // 按完整身份问之后，答「在」就真的是这个 owner 下还有行，停放才是对的。
             if known { outcome.parked.insert(identity) } else {
                 outcome.landed.insert(identity)
                 outcome.deleted.insert(identity)

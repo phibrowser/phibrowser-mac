@@ -63,15 +63,20 @@ final class PhiPinnedTabLocalAccessTests: XCTestCase {
         let rows = try access.allPins()
 
         XCTAssertEqual(rows.map(\.lineageId), ["ABC-UPPER"], "那一列原样投影，不被小写化")
-        XCTAssertTrue(access.isKnownLocalPin("abc-upper"), "线上归一过的小写 lineage 必须命中")
-        XCTAssertFalse(access.isKnownLocalPin("no-such-lineage"))
+        XCTAssertTrue(access.isKnownLocalPin("abc-upper", ownerKey: "Default"),
+                      "线上归一过的小写 lineage 必须命中")
+        XCTAssertFalse(access.isKnownLocalPin("no-such-lineage", ownerKey: "Default"))
     }
 
     /// 差分定义域出自同一次 fetch，且**不做作用域过滤**（R-exec-4）：一条作用域之外的备份行
-    /// 不进快照，但它的 lineage 仍然在定义域里。
+    /// 不进快照，但它本身仍然在定义域里，**带着自己的归属**（R-exec-11）。
     ///
     /// 防的是什么：「同步层不认领它」与「账户应该忘掉它」是两句不同的话。后者的回答是给每
     /// 一条游标发 tombstone，于是一次作用域抖动删掉账户上整批 pin，而每台设备都跟着删。
+    ///
+    /// **归属必须写实**：定义域交的是行而不是裸 lineage，调用方按 `PinKind.identity(of
+    /// local:)` 现算身份，所以备份行保护的是**它自己那一条**，挡不住同 lineage 的别的
+    /// owner 被判成删除。
     func testIdentitiesKeepAnOutOfScopeBackupRowThatTheSnapshotDrops() throws {
         let store = try makeStore()
         let access = AccountPhiPinnedTabAccess(store: store)
@@ -82,13 +87,57 @@ final class PhiPinnedTabLocalAccessTests: XCTestCase {
                       profileId: "Default", spaceId: "space-a")
 
         let snapshot = try access.allPins()
-        let identities = try access.allPinIdentities()
+        let domain = try access.allPinRows()
 
         XCTAssertEqual(snapshot.map(\.guid), ["p-profile"], "作用域之外的行不进快照")
-        XCTAssertEqual(identities, ["l-profile", "l-space"], "但它照样在差分的定义域里")
+        XCTAssertEqual(Set(domain.map(\.guid)), ["p-profile", "p-space"],
+                       "但它照样在差分的定义域里")
+        let backup = try XCTUnwrap(domain.first { $0.guid == "p-space" })
+        XCTAssertEqual(backup.spaceId, "space-a", "归属写实，它保护的是自己那一条身份")
+        XCTAssertEqual(backup.profileId, "Default")
     }
 
-    /// 本轮没有过一次成功的读时 `allPinIdentities()` **抛**，`isKnownLocalPin` 答 false。
+    /// `isKnownLocalPin` 的判据是**完整身份 `(lineage, owner)`**，不是裸 lineage
+    /// （R-M3-3-15）。作用域之外的备份行照旧不算「在」，而差分的定义域一个字节都不变。
+    ///
+    /// 防的是什么：一条 lineage 在 N 个 owner 下就是 N 条账户实体。只按 lineage 问的话，
+    /// `(L, Work)` 的行明明已经没了，只要 `(L, Default)` 还在就照样答「在」——§4.5 的落地后
+    /// 复核于是给一条根本没落地的身份写基线，而一条本该落地的 `(L, Work)` 删除会被无限期
+    /// 停放、账户上那条实体永远死不掉。Mac B 2026-09-14 丢掉的那条 pin 正是这个形状。
+    func testKnownLocalPinMatchesOnTheFullIdentityNotTheBareLineage() throws {
+        let store = try makeStore()
+        let access = AccountPhiPinnedTabAccess(store: store)
+        // 同一条 lineage 坐在两个 owner 下（作用域是默认的 `.profile`，owner 即 profileId）。
+        try insertPin(in: store, guid: "p-default", lineageId: "L-Shared", profileId: "Default")
+        try insertPin(in: store, guid: "p-work", lineageId: "L-Shared", profileId: "Work")
+        // 外加一条同 lineage、**作用域之外**的备份行（Space 形状 vs `.profile` 作用域）。
+        try insertPin(in: store, guid: "p-backup", lineageId: "L-Shared",
+                      profileId: "Default", spaceId: "space-a")
+
+        _ = try access.allPins()
+
+        XCTAssertTrue(access.isKnownLocalPin("l-shared", ownerKey: "Default"))
+        XCTAssertTrue(access.isKnownLocalPin("l-shared", ownerKey: "Work"))
+        XCTAssertFalse(access.isKnownLocalPin("l-shared", ownerKey: "space-a"),
+                       "作用域之外的备份行不算「在」——`allPins()` 的契约已经把它滤掉")
+        XCTAssertFalse(access.isKnownLocalPin("l-shared", ownerKey: nil),
+                       "反查不出本机 owner ⇒ 本机不可能有这条身份的行")
+
+        // 只删掉 `Work` 那一条物理行，`Default` 与备份行都留着。
+        let context = try XCTUnwrap(store.getMainContext())
+        context.delete(try XCTUnwrap(try row("p-work", in: store)))
+        try context.save()
+        _ = try access.allPins()
+
+        XCTAssertFalse(access.isKnownLocalPin("l-shared", ownerKey: "Work"),
+                       "这个 owner 下的行没了就是没了，别的 owner 下的同 lineage 挡不住")
+        XCTAssertTrue(access.isKnownLocalPin("l-shared", ownerKey: "Default"),
+                      "另一个 owner 下那条行照旧在")
+        XCTAssertEqual(Set(try access.allPinRows().map(\.guid)), ["p-default", "p-backup"],
+                       "差分那一侧仍然收下作用域之外的备份行（R-exec-4），只是不再按裸 lineage 保护")
+    }
+
+    /// 本轮没有过一次成功的读时 `allPinRows()` **抛**，`isKnownLocalPin` 答 false。
     ///
     /// 防的是什么：空集合在 §4.7 那边的含义是「本机一条 pin 都没有了」，回答是给每一条游标
     /// 发 tombstone——正是 R-exec-4 要防的那个形状。
@@ -98,7 +147,7 @@ final class PhiPinnedTabLocalAccessTests: XCTestCase {
         try insertPin(in: store, guid: "p1", lineageId: "l1", profileId: "Default")
 
         var threw = false
-        do { _ = try access.allPinIdentities() } catch { threw = true }
+        do { _ = try access.allPinRows() } catch { threw = true }
 
         XCTAssertTrue(threw, "绝不交出一个会让差分整批发 tombstone 的空集合")
     }
@@ -159,8 +208,9 @@ final class PhiPinnedTabLocalAccessTests: XCTestCase {
                                         index: 1, title: "New")),
         ]))
 
-        XCTAssertTrue(access.isKnownLocalPin("l-new"), "复核读到的是落地**之后**的行")
-        XCTAssertEqual(try access.allPinIdentities(), ["l-a", "l-new"])
+        XCTAssertTrue(access.isKnownLocalPin("l-new", ownerKey: "Default"),
+                      "复核读到的是落地**之后**的行")
+        XCTAssertEqual(Set(try access.allPinRows().map(\.guid)), ["p-a", "p-new"])
     }
 
     // MARK: - ③ 整批一个事务

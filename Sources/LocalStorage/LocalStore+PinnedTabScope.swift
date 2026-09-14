@@ -792,8 +792,14 @@ extension LocalStore {
             // 那一份，理由见 `PinnedTabMergeCandidate.contentUpdatedDate`。
             model.contentUpdatedDate = candidate.contentUpdatedDate
             model.pinLineageId = candidate.lineageId
-            try applyPinnedTabOwner(owner, to: model, in: context)
+            // **先 insert，再碰任何关系**（与下面 `moveOrCreatePinnedTabBody` 同序）。
+            // `applyPinnedTabOwner` 会写 `model.profile`，而 `ProfileModel.tabs` 是它的
+            // inverse：在 model 还没进上下文时写这一笔，SwiftData 只能为 inverse 现造一个
+            // **空白替身**登记进去——六个必填列全是 nil 的 `TabDataModel`。它不会被这次
+            // save 之外的任何代码碰到，却会在此后**每一次** save 上被物化并整批校验失败
+            // （NSCocoaErrorDomain 1560），直到有人 rollback。
             context.insert(model)
+            try applyPinnedTabOwner(owner, to: model, in: context)
             targetModels.append(model)
             for sourceGuid in candidate.sourceGuids {
                 candidateIndexBySourceGuid[sourceGuid] = index
@@ -992,13 +998,16 @@ extension LocalStore {
         // nil 就留 nil：`PhiLocalPin.contentUpdatedDate` 的契约是「nil = 从未改过内容」，
         // 拿 `now` 顶上去会把每一条本机新建的 pin 都伪装成刚被编辑过。
         model.contentUpdatedDate = contentUpdatedDate
+        // 先 insert 再写归属，理由同 `insertPinnedTabs`：`applyCurrentPinnedTabOwner` 写的
+        // `model.profile` 会经 `ProfileModel.tabs` 这条 inverse 反向登记，此刻 model 还不在
+        // 上下文里的话，被登记进去的是一个必填列全空的替身。
+        context.insert(model)
         try applyCurrentPinnedTabOwner(
             profileId: profileId,
             spaceId: spaceId,
             to: model,
             in: context
         )
-        context.insert(model)
         let insertIndex = min(max(index ?? activePins.count, 0), activePins.count)
         activePins.insert(model, at: insertIndex)
         for (position, tabModel) in activePins.enumerated() {

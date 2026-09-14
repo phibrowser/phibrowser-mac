@@ -3304,6 +3304,84 @@ final class PhiSyncEngineOwnedItemsTests: XCTestCase {
         XCTAssertNotNil(pinStore.table.cursors["lz:su-1"])
     }
 
+    /// R-exec-11 ① — Space 作用域下，作用域之外的 profile 备份行**只保护它自己那条身份**。
+    ///
+    /// 现场（Mac B 2026-09-14）：作用域迁移把 profile 形状的行原地留下当备份，用户随后在
+    /// `default-space` 里取消固定了那条 pin。旧口径的定义域是**裸 lineage**，备份行让整条
+    /// lineage 看起来「本机还有行」，于是 `(LX, default-space)` 既不会被重新拉回来（游标已
+    /// 定案），也永远发不出 tombstone——账户上那条实体就此与本机永久分叉。
+    ///
+    /// 按完整身份判之后：备份行贡献 `lx:pu-1`，那一条照旧不发 tombstone（R-exec-4 的本意
+    /// 成立）；`lx:su-1` 一条行都没有 ⇒ 发 tombstone。
+    func testAnOutOfScopeBackupRowProtectsOnlyItsOwnPinIdentity() async throws {
+        let spaceAccess = makeSpaceAccess(["space-a": "su-1"])
+        let created = Date(timeIntervalSince1970: 1)
+        // 当前作用域（Space）里一条行都没有：用户刚把 `space-a` 那一条取消固定了。
+        let pinAccess = FakePinAccess(scope: .space, account: .space, rows: [])
+        // 迁移原地留下的 profile 形状备份行：`allPins()` 看不见，`allPinRows()` 看得见。
+        pinAccess.outOfScopeRows = [
+            .fixture(lineageId: "LX", guid: "p-backup", spaceId: nil, index: 0,
+                     createdDate: created),
+        ]
+        let pinStore = MemoryOwnedItemStore()
+        pinStore.table.cursors["lx:su-1"] = publishedPinCursor(
+            pinPayload(lineage: "lx", ownerKey: "su-1"), entityId: "e-space", owner: "su-1")
+        pinStore.table.cursors["lx:pu-1"] = publishedPinCursor(
+            pinPayload(lineage: "lx", ownerKey: "pu-1"), entityId: "e-backup", owner: "pu-1")
+        let client = FakePhiSyncClient()
+
+        let engine = makeEngine(client: client, access: spaceAccess, store: makeSpaceStore(),
+                                ownedKinds: [pinKind(pinAccess, pinStore)])
+        await engine.setSpaceSyncEnabled(true)
+        await engine.pullOnce()
+
+        let tombstones = pinCommits(client).filter(\.deleted)
+        let table = await engine.ownedTableForTesting("pins")
+        let counters = await engine.lastOwnedRoundCountersForTesting["pins"]
+        XCTAssertEqual(tombstones.map(\.entityId), ["e-space"],
+                       "① 本机没有行的那条身份发 tombstone")
+        XCTAssertEqual(counters?.tombstones, 1)
+        XCTAssertNil(table.cursors["lx:pu-1"]?.deleteDecidedAtMs,
+                     "② 备份行自己那条身份照旧不被判成删除（R-exec-4）")
+    }
+
+    /// R-exec-11 ② — 同一条 lineage 坐在两个 Space 下，删掉其中一个 ⇒ **只有那一条**发
+    /// tombstone。
+    ///
+    /// 防的是什么：换 owner 按 §7.2 是「旧身份 tombstone + 新身份 create」，所以「同 lineage
+    /// 在别处还有行」从来都不是「这条身份还活着」的证据。按裸 lineage 判的话，两台设备中的
+    /// 任何一台删掉一个 Space 副本，账户上那条实体都永远死不掉，而每台新设备加入都会把它
+    /// 拉回来。
+    func testDeletingOneSpaceCopyTombstonesOnlyThatPinIdentity() async throws {
+        let spaceAccess = makeSpaceAccess(["space-a": "su-1", "space-b": "su-2"])
+        let created = Date(timeIntervalSince1970: 1)
+        // `space-a` 的副本还在，`space-b` 的那一条刚被取消固定。
+        let pinAccess = FakePinAccess(scope: .space, account: .space, rows: [
+            .fixture(lineageId: "LX", guid: "px", spaceId: "space-a", index: 0,
+                     createdDate: created),
+        ])
+        let pinStore = MemoryOwnedItemStore()
+        pinStore.table.cursors["lx:su-1"] = publishedPinCursor(
+            pinPayload(lineage: "lx", ownerKey: "su-1"), entityId: "e-a", owner: "su-1")
+        pinStore.table.cursors["lx:su-2"] = publishedPinCursor(
+            pinPayload(lineage: "lx", ownerKey: "su-2"), entityId: "e-b", owner: "su-2")
+        let client = FakePhiSyncClient()
+
+        let engine = makeEngine(client: client, access: spaceAccess, store: makeSpaceStore(),
+                                ownedKinds: [pinKind(pinAccess, pinStore)])
+        await engine.setSpaceSyncEnabled(true)
+        await engine.pullOnce()
+
+        let tombstones = pinCommits(client).filter(\.deleted)
+        let table = await engine.ownedTableForTesting("pins")
+        let counters = await engine.lastOwnedRoundCountersForTesting["pins"]
+        XCTAssertEqual(tombstones.map(\.entityId), ["e-b"],
+                       "① 只有行真的没了的那条身份发 tombstone")
+        XCTAssertEqual(counters?.tombstones, 1)
+        XCTAssertNil(table.cursors["lx:su-1"]?.deleteDecidedAtMs,
+                     "② 还有行的那条身份一个字都不动")
+    }
+
     /// CASE 9b.3（T6b-1）— 同 rank 的两条 pin 按 **`pin_uuid`**（归一后的 lineage）破平手，
     /// **不按本机 guid**。
     ///

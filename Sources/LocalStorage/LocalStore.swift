@@ -787,54 +787,76 @@ extension LocalStore {
     // 快照**有意取成同步层那份的超集**：书签不做 canonical root 过滤，pin 不做作用域过滤。
     // 超集只会多发一次信号（引擎那一轮比下来零字段变化 ⇒ 零提交），而子集会**漏**掉真实的
     // 变化——同一个过滤口径在两处各写一遍、然后慢慢走偏，正是 §4.8 点名要躲的那件事。
-    // 行的次序按 `guid` 排定：`allBookmarkModels` / `PinSyncFetch.nonDormant` 都没有排序
-    // 保证，不排就会有一批「同一批行、不同次序」的伪变化。
+    // 行的次序按 `guid` 排定：两次 fetch 都没有排序保证，不排就会有一批「同一批行、不同
+    // 次序」的伪变化。
+    //
+    // **级的次序是「类型过滤 → 2 s 防抖 → 投影一次 → 去重」，防抖在投影之前**（§5.7 第 1
+    // 条）。反过来（每条 save 各投影一遍、再按值去重）只塌掉**发射**、塌不掉**工作量**：
+    // 一次导入或一次多行拖拽就是每条 save 一次全表 fetch、一次 map、一次排序，全在主 actor
+    // 上。去重仍然留着，因为防抖只保证「安静了 2 秒」，不保证「真的变了」——favicon 回填照样
+    // 起计时器，安静期过后那唯一一次投影比下来逐字节相同，于是什么都不发。
+
+    /// 两条信号共用的防抖窗口。与 `PhiChromiumCoordinator.phiSyncPushDebounce` 是同一个 2 秒
+    /// 窗口，但**有意各存一份**：把协调器那个常量引进 `LocalStorage` 就是一条新的跨层依赖，
+    /// 而这一层本来就不认识那一层。窗口挪进 publisher 之后协调器那两条订阅不再自己防抖，
+    /// 否则端到端延迟会变成 4 秒。
+    private static let changeSignalDebounce: TimeInterval = 2
 
     /// 整账户的书签 / 文件夹变化信号（§5.7）。订阅当刻不发。
     ///
-    /// 防抖不在这里：协调器那条订阅负责 2 s 窗口（`phiSyncPushDebounce`），这里只负责
-    /// 「这次 save 到底改没改同步层看得见的东西」。
+    /// 防抖在这里，不在协调器：一连串 save 要在**任何一次投影发生之前**塌掉。
     ///
     /// **favicon、`lastSeen` 与 `updatedDate` 不进快照**，所以一次 `updateTabFavicon` /
-    /// `updateLastSeen` 在这里就被吃掉，连协调器那个防抖计时器都不会起。Task 10 的图标回填
-    /// 队列每写回一条就触发一次推送、而每次推送的内容与账户上的完全相同，是这条规则挡掉的
-    /// 那个自激。
+    /// `updateLastSeen` 起了防抖计时器、但安静期过后那唯一一次投影比下来逐字节相同，什么都
+    /// 不发。Task 10 的图标回填队列每写回一条就触发一次推送、而每次推送的内容与账户上的完全
+    /// 相同，是这条规则挡掉的那个自激。
+    ///
+    /// 返回的 publisher **每次订阅各有一份基线**（`Deferred`）：基线是订阅当刻那一份快照，
+    /// 同一个返回值被订两次就必须各自记各自的，否则第二个订阅者永远比不出差别、一个信号都
+    /// 收不到。协调器在 `stopPhiSync()` 之后会重新挂订阅，所以这不是理论情形。
     @MainActor
     func bookmarkChangesPublisher() -> AnyPublisher<Void, Never> {
         guard mainContext != nil else {
             return Empty(completeImmediately: true).eraseToAnyPublisher()
         }
 
-        // 订阅当刻取一次基线，但**不发射**——它是「上一次的样子」，不是一次变化。
-        var lastSnapshot = bookmarkChangeSnapshot()
+        return Deferred { [weak self] () -> AnyPublisher<Void, Never> in
+            guard let self else {
+                return Empty(completeImmediately: true).eraseToAnyPublisher()
+            }
+            // 订阅当刻取一次基线，但**不发射**——它是「上一次的样子」，不是一次变化。
+            var lastSnapshot = self.bookmarkChangeSnapshot()
 
-        return NotificationCenter.default
-            .publisher(for: .NSManagedObjectContextDidSave)
-            .filter {
-                Self.notificationContainsChanges(
-                    $0,
-                    matching: {
-                        guard $0.entity.name == TabDataModel.entityName,
-                              let type = Self.tabType(from: $0) else { return false }
-                        return type == TabDataType.bookmark.rawValue ||
-                            type == TabDataType.bookmarkFolder.rawValue
-                    }
-                )
-            }
-            .receive(on: DispatchQueue.main)
-            .compactMap { [weak self] _ -> Void? in
-                // 读不出来就**不发信号**，绝不当成「全没了」：下游是一次推送轮，而 §4.7 的
-                // 差分对空集合的回答是给每一条游标发 tombstone。
-                guard let self else { return nil }
-                guard let snapshot = self.bookmarkChangeSnapshot() else { return nil }
-                guard snapshot != lastSnapshot else { return nil }
-                lastSnapshot = snapshot
-                return ()
-            }
-            .eraseToAnyPublisher()
+            return NotificationCenter.default
+                .publisher(for: .NSManagedObjectContextDidSave)
+                .filter {
+                    LocalStore.notificationContainsChanges(
+                        $0,
+                        matching: {
+                            guard $0.entity.name == TabDataModel.entityName,
+                                  let type = LocalStore.tabType(from: $0) else { return false }
+                            return type == TabDataType.bookmark.rawValue ||
+                                type == TabDataType.bookmarkFolder.rawValue
+                        }
+                    )
+                }
+                .debounce(for: .seconds(LocalStore.changeSignalDebounce),
+                          scheduler: DispatchQueue.main)
+                .compactMap { [weak self] _ -> Void? in
+                    // 读不出来就**不发信号**，绝不当成「全没了」：下游是一次推送轮，而 §4.7
+                    // 的差分对空集合的回答是给每一条游标发 tombstone。
+                    guard let self else { return nil }
+                    guard let snapshot = self.bookmarkChangeSnapshot() else { return nil }
+                    guard snapshot != lastSnapshot else { return nil }
+                    lastSnapshot = snapshot
+                    return ()
+                }
+                .eraseToAnyPublisher()
+        }
+        .eraseToAnyPublisher()
     }
 
-    /// 整账户的 pin 变化信号（§5.7）。订阅当刻不发。
+    /// 整账户的 pin 变化信号（§5.7）。订阅当刻不发；每次订阅各有一份基线，理由同上。
     ///
     /// 过滤器把 `BrowserDataSettingsModel` 算进来，与 `pinnedTabsPublisher` 今天那条同款：
     /// 作用域一翻，同一批物理行里「同步层认领哪些」整个换一遍，而那次 save 碰的不是
@@ -845,31 +867,38 @@ extension LocalStore {
             return Empty(completeImmediately: true).eraseToAnyPublisher()
         }
 
-        var lastSnapshot = pinnedTabChangeSnapshot()
+        return Deferred { [weak self] () -> AnyPublisher<Void, Never> in
+            guard let self else {
+                return Empty(completeImmediately: true).eraseToAnyPublisher()
+            }
+            var lastSnapshot = self.pinnedTabChangeSnapshot()
 
-        return NotificationCenter.default
-            .publisher(for: .NSManagedObjectContextDidSave)
-            .filter {
-                Self.notificationContainsChanges(
-                    $0,
-                    matching: {
-                        if $0.entity.name == BrowserDataSettingsModel.entityName {
-                            return true
+            return NotificationCenter.default
+                .publisher(for: .NSManagedObjectContextDidSave)
+                .filter {
+                    LocalStore.notificationContainsChanges(
+                        $0,
+                        matching: {
+                            if $0.entity.name == BrowserDataSettingsModel.entityName {
+                                return true
+                            }
+                            return $0.entity.name == TabDataModel.entityName &&
+                                LocalStore.tabType(from: $0) == TabDataType.pinnedTab.rawValue
                         }
-                        return $0.entity.name == TabDataModel.entityName &&
-                            Self.tabType(from: $0) == TabDataType.pinnedTab.rawValue
-                    }
-                )
-            }
-            .receive(on: DispatchQueue.main)
-            .compactMap { [weak self] _ -> Void? in
-                guard let self else { return nil }
-                guard let snapshot = self.pinnedTabChangeSnapshot() else { return nil }
-                guard snapshot != lastSnapshot else { return nil }
-                lastSnapshot = snapshot
-                return ()
-            }
-            .eraseToAnyPublisher()
+                    )
+                }
+                .debounce(for: .seconds(LocalStore.changeSignalDebounce),
+                          scheduler: DispatchQueue.main)
+                .compactMap { [weak self] _ -> Void? in
+                    guard let self else { return nil }
+                    guard let snapshot = self.pinnedTabChangeSnapshot() else { return nil }
+                    guard snapshot != lastSnapshot else { return nil }
+                    lastSnapshot = snapshot
+                    return ()
+                }
+                .eraseToAnyPublisher()
+        }
+        .eraseToAnyPublisher()
     }
 
     /// nil = 这一刻读不出来。调用方把它当成「不知道」，不是「一条都没有」。
@@ -889,12 +918,24 @@ extension LocalStore {
 
     /// 同上。作用域读失败也算「不知道」——把它回落成 `.profile` 会在一台 Space 作用域的
     /// 机器上伪造出一次作用域翻转。
+    ///
+    /// **不走 `pinSyncFetch(in:)`**：那个函数自己再读一次作用域，还要按 `(ownerKey, index,
+    /// guid)` 排出一份 `active` 数组——而 owner 是每次比较现算的。这里要的是**未经作用域
+    /// 过滤**的那一半（`nonDormant`），那份排序整个是白做的。作用域读一次，行按 `guid` 排，
+    /// 判据与 `PinSyncFetch.nonDormant` 逐字相同（非休眠的全部 pin 行）。
     @MainActor
     private func pinnedTabChangeSnapshot() -> PinnedTabChangeSnapshot? {
         guard let context = mainContext else { return nil }
         do {
             let scope = try pinnedTabScope(in: context)
-            let rows = try pinSyncFetch(in: context).nonDormant
+            let pinnedRaw = TabDataType.pinnedTab.rawValue
+            var descriptor = FetchDescriptor<TabDataModel>(
+                predicate: #Predicate<TabDataModel> { $0.type == pinnedRaw }
+            )
+            // owner 推导要读 `profile?.profileId`；不预取就是每行一次 fault。
+            descriptor.relationshipKeyPathsForPrefetching = [\.profile]
+            let rows = try context.fetch(descriptor)
+                .filter { !$0.isPinnedTabDormant }
                 .map(PinnedTabRowChangeSnapshot.init)
                 .sorted { $0.guid < $1.guid }
             return PinnedTabChangeSnapshot(scope: scope, rows: rows)

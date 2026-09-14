@@ -127,8 +127,8 @@ import SwiftUI
     // 书签与 pin 的本地变化触发（§5.7）。与上面的 Space 段同一条命：同一个引擎、同一个
     // `startPhiSyncIfReady()` 挂起、同一个 `stopPhiSync()` 拆除。
 
-    /// 整账户书签编辑 -> 一轮归属项推送（§5.7）。上游是 `LocalStore.bookmarkChangesPublisher()`
-    /// （已按取值快照去重），这里只加 2 s 防抖。
+    /// 整账户书签编辑 -> 一轮归属项推送（§5.7）。上游是 `LocalStore.bookmarkChangesPublisher()`，
+    /// 防抖与取值快照去重都在它里面（防抖必须在投影之前），所以这里是一条裸 `sink`。
     ///
     /// 一次远端落地也会写本地行、必然触发这条订阅，与 Space 侧是同一条论证：落地已经在同
     /// 一轮写好基线，随之而来的推送轮比下来零字段变化 ⇒ 零提交、零本地写 ⇒ 没有第二次
@@ -511,18 +511,18 @@ import SwiftUI
                     Task { @MainActor in await self?.phiSyncEngine?.handleLocalSpacesChange() }
                 }
 
-            // 书签与 pin 的本地编辑（§5.7），形状逐字照上面那条：**值快照去重 → 2 s 防抖
-            // → 一轮推送**。去重在 `LocalStore` 那两个 store 级 publisher 里，所以到这里的
-            // 每一次发射都已经是「同步层看得见的字段真的变了」；这里只负责把一连串变化塌成
-            // 一轮。没有 throttle 那一级：`phiSyncPushDebounce` 已经是 2 秒，而本仓库既有的
-            // 两处订阅都是单独的一个 `.debounce`。
+            // 书签与 pin 的本地编辑（§5.7）：**2 s 防抖 → 投影一次 → 值快照去重 → 一轮
+            // 推送**。上面那条 Space 订阅在这里自己防抖，这两条**不**——窗口住在
+            // `LocalStore` 那两个 store 级 publisher 里（`changeSignalDebounce`，同样 2 秒），
+            // 因为防抖必须在投影**之前**才能挡住一次导入把整棵书签树在主 actor 上重投几十遍
+            // （§5.7 第 1 条）。在这里再加一级就是 4 秒延迟。到这里的每一次发射都已经是
+            // 「安静下来了，而且同步层看得见的字段真的变了」。
             //
             // 回声与上面那条同一条论证：一次远端落地会写本地行、必然触发 publisher，但落地
             // 已经在同一轮写好基线，随之而来的推送轮零字段变化 ⇒ 零提交、零本地写 ⇒ 没有
             // 第二次发射。
             if let label = phiBookmarkKindLabel {
                 phiBookmarksCancellable = account.localStorage.bookmarkChangesPublisher()
-                    .debounce(for: .seconds(Self.phiSyncPushDebounce), scheduler: DispatchQueue.main)
                     .sink { [weak self] _ in
                         Task { @MainActor in
                             await self?.phiSyncEngine?.handleLocalOwnedChange(label: label)
@@ -531,7 +531,6 @@ import SwiftUI
             }
             if let label = phiPinKindLabel {
                 phiPinnedTabsCancellable = account.localStorage.pinnedTabChangesPublisher()
-                    .debounce(for: .seconds(Self.phiSyncPushDebounce), scheduler: DispatchQueue.main)
                     .sink { [weak self] _ in
                         Task { @MainActor in
                             await self?.phiSyncEngine?.handleLocalOwnedChange(label: label)

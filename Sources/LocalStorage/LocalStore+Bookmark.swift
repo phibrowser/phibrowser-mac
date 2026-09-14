@@ -426,8 +426,8 @@ extension LocalStore {
                 importRoot.spaceId = root.spaceId
                 importRoot.profileId = profileId
                 importRoot.source = 3
-                importRoot.profile = profile
                 context.insert(importRoot)
+                importRoot.profile = profile
                 try self.insert(node: importRoot, to: root, at: nil, in: context)
 
                 func insertArcBookmark(_ arcBookmark: ArcDataParserTool.Bookmark, parent: TabDataModel, index: Int) throws {
@@ -444,8 +444,8 @@ extension LocalStore {
                     node.spaceId = parent.spaceId
                     node.profileId = profileId
                     node.source = 3
-                    node.profile = profile
                     context.insert(node)
+                    node.profile = profile
                     try self.insert(node: node, to: parent, at: index, in: context)
                     for (childIndex, child) in arcBookmark.children.enumerated() {
                         try insertArcBookmark(child, parent: node, index: childIndex)
@@ -513,8 +513,8 @@ extension LocalStore {
                         inheritedSource: parent.source,
                         isTopLevelImportFolder: parent.guid == root.guid
                     )
-                    node.profile = profile
                     context.insert(node)
+                    node.profile = profile
                     try self.insert(node: node, to: parent, at: index, in: context)
                     
                     let orderedChildren = wrapper.children.sorted { $0.indexInParent < $1.indexInParent }
@@ -1361,10 +1361,10 @@ extension LocalStore {
                                 updatedDate: now)
         root.dataType = TabDataType.bookmarkFolder
         root.profileId = profileId
-        root.profile = profile
         root.spaceId = spaceId
         root.isCreatedByChromium = false
         context.insert(root)
+        root.profile = profile
         space?.bookmarkRoot = root
         // Mirror onto the Profile only when this is the first time the
         // default Space materializes; non-default spaces must not pollute
@@ -1745,9 +1745,13 @@ private extension LocalStore {
         folder.dataType = TabDataType.bookmarkFolder
         folder.spaceId = spaceId ?? parent.spaceId
         folder.profileId = profileId
-        folder.profile = parent.profile
         folder.isCreatedByChromium = false
+        // **先 insert，再写 `profile`。** `ProfileModel.tabs` 是它的 inverse：model 还不在
+        // 上下文里时写这一笔，SwiftData 会为 inverse 现造一个必填列全空的替身，此后每一次
+        // save 都整批校验失败（NSCocoaErrorDomain 1560）。这条规则对**每一个**新建
+        // `TabDataModel` 的地方都成立，不只是 pin 那几处。
         context.insert(folder)
+        folder.profile = parent.profile
         try insert(node: folder, to: parent, at: index, in: context)
         return folder
     }
@@ -1785,11 +1789,12 @@ private extension LocalStore {
         bookmark.dataType = TabDataType.bookmark
         bookmark.spaceId = spaceId ?? parent.spaceId
         bookmark.profileId = profileId
-        bookmark.profile = parent.profile
         bookmark.isCreatedByChromium = false
         bookmark.secondaryUrl = secondaryUrl
         bookmark.secondaryTitle = (secondaryTitle?.isEmpty == false) ? secondaryTitle : nil
+        // 先 insert 再写 `profile`，理由同 `insertDirectoryNode`。
         context.insert(bookmark)
+        bookmark.profile = parent.profile
         try insert(node: bookmark, to: parent, at: index, in: context)
         return bookmark
     }
@@ -2060,14 +2065,17 @@ extension LocalStore {
             node.dataType = row.isFolder ? TabDataType.bookmarkFolder : TabDataType.bookmark
             node.spaceId = row.spaceId
             node.profileId = row.profileId
-            node.profile = profile
             node.isCreatedByChromium = false
             node.secondaryUrl = row.secondaryUrl
             node.secondaryTitle = row.secondaryTitle
             node.source = row.source
             node.syncId = row.syncId
             node.contentUpdatedDate = row.contentUpdatedDate
+            // 先 insert，再写两条关系。`node.parent` 本来就排在 insert 之后，`node.profile`
+            // 当时留在了前面——而这是同步落地那条路（R-exec-2），它比一次作用域迁移常走
+            // 得多。
             context.insert(node)
+            node.profile = profile
             node.parent = parent
 
             insertedByGuid[row.guid] = node
@@ -2347,9 +2355,9 @@ extension LocalStore {
             node.dataType = TabDataType.bookmark
             node.spaceId = parent.spaceId
             node.profileId = parent.profileId
-            node.profile = parent.profile
             node.isCreatedByChromium = false
             context.insert(node)
+            node.profile = parent.profile
             node.parent = parent
             return true
         }

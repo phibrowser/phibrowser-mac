@@ -317,12 +317,12 @@ final class PhiPinnedTabLocalAccessTests: XCTestCase {
             updatedDate: Date(timeIntervalSince1970: 1_000)
         )
         model.dataType = .pinnedTab
-        model.profile = profile
         model.profileId = profileId
         model.spaceId = spaceId
         model.pinLineageId = lineageId
         configure(model)
         context.insert(model)
+        model.profile = profile
         try context.save()
         return model
     }

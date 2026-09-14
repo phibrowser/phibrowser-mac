@@ -3352,6 +3352,11 @@ final class PhiSyncEngineOwnedItemsTests: XCTestCase {
     /// 在别处还有行」从来都不是「这条身份还活着」的证据。按裸 lineage 判的话，两台设备中的
     /// 任何一台删掉一个 Space 副本，账户上那条实体都永远死不掉，而每台新设备加入都会把它
     /// 拉回来。
+    ///
+    /// **这一条是防「改过头」的回归护栏，不是那个缺陷的探针**：旧代码在这里也是绿的——
+    /// `lx` 当时在 `inScope` 里，于是补壳那一支被跳过，`lx:su-2` 照样发了 tombstone。它钉的
+    /// 是新定义域**没有**把兄弟 owner 的游标一起保护起来，而那正是把备份行整批放进定义域
+    /// 这件事引入的风险。真正的探针是上面那条 `…BackupRowProtectsOnlyItsOwnPinIdentity`。
     func testDeletingOneSpaceCopyTombstonesOnlyThatPinIdentity() async throws {
         let spaceAccess = makeSpaceAccess(["space-a": "su-1", "space-b": "su-2"])
         let created = Date(timeIntervalSince1970: 1)
@@ -3472,6 +3477,9 @@ final class PhiSyncEngineOwnedItemsTests: XCTestCase {
         XCTAssertEqual(table.cursors["lx:su-1"]?.ownerUuid, "su-1",
                        "② 只认领、不改写归属——来源 1 才是唯一的 `ownerUuid` 写入方")
         XCTAssertEqual(counters?.rehomedCursors, 0)
+        // ③是**兜底，不是载荷**：这一趟 `dropped == 0 && rehomed == 0` 时根本不写表，而这条
+        // 游标本来就是直接种在内存 store 上的，所以它不可能变红。留着它是为了在「保护住了
+        // 但落盘时被顺手清掉」这种将来的改动下有人喊。载荷是①。
         XCTAssertNotNil(pinStore.table.cursors["lx:su-1"], "③ 落了盘")
     }
 

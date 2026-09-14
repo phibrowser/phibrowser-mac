@@ -860,8 +860,9 @@ extension LocalStore {
         /// 当前作用域内、**非休眠**的行，按 `(ownerKey, index, guid)` 有序——`allPins()`
         /// 的来源。
         let active: [TabDataModel]
-        /// 同一批 fetch 里**未经作用域过滤**的非休眠行——`allPinIdentities()` 的来源
-        /// （R-exec-4）。
+        /// 同一批 fetch 里**未经作用域过滤**的非休眠行——`allPinRows()` 的来源
+        /// （R-exec-4）。差分与 §9.3 级联按**行**取这一份，各自按
+        /// `PinKind.identity(of local:)` 算出 `(lineage, owner)`（R-exec-11）。
         ///
         /// **少一层过滤、多一层过滤各有理由，两条都是有意的：**
         ///
@@ -1030,12 +1031,24 @@ extension LocalStore {
         // `model.profile` 会经 `ProfileModel.tabs` 这条 inverse 反向登记，此刻 model 还不在
         // 上下文里的话，被登记进去的是一个必填列全空的替身。
         context.insert(model)
-        try applyCurrentPinnedTabOwner(
-            profileId: profileId,
-            spaceId: spaceId,
-            to: model,
-            in: context
-        )
+        do {
+            try applyCurrentPinnedTabOwner(
+                profileId: profileId,
+                spaceId: spaceId,
+                to: model,
+                in: context
+            )
+        } catch {
+            // **归属写失败就把刚插进去的行撤掉。** insert 排到前面之后，这两句之间多了一个
+            // 出口；而这条 body 有一个 fire-and-forget 的调用方（`createPinnedTab`，它的
+            // `catch` 只记一行日志），于是 `perform` 会照常 save，把一条 `profile` /
+            // `profileId` / `spaceId` 全空的 pin 行提交下去。它在任何作用域下都查不出来，
+            // 却在 `PinKind` 眼里坐在 `"app"` 归属上——一条永远发得出去、永远回不来的垃圾。
+            // 走 throwing 调用方时这一句是多余的（`performThrowing` 会 rollback），但多余
+            // 好过只在一条路上正确。
+            context.delete(model)
+            throw error
+        }
         let insertIndex = min(max(index ?? activePins.count, 0), activePins.count)
         activePins.insert(model, at: insertIndex)
         for (position, tabModel) in activePins.enumerated() {
@@ -1114,6 +1127,9 @@ extension LocalStore {
         }
 
         var tabToMove: TabDataModel
+        // 这一行是**这次调用新建**的，还是从库里取出来的既有行。归属写失败时只许撤掉前者：
+        // 删掉一条既有行会把用户一条好好的 pin 连带弄丢。
+        var didCreateRow = false
         let now = Date()
         if let resolvedTabGuid,
            let tabToMoveIndex = activePins.firstIndex(where: { $0.guid == resolvedTabGuid }) {
@@ -1142,18 +1158,26 @@ extension LocalStore {
             tabToMove.isCreatedByChromium = false
             tabToMove.pinLineageId = tabLineageId ?? tabToMove.guid
             context.insert(tabToMove)
+            didCreateRow = true
             AppLogInfo("[LocalStore] Created new pinned tab with guid: \(String(tabGuid.prefix(8)))")
         }
 
         if tabToMove.pinLineageId == nil {
             tabToMove.pinLineageId = tabToMove.guid
         }
-        try applyCurrentPinnedTabOwner(
-            profileId: profileId,
-            spaceId: spaceId,
-            to: tabToMove,
-            in: context
-        )
+        do {
+            try applyCurrentPinnedTabOwner(
+                profileId: profileId,
+                spaceId: spaceId,
+                to: tabToMove,
+                in: context
+            )
+        } catch {
+            // 理由同 `createPinnedTabBody`：`moveOrCreatePinnedTab` 是 fire-and-forget 的。
+            // **只撤本次新建的那一行**，移动路径上的既有行一个字都不碰。
+            if didCreateRow { context.delete(tabToMove) }
+            throw error
+        }
 
         let insertIndex: Int
         if let resolvedAfterGuid {

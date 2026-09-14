@@ -295,8 +295,8 @@ final class BrowserStatePinnedTabEditCrossSpaceTests: XCTestCase {
             updatedDate: Date()
         )
         pinnedModel.dataType = TabDataType.pinnedTab
-        pinnedModel.profile = profile
         context.insert(pinnedModel)
+        pinnedModel.profile = profile
         try context.save()
     }
 

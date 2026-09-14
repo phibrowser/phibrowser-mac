@@ -729,12 +729,12 @@ final class LocalStorePinnedTabTransferTests: XCTestCase {
             updatedDate: updatedDate
         )
         model.dataType = .pinnedTab
-        model.profile = profile
         model.profileId = profileId
         model.spaceId = spaceId
         model.pinLineageId = guid
         configure(model)
         context.insert(model)
+        model.profile = profile
         try context.save()
     }
 

@@ -4940,6 +4940,8 @@ extension OwnedKindRegistration {
             // 2. `allPins()` 一条都看不见、但 `allPinRows()` 还交得出来的那些行，各自按
             //    **自己那条身份**只认领、不改写归属——作用域迁移原地留下的备份行属于这一
             //    类，本机确实还有物理行，只是这一轮的快照不认领它们（R-exec-4 / R-exec-11）。
+            //    唯一的例外是**归属反查不出来**的那些行：这一轮算不出它们坐在哪，也就证不了
+            //    它们不是某条游标的那一行，于是退回按 lineage 保护（A12 的 fail-safe）。
             //
             // **按裸 lineage 判是错的**（T9a-2）：一条 lineage 在 N 个 owner 下是 N 条身份，
             // 于是一条 owner 已被清理的游标会被**另一个 owner 下**的行保护住——它既不会被删
@@ -4964,9 +4966,29 @@ extension OwnedKindRegistration {
                 // 全库行，**各自贡献自己那条身份**（R-exec-11）。
                 let claimedGuids = Set(state.locals.map(\.guid))
                 var outOfScopeIdentities: Set<String> = []
+                // **归属反查不出来的那些行退回按 lineage 保护**（A12 的 fail-safe）。判据不是
+                // `identity(of local:)` 返回 nil——它在归属解析不出来时交的是一个 NUL 打头的
+                // 占位后半段，那个身份与任何一条游标都不相等，于是「配不上」会被静默地读成
+                // 「不认领」。问的是 `eligibilityOwner`，它为 nil 才是「这一轮算不出这条行
+                // 坐在哪」。
+                //
+                // 为什么这一支必须保守：判据 (b) 保护的是「本机还有活行」的游标，而一条
+                // 归属未映射的行恰恰是**证不了它不是那条游标的那一行**的状态——一次 Space
+                // 映射抖动就会让它名下的游标被这一趟扫掉，而那条行还在用户的机器上。删错
+                // 的代价是那条行下一轮被判成从未发布过，以 `baseVersion == 0` 的 create 盲写
+                // 覆盖账户上那一条；留错的代价只是一条游标多活一个保留期。
+                //
+                // **只在来源 2 里退回**：作用域内的行由来源 1 按身份各自表态，它们归属算不
+                // 出来时本来就一个身份都不贡献（这一点与 R-exec-11 之前逐字相同）。
+                var unresolvedOwnerLineages: Set<String> = []
                 for row in fullStoreRows where !claimedGuids.contains(row.guid) {
                     guard let identity = PinKind.identity(of: row, resolve: resolve, scope: scope)
                     else { continue }
+                    guard PinKind.eligibilityOwner(of: row, resolve: resolve, scope: scope) != nil
+                    else {
+                        unresolvedOwnerLineages.insert(PinKind.lineageKey(row.lineageId))
+                        continue
+                    }
                     outOfScopeIdentities.insert(identity)
                 }
                 var out = OwnedLiveRows()
@@ -4980,7 +5002,10 @@ extension OwnedKindRegistration {
                     // 各自表过态，而作用域之外的备份行只认领**它自己**那一条。按裸 lineage
                     // 兜一次就把上面那条论证撤销了。归属这里不改写 ⇒ 保留上一次已知的归属
                     // （来源 1 才是唯一的 `ownerUuid` 写入方）。
-                    guard outOfScopeIdentities.contains(identity) else { continue }
+                    guard outOfScopeIdentities.contains(identity)
+                            || unresolvedOwnerLineages.contains(
+                                pinIdentityHalves(identity).lineage)
+                    else { continue }
                     out.claimed.insert(identity)
                 }
                 return out

@@ -3433,6 +3433,48 @@ final class PhiSyncEngineOwnedItemsTests: XCTestCase {
                      "⑥ 还有行的那条身份一个字都不动")
     }
 
+    /// R-exec-11 ④ — 判据 (b) 的 fail-safe：**归属反查不出来**的备份行退回按 lineage 保护
+    /// 它名下的全部游标。
+    ///
+    /// 与上面 CASE 9b.2 是一对，不是矛盾：那一条说的是「归属**算得出来**、而且是另一个
+    /// owner」⇒ 不构成认领；这一条说的是「归属**算不出来**」⇒ 证不了这条行不是那条游标的
+    /// 那一行，于是保守地留着。
+    ///
+    /// 防的是什么：一次 Space 映射抖动（映射表还没落地、或者那个 Space 这一轮解析不出来）
+    /// 会让备份行名下的游标被这一趟扫掉，而那条行还在用户的机器上。删错的代价是它下一轮被
+    /// 判成从未发布过，以 `baseVersion == 0` 的 create 盲写覆盖账户上那一条；留错的代价只是
+    /// 一条游标多活一个保留期。
+    func testAnUnresolvableOwnerOnABackupRowKeepsItsLineagesCursors() async throws {
+        // `space-gone` **不在**映射表里：那条备份行这一轮算不出归属。
+        let spaceAccess = makeSpaceAccess(["space-a": "su-1"])
+        let spaceStore = makeSpaceStore()
+        // `su-1` 的 30 天清理已经跑过，于是它名下的 pin 游标进入这一趟的候选集。
+        spaceStore.table.cursors["su-1"] = purgedSpaceCursor()
+        let created = Date(timeIntervalSince1970: 1)
+        let pinAccess = FakePinAccess(scope: .space, account: .space, rows: [])
+        pinAccess.outOfScopeRows = [
+            .fixture(lineageId: "LX", guid: "p-backup", spaceId: "space-gone", index: 0,
+                     createdDate: created),
+        ]
+        let pinStore = MemoryOwnedItemStore()
+        pinStore.table.cursors["lx:su-1"] = ownedCursor(entityId: "srv-lx", version: 1,
+                                                        ownerUuid: "su-1")
+
+        let engine = makeEngine(client: FakePhiSyncClient(), access: spaceAccess,
+                                store: spaceStore, ownedKinds: [pinKind(pinAccess, pinStore)])
+        await engine.setSpaceSyncEnabled(true)
+        await engine.runRetentionSweep()
+
+        let table = await engine.ownedTableForTesting("pins")
+        let counters = await engine.lastOwnedRoundCountersForTesting["pins"]
+        XCTAssertNotNil(table.cursors["lx:su-1"],
+                        "① 归属算不出来的那条行保护住它整条 lineage 的游标")
+        XCTAssertEqual(table.cursors["lx:su-1"]?.ownerUuid, "su-1",
+                       "② 只认领、不改写归属——来源 1 才是唯一的 `ownerUuid` 写入方")
+        XCTAssertEqual(counters?.rehomedCursors, 0)
+        XCTAssertNotNil(pinStore.table.cursors["lx:su-1"], "③ 落了盘")
+    }
+
     /// CASE 9b.3（T6b-1）— 同 rank 的两条 pin 按 **`pin_uuid`**（归一后的 lineage）破平手，
     /// **不按本机 guid**。
     ///

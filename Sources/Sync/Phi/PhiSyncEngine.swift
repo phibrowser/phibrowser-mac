@@ -175,6 +175,15 @@ struct OwnedLandingOutcome {
     var deleted: Set<String> = []
 }
 
+/// 一次停放项重试的结果（§3 / R-exec-10）。
+struct OwnedParkedClaimResult {
+    /// 本轮 §6 的认领**配上**的身份，写回成没成都算。差分的 `pendingClaims` 豁免读它，
+    /// 出站快照的「这一行本轮不铸新身份」也读它。
+    var paired: Set<String> = []
+    /// 真的把身份写回了本机行的那些。引擎清它们的 `pendingApply`。
+    var persisted: Set<String> = []
+}
+
 /// §11.2 的一行。**一个**结构体，引擎按注册项各持一份；每条 kind 只填它有的字段，
 /// 日志行也只印它有的字段。
 struct OwnedRoundCounters {
@@ -248,6 +257,12 @@ struct OwnedKindRegistration {
     /// （R-exec-4）；本轮没成功读过时它抛。
     let tombstones: @MainActor (PhiOwnedItemTable, OwnedOwnerMaps, Int64) throws
         -> OwnedItemTombstoneResult
+    /// §3 的「每一轮开头都重试停放项」里归属项这一半（R-exec-10）：把还没能写回本机行的
+    /// 那些身份重新认领一次，并把配上的那些立刻写回去。**每一种轮次都跑**——一次纯 push 轮
+    /// （设置推送、本地变化）也会走到发布段，而发布段的铸造与差分都要先知道「这一行已经
+    /// 配上了一个账户身份」。
+    let retryParkedClaims: @MainActor ([String: ParkedOwnedItem], OwnedOwnerMaps) async
+        -> OwnedParkedClaimResult
     let plan: @MainActor (OwnedPlanInput) -> OwnedPlanOutput
     let land: @MainActor (OwnedLandingInput) async -> OwnedLandingOutcome
     /// §6.4：提交被接受之后才把铸出来的身份写进本机行。返回真的写下去了的那些身份。
@@ -383,6 +398,10 @@ actor PhiSyncEngine {
 
     /// 本轮每条注册 kind 的计数（§11.2）。
     private var ownedCounters: [String: OwnedRoundCounters] = [:]
+
+    /// 本轮已经重试过停放项的 kind。一轮**一次**，在归属段的最前面——`pull` 与
+    /// `pushOwnedItems` 都可能是第一个到达那里的。
+    private var ownedParkedRetryDone: Set<String> = []
 
     /// 本轮已经跑过轮首的 kind。一轮至多一次 fetch（§5.7 第 2 条硬要求），而一轮里
     /// `pull` 与 `push` 都可能第一个到达轮首。
@@ -781,6 +800,7 @@ actor PhiSyncEngine {
         ownedReadFailed = []
         ownedTagIndices = [:]
         ownedRoundStarted = []
+        ownedParkedRetryDone = []
         ownedMapsThisRound = nil
         ownedTables = [:]
         ownedMustRepublish = [:]
@@ -1345,6 +1365,9 @@ actor PhiSyncEngine {
             // §5.2 的轮次顺序：设置 → Space → 归属 kind（注册清单的次序）。放在同一轮的
             // 后段，账户里本机没有的 Space 与它下面的树因此**通常在一轮内**全部落地。
             let ownedMaps = await ownedRoundMaps()
+            for registration in ownedKinds {
+                await retryParkedOwnedClaims(registration, maps: ownedMaps)
+            }
             for registration in ownedKinds {
                 await applyOwnedKind(registration,
                                      batch: ownedBatches[registration.label] ?? OwnedPullBatch(),
@@ -2530,6 +2553,40 @@ actor PhiSyncEngine {
         }
     }
 
+    /// 归属段的最前面：重试停放项（§3 / R-exec-10）。
+    ///
+    /// **每一种轮次都跑，一轮一次。** 一次纯 push 轮（`pushLocalSettings()` /
+    /// `handleLocalDefaultsChange()` / `handleLocalSpacesChange()`）没有落地段，却照样走到
+    /// 发布段——而发布段的两件事都要先知道「这一行本轮已经配上了一个账户身份」：出站快照
+    /// 据此**不为它铸新身份**，差分据此**不把那条身份判成缺席**。少了这一趟，用户在重试
+    /// 窗口里改一次设置就足以让账户上那条实体被删掉、同一条本机行再铸一个新身份重新建一条。
+    ///
+    /// 它**不往游标上加任何状态**（§3.5 禁止窗口状态 / 本地铸造标志 / 去重残留）：重试的
+    /// 输入就是 `pendingApply`，配对每轮从本机行现算。
+    private func retryParkedOwnedClaims(_ registration: OwnedKindRegistration,
+                                        maps: OwnedOwnerMaps) async {
+        guard !isStopped, !ownedParkedRetryDone.contains(registration.label) else { return }
+        ownedParkedRetryDone.insert(registration.label)
+        guard !ownedReadFailed.contains(registration.label) else { return }
+        var table = ownedTables[registration.label] ?? PhiOwnedItemTable()
+        var parked: [String: ParkedOwnedItem] = [:]
+        for (identity, cursor) in table.cursors {
+            guard let payload = cursor.pendingApply else { continue }
+            parked[identity] = ParkedOwnedItem(payload: payload,
+                                               pendingOwnerUuid: cursor.pendingOwnerUuid)
+        }
+        guard !parked.isEmpty else { return }
+        let result = await registration.retryParkedClaims(parked, maps)
+        guard !result.persisted.isEmpty else { return }
+        for identity in result.persisted {
+            guard var cursor = table.cursors[identity] else { continue }
+            cursor.pendingApply = nil
+            cursor.pendingOwnerUuid = nil
+            table.cursors[identity] = cursor
+        }
+        writeOwnedTable(registration, table)
+    }
+
     /// 一条 kind 的入站落地段。**apply → 基线，顺序即不变量**（§4.5）。
     private func applyOwnedKind(_ registration: OwnedKindRegistration,
                                 batch: OwnedPullBatch, maps: OwnedOwnerMaps) async {
@@ -2674,6 +2731,11 @@ actor PhiSyncEngine {
               spaceStore != nil, spaceAccess != nil else { return }
         await beginOwnedRound()
         let maps = await ownedRoundMaps()
+        // 归属段的最前面，**每一种轮次都跑**。在 pull 轮里这一趟已经在落地段之前跑过了，
+        // `ownedParkedRetryDone` 让它一轮只发生一次。
+        for registration in ownedKinds {
+            await retryParkedOwnedClaims(registration, maps: maps)
+        }
         for registration in ownedKinds {
             await publishOwnedKind(registration, maps: maps, retryOnConflict: retryOnConflict)
         }
@@ -3440,7 +3502,14 @@ final class BookmarkSyncRoundState {
     private(set) var identityToGuid: [String: String] = [:]
     private(set) var rowByGuid: [String: PhiLocalBookmark] = [:]
     /// 本轮 §6 的认领配对：实体身份 -> 本机 guid。
-    var pairs: [String: String] = [:]
+    ///
+    /// **累加，不覆盖**：归属段最前面那一趟停放项重试与落地段的 `plan` 都会往里写，而出站
+    /// 快照的「这一行本轮不铸新身份」与差分的 `pendingClaims` 豁免读的是两者的并集。
+    private(set) var pairs: [String: String] = [:]
+
+    func mergePairs(_ pairs: [String: String]) {
+        for (identity, guid) in pairs { self.pairs[identity] = guid }
+    }
 
     func reload(_ rows: [PhiLocalBookmark]) {
         locals = rows
@@ -3524,33 +3593,13 @@ extension OwnedKindRegistration {
                     table: table, resolve: maps.resolver, scope: nil, nowMs: now,
                     pendingClaims: Set(state.pairs.keys))
             },
+            retryParkedClaims: { parked, maps in
+                await retryParkedBookmarkClaims(parked, maps: maps, access: access, state: state)
+            },
             plan: { input in bookmarkPlan(input, state: state) },
             land: { input in await landBookmarks(input, access: access, state: state) },
             claimIdentities: { minted in
-                // §6.4：铸造在提交那一刻。逐条一个事务在一棵上千条的树上是上千个事务，
-                // 所以整批一次——**但和落地批次一样按 Space 切开**。导入锁是 fail-closed 的，
-                // 一批横跨两个 Space、其中一个正在导入的写回会被整批拒掉，于是另一个 Space 里
-                // 那些**服务端已经接受**的身份也写不回本机行。
-                var bySpace: [String: [BookmarkApplyOp]] = [:]
-                var identitiesBySpace: [String: Set<String>] = [:]
-                for (identity, guid) in minted.sorted(by: { $0.key < $1.key }) {
-                    let spaceId = state.rowByGuid[guid]?.spaceId ?? ""
-                    bySpace[spaceId, default: []].append(.claim(guid: guid, syncId: identity))
-                    identitiesBySpace[spaceId, default: []].insert(identity)
-                }
-                var persisted: Set<String> = []
-                for spaceId in bySpace.keys.sorted() {
-                    guard let ops = bySpace[spaceId], !ops.isEmpty else { continue }
-                    do {
-                        try await access.apply(BookmarkApplyBatch(unordered: ops))
-                        persisted.formUnion(identitiesBySpace[spaceId] ?? [])
-                    } catch {
-                        AppLogError("[phi-sync] minted bookmark identities could not be "
-                                    + "written back count=\(ops.count) "
-                                    + "(\(PhiSyncLog.describe(error)))")
-                    }
-                }
-                return persisted
+                await claimBookmarkIdentities(minted, access: access, state: state)
             })
     }
 }
@@ -3636,11 +3685,70 @@ private func bookmarkPlan(_ input: OwnedPlanInput,
     out.plan = SyncableOwnedItems.plan(BookmarkKind.self, arrivals: arrivals,
                                        parked: input.parked, table: input.table,
                                        resolve: resolve, context: context)
-    state.pairs = adoption.pairs
+    state.mergePairs(adoption.pairs)
     out.adopted = adoption.adopted
     out.unmatchedFolders = adoption.unmatchedFolders
     out.unmergeablePairs = adoption.unmergeablePairs
     out.mustRepublish = adoption.mustRepublish
+    return out
+}
+
+/// §6.4 的身份写回，**按 Space 切开**。
+///
+/// 导入锁是 fail-closed 的：一批横跨两个 Space、其中一个正在导入的写回会被整批拒掉，于是另一个
+/// Space 里那些**服务端已经接受**的身份也写不回本机行。返回真的写下去了的那些身份。
+@MainActor
+private func claimBookmarkIdentities(_ pairs: [String: String],
+                                     access: any PhiBookmarkLocalAccess,
+                                     state: BookmarkSyncRoundState) async -> Set<String> {
+    var bySpace: [String: [BookmarkApplyOp]] = [:]
+    var identitiesBySpace: [String: Set<String>] = [:]
+    for (identity, guid) in pairs.sorted(by: { $0.key < $1.key }) {
+        let spaceId = state.rowByGuid[guid]?.spaceId ?? ""
+        bySpace[spaceId, default: []].append(.claim(guid: guid, syncId: identity))
+        identitiesBySpace[spaceId, default: []].insert(identity)
+    }
+    var persisted: Set<String> = []
+    for spaceId in bySpace.keys.sorted() {
+        guard let ops = bySpace[spaceId], !ops.isEmpty else { continue }
+        do {
+            try await access.apply(BookmarkApplyBatch(unordered: ops))
+            persisted.formUnion(identitiesBySpace[spaceId] ?? [])
+        } catch {
+            AppLogError("[phi-sync] bookmark identities could not be written back "
+                        + "count=\(ops.count) (\(PhiSyncLog.describe(error)))")
+        }
+    }
+    return persisted
+}
+
+/// §3 / R-exec-10 的停放项重试，书签这一半：拿停放着的那些载荷重新走一次 §6 的认领，配上的
+/// 立刻写回本机行。
+///
+/// 它跑在**每一种轮次**的归属段最前面，所以一次纯 push 轮也能把「这一行已经配上一个账户身份」
+/// 这件事告诉后面的快照与差分。配不上的原样留着停放——那条身份下一轮再试，真的一直配不上就由
+/// 差分按「本机没有这一行」清理掉（R-exec-9 的另一半）。
+@MainActor
+private func retryParkedBookmarkClaims(_ parked: [String: ParkedOwnedItem],
+                                       maps: OwnedOwnerMaps,
+                                       access: any PhiBookmarkLocalAccess,
+                                       state: BookmarkSyncRoundState) async
+    -> OwnedParkedClaimResult {
+    var out = OwnedParkedClaimResult()
+    var entities: [Phi_PhiBookmarkEntity] = []
+    for identity in parked.keys.sorted() {
+        guard let payload = parked[identity]?.payload,
+              let envelope = try? Phi_PhiEntity(serializedBytes: payload),
+              let entity = BookmarkKind.entity(from: envelope) else { continue }
+        entities.append(entity)
+    }
+    guard !entities.isEmpty else { return out }
+    let adoption = SyncableOwnedItems.adopt(arrivals: entities, locals: state.locals,
+                                            resolve: maps.resolver)
+    guard !adoption.pairs.isEmpty else { return out }
+    out.paired = Set(adoption.pairs.keys)
+    state.mergePairs(adoption.pairs)
+    out.persisted = await claimBookmarkIdentities(adoption.pairs, access: access, state: state)
     return out
 }
 

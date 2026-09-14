@@ -127,6 +127,18 @@ final class FakeBookmarkAccess: PhiBookmarkLocalAccess {
         if let locked = batch.ops.compactMap(spaceId(of:)).first(where: importingSpaceIds.contains) {
             throw LocalStoreWriteError.spaceImporting(spaceId: locked)
         }
+        // 一条行的身份**只认领一次**，与生产实现同形（`LocalStore+Bookmark.swift` 的
+        // `node.syncId == nil || node.syncId == syncId`）：换一个身份是 fail-closed 的
+        // **批次级**拒绝，一行都不改。假件照写不误的话，Task 6 的轮内认领保护在端到端这一层
+        // 从来没有被执行过——第二条身份会静默改写那一行的 `syncId`，第一条身份在账户上从此
+        // 没有持有者，下一轮差分为它发一条 tombstone，把账户上一条真实的书签删掉
+        // （CASE 6b.13）。
+        for op in batch.ops {
+            guard case .claim(let guid, let syncId) = op,
+                  let existing = rows.first(where: { $0.guid == guid })?.syncId,
+                  existing != syncId else { continue }
+            throw LocalStoreWriteError.rowAlreadyMapped
+        }
         // 生产实现末尾会重读一次，于是 §4.5 的落地后复核在同一轮里就能做（G1）。抛错那一
         // 支走不到这里：真实现里那次重读排在写之后，写抛了就不会发生，快照保持原样。
         snapshotIsLoaded = true

@@ -2390,8 +2390,13 @@ final class PhiSyncEngineOwnedItemsTests: XCTestCase {
     ///
     /// 防的是什么：第二条也认领同一行的话，那行的 `syncId` 被改写成第二条的身份，**第一条
     /// 身份在账户上从此没有持有者**，下一轮差分为它发一条 tombstone，把账户上一条真实的书签
-    /// 删掉。③ 是另一半：把 `rowAlreadyMapped` 这个拒绝当成批次级失败，会让一次正常的重复
-    /// 配对拖垮整个 Space 这一轮的落地。
+    /// 删掉。
+    ///
+    /// ①②④ 由 `SyncableOwnedItems.adopt` 的**按位一对一**配对保证：两条同键的入站实体对一条
+    /// 本机行只配得上第一条，第二条落进 `leftOver` 并走 create。③ 是这条用例的承重半边——
+    /// `FakeBookmarkAccess` 照真 store 抛 `rowAlreadyMapped`（**批次级**拒绝），所以配对那一侧
+    /// 一旦回归，这一轮整个 Space 会被拒收、`x1` / `x2` 两条游标都拿不到基线，③ 当场变红。
+    /// 没有那条模拟，这条用例对「第二条也认领了同一行」是全绿的。
     func testASecondIdentityPairingToAClaimedRowTakesTheCreatePath() async throws {
         let spaceAccess = makeSpaceAccess()
         let access = FakeBookmarkAccess(rows: [

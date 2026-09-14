@@ -881,6 +881,9 @@ actor PhiSyncEngine {
     /// sweep runs as a round AND keeps no stale copy across a suspension.
     private func applyRetentionSweep() async {
         await applySpaceRetentionSweep()
+        // §3.6 的 tombstone 游标丢弃，**排在级联之前**：一条已经到期的游标不该再进级联的
+        // 候选集，那只会让同一条记录被两段逻辑各判一次。
+        await dropExpiredOwnedTombstones()
         // §9.3 的游标级联，**每一次清理轮都跑，与上面这趟有没有清出东西无关**。它不是
         // `applySpaceRetentionSweep` 的尾巴：那一趟的 `expired` 是「这一次**新**清理掉的
         // uuid」，而 `purgeExpired` 在 phase 1 就盖上 `purgedAtMs` 并立刻落盘、它自己的守卫
@@ -925,6 +928,35 @@ actor PhiSyncEngine {
                 // `snapshot` 的 eligible 过滤照旧把它排除在外。
                 AppLogWarn("[phi-sync] retention purge failed; keeping the mapping so the row cannot be republished (\(PhiSyncLog.describe(error)))")
             }
+        }
+    }
+
+    /// §3.6：删除定案满 30 天的 tombstone 游标整条丢弃，两条 kind 都过一趟。
+    ///
+    /// 丢弃为什么安全，论证在 `PhiOwnedItemTable.dropExpiredTombstones` 上（服务端每个
+    /// `entity_id` 只有一行且只下发最新版本，所以一条身份被再次投递时投到的要么仍是那条
+    /// tombstone、要么是一次更新的复活，两种在没有游标时的结论都与有游标时逐字一样）。
+    /// 这里只负责**什么时候**跑它：`.retentionSweep` 是唯一一种「与任何实体流动无关、纯粹
+    /// 按时间收尾」的轮次，Space 侧的 30 天清理也在这一轮。
+    ///
+    /// **不看 `ownedReadFailed`**：判据只有游标自己的 `deletedAtMs` 与本轮的 `now`，一次
+    /// 本机读失败改变不了其中任何一个。`beginOwnedRound()` 在读抛错之前就已经把游标表载进
+    /// `ownedTables` 了，所以这一趟照常成立。
+    private func dropExpiredOwnedTombstones() async {
+        guard !ownedKinds.isEmpty, spaceStore != nil else { return }
+        await beginOwnedRound()
+        let nowMs = now()
+        for registration in ownedKinds {
+            guard !isStopped else { return }
+            var table = ownedTables[registration.label] ?? PhiOwnedItemTable()
+            let before = table.cursors.count
+            table.dropExpiredTombstones(nowMs: nowMs)
+            let dropped = before - table.cursors.count
+            guard dropped > 0 else { continue }
+            // R12：只记 kind 与条数。
+            AppLogInfo("[phi-sync] expired tombstone cursors dropped "
+                       + "kind=\(registration.label) dropped=\(dropped)")
+            writeOwnedTable(registration, table)
         }
     }
 
@@ -4923,32 +4955,48 @@ extension OwnedKindRegistration {
             land: { input in await landPins(input, access: access, state: state) },
             // 同上：没有铸造就没有写回，`snapshot` 交出的 `minted` 恒空。
             claimIdentities: { _ in [] },
-            // §9.3 的级联。判据 (b) 问 `allPinIdentities()`——本机全部非休眠行的**裸
-            // lineage**，不做作用域过滤（R-exec-4，与差分的定义域同一条）。
+            // §9.3 的级联。判据 (b) 的粒度是**完整身份**（`<lineage>:<ownerKey>`），不是裸
+            // lineage——域的构造与 `pinTombstones` 逐字同源，同样两个来源：
             //
-            // **两边的形状不同**：`allSyncIds()` 交的是完整身份，这一个交的是裸 lineage，
-            // 所以候选身份要先拆成两半再比。按 lineage 判是这里**刻意保守**的那一侧：一条
-            // lineage 在 N 个 owner 下是 N 条身份，而作用域迁移原地留下的备份行不在
-            // `allPins()` 里——「同步层这一轮不认领它」与「账户应该忘掉它」是两句不同的话，
-            // 而这条路径上判错的代价是不对称的（多留一条游标下一轮自愈，少留一条是账户级
-            // 盲写覆盖）。
+            // 1. 当前作用域内的行交出**完整身份**（`PinKind.identity(of local:)`）；
+            // 2. `allPins()` 一条都看不见、但 `allPinIdentities()` 还认得的那些 lineage 补一
+            //    条只认领、不带归属的记录——作用域迁移原地留下的备份行属于这一类，本机确实
+            //    还有物理行，只是这一轮的快照算不出它们的 owner（R-exec-4）。
+            //
+            // **按裸 lineage 判是错的**（T9a-2）：一条 lineage 在 N 个 owner 下是 N 条身份，
+            // 于是一条 owner 已被清理的游标会被**另一个 owner 下**的行保护住——它既不会被删
+            // （看起来有活行认领），也不会被改写（它的身份配不上任何本机行），于是永远带着
+            // 一个指向已清理 Space 的 `ownerUuid` 留在表里。换 owner 按 §7.2 是「旧身份
+            // tombstone + 新身份 create」，旧身份那一条本来就不该由新 owner 下的行来认领。
             liveOwners: { candidates, maps in
                 let resolve = maps.resolver
                 let scope = state.localScope
                 let lineages = try access.allPinIdentities()
-                var out = OwnedLiveRows()
-                out.claimed = candidates.filter {
-                    lineages.contains(pinIdentityHalves($0).lineage)
-                }
                 // 读的是 `eligibilityOwner`，**不是**身份的后半段：`identity(of local:)` 在
                 // 归属解析不出来时交的是一个占位后半段，截它等于把占位值写进游标。
+                var ownerByIdentity: [String: String] = [:]
                 for row in state.locals {
                     guard let identity = PinKind.identity(of: row, resolve: resolve, scope: scope),
-                          out.claimed.contains(identity),
                           let owner = PinKind.eligibilityOwner(of: row, resolve: resolve,
                                                                scope: scope)
                     else { continue }
-                    out.owners[identity] = owner
+                    ownerByIdentity[identity] = owner
+                }
+                let inScope = Set(state.locals.map { PinKind.lineageKey($0.lineageId) })
+                var out = OwnedLiveRows()
+                for identity in candidates {
+                    if let owner = ownerByIdentity[identity] {
+                        out.claimed.insert(identity)
+                        out.owners[identity] = owner
+                        continue
+                    }
+                    // 来源 2。**只补 `allPins()` 里一条都没有的 lineage**：当前作用域下还有
+                    // 行的那些 lineage 已经由来源 1 按身份各自表过态，再按 lineage 兜一次
+                    // 就把上面那条论证撤销了。归属交不出来 ⇒ 只认领、不改写，保留上一次
+                    // 已知的归属。
+                    guard !inScope.contains(pinIdentityHalves(identity).lineage),
+                          lineages.contains(pinIdentityHalves(identity).lineage) else { continue }
+                    out.claimed.insert(identity)
                 }
                 return out
             })

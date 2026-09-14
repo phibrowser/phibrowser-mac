@@ -152,6 +152,20 @@ struct OwnedSnapshotBytes {
     var scopeMismatch = false
 }
 
+/// §9.3 的保留期级联问本机那两件事的答案，擦除了 kind。
+///
+/// **两件事必须分开交**，合成一张 `[String: String]` 是一条数据丢失路径：一条活行的归属
+/// 此刻解析不出来（Space 映射抖动）时它仍然**有活行**，只是这一轮没有新归属可写；合成一张
+/// 字典之后它读起来与「没有活行」一模一样，于是那条游标被删掉——而删掉一条活行的游标正是
+/// A12 的 fail-safe 要防的那一件事（下一轮以 `baseVersion == 0` 的 create 盲写覆盖账户上
+/// 那一条）。
+struct OwnedLiveRows {
+    /// 交进去的候选里，**本机还有活行认领**的那些身份。§9.3 判据 (b) 只读这一个集合。
+    var claimed: Set<String> = []
+    /// 上面那些身份里归属解析得出来的那些 -> 它**此刻所在的**归属，即 rehome 要写的值。
+    var owners: [String: String] = [:]
+}
+
 /// `plan` 的入参，擦除了 kind：到达项是信封字节。
 struct OwnedPlanInput {
     var arrivals: [(payload: Data, entityId: String, version: Int64)] = []
@@ -345,6 +359,22 @@ struct OwnedKindRegistration {
     let land: @MainActor (OwnedLandingInput) async -> OwnedLandingOutcome
     /// §6.4：提交被接受之后才把铸出来的身份写进本机行。返回真的写下去了的那些身份。
     let claimIdentities: @MainActor ([String: String]) async -> Set<String>
+
+    /// §9.3 保留期级联在本机这一侧的唯一读口：收本轮命中判据 (a) 的那批候选身份，交回其中
+    /// **本机还有活行认领**的那些（判据 (b)）以及它们此刻所在的归属（rehome 要写的值）。
+    ///
+    /// **为什么不复用已有的两个口。** `localIdentities` 在 pin 那一条按设计交空集合（身份的
+    /// 后半段是账户级 ownerKey，那个闭包按接缝的形状拿不到本轮的解析器），拿它当判据 (b)
+    /// 会把**每一条** pin 游标都判成「没有活行认领」而删掉。`snapshot` 则会为未同步行铸候选
+    /// 身份，并在 pin 作用域不一致时整段交一份空快照——两件事在一次清理里都不该发生。
+    ///
+    /// **抛 ⇒ 这条 kind 的级联整段不跑**（R-exec-3 同一条）：一次读不出来与「本机一条行都
+    /// 没有了」在值上同形，而后者的回答是删掉命中 (a) 的每一条游标。
+    ///
+    /// 判据 (b) 的定义域是 `allSyncIds()` / `allPinIdentities()`（**整库**那一次读），不是
+    /// 快照（R-exec-4 / R-exec-8）：孤儿根下面的行、作用域迁移原地留下的备份行都不发布，但
+    /// 它们是**活的本地行**，「同步层这一轮不认领它」与「账户应该忘掉它」是两句不同的话。
+    let liveOwners: @MainActor (Set<String>, OwnedOwnerMaps) throws -> OwnedLiveRows
 }
 
 /// One round of Phi settings sync: pull (GetUpdates -> decrypt -> field-level LWW merge ->
@@ -850,6 +880,18 @@ actor PhiSyncEngine {
     /// existed. This is exactly what §5.3's single-writer rule is for, so the
     /// sweep runs as a round AND keeps no stale copy across a suspension.
     private func applyRetentionSweep() async {
+        await applySpaceRetentionSweep()
+        // §9.3 的游标级联，**每一次清理轮都跑，与上面这趟有没有清出东西无关**。它不是
+        // `applySpaceRetentionSweep` 的尾巴：那一趟的 `expired` 是「这一次**新**清理掉的
+        // uuid」，而 `purgeExpired` 在 phase 1 就盖上 `purgedAtMs` 并立刻落盘、它自己的守卫
+        // 又是 `purgedAtMs == nil`，所以一个 uuid **再也不会被返回第二次**。把级联挂在那份
+        // 返回值上，一次「数据删成功、游标文件写失败」就永久留下一批孤儿游标——而 §11.4
+        // 明说游标文件写失败**不重试**。幂等重算一遍不需要任何新状态。
+        await applyOwnedRetentionCascade()
+    }
+
+    /// 上面那两段说的 Space 那一半：`purgeExpired` + 数据级联。
+    private func applySpaceRetentionSweep() async {
         guard let spaceAccess, spaceStore != nil else { return }
         var table = loadSpaceTable()
         let expired = table.purgeExpired(nowMs: now())
@@ -883,6 +925,89 @@ actor PhiSyncEngine {
                 // `snapshot` 的 eligible 过滤照旧把它排除在外。
                 AppLogWarn("[phi-sync] retention purge failed; keeping the mapping so the row cannot be republished (\(PhiSyncLog.describe(error)))")
             }
+        }
+    }
+
+    /// §9.3：一个 Space 被 30 天清理掉之后，把两张归属项表里指着它的游标级联处理掉。
+    ///
+    /// **幂等，每次清理轮重算一遍，并且对活行 fail-safe**（E11 + A12）。两条判据**都**成立
+    /// 才删一条游标：
+    ///
+    /// - (a) 它的 `ownerUuid` 指向的那个 Space 的 Space 游标带 `purgedAtMs`；
+    /// - (b) **没有任何活的本地行认领这条身份**。
+    ///
+    /// 不级联的后果：那些游标成为「有基线、无本地行」的孤儿，而 §4.7 的差分把它们**全部
+    /// 判成本地删除**并发出一批 tombstone——删的是账户上别人可能还需要的实体。
+    ///
+    /// (b) 是 A12 的 fail-safe。`ownerUuid` 在门关着、drain 未完、pin 作用域不一致这几种
+    /// 情况下会落后于本地行（它的刷新在发布段的 pre-pass 里），而删掉一条**活行**的游标
+    /// 等于让那条行此后被差分判成从未发布过，下一轮以 `baseVersion == 0` 的 create 盲写
+    /// 覆盖账户上那一条——服务端的 `ON CONFLICT (client_tag_hash) DO UPDATE` 没有版本检查。
+    /// 命中 (a) 但违反 (b) ⇒ **不删**，就地把 `ownerUuid` 按本地行改写并计一次
+    /// `rehomed_cursors`，把一整类「级联键过期」从账户级覆盖降级成一条日志。
+    ///
+    /// 判据只读游标上那一个字段，所以它不必把几千条基线解码一遍，也不会读到一个过期的
+    /// Space：`reconciled` 在「行改了 Space 而发布还排在切片后面」的窗口里是旧值，而
+    /// `ownerUuid` 每一轮 snapshot 的预处理都为表里每一条**在本机有对应行**的游标刷新一次
+    /// （N3 / I9 / R-exec-8）。
+    private func applyOwnedRetentionCascade() async {
+        guard !ownedKinds.isEmpty, spaceStore != nil else { return }
+        // 轮首那一次本机读 + 游标表读。它自己按 kind 记 `ownedReadFailed`（R-exec-3），
+        // 一轮至多跑一次，所以这里与别的轮次共用同一个入口而不是自己再读一遍。
+        await beginOwnedRound()
+        let spaceTable = loadSpaceTable()
+        let maps = await ownedRoundMaps()
+        for registration in ownedKinds {
+            guard !isStopped else { return }
+            guard !ownedReadFailed.contains(registration.label) else { continue }
+            var table = ownedTables[registration.label] ?? PhiOwnedItemTable()
+            // (a)。`ownerUuid == nil` 的游标不进候选：它要么是一条账户上有、本机从没有过
+            // 行的实体（归属永远解析不出来），要么是刚建出来还没被发布段刷过归属的——两种
+            // 都没有「指向一个被清理掉的 Space」这回事。
+            let candidates = Set(table.cursors.compactMap { identity, cursor -> String? in
+                guard let owner = cursor.ownerUuid,
+                      spaceTable.cursors[owner]?.purgedAtMs != nil else { return nil }
+                return identity
+            })
+            guard !candidates.isEmpty else { continue }
+            let live: OwnedLiveRows
+            do {
+                live = try await registration.liveOwners(candidates, maps)
+            } catch {
+                // 读不出来 ⇒ 这条 kind 这一轮整段不跑。下一次清理轮重算，判据没有任何
+                // 一次性状态。
+                AppLogWarn("[phi-sync] retention cascade skipped kind=\(registration.label): "
+                           + "the local rows could not be read (\(PhiSyncLog.describe(error)))")
+                continue
+            }
+            // 两个**本地**增量，不读 `counters.rehomedCursors` 的既有值：那一项在别的轮次
+            // 里由发布段写，拿它当「这一趟有没有改过东西」的判据会在一轮里既发布又清理时
+            // 多写一次盘。
+            var dropped = 0
+            var rehomed = 0
+            for identity in candidates.sorted() {
+                guard live.claimed.contains(identity) else {
+                    table.cursors.removeValue(forKey: identity)
+                    dropped += 1
+                    continue
+                }
+                // (b) 违反 ⇒ 不删。归属这一轮解析不出来时连改写也不做：保留上一次已知的
+                // 归属，下一轮重算——把它刷成一个猜测值会让差分的 tombstone 判据读到一条
+                // 本机从没成立过的归属。
+                guard let current = live.owners[identity],
+                      table.cursors[identity]?.ownerUuid != current else { continue }
+                table.cursors[identity]?.ownerUuid = current
+                rehomed += 1
+            }
+            var counters = ownedCounters[registration.label] ?? OwnedRoundCounters()
+            counters.rehomedCursors += rehomed
+            ownedCounters[registration.label] = counters
+            guard dropped > 0 || rehomed > 0 else { continue }
+            // R12：只记 kind 与条数。写一律走 `writeOwnedTable`（`guard !isStopped` + 两个
+            // per-kind 标志的维护都在那里），绝不直接 `store.save`。
+            AppLogInfo("[phi-sync] retention cascade kind=\(registration.label) "
+                       + "dropped=\(dropped) rehomed=\(rehomed)")
+            writeOwnedTable(registration, table)
         }
     }
 
@@ -3986,6 +4111,25 @@ extension OwnedKindRegistration {
             land: { input in await landBookmarks(input, access: access, state: state) },
             claimIdentities: { minted in
                 await claimBookmarkIdentities(minted, access: access, state: state)
+            },
+            // §9.3 的级联。判据 (b) 问 `allSyncIds()`——本机**所有**带身份的行，不做根过滤
+            // （R-exec-4，与差分的定义域同一条）：孤儿根下面那些行不进快照、永远不发布，
+            // 但它们是活的本地行，删掉它们的游标与删掉任何一条活行的游标后果相同。
+            liveOwners: { candidates, maps in
+                let resolve = maps.resolver
+                var out = OwnedLiveRows()
+                out.claimed = try candidates.intersection(access.allSyncIds())
+                // rehome 要写的值与发布段每轮刷进 `ownerUuid` 的是**同一个函数**
+                // （`eligibilityOwner`：这一行坐在哪个 Space 里），所以级联改写出来的值与
+                // 下一轮 pre-pass 刷出来的值不可能分叉（A12 / §3.5 的一个实现点）。
+                for row in state.locals {
+                    guard let identity = row.syncId, out.claimed.contains(identity),
+                          let owner = BookmarkKind.eligibilityOwner(of: row, resolve: resolve,
+                                                                    scope: nil)
+                    else { continue }
+                    out.owners[identity] = owner
+                }
+                return out
             })
     }
 }
@@ -4778,7 +4922,36 @@ extension OwnedKindRegistration {
             plan: { input in pinPlan(input, state: state) },
             land: { input in await landPins(input, access: access, state: state) },
             // 同上：没有铸造就没有写回，`snapshot` 交出的 `minted` 恒空。
-            claimIdentities: { _ in [] })
+            claimIdentities: { _ in [] },
+            // §9.3 的级联。判据 (b) 问 `allPinIdentities()`——本机全部非休眠行的**裸
+            // lineage**，不做作用域过滤（R-exec-4，与差分的定义域同一条）。
+            //
+            // **两边的形状不同**：`allSyncIds()` 交的是完整身份，这一个交的是裸 lineage，
+            // 所以候选身份要先拆成两半再比。按 lineage 判是这里**刻意保守**的那一侧：一条
+            // lineage 在 N 个 owner 下是 N 条身份，而作用域迁移原地留下的备份行不在
+            // `allPins()` 里——「同步层这一轮不认领它」与「账户应该忘掉它」是两句不同的话，
+            // 而这条路径上判错的代价是不对称的（多留一条游标下一轮自愈，少留一条是账户级
+            // 盲写覆盖）。
+            liveOwners: { candidates, maps in
+                let resolve = maps.resolver
+                let scope = state.localScope
+                let lineages = try access.allPinIdentities()
+                var out = OwnedLiveRows()
+                out.claimed = candidates.filter {
+                    lineages.contains(pinIdentityHalves($0).lineage)
+                }
+                // 读的是 `eligibilityOwner`，**不是**身份的后半段：`identity(of local:)` 在
+                // 归属解析不出来时交的是一个占位后半段，截它等于把占位值写进游标。
+                for row in state.locals {
+                    guard let identity = PinKind.identity(of: row, resolve: resolve, scope: scope),
+                          out.claimed.contains(identity),
+                          let owner = PinKind.eligibilityOwner(of: row, resolve: resolve,
+                                                               scope: scope)
+                    else { continue }
+                    out.owners[identity] = owner
+                }
+                return out
+            })
     }
 }
 

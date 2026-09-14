@@ -2930,4 +2930,161 @@ final class PhiSyncEngineOwnedItemsTests: XCTestCase {
         XCTAssertEqual(sent?.title.stringValue, "local", "② 带的是本机那个标题")
         XCTAssertEqual(sent?.spaceUuid.stringValue, "su-2", "② 带的是落地后的那个 Space")
     }
+
+    // MARK: - CASE 9a.1 – 9a.3：生命周期（书签半边）
+
+    /// Task 9a 专用的 `SyncKeyController`：只接自撤销那一步真正要碰的两样东西——归属项的
+    /// 游标 store 数组，与清 `syncId` 的那个窄闭包。其余构造参数走默认值，或本文件与
+    /// `Sync/Keys` 那批用例共享的假件（形状照 `SelfRevokeTests.makeController`）。
+    ///
+    /// **`engineDefaults` 显式传本用例那个一次性 suite**，不用默认实参：自撤销的引擎状态
+    /// 那一步会把 `PhiSyncEngine.stateKeys` 从传进去的域里删掉，而默认实参是
+    /// `UserDefaults.standard`——那是这台机器上真正在用的同步游标。
+    private func makeController(ownedStores: [any PhiOwnedItemStateStore],
+                                bookmarkAccess: FakeBookmarkAccess) async throws
+        -> SyncKeyController {
+        let api = AccountKeyManagerTests.FakeAPI()
+        let manager = AccountKeyManager(
+            api: api, deviceKeyProvider: AccountKeyManagerTests.FakeDeviceKeyProvider())
+        _ = try await manager.bootstrap()
+        let profileKeys = ProfileKeyManager(
+            api: api, keyManager: manager,
+            mappingStore: ProfileKeyManagerTests.MemoryMappingStore())
+        let approvals = DeviceApprovalService(
+            api: api, keyManager: manager,
+            deviceKeyProvider: AccountKeyManagerTests.FakeDeviceKeyProvider())
+        return SyncKeyController(
+            manager: manager, approvals: approvals, profileKeys: profileKeys,
+            localProfilesProvider: { [] }, notifyChromium: {},
+            engineDefaults: defaults,
+            ownedItemStores: ownedStores,
+            clearAllSyncIds: { try await bookmarkAccess.clearAllSyncIds() })
+    }
+
+    /// CASE 9a.1（spec engine 12）— 自撤销**先删两个游标文件，再清 `syncId`**。
+    ///
+    /// 防的是什么：断言的是**顺序本身**，不只是终态。两种中途失败的后果不对称——停在
+    /// 「文件没了、`syncId` 还在」这一侧是**可恢复**的（重新加入时的整类型重放按身份把每条
+    /// 实体重新落回它原来那一行，游标自己长回来）；反过来「`syncId` 清了、文件还在」是
+    /// **灾难**：游标说「我发布过这些身份」，本机却没有任何行带这些身份，§4.7 的差分把整张
+    /// 表判成本机删除，重新加入后删掉账户上的整棵树。
+    ///
+    /// 清 `syncId` 失败因此**只记 warn、不中断、也不回滚删文件**，precedent 是同一个方法里
+    /// 设备密钥轮换失败那一段。
+    func testSelfRevokeDeletesTheCursorFilesBeforeItClearsTheSyncIds() async throws {
+        let access = FakeBookmarkAccess(rows: [
+            .fixture(guid: "G1", syncId: "b1", spaceId: "space-a"),
+        ])
+        // 第二步抛：终态因此停在两步之间，可以直接读出次序。
+        access.failClearSyncIds = true
+        let store = MemoryOwnedItemStore()
+        store.table.cursors["b1"] = ownedCursor(entityId: "srv-b1", version: 1,
+                                                ownerUuid: "su-1")
+        ProfilePairingGate.staticPendingOverride = true
+        defer { ProfilePairingGate.staticPendingOverride = nil }
+
+        let controller = try await makeController(ownedStores: [store], bookmarkAccess: access)
+        try await controller.removeThisDeviceFromSync()
+
+        XCTAssertTrue(store.deleted, "① 游标文件先删掉了")
+        XCTAssertTrue(access.calls.contains(.clearAllSyncIds), "② 清 `syncId` 那一步确实跑过")
+        XCTAssertEqual(access.rows.first?.syncId, "b1",
+                       "③ 它抛了，`syncId` 原样留在行上——可恢复的那一侧")
+    }
+
+    /// CASE 9a.2（spec engine 11）— 保留期级联**幂等**，且对活行 **fail-safe**（E11 + A12）。
+    ///
+    /// 两条判据都成立才删一条游标：(a) `ownerUuid` 指向的那个 Space 的游标带 `purgedAtMs`；
+    /// (b) 没有任何活的本地行认领这条身份。命中 (a) 但违反 (b) ⇒ **不删**，就地把
+    /// `ownerUuid` 按本地行改写并计一次 `rehomed_cursors`。
+    ///
+    /// 防的是什么：删掉一条**活行**的游标，那条行此后被差分判成从未发布过，于是下一轮用
+    /// `baseVersion == 0` 的 create 盲写覆盖账户上那一条——而服务端的
+    /// `ON CONFLICT (client_tag_hash) DO UPDATE` 没有版本检查。
+    func testTheRetentionCascadeRehomesLiveCursorsAndDropsOnlyTheOrphans() async throws {
+        let spaceAccess = makeSpaceAccess(["space-a": "su-1", "space-b": "su-2"])
+        let spaceStore = makeSpaceStore()
+        // `su-1` 的 30 天清理已经跑过：phase 1 盖上的 `purgedAtMs` 还在，而
+        // `purgeExpired` 自己的守卫是 `purgedAtMs == nil`，所以这个 uuid 再也不会被返回
+        // 第二次——级联因此不能挂在「本次返回的 uuid」上。
+        spaceStore.table.cursors["su-1"] = purgedSpaceCursor()
+        // `b1` 还有一条活的本地行，它现在坐在 `space-b` 里；`b2` 一条行都没有。
+        let access = FakeBookmarkAccess(rows: [
+            .fixture(guid: "G1", syncId: "b1", spaceId: "space-b"),
+        ])
+        let store = MemoryOwnedItemStore()
+        store.table.cursors["b1"] = ownedCursor(entityId: "srv-b1", version: 1,
+                                                ownerUuid: "su-1")
+        store.table.cursors["b2"] = ownedCursor(entityId: "srv-b2", version: 1,
+                                                ownerUuid: "su-1")
+
+        let engine = makeEngine(client: FakePhiSyncClient(), access: spaceAccess,
+                                store: spaceStore, ownedKinds: [bookmarkKind(access, store)])
+        await engine.setSpaceSyncEnabled(true)
+        await engine.runRetentionSweep()
+
+        let first = await engine.ownedTableForTesting("bookmarks")
+        let firstCounters = await engine.lastOwnedRoundCountersForTesting["bookmarks"]
+        XCTAssertEqual(first.cursors["b1"]?.ownerUuid, "su-2",
+                       "① 活行那条不删，就地按本地行改写归属")
+        XCTAssertNotNil(first.cursors["b1"], "① 那条游标本身还在")
+        XCTAssertNil(first.cursors["b2"], "② 没有活行认领的那条被删掉")
+        XCTAssertEqual(firstCounters?.rehomedCursors, 1, "③ 改写计一次 `rehomed_cursors`")
+        XCTAssertEqual(store.table.cursors["b1"]?.ownerUuid, "su-2", "④ 落了盘")
+        XCTAssertNil(store.table.cursors["b2"])
+
+        await engine.runRetentionSweep()
+
+        let second = await engine.ownedTableForTesting("bookmarks")
+        let secondCounters = await engine.lastOwnedRoundCountersForTesting["bookmarks"]
+        XCTAssertEqual(second.cursors["b1"]?.ownerUuid, "su-2", "⑤ 第二趟结果不变")
+        XCTAssertNil(second.cursors["b2"])
+        XCTAssertEqual(secondCounters?.rehomedCursors, 0,
+                       "⑥ 幂等：游标已经指向一个没被清理的 Space，判据 (a) 不再命中")
+    }
+
+    /// CASE 9a.3（spec engine 13）— 退休之后，在飞的那一轮**零写回**。
+    ///
+    /// 防的是什么：一次 `shutdown()` 之后在飞的那一轮会把它手上那份旧表写回，于是刚被自
+    /// 撤销清干净的设备又长出一份游标表——而那份表说「我发布过这些身份」，本机却已经没有
+    /// 任何行带这些身份了。
+    ///
+    /// `Gate` 只有 `open()` 与 `wait()` 两个方法，都要 `await`；`shutdown()` 是
+    /// `nonisolated` 且同步生效，所以它在返回时就已经挡住了后面每一个写入口。
+    func testARoundInFlightWhenTheDeviceRetiresWritesNothingBack() async throws {
+        let spaceAccess = makeSpaceAccess(["space-a": "su-1"])
+        let access = FakeBookmarkAccess(rows: [
+            .fixture(guid: "G1", syncId: "b1", spaceId: "space-a"),
+        ])
+        let store = MemoryOwnedItemStore()
+        store.table.cursors["b1"] = ownedCursor(entityId: "srv-b1", version: 1,
+                                                ownerUuid: "su-1")
+        let client = FakePhiSyncClient()
+        client.scriptedPages = [page([
+            remoteEntity(envelope(bookmarkPayload(uuid: "b9")), tag: bookmarkTag("b9"),
+                         version: 12, entityId: "srv-b9", key: key),
+        ])]
+        let arrived = Gate()
+        let release = Gate()
+        client.arrivedInGetUpdates = arrived
+        client.getUpdatesGate = release
+
+        let engine = makeEngine(client: client, access: spaceAccess, store: makeSpaceStore(),
+                                ownedKinds: [bookmarkKind(access, store)])
+        await engine.setSpaceSyncEnabled(true)
+        let round = Task { await engine.pullOnce() }
+        await arrived.wait()
+
+        // 自撤销那两步，就在这一轮停在 `getUpdates` 里的时候发生。
+        engine.shutdown()
+        store.deleteFile()
+        await release.open()
+        await round.value
+
+        let applied = access.calls.contains { if case .apply = $0 { return true } else { return false } }
+        XCTAssertTrue(store.deleted, "① 文件没有被在飞那一轮写回来")
+        XCTAssertTrue(store.table.cursors.isEmpty, "② 游标表仍然是空的")
+        XCTAssertEqual(bookmarkCommits(client).count, 0, "③ 退休之后一条 commit 都没发")
+        XCTAssertFalse(applied, "④ 退休之后没有任何落地")
+    }
 }

@@ -208,6 +208,21 @@ import SwiftUI
             AppLogWarn("[phi-sync] space sync table discarded (format < \(PhiSpaceSyncTable.currentFormatVersion)); re-running the pairing wizard")
             ProfilePairingGate.joinPairingPending = true
         }
+        // M3-3 §3.5：归属项（书签 / pin）的两张 per-kind 游标表，落在账户目录下
+        // （`<App Support>/Phi/users/<userID>/sync/`），所以切账户与账户重置零清理，也不必
+        // 进 `PhiSyncEngine.stateKeys`。目录不存在时由 `FileOwnedItemStateStore.save` 顺手
+        // 建（`withIntermediateDirectories: true`），两条 kind 走同一条路。
+        //
+        // **建在这里、而不是等 `buildPhiSyncEngine`**：§9.1 的自撤销要删的正是这两个 store
+        // 指着的文件，而那一步与引擎建不建得起来无关——读不到设备密钥的会话里
+        // `buildPhiSyncEngine` 在它自己那道 guard 上就返回了，而「离开账户」照样得做干净。
+        // 两处因此共用同一批对象，绝不各建一份。
+        let syncDirectory = account.userDataStorage.appendingPathComponent("sync")
+        let bookmarkAccess = AccountPhiBookmarkAccess(account: account)
+        let bookmarkStore = FileOwnedItemStateStore(
+            fileURL: syncDirectory.appendingPathComponent("bookmarks-cursors.json"))
+        let pinStore = FileOwnedItemStateStore(
+            fileURL: syncDirectory.appendingPathComponent("pins-cursors.json"))
         syncKeyController = SyncKeyController(
             manager: stack.manager, approvals: stack.approvals, profileKeys: profileKeys,
             spaceKeys: spaceKeys,
@@ -238,7 +253,12 @@ import SwiftUI
             },
             deviceKeyRotator: DeviceKeyStore(accountId: account.userID),
             engineDefaults: UserDefaults.standard,
-            spaceStateStore: spaceStateStore)
+            spaceStateStore: spaceStateStore,
+            // M3-3 §9.1 的两步。store 数组给「先删两个游标文件」那一半；闭包给「后清
+            // `syncId`」那一半，窄成一个函数、与 `notifyChromium` 同形，于是 controller
+            // 仍然既不持 `Account` 也不持 `LocalStore`。
+            ownedItemStores: [bookmarkStore, pinStore],
+            clearAllSyncIds: { try await bookmarkAccess.clearAllSyncIds() })
 
         // The main-thread facade: read-only caches plus the no-engine fallback. Cleared in
         // `invalidateSyncKeyController()` — the store and the two closures are bound to THIS
@@ -279,7 +299,9 @@ import SwiftUI
                 }
             }
         buildPhiSyncEngine(stack: stack, accountId: account.userID,
-                           account: account, spaceStateStore: spaceStateStore)
+                           account: account, spaceStateStore: spaceStateStore,
+                           bookmarkAccess: bookmarkAccess, bookmarkStore: bookmarkStore,
+                           pinStore: pinStore)
         return syncKeyController
     }
 
@@ -292,7 +314,10 @@ import SwiftUI
         stack: (api: KeyEnvelopeAPIClient, manager: AccountKeyManager, approvals: DeviceApprovalService),
         accountId: String,
         account: Account,
-        spaceStateStore: AccountPhiSpaceSyncStateStore
+        spaceStateStore: AccountPhiSpaceSyncStateStore,
+        bookmarkAccess: AccountPhiBookmarkAccess,
+        bookmarkStore: FileOwnedItemStateStore,
+        pinStore: FileOwnedItemStateStore
     ) {
         let deviceKeyId: String
         do {
@@ -349,19 +374,16 @@ import SwiftUI
         // table is the opposite — account-scoped, so it goes to `account.userDefaults`
         // through `spaceStateStore`.
         let spaceAccess = AccountPhiSpaceAccess(account: account, controller: syncKeyController)
-        // M3-3：归属项（书签 / pin）的注册清单。每种 kind 一张表、一个文件，落在账户目录下
-        // （`<App Support>/Phi/users/<userID>/sync/`），所以切账户与账户重置零清理，也不必
-        // 进 `PhiSyncEngine.stateKeys`。目录不存在时由 `FileOwnedItemStateStore.save` 顺手
-        // 建（`withIntermediateDirectories: true`），两条 kind 走同一条路。
-        let syncDirectory = account.userDataStorage.appendingPathComponent("sync")
-        let bookmarkAccess = AccountPhiBookmarkAccess(account: account)
-        let bookmarkStore = FileOwnedItemStateStore(
-            fileURL: syncDirectory.appendingPathComponent("bookmarks-cursors.json"))
-        // pin 那一条（PR15：`PinKind` 只在这里进引擎）。它的 access 收的是 `LocalStore`
-        // 而不是 `Account`——那个注入是 5b-1 为了让生产实现在测试里也驱动得起来做的。
+        // M3-3：归属项（书签 / pin）的注册清单。两条 kind 的 access / store 由
+        // `buildSyncKeyControllerIfNeeded()` 建好传进来——§9.1 的自撤销要删的是**同一批
+        // 对象**指着的文件，而那一步在引擎建不起来的会话里照样要跑（见那里的注释）。
+        //
+        // pin 的 access 是这里的（PR15：`PinKind` 只在这里进引擎）：它收的是 `LocalStore`
+        // 而不是 `Account`——那个注入是 5b-1 为了让生产实现在测试里也驱动得起来做的——而
+        // 自撤销那一步按 §9.1 **只清书签的 `syncId`**：pin 的身份是 `(pinLineageId, owner)`
+        // 推导出来的，而 `pinLineageId` 本来就是一个本地字段（作用域迁移与跨窗口转移依赖
+        // 它），清掉会破坏与同步无关的本地功能。
         let pinAccess = AccountPhiPinnedTabAccess(store: account.localStorage)
-        let pinStore = FileOwnedItemStateStore(
-            fileURL: syncDirectory.appendingPathComponent("pins-cursors.json"))
         let bookmarkKind = OwnedKindRegistration.bookmarks(access: bookmarkAccess,
                                                            store: bookmarkStore)
         let pinKind = OwnedKindRegistration.pins(access: pinAccess, store: pinStore)

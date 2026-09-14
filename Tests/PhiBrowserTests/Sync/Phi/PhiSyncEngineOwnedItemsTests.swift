@@ -648,10 +648,20 @@ final class PhiSyncEngineOwnedItemsTests: XCTestCase {
         var counters = await engine.lastOwnedRoundCountersForTesting["bookmarks"]
         XCTAssertEqual(counters?.localReadFailed, 1)
 
+        // ④ 读好了就一切照常：这一轮**读得到那三条行**，所以差分认得出它们还在，零 commit。
+        // 没有这三条行，一个「恢复之后照样把已发布身份判成缺席」的实现会发三条 tombstone，
+        // 而只断言 `localReadFailed == 0` 的用例对它全绿。
         access.readError = nil
+        access.rows = [
+            .fixture(guid: "Gb1", syncId: "b1", spaceId: "s-1", index: 0),
+            .fixture(guid: "Gb2", syncId: "b2", spaceId: "s-1", index: 1),
+            .fixture(guid: "Gb3", syncId: "b3", spaceId: "s-1", index: 2),
+        ]
         await engine.pullOnce()
         counters = await engine.lastOwnedRoundCountersForTesting["bookmarks"]
-        XCTAssertEqual(counters?.localReadFailed, 0, "④ 读好了就一切照常")
+        XCTAssertEqual(counters?.localReadFailed, 0)
+        XCTAssertTrue(bookmarkCommits(client).filter(\.deleted).isEmpty,
+                      "④ 恢复轮绝不为还在本机的身份发 tombstone")
     }
 
     /// CASE 6.11 — B8 逃生口：后代放弃之后祖先照常出门。
@@ -889,10 +899,15 @@ final class PhiSyncEngineOwnedItemsTests: XCTestCase {
         XCTAssertEqual(sent?.title.stringValue, "local", "③ 标题是本机的")
         XCTAssertEqual(sent?.spaceUuid.stringValue, "su-2", "③ 位置是远端的")
         let table = await engine.ownedTableForTesting("bookmarks")
-        XCTAssertEqual(table.cursors["b1"]?.server, baselineBytes(inbound),
-                       "④ `server` 是拉到的那一条，不是合并结果")
-        XCTAssertNotEqual(table.cursors["b1"]?.reconciled, table.cursors["b1"]?.server,
-                          "④ `reconciled` 才是合并后的")
+        // ④ 提交被接受之后，服务端手上那一版**就是刚发出去的这一份**，所以两份基线都等于
+        // 它（R-exec-7，与 Space 侧逐字同款）。只更新 `reconciled` 的实现会让 `server` 永远
+        // 停在发布之前那一版，而它的用途正是「压掉一次多余的发布」。
+        let sentBytes = sent.map(baselineBytes)
+        XCTAssertNotNil(sentBytes)
+        XCTAssertEqual(table.cursors["b1"]?.reconciled, sentBytes)
+        XCTAssertEqual(table.cursors["b1"]?.server, sentBytes)
+        XCTAssertNotEqual(table.cursors["b1"]?.server, baselineBytes(inbound),
+                          "④ 落地写的那一份远端字节已经被这次被接受的提交盖过去了")
     }
 
     /// CASE 6.18 / 6.21 — `NOT_MY_BIRTHDAY` 的字段级后果。
@@ -1075,10 +1090,32 @@ final class PhiSyncEngineOwnedItemsTests: XCTestCase {
         XCTAssertEqual(creates, 0)
         XCTAssertEqual(access.rows.count, 1, "一条行绝不变成两条")
 
-        // ④ 反向那一半：`…HadRecords == false` 时同样丢文件 ⇒ **不重放**。
-        let quiet = MemoryOwnedItemStore()
-        quiet.forcedLoss = true
-        XCTAssertFalse(quiet.load(hadRecords: false).reportedLoss)
+    }
+
+    /// CASE 6.23 assertion 4 — 反向那一半：`…HadRecords == false` 时同样丢文件 ⇒ **不重放**。
+    ///
+    /// 断言的是**引擎**：`getUpdatesCalls` 里不许多出一条 `marker == nil` 的记录。断言替身自己
+    /// 的 `reportedLoss` 语义（那是 assertion 5 的事）对一个照样重放的引擎恒绿。
+    func testALostCursorFileWithNoPriorRecordDoesNotReplay() async throws {
+        let spaceAccess = makeSpaceAccess()
+        let access = FakeBookmarkAccess()          // 一条本机行都没有 ⇒ 永远写不出已发布游标
+        let spaceStore = makeSpaceStore()
+        XCTAssertFalse(spaceStore.table.bookmarksHadRecords, "前提：这台机器没为书签发布过")
+        let store = MemoryOwnedItemStore()
+        store.forcedLoss = true
+        let client = FakePhiSyncClient()
+        // 空页，但带一个真的 marker，所以「这一轮从头拉」在 `getUpdatesCalls` 上看得出来。
+        client.scriptedPages = [page([], marker: "m1"), page([], marker: "m2")]
+
+        let engine = makeEngine(client: client, access: spaceAccess, store: spaceStore,
+                                ownedKinds: [bookmarkKind(access, store)])
+        await engine.setSpaceSyncEnabled(true)
+        await engine.pullOnce()
+        await engine.pullOnce()
+
+        XCTAssertEqual(client.getUpdatesCalls.filter { $0.marker == nil }.count, 1,
+                       "没有 `…HadRecords` 就没有丢失，第二轮不许从头拉")
+        XCTAssertTrue(spaceStore.table.hasDrainedFullReplay)
     }
 
     /// CASE 6.24 / 6.25 — per-kind 闸独立于 Space 的永久闩，而且**可以重新武装**。
@@ -1128,6 +1165,195 @@ final class PhiSyncEngineOwnedItemsTests: XCTestCase {
         await engine.pullOnce()
         XCTAssertGreaterThan(markerNilCalls(), afterFirstLoss,
                              "per-kind 闸可以重新武装，再多一条 marker == nil")
+    }
+
+    // MARK: - 复审轮补上的用例
+
+    /// T6-C3 — 铸出来的身份写不回本机行时，**游标留着**，而且只有落地成功的 Space 前进。
+    ///
+    /// 防的是什么：撤掉游标是最贵的那条路。服务端**已经接受**了那些实体，所以账户上它们真实
+    /// 存在；游标一删，这台机器对它们再无任何记录，而本机那些行的 `syncId` 仍然是 nil——下一轮
+    /// 它们重铸一批新身份、再建一批新实体，第一批就此变成没有任何设备持有游标的幽灵，§4.7 的
+    /// 差分永远产不出它们的 tombstone，每一个对端都把它们物化成重复书签。写回批次不按 Space
+    /// 切开还会让一个正在导入的 Space 把另一个 Space 的写回一起拒掉。
+    func testAFailedIdentityWriteBackKeepsTheCursorAndMintsNothingNextRound() async throws {
+        let spaceAccess = makeSpaceAccess(["s-a": "su-a", "s-b": "su-b"])
+        let access = FakeBookmarkAccess(rows: [
+            .fixture(guid: "GA", spaceId: "s-a", index: 0, title: "A",
+                     url: URL(string: "https://a.example")!),
+            .fixture(guid: "GB", spaceId: "s-b", index: 0, title: "B",
+                     url: URL(string: "https://b.example")!),
+        ])
+        access.importingSpaceIds = ["s-b"]
+        let store = MemoryOwnedItemStore()
+        let client = FakePhiSyncClient()
+
+        let engine = makeEngine(client: client, access: spaceAccess, store: makeSpaceStore(),
+                                ownedKinds: [bookmarkKind(access, store)])
+        await engine.setSpaceSyncEnabled(true)
+        await engine.pullOnce()
+
+        // 两条都被账户接受了。
+        XCTAssertEqual(bookmarkCommits(client).count, 2)
+        let table = await engine.ownedTableForTesting("bookmarks")
+        XCTAssertEqual(table.cursors.count, 2, "被接受的身份一条游标都不许撤掉")
+        // 没上锁的那个 Space：身份真的写回了本机行。
+        XCTAssertNotNil(access.rows.first { $0.guid == "GA" }?.syncId)
+        // 上锁的那个：写不回去，但游标停放着那份载荷，等下一轮认领。
+        XCTAssertNil(access.rows.first { $0.guid == "GB" }?.syncId)
+        let parked = table.cursors.values.filter { $0.pendingApply != nil }
+        XCTAssertEqual(parked.count, 1)
+
+        // 下一轮：那条行仍然没有 `syncId`，但**不许再铸一个新身份**——账户上已经有它那一条。
+        let before = bookmarkCommits(client).count
+        await engine.pullOnce()
+        let after = await engine.ownedTableForTesting("bookmarks")
+        XCTAssertEqual(after.cursors.count, 2, "下一轮不许为同一条本机行铸第二个身份")
+        XCTAssertEqual(bookmarkCommits(client).count - before, 0,
+                       "也不许把第二个身份发上账户")
+    }
+
+    /// T6-I1 / §5.6 T3 — 反查到身份、本机没有行的 tombstone 照样把游标定案。
+    ///
+    /// 防的是什么：不写 `deletedAtMs`，那条游标永远停在「活着」的状态，§3.6 那个按
+    /// `deletedAtMs` 扫描的 30 天丢弃永远收不走它；而同一轮的差分还会为一条账户已经删掉的
+    /// 实体再发一条多余的 tombstone。
+    func testARemoteTombstoneWithNoLocalRowStillStampsTheCursor() async throws {
+        let spaceAccess = makeSpaceAccess()
+        let access = FakeBookmarkAccess()            // 本机没有这一行
+        let store = MemoryOwnedItemStore()
+        store.table.cursors["b1"] = publishedCursor(bookmarkPayload(uuid: "b1"),
+                                                    entityId: "srv-b1", version: 3)
+        let client = FakePhiSyncClient()
+        client.scriptedPages = [page([remoteTombstone(tag: bookmarkTag("b1"), version: 8)])]
+
+        let engine = makeEngine(client: client, access: spaceAccess, store: makeSpaceStore(),
+                                ownedKinds: [bookmarkKind(access, store)])
+        await engine.setSpaceSyncEnabled(true)
+        await engine.pullOnce()
+
+        let table = await engine.ownedTableForTesting("bookmarks")
+        XCTAssertNotNil(table.cursors["b1"]?.deletedAtMs, "T3 照样定案")
+        XCTAssertNil(table.cursors["b1"]?.reconciled)
+        XCTAssertTrue(bookmarkCommits(client).filter(\.deleted).isEmpty,
+                      "远端已经删掉的实体不该再收到本机的一条 tombstone")
+    }
+
+    /// T6-I2 — 一次认领与一次移动共用同一个父时，兄弟们的 index 不许撞上。
+    ///
+    /// 防的是什么：`.claim` 只写 `syncId`、`.update` 只写字段，两者都不带 index，而批次入口
+    /// 写的是**裸 index**——它不会替你把兄弟们往后挪。把它们算成「已经带着最终 index 出门」，
+    /// 被认领的那一条会留着旧 index 与某个被重新编号的兄弟撞上，那个文件夹的顺序此后随 fetch
+    /// 而变（正是 CASE 2a.22 给 `children(of:)` 加次键要防的形状）。
+    func testAClaimAndAMoveUnderTheSameParentNeverCollideOnAnIndex() async throws {
+        let spaceAccess = makeSpaceAccess()
+        let access = FakeBookmarkAccess(rows: [
+            .fixture(guid: "F1", syncId: "f1", spaceId: "s-1", index: 0, isFolder: true,
+                     url: URL(string: "https://bookmark.phi/folder")!),
+            // 待认领：没有身份，内容与入站的 `x1` 逐字相同。
+            .fixture(guid: "GX", spaceId: "s-1", parentGuid: "F1", index: 0,
+                     title: "X", url: URL(string: "https://x.example")!),
+            // 已有身份，本轮被移动。
+            .fixture(guid: "GY", syncId: "y1", spaceId: "s-1", parentGuid: "F1", index: 1,
+                     title: "Y", url: URL(string: "https://y.example")!),
+        ])
+        let store = MemoryOwnedItemStore()
+        store.table.cursors["f1"] = publishedCursor(
+            bookmarkPayload(uuid: "f1", isFolder: true, url: "https://bookmark.phi/folder"))
+        store.table.cursors["y1"] = publishedCursor(
+            bookmarkPayload(uuid: "y1", parentUuid: "f1", rank: "W", title: "Y",
+                            url: "https://y.example"))
+        let client = FakePhiSyncClient()
+        client.scriptedPages = [page([
+            // 认领 `GX`：同一个父下、URL 完全相同的一条远端实体。
+            // `x1` 的 rank 排在 `y1` 后面，所以被认领的那一条**必须移动**：认领只写
+            // `syncId`，不带 index，漏掉置换它就留在 index 0 上与 `y1` 撞上。
+            remoteEntity(envelope(bookmarkPayload(uuid: "x1", parentUuid: "f1", rank: "Z",
+                                                  title: "X", url: "https://x.example")),
+                         tag: bookmarkTag("x1"), version: 30, entityId: "srv-x1", key: key),
+            // `y1` 换了 rank，于是它是一次真正的移动，并且排到了前面。
+            remoteEntity(envelope(bookmarkPayload(uuid: "y1", parentUuid: "f1", rank: "V",
+                                                  title: "Y", url: "https://y.example",
+                                                  rankStamp: 500)),
+                         tag: bookmarkTag("y1"), version: 31, entityId: "srv-y1", key: key),
+        ])]
+
+        let engine = makeEngine(client: client, access: spaceAccess, store: makeSpaceStore(),
+                                ownedKinds: [bookmarkKind(access, store)])
+        await engine.setSpaceSyncEnabled(true)
+        await engine.pullOnce()
+
+        let siblings = access.rows.filter { $0.parentGuid == "F1" }
+        XCTAssertEqual(siblings.count, 2)
+        XCTAssertEqual(Set(siblings.map(\.index)).count, 2,
+                       "同一个父下的两条行不许共用一个 index")
+    }
+
+    /// T6-I3 — 一个**每次都读不出来**的游标文件至多换来一次重放。
+    ///
+    /// 防的是什么：把「闸的复位」挂在一次成功的 save 上，等于拿引擎自己刚在内存里建出来的
+    /// 那张表当「文件恢复了」的证据。于是权限错误或永远解析失败的 JSON 会在「报损 → 重放 →
+    /// 重建游标 → 清闸 → 再报损」之间无限循环，此后每一轮都是一次整个 data type 的重放。
+    func testAPermanentlyUnreadableCursorFileReplaysAtMostOnce() async throws {
+        let spaceAccess = makeSpaceAccess()
+        let access = FakeBookmarkAccess(rows: [
+            .fixture(guid: "G1", syncId: "b1", spaceId: "s-1"),
+        ])
+        let spaceStore = makeSpaceStore()
+        spaceStore.table.bookmarksHadRecords = true
+        let store = MemoryOwnedItemStore()
+        store.forcedLoss = true                       // 这个文件永远读不出来
+        let client = FakePhiSyncClient()
+        client.seed(tagHash: bookmarkHash("b1"),
+                    ciphertext: try PhiEntityCodec.encrypt(
+                        envelope(bookmarkPayload(uuid: "b1")), key: key),
+                    version: 20, entityId: "srv-b1")
+
+        let engine = makeEngine(client: client, access: spaceAccess, store: spaceStore,
+                                ownedKinds: [bookmarkKind(access, store)])
+        await engine.setSpaceSyncEnabled(true)
+        for _ in 0..<4 { await engine.pullOnce() }
+
+        XCTAssertLessThanOrEqual(client.getUpdatesCalls.filter { $0.marker == nil }.count, 2,
+                                 "第一轮本来就是 marker == nil，报损只许再换来一次重放")
+    }
+
+    /// T6-I5 / §4.2 规则 3b — 一条带 `deletedAtMs`、本机行还活着的游标要复活发布。
+    ///
+    /// 防的是什么：不复活，那条书签只活在这一台机器上；复活时不清 `deletedAtMs`，每一轮都会
+    /// 再复活发布一次，每轮换来一次 `.conflict` 加一次限定重发。
+    func testACursorWithADeletedStampRepublishesTheLiveRowAndClearsTheStamp() async throws {
+        let spaceAccess = makeSpaceAccess()
+        let access = FakeBookmarkAccess(rows: [
+            .fixture(guid: "G1", syncId: "lx", spaceId: "s-1", title: "back"),
+        ])
+        let store = MemoryOwnedItemStore()
+        var cursor = publishedCursor(bookmarkPayload(uuid: "lx"), entityId: "e-lx", version: 42)
+        cursor.reconciled = nil          // tombstone 收尾清掉了两份基线
+        cursor.server = nil
+        cursor.deletedAtMs = 1_000
+        store.table.cursors["lx"] = cursor
+        let client = FakePhiSyncClient()
+        // 账户上那一行是 tombstone，`e-lx` / 42 就是复活提交要用的三元组。空脚本页让这一轮
+        // 的拉取不去重投它——重投会让它作为一条入站 tombstone 把本机那条活行删掉，而这条
+        // 用例要的是**本机行还活着**的那一半。
+        client.seed(tagHash: bookmarkHash("lx"), ciphertext: Data(), version: 42,
+                    entityId: "e-lx", deleted: true)
+        client.scriptedPages = [page([], marker: "m1")]
+
+        let engine = makeEngine(client: client, access: spaceAccess, store: makeSpaceStore(),
+                                ownedKinds: [bookmarkKind(access, store)])
+        await engine.setSpaceSyncEnabled(true)
+        await engine.pullOnce()
+
+        let live = bookmarkCommits(client).filter { !$0.deleted }
+        XCTAssertEqual(live.count, 1)
+        XCTAssertEqual(live.first?.entityId, "e-lx", "复活用的是保留下来的那个 entityId")
+        XCTAssertEqual(live.first?.baseVersion, 42)
+        let table = await engine.ownedTableForTesting("bookmarks")
+        XCTAssertNil(table.cursors["lx"]?.deletedAtMs, "落地之后清 `deletedAtMs`")
+        let counters = await engine.lastOwnedRoundCountersForTesting["bookmarks"]
+        XCTAssertEqual(counters?.resurrected, 1)
     }
 
     /// CASE 6.26 — 报损只在发布段的 `load()` 被观察到 ⇒ 该轮发布就地中止。

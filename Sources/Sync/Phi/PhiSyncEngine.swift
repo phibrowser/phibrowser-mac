@@ -2578,12 +2578,29 @@ actor PhiSyncEngine {
         guard !parked.isEmpty else { return }
         let result = await registration.retryParkedClaims(parked, maps)
         guard !result.persisted.isEmpty else { return }
+        var changed = false
         for identity in result.persisted {
             guard var cursor = table.cursors[identity] else { continue }
+            // **只有「写回重试」那一种形状可以解除停放。** 它的停放载荷就是 `reconciled` 的
+            // 一份拷贝——那条实体早就落过地了，认领写下身份之后没有任何东西剩下要落地。
+            //
+            // 另一种形状是一条**真正的入站实体**被导入锁挡下（§5.6 T4）：它从没落过地，
+            // `reconciled` 还是 nil，而 `.claim` **只写身份、不写任何字段**
+            // （`LocalStore+Bookmark.swift`：「认领不是一次编辑」）。清掉它的载荷等于把
+            // `adopt` 算出来的那份字段级合并结果扔掉，而那条实体永远不会再来一次——共享
+            // marker 早已推过那一页，`pendingApply` 存在的全部理由就是这个。下一轮的快照
+            // 会拿本机那一行的全部字段盖掉账户上那一条，远端的位置就此丢失，正是 §6.2
+            // 点名禁止的「整体采纳本机」。
+            //
+            // 留着载荷是安全的：停放中的游标不进快照（§4.2 第 3 条），所以在落地段把那份
+            // 合并结果放下去之前，没有任何东西会被发布到它上面。
+            guard cursor.reconciled == cursor.pendingApply else { continue }
             cursor.pendingApply = nil
             cursor.pendingOwnerUuid = nil
             table.cursors[identity] = cursor
+            changed = true
         }
+        guard changed else { return }
         writeOwnedTable(registration, table)
     }
 
@@ -3511,6 +3528,21 @@ final class BookmarkSyncRoundState {
         for (identity, guid) in pairs { self.pairs[identity] = guid }
     }
 
+    /// 把本轮**中途真的写回本机行**的那些身份折回轮首那份快照。
+    ///
+    /// 一轮至多一次 fetch 的规则不变：这里改的是内存里那份投影，不是再读一次库。不折回去，
+    /// 同一轮的落地段看到的还是「这一行没有身份」，于是它可能把**第二个**身份配给同一条行
+    /// ——`applyBookmarkSyncBatchThrowing` 会用 `rowAlreadyMapped` 拒掉那个 Space 的**整批**
+    /// （拒收而不是停放），那些入站实体既没有游标也永远不会重投。
+    func notePersistedClaims(_ pairs: [String: String]) {
+        for (identity, guid) in pairs {
+            guard let index = locals.firstIndex(where: { $0.guid == guid }) else { continue }
+            locals[index].syncId = identity
+            rowByGuid[guid]?.syncId = identity
+            identityToGuid[identity] = guid
+        }
+    }
+
     func reload(_ rows: [PhiLocalBookmark]) {
         locals = rows
         identityToGuid = [:]
@@ -3749,6 +3781,12 @@ private func retryParkedBookmarkClaims(_ parked: [String: ParkedOwnedItem],
     out.paired = Set(adoption.pairs.keys)
     state.mergePairs(adoption.pairs)
     out.persisted = await claimBookmarkIdentities(adoption.pairs, access: access, state: state)
+    var persistedPairs: [String: String] = [:]
+    for identity in out.persisted {
+        guard let guid = adoption.pairs[identity] else { continue }
+        persistedPairs[identity] = guid
+    }
+    state.notePersistedClaims(persistedPairs)
     return out
 }
 

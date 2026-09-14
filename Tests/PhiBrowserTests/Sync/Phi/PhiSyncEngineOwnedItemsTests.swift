@@ -1285,6 +1285,92 @@ final class PhiSyncEngineOwnedItemsTests: XCTestCase {
         XCTAssertNotEqual(fixture.access.rows.first { $0.guid == "GB" }?.syncId, "bpark")
     }
 
+    /// T6-N4 — 一条被导入锁挡下的**真正入站实体**，认领之后那份合并结果必须还在。
+    ///
+    /// 防的是什么：`.claim` 只写身份、不写任何字段。认领成功就解除停放，等于把 `adopt` 算出
+    /// 来的那份字段级合并结果扔掉，而那条实体永远不会再来一次——共享 marker 早已推过那一页。
+    /// 下一轮的快照于是拿本机那一行的全部字段盖掉账户上那一条，远端的位置就此丢失，正是
+    /// §6.2 点名禁止的「整体采纳本机」。
+    func testAParkedInboundEntityKeepsItsPayloadUntilTheMergeActuallyLands() async throws {
+        let spaceAccess = makeSpaceAccess()
+        let access = FakeBookmarkAccess(rows: [
+            .fixture(guid: "GX", spaceId: "s-1", title: "local",
+                     url: URL(string: "https://x.example")!),
+        ])
+        let store = MemoryOwnedItemStore()
+        // §5.6 T4 的形状：载荷停着，**从没落过地**，所以 `reconciled` 还是 nil。
+        var cursor = ownedCursor(entityId: "srv-x1", version: 5, ownerUuid: "su-1")
+        cursor.pendingApply = baselineBytes(bookmarkPayload(uuid: "x1", title: "remote",
+                                                            url: "https://x.example",
+                                                            contentStamp: 9_000))
+        store.table.cursors["x1"] = cursor
+        defaults.set("srv-settings", forKey: PhiSyncEngine.entityIdStateKey)
+        let client = FakePhiSyncClient()
+
+        let engine = makeEngine(client: client, access: spaceAccess, store: makeSpaceStore(),
+                                ownedKinds: [bookmarkKind(access, store)])
+        await engine.setSpaceSyncEnabled(true)
+
+        // 纯 push 轮：导入锁已经不在，认领写得下去。
+        await engine.pushLocalSettings()
+
+        XCTAssertEqual(access.rows.first { $0.guid == "GX" }?.syncId, "x1", "身份写回去了")
+        var table = await engine.ownedTableForTesting("bookmarks")
+        XCTAssertNotNil(table.cursors["x1"]?.pendingApply,
+                        "合并结果还没落地，载荷一个字节都不许丢")
+        XCTAssertTrue(bookmarkCommits(client).isEmpty,
+                      "停放中的游标不进快照，所以这一轮什么都不该被发布到它上面")
+        XCTAssertEqual(access.rows.first { $0.guid == "GX" }?.title, "local",
+                       "认领不是一次编辑")
+
+        // 下一轮的落地段把那份合并结果真的放下去。
+        await engine.pullOnce()
+
+        XCTAssertEqual(access.rows.first { $0.guid == "GX" }?.title, "remote",
+                       "远端赢下的字段最终要到达本机行")
+        table = await engine.ownedTableForTesting("bookmarks")
+        XCTAssertNil(table.cursors["x1"]?.pendingApply, "落地之后才解除停放")
+        XCTAssertNotNil(table.cursors["x1"]?.reconciled)
+    }
+
+    /// T6-N5 — 轮首重试写下的那个身份，同一轮的落地段必须看得见。
+    ///
+    /// 防的是什么：`adopt` 的本机侧筛的是 `syncId == nil`，读的是轮首那份快照。中途写下的身份
+    /// 不折回去，落地段就会把**第二个**身份配给同一条行，`applyBookmarkSyncBatchThrowing` 用
+    /// `rowAlreadyMapped` 拒掉那个 Space 的**整批**——拒收而不是停放，于是那些入站实体既没有
+    /// 游标也永远不会重投。假件把 `.claim` 模成一次普通赋值、从不抛 `rowAlreadyMapped`，所以
+    /// 这条用例断言的是它的前一步：第二条身份绝不该配到那一行上。
+    func testAMidRoundClaimIsVisibleToTheSameRoundsAdoption() async throws {
+        let spaceAccess = makeSpaceAccess()
+        let access = FakeBookmarkAccess(rows: [
+            .fixture(guid: "GB", spaceId: "s-1", title: "B",
+                     url: URL(string: "https://b.example")!),
+        ])
+        let store = MemoryOwnedItemStore()
+        // 写回重试的形状：载荷就是 `reconciled` 的一份拷贝。
+        let landed = bookmarkPayload(uuid: "e1", title: "B", url: "https://b.example")
+        var cursor = publishedCursor(landed, entityId: "srv-e1", version: 4)
+        cursor.pendingApply = cursor.reconciled
+        store.table.cursors["e1"] = cursor
+        let client = FakePhiSyncClient()
+        // 同一个父下、URL 完全相同的第二条账户实体——没有那次折回，它会被配到 `GB` 上。
+        client.scriptedPages = [page([
+            remoteEntity(envelope(bookmarkPayload(uuid: "e2", rank: "W", title: "B",
+                                                  url: "https://b.example")),
+                         tag: bookmarkTag("e2"), version: 30, entityId: "srv-e2", key: key),
+        ])]
+
+        let engine = makeEngine(client: client, access: spaceAccess, store: makeSpaceStore(),
+                                ownedKinds: [bookmarkKind(access, store)])
+        await engine.setSpaceSyncEnabled(true)
+        await engine.pullOnce()
+
+        XCTAssertEqual(access.rows.first { $0.guid == "GB" }?.syncId, "e1",
+                       "那一行已经认领过了，第二个身份绝不许再配给它")
+        XCTAssertEqual(access.rows.count, 2, "第二条实体照常建一条新行")
+        XCTAssertEqual(access.rows.first { $0.guid != "GB" }?.syncId, "e2")
+    }
+
     /// T6-N1 的轮 1：两个 Space、其中一个正在导入，于是被锁那一条的身份写不回本机行。
     /// 返回那条**留在游标表里、本机行却没有认领**的身份。
     private func runFailedWriteBackRound()

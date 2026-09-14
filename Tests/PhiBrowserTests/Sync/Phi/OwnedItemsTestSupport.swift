@@ -129,10 +129,14 @@ final class FakeBookmarkAccess: PhiBookmarkLocalAccess {
         }
         // 一条行的身份**只认领一次**，与生产实现同形（`LocalStore+Bookmark.swift` 的
         // `node.syncId == nil || node.syncId == syncId`）：换一个身份是 fail-closed 的
-        // **批次级**拒绝，一行都不改。假件照写不误的话，Task 6 的轮内认领保护在端到端这一层
-        // 从来没有被执行过——第二条身份会静默改写那一行的 `syncId`，第一条身份在账户上从此
-        // 没有持有者，下一轮差分为它发一条 tombstone，把账户上一条真实的书签删掉
-        // （CASE 6b.13）。
+        // **批次级**拒绝，一行都不改。覆盖写会让旧身份在本机瞬间失去对应行，而下一轮差分对
+        // 「没有本机行」的回答是发一条 tombstone，把账户上那条真实的书签删掉。
+        //
+        // **这道扫描读的是施加任何 op 之前的 `rows`**，所以它接的是「目标行**在这一批之前**
+        // 就已经带着另一个身份」那一种形状（上一批写的，或轮首那份快照里就带着）。真 store
+        // 是边走边写的，同一批里的第二条 `.claim` 会看见第一条刚写下的 `syncId` 而抛，假件
+        // 在这一点上比它宽——同一批双认领由 CASE 6b.13 的身份断言（那一行最后带的是哪一条）
+        // 兜住，不靠这里。
         for op in batch.ops {
             guard case .claim(let guid, let syncId) = op,
                   let existing = rows.first(where: { $0.guid == guid })?.syncId,

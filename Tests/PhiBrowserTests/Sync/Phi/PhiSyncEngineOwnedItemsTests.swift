@@ -2392,11 +2392,16 @@ final class PhiSyncEngineOwnedItemsTests: XCTestCase {
     /// 身份在账户上从此没有持有者**，下一轮差分为它发一条 tombstone，把账户上一条真实的书签
     /// 删掉。
     ///
-    /// ①②④ 由 `SyncableOwnedItems.adopt` 的**按位一对一**配对保证：两条同键的入站实体对一条
-    /// 本机行只配得上第一条，第二条落进 `leftOver` 并走 create。③ 是这条用例的承重半边——
-    /// `FakeBookmarkAccess` 照真 store 抛 `rowAlreadyMapped`（**批次级**拒绝），所以配对那一侧
-    /// 一旦回归，这一轮整个 Space 会被拒收、`x1` / `x2` 两条游标都拿不到基线，③ 当场变红。
-    /// 没有那条模拟，这条用例对「第二条也认领了同一行」是全绿的。
+    /// 四条断言都由 `SyncableOwnedItems.adopt` 的**按位一对一**配对撑着：两条同键的入站实体
+    /// 对一条本机行只配得上第一条，第二条落进 `leftOver` 并走 create。配对那一侧一旦回归、
+    /// 两条身份都配到 `GX` 上，① 会是第一个红的——那一行最后带的是 `x2` 而不是 `x1`，②
+    /// 的行数也只剩一条。
+    ///
+    /// **这里不指望假件的 `rowAlreadyMapped` 抛出。** `FakeBookmarkAccess.apply` 是先拿
+    /// **施加任何 op 之前**的 `rows` 把整批扫一遍再落地的，所以同一批里的两条 `.claim` 打在
+    /// 同一条**尚未认领**的行上时两条都看见 `syncId == nil`，一条都不抛——第二条只是在落地
+    /// 时覆盖掉第一条。那条模拟覆盖的是另一种形状：目标行**在这一批之前**就已经带着另一个
+    /// 身份（上一批、或轮首那份快照里就带着）。
     func testASecondIdentityPairingToAClaimedRowTakesTheCreatePath() async throws {
         let spaceAccess = makeSpaceAccess()
         let access = FakeBookmarkAccess(rows: [

@@ -1227,8 +1227,12 @@ final class PhiSyncEngineOwnedItemsTests: XCTestCase {
             .fixture(guid: "GB", spaceId: "s-1", title: "B", url: url),
         ])
         let store = MemoryOwnedItemStore()
+        // 停放的字节必须与本机行的投影逐字节一致（真实轮次里它们就来自同一行）：行夹具的
+        // `createdDate` 默认是 1_000 s，投影成 1_000_000 ms，载荷也要用这个值，否则认领
+        // 写回后那一行进快照就会多发一条毫无意义的 update（T6-N6）。
         var cursor = publishedCursor(bookmarkPayload(uuid: "bpark", title: "B",
-                                                     url: "https://b.example"),
+                                                     url: "https://b.example",
+                                                     createdAtMs: 1_000_000),
                                      entityId: "srv-bpark", version: 7)
         cursor.pendingApply = cursor.reconciled
         store.table.cursors["bpark"] = cursor

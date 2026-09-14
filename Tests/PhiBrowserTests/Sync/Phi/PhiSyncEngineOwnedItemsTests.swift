@@ -1776,6 +1776,10 @@ final class PhiSyncEngineOwnedItemsTests: XCTestCase {
     /// 解不掉**，用户每次解除、每次同步又被拼回去。反过来，无条件发 `""` 的实现让①在伙伴
     /// 到达前就把一个完好的拆分对拆开。两半只有「按 `pendingPartnerLineage` 分流」才同时
     /// 成立。
+    ///
+    /// **取值之外还断时间戳**：一条沿用基线戳的空串与对端手上那条 `("<伙伴>", t_基线)` 戳
+    /// 相同，LWW 按序列化字节破平手，空串是对方的前缀、**输掉**平手——解除在对端从来不生效，
+    /// 而只断取值的用例对这个缺陷是绿的。
     func testALocalSplitReleaseSendsAnEmptyPartnerWhileAHalfLandedPairKeepsTheBaseline() async throws {
         let spaceAccess = makeSpaceAccess()
         // 两条本机行的 `splitPartnerLineageId` 都是 nil。①的标题与基线不同，于是它这一轮
@@ -1785,7 +1789,7 @@ final class PhiSyncEngineOwnedItemsTests: XCTestCase {
             .fixture(lineageId: "LC", guid: "pc", index: 1, title: "T"),
         ])
         let pinStore = MemoryOwnedItemStore()
-        // ① 确实在等伙伴。
+        // ① 确实在等伙伴。两条基线的字段戳都是 100。
         var waiting = publishedPinCursor(pinPayload(lineage: "la", rank: "V",
                                                     splitPartner: "lb"))
         waiting.pendingPartnerLineage = "lb"
@@ -1794,9 +1798,10 @@ final class PhiSyncEngineOwnedItemsTests: XCTestCase {
         pinStore.table.cursors["lc:pu-1"] = publishedPinCursor(
             pinPayload(lineage: "lc", rank: "W", splitPartner: "ld"), entityId: "srv-p2")
         let client = FakePhiSyncClient()
+        let clock = Clock()
 
         let engine = makeEngine(client: client, access: spaceAccess, store: makeSpaceStore(),
-                                ownedKinds: [pinKind(pinAccess, pinStore)])
+                                clock: clock, ownedKinds: [pinKind(pinAccess, pinStore)])
         await engine.setSpaceSyncEnabled(true)
         await engine.pullOnce()
 
@@ -1805,10 +1810,16 @@ final class PhiSyncEngineOwnedItemsTests: XCTestCase {
             .flatMap(committedPin)
         let releasedHalf = commits.first { $0.clientTagHash == pinHash("lc") }
             .flatMap(committedPin)
+        let baselineStamp: Int64 = 100
         XCTAssertEqual(waitingHalf?.splitPartnerUuid.stringValue, "lb",
                        "伙伴还没落地 ⇒ 沿用基线，绝不发空串")
+        XCTAssertEqual(waitingHalf?.splitPartnerUuid.updatedAtMs, baselineStamp,
+                       "沿用基线的值就该沿用基线的戳，不是一次新的编辑")
         XCTAssertEqual(releasedHalf?.splitPartnerUuid.stringValue, "",
                        "本机主动解除 ⇒ 发空串，不是重发基线里的旧伙伴")
+        XCTAssertEqual(releasedHalf?.splitPartnerUuid.updatedAtMs, clock.nowMs,
+                       "解除盖的是本轮的 now，否则它在对端的 LWW 平手里输给那条旧链接")
+        XCTAssertGreaterThan(releasedHalf?.splitPartnerUuid.updatedAtMs ?? 0, baselineStamp)
     }
 
     /// CASE 5b.6（R-exec-5）— 远端 pin 落地时带上内容戳。

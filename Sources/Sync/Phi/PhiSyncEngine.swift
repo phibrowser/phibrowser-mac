@@ -213,8 +213,11 @@ struct OwnedLandingOutcome {
     /// 字段，所以一条由落地新建的行**按构造**没有图标；认领 / 更新命中的是本机早就有的行，
     /// 它们自己的图标不该被一次回填盖掉。于是回填的投喂源不需要任何新的本机读。
     ///
-    /// pin 那一侧恒空——回填只处理书签行。
+    /// 书签那一侧填这个，pin 那一侧填 `createdPins`。
     var createdRows: [PhiLocalBookmark] = []
+    /// §8.2 / Task 10 的 pin 半边。同一条判据（「本轮新建」⇒ 按构造没有图标）；spec §8.2
+    /// 开头那句是「落地的书签**与 pin** 没有图标时」，所以两种 kind 都投喂。
+    var createdPins: [PhiLocalPin] = []
 }
 
 /// 一次停放项重试的结果（§3 / R-exec-10）。
@@ -452,8 +455,10 @@ actor PhiSyncEngine {
     /// 投喂一次，`shutdown()` 时停。
     private let faviconBackfill: PhiFaviconBackfillQueue?
 
-    /// 本轮新落地、要回填图标的行。**每轮清零**（`run`），轮末一次交给队列。
+    /// 本轮新落地、要回填图标的行。**每轮清零**（`run`），轮末一次交给队列。两种 kind 各
+    /// 一个篮子：队列按 kind 分开写回（两个 access 协议实例是两个写入口）。
     private var faviconCandidatesThisRound: [PhiLocalBookmark] = []
+    private var faviconPinCandidatesThisRound: [PhiLocalPin] = []
 
     /// §5.8：配对预览的分页预算。它与拉取的 `maxPullPages` 分开，因为两种 kind 之后
     /// 一次预览要走过整个账户的书签与 pin 才能数清账户里有几个 Space。
@@ -927,6 +932,7 @@ actor PhiSyncEngine {
         // §8.2 / Task 10：投喂源也是**每轮**的。上一轮没来得及交出去的行由队列自己留着，
         // 这里清的只是本轮的收集篮。
         faviconCandidatesThisRound = []
+        faviconPinCandidatesThisRound = []
         // Same reason, same scope: the NOT_MY_BIRTHDAY recursion (:608), the push's initial
         // pull (:1160 / :1456) and the CONFLICT retry (:1250) are all pulls inside ONE round,
         // and none of them re-lists the account's profiles.
@@ -981,8 +987,11 @@ actor PhiSyncEngine {
     private func runFaviconBackfill() async {
         guard let queue = faviconBackfill, !isStopped else { return }
         let rows = faviconCandidatesThisRound
+        let pins = faviconPinCandidatesThisRound
         faviconCandidatesThisRound = []
+        faviconPinCandidatesThisRound = []
         if !rows.isEmpty { await queue.enqueue(rows) }
+        if !pins.isEmpty { await queue.enqueue(pins) }
         _ = await queue.drainOnce()
     }
 
@@ -2870,6 +2879,7 @@ actor PhiSyncEngine {
         counters.relineaged += outcome.relineaged
         // §8.2 / Task 10：本轮新建出来的行攒进收集篮，轮末一次交给回填队列。
         faviconCandidatesThisRound.append(contentsOf: outcome.createdRows)
+        faviconPinCandidatesThisRound.append(contentsOf: outcome.createdPins)
 
         var spaceTable = loadSpaceTable()
         var spaceTableChanged = false
@@ -4941,6 +4951,9 @@ private func landPins(_ input: OwnedLandingInput,
 
     // 三相里的第一相：create / relineage / move。
     var indexed: Set<String> = []
+    // §8.2 / Task 10：本轮真的**新建**出来的那些 pin，落地后复核通过的会跟着 outcome 交给
+    // 图标回填队列。
+    var createdPinsByIdentity: [String: PhiLocalPin] = [:]
     for item in planned where item.step.kind != .delete {
         guard let guid = guidOf[item.identity], !outcome.parked.contains(item.identity) else {
             continue
@@ -4949,6 +4962,7 @@ private func landPins(_ input: OwnedLandingInput,
             row.index = indexOf[guid] ?? 0
             projected[guid] = row
             ops.append(.create(row))
+            createdPinsByIdentity[item.identity] = row
             indexed.insert(guid)
         } else if item.step.kind == .create || item.step.kind == .move {
             // §4.5：**先按身份找本机行，找不到才 create**。本机已经有这条身份的行时，一条
@@ -5080,6 +5094,8 @@ private func landPins(_ input: OwnedLandingInput,
         }
         guard known else { outcome.parked.insert(identity); continue }
         outcome.landed.insert(identity)
+        // §8.2 / Task 10：这一条是本轮**新建**出来的 ⇒ 它按构造没有图标，交给回填队列。
+        if let created = createdPinsByIdentity[identity] { outcome.createdPins.append(created) }
         if let payload = payloadOf[identity] { outcome.reconciled[identity] = payload }
     }
     outcome.parked.subtract(outcome.landed)

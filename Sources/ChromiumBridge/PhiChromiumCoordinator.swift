@@ -375,9 +375,11 @@ import SwiftUI
         // the belt to that braces, because nothing forces the two to be paired.)
         lastSpaceGateEnabled = nil
         // M3-3 §8.2：图标回填队列。它是 `@MainActor`，而引擎是一个非 MainActor 的 actor，
-        // 所以只能在这里造好再传进去。写入口收的是书签 access——回填只处理书签行。
+        // 所以只能在这里造好再传进去。两个写入口各一个：§8.2 开头那句是「落地的书签**与
+        // pin** 没有图标时」，而两种 kind 的写回各走自己那条 access。
         let faviconBackfill = PhiFaviconBackfillQueue(fetcher: PhiFaviconFetcher(),
                                                       access: bookmarkAccess,
+                                                      pinAccess: pinAccess,
                                                       logSink: PhiFaviconAppLogSink())
         phiSyncEngine = PhiSyncEngine(domainKeys: domainKeys, client: client,
                                       defaults: defaults, deviceKeyId: deviceKeyId,

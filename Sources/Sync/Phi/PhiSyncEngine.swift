@@ -103,14 +103,34 @@ struct OwnedOwnerMaps {
     var globalUuidByProfileId: [String: String] = [:]
     var localProfileIdByGlobalUuid: [String: String] = [:]
 
+    /// App 作用域的 pin 在 client tag 第三段与 `ownerUuid` 上写的字面量（§2.4 / §2.5）。
+    /// 它不是一个 uuid，两张映射表里都没有它。
+    static let appOwnerKey = "app"
+
     var resolver: OwnerResolver {
         let maps = self
+        // **字面量 `"app"` 映射回它自己**（P1）。App 作用域的 pin 的归属就是这个字符串，
+        // 而它不在任何一张映射表里：不映射的话 `SyncableOwnedItems` 的三处判据
+        // （`plan` 的归属分类、`tombstones` 的「归属未映射」排除、`snapshot` 的合格性）
+        // 都把它读成「解析不出来」——入站的 App 作用域 pin 永远停放，用户删掉的 App 作用域
+        // pin 永远发不出 tombstone，在账户上不死，每台新设备加入都把它拉回来。
+        //
+        // **绝不在 `tombstones` 里特判这个字符串**：那条「归属解析不出来就跳过」的规则正是
+        // §4.7 用来防「一次映射抖动删掉整个 Space 的书签」的，给它开例外等于在 pin 侧凿一
+        // 个洞。修在解析器这一侧，规则本身一个字都不用动（CASE 4b.4b 是这条的探针）。
+        //
+        // 对书签是恒等变换：书签的归属是 Space uuid 或父身份，两者都产不出这三个字母。
+        func selfMapped(_ uuid: String, _ table: [String: String]) -> String? {
+            uuid == Self.appOwnerKey ? Self.appOwnerKey : table[uuid]
+        }
         return OwnerResolver(
             syncUuid: { maps.syncUuidBySpaceId[$0] },
+            // **`localSpaceId` 不映射**：映了的话 `"app"` 会被当成一个 Space 归属，于是
+            // `isEligibleSpace` 那道只对 Space 有意义的闸会一刀切掉整类 App 作用域的 pin。
             localSpaceId: { maps.localSpaceIdBySyncUuid[$0] },
-            isEligibleSpace: { maps.eligibleSpaceUuids.contains($0) },
-            globalUuid: { maps.globalUuidByProfileId[$0] },
-            localProfileId: { maps.localProfileIdByGlobalUuid[$0] })
+            isEligibleSpace: { $0 == Self.appOwnerKey || maps.eligibleSpaceUuids.contains($0) },
+            globalUuid: { selfMapped($0, maps.globalUuidByProfileId) },
+            localProfileId: { selfMapped($0, maps.localProfileIdByGlobalUuid) })
     }
 }
 
@@ -173,6 +193,16 @@ struct OwnedLandingOutcome {
     var reconciled: [String: Data] = [:]
     /// 被删掉的身份（远端 tombstone 落地）。
     var deleted: Set<String> = []
+    /// §7.4 的半落地拆分对：身份 -> 它还在等的那条伙伴 lineage。引擎把它写进游标的
+    /// `pendingPartnerLineage`，于是 §7.4 的表副本（`doctoredOwnedTable`）认得出「这一条
+    /// 确实在等伙伴」并照抄基线，而不是把 `""` 发出去拆散对端那一半。
+    ///
+    /// **空值（`""`）是「不再等了」**：伙伴这一轮落地了，或者这条实体已经没有伙伴。引擎据此
+    /// 清掉那一位。用 `nil`（不出现在字典里）表达不了这件事——不出现的含义是「本轮没这条
+    /// 身份的消息」。书签没有拆分伙伴这个概念，那一侧这张字典恒空。
+    var pendingPartnerLineages: [String: String] = [:]
+    /// §7.2 / A11 的变体重铸本轮改了几行（`relineaged` 计数）。书签恒为 0。
+    var relineaged = 0
 }
 
 /// 一次停放项重试的结果（§3 / R-exec-10）。
@@ -2663,6 +2693,8 @@ actor PhiSyncEngine {
         let outcome = await registration.land(
             OwnedLandingInput(steps: output.plan.steps, table: table, maps: maps))
         guard !isStopped else { return }
+        // §7.2 / A11 的变体重铸跑在落地那一批里，所以它的条数跟着落地结果回来。
+        counters.relineaged += outcome.relineaged
 
         var spaceTable = loadSpaceTable()
         var spaceTableChanged = false
@@ -2688,6 +2720,12 @@ actor PhiSyncEngine {
             cursor.pendingApply = nil
             cursor.pendingOwnerUuid = nil
             cursor.pendingTombstone = false
+            // §7.4：这一条的拆分伙伴解析出来了没有，只有落地那一侧知道（它手上才有本机
+            // 那一批行）。`""` = 不再等了，于是 `doctoredOwnedTable` 下一轮会如实把一次
+            // 本机解除发出去；非空 = 还在等，快照照抄基线。
+            if let waiting = outcome.pendingPartnerLineages[identity] {
+                cursor.pendingPartnerLineage = waiting.isEmpty ? nil : waiting
+            }
             table.cursors[identity] = cursor
             // 一次成功的落地就是对这条 tag 的一次成功解读（§4.5 末条）：不清的话，一次
             // **瞬时**解密失败会让这条实体在本机**永久**失去发布权。
@@ -4109,6 +4147,527 @@ private func bookmarkPatch(_ entity: Phi_PhiBookmarkEntity) -> BookmarkFieldPatc
         secondaryUrl: .some(URL(string: entity.secondaryURL.stringValue)),
         secondaryTitle: .some(entity.secondaryTitle.stringValue.isEmpty
                               ? nil : entity.secondaryTitle.stringValue))
+}
+
+// MARK: - PinKind 的适配层
+
+/// 一轮 pin 同步的轮内状态。形状照 `BookmarkSyncRoundState`，**少了认领配对那一半**
+/// （§6.7：pin 完全不走 §6——身份是 `(lineage, owner)` 推导出来的，本机行上没有一列
+/// 要写回，所以既没有铸造也没有配对表）。
+@MainActor
+final class PinSyncRoundState {
+    /// 轮首那一次 `allPins()`：当前作用域内、非休眠的全部行。
+    private(set) var locals: [PhiLocalPin] = []
+    private(set) var rowByGuid: [String: PhiLocalPin] = [:]
+    /// §7.3 的两个判据，轮首各读一次。**账户值为 nil = 账户还没发过作用域**，此时不判
+    /// 不一致（`accountScope()` 的契约）。
+    private(set) var localScope: PinnedTabScope = .profile
+    private(set) var accountScope: PinnedTabScope?
+
+    /// §7.3：两者都已知且不相等 ⇒ 这一轮 pin 的**发布半边整段不跑**，入站半边全部停放。
+    var scopeMismatch: Bool {
+        guard let accountScope else { return false }
+        return localScope != accountScope
+    }
+
+    func reload(_ rows: [PhiLocalPin], localScope: PinnedTabScope,
+                accountScope: PinnedTabScope?) {
+        locals = rows
+        rowByGuid = [:]
+        for row in rows { rowByGuid[row.guid] = row }
+        self.localScope = localScope
+        self.accountScope = accountScope
+    }
+}
+
+/// pin 身份 `<lineage>:<ownerKey>` 的两半。
+///
+/// **第一个冒号就是分界**：`PinKind.isNormalizedLineage` 明确拒掉带 `:` 的 lineage，正是
+/// 为了让这个拼接可逆——否则 `("a:b", "c")` 与 `("a", "b:c")` 算出同一个身份。
+func pinIdentityHalves(_ identity: String) -> (lineage: String, ownerKey: String) {
+    guard let separator = identity.firstIndex(of: ":") else { return (identity, "") }
+    return (String(identity[..<separator]),
+            String(identity[identity.index(after: separator)...]))
+}
+
+/// 身份 -> client tag（§2.5）。
+///
+/// **经 `pinClientTag(lineageKey(…), ownerKey:)` 构造**：那个函数自己不做任何大小写归一，
+/// 归一的责任全在调用方（§3.2）。少了这一步，算出的 hash 与线上那条永不相等，接收端校验
+/// 会把每一条 pin 实体都判成伪造载荷。
+func pinClientTag(for identity: String) -> String {
+    let halves = pinIdentityHalves(identity)
+    return PhiSyncEntity.pinClientTag(PinKind.lineageKey(halves.lineage),
+                                      ownerKey: halves.ownerKey)
+}
+
+/// §7.4：把一份基线字节里的拆分伙伴清空，交给 `doctoredOwnedTable` 当表副本用。
+///
+/// **只清取值，时间戳原样留着**：`PinKind.stamp` 的重盖判据是字段的**签名**（取值，不含
+/// 时间戳），动时间戳改变不了任何一条重盖决定，只会让发出去的那一条带一个更早的戳。
+///
+/// nil = 这份字节不是一条 pin、或者它本来就没有伙伴——两种情形下调用方都原样沿用基线。
+func clearedPinSplitPartner(_ bytes: Data) -> Data? {
+    guard let envelope = try? Phi_PhiEntity(serializedBytes: bytes),
+          var entity = PinKind.entity(from: envelope),
+          !entity.splitPartnerUuid.stringValue.isEmpty else { return nil }
+    entity.splitPartnerUuid.stringValue = ""
+    return try? PinKind.envelope(entity).serializedData()
+}
+
+private extension PhiLocalPin {
+    /// §4.7 的定义域用的壳：只要 `PinKind.identity(of local:)` 算得出那一条身份，别的字段
+    /// 都不参与（同 `PhiLocalBookmark.identityOnly`）。
+    ///
+    /// owner 的那一半按 §7.2 的表**反推回本机形状**：Space 归属填 `spaceId`，profile 与
+    /// App 归属填 `profileId`（字面量 `"app"` 由解析器映射回它自己）。归属反推不出来 ⇒ nil，
+    /// 那条游标本来就轮不到差分处理（`tombstones` 在归属未映射上保守地跳过）。
+    static func identityOnly(lineage: String, ownerKey: String,
+                             resolve: OwnerResolver) -> PhiLocalPin? {
+        var spaceId: String?
+        var profileId: String?
+        if let localSpaceId = resolve.localSpaceId(ownerKey) {
+            spaceId = localSpaceId
+            // Space 作用域的行两个字段都非 nil（`PhiLocalPin.spaceId` 上那张表），而
+            // `PinKind` 的推导先看 `spaceId`，所以这里填哪个 profile 不影响身份。
+            profileId = LocalStore.defaultProfileId
+        } else if let localProfileId = resolve.localProfileId(ownerKey) {
+            profileId = localProfileId
+        } else {
+            return nil
+        }
+        return PhiLocalPin(lineageId: lineage, guid: lineage, spaceId: spaceId,
+                           profileId: profileId, index: 0, title: "",
+                           url: URL(string: "https://pin.phi/placeholder")!,
+                           splitPartnerLineageId: nil, source: 0,
+                           createdDate: Date(timeIntervalSince1970: 0),
+                           contentUpdatedDate: nil, isDormant: false)
+    }
+}
+
+extension OwnedKindRegistration {
+    /// `PinKind` 那一条注册项。
+    @MainActor
+    static func pins(access: any PhiPinnedTabLocalAccess,
+                     store: any PhiOwnedItemStateStore) -> OwnedKindRegistration {
+        let state = PinSyncRoundState()
+        return OwnedKindRegistration(
+            label: "pins",
+            tagPrefix: PhiSyncEntity.pinTagPrefix,
+            entityName: PhiSyncEntity.pinEntityName,
+            store: store,
+            flags: .pins,
+            // §11.2：认领那三项**只有书签行有**——pin 完全不走 §6（§6.7）。
+            reportsAdoption: false,
+            // 反过来 `relineaged` 与 `scope_mismatch` 只有 pin 行有。
+            reportsScope: true,
+            identity: { envelope in
+                guard let entity = PinKind.entity(from: envelope) else { return nil }
+                let identity = PinKind.identity(of: entity)
+                return identity.isEmpty ? nil : identity
+            },
+            clientTag: pinClientTag(for:),
+            owners: { bytes in
+                guard let envelope = try? Phi_PhiEntity(serializedBytes: bytes),
+                      let entity = PinKind.entity(from: envelope) else { return [] }
+                return PinKind.ownerUuids(of: entity)
+            },
+            clearedSplitPartner: clearedPinSplitPartner(_:),
+            beginRound: {
+                state.reload(try access.allPins(),
+                             localScope: access.currentScope(),
+                             accountScope: access.accountScope())
+            },
+            // §5.1 的索引种子，pin 这一侧**只有游标键**。
+            //
+            // 本机那一半交不出来：身份的后半段是**账户级** ownerKey，要由本轮的解析器从
+            // `spaceId` / `profileId` 翻出来，而这个闭包按接缝的形状拿不到那份映射表；
+            // `allPinIdentities()` 交的又是**裸 lineage**，直接拿去拼 tag 会往索引里塞一批
+            // 线上永不存在的 hash。交空集合是保守的那一侧：索引少一条种子只会让一条
+            // **游标已经丢失**的身份的远端 tombstone 被当成「不认识的 hash」忽略掉，而那条
+            // 路径本来就要靠 R-M3-3-13 的整类型重放兜底。
+            localIdentities: { [] },
+            snapshot: { table, maps, now in
+                pinSnapshot(table: table, maps: maps, now: now, state: state)
+            },
+            tombstones: { table, maps, now in
+                try pinTombstones(table: table, maps: maps, now: now,
+                                  access: access, state: state)
+            },
+            // §6.7：pin 不走认领，所以这一趟没有任何身份可以配、也没有任何东西要写回本机
+            // 行。它仍然存在并照书签那一条接线，于是引擎那个 helper 不需要为 kind 开分支
+            // （R-exec-10）。
+            retryParkedClaims: { _, _ in OwnedParkedClaimResult() },
+            plan: { input in pinPlan(input, state: state) },
+            land: { input in await landPins(input, access: access, state: state) },
+            // 同上：没有铸造就没有写回，`snapshot` 交出的 `minted` 恒空。
+            claimIdentities: { _ in [] })
+    }
+}
+
+/// §4.2 的出站快照。**没有铸造那一步**：pin 的身份由 `(lineage, owner)` 推导，不需要在
+/// 内存里先铸一个再等提交写回（§6.4 对 pin 退化成空操作）。
+@MainActor
+private func pinSnapshot(table: PhiOwnedItemTable, maps: OwnedOwnerMaps, now: Int64,
+                         state: PinSyncRoundState) -> OwnedSnapshotBytes {
+    var out = OwnedSnapshotBytes()
+    // §7.3：作用域不一致 ⇒ 发布半边**整段**跳过——不铸造、不快照、不发任何 commit。
+    // 一份空快照就是「这一轮没有任何 pin 要发布」；入站那一半由 `plan` 全部停放。
+    guard !state.scopeMismatch else { return out }
+    let resolve = maps.resolver
+    let scope = state.localScope
+    let result = SyncableOwnedItems.snapshot(PinKind.self, locals: state.locals, table: table,
+                                             resolve: resolve, scope: scope, now: now)
+    out.skippedUnmappedOwner = result.skippedUnmappedOwner
+    out.skippedIneligibleOwner = result.skippedIneligibleOwner
+    for (identity, entity) in result.entities {
+        guard let bytes = try? PinKind.envelope(entity).serializedData() else { continue }
+        out.entities[identity] = bytes
+    }
+    // A12 / §3.5：身份 -> 这一行**当前所在的归属**，引擎每轮刷进游标的 `ownerUuid`。
+    // 读的是 `eligibilityOwner`，**不是**身份的后半段（`identity(of local:)` 在归属解析
+    // 不出来时交的是一个占位后半段，截它等于把占位值写进游标）。
+    for row in state.locals {
+        guard let identity = PinKind.identity(of: row, resolve: resolve, scope: scope),
+              let owner = PinKind.eligibilityOwner(of: row, resolve: resolve, scope: scope)
+        else { continue }
+        out.ownerUuids[identity] = owner
+    }
+    return out
+}
+
+/// §4.7 的差分。
+@MainActor
+private func pinTombstones(table: PhiOwnedItemTable, maps: OwnedOwnerMaps, now: Int64,
+                           access: any PhiPinnedTabLocalAccess,
+                           state: PinSyncRoundState) throws -> OwnedItemTombstoneResult {
+    // §7.3：作用域不一致的那一轮发布半边整段不跑，差分是它的一半。
+    guard !state.scopeMismatch else {
+        return OwnedItemTombstoneResult(identities: [], cursorUpdates: [:])
+    }
+    let resolve = maps.resolver
+    let scope = state.localScope
+    // R-exec-4：定义域问 `allPinIdentities()`，**不问快照**。本轮没成功读过时它抛，于是
+    // 这一条 kind 的发布段整段不跑——空集合的回答是给账户上每一条已发布身份发 tombstone。
+    let lineages = try access.allPinIdentities()
+    var domain = state.locals
+    // **两边的形状不同**：`allSyncIds()` 交的是完整身份，`allPinIdentities()` 交的是**裸
+    // lineage**。直接拿后者与游标身份比会把每一条游标判成死的，所以这里为「本机确实还有
+    // 行、但这一轮的 `allPins()` 看不见」的那些 lineage 补一条只带归属的壳——作用域迁移
+    // 原地留下的备份行属于这一类，「同步层这一轮不认领它」与「账户应该忘掉它」是两句不同
+    // 的话。
+    //
+    // **只补 `allPins()` 里一条都没有的 lineage**：当前作用域下还有行的那些 lineage，行
+    // 自己已经贡献了**它那个 owner 下**的身份；别的 owner 下的同 lineage 游标正是换 owner
+    // 之后该发 tombstone 的那一类（§7.2「换 owner = tombstone + create」，R-M3-3-23 的
+    // 中间那一程也走这条）。
+    let inScope = Set(state.locals.map { PinKind.lineageKey($0.lineageId) })
+    for identity in table.cursors.keys {
+        let halves = pinIdentityHalves(identity)
+        guard !inScope.contains(halves.lineage), lineages.contains(halves.lineage),
+              let shell = PhiLocalPin.identityOnly(lineage: halves.lineage,
+                                                   ownerKey: halves.ownerKey, resolve: resolve)
+        else { continue }
+        domain.append(shell)
+    }
+    // R-exec-9 的豁免集合对 pin 恒空：没有认领就没有「配上了但还没写回」这个中间态。
+    return SyncableOwnedItems.tombstones(PinKind.self, locals: domain, table: table,
+                                         resolve: resolve, scope: scope, nowMs: now,
+                                         pendingClaims: [])
+}
+
+/// §4.4 的入站计划。**没有 §6 的认领**（§6.7：首次同步时两边的 pin 取并集）。
+@MainActor
+private func pinPlan(_ input: OwnedPlanInput, state: PinSyncRoundState) -> OwnedPlanOutput {
+    var out = OwnedPlanOutput()
+    var arrivals: [OwnedItemArrival<Phi_PhiPinTabEntity>] = []
+    for item in input.arrivals {
+        guard let envelope = try? Phi_PhiEntity(serializedBytes: item.payload),
+              let entity = PinKind.entity(from: envelope) else { continue }
+        arrivals.append(OwnedItemArrival(entity: entity, entityId: item.entityId,
+                                         version: item.version))
+        out.serverBytes[PinKind.identity(of: entity)] = item.payload
+    }
+    var context = OwnedItemPlanContext()
+    context.tombstonedIdentities = input.tombstoned
+    // §7.3 的判据交给纯函数模块：不一致 ⇒ 零 step、入站实体全部停放。**`liveLocalParents`
+    // 与 `deletedSubtree` 留空**：pin 是平的，没有父，A9 的那两个合取项对它退化。
+    context.localScope = state.localScope
+    context.accountScope = state.accountScope
+    out.plan = SyncableOwnedItems.plan(PinKind.self, arrivals: arrivals, parked: input.parked,
+                                       table: input.table, resolve: input.maps.resolver,
+                                       context: context)
+    // §11.2 的 `scope_mismatch`：这一轮 pin 段的发布半边有没有因为作用域不一致被跳过。
+    out.scopeMismatch = context.scopeMismatch
+    return out
+}
+
+/// §4.4 / §4.5 的落地：变体重铸 + 三相批次 + 落地后复核，**一个事务**。
+///
+/// 与书签那边的两点差别都来自「pin 是平的、按 owner 分组」：没有父子关系要排，所以没有
+/// 提升；批次不按 Space 切开，因为一条 pin 操作的归属由 store 自己从行上读（`.create`
+/// 之外的四种 op 只带 guid）。
+@MainActor
+private func landPins(_ input: OwnedLandingInput,
+                      access: any PhiPinnedTabLocalAccess,
+                      state: PinSyncRoundState) async -> OwnedLandingOutcome {
+    var outcome = OwnedLandingOutcome()
+    let resolve = input.maps.resolver
+    let scope = state.localScope
+
+    // §7.2 / A11 的变体重铸：同 owner 下两条同 lineage 的活动行，`index` 较大的那一条重铸
+    // `pinLineageId`。它是一次**本地写**，所以它在这一轮的 `PinApplyBatch` 里、与落地同一个
+    // 事务（W14），**不在**发布段那个只读的 pre-pass 里。
+    var ops = PinKind.normalizeVariants(locals: state.locals).ops
+    outcome.relineaged = ops.count
+    guard !input.steps.isEmpty || !ops.isEmpty else { return outcome }
+
+    // 身份 -> 本机行。pin 没有 `syncId` 那一列，身份是**算出来**的。
+    var rowOf: [String: PhiLocalPin] = [:]
+    for row in state.locals {
+        guard let identity = PinKind.identity(of: row, resolve: resolve, scope: scope) else {
+            continue
+        }
+        rowOf[identity] = row
+    }
+
+    /// 账户级 ownerKey -> 本机那一侧的两个字段（§7.2 的表反过来读）。
+    func localOwner(_ ownerKey: String) -> (spaceId: String?, profileId: String?)? {
+        if ownerKey == OwnedOwnerMaps.appOwnerKey { return (nil, nil) }
+        if let spaceId = resolve.localSpaceId(ownerKey) {
+            // 一条 Space 作用域的行两个字段都非 nil；profile 取同 Space 的既有行，没有就
+            // 落到默认 profile（与书签落地同一条兜底）。
+            let profileId = state.locals.first { $0.spaceId == spaceId }?.profileId
+                ?? LocalStore.defaultProfileId
+            return (spaceId, profileId)
+        }
+        if let profileId = resolve.localProfileId(ownerKey) { return (nil, profileId) }
+        return nil
+    }
+
+    struct Planned {
+        var step: OwnedItemApplyStep
+        var entity: Phi_PhiPinTabEntity?
+        var identity: String
+        var ownerKey: String
+    }
+    var planned: [Planned] = []
+    for step in input.steps {
+        // §6.7：pin 不走认领，`plan` 因此产不出 `.claim`。真出现了就跳过，不去猜它的意思。
+        guard step.kind != .claim else { continue }
+        let entity = step.payload.flatMap { bytes -> Phi_PhiPinTabEntity? in
+            guard let envelope = try? Phi_PhiEntity(serializedBytes: bytes) else { return nil }
+            return PinKind.entity(from: envelope)
+        }
+        planned.append(Planned(step: step, entity: entity, identity: step.identity,
+                               ownerKey: pinIdentityHalves(step.identity).ownerKey))
+    }
+
+    // 本轮的落地投影：轮首那份快照 + 这一轮新建的行。它同时回答两个问题——「这条身份有没有
+    // 本机行」与「这个 owner 下现在有哪些行」（rank → index 与拆分伙伴解析都要）。
+    var projected: [String: PhiLocalPin] = state.rowByGuid
+    var guidOf: [String: String] = [:]
+    for (identity, row) in rowOf { guidOf[identity] = row.guid }
+    var rankOf: [String: String] = [:]
+    for (identity, cursor) in input.table.cursors {
+        guard let bytes = cursor.reconciled,
+              let envelope = try? Phi_PhiEntity(serializedBytes: bytes),
+              let entity = PinKind.entity(from: envelope) else { continue }
+        rankOf[identity] = PinKind.rank(of: entity)
+    }
+
+    var created: Set<String> = []
+    var deletedIdentities: Set<String> = []
+    var payloadOf: [String: Data] = [:]
+    var touchedOwners: Set<String> = []
+    var ownerOfGuid: [String: String] = [:]
+    for (identity, row) in rowOf {
+        ownerOfGuid[row.guid] = PinKind.eligibilityOwner(of: row, resolve: resolve, scope: scope)
+            ?? pinIdentityHalves(identity).ownerKey
+    }
+
+    for item in planned {
+        let identity = item.identity
+        if let payload = item.step.payload { payloadOf[identity] = payload }
+        if let rank = item.step.newRank { rankOf[identity] = rank }
+        touchedOwners.insert(item.ownerKey)
+
+        if item.step.kind == .delete {
+            deletedIdentities.insert(identity)
+            guard let guid = guidOf[identity] else { continue }
+            projected.removeValue(forKey: guid)
+            continue
+        }
+        guard let entity = item.entity else { continue }
+        if guidOf[identity] == nil {
+            // 归属反推不出本机形状 ⇒ 停放，等那个 Space / profile 的映射到位。
+            guard let owner = localOwner(item.ownerKey) else {
+                outcome.parked.insert(identity)
+                continue
+            }
+            let guid = UUID().uuidString
+            guidOf[identity] = guid
+            created.insert(identity)
+            ownerOfGuid[guid] = item.ownerKey
+            projected[guid] = PhiLocalPin(
+                lineageId: pinIdentityHalves(identity).lineage,
+                guid: guid, spaceId: owner.spaceId, profileId: owner.profileId,
+                index: 0, title: entity.title.stringValue,
+                url: URL(string: entity.url.stringValue)
+                    ?? URL(string: "https://pin.phi/placeholder")!,
+                splitPartnerLineageId: nil, source: Int(entity.source),
+                createdDate: Date(timeIntervalSince1970: Double(entity.createdAtMs) / 1000),
+                // R-exec-5：内容戳照实体的内容戳落，**不是 nil、也不是落地时刻**。留 nil
+                // 的话下一轮的本机比较戳回落到 `createdDate` = 落地那一刻，这条刚从对端拿
+                // 来的 pin 会在下一次字段冲突里凭一个假的「我更新」赢掉对端的真实编辑。
+                contentUpdatedDate: Date(timeIntervalSince1970:
+                                            Double(entity.title.updatedAtMs) / 1000),
+                isDormant: false)
+        }
+    }
+
+    // §4.10 的 rank → index 投影，**按 owner 分组**（pin 没有父）。每个被触及的 owner 发
+    // 一份**完整的稠密置换**：批次入口写的是裸 index，它不会替你把兄弟们往后挪（M7）。
+    // 本机 guid -> 它这一轮的 rank：步骤里的新 rank 优先，否则基线那一条。
+    var rankByGuid: [String: String] = [:]
+    for (identity, guid) in guidOf {
+        guard let rank = rankOf[identity] else { continue }
+        rankByGuid[guid] = rank
+    }
+    var indexOf: [String: Int] = [:]
+    for owner in touchedOwners {
+        let members = projected.values
+            .filter { ownerOfGuid[$0.guid] == owner }
+            .sorted { lhs, rhs in
+                switch (rankByGuid[lhs.guid], rankByGuid[rhs.guid]) {
+                case let (left?, right?):
+                    return left == right ? lhs.guid < rhs.guid : left < right
+                // **没有 rank 的排在后面**：那是一条从没发布过、这一轮也没被碰过的本机行，
+                // 把它排到前面会让每一次落地都顺手重排一遍与本轮无关的行。
+                case (nil, _?): return false
+                case (_?, nil): return true
+                case (nil, nil):
+                    return lhs.index == rhs.index ? lhs.guid < rhs.guid : lhs.index < rhs.index
+                }
+            }
+        for (position, row) in members.enumerated() { indexOf[row.guid] = position }
+    }
+
+    // 三相里的第一相：create / relineage / move。
+    var indexed: Set<String> = []
+    for item in planned where item.step.kind != .delete {
+        guard let guid = guidOf[item.identity], !outcome.parked.contains(item.identity) else {
+            continue
+        }
+        if created.contains(item.identity), var row = projected[guid] {
+            row.index = indexOf[guid] ?? 0
+            projected[guid] = row
+            ops.append(.create(row))
+            indexed.insert(guid)
+        } else if item.step.kind == .create || item.step.kind == .move {
+            // §4.5：**先按身份找本机行，找不到才 create**。本机已经有这条身份的行时，一条
+            // 计划里的 `.create` 是一次重放而不是一次新建——照着建一遍会让本机每条 pin 在
+            // 一次重放之后变成两条，而两条都算得出身份、都不会被差分判成删除。
+            ops.append(.move(guid: guid, index: indexOf[guid] ?? 0))
+            indexed.insert(guid)
+        }
+    }
+    // 其余兄弟：被触及的 owner 里所有**已经存在于本机**、这一轮还没拿到最终 index 的行。
+    for owner in touchedOwners {
+        let movers = projected.values
+            .filter { ownerOfGuid[$0.guid] == owner && !indexed.contains($0.guid)
+                && state.rowByGuid[$0.guid] != nil }
+            .sorted { (indexOf[$0.guid] ?? 0, $0.guid) < (indexOf[$1.guid] ?? 0, $1.guid) }
+        for row in movers {
+            ops.append(.move(guid: row.guid, index: indexOf[row.guid] ?? row.index))
+        }
+    }
+
+    // 第二相：字段补丁。**拆分伙伴在这里预解析**（§7.4）——伙伴行在同一个 owner 下存在
+    // 就把 lineage 交给 store（它在同一个事务里写两个方向），不存在就不写本地链接，并把
+    // 那条 lineage 记进游标的 `pendingPartnerLineage`：没有这一半，下一次快照会判出「这个
+    // 字段变了」并把 `""` 发出去，**把对端好好的拆分对拆散**，而这台机器只是接收了它。
+    for item in planned where item.step.kind != .delete {
+        guard let entity = item.entity, let guid = guidOf[item.identity],
+              !outcome.parked.contains(item.identity) else { continue }
+        var fields = PinFieldPatch()
+        if !created.contains(item.identity) {
+            fields.title = .some(entity.title.stringValue)
+            fields.url = .some(URL(string: entity.url.stringValue))
+        }
+        let partner = PinKind.lineageKey(entity.splitPartnerUuid.stringValue)
+        if partner.isEmpty {
+            // 对端解除了这一对：清掉本地链接，游标那一位也跟着清。**本机本来就没有链接时
+            // 一个字都不写**——一条刚建出来的行没有伙伴可解，那一条补丁只会在事务里多跑
+            // 一次 `applyPinSplitPartnerBody` 并盖一遍 `updatedDate`。
+            if state.rowByGuid[guid]?.splitPartnerLineageId != nil {
+                fields.splitPartnerLineageId = .some(nil)
+            }
+            outcome.pendingPartnerLineages[item.identity] = ""
+        } else {
+            let resolved = projected.values.contains {
+                $0.guid != guid && ownerOfGuid[$0.guid] == item.ownerKey
+                    && PinKind.lineageKey($0.lineageId) == partner
+            }
+            fields.splitPartnerLineageId = .some(partner)
+            // 伙伴还没有本地行 ⇒ 这一条是半落地的那一半，记下它在等谁。
+            outcome.pendingPartnerLineages[item.identity] = resolved ? "" : partner
+        }
+        guard fields.title != nil || fields.url != nil || fields.splitPartnerLineageId != nil
+        else { continue }
+        ops.append(.update(guid: guid, fields: fields))
+    }
+
+    // 第三相：删除。
+    for item in planned where item.step.kind == .delete {
+        // §5.6 T3：反查到身份、**本机没有行** ⇒ 什么都不删，但游标照样写 `deletedAtMs`。
+        guard let guid = guidOf[item.identity], state.rowByGuid[guid] != nil else {
+            outcome.landed.insert(item.identity)
+            outcome.deleted.insert(item.identity)
+            continue
+        }
+        ops.append(.delete(guid: guid))
+    }
+
+    guard !ops.isEmpty else { return outcome }
+    let identities = Set(planned.map(\.identity))
+        .subtracting(outcome.parked)
+        .subtracting(outcome.landed)
+    do {
+        try await access.apply(PinApplyBatch(unordered: ops))
+    } catch LocalStoreWriteError.rowAlreadyMapped, LocalStoreWriteError.rowNotFound,
+            LocalStoreWriteError.rowNotInActiveScope, LocalStoreWriteError.noCandidateSurvived {
+        // 这一批**算错了**：拒收。它们不是在等什么，停放会让同一批每轮原样重试、永远不会好。
+        outcome.refused.formUnion(identities)
+        return outcome
+    } catch {
+        // 导入锁（`.spaceImporting`）与其余一切瞬时失败：**停放**，下一轮重试。
+        outcome.parked.formUnion(identities)
+        outcome.pendingPartnerLineages = [:]
+        return outcome
+    }
+
+    // §4.5：落地之后、写基线之前，按计划复核一次。复核读的是**落地后**的行——`apply` 收尾
+    // 会自己重建一次缓存，所以这个读者此刻答的是新世界。
+    for identity in identities {
+        let lineage = pinIdentityHalves(identity).lineage
+        let known = access.isKnownLocalPin(lineage)
+        if deletedIdentities.contains(identity) {
+            // 同一条 lineage 在别的 owner 下还有行时 `isKnownLocalPin` 仍然答「在」，于是
+            // 这一条会被保守地停放、下一轮重试；那比把一次没落地的删除记成成功安全。
+            if known { outcome.parked.insert(identity) } else {
+                outcome.landed.insert(identity)
+                outcome.deleted.insert(identity)
+            }
+            continue
+        }
+        guard known else { outcome.parked.insert(identity); continue }
+        outcome.landed.insert(identity)
+        if let payload = payloadOf[identity] { outcome.reconciled[identity] = payload }
+    }
+    outcome.parked.subtract(outcome.landed)
+    outcome.refused.subtract(outcome.landed)
+    return outcome
 }
 
 #if DEBUG

@@ -299,12 +299,20 @@ import SwiftUI
         let spaceAccess = AccountPhiSpaceAccess(account: account, controller: syncKeyController)
         // M3-3：归属项（书签 / pin）的注册清单。每种 kind 一张表、一个文件，落在账户目录下
         // （`<App Support>/Phi/users/<userID>/sync/`），所以切账户与账户重置零清理，也不必
-        // 进 `PhiSyncEngine.stateKeys`。清单此时只有书签那一条。
+        // 进 `PhiSyncEngine.stateKeys`。目录不存在时由 `FileOwnedItemStateStore.save` 顺手
+        // 建（`withIntermediateDirectories: true`），两条 kind 走同一条路。
+        let syncDirectory = account.userDataStorage.appendingPathComponent("sync")
         let bookmarkAccess = AccountPhiBookmarkAccess(account: account)
         let bookmarkStore = FileOwnedItemStateStore(
-            fileURL: account.userDataStorage.appendingPathComponent("sync/bookmarks-cursors.json"))
+            fileURL: syncDirectory.appendingPathComponent("bookmarks-cursors.json"))
+        // pin 那一条（PR15：`PinKind` 只在这里进引擎）。它的 access 收的是 `LocalStore`
+        // 而不是 `Account`——那个注入是 5b-1 为了让生产实现在测试里也驱动得起来做的。
+        let pinAccess = AccountPhiPinnedTabAccess(store: account.localStorage)
+        let pinStore = FileOwnedItemStateStore(
+            fileURL: syncDirectory.appendingPathComponent("pins-cursors.json"))
         let ownedKinds = [OwnedKindRegistration.bookmarks(access: bookmarkAccess,
-                                                          store: bookmarkStore)]
+                                                          store: bookmarkStore),
+                          OwnedKindRegistration.pins(access: pinAccess, store: pinStore)]
         // A new engine starts from its own persisted `spaceSectionEnabled`, so the memo
         // describes an engine that no longer exists. (`stopPhiSync()` clears it too; this is
         // the belt to that braces, because nothing forces the two to be paired.)

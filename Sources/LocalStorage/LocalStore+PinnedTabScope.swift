@@ -771,22 +771,6 @@ extension LocalStore {
 // `owner(of:at:)`、`contentSignature(for:)` 这几个 helper 都是 `private`，而 Swift 的
 // `private` 只对**同一个文件**里的其它 extension 可见。
 extension LocalStore {
-    /// 当前作用域内、**非休眠**（`isPinnedTabDormant == false`）的全部 pin 行，按
-    /// (ownerKey, index, guid) 有序——`allPins()` 的 store 级读（§4.8）。
-    ///
-    /// 休眠行是作用域迁移留下的备份副本，与活动行共享同一个 `pinLineageId`：它既不发布，
-    /// 也不算进 §4.7 的差分定义域，所以必须在这里就被滤掉，而不是让每个消费者各滤一遍。
-    ///
-    /// **不做「每条 lineage 挑一个代表」**：身份是 `(lineage, ownerKey)` 这一对
-    /// （§3.2 / R-M3-3-15），一条 lineage 在 N 个 owner 下就是 N 条实体，N 条都要返回。
-    ///
-    /// 次键 `guid` 不是装饰：`index` 在同一个 owner 下可能撞车（迁移刚插完、重排还没跑），
-    /// 没有次键的话撞上的两行顺序随 fetch 而变，出站 pass 会给其中一条算出新 rank 发出去，
-    /// 对端应用后顺序又翻回来——每轮两条 commit，永远（§4.10）。
-    func activeNonDormantPinModels(in context: ModelContext) throws -> [TabDataModel] {
-        try pinSyncFetch(in: context).active
-    }
-
     /// 同步层每轮那**一次** pin fetch 的产物：快照与差分定义域出自同一批 models。
     ///
     /// 两者之间**没有第二个时刻**（L9）。跑两次查询的话，中间隔着至少一次 actor hop，
@@ -865,7 +849,7 @@ extension LocalStore {
         guard let tab = try context.fetch(descriptor).first else {
             throw LocalStoreWriteError.rowNotFound
         }
-        // 分组的来源是那一轮 `activeNonDormantPinModels(in:)` 的结果，所以定义域一致：
+        // 分组的来源是那一轮 `pinSyncFetch(in:).active` 的结果，所以定义域一致：
         // 作用域外的备份行与休眠行都不参与重铸。
         guard !tab.isPinnedTabDormant,
               pinnedTab(tab, belongsTo: try pinnedTabScope(in: context)) else {
@@ -886,6 +870,11 @@ extension LocalStore {
     /// `source` 是 `PhiPinTabEntity` 的字段 8（`TabSource` 的 raw value），`PinKind.merge`
     /// 按「取非零一侧、都非零取较小者」合并它。缺这个参数，一条远端 pin 落地时它只能落成
     /// 默认值 0，下一轮的快照把 0 当成本机的值发回去，把对端记录的导入来源抹掉。
+    ///
+    /// `contentUpdatedDate` 同理（R-exec-5，与书签的 `BulkBookmarkInsert` 是同一件事）：
+    /// 缺它的话一条远端 pin 落地时那一列是 nil，下一轮快照拿 `contentUpdatedDate ??
+    /// createdDate` 当本机比较戳，取到的是**落地那一刻**的 `createdDate`，比对端真正的编辑
+    /// 时间晚得多——刚落地的那条 pin 于是在下一次字段冲突里凭「我比较新」赢下对端的真实编辑。
     func createPinnedTabThrowing(guid: String,
                                  url: URL,
                                  title: String,
@@ -894,7 +883,8 @@ extension LocalStore {
                                  index: Int? = nil,
                                  lineageId: String? = nil,
                                  createdDate: Date? = nil,
-                                 source: Int = 0) async throws {
+                                 source: Int = 0,
+                                 contentUpdatedDate: Date? = nil) async throws {
         try await performBackgroundWriteAndWaitThrowing { context in
             try self.createPinnedTabBody(guid: guid,
                                          url: url,
@@ -905,6 +895,7 @@ extension LocalStore {
                                          lineageId: lineageId,
                                          createdDate: createdDate,
                                          source: source,
+                                         contentUpdatedDate: contentUpdatedDate,
                                          in: context)
         }
     }
@@ -919,6 +910,7 @@ extension LocalStore {
                              lineageId: String?,
                              createdDate: Date?,
                              source: Int,
+                             contentUpdatedDate: Date? = nil,
                              in context: ModelContext) throws {
         let scope = try pinnedTabScope(in: context)
         var activePins = try pinnedTabs(
@@ -941,6 +933,9 @@ extension LocalStore {
         model.isCreatedByChromium = false
         model.pinLineageId = lineageId ?? guid
         model.source = source
+        // nil 就留 nil：`PhiLocalPin.contentUpdatedDate` 的契约是「nil = 从未改过内容」，
+        // 拿 `now` 顶上去会把每一条本机新建的 pin 都伪装成刚被编辑过。
+        model.contentUpdatedDate = contentUpdatedDate
         try applyCurrentPinnedTabOwner(
             profileId: profileId,
             spaceId: spaceId,
@@ -1160,10 +1155,11 @@ extension LocalStore {
         for op in ops {
             switch op {
             case .create(let row):
-                // 三个参数一律**显式**传（§4.9）：`lineageId` 为 nil 会让 body 自己铸一个新
-                // 的 lineage，于是刚从账户落地的那条 pin 拿到一个线上没有的身份，下一轮被
-                // 差分判成「本机新建」再发一次，账户上多出一条重复实体；`source` 与
-                // `createdDate` 同理会把对端记录的值抹成默认值。
+                // 四个参数一律**显式**传（§4.9 / R-exec-5）：`lineageId` 为 nil 会让 body
+                // 自己铸一个新的 lineage，于是刚从账户落地的那条 pin 拿到一个线上没有的
+                // 身份，下一轮被差分判成「本机新建」再发一次，账户上多出一条重复实体；
+                // `source`、`createdDate` 与 `contentUpdatedDate` 同理会把对端记录的值抹成
+                // 默认值，而最后那一个抹掉之后，这条 pin 下一轮的本机比较戳回落到落地时刻。
                 let profileId = row.profileId ?? Self.defaultProfileId
                 let spaceId = row.spaceId ?? Self.defaultSpaceId
                 try createPinnedTabBody(guid: row.guid,
@@ -1175,6 +1171,7 @@ extension LocalStore {
                                         lineageId: row.lineageId,
                                         createdDate: row.createdDate,
                                         source: row.source,
+                                        contentUpdatedDate: row.contentUpdatedDate,
                                         in: context)
                 touchedOwners.insert(Self.pinnedTabOwner(for: scope,
                                                          profileId: profileId,

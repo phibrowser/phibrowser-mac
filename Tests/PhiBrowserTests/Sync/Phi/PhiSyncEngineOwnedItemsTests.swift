@@ -121,6 +121,40 @@ final class PhiSyncEngineOwnedItemsTests: XCTestCase {
                     entityId: entityId, version: version, ownerUuid: owner)
     }
 
+    // MARK: - pin 侧的同款小工具
+
+    /// pin 的 client tag 两段都进：身份是 `(lineage, owner)` 这一对，一条 lineage 在 N 个
+    /// owner 下就是 N 条实体。
+    private func pinTag(_ lineage: String, owner: String = "pu-1") -> String {
+        PhiSyncEntity.pinClientTag(lineage, ownerKey: owner)
+    }
+
+    private func pinHash(_ lineage: String, owner: String = "pu-1") -> String {
+        PhiSyncEntity.clientTagHash(for: pinTag(lineage, owner: owner))
+    }
+
+    private func pinKind(_ access: FakePinAccess,
+                         _ store: MemoryOwnedItemStore) -> OwnedKindRegistration {
+        .pins(access: access, store: store)
+    }
+
+    /// 一条 commit 的密文解出来的整条 pin 实体。
+    private func committedPin(_ call: FakePhiSyncClient.CommitCall) -> Phi_PhiPinTabEntity? {
+        guard let ciphertext = call.ciphertext,
+              let entity = try? PhiEntityCodec.decrypt(ciphertext, key: key),
+              case .pinTab(let payload)? = entity.kind else { return nil }
+        return payload
+    }
+
+    /// pin 那一侧的 `publishedCursor`：归属默认是 profile 作用域的 `pu-1`。
+    private func publishedPinCursor(_ payload: Phi_PhiPinTabEntity,
+                                    entityId: String = "srv-p1",
+                                    version: Int64 = 1,
+                                    owner: String = "pu-1") -> PhiOwnedItemCursor {
+        ownedCursor(reconciled: baselineBytes(payload), server: baselineBytes(payload),
+                    entityId: entityId, version: version, ownerUuid: owner)
+    }
+
     // MARK: - CASE 6.1 – 6.3：分发
 
     /// CASE 6.1 — 一页四种实体混排，各归各位。
@@ -1610,5 +1644,196 @@ final class PhiSyncEngineOwnedItemsTests: XCTestCase {
 
         XCTAssertEqual(bookmarkCommits(client).count, 0)
         XCTAssertFalse(spaceStore.table.hasDrainedFullReplay)
+    }
+
+    // MARK: - CASE 5b.1 – 5b.6：pin 注册进引擎
+
+    /// CASE 5b.1 — 注册之后引擎真的驱动 pin 段。
+    ///
+    /// 防的是什么：没有注册的话 pin 段连 `load()` 都没有对象可调，而 Task 9b 的级联会写进
+    /// 一张谁也不会保存的表。
+    func testRegisteringThePinKindMakesTheEngineDriveThePinSection() async throws {
+        let pinAccess = FakePinAccess(scope: .profile, account: .profile, rows: [.fixture()])
+        let pinStore = MemoryOwnedItemStore()
+        let client = FakePhiSyncClient()
+
+        let engine = makeEngine(client: client, ownedKinds: [pinKind(pinAccess, pinStore)])
+        await engine.setSpaceSyncEnabled(true)
+        await engine.pullOnce()
+
+        let seen = pinStore.hadRecordsSeen
+        let counters = await engine.lastOwnedRoundCountersForTesting["pins"]
+        XCTAssertFalse(seen.isEmpty, "pin 段至少读过一次它自己的表")
+        XCTAssertNotNil(counters, "计数行里出现 PinKind 那一行")
+    }
+
+    /// CASE 5b.2 — 两条 kind 同时注册时互不干扰。
+    ///
+    /// 防的是什么：把注册清单实现成「最后一条覆盖前一条」或让两条 kind 共用一张表，都会在
+    /// 这条用例上红，而线上表现是其中一种实体整类消失。
+    func testTwoRegisteredKindsKeepTheirOwnTablesCountersAndTagIndices() async throws {
+        let spaceAccess = makeSpaceAccess()
+        let bookmarkAccess = FakeBookmarkAccess()
+        let bookmarkStore = MemoryOwnedItemStore()
+        let pinAccess = FakePinAccess(scope: .profile, account: .profile)
+        let pinStore = MemoryOwnedItemStore()
+        let client = FakePhiSyncClient()
+        client.scriptedPages = [page([
+            remoteEntity(envelope(bookmarkPayload(uuid: "b1")), tag: bookmarkTag("b1"),
+                         version: 11, entityId: "srv-b1", key: key),
+            remoteEntity(envelope(pinPayload(lineage: "lx")), tag: pinTag("lx"),
+                         version: 12, entityId: "srv-p1", key: key),
+        ])]
+
+        let engine = makeEngine(client: client, access: spaceAccess, store: makeSpaceStore(),
+                                ownedKinds: [bookmarkKind(bookmarkAccess, bookmarkStore),
+                                             pinKind(pinAccess, pinStore)])
+        await engine.setSpaceSyncEnabled(true)
+        await engine.pullOnce()
+
+        let bookmarkTable = await engine.ownedTableForTesting("bookmarks")
+        let pinTable = await engine.ownedTableForTesting("pins")
+        let bookmarkCounters = await engine.lastOwnedRoundCountersForTesting["bookmarks"]
+        let pinCounters = await engine.lastOwnedRoundCountersForTesting["pins"]
+        XCTAssertEqual(Set(bookmarkTable.cursors.keys), ["b1"], "书签表只长书签那一条")
+        XCTAssertEqual(Set(pinTable.cursors.keys), ["lx:pu-1"], "pin 表只长 pin 那一条")
+        XCTAssertEqual(bookmarkCounters?.pulled, 1)
+        XCTAssertEqual(pinCounters?.pulled, 1)
+    }
+
+    /// CASE 5b.3（承接 CASE 6.4 / 6.5）— pin 的 tag 校验顺带钉住 owner。
+    ///
+    /// 防的是什么：owner 是 pin 身份的一半（R-M3-3-15），所以 owner 与 tag 不符**就是身份
+    /// 不符**。这样一条实体是伪造载荷或对端 bug，**不是**一次合法的换绑——换绑在线上的形状
+    /// 是「旧 tag 一条 tombstone + 新 tag 一条 create」。
+    func testAPinPayloadWhoseOwnerDoesNotMatchItsTagIsQuarantined() async throws {
+        let spaceAccess = makeSpaceAccess()
+        let pinAccess = FakePinAccess(scope: .profile, account: .profile,
+                                      rows: [.fixture(lineageId: "LX", guid: "p1")])
+        let pinStore = MemoryOwnedItemStore()
+        pinStore.table.cursors["lx:pu-1"] = publishedPinCursor(pinPayload(lineage: "lx"),
+                                                               version: 3)
+        let before = pinStore.table.cursors["lx:pu-1"]
+        let client = FakePhiSyncClient()
+        // tag 的 ownerKey 是 pu-1，载荷里的 owner 是 su-9。
+        client.scriptedPages = [page([
+            remoteEntity(envelope(pinPayload(lineage: "lx", ownerKey: "su-9")),
+                         tag: pinTag("lx"), version: 9, entityId: "srv-p1", key: key),
+        ])]
+
+        let engine = makeEngine(client: client, access: spaceAccess, store: makeSpaceStore(),
+                                ownedKinds: [pinKind(pinAccess, pinStore)])
+        await engine.setSpaceSyncEnabled(true)
+        await engine.pullOnce()
+
+        let table = await engine.ownedTableForTesting("pins")
+        XCTAssertEqual(table.cursors["lx:pu-1"], before, "游标一个字段都不许动")
+        XCTAssertNil(table.cursors["lx:su-9"], "伪造载荷绝不长出游标")
+        let unreadable = await engine.spaceTableForTesting.unreadableTagHashes
+        XCTAssertEqual(Set(unreadable.keys), [pinHash("lx")])
+    }
+
+    /// CASE 5b.4（承接 CASE 6.13）— 门开边沿的整类型重放覆盖三种 kind。
+    ///
+    /// 防的是什么：重放漏掉任一 kind，那个 kind 就停在门关之前的状态，而 marker 已经过去了。
+    /// **三个断言分开写**：断言两个计数之和，光靠其中一条就能满足。
+    func testTheGateOpenEdgeReplayCoversTheSpaceSectionAndBothOwnedKinds() async throws {
+        let spaceAccess = makeSpaceAccess()
+        let spaceStore = makeSpaceStore()
+        spaceStore.table.markerMovedWhileGateShut = true
+        let bookmarkAccess = FakeBookmarkAccess()
+        let bookmarkStore = MemoryOwnedItemStore()
+        let pinAccess = FakePinAccess(scope: .profile, account: .profile)
+        let pinStore = MemoryOwnedItemStore()
+        let client = FakePhiSyncClient()
+        var remoteSpace = spacePayload(uuid: "su-9")
+        remoteSpace.profileUuid = stamped("pu-1", at: 100)
+        client.scriptedPages = [page([
+            remoteEntity(envelope(remoteSpace), tag: PhiSyncEntity.spaceClientTag("su-9"),
+                         version: 10, entityId: "srv-space", key: key),
+            remoteEntity(envelope(bookmarkPayload(uuid: "b1")), tag: bookmarkTag("b1"),
+                         version: 11, entityId: "srv-b1", key: key),
+            remoteEntity(envelope(pinPayload(lineage: "lx")), tag: pinTag("lx"),
+                         version: 12, entityId: "srv-p1", key: key),
+        ])]
+
+        let engine = makeEngine(client: client, access: spaceAccess, store: spaceStore,
+                                ownedKinds: [bookmarkKind(bookmarkAccess, bookmarkStore),
+                                             pinKind(pinAccess, pinStore)])
+        await engine.setSpaceSyncEnabled(true)
+        await engine.pullOnce()
+
+        let bookmarkCounters = await engine.lastOwnedRoundCountersForTesting["bookmarks"]
+        let pinCounters = await engine.lastOwnedRoundCountersForTesting["pins"]
+        XCTAssertNotNil(spaceStore.table.cursors["su-9"], "Space 段处理了它那一条")
+        XCTAssertGreaterThanOrEqual(bookmarkCounters?.pulled ?? 0, 1, "书签段处理了它那一条")
+        XCTAssertGreaterThanOrEqual(pinCounters?.pulled ?? 0, 1, "pin 段处理了它那一条")
+    }
+
+    /// CASE 5b-2.1（原 CASE 6.6c）— 本机主动解除拆分 ⇒ 发 `""`，不是重发基线里的旧伙伴。
+    ///
+    /// 防的是什么：无条件沿用基线的实现让②也发 `"ld"`——那条 pin 的拆分关系在账户上**永远
+    /// 解不掉**，用户每次解除、每次同步又被拼回去。反过来，无条件发 `""` 的实现让①在伙伴
+    /// 到达前就把一个完好的拆分对拆开。两半只有「按 `pendingPartnerLineage` 分流」才同时
+    /// 成立。
+    func testALocalSplitReleaseSendsAnEmptyPartnerWhileAHalfLandedPairKeepsTheBaseline() async throws {
+        let spaceAccess = makeSpaceAccess()
+        // 两条本机行的 `splitPartnerLineageId` 都是 nil。①的标题与基线不同，于是它这一轮
+        // 确实出门，投影出来的 `split_partner_uuid` 才观察得到。
+        let pinAccess = FakePinAccess(scope: .profile, account: .profile, rows: [
+            .fixture(lineageId: "LA", guid: "pa", index: 0, title: "A"),
+            .fixture(lineageId: "LC", guid: "pc", index: 1, title: "T"),
+        ])
+        let pinStore = MemoryOwnedItemStore()
+        // ① 确实在等伙伴。
+        var waiting = publishedPinCursor(pinPayload(lineage: "la", rank: "V",
+                                                    splitPartner: "lb"))
+        waiting.pendingPartnerLineage = "lb"
+        pinStore.table.cursors["la:pu-1"] = waiting
+        // ② 伙伴早就到过，是用户刚刚主动解除的。
+        pinStore.table.cursors["lc:pu-1"] = publishedPinCursor(
+            pinPayload(lineage: "lc", rank: "W", splitPartner: "ld"), entityId: "srv-p2")
+        let client = FakePhiSyncClient()
+
+        let engine = makeEngine(client: client, access: spaceAccess, store: makeSpaceStore(),
+                                ownedKinds: [pinKind(pinAccess, pinStore)])
+        await engine.setSpaceSyncEnabled(true)
+        await engine.pullOnce()
+
+        let commits = pinCommits(client)
+        let waitingHalf = commits.first { $0.clientTagHash == pinHash("la") }
+            .flatMap(committedPin)
+        let releasedHalf = commits.first { $0.clientTagHash == pinHash("lc") }
+            .flatMap(committedPin)
+        XCTAssertEqual(waitingHalf?.splitPartnerUuid.stringValue, "lb",
+                       "伙伴还没落地 ⇒ 沿用基线，绝不发空串")
+        XCTAssertEqual(releasedHalf?.splitPartnerUuid.stringValue, "",
+                       "本机主动解除 ⇒ 发空串，不是重发基线里的旧伙伴")
+    }
+
+    /// CASE 5b.6（R-exec-5）— 远端 pin 落地时带上内容戳。
+    ///
+    /// 防的是什么：留 nil 的话，下一轮的本机比较戳回落到 `createdDate` = 落地时刻，于是这条
+    /// 刚从对端拿来的 pin 在下一次冲突里凭一个假的「我更新」赢掉对端的真实编辑。
+    func testARemotePinLandsWithTheEntitysOwnContentTimestamp() async throws {
+        let spaceAccess = makeSpaceAccess()
+        let pinAccess = FakePinAccess(scope: .profile, account: .profile)
+        let pinStore = MemoryOwnedItemStore()
+        let client = FakePhiSyncClient()
+        // 内容戳 5 s，远早于 `Clock` 那个 2023 年的「现在」。
+        client.scriptedPages = [page([
+            remoteEntity(envelope(pinPayload(lineage: "lx", contentStamp: 5_000)),
+                         tag: pinTag("lx"), version: 9, entityId: "srv-p1", key: key),
+        ])]
+
+        let engine = makeEngine(client: client, access: spaceAccess, store: makeSpaceStore(),
+                                ownedKinds: [pinKind(pinAccess, pinStore)])
+        await engine.setSpaceSyncEnabled(true)
+        await engine.pullOnce()
+
+        let landed = pinAccess.rows.first { PinKind.lineageKey($0.lineageId) == "lx" }
+        let stamp = landed?.contentUpdatedDate
+        XCTAssertEqual(stamp, Date(timeIntervalSince1970: 5),
+                       "落地的是实体的内容戳，不是 nil、也不是落地时刻")
     }
 }

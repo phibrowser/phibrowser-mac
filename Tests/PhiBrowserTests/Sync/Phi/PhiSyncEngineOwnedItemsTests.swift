@@ -3382,6 +3382,57 @@ final class PhiSyncEngineOwnedItemsTests: XCTestCase {
                      "② 还有行的那条身份一个字都不动")
     }
 
+    /// R-exec-11 ③ — 远端删掉 `(LX, space-a)`，而 `(LX, space-b)` 还在 ⇒ **只删那一行，而且
+    /// 不停放**。
+    ///
+    /// 这是 §4.5 落地后复核那一半的探针，与上面两条（差分那一半）配成一对。
+    ///
+    /// 防的是什么：复核一度只按**裸 lineage** 问「本机还有没有这条」，于是同一条 lineage 在
+    /// 别的 Space 下还有行时它答「在」。删除那一支把「在」读成「没删成」，于是这条 tombstone
+    /// 每一轮都被保守地停放、永远兑现不了——账户上那条实体死不掉，本机那一行却早就删了。
+    /// Mac B 2026-09-14 收到 A 那次 Test Space 取消固定之后停放了整整一分钟，就是这条。
+    func testARemotePinTombstoneLandsWhileTheSameLineageSurvivesInAnotherSpace() async throws {
+        let spaceAccess = makeSpaceAccess(["space-a": "su-1", "space-b": "su-2"])
+        let created = Date(timeIntervalSince1970: 1)
+        // 同一条 lineage 的两个 Space 副本，各自是一条账户实体（R-M3-3-15）。
+        let pinAccess = FakePinAccess(scope: .space, account: .space, rows: [
+            .fixture(lineageId: "LX", guid: "pa", spaceId: "space-a", index: 0,
+                     createdDate: created),
+            .fixture(lineageId: "LX", guid: "pb", spaceId: "space-b", index: 0,
+                     createdDate: created),
+        ])
+        let pinStore = MemoryOwnedItemStore()
+        // 两条身份都已发布过：一条 tombstone 没有载荷，身份要靠 §5.1 的 tag 索引反查，而 pin
+        // 这一侧索引的种子只有游标键。
+        pinStore.table.cursors["lx:su-1"] = publishedPinCursor(
+            pinPayload(lineage: "lx", ownerKey: "su-1"), entityId: "e-a", owner: "su-1")
+        pinStore.table.cursors["lx:su-2"] = publishedPinCursor(
+            pinPayload(lineage: "lx", ownerKey: "su-2"), entityId: "e-b", owner: "su-2")
+        let client = FakePhiSyncClient()
+        client.scriptedPages = [
+            page([remoteTombstone(tag: pinTag("lx", owner: "su-1"), version: 8,
+                                  entityId: "e-a")]),
+        ]
+
+        let engine = makeEngine(client: client, access: spaceAccess, store: makeSpaceStore(),
+                                ownedKinds: [pinKind(pinAccess, pinStore)])
+        await engine.setSpaceSyncEnabled(true)
+        await engine.pullOnce()
+
+        let table = await engine.ownedTableForTesting("pins")
+        let counters = await engine.lastOwnedRoundCountersForTesting["pins"]
+        XCTAssertEqual(pinAccess.lastAppliedOps, [.delete(guid: "pa")],
+                       "① 这一批只有那一条删除——同 lineage 跨 owner 不是变体，不重铸")
+        XCTAssertEqual(pinAccess.rows.map(\.guid), ["pb"], "② 另一个 Space 的副本原样留着")
+        XCTAssertEqual(counters?.applied, 1, "③ 落地了，不是停放")
+        XCTAssertEqual(counters?.parked, 0)
+        XCTAssertFalse(table.cursors["lx:su-1"]?.pendingTombstone ?? false,
+                       "④ 没有被停成工作集的一员")
+        XCTAssertNotNil(table.cursors["lx:su-1"]?.deletedAtMs, "⑤ 删除定案")
+        XCTAssertNil(table.cursors["lx:su-2"]?.deleteDecidedAtMs,
+                     "⑥ 还有行的那条身份一个字都不动")
+    }
+
     /// CASE 9b.3（T6b-1）— 同 rank 的两条 pin 按 **`pin_uuid`**（归一后的 lineage）破平手，
     /// **不按本机 guid**。
     ///

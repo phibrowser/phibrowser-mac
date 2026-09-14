@@ -658,7 +658,8 @@ final class LocalStoreBookmarkThrowingTests: XCTestCase {
     // CASE 6c.1 —— 一连串写入塌缩成一次下游信号，而且订阅当刻不发。
     //
     // 防抖住在 publisher 里（`LocalStore.changeSignalDebounce`），所以这里**直接订阅**，
-    // 不再自己拼一级 `.debounce`——断言量的是出厂形状，不是用例里组装出来的形状。
+    // 不再自己拼一级 `.debounce`——断言量的是出厂形状，不是用例里组装出来的形状。这也是四条
+    // 用例里**唯一**用出厂窗口的一条：它量的就是窗口本身，别人把那个常量改了它要跟着动。
     //
     // 「订阅当刻不发」这一半必须在**安静期跑完之后**才量得到，不能只 `drainMainQueue()` 一下
     // 就断言 0：订阅当刻真发了一次的话，那一次也要过完整个防抖窗口才到得了 sink，0.05 秒之后
@@ -704,12 +705,16 @@ final class LocalStoreBookmarkThrowingTests: XCTestCase {
                                                           parentId: nil)
 
         var received = 0
-        let cancellable = store.bookmarkChangesPublisher().sink { _ in received += 1 }
+        let cancellable = store.bookmarkChangesPublisher(debounceWindow: Self.shortDebounceWindow)
+            .sink { _ in received += 1 }
         defer { cancellable.cancel() }
 
         store.updateTabFavicon(guid, favicon: Data([0x01, 0x02, 0x03]))
         store.updateLastSeen(guid, seenAt: Date(timeIntervalSince1970: 1_700_000_000))
-        waitPastDebounceWindow()
+        // 先把两次写挤过写队列，再等窗口：不这么做，短窗口下这条用例会因为「写还没发生」
+        // 而通过。
+        await flushWrites(store)
+        waitPastDebounceWindow(Self.shortDebounceWindow)
 
         let observed = received
         XCTAssertEqual(observed, 0, "图标与 lastSeen 不进快照，一次都不许发")
@@ -728,17 +733,18 @@ final class LocalStoreBookmarkThrowingTests: XCTestCase {
         let store = try await makeStoreWithSpaces()
 
         var received = 0
-        let cancellable = store.pinnedTabChangesPublisher().sink { _ in received += 1 }
+        let cancellable = store.pinnedTabChangesPublisher(debounceWindow: Self.shortDebounceWindow)
+            .sink { _ in received += 1 }
         defer { cancellable.cancel() }
 
-        waitPastDebounceWindow()
+        waitPastDebounceWindow(Self.shortDebounceWindow)
         let afterQuietPeriod = received
         XCTAssertEqual(afterQuietPeriod, 0, "订阅当刻不发当前值")
 
         try await store.changePinnedTabScope(to: .space,
                                              preferredProfileId: Self.profileId,
                                              preferredSpaceId: LocalStore.defaultSpaceId)
-        waitPastDebounceWindow()
+        waitPastDebounceWindow(Self.shortDebounceWindow)
 
         let observed = received
         XCTAssertEqual(observed, 1, "一行 pin 都没有，变的只有作用域——它必须在快照里")
@@ -755,12 +761,14 @@ final class LocalStoreBookmarkThrowingTests: XCTestCase {
                                                 profileId: Self.profileId)
 
         var received = 0
-        let cancellable = store.pinnedTabChangesPublisher().sink { _ in received += 1 }
+        let cancellable = store.pinnedTabChangesPublisher(debounceWindow: Self.shortDebounceWindow)
+            .sink { _ in received += 1 }
         defer { cancellable.cancel() }
 
         store.updateTabFavicon(guid, favicon: Data([0x04, 0x05, 0x06]))
         store.updateLastSeen(guid, seenAt: Date(timeIntervalSince1970: 1_700_000_000))
-        waitPastDebounceWindow()
+        await flushWrites(store)
+        waitPastDebounceWindow(Self.shortDebounceWindow)
 
         let observed = received
         XCTAssertEqual(observed, 0, "图标与 lastSeen 不进快照，一次都不许发")
@@ -844,14 +852,23 @@ final class LocalStoreBookmarkThrowingTests: XCTestCase {
         RunLoop.main.run(until: Date().addingTimeInterval(0.05))
     }
 
-    /// 与 `LocalStore.changeSignalDebounce` 同一个值（那一个是 `private`，测试够不到）。
-    /// 用例不再自己拼防抖——窗口在 publisher 里——这个常量只用来算「要等多久才算跑过了
-    /// 安静期」。
-    private static let debounceWindow: TimeInterval = 2
+    /// 量「窗口之外的性质」的用例用的短窗口：去重、过滤、作用域进不进快照都与窗口多长无关，
+    /// 没有理由为每次断言各空转两秒。**只有 CASE 6c.1 用出厂的
+    /// `LocalStore.changeSignalDebounce`**——它量的就是窗口本身。
+    private static let shortDebounceWindow: TimeInterval = 0.2
 
-    /// 跑过整个防抖窗口再多留一点，让 `performBackgroundWrite` 那条 FIFO 队列上的写入与
-    /// 随后的主队列投递都有机会落地。
-    private func waitPastDebounceWindow() {
-        RunLoop.main.run(until: Date().addingTimeInterval(Self.debounceWindow + 1))
+    /// 跑过给定的防抖窗口再多留一点，让主队列上的投递有机会落地。
+    private func waitPastDebounceWindow(
+        _ window: TimeInterval = LocalStore.changeSignalDebounce
+    ) {
+        RunLoop.main.run(until: Date().addingTimeInterval(window + 0.6))
+    }
+
+    /// 把 fire-and-forget 的写入（`updateTabFavicon` / `updateLastSeen`）挤过那条 FIFO 写队列。
+    ///
+    /// 断言「零发射」的用例**必须**先做这一步，否则短窗口下它会因为写入根本还没落地而通过
+    /// ——一条永远绿、什么都没测的用例。
+    private func flushWrites(_ store: LocalStore) async {
+        await store.performBackgroundWriteAndWait { _ in }
     }
 }

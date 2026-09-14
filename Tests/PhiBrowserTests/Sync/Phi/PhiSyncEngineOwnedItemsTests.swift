@@ -1789,13 +1789,20 @@ final class PhiSyncEngineOwnedItemsTests: XCTestCase {
         let spaceAccess = makeSpaceAccess()
         // ①②两条本机行的 `splitPartnerLineageId` 都是 nil；①的标题与基线不同，于是它这一轮
         // 确实出门，投影出来的 `split_partner_uuid` 才观察得到。③那一对互相链着。
+        //
+        // **四条行都显式传 `createdDate`**：`PhiLocalPin.fixture` 的默认值是 1_000 **秒**，
+        // 而 `pinPayload` 的 `createdAtMs` 默认值是 1_000 **毫秒**，差一千倍。`created_at_ms`
+        // 是个裸值、不参与盖戳，所以两边不对齐时投影与基线**永远**不同——③那一对会照样出门，
+        // 而它们本该一个字节都不发。真实的一轮里基线就是由同一条行投影出来的，所以这是 fixture
+        // 的坑不是产品的（书签侧在 `0bba0ae5` 踩过同一个）。
+        let created = Date(timeIntervalSince1970: 1)
         let pinAccess = FakePinAccess(scope: .profile, account: .profile, rows: [
-            .fixture(lineageId: "LA", guid: "pa", index: 0, title: "A"),
-            .fixture(lineageId: "LC", guid: "pc", index: 1, title: "T"),
+            .fixture(lineageId: "LA", guid: "pa", index: 0, title: "A", createdDate: created),
+            .fixture(lineageId: "LC", guid: "pc", index: 1, title: "T", createdDate: created),
             .fixture(lineageId: "LE", guid: "pe", index: 2, title: "T",
-                     splitPartnerLineageId: "lf"),
+                     splitPartnerLineageId: "lf", createdDate: created),
             .fixture(lineageId: "LF", guid: "pf", index: 3, title: "T",
-                     splitPartnerLineageId: "le"),
+                     splitPartnerLineageId: "le", createdDate: created),
         ])
         let pinStore = MemoryOwnedItemStore()
         // ① 确实在等伙伴。四条基线的字段戳都是 100。

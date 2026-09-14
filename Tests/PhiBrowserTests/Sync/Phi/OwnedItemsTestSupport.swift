@@ -236,7 +236,7 @@ final class FakeBookmarkAccess: PhiBookmarkLocalAccess {
 final class FakePinAccess: PhiPinnedTabLocalAccess {
     enum Call: Equatable {
         case allPins
-        case allPinIdentities
+        case allPinRows
         case apply(opCount: Int)
         case changeScope(PinnedTabScope)
     }
@@ -247,13 +247,16 @@ final class FakePinAccess: PhiPinnedTabLocalAccess {
     /// 让两个读方法抛（R-exec-3）。**每次都抛，不自动清零**：一轮读失败的引擎行为是整段
     /// 跳过，用例要断言的正是「跳过了」，一次性的失败会让第二次读悄悄成功。
     var readError: Error?
-    /// 本机有行、但**不在快照里**的那些 lineage：作用域迁移原地留下的、当前作用域之外的
-    /// 备份行（R-exec-4）。`allPins()` 看不见它们，`allPinIdentities()` 必须看得见，否则
-    /// 差分把它们判成删除。
-    var outOfScopeLineageIds: Set<String> = []
+    /// 本机有行、但**不在快照里**的那些行：作用域迁移原地留下的、当前作用域之外的备份行
+    /// （R-exec-4）。`allPins()` 看不见它们，`allPinRows()` 必须看得见，否则差分把它们判成
+    /// 删除。
+    ///
+    /// **是行，不是 lineage**（R-exec-11）：每一条备份行保护的是**它自己那条**
+    /// `(lineage, owner)` 身份，所以它的 `spaceId` / `profileId` 必须写实。
+    var outOfScopeRows: [PhiLocalPin] = []
     /// 本轮有没有一份可用的快照，**与生产实现同一条契约**：`isKnownLocalPin` 只在本轮最后
     /// 一次成功的 `allPins()` 或 `apply(_:)` 之后有意义，否则交出「不在」那个值；
-    /// `allPinIdentities()` 在此之前抛。
+    /// `allPinRows()` 在此之前抛。
     private(set) var snapshotIsLoaded = false
     /// 下一次 `apply` 抛 `LocalStoreWriteError.storeUnavailable`，然后清零。**一行都不改。**
     var failApplyOnce = false
@@ -285,17 +288,16 @@ final class FakePinAccess: PhiPinnedTabLocalAccess {
             .sorted { (Self.ownerKey($0), $0.index, $0.guid) < (Self.ownerKey($1), $1.index, $1.guid) }
     }
 
-    /// 快照里的 lineage 加上作用域之外那些。生产实现是同一次 fetch 里未经作用域过滤的行；
-    /// 这里用一个显式的 `outOfScopeLineageIds` 表达同一件事，因为假件的 `rows` 本身没有
-    /// 「另一个作用域」的概念。
-    func allPinIdentities() throws -> Set<String> {
-        calls.append(.allPinIdentities)
+    /// 快照里的行加上作用域之外那些。生产实现是同一次 fetch 里未经作用域过滤的行；这里用
+    /// 一个显式的 `outOfScopeRows` 表达同一件事，因为假件的 `rows` 本身没有「另一个作用域」
+    /// 的概念。
+    func allPinRows() throws -> [PhiLocalPin] {
+        calls.append(.allPinRows)
         if let readError { throw readError }
         // 与生产实现同源：本轮没成功读过就抛，绝不交出一个会让差分把整批 pin 判成删除的
-        // 空集合。
+        // 空数组。
         guard snapshotIsLoaded else { throw LocalStoreWriteError.storeUnavailable }
-        return Set(rows.filter { !$0.isDormant }.map { PinKind.lineageKey($0.lineageId) })
-            .union(outOfScopeLineageIds.map(PinKind.lineageKey))
+        return (rows + outOfScopeRows).filter { !$0.isDormant }
     }
 
     /// 那一次 fetch 的行快照本身，**不再 fetch**、**不记调用**（理由同
@@ -309,10 +311,16 @@ final class FakePinAccess: PhiPinnedTabLocalAccess {
 
     /// **两边都过 `PinKind.lineageKey`**（P11），与生产实现同形：传进来的是线上归一过的小写
     /// lineage，而 `rows` 里那一列可能是大写。
-    func isKnownLocalPin(_ lineageId: String) -> Bool {
-        guard snapshotIsLoaded else { return false }
+    ///
+    /// **判据是完整身份 `(lineage, ownerKey)`**，同生产实现：只按 lineage 比的话，一条
+    /// `(L, spaceX)` 的行没了、而 `(L, spaceY)` 还在时照样答「在」。`ownerKey` 为 nil =
+    /// 调用方反查不出本机 owner ⇒ 本机不可能有这条身份的行。
+    func isKnownLocalPin(_ lineageId: String, ownerKey: String?) -> Bool {
+        guard snapshotIsLoaded, let ownerKey else { return false }
         let wanted = PinKind.lineageKey(lineageId)
-        return rows.contains { PinKind.lineageKey($0.lineageId) == wanted }
+        return rows.contains {
+            PinKind.lineageKey($0.lineageId) == wanted && Self.ownerKey($0) == ownerKey
+        }
     }
 
     func apply(_ batch: PinApplyBatch) async throws {

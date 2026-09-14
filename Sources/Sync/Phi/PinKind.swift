@@ -386,8 +386,16 @@ enum PinKind: OwnedItemKind {
         }
     }
 
-    /// 本机那一侧的 owner id，只用来分组（`normalizeVariants`）。
-    private static func localOwnerKey(_ local: PhiLocalPin) -> String {
+    /// 本机那一侧的 owner id：`normalizeVariants` 的分组键，也是
+    /// `PhiPinnedTabLocalAccess.isKnownLocalPin(_:ownerKey:)` 那半个身份。
+    ///
+    /// **判据与 `owner(of:resolve:)` 逐字同序**（先 `spaceId` 再 `profileId`，都没有才是
+    /// App 作用域），只是停在本机这一侧、不过映射表。两处分叉的后果是「本机有没有这条
+    /// 身份的行」在账户侧与本机侧问出两个答案。
+    ///
+    /// 与 `identity(of:resolve:scope:)` 的后半段是**两个命名空间**：那一个是账户级 uuid，
+    /// 这一个是本机 id。互相直接比较恒为假，中间必须过 `OwnerResolver` 的反查。
+    static func localOwnerKey(_ local: PhiLocalPin) -> String {
         local.spaceId ?? local.profileId ?? appOwnerKey
     }
 

@@ -119,6 +119,72 @@ final class PinnedTabScopeTests: XCTestCase {
         )
     }
 
+    /// 迁移之后，**同一个后台写上下文上的第二次写必须还能提交**，而且一条必填列为空的
+    /// `TabDataModel` 都不存在。
+    ///
+    /// 防的是什么：`insertPinnedTabs` 里 `applyPinnedTabOwner`（它写 `model.profile`）一度
+    /// 排在 `context.insert(model)` **之前**。`ProfileModel.tabs` 是那一笔的 inverse，于是
+    /// 每建一条 pin，SwiftData 就为那条 inverse 现造一个六个必填列全空的 `TabDataModel`
+    /// 替身登记进上下文。**迁移那一次 save 照样可能过**（Mac B 2026-09-14 的现场就是这样），
+    /// 坏在此后：替身留在上下文里，此后每一次 save 都把它们物化一遍并整批校验失败
+    /// （NSCocoaErrorDomain 1560），直到有人 rollback。所以**第二次写**才是这条用例的载荷。
+    ///
+    /// 3 条 lineage × 2 个 Space（`Default` 名下的 `space-a` / `space-b`）= 6 条新行，与现场
+    /// 那六个替身同一个规模。
+    func testASecondWriteStillCommitsAfterAProfileToSpaceMigration() async throws {
+        let store = try makeStore()
+        let fixture = try seedProfilesAndSpaces(in: store)
+        for (index, name) in ["one", "two", "three"].enumerated() {
+            try insertPinnedTab(
+                in: store,
+                guid: "pin-\(name)",
+                lineageId: "lineage-\(name)",
+                profile: fixture.defaultProfile,
+                title: name,
+                url: "https://\(name).example",
+                index: index
+            )
+        }
+
+        try await store.changePinnedTabScope(
+            to: .space,
+            preferredProfileId: "Default",
+            preferredSpaceId: "space-a"
+        )
+        try drainMainQueue()
+
+        XCTAssertEqual(store.pinnedTabScope(), .space)
+        XCTAssertEqual(
+            store.getAllPinnedTabs(for: "Default", spaceId: "space-a").count, 3
+        )
+        XCTAssertEqual(
+            store.getAllPinnedTabs(for: "Default", spaceId: "space-b").count, 3
+        )
+
+        // 载荷①：同一个后台上下文上的**第二次**写还能提交。走 throwing 那条入口，save 失败
+        // 会抛出来而不是只留一行日志。
+        let target = try XCTUnwrap(
+            store.getAllPinnedTabs(for: "Default", spaceId: "space-a").first
+        )
+        let targetGuid = target.guid
+        try await store.performBackgroundWriteAndWaitThrowing { context in
+            let descriptor = FetchDescriptor<TabDataModel>(
+                predicate: #Predicate<TabDataModel> { $0.guid == targetGuid }
+            )
+            let row = try XCTUnwrap(try context.fetch(descriptor).first)
+            row.title = "After migration"
+        }
+        try drainMainQueue()
+
+        XCTAssertEqual(store.getTab(by: targetGuid)?.title, "After migration",
+                       "第二次写必须真的落盘")
+
+        // 载荷②：一条必填列为空的行都没有。替身的签名就是六个必填列全 nil，`guid` 是其中
+        // 之一，所以空 guid 是它落盘之后唯一看得见的痕迹。
+        XCTAssertTrue(store.getAllTabs().allSatisfy { !$0.guid.isEmpty },
+                      "没有任何一条必填列为空的 TabDataModel 替身")
+    }
+
     func testProfilePinsWithoutDestinationSpaceSurviveScopeRoundTrip() async throws {
         let store = try makeStore()
         let fixture = try seedProfilesAndSpaces(in: store)

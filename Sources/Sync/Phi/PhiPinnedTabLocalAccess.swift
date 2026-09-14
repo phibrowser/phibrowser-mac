@@ -117,7 +117,7 @@ protocol PhiPinnedTabLocalAccess: PhiFaviconWriting {
     /// 设备都跟着删。返回一份悄悄过期的旧快照是同一类 bug 的另一种写法，所以也不做。
     func allPins() throws -> [PhiLocalPin]
 
-    /// 差分的定义域：本机**所有**非休眠 pin 行的归一 lineage，**不做作用域过滤**
+    /// 差分与 §9.3 级联的定义域来源：本机**所有**非休眠 pin 行，**不做作用域过滤**
     /// （R-exec-4，与 `allSyncIds()` 同一条）。
     ///
     /// §4.7 的「这条身份在本机还有没有行」用它，不用 `allPins()`：后者回答的是「同步层这
@@ -125,10 +125,21 @@ protocol PhiPinnedTabLocalAccess: PhiFaviconWriting {
     /// 里，但**永远不会被判成删除**——「同步层不认领它」与「账户应该忘掉它」是两句不同的
     /// 话。休眠行仍然排除在外：`isDormant` 的契约明写它不参与差分。
     ///
+    /// **交的是行，不是身份，而且判据是身份不是 lineage（R-exec-11）。** 身份是
+    /// `(lineage, owner)` 这一对，而 owner 那一半要过 `OwnerResolver` 才算得出来——那张映射
+    /// 表在引擎手上，不在这一层。所以这里交行，由调用方按**与出站快照逐字相同**的那条
+    /// 推导（`PinKind.identity(of local:resolve:scope:)`）各自算出身份。
+    ///
+    /// 于是**每一条行只保护它自己那一条身份**：一条 profile 形状的备份行保护
+    /// `(L, profileUuid)`，挡不住 `(L, spaceX)` 被判成删除。旧口径交的是**裸 lineage**，
+    /// 一条 lineage 只要还剩任何一行就把它名下**全部** owner 的游标一起保护住——Mac B
+    /// 2026-09-14 丢掉的那条 default-space pin 就是这样既不落地也不发 tombstone 的。
+    /// R-exec-4 的本意（备份行不被判成删除）照旧成立：它们的身份**在集合里**。
+    ///
     /// **与快照同一次 fetch**（L9）：它读的是 `allPins()` 那一次**未经作用域过滤**的行，
     /// 不是第二次查询。因此本轮没有成功读过时它**抛**，而不是自己补一次 fetch，更不是交出
-    /// 一个空集合——空集合正是 R-exec-4 要防的那个形状。
-    func allPinIdentities() throws -> Set<String>
+    /// 一个空数组——空集合正是 R-exec-4 要防的那个形状。
+    func allPinRows() throws -> [PhiLocalPin]
 
     /// **本轮最后一次成功的 `allPins()` 或 `apply(_:)` 留下的那份行快照**，**不再 fetch**
     /// （§5.7 第 2 条硬要求）。次序、作用域过滤与休眠过滤都与 `allPins()` 交出的那一份相同。
@@ -140,7 +151,21 @@ protocol PhiPinnedTabLocalAccess: PhiFaviconWriting {
     /// **`nil` = 本轮没有一份可用的快照**，调用方原样留着轮内那份投影，绝不清空。
     func cachedPins() -> [PhiLocalPin]?
 
-    /// 本机还有没有这条 lineage。理由同 `isKnownLocalBookmark`。
+    /// 本机还有没有**这条身份**的行。理由同 `isKnownLocalBookmark`。
+    ///
+    /// **问的是 `(lineage, owner)` 这一对，不是裸 lineage**（R-M3-3-15）。一条 lineage 在
+    /// N 个 Space 里就是 N 条实体，只按 lineage 问的话，一条 `(L, spaceX)` 的行明明已经没
+    /// 了，只要 `(L, spaceY)` 还在就照样答「在」——§4.5 的落地后复核于是给一条根本没落地
+    /// 的身份写基线，而一条本该落地的 `(L, spaceX)` 删除会被永远停放。
+    ///
+    /// `ownerKey` 是**本机那一侧**的 owner id（`PinKind.localOwnerKey(_:)`：先 `spaceId`
+    /// 再 `profileId`，都没有才是 `"app"`），不是账户级 uuid——两者是两个命名空间，调用方
+    /// 负责先过 `OwnerResolver` 的反查。反查不出本机形状时传 **nil**：那意味着本机根本不
+    /// 存在能坐出这条身份的 owner，于是答案是「不在」。
+    ///
+    /// **作用域之外的备份行不算「在」**：`allPins()` 的契约已经把它们滤掉，这里跟着它。
+    /// 那与 `allPinRows()`（R-exec-4，**不做**作用域过滤）是两个问题——「同步层这一轮认领
+    /// 哪些行」与「账户应该忘掉哪些身份」。两侧如今都按完整身份判，只是定义域一宽一窄。
     ///
     /// **收到的是线上归一过的小写 lineage**（P11）：实现必须把本机那一列也过一遍
     /// `PinKind.lineageKey(_:)` 再比。拿它直接与一个大写的列值比恒为假，后果是每一条本机
@@ -151,7 +176,7 @@ protocol PhiPinnedTabLocalAccess: PhiFaviconWriting {
     /// 那次重读抛了（那一批**已经提交**，只是快照跟不上了）。此时它返回 false 并在 DEBUG 下
     /// `assertionFailure`：非抛出的签名表达不了「我这次没读到」，而「每一条都答不在」正是
     /// 会让引擎整批发 tombstone 的那个静默默认值。
-    func isKnownLocalPin(_ lineageId: String) -> Bool
+    func isKnownLocalPin(_ lineageId: String, ownerKey: String?) -> Bool
 
     /// 一整轮远端落地，一个事务。抛错 = 一条都没落。
     func apply(_ batch: PinApplyBatch) async throws
@@ -178,8 +203,8 @@ protocol PhiPinnedTabLocalAccess: PhiFaviconWriting {
 /// 传进来即可，生产行为一字不变。（给书签 access 补同样的注入是一条 follow-up。）
 ///
 /// **每轮一次 fetch**（§4.8 / §5.7）：`allPins()` 跑那一次读并把结果投影成值快照，顺手建好
-/// 归一 lineage 的两份索引；`allPinIdentities()` 与 `isKnownLocalPin(_:)` 读的都是那一份
-/// 缓存，**不再 fetch**。
+/// 两份派生物；`allPinRows()` 与 `isKnownLocalPin(_:ownerKey:)` 读的都是那一份缓存，
+/// **不再 fetch**。
 @MainActor
 final class AccountPhiPinnedTabAccess: PhiPinnedTabLocalAccess {
     private let store: LocalStore
@@ -195,13 +220,19 @@ final class AccountPhiPinnedTabAccess: PhiPinnedTabLocalAccess {
 
     /// 本轮那一次 fetch 的投影结果。`allPins()` 重建，其余两个读者复用。
     private var cachedRows: [PhiLocalPin] = []
-    /// 快照里那些行的归一 lineage——`isKnownLocalPin(_:)` 的判据。
-    private var cachedLineageKeys: Set<String> = []
-    /// 差分的定义域：那一次 fetch 里**未经作用域过滤**的非休眠行的归一 lineage
-    /// （L9 / R-exec-4）。
-    private var cachedIdentityKeys: Set<String> = []
+    /// 快照里那些行的**完整身份** `<归一 lineage>:<本机 ownerKey>`——
+    /// `isKnownLocalPin(_:ownerKey:)` 的判据。
+    ///
+    /// 与下面那份定义域的两处差别都是有意的：这一份出自**作用域过滤之后**的 `active`
+    /// （问的是「同步层这一轮认领的行里还有没有它」），而且**带 owner**（身份是
+    /// `(lineage, owner)` 这一对）。
+    private var cachedIdentityPairs: Set<String> = []
+    /// 差分与级联的定义域来源：那一次 fetch 里**未经作用域过滤**的非休眠行
+    /// （L9 / R-exec-4 / R-exec-11）。上面那一份是它按作用域过滤之后的子集。
+    private var cachedFullStoreRows: [PhiLocalPin] = []
     /// 本轮有没有一份可用的快照。区分「读到了，就是空的」与「没读到」——后者让
-    /// `isKnownLocalPin(_:)` 答「不在」，而那正是会让引擎整批发 tombstone 的静默默认值。
+    /// `isKnownLocalPin(_:ownerKey:)` 答「不在」，而那正是会让引擎整批发 tombstone 的静默
+    /// 默认值。
     private var snapshotIsLoaded = false
 
     init(store: LocalStore, defaults: UserDefaults = .standard) {
@@ -232,14 +263,14 @@ final class AccountPhiPinnedTabAccess: PhiPinnedTabLocalAccess {
 
     /// 与快照**同一次** fetch 的产物，在作用域过滤**之前**取（R-exec-4 / L9）。
     ///
-    /// 本轮没成功读过就抛，绝不返回一个空集合：空集合在 §4.7 那边的含义是「本机一条 pin
+    /// 本轮没成功读过就抛，绝不返回一个空数组：空集合在 §4.7 那边的含义是「本机一条 pin
     /// 都没有了」，回答是给每一条游标发 tombstone。
-    func allPinIdentities() throws -> Set<String> {
+    func allPinRows() throws -> [PhiLocalPin] {
         guard snapshotIsLoaded else {
             AppLogError("[phi-sync] pin identities read before a successful snapshot")
             throw LocalStoreWriteError.storeUnavailable
         }
-        return cachedIdentityKeys
+        return cachedFullStoreRows
     }
 
     /// 那一次 fetch 的行快照本身，**不再 fetch**。`apply(_:)` 收尾已经重建过它，所以落地
@@ -254,9 +285,14 @@ final class AccountPhiPinnedTabAccess: PhiPinnedTabLocalAccess {
 
     /// **两边都过 `PinKind.lineageKey`**（P11）：传进来的是线上归一过的小写 lineage，而本机
     /// 那一列可能是 `UUID().uuidString`（大写）或一条回落成 guid 的旧值。直接比恒为假。
-    func isKnownLocalPin(_ lineageId: String) -> Bool {
+    ///
+    /// `ownerKey` 为 nil ⇒ 调用方反查不出本机 owner，本机不可能有这条身份的行 ⇒ 「不在」。
+    /// 这与「本轮没读到快照」那个 false 是两件事，所以它排在
+    /// `requireLoadedSnapshot()` 之后：误用仍然要在 DEBUG 下当场现形。
+    func isKnownLocalPin(_ lineageId: String, ownerKey: String?) -> Bool {
         guard requireLoadedSnapshot() else { return false }
-        return cachedLineageKeys.contains(PinKind.lineageKey(lineageId))
+        guard let ownerKey else { return false }
+        return cachedIdentityPairs.contains(PinKind.lineageKey(lineageId) + ":" + ownerKey)
     }
 
     // MARK: - 写
@@ -312,8 +348,8 @@ final class AccountPhiPinnedTabAccess: PhiPinnedTabLocalAccess {
     /// 看不出区别。
     private func invalidateCache() {
         cachedRows = []
-        cachedLineageKeys = []
-        cachedIdentityKeys = []
+        cachedIdentityPairs = []
+        cachedFullStoreRows = []
         snapshotIsLoaded = false
     }
 
@@ -353,10 +389,16 @@ final class AccountPhiPinnedTabAccess: PhiPinnedTabLocalAccess {
         let rows = fetched.active.map { Self.project($0, lineageByGuid: lineageByGuid) }
         // 两份索引与快照一起换上，中间没有任何一刻是「行在、索引不在」。
         cachedRows = rows
-        cachedLineageKeys = Set(rows.map { PinKind.lineageKey($0.lineageId) })
-        cachedIdentityKeys = Set(fetched.nonDormant.map {
-            PinKind.lineageKey($0.pinLineageId ?? $0.guid)
+        // 判据是**完整身份**：只按 lineage 建索引的话，一条 `(L, spaceX)` 的行没了、而
+        // `(L, spaceY)` 还在时，复核照样答「在」（R-M3-3-15）。
+        cachedIdentityPairs = Set(rows.map {
+            PinKind.lineageKey($0.lineageId) + ":" + PinKind.localOwnerKey($0)
         })
+        // 定义域交的是**行**：身份由调用方按 `PinKind.identity(of local:)` 算，与出站快照
+        // 同一条推导，于是每一条行只保护它自己那一条 `(lineage, owner)`（R-exec-11）。
+        cachedFullStoreRows = fetched.nonDormant.map {
+            Self.project($0, lineageByGuid: lineageByGuid)
+        }
         snapshotIsLoaded = true
     }
 

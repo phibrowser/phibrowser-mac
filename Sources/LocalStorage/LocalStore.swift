@@ -16,6 +16,12 @@ actor LocalStoreActor {
             try modelContext.save()
         } catch {
             AppLogError("[LocalStore] save error: \(error)")
+            // **回滚，与 `performThrowing` 同款。** `LocalStoreActor` 是一个
+            // `@ModelActor`，整个进程的后台写共用它这**一个** `modelContext`；一次失败的
+            // save 把那一批改动原样留在上下文里，于是此后每一次 save 都带着同一批坏对象
+            // 重试并同样失败——一条 fire-and-forget 的 UI 写就此让**全部**后台写（同步落
+            // 地也在内）持续失败，直到别处某个 throwing 写碰巧 rollback 了它。
+            modelContext.rollback()
         }
     }
 

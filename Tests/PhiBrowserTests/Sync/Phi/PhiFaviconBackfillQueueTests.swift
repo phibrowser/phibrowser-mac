@@ -42,6 +42,10 @@ final class RecordingFetcher: PhiFaviconFetching {
     var streamedBytes = 0
     /// 第 1 步交回的字节。nil ⇒ Chromium 那边没有这条 URL 的图标。
     var chromiumResponse: Data?
+    /// 第 1 步**永不主动返回**——模拟一个丢了回调的 bridge。它只在被取消时回来，而那正是
+    /// 生产实现用 `withTaskCancellationHandler` 换来的那条性质：不理会取消的第 1 步会把整个
+    /// 任务组连同 `drainOnce()` 一起钉死，套多少层截止时间都救不回来。
+    var chromiumNeverCompletes = false
 
     private var inFlight = 0
 
@@ -49,6 +53,12 @@ final class RecordingFetcher: PhiFaviconFetching {
 
     func chromiumFavicon(profileId: String, pageURL: URL) async -> Data? {
         chromiumLookups += 1
+        if chromiumNeverCompletes {
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: 5_000_000)
+            }
+            return nil
+        }
         return chromiumResponse
     }
 
@@ -368,6 +378,50 @@ final class PhiFaviconBackfillQueueTests: XCTestCase {
         XCTAssertTrue(line.contains("ms="))
         let requests = harness.fetcher.requests
         XCTAssertTrue(requests.isEmpty, "step 1 hitting means step 2 must never run")
+    }
+
+    // MARK: §8.2 — 第 1 步挂住时，这一行仍然走得到第 2 步，而且这一轮走得完
+
+    /// 丢了回调的 bridge。**这条用例的第一个断言其实是「它会返回」**：不理会取消的第 1 步
+    /// 会让任务组永远解不开，于是 `drainOnce()` 不返回、`run(_:)` 不返回、引擎那条串行轮次
+    /// 队列此后一轮都跑不动——那不是一条变红的断言，而是一次挂死。
+    func testALostBridgeCallbackFallsThroughToStepTwo() async {
+        let harness = makeHarness()
+        harness.fetcher.chromiumNeverCompletes = true
+        harness.queue.enqueue(rows(["https://h0.example/page"]))
+
+        let result = await harness.queue.drainOnce()
+
+        XCTAssertEqual(result.attempted, 1)
+        XCTAssertEqual(result.succeeded, 1, "step 2 must still run and land the icon")
+        let requests = harness.fetcher.requests.count
+        XCTAssertGreaterThanOrEqual(requests, 1)
+        let writes = harness.access.faviconWrites.count
+        XCTAssertEqual(writes, 1)
+    }
+
+    // MARK: §8.2 — 第 1 步的子预算严格小于一行的总预算
+
+    /// 没有这道子预算，一个系统性变慢的 bridge 会把第 2 步饿到**恰好零**：预算用完时连
+    /// 请求都不发，那一行就这么失败掉，而且不会重新排队。那种故障在日志上只表现为
+    /// `from_network=0`，与「本机历史里什么都有」长得一模一样。
+    func testStepOneCannotConsumeTheWholeRowBudget() async {
+        XCTAssertLessThan(PhiFaviconBackfillQueue.historyLookupTimeout,
+                          PhiFaviconBackfillQueue.perItemTimeout)
+
+        let harness = makeHarness()
+        harness.fetcher.chromiumNeverCompletes = true
+        harness.queue.enqueue(rows(["https://h0.example/page"]))
+
+        _ = await harness.queue.drainOnce()
+
+        guard let line = harness.sink.lines.first(where: { $0.contains("favicon backfill:") }) else {
+            XCTFail("the round must emit the §11.3 diagnostic line")
+            return
+        }
+        XCTAssertTrue(line.contains("from_network=1"),
+                      "a stalled step 1 must not starve step 2 out of the row budget")
+        XCTAssertTrue(line.contains("from_history=0"))
     }
 
     // MARK: §8.3 — 退休时丢弃未完成项并取消在飞的请求

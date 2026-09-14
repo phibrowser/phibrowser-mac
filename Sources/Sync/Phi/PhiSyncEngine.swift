@@ -447,7 +447,8 @@ actor PhiSyncEngine {
     /// `previewDeadlineMs`，页预算只是兜底。
     static let defaultPreviewMaxPages = 400
 
-    /// 最近一次预览的页数与实体数（§9.1）。成功、截断、超期三条路径都写它。
+    /// 最近一次预览的页数与实体数（§9.1）。`runPreview` **轮首清零、每一条出口都写它**，
+    /// 所以它永远是最近那一次预览的计数，不会是上一次的残值。
     /// 只有这两个数字：没有它们，一次线上截断在日志里与一次网络失败无法区分，而
     /// `PhiSpacePreviewError.truncated` **不带载荷**（给它加 associated value 会同时改坏
     /// 向导与两个测试文件里既有的 `case .truncated`），所以计数走这条独立的只读接缝。
@@ -946,6 +947,11 @@ actor PhiSyncEngine {
     /// §4.3 的轮体。跑在引擎 actor 的同一条 round 队列上；never call it directly.
     private func runPreview(into box: PreviewBox) async {
         let startedAt = now()
+        // 轮首清零。`lastPreviewStats` 是**这一次**预览的计数：不清零的话，一次在拿域密钥
+        // 上就失败的预览会让只读接缝与日志继续报上一次的页数，而那两个数字唯一的用处就是
+        // 分辨「这次截断了」与「这次根本没跑起来」。下面每一条出口都写它，前置失败那几条
+        // 写的就是这里的 (0, 0)。
+        lastPreviewStats = (0, 0)
         guard !isStopped else { box.result = .failure(.retired); return }
         let key: SymmetricKey
         do {
@@ -983,7 +989,11 @@ actor PhiSyncEngine {
                     return
                 }
                 let response = try await client.getUpdates(marker: marker, storeBirthday: storedBirthday)
-                guard !isStopped else { box.result = .failure(.retired); return }
+                guard !isStopped else {
+                    lastPreviewStats = (pages, entities)
+                    box.result = .failure(.retired)
+                    return
+                }
                 marker = response.newMarker
                 pages += 1
                 more = response.changesRemaining
@@ -1014,11 +1024,15 @@ actor PhiSyncEngine {
             // 预览不做任何游标清理，那是正式 pull 的职责。**这不是死路**：设置同步照常
             // 按 60 s 跑，它自己的 birthday 重试会把 `storedBirthday` 修好，下一次
             // Retry 就能过。
-            AppLogWarn("[phi-sync] space preview: pages=\(pages) error=not_my_birthday")
+            lastPreviewStats = (pages, entities)
+            AppLogWarn("[phi-sync] space preview: pages=\(pages) entities=\(entities) "
+                       + "error=not_my_birthday")
             box.result = .failure(.transport("not_my_birthday"))
             return
         } catch {
-            AppLogWarn("[phi-sync] space preview: pages=\(pages) error=\(PhiSyncLog.describe(error))")
+            lastPreviewStats = (pages, entities)
+            AppLogWarn("[phi-sync] space preview: pages=\(pages) entities=\(entities) "
+                       + "error=\(PhiSyncLog.describe(error))")
             box.result = .failure(.transport(PhiSyncLog.describe(error)))
             return
         }
@@ -5045,7 +5059,8 @@ extension PhiSyncEngine {
     /// 最近一轮每条注册 kind 的计数行（§11.2），按 `label` 索引。
     var lastOwnedRoundCountersForTesting: [String: OwnedRoundCounters] { ownedCounters }
 
-    /// 最近一次预览翻过几页、数过几条实体（§5.8）。成功、截断、超期三条路径都写它。
+    /// 最近一次预览翻过几页、数过几条实体（§5.8）。轮首清零，成功 / 截断 / 超期 / 退休 /
+    /// 传输失败每一条出口都写它，所以读到的绝不会是上一次预览的残值。
     ///
     /// **这是一条独立的只读接缝，不是 `.truncated` 的载荷**：给那个 case 加 associated
     /// value 会同时改坏向导里的两处 `case .truncated:` 与两个测试文件里既有的断言，而

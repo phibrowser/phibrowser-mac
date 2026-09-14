@@ -97,7 +97,8 @@ final class PhiSyncEngineOwnedItemsTests: XCTestCase {
                             clock: Clock = Clock(),
                             domainKeys: StubDomainKeys? = nil,
                             ownedKinds: [OwnedKindRegistration] = [],
-                            previewMaxPages: Int = 400) -> PhiSyncEngine {
+                            previewMaxPages: Int = PhiSyncEngine.defaultPreviewMaxPages)
+        -> PhiSyncEngine {
         PhiSyncEngine(domainKeys: domainKeys ?? StubDomainKeys(key: key),
                       client: client, defaults: defaults, deviceKeyId: "devA",
                       settings: [], spaceAccess: access ?? makeSpaceAccess(), spaceStore: store,

@@ -116,17 +116,36 @@ private struct PinnedTabMergeCandidate {
     let signature: PinnedTabVariantSignature
     var sourceGuids: [String]
     var lastSeen: Date?
+    /// 合并进来的各份副本里**最晚**的那个内容编辑戳，取法与 `lastSeen` 同。
+    ///
+    /// 只有内容签名相等的副本才会合并，所以合出来那一行的**内容**取谁都一样；但它们各自的
+    /// 编辑戳可以不同（两台机器把同一次编辑落在不同时刻）。只取 `source` 那一份的话，两台把
+    /// 集合排成不同顺序的机器会为同一份内容发布不同的比较戳，下一轮互相盖来盖去。取最大值
+    /// 与顺序无关，因此收敛。
+    var contentUpdatedDate: Date?
 }
 
 extension LocalStore {
     @MainActor
     func pinnedTabScope() -> PinnedTabScope {
-        guard let context = mainContext else { return .profile }
+        pinnedTabScopeIfReadable() ?? .profile
+    }
+
+    /// 同一次读，但**读不出来就答 nil**，而不是把 `.profile` 这个失败默认值伪装成行的取值。
+    ///
+    /// 库没打开（兼容性预检拒绝、`requiresNewerApp`、`ModelContainer` 打不开）或读抛错时，
+    /// `pinnedTabScope()` 交的 `.profile` 对本机 UI 是个安全的显示默认值，对**账户级**决策
+    /// 却不是：把它当成行播种进镜像键，会在一个从没发布过作用域的账户上把 `.profile` 定成
+    /// 账户取值。同步层的写者因此走这一个口（`PinnedTabScopeMirror.reseed` 的 `rowValue`
+    /// 契约），读者那一侧 `AccountPhiPinnedTabAccess.accountScope()` 对镜像键做的是同一件事。
+    @MainActor
+    func pinnedTabScopeIfReadable() -> PinnedTabScope? {
+        guard let context = mainContext else { return nil }
         do {
             return try pinnedTabScope(in: context)
         } catch {
             AppLogError("[LocalStore] Failed to read pinned-tab scope: \(error)")
-            return .profile
+            return nil
         }
     }
 
@@ -154,8 +173,16 @@ extension LocalStore {
             let settings = try self.browserDataSettings(in: context, createIfNeeded: true)
             settings?.pinnedTabScopeRawValue = newScope.rawValue
         }
-        // 本地 → 镜像（§7.1 第 2 步）。只在**成功路径**上写：键与行必须同生同死，写失败时
-        // 行没变，键也不许变。
+        // 本地 → 镜像（§7.1 第 2 步）。写在这里、在那次抛出写之后：迁移抛错时行没变，键也
+        // 不许变——键与行必须同生同死。
+        //
+        // **每一条不抛出的路径都写，包括上面 `guard currentScope != newScope` 那次空操作**
+        // （它 `return` 的是闭包，不是这个函数）。断言是「非抛出返回之后键 == 行」，而空操作
+        // 那一路行本来就等于 `newScope`，所以这次写是幂等的。它不是无条件安全的：镜像键正
+        // 押着一个**已落地、迁移尚未跑完**的账户值时（§7.1 第 3 步情形二），一个把目标定成
+        // 行当前值的调用会把那个账户值擦掉。两个生产调用方都先比过行才进来
+        // （`PhiChromiumCoordinator.applyAccountPinnedTabScope`、
+        // `SpacesSettingsView.requestPinnedTabScopeChange`），新调用方必须照做。
         //
         // 这是全仓库**唯一**一处刻意让 sidecar 落后于键值的地方——它是一次真实的用户（或
         // 远端落地之后的重放）操作，下一轮 `SyncableSettings.snapshot` 本来就该把它判成本地
@@ -720,6 +747,10 @@ extension LocalStore {
                        candidates[matchingIndex].lastSeen.map({ lastSeen > $0 }) ?? true {
                         candidates[matchingIndex].lastSeen = lastSeen
                     }
+                    if let edited = source.contentUpdatedDate,
+                       candidates[matchingIndex].contentUpdatedDate.map({ edited > $0 }) ?? true {
+                        candidates[matchingIndex].contentUpdatedDate = edited
+                    }
                     continue
                 }
 
@@ -728,7 +759,8 @@ extension LocalStore {
                     lineageId: lineageId,
                     signature: signature,
                     sourceGuids: [source.guid],
-                    lastSeen: source.lastSeen
+                    lastSeen: source.lastSeen,
+                    contentUpdatedDate: source.contentUpdatedDate
                 )
                 candidates.append(candidate)
                 candidateIndicesByLineage[lineageId, default: []].append(candidates.count - 1)
@@ -784,8 +816,9 @@ extension LocalStore {
             // 内容编辑戳必须跟着搬过来（R-M3-3-26 加的这一列，迁移路径当时没跟上）。不搬的
             // 话用户切一次作用域，本机每一条 pin 的比较戳就从「上次真实编辑」塌回
             // `createdDate`，于是它们在下一轮全部输给对端任意一次旧编辑——一次作用域切换变成
-            // 一次账户级的内容回滚。
-            model.contentUpdatedDate = source.contentUpdatedDate
+            // 一次账户级的内容回滚。取的是候选上那个**跨副本最大值**，不是 `source` 自己的
+            // 那一份，理由见 `PinnedTabMergeCandidate.contentUpdatedDate`。
+            model.contentUpdatedDate = candidate.contentUpdatedDate
             model.pinLineageId = candidate.lineageId
             try applyPinnedTabOwner(owner, to: model, in: context)
             context.insert(model)

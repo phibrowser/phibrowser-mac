@@ -528,4 +528,38 @@ final class SyncableSettingsTests: XCTestCase {
         XCTAssertEqual(sidecarTimestamp(key), 7)
         XCTAssertEqual(defaults.data(forKey: SyncableSettings.valueKey(for: key)), markerValue)
     }
+
+    /// CASE 8.7 — the local row could not be read, so nothing is written at all.
+    ///
+    /// `LocalStore.pinnedTabScope()` answers `.profile` whenever the store never opened, and
+    /// that failure default must not reach the mirror: on an account that has never published
+    /// a scope it would become the account-level value and drag every device through a full
+    /// pin migration.
+    func testReseedWritesNothingWhenTheRowCannotBeRead() {
+        let key = PinnedTabScopeMirror.pinnedTabScope.key
+
+        let outcome = PinnedTabScopeMirror.reseed(rowValue: nil, into: defaults)
+
+        XCTAssertEqual(outcome, .rowUnavailable)
+        XCTAssertNil(defaults.string(forKey: key), "an unreadable row must not seed the key")
+        XCTAssertNil(defaults.object(forKey: SyncableSettings.timestampKey(for: key)))
+        XCTAssertNil(defaults.data(forKey: SyncableSettings.valueKey(for: key)))
+    }
+
+    /// CASE 8.8 — an unreadable row does not drive a migration either, even when the mirror
+    /// key holds a different scope. There is no row to migrate, and the next mount replays.
+    func testReseedAsksForNoMigrationWhenTheRowCannotBeRead() {
+        let key = PinnedTabScopeMirror.pinnedTabScope.key
+        let markerValue = Data([0xAB, 0xCD])
+        defaults.set("profile", forKey: key)
+        defaults.set(NSNumber(value: Int64(7)), forKey: SyncableSettings.timestampKey(for: key))
+        defaults.set(markerValue, forKey: SyncableSettings.valueKey(for: key))
+
+        let outcome = PinnedTabScopeMirror.reseed(rowValue: nil, into: defaults)
+
+        XCTAssertEqual(outcome, .rowUnavailable)
+        XCTAssertEqual(defaults.string(forKey: key), "profile")
+        XCTAssertEqual(sidecarTimestamp(key), 7)
+        XCTAssertEqual(defaults.data(forKey: SyncableSettings.valueKey(for: key)), markerValue)
+    }
 }

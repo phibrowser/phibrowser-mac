@@ -173,8 +173,12 @@ final class AccountPhiPinnedTabAccess: PhiPinnedTabLocalAccess {
     private let defaults: UserDefaults
 
     /// Task 8 写的镜像偏好键。键缺失或值不认识 ⇒ `accountScope()` 返回 nil，引擎按「账户
-    /// 还没发过作用域」处理、不判不一致。**这里只读**，写那一侧是 Task 8 的事。
-    private static let accountScopeKey = "PhiPinnedTabScope"
+    /// 还没发过作用域」处理、不判不一致。**这里只读**，写那一侧在 `PinnedTabScopeMirror`。
+    ///
+    /// 引的是那边的常量，不另写一份同样的字面量：两份字符串分头改掉一份，这一侧会静默地
+    /// 永远答 nil（「账户还没发过作用域」），于是 §7.3 的不一致判据整条失效，而没有任何一条
+    /// 计数会变色。
+    private static var accountScopeKey: String { PinnedTabScopeMirror.key }
 
     /// 本轮那一次 fetch 的投影结果。`allPins()` 重建，其余两个读者复用。
     private var cachedRows: [PhiLocalPin] = []

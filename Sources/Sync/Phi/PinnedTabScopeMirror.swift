@@ -71,12 +71,15 @@ enum PinnedTabScopeMirror {
         case seeded
         /// 键与行不符：键没动，请按这个**镜像值**重跑一次本地迁移。
         case runLocalMigration(to: PinnedTabScope)
+        /// 行根本读不出来：**整轮零写入、也不跑迁移**。见 `reseed` 的 `rowValue` 契约。
+        case rowUnavailable
     }
 
     /// 挂载账户时重新播种镜像键（R-M3-3-8 / I12 / L4）。
     ///
     /// | 情形 | 动作 |
     /// |---|---|
+    /// | `rowValue` 为 **nil**（行读不出来） | 零写入、不跑迁移 ⇒ `.rowUnavailable` |
     /// | 镜像键**缺失** | 按行写键，并同批把两个 sidecar 写成与之匹配 ⇒ `.seeded` |
     /// | 镜像键存在但**与行不符** | 键不动（账户的值是权威），返回 `.runLocalMigration` |
     /// | 镜像键与行**一致** | 零写入，sidecar 也不碰 ⇒ `.noop` |
@@ -93,10 +96,20 @@ enum PinnedTabScopeMirror {
     /// 这条路径来重试。取「键权威 + 重跑迁移」之后，第一种情形也仍然收敛：串扰进来的那个
     /// 值会被账户的下一次快照对比纠正，代价至多是一次多余的迁移。
     ///
+    /// **`rowValue` 是可空的，nil 的含义是「这一行读不出来」，不是「行说 `.profile`」。**
+    /// `LocalStore.pinnedTabScope()` 在库根本没打开时答 `.profile`（兼容性预检拒绝、
+    /// `requiresNewerApp`、`ModelContainer` 打不开，三条路都会），而那种会话里引擎照样会建
+    /// 起来。把那个失败默认值当成行播种出去，等于在一个**从没发布过作用域**的账户上把
+    /// `.profile` 定成账户级取值，拖着每一台设备跑一次全量 pin 迁移；等这台机器下次用一个打
+    /// 得开库的构建启动，情形二又会判键权威，把用户真实的 pin 迁到 Profile 作用域去。
+    /// 这正是读者那一侧 `AccountPhiPinnedTabAccess.accountScope()` 拒绝回落成 `.profile` 的
+    /// 同一条理由——写者这一侧同样需要它。读不出来就整轮不动，下次挂载账户时重播。
+    ///
     /// - Parameters:
-    ///   - rowValue: SwiftData 单例行上的当前作用域。
+    ///   - rowValue: SwiftData 单例行上的当前作用域，**读不出来时传 nil**。
     ///   - defaults: 镜像键所在的偏好域（生产是 `UserDefaults.standard`）。
-    static func reseed(rowValue: PinnedTabScope, into defaults: UserDefaults) -> ReseedOutcome {
+    static func reseed(rowValue: PinnedTabScope?, into defaults: UserDefaults) -> ReseedOutcome {
+        guard let rowValue else { return .rowUnavailable }
         guard let raw = defaults.string(forKey: key),
               let mirrored = PinnedTabScope(rawValue: raw) else {
             seed(rowValue, into: defaults)

@@ -80,6 +80,18 @@ final class SyncKeyController {
     private let deviceKeyRotator: (any DeviceKeyRotating)?
     private let engineDefaults: UserDefaults
     private let spaceStateStore: (any PhiSpaceSyncStateStore)?
+    /// M3-3 §9.1：归属项（书签 / pin）的两张 per-kind 游标表，自撤销时**删文件**（不是保存
+    /// 一张空表）。空数组与 `spaceStateStore == nil` 同款含义——「这个 controller 没有归属项
+    /// 段」（单元测试，以及任何还没接线的构造点）。
+    ///
+    /// 持的是 store 而不是两个 URL：删文件是 `PhiOwnedItemStateStore` 契约里的一条
+    /// （`deleteFile()`），自己拼路径等于把 §3.5 的落点抄第二遍。
+    private let ownedItemStores: [any PhiOwnedItemStateStore]
+    /// M3-3 §9.1 的第二半：抹掉本机全部 `syncId`（**行保留**，只把那一列置 nil）。
+    ///
+    /// 注入成一个窄闭包，与 `notifyChromium` 同形：controller 今天既不持 `Account` 也不持
+    /// `LocalStore`，而自撤销的单元测试不该为了这一步去够真库。
+    private let clearAllSyncIds: (@Sendable () async throws -> Void)?
 
     /// What an announcement says about the two pairing predicates it arrives
     /// with. `false, false` is produced by all three cases and means something
@@ -147,7 +159,9 @@ final class SyncKeyController {
          retirePhiSync: @escaping () -> Void = {},
          deviceKeyRotator: (any DeviceKeyRotating)? = nil,
          engineDefaults: UserDefaults = .standard,
-         spaceStateStore: (any PhiSpaceSyncStateStore)? = nil) {
+         spaceStateStore: (any PhiSpaceSyncStateStore)? = nil,
+         ownedItemStores: [any PhiOwnedItemStateStore] = [],
+         clearAllSyncIds: (@Sendable () async throws -> Void)? = nil) {
         self.manager = manager
         self.approvals = approvals
         self.profileKeys = profileKeys
@@ -159,6 +173,8 @@ final class SyncKeyController {
         self.deviceKeyRotator = deviceKeyRotator
         self.engineDefaults = engineDefaults
         self.spaceStateStore = spaceStateStore
+        self.ownedItemStores = ownedItemStores
+        self.clearAllSyncIds = clearAllSyncIds
     }
 
     /// Hot path: the bridge delegate calls this on every Chromium pull.
@@ -255,12 +271,35 @@ final class SyncKeyController {
         // 3. Mappings, through the store -- never a direct AccountUserDefaults write.
         profileKeys.removeAllMappings()
         // D6 §2.3: the Space identity table goes with it. Order matters only in
-        // one direction -- both tables must be gone before step 4 wipes the
+        // one direction -- both tables must be gone before step 5 wipes the
         // cursor table, or a round that somehow survived would resolve a uuid
         // whose cursor no longer exists.
         spaceKeys?.removeAllMappings()
 
-        // 4. Engine state. `phi.sync.cursorAccount` is deliberately kept: it is
+        // 4. M3-3 §9.1 的归属项（书签 / pin）两步，**次序不能反过来：先删两个游标文件，
+        //    再清 `syncId`**（E14）。两种中途失败的后果不对称——
+        //    「文件没了、`syncId` 还在」是**可恢复**的：重新加入时那一次整类型重放
+        //    （R-M3-3-13 正是为这个形状写的）按身份把每条实体重新落回它原来那一行，游标
+        //    自己长回来；
+        //    「`syncId` 清了、文件还在」是**灾难**：游标说「我发布过这些身份」，本机却没有
+        //    任何行带这些身份，§4.7 的差分把**整张表**判成本机删除，重新加入后发出一批
+        //    tombstone，删掉账户上的整棵树。
+        //
+        //    删文件而不是保存一张空表（§3.5 的 `deleteFile()` 契约）：一张「正常的空表」
+        //    会让下一次 `load` 再也报不出损，于是那一次整类型重放不会发生。
+        for store in ownedItemStores { store.deleteFile() }
+        do {
+            // 行保留、只清 `syncId` 那一列——自撤销不是删数据。重新加入时这台机器的树是
+            // 「全部未同步」，§6 的认领会按 D10 与账户树重新对齐。
+            try await clearAllSyncIds?()
+        } catch {
+            // **只记 warn、不中断、也不回滚上面那次删文件**。服务端已经把这台设备撤销掉
+            // 了，离开账户无论如何都已成事实；而停在「文件没了、`syncId` 还在」正是上面
+            // 论证里可恢复的那一侧。处理方向与 step 2 的设备密钥轮换失败逐字相同。
+            AppLogWarn("[phi-sync] clearing local sync ids failed; the rows keep their identities (\(PhiSyncLog.describe(error)))")
+        }
+
+        // 5. Engine state. `phi.sync.cursorAccount` is deliberately kept: it is
         //    not a cursor, and dropping it would make the next build report a
         //    phantom account switch. Writing the Space table through the store
         //    directly is legal here precisely BECAUSE step 1 already shut the
@@ -274,7 +313,7 @@ final class SyncKeyController {
         spaceStateStore?.save(PhiSpaceSyncTable())
         PhiSpaceSyncState.shared.refreshCaches(from: PhiSpaceSyncTable())
 
-        // 5. Resolved cache + both predicates, and the join flag. The `.cleared`
+        // 6. Resolved cache + both predicates, and the join flag. The `.cleared`
         //    announcement `clearResolved()` posts does take the gate's window down
         //    (`ProfilePairingGate`'s `.cleared` branch), but `.cleared` may never
         //    retire `sync.joinPairingPending` -- only a `.measured` pass may, and

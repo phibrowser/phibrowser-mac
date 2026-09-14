@@ -2941,7 +2941,8 @@ final class PhiSyncEngineOwnedItemsTests: XCTestCase {
     /// 那一步会把 `PhiSyncEngine.stateKeys` 从传进去的域里删掉，而默认实参是
     /// `UserDefaults.standard`——那是这台机器上真正在用的同步游标。
     private func makeController(ownedStores: [any PhiOwnedItemStateStore],
-                                bookmarkAccess: FakeBookmarkAccess) async throws
+                                bookmarkAccess: FakeBookmarkAccess,
+                                ledger: SelfRevokeLedger = SelfRevokeLedger()) async throws
         -> SyncKeyController {
         let api = AccountKeyManagerTests.FakeAPI()
         let manager = AccountKeyManager(
@@ -2958,38 +2959,88 @@ final class PhiSyncEngineOwnedItemsTests: XCTestCase {
             localProfilesProvider: { [] }, notifyChromium: {},
             engineDefaults: defaults,
             ownedItemStores: ownedStores,
-            clearAllSyncIds: { try await bookmarkAccess.clearAllSyncIds() })
+            // 记在闭包**进入时**，不是返回之后：这一步会抛，而 CASE 9a.1 要断言的正是
+            // 「它开始的时候文件已经删掉了」。
+            clearAllSyncIds: {
+                ledger.note("clearSyncIds")
+                try await bookmarkAccess.clearAllSyncIds()
+            })
+    }
+
+    /// 自撤销那几步的**发生次序**。`@unchecked Sendable` 是因为 `clearAllSyncIds` 是一个
+    /// `@Sendable` 闭包；这些用例整体跑在 main actor 上，账本没有并发写入方。
+    final class SelfRevokeLedger: @unchecked Sendable {
+        private(set) var steps: [String] = []
+        func note(_ step: String) { steps.append(step) }
+    }
+
+    /// CASE 9a.1 的顺序探针用的游标 store：每一次副作用都记进共享账本。
+    ///
+    /// 单独写一个而不是给 `MemoryOwnedItemStore` 加成员：那个假件被本文件几十条用例共享，
+    /// 而这里要的是一份只有这一条用例关心的副作用流水。
+    private final class RecordingOwnedItemStore: PhiOwnedItemStateStore {
+        let ledger: SelfRevokeLedger
+        var table = PhiOwnedItemTable()
+        private(set) var deleted = false
+
+        init(ledger: SelfRevokeLedger) { self.ledger = ledger }
+
+        func load(hadRecords: Bool) -> (table: PhiOwnedItemTable, reportedLoss: Bool) {
+            ledger.note("load")
+            return (table, hadRecords && table.cursors.isEmpty)
+        }
+
+        func save(_ table: PhiOwnedItemTable) {
+            self.table = table
+            ledger.note("save")
+        }
+
+        func deleteFile() {
+            deleted = true
+            table = PhiOwnedItemTable()
+            ledger.note("deleteFile")
+        }
     }
 
     /// CASE 9a.1（spec engine 12）— 自撤销**先删两个游标文件，再清 `syncId`**。
     ///
-    /// 防的是什么：断言的是**顺序本身**，不只是终态。两种中途失败的后果不对称——停在
-    /// 「文件没了、`syncId` 还在」这一侧是**可恢复**的（重新加入时的整类型重放按身份把每条
-    /// 实体重新落回它原来那一行，游标自己长回来）；反过来「`syncId` 清了、文件还在」是
-    /// **灾难**：游标说「我发布过这些身份」，本机却没有任何行带这些身份，§4.7 的差分把整张
-    /// 表判成本机删除，重新加入后删掉账户上的整棵树。
+    /// 防的是什么：断言的是**顺序本身**。两种中途失败的后果不对称——停在「文件没了、
+    /// `syncId` 还在」这一侧是**可恢复**的（重新加入时的整类型重放按身份把每条实体重新落回
+    /// 它原来那一行，游标自己长回来）；反过来「`syncId` 清了、文件还在」是**灾难**：游标说
+    /// 「我发布过这些身份」，本机却没有任何行带这些身份，§4.7 的差分把整张表判成本机删除，
+    /// 重新加入后删掉账户上的整棵树。
     ///
-    /// 清 `syncId` 失败因此**只记 warn、不中断、也不回滚删文件**，precedent 是同一个方法里
-    /// 设备密钥轮换失败那一段。
+    /// **终态断不出这件事**（T9a-1）：清 `syncId` 失败是被有意吞掉的，所以把两步反过来写，
+    /// 「文件已删 + `syncId` 还在 + 清那一步跑过」三条**照样全部成立**。判据必须是两个副作用
+    /// 的**先后**，所以这里记一份流水账，由 `RecordingOwnedItemStore` 与注入的闭包共同写。
+    ///
+    /// 清 `syncId` 失败**只记 warn、不中断、也不回滚删文件**，precedent 是同一个方法里设备
+    /// 密钥轮换失败那一段。
     func testSelfRevokeDeletesTheCursorFilesBeforeItClearsTheSyncIds() async throws {
+        let ledger = SelfRevokeLedger()
         let access = FakeBookmarkAccess(rows: [
             .fixture(guid: "G1", syncId: "b1", spaceId: "space-a"),
         ])
-        // 第二步抛：终态因此停在两步之间，可以直接读出次序。
+        // 第二步抛：可恢复的那一侧，同时证明失败不回滚前一步。
         access.failClearSyncIds = true
-        let store = MemoryOwnedItemStore()
+        let store = RecordingOwnedItemStore(ledger: ledger)
         store.table.cursors["b1"] = ownedCursor(entityId: "srv-b1", version: 1,
                                                 ownerUuid: "su-1")
         ProfilePairingGate.staticPendingOverride = true
         defer { ProfilePairingGate.staticPendingOverride = nil }
 
-        let controller = try await makeController(ownedStores: [store], bookmarkAccess: access)
+        let controller = try await makeController(ownedStores: [store], bookmarkAccess: access,
+                                                  ledger: ledger)
         try await controller.removeThisDeviceFromSync()
 
-        XCTAssertTrue(store.deleted, "① 游标文件先删掉了")
-        XCTAssertTrue(access.calls.contains(.clearAllSyncIds), "② 清 `syncId` 那一步确实跑过")
+        XCTAssertEqual(ledger.steps, ["deleteFile", "clearSyncIds"],
+                       "① 次序本身：文件先删，`syncId` 后清。反过来写这一条就红")
+        XCTAssertTrue(store.deleted, "② 清 `syncId` 抛了也不回滚那次删文件")
         XCTAssertEqual(access.rows.first?.syncId, "b1",
                        "③ 它抛了，`syncId` 原样留在行上——可恢复的那一侧")
+        XCTAssertTrue(access.calls.contains(.clearAllSyncIds), "④ 清 `syncId` 那一步确实跑过")
+        XCTAssertFalse(ledger.steps.contains("save"),
+                       "⑤ 自撤销**删文件**，绝不保存一张空表：空表会让下一次 `load` 再也报不出损")
     }
 
     /// CASE 9a.2（spec engine 11）— 保留期级联**幂等**，且对活行 **fail-safe**（E11 + A12）。
@@ -3088,6 +3139,64 @@ final class PhiSyncEngineOwnedItemsTests: XCTestCase {
         XCTAssertFalse(applied, "④ 退休之后没有任何落地")
     }
 
+    /// CASE 9a.4（§3.6）— 清理轮丢弃删除定案满 30 天的 tombstone 游标，**两条 kind 都过**。
+    ///
+    /// 防的是什么：`PhiOwnedItemTable.dropExpiredTombstones` 从 Task 0 起就写好了，但在这一
+    /// 条之前**没有任何调用方**——于是每一条被删过的书签 / pin 都在那张表里留一条永久游标，
+    /// 而一次大规模整理正是这张表最不该永久增长的时刻。§3.6 的窗口复用
+    /// `PhiSpaceSyncState.retentionMs`，与 M1 §2 的恢复窗口是同一个 30 天。
+    ///
+    /// 边界取在窗口两侧各一毫秒：判据是 `now - deletedAtMs <= retentionMs` 时保留，所以
+    /// 「正好满 30 天」那一条是**留着**的，`window + 1` 才丢。
+    func testTheSweepDropsOwnedTombstoneCursorsPastTheRetentionWindow() async throws {
+        let clock = Clock()
+        let nowMs = clock.nowMs
+        let window = PhiSpaceSyncState.retentionMs
+        let spaceAccess = makeSpaceAccess(["space-a": "su-1"])
+        let created = Date(timeIntervalSince1970: 1)
+
+        let bookmarkAccess = FakeBookmarkAccess(rows: [
+            .fixture(guid: "G1", syncId: "live", spaceId: "space-a"),
+        ])
+        let bookmarks = MemoryOwnedItemStore()
+        bookmarks.table.cursors["live"] = ownedCursor(entityId: "srv-live", version: 1,
+                                                       ownerUuid: "su-1")
+        var staleBookmark = ownedCursor(entityId: "srv-old", version: 1, ownerUuid: "su-1")
+        staleBookmark.deletedAtMs = nowMs - window - 1
+        bookmarks.table.cursors["old"] = staleBookmark
+        var freshBookmark = ownedCursor(entityId: "srv-young", version: 1, ownerUuid: "su-1")
+        freshBookmark.deletedAtMs = nowMs - window + 1
+        bookmarks.table.cursors["young"] = freshBookmark
+
+        let pinAccess = FakePinAccess(scope: .profile, account: .profile, rows: [
+            .fixture(lineageId: "LP", guid: "pp", index: 0, createdDate: created),
+        ])
+        let pins = MemoryOwnedItemStore()
+        pins.table.cursors["lp:pu-1"] = ownedCursor(entityId: "srv-lp", version: 1,
+                                                     ownerUuid: "pu-1")
+        var stalePin = ownedCursor(entityId: "srv-pold", version: 1, ownerUuid: "pu-1")
+        stalePin.deletedAtMs = nowMs - window - 1
+        pins.table.cursors["pold:pu-1"] = stalePin
+
+        let engine = makeEngine(client: FakePhiSyncClient(), access: spaceAccess,
+                                store: makeSpaceStore(), clock: clock,
+                                ownedKinds: [bookmarkKind(bookmarkAccess, bookmarks),
+                                             pinKind(pinAccess, pins)])
+        await engine.setSpaceSyncEnabled(true)
+        await engine.runRetentionSweep()
+
+        let bookmarkTable = await engine.ownedTableForTesting("bookmarks")
+        let pinTable = await engine.ownedTableForTesting("pins")
+        XCTAssertNil(bookmarkTable.cursors["old"], "① 过了窗口的 tombstone 游标整条丢弃")
+        XCTAssertNotNil(bookmarkTable.cursors["young"], "② 还在窗口里的留着")
+        XCTAssertNotNil(bookmarkTable.cursors["live"],
+                        "③ 活游标没有 `deletedAtMs`，一个字节都不动")
+        XCTAssertNil(pinTable.cursors["pold:pu-1"], "④ 这一趟走注册清单，两条 kind 都过")
+        XCTAssertNotNil(pinTable.cursors["lp:pu-1"])
+        XCTAssertNil(bookmarks.table.cursors["old"], "⑤ 落了盘")
+        XCTAssertNil(pins.table.cursors["pold:pu-1"])
+    }
+
     // MARK: - CASE 9b.1 – 9b.3：生命周期（pin 半边）
 
     /// CASE 9b.1 — 复活按 **update** 发，沿用 tombstone 那条实体与版本。
@@ -3135,37 +3244,45 @@ final class PhiSyncEngineOwnedItemsTests: XCTestCase {
                      "④ 复活被服务端接受之后才清 `deletedAtMs`，否则 §4.2 第 3b 条每轮再复活一次")
     }
 
-    /// CASE 9b.2 — pin 的 purge 级联走的是 Task 9a 那一条通用规则：两条判据都成立才删游标，
-    /// 命中 (a) 但**还有活行认领**时不删。
+    /// CASE 9b.2 — pin 的 purge 级联，判据 (b) 的粒度是**完整身份**而不是裸 lineage
+    /// （T9a-2），fail-safe 那一半照旧。
     ///
-    /// **与 brief 的 Expected 有一处对不上，未断言，留待裁定。** brief 写的是「`ownerUuid`
-    /// 改写成新 Space 的 syncUuid」，而 pin 的**身份本身**就带着 owner
-    /// （`PinKind.identity(of local:)` = `<lineageKey>:<eligibilityOwner>`），且引擎里每一个
-    /// `cursor.ownerUuid` 的写入方都取 `snapshot.ownerUuids[identity]` = 同一个
-    /// `eligibilityOwner`——所以一条 pin 游标的 `ownerUuid` 与它自己的键的后半段**永远相等**，
-    /// 改写成 `su-2` 会让它与键矛盾。一条换了 Space 的 pin 按 §7.2 是「旧身份 tombstone + 新
-    /// 身份 create」，而发出那条 tombstone 的前提正是**旧游标还在**——所以这里断言的是「不
-    /// 删」，把 `ownerUuid` 留给差分去用。
+    /// pin 的**身份本身**带着 owner（`PinKind.identity(of local:)` =
+    /// `<lineageKey>:<eligibilityOwner>`），而引擎里每一个 `cursor.ownerUuid` 的写入方都取
+    /// `snapshot.ownerUuids[identity]` = 同一个 `eligibilityOwner`——所以一条 pin 游标的
+    /// `ownerUuid` 与它自己的键的后半段**永远相等**，rehome 那一支对 pin 结构上到不了。换
+    /// owner 按 §7.2 走「旧身份 tombstone + 新身份 create」，不是原地改写归属。
     ///
-    /// 防的是什么：删掉 `lx:su-1` 的游标，账户上那条实体从此没有任何设备发得出它的
-    /// tombstone，永久孤儿；而 `ly:su-1` 那条本机一条行都没有，留着它就是 §4.7 的差分下一轮
-    /// 拿来盲发 tombstone 的那类孤儿。
-    func testThePinRetentionCascadeKeepsACursorWhoseLineageStillHasALiveRow() async throws {
+    /// 三条游标覆盖三条不同的路：
+    ///
+    /// - `lx:su-1` —— 那条 lineage 还在，但它现在坐在**另一个 owner**（`space-b`）下。按裸
+    ///   lineage 判会让它被永久保护住：删不掉（看起来有活行认领）、也改不了（它的身份配不上
+    ///   任何本机行），于是永远带着一个指向已清理 Space 的 `ownerUuid`。按完整身份判 ⇒ 删。
+    /// - `lz:su-1` —— 行还留在那个被清理的 Space 里（数据级联抛过错，映射与行都留着）。这是
+    ///   A12 的 fail-safe：有活行认领这条身份 ⇒ 不删。
+    /// - `ly:su-1` —— 本机一条行都没有 ⇒ 两条判据都成立 ⇒ 删。
+    ///
+    /// 防的是什么：删掉一条**活行**的游标，那条行下一轮被差分判成从未发布过，于是以
+    /// `baseVersion == 0` 的 create 盲写覆盖账户上那一条；反过来永远留着一条 owner 已被清理
+    /// 的游标，§9.3 的这一趟就白跑了。
+    func testThePinRetentionCascadeMatchesOnTheFullIdentityNotTheBareLineage() async throws {
         let spaceAccess = makeSpaceAccess(["space-a": "su-1", "space-b": "su-2"])
         let spaceStore = makeSpaceStore()
+        // `su-1` 的 30 天清理已经跑过：phase 1 盖上的 `purgedAtMs` 还在。
         spaceStore.table.cursors["su-1"] = purgedSpaceCursor()
         let created = Date(timeIntervalSince1970: 1)
-        // Space 作用域：行的 owner 就是它所在 Space 的 syncUuid。`LX` 现在坐在 `space-b`
-        // 里（身份因此已经是 `lx:su-2`）；`LY` 本机一条行都没有。
+        // Space 作用域：行的 owner 就是它所在 Space 的 syncUuid。
         let pinAccess = FakePinAccess(scope: .space, account: .space, rows: [
             .fixture(lineageId: "LX", guid: "px", spaceId: "space-b", index: 0,
                      createdDate: created),
+            .fixture(lineageId: "LZ", guid: "pz", spaceId: "space-a", index: 1,
+                     createdDate: created),
         ])
         let pinStore = MemoryOwnedItemStore()
-        pinStore.table.cursors["lx:su-1"] = ownedCursor(entityId: "srv-lx", version: 1,
-                                                        ownerUuid: "su-1")
-        pinStore.table.cursors["ly:su-1"] = ownedCursor(entityId: "srv-ly", version: 1,
-                                                        ownerUuid: "su-1")
+        for identity in ["lx:su-1", "ly:su-1", "lz:su-1"] {
+            pinStore.table.cursors[identity] = ownedCursor(entityId: "srv-" + identity,
+                                                           version: 1, ownerUuid: "su-1")
+        }
 
         let engine = makeEngine(client: FakePhiSyncClient(), access: spaceAccess,
                                 store: spaceStore, ownedKinds: [pinKind(pinAccess, pinStore)])
@@ -3173,12 +3290,18 @@ final class PhiSyncEngineOwnedItemsTests: XCTestCase {
         await engine.runRetentionSweep()
 
         let table = await engine.ownedTableForTesting("pins")
-        XCTAssertNotNil(table.cursors["lx:su-1"],
-                        "① 本机还有这条 lineage 的活行 ⇒ 判据 (b) 不成立，游标不许删")
-        XCTAssertNil(table.cursors["ly:su-1"],
-                     "② 一条活行都没有认领它 ⇒ 两条判据都成立，游标删掉")
-        XCTAssertNotNil(pinStore.table.cursors["lx:su-1"], "③ 落了盘")
-        XCTAssertNil(pinStore.table.cursors["ly:su-1"])
+        let counters = await engine.lastOwnedRoundCountersForTesting["pins"]
+        XCTAssertNil(table.cursors["lx:su-1"],
+                     "① 同 lineage、**另一个 owner** 下的行不构成对这条身份的认领 ⇒ 删")
+        XCTAssertNil(table.cursors["ly:su-1"], "② 一条行都没有 ⇒ 删")
+        XCTAssertNotNil(table.cursors["lz:su-1"],
+                        "③ 行还留在那个被清理的 Space 里 ⇒ A12 的 fail-safe，不许删")
+        XCTAssertEqual(table.cursors["lz:su-1"]?.ownerUuid, "su-1",
+                       "④ 归属没变，也就没有 rehome 可做")
+        XCTAssertEqual(counters?.rehomedCursors, 0,
+                       "⑤ pin 的身份带着 owner，rehome 那一支对它结构上到不了")
+        XCTAssertNil(pinStore.table.cursors["lx:su-1"], "⑥ 落了盘")
+        XCTAssertNotNil(pinStore.table.cursors["lz:su-1"])
     }
 
     /// CASE 9b.3（T6b-1）— 同 rank 的两条 pin 按 **`pin_uuid`**（归一后的 lineage）破平手，

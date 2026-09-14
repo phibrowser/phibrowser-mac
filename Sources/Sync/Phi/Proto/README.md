@@ -232,20 +232,30 @@ Reserved ranges are **declared in the proto**, not just described here: `PhiSpac
 reserves 11-14, `PhiBookmarkEntity` 12-15 and `PhiPinTabEntity` 10-13, all for M3-4 / M4.
 Until M3-3 these were comments only, which protoc does not enforce; with the declarations in
 place, reusing one of those numbers is a compile failure rather than a code-review catch. The
-declarations are wire-neutral (a reserved range emits no field), and the numbers are pinned by
-`PhiEntityGoldenBytesTests`, which also proves no known field claims one of them.
+declarations are wire-neutral (a reserved range emits no field), and
+`PhiEntityGoldenBytesTests` pins that an unknown field inside each range survives a decode and
+re-encode verbatim. That probe cannot detect a *re-declared* number — a build that gave field
+12 a real name would decode the same bytes into that field and the test would still see the
+known fields it asserts on. The `reserved` keyword is the guard; the test only pins the
+preservation half.
 
 `PhiPinTabEntity.owner` is the one field in this schema that is **not** always emitted: an
 absent `owner` IS the App scope, because absence here is one of three exhaustive values rather
 than "an older client never knew about it".
 
-**Reserved-field preservation is a contract, not a side effect.** A build that does not know
-fields 11-14 must still hand them back untouched, or two clients of different versions strip
+**Reserved-field preservation is a contract, not a side effect.** A build that does not know a
+reserved field must still hand it back untouched, or two clients of different versions strip
 each other's content on every round. `SwiftProtobuf` parks them in `unknownFields`, so the rule
-for any code that rebuilds a `PhiSpaceEntity` is: start from the message that carries the
-authoritative bytes and overwrite the known fields, never from a fresh `Phi_PhiSpaceEntity()`.
-`SyncableSpaces.merge(local:remote:)` starts from `remote` for exactly this reason, and
-`SyncableSpacesTests.testMergeKeepsAnUnknownReservedFieldWrittenByANewerClient` pins it.
+for any code that rebuilds one of these payload messages is: start from the message that
+carries the authoritative bytes and overwrite the known fields, never from a fresh
+`Phi_Phi…Entity()`. All three merge implementations start from `remote` for exactly this
+reason, each pinned by its own test:
+
+| Message | Merge | Pinned by |
+| --- | --- | --- |
+| `PhiSpaceEntity` | `SyncableSpaces.merge(local:remote:)` | `SyncableSpacesTests.testMergeKeepsAnUnknownReservedFieldWrittenByANewerClient` |
+| `PhiBookmarkEntity` | `BookmarkKind.merge(local:remote:)` | `SyncableOwnedItemsTests.testUnknownFieldsSurviveAMerge` |
+| `PhiPinTabEntity` | `PinKind.merge(local:remote:)` | (shares the rule; no dedicated probe) |
 
 ## Client tags
 

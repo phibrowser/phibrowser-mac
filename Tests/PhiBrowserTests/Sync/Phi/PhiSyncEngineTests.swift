@@ -28,20 +28,58 @@ final class PhiSyncEngineTests: XCTestCase {
 
     /// A one-shot gate. `wait()` suspends until someone calls `open()`, which is how a test
     /// parks a round inside the fake network call and then lets it go.
+    ///
+    /// **The wait is bounded.** Every call site depends on the engine actually reaching the
+    /// instrumented `getUpdates` / `commit` under whatever gating condition the case set up.
+    /// If that condition ever stops matching what the case assumed, an unbounded
+    /// `withCheckedContinuation` is never resumed -- and XCTest applies no timeout to an
+    /// `await` inside a test body, so the failure would present as a stuck suite rather than
+    /// a red test. On expiry the waiter is resumed with a failure, `XCTFail` is attributed to
+    /// the caller's own `wait()` line, and control returns. The success path is unchanged:
+    /// `open()` still resumes every waiter, and a `wait()` after `open()` still returns at once.
     actor Gate {
+        /// Ten seconds. Between a park and its `open()` these cases do a handful of
+        /// `Task.yield()`s and one in-memory round, so spending this is only ever possible if
+        /// the gate is never going to open at all.
+        static let defaultTimeout: TimeInterval = 10
+
         private var isOpen = false
-        private var waiters: [CheckedContinuation<Void, Never>] = []
+        private var waiters: [UUID: CheckedContinuation<Bool, Never>] = [:]
 
         func open() {
             guard !isOpen else { return }
             isOpen = true
-            for waiter in waiters { waiter.resume() }
+            for waiter in waiters.values { waiter.resume(returning: true) }
             waiters.removeAll()
         }
 
-        func wait() async {
+        func wait(timeout: TimeInterval = Gate.defaultTimeout,
+                  file: StaticString = #filePath,
+                  line: UInt = #line) async {
             guard !isOpen else { return }
-            await withCheckedContinuation { waiters.append($0) }
+            let id = UUID()
+            // Detached on purpose: the deadline must not inherit this actor's isolation, or it
+            // would be ordered behind whatever is already queued on it.
+            let deadline = Task.detached { [self] in
+                do { try await Task.sleep(nanoseconds: UInt64(max(timeout, 0) * 1_000_000_000)) }
+                catch { return }                 // cancelled -- the gate opened first
+                await expire(id)
+            }
+            // The continuation is registered synchronously inside this closure, before the
+            // actor is ever yielded, so `expire` cannot arrive ahead of it.
+            let opened = await withCheckedContinuation { (continuation: CheckedContinuation<Bool, Never>) in
+                waiters[id] = continuation
+            }
+            deadline.cancel()
+            if !opened {
+                XCTFail("gate never opened within \(timeout)s", file: file, line: line)
+            }
+        }
+
+        /// Expiry releases *this* waiter only. The gate stays shut and every other waiter keeps
+        /// its own deadline, so one timed-out site cannot silently unpark the rest.
+        private func expire(_ id: UUID) {
+            waiters.removeValue(forKey: id)?.resume(returning: false)
         }
     }
 

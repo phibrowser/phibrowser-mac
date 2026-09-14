@@ -943,7 +943,12 @@ actor PhiSyncEngine {
     /// 本机读失败改变不了其中任何一个。`beginOwnedRound()` 在读抛错之前就已经把游标表载进
     /// `ownedTables` 了，所以这一趟照常成立。
     private func dropExpiredOwnedTombstones() async {
-        guard !ownedKinds.isEmpty, spaceStore != nil else { return }
+        // 与归属段的其余部分同一道门（`ownedItemsPublishAllowed` / `pushOwnedItems` / 落地段
+        // 的 `spaceLive`）。门关着时这一趟不可能有产出——没有任何一轮写过游标表，所以也没有
+        // 到期的 tombstone 可丢——而 `beginOwnedRound()` 是一整趟主线程书签树读 + pin 读。
+        // 关着门的用户因此不必为一次必然空转的清理付这个代价。判据只有游标自己的
+        // `deletedAtMs` 与 `now`，都不随门开关变化：门再开时下一趟清理轮照常把它们丢掉。
+        guard spaceSectionEnabled, !ownedKinds.isEmpty, spaceStore != nil else { return }
         await beginOwnedRound()
         let nowMs = now()
         for registration in ownedKinds {
@@ -983,7 +988,9 @@ actor PhiSyncEngine {
     /// `ownerUuid` 每一轮 snapshot 的预处理都为表里每一条**在本机有对应行**的游标刷新一次
     /// （N3 / I9 / R-exec-8）。
     private func applyOwnedRetentionCascade() async {
-        guard !ownedKinds.isEmpty, spaceStore != nil else { return }
+        // 同上那道门。门关着时候选集恒为空：判据 (a) 要求 `purgedAtMs != nil`，而 Space 那
+        // 半趟清理自己就卡在 `guard let spaceAccess` 上、从来没有清掉过任何一个 Space。
+        guard spaceSectionEnabled, !ownedKinds.isEmpty, spaceStore != nil else { return }
         // 轮首那一次本机读 + 游标表读。它自己按 kind 记 `ownedReadFailed`（R-exec-3），
         // 一轮至多跑一次，所以这里与别的轮次共用同一个入口而不是自己再读一遍。
         await beginOwnedRound()

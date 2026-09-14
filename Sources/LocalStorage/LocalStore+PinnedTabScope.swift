@@ -1133,7 +1133,7 @@ extension LocalStore {
             tabToMove.isCreatedByChromium = false
             tabToMove.pinLineageId = tabLineageId ?? tabToMove.guid
             context.insert(tabToMove)
-            AppLogInfo("[LocalStore] Created new pinned tab with guid: \(tabGuid)")
+            AppLogInfo("[LocalStore] Created new pinned tab with guid: \(String(tabGuid.prefix(8)))")
         }
 
         if tabToMove.pinLineageId == nil {

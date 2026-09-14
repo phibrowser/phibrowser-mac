@@ -655,27 +655,26 @@ final class LocalStoreBookmarkThrowingTests: XCTestCase {
 
     // MARK: - store 级的变化 publisher（§5.7）
 
-    // CASE 6c.1 —— 一连串写入塌缩成一次下游信号。
+    // CASE 6c.1 —— 一连串写入塌缩成一次下游信号，而且订阅当刻不发。
     //
-    // 两级合起来才是「恰好一次」，所以这里把协调器那条订阅的形状逐字照搬：publisher 每条
-    // 匹配的 save 发一次（值快照去重之后），2 s 防抖把一连串塌成一次。少了防抖这一级，30
-    // 次写入就是 30 次推送。
+    // 防抖住在 publisher 里（`LocalStore.changeSignalDebounce`），所以这里**直接订阅**，
+    // 不再自己拼一级 `.debounce`——断言量的是出厂形状，不是用例里组装出来的形状。
     //
-    // 顺带钉住「订阅当刻不发」：`spacesPublisher` / `bookmarksPublisher` 的上游是
-    // `CurrentValueSubject` 并在订阅当刻就送一次当前值，那是 UI 要的语义；引擎要的是**变化**
-    // 通知，照抄那个形状会让下面这条断言变成 2。
+    // 「订阅当刻不发」这一半必须在**安静期跑完之后**才量得到，不能只 `drainMainQueue()` 一下
+    // 就断言 0：订阅当刻真发了一次的话，那一次也要过完整个防抖窗口才到得了 sink，0.05 秒之后
+    // 去数它必然是 0，断言于是永远成立、永远发现不了问题。先空等过一整个窗口、确认零发射，
+    // 再放那 30 条写入，两半才都是真的。
     func testBookmarkChangesPublisherCollapsesABurstOfWritesIntoOneSignal() async throws {
         let store = try await makeStoreWithSpaces()
 
         var received = 0
-        let cancellable = store.bookmarkChangesPublisher()
-            .debounce(for: .seconds(Self.debounceWindow), scheduler: DispatchQueue.main)
-            .sink { _ in received += 1 }
+        let cancellable = store.bookmarkChangesPublisher().sink { _ in received += 1 }
         defer { cancellable.cancel() }
 
-        drainMainQueue()
-        let afterSubscribe = received
-        XCTAssertEqual(afterSubscribe, 0, "订阅当刻不发当前值")
+        // 一个字节都没写，跑过整个防抖窗口：seed 的那一次发射会在这里现形。
+        waitPastDebounceWindow()
+        let afterQuietPeriod = received
+        XCTAssertEqual(afterQuietPeriod, 0, "订阅当刻不发当前值")
 
         for index in 0..<30 {
             let url = try XCTUnwrap(URL(string: "https://example.com/burst-\(index)"))
@@ -695,7 +694,8 @@ final class LocalStoreBookmarkThrowingTests: XCTestCase {
     // 防的是什么：这两个字段不在 `PhiLocalBookmark` 里，所以它们进不了值快照。真让它们进
     // 去，Task 10 的回填队列每写回一条图标就触发一次推送，而那次推送发的内容与账户上的
     // 完全相同——一台机器每轮空跑几十次提交。两次写都会发 `NSManagedObjectContextDidSave`
-    // 并通过类型过滤，被吃掉的地方是值快照去重那一级，不是过滤器。
+    // 并通过类型过滤、也确实会起防抖计时器，被吃掉的地方是安静期之后那一次投影比出来逐字节
+    // 相同，不是过滤器。把 `updatedDate` 加进 `BookmarkChangeSnapshot` 这条用例立刻转红。
     func testBookmarkChangesPublisherIgnoresFaviconAndLastSeenWrites() async throws {
         let store = try await makeStoreWithSpaces()
         let guid = try await store.createBookmarkThrowing(url: Self.exampleURL,
@@ -704,12 +704,61 @@ final class LocalStoreBookmarkThrowingTests: XCTestCase {
                                                           parentId: nil)
 
         var received = 0
-        let cancellable = store.bookmarkChangesPublisher()
-            .debounce(for: .seconds(Self.debounceWindow), scheduler: DispatchQueue.main)
-            .sink { _ in received += 1 }
+        let cancellable = store.bookmarkChangesPublisher().sink { _ in received += 1 }
         defer { cancellable.cancel() }
 
         store.updateTabFavicon(guid, favicon: Data([0x01, 0x02, 0x03]))
+        store.updateLastSeen(guid, seenAt: Date(timeIntervalSince1970: 1_700_000_000))
+        waitPastDebounceWindow()
+
+        let observed = received
+        XCTAssertEqual(observed, 0, "图标与 lastSeen 不进快照，一次都不许发")
+    }
+
+    // 作用域本身进快照（T6c-6 / ledger 4）。
+    //
+    // 防的是什么：一次纯作用域翻转在**每一条** `TabDataModel` 上一个字节都不改，而「同步层
+    // 这一轮认领哪一批行」整个换了。快照里只放行、把作用域留在外面的话，过滤器虽然放行了
+    // 那次 `BrowserDataSettingsModel` 的 save，去重却会把它当成「什么都没变」吃掉，引擎于是
+    // 永远不知道作用域翻过。
+    //
+    // 用例**一条 pin 都不建**，正是为了让这次翻转除了作用域之外无事可改：真有 pin 在，
+    // `migratePinnedTabs` 会顺手改行，那样即使作用域不在快照里断言也照样通过。
+    func testPinnedTabChangesPublisherEmitsWhenOnlyTheScopeChanges() async throws {
+        let store = try await makeStoreWithSpaces()
+
+        var received = 0
+        let cancellable = store.pinnedTabChangesPublisher().sink { _ in received += 1 }
+        defer { cancellable.cancel() }
+
+        waitPastDebounceWindow()
+        let afterQuietPeriod = received
+        XCTAssertEqual(afterQuietPeriod, 0, "订阅当刻不发当前值")
+
+        try await store.changePinnedTabScope(to: .space,
+                                             preferredProfileId: Self.profileId,
+                                             preferredSpaceId: LocalStore.defaultSpaceId)
+        waitPastDebounceWindow()
+
+        let observed = received
+        XCTAssertEqual(observed, 1, "一行 pin 都没有，变的只有作用域——它必须在快照里")
+    }
+
+    // pin 侧的 6c.2。`updateLastSeen` 对 `.pinnedTab` 与 `.bookmark` 都写，所以这条路在 pin
+    // 上同样成立，而 Task 10 的图标回填两种行都碰。
+    func testPinnedTabChangesPublisherIgnoresFaviconAndLastSeenWrites() async throws {
+        let store = try await makeStoreWithSpaces()
+        let guid = "pin-favicon"
+        try await store.createPinnedTabThrowing(guid: guid,
+                                                url: Self.exampleURL,
+                                                title: "A",
+                                                profileId: Self.profileId)
+
+        var received = 0
+        let cancellable = store.pinnedTabChangesPublisher().sink { _ in received += 1 }
+        defer { cancellable.cancel() }
+
+        store.updateTabFavicon(guid, favicon: Data([0x04, 0x05, 0x06]))
         store.updateLastSeen(guid, seenAt: Date(timeIntervalSince1970: 1_700_000_000))
         waitPastDebounceWindow()
 
@@ -795,8 +844,9 @@ final class LocalStoreBookmarkThrowingTests: XCTestCase {
         RunLoop.main.run(until: Date().addingTimeInterval(0.05))
     }
 
-    /// 与 `PhiChromiumCoordinator.phiSyncPushDebounce` 同一个值。两条订阅的防抖窗口是
-    /// 生产形状的一半，这里照搬它，免得用例在一个自己编出来的窗口上成立。
+    /// 与 `LocalStore.changeSignalDebounce` 同一个值（那一个是 `private`，测试够不到）。
+    /// 用例不再自己拼防抖——窗口在 publisher 里——这个常量只用来算「要等多久才算跑过了
+    /// 安静期」。
     private static let debounceWindow: TimeInterval = 2
 
     /// 跑过整个防抖窗口再多留一点，让 `performBackgroundWrite` 那条 FIFO 队列上的写入与

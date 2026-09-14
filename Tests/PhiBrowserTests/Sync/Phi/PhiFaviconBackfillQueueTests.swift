@@ -27,6 +27,8 @@ final class RecordingFetcher: PhiFaviconFetching {
     private(set) var chromiumLookups = 0
     /// `streamedBytes` 那条路上真的读进内存的字节数（每次尝试各自计，取最后一次）。
     private(set) var bytesActuallyRead = 0
+    /// `cancelAll()` 被调了几次（`stop()` ⇒ §8.3 的「取消队列并丢弃未完成项」）。
+    private(set) var cancelAllCalls = 0
 
     /// 第 2 步每次都失败（HTTP 500）。
     var alwaysFail = false
@@ -42,6 +44,8 @@ final class RecordingFetcher: PhiFaviconFetching {
     var chromiumResponse: Data?
 
     private var inFlight = 0
+
+    func cancelAll() { cancelAllCalls += 1 }
 
     func chromiumFavicon(profileId: String, pageURL: URL) async -> Data? {
         chromiumLookups += 1
@@ -74,17 +78,12 @@ final class RecordingFetcher: PhiFaviconFetching {
         if alwaysFail { throw PhiFaviconFetchError.badStatus(500) }
 
         if streamedBytes > 0 {
-            // 边下边计：一块一块读，越过上限立刻断，**绝不先读完再看 `count`**。
-            var read = 0
-            while read < streamedBytes {
-                read += min(4096, streamedBytes - read)
-                bytesActuallyRead = read
-                if read > PhiFaviconBackfillQueue.maxBytes {
-                    throw PhiFaviconFetchError.tooLarge
-                }
-                await Task.yield()
-            }
-            return Data(count: read)
+            // **假件刻意不自设上限**：它模拟的是一个没能在流中途收手的取图器，于是用例断言
+            // 的是队列自己那道 `accepts` 后备闸（真的生产行为），而不是假件循环里的一个常量。
+            // 生产侧那道边下边断住在 `PhiFaviconFetcher.readBounded`，测它要一个 URLProtocol
+            // 夹具，不在本任务范围内。
+            bytesActuallyRead = streamedBytes
+            return Data(count: streamedBytes)
         }
         return responseBytes ?? validPNGBytes()
     }
@@ -260,9 +259,12 @@ final class PhiFaviconBackfillQueueTests: XCTestCase {
         XCTAssertEqual(fourthHop, 0, "the fourth hop is past the limit and must not be requested")
     }
 
-    // MARK: CASE 10.8 — 超限响应边下边断
+    // MARK: CASE 10.8 — 超限响应被拒，队列自己有一道后备闸
 
-    func testAnOversizedResponseIsAbandonedMidStream() async {
+    /// 断言的是**生产行为**：即使取图器没能在流中途收手、把整段 1 MB 交了回来，队列的
+    /// `accepts` 也不会让它落地。上限常量与生产流式读取用的是同一个，所以这条用例同时把
+    /// 那个数钉住。
+    func testAnOversizedBodyIsRejectedEvenWhenTheFetcherFailsToCapIt() async {
         let harness = makeHarness()
         harness.fetcher.streamedBytes = 1_000_000
         harness.queue.enqueue(rows(["https://h0.example/page"]))
@@ -270,8 +272,12 @@ final class PhiFaviconBackfillQueueTests: XCTestCase {
         let result = await harness.queue.drainOnce()
 
         XCTAssertEqual(result.succeeded, 0)
+        XCTAssertEqual(result.failed, 1)
+        let writes = harness.access.faviconWrites.count
+        XCTAssertEqual(writes, 0, "an over-size body must never reach the store")
         let read = harness.fetcher.bytesActuallyRead
-        XCTAssertLessThanOrEqual(read, PhiFaviconBackfillQueue.maxBytes + 4096)
+        XCTAssertEqual(read, 1_000_000, "the fake deliberately read it all; the queue still refused")
+        XCTAssertEqual(PhiFaviconBackfillQueue.maxBytes, 65_536)
     }
 
     // MARK: CASE 10.9 — 解不开的字节被拒
@@ -335,5 +341,122 @@ final class PhiFaviconBackfillQueueTests: XCTestCase {
         XCTAssertFalse(lines.contains { $0.contains("secret-host") },
                        "R12: a back-fill log line must never carry a host")
         XCTAssertTrue(lines.contains { $0.contains("attempted=") })
+    }
+
+    // MARK: §11.3 — 那条诊断行的字段
+
+    /// spec §11.3 逐字规定了
+    /// `[phi-sync] favicon backfill: queued=<n> from_history=<n> from_network=<n> failed=<n> ms=<n>`。
+    /// `from_history` / `from_network` 的分法是 §8.3 里唯一一个与隐私相关的数：它回答「这条
+    /// 队列到底有没有在向第三方发请求」。
+    func testTheRoundLineCarriesTheSpecMandatedCounters() async {
+        let harness = makeHarness()
+        harness.fetcher.chromiumResponse = validPNGBytes()
+        harness.queue.enqueue(rows(["https://h0.example/page"]))
+
+        _ = await harness.queue.drainOnce()
+
+        guard let line = harness.sink.lines.first(where: { $0.contains("favicon backfill:") }) else {
+            XCTFail("the round must emit the §11.3 diagnostic line")
+            return
+        }
+        XCTAssertTrue(line.contains("queued=1"))
+        XCTAssertTrue(line.contains("from_history=1"),
+                      "a row served from Chromium history must not be counted as a network fetch")
+        XCTAssertTrue(line.contains("from_network=0"))
+        XCTAssertTrue(line.contains("failed=0"))
+        XCTAssertTrue(line.contains("ms="))
+        let requests = harness.fetcher.requests
+        XCTAssertTrue(requests.isEmpty, "step 1 hitting means step 2 must never run")
+    }
+
+    // MARK: §8.3 — 退休时丢弃未完成项并取消在飞的请求
+
+    func testStopDiscardsPendingRowsAndCancelsTheFetcher() async {
+        let harness = makeHarness()
+        harness.queue.enqueue(rows((0..<30).map { "https://h\($0).example/page" }))
+
+        harness.queue.stop()
+        let afterStop = await harness.queue.drainOnce()
+
+        XCTAssertEqual(afterStop.attempted, 0)
+        XCTAssertEqual(afterStop.succeeded, 0)
+        XCTAssertEqual(afterStop.failed, 0)
+        // `stop()` 同步返回，清理排一次主 actor 跃迁再做。
+        for _ in 0..<20 { await Task.yield() }
+        let cancels = harness.fetcher.cancelAllCalls
+        XCTAssertEqual(cancels, 1)
+    }
+}
+
+// MARK: - 过滤表
+
+/// `PhiFaviconHostFilter.allows` 的表驱动用例。
+///
+/// 这是本任务唯一一块直接测生产判据的覆盖：CASE 10.5 / 10.6 经由假件间接用到它，但那两条
+/// 只走六个 host。真正危险的是**同一个地址的别的写法**——展开的 IPv6 回环、十六进制 v4
+/// 映射、八进制与十进制整数 IPv4 —— 它们全都解析成 127.0.0.1，而没有一个长得像 `127.x`。
+@MainActor
+final class PhiFaviconHostFilterTests: XCTestCase {
+
+    private func check(_ string: String, _ expected: Bool, line: UInt = #line) {
+        guard let url = URL(string: string) else {
+            XCTAssertFalse(expected, "\(string) did not parse as a URL at all", line: line)
+            return
+        }
+        let allowed = PhiFaviconHostFilter.allows(url)
+        XCTAssertEqual(allowed, expected, "wrong verdict for \(string)", line: line)
+    }
+
+    func testSchemeAndEmptyHostAreRejected() {
+        check("file:///etc/passwd", false)
+        check("https:///x", false)
+        check("ftp://example.com/x", false)
+        check("phi://newtab", false)
+    }
+
+    func testLocalNamesAreRejected() {
+        check("http://localhost/x", false)
+        check("http://app.localhost/x", false)
+        check("http://printer.local/x", false)
+        check("http://local/x", false)
+    }
+
+    func testDottedDecimalPrivateAndLoopbackAreRejected() {
+        check("http://127.0.0.1/x", false)
+        check("http://192.168.1.1/x", false)
+        check("http://10.0.0.5/x", false)
+        check("http://172.16.0.1/x", false)
+        check("http://169.254.1.1/x", false)
+        check("http://100.64.0.1/x", false)
+        check("http://0.0.0.0/x", false)
+    }
+
+    /// 这四行是审阅点名的四种绕过写法，每一种都落在 127.0.0.1 上。
+    func testAlternateIPv4AndIPv6EncodingsAreRejected() {
+        check("http://0177.0.0.1/x", false)        // 八进制：0177 = 127
+        check("http://2130706433/x", false)        // 十进制整数
+        check("http://127.1/x", false)             // 两段
+        check("http://0x7f.0.0.1/x", false)        // 十六进制
+        check("http://[::1]/x", false)             // 紧凑 IPv6 回环
+        check("http://[0:0:0:0:0:0:0:1]/x", false) // 展开的同一个地址
+        check("http://[::ffff:7f00:1]/x", false)   // 十六进制 v4 映射
+        check("http://[fe80::1]/x", false)         // link-local
+        check("http://[fd00::1]/x", false)         // unique local
+    }
+
+    /// 规则是「数字字面量一律拒」，公网地址也不例外——favicon 的 host 来自书签里的页面
+    /// URL，那些是 DNS 名字。
+    func testEvenAPublicIPLiteralIsRejected() {
+        check("https://93.184.216.34/x", false)
+    }
+
+    func testOrdinaryDNSNamesAreAllowed() {
+        check("https://example.com/x", true)
+        check("http://sub.example.co.uk/page", true)
+        check("https://secret-host.example/page", true)
+        check("https://localhost.example.com/x", true)
+        check("https://example.local.com/x", true)
+        check("https://1and1.com/x", true)
     }
 }

@@ -796,16 +796,26 @@ extension LocalStore {
         let nonDormant: [TabDataModel]
     }
 
-    /// 一次 fetch（带 `\.profile` 预取）+ 一次作用域读，其余全在内存里。
-    func pinSyncFetch(in context: ModelContext) throws -> PinSyncFetch {
+    /// 非休眠的**全部** pin 行，**未经作用域过滤**（带 `\.profile` 预取）。
+    ///
+    /// 两个调用方共用这一条判据，而且必须共用：`PinSyncFetch.nonDormant`（差分的定义域）与
+    /// §5.7 那条变化信号的值快照（`LocalStore.pinnedTabChangesPublisher`）问的是同一个问题
+    /// ——「本机现在有哪些 pin 行」。各写一遍就会走偏，而走偏的后果不对称：快照那边的行集合
+    /// 比差分那边**小**，就会有一类真实变化永远发不出信号。
+    func nonDormantPinModels(in context: ModelContext) throws -> [TabDataModel] {
         let pinnedRaw = TabDataType.pinnedTab.rawValue
         var descriptor = FetchDescriptor<TabDataModel>(
             predicate: #Predicate<TabDataModel> { $0.type == pinnedRaw }
         )
         // owner 推导要读 `profile?.profileId`；不预取就是每行一次 fault。
         descriptor.relationshipKeyPathsForPrefetching = [\.profile]
+        return try context.fetch(descriptor).filter { !$0.isPinnedTabDormant }
+    }
+
+    /// 一次 fetch（带 `\.profile` 预取）+ 一次作用域读，其余全在内存里。
+    func pinSyncFetch(in context: ModelContext) throws -> PinSyncFetch {
         let scope = try pinnedTabScope(in: context)
-        let nonDormant = try context.fetch(descriptor).filter { !$0.isPinnedTabDormant }
+        let nonDormant = try nonDormantPinModels(in: context)
         let active = nonDormant
             .filter { pinnedTab($0, belongsTo: scope) }
             .sorted { lhs, rhs in

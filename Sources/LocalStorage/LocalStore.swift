@@ -796,15 +796,24 @@ extension LocalStore {
     // 上。去重仍然留着，因为防抖只保证「安静了 2 秒」，不保证「真的变了」——favicon 回填照样
     // 起计时器，安静期过后那唯一一次投影比下来逐字节相同，于是什么都不发。
 
-    /// 两条信号共用的防抖窗口。与 `PhiChromiumCoordinator.phiSyncPushDebounce` 是同一个 2 秒
+    /// 两条信号默认的防抖窗口。与 `PhiChromiumCoordinator.phiSyncPushDebounce` 是同一个 2 秒
     /// 窗口，但**有意各存一份**：把协调器那个常量引进 `LocalStorage` 就是一条新的跨层依赖，
     /// 而这一层本来就不认识那一层。窗口挪进 publisher 之后协调器那两条订阅不再自己防抖，
     /// 否则端到端延迟会变成 4 秒。
-    private static let changeSignalDebounce: TimeInterval = 2
+    ///
+    /// 两个 publisher 都收一个 `debounceWindow` 参数并默认到它，**只为用例**：一条用例要么
+    /// 量的是「窗口本身」（那就用默认值，别人改了常量它要跟着动），要么量的是窗口之外的性质
+    /// （去重、过滤、作用域进不进快照），后者没有理由为每次断言各空转两秒。生产调用一律走
+    /// 默认值。
+    static let changeSignalDebounce: TimeInterval = 2
 
     /// 整账户的书签 / 文件夹变化信号（§5.7）。订阅当刻不发。
     ///
     /// 防抖在这里，不在协调器：一连串 save 要在**任何一次投影发生之前**塌掉。
+    ///
+    /// **必须在主线程订阅**（`Deferred` 体内有 `dispatchPrecondition`）。基线快照在订阅当刻
+    /// 现取，而它读 `mainContext`；从别的线程订阅会在 SwiftData 的主上下文上并发读，那是
+    /// 一类不会当场报错、只会偶尔交出半截数据的错误。协调器与用例都在主 actor 上订阅。
     ///
     /// **favicon、`lastSeen` 与 `updatedDate` 不进快照**，所以一次 `updateTabFavicon` /
     /// `updateLastSeen` 起了防抖计时器、但安静期过后那唯一一次投影比下来逐字节相同，什么都
@@ -815,12 +824,15 @@ extension LocalStore {
     /// 同一个返回值被订两次就必须各自记各自的，否则第二个订阅者永远比不出差别、一个信号都
     /// 收不到。协调器在 `stopPhiSync()` 之后会重新挂订阅，所以这不是理论情形。
     @MainActor
-    func bookmarkChangesPublisher() -> AnyPublisher<Void, Never> {
+    func bookmarkChangesPublisher(
+        debounceWindow: TimeInterval = LocalStore.changeSignalDebounce
+    ) -> AnyPublisher<Void, Never> {
         guard mainContext != nil else {
             return Empty(completeImmediately: true).eraseToAnyPublisher()
         }
 
         return Deferred { [weak self] () -> AnyPublisher<Void, Never> in
+            dispatchPrecondition(condition: .onQueue(.main))
             guard let self else {
                 return Empty(completeImmediately: true).eraseToAnyPublisher()
             }
@@ -840,8 +852,12 @@ extension LocalStore {
                         }
                     )
                 }
-                .debounce(for: .seconds(LocalStore.changeSignalDebounce),
-                          scheduler: DispatchQueue.main)
+                // **先上主队列，再防抖。** 通知是保存那个上下文的线程发的（写走后台 actor），
+                // 而 `debounce` 是有状态的：它自己攒着「上一个值」与一只计时器。让它在若干条
+                // 后台线程上收值，就是在无锁状态上并发读写。上面那个 `filter` 不怕，它只碰两个
+                // 静态纯函数。
+                .receive(on: DispatchQueue.main)
+                .debounce(for: .seconds(debounceWindow), scheduler: DispatchQueue.main)
                 .compactMap { [weak self] _ -> Void? in
                     // 读不出来就**不发信号**，绝不当成「全没了」：下游是一次推送轮，而 §4.7
                     // 的差分对空集合的回答是给每一条游标发 tombstone。
@@ -856,18 +872,22 @@ extension LocalStore {
         .eraseToAnyPublisher()
     }
 
-    /// 整账户的 pin 变化信号（§5.7）。订阅当刻不发；每次订阅各有一份基线，理由同上。
+    /// 整账户的 pin 变化信号（§5.7）。订阅当刻不发；每次订阅各有一份基线、必须在主线程订阅，
+    /// 两条理由都同上。
     ///
     /// 过滤器把 `BrowserDataSettingsModel` 算进来，与 `pinnedTabsPublisher` 今天那条同款：
     /// 作用域一翻，同一批物理行里「同步层认领哪些」整个换一遍，而那次 save 碰的不是
     /// `TabDataModel`。作用域本身也进快照，否则一次纯翻转在行上看不出任何差别。
     @MainActor
-    func pinnedTabChangesPublisher() -> AnyPublisher<Void, Never> {
+    func pinnedTabChangesPublisher(
+        debounceWindow: TimeInterval = LocalStore.changeSignalDebounce
+    ) -> AnyPublisher<Void, Never> {
         guard mainContext != nil else {
             return Empty(completeImmediately: true).eraseToAnyPublisher()
         }
 
         return Deferred { [weak self] () -> AnyPublisher<Void, Never> in
+            dispatchPrecondition(condition: .onQueue(.main))
             guard let self else {
                 return Empty(completeImmediately: true).eraseToAnyPublisher()
             }
@@ -887,8 +907,9 @@ extension LocalStore {
                         }
                     )
                 }
-                .debounce(for: .seconds(LocalStore.changeSignalDebounce),
-                          scheduler: DispatchQueue.main)
+                // 先上主队列再防抖，理由同书签那条。
+                .receive(on: DispatchQueue.main)
+                .debounce(for: .seconds(debounceWindow), scheduler: DispatchQueue.main)
                 .compactMap { [weak self] _ -> Void? in
                     guard let self else { return nil }
                     guard let snapshot = self.pinnedTabChangeSnapshot() else { return nil }
@@ -921,21 +942,14 @@ extension LocalStore {
     ///
     /// **不走 `pinSyncFetch(in:)`**：那个函数自己再读一次作用域，还要按 `(ownerKey, index,
     /// guid)` 排出一份 `active` 数组——而 owner 是每次比较现算的。这里要的是**未经作用域
-    /// 过滤**的那一半（`nonDormant`），那份排序整个是白做的。作用域读一次，行按 `guid` 排，
-    /// 判据与 `PinSyncFetch.nonDormant` 逐字相同（非休眠的全部 pin 行）。
+    /// 过滤**的那一半，那份排序整个是白做的。所以作用域读一次，行集合走两边共用的
+    /// `nonDormantPinModels(in:)`——那条判据必须只有一份，理由写在它自己身上。
     @MainActor
     private func pinnedTabChangeSnapshot() -> PinnedTabChangeSnapshot? {
         guard let context = mainContext else { return nil }
         do {
             let scope = try pinnedTabScope(in: context)
-            let pinnedRaw = TabDataType.pinnedTab.rawValue
-            var descriptor = FetchDescriptor<TabDataModel>(
-                predicate: #Predicate<TabDataModel> { $0.type == pinnedRaw }
-            )
-            // owner 推导要读 `profile?.profileId`；不预取就是每行一次 fault。
-            descriptor.relationshipKeyPathsForPrefetching = [\.profile]
-            let rows = try context.fetch(descriptor)
-                .filter { !$0.isPinnedTabDormant }
+            let rows = try nonDormantPinModels(in: context)
                 .map(PinnedTabRowChangeSnapshot.init)
                 .sorted { $0.guid < $1.guid }
             return PinnedTabChangeSnapshot(scope: scope, rows: rows)

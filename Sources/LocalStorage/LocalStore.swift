@@ -564,6 +564,225 @@ extension LocalStore {
             })
             .eraseToAnyPublisher()
     }
+
+    // MARK: - 整账户的变化信号（M3-3 §5.7）
+    //
+    // 与上面那个 `pinnedTabsPublisher` 以及 `bookmarksPublisher(profileId:spaceId:)` 是
+    // 两类东西，别把它们混成一个：
+    //
+    // - **作用域**。那两个是按 (profile, space) 的，每个窗口订阅一份，下游是 UI；这两个是
+    //   整账户的一条信号，下游是同步引擎。改那两个的语义会波及全部 UI，所以这里是**新增
+    //   兄弟**，一个字节都不碰既有那两个。
+    // - **载荷**。那两个交出当前值（`[TabDataModel]`）；这两个交出的是 `Void`——引擎要的是
+    //   「有东西变了」，拿到之后自己按注册清单去读快照。
+    // - **订阅当刻不发**。`spacesPublisher` / `bookmarksPublisher` 的上游是
+    //   `CurrentValueSubject` 并在订阅当刻立刻 `send(fetch())`，因为 UI 需要一个初值。变化
+    //   通知不需要，照抄那个形状就是每次挂上订阅都白推一轮。
+    //
+    // 去重比的是**取值快照数组**，不是 model 对象：SwiftData 在保存的上下文里**就地刷新**
+    // 同一批实例，所以一次重取拿回来的是上一次那些对象，按对象比较恒等、真实的字段编辑会
+    // 被整个吞掉。`spacesPublisher`（LocalStore+Space.swift）与上面的 `PinnedTabSnapshot`
+    // 都为此栽过跟头并留了注释。
+    //
+    // 快照**有意取成同步层那份的超集**：书签不做 canonical root 过滤，pin 不做作用域过滤。
+    // 超集只会多发一次信号（引擎那一轮比下来零字段变化 ⇒ 零提交），而子集会**漏**掉真实的
+    // 变化——同一个过滤口径在两处各写一遍、然后慢慢走偏，正是 §4.8 点名要躲的那件事。
+    // 行的次序按 `guid` 排定：`allBookmarkModels` / `PinSyncFetch.nonDormant` 都没有排序
+    // 保证，不排就会有一批「同一批行、不同次序」的伪变化。
+
+    /// 整账户的书签 / 文件夹变化信号（§5.7）。订阅当刻不发。
+    ///
+    /// 防抖不在这里：协调器那条订阅负责 2 s 窗口（`phiSyncPushDebounce`），这里只负责
+    /// 「这次 save 到底改没改同步层看得见的东西」。
+    ///
+    /// **favicon、`lastSeen` 与 `updatedDate` 不进快照**，所以一次 `updateTabFavicon` /
+    /// `updateLastSeen` 在这里就被吃掉，连协调器那个防抖计时器都不会起。Task 10 的图标回填
+    /// 队列每写回一条就触发一次推送、而每次推送的内容与账户上的完全相同，是这条规则挡掉的
+    /// 那个自激。
+    @MainActor
+    func bookmarkChangesPublisher() -> AnyPublisher<Void, Never> {
+        guard mainContext != nil else {
+            return Empty(completeImmediately: true).eraseToAnyPublisher()
+        }
+
+        // 订阅当刻取一次基线，但**不发射**——它是「上一次的样子」，不是一次变化。
+        var lastSnapshot = bookmarkChangeSnapshot()
+
+        return NotificationCenter.default
+            .publisher(for: .NSManagedObjectContextDidSave)
+            .filter {
+                Self.notificationContainsChanges(
+                    $0,
+                    matching: {
+                        guard $0.entity.name == TabDataModel.entityName,
+                              let type = Self.tabType(from: $0) else { return false }
+                        return type == TabDataType.bookmark.rawValue ||
+                            type == TabDataType.bookmarkFolder.rawValue
+                    }
+                )
+            }
+            .receive(on: DispatchQueue.main)
+            .compactMap { [weak self] _ -> Void? in
+                // 读不出来就**不发信号**，绝不当成「全没了」：下游是一次推送轮，而 §4.7 的
+                // 差分对空集合的回答是给每一条游标发 tombstone。
+                guard let self else { return nil }
+                guard let snapshot = self.bookmarkChangeSnapshot() else { return nil }
+                guard snapshot != lastSnapshot else { return nil }
+                lastSnapshot = snapshot
+                return ()
+            }
+            .eraseToAnyPublisher()
+    }
+
+    /// 整账户的 pin 变化信号（§5.7）。订阅当刻不发。
+    ///
+    /// 过滤器把 `BrowserDataSettingsModel` 算进来，与 `pinnedTabsPublisher` 今天那条同款：
+    /// 作用域一翻，同一批物理行里「同步层认领哪些」整个换一遍，而那次 save 碰的不是
+    /// `TabDataModel`。作用域本身也进快照，否则一次纯翻转在行上看不出任何差别。
+    @MainActor
+    func pinnedTabChangesPublisher() -> AnyPublisher<Void, Never> {
+        guard mainContext != nil else {
+            return Empty(completeImmediately: true).eraseToAnyPublisher()
+        }
+
+        var lastSnapshot = pinnedTabChangeSnapshot()
+
+        return NotificationCenter.default
+            .publisher(for: .NSManagedObjectContextDidSave)
+            .filter {
+                Self.notificationContainsChanges(
+                    $0,
+                    matching: {
+                        if $0.entity.name == BrowserDataSettingsModel.entityName {
+                            return true
+                        }
+                        return $0.entity.name == TabDataModel.entityName &&
+                            Self.tabType(from: $0) == TabDataType.pinnedTab.rawValue
+                    }
+                )
+            }
+            .receive(on: DispatchQueue.main)
+            .compactMap { [weak self] _ -> Void? in
+                guard let self else { return nil }
+                guard let snapshot = self.pinnedTabChangeSnapshot() else { return nil }
+                guard snapshot != lastSnapshot else { return nil }
+                lastSnapshot = snapshot
+                return ()
+            }
+            .eraseToAnyPublisher()
+    }
+
+    /// nil = 这一刻读不出来。调用方把它当成「不知道」，不是「一条都没有」。
+    @MainActor
+    private func bookmarkChangeSnapshot() -> [BookmarkChangeSnapshot]? {
+        guard let context = mainContext else { return nil }
+        do {
+            return try allBookmarkModels(in: context)
+                .map(BookmarkChangeSnapshot.init)
+                .sorted { $0.guid < $1.guid }
+        } catch {
+            // R12：只记类型与 domain/code，一个行内容的字节都不记。
+            AppLogError("[phi-sync] bookmark change snapshot failed: \(PhiSyncLog.describe(error))")
+            return nil
+        }
+    }
+
+    /// 同上。作用域读失败也算「不知道」——把它回落成 `.profile` 会在一台 Space 作用域的
+    /// 机器上伪造出一次作用域翻转。
+    @MainActor
+    private func pinnedTabChangeSnapshot() -> PinnedTabChangeSnapshot? {
+        guard let context = mainContext else { return nil }
+        do {
+            let scope = try pinnedTabScope(in: context)
+            let rows = try pinSyncFetch(in: context).nonDormant
+                .map(PinnedTabRowChangeSnapshot.init)
+                .sorted { $0.guid < $1.guid }
+            return PinnedTabChangeSnapshot(scope: scope, rows: rows)
+        } catch {
+            AppLogError("[phi-sync] pin change snapshot failed: \(PhiSyncLog.describe(error))")
+            return nil
+        }
+    }
+}
+
+/// 一条书签 / 文件夹行在**同步层眼里**的取值快照（§5.7）。字段照 `PhiLocalBookmark`
+/// 取，因为「变了没有」问的就是「引擎下一轮发出去的字节会不会不同」。
+///
+/// **`favicon` / `lastSeen` / `updatedDate` 有意不在这里**：前两个不是用户对内容的编辑，
+/// 第三个每一次写都会动（`updateLastSeen` 与 `updateTabFavicon` 都写它）。
+private struct BookmarkChangeSnapshot: Equatable {
+    let syncId: String?
+    let guid: String
+    let spaceId: String?
+    let profileId: String?
+    let parentGuid: String?
+    let index: Int
+    let type: Int
+    let title: String
+    let url: URL
+    let secondaryUrl: URL?
+    let secondaryTitle: String?
+    let source: Int
+    let createdDate: Date
+    let contentUpdatedDate: Date?
+
+    init(_ model: TabDataModel) {
+        syncId = model.syncId
+        guid = model.guid
+        spaceId = model.spaceId
+        profileId = model.profileId ?? model.profile?.profileId
+        parentGuid = model.parent?.guid
+        index = model.index
+        type = model.type
+        title = model.title
+        url = model.url
+        secondaryUrl = model.secondaryUrl
+        secondaryTitle = model.secondaryTitle
+        source = model.source
+        createdDate = model.createdDate
+        contentUpdatedDate = model.contentUpdatedDate
+    }
+}
+
+/// 一条 pin 行的取值快照，字段照 `PhiLocalPin` 取。
+///
+/// `splitPartnerGuid` 而不是伙伴的 lineage：换算要第二张表，而伙伴行本身也在这个数组里，
+/// 它改 lineage 的那一刻数组已经不同了——超集，不漏。
+private struct PinnedTabRowChangeSnapshot: Equatable {
+    let lineageId: String?
+    let guid: String
+    let spaceId: String?
+    let profileId: String?
+    let index: Int
+    let title: String
+    let url: URL
+    let splitPartnerGuid: String?
+    let source: Int
+    let createdDate: Date
+    let contentUpdatedDate: Date?
+    let isDormant: Bool
+
+    init(_ model: TabDataModel) {
+        lineageId = model.pinLineageId
+        guid = model.guid
+        spaceId = model.spaceId
+        profileId = model.profileId ?? model.profile?.profileId
+        index = model.index
+        title = model.title
+        url = model.url
+        splitPartnerGuid = model.splitPartnerGuid
+        source = model.source
+        createdDate = model.createdDate
+        contentUpdatedDate = model.contentUpdatedDate
+        isDormant = model.isPinnedTabDormant
+    }
+}
+
+/// pin 侧比的是「作用域 + 行」这一对。行一个字节没动但作用域翻了，同步层认领的那一批就
+/// 整个换了，所以它是快照的一部分而不是订阅之外的东西。
+private struct PinnedTabChangeSnapshot: Equatable {
+    let scope: PinnedTabScope
+    let rows: [PinnedTabRowChangeSnapshot]
 }
 
 /// Value snapshot of a pinned-tab row used by `pinnedTabsPublisher` for

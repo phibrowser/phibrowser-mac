@@ -3,6 +3,7 @@
 // Use of this source code is governed by an Apache license that can be
 // found in the LICENSE file.
 
+import Combine
 import SwiftData
 import XCTest
 @testable import Phi
@@ -652,6 +653,70 @@ final class LocalStoreBookmarkThrowingTests: XCTestCase {
                       "但这两条身份在本机还有行，绝不能被差分判成删除")
     }
 
+    // MARK: - store 级的变化 publisher（§5.7）
+
+    // CASE 6c.1 —— 一连串写入塌缩成一次下游信号。
+    //
+    // 两级合起来才是「恰好一次」，所以这里把协调器那条订阅的形状逐字照搬：publisher 每条
+    // 匹配的 save 发一次（值快照去重之后），2 s 防抖把一连串塌成一次。少了防抖这一级，30
+    // 次写入就是 30 次推送。
+    //
+    // 顺带钉住「订阅当刻不发」：`spacesPublisher` / `bookmarksPublisher` 的上游是
+    // `CurrentValueSubject` 并在订阅当刻就送一次当前值，那是 UI 要的语义；引擎要的是**变化**
+    // 通知，照抄那个形状会让下面这条断言变成 2。
+    func testBookmarkChangesPublisherCollapsesABurstOfWritesIntoOneSignal() async throws {
+        let store = try await makeStoreWithSpaces()
+
+        var received = 0
+        let cancellable = store.bookmarkChangesPublisher()
+            .debounce(for: .seconds(Self.debounceWindow), scheduler: DispatchQueue.main)
+            .sink { _ in received += 1 }
+        defer { cancellable.cancel() }
+
+        drainMainQueue()
+        let afterSubscribe = received
+        XCTAssertEqual(afterSubscribe, 0, "订阅当刻不发当前值")
+
+        for index in 0..<30 {
+            let url = try XCTUnwrap(URL(string: "https://example.com/burst-\(index)"))
+            _ = try await store.createBookmarkThrowing(url: url,
+                                                       title: "B\(index)",
+                                                       profileId: Self.profileId,
+                                                       parentId: nil)
+        }
+        waitPastDebounceWindow()
+
+        let observed = received
+        XCTAssertEqual(observed, 1, "30 次写入在防抖窗口里塌成一次推送")
+    }
+
+    // CASE 6c.2 —— favicon 与 lastSeen 的写入零发射。
+    //
+    // 防的是什么：这两个字段不在 `PhiLocalBookmark` 里，所以它们进不了值快照。真让它们进
+    // 去，Task 10 的回填队列每写回一条图标就触发一次推送，而那次推送发的内容与账户上的
+    // 完全相同——一台机器每轮空跑几十次提交。两次写都会发 `NSManagedObjectContextDidSave`
+    // 并通过类型过滤，被吃掉的地方是值快照去重那一级，不是过滤器。
+    func testBookmarkChangesPublisherIgnoresFaviconAndLastSeenWrites() async throws {
+        let store = try await makeStoreWithSpaces()
+        let guid = try await store.createBookmarkThrowing(url: Self.exampleURL,
+                                                          title: "A",
+                                                          profileId: Self.profileId,
+                                                          parentId: nil)
+
+        var received = 0
+        let cancellable = store.bookmarkChangesPublisher()
+            .debounce(for: .seconds(Self.debounceWindow), scheduler: DispatchQueue.main)
+            .sink { _ in received += 1 }
+        defer { cancellable.cancel() }
+
+        store.updateTabFavicon(guid, favicon: Data([0x01, 0x02, 0x03]))
+        store.updateLastSeen(guid, seenAt: Date(timeIntervalSince1970: 1_700_000_000))
+        waitPastDebounceWindow()
+
+        let observed = received
+        XCTAssertEqual(observed, 0, "图标与 lastSeen 不进快照，一次都不许发")
+    }
+
     // MARK: - Fixtures
 
     private struct ObservedDomain: Sendable {
@@ -728,5 +793,15 @@ final class LocalStoreBookmarkThrowingTests: XCTestCase {
 
     private func drainMainQueue() {
         RunLoop.main.run(until: Date().addingTimeInterval(0.05))
+    }
+
+    /// 与 `PhiChromiumCoordinator.phiSyncPushDebounce` 同一个值。两条订阅的防抖窗口是
+    /// 生产形状的一半，这里照搬它，免得用例在一个自己编出来的窗口上成立。
+    private static let debounceWindow: TimeInterval = 2
+
+    /// 跑过整个防抖窗口再多留一点，让 `performBackgroundWrite` 那条 FIFO 队列上的写入与
+    /// 随后的主队列投递都有机会落地。
+    private func waitPastDebounceWindow() {
+        RunLoop.main.run(until: Date().addingTimeInterval(Self.debounceWindow + 1))
     }
 }

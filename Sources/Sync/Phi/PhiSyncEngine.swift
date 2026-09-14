@@ -729,6 +729,22 @@ actor PhiSyncEngine {
         await serialized(.localSpaceChange)
     }
 
+    /// Entry point for the debounced `bookmarkChangesPublisher()` /
+    /// `pinnedTabChangesPublisher()` observers (§5.7). Same shape as
+    /// `handleLocalSpacesChange()`, one line down to `serialized`.
+    ///
+    /// `label` is a registration's `label` — the unique key of the owned-kind list — and it
+    /// travels no further than the round's log line: the publish section walks the whole
+    /// registration list, so one kind's local change is an ordinary push round. It is a
+    /// parameter rather than two methods because **kind is data, not code** (`Round`'s own
+    /// `localOwnedChange` comment).
+    ///
+    /// Must be called from *outside* a round, like every other driver here: it waits on the
+    /// queue the round in flight is holding.
+    func handleLocalOwnedChange(label: String) async {
+        await serialized(.localOwnedChange(label))
+    }
+
     /// Delivered by `PhiSpaceSyncState.shared` and executed as a QUEUED ROUND --
     /// the table has exactly one writer (§5.3: "全部 async, 全部排进同一条
     /// roundQueue").

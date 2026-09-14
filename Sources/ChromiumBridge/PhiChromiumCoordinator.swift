@@ -121,6 +121,29 @@ import SwiftUI
     /// SwiftData cannot see them.
     private var phiSpacesCancellable: AnyCancellable?
 
+    // MARK: - Phi 归属项同步（M3-3）
+    //
+    // 书签与 pin 的本地变化触发（§5.7）。与上面的 Space 段同一条命：同一个引擎、同一个
+    // `startPhiSyncIfReady()` 挂起、同一个 `stopPhiSync()` 拆除。
+
+    /// 整账户书签编辑 -> 一轮归属项推送（§5.7）。上游是 `LocalStore.bookmarkChangesPublisher()`
+    /// （已按取值快照去重），这里只加 2 s 防抖。
+    ///
+    /// 一次远端落地也会写本地行、必然触发这条订阅，与 Space 侧是同一条论证：落地已经在同
+    /// 一轮写好基线，随之而来的推送轮比下来零字段变化 ⇒ 零提交、零本地写 ⇒ 没有第二次
+    /// 发射。图标回填（§8）走的是不进快照的字段，所以它连这条订阅都到不了。
+    private var phiBookmarksCancellable: AnyCancellable?
+    /// 整账户 pin 编辑 -> 一轮归属项推送（§5.7）。形状同上。
+    private var phiPinnedTabsCancellable: AnyCancellable?
+    /// 两条订阅要把各自 kind 的 `label` 交给引擎，而 `label` 是注册清单的唯一键
+    /// （`OwnedKindRegistration.label`）。注册项在引擎构建那一处建，订阅在
+    /// `startPhiSyncIfReady()` 里挂，所以把 label 从前者带到后者，而不是在第二处重写一遍
+    /// 字面量——重写的那一份会在改名时静默失配，而失配的后果只是日志里少一行，没有任何
+    /// 东西会报错。与引擎同生共死。
+    private var phiBookmarkKindLabel: String?
+    /// 同上，pin 那一条。
+    private var phiPinKindLabel: String?
+
     /// Cadence of the periodic pull, per the M3-1 design §5.3 ("保守间隔,如 60s"). M3-1 has no
     /// invalidation, so this timer and the foreground pull are the only unattended triggers on
     /// a peer, and the acceptance criterion (§9) is convergence "within seconds" — a longer
@@ -309,9 +332,13 @@ import SwiftUI
         let pinAccess = AccountPhiPinnedTabAccess(store: account.localStorage)
         let pinStore = FileOwnedItemStateStore(
             fileURL: syncDirectory.appendingPathComponent("pins-cursors.json"))
-        let ownedKinds = [OwnedKindRegistration.bookmarks(access: bookmarkAccess,
-                                                          store: bookmarkStore),
-                          OwnedKindRegistration.pins(access: pinAccess, store: pinStore)]
+        let bookmarkKind = OwnedKindRegistration.bookmarks(access: bookmarkAccess,
+                                                           store: bookmarkStore)
+        let pinKind = OwnedKindRegistration.pins(access: pinAccess, store: pinStore)
+        let ownedKinds = [bookmarkKind, pinKind]
+        // §5.7 的两条订阅在 `startPhiSyncIfReady()` 里挂，label 从这里带过去（见属性注释）。
+        phiBookmarkKindLabel = bookmarkKind.label
+        phiPinKindLabel = pinKind.label
         // A new engine starts from its own persisted `spaceSectionEnabled`, so the memo
         // describes an engine that no longer exists. (`stopPhiSync()` clears it too; this is
         // the belt to that braces, because nothing forces the two to be paired.)
@@ -482,6 +509,34 @@ import SwiftUI
                 .sink { [weak self] _ in
                     Task { @MainActor in await self?.phiSyncEngine?.handleLocalSpacesChange() }
                 }
+
+            // 书签与 pin 的本地编辑（§5.7），形状逐字照上面那条：**值快照去重 → 2 s 防抖
+            // → 一轮推送**。去重在 `LocalStore` 那两个 store 级 publisher 里，所以到这里的
+            // 每一次发射都已经是「同步层看得见的字段真的变了」；这里只负责把一连串变化塌成
+            // 一轮。没有 throttle 那一级：`phiSyncPushDebounce` 已经是 2 秒，而本仓库既有的
+            // 两处订阅都是单独的一个 `.debounce`。
+            //
+            // 回声与上面那条同一条论证：一次远端落地会写本地行、必然触发 publisher，但落地
+            // 已经在同一轮写好基线，随之而来的推送轮零字段变化 ⇒ 零提交、零本地写 ⇒ 没有
+            // 第二次发射。
+            if let label = phiBookmarkKindLabel {
+                phiBookmarksCancellable = account.localStorage.bookmarkChangesPublisher()
+                    .debounce(for: .seconds(Self.phiSyncPushDebounce), scheduler: DispatchQueue.main)
+                    .sink { [weak self] _ in
+                        Task { @MainActor in
+                            await self?.phiSyncEngine?.handleLocalOwnedChange(label: label)
+                        }
+                    }
+            }
+            if let label = phiPinKindLabel {
+                phiPinnedTabsCancellable = account.localStorage.pinnedTabChangesPublisher()
+                    .debounce(for: .seconds(Self.phiSyncPushDebounce), scheduler: DispatchQueue.main)
+                    .sink { [weak self] _ in
+                        Task { @MainActor in
+                            await self?.phiSyncEngine?.handleLocalOwnedChange(label: label)
+                        }
+                    }
+            }
         }
 
         AppLogInfo("[phi-sync] scheduling started interval=\(Int(Self.phiSyncPullInterval))s debounce=\(Int(Self.phiSyncPushDebounce))s")
@@ -616,6 +671,17 @@ import SwiftUI
             NotificationCenter.default.removeObserver(observer)
             phiSpacePairingObserver = nil
         }
+        // M3-3 Task 8: remove the synced-scope observer here.
+        // §5.7 的两条归属项订阅。留着不清的订阅会在账户注销之后继续把 Round 排给一个已经
+        // 退休的引擎——`shutdown()` 让那些轮次一个字节都不写，但每一次都还是一次完整的排队
+        // 与唤醒，而下一个账户挂上来的时候这两条订阅指的仍是上一个账户的 `LocalStore`。
+        phiBookmarksCancellable?.cancel()
+        phiBookmarksCancellable = nil
+        phiPinnedTabsCancellable?.cancel()
+        phiPinnedTabsCancellable = nil
+        // 两个 label 描述的是下面正要丢掉的那个引擎的注册清单，跟着它一起清。
+        phiBookmarkKindLabel = nil
+        phiPinKindLabel = nil
         // The memo describes the engine being dropped below; the next one loads its own
         // persisted gate state and must be told again.
         lastSpaceGateEnabled = nil

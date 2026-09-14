@@ -194,6 +194,21 @@ protocol PhiBookmarkLocalAccess: PhiFaviconWriting {
     /// 读过时它**抛**，而不是自己补一次 fetch。
     func allSyncIds() throws -> Set<String>
 
+    /// **本轮最后一次成功的 `allBookmarks()` 或 `apply(_:)` 留下的那份行快照**，
+    /// **不再 fetch**（§5.7 第 2 条硬要求）。次序与 `allBookmarks()` 交出的那一份相同。
+    ///
+    /// 它存在的理由只有一个：一次落地改了行之后，**同一轮的出站快照必须看见落地后的那份
+    /// 投影**（§4.2 与 §4.5 之间那道接缝）。落地把一条远端赢下的标题或一次远端搬家写进了
+    /// 本机行，而轮内那份本机投影还停在落地**之前**——差分于是判成「本机改了」，把**旧值**
+    /// 配上一个**新鲜的 `now`** 发回账户，而那个 `now` 比对端刚才那次真实编辑更晚，于是
+    /// 旧值盖掉新值。一次纯粹的读写时序问题就此变成一次数据回滚。
+    ///
+    /// **`nil` = 本轮没有一份可用的快照**（还没读过、`allBookmarks()` 抛了、或 `apply` 落地
+    /// 成功但它末尾那次重读抛了）。调用方此时**原样留着轮内那份投影**，绝不把它清空——
+    /// 与另外三个非抛出读者不同，这一个的正确回答是「我这次没读到」，所以它用可选值说出来
+    /// 而不是交出一个会让整轮快照变空的 `[]`。
+    func cachedBookmarks() -> [PhiLocalBookmark]?
+
     /// **不是第二次 fetch**，是 `allBookmarks()` 那一次结果按 `(spaceId, parentGuid)`
     /// 在内存里的分组。
     ///
@@ -289,6 +304,16 @@ final class AccountPhiBookmarkAccess: PhiBookmarkLocalAccess {
             throw LocalStoreWriteError.storeUnavailable
         }
         return cachedSyncIds
+    }
+
+    /// 那一次 fetch 的行快照本身，**不再 fetch**。`apply(_:)` 收尾已经重建过它，所以
+    /// 落地之后同一轮的出站快照拿它就能看见落地后的世界。
+    ///
+    /// **本轮没读到就交 nil，不交 `[]`**：调用方拿它去换掉轮内那份本机投影，一个空数组会
+    /// 让整轮的出站快照变空（见协议上的契约）。
+    func cachedBookmarks() -> [PhiLocalBookmark]? {
+        guard snapshotIsLoaded else { return nil }
+        return cachedRows
     }
 
     /// 分组缓存的读取，**不再 fetch**、**不过滤**（§4.10 的 index 投影要未过滤的兄弟）。

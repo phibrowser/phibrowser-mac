@@ -171,6 +171,14 @@ struct OwnedPlanOutput {
     var unmergeablePairs = 0
     /// 认领的合并结果里本机赢了字段的那些身份：**必须重新发布**。
     var mustRepublish: Set<String> = []
+    /// §5.3 / §6.4 的**尽力而为的推迟**：本轮的 pull 里**收到过本 kind 实体**的那些归属。
+    /// 这些归属下本轮新铸身份的行不进发布切片——它们在第一个没有该归属实体到达的轮次里提交。
+    ///
+    /// **它是优化，不是正确性规则**，而且不引入任何窗口状态：判据就是「这一轮这个归属有没有
+    /// 到达过实体」，一个轮内的局部量，不落盘、不跨轮记忆（R-M3-3-22 / CASE 7.4）。
+    /// 值的口径与 `OwnedSnapshotBytes.ownerUuids` 相同（书签是**这一行坐在哪个 Space**），
+    /// 不是 `owners(_:)` 那个绑定引用——后者对一条子孙书签交出的是它的父。
+    var deferredOwners: Set<String> = []
     var scopeMismatch = false
     /// 身份 -> 本轮**拉到的那一条远端实体**的信封字节。§4.5 的 `server = remote`，
     /// **永远不是 merge 结果**。
@@ -510,6 +518,14 @@ actor PhiSyncEngine {
     /// 认领的合并结果里本机赢了字段的那些身份（`OwnedItemAdoptionResult.mustRepublish`）。
     /// 本机赢了却不发布，对端永远停在旧值上，而两边都认为自己收敛了。
     private var ownedMustRepublish: [String: Set<String>] = [:]
+
+    /// §5.3 的尽力推迟：本轮收到过该 kind 实体的那些归属（`OwnedPlanOutput.deferredOwners`）。
+    ///
+    /// **累加，不覆盖**：一轮里可以有不止一次 pull（`NOT_MY_BIRTHDAY` 的重来、发布前的那次
+    /// 初始 pull、`.conflict` 的限定重试各带一次），而「这一轮这个归属有没有到达过实体」问的
+    /// 是整轮的并集。每轮清零，**绝不落盘**——落盘的那一刻它就成了一个跨轮的窗口状态，而
+    /// R-M3-3-22 明令这张表里不许有窗口。
+    private var ownedDeferredOwners: [String: Set<String>] = [:]
 
     /// §3.6's per-round account profile refresh. `GET /keys/v1/profiles` is small, but App
     /// activation can fire `pullOnce()` far more often than the 60 s timer.
@@ -933,6 +949,7 @@ actor PhiSyncEngine {
         // 这里清的只是本轮的收集篮。
         faviconCandidatesThisRound = []
         faviconPinCandidatesThisRound = []
+        ownedDeferredOwners = [:]
         // Same reason, same scope: the NOT_MY_BIRTHDAY recursion (:608), the push's initial
         // pull (:1160 / :1456) and the CONFLICT retry (:1250) are all pulls inside ONE round,
         // and none of them re-lists the account's profiles.
@@ -2861,6 +2878,9 @@ actor PhiSyncEngine {
         counters.supersededByDelete += output.plan.supersededByDelete
         counters.scopeMismatch = counters.scopeMismatch || output.scopeMismatch
         ownedMustRepublish[registration.label] = output.mustRepublish
+        // §5.3 的尽力推迟，**并集**：一轮里可以有不止一次 pull，而判据问的是整轮。
+        ownedDeferredOwners[registration.label, default: []]
+            .formUnion(output.deferredOwners)
 
         // **只更新已存在的游标**（P5）：`plan` 先收割再判 `refuses`，所以一条被拒的实体
         // 照样在 `harvest` 里留一条记录，而它的身份可能根本没有对应游标。照着 harvest 建
@@ -3082,9 +3102,25 @@ actor PhiSyncEngine {
         let tombstoneSlice = ownedTombstoneSlice(registration, table: table,
                                                  candidates: deleteCandidates, budget: &budget)
         let republish = ownedMustRepublish[registration.label] ?? []
+        // §5.3 / §6.4 的尽力而为的推迟：某个归属在**本轮的 pull 里收到过本 kind 的实体**时，
+        // 该归属下**本轮新铸身份**的行不进这一轮的切片；它们在第一个没有该归属实体到达的
+        // 轮次里提交。这只是把加入期「本机先铸、对端的同一条随后才到」的窗口压窄——§6 的
+        // 规则 (i) 是无状态的，谁先谁后都不丢东西，最坏是多一条重复（§6.5 的残留竞态）。
+        //
+        // **判据只碰本轮铸出来的身份。** 一条已经有身份的行照常发布：它在账户上已经存在，
+        // 推迟它只会让一次真实的本机编辑白等一轮。已经在配对表里的行本轮根本不铸身份，
+        // 所以它们也不在 `minted` 里。
+        //
+        // **口径是 `snapshot.ownerUuids`**（这一行坐在哪个归属里），与 `plan` 交回来的那一份
+        // 同源；拿 `owners(_:)` 那个绑定引用去比，一条子孙书签比的会是它的父身份。
+        let deferredOwners = ownedDeferredOwners[registration.label] ?? []
         var liveCandidates: [String] = []
         for (identity, bytes) in snapshot.entities {
             guard table.cursors[identity]?.pendingDelete != true else { continue }
+            if snapshot.minted[identity] != nil,
+               let owner = snapshot.ownerUuids[identity], deferredOwners.contains(owner) {
+                continue
+            }
             if bytes != table.cursors[identity]?.reconciled || republish.contains(identity) {
                 liveCandidates.append(identity)
             }
@@ -3847,6 +3883,29 @@ final class BookmarkSyncRoundState {
         }
         pairs = [:]
     }
+
+    /// 一次落地之后把轮内那份本机投影换成**落地后**的行（Step 3）。
+    ///
+    /// 交进来的是 access 那份缓存（`apply(_:)` 收尾已经重建过它），**不是第二次 fetch**：
+    /// 一轮至多一次 fetch 的规则一个字不变。
+    ///
+    /// **内容与位置一起换。** 只换标题与 URL 的实现会在每一次入站搬家之后把**旧位置**配上
+    /// 一个新鲜的 `now` 发回去，把对端刚做的移动原地撤销——`parentGuid` / `spaceId` /
+    /// `index` 三项因此都在这一次替换里。
+    ///
+    /// **`pairs` 不动。** 它是本轮 §6 的认领配对，出站快照的「这一行本轮不铸新身份」与差分
+    /// 的 `pendingClaims` 豁免都读它；清掉它，一条刚被认领的行会在同一轮里再被铸一个身份，
+    /// 而账户上从此多一条没有本地所有者的实体。`reload` 清它是因为那是**新一轮**的开始，
+    /// 这里是同一轮的中途。
+    func refreshLandedRows(_ rows: [PhiLocalBookmark]) {
+        locals = rows
+        identityToGuid = [:]
+        rowByGuid = [:]
+        for row in rows {
+            rowByGuid[row.guid] = row
+            if let syncId = row.syncId { identityToGuid[syncId] = row.guid }
+        }
+    }
 }
 
 /// 同级分组的键。`parentGuid == nil` = 直接挂在这个 Space 的 canonical root 下。
@@ -3986,6 +4045,17 @@ private func bookmarkPlan(_ input: OwnedPlanInput,
         arrivals.append(OwnedItemArrival(entity: entity, entityId: item.entityId,
                                          version: item.version))
         out.serverBytes[BookmarkKind.identity(of: entity)] = item.payload
+        // §5.3 的尽力推迟：**只数这一轮真的到达过的实体**，停放项不算。一条停着的实体是
+        // 上一轮的消息，拿它当「这个 Space 正在到货」会让一条永远落不了地的停放项把整个
+        // Space 的未同步行永久压在切片外面。
+        //
+        // 归属取实体自己的 `space_uuid`（**不是** `parent_uuid`）：判据说的是 Space，而一条
+        // 子孙实体的绑定引用是它的父。子孙的 `space_uuid` 永不重发（R-M3-3-18），所以它可能
+        // 停在搬家之前的那个 Space 上——**这条推迟是优化而不是正确性规则**，一个过期的 uuid
+        // 最坏只是让某个 Space 的未同步行多等一轮，不会让任何东西丢失或重复。真正守住「不丢」
+        // 的是 §6 那条无状态的认领规则。
+        let spaceUuid = entity.spaceUuid.stringValue
+        if !spaceUuid.isEmpty { out.deferredOwners.insert(spaceUuid) }
     }
     // D10 的规则 (i)。它**从不删除任何东西**，也不会让任何入站实体被丢掉。
     //
@@ -4377,12 +4447,17 @@ private func landBookmarks(_ input: OwnedLandingInput,
     // 一个正在被导入的落地会把另一个 Space 的行也一起回滚——那些行本来没有任何理由等。
     // 所以调用之前先按 Space 把批次切开，每个被触及的 Space 一次调用。跨 Space 的父子关系
     // 不受影响：一条行的父必定与它同 Space。
+    //
+    // `didApply` = 这一轮有没有**真的**落下去过一批。Step 3 的重取只在它为真时发生：一轮
+    // 至多一次 fetch 的规则对「一行都没落」的轮次一个字不让。
+    var didApply = false
     for spaceId in opsBySpace.keys.sorted() {
         let ops = opsBySpace[spaceId] ?? []
         guard !ops.isEmpty else { continue }
         let identities = identitiesBySpace[spaceId] ?? []
         do {
             try await access.apply(BookmarkApplyBatch(unordered: ops, parentOf: parentOf))
+            didApply = true
         } catch LocalStoreWriteError.folderNotEmpty, LocalStoreWriteError.rowAlreadyMapped {
             // 这一批**算错了**：拒收。它们不是在等什么，停放会让同一批每轮原样重试、永远
             // 不会好，而 `pendingApply` 里堆着一批永远落不了地的实体。
@@ -4417,6 +4492,19 @@ private func landBookmarks(_ input: OwnedLandingInput,
     outcome.refused.subtract(outcome.landed)
     // 本轮真的被删掉的那些行立刻退出轮内投影，于是同一轮的发布段不会把它们复活（CASE 6b.8）。
     state.noteDeletedRows(Set(outcome.deleted.compactMap { guidOf[$0] }))
+    // Step 3：落地过至少一批 ⇒ 出站快照之前把轮内那份本机投影换成**落地后**的行。
+    //
+    // 取的是 access 那份缓存（`apply` 收尾已经重建过它），**不是再 fetch 一次**。不换的
+    // 后果有两层：其一，每一次入站内容变化都多一条无谓的 commit——快照拿的是落地**前**那
+    // 一行，与刚写好的 `reconciled` 不同，差分判成「本机改了」；其二，那条 commit 带的是
+    // **旧值**配上一个**新鲜的 `now`**，它比对端刚才那次真实编辑更晚，于是在一次并发编辑
+    // 里旧值盖掉新值——一次读写时序问题就此变成一次数据回滚（CASE 7.6 / 7.7）。
+    //
+    // `nil` = 本轮没有一份可用的快照（`apply` 落了地但它收尾那次重读抛了）。此时**原样
+    // 留着**轮内那份投影：交出一个空数组会让整轮的出站快照变空。
+    if didApply, let refreshed = access.cachedBookmarks() {
+        state.refreshLandedRows(refreshed)
+    }
     return outcome
 }
 
@@ -4468,6 +4556,17 @@ final class PinSyncRoundState {
         for row in rows { rowByGuid[row.guid] = row }
         self.localScope = localScope
         self.accountScope = accountScope
+    }
+
+    /// 一次落地之后把轮内那份本机投影换成**落地后**的行（Step 3）。形状与理由都照
+    /// `BookmarkSyncRoundState.refreshLandedRows`：交进来的是 access 那份缓存
+    /// （`apply(_:)` 收尾已经重建过它），**不是第二次 fetch**。
+    ///
+    /// **两个作用域不动**：它们是 §7.3 的判据，轮首各读一次，落地一次也改不了它们。
+    func refreshLandedRows(_ rows: [PhiLocalPin]) {
+        locals = rows
+        rowByGuid = [:]
+        for row in rows { rowByGuid[row.guid] = row }
     }
 
     /// 本轮真的被删掉的那些行立刻从轮内投影里消失。理由与
@@ -5102,6 +5201,10 @@ private func landPins(_ input: OwnedLandingInput,
     outcome.refused.subtract(outcome.landed)
     // 本轮真的被删掉的那些行立刻退出轮内投影，理由同 `landBookmarks`（CASE 6b.8）。
     state.noteDeletedRows(Set(outcome.deleted.compactMap { guidOf[$0] }))
+    // Step 3，pin 这一半：走到这里意味着上面那次 `apply` 提交了，于是出站快照之前把轮内
+    // 那份本机投影换成**落地后**的行。理由与 `landBookmarks` 逐字相同——不换的话，一次
+    // 远端赢下的标题或一次远端重排之后，旧值会配上一个新鲜的 `now` 被发回账户。
+    if let refreshed = access.cachedPins() { state.refreshLandedRows(refreshed) }
     return outcome
 }
 

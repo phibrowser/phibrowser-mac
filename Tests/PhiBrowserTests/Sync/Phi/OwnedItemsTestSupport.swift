@@ -73,6 +73,20 @@ final class FakeBookmarkAccess: PhiBookmarkLocalAccess {
         }
     }
 
+    /// 那一次 fetch 的行快照本身，**不再 fetch**、**不记调用**——它与
+    /// `isKnownLocalBookmark` / `localIsFolder` 同属那一组读缓存的非抛出读者，而 CASE 0.3
+    /// 那条逐项相等的 `calls` 断言容不下一个新条目。次序与 `allBookmarks()` 相同。
+    ///
+    /// **没读过就交 nil**，与生产实现同一条契约：调用方拿它去换掉轮内那份本机投影，一个空
+    /// 数组会让整轮的出站快照变空。
+    func cachedBookmarks() -> [PhiLocalBookmark]? {
+        guard snapshotIsLoaded else { return nil }
+        return rows.sorted {
+            ($0.spaceId, $0.parentGuid ?? "", $0.index, $0.guid)
+                < ($1.spaceId, $1.parentGuid ?? "", $1.index, $1.guid)
+        }
+    }
+
     /// 契约是「那一次 fetch 结果在内存里的分组」，所以这里读的也是 `rows`，**不**再记一次
     /// `.allBookmarks`，也**不**过滤（§4.10 的 index 投影要未过滤的兄弟列表）。
     func siblings(ofParent parentGuid: String?, inSpaceId spaceId: String) -> [PhiLocalBookmark] {
@@ -282,6 +296,15 @@ final class FakePinAccess: PhiPinnedTabLocalAccess {
         guard snapshotIsLoaded else { throw LocalStoreWriteError.storeUnavailable }
         return Set(rows.filter { !$0.isDormant }.map { PinKind.lineageKey($0.lineageId) })
             .union(outOfScopeLineageIds.map(PinKind.lineageKey))
+    }
+
+    /// 那一次 fetch 的行快照本身，**不再 fetch**、**不记调用**（理由同
+    /// `FakeBookmarkAccess.cachedBookmarks()`）。过滤与次序都与 `allPins()` 相同。
+    func cachedPins() -> [PhiLocalPin]? {
+        guard snapshotIsLoaded else { return nil }
+        return rows
+            .filter { !$0.isDormant }
+            .sorted { (Self.ownerKey($0), $0.index, $0.guid) < (Self.ownerKey($1), $1.index, $1.guid) }
     }
 
     /// **两边都过 `PinKind.lineageKey`**（P11），与生产实现同形：传进来的是线上归一过的小写

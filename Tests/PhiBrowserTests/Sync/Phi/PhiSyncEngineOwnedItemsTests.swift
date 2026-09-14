@@ -2580,4 +2580,354 @@ final class PhiSyncEngineOwnedItemsTests: XCTestCase {
         XCTAssertEqual(stats.pages, 1)
         XCTAssertEqual(stats.entities, 3, "数的是页里的实体总数，过滤在它之后")
     }
+
+    // MARK: - CASE 7.1 – 7.7：认领 + 提交期铸造 + 发布段预处理（Group A）
+
+    /// 一条本机未同步行，URL 与 `alignedPayload(uuid:)` 默认产出的那条实体相同。
+    ///
+    /// §6.1 的书签匹配键是 **URL**（文件夹才按标题），所以这一对天然配得上；标题与内容戳
+    /// 由调用方按每条用例要的胜负方向给。`createdDate` 用 fixture 的默认值（1_000 **秒**），
+    /// 与 `Self.rowCreatedAtMs`（1_000_000 **毫秒**）对齐，于是任何「这一轮零 commit」的
+    /// 断言不会因为 `created_at_ms` 这个裸值而变红。
+    private func adoptableRow(guid: String = "G1", spaceId: String = "s-1",
+                              title: String = "T",
+                              contentUpdatedDate: Date? = nil) -> PhiLocalBookmark {
+        .fixture(guid: guid, spaceId: spaceId, title: title,
+                 contentUpdatedDate: contentUpdatedDate)
+    }
+
+    /// 一页只装一条书签实体的脚本页。
+    ///
+    /// marker 取一个**数值**（假件按 `Int64(text)` 解 watermark）：默认那个 `"m1"` 解出 0，
+    /// 于是第二轮会把第一轮提交进 `stored` 的那些行整批重投一遍，而本段好几条用例的第二轮
+    /// 断言的正是「一条都不该再发」。
+    private func oneEntityPage(_ entity: Phi_PhiBookmarkEntity, uuid: String,
+                               version: Int64 = 30,
+                               entityId: String = "srv-b1")
+        -> FakePhiSyncClient.Page {
+        page([remoteEntity(envelope(entity), tag: bookmarkTag(uuid), version: version,
+                           entityId: entityId, key: key)],
+             marker: "500")
+    }
+
+    /// CASE 7.1 — 认领与落地共一个事务，一起回滚。
+    ///
+    /// 防的是什么：「改了 `syncId` 却没落地」的中间态会让下一轮的匹配看不见那些行（它们已经
+    /// 不是 `syncId == nil`），于是远端实体被建成重复行，而本机那几行永远不会再被认领。
+    ///
+    /// **断言 ② 是「一个字节的基线都没写」，不是「游标表为空」**：落地失败的那一批按 §4.9
+    /// 第 3 条**停放**，而停放本来就要建一条带 `pendingApply` 的游标（Task 6 落地的形状）。
+    /// 真正不许发生的是写下一份 `reconciled` / `server`——那等于记住一次从没发生过的落地。
+    func testAFailedLandingRollsBackTheClaimAndWritesNoBaseline() async throws {
+        let spaceAccess = makeSpaceAccess()
+        let access = FakeBookmarkAccess(rows: [adoptableRow()])
+        access.failApplyOnce = true
+        let store = MemoryOwnedItemStore()
+        let client = FakePhiSyncClient()
+        client.scriptedPages = [oneEntityPage(alignedPayload(uuid: "b1"), uuid: "b1")]
+
+        let engine = makeEngine(client: client, access: spaceAccess, store: makeSpaceStore(),
+                                ownedKinds: [bookmarkKind(access, store)])
+        await engine.setSpaceSyncEnabled(true)
+        await engine.pullOnce()
+
+        let table = await engine.ownedTableForTesting("bookmarks")
+        let syncId = access.rows.first { $0.guid == "G1" }?.syncId
+        let baselines = table.cursors.values.filter { $0.reconciled != nil || $0.server != nil }
+        XCTAssertNil(syncId, "① 落地回滚了，`syncId` 不许停在中间态")
+        XCTAssertTrue(baselines.isEmpty, "② 基线一个字节都不写")
+        XCTAssertTrue(bookmarkCommits(client).isEmpty,
+                      "③ 配对上的那一行本轮不铸新身份，所以也没什么可发")
+    }
+
+    /// CASE 7.2 — 成功那一路：认领而不是复制。
+    func testASuccessfulLandingAdoptsTheLocalRowInsteadOfCopyingIt() async throws {
+        let spaceAccess = makeSpaceAccess()
+        let access = FakeBookmarkAccess(rows: [adoptableRow()])
+        let store = MemoryOwnedItemStore()
+        let client = FakePhiSyncClient()
+        client.scriptedPages = [oneEntityPage(alignedPayload(uuid: "b1"), uuid: "b1")]
+
+        let engine = makeEngine(client: client, access: spaceAccess, store: makeSpaceStore(),
+                                ownedKinds: [bookmarkKind(access, store)])
+        await engine.setSpaceSyncEnabled(true)
+        await engine.pullOnce()
+
+        let counters = await engine.lastOwnedRoundCountersForTesting["bookmarks"]
+        XCTAssertEqual(access.rows.count, 1, "① 一条行绝不因为一次认领变成两条")
+        XCTAssertEqual(access.rows.first { $0.guid == "G1" }?.syncId, "b1",
+                       "② 那一行接过账户上那个身份")
+        XCTAssertEqual(counters?.adopted, 1, "③")
+    }
+
+    /// CASE 7.2b — 认领时本机赢了一个字段 ⇒ 恰好一条 commit，带的是合并后的标题。
+    ///
+    /// 防的是什么：两个独立的错法都在这条上红。其一，落地时用了入站的**原始**实体 ⇒ ① 变成
+    /// `"remote-old"`，用户刚打的字被一次认领吃掉。其二，`mustRepublish` 没人消费 ⇒ ③ 是零条：
+    /// 那条游标的基线已经是合并后的字节，快照差分此后永远判「没变化」，账户上那条旧标题
+    /// **再也没有机会**被纠正。本条只盯本机赢的那个方向，远端赢的那一半由 CASE 7.2c 盯。
+    func testALocalFieldWonAtAdoptionIsRepublishedOnceWithTheMergedTitle() async throws {
+        let spaceAccess = makeSpaceAccess()
+        let access = FakeBookmarkAccess(rows: [
+            adoptableRow(title: "local-new",
+                         contentUpdatedDate: Date(timeIntervalSince1970: 3_000)),
+        ])
+        let store = MemoryOwnedItemStore()
+        let client = FakePhiSyncClient()
+        client.scriptedPages = [oneEntityPage(
+            bookmarkPayload(uuid: "b1", title: "remote-old", contentStamp: 2_000_000,
+                            createdAtMs: Self.rowCreatedAtMs), uuid: "b1")]
+
+        let engine = makeEngine(client: client, access: spaceAccess, store: makeSpaceStore(),
+                                ownedKinds: [bookmarkKind(access, store)])
+        await engine.setSpaceSyncEnabled(true)
+        await engine.pullOnce()
+
+        let counters = await engine.lastOwnedRoundCountersForTesting["bookmarks"]
+        let row = access.rows.first { $0.guid == "G1" }
+        XCTAssertEqual(access.rows.count, 1, "①")
+        XCTAssertEqual(row?.syncId, "b1", "①")
+        XCTAssertEqual(row?.title, "local-new", "① 落地的是合并结果，不是入站那条原始实体")
+        XCTAssertEqual(counters?.adopted, 1, "②")
+
+        // ③ 判据是「这一轮或下一轮**恰好**一条」，所以第二轮之后数的是累计值。
+        await engine.pullOnce()
+
+        let commits = bookmarkCommits(client)
+        XCTAssertEqual(commits.count, 1, "③ 本机赢下的字段回了账户，而且只回一次")
+        XCTAssertEqual(commits.first.flatMap(committedBookmark)?.title.stringValue, "local-new",
+                       "③ 发出去的是合并后的标题")
+    }
+
+    /// CASE 7.2c — 认领时远端赢了一个字段 ⇒ 本机那一行被改写。
+    ///
+    /// 防的是什么：`fieldWrites` 没人消费 ⇒ ① 停在 `"local-old"`，而那条游标的 `reconciled`
+    /// 记的是 `"remote-new"`。下一轮快照拿本机那个旧标题投影，与基线不同 ⇒ 判成「本机改了
+    /// 标题」，把 `"local-old"` 发回账户，**把对端刚做的改名覆盖掉**——一次认领于是变成一次
+    /// 静默的数据回滚。
+    func testARemoteFieldWonAtAdoptionRewritesTheLocalRow() async throws {
+        let spaceAccess = makeSpaceAccess()
+        let access = FakeBookmarkAccess(rows: [
+            adoptableRow(title: "local-old",
+                         contentUpdatedDate: Date(timeIntervalSince1970: 500)),
+        ])
+        let store = MemoryOwnedItemStore()
+        let client = FakePhiSyncClient()
+        client.scriptedPages = [oneEntityPage(
+            bookmarkPayload(uuid: "b1", title: "remote-new", contentStamp: 2_000_000,
+                            createdAtMs: Self.rowCreatedAtMs), uuid: "b1")]
+
+        let engine = makeEngine(client: client, access: spaceAccess, store: makeSpaceStore(),
+                                ownedKinds: [bookmarkKind(access, store)])
+        await engine.setSpaceSyncEnabled(true)
+        await engine.pullOnce()
+
+        let row = access.rows.first { $0.guid == "G1" }
+        XCTAssertEqual(access.rows.count, 1, "①")
+        XCTAssertEqual(row?.syncId, "b1", "①")
+        XCTAssertEqual(row?.title, "remote-new", "① 远端赢下的字段真的写进了本机行")
+
+        await engine.pullOnce()
+
+        XCTAssertEqual(bookmarkCommits(client).count, 0,
+                       "② 账户已经是对的，两轮加起来一条都不该发")
+    }
+
+    /// CASE 7.3 — 铸造在提交那一刻：提交没被接受 ⇒ 身份不进本机行。
+    ///
+    /// 防的是什么：提前写进 SwiftData 的实现会在一次提交失败之后留下一批「有身份、线上不
+    /// 存在」的行，而差分此后把它们当作已发布，永远不再产出 create。
+    func testAMintedIdentityReachesTheLocalRowOnlyAfterTheCommitIsAccepted() async throws {
+        let spaceAccess = makeSpaceAccess()
+        let access = FakeBookmarkAccess(rows: [.fixture(guid: "G1", spaceId: "s-1")])
+        let store = MemoryOwnedItemStore()
+        let client = FakePhiSyncClient()
+        // 超过 §5.3 那次限定范围重试所需的条数，于是本轮这条实体一个字节都没被账户接受。
+        client.forcedConflicts = 10
+
+        let engine = makeEngine(client: client, access: spaceAccess, store: makeSpaceStore(),
+                                ownedKinds: [bookmarkKind(access, store)])
+        await engine.setSpaceSyncEnabled(true)
+        await engine.pullOnce()
+
+        XCTAssertNil(access.rows.first { $0.guid == "G1" }?.syncId,
+                     "① 提交没被接受 ⇒ 身份不许落进本机行")
+
+        client.forcedConflicts = 0
+        await engine.pullOnce()
+
+        XCTAssertNotNil(access.rows.first { $0.guid == "G1" }?.syncId,
+                        "② 被接受的那一刻才写回")
+        XCTAssertEqual(access.rows.count, 1, "两轮下来那条行还是一条")
+    }
+
+    /// CASE 7.4 — 尽力推迟是轮内局部量，不落盘（§5.3 / §6.4）。
+    ///
+    /// 防的是什么：把推迟判据写进游标表会被 CASE 3.2 打红（那张表里不许有任何窗口状态）；
+    /// 而不推迟会在一次首次合并里同时发出本机副本与账户副本，制造 §6.5 记录的那类重复。
+    func testAnUnsyncedRowWaitsOutTheRoundInWhichItsSpaceReceivedEntities() async throws {
+        let spaceAccess = makeSpaceAccess()
+        let access = FakeBookmarkAccess(rows: [
+            // URL 与入站那条不同 ⇒ §6.1 配不上它，本轮会为它铸一个新身份。
+            .fixture(guid: "G2", spaceId: "s-1", index: 1, title: "other",
+                     url: URL(string: "https://other.example")!),
+        ])
+        let store = MemoryOwnedItemStore()
+        let client = FakePhiSyncClient()
+        client.scriptedPages = [oneEntityPage(alignedPayload(uuid: "b1"), uuid: "b1")]
+
+        let engine = makeEngine(client: client, access: spaceAccess, store: makeSpaceStore(),
+                                ownedKinds: [bookmarkKind(access, store)])
+        await engine.setSpaceSyncEnabled(true)
+        await engine.pullOnce()
+
+        XCTAssertEqual(bookmarkCommits(client).count, 0,
+                       "① 这个 Space 本轮到过货 ⇒ 它下面的未同步行不进本轮切片")
+        let table = await engine.ownedTableForTesting("bookmarks")
+        let fields = Mirror(reflecting: table).children.compactMap(\.label)
+        XCTAssertEqual(fields, ["formatVersion", "cursors"],
+                       "② 推迟不许在游标表上留下任何窗口状态")
+
+        // 第一个**没有**该 Space 实体到达的轮次：那条行照常发出。
+        await engine.pullOnce()
+
+        let commits = bookmarkCommits(client)
+        XCTAssertEqual(commits.count, 1, "③ 下一轮照常发出，推迟不是丢弃")
+        XCTAssertEqual(commits.first.flatMap(committedBookmark)?.url.stringValue,
+                       "https://other.example", "③ 发出去的正是那条被推迟的行")
+    }
+
+    /// CASE 7.5 — 预处理刷新表里**每一条**游标的 `ownerUuid`，不只是本轮切片里的。
+    ///
+    /// 防的是什么：只刷新切片内的实现，会让一条长期没变动的行的 `ownerUuid` 永远停在它第一次
+    /// 发布时的 Space 上；那个 Space 一旦被清理，§9.3 的级联就会去删一条活行的游标，而那条行
+    /// 此后被差分判成从未发布过、用 `baseVersion == 0` 的 create 盲写覆盖账户上那一条。
+    func testTheOwnerPrePassRefreshesEveryCursorNotOnlyThisRoundsSlice() async throws {
+        let spaceAccess = makeSpaceAccess(["s-1": "su-1", "s-2": "su-2"])
+        let access = FakeBookmarkAccess(rows: [
+            // 早就发布过、这一轮一个字节都没变 ⇒ **不进切片**；它现在坐在 `s-2`。
+            .fixture(guid: "GOLD", syncId: "b-old", spaceId: "s-2", title: "T"),
+            // 本轮会被铸身份、进切片的那一条。
+            .fixture(guid: "GNEW", spaceId: "s-1", index: 1, title: "N",
+                     url: URL(string: "https://new.example")!),
+        ])
+        let store = MemoryOwnedItemStore()
+        var stale = publishedCursor(alignedPayload(uuid: "b-old", spaceUuid: "su-2"),
+                                    entityId: "srv-old", version: 9)
+        stale.ownerUuid = "su-stale"
+        store.table.cursors["b-old"] = stale
+        let client = FakePhiSyncClient()
+        client.scriptedPages = [page([], marker: "500")]
+
+        let engine = makeEngine(client: client, access: spaceAccess, store: makeSpaceStore(),
+                                ownedKinds: [bookmarkKind(access, store)])
+        await engine.setSpaceSyncEnabled(true)
+        await engine.pullOnce()
+
+        let table = await engine.ownedTableForTesting("bookmarks")
+        let published = bookmarkCommits(client).compactMap { committedBookmarkUuid($0, key: key) }
+        XCTAssertEqual(table.cursors["b-old"]?.ownerUuid, "su-2",
+                       "① 归属按本地行现在坐的那个 Space 刷新")
+        XCTAssertFalse(published.contains("b-old"),
+                       "② 它本轮根本没进切片——刷新覆盖的是表里每一条，不是切片里那些")
+        XCTAssertEqual(published.count, 1, "② 进切片的只有那条新行")
+    }
+
+    /// CASE 7.6 — 落地一条远端赢的标题变更 ⇒ 该轮零 commit，下一轮静默。
+    ///
+    /// 防的是什么：不刷新轮内那份本机投影时 ① 是一条——内容是**落地前**的旧标题、戳是 `now`。
+    /// 那个 `now` 比对端刚才那次真实编辑更晚，于是在一次并发编辑里**旧值盖掉新值**，一个纯粹
+    /// 的读写时序问题变成一次数据回滚。② 是判据的另一半：只断言第一轮的实现可能把刷新做成
+    /// 「延迟到下一轮」，那样第二轮才发那条多余的 commit。
+    func testLandingARemotelyWonTitleCommitsNothingInEitherRound() async throws {
+        let spaceAccess = makeSpaceAccess()
+        let access = FakeBookmarkAccess(rows: [
+            .fixture(guid: "G1", syncId: "b1", spaceId: "s-1", title: "old",
+                     contentUpdatedDate: Date(timeIntervalSince1970: 500)),
+        ])
+        let store = MemoryOwnedItemStore()
+        store.table.cursors["b1"] = publishedCursor(alignedPayload(uuid: "b1", title: "old"),
+                                                    entityId: "srv-b1", version: 7)
+        let client = FakePhiSyncClient()
+        client.scriptedPages = [oneEntityPage(
+            bookmarkPayload(uuid: "b1", title: "new", contentStamp: 2_000_000,
+                            createdAtMs: Self.rowCreatedAtMs),
+            uuid: "b1", version: 42, entityId: "srv-b1")]
+
+        let engine = makeEngine(client: client, access: spaceAccess, store: makeSpaceStore(),
+                                ownedKinds: [bookmarkKind(access, store)])
+        await engine.setSpaceSyncEnabled(true)
+        await engine.pullOnce()
+
+        XCTAssertEqual(access.rows.first { $0.guid == "G1" }?.title, "new",
+                       "前提：远端赢下的标题真的落进了本机行")
+        XCTAssertEqual(bookmarkCommits(client).count, 0, "① 落地那一轮零 commit")
+
+        await engine.pullOnce()
+
+        XCTAssertEqual(bookmarkCommits(client).count, 0,
+                       "② 下一轮也零条——真的收敛了，不是把问题推到下一轮")
+    }
+
+    /// CASE 7.7 — 落地一条远端赢的移动 ⇒ 该轮零 commit（**位置也要刷新**）。
+    ///
+    /// 防的是什么：刷新只覆盖内容字段、漏掉位置的实现，会在每一次入站移动之后把**旧位置**
+    /// 配上一个新鲜的 `now` 发回去，把对端刚做的移动原地撤销。断言 ② 是 CASE 6.17 的 ③
+    /// （`testALocallyWonFieldIsRepublishedAndServerKeepsThePulledBytes`）那一半：本机赢下内容
+    /// 时那条 commit 照发，但它带的位置必须是**落地后**的 `su-2`。这里把它单独立一遍，是因为
+    /// 那条用例还同时断言别的东西，只看它的话分不清「位置对了」与「别的原因让它绿了」。
+    func testLandingARemotelyWonMoveCommitsNothingAndRepublishesAtTheNewSpace() async throws {
+        // 第一半：纯位置变化 ⇒ 零 commit。
+        let spaceAccess = makeSpaceAccess(["s-1": "su-1", "s-2": "su-2"])
+        let access = FakeBookmarkAccess(rows: [
+            .fixture(guid: "G1", syncId: "b1", spaceId: "s-1", title: "T",
+                     contentUpdatedDate: Date(timeIntervalSince1970: 500)),
+        ])
+        let store = MemoryOwnedItemStore()
+        store.table.cursors["b1"] = publishedCursor(alignedPayload(uuid: "b1"),
+                                                    entityId: "srv-b1", version: 7)
+        let client = FakePhiSyncClient()
+        client.scriptedPages = [oneEntityPage(
+            bookmarkPayload(uuid: "b1", spaceUuid: "su-2", locationStamp: 300,
+                            createdAtMs: Self.rowCreatedAtMs),
+            uuid: "b1", version: 42, entityId: "srv-b1")]
+
+        let engine = makeEngine(client: client, access: spaceAccess, store: makeSpaceStore(),
+                                ownedKinds: [bookmarkKind(access, store)])
+        await engine.setSpaceSyncEnabled(true)
+        await engine.pullOnce()
+
+        XCTAssertEqual(access.rows.first { $0.guid == "G1" }?.spaceId, "s-2",
+                       "前提：远端赢下的移动真的落了地")
+        XCTAssertEqual(bookmarkCommits(client).count, 0,
+                       "① 位置也刷新了 ⇒ 投影与刚写好的基线逐字节相同，没什么可发")
+
+        // 第二半（CASE 6.17 的 ③）：同一次移动，但本机赢下了内容 ⇒ 那条 commit 照发，
+        // 而它带的位置是**落地后**的那一个。
+        let wonAccess = FakeBookmarkAccess(rows: [
+            .fixture(guid: "G1", syncId: "b1", spaceId: "s-1", title: "local",
+                     contentUpdatedDate: Date(timeIntervalSince1970: 500)),
+        ])
+        let wonStore = MemoryOwnedItemStore()
+        wonStore.table.cursors["b1"] = publishedCursor(alignedPayload(uuid: "b1", title: "old"),
+                                                       entityId: "srv-b1", version: 7)
+        let wonClient = FakePhiSyncClient()
+        wonClient.scriptedPages = [oneEntityPage(
+            bookmarkPayload(uuid: "b1", spaceUuid: "su-2", title: "old", locationStamp: 300,
+                            createdAtMs: Self.rowCreatedAtMs),
+            uuid: "b1", version: 42, entityId: "srv-b1")]
+
+        let wonEngine = makeEngine(client: wonClient, access: makeSpaceAccess(["s-1": "su-1",
+                                                                              "s-2": "su-2"]),
+                                   store: makeSpaceStore(),
+                                   ownedKinds: [bookmarkKind(wonAccess, wonStore)])
+        await wonEngine.setSpaceSyncEnabled(true)
+        await wonEngine.pullOnce()
+
+        let wonCommits = bookmarkCommits(wonClient)
+        let sent = wonCommits.first.flatMap(committedBookmark)
+        XCTAssertEqual(wonCommits.count, 1, "② 本机赢下的标题要回账户")
+        XCTAssertEqual(sent?.title.stringValue, "local", "② 带的是本机那个标题")
+        XCTAssertEqual(sent?.spaceUuid.stringValue, "su-2", "② 带的是落地后的那个 Space")
+    }
 }
